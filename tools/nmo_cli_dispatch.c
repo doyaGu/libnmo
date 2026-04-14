@@ -189,24 +189,26 @@ static void object_delete_usage(FILE *out) {
 }
 
 static void object_create_usage(FILE *out) {
-    fprintf(out, "Usage: nmo object create --class <name> [--name <name>] [--type-guid <guid>] <file> -o <output>\n\n");
+    fprintf(out, "Usage: nmo object create --class <name> [--name <name>] <file> -o <output>\n\n");
     fprintf(out, "Create a new object in the file.\n\n");
     fprintf(out, "Options:\n");
-    fprintf(out, "  -o, --output <path>    Output file (required)\n");
+    fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
     fprintf(out, "  -c, --class <name>     Class name (required)\n");
     fprintf(out, "  -n, --name <name>      Object name\n");
     fprintf(out, "  --type-guid <guid>     Type GUID (d1,d2 format)\n");
+    fprintf(out, "  --dry-run              Preview without saving\n");
 }
 
 static void object_copy_usage(FILE *out) {
     fprintf(out, "Usage: nmo object copy [options] <id>[,<id>,...] <file> -o <output>\n\n");
     fprintf(out, "Copy objects within a file.\n\n");
     fprintf(out, "Options:\n");
-    fprintf(out, "  -o, --output <file>  Output file (required)\n");
+    fprintf(out, "  -o, --output <file>  Output file (required unless --dry-run)\n");
     fprintf(out, "  -c, --class <name>   Filter by class (includes derived)\n");
     fprintf(out, "  -n, --name <pat>     Filter by name wildcard pattern\n");
     fprintf(out, "  -f, --filter <expr>  Filter by DSL expression\n");
     fprintf(out, "  --cascade            Copy dependents\n");
+    fprintf(out, "  --dry-run            Preview without saving\n");
 }
 
 static void object_import_json_usage(FILE *out) {
@@ -384,6 +386,30 @@ static void behavior_graph_usage(FILE *out) {
     fprintf(out, "  --dot               Include DOT graph output (text format only)\n");
     fprintf(out, "  --max-nodes <n>      Limit node output (0 = no limit)\n");
     fprintf(out, "  --max-edges <n>      Limit edge output (0 = no limit)\n");
+}
+
+static void behavior_dump_usage(FILE *out) {
+    fprintf(out, "Usage: nmo behavior dump [options] <id> <file>\n\n");
+    fprintf(out, "Dump behavior tree with decoded parameter values.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --level <n>     Dump depth level (0-3, default: 2)\n");
+}
+
+static void behavior_find_usage(FILE *out) {
+    fprintf(out, "Usage: nmo behavior find [options] <file>\n\n");
+    fprintf(out, "Search behaviors by name, GUID, or type.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --name <pattern>  Name wildcard pattern\n");
+    fprintf(out, "  --guid <guid>     Building block GUID\n");
+    fprintf(out, "  --type <type>     Behavior type filter\n");
+}
+
+static void behavior_trace_usage(FILE *out) {
+    fprintf(out, "Usage: nmo behavior trace [options] <id> <file>\n\n");
+    fprintf(out, "Trace execution path from a behavior IO port.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --from <io_id>   Starting IO port\n");
+    fprintf(out, "  --max-depth <n>  Maximum trace depth\n");
 }
 
 static void parameter_list_usage(FILE *out) {
@@ -751,9 +777,9 @@ static const nmo_cli_action_t behavior_actions[] = {
     {"stats", "st", "Show behavior statistics", nmo_cmd_behavior_stats, behavior_stats_usage, NULL, 0, NULL},
     {"show", "s", "Show behavior signature", nmo_cmd_behavior_show, behavior_show_usage, NULL, 0, NULL},
     {"graph", "g", "Export behavior graph", nmo_cmd_behavior_graph, behavior_graph_usage, NULL, 0, NULL},
-    {"dump", "d", "Dump behavior tree with decoded values", nmo_cmd_behavior_dump, NULL, NULL, 0, NULL},
-    {"find", "f", "Search behaviors by name/GUID/type", nmo_cmd_behavior_find, NULL, NULL, 0, NULL},
-    {"trace", "tr", "Trace execution path from IO", nmo_cmd_behavior_trace, NULL, NULL, 0, NULL},
+    {"dump", "d", "Dump behavior tree with decoded values", nmo_cmd_behavior_dump, behavior_dump_usage, NULL, 0, NULL},
+    {"find", "f", "Search behaviors by name/GUID/type", nmo_cmd_behavior_find, behavior_find_usage, NULL, 0, NULL},
+    {"trace", "tr", "Trace execution path from IO", nmo_cmd_behavior_trace, behavior_trace_usage, NULL, 0, NULL},
     {"interface", "iface", "Interface layout commands", NULL, NULL,
         nmo_behavior_interface_sub_actions, NMO_BEHAVIOR_INTERFACE_SUB_ACTION_COUNT, "show"},
 };
