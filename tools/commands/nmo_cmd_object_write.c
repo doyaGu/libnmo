@@ -16,6 +16,7 @@
 #include "session/nmo_session.h"
 #include "session/nmo_runtime_kernel.h"
 #include "app/nmo_save.h"
+#include "app/nmo_object_import.h"
 #include "core/nmo_arena.h"
 #include "dsl/nmo_dsl.h"
 #include "object/nmo_class_ids.h"
@@ -1126,4 +1127,133 @@ int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
     if (target_ids_owned) free(target_ids);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+/* ============================================================================
+ * object import-json - Import objects from JSON (round-trip with object export)
+ * ============================================================================ */
+
+int nmo_cmd_object_import_json(int argc, char **argv, const nmo_cli_global_opts_t *global)
+{
+    static const nmo_opt_def_t opts[] = {
+        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        {"--create",  NULL, NMO_OPT_FLAG,   "Create objects not found by ID"},
+        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview changes without saving"},
+    };
+    enum { OPT_OUTPUT, OPT_CREATE, OPT_DRYRUN, OPT_COUNT };
+
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+        return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    bool create  = vals[OPT_CREATE].present && vals[OPT_CREATE].val.flag;
+    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+
+    if (!dry_run && !output_path) {
+        fprintf(stderr, "Error: -o/--output required (or use --dry-run)\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (r.pos_count < 2) {
+        fprintf(stderr, "Usage: nmo object import-json <json-file> <nmo-file> -o <output>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *json_path = r.pos_args[0];
+    const char *nmo_path = r.pos_args[r.pos_count - 1];
+
+    /* Read JSON file */
+    FILE *f = fopen(json_path, "rb");
+    if (!f) {
+        fprintf(stderr, "Error: Cannot open JSON file '%s'\n", json_path);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (fsize <= 0) {
+        fclose(f);
+        fprintf(stderr, "Error: Empty JSON file\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    char *json_data = (char *)malloc((size_t)fsize + 1);
+    if (!json_data) {
+        fclose(f);
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    size_t json_size = fread(json_data, 1, (size_t)fsize, f);
+    fclose(f);
+    json_data[json_size] = '\0';
+
+    /* Open NMO session */
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init_with_file(&c, nmo_path, global);
+    if (rc) { free(json_data); return rc; }
+
+    /* Import */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
+    if (!arena) {
+        free(json_data);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    uint32_t flags = 0;
+    if (create) flags |= NMO_IMPORT_CREATE_MISSING;
+    if (dry_run) flags |= NMO_IMPORT_DRY_RUN;
+
+    nmo_import_result_t result;
+    memset(&result, 0, sizeof(result));
+
+    nmo_status_t st = nmo_object_import_json(
+        c.session, c.registry, arena,
+        json_data, json_size, flags, &result);
+
+    nmo_arena_destroy(arena);
+    free(json_data);
+
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Import failed: %s\n", nmo_error_string(st));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    /* Save (unless dry-run) */
+    if (!dry_run) {
+        nmo_save_options_t save_opts = nmo_save_options_default();
+        int save_rc = nmo_save_file(c.session, output_path, &save_opts);
+        if (save_rc != NMO_OK) {
+            fprintf(stderr, "Error saving: %s\n", nmo_error_string(save_rc));
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+        }
+    }
+
+    /* Output */
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        if (!doc) return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
+        nmo_cli_json_add_uint_safe(doc, data, "objects_updated", (uint64_t)result.objects_updated);
+        nmo_cli_json_add_uint_safe(doc, data, "objects_created", (uint64_t)result.objects_created);
+        nmo_cli_json_add_uint_safe(doc, data, "fields_written", (uint64_t)result.fields_written);
+        nmo_cli_json_add_uint_safe(doc, data, "fields_skipped", (uint64_t)result.fields_skipped);
+        nmo_cli_json_add_uint_safe(doc, data, "errors", (uint64_t)result.errors);
+        if (!dry_run && output_path)
+            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+        nmo_cmd_ctx_json_end(&c, doc, data, "object.import-json");
+    } else {
+        if (dry_run)
+            fprintf(c.out, "=== Dry Run: Import JSON ===\n");
+        fprintf(c.out, "Objects updated : %zu\n", result.objects_updated);
+        fprintf(c.out, "Objects created : %zu\n", result.objects_created);
+        fprintf(c.out, "Fields written  : %zu\n", result.fields_written);
+        fprintf(c.out, "Fields skipped  : %zu\n", result.fields_skipped);
+        fprintf(c.out, "Errors          : %zu\n", result.errors);
+        if (!dry_run && output_path)
+            fprintf(c.out, "Saved to: %s\n", output_path);
+    }
+
+    return nmo_cmd_ctx_done(&c, result.errors > 0 ? NMO_CLI_EXIT_INTERNAL_ERROR : NMO_CLI_EXIT_SUCCESS);
 }

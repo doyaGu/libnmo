@@ -184,6 +184,44 @@ int nmo_tool_batch_run(
     nmo_batch_handler_t handler,
     void *user_data);
 
+/**
+ * Per-file handler for batch write processing.
+ * Called once per file with computed output path.
+ * Returns an NMO_CLI_EXIT_* code (0 = success).
+ */
+typedef int (*nmo_batch_write_handler_t)(
+    const char *input_path,
+    const char *output_path,
+    const struct nmo_cli_global_opts *global,
+    void *user_data,
+    struct yyjson_mut_doc *doc,
+    struct yyjson_mut_val *result_data);
+
+/**
+ * Expand output template: replace {} with input basename (no extension).
+ * E.g. input="dir/file.cmo", template="{}.stripped.cmo" → "file.stripped.cmo"
+ *
+ * @return 0 on success, -1 if no {} in template with multiple files
+ */
+int nmo_tool_expand_output_template(
+    const char *input_path,
+    const char *output_template,
+    char *out_buf,
+    size_t out_buf_size);
+
+/**
+ * Run a write command handler over multiple files with output template.
+ * Similar to nmo_tool_batch_run but each file gets a computed output path.
+ */
+int nmo_tool_batch_write_run(
+    const char **file_paths,
+    size_t file_count,
+    const char *output_template,
+    const struct nmo_cli_global_opts *global,
+    const char *command,
+    nmo_batch_write_handler_t handler,
+    void *user_data);
+
 #ifdef __cplusplus
 }
 #endif

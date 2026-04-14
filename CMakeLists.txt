@@ -343,6 +343,7 @@ set(NMO_BEHAVIOR_SOURCES
 set(NMO_JSON_SOURCES
     src/app/json_util.c
     src/app/object_summary.c
+    src/app/object_import.c
 )
 
 # Combine all sources (yyjson compiled directly into nmo)

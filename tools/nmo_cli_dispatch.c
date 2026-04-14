@@ -24,6 +24,9 @@
 #include "commands/nmo_cmd_extension.h"
 #include "commands/nmo_cmd_texture.h"
 #include "commands/nmo_cmd_data.h"
+#include "commands/nmo_cmd_scene.h"
+#include "commands/nmo_cmd_entity.h"
+#include "commands/nmo_cmd_material.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -202,6 +205,15 @@ static void object_copy_usage(FILE *out) {
     fprintf(out, "  -n, --name <pat>     Filter by name wildcard pattern\n");
     fprintf(out, "  -f, --filter <expr>  Filter by DSL expression\n");
     fprintf(out, "  --cascade            Copy dependents\n");
+}
+
+static void object_import_json_usage(FILE *out) {
+    fprintf(out, "Usage: nmo object import-json <json-file> <nmo-file> -o <output>\n\n");
+    fprintf(out, "Import objects from JSON (round-trip with object export).\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <file>  Output file (required unless --dry-run)\n");
+    fprintf(out, "  --create             Create objects not found by ID\n");
+    fprintf(out, "  --dry-run            Preview changes without saving\n");
 }
 
 static void debug_load_phases_usage(FILE *out) {
@@ -588,6 +600,45 @@ static void data_dump_usage(FILE *out) {
     fprintf(out, "  --row, -r <n>   Dump a single row by index (key-value format)\n");
 }
 
+/* Scene command usage */
+static void scene_list_usage(FILE *out) {
+    fprintf(out, "Usage: nmo scene list <file>\n\n");
+    fprintf(out, "List all CKScene and CKLevel objects.\n");
+}
+
+static void scene_show_usage(FILE *out) {
+    fprintf(out, "Usage: nmo scene show <id> <file>\n\n");
+    fprintf(out, "Show scene or level details.\n\n");
+    fprintf(out, "For CKScene: background, ambient, fog, camera, environment.\n");
+    fprintf(out, "For CKLevel: scene list, current scene, level scene.\n");
+}
+
+/* Entity command usage */
+static void entity_list_usage(FILE *out) {
+    fprintf(out, "Usage: nmo entity list [options] <file>\n\n");
+    fprintf(out, "List all 3D entities (CK3dEntity and derived classes).\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --class, -c <name>   Filter by class (e.g. CKCamera, CKLight)\n");
+}
+
+static void entity_show_usage(FILE *out) {
+    fprintf(out, "Usage: nmo entity show <id> <file>\n\n");
+    fprintf(out, "Show 3D entity details including transform, mesh, and animations.\n");
+    fprintf(out, "For CKCamera: also shows projection, FOV, near/far planes.\n");
+    fprintf(out, "For CKLight: also shows light type, color, range, attenuation.\n");
+}
+
+/* Material command usage */
+static void material_list_usage(FILE *out) {
+    fprintf(out, "Usage: nmo material list <file>\n\n");
+    fprintf(out, "List all CKMaterial objects with diffuse color and texture count.\n");
+}
+
+static void material_show_usage(FILE *out) {
+    fprintf(out, "Usage: nmo material show <id> <file>\n\n");
+    fprintf(out, "Show material details: colors, specular power, textures, blend modes.\n");
+}
+
 /* ============================================================================
  * Action definitions for each group
  * ============================================================================ */
@@ -625,6 +676,7 @@ static const nmo_cli_action_t object_actions[] = {
     {"delete", "del", "Delete objects", nmo_cmd_object_delete, object_delete_usage, NULL, 0, NULL},
     {"create", NULL, "Create new object", nmo_cmd_object_create, object_create_usage, NULL, 0, NULL},
     {"copy", "cp", "Copy objects", nmo_cmd_object_copy, object_copy_usage, NULL, 0, NULL},
+    {"import-json", NULL, "Import objects from JSON", nmo_cmd_object_import_json, object_import_json_usage, NULL, 0, NULL},
     {"graph", "gr", "Export reference graph", nmo_cmd_object_graph, object_graph_usage, NULL, 0, NULL},
 };
 
@@ -723,6 +775,24 @@ static const nmo_cli_action_t data_actions[] = {
     {"dump", "d", "Dump data array contents", nmo_cmd_data_dump, data_dump_usage, NULL, 0, NULL},
 };
 
+/* scene group actions */
+static const nmo_cli_action_t scene_actions[] = {
+    {"list", "ls", "List scenes and levels", nmo_cmd_scene_list, scene_list_usage, NULL, 0, NULL},
+    {"show", "s", "Show scene/level details", nmo_cmd_scene_show, scene_show_usage, NULL, 0, NULL},
+};
+
+/* entity group actions */
+static const nmo_cli_action_t entity_actions[] = {
+    {"list", "ls", "List 3D entities", nmo_cmd_entity_list, entity_list_usage, NULL, 0, NULL},
+    {"show", "s", "Show entity details", nmo_cmd_entity_show, entity_show_usage, NULL, 0, NULL},
+};
+
+/* material group actions */
+static const nmo_cli_action_t material_actions[] = {
+    {"list", "ls", "List materials", nmo_cmd_material_list, material_list_usage, NULL, 0, NULL},
+    {"show", "s", "Show material details", nmo_cmd_material_show, material_show_usage, NULL, 0, NULL},
+};
+
 /* debug group actions */
 static const nmo_cli_action_t debug_actions[] = {
     {"load-phases", "lp", "Show load pipeline phases", nmo_cmd_debug_load_phases, debug_load_phases_usage, NULL, 0, NULL},
@@ -751,6 +821,9 @@ static const nmo_cli_group_t groups[] = {
     {"resource", "res", "Resource management", resource_actions, ARRAY_SIZE(resource_actions)},
     {"texture", "tex", "Texture management", texture_actions, ARRAY_SIZE(texture_actions)},
     {"data", "da", "Data array inspection", data_actions, ARRAY_SIZE(data_actions)},
+    {"scene", "sc", "Scene/level inspection", scene_actions, ARRAY_SIZE(scene_actions)},
+    {"entity", "ent", "3D entity inspection", entity_actions, ARRAY_SIZE(entity_actions)},
+    {"material", "mat", "Material inspection", material_actions, ARRAY_SIZE(material_actions)},
     {"type", "t", "Type system information", type_actions, ARRAY_SIZE(type_actions)},
     {"validate", "val", "File validation", validate_actions, ARRAY_SIZE(validate_actions)},
     {"convert", "conv", "Format conversion", convert_actions, ARRAY_SIZE(convert_actions)},

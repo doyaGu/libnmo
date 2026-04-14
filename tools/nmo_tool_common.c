@@ -578,3 +578,168 @@ int nmo_tool_batch_run(
     nmo_cli_close_output_stream(global, out);
     return worst_exit;
 }
+
+/* ============================================================================
+ * Batch write support
+ * ============================================================================ */
+
+int nmo_tool_expand_output_template(
+    const char *input_path,
+    const char *output_template,
+    char *out_buf,
+    size_t out_buf_size)
+{
+    if (!input_path || !output_template || !out_buf || out_buf_size == 0) {
+        return -1;
+    }
+
+    /* Extract basename without extension */
+    const char *slash = strrchr(input_path, '/');
+    const char *bslash = strrchr(input_path, '\\');
+    const char *base = input_path;
+    if (slash && (!bslash || slash > bslash)) base = slash + 1;
+    else if (bslash) base = bslash + 1;
+
+    char basename[256];
+    snprintf(basename, sizeof(basename), "%s", base);
+    char *dot = strrchr(basename, '.');
+    if (dot) *dot = '\0';
+
+    /* Find {} in template and replace */
+    const char *placeholder = strstr(output_template, "{}");
+    if (!placeholder) {
+        snprintf(out_buf, out_buf_size, "%s", output_template);
+        return 0;
+    }
+
+    size_t prefix_len = (size_t)(placeholder - output_template);
+    snprintf(out_buf, out_buf_size, "%.*s%s%s",
+             (int)prefix_len, output_template,
+             basename,
+             placeholder + 2);
+    return 0;
+}
+
+int nmo_tool_batch_write_run(
+    const char **file_paths,
+    size_t file_count,
+    const char *output_template,
+    const nmo_cli_global_opts_t *global,
+    const char *command,
+    nmo_batch_write_handler_t handler,
+    void *user_data)
+{
+    if (!file_paths || file_count == 0 || !global || !handler || !output_template) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    /* Check: if multiple files and no {} in template, error */
+    if (file_count > 1 && !strstr(output_template, "{}")) {
+        fprintf(stderr, "Error: Output template must contain {} when processing multiple files\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    bool is_json = (global->format == NMO_CLI_FORMAT_JSON ||
+                    global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+
+    char out_err[128];
+    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
+    if (!out) {
+        fprintf(stderr, "Error: %s\n", out_err);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    int worst_exit = NMO_CLI_EXIT_SUCCESS;
+    size_t succeeded = 0;
+    size_t failed = 0;
+
+    yyjson_mut_doc *doc = NULL;
+    yyjson_mut_val *results_arr = NULL;
+
+    if (is_json) {
+        doc = nmo_cli_json_create_doc();
+        if (!doc) {
+            nmo_cli_close_output_stream(global, out);
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+        results_arr = yyjson_mut_arr(doc);
+    }
+
+    for (size_t i = 0; i < file_count; ++i) {
+        const char *path = file_paths[i];
+
+        /* Expand output path from template */
+        char output_path[1024];
+        nmo_tool_expand_output_template(path, output_template, output_path, sizeof(output_path));
+
+        if (is_json) {
+            yyjson_mut_val *result_obj = yyjson_mut_obj(doc);
+            yyjson_mut_obj_add_str(doc, result_obj, "file", path);
+            yyjson_mut_obj_add_str(doc, result_obj, "output", output_path);
+
+            yyjson_mut_val *data_obj = yyjson_mut_obj(doc);
+            int rc = handler(path, output_path, global, user_data, doc, data_obj);
+
+            yyjson_mut_obj_add_bool(doc, result_obj, "success", rc == NMO_CLI_EXIT_SUCCESS);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                yyjson_mut_obj_add_int(doc, result_obj, "exit_code", rc);
+                failed++;
+            } else {
+                succeeded++;
+            }
+            yyjson_mut_obj_add_val(doc, result_obj, "data", data_obj);
+            yyjson_mut_arr_append(results_arr, result_obj);
+
+            if (rc > worst_exit) worst_exit = rc;
+        } else {
+            bool colorize = nmo_cli_should_colorize(global, out);
+
+            if (i > 0) fprintf(out, "\n");
+            fprintf(out, "%s--- [%zu/%zu] %s -> %s ---%s\n",
+                    colorize ? NMO_CLI_COLOR_CYAN : "",
+                    i + 1, file_count, path, output_path,
+                    colorize ? NMO_CLI_COLOR_RESET : "");
+
+            nmo_tool_text_output_ctx_t text_ctx = {
+                .out = out,
+                .colorize = colorize,
+                .user_data = user_data
+            };
+
+            int rc = handler(path, output_path, global, &text_ctx, NULL, NULL);
+            if (rc != NMO_CLI_EXIT_SUCCESS) failed++;
+            else succeeded++;
+
+            if (rc > worst_exit) worst_exit = rc;
+        }
+    }
+
+    if (is_json) {
+        yyjson_mut_val *envelope = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_str(doc, envelope, "schema_version", NMO_CLI_JSON_SCHEMA_VERSION);
+        yyjson_mut_obj_add_str(doc, envelope, "tool", "nmo");
+        yyjson_mut_obj_add_str(doc, envelope, "command", command);
+        yyjson_mut_obj_add_bool(doc, envelope, "batch_mode", true);
+        yyjson_mut_obj_add_val(doc, envelope, "results", results_arr);
+
+        yyjson_mut_val *summary = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, summary, "total", (uint64_t)file_count);
+        yyjson_mut_obj_add_uint(doc, summary, "succeeded", (uint64_t)succeeded);
+        yyjson_mut_obj_add_uint(doc, summary, "failed", (uint64_t)failed);
+        yyjson_mut_obj_add_val(doc, envelope, "summary", summary);
+
+        yyjson_mut_doc_set_root(doc, envelope);
+        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cli_json_free_doc(doc);
+    } else {
+        bool colorize = nmo_cli_should_colorize(global, out);
+        fprintf(out, "\n%s=== Batch Write Summary ===%s\n",
+                colorize ? NMO_CLI_COLOR_BOLD : "",
+                colorize ? NMO_CLI_COLOR_RESET : "");
+        fprintf(out, "Total: %zu  Succeeded: %zu  Failed: %zu\n",
+                file_count, succeeded, failed);
+    }
+
+    nmo_cli_close_output_stream(global, out);
+    return worst_exit;
+}

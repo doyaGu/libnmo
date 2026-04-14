@@ -63,6 +63,11 @@ int nmo_cmd_object_create(int argc, char **argv, const nmo_cli_global_opts_t *gl
 int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
 /**
+ * @brief nmo object import-json - Import objects from JSON
+ */
+int nmo_cmd_object_import_json(int argc, char **argv, const nmo_cli_global_opts_t *global);
+
+/**
  * @brief nmo object impact - Show deletion impact analysis
  */
 int nmo_cmd_object_impact(int argc, char **argv, const nmo_cli_global_opts_t *global);
