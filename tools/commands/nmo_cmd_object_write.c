@@ -1,6 +1,6 @@
 /**
  * @file nmo_cmd_object_write.c
- * @brief CLI object write commands: rename, delete
+ * @brief CLI object write commands: rename, delete, create, copy
  */
 
 #include "nmo_cmd_object.h"
@@ -802,4 +802,328 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
     if (arena) nmo_arena_destroy(arena);
     if (target_ids_owned) free(target_ids);
     return nmo_cmd_ctx_done(&c, exit_code);
+}
+
+/* ============================================================================
+ * object create - Create a new object and save to file
+ *
+ *   nmo object create --class <name> [--name <name>] [--type-guid <guid>] <file> -o <output>
+ * ============================================================================ */
+
+int nmo_cmd_object_create(int argc, char **argv, const nmo_cli_global_opts_t *global)
+{
+    static const nmo_opt_def_t opts[] = {
+        {"--output",    "-o", NMO_OPT_STRING, "Output file (required)"},
+        {"--class",     "-c", NMO_OPT_STRING, "Class name (required)"},
+        {"--name",      "-n", NMO_OPT_STRING, "Object name"},
+        {"--type-guid", NULL, NMO_OPT_STRING, "Type GUID (d1,d2 format)"},
+    };
+    enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_TYPE_GUID, OPT_COUNT };
+
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+        return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    const char *class_str   = vals[OPT_CLASS].present  ? vals[OPT_CLASS].val.str  : NULL;
+    const char *name        = vals[OPT_NAME].present   ? vals[OPT_NAME].val.str   : NULL;
+
+    if (!output_path) {
+        fprintf(stderr, "Error: -o/--output is required\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!class_str) {
+        fprintf(stderr, "Error: --class/-c is required\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *file_path = r.pos_count > 0 ? r.pos_args[r.pos_count - 1] : NULL;
+    if (!file_path) {
+        fprintf(stderr, "Error: No input file specified\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    /* Open session */
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
+    if (rc) return rc;
+
+    /* Resolve class */
+    nmo_class_id_t class_id = nmo_core_class_id(&c, class_str);
+    if (!class_id) {
+        fprintf(stderr, "Error: Unknown class '%s'\n", class_str);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    /* Parse type GUID if provided */
+    nmo_guid_t type_guid = NMO_GUID_NULL;
+    if (vals[OPT_TYPE_GUID].present) {
+        const char *guid_str = vals[OPT_TYPE_GUID].val.str;
+        uint32_t d1 = 0, d2 = 0;
+        if (sscanf(guid_str, "%x,%x", &d1, &d2) == 2) {
+            type_guid.d1 = d1;
+            type_guid.d2 = d2;
+        } else {
+            type_guid = nmo_guid_parse(guid_str);
+            if (nmo_guid_is_null(type_guid)) {
+                fprintf(stderr, "Error: Invalid GUID '%s'\n", guid_str);
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+            }
+        }
+    }
+
+    /* Create object */
+    nmo_object_id_t new_id = 0;
+    nmo_runtime_report_t report;
+    memset(&report, 0, sizeof(report));
+
+    int create_rc = nmo_session_create_object(
+        c.session, class_id, name, type_guid, &new_id, &report);
+    if (create_rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to create object: %s\n",
+                nmo_error_string(create_rc));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    /* Save file */
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    int save_rc = nmo_save_file(c.session, output_path, &save_opts);
+    if (save_rc != NMO_OK) {
+        fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_rc));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+    }
+
+    /* Output */
+    const char *cls = nmo_core_class_name(&c, class_id);
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        if (!doc)
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        nmo_cli_json_add_uint_safe(doc, data, "id", (uint64_t)new_id);
+        nmo_cli_json_add_str_safe(doc, data, "class_name", cls ? cls : class_str);
+        nmo_cli_json_add_str_safe(doc, data, "name", name ? name : "");
+        nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+
+        nmo_cmd_ctx_json_end(&c, doc, data, "object.create");
+    } else {
+        fprintf(c.out, "Created object #%u (%s)",
+                new_id, cls ? cls : class_str);
+        if (name && name[0])
+            fprintf(c.out, " [name: %s]", name);
+        fprintf(c.out, "\n");
+        fprintf(c.out, "Saved to: %s\n", output_path);
+    }
+
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+/* ============================================================================
+ * object copy - Copy objects with filter support
+ *
+ *   nmo object copy <id>[,<id>,...] <file> -o <output>
+ *   nmo object copy --class <cls> [--name <pat>] <file> -o <output>
+ * ============================================================================ */
+
+int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *global)
+{
+    static const nmo_opt_def_t opts[] = {
+        {"--output",  "-o", NMO_OPT_STRING, "Output file (required)"},
+        {"--class",   "-c", NMO_OPT_STRING, "Filter by class (includes derived)"},
+        {"--name",    "-n", NMO_OPT_STRING, "Filter by name wildcard pattern"},
+        {"--filter",  "-f", NMO_OPT_STRING, "Filter by DSL expression"},
+        {"--cascade", NULL, NMO_OPT_FLAG,   "Copy dependents"},
+    };
+    enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_FILTER, OPT_CASCADE, OPT_COUNT };
+
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+        return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    bool cascade   = vals[OPT_CASCADE].present && vals[OPT_CASCADE].val.flag;
+    bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present ||
+                      vals[OPT_FILTER].present;
+
+    if (!output_path) {
+        fprintf(stderr, "Error: -o/--output is required\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *file_path = r.pos_count > 0 ? r.pos_args[r.pos_count - 1] : NULL;
+    if (!file_path) {
+        fprintf(stderr, "Error: No input file specified\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    /* Open session */
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
+    if (rc) return rc;
+
+    /* Collect target IDs — same pattern as object delete */
+    nmo_object_id_t *target_ids = NULL;
+    size_t target_count = 0;
+    bool target_ids_owned = false;
+
+    if (use_filter) {
+        nmo_core_object_filter_t filter;
+        memset(&filter, 0, sizeof(filter));
+
+        if (vals[OPT_CLASS].present) {
+            filter.class_id = nmo_core_class_id(&c, vals[OPT_CLASS].val.str);
+            if (!filter.class_id) {
+                fprintf(stderr, "Error: Unknown class '%s'\n", vals[OPT_CLASS].val.str);
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+            }
+            filter.class_derived = true;
+        }
+        if (vals[OPT_NAME].present) {
+            filter.name_pattern = vals[OPT_NAME].val.str;
+        }
+        if (vals[OPT_FILTER].present) {
+            nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_EXPRESSION };
+            nmo_status_t st = nmo_dsl_compile(
+                c.registry, NULL, vals[OPT_FILTER].val.str,
+                &compile_opts, &filter.dsl_filter);
+            if (st != NMO_OK) {
+                fprintf(stderr, "Error: Failed to compile filter expression\n");
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+            }
+        }
+
+        delete_id_collector_t col = {0};
+        nmo_core_iter_result_t iter_result;
+        rc = nmo_core_iter_objects(&c, &filter, delete_collect_visitor, &col, &iter_result);
+
+        if (filter.dsl_filter) {
+            nmo_dsl_program_destroy(filter.dsl_filter);
+        }
+
+        if (rc < 0) {
+            free(col.ids);
+            fprintf(stderr, "Error: Failed to iterate objects\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+
+        target_ids = col.ids;
+        target_count = col.count;
+        target_ids_owned = true;
+    } else {
+        /* ID-based: parse comma-separated IDs from positional args */
+        size_t max_ids = r.pos_count > 1 ? (r.pos_count - 1) * 16 : 16;
+        target_ids = (nmo_object_id_t *)malloc(max_ids * sizeof(nmo_object_id_t));
+        if (!target_ids) {
+            fprintf(stderr, "Error: Out of memory\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+        target_ids_owned = true;
+
+        for (size_t i = 0; i < r.pos_count - 1; i++) {
+            const char *s = r.pos_args[i];
+            while (*s) {
+                const char *comma = strchr(s, ',');
+                size_t tok_len = comma ? (size_t)(comma - s) : strlen(s);
+                char tok[32];
+                if (tok_len >= sizeof(tok)) break;
+                memcpy(tok, s, tok_len);
+                tok[tok_len] = '\0';
+
+                uint32_t id;
+                if (!nmo_tool_parse_u32(tok, &id) || id == 0) {
+                    fprintf(stderr, "Error: Invalid object ID '%s'\n", tok);
+                    free(target_ids);
+                    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+                }
+
+                if (target_count >= max_ids) {
+                    max_ids *= 2;
+                    nmo_object_id_t *tmp = (nmo_object_id_t *)realloc(
+                        target_ids, max_ids * sizeof(nmo_object_id_t));
+                    if (!tmp) { free(target_ids); return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR); }
+                    target_ids = tmp;
+                }
+                target_ids[target_count++] = (nmo_object_id_t)id;
+
+                if (comma) s = comma + 1;
+                else break;
+            }
+        }
+
+        if (target_count == 0) {
+            free(target_ids);
+            fprintf(stderr, "Error: No valid object IDs specified\n");
+            fprintf(stderr, "Usage: nmo object copy <id>[,<id>,...] <file> -o <output>\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+    }
+
+    if (target_count == 0) {
+        if (target_ids_owned) free(target_ids);
+        if (!c.is_json)
+            fprintf(c.out, "No objects matched.\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    }
+
+    /* Snapshot count before */
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    size_t count_before = nmo_object_repository_get_count(repo);
+
+    /* Copy objects */
+    uint32_t flags = cascade ? NMO_RUNTIME_REQUEST_CASCADE : NMO_RUNTIME_REQUEST_DEFAULT;
+
+    nmo_runtime_report_t report;
+    memset(&report, 0, sizeof(report));
+
+    int copy_rc = nmo_session_copy_objects(
+        c.session, target_ids, target_count, flags, &report);
+    if (copy_rc != NMO_OK) {
+        fprintf(stderr, "Error: Copy failed: %s\n", nmo_error_string(copy_rc));
+        if (target_ids_owned) free(target_ids);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    /* Snapshot count after */
+    size_t count_after = nmo_object_repository_get_count(repo);
+
+    /* Save file */
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    int save_rc = nmo_save_file(c.session, output_path, &save_opts);
+    if (save_rc != NMO_OK) {
+        fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_rc));
+        if (target_ids_owned) free(target_ids);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+    }
+
+    /* Output */
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        if (!doc) {
+            if (target_ids_owned) free(target_ids);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        nmo_cli_json_add_uint_safe(doc, data, "copied_objects",
+                                   (uint64_t)report.copied_objects);
+        nmo_cli_json_add_uint_safe(doc, data, "count_before",
+                                   (uint64_t)count_before);
+        nmo_cli_json_add_uint_safe(doc, data, "count_after",
+                                   (uint64_t)count_after);
+        nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+
+        nmo_cmd_ctx_json_end(&c, doc, data, "object.copy");
+    } else {
+        fprintf(c.out, "Copied %zu object(s) (%zu -> %zu)\n",
+                report.copied_objects, count_before, count_after);
+        fprintf(c.out, "Saved to: %s\n", output_path);
+    }
+
+    if (target_ids_owned) free(target_ids);
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }

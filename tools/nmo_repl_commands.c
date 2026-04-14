@@ -19,6 +19,9 @@
 #include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_ref_graph.h"
+#include "object/nmo_object_repository.h"
+#include "session/nmo_runtime_kernel.h"
+#include "type/nmo_type_string.h"
 
 #include "nmo_cli_json.h"
 #include "nmo_cli_output.h"
@@ -55,6 +58,11 @@ static int cmd_reload(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_history(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_clear(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_quit(nmo_repl_context_t *repl, int argc, char **argv);
+static int cmd_rename(nmo_repl_context_t *repl, int argc, char **argv);
+static int cmd_delete(nmo_repl_context_t *repl, int argc, char **argv);
+static int cmd_create(nmo_repl_context_t *repl, int argc, char **argv);
+static int cmd_copy(nmo_repl_context_t *repl, int argc, char **argv);
+static int cmd_set_param(nmo_repl_context_t *repl, int argc, char **argv);
 
 static const nmo_repl_command_t commands[] = {
     {"help", "h", "Show help for commands", "help [command]", cmd_help},
@@ -81,6 +89,12 @@ static const nmo_repl_command_t commands[] = {
     {"clear", "cls", "Clear the screen", "clear", cmd_clear},
     {"quit", "q", "Exit REPL", "quit", cmd_quit},
     {"exit", "", "Exit REPL", "exit", cmd_quit},
+    /* mutation commands */
+    {"rename", "ren", "Rename an object", "rename <selector> <new_name>", cmd_rename},
+    {"delete", "del", "Delete object(s)", "delete <selector> [--cascade]", cmd_delete},
+    {"create", "", "Create new object", "create <class> [name]", cmd_create},
+    {"copy", "cp", "Copy object(s)", "copy <selector> [--cascade]", cmd_copy},
+    {"set-param", "sp", "Set parameter value", "set-param <selector> <value>", cmd_set_param},
     {NULL, NULL, NULL, NULL, NULL}};
 
 static void suggest_commands(const char *name) {
@@ -987,6 +1001,7 @@ static int cmd_save(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
+    repl->dirty = false;
     printf("Saved to %s\n", output_path);
     return 0;
 }
@@ -1334,8 +1349,249 @@ static int cmd_clear(nmo_repl_context_t *repl, int argc, char **argv) {
 }
 
 static int cmd_quit(nmo_repl_context_t *repl, int argc, char **argv) {
-    (void)repl;
     (void)argc;
     (void)argv;
+    if (repl->dirty) {
+        fprintf(stderr, "Warning: unsaved changes. Use 'save <path>' first, or 'quit' again to discard.\n");
+        repl->dirty = false;  /* allow second quit to proceed */
+        return 0;
+    }
     return 1;
+}
+
+/* ============================================================================
+ * Mutation commands
+ * ============================================================================ */
+
+static int cmd_rename(nmo_repl_context_t *repl, int argc, char **argv) {
+    if (argc < 3) {
+        fprintf(stderr, "Usage: rename <selector> <new_name>\n");
+        return -1;
+    }
+    if (!repl->session) { fprintf(stderr, "No session loaded.\n"); return -1; }
+
+    size_t index = 0;
+    if (nmo_repl_resolve_object_index(repl, argv[1], &index, false) != 0) return -1;
+
+    nmo_object_t **objects = NULL;
+    size_t object_count = 0;
+    nmo_repl_get_objects(repl, &objects, &object_count);
+    if (index >= object_count) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
+
+    nmo_object_t *obj = objects[index];
+    nmo_object_id_t id = nmo_object_get_id(obj);
+    const char *old_name = nmo_object_get_name(obj);
+    printf("Renaming #%u '%s' -> '%s'\n", id, old_name ? old_name : "", argv[2]);
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
+    int rc = nmo_object_repository_rename(repo, id, argv[2]);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: %s\n", nmo_error_string(rc));
+        return -1;
+    }
+
+    repl->dirty = true;
+    nmo_repl_input_invalidate_name_cache(repl);
+    return 0;
+}
+
+static int cmd_delete(nmo_repl_context_t *repl, int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: delete <selector> [--cascade]\n");
+        return -1;
+    }
+    if (!repl->session) { fprintf(stderr, "No session loaded.\n"); return -1; }
+
+    size_t index = 0;
+    if (nmo_repl_resolve_object_index(repl, argv[1], &index, false) != 0) return -1;
+
+    nmo_object_t **objects = NULL;
+    size_t object_count = 0;
+    nmo_repl_get_objects(repl, &objects, &object_count);
+    if (index >= object_count) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
+
+    bool cascade = false;
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "--cascade") == 0) cascade = true;
+    }
+
+    nmo_object_t *obj = objects[index];
+    nmo_object_id_t id = nmo_object_get_id(obj);
+    const char *name = nmo_object_get_name(obj);
+
+    uint32_t flags = cascade ? NMO_RUNTIME_REQUEST_CASCADE : NMO_RUNTIME_REQUEST_SAFE_DETACH;
+    nmo_runtime_report_t report;
+    memset(&report, 0, sizeof(report));
+    int rc = nmo_session_destroy_objects(repl->session, &id, 1, flags, &report);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: %s\n", nmo_error_string(rc));
+        return -1;
+    }
+
+    printf("Deleted #%u '%s' (%zu object(s) removed)\n",
+           id, name ? name : "", report.deleted_objects);
+
+    repl->dirty = true;
+    repl->has_selection = false;
+    nmo_repl_input_invalidate_name_cache(repl);
+    return 0;
+}
+
+static int cmd_create(nmo_repl_context_t *repl, int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: create <class_name> [object_name]\n");
+        return -1;
+    }
+    if (!repl->session) { fprintf(stderr, "No session loaded.\n"); return -1; }
+
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(repl->ctx);
+    nmo_class_id_t class_id = 0;
+
+    /* Try class name lookup */
+    const nmo_type_descriptor_t *td = nmo_type_registry_find_by_name(registry, argv[1]);
+    if (td) {
+        class_id = (nmo_class_id_t)td->class_id;
+    }
+    if (!class_id) {
+        fprintf(stderr, "Error: Unknown class '%s'\n", argv[1]);
+        return -1;
+    }
+
+    const char *name = (argc >= 3) ? argv[2] : NULL;
+    nmo_guid_t type_guid = NMO_GUID_NULL;
+
+    nmo_object_id_t new_id = 0;
+    nmo_runtime_report_t report;
+    memset(&report, 0, sizeof(report));
+    int rc = nmo_session_create_object(repl->session, class_id, name, type_guid, &new_id, &report);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: %s\n", nmo_error_string(rc));
+        return -1;
+    }
+
+    printf("Created #%u (%s) %s\n", new_id, argv[1], name ? name : "");
+
+    repl->dirty = true;
+    nmo_repl_input_invalidate_name_cache(repl);
+    return 0;
+}
+
+static int cmd_copy(nmo_repl_context_t *repl, int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: copy <selector> [--cascade]\n");
+        return -1;
+    }
+    if (!repl->session) { fprintf(stderr, "No session loaded.\n"); return -1; }
+
+    size_t index = 0;
+    if (nmo_repl_resolve_object_index(repl, argv[1], &index, false) != 0) return -1;
+
+    nmo_object_t **objects = NULL;
+    size_t object_count = 0;
+    nmo_repl_get_objects(repl, &objects, &object_count);
+    if (index >= object_count) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
+
+    bool cascade = false;
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "--cascade") == 0) cascade = true;
+    }
+
+    nmo_object_id_t id = nmo_object_get_id(objects[index]);
+    uint32_t flags = cascade ? NMO_RUNTIME_REQUEST_CASCADE : 0;
+
+    nmo_runtime_report_t report;
+    memset(&report, 0, sizeof(report));
+    int rc = nmo_session_copy_objects(repl->session, &id, 1, flags, &report);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: %s\n", nmo_error_string(rc));
+        return -1;
+    }
+
+    printf("Copied %zu object(s)\n", report.copied_objects);
+
+    repl->dirty = true;
+    nmo_repl_input_invalidate_name_cache(repl);
+    return 0;
+}
+
+static int cmd_set_param(nmo_repl_context_t *repl, int argc, char **argv) {
+    if (argc < 3) {
+        fprintf(stderr, "Usage: set-param <selector> <value>\n");
+        return -1;
+    }
+    if (!repl->session) { fprintf(stderr, "No session loaded.\n"); return -1; }
+
+    size_t index = 0;
+    if (nmo_repl_resolve_object_index(repl, argv[1], &index, false) != 0) return -1;
+
+    nmo_object_t **objects = NULL;
+    size_t object_count = 0;
+    nmo_repl_get_objects(repl, &objects, &object_count);
+    if (index >= object_count) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
+
+    nmo_object_t *obj = objects[index];
+    nmo_class_id_t cid = nmo_object_get_class_id(obj);
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(repl->ctx);
+
+    /* Verify it's a parameter class */
+    if (!nmo_type_registry_is_class_derived_from(registry, (uint32_t)cid, (uint32_t)NMO_CID_PARAMETER) &&
+        cid != NMO_CID_PARAMETEROUT && cid != NMO_CID_PARAMETERLOCAL) {
+        fprintf(stderr, "Error: Object is not a parameter (class %u)\n", cid);
+        return -1;
+    }
+
+    /* Get parameter state — navigate to nmo_parameter_state_t base */
+    void *data = nmo_object_get_data(obj);
+    if (!data) { fprintf(stderr, "Error: No data for parameter\n"); return -1; }
+
+    nmo_parameter_state_t *pstate = NULL;
+    if (cid == NMO_CID_PARAMETEROUT) {
+        pstate = &((nmo_parameterout_state_t *)data)->base;
+    } else if (cid == NMO_CID_PARAMETERLOCAL) {
+        pstate = &((nmo_parameterlocal_state_t *)data)->base;
+    } else {
+        pstate = (nmo_parameter_state_t *)data;
+    }
+
+    if (pstate->mode != CKPARAM_MODE_BUFFER) {
+        fprintf(stderr, "Error: Only buffer-mode parameters can be set (mode=%d)\n", pstate->mode);
+        return -1;
+    }
+
+    /* Resolve type */
+    const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(registry, pstate->type_guid);
+    if (!type_desc) {
+        fprintf(stderr, "Error: Unknown parameter type\n");
+        return -1;
+    }
+
+    /* Parse value */
+    uint8_t value_buf[256];
+    if (type_desc->size > sizeof(value_buf)) {
+        fprintf(stderr, "Error: Parameter type too large (%u bytes)\n", type_desc->size);
+        return -1;
+    }
+    memset(value_buf, 0, type_desc->size);
+
+    nmo_status_t st = nmo_type_value_from_string(value_buf, type_desc, registry, argv[2]);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Cannot parse '%s' as %s: %s\n",
+                argv[2], type_desc->name ? type_desc->name : "?", nmo_error_string(st));
+        return -1;
+    }
+
+    /* Write value */
+    if (pstate->buffer_data.data && pstate->buffer_data.count >= type_desc->size) {
+        memcpy(pstate->buffer_data.data, value_buf, type_desc->size);
+    } else {
+        fprintf(stderr, "Error: Buffer size mismatch\n");
+        return -1;
+    }
+
+    const char *name = nmo_object_get_name(obj);
+    printf("Set parameter #%u '%s' (%s) = %s\n",
+           nmo_object_get_id(obj), name ? name : "", type_desc->name ? type_desc->name : "?", argv[2]);
+
+    repl->dirty = true;
+    return 0;
 }

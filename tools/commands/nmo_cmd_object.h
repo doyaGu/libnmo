@@ -53,6 +53,16 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
 int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
 /**
+ * @brief nmo object create - Create a new object
+ */
+int nmo_cmd_object_create(int argc, char **argv, const nmo_cli_global_opts_t *global);
+
+/**
+ * @brief nmo object copy - Copy objects
+ */
+int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *global);
+
+/**
  * @brief nmo object impact - Show deletion impact analysis
  */
 int nmo_cmd_object_impact(int argc, char **argv, const nmo_cli_global_opts_t *global);
@@ -66,6 +76,11 @@ int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *g
  * @brief nmo object cycles - Detect circular references
  */
 int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *global);
+
+/**
+ * @brief nmo object graph - Export full reference graph
+ */
+int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
 #ifdef __cplusplus
 }

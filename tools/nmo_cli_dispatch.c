@@ -23,6 +23,7 @@
 #include "commands/nmo_cmd_query.h"
 #include "commands/nmo_cmd_extension.h"
 #include "commands/nmo_cmd_texture.h"
+#include "commands/nmo_cmd_data.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -160,6 +161,15 @@ static void object_cycles_usage(FILE *out) {
     fprintf(out, "Detect circular references in the object graph using DFS.\n");
 }
 
+static void object_graph_usage(FILE *out) {
+    fprintf(out, "Usage: nmo object graph [options] <file>\n\n");
+    fprintf(out, "Export the full reference graph as text summary, DOT digraph,\n");
+    fprintf(out, "or JSON edge list.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --dot              Output DOT digraph format\n");
+    fprintf(out, "  --kind <name>      Filter edges by ref kind (case-insensitive)\n");
+}
+
 static void object_delete_usage(FILE *out) {
     fprintf(out, "Usage: nmo object delete [options] <id>[,<id>,...] <file> -o <output>\n\n");
     fprintf(out, "Delete objects from a file.\n\n");
@@ -171,6 +181,27 @@ static void object_delete_usage(FILE *out) {
     fprintf(out, "  --cascade            Delete dependents (default: safe-detach)\n");
     fprintf(out, "  --dry-run            Preview only, do not save\n");
     fprintf(out, "  --strict             Fail if any ID not found\n");
+}
+
+static void object_create_usage(FILE *out) {
+    fprintf(out, "Usage: nmo object create --class <name> [--name <name>] [--type-guid <guid>] <file> -o <output>\n\n");
+    fprintf(out, "Create a new object in the file.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>    Output file (required)\n");
+    fprintf(out, "  -c, --class <name>     Class name (required)\n");
+    fprintf(out, "  -n, --name <name>      Object name\n");
+    fprintf(out, "  --type-guid <guid>     Type GUID (d1,d2 format)\n");
+}
+
+static void object_copy_usage(FILE *out) {
+    fprintf(out, "Usage: nmo object copy [options] <id>[,<id>,...] <file> -o <output>\n\n");
+    fprintf(out, "Copy objects within a file.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <file>  Output file (required)\n");
+    fprintf(out, "  -c, --class <name>   Filter by class (includes derived)\n");
+    fprintf(out, "  -n, --name <pat>     Filter by name wildcard pattern\n");
+    fprintf(out, "  -f, --filter <expr>  Filter by DSL expression\n");
+    fprintf(out, "  --cascade            Copy dependents\n");
 }
 
 static void debug_load_phases_usage(FILE *out) {
@@ -539,6 +570,24 @@ static void texture_extract_usage(FILE *out) {
     fprintf(out, "  --overwrite          Overwrite existing files\n");
 }
 
+/* Data array command usage */
+static void data_list_usage(FILE *out) {
+    fprintf(out, "Usage: nmo data list <file>\n\n");
+    fprintf(out, "List all CKDataArray objects with column and row counts.\n");
+}
+
+static void data_show_usage(FILE *out) {
+    fprintf(out, "Usage: nmo data show <id> <file>\n\n");
+    fprintf(out, "Show data array metadata and column schema.\n");
+}
+
+static void data_dump_usage(FILE *out) {
+    fprintf(out, "Usage: nmo data dump [options] <id> <file>\n\n");
+    fprintf(out, "Dump data array contents as a table.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --row, -r <n>   Dump a single row by index (key-value format)\n");
+}
+
 /* ============================================================================
  * Action definitions for each group
  * ============================================================================ */
@@ -574,6 +623,9 @@ static const nmo_cli_action_t object_actions[] = {
     {"orphans", "orp", "Find unreachable objects", nmo_cmd_object_orphans, object_orphans_usage, NULL, 0, NULL},
     {"cycles", "cyc", "Detect circular references", nmo_cmd_object_cycles, object_cycles_usage, NULL, 0, NULL},
     {"delete", "del", "Delete objects", nmo_cmd_object_delete, object_delete_usage, NULL, 0, NULL},
+    {"create", NULL, "Create new object", nmo_cmd_object_create, object_create_usage, NULL, 0, NULL},
+    {"copy", "cp", "Copy objects", nmo_cmd_object_copy, object_copy_usage, NULL, 0, NULL},
+    {"graph", "gr", "Export reference graph", nmo_cmd_object_graph, object_graph_usage, NULL, 0, NULL},
 };
 
 /* behavior group actions */
@@ -664,6 +716,13 @@ static const nmo_cli_action_t texture_actions[] = {
     {"extract", "x", "Extract textures as images", nmo_cmd_texture_extract, texture_extract_usage, NULL, 0, NULL},
 };
 
+/* data array group actions */
+static const nmo_cli_action_t data_actions[] = {
+    {"list", "ls", "List data arrays", nmo_cmd_data_list, data_list_usage, NULL, 0, NULL},
+    {"show", "s", "Show data array schema", nmo_cmd_data_show, data_show_usage, NULL, 0, NULL},
+    {"dump", "d", "Dump data array contents", nmo_cmd_data_dump, data_dump_usage, NULL, 0, NULL},
+};
+
 /* debug group actions */
 static const nmo_cli_action_t debug_actions[] = {
     {"load-phases", "lp", "Show load pipeline phases", nmo_cmd_debug_load_phases, debug_load_phases_usage, NULL, 0, NULL},
@@ -691,6 +750,7 @@ static const nmo_cli_group_t groups[] = {
     {"parameter", "param", "Parameter inspection", parameter_actions, ARRAY_SIZE(parameter_actions)},
     {"resource", "res", "Resource management", resource_actions, ARRAY_SIZE(resource_actions)},
     {"texture", "tex", "Texture management", texture_actions, ARRAY_SIZE(texture_actions)},
+    {"data", "da", "Data array inspection", data_actions, ARRAY_SIZE(data_actions)},
     {"type", "t", "Type system information", type_actions, ARRAY_SIZE(type_actions)},
     {"validate", "val", "File validation", validate_actions, ARRAY_SIZE(validate_actions)},
     {"convert", "conv", "Format conversion", convert_actions, ARRAY_SIZE(convert_actions)},

@@ -26,6 +26,7 @@ typedef struct {
     bool has_selection;
     size_t page_size;
     bool regex_icase;
+    bool dirty;  /**< True if session modified since last save */
 
 #ifdef NMO_HAVE_ISOCLINE
     struct nmo_arena *name_cache_arena;

@@ -1,6 +1,6 @@
 /**
  * @file nmo_cmd_object_refs.c
- * @brief CLI object ref-graph commands: refs, impact, orphans, cycles
+ * @brief CLI object ref-graph commands: refs, impact, orphans, cycles, graph
  */
 
 #include "nmo_cmd_object.h"
@@ -1094,6 +1094,278 @@ int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *gl
     free(stack);
     free(stack_kinds);
     free(st.cycles);
+    nmo_ref_graph_destroy(graph);
+    nmo_arena_destroy(arena);
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+/* ============================================================================
+ * object graph - Export full reference graph
+ * ============================================================================ */
+
+/** Escape a string for DOT record labels: quote special chars */
+static void dot_escape(const char *src, char *dst, size_t dst_size) {
+    size_t j = 0;
+    for (size_t i = 0; src[i] && j + 2 < dst_size; i++) {
+        char ch = src[i];
+        if (ch == '"' || ch == '\\' || ch == '|' || ch == '{' ||
+            ch == '}' || ch == '<' || ch == '>') {
+            dst[j++] = '\\';
+        }
+        dst[j++] = ch;
+    }
+    dst[j] = '\0';
+}
+
+/** Collect unique node IDs from edges into a sorted array */
+static size_t graph_collect_nodes(const nmo_ref_edge_t *edges, size_t edge_count,
+                                  nmo_object_id_t *out, size_t cap) {
+    size_t count = 0;
+    for (size_t i = 0; i < edge_count; ++i) {
+        nmo_object_id_t ids[2] = { edges[i].from, edges[i].to };
+        for (int k = 0; k < 2; ++k) {
+            /* Linear search for existing */
+            bool found = false;
+            for (size_t j = 0; j < count; ++j) {
+                if (out[j] == ids[k]) { found = true; break; }
+            }
+            if (!found && count < cap) {
+                out[count++] = ids[k];
+            }
+        }
+    }
+    /* Simple insertion sort */
+    for (size_t i = 1; i < count; ++i) {
+        nmo_object_id_t key = out[i];
+        size_t j = i;
+        while (j > 0 && out[j - 1] > key) {
+            out[j] = out[j - 1];
+            --j;
+        }
+        out[j] = key;
+    }
+    return count;
+}
+
+/** DOT edge color palette indexed by ref_kind */
+static const char *graph_dot_color(nmo_ref_kind_t kind) {
+    static const char *colors[] = {
+        [NMO_REF_KIND_UNKNOWN]       = "gray",
+        [NMO_REF_KIND_HIERARCHY]     = "black",
+        [NMO_REF_KIND_MESH]          = "blue",
+        [NMO_REF_KIND_MATERIAL]      = "red",
+        [NMO_REF_KIND_TEXTURE]       = "darkgreen",
+        [NMO_REF_KIND_OWNER]         = "purple",
+        [NMO_REF_KIND_BEHAVIOR_LINK] = "orange",
+        [NMO_REF_KIND_PARAMETER]     = "brown",
+        [NMO_REF_KIND_TARGET]        = "cyan4",
+        [NMO_REF_KIND_GROUP_MEMBER]  = "magenta",
+        [NMO_REF_KIND_SCENE]         = "darkgoldenrod",
+        [NMO_REF_KIND_ANIMATION]     = "deeppink",
+        [NMO_REF_KIND_PLACE]         = "darkolivegreen",
+        [NMO_REF_KIND_SKIN_BONE]     = "chocolate",
+        [NMO_REF_KIND_DATA_ARRAY]    = "navy",
+        [NMO_REF_KIND_SCRIPT]        = "darkslategray",
+    };
+    if ((int)kind >= 0 && kind < NMO_REF_KIND_MAX)
+        return colors[kind];
+    return "gray";
+}
+
+int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--dot",  NULL, NMO_OPT_FLAG,   "Output DOT digraph format"},
+        {"--kind", NULL, NMO_OPT_STRING, "Filter edges by ref kind name"},
+    };
+    enum { OPT_DOT, OPT_KIND };
+    nmo_opt_val_t vals[2];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    bool dot_mode = vals[OPT_DOT].present && vals[OPT_DOT].val.flag;
+    const char *kind_str = vals[OPT_KIND].present ? vals[OPT_KIND].val.str : NULL;
+
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    /* Build reference graph */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
+    if (!arena) {
+        fprintf(stderr, "Error: Failed to create arena\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_ref_graph_t *graph = nmo_ref_graph_create(repo, c.registry, arena);
+    if (!graph) {
+        nmo_arena_destroy(arena);
+        fprintf(stderr, "Error: Failed to create reference graph\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    /* Get all edges */
+    nmo_ref_edge_t *all_edges = NULL;
+    size_t all_count = 0;
+    if (nmo_ref_graph_get_edges(graph, &all_edges, &all_count) != NMO_OK) {
+        nmo_ref_graph_destroy(graph);
+        nmo_arena_destroy(arena);
+        fprintf(stderr, "Error: Failed to get edges\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    /* Optional kind filter: build a filtered edge list */
+    nmo_ref_edge_t *edges = all_edges;
+    size_t edge_count = all_count;
+    nmo_ref_edge_t *filtered = NULL;
+
+    if (kind_str) {
+        filtered = (nmo_ref_edge_t *)malloc(all_count * sizeof(nmo_ref_edge_t));
+        if (!filtered) {
+            nmo_ref_graph_destroy(graph);
+            nmo_arena_destroy(arena);
+            fprintf(stderr, "Error: Allocation failed\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+        size_t fc = 0;
+        for (size_t i = 0; i < all_count; ++i) {
+            if (nmo_tool_streq_ci(nmo_ref_kind_name(all_edges[i].kind), kind_str)) {
+                filtered[fc++] = all_edges[i];
+            }
+        }
+        edges = filtered;
+        edge_count = fc;
+    }
+
+    /* Collect unique node IDs */
+    size_t node_cap = edge_count * 2 + 1;
+    nmo_object_id_t *node_ids = (nmo_object_id_t *)malloc(
+        node_cap * sizeof(nmo_object_id_t));
+    size_t node_count = 0;
+    if (node_ids) {
+        node_count = graph_collect_nodes(edges, edge_count, node_ids, node_cap);
+    }
+
+    /* Kind summary counts (always over the filtered set) */
+    size_t kind_counts[NMO_REF_KIND_MAX];
+    memset(kind_counts, 0, sizeof(kind_counts));
+    for (size_t i = 0; i < edge_count; ++i) {
+        if ((int)edges[i].kind >= 0 && edges[i].kind < NMO_REF_KIND_MAX)
+            kind_counts[edges[i].kind]++;
+    }
+
+    if (c.is_json) {
+        /* ---- JSON output ---- */
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+
+        yyjson_mut_obj_add_uint(doc, data, "node_count", (uint64_t)node_count);
+        yyjson_mut_obj_add_uint(doc, data, "edge_count", (uint64_t)edge_count);
+
+        /* Nodes */
+        yyjson_mut_val *jarr_nodes = yyjson_mut_arr(doc);
+        for (size_t i = 0; i < node_count; ++i) {
+            yyjson_mut_val *jn = yyjson_mut_obj(doc);
+            yyjson_mut_obj_add_uint(doc, jn, "id", node_ids[i]);
+
+            nmo_object_t *obj = nmo_core_find_by_id(&c, node_ids[i]);
+            if (obj) {
+                char cbuf[32];
+                const char *cls = nmo_core_class_name_or(
+                    &c, nmo_object_get_class_id(obj), cbuf, sizeof(cbuf));
+                yyjson_mut_obj_add_str(doc, jn, "class_name", cls);
+                const char *name = nmo_object_get_name(obj);
+                if (name && name[0])
+                    nmo_cli_json_add_str_safe(doc, jn, "name", name);
+            }
+            yyjson_mut_arr_add_val(jarr_nodes, jn);
+        }
+        yyjson_mut_obj_add_val(doc, data, "nodes", jarr_nodes);
+
+        /* Edges */
+        yyjson_mut_val *jarr_edges = yyjson_mut_arr(doc);
+        for (size_t i = 0; i < edge_count; ++i) {
+            yyjson_mut_val *je = yyjson_mut_obj(doc);
+            yyjson_mut_obj_add_uint(doc, je, "from", edges[i].from);
+            yyjson_mut_obj_add_uint(doc, je, "to", edges[i].to);
+            yyjson_mut_obj_add_str(doc, je, "kind",
+                                   nmo_ref_kind_name(edges[i].kind));
+            yyjson_mut_obj_add_str(doc, je, "field",
+                                   edges[i].field_path ? edges[i].field_path : "unknown");
+            yyjson_mut_arr_add_val(jarr_edges, je);
+        }
+        yyjson_mut_obj_add_val(doc, data, "edges", jarr_edges);
+
+        /* Kind summary */
+        yyjson_mut_val *jsummary = yyjson_mut_obj(doc);
+        for (int k = 0; k < NMO_REF_KIND_MAX; ++k) {
+            if (kind_counts[k] > 0) {
+                yyjson_mut_obj_add_uint(doc, jsummary,
+                    nmo_ref_kind_name((nmo_ref_kind_t)k),
+                    (uint64_t)kind_counts[k]);
+            }
+        }
+        yyjson_mut_obj_add_val(doc, data, "kind_summary", jsummary);
+
+        nmo_cmd_ctx_json_end(&c, doc, data, "object.graph");
+    } else if (dot_mode) {
+        /* ---- DOT output ---- */
+        fprintf(c.out, "digraph references {\n");
+        fprintf(c.out, "    rankdir=LR;\n");
+        fprintf(c.out, "    node [shape=record, fontsize=10];\n\n");
+
+        /* Nodes */
+        fprintf(c.out, "    // Nodes\n");
+        for (size_t i = 0; i < node_count; ++i) {
+            nmo_object_t *obj = nmo_core_find_by_id(&c, node_ids[i]);
+            const char *cls = "?";
+            const char *name = "";
+            char cbuf[32];
+            if (obj) {
+                cls = nmo_core_class_name_or(
+                    &c, nmo_object_get_class_id(obj), cbuf, sizeof(cbuf));
+                const char *n = nmo_object_get_name(obj);
+                if (n && n[0]) name = n;
+            }
+            char esc_cls[64], esc_name[128];
+            dot_escape(cls, esc_cls, sizeof(esc_cls));
+            dot_escape(name, esc_name, sizeof(esc_name));
+            fprintf(c.out, "    n%u [label=\"#%u|%s|%s\"];\n",
+                    node_ids[i], node_ids[i], esc_cls, esc_name);
+        }
+
+        /* Edges */
+        fprintf(c.out, "\n    // Edges\n");
+        for (size_t i = 0; i < edge_count; ++i) {
+            fprintf(c.out, "    n%u -> n%u [label=\"%s\", color=\"%s\"];\n",
+                    edges[i].from, edges[i].to,
+                    nmo_ref_kind_name(edges[i].kind),
+                    graph_dot_color(edges[i].kind));
+        }
+
+        fprintf(c.out, "}\n");
+    } else {
+        /* ---- Text summary ---- */
+        fprintf(c.out, "Reference Graph: %zu nodes, %zu edges\n\n",
+                node_count, edge_count);
+
+        fprintf(c.out, "Edges by kind:\n");
+        bool any_kind = false;
+        for (int k = 0; k < NMO_REF_KIND_MAX; ++k) {
+            if (kind_counts[k] > 0) {
+                fprintf(c.out, "  %-16s: %4zu\n",
+                        nmo_ref_kind_name((nmo_ref_kind_t)k),
+                        kind_counts[k]);
+                any_kind = true;
+            }
+        }
+        if (!any_kind)
+            fprintf(c.out, "  (none)\n");
+    }
+
+    free(node_ids);
+    free(filtered);
     nmo_ref_graph_destroy(graph);
     nmo_arena_destroy(arena);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
