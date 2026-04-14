@@ -485,6 +485,82 @@ static int delete_collect_visitor(size_t index, nmo_object_t *obj,
     return 0;
 }
 
+/* Batch delete context -- stores copies of filter strings */
+typedef struct {
+    char class_str[64];
+    char name_str[256];
+    char filter_str[512];
+    bool has_class;
+    bool has_name;
+    bool has_filter;
+    bool cascade;
+    bool strict;
+} delete_batch_ctx_t;
+
+static int delete_batch_handler(
+    const char *input_path,
+    const char *output_path,
+    const nmo_cli_global_opts_t *global,
+    void *user_data,
+    struct yyjson_mut_doc *doc,
+    struct yyjson_mut_val *result_data)
+{
+    (void)doc; (void)result_data;
+    delete_batch_ctx_t *ctx = (delete_batch_ctx_t *)user_data;
+
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init_with_file(&c, input_path, global);
+    if (rc) return rc;
+
+    /* Build filter */
+    nmo_core_object_filter_t filter;
+    memset(&filter, 0, sizeof(filter));
+    if (ctx->has_class) {
+        filter.class_id = nmo_core_class_id(&c, ctx->class_str);
+        if (!filter.class_id) {
+            fprintf(stderr, "Error: Unknown class '%s'\n", ctx->class_str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+        filter.class_derived = true;
+    }
+    if (ctx->has_name) filter.name_pattern = ctx->name_str;
+
+    /* Collect matching IDs */
+    delete_id_collector_t col = {0};
+    nmo_core_iter_result_t iter_result;
+    (void)nmo_core_iter_objects(&c, &filter, delete_collect_visitor, &col, &iter_result);
+
+    if (col.count == 0) {
+        fprintf(stderr, "  No objects matched in %s\n", input_path);
+        free(col.ids);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    }
+
+    /* Delete */
+    uint32_t flags = ctx->cascade ? NMO_RUNTIME_REQUEST_CASCADE : NMO_RUNTIME_REQUEST_SAFE_DETACH;
+    if (ctx->strict) flags |= NMO_RUNTIME_REQUEST_STRICT;
+
+    nmo_runtime_report_t report;
+    memset(&report, 0, sizeof(report));
+    int del_rc = nmo_session_destroy_objects(c.session, col.ids, col.count, flags, &report);
+    free(col.ids);
+    if (del_rc != NMO_OK) {
+        fprintf(stderr, "Error: Deletion failed: %s\n", nmo_error_string(del_rc));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    /* Save */
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    int save_rc = nmo_save_file(c.session, output_path, &save_opts);
+    if (save_rc != NMO_OK) {
+        fprintf(stderr, "Error saving: %s\n", nmo_error_string(save_rc));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+    }
+
+    fprintf(stderr, "  Deleted %zu object(s) -> %s\n", report.deleted_objects, output_path);
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
 int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
     static const nmo_opt_def_t opts[] = {
@@ -515,6 +591,29 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
     if (!dry_run && !output_path) {
         fprintf(stderr, "Error: -o/--output is required (or use --dry-run)\n");
         return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    /* Batch mode: all positional args are files (filter mode only) */
+    if (global->batch_mode && use_filter && r.pos_count > 0 && output_path) {
+        delete_batch_ctx_t batch_ctx;
+        memset(&batch_ctx, 0, sizeof(batch_ctx));
+        if (vals[OPT_CLASS].present) {
+            snprintf(batch_ctx.class_str, sizeof(batch_ctx.class_str), "%s", vals[OPT_CLASS].val.str);
+            batch_ctx.has_class = true;
+        }
+        if (vals[OPT_NAME].present) {
+            snprintf(batch_ctx.name_str, sizeof(batch_ctx.name_str), "%s", vals[OPT_NAME].val.str);
+            batch_ctx.has_name = true;
+        }
+        if (vals[OPT_FILTER].present) {
+            snprintf(batch_ctx.filter_str, sizeof(batch_ctx.filter_str), "%s", vals[OPT_FILTER].val.str);
+            batch_ctx.has_filter = true;
+        }
+        batch_ctx.cascade = cascade;
+        batch_ctx.strict = strict;
+        return nmo_tool_batch_write_run(
+            r.pos_args, r.pos_count, output_path, global,
+            "object.delete", delete_batch_handler, &batch_ctx);
     }
 
     /* Determine input file */
