@@ -166,6 +166,30 @@ NMO_API nmo_status_t nmo_interface_link_add_point(
 NMO_API void nmo_interface_link_clear_points(
     nmo_interface_link_t *link);
 
+/**
+ * @brief Remove a single routing point by index.
+ * Shifts remaining points down. Points are float[count*2] interleaved h,v.
+ */
+NMO_API nmo_status_t nmo_interface_link_remove_point(
+    nmo_interface_link_t *link,
+    size_t index);
+
+/* ================================================================
+ * Graph IO mutations
+ * ================================================================ */
+
+/**
+ * @brief Set a graph IO port ordering array.
+ * Arena-allocates new array and copies values. Pass to any of the 4 arrays
+ * via pointer-to-pointer (e.g. &gio->inward_inputs, &gio->inward_input_count).
+ */
+NMO_API nmo_status_t nmo_interface_graph_io_set_array(
+    int32_t **array_ptr,
+    size_t *count_ptr,
+    nmo_arena_t *arena,
+    const int32_t *values,
+    size_t count);
+
 #ifdef __cplusplus
 }
 #endif

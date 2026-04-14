@@ -274,3 +274,65 @@ void nmo_interface_link_clear_points(
     link->point_count = 0;
     link->points = NULL;
 }
+
+nmo_status_t nmo_interface_link_remove_point(
+    nmo_interface_link_t *link,
+    size_t index)
+{
+    if (!link) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "interface edit: remove_point NULL link");
+    }
+    if (index >= link->point_count) {
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR,
+                         "interface edit: remove_point index out of range");
+    }
+
+    size_t remaining = link->point_count - index - 1;
+    if (remaining > 0) {
+        memmove(&link->points[index * 2],
+                &link->points[(index + 1) * 2],
+                remaining * 2 * sizeof(float));
+    }
+    link->point_count--;
+    if (link->point_count == 0) {
+        link->points = NULL;
+    }
+    return NMO_OK;
+}
+
+nmo_status_t nmo_interface_graph_io_set_array(
+    int32_t **array_ptr,
+    size_t *count_ptr,
+    nmo_arena_t *arena,
+    const int32_t *values,
+    size_t count)
+{
+    if (!array_ptr || !count_ptr || !arena) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "interface edit: graph_io_set_array NULL argument");
+    }
+
+    if (count == 0) {
+        *array_ptr = NULL;
+        *count_ptr = 0;
+        return NMO_OK;
+    }
+
+    if (!values) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "interface edit: graph_io_set_array NULL values with count > 0");
+    }
+
+    int32_t *new_arr = (int32_t *)nmo_arena_alloc(
+        arena, count * sizeof(int32_t), _Alignof(int32_t));
+    if (!new_arr) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "interface edit: cannot allocate graph IO array");
+    }
+    memcpy(new_arr, values, count * sizeof(int32_t));
+
+    *array_ptr = new_arr;
+    *count_ptr = count;
+    return NMO_OK;
+}

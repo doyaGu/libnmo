@@ -30,7 +30,7 @@ int nmo_cmd_behavior_iface_add_comment(int argc, char **argv, const nmo_cli_glob
 int nmo_cmd_behavior_iface_remove_comment(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
 /* Interface sub-action table for dispatch */
-#define NMO_BEHAVIOR_INTERFACE_SUB_ACTION_COUNT 7
+#define NMO_BEHAVIOR_INTERFACE_SUB_ACTION_COUNT 23
 extern const nmo_cli_action_t nmo_behavior_interface_sub_actions[];
 
 #ifdef __cplusplus
