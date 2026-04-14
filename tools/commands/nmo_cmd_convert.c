@@ -877,19 +877,19 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
             seed_ids[i] = nmo_object_get_id(col.objects[i]);
         qsort(seed_ids, seed_count, sizeof(nmo_object_id_t), id_cmp);
 
-        /* Build reference graph and compute transitive closure */
-        nmo_arena_t *deps_arena = nmo_arena_create(NULL, 0);
-        if (!deps_arena) {
+        /* Get reference graph from session cache and compute transitive closure */
+        nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
+        if (!graph) {
+            fprintf(stderr, "Error: Failed to build reference graph\n");
             free(seed_ids);
             free(col.objects);
             if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
-        nmo_ref_graph_t *graph = nmo_ref_graph_create(repo, c.registry, deps_arena);
-        if (!graph) {
-            fprintf(stderr, "Error: Failed to build reference graph\n");
-            nmo_arena_destroy(deps_arena);
+        /* Arena for mark_reachable results */
+        nmo_arena_t *deps_arena = nmo_arena_create(NULL, 0);
+        if (!deps_arena) {
             free(seed_ids);
             free(col.objects);
             if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
@@ -904,7 +904,6 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
 
         if (ms != NMO_OK) {
             fprintf(stderr, "Error: Failed to resolve dependencies\n");
-            nmo_ref_graph_destroy(graph);
             nmo_arena_destroy(deps_arena);
             free(seed_ids);
             free(col.objects);
@@ -915,7 +914,6 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         /* Build final array: dependencies first, then seeds */
         final_objects = (nmo_object_t **)malloc(reachable_count * sizeof(nmo_object_t *));
         if (!final_objects) {
-            nmo_ref_graph_destroy(graph);
             nmo_arena_destroy(deps_arena);
             free(seed_ids);
             free(col.objects);
@@ -938,7 +936,6 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         for (size_t i = 0; i < seed_count; i++)
             final_objects[final_count++] = col.objects[i];
 
-        nmo_ref_graph_destroy(graph);
         nmo_arena_destroy(deps_arena);
         free(seed_ids);
     } else {

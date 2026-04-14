@@ -7,8 +7,8 @@
 #include "nmo_cli_common.h"
 #include "nmo_tool_common.h"
 #include "session/nmo_context.h"
+#include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
-#include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
 #include "type/nmo_type_guids.h"
 
@@ -333,14 +333,8 @@ int nmo_core_iter_refs(const nmo_cmd_ctx_t *c,
                        nmo_core_ref_result_t *result) {
     nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
 
-    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
-    if (!arena) return NMO_CLI_EXIT_INTERNAL_ERROR;
-
-    nmo_ref_graph_t *graph = nmo_ref_graph_create(repo, c->registry, arena);
-    if (!graph) {
-        nmo_arena_destroy(arena);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
+    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c->session);
+    if (!graph) return NMO_CLI_EXIT_INTERNAL_ERROR;
 
     nmo_core_ref_result_t r = {0};
 
@@ -392,8 +386,6 @@ int nmo_core_iter_refs(const nmo_cmd_ctx_t *c,
         }
     }
 
-    nmo_ref_graph_destroy(graph);
-    nmo_arena_destroy(arena);
     if (result) *result = r;
     return NMO_CLI_EXIT_SUCCESS;
 }

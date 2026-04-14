@@ -28,6 +28,18 @@ bool nmo_tool_open_session(const char *path,
                           char *errbuf,
                           size_t errbuf_size);
 
+typedef struct nmo_load_options nmo_load_options_t;
+
+/**
+ * @brief Like nmo_tool_open_session, but with explicit load options.
+ */
+bool nmo_tool_open_session_opts(const char *path,
+                                const nmo_load_options_t *opts,
+                                nmo_context_t **out_ctx,
+                                nmo_session_t **out_session,
+                                char *errbuf,
+                                size_t errbuf_size);
+
 /**
  * @brief Destroy session/context created by nmo_tool_open_session.
  */

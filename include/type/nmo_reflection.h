@@ -158,10 +158,14 @@ extern "C" {
     }
 
 /**
- * @brief Define a raw pointer+count array field
- * Count discovered via {singular}_count naming convention.
+ * @brief Define a raw pointer+count array field with explicit count field name.
+ *
+ * @param _struct         Struct type containing the field
+ * @param _ptr_field      Pointer field name (e.g. items)
+ * @param _count_field    Count field name (e.g. item_count)
+ * @param _elem_type_guid Element type GUID (without _INIT suffix)
  */
-#define NMO_FIELD_PTR_ARRAY(_struct, _ptr_field, _elem_type_guid) \
+#define NMO_FIELD_PTR_ARRAY(_struct, _ptr_field, _count_field, _elem_type_guid) \
     { \
         .name = #_ptr_field, \
         .description = NULL, \
@@ -173,7 +177,8 @@ extern "C" {
         .removed_version = 0, \
         .semantic = NMO_SEMANTIC_NONE, \
         .units = NMO_UNITS_NONE, \
-        .default_value = NULL \
+        .default_value = NULL, \
+        .count_field_name = #_count_field \
     }
 
 /**
@@ -347,6 +352,22 @@ static inline bool nmo_field_is_array(const nmo_type_field_t *field) {
  */
 static inline bool nmo_field_is_optional(const nmo_type_field_t *field) {
     return field && (field->flags & NMO_FIELD_OPTIONAL);
+}
+
+/**
+ * @brief Get the count field for a pointer-array field.
+ *
+ * Uses explicit metadata (count_field_name) when available.
+ * Returns NULL if no metadata set (caller should use heuristic fallback).
+ */
+static inline const nmo_type_field_t *nmo_field_get_count_field(
+    const nmo_type_descriptor_t *type,
+    const nmo_type_field_t *field)
+{
+    if (type == NULL || field == NULL || field->count_field_name == NULL) {
+        return NULL;
+    }
+    return nmo_type_get_field_by_name(type, field->count_field_name);
 }
 
 /* ============================================================================

@@ -1095,12 +1095,27 @@ nmo_status_t nmo_deserializer_finalize(nmo_deserializer_t *ds)
     memset(&request, 0, sizeof(request));
     request.kind = NMO_RUNTIME_OP_LOAD;
     request.flags = NMO_RUNTIME_REQUEST_DEFAULT;
+    request.payload.load.options = &ds->options;
 
     nmo_runtime_report_t report;
     memset(&report, 0, sizeof(report));
 
     int runtime_result = nmo_runtime_kernel_finalize_load(ds->session, &request, &report);
     if (runtime_result != NMO_OK) {
+        /* Fatal errors must be propagated to the caller. Non-fatal hook/manager
+         * failures are already handled internally by the kernel (it continues). */
+        if (runtime_result == NMO_ERR_VALIDATION_FAILED ||
+            runtime_result == NMO_ERR_NOMEM ||
+            runtime_result == NMO_ERR_INTERNAL) {
+            nmo_log(logger, NMO_LOG_ERROR,
+                    "Runtime load finalization failed: %d", runtime_result);
+            if (ds->id_mapping != NULL) {
+                nmo_id_mapping_destroy(ds->id_mapping);
+                ds->id_mapping = NULL;
+            }
+            ds->phase_completed = 3;
+            return runtime_result;
+        }
         nmo_log(logger, NMO_LOG_WARN,
                 "Runtime load finalization failed: %d (continuing)", runtime_result);
     }

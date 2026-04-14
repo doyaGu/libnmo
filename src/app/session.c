@@ -22,6 +22,8 @@
 #include "format/nmo_chunk_pool.h"
 #include "format/nmo_header1.h"
 #include "behavior/nmo_behavior_index.h"
+#include "object/nmo_ref_graph.h"
+#include "type/nmo_type_runtime.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include <stddef.h>
 #include <string.h>
@@ -82,8 +84,13 @@ typedef struct nmo_session {
     /* Backing store for plugin diagnostics entries (arena-backed) */
     nmo_arena_array_t plugin_diag_entries;
 
-    /* Behavior ownership index (built after load) */
+    /* Behavior ownership index (built after load, lazy-rebuilt when dirty) */
     nmo_behavior_index_t *behavior_index;
+    int behavior_index_dirty;
+
+    /* Cached reference graph (lazy-built, invalidated on mutation) */
+    nmo_ref_graph_t *cached_ref_graph;
+    nmo_arena_t *ref_graph_arena;
 
     /* Runtime operation callbacks (set by app layer, used by runtime kernel) */
     nmo_runtime_ops_t runtime_ops;
@@ -252,6 +259,16 @@ void nmo_session_destroy(nmo_session_t *session) {
             session->behavior_index = NULL;
         }
 
+        /* Destroy cached ref graph and its dedicated arena */
+        if (session->cached_ref_graph != NULL) {
+            nmo_ref_graph_destroy(session->cached_ref_graph);
+            session->cached_ref_graph = NULL;
+        }
+        if (session->ref_graph_arena != NULL) {
+            nmo_arena_destroy(session->ref_graph_arena);
+            session->ref_graph_arena = NULL;
+        }
+
         if (session->arena != NULL) {
             nmo_arena_destroy(session->arena);
         }
@@ -294,7 +311,65 @@ nmo_object_repository_t *nmo_session_get_repository(const nmo_session_t *session
 }
 
 nmo_behavior_index_t *nmo_session_get_behavior_index(const nmo_session_t *session) {
-    return session ? session->behavior_index : NULL;
+    if (session == NULL) return NULL;
+    /* Lazy rebuild when dirty (safe: single-threaded) */
+    nmo_session_t *s = (nmo_session_t *)session;
+    if (s->behavior_index_dirty && s->behavior_index != NULL) {
+        nmo_behavior_index_destroy(s->behavior_index);
+        s->behavior_index = NULL;
+        nmo_session_build_behavior_index(s);
+        s->behavior_index_dirty = 0;
+    }
+    return s->behavior_index;
+}
+
+void nmo_session_invalidate_behavior_index(nmo_session_t *session) {
+    if (session != NULL) {
+        session->behavior_index_dirty = 1;
+    }
+}
+
+#define REF_GRAPH_ARENA_SIZE (64 * 1024)
+
+nmo_ref_graph_t *nmo_session_get_ref_graph(nmo_session_t *session) {
+    if (session == NULL) return NULL;
+    if (session->cached_ref_graph != NULL) {
+        return session->cached_ref_graph;
+    }
+
+    /* Lazy build: need repository + type registry */
+    if (session->repository == NULL || session->context == NULL) {
+        return NULL;
+    }
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(session->context);
+    if (type_rt == NULL || type_rt->types == NULL) {
+        return NULL;
+    }
+
+    /* Create dedicated arena if needed */
+    if (session->ref_graph_arena == NULL) {
+        session->ref_graph_arena = nmo_arena_create(&session->allocator, REF_GRAPH_ARENA_SIZE);
+        if (session->ref_graph_arena == NULL) {
+            return NULL;
+        }
+    }
+
+    session->cached_ref_graph = nmo_ref_graph_create(
+        session->repository, type_rt->types, session->ref_graph_arena);
+    return session->cached_ref_graph;
+}
+
+void nmo_session_invalidate_ref_graph(nmo_session_t *session) {
+    if (session == NULL) return;
+    if (session->cached_ref_graph != NULL) {
+        nmo_ref_graph_destroy(session->cached_ref_graph);
+        session->cached_ref_graph = NULL;
+    }
+    /* Reset arena rather than destroy — avoids alloc/free churn and pointer
+     * reuse issues.  The arena is destroyed in nmo_session_destroy(). */
+    if (session->ref_graph_arena != NULL) {
+        nmo_arena_reset(session->ref_graph_arena);
+    }
 }
 
 static void nmo_session_build_behavior_index(nmo_session_t *session) {
@@ -303,6 +378,7 @@ static void nmo_session_build_behavior_index(nmo_session_t *session) {
     session->behavior_index = nmo_behavior_index_create(session->arena);
     if (session->behavior_index != NULL) {
         nmo_behavior_index_build(session->behavior_index, session->context, session);
+        session->behavior_index_dirty = 0;
     }
 }
 

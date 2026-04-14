@@ -29,6 +29,7 @@ typedef struct nmo_plugin_dep nmo_plugin_dep_t;
 typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
 typedef struct nmo_shadow_storage nmo_shadow_storage_t;
 typedef struct nmo_behavior_index nmo_behavior_index_t;
+typedef struct nmo_ref_graph nmo_ref_graph_t;
 
 /**
  * @brief Session structure
@@ -121,9 +122,39 @@ NMO_API nmo_object_repository_t *nmo_session_get_repository(const nmo_session_t 
  * @brief Get behavior ownership index.
  *
  * Built automatically during file loading. Returns NULL if no file loaded.
- * @ownership borrowed (owned by session)
+ * Lazily rebuilt when stale (after create/copy/delete mutations).
+ *
+ * @ownership borrowed (owned by session, valid until next mutation)
  */
 NMO_API nmo_behavior_index_t *nmo_session_get_behavior_index(const nmo_session_t *session);
+
+/**
+ * @brief Get or lazily build the reference graph for this session.
+ *
+ * The graph is cached and automatically invalidated on any mutation
+ * (create/copy/delete). Returns NULL if the session has no type runtime.
+ *
+ * @param session Session
+ * @return Reference graph, or NULL
+ * @ownership borrowed (valid until next mutation)
+ */
+NMO_API nmo_ref_graph_t *nmo_session_get_ref_graph(nmo_session_t *session);
+
+/**
+ * @brief Invalidate the cached reference graph.
+ *
+ * Called internally after mutations. The graph will be rebuilt lazily
+ * on next access via nmo_session_get_ref_graph().
+ */
+NMO_API void nmo_session_invalidate_ref_graph(nmo_session_t *session);
+
+/**
+ * @brief Mark the behavior index as stale.
+ *
+ * Called internally after mutations (create/copy/delete). The index will
+ * be rebuilt lazily on the next call to nmo_session_get_behavior_index().
+ */
+NMO_API void nmo_session_invalidate_behavior_index(nmo_session_t *session);
 
 /**
  * @brief Get the session's reference resolver (may be NULL).

@@ -9,6 +9,7 @@
 
 #include "type/nmo_type_string.h"
 #include "type/nmo_type_system.h"
+#include "type/nmo_reflection.h"
 #include "type/nmo_operations.h"
 #include "type/nmo_type_guids.h"
 #include "object/nmo_param_guids.h"
@@ -1264,7 +1265,17 @@ static nmo_status_t nmo_struct_like_to_string(
                 }
                 field_ptr = (const uint8_t *)ptr_val;
             } else {
-                /* pointer+repeated: show count only */
+                /* pointer+repeated: show count if metadata available */
+                if (field->count_field_name != NULL) {
+                    const nmo_type_field_t *cf = nmo_type_get_field_by_name(type, field->count_field_name);
+                    if (cf != NULL) {
+                        uint32_t cnt = nmo_field_get_uint32(value, cf);
+                        char buf[32];
+                        snprintf(buf, sizeof(buf), "[%u items]", cnt);
+                        NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, buf));
+                        continue;
+                    }
+                }
                 NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "[...]"));
                 continue;
             }

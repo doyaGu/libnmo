@@ -12,23 +12,13 @@
 #include "format/nmo_object.h"
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_repository.h"
+#include "session/nmo_deserializer.h"
 #include "session/nmo_reference_resolver.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_runtime.h"
 #include "type/nmo_type_system.h"
+#include "runtime_internal.h"
 #include <string.h>
-
-/* ── Shared trivial helper ─────────────────────────────────────── */
-
-static const nmo_type_descriptor_t *runtime_find_type_for_object(
-    const nmo_type_runtime_t *type_rt,
-    const nmo_object_t *object)
-{
-    if (type_rt == NULL || type_rt->types == NULL || object == NULL) {
-        return NULL;
-    }
-    return nmo_type_registry_find_by_class_id_inherited(type_rt->types, object->class_id);
-}
 
 /* ── Report init ───────────────────────────────────────────────── */
 
@@ -501,12 +491,19 @@ int nmo_runtime_kernel_finalize_load(
     const nmo_runtime_request_t *request,
     nmo_runtime_report_t *out_report)
 {
-    (void)request;
     if (session == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     runtime_init_report(out_report);
+
+    /* Extract strict flag from load options if available */
+    int strict_mode = 0;
+    if (request != NULL &&
+        request->payload.load.options != NULL &&
+        (request->payload.load.options->flags & NMO_LOAD_STRICT)) {
+        strict_mode = 1;
+    }
 
     nmo_context_t *ctx = nmo_session_get_context(session);
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
@@ -527,6 +524,34 @@ int nmo_runtime_kernel_finalize_load(
             finish_stats.references.unresolved = resolver_stats.unresolved_count;
             finish_stats.references.ambiguous = resolver_stats.ambiguous_count;
         }
+
+        /* Populate unresolved reference preview (up to 8 samples) */
+        if (finish_stats.references.unresolved > 0) {
+            nmo_object_ref_t **unresolved_refs = NULL;
+            size_t unresolved_count = 0;
+            if (nmo_reference_resolver_get_unresolved(resolver, &unresolved_refs,
+                                                       &unresolved_count) == NMO_OK) {
+                size_t preview_count = unresolved_count < 8 ? unresolved_count : 8;
+                finish_stats.references.unresolved_preview_count = (uint32_t)preview_count;
+                for (size_t i = 0; i < preview_count; i++) {
+                    finish_stats.references.unresolved_preview[i].id =
+                        unresolved_refs[i]->id;
+                    finish_stats.references.unresolved_preview[i].class_id =
+                        unresolved_refs[i]->class_id;
+                }
+            }
+        }
+    }
+
+    /* Strict mode: fail if any references are unresolved */
+    if (strict_mode && finish_stats.references.unresolved > 0) {
+        nmo_session_set_runtime_load_stats(session, &finish_stats);
+        if (logger != NULL) {
+            nmo_log(logger, NMO_LOG_ERROR,
+                    "Strict mode: %u unresolved references",
+                    finish_stats.references.unresolved);
+        }
+        return NMO_ERR_VALIDATION_FAILED;
     }
 
     if (repo != NULL && type_rt != NULL && type_rt->types != NULL) {
@@ -653,12 +678,16 @@ int nmo_runtime_kernel_execute(
         }
         case NMO_RUNTIME_OP_CREATE:
             result = runtime_execute_create(session, request, out_report);
+            nmo_session_invalidate_behavior_index(session);
+            nmo_session_invalidate_ref_graph(session);
             break;
         case NMO_RUNTIME_OP_COPY:
             (void)runtime_dispatch_manager_event(
                 session, NMO_RUNTIME_EVENT_PRE_COPY, NULL,
                 out_report != NULL ? &out_report->manager_event_errors : NULL);
             result = runtime_execute_copy(session, request, out_report);
+            nmo_session_invalidate_behavior_index(session);
+            nmo_session_invalidate_ref_graph(session);
             (void)runtime_dispatch_manager_event(
                 session, NMO_RUNTIME_EVENT_POST_COPY, NULL,
                 out_report != NULL ? &out_report->manager_event_errors : NULL);
@@ -668,6 +697,8 @@ int nmo_runtime_kernel_execute(
                 session, NMO_RUNTIME_EVENT_PRE_DELETE, NULL,
                 out_report != NULL ? &out_report->manager_event_errors : NULL);
             result = nmo_runtime_execute_delete(session, request, out_report);
+            nmo_session_invalidate_behavior_index(session);
+            nmo_session_invalidate_ref_graph(session);
             (void)runtime_dispatch_manager_event(
                 session, NMO_RUNTIME_EVENT_POST_DELETE, NULL,
                 out_report != NULL ? &out_report->manager_event_errors : NULL);

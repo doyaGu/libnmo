@@ -428,7 +428,13 @@ static uint64_t nmo_summary_guess_array_count(
         }
     }
 
-    /* Look for a count field with naming convention: {field_name}_count */
+    /* Fast path: explicit count_field_name metadata */
+    const nmo_type_field_t *meta_cf = nmo_field_get_count_field(owner_type, field);
+    if (meta_cf != NULL) {
+        return (uint64_t)nmo_field_get_uint32(owner_instance, meta_cf);
+    }
+
+    /* Heuristic fallback: look for {field_name}_count naming convention */
     char count_field_name[128];
     snprintf(count_field_name, sizeof(count_field_name), "%s_count", field->name);
 

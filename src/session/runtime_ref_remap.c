@@ -8,19 +8,8 @@
 #include "type/nmo_type_runtime.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_array.h"
+#include "runtime_internal.h"
 #include <string.h>
-
-/* ── Shared trivial helper ─────────────────────────────────────── */
-
-static const nmo_type_descriptor_t *runtime_find_type_for_object(
-    const nmo_type_runtime_t *type_rt,
-    const nmo_object_t *object)
-{
-    if (type_rt == NULL || type_rt->types == NULL || object == NULL) {
-        return NULL;
-    }
-    return nmo_type_registry_find_by_class_id_inherited(type_rt->types, object->class_id);
-}
 
 /* ── ID remap lookup ───────────────────────────────────────────── */
 
@@ -39,14 +28,23 @@ static bool runtime_lookup_mapping(
 
 static bool runtime_get_pointer_array_count(
     const nmo_type_descriptor_t *type,
-    const char *field_name,
+    const nmo_type_field_t *field,
     const void *instance,
     uint32_t *out_count)
 {
-    if (type == NULL || field_name == NULL || instance == NULL || out_count == NULL) {
+    if (type == NULL || field == NULL || instance == NULL || out_count == NULL) {
         return false;
     }
 
+    /* Fast path: explicit count_field_name metadata */
+    const nmo_type_field_t *cf = nmo_field_get_count_field(type, field);
+    if (cf != NULL) {
+        *out_count = nmo_field_get_uint32(instance, cf);
+        return true;
+    }
+
+    /* Heuristic fallback */
+    const char *field_name = field->name;
     size_t name_len = strlen(field_name);
     size_t base_len = name_len;
 
@@ -154,7 +152,7 @@ static bool runtime_remap_ref_field(
         }
 
         uint32_t count = 0;
-        if (!runtime_get_pointer_array_count(ctx->type, field->name, ctx->instance, &count)) {
+        if (!runtime_get_pointer_array_count(ctx->type, field, ctx->instance, &count)) {
             return true;
         }
 

@@ -297,7 +297,14 @@ int nmo_cmd_object_impact(int argc, char **argv, const nmo_cli_global_opts_t *gl
     char obj_cbuf[32];
     const char *obj_class = nmo_core_class_name_or(&c, obj_cid, obj_cbuf, sizeof(obj_cbuf));
 
-    /* Build ref graph for direct dependents */
+    /* Get reference graph from session cache */
+    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
+    if (!graph) {
+        fprintf(stderr, "Error: Failed to create reference graph\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    /* Arena for cascade preview */
     nmo_arena_t *arena = nmo_arena_create(NULL, 0);
     if (!arena) {
         fprintf(stderr, "Error: Failed to create arena\n");
@@ -305,12 +312,6 @@ int nmo_cmd_object_impact(int argc, char **argv, const nmo_cli_global_opts_t *gl
     }
 
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    nmo_ref_graph_t *graph = nmo_ref_graph_create(repo, c.registry, arena);
-    if (!graph) {
-        nmo_arena_destroy(arena);
-        fprintf(stderr, "Error: Failed to create reference graph\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
 
     /* Get direct dependents (incoming refs) */
     nmo_ref_edge_t *in_edges = NULL;
@@ -472,7 +473,6 @@ int nmo_cmd_object_impact(int argc, char **argv, const nmo_cli_global_opts_t *gl
         }
     }
 
-    nmo_ref_graph_destroy(graph);
     nmo_arena_destroy(arena);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
@@ -528,18 +528,17 @@ int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *g
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    /* Build reference graph */
-    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
-    if (!arena) {
-        fprintf(stderr, "Error: Failed to create arena\n");
+    /* Get reference graph from session cache */
+    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
+    if (!graph) {
+        fprintf(stderr, "Error: Failed to create reference graph\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    nmo_ref_graph_t *graph = nmo_ref_graph_create(repo, c.registry, arena);
-    if (!graph) {
-        nmo_arena_destroy(arena);
-        fprintf(stderr, "Error: Failed to create reference graph\n");
+    /* Arena for mark-sweep allocations (root IDs, reachable set, orphan list) */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
+    if (!arena) {
+        fprintf(stderr, "Error: Failed to create arena\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
@@ -611,7 +610,6 @@ int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *g
             graph, root_ids, root_count, arena,
             &reachable_ids, &reachable_count);
         if (ms != NMO_OK) {
-            nmo_ref_graph_destroy(graph);
             nmo_arena_destroy(arena);
             fprintf(stderr, "Error: mark_reachable failed\n");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
@@ -630,7 +628,6 @@ int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *g
             object_count * sizeof(orphan_entry_t),
             _Alignof(orphan_entry_t));
         if (!orphan_list) {
-            nmo_ref_graph_destroy(graph);
             nmo_arena_destroy(arena);
             fprintf(stderr, "Error: Allocation failed\n");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
@@ -752,7 +749,6 @@ int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *g
         fprintf(c.out, "\n");
     }
 
-    nmo_ref_graph_destroy(graph);
     nmo_arena_destroy(arena);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
@@ -953,18 +949,17 @@ int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *gl
         if (oid > max_id) max_id = oid;
     }
 
-    /* Build reference graph */
-    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
-    if (!arena) {
-        fprintf(stderr, "Error: Failed to create arena\n");
+    /* Get reference graph from session cache */
+    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
+    if (!graph) {
+        fprintf(stderr, "Error: Failed to create reference graph\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    nmo_ref_graph_t *graph = nmo_ref_graph_create(repo, c.registry, arena);
-    if (!graph) {
-        nmo_arena_destroy(arena);
-        fprintf(stderr, "Error: Failed to create reference graph\n");
+    /* Arena for cycle recording */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
+    if (!arena) {
+        fprintf(stderr, "Error: Failed to create arena\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
@@ -980,7 +975,6 @@ int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *gl
         free(color);
         free(stack);
         free(stack_kinds);
-        nmo_ref_graph_destroy(graph);
         nmo_arena_destroy(arena);
         fprintf(stderr, "Error: Allocation failed\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
@@ -1094,7 +1088,6 @@ int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *gl
     free(stack);
     free(stack_kinds);
     free(st.cycles);
-    nmo_ref_graph_destroy(graph);
     nmo_arena_destroy(arena);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
@@ -1190,17 +1183,9 @@ int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *glo
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    /* Build reference graph */
-    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
-    if (!arena) {
-        fprintf(stderr, "Error: Failed to create arena\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    nmo_ref_graph_t *graph = nmo_ref_graph_create(repo, c.registry, arena);
+    /* Get reference graph from session cache */
+    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
     if (!graph) {
-        nmo_arena_destroy(arena);
         fprintf(stderr, "Error: Failed to create reference graph\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
@@ -1209,8 +1194,6 @@ int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_ref_edge_t *all_edges = NULL;
     size_t all_count = 0;
     if (nmo_ref_graph_get_edges(graph, &all_edges, &all_count) != NMO_OK) {
-        nmo_ref_graph_destroy(graph);
-        nmo_arena_destroy(arena);
         fprintf(stderr, "Error: Failed to get edges\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
@@ -1223,8 +1206,6 @@ int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *glo
     if (kind_str) {
         filtered = (nmo_ref_edge_t *)malloc(all_count * sizeof(nmo_ref_edge_t));
         if (!filtered) {
-            nmo_ref_graph_destroy(graph);
-            nmo_arena_destroy(arena);
             fprintf(stderr, "Error: Allocation failed\n");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
@@ -1366,7 +1347,5 @@ int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
     free(node_ids);
     free(filtered);
-    nmo_ref_graph_destroy(graph);
-    nmo_arena_destroy(arena);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }

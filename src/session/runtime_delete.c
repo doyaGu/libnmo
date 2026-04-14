@@ -11,19 +11,9 @@
 #include "object/nmo_object_repository.h"
 #include "type/nmo_type_runtime.h"
 #include "type/nmo_type_system.h"
+#include "core/nmo_logger.h"
+#include "runtime_internal.h"
 #include <string.h>
-
-/* ── Shared trivial helper ─────────────────────────────────────── */
-
-static const nmo_type_descriptor_t *runtime_find_type_for_object(
-    const nmo_type_runtime_t *type_rt,
-    const nmo_object_t *object)
-{
-    if (type_rt == NULL || type_rt->types == NULL || object == NULL) {
-        return NULL;
-    }
-    return nmo_type_registry_find_by_class_id_inherited(type_rt->types, object->class_id);
-}
 
 /* ── ID set (private) ──────────────────────────────────────────── */
 
@@ -178,6 +168,72 @@ static int runtime_collect_delete_set(
     return NMO_OK;
 }
 
+/* ── Safe-detach pre-validation ────────────────────────────────── */
+
+/**
+ * @brief Validate that safe-detach remap can succeed.
+ *
+ * For each surviving object that references a delete-set member, verify its
+ * type has a remap_dependencies vtable hook.  Without this hook,
+ * nmo_runtime_remap_all_refs() silently skips the object, leaving dangling
+ * references in the saved file.
+ *
+ * @return NMO_OK if all referencing objects support remap, error otherwise
+ */
+static int runtime_validate_safe_detach(
+    nmo_object_repository_t *repo,
+    const nmo_type_runtime_t *type_rt,
+    nmo_ref_graph_t *graph,
+    const runtime_id_set_t *delete_set,
+    uint32_t request_flags,
+    nmo_logger_t *logger)
+{
+    if (graph == NULL || type_rt == NULL || type_rt->types == NULL) {
+        return NMO_OK;
+    }
+
+    nmo_ref_edge_t *edges = NULL;
+    size_t edge_count = 0;
+    nmo_ref_graph_get_edges(graph, &edges, &edge_count);
+
+    int result = NMO_OK;
+    for (size_t i = 0; i < edge_count; i++) {
+        /* Only care about edges TO a deleted object FROM a surviving object */
+        if (!runtime_id_set_contains(delete_set, edges[i].to)) {
+            continue;
+        }
+        if (runtime_id_set_contains(delete_set, edges[i].from)) {
+            continue;
+        }
+
+        nmo_object_t *referrer = nmo_object_repository_find_by_id(repo, edges[i].from);
+        if (referrer == NULL || referrer->state == NULL) {
+            continue;
+        }
+
+        const nmo_type_descriptor_t *type = runtime_find_type_for_object(type_rt, referrer);
+        if (type != NULL &&
+            type->vtable != NULL &&
+            type->vtable->remap_dependencies != NULL) {
+            continue; /* this object can be remapped */
+        }
+
+        /* Surviving object references a deleted object but cannot remap */
+        if (request_flags & NMO_RUNTIME_REQUEST_STRICT) {
+            result = NMO_ERR_VALIDATION_FAILED;
+            break;
+        }
+        if (logger != NULL) {
+            nmo_log(logger, NMO_LOG_WARN,
+                    "Object %u references deleted object %u but type lacks "
+                    "remap_dependencies; dangling reference will persist",
+                    edges[i].from, edges[i].to);
+        }
+    }
+
+    return result;
+}
+
 /* ── Public API ────────────────────────────────────────────────── */
 
 int nmo_runtime_preview_delete(
@@ -236,6 +292,7 @@ int nmo_runtime_execute_delete(
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
     nmo_arena_t *arena = nmo_session_get_arena(session);
     const nmo_type_runtime_t *type_rt = (ctx != NULL) ? nmo_context_get_type_runtime(ctx) : NULL;
+    nmo_logger_t *logger = (ctx != NULL) ? nmo_context_get_logger(ctx) : NULL;
     if (repo == NULL || arena == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -248,20 +305,25 @@ int nmo_runtime_execute_delete(
         return collect_result;
     }
 
-    /* Two-pass delete: separate detach from destroy to prevent pre_delete
-     * hooks from accessing state data of objects already freed in an earlier
-     * iteration. Pass 1 runs hooks and detaches all; pass 2 destroys. */
-
-    /* Pass 1: pre_delete hooks + detach from repository */
-    nmo_object_t **detached_objects = (nmo_object_t **)nmo_arena_alloc(
-        arena, ID_SET_COUNT(&delete_set) * sizeof(nmo_object_t *),
-        _Alignof(nmo_object_t *));
-    if (detached_objects == NULL && ID_SET_COUNT(&delete_set) > 0) {
-        nmo_bit_array_dispose(&delete_set.bits);
-        return NMO_ERR_NOMEM;
+    /* Pre-validate safe-detach: ensure all surviving referrers can remap */
+    if (request->flags & NMO_RUNTIME_REQUEST_SAFE_DETACH) {
+        nmo_ref_graph_t *graph = nmo_session_get_ref_graph(session);
+        int validate_result = runtime_validate_safe_detach(
+            repo, type_rt, graph, &delete_set, request->flags, logger);
+        if (validate_result != NMO_OK) {
+            nmo_bit_array_dispose(&delete_set.bits);
+            return validate_result;
+        }
     }
-    size_t detached_count = 0;
 
+    /* Three-phase delete: validate hooks, then detach, then destroy.
+     * Phase 1a runs pre_delete hooks without mutating the repository so that
+     * all hooks see a fully consistent world.  If any hook fails under STRICT,
+     * the operation aborts before any state change.
+     * Phase 1b detaches objects from the repository (no destroy yet).
+     * Phase 2 runs post_delete hooks and destroys detached objects. */
+
+    /* Phase 1a: validate pre_delete hooks (no mutation) */
     for (size_t i = 0; i < ID_SET_COUNT(&delete_set); i++) {
         nmo_object_id_t object_id = ID_SET_AT(&delete_set, i);
         nmo_object_t *obj = nmo_object_repository_find_by_id(repo, object_id);
@@ -280,20 +342,38 @@ int nmo_runtime_execute_delete(
                 return hook_result;
             }
         }
+    }
 
+    /* Phase 1b: batch detach from repository (all hooks passed) */
+    nmo_object_t **detached_objects = (nmo_object_t **)nmo_arena_alloc(
+        arena, ID_SET_COUNT(&delete_set) * sizeof(nmo_object_t *),
+        _Alignof(nmo_object_t *));
+    if (detached_objects == NULL && ID_SET_COUNT(&delete_set) > 0) {
+        nmo_bit_array_dispose(&delete_set.bits);
+        return NMO_ERR_NOMEM;
+    }
+    size_t detached_count = 0;
+
+    for (size_t i = 0; i < ID_SET_COUNT(&delete_set); i++) {
+        nmo_object_id_t object_id = ID_SET_AT(&delete_set, i);
         nmo_object_t *detached = NULL;
         int remove_result = nmo_object_repository_take(repo, object_id, &detached);
-        if (remove_result != NMO_OK && (request->flags & NMO_RUNTIME_REQUEST_STRICT)) {
-            nmo_bit_array_dispose(&delete_set.bits);
-            return remove_result;
+        /* All IDs were validated in Phase 1a and runtime_collect_delete_set.
+         * A take failure here indicates an internal consistency error. */
+        if (remove_result != NMO_OK || detached == NULL) {
+            if (logger != NULL) {
+                nmo_log(logger, NMO_LOG_WARN,
+                        "Phase 1b: take(%u) failed unexpectedly (status=%d)",
+                        object_id, remove_result);
+            }
+            continue;
         }
-
         if (remove_result == NMO_OK && detached != NULL) {
             detached_objects[detached_count++] = detached;
         }
     }
 
-    /* Pass 2: post_delete hooks + destroy (all objects already detached) */
+    /* Phase 2: post_delete hooks + destroy (all objects already detached) */
     for (size_t i = 0; i < detached_count; i++) {
         nmo_object_t *detached = detached_objects[i];
         const nmo_type_descriptor_t *type = runtime_find_type_for_object(type_rt, detached);

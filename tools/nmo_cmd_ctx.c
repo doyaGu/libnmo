@@ -26,7 +26,8 @@ int nmo_cmd_ctx_init(nmo_cmd_ctx_t *c, int argc, char **argv,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    /* Open session */
+    /* Open session. Command-level --strict is handled by validators/mutations,
+     * not by rejecting files during load. */
     char errbuf[256];
     if (!nmo_tool_open_session(c->file_path, &c->ctx, &c->session,
                                errbuf, sizeof(errbuf))) {

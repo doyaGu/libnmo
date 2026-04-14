@@ -63,6 +63,7 @@ typedef enum nmo_load_flags {
     NMO_LOAD_ONLYBEHAVIORS      = 0x0010,
     NMO_LOAD_CHECK_DEPENDENCIES = 0x0020,
     NMO_LOAD_PRESERVE_SHADOW    = 0x0080,
+    NMO_LOAD_STRICT             = 0x0100, /**< Error on unresolved references */
 } nmo_load_flags_t;
 
 /**

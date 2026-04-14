@@ -14,7 +14,11 @@
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 #include "app/nmo_save.h"
+#include "core/nmo_array.h"
+#include "object/builtin/nmo_group_schemas.h"
+#include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
+#include "format/nmo_object.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -492,6 +496,68 @@ TEST(cli, validate_references_json) {
     ASSERT_NOT_NULL(yyjson_obj_get(data, "valid"));
 
     yyjson_doc_free(doc);
+}
+
+static bool create_dangling_reference_fixture(const char *path) {
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    if (!ctx) return false;
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    if (!session) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    nmo_object_id_t group_id = 0;
+    bool ok = false;
+
+    if (nmo_session_create_object(session, NMO_CID_GROUP, "dangling-group",
+            (nmo_guid_t){0, 0}, &group_id, NULL) != NMO_OK) {
+        goto cleanup;
+    }
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_t *group_obj = nmo_object_repository_find_by_id(repo, group_id);
+    if (!group_obj || !group_obj->state) {
+        goto cleanup;
+    }
+
+    nmo_group_state_t *group_state = (nmo_group_state_t *)group_obj->state;
+    nmo_array_clear(&group_state->object_ids);
+    if (nmo_array_reserve(&group_state->object_ids, 1) != NMO_OK) {
+        goto cleanup;
+    }
+    nmo_object_id_t *ids = NULL;
+    if (nmo_array_extend(&group_state->object_ids, 1, (void **)&ids) != NMO_OK) {
+        goto cleanup;
+    }
+    ids[0] = 99999u;
+
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    ok = (nmo_save_file(session, path, &save_opts) == NMO_OK);
+
+cleanup:
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+    return ok;
+}
+
+TEST(cli, validate_references_strict_does_not_fail_during_load) {
+    const char *fixture = "test_validate_refs_dangling.nmo";
+    remove(fixture);
+
+    ASSERT_TRUE(create_dangling_reference_fixture(fixture));
+
+    char args[512];
+    snprintf(args, sizeof(args), "--strict validate references \"%s\"", fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Reference Validation");
+
+    free(result.output);
+    remove(fixture);
 }
 
 /* ============================================================================
@@ -1248,6 +1314,37 @@ TEST(cli, object_rename_missing_output) {
     remove(fixture);
 }
 
+TEST(cli, object_delete_batch_name_filter_saves) {
+    const char *fixture = "test_delete_batch_fixture.nmo";
+    const char *output = "test_delete_batch_output.nmo";
+    remove(fixture);
+    remove(output);
+
+    ASSERT_TRUE(create_rename_test_fixture(fixture));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "--batch object delete --name Alpha \"%s\" -o \"%s\"",
+             fixture, output);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Deleted 1 object");
+    ASSERT_TRUE(file_exists(output));
+    free(result.output);
+
+    char verify_args[512];
+    snprintf(verify_args, sizeof(verify_args), "object list \"%s\"", output);
+    char *verify_output = run_cli(verify_args);
+    ASSERT_NOT_NULL(verify_output);
+    ASSERT_STR_CONTAINS(verify_output, "Beta");
+    ASSERT_TRUE(strstr(verify_output, "Alpha") == NULL);
+    free(verify_output);
+
+    remove(fixture);
+    remove(output);
+}
+
 /* ============================================================================
  * convert strip --dry-run
  * ============================================================================ */
@@ -1403,6 +1500,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, validate_structure_fix);
     REGISTER_TEST(cli, validate_references_text);
     REGISTER_TEST(cli, validate_references_json);
+    REGISTER_TEST(cli, validate_references_strict_does_not_fail_during_load);
 
     /* type commands */
     REGISTER_TEST(cli, type_list_text);
@@ -1433,6 +1531,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, object_rename_name_collision);
     REGISTER_TEST(cli, object_rename_nonexistent_id);
     REGISTER_TEST(cli, object_rename_missing_output);
+    REGISTER_TEST(cli, object_delete_batch_name_filter_saves);
 
     /* convert strip --dry-run */
     REGISTER_TEST(cli, convert_strip_dry_run_json);

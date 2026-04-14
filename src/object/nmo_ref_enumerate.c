@@ -90,14 +90,23 @@ static nmo_ref_kind_t nmo_ref_kind_from_field(const nmo_type_field_t *field) {
 
 static bool nmo_ref_get_pointer_array_count(
     const nmo_type_descriptor_t *type,
-    const char *field_name,
+    const nmo_type_field_t *field,
     const void *instance,
     uint32_t *out_count)
 {
-    if (!type || !field_name || !instance || !out_count) {
+    if (!type || !field || !instance || !out_count) {
         return false;
     }
 
+    /* Fast path: explicit count_field_name metadata */
+    const nmo_type_field_t *cf = nmo_field_get_count_field(type, field);
+    if (cf != NULL) {
+        *out_count = nmo_field_get_uint32(instance, cf);
+        return true;
+    }
+
+    /* Heuristic fallback */
+    const char *field_name = field->name;
     size_t name_len = strlen(field_name);
     size_t base_len = name_len;
 
@@ -190,7 +199,7 @@ static bool nmo_ref_field_visitor(
         }
 
         uint32_t count = 0;
-        if (!nmo_ref_get_pointer_array_count(ctx->type, field->name, ctx->instance, &count)) {
+        if (!nmo_ref_get_pointer_array_count(ctx->type, field, ctx->instance, &count)) {
             return true;
         }
 
@@ -330,7 +339,7 @@ static nmo_status_t nmo_ref_enumerate_struct_arrays(
 
             uint32_t count = 0;
             if (!nmo_ref_get_pointer_array_count(
-                    type, field->name, instance, &count))
+                    type, field, instance, &count))
                 continue;
 
             for (uint32_t k = 0; k < count; ++k) {

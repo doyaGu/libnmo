@@ -170,12 +170,16 @@ static const nmo_type_field_t *find_count_field(const nmo_type_descriptor_t *typ
 {
     if (!type || !ptr_field || !ptr_field->name) return NULL;
 
+    /* Fast path: explicit count_field_name metadata */
+    const nmo_type_field_t *meta_cf = nmo_field_get_count_field(type, ptr_field);
+    if (meta_cf != NULL) return meta_cf;
+
+    /* Heuristic fallback */
     char name_buf[128];
     snprintf(name_buf, sizeof(name_buf), "%s_count", ptr_field->name);
     const nmo_type_field_t *cf = nmo_type_get_field_by_name(type, name_buf);
     if (cf) return cf;
 
-    /* Try stripping trailing 's' for plural */
     size_t len = strlen(ptr_field->name);
     if (len > 1 && ptr_field->name[len - 1] == 's') {
         snprintf(name_buf, sizeof(name_buf), "%.*s_count", (int)(len - 1), ptr_field->name);

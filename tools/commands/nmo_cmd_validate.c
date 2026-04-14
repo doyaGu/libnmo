@@ -341,17 +341,10 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    /* Create reference graph */
-    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
-    if (!arena) {
-        fprintf(stderr, "Error: Failed to create arena\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
+    /* Get reference graph from session cache */
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    nmo_ref_graph_t *graph = nmo_ref_graph_create(repo, c.registry, arena);
+    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
     if (!graph) {
-        nmo_arena_destroy(arena);
         fprintf(stderr, "Error: Failed to create reference graph\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
@@ -509,7 +502,6 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
         }
     }
 
-    nmo_arena_destroy(arena);
     return nmo_cmd_ctx_done(&c, exit_code);
 }
 
@@ -699,18 +691,17 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    /* Build reference graph */
-    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
-    if (!arena) {
-        fprintf(stderr, "Error: Failed to create arena\n");
+    /* Get reference graph from session cache */
+    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
+    if (!graph) {
+        fprintf(stderr, "Error: Failed to create reference graph\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    nmo_ref_graph_t *graph = nmo_ref_graph_create(repo, c.registry, arena);
-    if (!graph) {
-        nmo_arena_destroy(arena);
-        fprintf(stderr, "Error: Failed to create reference graph\n");
+    /* Arena for mark-sweep allocations (root IDs, reachable set, orphan list) */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
+    if (!arena) {
+        fprintf(stderr, "Error: Failed to create arena\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
@@ -1055,7 +1046,7 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
             for (size_t i = 0; i < likely_orphans && i < orphan_cap; i++)
                 orphan_ids[i] = nmo_object_get_id(orphan_list[i].obj);
 
-            /* Destroy arena before modifying session (arena owns graph data) */
+            /* Destroy arena before modifying session (arena owns mark-sweep data) */
             nmo_arena_destroy(arena);
             arena = NULL;
 

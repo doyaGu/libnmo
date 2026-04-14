@@ -505,8 +505,18 @@ static int delete_batch_handler(
     struct yyjson_mut_doc *doc,
     struct yyjson_mut_val *result_data)
 {
-    (void)doc; (void)result_data;
-    delete_batch_ctx_t *ctx = (delete_batch_ctx_t *)user_data;
+    delete_batch_ctx_t *ctx = NULL;
+    if (doc && result_data) {
+        ctx = (delete_batch_ctx_t *)user_data;
+    } else {
+        const nmo_tool_text_output_ctx_t *text_ctx =
+            (const nmo_tool_text_output_ctx_t *)user_data;
+        ctx = text_ctx ? (delete_batch_ctx_t *)text_ctx->user_data : NULL;
+    }
+    if (!ctx) {
+        fprintf(stderr, "Error: Invalid batch delete context\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init_with_file(&c, input_path, global);
@@ -524,11 +534,32 @@ static int delete_batch_handler(
         filter.class_derived = true;
     }
     if (ctx->has_name) filter.name_pattern = ctx->name_str;
+    if (ctx->has_filter) {
+        nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_EXPRESSION };
+        nmo_status_t st = nmo_dsl_compile(
+            c.registry, NULL, ctx->filter_str,
+            &compile_opts, &filter.dsl_filter);
+        if (st != NMO_OK) {
+            nmo_core_dsl_print_error(stderr, ctx->filter_str,
+                                     "Error: Failed to compile filter expression");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+    }
 
     /* Collect matching IDs */
     delete_id_collector_t col = {0};
     nmo_core_iter_result_t iter_result;
-    (void)nmo_core_iter_objects(&c, &filter, delete_collect_visitor, &col, &iter_result);
+    rc = nmo_core_iter_objects(&c, &filter, delete_collect_visitor, &col, &iter_result);
+
+    if (filter.dsl_filter) {
+        nmo_dsl_program_destroy(filter.dsl_filter);
+    }
+
+    if (rc < 0) {
+        free(col.ids);
+        fprintf(stderr, "Error: Failed to iterate objects\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
 
     if (col.count == 0) {
         fprintf(stderr, "  No objects matched in %s\n", input_path);
