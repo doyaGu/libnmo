@@ -258,6 +258,22 @@ TEST(param_value, unknown_type_hex_fallback) {
     nmo_context_release(ctx);
 }
 
+TEST(param_value, truncated_known_type_hex_fallback) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_type_registry_t *reg = nmo_context_get_type_registry(ctx);
+
+    uint8_t data[] = {0xEF, 0xBE, 0xAD};
+    nmo_parameter_state_t p = make_buffer_param(CKPGUID_INT, data, sizeof(data));
+
+    char buf[128];
+    nmo_status_t st = nmo_param_value_to_string(&p, reg, NULL, buf, sizeof(buf));
+    ASSERT_EQ(NMO_OK, st);
+    ASSERT_STR_EQ("ef be ad", buf);
+
+    nmo_context_release(ctx);
+}
+
 /* ============================================================================
  * Tests: summary formatter
  * ============================================================================ */
@@ -366,6 +382,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(param_value, decode_string);
     REGISTER_TEST(param_value, decode_raw_string_buffer);
     REGISTER_TEST(param_value, unknown_type_hex_fallback);
+    REGISTER_TEST(param_value, truncated_known_type_hex_fallback);
     REGISTER_TEST(param_value, format_summary);
     REGISTER_TEST(param_value, format_summary_unknown_type);
     REGISTER_TEST(param_value, type_name_known);

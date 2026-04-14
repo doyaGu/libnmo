@@ -39,48 +39,151 @@ struct nmo_bb_registry {
  * Arena deep-copy helpers
  * ============================================================================ */
 
-static const char **arena_dup_strings(nmo_arena_t *arena, const char *const *src, uint32_t count) {
-    if (!src || count == 0) return NULL;
-    const char **dst = (const char **)nmo_arena_alloc(arena, count * sizeof(const char *), _Alignof(const char *));
-    if (!dst) return NULL;
-    for (uint32_t i = 0; i < count; i++)
-        dst[i] = nmo_arena_strdup(arena, src[i]);
-    return dst;
+static nmo_status_t validate_count_ptr(const void *ptr, uint32_t count, const char *field) {
+    if (count > 0 && !ptr) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "BB prototype %s count is non-zero but array is NULL", field);
+    }
+    NMO_RETURN_OK();
 }
 
-static nmo_bb_param_desc_t *arena_dup_params(nmo_arena_t *arena, const nmo_bb_param_desc_t *src, uint32_t count) {
-    if (!src || count == 0) return NULL;
+static nmo_status_t arena_dup_strings(
+    nmo_arena_t *arena,
+    const char *const *src,
+    uint32_t count,
+    const char ***out_dst) {
+    if (!out_dst) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL out_dst");
+    }
+    *out_dst = NULL;
+    if (count == 0) NMO_RETURN_OK();
+    if (!src) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "String array count is non-zero but source is NULL");
+    }
+
+    const char **dst = (const char **)nmo_arena_alloc(
+        arena, count * sizeof(const char *), _Alignof(const char *));
+    if (!dst) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "arena alloc failed");
+    }
+
+    for (uint32_t i = 0; i < count; i++) {
+        dst[i] = nmo_arena_strdup(arena, src[i]);
+        if (src[i] && !dst[i]) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "arena string alloc failed");
+        }
+    }
+
+    *out_dst = dst;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t arena_dup_params(
+    nmo_arena_t *arena,
+    const nmo_bb_param_desc_t *src,
+    uint32_t count,
+    nmo_bb_param_desc_t **out_dst) {
+    if (!out_dst) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL out_dst");
+    }
+    *out_dst = NULL;
+    if (count == 0) NMO_RETURN_OK();
+    if (!src) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Parameter array count is non-zero but source is NULL");
+    }
+
     nmo_bb_param_desc_t *dst = (nmo_bb_param_desc_t *)nmo_arena_alloc(
         arena, count * sizeof(*dst), _Alignof(nmo_bb_param_desc_t));
-    if (!dst) return NULL;
+    if (!dst) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "arena alloc failed");
+    }
+
     for (uint32_t i = 0; i < count; i++) {
         dst[i].name = nmo_arena_strdup(arena, src[i].name);
+        if (src[i].name && !dst[i].name) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "arena string alloc failed");
+        }
         dst[i].type_guid = src[i].type_guid;
     }
-    return dst;
+
+    *out_dst = dst;
+    NMO_RETURN_OK();
 }
 
-static void deep_copy_proto(nmo_arena_t *arena, nmo_bb_proto_t *dst, const nmo_bb_proto_t *src) {
-    dst->guid = src->guid;
-    dst->name = nmo_arena_strdup(arena, src->name);
-    dst->description = nmo_arena_strdup(arena, src->description);
-    dst->category = nmo_arena_strdup(arena, src->category);
-    dst->dll = nmo_arena_strdup(arena, src->dll);
-    dst->version = src->version;
-    dst->compatible_class_id = src->compatible_class_id;
-    dst->behavior_flags = src->behavior_flags;
-    dst->inputs = arena_dup_strings(arena, src->inputs, src->input_count);
-    dst->input_count = src->input_count;
-    dst->outputs = arena_dup_strings(arena, src->outputs, src->output_count);
-    dst->output_count = src->output_count;
-    dst->input_params = arena_dup_params(arena, src->input_params, src->input_param_count);
-    dst->input_param_count = src->input_param_count;
-    dst->output_params = arena_dup_params(arena, src->output_params, src->output_param_count);
-    dst->output_param_count = src->output_param_count;
-    dst->local_params = arena_dup_params(arena, src->local_params, src->local_param_count);
-    dst->local_param_count = src->local_param_count;
-    dst->settings = arena_dup_params(arena, src->settings, src->setting_count);
-    dst->setting_count = src->setting_count;
+static nmo_status_t validate_proto_arrays(const nmo_bb_proto_t *proto) {
+    NMO_RETURN_IF_ERROR(validate_count_ptr(proto->inputs, proto->input_count, "input"));
+    NMO_RETURN_IF_ERROR(validate_count_ptr(proto->outputs, proto->output_count, "output"));
+    NMO_RETURN_IF_ERROR(validate_count_ptr(proto->input_params, proto->input_param_count,
+                                          "input_param"));
+    NMO_RETURN_IF_ERROR(validate_count_ptr(proto->output_params, proto->output_param_count,
+                                          "output_param"));
+    NMO_RETURN_IF_ERROR(validate_count_ptr(proto->local_params, proto->local_param_count,
+                                          "local_param"));
+    NMO_RETURN_IF_ERROR(validate_count_ptr(proto->settings, proto->setting_count, "setting"));
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t deep_copy_proto(
+    nmo_arena_t *arena,
+    nmo_bb_proto_t *dst,
+    const nmo_bb_proto_t *src) {
+    NMO_RETURN_IF_ERROR(validate_proto_arrays(src));
+
+    nmo_bb_proto_t tmp;
+    memset(&tmp, 0, sizeof(tmp));
+
+    tmp.guid = src->guid;
+    tmp.name = nmo_arena_strdup(arena, src->name);
+    if (src->name && !tmp.name) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "arena string alloc failed");
+    }
+    tmp.description = nmo_arena_strdup(arena, src->description);
+    if (src->description && !tmp.description) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "arena string alloc failed");
+    }
+    tmp.category = nmo_arena_strdup(arena, src->category);
+    if (src->category && !tmp.category) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "arena string alloc failed");
+    }
+    tmp.dll = nmo_arena_strdup(arena, src->dll);
+    if (src->dll && !tmp.dll) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "arena string alloc failed");
+    }
+    tmp.version = src->version;
+    tmp.compatible_class_id = src->compatible_class_id;
+    tmp.behavior_flags = src->behavior_flags;
+    const char **inputs = NULL;
+    NMO_RETURN_IF_ERROR(arena_dup_strings(arena, src->inputs, src->input_count, &inputs));
+    tmp.inputs = inputs;
+    tmp.input_count = src->input_count;
+    const char **outputs = NULL;
+    NMO_RETURN_IF_ERROR(arena_dup_strings(arena, src->outputs, src->output_count, &outputs));
+    tmp.outputs = outputs;
+    tmp.output_count = src->output_count;
+    nmo_bb_param_desc_t *input_params = NULL;
+    NMO_RETURN_IF_ERROR(arena_dup_params(arena, src->input_params, src->input_param_count,
+                                         &input_params));
+    tmp.input_params = input_params;
+    tmp.input_param_count = src->input_param_count;
+    nmo_bb_param_desc_t *output_params = NULL;
+    NMO_RETURN_IF_ERROR(arena_dup_params(arena, src->output_params, src->output_param_count,
+                                         &output_params));
+    tmp.output_params = output_params;
+    tmp.output_param_count = src->output_param_count;
+    nmo_bb_param_desc_t *local_params = NULL;
+    NMO_RETURN_IF_ERROR(arena_dup_params(arena, src->local_params, src->local_param_count,
+                                         &local_params));
+    tmp.local_params = local_params;
+    tmp.local_param_count = src->local_param_count;
+    nmo_bb_param_desc_t *settings = NULL;
+    NMO_RETURN_IF_ERROR(arena_dup_params(arena, src->settings, src->setting_count, &settings));
+    tmp.settings = settings;
+    tmp.setting_count = src->setting_count;
+
+    *dst = tmp;
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -135,8 +238,7 @@ nmo_status_t nmo_bb_registry_add(nmo_bb_registry_t *registry, const nmo_bb_proto
     /* Update existing? */
     nmo_bb_proto_t *existing = NULL;
     if (nmo_hash_table_get(registry->guid_map, &proto->guid, &existing) == NMO_OK) {
-        deep_copy_proto(registry->arena, existing, proto);
-        return NMO_OK;
+        return deep_copy_proto(registry->arena, existing, proto);
     }
 
     /* New entry: arena-allocate proto and deep-copy */
@@ -146,7 +248,7 @@ nmo_status_t nmo_bb_registry_add(nmo_bb_registry_t *registry, const nmo_bb_proto
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "arena alloc failed");
     }
     memset(entry, 0, sizeof(*entry));
-    deep_copy_proto(registry->arena, entry, proto);
+    NMO_RETURN_IF_ERROR(deep_copy_proto(registry->arena, entry, proto));
 
     nmo_status_t st = nmo_hash_table_insert(registry->guid_map, &proto->guid, &entry);
     if (st != NMO_OK) return st;

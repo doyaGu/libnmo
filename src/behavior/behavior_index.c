@@ -45,7 +45,10 @@ static uint32_t id_hash(nmo_object_id_t id) {
     return h;
 }
 
-static bool index_insert(nmo_behavior_index_t *idx, nmo_object_id_t key, const nmo_port_owner_t *val) {
+static bool index_insert(
+    nmo_behavior_index_t *idx,
+    nmo_object_id_t key,
+    const nmo_port_owner_t *val) {
     if (key == 0) return true; /* skip null IDs */
 
     /* Grow if needed */
@@ -102,15 +105,19 @@ static const nmo_port_owner_t *index_find(const nmo_behavior_index_t *idx, nmo_o
 typedef struct build_ctx {
     nmo_behavior_index_t *index;
     nmo_object_repository_t *repo;
+    nmo_status_t status;
 } build_ctx_t;
 
-static void index_array(nmo_behavior_index_t *idx, nmo_object_id_t owner_id,
+static bool index_array(nmo_behavior_index_t *idx, nmo_object_id_t owner_id,
                          const nmo_object_id_t *ids, size_t count, nmo_port_kind_t kind) {
     for (size_t i = 0; i < count; i++) {
         if (ids[i] == 0) continue;
         nmo_port_owner_t owner = {owner_id, (int32_t)i, kind};
-        index_insert(idx, ids[i], &owner);
+        if (!index_insert(idx, ids[i], &owner)) {
+            return false;
+        }
     }
+    return true;
 }
 
 static bool build_visitor(
@@ -125,65 +132,79 @@ static bool build_visitor(
     (void)depth;
     (void)is_building_block;
 
+    if (bctx->status != NMO_OK) return false;
     if (!state) return true;
 
     /* IO ports */
     if (state->inputs.data) {
-        index_array(idx, behavior_id,
-                    (const nmo_object_id_t *)state->inputs.data,
-                    state->inputs.count, NMO_PORT_IO_IN);
+        if (!index_array(idx, behavior_id,
+                         (const nmo_object_id_t *)state->inputs.data,
+                         state->inputs.count, NMO_PORT_IO_IN))
+            goto oom;
     }
     if (state->outputs.data) {
-        index_array(idx, behavior_id,
-                    (const nmo_object_id_t *)state->outputs.data,
-                    state->outputs.count, NMO_PORT_IO_OUT);
+        if (!index_array(idx, behavior_id,
+                         (const nmo_object_id_t *)state->outputs.data,
+                         state->outputs.count, NMO_PORT_IO_OUT))
+            goto oom;
     }
 
     /* Parameters */
     if (state->in_parameters.data) {
-        index_array(idx, behavior_id,
-                    (const nmo_object_id_t *)state->in_parameters.data,
-                    state->in_parameters.count, NMO_PORT_PARAM_IN);
+        if (!index_array(idx, behavior_id,
+                         (const nmo_object_id_t *)state->in_parameters.data,
+                         state->in_parameters.count, NMO_PORT_PARAM_IN))
+            goto oom;
     }
     if (state->out_parameters.data) {
-        index_array(idx, behavior_id,
-                    (const nmo_object_id_t *)state->out_parameters.data,
-                    state->out_parameters.count, NMO_PORT_PARAM_OUT);
+        if (!index_array(idx, behavior_id,
+                         (const nmo_object_id_t *)state->out_parameters.data,
+                         state->out_parameters.count, NMO_PORT_PARAM_OUT))
+            goto oom;
     }
     if (state->local_parameters.data) {
-        index_array(idx, behavior_id,
-                    (const nmo_object_id_t *)state->local_parameters.data,
-                    state->local_parameters.count, NMO_PORT_PARAM_LOCAL);
+        if (!index_array(idx, behavior_id,
+                         (const nmo_object_id_t *)state->local_parameters.data,
+                         state->local_parameters.count, NMO_PORT_PARAM_LOCAL))
+            goto oom;
     }
 
     /* Target parameter */
     if (state->target_parameter_id != 0) {
         nmo_port_owner_t owner = {behavior_id, -1, NMO_PORT_PARAM_TARGET};
-        index_insert(idx, state->target_parameter_id, &owner);
+        if (!index_insert(idx, state->target_parameter_id, &owner))
+            goto oom;
     }
 
     /* Operations */
     if (state->operations.data) {
-        index_array(idx, behavior_id,
-                    (const nmo_object_id_t *)state->operations.data,
-                    state->operations.count, NMO_PORT_OPERATION);
+        if (!index_array(idx, behavior_id,
+                         (const nmo_object_id_t *)state->operations.data,
+                         state->operations.count, NMO_PORT_OPERATION))
+            goto oom;
     }
 
     /* Sub-behaviors */
     if (state->sub_behaviors.data) {
-        index_array(idx, behavior_id,
-                    (const nmo_object_id_t *)state->sub_behaviors.data,
-                    state->sub_behaviors.count, NMO_PORT_SUB_BEHAVIOR);
+        if (!index_array(idx, behavior_id,
+                         (const nmo_object_id_t *)state->sub_behaviors.data,
+                         state->sub_behaviors.count, NMO_PORT_SUB_BEHAVIOR))
+            goto oom;
     }
 
     /* Sub-behavior links */
     if (state->sub_behavior_links.data) {
-        index_array(idx, behavior_id,
-                    (const nmo_object_id_t *)state->sub_behavior_links.data,
-                    state->sub_behavior_links.count, NMO_PORT_SUB_LINK);
+        if (!index_array(idx, behavior_id,
+                         (const nmo_object_id_t *)state->sub_behavior_links.data,
+                         state->sub_behavior_links.count, NMO_PORT_SUB_LINK))
+            goto oom;
     }
 
     return true;
+
+oom:
+    bctx->status = NMO_ERR_NOMEM;
+    return false;
 }
 
 /* ============================================================================
@@ -227,10 +248,18 @@ nmo_status_t nmo_behavior_index_build(
         return st;
     }
 
-    build_ctx_t bctx = {index, repo};
+    build_ctx_t bctx = {index, repo, NMO_OK};
     const nmo_script_entry_t *entries = (const nmo_script_entry_t *)scripts.data;
     for (size_t i = 0; i < scripts.count; i++) {
-        nmo_script_walker_walk(ctx, session, entries[i].script_id, build_visitor, &bctx);
+        st = nmo_script_walker_walk(ctx, session, entries[i].script_id, build_visitor, &bctx);
+        if (st != NMO_OK) {
+            nmo_array_clear(&scripts);
+            return st;
+        }
+        if (bctx.status != NMO_OK) {
+            nmo_array_clear(&scripts);
+            return bctx.status;
+        }
     }
 
     nmo_array_clear(&scripts);

@@ -266,6 +266,10 @@ nmo_status_t nmo_param_value_to_string(
         return format_hex_preview(data, data_size, buffer, buffer_size);
     }
 
+    if (type->size > 0 && data_size < type->size) {
+        return format_hex_preview(data, data_size, buffer, buffer_size);
+    }
+
     /* Unified dispatch: vtable -> category fallback -> hex */
     nmo_status_t st = nmo_type_value_to_string(
         data, type, registry, buffer, buffer_size);

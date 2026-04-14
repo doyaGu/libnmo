@@ -12,10 +12,32 @@
 #include "behavior/nmo_script_walker.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "core/nmo_allocator.h"
 #include "core/nmo_array.h"
 #include "object/nmo_class_ids.h"
 
 #include <string.h>
+
+typedef struct fail_after_alloc_ctx {
+    size_t calls;
+    size_t fail_after;
+} fail_after_alloc_ctx_t;
+
+static void *fail_after_alloc(void *user_data, size_t size, size_t alignment)
+{
+    (void)alignment;
+    fail_after_alloc_ctx_t *ctx = (fail_after_alloc_ctx_t *)user_data;
+    if (ctx && ctx->calls++ >= ctx->fail_after) {
+        return NULL;
+    }
+    return malloc(size);
+}
+
+static void fail_after_free(void *user_data, void *ptr)
+{
+    (void)user_data;
+    free(ptr);
+}
 
 /* ============================================================================
  * Tests: NULL argument handling
@@ -83,6 +105,33 @@ TEST(script_walker, find_scripts_with_file) {
     ASSERT_NOT_NULL(entry);
     ASSERT_NE(0, (long long)entry->script_id);
     ASSERT_NE(0, (long long)entry->owner_id);
+
+    nmo_array_dispose(&scripts);
+    nmo_session_close_with_context(ctx, session);
+}
+
+TEST(script_walker, find_scripts_reports_append_oom) {
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    char errbuf[256] = {0};
+
+    const char *file = NMO_TEST_DATA_FILE("Nop.cmo");
+    bool ok = nmo_session_open_file_with_context(
+        file, &ctx, &session, errbuf, sizeof(errbuf));
+    if (!ok) {
+        return;
+    }
+
+    fail_after_alloc_ctx_t alloc_ctx = {0, 0};
+    nmo_allocator_t fail_alloc =
+        nmo_allocator_custom(fail_after_alloc, fail_after_free, &alloc_ctx);
+
+    nmo_array_t scripts;
+    ASSERT_EQ(NMO_OK, nmo_array_init(&scripts, sizeof(nmo_script_entry_t), 0, &fail_alloc));
+
+    nmo_status_t st = nmo_script_walker_find_scripts(ctx, session, &scripts);
+    ASSERT_EQ(NMO_ERR_NOMEM, st);
+    ASSERT_EQ(0u, scripts.count);
 
     nmo_array_dispose(&scripts);
     nmo_session_close_with_context(ctx, session);
@@ -166,6 +215,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(script_walker, trace_null_args);
     REGISTER_TEST(script_walker, dump_text_null_args);
     REGISTER_TEST(script_walker, find_scripts_with_file);
+    REGISTER_TEST(script_walker, find_scripts_reports_append_oom);
     REGISTER_TEST(script_walker, walk_with_file);
     REGISTER_TEST(script_walker, dump_text_with_file);
 TEST_MAIN_END()

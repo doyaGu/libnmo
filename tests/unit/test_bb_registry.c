@@ -77,6 +77,24 @@ TEST(bb_reg, add_and_find) {
     nmo_arena_destroy(arena);
 }
 
+TEST(bb_reg, rejects_nonzero_count_with_null_array) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    nmo_bb_registry_t *reg = nmo_bb_registry_create(arena);
+
+    nmo_bb_proto_t proto;
+    memset(&proto, 0, sizeof(proto));
+    proto.guid = nmo_guid_create(0xAAAA0003, 0xBBBB0003);
+    proto.name = "Bad BB";
+    proto.input_count = 1;
+    proto.inputs = NULL;
+
+    ASSERT_NE(NMO_OK, nmo_bb_registry_add(reg, &proto));
+    ASSERT_TRUE(nmo_bb_registry_find(reg, proto.guid) == NULL);
+
+    nmo_bb_registry_destroy(reg);
+    nmo_arena_destroy(arena);
+}
+
 TEST(bb_reg, remove_entry) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     nmo_bb_registry_t *reg = nmo_bb_registry_create(arena);
@@ -99,5 +117,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(bb_reg, empty_without_data);
     REGISTER_TEST(bb_reg, loaded_from_data_dir);
     REGISTER_TEST(bb_reg, add_and_find);
+    REGISTER_TEST(bb_reg, rejects_nonzero_count_with_null_array);
     REGISTER_TEST(bb_reg, remove_entry);
 TEST_MAIN_END()

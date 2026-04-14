@@ -97,7 +97,10 @@ nmo_status_t nmo_script_walker_find_scripts(
                 }
             }
 
-            nmo_array_append(out_scripts, &entry);
+            nmo_status_t st = nmo_array_append(out_scripts, &entry);
+            if (st != NMO_OK) {
+                return st;
+            }
         }
     }
 
