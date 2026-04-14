@@ -847,16 +847,18 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
     }
 
-    /* Build vertex array from face data (no dedup for v1) */
-    size_t total_verts = obj_data.face_count * 3;
-    if (total_verts > 65535) {
+    /* Build deduplicated vertex array from face data.
+     * Worst case is face_count*3 unique vertices; we allocate that and
+     * shrink the effective count after dedup. */
+    size_t max_verts = obj_data.face_count * 3;
+    if (max_verts > 65535) {
         fprintf(stderr, "Error: Mesh exceeds 65535 vertex limit (%zu)\n",
-                total_verts);
+                max_verts);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
     }
 
     nmo_vertex_t *vertices = (nmo_vertex_t *)nmo_arena_alloc(
-        arena, total_verts * sizeof(nmo_vertex_t), alignof(nmo_vertex_t));
+        arena, max_verts * sizeof(nmo_vertex_t), alignof(nmo_vertex_t));
     uint16_t *face_indices = (uint16_t *)nmo_arena_alloc(
         arena, obj_data.face_count * 3 * sizeof(uint16_t), alignof(uint16_t));
     nmo_face_t *faces = (nmo_face_t *)nmo_arena_alloc(
@@ -867,43 +869,85 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    /* Expand face vertices into interleaved vertex array */
-    uint16_t vert_idx = 0;
+    /* Hash-based vertex deduplication.
+     * Key: packed (pos_idx, uv_idx, normal_idx) tuple.
+     * Open-addressing hash table mapping tuple -> unified vertex index. */
+    size_t dedup_cap = max_verts * 2;   /* load factor <= 0.5 */
+    if (dedup_cap < 64) dedup_cap = 64;
+
+    /* Each slot: packed key + 1-based vertex index (0 = empty) */
+    typedef struct { uint64_t key; uint16_t idx_plus1; } dedup_slot_t;
+    dedup_slot_t *dedup_table = (dedup_slot_t *)calloc(dedup_cap, sizeof(dedup_slot_t));
+    if (!dedup_table) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    uint16_t unique_count = 0;
+
     for (size_t fi = 0; fi < obj_data.face_count; fi++) {
         const nmo_obj_face_t *of = &obj_data.faces[fi];
 
         for (int vi = 0; vi < 3; vi++) {
-            nmo_vertex_t *v = &vertices[vert_idx];
-            memset(v, 0, sizeof(*v));
-
             int32_t pi = of->verts[vi].pos_idx;
-            if (pi >= 0 && (size_t)pi < obj_data.pos_count) {
-                v->position.x = obj_data.positions[pi * 3 + 0];
-                v->position.y = obj_data.positions[pi * 3 + 1];
-                v->position.z = obj_data.positions[pi * 3 + 2];
-            }
-
             int32_t ui = of->verts[vi].uv_idx;
-            if (ui >= 0 && (size_t)ui < obj_data.uv_count) {
-                v->uv.x = obj_data.uvs[ui * 2 + 0];
-                v->uv.y = obj_data.uvs[ui * 2 + 1];
-            }
-
             int32_t ni = of->verts[vi].normal_idx;
-            if (ni >= 0 && (size_t)ni < obj_data.normal_count) {
-                v->normal.x = obj_data.normals[ni * 3 + 0];
-                v->normal.y = obj_data.normals[ni * 3 + 1];
-                v->normal.z = obj_data.normals[ni * 3 + 2];
+
+            /* Pack indices into a 64-bit key.
+             * Shift by 21 bits each gives ~2M indices per component. */
+            uint64_t key = ((uint64_t)(uint32_t)(pi + 1) << 42)
+                         | ((uint64_t)(uint32_t)(ui + 1) << 21)
+                         | (uint64_t)(uint32_t)(ni + 1);
+            /* Avoid key==0 (our empty sentinel) by setting high bit */
+            key |= (uint64_t)1 << 63;
+
+            /* Probe the hash table */
+            uint64_t h = key * 0x9E3779B97F4A7C15ULL;
+            size_t slot = (size_t)(h % dedup_cap);
+            uint16_t found_idx = 0;
+
+            for (;;) {
+                if (dedup_table[slot].idx_plus1 == 0) {
+                    /* Empty slot: insert new vertex */
+                    nmo_vertex_t *v = &vertices[unique_count];
+                    memset(v, 0, sizeof(*v));
+
+                    if (pi >= 0 && (size_t)pi < obj_data.pos_count) {
+                        v->position.x = obj_data.positions[pi * 3 + 0];
+                        v->position.y = obj_data.positions[pi * 3 + 1];
+                        v->position.z = obj_data.positions[pi * 3 + 2];
+                    }
+                    if (ui >= 0 && (size_t)ui < obj_data.uv_count) {
+                        v->uv.x = obj_data.uvs[ui * 2 + 0];
+                        v->uv.y = obj_data.uvs[ui * 2 + 1];
+                    }
+                    if (ni >= 0 && (size_t)ni < obj_data.normal_count) {
+                        v->normal.x = obj_data.normals[ni * 3 + 0];
+                        v->normal.y = obj_data.normals[ni * 3 + 1];
+                        v->normal.z = obj_data.normals[ni * 3 + 2];
+                    }
+
+                    dedup_table[slot].key = key;
+                    dedup_table[slot].idx_plus1 = unique_count + 1;
+                    found_idx = unique_count;
+                    unique_count++;
+                    break;
+                }
+                if (dedup_table[slot].key == key) {
+                    /* Existing vertex */
+                    found_idx = dedup_table[slot].idx_plus1 - 1;
+                    break;
+                }
+                slot = (slot + 1) % dedup_cap;
             }
 
-            face_indices[fi * 3 + vi] = vert_idx;
-            vert_idx++;
+            face_indices[fi * 3 + vi] = found_idx;
         }
 
         /* Face normal: compute from cross product */
-        nmo_vertex_t *v0 = &vertices[fi * 3 + 0];
-        nmo_vertex_t *v1 = &vertices[fi * 3 + 1];
-        nmo_vertex_t *v2 = &vertices[fi * 3 + 2];
+        nmo_vertex_t *v0 = &vertices[face_indices[fi * 3 + 0]];
+        nmo_vertex_t *v1 = &vertices[face_indices[fi * 3 + 1]];
+        nmo_vertex_t *v2 = &vertices[face_indices[fi * 3 + 2]];
         float e1x = v1->position.x - v0->position.x;
         float e1y = v1->position.y - v0->position.y;
         float e1z = v1->position.z - v0->position.z;
@@ -922,6 +966,9 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
         faces[fi].material_group_idx = (uint16_t)of->material_group;
         faces[fi].channel_mask = 0;
     }
+
+    free(dedup_table);
+    size_t total_verts = unique_count;
 
     /* Build material groups from OBJ material names */
     uint32_t mat_group_count = obj_data.material_name_count > 0
@@ -971,16 +1018,64 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
     }
 
     if (!mesh_obj) {
-        fprintf(stderr, "Error: --replace is required (mesh creation not yet supported)\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        /* Derive name from --name option or OBJ filename */
+        const char *create_name = mesh_name;
+        char name_buf[256];
+        if (!create_name) {
+            /* Extract basename without extension from OBJ path */
+            const char *base = obj_file_path;
+            const char *p;
+            for (p = obj_file_path; *p; p++) {
+                if (*p == '/' || *p == '\\') base = p + 1;
+            }
+            size_t blen = strlen(base);
+            const char *dot = NULL;
+            for (p = base + blen; p > base; p--) {
+                if (*(p - 1) == '.') { dot = p - 1; break; }
+            }
+            size_t namelen = dot ? (size_t)(dot - base) : blen;
+            if (namelen >= sizeof(name_buf)) namelen = sizeof(name_buf) - 1;
+            memcpy(name_buf, base, namelen);
+            name_buf[namelen] = '\0';
+            create_name = name_buf;
+        }
+
+        nmo_object_id_t new_id = 0;
+        nmo_runtime_report_t report;
+        memset(&report, 0, sizeof(report));
+        int create_rc = nmo_session_create_object(
+            c.session, NMO_CID_MESH, create_name, NMO_GUID_NULL,
+            &new_id, &report);
+        if (create_rc != NMO_OK) {
+            fprintf(stderr, "Error: Failed to create mesh object: %s\n",
+                    nmo_error_string(create_rc));
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+
+        mesh_obj = nmo_core_find_by_id(&c, new_id);
+        if (!mesh_obj) {
+            fprintf(stderr, "Error: Created mesh object %u not found\n", new_id);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
     }
 
-    /* Update mesh state */
+    /* Get or allocate mesh state */
     nmo_mesh_state_t *ms =
         (nmo_mesh_state_t *)nmo_object_get_data(mesh_obj);
     if (!ms) {
-        fprintf(stderr, "Error: Mesh object has no state\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        /* Newly created object -- allocate and zero-init state */
+        nmo_status_t alloc_rc = nmo_object_alloc_state(mesh_obj, sizeof(nmo_mesh_state_t));
+        if (alloc_rc != NMO_OK) {
+            fprintf(stderr, "Error: Failed to allocate mesh state\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+        ms = (nmo_mesh_state_t *)nmo_object_get_state(mesh_obj);
+        if (!ms) {
+            fprintf(stderr, "Error: Mesh state allocation failed\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+        memset(ms, 0, sizeof(*ms));
+        nmo_object_set_data(mesh_obj, ms);
     }
 
     ms->vertex_count = (uint32_t)total_verts;
@@ -1000,8 +1095,14 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
         nmo_object_set_name(mesh_obj, mesh_name);
     }
 
-    /* Serialize updated mesh back to its chunk */
+    /* Serialize updated mesh back to its chunk (create one if needed) */
     nmo_chunk_t *chunk = nmo_object_get_chunk(mesh_obj);
+    if (!chunk) {
+        chunk = nmo_chunk_create(arena);
+        if (chunk) {
+            nmo_object_set_chunk(mesh_obj, chunk);
+        }
+    }
     if (chunk) {
         const nmo_type_descriptor_t *type_desc = NULL;
         if (c.registry) {

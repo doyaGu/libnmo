@@ -362,6 +362,16 @@ static int iface_edit_save(nmo_cmd_ctx_t *c, const char *output_path)
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+static bool iface_validate_behavior_id(nmo_cmd_ctx_t *c, uint32_t beh_id) {
+    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
+    nmo_object_t *obj = nmo_object_repository_find_by_id(repo, beh_id);
+    if (!obj) {
+        fprintf(stderr, "Warning: Behavior %u not found in repository (may have been deleted)\n", beh_id);
+        return false;
+    }
+    return true;
+}
+
 /* ================================================================
  * Interface edit: verb handlers (now public sub-action handlers)
  * ================================================================ */
@@ -416,6 +426,10 @@ int nmo_cmd_behavior_iface_set_pos(int argc, char **argv, const nmo_cli_global_o
 
     nmo_interface_data_t *idata = iface_edit_get_data(&c, target_id, NULL);
     if (!idata) return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+
+    if (!iface_validate_behavior_id(&c, beh_id)) {
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
 
     if (idata->script.behavior_id == beh_id) {
         idata->script.h_pos = h;
@@ -476,6 +490,10 @@ static int iface_cmd_fold_impl(int argc, char **argv, const nmo_cli_global_opts_
 
     nmo_interface_data_t *idata = iface_edit_get_data(&c, target_id, NULL);
     if (!idata) return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+
+    if (!iface_validate_behavior_id(&c, beh_id)) {
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
 
     uint32_t *flags = NULL;
     if (idata->script.behavior_id == beh_id) {
@@ -630,6 +648,9 @@ int nmo_cmd_behavior_iface_add_comment(int argc, char **argv, const nmo_cli_glob
             fprintf(stderr, "Error: Invalid --body ID '%s'\n", vals[OPT_BODY].val.str);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
+        if (!iface_validate_behavior_id(&c, body_id)) {
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
     }
 
     nmo_interface_body_t *body = nmo_interface_find_body(idata, body_id);
@@ -701,6 +722,9 @@ int nmo_cmd_behavior_iface_remove_comment(int argc, char **argv, const nmo_cli_g
     if (vals[OPT_BODY].present) {
         if (!nmo_tool_parse_u32(vals[OPT_BODY].val.str, &body_id)) {
             fprintf(stderr, "Error: Invalid --body ID '%s'\n", vals[OPT_BODY].val.str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+        if (!iface_validate_behavior_id(&c, body_id)) {
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
     }
@@ -786,6 +810,9 @@ int nmo_cmd_behavior_iface_set_comment_text(int argc, char **argv, const nmo_cli
     if (vals[OPT_BODY].present) {
         if (!nmo_tool_parse_u32(vals[OPT_BODY].val.str, &body_id)) {
             fprintf(stderr, "Error: Invalid --body ID '%s'\n", vals[OPT_BODY].val.str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+        if (!iface_validate_behavior_id(&c, body_id)) {
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
     }
@@ -877,6 +904,9 @@ int nmo_cmd_behavior_iface_move_comment(int argc, char **argv, const nmo_cli_glo
             fprintf(stderr, "Error: Invalid --body ID '%s'\n", vals[OPT_BODY].val.str);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
+        if (!iface_validate_behavior_id(&c, body_id)) {
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
     }
 
     nmo_interface_body_t *body = nmo_interface_find_body(idata, body_id);
@@ -965,6 +995,9 @@ int nmo_cmd_behavior_iface_set_comment_style(int argc, char **argv, const nmo_cl
     if (vals[OPT_BODY].present) {
         if (!nmo_tool_parse_u32(vals[OPT_BODY].val.str, &body_id)) {
             fprintf(stderr, "Error: Invalid --body ID '%s'\n", vals[OPT_BODY].val.str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+        if (!iface_validate_behavior_id(&c, body_id)) {
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
     }
@@ -1473,6 +1506,9 @@ int nmo_cmd_behavior_iface_move_param(int argc, char **argv, const nmo_cli_globa
             fprintf(stderr, "Error: Invalid --body ID '%s'\n", vals[OPT_BODY].val.str);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
+        if (!iface_validate_behavior_id(&c, body_id)) {
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
     }
 
     nmo_interface_body_t *body = nmo_interface_find_body(idata, body_id);
@@ -1576,6 +1612,9 @@ int nmo_cmd_behavior_iface_set_param_style(int argc, char **argv, const nmo_cli_
             fprintf(stderr, "Error: Invalid --body ID '%s'\n", vals[OPT_BODY].val.str);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
+        if (!iface_validate_behavior_id(&c, body_id)) {
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
     }
 
     nmo_interface_body_t *body = nmo_interface_find_body(idata, body_id);
@@ -1671,6 +1710,10 @@ int nmo_cmd_behavior_iface_resize(int argc, char **argv, const nmo_cli_global_op
     nmo_interface_data_t *idata = iface_edit_get_data(&c, target_id, NULL);
     if (!idata) return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
 
+    if (!iface_validate_behavior_id(&c, beh_id)) {
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
     if (beh_id == idata->script.behavior_id) {
         fprintf(stderr, "Error: Cannot resize script behavior (no size fields)\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
@@ -1743,6 +1786,10 @@ int nmo_cmd_behavior_iface_set_expand(int argc, char **argv, const nmo_cli_globa
 
     nmo_interface_data_t *idata = iface_edit_get_data(&c, target_id, NULL);
     if (!idata) return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+
+    if (!iface_validate_behavior_id(&c, beh_id)) {
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
 
     if (beh_id == idata->script.behavior_id) {
         fprintf(stderr, "Error: Cannot set expand size for script behavior (no size fields)\n");
@@ -1902,6 +1949,9 @@ int nmo_cmd_behavior_iface_set_graph_io(int argc, char **argv, const nmo_cli_glo
     if (vals[OPT_BODY].present) {
         if (!nmo_tool_parse_u32(vals[OPT_BODY].val.str, &body_id)) {
             fprintf(stderr, "Error: Invalid --body ID '%s'\n", vals[OPT_BODY].val.str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+        if (!iface_validate_behavior_id(&c, body_id)) {
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
     }
