@@ -7,12 +7,12 @@
  * and removal for comments and link routing points.
  *
  * Simple field writes (position, color, fold, style, highlight) are
- * done directly on the public struct fields — see the spec for examples.
+ * done directly on the public struct fields -- see the spec for examples.
  *
  * Version-gated features: the writer silently skips fields unsupported
  * by data->version (e.g., color requires v>=0x14 inline, comment
  * style_flags requires v>=0x16). This API does not enforce version
- * checks — callers should verify data->version before setting gated
+ * checks -- callers should verify data->version before setting gated
  * fields.
  */
 

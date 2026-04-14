@@ -20,10 +20,15 @@
 #include "object/builtin/nmo_animation_schemas.h"
 #include "core/nmo_arena.h"
 
+#include <errno.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#endif
 
 /* ============================================================================
  * Helpers
@@ -808,8 +813,18 @@ static int export_one_animation(nmo_objectanimation_state_t *st,
         return -1;
     }
 
-    fprintf(stderr, "Exported: %s\n", path);
     return 0;
+}
+
+static int anim_ensure_dir(const char *dir_path) {
+    if (!dir_path || !*dir_path) return -1;
+#ifdef _WIN32
+    if (_mkdir(dir_path) == 0) return 0;
+#else
+    if (mkdir(dir_path, 0755) == 0) return 0;
+#endif
+    if (errno == EEXIST) return 0;
+    return -1;
 }
 
 int nmo_cmd_animation_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -846,6 +861,12 @@ int nmo_cmd_animation_export(int argc, char **argv, const nmo_cli_global_opts_t 
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
+    if (anim_ensure_dir(out_dir) < 0) {
+        fprintf(stderr, "Error: Cannot create directory '%s' (%s)\n",
+                out_dir, strerror(errno));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+    }
+
     if (export_all) {
         nmo_object_t **objects = NULL;
         size_t object_count = 0;
@@ -864,7 +885,7 @@ int nmo_cmd_animation_export(int argc, char **argv, const nmo_cli_global_opts_t 
             if (export_one_animation(st, obj, out_dir) == 0)
                 exported++;
         }
-        fprintf(stderr, "Exported %u animations to %s\n", exported, out_dir);
+        fprintf(c.out, "Exported %u animations to %s\n", exported, out_dir);
     } else {
         uint32_t obj_id;
         if (!nmo_tool_parse_u32_dec(id_str, &obj_id)) {

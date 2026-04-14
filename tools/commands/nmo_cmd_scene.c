@@ -251,15 +251,15 @@ int nmo_cmd_scene_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
                 char color_buf[16];
 
                 snprintf(color_buf, sizeof(color_buf), "0x%08X", ss->background_color);
-                yyjson_mut_obj_add_str(doc, data, "background_color", color_buf);
+                yyjson_mut_obj_add_strcpy(doc, data, "background_color", color_buf);
 
                 snprintf(color_buf, sizeof(color_buf), "0x%08X", ss->ambient_light_color);
-                yyjson_mut_obj_add_str(doc, data, "ambient_light_color", color_buf);
+                yyjson_mut_obj_add_strcpy(doc, data, "ambient_light_color", color_buf);
 
                 yyjson_mut_obj_add_str(doc, data, "fog_mode",
                                        fog_mode_str(ss->fog_mode));
                 snprintf(color_buf, sizeof(color_buf), "0x%08X", ss->fog_color);
-                yyjson_mut_obj_add_str(doc, data, "fog_color", color_buf);
+                yyjson_mut_obj_add_strcpy(doc, data, "fog_color", color_buf);
                 yyjson_mut_obj_add_real(doc, data, "fog_start", (double)ss->fog_start);
                 yyjson_mut_obj_add_real(doc, data, "fog_end", (double)ss->fog_end);
                 yyjson_mut_obj_add_real(doc, data, "fog_density", (double)ss->fog_density);

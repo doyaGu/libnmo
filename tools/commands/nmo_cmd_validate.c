@@ -563,7 +563,7 @@ int nmo_cmd_validate_resources(int argc, char **argv, const nmo_cli_global_opts_
 
                 char guid_buf[64];
                 nmo_guid_format(e->guid, guid_buf, sizeof(guid_buf));
-                yyjson_mut_obj_add_str(doc, entry, "guid", guid_buf);
+                yyjson_mut_obj_add_strcpy(doc, entry, "guid", guid_buf);
                 yyjson_mut_obj_add_uint(doc, entry, "category", (uint64_t)e->category);
                 yyjson_mut_obj_add_uint(doc, entry, "required_version", e->required_version);
                 yyjson_mut_obj_add_uint(doc, entry, "resolved_version", e->resolved_version);
@@ -718,10 +718,10 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
 
     /* Step 1: Collect root IDs using tiered strategy.
      *
-     * Tier 1: CKLevel / CKScene  — scene graph roots (main level files)
-     * Tier 2: CKGroup             — container roots (component files)
-     * Tier 3: CK3dEntity/Object   — entity roots
-     * Tier 4: All zero-incoming   — fallback for unusual files
+     * Tier 1: CKLevel / CKScene  -- scene graph roots (main level files)
+     * Tier 2: CKGroup             -- container roots (component files)
+     * Tier 3: CK3dEntity/Object   -- entity roots
+     * Tier 4: All zero-incoming   -- fallback for unusual files
      *
      * Use the first non-empty tier. This ensures component NMO files
      * (which lack CKLevel) still get meaningful orphan analysis.
@@ -1038,7 +1038,7 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
     if (do_strip && likely_orphans > 0) {
         if (likely_orphans >= object_count) {
             if (!c.is_json) {
-                fprintf(c.out, "\nAll objects are orphans — nothing to save.\n");
+                fprintf(c.out, "\nAll objects are orphans - nothing to save.\n");
             }
             if (arena) nmo_arena_destroy(arena);
             return nmo_cmd_ctx_done(&c, exit_code);

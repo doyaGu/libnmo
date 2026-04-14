@@ -852,7 +852,7 @@ static void cycle_dfs_record(cycle_dfs_state_t *st, nmo_object_id_t back_target,
     rec->count = len;
 }
 
-/* Iterative DFS frame — avoids C stack overflow on deep graphs */
+/* Iterative DFS frame -- avoids C stack overflow on deep graphs */
 typedef struct {
     nmo_object_id_t id;
     nmo_ref_kind_t entry_kind;
@@ -890,7 +890,7 @@ static void cycle_dfs_visit(cycle_dfs_state_t *st, nmo_object_id_t start_id,
         dfs_frame_t *f = &frames[frame_top - 1];
 
         if (f->edge_idx >= f->ecount) {
-            /* All edges processed — pop frame, mark BLACK */
+            /* All edges processed -- pop frame, mark BLACK */
             st->stack_size--;
             st->color[f->id] = 2; /* BLACK */
             frame_top--;
@@ -902,10 +902,10 @@ static void cycle_dfs_visit(cycle_dfs_state_t *st, nmo_object_id_t start_id,
         if (target > st->max_id) continue;
 
         if (st->color[target] == 1) {
-            /* Back edge → cycle */
+            /* Back edge -> cycle */
             cycle_dfs_record(st, target, edge->kind);
         } else if (st->color[target] == 0) {
-            /* Unvisited → push new frame */
+            /* Unvisited -> push new frame */
             if (frame_top >= frame_cap || st->stack_size >= frame_cap) continue;
 
             st->color[target] = 1; /* GRAY */

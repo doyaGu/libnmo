@@ -447,7 +447,7 @@ int nmo_cmd_texture_show(int argc, char **argv, const nmo_cli_global_opts_t *glo
                 char color_buf[16];
                 snprintf(color_buf, sizeof(color_buf), "0x%08X",
                          ts->transparent_color);
-                yyjson_mut_obj_add_str(doc, data, "transparent_color", color_buf);
+                yyjson_mut_obj_add_strcpy(doc, data, "transparent_color", color_buf);
             }
             if (ts->has_current_slot) {
                 yyjson_mut_obj_add_int(doc, data, "current_slot", ts->current_slot);
@@ -505,13 +505,13 @@ int nmo_cmd_texture_show(int argc, char **argv, const nmo_cli_global_opts_t *glo
                         {
                             char mask_buf[16];
                             snprintf(mask_buf, sizeof(mask_buf), "0x%08X", rs->red_mask);
-                            yyjson_mut_obj_add_str(doc, slot, "red_mask", mask_buf);
+                            yyjson_mut_obj_add_strcpy(doc, slot, "red_mask", mask_buf);
                             snprintf(mask_buf, sizeof(mask_buf), "0x%08X", rs->green_mask);
-                            yyjson_mut_obj_add_str(doc, slot, "green_mask", mask_buf);
+                            yyjson_mut_obj_add_strcpy(doc, slot, "green_mask", mask_buf);
                             snprintf(mask_buf, sizeof(mask_buf), "0x%08X", rs->blue_mask);
-                            yyjson_mut_obj_add_str(doc, slot, "blue_mask", mask_buf);
+                            yyjson_mut_obj_add_strcpy(doc, slot, "blue_mask", mask_buf);
                             snprintf(mask_buf, sizeof(mask_buf), "0x%08X", rs->alpha_mask);
-                            yyjson_mut_obj_add_str(doc, slot, "alpha_mask", mask_buf);
+                            yyjson_mut_obj_add_strcpy(doc, slot, "alpha_mask", mask_buf);
                         }
                         yyjson_mut_obj_add_uint(doc, slot, "red_size", rs->red_size);
                         yyjson_mut_obj_add_uint(doc, slot, "green_size", rs->green_size);
@@ -1004,7 +1004,7 @@ int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *
             if (ts->bitmap2_slots) {
                 pixels = decode_bitmap2_slot(arena, &ts->bitmap2_slots[0], &w, &h, &ch);
                 if (!pixels) {
-                    /* stb_image failed — try interleaved raw pixel decode.
+                    /* stb_image failed -- try interleaved raw pixel decode.
                      * Use reader dimensions and desired_video_format as hints. */
                     const nmo_texture_bitmap2_slot_t *bs = &ts->bitmap2_slots[0];
                     int32_t expected_bpl = (ts->reader_width > 0 && ts->reader_bpp > 0)

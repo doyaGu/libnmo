@@ -67,7 +67,7 @@ static void add_dsl_value_to_json(yyjson_mut_doc *doc, yyjson_mut_val *parent,
         case NMO_DSL_VALUE_TYPE: {
             char buf[64];
             nmo_core_dsl_format(value, buf, sizeof(buf));
-            yyjson_mut_obj_add_str(doc, parent, key, buf);
+            yyjson_mut_obj_add_strcpy(doc, parent, key, buf);
             break;
         }
 
@@ -110,7 +110,7 @@ static void add_dsl_value_to_json(yyjson_mut_doc *doc, yyjson_mut_val *parent,
         default: {
             char buf[64];
             nmo_core_dsl_format(value, buf, sizeof(buf));
-            yyjson_mut_obj_add_str(doc, parent, key, buf);
+            yyjson_mut_obj_add_strcpy(doc, parent, key, buf);
             break;
         }
     }

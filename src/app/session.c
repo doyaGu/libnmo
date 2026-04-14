@@ -646,7 +646,7 @@ int nmo_session_remove_included_file(
         return rc;
     }
 
-    /* Invalidate shadow blob — it still contains the removed file's data.
+    /* Invalidate shadow blob -- it still contains the removed file's data.
      * Without this, the save pipeline's all_borrowed check would pass
      * and write the stale shadow blob verbatim. */
     if (session->shadow_storage != NULL) {

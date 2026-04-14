@@ -275,11 +275,11 @@ NMO_API nmo_status_t nmo_obj_parse(
             pos[2] = parse_float(&p, end);
         } else if (p[0] == 'f' &&
                    (p + 1 >= end || p[1] == ' ' || p[1] == '\t')) {
-            /* f v1 v2 v3 [v4] */
+            /* f v1 v2 v3 ... (triangles, quads, N-gons) */
             p += 1;
-            nmo_obj_face_vertex_t fverts[4];
+            nmo_obj_face_vertex_t fverts[64];
             int nv = 0;
-            while (nv < 4) {
+            while (nv < 64) {
                 const char *before = p;
                 nmo_obj_face_vertex_t fv;
                 if (!parse_face_vertex(&p, end, &fv,
@@ -291,24 +291,14 @@ NMO_API nmo_status_t nmo_obj_parse(
                 fverts[nv++] = fv;
             }
 
-            if (nv >= 3) {
-                /* First triangle: 0,1,2 */
+            /* Fan triangulation: (0,1,2), (0,2,3), (0,3,4), ... */
+            for (int ti = 0; ti + 2 < nv; ti++) {
                 nmo_obj_face_t *face = (nmo_obj_face_t *)dyn_push(&faces);
                 if (!face) goto oom;
                 face->verts[0] = fverts[0];
-                face->verts[1] = fverts[1];
-                face->verts[2] = fverts[2];
+                face->verts[1] = fverts[ti + 1];
+                face->verts[2] = fverts[ti + 2];
                 face->material_group = current_material;
-
-                /* Quad: second triangle 0,2,3 */
-                if (nv >= 4) {
-                    nmo_obj_face_t *face2 = (nmo_obj_face_t *)dyn_push(&faces);
-                    if (!face2) goto oom;
-                    face2->verts[0] = fverts[0];
-                    face2->verts[1] = fverts[2];
-                    face2->verts[2] = fverts[3];
-                    face2->material_group = current_material;
-                }
             }
         } else if (p + 6 <= end && memcmp(p, "usemtl", 6) == 0 &&
                    (p + 6 >= end || p[6] == ' ' || p[6] == '\t')) {

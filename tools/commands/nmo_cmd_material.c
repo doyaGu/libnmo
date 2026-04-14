@@ -85,7 +85,7 @@ int nmo_cmd_material_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
             if (ms) {
                 char color_buf[16];
                 format_argb(color_buf, sizeof(color_buf), ms->diffuse_color);
-                yyjson_mut_obj_add_str(doc, item, "diffuse", color_buf);
+                yyjson_mut_obj_add_strcpy(doc, item, "diffuse", color_buf);
                 yyjson_mut_obj_add_uint(doc, item, "texture_count",
                                         count_texture_refs(ms->texture_ids, 4));
             }
@@ -206,13 +206,13 @@ int nmo_cmd_material_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             char color_buf[16];
 
             format_argb(color_buf, sizeof(color_buf), ms->diffuse_color);
-            yyjson_mut_obj_add_str(doc, data, "diffuse_color", color_buf);
+            yyjson_mut_obj_add_strcpy(doc, data, "diffuse_color", color_buf);
             format_argb(color_buf, sizeof(color_buf), ms->ambient_color);
-            yyjson_mut_obj_add_str(doc, data, "ambient_color", color_buf);
+            yyjson_mut_obj_add_strcpy(doc, data, "ambient_color", color_buf);
             format_argb(color_buf, sizeof(color_buf), ms->specular_color);
-            yyjson_mut_obj_add_str(doc, data, "specular_color", color_buf);
+            yyjson_mut_obj_add_strcpy(doc, data, "specular_color", color_buf);
             format_argb(color_buf, sizeof(color_buf), ms->emissive_color);
-            yyjson_mut_obj_add_str(doc, data, "emissive_color", color_buf);
+            yyjson_mut_obj_add_strcpy(doc, data, "emissive_color", color_buf);
 
             yyjson_mut_obj_add_real(doc, data, "specular_power",
                                    (double)ms->specular_power);
@@ -235,9 +235,9 @@ int nmo_cmd_material_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
             /* Packed render settings */
             format_argb(color_buf, sizeof(color_buf), ms->packed_modes);
-            yyjson_mut_obj_add_str(doc, data, "packed_modes", color_buf);
+            yyjson_mut_obj_add_strcpy(doc, data, "packed_modes", color_buf);
             format_argb(color_buf, sizeof(color_buf), ms->packed_flags);
-            yyjson_mut_obj_add_str(doc, data, "packed_flags", color_buf);
+            yyjson_mut_obj_add_strcpy(doc, data, "packed_flags", color_buf);
 
             if (ms->has_effect) {
                 yyjson_mut_obj_add_uint(doc, data, "effect", ms->effect);

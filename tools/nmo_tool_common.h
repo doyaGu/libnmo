@@ -199,7 +199,7 @@ typedef int (*nmo_batch_write_handler_t)(
 
 /**
  * Expand output template: replace {} with input basename (no extension).
- * E.g. input="dir/file.cmo", template="{}.stripped.cmo" → "file.stripped.cmo"
+ * E.g. input="dir/file.cmo", template="{}.stripped.cmo" -> "file.stripped.cmo"
  *
  * @return 0 on success, -1 if no {} in template with multiple files
  */

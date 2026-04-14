@@ -170,7 +170,7 @@ int nmo_cmd_file_header(int argc, char **argv, const nmo_cli_global_opts_t *glob
         char sig_buf[9];
         memcpy(sig_buf, header->signature, 8);
         sig_buf[8] = '\0';
-        yyjson_mut_obj_add_str(doc, data, "signature", sig_buf);
+        yyjson_mut_obj_add_strcpy(doc, data, "signature", sig_buf);
         yyjson_mut_obj_add_uint(doc, data, "file_version", header->file_version);
         yyjson_mut_obj_add_uint(doc, data, "file_version2", header->file_version2);
         yyjson_mut_obj_add_uint(doc, data, "ck_version", header->ck_version);
@@ -595,7 +595,7 @@ int nmo_cmd_file_plugins(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
                 char guid_buf[64];
                 nmo_guid_format(e->guid, guid_buf, sizeof(guid_buf));
-                yyjson_mut_obj_add_str(doc, entry, "guid", guid_buf);
+                yyjson_mut_obj_add_strcpy(doc, entry, "guid", guid_buf);
                 if (e->resolved_name) {
                     yyjson_mut_obj_add_str(doc, entry, "name", e->resolved_name);
                 }

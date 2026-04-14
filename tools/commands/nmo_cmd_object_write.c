@@ -967,7 +967,7 @@ int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *glob
     int rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
     if (rc) return rc;
 
-    /* Collect target IDs — same pattern as object delete */
+    /* Collect target IDs -- same pattern as object delete */
     nmo_object_id_t *target_ids = NULL;
     size_t target_count = 0;
     bool target_ids_owned = false;

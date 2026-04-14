@@ -1540,7 +1540,7 @@ static int cmd_set_param(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
-    /* Get parameter state — navigate to nmo_parameter_state_t base */
+    /* Get parameter state -- navigate to nmo_parameter_state_t base */
     void *data = nmo_object_get_data(obj);
     if (!data) { fprintf(stderr, "Error: No data for parameter\n"); return -1; }
 

@@ -934,7 +934,15 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
     for (uint32_t gi = 0; gi < mat_group_count; gi++) {
-        mat_groups[gi].material_id = 0; /* unresolved for now */
+        mat_groups[gi].material_id = 0;
+        /* Resolve material by OBJ usemtl name -> NMO CKMaterial name match */
+        if (gi < obj_data.material_name_count && obj_data.material_names[gi]) {
+            nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+            nmo_object_t *mat = nmo_object_repository_find_by_name(repo, obj_data.material_names[gi]);
+            if (mat && nmo_object_get_class_id(mat) == NMO_CID_MATERIAL) {
+                mat_groups[gi].material_id = nmo_object_get_id(mat);
+            }
+        }
     }
 
     /* Compute bounds */

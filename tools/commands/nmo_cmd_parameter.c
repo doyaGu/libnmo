@@ -480,7 +480,7 @@ int nmo_cmd_parameter_show(int argc, char **argv, const nmo_cli_global_opts_t *g
             }
 
             if (hex_dump[0]) {
-                yyjson_mut_obj_add_str(doc, data, "hex", hex_dump);
+                yyjson_mut_obj_add_strcpy(doc, data, "hex", hex_dump);
             }
         }
 
@@ -827,7 +827,7 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
 
         if (c.is_json) {
-            /* Emit JSON object per parameter — mirrors parameter show JSON */
+            /* Emit JSON object per parameter -- mirrors parameter show JSON */
             yyjson_mut_val *item = yyjson_mut_obj(doc);
             nmo_object_id_t oid = nmo_object_get_id(obj);
             yyjson_mut_obj_add_uint(doc, item, "id", oid);

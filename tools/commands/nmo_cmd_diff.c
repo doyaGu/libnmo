@@ -379,7 +379,7 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
 }
 
 /* ============================================================================
- * diff objects �?thin CLI wrapper over nmo_diff_objects() library API
+ * diff objects -- thin CLI wrapper over nmo_diff_objects() library API
  * ============================================================================ */
 
 int nmo_cmd_diff_objects(int argc, char **argv, const nmo_cli_global_opts_t *global)

@@ -347,11 +347,11 @@ int nmo_cmd_entity_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
                                            light_type_str(ls->light_data.type));
                     char cbuf[64];
                     format_color_rgba(cbuf, sizeof(cbuf), &ls->light_data.diffuse);
-                    yyjson_mut_obj_add_str(doc, data, "light_diffuse", cbuf);
+                    yyjson_mut_obj_add_strcpy(doc, data, "light_diffuse", cbuf);
                     format_color_rgba(cbuf, sizeof(cbuf), &ls->light_data.specular);
-                    yyjson_mut_obj_add_str(doc, data, "light_specular", cbuf);
+                    yyjson_mut_obj_add_strcpy(doc, data, "light_specular", cbuf);
                     format_color_rgba(cbuf, sizeof(cbuf), &ls->light_data.ambient);
-                    yyjson_mut_obj_add_str(doc, data, "light_ambient", cbuf);
+                    yyjson_mut_obj_add_strcpy(doc, data, "light_ambient", cbuf);
                     yyjson_mut_obj_add_real(doc, data, "light_range",
                                            (double)ls->light_data.range);
                     yyjson_mut_obj_add_real(doc, data, "attenuation0",

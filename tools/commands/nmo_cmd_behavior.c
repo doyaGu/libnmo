@@ -1,6 +1,6 @@
 /**
  * @file nmo_cmd_behavior.c
- * @brief CLI behavior command group — shared helpers, list, and stats
+ * @brief CLI behavior command group -- shared helpers, list, and stats
  */
 
 #include "nmo_cmd_behavior.h"

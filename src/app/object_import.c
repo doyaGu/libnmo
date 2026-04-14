@@ -626,7 +626,7 @@ nmo_status_t nmo_object_import_json(
                          "JSON root must be an object");
     }
 
-    /* Get "objects" array — support both flat format and envelope format.
+    /* Get "objects" array -- support both flat format and envelope format.
      * Flat:     {"objects": [...]}
      * Envelope: {"data": {"objects": [...]}} (from nmo --format json object export) */
     yyjson_val *objects_arr = yyjson_obj_get(root, "objects");
