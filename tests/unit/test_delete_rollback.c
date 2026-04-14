@@ -177,8 +177,95 @@ TEST(delete_rollback, all_hooks_pass) {
     nmo_context_release(ctx);
 }
 
+/**
+ * CASCADE delete should remove orphaned included files whose owners are all gone.
+ */
+TEST(delete_rollback, cascade_removes_orphaned_included_files) {
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    /* Create an object that will own an included file */
+    nmo_object_id_t owner_id = 0;
+    ASSERT_EQ(NMO_OK,
+        nmo_session_create_object(session, 1, "texture-owner",
+            (nmo_guid_t){0, 0}, &owner_id, NULL));
+
+    /* Add an included file owned by this object */
+    const char payload[] = "fake-texture-data";
+    nmo_included_file_metadata_t meta = {0};
+    meta.owner_ids = &owner_id;
+    meta.owner_count = 1;
+    ASSERT_EQ(NMO_OK,
+        nmo_session_add_included_file_ex(session, "texture.bmp",
+            payload, sizeof(payload), &meta));
+
+    /* Verify the file exists */
+    uint32_t file_count = 0;
+    nmo_session_get_included_files(session, &file_count);
+    ASSERT_EQ(1u, file_count);
+
+    /* Delete the owner with CASCADE — should also remove the included file */
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_OK,
+        nmo_session_destroy_objects(session, &owner_id, 1,
+            NMO_RUNTIME_REQUEST_CASCADE, &report));
+    ASSERT_EQ(1u, report.deleted_objects);
+
+    /* Included file should be gone */
+    nmo_session_get_included_files(session, &file_count);
+    ASSERT_EQ(0u, file_count);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+/**
+ * Non-CASCADE delete should NOT remove included files (even if owner is deleted).
+ */
+TEST(delete_rollback, non_cascade_preserves_included_files) {
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t owner_id = 0;
+    ASSERT_EQ(NMO_OK,
+        nmo_session_create_object(session, 1, "texture-owner",
+            (nmo_guid_t){0, 0}, &owner_id, NULL));
+
+    const char payload[] = "fake-texture-data";
+    nmo_included_file_metadata_t meta = {0};
+    meta.owner_ids = &owner_id;
+    meta.owner_count = 1;
+    ASSERT_EQ(NMO_OK,
+        nmo_session_add_included_file_ex(session, "texture.bmp",
+            payload, sizeof(payload), &meta));
+
+    /* Delete owner WITHOUT CASCADE */
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_OK,
+        nmo_session_destroy_objects(session, &owner_id, 1,
+            NMO_RUNTIME_REQUEST_DEFAULT, &report));
+
+    /* Included file should still exist */
+    uint32_t file_count = 0;
+    nmo_session_get_included_files(session, &file_count);
+    ASSERT_EQ(1u, file_count);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(delete_rollback, pre_delete_failure_strict_no_detach);
     REGISTER_TEST(delete_rollback, pre_delete_failure_non_strict_proceeds);
     REGISTER_TEST(delete_rollback, all_hooks_pass);
+    REGISTER_TEST(delete_rollback, cascade_removes_orphaned_included_files);
+    REGISTER_TEST(delete_rollback, non_cascade_preserves_included_files);
 TEST_MAIN_END()

@@ -403,5 +403,38 @@ int nmo_runtime_execute_delete(
         }
     }
 
+    /* Clean up included files whose owners are all deleted.
+     * Iterate in reverse so index shifts from remove don't skip entries. */
+    if (request->flags & NMO_RUNTIME_REQUEST_CASCADE) {
+        uint32_t file_count = 0;
+        nmo_included_file_t *files = nmo_session_get_included_files(session, &file_count);
+        for (uint32_t fi = file_count; fi > 0; fi--) {
+            nmo_included_file_t *f = &files[fi - 1];
+            if (f->owner_ids.count == 0) {
+                continue; /* no owners recorded — not managed */
+            }
+            const nmo_object_id_t *owners =
+                (const nmo_object_id_t *)f->owner_ids.data;
+            bool any_alive = false;
+            for (size_t oi = 0; oi < f->owner_ids.count; oi++) {
+                if (nmo_object_repository_find_by_id(repo, owners[oi]) != NULL) {
+                    any_alive = true;
+                    break;
+                }
+            }
+            if (!any_alive) {
+                if (logger != NULL) {
+                    nmo_log(logger, NMO_LOG_DEBUG,
+                            "Removing orphaned included file %u (%s): all owners deleted",
+                            fi - 1, f->name ? f->name : "<unnamed>");
+                }
+                nmo_session_remove_included_file(session, fi - 1);
+                if (report != NULL) {
+                    report->affected_objects++;
+                }
+            }
+        }
+    }
+
     return NMO_OK;
 }
