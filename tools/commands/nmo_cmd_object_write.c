@@ -527,17 +527,14 @@ static int delete_batch_handler(
     memset(&query, 0, sizeof(query));
     nmo_core_query_dsl_t query_dsl = {0};
     if (ctx->has_class) {
-        query.class_id = nmo_core_class_id(&c, ctx->class_str);
-        if (!query.class_id) {
+        if (nmo_core_query_set_class_name(
+                &c, &query, ctx->class_str, true) != NMO_OK) {
             fprintf(stderr, "Error: Unknown class '%s'\n", ctx->class_str);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
-        query.include_derived_classes = true;
     }
     if (ctx->has_name) {
-        query.name = ctx->name_str;
-        query.name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD;
-        query.name_case_insensitive = true;
+        nmo_core_query_set_name_wildcard(&query, ctx->name_str);
     }
     if (ctx->has_filter) {
         nmo_status_t st =
@@ -672,17 +669,14 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
         nmo_core_query_dsl_t query_dsl = {0};
 
         if (vals[OPT_CLASS].present) {
-            query.class_id = nmo_core_class_id(&c, vals[OPT_CLASS].val.str);
-            if (!query.class_id) {
+            if (nmo_core_query_set_class_name(
+                    &c, &query, vals[OPT_CLASS].val.str, true) != NMO_OK) {
                 fprintf(stderr, "Error: Unknown class '%s'\n", vals[OPT_CLASS].val.str);
                 return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
             }
-            query.include_derived_classes = true;
         }
         if (vals[OPT_NAME].present) {
-            query.name = vals[OPT_NAME].val.str;
-            query.name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD;
-            query.name_case_insensitive = true;
+            nmo_core_query_set_name_wildcard(&query, vals[OPT_NAME].val.str);
         }
         if (vals[OPT_FILTER].present) {
             nmo_status_t st = nmo_core_query_add_dsl_filter(
@@ -1119,17 +1113,14 @@ int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *glob
         nmo_core_query_dsl_t query_dsl = {0};
 
         if (vals[OPT_CLASS].present) {
-            query.class_id = nmo_core_class_id(&c, vals[OPT_CLASS].val.str);
-            if (!query.class_id) {
+            if (nmo_core_query_set_class_name(
+                    &c, &query, vals[OPT_CLASS].val.str, true) != NMO_OK) {
                 fprintf(stderr, "Error: Unknown class '%s'\n", vals[OPT_CLASS].val.str);
                 return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
             }
-            query.include_derived_classes = true;
         }
         if (vals[OPT_NAME].present) {
-            query.name = vals[OPT_NAME].val.str;
-            query.name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD;
-            query.name_case_insensitive = true;
+            nmo_core_query_set_name_wildcard(&query, vals[OPT_NAME].val.str);
         }
         if (vals[OPT_FILTER].present) {
             nmo_status_t st = nmo_core_query_add_dsl_filter(

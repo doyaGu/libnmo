@@ -108,6 +108,55 @@ static bool nmo_core_object_query_dsl_predicate(
     return match;
 }
 
+nmo_status_t nmo_core_query_set_class_name(
+    const nmo_cmd_ctx_t *c,
+    nmo_object_query_t *query,
+    const char *class_name,
+    bool include_derived)
+{
+    if (c == NULL || query == NULL || class_name == NULL || class_name[0] == '\0') {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_class_id_t class_id = nmo_core_class_id(c, class_name);
+    if (class_id == 0) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    query->class_id = class_id;
+    query->include_derived_classes = include_derived;
+    return NMO_OK;
+}
+
+void nmo_core_query_set_name_wildcard(
+    nmo_object_query_t *query,
+    const char *pattern)
+{
+    if (query == NULL) {
+        return;
+    }
+    if (pattern == NULL) {
+        query->name = NULL;
+        query->name_mode = NMO_OBJECT_QUERY_NAME_NONE;
+        query->name_case_insensitive = false;
+        return;
+    }
+
+    query->name = pattern;
+    query->name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD;
+    query->name_case_insensitive = true;
+}
+
+void nmo_core_query_set_object_id(
+    nmo_object_query_t *query,
+    nmo_object_id_t object_id)
+{
+    if (query == NULL) {
+        return;
+    }
+    query->object_id = object_id;
+}
+
 nmo_status_t nmo_core_query_add_dsl_filter(
     const nmo_cmd_ctx_t *c,
     nmo_object_query_t *query,

@@ -866,12 +866,10 @@ int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *
         .include_derived_classes = true
     };
     if (filter_id) {
-        query.object_id = filter_id;
+        nmo_core_query_set_object_id(&query, filter_id);
     }
     if (name_pat) {
-        query.name = name_pat;
-        query.name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD;
-        query.name_case_insensitive = true;
+        nmo_core_query_set_name_wildcard(&query, name_pat);
     }
 
     texture_list_t tl = {0};

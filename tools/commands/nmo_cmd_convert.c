@@ -825,17 +825,14 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     nmo_object_query_t query = {0};
     nmo_core_query_dsl_t query_dsl = {0};
     if (class_filter_str) {
-        query.class_id = nmo_core_class_id(&c, class_filter_str);
-        if (!query.class_id) {
+        if (nmo_core_query_set_class_name(
+                &c, &query, class_filter_str, true) != NMO_OK) {
             fprintf(stderr, "Error: Unknown class '%s'\n", class_filter_str);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
-        query.include_derived_classes = true;
     }
     if (name_pattern) {
-        query.name = name_pattern;
-        query.name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD;
-        query.name_case_insensitive = true;
+        nmo_core_query_set_name_wildcard(&query, name_pattern);
     }
     if (filter_expr) {
         nmo_status_t st =

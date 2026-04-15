@@ -101,6 +101,29 @@ typedef struct nmo_core_query_dsl {
 } nmo_core_query_dsl_t;
 
 /**
+ * @brief Set query class filter from a CLI class name.
+ */
+nmo_status_t nmo_core_query_set_class_name(
+    const nmo_cmd_ctx_t *c,
+    nmo_object_query_t *query,
+    const char *class_name,
+    bool include_derived);
+
+/**
+ * @brief Set query name filter to the CLI wildcard semantics.
+ */
+void nmo_core_query_set_name_wildcard(
+    nmo_object_query_t *query,
+    const char *pattern);
+
+/**
+ * @brief Set query object ID filter.
+ */
+void nmo_core_query_set_object_id(
+    nmo_object_query_t *query,
+    nmo_object_id_t object_id);
+
+/**
  * @brief Compile a DSL expression and attach it as query->predicate.
  */
 nmo_status_t nmo_core_query_add_dsl_filter(
@@ -118,7 +141,7 @@ void nmo_core_query_dsl_destroy(nmo_core_query_dsl_t *dsl);
  * @brief Iterate objects with optional filtering and visitor callback
  *
  * @param c       Command context
- * @param filter  Filter criteria (NULL = match all)
+ * @param query   Query criteria (NULL = match all)
  * @param visitor Callback per matched object (NULL = count only)
  * @param user    User data passed to visitor
  * @param result  Output counters (NULL = don't collect)

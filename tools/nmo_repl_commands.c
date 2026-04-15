@@ -399,8 +399,8 @@ static int cmd_list(nmo_repl_context_t *repl, int argc, char **argv) {
             if (isdigit((unsigned char)token[0]) || token[0] == '-') {
                 query.class_id = (nmo_class_id_t)atoi(token);
             } else {
-                query.class_id = nmo_core_class_id(&c, token);
-                if (query.class_id == 0) {
+                if (nmo_core_query_set_class_name(
+                        &c, &query, token, false) != NMO_OK) {
                     fprintf(stderr, "Unknown class: %s\n", token);
                     fprintf(stderr, "Tip: use a numeric class_id or a known type name (e.g. CKCamera).\n");
                     return -1;
@@ -592,8 +592,8 @@ static int cmd_find(nmo_repl_context_t *repl, int argc, char **argv) {
         if (isdigit((unsigned char)arg[0]) || arg[0] == '-') {
             query.class_id = (nmo_class_id_t)atoi(arg);
         } else {
-            query.class_id = nmo_core_class_id(&c, arg);
-            if (query.class_id == 0) {
+            if (nmo_core_query_set_class_name(
+                    &c, &query, arg, false) != NMO_OK) {
                 fprintf(stderr, "Unknown class: %s\n", arg);
                 return -1;
             }
@@ -602,7 +602,7 @@ static int cmd_find(nmo_repl_context_t *repl, int argc, char **argv) {
     } else if (strcmp(token, "id") == 0 && argc > 2) {
         uint32_t id_val = 0;
         if (nmo_repl_parse_u32(argv[2], &id_val)) {
-            query.object_id = (nmo_object_id_t)id_val;
+            nmo_core_query_set_object_id(&query, (nmo_object_id_t)id_val);
         }
     } else {
         size_t len = strlen(token);
