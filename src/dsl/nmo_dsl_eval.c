@@ -186,7 +186,7 @@ static bool resolve_repeated_field_view(
 
     nmo_guid_t elem_guid = field->type_guid;
     if (struct_field &&
-        nmo_guid_equals(struct_field->type_guid, NMO_TYPE_GUID_POINTER) &&
+        nmo_guid_equals(struct_field->type_guid, CKPGUID_POINTER) &&
         !nmo_guid_is_null(struct_field->pointee_guid)) {
         elem_guid = struct_field->pointee_guid;
     }
@@ -504,19 +504,19 @@ static bool op_arg_to_native(
         if (buf_size < sizeof(int32_t)) return false;
         int32_t iv = (int32_t)arg->as.i;
         memcpy(buf, &iv, sizeof(iv));
-        *out_type = nmo_type_registry_find_by_guid(ev->ctx->registry, NMO_TYPE_GUID_INT);
+        *out_type = nmo_type_registry_find_by_guid(ev->ctx->registry, CKPGUID_INT);
         *out_ptr = buf;
     } else if (arg->kind == NMO_DSL_VALUE_REAL) {
         if (buf_size < sizeof(float)) return false;
         float fv = (float)arg->as.r;
         memcpy(buf, &fv, sizeof(fv));
-        *out_type = nmo_type_registry_find_by_guid(ev->ctx->registry, NMO_TYPE_GUID_FLOAT);
+        *out_type = nmo_type_registry_find_by_guid(ev->ctx->registry, CKPGUID_FLOAT);
         *out_ptr = buf;
     } else if (arg->kind == NMO_DSL_VALUE_BOOL) {
         if (buf_size < sizeof(bool)) return false;
         bool bv = arg->as.b;
         memcpy(buf, &bv, sizeof(bv));
-        *out_type = nmo_type_registry_find_by_guid(ev->ctx->registry, NMO_TYPE_GUID_BOOL);
+        *out_type = nmo_type_registry_find_by_guid(ev->ctx->registry, CKPGUID_BOOL);
         *out_ptr = buf;
     } else if (arg->kind == NMO_DSL_VALUE_BYREF && arg->as.byref.type && arg->as.byref.ptr) {
         *out_type = arg->as.byref.type;
@@ -542,67 +542,67 @@ static bool op_result_to_dsl_value(
     if (!ev || !result_type || !result_data || !out) return false;
     nmo_guid_t guid = result_type->guid;
 
-    if (nmo_guid_equals(guid, NMO_TYPE_GUID_BOOL)) {
+    if (nmo_guid_equals(guid, CKPGUID_BOOL)) {
         out->kind = NMO_DSL_VALUE_BOOL;
         out->as.b = *(const bool *)result_data;
         return true;
     }
 
-    if (nmo_guid_equals(guid, NMO_TYPE_GUID_INT8)) {
+    if (nmo_guid_equals(guid, CKPGUID_INT8)) {
         out->kind = NMO_DSL_VALUE_INT;
         out->as.i = *(const int8_t *)result_data;
         return true;
     }
-    if (nmo_guid_equals(guid, NMO_TYPE_GUID_INT16)) {
+    if (nmo_guid_equals(guid, CKPGUID_INT16)) {
         out->kind = NMO_DSL_VALUE_INT;
         out->as.i = *(const int16_t *)result_data;
         return true;
     }
-    if (nmo_guid_equals(guid, NMO_TYPE_GUID_INT)) {
+    if (nmo_guid_equals(guid, CKPGUID_INT)) {
         out->kind = NMO_DSL_VALUE_INT;
         out->as.i = *(const int32_t *)result_data;
         return true;
     }
-    if (nmo_guid_equals(guid, NMO_TYPE_GUID_INT64)) {
+    if (nmo_guid_equals(guid, CKPGUID_INT64)) {
         out->kind = NMO_DSL_VALUE_INT;
         out->as.i = *(const int64_t *)result_data;
         return true;
     }
 
-    if (nmo_guid_equals(guid, NMO_TYPE_GUID_UINT8)) {
+    if (nmo_guid_equals(guid, CKPGUID_UINT8)) {
         out->kind = NMO_DSL_VALUE_UINT;
         out->as.u = *(const uint8_t *)result_data;
         return true;
     }
-    if (nmo_guid_equals(guid, NMO_TYPE_GUID_UINT16)) {
+    if (nmo_guid_equals(guid, CKPGUID_UINT16)) {
         out->kind = NMO_DSL_VALUE_UINT;
         out->as.u = *(const uint16_t *)result_data;
         return true;
     }
-    if (nmo_guid_equals(guid, NMO_TYPE_GUID_UINT32) ||
-        nmo_guid_equals(guid, NMO_TYPE_GUID_OBJECT_ID)) {
+    if (nmo_guid_equals(guid, CKPGUID_UINT32) ||
+        nmo_guid_equals(guid, CKPGUID_ID)) {
         out->kind = NMO_DSL_VALUE_UINT;
         out->as.u = *(const uint32_t *)result_data;
         return true;
     }
-    if (nmo_guid_equals(guid, NMO_TYPE_GUID_UINT64)) {
+    if (nmo_guid_equals(guid, CKPGUID_UINT64)) {
         out->kind = NMO_DSL_VALUE_UINT;
         out->as.u = *(const uint64_t *)result_data;
         return true;
     }
 
-    if (nmo_guid_equals(guid, NMO_TYPE_GUID_FLOAT)) {
+    if (nmo_guid_equals(guid, CKPGUID_FLOAT)) {
         out->kind = NMO_DSL_VALUE_REAL;
         out->as.r = (double)*(const float *)result_data;
         return true;
     }
-    if (nmo_guid_equals(guid, NMO_TYPE_GUID_DOUBLE)) {
+    if (nmo_guid_equals(guid, CKPGUID_DOUBLE)) {
         out->kind = NMO_DSL_VALUE_REAL;
         out->as.r = *(const double *)result_data;
         return true;
     }
 
-    if (nmo_guid_equals(guid, NMO_TYPE_GUID_STRING)) {
+    if (nmo_guid_equals(guid, CKPGUID_STRING)) {
         const char *src = *(const char *const *)result_data;
         out->kind = NMO_DSL_VALUE_STRING;
         out->as.s = eval_strdup(src ? src : "");
@@ -799,29 +799,29 @@ static bool eval_call(nmo_dsl_eval_state_t *ev, const nmo_dsl_call_t *call, nmo_
                 }
                 break;
             case NMO_DSL_VALUE_INT:
-                out->as.type_handle.guid = NMO_TYPE_GUID_INT64;
+                out->as.type_handle.guid = CKPGUID_INT64;
                 out->as.type_handle.type = nmo_type_registry_find_by_guid(
-                    ev->ctx->registry, NMO_TYPE_GUID_INT64);
+                    ev->ctx->registry, CKPGUID_INT64);
                 break;
             case NMO_DSL_VALUE_UINT:
-                out->as.type_handle.guid = NMO_TYPE_GUID_UINT64;
+                out->as.type_handle.guid = CKPGUID_UINT64;
                 out->as.type_handle.type = nmo_type_registry_find_by_guid(
-                    ev->ctx->registry, NMO_TYPE_GUID_UINT64);
+                    ev->ctx->registry, CKPGUID_UINT64);
                 break;
             case NMO_DSL_VALUE_REAL:
-                out->as.type_handle.guid = NMO_TYPE_GUID_DOUBLE;
+                out->as.type_handle.guid = CKPGUID_DOUBLE;
                 out->as.type_handle.type = nmo_type_registry_find_by_guid(
-                    ev->ctx->registry, NMO_TYPE_GUID_DOUBLE);
+                    ev->ctx->registry, CKPGUID_DOUBLE);
                 break;
             case NMO_DSL_VALUE_BOOL:
-                out->as.type_handle.guid = NMO_TYPE_GUID_BOOL;
+                out->as.type_handle.guid = CKPGUID_BOOL;
                 out->as.type_handle.type = nmo_type_registry_find_by_guid(
-                    ev->ctx->registry, NMO_TYPE_GUID_BOOL);
+                    ev->ctx->registry, CKPGUID_BOOL);
                 break;
             case NMO_DSL_VALUE_STRING:
-                out->as.type_handle.guid = NMO_TYPE_GUID_STRING;
+                out->as.type_handle.guid = CKPGUID_STRING;
                 out->as.type_handle.type = nmo_type_registry_find_by_guid(
-                    ev->ctx->registry, NMO_TYPE_GUID_STRING);
+                    ev->ctx->registry, CKPGUID_STRING);
                 break;
             default:
                 out->kind = NMO_DSL_VALUE_NULL;
@@ -844,11 +844,11 @@ static bool eval_call(nmo_dsl_eval_state_t *ev, const nmo_dsl_call_t *call, nmo_
         } else if (ev->ctx->registry) {
             /* Try to look up by GUID for primitive literals */
             nmo_guid_t g = {0, 0};
-            if (args[0].kind == NMO_DSL_VALUE_INT) g = NMO_TYPE_GUID_INT64;
-            else if (args[0].kind == NMO_DSL_VALUE_UINT) g = NMO_TYPE_GUID_UINT64;
-            else if (args[0].kind == NMO_DSL_VALUE_REAL) g = NMO_TYPE_GUID_DOUBLE;
-            else if (args[0].kind == NMO_DSL_VALUE_BOOL) g = NMO_TYPE_GUID_BOOL;
-            else if (args[0].kind == NMO_DSL_VALUE_STRING) g = NMO_TYPE_GUID_STRING;
+            if (args[0].kind == NMO_DSL_VALUE_INT) g = CKPGUID_INT64;
+            else if (args[0].kind == NMO_DSL_VALUE_UINT) g = CKPGUID_UINT64;
+            else if (args[0].kind == NMO_DSL_VALUE_REAL) g = CKPGUID_DOUBLE;
+            else if (args[0].kind == NMO_DSL_VALUE_BOOL) g = CKPGUID_BOOL;
+            else if (args[0].kind == NMO_DSL_VALUE_STRING) g = CKPGUID_STRING;
             tname = nmo_type_registry_guid_to_name(ev->ctx->registry, g);
         }
         out->kind = NMO_DSL_VALUE_STRING;

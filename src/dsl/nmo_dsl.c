@@ -589,7 +589,7 @@ static nmo_status_t schema_apply_enum_decl(
     }
 
     nmo_status_t st = schema_validate_underlying_type(
-        ctx->registry, decl->underlying_type, NMO_TYPE_GUID_INT, "enum", "int32");
+        ctx->registry, decl->underlying_type, CKPGUID_INT, "enum", "int32");
     if (st != NMO_OK) return st;
 
     nmo_enum_value_def_t *values = NULL;
@@ -630,7 +630,7 @@ static nmo_status_t schema_apply_flags_decl(
     }
 
     nmo_status_t st = schema_validate_underlying_type(
-        ctx->registry, decl->underlying_type, NMO_TYPE_GUID_UINT32, "flags", "uint32");
+        ctx->registry, decl->underlying_type, CKPGUID_UINT32, "flags", "uint32");
     if (st != NMO_OK) return st;
 
     nmo_flags_bit_def_t *bits = NULL;

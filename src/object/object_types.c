@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file object_types.c
  * @brief Implementation of Virtools object type registration
  * 
@@ -272,7 +272,7 @@ nmo_status_t nmo_register_object_types(nmo_type_registry_t *registry) {
     NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
-    NMO_ENSURE(nmo_type_registry_find_by_guid(registry, NMO_TYPE_GUID_INT) != NULL,
+    NMO_ENSURE(nmo_type_registry_find_by_guid(registry, CKPGUID_INT) != NULL,
                NMO_ERR_INVALID_STATE,
                NMO_SEVERITY_ERROR,
                "Builtin types must be registered before object types");

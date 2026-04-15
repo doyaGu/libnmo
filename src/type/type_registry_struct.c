@@ -110,7 +110,7 @@ static nmo_status_t validate_struct_field_consistency(
                                  "Array field '%s' missing repeated flag", s->name);
             }
         } else if ((t->flags & NMO_FIELD_REPEATED) != 0u) {
-            if (nmo_guid_equals(s->type_guid, NMO_TYPE_GUID_POINTER)) {
+            if (nmo_guid_equals(s->type_guid, CKPGUID_POINTER)) {
                 continue;
             }
             NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -191,7 +191,7 @@ nmo_status_t nmo_type_calculate_layout(
             array_count = parse_result.array_count;
 
             if (parse_result.is_pointer) {
-                field_type_guid = NMO_TYPE_GUID_POINTER;
+                field_type_guid = CKPGUID_POINTER;
             }
         } else if (!nmo_guid_is_null(field->type_guid)) {
             field_type_guid = field->type_guid;
@@ -388,7 +388,7 @@ nmo_status_t nmo_type_registry_register_struct(
                 if (parse_result.is_pointer) {
                     pointee_guid = parse_result.base_type_guid;
                     pointer_depth = parse_result.pointer_depth;
-                    field_type_guid = NMO_TYPE_GUID_POINTER;
+                    field_type_guid = CKPGUID_POINTER;
                 }
             }
         }
@@ -794,7 +794,7 @@ nmo_status_t nmo_type_registry_finalize_struct(
             }
             field->type_guid = parse_result.base_type_guid;
             if (parse_result.is_pointer) {
-                field->type_guid = NMO_TYPE_GUID_POINTER;
+                field->type_guid = CKPGUID_POINTER;
             }
         }
     }
@@ -848,7 +848,7 @@ nmo_status_t nmo_type_registry_finalize_struct(
                 if (parse_result.is_pointer) {
                     pointee_guid = parse_result.base_type_guid;
                     pointer_depth = parse_result.pointer_depth;
-                    field_type_guid = NMO_TYPE_GUID_POINTER;
+                    field_type_guid = CKPGUID_POINTER;
                 }
             }
         }
@@ -1153,7 +1153,7 @@ nmo_status_t nmo_type_registry_register_union(
             field_type_guid = parse_result.base_type_guid;
             array_count = parse_result.array_count;
             if (parse_result.is_pointer) {
-                field_type_guid = NMO_TYPE_GUID_POINTER;
+                field_type_guid = CKPGUID_POINTER;
             }
         }
 
@@ -1228,7 +1228,7 @@ nmo_status_t nmo_type_registry_register_union(
                 if (parse_result.is_pointer) {
                     pointee_guid = parse_result.base_type_guid;
                     pointer_depth = parse_result.pointer_depth;
-                    field_type_guid = NMO_TYPE_GUID_POINTER;
+                    field_type_guid = CKPGUID_POINTER;
                 }
             }
         }

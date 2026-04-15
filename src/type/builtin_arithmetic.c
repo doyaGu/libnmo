@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file builtin_arithmetic.c
  * @brief Builtin arithmetic operations implementation
  *
@@ -494,207 +494,207 @@ nmo_status_t nmo_register_arithmetic_operations(
 
     /* Signed integers */
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_ADD, "Add", "INT8 addition: a + b",
-                    NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_OP_BINARY, 100, op_add_int8);
+                    CKPGUID_INT8, CKPGUID_INT8, CKPGUID_INT8, NMO_OP_BINARY, 100, op_add_int8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_SUBTRACT, "Subtract", "INT8 subtraction: a - b",
-                    NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_OP_BINARY, 100, op_subtract_int8);
+                    CKPGUID_INT8, CKPGUID_INT8, CKPGUID_INT8, NMO_OP_BINARY, 100, op_subtract_int8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MULTIPLY, "Multiply", "INT8 multiplication: a * b",
-                    NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_OP_BINARY, 100, op_multiply_int8);
+                    CKPGUID_INT8, CKPGUID_INT8, CKPGUID_INT8, NMO_OP_BINARY, 100, op_multiply_int8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_DIVIDE, "Divide", "INT8 division: a / b",
-                    NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_OP_BINARY, 100, op_divide_int8);
+                    CKPGUID_INT8, CKPGUID_INT8, CKPGUID_INT8, NMO_OP_BINARY, 100, op_divide_int8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MODULO, "Modulo", "INT8 modulo: a %% b",
-                    NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_OP_BINARY, 100, op_modulo_int8);
+                    CKPGUID_INT8, CKPGUID_INT8, CKPGUID_INT8, NMO_OP_BINARY, 100, op_modulo_int8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NEGATE, "Negate", "INT8 negation: -a",
-                    NMO_TYPE_GUID_INT8, (nmo_guid_t){0, 0}, NMO_TYPE_GUID_INT8, NMO_OP_UNARY, 100, op_negate_int8);
+                    CKPGUID_INT8, (nmo_guid_t){0, 0}, CKPGUID_INT8, NMO_OP_UNARY, 100, op_negate_int8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_ABS, "Abs", "INT8 absolute value: |a|",
-                    NMO_TYPE_GUID_INT8, (nmo_guid_t){0, 0}, NMO_TYPE_GUID_INT8, NMO_OP_UNARY, 100, op_abs_int8);
+                    CKPGUID_INT8, (nmo_guid_t){0, 0}, CKPGUID_INT8, NMO_OP_UNARY, 100, op_abs_int8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_POWER, "Power", "INT8 power: a^b",
-                    NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_OP_BINARY, 100, op_power_int8);
+                    CKPGUID_INT8, CKPGUID_INT8, CKPGUID_INT8, NMO_OP_BINARY, 100, op_power_int8);
     NMO_RETURN_IF_ERROR(s);
 
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_ADD, "Add", "INT16 addition: a + b",
-                    NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_OP_BINARY, 100, op_add_int16);
+                    CKPGUID_INT16, CKPGUID_INT16, CKPGUID_INT16, NMO_OP_BINARY, 100, op_add_int16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_SUBTRACT, "Subtract", "INT16 subtraction: a - b",
-                    NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_OP_BINARY, 100, op_subtract_int16);
+                    CKPGUID_INT16, CKPGUID_INT16, CKPGUID_INT16, NMO_OP_BINARY, 100, op_subtract_int16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MULTIPLY, "Multiply", "INT16 multiplication: a * b",
-                    NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_OP_BINARY, 100, op_multiply_int16);
+                    CKPGUID_INT16, CKPGUID_INT16, CKPGUID_INT16, NMO_OP_BINARY, 100, op_multiply_int16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_DIVIDE, "Divide", "INT16 division: a / b",
-                    NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_OP_BINARY, 100, op_divide_int16);
+                    CKPGUID_INT16, CKPGUID_INT16, CKPGUID_INT16, NMO_OP_BINARY, 100, op_divide_int16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MODULO, "Modulo", "INT16 modulo: a % b",
-                    NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_OP_BINARY, 100, op_modulo_int16);
+                    CKPGUID_INT16, CKPGUID_INT16, CKPGUID_INT16, NMO_OP_BINARY, 100, op_modulo_int16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NEGATE, "Negate", "INT16 negation: -a",
-                    NMO_TYPE_GUID_INT16, (nmo_guid_t){0, 0}, NMO_TYPE_GUID_INT16, NMO_OP_UNARY, 100, op_negate_int16);
+                    CKPGUID_INT16, (nmo_guid_t){0, 0}, CKPGUID_INT16, NMO_OP_UNARY, 100, op_negate_int16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_ABS, "Abs", "INT16 absolute value: |a|",
-                    NMO_TYPE_GUID_INT16, (nmo_guid_t){0, 0}, NMO_TYPE_GUID_INT16, NMO_OP_UNARY, 100, op_abs_int16);
+                    CKPGUID_INT16, (nmo_guid_t){0, 0}, CKPGUID_INT16, NMO_OP_UNARY, 100, op_abs_int16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_POWER, "Power", "INT16 power: a^b",
-                    NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_OP_BINARY, 100, op_power_int16);
+                    CKPGUID_INT16, CKPGUID_INT16, CKPGUID_INT16, NMO_OP_BINARY, 100, op_power_int16);
     NMO_RETURN_IF_ERROR(s);
 
     /* Keep existing INT32 operations (same behavior) */
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_ADD, "Add", "Integer addition: a + b",
-                    NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_OP_BINARY, 100, op_add_int);
+                    CKPGUID_INT, CKPGUID_INT, CKPGUID_INT, NMO_OP_BINARY, 100, op_add_int);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_SUBTRACT, "Subtract", "Integer subtraction: a - b",
-                    NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_OP_BINARY, 100, op_subtract_int);
+                    CKPGUID_INT, CKPGUID_INT, CKPGUID_INT, NMO_OP_BINARY, 100, op_subtract_int);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MULTIPLY, "Multiply", "Integer multiplication: a * b",
-                    NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_OP_BINARY, 100, op_multiply_int);
+                    CKPGUID_INT, CKPGUID_INT, CKPGUID_INT, NMO_OP_BINARY, 100, op_multiply_int);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_DIVIDE, "Divide", "Integer division: a / b",
-                    NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_OP_BINARY, 100, op_divide_int);
+                    CKPGUID_INT, CKPGUID_INT, CKPGUID_INT, NMO_OP_BINARY, 100, op_divide_int);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MODULO, "Modulo", "Integer modulo: a % b",
-                    NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_OP_BINARY, 100, op_modulo_int);
+                    CKPGUID_INT, CKPGUID_INT, CKPGUID_INT, NMO_OP_BINARY, 100, op_modulo_int);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NEGATE, "Negate", "Integer negation: -a",
-                    NMO_TYPE_GUID_INT, (nmo_guid_t){0, 0}, NMO_TYPE_GUID_INT, NMO_OP_UNARY, 100, op_negate_int);
+                    CKPGUID_INT, (nmo_guid_t){0, 0}, CKPGUID_INT, NMO_OP_UNARY, 100, op_negate_int);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_ABS, "Abs", "Integer absolute value: |a|",
-                    NMO_TYPE_GUID_INT, (nmo_guid_t){0, 0}, NMO_TYPE_GUID_INT, NMO_OP_UNARY, 100, op_abs_int);
+                    CKPGUID_INT, (nmo_guid_t){0, 0}, CKPGUID_INT, NMO_OP_UNARY, 100, op_abs_int);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_POWER, "Power", "Integer power: a^b",
-                    NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_OP_BINARY, 100, op_power_int);
+                    CKPGUID_INT, CKPGUID_INT, CKPGUID_INT, NMO_OP_BINARY, 100, op_power_int);
     NMO_RETURN_IF_ERROR(s);
 
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_ADD, "Add", "INT64 addition: a + b",
-                    NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_OP_BINARY, 100, op_add_int64);
+                    CKPGUID_INT64, CKPGUID_INT64, CKPGUID_INT64, NMO_OP_BINARY, 100, op_add_int64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_SUBTRACT, "Subtract", "INT64 subtraction: a - b",
-                    NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_OP_BINARY, 100, op_subtract_int64);
+                    CKPGUID_INT64, CKPGUID_INT64, CKPGUID_INT64, NMO_OP_BINARY, 100, op_subtract_int64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MULTIPLY, "Multiply", "INT64 multiplication: a * b",
-                    NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_OP_BINARY, 100, op_multiply_int64);
+                    CKPGUID_INT64, CKPGUID_INT64, CKPGUID_INT64, NMO_OP_BINARY, 100, op_multiply_int64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_DIVIDE, "Divide", "INT64 division: a / b",
-                    NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_OP_BINARY, 100, op_divide_int64);
+                    CKPGUID_INT64, CKPGUID_INT64, CKPGUID_INT64, NMO_OP_BINARY, 100, op_divide_int64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MODULO, "Modulo", "INT64 modulo: a % b",
-                    NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_OP_BINARY, 100, op_modulo_int64);
+                    CKPGUID_INT64, CKPGUID_INT64, CKPGUID_INT64, NMO_OP_BINARY, 100, op_modulo_int64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NEGATE, "Negate", "INT64 negation: -a",
-                    NMO_TYPE_GUID_INT64, (nmo_guid_t){0, 0}, NMO_TYPE_GUID_INT64, NMO_OP_UNARY, 100, op_negate_int64);
+                    CKPGUID_INT64, (nmo_guid_t){0, 0}, CKPGUID_INT64, NMO_OP_UNARY, 100, op_negate_int64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_ABS, "Abs", "INT64 absolute value: |a|",
-                    NMO_TYPE_GUID_INT64, (nmo_guid_t){0, 0}, NMO_TYPE_GUID_INT64, NMO_OP_UNARY, 100, op_abs_int64);
+                    CKPGUID_INT64, (nmo_guid_t){0, 0}, CKPGUID_INT64, NMO_OP_UNARY, 100, op_abs_int64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_POWER, "Power", "INT64 power: a^b",
-                    NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_OP_BINARY, 100, op_power_int64);
+                    CKPGUID_INT64, CKPGUID_INT64, CKPGUID_INT64, NMO_OP_BINARY, 100, op_power_int64);
     NMO_RETURN_IF_ERROR(s);
 
     /* Unsigned integers */
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_ADD, "Add", "UINT8 addition: a + b",
-                    NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_OP_BINARY, 100, op_add_uint8);
+                    CKPGUID_UINT8, CKPGUID_UINT8, CKPGUID_UINT8, NMO_OP_BINARY, 100, op_add_uint8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_SUBTRACT, "Subtract", "UINT8 subtraction: a - b",
-                    NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_OP_BINARY, 100, op_subtract_uint8);
+                    CKPGUID_UINT8, CKPGUID_UINT8, CKPGUID_UINT8, NMO_OP_BINARY, 100, op_subtract_uint8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MULTIPLY, "Multiply", "UINT8 multiplication: a * b",
-                    NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_OP_BINARY, 100, op_multiply_uint8);
+                    CKPGUID_UINT8, CKPGUID_UINT8, CKPGUID_UINT8, NMO_OP_BINARY, 100, op_multiply_uint8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_DIVIDE, "Divide", "UINT8 division: a / b",
-                    NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_OP_BINARY, 100, op_divide_uint8);
+                    CKPGUID_UINT8, CKPGUID_UINT8, CKPGUID_UINT8, NMO_OP_BINARY, 100, op_divide_uint8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MODULO, "Modulo", "UINT8 modulo: a % b",
-                    NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_OP_BINARY, 100, op_modulo_uint8);
+                    CKPGUID_UINT8, CKPGUID_UINT8, CKPGUID_UINT8, NMO_OP_BINARY, 100, op_modulo_uint8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_POWER, "Power", "UINT8 power: a^b",
-                    NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_OP_BINARY, 100, op_power_uint8);
+                    CKPGUID_UINT8, CKPGUID_UINT8, CKPGUID_UINT8, NMO_OP_BINARY, 100, op_power_uint8);
     NMO_RETURN_IF_ERROR(s);
 
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_ADD, "Add", "UINT16 addition: a + b",
-                    NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_OP_BINARY, 100, op_add_uint16);
+                    CKPGUID_UINT16, CKPGUID_UINT16, CKPGUID_UINT16, NMO_OP_BINARY, 100, op_add_uint16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_SUBTRACT, "Subtract", "UINT16 subtraction: a - b",
-                    NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_OP_BINARY, 100, op_subtract_uint16);
+                    CKPGUID_UINT16, CKPGUID_UINT16, CKPGUID_UINT16, NMO_OP_BINARY, 100, op_subtract_uint16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MULTIPLY, "Multiply", "UINT16 multiplication: a * b",
-                    NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_OP_BINARY, 100, op_multiply_uint16);
+                    CKPGUID_UINT16, CKPGUID_UINT16, CKPGUID_UINT16, NMO_OP_BINARY, 100, op_multiply_uint16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_DIVIDE, "Divide", "UINT16 division: a / b",
-                    NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_OP_BINARY, 100, op_divide_uint16);
+                    CKPGUID_UINT16, CKPGUID_UINT16, CKPGUID_UINT16, NMO_OP_BINARY, 100, op_divide_uint16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MODULO, "Modulo", "UINT16 modulo: a %% b",
-                    NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_OP_BINARY, 100, op_modulo_uint16);
+                    CKPGUID_UINT16, CKPGUID_UINT16, CKPGUID_UINT16, NMO_OP_BINARY, 100, op_modulo_uint16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_POWER, "Power", "UINT16 power: a^b",
-                    NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_OP_BINARY, 100, op_power_uint16);
+                    CKPGUID_UINT16, CKPGUID_UINT16, CKPGUID_UINT16, NMO_OP_BINARY, 100, op_power_uint16);
     NMO_RETURN_IF_ERROR(s);
 
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_ADD, "Add", "UINT32 addition: a + b",
-                    NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_OP_BINARY, 100, op_add_uint32);
+                    CKPGUID_UINT32, CKPGUID_UINT32, CKPGUID_UINT32, NMO_OP_BINARY, 100, op_add_uint32);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_SUBTRACT, "Subtract", "UINT32 subtraction: a - b",
-                    NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_OP_BINARY, 100, op_subtract_uint32);
+                    CKPGUID_UINT32, CKPGUID_UINT32, CKPGUID_UINT32, NMO_OP_BINARY, 100, op_subtract_uint32);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MULTIPLY, "Multiply", "UINT32 multiplication: a * b",
-                    NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_OP_BINARY, 100, op_multiply_uint32);
+                    CKPGUID_UINT32, CKPGUID_UINT32, CKPGUID_UINT32, NMO_OP_BINARY, 100, op_multiply_uint32);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_DIVIDE, "Divide", "UINT32 division: a / b",
-                    NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_OP_BINARY, 100, op_divide_uint32);
+                    CKPGUID_UINT32, CKPGUID_UINT32, CKPGUID_UINT32, NMO_OP_BINARY, 100, op_divide_uint32);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MODULO, "Modulo", "UINT32 modulo: a %% b",
-                    NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_OP_BINARY, 100, op_modulo_uint32);
+                    CKPGUID_UINT32, CKPGUID_UINT32, CKPGUID_UINT32, NMO_OP_BINARY, 100, op_modulo_uint32);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_POWER, "Power", "UINT32 power: a^b",
-                    NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_OP_BINARY, 100, op_power_uint32);
+                    CKPGUID_UINT32, CKPGUID_UINT32, CKPGUID_UINT32, NMO_OP_BINARY, 100, op_power_uint32);
     NMO_RETURN_IF_ERROR(s);
 
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_ADD, "Add", "UINT64 addition: a + b",
-                    NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_OP_BINARY, 100, op_add_uint64);
+                    CKPGUID_UINT64, CKPGUID_UINT64, CKPGUID_UINT64, NMO_OP_BINARY, 100, op_add_uint64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_SUBTRACT, "Subtract", "UINT64 subtraction: a - b",
-                    NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_OP_BINARY, 100, op_subtract_uint64);
+                    CKPGUID_UINT64, CKPGUID_UINT64, CKPGUID_UINT64, NMO_OP_BINARY, 100, op_subtract_uint64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MULTIPLY, "Multiply", "UINT64 multiplication: a * b",
-                    NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_OP_BINARY, 100, op_multiply_uint64);
+                    CKPGUID_UINT64, CKPGUID_UINT64, CKPGUID_UINT64, NMO_OP_BINARY, 100, op_multiply_uint64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_DIVIDE, "Divide", "UINT64 division: a / b",
-                    NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_OP_BINARY, 100, op_divide_uint64);
+                    CKPGUID_UINT64, CKPGUID_UINT64, CKPGUID_UINT64, NMO_OP_BINARY, 100, op_divide_uint64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MODULO, "Modulo", "UINT64 modulo: a %% b",
-                    NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_OP_BINARY, 100, op_modulo_uint64);
+                    CKPGUID_UINT64, CKPGUID_UINT64, CKPGUID_UINT64, NMO_OP_BINARY, 100, op_modulo_uint64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_POWER, "Power", "UINT64 power: a^b",
-                    NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_OP_BINARY, 100, op_power_uint64);
+                    CKPGUID_UINT64, CKPGUID_UINT64, CKPGUID_UINT64, NMO_OP_BINARY, 100, op_power_uint64);
     NMO_RETURN_IF_ERROR(s);
 
     /* Float */
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_ADD, "Add", "Float addition: a + b",
-                    NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_OP_BINARY, 100, op_add_float);
+                    CKPGUID_FLOAT, CKPGUID_FLOAT, CKPGUID_FLOAT, NMO_OP_BINARY, 100, op_add_float);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_SUBTRACT, "Subtract", "Float subtraction: a - b",
-                    NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_OP_BINARY, 100, op_subtract_float);
+                    CKPGUID_FLOAT, CKPGUID_FLOAT, CKPGUID_FLOAT, NMO_OP_BINARY, 100, op_subtract_float);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MULTIPLY, "Multiply", "Float multiplication: a * b",
-                    NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_OP_BINARY, 100, op_multiply_float);
+                    CKPGUID_FLOAT, CKPGUID_FLOAT, CKPGUID_FLOAT, NMO_OP_BINARY, 100, op_multiply_float);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_DIVIDE, "Divide", "Float division: a / b",
-                    NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_OP_BINARY, 100, op_divide_float);
+                    CKPGUID_FLOAT, CKPGUID_FLOAT, CKPGUID_FLOAT, NMO_OP_BINARY, 100, op_divide_float);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MODULO, "Modulo", "Float modulo: fmod(a, b)",
-                    NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_OP_BINARY, 100, op_modulo_float);
+                    CKPGUID_FLOAT, CKPGUID_FLOAT, CKPGUID_FLOAT, NMO_OP_BINARY, 100, op_modulo_float);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NEGATE, "Negate", "Float negation: -a",
-                    NMO_TYPE_GUID_FLOAT, (nmo_guid_t){0, 0}, NMO_TYPE_GUID_FLOAT, NMO_OP_UNARY, 100, op_negate_float);
+                    CKPGUID_FLOAT, (nmo_guid_t){0, 0}, CKPGUID_FLOAT, NMO_OP_UNARY, 100, op_negate_float);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_ABS, "Abs", "Float absolute value: |a|",
-                    NMO_TYPE_GUID_FLOAT, (nmo_guid_t){0, 0}, NMO_TYPE_GUID_FLOAT, NMO_OP_UNARY, 100, op_abs_float);
+                    CKPGUID_FLOAT, (nmo_guid_t){0, 0}, CKPGUID_FLOAT, NMO_OP_UNARY, 100, op_abs_float);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_POWER, "Power", "Float power: a^b",
-                    NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_OP_BINARY, 100, op_power_float);
+                    CKPGUID_FLOAT, CKPGUID_FLOAT, CKPGUID_FLOAT, NMO_OP_BINARY, 100, op_power_float);
     NMO_RETURN_IF_ERROR(s);
 
     /* CK2 derived float types: use float implementation but keep result type */
@@ -750,28 +750,28 @@ nmo_status_t nmo_register_arithmetic_operations(
 
     /* Double */
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_ADD, "Add", "Double addition: a + b",
-                    NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_OP_BINARY, 100, op_add_double);
+                    CKPGUID_DOUBLE, CKPGUID_DOUBLE, CKPGUID_DOUBLE, NMO_OP_BINARY, 100, op_add_double);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_SUBTRACT, "Subtract", "Double subtraction: a - b",
-                    NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_OP_BINARY, 100, op_subtract_double);
+                    CKPGUID_DOUBLE, CKPGUID_DOUBLE, CKPGUID_DOUBLE, NMO_OP_BINARY, 100, op_subtract_double);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MULTIPLY, "Multiply", "Double multiplication: a * b",
-                    NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_OP_BINARY, 100, op_multiply_double);
+                    CKPGUID_DOUBLE, CKPGUID_DOUBLE, CKPGUID_DOUBLE, NMO_OP_BINARY, 100, op_multiply_double);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_DIVIDE, "Divide", "Double division: a / b",
-                    NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_OP_BINARY, 100, op_divide_double);
+                    CKPGUID_DOUBLE, CKPGUID_DOUBLE, CKPGUID_DOUBLE, NMO_OP_BINARY, 100, op_divide_double);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MODULO, "Modulo", "Double modulo: fmod(a, b)",
-                    NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_OP_BINARY, 100, op_modulo_double);
+                    CKPGUID_DOUBLE, CKPGUID_DOUBLE, CKPGUID_DOUBLE, NMO_OP_BINARY, 100, op_modulo_double);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NEGATE, "Negate", "Double negation: -a",
-                    NMO_TYPE_GUID_DOUBLE, (nmo_guid_t){0, 0}, NMO_TYPE_GUID_DOUBLE, NMO_OP_UNARY, 100, op_negate_double);
+                    CKPGUID_DOUBLE, (nmo_guid_t){0, 0}, CKPGUID_DOUBLE, NMO_OP_UNARY, 100, op_negate_double);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_ABS, "Abs", "Double absolute value: |a|",
-                    NMO_TYPE_GUID_DOUBLE, (nmo_guid_t){0, 0}, NMO_TYPE_GUID_DOUBLE, NMO_OP_UNARY, 100, op_abs_double);
+                    CKPGUID_DOUBLE, (nmo_guid_t){0, 0}, CKPGUID_DOUBLE, NMO_OP_UNARY, 100, op_abs_double);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_POWER, "Power", "Double power: a^b",
-                    NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_OP_BINARY, 100, op_power_double);
+                    CKPGUID_DOUBLE, CKPGUID_DOUBLE, CKPGUID_DOUBLE, NMO_OP_BINARY, 100, op_power_double);
     NMO_RETURN_IF_ERROR(s);
 
     NMO_RETURN_OK();

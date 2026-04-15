@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file builtin_trigonometry.c
  * @brief Builtin trigonometry operations implementation
  *
@@ -108,9 +108,9 @@ nmo_status_t nmo_register_trigonometry_operations(
             .operation_guid = NMO_OP_GUID_SIN,
             .name = "Sin",
             .description = "Sine function: sin(a)",
-            .p1_type_guid = NMO_TYPE_GUID_FLOAT,
+            .p1_type_guid = CKPGUID_FLOAT,
             .p2_type_guid = {0, 0}, /* Unary operation */
-            .result_type_guid = NMO_TYPE_GUID_FLOAT,
+            .result_type_guid = CKPGUID_FLOAT,
             .flags = NMO_OP_UNARY,
             .function = op_sin_float,
             .priority = 100,
@@ -120,9 +120,9 @@ nmo_status_t nmo_register_trigonometry_operations(
             .operation_guid = NMO_OP_GUID_COS,
             .name = "Cos",
             .description = "Cosine function: cos(a)",
-            .p1_type_guid = NMO_TYPE_GUID_FLOAT,
+            .p1_type_guid = CKPGUID_FLOAT,
             .p2_type_guid = {0, 0}, /* Unary operation */
-            .result_type_guid = NMO_TYPE_GUID_FLOAT,
+            .result_type_guid = CKPGUID_FLOAT,
             .flags = NMO_OP_UNARY,
             .function = op_cos_float,
             .priority = 100,
@@ -132,9 +132,9 @@ nmo_status_t nmo_register_trigonometry_operations(
             .operation_guid = NMO_OP_GUID_TAN,
             .name = "Tan",
             .description = "Tangent function: tan(a)",
-            .p1_type_guid = NMO_TYPE_GUID_FLOAT,
+            .p1_type_guid = CKPGUID_FLOAT,
             .p2_type_guid = {0, 0}, /* Unary operation */
-            .result_type_guid = NMO_TYPE_GUID_FLOAT,
+            .result_type_guid = CKPGUID_FLOAT,
             .flags = NMO_OP_UNARY,
             .function = op_tan_float,
             .priority = 100,
@@ -144,9 +144,9 @@ nmo_status_t nmo_register_trigonometry_operations(
             .operation_guid = NMO_OP_GUID_ASIN,
             .name = "Asin",
             .description = "Arcsine function: asin(a)",
-            .p1_type_guid = NMO_TYPE_GUID_FLOAT,
+            .p1_type_guid = CKPGUID_FLOAT,
             .p2_type_guid = {0, 0}, /* Unary operation */
-            .result_type_guid = NMO_TYPE_GUID_FLOAT,
+            .result_type_guid = CKPGUID_FLOAT,
             .flags = NMO_OP_UNARY,
             .function = op_asin_float,
             .priority = 100,
@@ -156,9 +156,9 @@ nmo_status_t nmo_register_trigonometry_operations(
             .operation_guid = NMO_OP_GUID_ACOS,
             .name = "Acos",
             .description = "Arccosine function: acos(a)",
-            .p1_type_guid = NMO_TYPE_GUID_FLOAT,
+            .p1_type_guid = CKPGUID_FLOAT,
             .p2_type_guid = {0, 0}, /* Unary operation */
-            .result_type_guid = NMO_TYPE_GUID_FLOAT,
+            .result_type_guid = CKPGUID_FLOAT,
             .flags = NMO_OP_UNARY,
             .function = op_acos_float,
             .priority = 100,
@@ -168,9 +168,9 @@ nmo_status_t nmo_register_trigonometry_operations(
             .operation_guid = NMO_OP_GUID_ATAN,
             .name = "Atan",
             .description = "Arctangent function: atan(a)",
-            .p1_type_guid = NMO_TYPE_GUID_FLOAT,
+            .p1_type_guid = CKPGUID_FLOAT,
             .p2_type_guid = {0, 0}, /* Unary operation */
-            .result_type_guid = NMO_TYPE_GUID_FLOAT,
+            .result_type_guid = CKPGUID_FLOAT,
             .flags = NMO_OP_UNARY,
             .function = op_atan_float,
             .priority = 100,

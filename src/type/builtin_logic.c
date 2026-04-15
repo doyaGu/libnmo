@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file builtin_logic.c
  * @brief Builtin logic and comparison operations implementation
  *
@@ -596,9 +596,9 @@ nmo_status_t nmo_register_logic_operations(
             .operation_guid = NMO_OP_GUID_AND,
             .name = "And",
             .description = "Logical AND: a && b",
-            .p1_type_guid = NMO_TYPE_GUID_BOOL,
-            .p2_type_guid = NMO_TYPE_GUID_BOOL,
-            .result_type_guid = NMO_TYPE_GUID_BOOL,
+            .p1_type_guid = CKPGUID_BOOL,
+            .p2_type_guid = CKPGUID_BOOL,
+            .result_type_guid = CKPGUID_BOOL,
             .function = op_and_bool,
             .priority = 100,
             .user_data = NULL
@@ -607,9 +607,9 @@ nmo_status_t nmo_register_logic_operations(
             .operation_guid = NMO_OP_GUID_OR,
             .name = "Or",
             .description = "Logical OR: a || b",
-            .p1_type_guid = NMO_TYPE_GUID_BOOL,
-            .p2_type_guid = NMO_TYPE_GUID_BOOL,
-            .result_type_guid = NMO_TYPE_GUID_BOOL,
+            .p1_type_guid = CKPGUID_BOOL,
+            .p2_type_guid = CKPGUID_BOOL,
+            .result_type_guid = CKPGUID_BOOL,
             .function = op_or_bool,
             .priority = 100,
             .user_data = NULL
@@ -618,9 +618,9 @@ nmo_status_t nmo_register_logic_operations(
             .operation_guid = NMO_OP_GUID_NOT,
             .name = "Not",
             .description = "Logical NOT: !a",
-            .p1_type_guid = NMO_TYPE_GUID_BOOL,
+            .p1_type_guid = CKPGUID_BOOL,
             .p2_type_guid = {0, 0}, /* Unary operation */
-            .result_type_guid = NMO_TYPE_GUID_BOOL,
+            .result_type_guid = CKPGUID_BOOL,
             .flags = NMO_OP_UNARY,
             .function = op_not_bool,
             .priority = 100,
@@ -630,9 +630,9 @@ nmo_status_t nmo_register_logic_operations(
             .operation_guid = NMO_OP_GUID_XOR,
             .name = "Xor",
             .description = "Logical XOR: a ^ b",
-            .p1_type_guid = NMO_TYPE_GUID_BOOL,
-            .p2_type_guid = NMO_TYPE_GUID_BOOL,
-            .result_type_guid = NMO_TYPE_GUID_BOOL,
+            .p1_type_guid = CKPGUID_BOOL,
+            .p2_type_guid = CKPGUID_BOOL,
+            .result_type_guid = CKPGUID_BOOL,
             .function = op_xor_bool,
             .priority = 100,
             .user_data = NULL
@@ -656,171 +656,171 @@ nmo_status_t nmo_register_comparison_operations(
 
     /* BOOL equality */
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_EQUAL, "Equal", "Bool equality: a == b",
-                    NMO_TYPE_GUID_BOOL, NMO_TYPE_GUID_BOOL, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_equal_bool);
+                    CKPGUID_BOOL, CKPGUID_BOOL, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_equal_bool);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NOT_EQUAL, "NotEqual", "Bool inequality: a != b",
-                    NMO_TYPE_GUID_BOOL, NMO_TYPE_GUID_BOOL, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_bool);
+                    CKPGUID_BOOL, CKPGUID_BOOL, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_bool);
     NMO_RETURN_IF_ERROR(s);
 
     /* ARRAY equality (bytewise; no allocation) */
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_EQUAL, "Equal", "Array equality: a == b",
-                    CKPGUID_ARRAY, CKPGUID_ARRAY, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_equal_array);
+                    CKPGUID_ARRAY, CKPGUID_ARRAY, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_equal_array);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NOT_EQUAL, "NotEqual", "Array inequality: a != b",
-                    CKPGUID_ARRAY, CKPGUID_ARRAY, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_array);
+                    CKPGUID_ARRAY, CKPGUID_ARRAY, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_array);
     NMO_RETURN_IF_ERROR(s);
 
     /* Signed/unsigned integers + float (existing) */
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_EQUAL, "Equal", "INT8 equality: a == b",
-                    NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_equal_int8);
+                    CKPGUID_INT8, CKPGUID_INT8, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_equal_int8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NOT_EQUAL, "NotEqual", "INT8 inequality: a != b",
-                    NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_int8);
+                    CKPGUID_INT8, CKPGUID_INT8, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_int8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS, "Less", "INT8 less than: a < b",
-                    NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_int8);
+                    CKPGUID_INT8, CKPGUID_INT8, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_int8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS_EQ, "LessEqual", "INT8 less or equal: a <= b",
-                    NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_int8);
+                    CKPGUID_INT8, CKPGUID_INT8, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_int8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER, "Greater", "INT8 greater than: a > b",
-                    NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_int8);
+                    CKPGUID_INT8, CKPGUID_INT8, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_int8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER_EQ, "GreaterEqual", "INT8 greater or equal: a >= b",
-                    NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_int8);
+                    CKPGUID_INT8, CKPGUID_INT8, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_int8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MIN, "Min", "INT8 minimum: min(a, b)",
-                    NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_OP_BINARY, 100, op_min_int8);
+                    CKPGUID_INT8, CKPGUID_INT8, CKPGUID_INT8, NMO_OP_BINARY, 100, op_min_int8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MAX, "Max", "INT8 maximum: max(a, b)",
-                    NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_TYPE_GUID_INT8, NMO_OP_BINARY, 100, op_max_int8);
+                    CKPGUID_INT8, CKPGUID_INT8, CKPGUID_INT8, NMO_OP_BINARY, 100, op_max_int8);
     NMO_RETURN_IF_ERROR(s);
 
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_EQUAL, "Equal", "UINT8 equality: a == b",
-                    NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_equal_uint8);
+                    CKPGUID_UINT8, CKPGUID_UINT8, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_equal_uint8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NOT_EQUAL, "NotEqual", "UINT8 inequality: a != b",
-                    NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_uint8);
+                    CKPGUID_UINT8, CKPGUID_UINT8, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_uint8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS, "Less", "UINT8 less than: a < b",
-                    NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_uint8);
+                    CKPGUID_UINT8, CKPGUID_UINT8, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_uint8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS_EQ, "LessEqual", "UINT8 less or equal: a <= b",
-                    NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_uint8);
+                    CKPGUID_UINT8, CKPGUID_UINT8, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_uint8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER, "Greater", "UINT8 greater than: a > b",
-                    NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_uint8);
+                    CKPGUID_UINT8, CKPGUID_UINT8, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_uint8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER_EQ, "GreaterEqual", "UINT8 greater or equal: a >= b",
-                    NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_uint8);
+                    CKPGUID_UINT8, CKPGUID_UINT8, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_uint8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MIN, "Min", "UINT8 minimum: min(a, b)",
-                    NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_OP_BINARY, 100, op_min_uint8);
+                    CKPGUID_UINT8, CKPGUID_UINT8, CKPGUID_UINT8, NMO_OP_BINARY, 100, op_min_uint8);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MAX, "Max", "UINT8 maximum: max(a, b)",
-                    NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_TYPE_GUID_UINT8, NMO_OP_BINARY, 100, op_max_uint8);
+                    CKPGUID_UINT8, CKPGUID_UINT8, CKPGUID_UINT8, NMO_OP_BINARY, 100, op_max_uint8);
     NMO_RETURN_IF_ERROR(s);
 
     /* INT16/UINT16 */
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_EQUAL, "Equal", "INT16 equality: a == b",
-                    NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_equal_int16);
+                    CKPGUID_INT16, CKPGUID_INT16, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_equal_int16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NOT_EQUAL, "NotEqual", "INT16 inequality: a != b",
-                    NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_int16);
+                    CKPGUID_INT16, CKPGUID_INT16, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_int16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS, "Less", "INT16 less than: a < b",
-                    NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_int16);
+                    CKPGUID_INT16, CKPGUID_INT16, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_int16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS_EQ, "LessEqual", "INT16 less or equal: a <= b",
-                    NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_int16);
+                    CKPGUID_INT16, CKPGUID_INT16, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_int16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER, "Greater", "INT16 greater than: a > b",
-                    NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_int16);
+                    CKPGUID_INT16, CKPGUID_INT16, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_int16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER_EQ, "GreaterEqual", "INT16 greater or equal: a >= b",
-                    NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_int16);
+                    CKPGUID_INT16, CKPGUID_INT16, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_int16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MIN, "Min", "INT16 minimum: min(a, b)",
-                    NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_OP_BINARY, 100, op_min_int16);
+                    CKPGUID_INT16, CKPGUID_INT16, CKPGUID_INT16, NMO_OP_BINARY, 100, op_min_int16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MAX, "Max", "INT16 maximum: max(a, b)",
-                    NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_TYPE_GUID_INT16, NMO_OP_BINARY, 100, op_max_int16);
+                    CKPGUID_INT16, CKPGUID_INT16, CKPGUID_INT16, NMO_OP_BINARY, 100, op_max_int16);
     NMO_RETURN_IF_ERROR(s);
 
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_EQUAL, "Equal", "UINT16 equality: a == b",
-                    NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_equal_uint16);
+                    CKPGUID_UINT16, CKPGUID_UINT16, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_equal_uint16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NOT_EQUAL, "NotEqual", "UINT16 inequality: a != b",
-                    NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_uint16);
+                    CKPGUID_UINT16, CKPGUID_UINT16, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_uint16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS, "Less", "UINT16 less than: a < b",
-                    NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_uint16);
+                    CKPGUID_UINT16, CKPGUID_UINT16, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_uint16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS_EQ, "LessEqual", "UINT16 less or equal: a <= b",
-                    NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_uint16);
+                    CKPGUID_UINT16, CKPGUID_UINT16, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_uint16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER, "Greater", "UINT16 greater than: a > b",
-                    NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_uint16);
+                    CKPGUID_UINT16, CKPGUID_UINT16, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_uint16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER_EQ, "GreaterEqual", "UINT16 greater or equal: a >= b",
-                    NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_uint16);
+                    CKPGUID_UINT16, CKPGUID_UINT16, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_uint16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MIN, "Min", "UINT16 minimum: min(a, b)",
-                    NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_OP_BINARY, 100, op_min_uint16);
+                    CKPGUID_UINT16, CKPGUID_UINT16, CKPGUID_UINT16, NMO_OP_BINARY, 100, op_min_uint16);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MAX, "Max", "UINT16 maximum: max(a, b)",
-                    NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_TYPE_GUID_UINT16, NMO_OP_BINARY, 100, op_max_uint16);
+                    CKPGUID_UINT16, CKPGUID_UINT16, CKPGUID_UINT16, NMO_OP_BINARY, 100, op_max_uint16);
     NMO_RETURN_IF_ERROR(s);
 
     /* INT32/FLOAT comparisons (existing functions) */
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_EQUAL, "Equal", "Integer equality: a == b",
-                    NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_equal_int);
+                    CKPGUID_INT, CKPGUID_INT, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_equal_int);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NOT_EQUAL, "NotEqual", "Integer inequality: a != b",
-                    NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_int);
+                    CKPGUID_INT, CKPGUID_INT, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_int);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS, "Less", "Integer less than: a < b",
-                    NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_int);
+                    CKPGUID_INT, CKPGUID_INT, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_int);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS_EQ, "LessEqual", "Integer less or equal: a <= b",
-                    NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_int);
+                    CKPGUID_INT, CKPGUID_INT, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_int);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER, "Greater", "Integer greater than: a > b",
-                    NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_int);
+                    CKPGUID_INT, CKPGUID_INT, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_int);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER_EQ, "GreaterEqual", "Integer greater or equal: a >= b",
-                    NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_int);
+                    CKPGUID_INT, CKPGUID_INT, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_int);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MIN, "Min", "Integer minimum: min(a, b)",
-                    NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_OP_BINARY, 100, op_min_int);
+                    CKPGUID_INT, CKPGUID_INT, CKPGUID_INT, NMO_OP_BINARY, 100, op_min_int);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MAX, "Max", "Integer maximum: max(a, b)",
-                    NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_TYPE_GUID_INT, NMO_OP_BINARY, 100, op_max_int);
+                    CKPGUID_INT, CKPGUID_INT, CKPGUID_INT, NMO_OP_BINARY, 100, op_max_int);
     NMO_RETURN_IF_ERROR(s);
 
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_EQUAL, "Equal", "Float equality: a == b",
-                    NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_equal_float);
+                    CKPGUID_FLOAT, CKPGUID_FLOAT, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_equal_float);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NOT_EQUAL, "NotEqual", "Float inequality: a != b",
-                    NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_float);
+                    CKPGUID_FLOAT, CKPGUID_FLOAT, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_float);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS, "Less", "Float less than: a < b",
-                    NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_float);
+                    CKPGUID_FLOAT, CKPGUID_FLOAT, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_float);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS_EQ, "LessEqual", "Float less or equal: a <= b",
-                    NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_float);
+                    CKPGUID_FLOAT, CKPGUID_FLOAT, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_float);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER, "Greater", "Float greater than: a > b",
-                    NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_float);
+                    CKPGUID_FLOAT, CKPGUID_FLOAT, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_float);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER_EQ, "GreaterEqual", "Float greater or equal: a >= b",
-                    NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_float);
+                    CKPGUID_FLOAT, CKPGUID_FLOAT, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_float);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MIN, "Min", "Float minimum: min(a, b)",
-                    NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_OP_BINARY, 100, op_min_float);
+                    CKPGUID_FLOAT, CKPGUID_FLOAT, CKPGUID_FLOAT, NMO_OP_BINARY, 100, op_min_float);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MAX, "Max", "Float maximum: max(a, b)",
-                    NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_TYPE_GUID_FLOAT, NMO_OP_BINARY, 100, op_max_float);
+                    CKPGUID_FLOAT, CKPGUID_FLOAT, CKPGUID_FLOAT, NMO_OP_BINARY, 100, op_max_float);
     NMO_RETURN_IF_ERROR(s);
 
     /* Derived float types: ANGLE/PERCENTAGE keep their result type (priority > base) */
@@ -839,145 +839,145 @@ nmo_status_t nmo_register_comparison_operations(
 
     /* UINT32 */
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_EQUAL, "Equal", "UINT32 equality: a == b",
-                    NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_equal_uint32);
+                    CKPGUID_UINT32, CKPGUID_UINT32, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_equal_uint32);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NOT_EQUAL, "NotEqual", "UINT32 inequality: a != b",
-                    NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_uint32);
+                    CKPGUID_UINT32, CKPGUID_UINT32, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_uint32);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS, "Less", "UINT32 less than: a < b",
-                    NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_uint32);
+                    CKPGUID_UINT32, CKPGUID_UINT32, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_uint32);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS_EQ, "LessEqual", "UINT32 less or equal: a <= b",
-                    NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_uint32);
+                    CKPGUID_UINT32, CKPGUID_UINT32, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_uint32);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER, "Greater", "UINT32 greater than: a > b",
-                    NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_uint32);
+                    CKPGUID_UINT32, CKPGUID_UINT32, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_uint32);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER_EQ, "GreaterEqual", "UINT32 greater or equal: a >= b",
-                    NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_uint32);
+                    CKPGUID_UINT32, CKPGUID_UINT32, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_uint32);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MIN, "Min", "UINT32 minimum: min(a, b)",
-                    NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_OP_BINARY, 100, op_min_uint32);
+                    CKPGUID_UINT32, CKPGUID_UINT32, CKPGUID_UINT32, NMO_OP_BINARY, 100, op_min_uint32);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MAX, "Max", "UINT32 maximum: max(a, b)",
-                    NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_TYPE_GUID_UINT32, NMO_OP_BINARY, 100, op_max_uint32);
+                    CKPGUID_UINT32, CKPGUID_UINT32, CKPGUID_UINT32, NMO_OP_BINARY, 100, op_max_uint32);
     NMO_RETURN_IF_ERROR(s);
 
     /* INT64/UINT64 */
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_EQUAL, "Equal", "INT64 equality: a == b",
-                    NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_equal_int64);
+                    CKPGUID_INT64, CKPGUID_INT64, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_equal_int64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NOT_EQUAL, "NotEqual", "INT64 inequality: a != b",
-                    NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_int64);
+                    CKPGUID_INT64, CKPGUID_INT64, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_int64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS, "Less", "INT64 less than: a < b",
-                    NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_int64);
+                    CKPGUID_INT64, CKPGUID_INT64, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_int64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS_EQ, "LessEqual", "INT64 less or equal: a <= b",
-                    NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_int64);
+                    CKPGUID_INT64, CKPGUID_INT64, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_int64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER, "Greater", "INT64 greater than: a > b",
-                    NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_int64);
+                    CKPGUID_INT64, CKPGUID_INT64, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_int64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER_EQ, "GreaterEqual", "INT64 greater or equal: a >= b",
-                    NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_int64);
+                    CKPGUID_INT64, CKPGUID_INT64, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_int64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MIN, "Min", "INT64 minimum: min(a, b)",
-                    NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_OP_BINARY, 100, op_min_int64);
+                    CKPGUID_INT64, CKPGUID_INT64, CKPGUID_INT64, NMO_OP_BINARY, 100, op_min_int64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MAX, "Max", "INT64 maximum: max(a, b)",
-                    NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_TYPE_GUID_INT64, NMO_OP_BINARY, 100, op_max_int64);
+                    CKPGUID_INT64, CKPGUID_INT64, CKPGUID_INT64, NMO_OP_BINARY, 100, op_max_int64);
     NMO_RETURN_IF_ERROR(s);
 
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_EQUAL, "Equal", "UINT64 equality: a == b",
-                    NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_equal_uint64);
+                    CKPGUID_UINT64, CKPGUID_UINT64, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_equal_uint64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NOT_EQUAL, "NotEqual", "UINT64 inequality: a != b",
-                    NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_uint64);
+                    CKPGUID_UINT64, CKPGUID_UINT64, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_uint64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS, "Less", "UINT64 less than: a < b",
-                    NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_uint64);
+                    CKPGUID_UINT64, CKPGUID_UINT64, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_uint64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS_EQ, "LessEqual", "UINT64 less or equal: a <= b",
-                    NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_uint64);
+                    CKPGUID_UINT64, CKPGUID_UINT64, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_uint64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER, "Greater", "UINT64 greater than: a > b",
-                    NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_uint64);
+                    CKPGUID_UINT64, CKPGUID_UINT64, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_uint64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER_EQ, "GreaterEqual", "UINT64 greater or equal: a >= b",
-                    NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_uint64);
+                    CKPGUID_UINT64, CKPGUID_UINT64, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_uint64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MIN, "Min", "UINT64 minimum: min(a, b)",
-                    NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_OP_BINARY, 100, op_min_uint64);
+                    CKPGUID_UINT64, CKPGUID_UINT64, CKPGUID_UINT64, NMO_OP_BINARY, 100, op_min_uint64);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MAX, "Max", "UINT64 maximum: max(a, b)",
-                    NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_TYPE_GUID_UINT64, NMO_OP_BINARY, 100, op_max_uint64);
+                    CKPGUID_UINT64, CKPGUID_UINT64, CKPGUID_UINT64, NMO_OP_BINARY, 100, op_max_uint64);
     NMO_RETURN_IF_ERROR(s);
 
     /* DOUBLE */
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_EQUAL, "Equal", "Double equality: a == b",
-                    NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_equal_double);
+                    CKPGUID_DOUBLE, CKPGUID_DOUBLE, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_equal_double);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NOT_EQUAL, "NotEqual", "Double inequality: a != b",
-                    NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_double);
+                    CKPGUID_DOUBLE, CKPGUID_DOUBLE, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_double);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS, "Less", "Double less than: a < b",
-                    NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_double);
+                    CKPGUID_DOUBLE, CKPGUID_DOUBLE, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_double);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS_EQ, "LessEqual", "Double less or equal: a <= b",
-                    NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_double);
+                    CKPGUID_DOUBLE, CKPGUID_DOUBLE, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_double);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER, "Greater", "Double greater than: a > b",
-                    NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_double);
+                    CKPGUID_DOUBLE, CKPGUID_DOUBLE, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_double);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER_EQ, "GreaterEqual", "Double greater or equal: a >= b",
-                    NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_double);
+                    CKPGUID_DOUBLE, CKPGUID_DOUBLE, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_double);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MIN, "Min", "Double minimum: min(a, b)",
-                    NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_OP_BINARY, 100, op_min_double);
+                    CKPGUID_DOUBLE, CKPGUID_DOUBLE, CKPGUID_DOUBLE, NMO_OP_BINARY, 100, op_min_double);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_MAX, "Max", "Double maximum: max(a, b)",
-                    NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_TYPE_GUID_DOUBLE, NMO_OP_BINARY, 100, op_max_double);
+                    CKPGUID_DOUBLE, CKPGUID_DOUBLE, CKPGUID_DOUBLE, NMO_OP_BINARY, 100, op_max_double);
     NMO_RETURN_IF_ERROR(s);
 
     /* STRING lexicographic comparisons (bool result only) */
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_EQUAL, "Equal", "String equality: a == b",
-                    NMO_TYPE_GUID_STRING, NMO_TYPE_GUID_STRING, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_equal_string);
+                    CKPGUID_STRING, CKPGUID_STRING, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_equal_string);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NOT_EQUAL, "NotEqual", "String inequality: a != b",
-                    NMO_TYPE_GUID_STRING, NMO_TYPE_GUID_STRING, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_string);
+                    CKPGUID_STRING, CKPGUID_STRING, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_string);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS, "Less", "String less than: a < b",
-                    NMO_TYPE_GUID_STRING, NMO_TYPE_GUID_STRING, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_string);
+                    CKPGUID_STRING, CKPGUID_STRING, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_string);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_LESS_EQ, "LessEqual", "String less or equal: a <= b",
-                    NMO_TYPE_GUID_STRING, NMO_TYPE_GUID_STRING, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_string);
+                    CKPGUID_STRING, CKPGUID_STRING, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_less_equal_string);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER, "Greater", "String greater than: a > b",
-                    NMO_TYPE_GUID_STRING, NMO_TYPE_GUID_STRING, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_string);
+                    CKPGUID_STRING, CKPGUID_STRING, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_string);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_GREATER_EQ, "GreaterEqual", "String greater or equal: a >= b",
-                    NMO_TYPE_GUID_STRING, NMO_TYPE_GUID_STRING, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_string);
+                    CKPGUID_STRING, CKPGUID_STRING, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_greater_equal_string);
     NMO_RETURN_IF_ERROR(s);
 
     /* GUID/POINTER/OBJECT_ID equality */
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_EQUAL, "Equal", "GUID equality: a == b",
-                    NMO_TYPE_GUID_GUID, NMO_TYPE_GUID_GUID, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_equal_guid);
+                    CKPGUID_GUID, CKPGUID_GUID, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_equal_guid);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NOT_EQUAL, "NotEqual", "GUID inequality: a != b",
-                    NMO_TYPE_GUID_GUID, NMO_TYPE_GUID_GUID, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_guid);
+                    CKPGUID_GUID, CKPGUID_GUID, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_guid);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_EQUAL, "Equal", "Pointer equality: a == b",
-                    NMO_TYPE_GUID_POINTER, NMO_TYPE_GUID_POINTER, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_equal_pointer);
+                    CKPGUID_POINTER, CKPGUID_POINTER, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_equal_pointer);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NOT_EQUAL, "NotEqual", "Pointer inequality: a != b",
-                    NMO_TYPE_GUID_POINTER, NMO_TYPE_GUID_POINTER, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_pointer);
+                    CKPGUID_POINTER, CKPGUID_POINTER, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_pointer);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_EQUAL, "Equal", "ObjectID equality: a == b",
-                    NMO_TYPE_GUID_OBJECT_ID, NMO_TYPE_GUID_OBJECT_ID, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_equal_object_id);
+                    CKPGUID_ID, CKPGUID_ID, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_equal_object_id);
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NOT_EQUAL, "NotEqual", "ObjectID inequality: a != b",
-                    NMO_TYPE_GUID_OBJECT_ID, NMO_TYPE_GUID_OBJECT_ID, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_object_id);
+                    CKPGUID_ID, CKPGUID_ID, CKPGUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_object_id);
     NMO_RETURN_IF_ERROR(s);
 
     NMO_RETURN_OK();

@@ -184,7 +184,4 @@ extern "C" {
 }
 #endif
 
-/* Temporary legacy aliases (to be removed after migration). */
-#include "type/nmo_type_guid_compat.h"
-
 #endif /* NMO_TYPE_GUIDS_H */

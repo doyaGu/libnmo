@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file builtin_bitwise.c
  * @brief Builtin bitwise operations implementation
  *
@@ -152,9 +152,9 @@ nmo_status_t nmo_register_bitwise_operations(
             .operation_guid = NMO_OP_GUID_BIT_AND,
             .name = "BitAnd",
             .description = "Bitwise AND: a & b",
-            .p1_type_guid = NMO_TYPE_GUID_INT,
-            .p2_type_guid = NMO_TYPE_GUID_INT,
-            .result_type_guid = NMO_TYPE_GUID_INT, .flags = NMO_OP_BINARY, .function = op_bit_and_int,
+            .p1_type_guid = CKPGUID_INT,
+            .p2_type_guid = CKPGUID_INT,
+            .result_type_guid = CKPGUID_INT, .flags = NMO_OP_BINARY, .function = op_bit_and_int,
             .priority = 100,
             .user_data = NULL
         },
@@ -162,9 +162,9 @@ nmo_status_t nmo_register_bitwise_operations(
             .operation_guid = NMO_OP_GUID_BIT_OR,
             .name = "BitOr",
             .description = "Bitwise OR: a | b",
-            .p1_type_guid = NMO_TYPE_GUID_INT,
-            .p2_type_guid = NMO_TYPE_GUID_INT,
-            .result_type_guid = NMO_TYPE_GUID_INT, .flags = NMO_OP_BINARY, .function = op_bit_or_int,
+            .p1_type_guid = CKPGUID_INT,
+            .p2_type_guid = CKPGUID_INT,
+            .result_type_guid = CKPGUID_INT, .flags = NMO_OP_BINARY, .function = op_bit_or_int,
             .priority = 100,
             .user_data = NULL
         },
@@ -172,9 +172,9 @@ nmo_status_t nmo_register_bitwise_operations(
             .operation_guid = NMO_OP_GUID_BIT_XOR,
             .name = "BitXor",
             .description = "Bitwise XOR: a ^ b",
-            .p1_type_guid = NMO_TYPE_GUID_INT,
-            .p2_type_guid = NMO_TYPE_GUID_INT,
-            .result_type_guid = NMO_TYPE_GUID_INT, .flags = NMO_OP_BINARY, .function = op_bit_xor_int,
+            .p1_type_guid = CKPGUID_INT,
+            .p2_type_guid = CKPGUID_INT,
+            .result_type_guid = CKPGUID_INT, .flags = NMO_OP_BINARY, .function = op_bit_xor_int,
             .priority = 100,
             .user_data = NULL
         },
@@ -182,9 +182,9 @@ nmo_status_t nmo_register_bitwise_operations(
             .operation_guid = NMO_OP_GUID_BIT_NOT,
             .name = "BitNot",
             .description = "Bitwise NOT: ~a",
-            .p1_type_guid = NMO_TYPE_GUID_INT,
+            .p1_type_guid = CKPGUID_INT,
             .p2_type_guid = {0, 0}, /* Unary operation */
-            .result_type_guid = NMO_TYPE_GUID_INT,
+            .result_type_guid = CKPGUID_INT,
             .flags = NMO_OP_UNARY,
             .function = op_bit_not_int,
             .priority = 100,
@@ -194,9 +194,9 @@ nmo_status_t nmo_register_bitwise_operations(
             .operation_guid = NMO_OP_GUID_SHIFT_LEFT,
             .name = "ShiftLeft",
             .description = "Bitwise left shift: a << b",
-            .p1_type_guid = NMO_TYPE_GUID_INT,
-            .p2_type_guid = NMO_TYPE_GUID_INT,
-            .result_type_guid = NMO_TYPE_GUID_INT, .flags = NMO_OP_BINARY, .function = op_shift_left_int,
+            .p1_type_guid = CKPGUID_INT,
+            .p2_type_guid = CKPGUID_INT,
+            .result_type_guid = CKPGUID_INT, .flags = NMO_OP_BINARY, .function = op_shift_left_int,
             .priority = 100,
             .user_data = NULL
         },
@@ -204,9 +204,9 @@ nmo_status_t nmo_register_bitwise_operations(
             .operation_guid = NMO_OP_GUID_SHIFT_RIGHT,
             .name = "ShiftRight",
             .description = "Bitwise right shift: a >> b",
-            .p1_type_guid = NMO_TYPE_GUID_INT,
-            .p2_type_guid = NMO_TYPE_GUID_INT,
-            .result_type_guid = NMO_TYPE_GUID_INT, .flags = NMO_OP_BINARY, .function = op_shift_right_int,
+            .p1_type_guid = CKPGUID_INT,
+            .p2_type_guid = CKPGUID_INT,
+            .result_type_guid = CKPGUID_INT, .flags = NMO_OP_BINARY, .function = op_shift_right_int,
             .priority = 100,
             .user_data = NULL
         },
@@ -214,9 +214,9 @@ nmo_status_t nmo_register_bitwise_operations(
             .operation_guid = NMO_OP_GUID_ROTATE_LEFT,
             .name = "RotateLeft",
             .description = "Bitwise rotate left: rol(a, b)",
-            .p1_type_guid = NMO_TYPE_GUID_INT,
-            .p2_type_guid = NMO_TYPE_GUID_INT,
-            .result_type_guid = NMO_TYPE_GUID_INT, .flags = NMO_OP_BINARY, .function = op_rotate_left_int,
+            .p1_type_guid = CKPGUID_INT,
+            .p2_type_guid = CKPGUID_INT,
+            .result_type_guid = CKPGUID_INT, .flags = NMO_OP_BINARY, .function = op_rotate_left_int,
             .priority = 100,
             .user_data = NULL
         },
@@ -224,9 +224,9 @@ nmo_status_t nmo_register_bitwise_operations(
             .operation_guid = NMO_OP_GUID_ROTATE_RIGHT,
             .name = "RotateRight",
             .description = "Bitwise rotate right: ror(a, b)",
-            .p1_type_guid = NMO_TYPE_GUID_INT,
-            .p2_type_guid = NMO_TYPE_GUID_INT,
-            .result_type_guid = NMO_TYPE_GUID_INT, .flags = NMO_OP_BINARY,
+            .p1_type_guid = CKPGUID_INT,
+            .p2_type_guid = CKPGUID_INT,
+            .result_type_guid = CKPGUID_INT, .flags = NMO_OP_BINARY,
             .function = op_rotate_right_int,
             .priority = 100,
             .user_data = NULL
