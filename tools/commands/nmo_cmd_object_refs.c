@@ -914,7 +914,9 @@ int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *glo
             }
         }
         nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-        nmo_ref_graph_to_dot(graph, repo, c.registry, kind_mask, c.out);
+        nmo_arena_t *dot_arena = nmo_arena_create(NULL, 0);
+        nmo_ref_graph_to_dot(graph, repo, c.registry, kind_mask, dot_arena, c.out);
+        nmo_arena_destroy(dot_arena);
     } else {
         /* ---- Text summary ---- */
         fprintf(c.out, "Reference Graph: %zu nodes, %zu edges\n\n",

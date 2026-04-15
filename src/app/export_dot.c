@@ -8,9 +8,9 @@
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "type/nmo_type_query.h"
+#include "core/nmo_arena.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 /* ------------------------------------------------------------------------ */
@@ -67,30 +67,32 @@ static const char *dot_edge_color(nmo_ref_kind_t kind) {
 /* Collect unique node IDs                                                   */
 /* ------------------------------------------------------------------------ */
 
+/* Binary search in sorted array. Returns index if found, or insertion point. */
+static size_t bsearch_id(const nmo_object_id_t *arr, size_t count, nmo_object_id_t id) {
+    size_t lo = 0, hi = count;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (arr[mid] < id) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo;
+}
+
+/* Collect unique node IDs using sorted insertion — O(E * log N). */
 static size_t collect_nodes(const nmo_ref_edge_t *edges, size_t edge_count,
                             nmo_object_id_t *out, size_t cap) {
     size_t count = 0;
     for (size_t i = 0; i < edge_count; ++i) {
         nmo_object_id_t ids[2] = { edges[i].from, edges[i].to };
         for (int k = 0; k < 2; ++k) {
-            bool found = false;
-            for (size_t j = 0; j < count; ++j) {
-                if (out[j] == ids[k]) { found = true; break; }
-            }
-            if (!found && count < cap) {
-                out[count++] = ids[k];
-            }
+            size_t pos = bsearch_id(out, count, ids[k]);
+            if (pos < count && out[pos] == ids[k]) continue; /* duplicate */
+            if (count >= cap) continue;
+            /* Insert at pos, shift right */
+            memmove(&out[pos + 1], &out[pos], (count - pos) * sizeof(nmo_object_id_t));
+            out[pos] = ids[k];
+            count++;
         }
-    }
-    /* Insertion sort */
-    for (size_t i = 1; i < count; ++i) {
-        nmo_object_id_t key = out[i];
-        size_t j = i;
-        while (j > 0 && out[j - 1] > key) {
-            out[j] = out[j - 1];
-            --j;
-        }
-        out[j] = key;
     }
     return count;
 }
@@ -104,9 +106,10 @@ nmo_status_t nmo_ref_graph_to_dot(
     nmo_object_repository_t *repo,
     const nmo_type_registry_t *registry,
     uint32_t kind_mask,
+    nmo_arena_t *arena,
     FILE *out)
 {
-    if (!graph || !repo || !registry || !out)
+    if (!graph || !repo || !registry || !arena || !out)
         return NMO_ERR_INVALID_ARGUMENT;
 
     /* Get all edges */
@@ -122,7 +125,8 @@ nmo_status_t nmo_ref_graph_to_dot(
     nmo_ref_edge_t *filtered = NULL;
 
     if (kind_mask != 0) {
-        filtered = (nmo_ref_edge_t *)malloc(all_count * sizeof(nmo_ref_edge_t));
+        filtered = (nmo_ref_edge_t *)nmo_arena_alloc(
+            arena, all_count * sizeof(nmo_ref_edge_t), _Alignof(nmo_ref_edge_t));
         if (!filtered && all_count > 0)
             return NMO_ERR_NOMEM;
         size_t fc = 0;
@@ -139,13 +143,12 @@ nmo_status_t nmo_ref_graph_to_dot(
 
     /* Collect unique node IDs */
     size_t node_cap = edge_count * 2 + 1;
-    nmo_object_id_t *node_ids = (nmo_object_id_t *)malloc(
-        node_cap * sizeof(nmo_object_id_t));
+    nmo_object_id_t *node_ids = (nmo_object_id_t *)nmo_arena_alloc(
+        arena, node_cap * sizeof(nmo_object_id_t), _Alignof(nmo_object_id_t));
     size_t node_count = 0;
     if (node_ids) {
         node_count = collect_nodes(edges, edge_count, node_ids, node_cap);
     } else if (edge_count > 0) {
-        free(filtered);
         return NMO_ERR_NOMEM;
     }
 
@@ -192,7 +195,6 @@ nmo_status_t nmo_ref_graph_to_dot(
 
     fprintf(out, "}\n");
 
-    free(node_ids);
-    free(filtered);
+    /* Arena-allocated buffers are freed when arena is reset/destroyed */
     return NMO_OK;
 }

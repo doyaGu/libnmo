@@ -158,13 +158,16 @@ int nmo_behavior_remove_link(
         return NMO_ERR_INTERNAL;
 
     size_t idx;
-    if (nmo_array_find(&beh_state->sub_behavior_links, &link_id, &idx) == NMO_OK)
+    bool found_in_parent =
+        (nmo_array_find(&beh_state->sub_behavior_links, &link_id, &idx) == NMO_OK);
+    if (found_in_parent)
         nmo_array_remove(&beh_state->sub_behavior_links, idx, NULL);
 
-    /* Destroy the link object */
+    /* Destroy the link object regardless */
     nmo_session_destroy_objects(session, &link_id, 1, 0, NULL);
 
-    return NMO_OK;
+    /* Warn caller if link was not in parent's array (orphaned link) */
+    return found_in_parent ? NMO_OK : NMO_ERR_NOT_FOUND;
 }
 
 /* ------------------------------------------------------------------ */

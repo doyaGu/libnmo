@@ -20,6 +20,7 @@ extern "C" {
 typedef struct nmo_ref_graph nmo_ref_graph_t;
 typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_type_registry nmo_type_registry_t;
+typedef struct nmo_arena nmo_arena_t;
 
 /**
  * @brief Export reference graph as DOT digraph.
@@ -31,6 +32,7 @@ typedef struct nmo_type_registry nmo_type_registry_t;
  * @param repo      Object repository for node names/classes (required)
  * @param registry  Type registry for class name lookup (required)
  * @param kind_mask Bitmask of nmo_ref_kind_t to include (0 = all)
+ * @param arena     Arena for temporary allocations (required)
  * @param out       Output stream (required)
  * @return NMO_OK on success
  */
@@ -39,6 +41,7 @@ NMO_API nmo_status_t nmo_ref_graph_to_dot(
     nmo_object_repository_t *repo,
     const nmo_type_registry_t *registry,
     uint32_t kind_mask,
+    nmo_arena_t *arena,
     FILE *out);
 
 /**

@@ -310,17 +310,16 @@ nmo_object_repository_t *nmo_session_get_repository(const nmo_session_t *session
     return session ? session->repository : NULL;
 }
 
-nmo_behavior_index_t *nmo_session_get_behavior_index(const nmo_session_t *session) {
+nmo_behavior_index_t *nmo_session_get_behavior_index(nmo_session_t *session) {
     if (session == NULL) return NULL;
-    /* Lazy rebuild when dirty (safe: single-threaded) */
-    nmo_session_t *s = (nmo_session_t *)session;
-    if (s->behavior_index_dirty && s->behavior_index != NULL) {
-        nmo_behavior_index_destroy(s->behavior_index);
-        s->behavior_index = NULL;
-        nmo_session_build_behavior_index(s);
-        s->behavior_index_dirty = 0;
+    /* Lazy rebuild when dirty */
+    if (session->behavior_index_dirty && session->behavior_index != NULL) {
+        nmo_behavior_index_destroy(session->behavior_index);
+        session->behavior_index = NULL;
+        nmo_session_build_behavior_index(session);
+        session->behavior_index_dirty = 0;
     }
-    return s->behavior_index;
+    return session->behavior_index;
 }
 
 void nmo_session_invalidate_behavior_index(nmo_session_t *session) {

@@ -122,11 +122,13 @@ NMO_API nmo_object_repository_t *nmo_session_get_repository(const nmo_session_t 
  * @brief Get behavior ownership index.
  *
  * Built automatically during file loading. Returns NULL if no file loaded.
- * Lazily rebuilt when stale (after create/copy/delete mutations).
+ * Lazily rebuilt when stale after any session-execute mutation
+ * (nmo_session_create_object, nmo_session_copy_objects,
+ * nmo_session_destroy_objects, or any nmo_session_execute call).
  *
  * @ownership borrowed (owned by session, valid until next mutation)
  */
-NMO_API nmo_behavior_index_t *nmo_session_get_behavior_index(const nmo_session_t *session);
+NMO_API nmo_behavior_index_t *nmo_session_get_behavior_index(nmo_session_t *session);
 
 /**
  * @brief Get or lazily build the reference graph for this session.
