@@ -277,13 +277,17 @@ static nmo_status_t import_field_value(void *state,
 
         size_t elem_size = guess_element_size(field->type_guid, field_type);
         size_t arr_count = yyjson_arr_size(json_val);
+        const nmo_type_field_t *count_field =
+            nmo_field_resolve_count_field(owner_type, field);
+        if (!count_field) {
+            result->errors++;
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
 
         if (arr_count == 0) {
             if (!dry_run) {
                 *(void **)fptr = NULL;
-                const nmo_type_field_t *cf =
-                    nmo_field_resolve_count_field(owner_type, field);
-                if (cf) write_count_field(state, cf, 0);
+                write_count_field(state, count_field, 0);
             }
             result->fields_written++;
             return NMO_OK;
@@ -316,9 +320,7 @@ static nmo_status_t import_field_value(void *state,
 
         if (!dry_run) {
             *(void **)fptr = buf;
-            const nmo_type_field_t *cf =
-                nmo_field_resolve_count_field(owner_type, field);
-            if (cf) write_count_field(state, cf, arr_count);
+            write_count_field(state, count_field, arr_count);
         }
         result->fields_written++;
         return NMO_OK;
