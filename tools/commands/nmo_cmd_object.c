@@ -616,16 +616,20 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    /* Get objects */
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
-        fprintf(stderr, "Error: Failed to get objects\n");
+    obj_collect_t col = {0};
+    nmo_core_iter_result_t iter_result = {0};
+    rc = nmo_core_object_query_run(&c, NULL, obj_collect_visitor, &col, &iter_result);
+    if (rc != NMO_CLI_EXIT_SUCCESS || col.count < iter_result.matched) {
+        free(col.objects);
+        fprintf(stderr, "Error: Failed to collect objects\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
+    nmo_object_t **objects = col.objects;
+    size_t object_count = col.count;
 
     nmo_object_hierarchy_t hierarchy;
     if (!nmo_object_hierarchy_build(c.ctx, c.session, &hierarchy)) {
+        free(col.objects);
         fprintf(stderr, "Error: Failed to build object hierarchy\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
@@ -636,6 +640,7 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
     nmo_cli_tree_node_t **node_map = (nmo_cli_tree_node_t **)calloc(map_size, sizeof(nmo_cli_tree_node_t *));
     if (!node_map) {
         nmo_object_hierarchy_free(&hierarchy);
+        free(col.objects);
         fprintf(stderr, "Error: Out of memory\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
@@ -698,6 +703,7 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
     nmo_object_hierarchy_free(&hierarchy);
     free(node_map);
+    free(col.objects);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
@@ -799,23 +805,7 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    /* Get objects */
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
-        fprintf(stderr, "Error: Failed to get objects\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    /* Find object by ID */
-    nmo_object_t *target = NULL;
-    for (size_t i = 0; i < object_count; ++i) {
-        if (nmo_object_get_id(objects[i]) == object_id) {
-            target = objects[i];
-            break;
-        }
-    }
-
+    nmo_object_t *target = nmo_core_find_by_id(&c, object_id);
     if (!target) {
         fprintf(stderr, "Error: Object %u not found\n", object_id);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
