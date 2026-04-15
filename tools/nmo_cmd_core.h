@@ -147,6 +147,14 @@ int nmo_core_query_build(
     const nmo_core_query_build_options_t *opts);
 
 /**
+ * @brief Match one object against query criteria using command context.
+ */
+bool nmo_core_query_matches_object(
+    const nmo_cmd_ctx_t *c,
+    const nmo_object_query_t *query,
+    const nmo_object_t *object);
+
+/**
  * @brief Compile a DSL expression and attach it as query->predicate.
  */
 nmo_status_t nmo_core_query_add_dsl_filter(

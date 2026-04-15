@@ -673,15 +673,17 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    /* Resolve optional class filter */
-    nmo_class_id_t filter_cid = 0;
-    if (class_filter_str) {
-        filter_cid = nmo_core_class_id(&c, class_filter_str);
-        if (!filter_cid) {
-            fprintf(stderr, "Error: Unknown class '%s'\n", class_filter_str);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-        }
+    nmo_object_query_t class_query = {0};
+    nmo_core_query_build_options_t query_opts = {
+        .class_name = class_filter_str,
+        .include_derived_classes = true,
+    };
+    rc = nmo_core_query_build(&c, &class_query, NULL, &query_opts);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return nmo_cmd_ctx_done(&c, rc);
     }
+    const nmo_object_query_t *filter_query =
+        class_filter_str != NULL ? &class_query : NULL;
 
     /* Get objects */
     nmo_object_t **objects = NULL;
@@ -754,25 +756,19 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
     for (size_t i = 0; i < object_count; ++i) {
         nmo_object_t *obj = objects[i];
         nmo_object_id_t obj_id = nmo_object_get_id(obj);
-        nmo_class_id_t cid = nmo_object_get_class_id(obj);
 
         /* Skip reachable objects (not in orphan set) */
         if (!id_is_in_set(orphan_ids, orphan_id_count, obj_id)) {
             /* Still count toward filtered total if class matches */
-            if (filter_cid == 0 ||
-                cid == filter_cid ||
-                nmo_type_registry_is_class_derived_from(c.registry, cid, filter_cid)) {
+            if (nmo_core_query_matches_object(&c, filter_query, obj)) {
                 total_filtered++;
             }
             continue;
         }
 
         /* Apply class filter for display */
-        if (filter_cid != 0) {
-            if (cid != filter_cid &&
-                !nmo_type_registry_is_class_derived_from(c.registry, cid, filter_cid)) {
-                continue;
-            }
+        if (!nmo_core_query_matches_object(&c, filter_query, obj)) {
+            continue;
         }
         total_filtered++;
 

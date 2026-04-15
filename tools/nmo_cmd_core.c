@@ -212,6 +212,23 @@ int nmo_core_query_build(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+bool nmo_core_query_matches_object(
+    const nmo_cmd_ctx_t *c,
+    const nmo_object_query_t *query,
+    const nmo_object_t *object)
+{
+    if (query == NULL) {
+        return true;
+    }
+    if (c == NULL || object == NULL) {
+        return false;
+    }
+
+    bool matches = false;
+    return nmo_object_query_matches(object, query, c->registry, &matches) == NMO_OK &&
+           matches;
+}
+
 nmo_status_t nmo_core_query_add_dsl_filter(
     const nmo_cmd_ctx_t *c,
     nmo_object_query_t *query,
