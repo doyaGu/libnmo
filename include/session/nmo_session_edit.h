@@ -55,6 +55,11 @@ NMO_API nmo_status_t nmo_session_edit_set_object_fields(
     size_t field_count,
     nmo_session_field_edit_result_t *out_result);
 
+NMO_API nmo_status_t nmo_session_edit_rename_object(
+    nmo_session_edit_t *edit,
+    nmo_object_id_t object_id,
+    const char *new_name);
+
 NMO_API nmo_status_t nmo_session_edit_set_parameter_value(
     nmo_session_edit_t *edit,
     nmo_object_id_t parameter_id,

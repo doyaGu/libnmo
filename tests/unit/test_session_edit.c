@@ -4,6 +4,7 @@
 #include "session/nmo_session.h"
 #include "session/nmo_session_edit.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_index.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
@@ -335,6 +336,58 @@ TEST(session_edit, remove_behavior_link_commit_runs_delete_hooks) {
     nmo_context_release(ctx);
 }
 
+TEST(session_edit, rename_object_commit_rebuilds_name_index) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t object_id = 0;
+    create_object_or_fail(session, NMO_CID_OBJECT, "old-name", &object_id);
+    ASSERT_EQ(NMO_OK, nmo_session_rebuild_indexes(session, NMO_INDEX_BUILD_ALL));
+    ASSERT_NOT_NULL(nmo_session_find_by_name(session, "old-name", 0));
+
+    nmo_session_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_edit_begin(session, "rename commit", &edit));
+    ASSERT_EQ(NMO_OK, nmo_session_edit_rename_object(edit, object_id, "new-name"));
+    ASSERT_EQ(NMO_OK, nmo_session_edit_commit(edit));
+
+    ASSERT_NULL(nmo_session_find_by_name(session, "old-name", 0));
+    nmo_object_t *renamed = nmo_session_find_by_name(session, "new-name", 0);
+    ASSERT_NOT_NULL(renamed);
+    ASSERT_EQ(object_id, nmo_object_get_id(renamed));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(session_edit, rename_object_rollback_restores_name_without_rebuilding_index) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t object_id = 0;
+    create_object_or_fail(session, NMO_CID_OBJECT, "old-name", &object_id);
+    ASSERT_EQ(NMO_OK, nmo_session_rebuild_indexes(session, NMO_INDEX_BUILD_ALL));
+    nmo_object_index_t *before_index = nmo_session_get_object_index(session);
+    ASSERT_NOT_NULL(before_index);
+
+    nmo_session_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_edit_begin(session, "rename rollback", &edit));
+    ASSERT_EQ(NMO_OK, nmo_session_edit_rename_object(edit, object_id, "new-name"));
+    nmo_session_edit_rollback(edit);
+
+    ASSERT_TRUE(before_index == nmo_session_get_object_index(session));
+    nmo_object_t *restored = nmo_session_find_by_name(session, "old-name", 0);
+    ASSERT_NOT_NULL(restored);
+    ASSERT_EQ(object_id, nmo_object_get_id(restored));
+    ASSERT_NULL(nmo_session_find_by_name(session, "new-name", 0));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(session_edit, parameter_edit_rollback_restores_buffer) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
@@ -494,6 +547,8 @@ REGISTER_TEST(session_edit, add_behavior_link_commit_invalidates_ref_graph);
 REGISTER_TEST(session_edit, remove_behavior_link_rollback_restores_parent_array);
 REGISTER_TEST(session_edit, remove_behavior_link_commit_destroys_link);
 REGISTER_TEST(session_edit, remove_behavior_link_commit_runs_delete_hooks);
+REGISTER_TEST(session_edit, rename_object_commit_rebuilds_name_index);
+REGISTER_TEST(session_edit, rename_object_rollback_restores_name_without_rebuilding_index);
 REGISTER_TEST(session_edit, parameter_edit_rollback_restores_buffer);
 REGISTER_TEST(session_edit, parameterout_object_mode_commit_sets_reference);
 REGISTER_TEST(session_edit, dataarray_object_cell_commit_and_rollback);

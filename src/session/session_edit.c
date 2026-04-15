@@ -77,6 +77,11 @@ typedef struct object_id_action {
     nmo_object_id_t id;
 } object_id_action_t;
 
+typedef struct rename_object_action {
+    nmo_object_id_t id;
+    const char *name;
+} rename_object_action_t;
+
 static void session_edit_free(nmo_session_edit_t *edit)
 {
     if (edit == NULL) {
@@ -257,6 +262,19 @@ static nmo_status_t commit_destroy_object(nmo_session_t *session, void *payload)
         1,
         NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_DEFER_CACHE_INVALIDATION,
         NULL);
+}
+
+static nmo_status_t rollback_rename_object(nmo_session_t *session, void *payload)
+{
+    rename_object_action_t *action = (rename_object_action_t *)payload;
+    if (session == NULL || action == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    return nmo_object_repository_rename(repo, action->id, action->name);
 }
 
 static const nmo_type_registry_t *session_type_registry(nmo_session_t *session)
@@ -588,6 +606,64 @@ nmo_status_t nmo_session_edit_set_object_fields(
     if (out_result != NULL) {
         *out_result = result;
     }
+    return NMO_OK;
+}
+
+nmo_status_t nmo_session_edit_rename_object(
+    nmo_session_edit_t *edit,
+    nmo_object_id_t object_id,
+    const char *new_name)
+{
+    if (edit == NULL || edit->finished) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t checkpoint = edit->rollback_count;
+    nmo_object_repository_t *repo = nmo_session_get_repository(edit->session);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, object_id);
+    if (object == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    const char *old_name = nmo_object_get_name(object);
+    const char *old_name_copy = NULL;
+    if (old_name != NULL) {
+        size_t old_name_len = strlen(old_name) + 1u;
+        char *copy = (char *)nmo_session_edit_alloc(edit, old_name_len, 1);
+        if (copy == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        memcpy(copy, old_name, old_name_len);
+        old_name_copy = copy;
+    }
+
+    rename_object_action_t *rollback =
+        (rename_object_action_t *)nmo_session_edit_alloc(
+            edit, sizeof(*rollback), _Alignof(rename_object_action_t));
+    if (rollback == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    rollback->id = object_id;
+    rollback->name = old_name_copy;
+
+    nmo_status_t push_result =
+        session_edit_push_rollback(edit, rollback_rename_object, rollback);
+    if (push_result != NMO_OK) {
+        return push_result;
+    }
+
+    nmo_status_t rename_result =
+        nmo_object_repository_rename(repo, object_id, new_name);
+    if (rename_result != NMO_OK) {
+        session_edit_rollback_to(edit, checkpoint);
+        return rename_result;
+    }
+
+    nmo_session_edit_mark(edit, NMO_SESSION_EDIT_NAMES);
     return NMO_OK;
 }
 

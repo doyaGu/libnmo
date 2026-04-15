@@ -1409,8 +1409,16 @@ static int cmd_rename(nmo_repl_context_t *repl, int argc, char **argv) {
     const char *old_name = nmo_object_get_name(obj);
     printf("Renaming #%u '%s' -> '%s'\n", id, old_name ? old_name : "", argv[2]);
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
-    int rc = nmo_object_repository_rename(repo, id, argv[2]);
+    nmo_session_edit_t *edit = NULL;
+    nmo_status_t rc = nmo_session_edit_begin(repl->session, "repl rename", &edit);
+    if (rc == NMO_OK) {
+        rc = nmo_session_edit_rename_object(edit, id, argv[2]);
+        if (rc == NMO_OK) {
+            rc = nmo_session_edit_commit(edit);
+        } else {
+            nmo_session_edit_rollback(edit);
+        }
+    }
     if (rc != NMO_OK) {
         fprintf(stderr, "Error: %s\n", nmo_error_string(rc));
         return -1;

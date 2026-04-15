@@ -14,6 +14,7 @@
 #include "nmo.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_edit.h"
 #include "session/nmo_runtime_kernel.h"
 #include "app/nmo_save.h"
 #include "app/nmo_object_import.h"
@@ -42,6 +43,27 @@ typedef struct {
     char new_name[256];
     bool collision;
 } rename_entry_t;
+
+static nmo_status_t nmo_cmd_object_rename_with_edit(
+    nmo_cmd_ctx_t *c,
+    nmo_object_id_t object_id,
+    const char *new_name)
+{
+    nmo_session_edit_t *edit = NULL;
+    nmo_status_t rc =
+        nmo_session_edit_begin(c->session, "cli object rename", &edit);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    rc = nmo_session_edit_rename_object(edit, object_id, new_name);
+    if (rc != NMO_OK) {
+        nmo_session_edit_rollback(edit);
+        return rc;
+    }
+
+    return nmo_session_edit_commit(edit);
+}
 
 
 /**
@@ -181,8 +203,8 @@ static int nmo_cmd_object_rename_batch(
     size_t rename_errors = 0;
     if (!dry_run) {
         for (size_t i = 0; i < entry_count; i++) {
-            int rrc = nmo_object_repository_rename(
-                repo, entries[i].id, entries[i].new_name);
+            nmo_status_t rrc = nmo_cmd_object_rename_with_edit(
+                &c, entries[i].id, entries[i].new_name);
             if (rrc != NMO_OK) {
                 fprintf(stderr, "Error: Failed to rename object %u: %s\n",
                         entries[i].id, nmo_error_string(rrc));
@@ -407,7 +429,7 @@ int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *gl
     }
 
     /* Perform rename */
-    int rename_rc = nmo_object_repository_rename(repo, object_id, new_name);
+    int rename_rc = nmo_cmd_object_rename_with_edit(&c, object_id, new_name);
     if (rename_rc != NMO_OK) {
         fprintf(stderr, "Error: Failed to rename object %u: %s\n",
                 object_id, nmo_error_string(rename_rc));
