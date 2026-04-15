@@ -370,6 +370,26 @@ static inline const nmo_type_field_t *nmo_field_get_count_field(
     return nmo_type_get_field_by_name(type, field->count_field_name);
 }
 
+/**
+ * @brief Resolve the runtime element count for a pointer-array field.
+ *
+ * Uses explicit count_field_name metadata first. If metadata is absent, falls
+ * back to the legacy naming convention used by older schemas:
+ * field_ids -> field_count, field_id -> field_count, fields -> field_count,
+ * and long_prefix_items -> long_prefix_count.
+ *
+ * @param type Type descriptor that owns array_field
+ * @param array_field Pointer-array field descriptor
+ * @param instance Object or struct instance containing both fields
+ * @param out_count Output element count
+ * @return NMO_OK when a count field was found, NMO_ERR_NOT_FOUND otherwise
+ */
+NMO_API nmo_status_t nmo_field_resolve_count(
+    const nmo_type_descriptor_t *type,
+    const nmo_type_field_t *array_field,
+    const void *instance,
+    uint32_t *out_count);
+
 /* ============================================================================
  * Field Iteration
  * ============================================================================ */

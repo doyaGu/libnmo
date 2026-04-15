@@ -88,69 +88,6 @@ static nmo_ref_kind_t nmo_ref_kind_from_field(const nmo_type_field_t *field) {
     return NMO_REF_UNKNOWN;
 }
 
-static bool nmo_ref_get_pointer_array_count(
-    const nmo_type_descriptor_t *type,
-    const nmo_type_field_t *field,
-    const void *instance,
-    uint32_t *out_count)
-{
-    if (!type || !field || !instance || !out_count) {
-        return false;
-    }
-
-    /* Fast path: explicit count_field_name metadata */
-    const nmo_type_field_t *cf = nmo_field_get_count_field(type, field);
-    if (cf != NULL) {
-        *out_count = nmo_field_get_uint32(instance, cf);
-        return true;
-    }
-
-    /* Heuristic fallback */
-    const char *field_name = field->name;
-    size_t name_len = strlen(field_name);
-    size_t base_len = name_len;
-
-    if (name_len > 4 && strcmp(field_name + name_len - 4, "_ids") == 0) {
-        base_len = name_len - 4;
-    } else if (name_len > 3 && strcmp(field_name + name_len - 3, "_id") == 0) {
-        base_len = name_len - 3;
-    } else if (name_len > 1 && field_name[name_len - 1] == 's') {
-        base_len = name_len - 1;
-    }
-
-    if (base_len == 0 || base_len + 6 >= 128) {
-        return false;
-    }
-
-    char count_name[128];
-    memcpy(count_name, field_name, base_len);
-    memcpy(count_name + base_len, "_count", 7);
-
-    const nmo_type_field_t *count_field = nmo_type_get_field_by_name(type, count_name);
-    if (!count_field && base_len > 0) {
-        const char *last_underscore = NULL;
-        for (size_t i = 0; i < base_len; ++i) {
-            if (field_name[i] == '_') {
-                last_underscore = field_name + i;
-            }
-        }
-        if (last_underscore) {
-            size_t short_base_len = (size_t)(last_underscore - field_name);
-            if (short_base_len > 0 && short_base_len + 6 < sizeof(count_name)) {
-                memcpy(count_name, field_name, short_base_len);
-                memcpy(count_name + short_base_len, "_count", 7);
-                count_field = nmo_type_get_field_by_name(type, count_name);
-            }
-        }
-    }
-    if (!count_field) {
-        return false;
-    }
-
-    *out_count = nmo_field_get_uint32(instance, count_field);
-    return true;
-}
-
 static bool nmo_ref_field_visitor(
     void *user_data,
     const nmo_type_field_t *field,
@@ -199,7 +136,7 @@ static bool nmo_ref_field_visitor(
         }
 
         uint32_t count = 0;
-        if (!nmo_ref_get_pointer_array_count(ctx->type, field, ctx->instance, &count)) {
+        if (nmo_field_resolve_count(ctx->type, field, ctx->instance, &count) != NMO_OK) {
             return true;
         }
 
@@ -338,9 +275,9 @@ static nmo_status_t nmo_ref_enumerate_struct_arrays(
             if (!ptr) continue;
 
             uint32_t count = 0;
-            if (!nmo_ref_get_pointer_array_count(
-                    type, field, instance, &count))
+            if (nmo_field_resolve_count(type, field, instance, &count) != NMO_OK) {
                 continue;
+            }
 
             for (uint32_t k = 0; k < count; ++k) {
                 const void *elem =
