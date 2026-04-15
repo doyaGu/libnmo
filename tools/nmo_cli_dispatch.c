@@ -425,6 +425,27 @@ static void behavior_trace_usage(FILE *out) {
     fprintf(out, "  --max-depth <n>  Maximum trace depth\n");
 }
 
+static void behavior_add_link_usage(FILE *out) {
+    fprintf(out, "Usage: nmo behavior add-link --parent <beh-id> --from <io-id> --to <io-id> [options] <file> -o <output>\n\n");
+    fprintf(out, "Add a behavior graph link between two IO ports.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -p, --parent <id>      Parent behavior ID (required)\n");
+    fprintf(out, "  --from <id>            Source IO port ID (required)\n");
+    fprintf(out, "  --to <id>              Target IO port ID (required)\n");
+    fprintf(out, "  -d, --delay <n>        Activation delay in frames (default: 1)\n");
+    fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
+    fprintf(out, "  --dry-run              Preview without saving\n");
+}
+
+static void behavior_remove_link_usage(FILE *out) {
+    fprintf(out, "Usage: nmo behavior remove-link <link-id> --parent <beh-id> <file> -o <output>\n\n");
+    fprintf(out, "Remove a behavior graph link and delete the link object.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -p, --parent <id>      Parent behavior ID (required)\n");
+    fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
+    fprintf(out, "  --dry-run              Preview without saving\n");
+}
+
 static void parameter_list_usage(FILE *out) {
     fprintf(out, "Usage: nmo parameter list <file>\n\n");
     fprintf(out, "List parameter objects in the file (CKParameter* family).\n");
@@ -885,6 +906,8 @@ static const nmo_cli_action_t behavior_actions[] = {
     {"dump", "d", "Dump behavior tree with decoded values", nmo_cmd_behavior_dump, behavior_dump_usage, NULL, 0, NULL},
     {"find", "f", "Search behaviors by name/GUID/type", nmo_cmd_behavior_find, behavior_find_usage, NULL, 0, NULL},
     {"trace", "tr", "Trace execution path from IO", nmo_cmd_behavior_trace, behavior_trace_usage, NULL, 0, NULL},
+    {"add-link", NULL, "Add behavior graph link", nmo_cmd_behavior_add_link, behavior_add_link_usage, NULL, 0, NULL},
+    {"remove-link", NULL, "Remove behavior graph link", nmo_cmd_behavior_remove_link, behavior_remove_link_usage, NULL, 0, NULL},
     {"interface", "iface", "Interface layout commands", NULL, NULL,
         nmo_behavior_interface_sub_actions, NMO_BEHAVIOR_INTERFACE_SUB_ACTION_COUNT, "show"},
 };
