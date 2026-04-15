@@ -82,7 +82,7 @@ int nmo_cmd_material_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
                                       (name && name[0]) ? name : "");
 
             const nmo_material_state_t *ms =
-                (const nmo_material_state_t *)nmo_object_get_data(obj);
+                (const nmo_material_state_t *)nmo_object_get_state(obj);
             if (ms) {
                 char color_buf[16];
                 format_argb(color_buf, sizeof(color_buf), ms->diffuse_color);
@@ -124,7 +124,7 @@ int nmo_cmd_material_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
             char tex_buf[16];
 
             const nmo_material_state_t *ms =
-                (const nmo_material_state_t *)nmo_object_get_data(obj);
+                (const nmo_material_state_t *)nmo_object_get_state(obj);
             if (ms) {
                 format_argb(diffuse_buf, sizeof(diffuse_buf), ms->diffuse_color);
                 snprintf(tex_buf, sizeof(tex_buf), "%u",
@@ -193,7 +193,7 @@ int nmo_cmd_material_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     const char *name = nmo_object_get_name(obj);
     const nmo_material_state_t *ms =
-        (const nmo_material_state_t *)nmo_object_get_data(obj);
+        (const nmo_material_state_t *)nmo_object_get_state(obj);
 
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);

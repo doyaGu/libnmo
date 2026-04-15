@@ -59,6 +59,7 @@ static const char *k_probe_prefixes[] = {
 
 static const char *k_state_only_cli_sources[] = {
     "tools/commands/nmo_cmd_data.c",
+    "tools/commands/nmo_cmd_material.c",
 };
 
 static int line_has_legacy_api(const char *line) {
