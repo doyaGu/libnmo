@@ -345,10 +345,6 @@ static nmo_status_t import_field_value(void *state,
         }
 
         nmo_array_t *arr = (nmo_array_t *)fptr;
-        if (!dry_run) {
-            nmo_array_clear(arr);
-        }
-
         uint8_t stack_buf[256];
         void *elem_buf = stack_buf;
         if (elem_size > sizeof(stack_buf)) {
@@ -359,27 +355,65 @@ static nmo_status_t import_field_value(void *state,
             }
         }
 
-        size_t written = 0;
+        if (!field_type) {
+            result->errors++;
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+
+        const nmo_allocator_t *array_allocator =
+            (arr->element_size != 0 && arr->allocator.alloc && arr->allocator.free)
+                ? &arr->allocator
+                : NULL;
+        nmo_array_t temp;
+        nmo_status_t st = nmo_array_init(&temp, elem_size, arr_count, array_allocator);
+        if (st != NMO_OK) {
+            result->errors++;
+            return st;
+        }
+        if (arr->element_size != 0) {
+            nmo_array_set_lifecycle(&temp, &arr->lifecycle);
+        }
+
         yyjson_val *elem;
         yyjson_arr_iter iter;
         yyjson_arr_iter_init(json_val, &iter);
         while ((elem = yyjson_arr_iter_next(&iter)) != NULL) {
             memset(elem_buf, 0, elem_size);
-            if (field_type) {
-                char conv_buf[IMPORT_VALUE_BUF_SIZE];
-                const char *str = json_val_to_str(elem, conv_buf, sizeof(conv_buf));
-                if (str) {
-                    nmo_status_t st = nmo_type_value_from_string(elem_buf, field_type, registry, str);
-                    if (st == NMO_OK) {
-                        if (!dry_run) {
-                            nmo_array_append(arr, elem_buf);
-                        }
-                        written++;
-                    }
+            char conv_buf[IMPORT_VALUE_BUF_SIZE];
+            const char *str = json_val_to_str(elem, conv_buf, sizeof(conv_buf));
+            if (!str) {
+                nmo_array_dispose(&temp);
+                result->errors++;
+                return NMO_ERR_INVALID_ARGUMENT;
+            }
+            st = nmo_type_value_from_string(elem_buf, field_type, registry, str);
+            if (st != NMO_OK) {
+                nmo_array_dispose(&temp);
+                result->errors++;
+                return st;
+            }
+            st = nmo_array_append(&temp, elem_buf);
+            if (st != NMO_OK) {
+                nmo_array_dispose(&temp);
+                result->errors++;
+                return st;
+            }
+        }
+
+        if (!dry_run) {
+            if (arr->element_size == 0) {
+                *arr = temp;
+                memset(&temp, 0, sizeof(temp));
+            } else {
+                st = nmo_array_swap(arr, &temp);
+                if (st != NMO_OK) {
+                    nmo_array_dispose(&temp);
+                    result->errors++;
+                    return st;
                 }
             }
         }
-        (void)arr_count;
+        nmo_array_dispose(&temp);
 
         result->fields_written++;
         return NMO_OK;

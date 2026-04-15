@@ -261,6 +261,7 @@ nmo_status_t nmo_chunk_write_string(nmo_chunk_t *chunk, const char *str) {
 
     // Write string data
     if (len > 0) {
+        memset(&data[state->current_pos], 0, dwords * sizeof(uint32_t));
         memcpy(&data[state->current_pos], str, len);
         state->current_pos += dwords;
     }
@@ -340,6 +341,7 @@ nmo_status_t nmo_chunk_write_buffer(nmo_chunk_t *chunk,
 
     // Write data
     if (size > 0 && data) {
+        memset(&data_dwords[state->current_pos], 0, dwords * sizeof(uint32_t));
         memcpy(&data_dwords[state->current_pos], data, size);
         state->current_pos += dwords;
     }
@@ -372,6 +374,7 @@ nmo_status_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
 
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
+    memset(&data_dwords[state->current_pos], 0, dwords * sizeof(uint32_t));
     memcpy(&data_dwords[state->current_pos], data, size);
     state->current_pos += dwords;
 

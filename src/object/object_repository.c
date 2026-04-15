@@ -481,6 +481,11 @@ int nmo_object_repository_rename(nmo_object_repository_t *repo,
         return NMO_ERR_NOT_FOUND;
     }
 
+    int index_result = nmo_object_repository_notify_remove(repo, id);
+    if (index_result != NMO_OK) {
+        return index_result;
+    }
+
     /* 1. Remove old name from table (key still valid at this point) */
     if (obj->name != NULL && obj->name[0] != '\0') {
         nmo_object_t *mapped = NULL;
@@ -493,6 +498,7 @@ int nmo_object_repository_rename(nmo_object_repository_t *repo,
     /* 2. Update the object's name (frees old, allocates new) */
     int set_result = nmo_object_set_name(obj, new_name);
     if (set_result != NMO_OK) {
+        nmo_object_repository_notify_add(repo, obj);
         return set_result;
     }
 
@@ -500,11 +506,12 @@ int nmo_object_repository_rename(nmo_object_repository_t *repo,
     if (new_name != NULL && new_name[0] != '\0') {
         nmo_status_t ins = nmo_hash_table_insert(repo->name_table, &obj->name, &obj);
         if (ins != NMO_OK) {
+            nmo_object_repository_notify_add(repo, obj);
             return ins;
         }
     }
 
-    return NMO_OK;
+    return nmo_object_repository_notify_add(repo, obj);
 }
 
 /**
