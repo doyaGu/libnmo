@@ -1,5 +1,6 @@
 #include "test_framework.h"
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -139,6 +140,42 @@ static void assert_file_has_no_substring(const char *relative_path, const char *
     fclose(fp);
 }
 
+static void assert_file_section_has_no_substring(
+    const char *relative_path,
+    const char *start_marker,
+    const char *end_marker,
+    const char *needle)
+{
+    char full_path[512];
+    FILE *fp = NULL;
+    for (size_t i = 0; i < sizeof(k_probe_prefixes) / sizeof(k_probe_prefixes[0]); i++) {
+        snprintf(full_path, sizeof(full_path), "%s%s", k_probe_prefixes[i], relative_path);
+        fp = fopen(full_path, "rb");
+        if (fp != NULL) {
+            break;
+        }
+    }
+
+    ASSERT_NOT_NULL(fp);
+    char line[1024];
+    bool in_section = false;
+    bool saw_section = false;
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        if (!in_section && strstr(line, start_marker) != NULL) {
+            in_section = true;
+            saw_section = true;
+        } else if (in_section && strstr(line, end_marker) != NULL) {
+            break;
+        }
+
+        if (in_section) {
+            ASSERT_NULL(strstr(line, needle));
+        }
+    }
+    fclose(fp);
+    ASSERT_TRUE(saw_section);
+}
+
 static void assert_file_not_found(const char *relative_path) {
     char full_path[512];
     for (size_t i = 0; i < sizeof(k_probe_prefixes) / sizeof(k_probe_prefixes[0]); i++) {
@@ -236,6 +273,14 @@ TEST(no_legacy_runtime_api_exports, parameter_commands_use_object_query_api) {
     assert_file_has_no_substring("tools/commands/nmo_cmd_parameter.c", "nmo_session_get_objects");
 }
 
+TEST(no_legacy_runtime_api_exports, behavior_list_uses_object_query_api) {
+    assert_file_section_has_no_substring(
+        "tools/commands/nmo_cmd_behavior.c",
+        " * behavior list",
+        " * behavior stats",
+        "nmo_session_get_objects");
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_exports);
 REGISTER_TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_pointer_state);
@@ -252,4 +297,5 @@ REGISTER_TEST(no_legacy_runtime_api_exports, mesh_commands_use_shared_object_que
 REGISTER_TEST(no_legacy_runtime_api_exports, animation_commands_use_shared_object_query_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, resource_commands_use_core_object_lookup);
 REGISTER_TEST(no_legacy_runtime_api_exports, parameter_commands_use_object_query_api);
+REGISTER_TEST(no_legacy_runtime_api_exports, behavior_list_uses_object_query_api);
 TEST_MAIN_END()

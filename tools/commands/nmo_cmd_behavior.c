@@ -155,6 +155,94 @@ const char *interface_color_to_hex(uint32_t color, char *buf, size_t size) {
  * behavior list
  * ============================================================================ */
 
+typedef struct behavior_list_data {
+    nmo_context_t *ctx;
+    yyjson_mut_doc *doc;
+    yyjson_mut_val *arr;
+    nmo_cli_table_t *table;
+    size_t count;
+} behavior_list_data_t;
+
+static void behavior_list_add_json(yyjson_mut_doc *doc,
+                                   yyjson_mut_val *arr,
+                                   nmo_context_t *ctx,
+                                   nmo_object_t *obj)
+{
+    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+    yyjson_mut_val *item = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_uint(doc, item, "id", nmo_object_get_id(obj));
+    yyjson_mut_obj_add_uint(doc, item, "class_id", class_id);
+
+    const char *class_name = nmo_cli_class_name_from_id(ctx, class_id);
+    if (class_name) nmo_cli_json_add_str_safe(doc, item, "class_name", class_name);
+
+    const char *name = nmo_object_get_name(obj);
+    if (name && name[0]) nmo_cli_json_add_str_safe(doc, item, "name", name);
+
+    yyjson_mut_arr_add_val(arr, item);
+}
+
+static void behavior_list_add_table_row(nmo_cli_table_t *table, nmo_object_t *obj) {
+    const nmo_behavior_state_t *bs =
+        (const nmo_behavior_state_t *)nmo_object_get_state(obj);
+
+    char id_buf[16];
+    snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
+
+    const char *type_str = "Graph";
+    if (bs) {
+        if (bs->flags & CKBEHAVIOR_SCRIPT) type_str = "Script";
+        else if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) type_str = "BB";
+    }
+
+    char io_buf[16], pin_buf[16], pout_buf[16], sub_buf[16];
+    size_t n_io = bs ? (bs->inputs.count + bs->outputs.count) : 0;
+    snprintf(io_buf, sizeof(io_buf), "%zu", n_io);
+    snprintf(pin_buf, sizeof(pin_buf), "%zu", bs ? bs->in_parameters.count : 0);
+    snprintf(pout_buf, sizeof(pout_buf), "%zu", bs ? bs->out_parameters.count : 0);
+    snprintf(sub_buf, sizeof(sub_buf), "%zu", bs ? bs->sub_behaviors.count : 0);
+
+    const char *name = nmo_object_get_name(obj);
+    const char *cells[] = {
+        id_buf, type_str, io_buf, pin_buf, pout_buf, sub_buf,
+        (name && name[0]) ? name : "-",
+    };
+    nmo_cli_table_add_row(table, cells, 7);
+}
+
+static bool behavior_list_query_visitor(size_t index,
+                                        nmo_object_t *obj,
+                                        void *user_data)
+{
+    (void)index;
+
+    behavior_list_data_t *list = (behavior_list_data_t *)user_data;
+    if (list->arr) {
+        behavior_list_add_json(list->doc, list->arr, list->ctx, obj);
+    } else if (list->table) {
+        behavior_list_add_table_row(list->table, obj);
+    }
+    list->count++;
+    return true;
+}
+
+static int behavior_list_core_visitor(size_t index,
+                                      nmo_object_t *obj,
+                                      const nmo_cmd_ctx_t *c,
+                                      void *user)
+{
+    (void)index;
+
+    behavior_list_data_t *list = (behavior_list_data_t *)user;
+    if (list->arr) {
+        behavior_list_add_json(list->doc, list->arr, c->ctx, obj);
+    } else if (list->table) {
+        behavior_list_add_table_row(list->table, obj);
+    }
+    list->count++;
+    return 0;
+}
+
 static int behavior_list_single(const char *file_path,
                                 const nmo_cli_global_opts_t *global,
                                 void *user_data,
@@ -180,37 +268,30 @@ static int behavior_list_single(const char *file_path,
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(session, &objects, &object_count) != NMO_OK) {
-        fprintf(stderr, "Error: Failed to get objects\n");
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    if (!repo) {
+        fprintf(stderr, "Error: Failed to get object repository\n");
         nmo_tool_close_session(ctx, session);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    size_t behavior_count = 0;
+    nmo_object_query_t query = {
+        .class_id = NMO_CID_BEHAVIOR,
+        .include_derived_classes = true,
+    };
+    nmo_object_query_result_t query_result = {0};
 
     if (doc && data) {
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-            if (!is_behavior_class(registry, class_id)) continue;
-
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, item, "id", nmo_object_get_id(obj));
-            yyjson_mut_obj_add_uint(doc, item, "class_id", class_id);
-
-            const char *class_name = nmo_cli_class_name_from_id(ctx, class_id);
-            if (class_name) nmo_cli_json_add_str_safe(doc, item, "class_name", class_name);
-
-            const char *name = nmo_object_get_name(obj);
-            if (name && name[0]) nmo_cli_json_add_str_safe(doc, item, "name", name);
-
-            yyjson_mut_arr_add_val(arr, item);
-            behavior_count++;
+        behavior_list_data_t ld = { .ctx = ctx, .doc = doc, .arr = arr };
+        if (nmo_object_query_iterate(repo, &query, registry,
+                                     behavior_list_query_visitor, &ld,
+                                     &query_result) != NMO_OK) {
+            fprintf(stderr, "Error: Failed to query objects\n");
+            nmo_tool_close_session(ctx, session);
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
-        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)behavior_count);
+        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)ld.count);
         yyjson_mut_obj_add_val(doc, data, "objects", arr);
     } else {
         FILE *out = (text_ctx && text_ctx->out) ? text_ctx->out : stdout;
@@ -228,40 +309,17 @@ static int behavior_list_single(const char *file_path,
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-            if (!is_behavior_class(registry, class_id)) continue;
-
-            const nmo_behavior_state_t *bs =
-                (const nmo_behavior_state_t *)nmo_object_get_state(obj);
-
-            char id_buf[16];
-            snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
-
-            const char *type_str = "Graph";
-            if (bs) {
-                if (bs->flags & CKBEHAVIOR_SCRIPT) type_str = "Script";
-                else if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) type_str = "BB";
-            }
-
-            char io_buf[16], pin_buf[16], pout_buf[16], sub_buf[16];
-            size_t n_io = bs ? (bs->inputs.count + bs->outputs.count) : 0;
-            snprintf(io_buf, sizeof(io_buf), "%zu", n_io);
-            snprintf(pin_buf, sizeof(pin_buf), "%zu", bs ? bs->in_parameters.count : 0);
-            snprintf(pout_buf, sizeof(pout_buf), "%zu", bs ? bs->out_parameters.count : 0);
-            snprintf(sub_buf, sizeof(sub_buf), "%zu", bs ? bs->sub_behaviors.count : 0);
-
-            const char *name = nmo_object_get_name(obj);
-            const char *cells[] = {
-                id_buf, type_str, io_buf, pin_buf, pout_buf, sub_buf,
-                (name && name[0]) ? name : "-",
-            };
-            nmo_cli_table_add_row(&table, cells, 7);
-            behavior_count++;
+        behavior_list_data_t ld = { .ctx = ctx, .table = &table };
+        if (nmo_object_query_iterate(repo, &query, registry,
+                                     behavior_list_query_visitor, &ld,
+                                     &query_result) != NMO_OK) {
+            fprintf(stderr, "Error: Failed to query objects\n");
+            nmo_cli_table_free(&table);
+            nmo_tool_close_session(ctx, session);
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
 
-        fprintf(out, "Behaviors: %zu\n\n", behavior_count);
+        fprintf(out, "Behaviors: %zu\n\n", ld.count);
         nmo_cli_table_print(&table, out, colorize);
         nmo_cli_table_free(&table);
     }
@@ -295,47 +353,22 @@ int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
-        fprintf(stderr, "Error: Failed to get objects\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    size_t behavior_count = 0;
+    nmo_object_query_t query = {0};
+    nmo_core_query_set_class_id(&query, NMO_CID_BEHAVIOR, true);
 
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-
-            if (!is_behavior_class(c.registry, class_id)) {
-                continue;
-            }
-
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, item, "id", nmo_object_get_id(obj));
-            yyjson_mut_obj_add_uint(doc, item, "class_id", class_id);
-
-            const char *class_name = nmo_cli_class_name_from_id(c.ctx, class_id);
-            if (class_name) {
-                yyjson_mut_obj_add_str(doc, item, "class_name", class_name);
-            }
-
-            const char *name = nmo_object_get_name(obj);
-            if (name && name[0]) {
-                nmo_cli_json_add_str_safe(doc, item, "name", name);
-            }
-
-            yyjson_mut_arr_add_val(arr, item);
-            behavior_count++;
+        behavior_list_data_t ld = { .doc = doc, .arr = arr };
+        rc = nmo_core_object_query_run(&c, &query,
+                                       behavior_list_core_visitor, &ld, NULL);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            return nmo_cmd_ctx_done(&c, rc);
         }
 
-        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)behavior_count);
+        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)ld.count);
         yyjson_mut_obj_add_val(doc, data, "objects", arr);
 
         nmo_cmd_ctx_json_end(&c, doc, data, "behavior.list");
@@ -353,46 +386,15 @@ int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-            if (!is_behavior_class(c.registry, class_id)) {
-                continue;
-            }
-
-            const nmo_behavior_state_t *bs =
-                (const nmo_behavior_state_t *)nmo_object_get_state(obj);
-
-            char id_buf[16];
-            snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
-
-            const char *type_str = "Graph";
-            if (bs) {
-                if (bs->flags & CKBEHAVIOR_SCRIPT) type_str = "Script";
-                else if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) type_str = "BB";
-            }
-
-            char io_buf[16], pin_buf[16], pout_buf[16], sub_buf[16];
-            size_t n_io = bs ? (bs->inputs.count + bs->outputs.count) : 0;
-            snprintf(io_buf, sizeof(io_buf), "%zu", n_io);
-            snprintf(pin_buf, sizeof(pin_buf), "%zu",
-                     bs ? bs->in_parameters.count : 0);
-            snprintf(pout_buf, sizeof(pout_buf), "%zu",
-                     bs ? bs->out_parameters.count : 0);
-            snprintf(sub_buf, sizeof(sub_buf), "%zu",
-                     bs ? bs->sub_behaviors.count : 0);
-
-            const char *name = nmo_object_get_name(obj);
-
-            const char *cells[] = {
-                id_buf, type_str, io_buf, pin_buf, pout_buf, sub_buf,
-                (name && name[0]) ? name : "-",
-            };
-            nmo_cli_table_add_row(&table, cells, 7);
-            behavior_count++;
+        behavior_list_data_t ld = { .table = &table };
+        rc = nmo_core_object_query_run(&c, &query,
+                                       behavior_list_core_visitor, &ld, NULL);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            nmo_cli_table_free(&table);
+            return nmo_cmd_ctx_done(&c, rc);
         }
 
-        fprintf(c.out, "Behaviors: %zu\n\n", behavior_count);
+        fprintf(c.out, "Behaviors: %zu\n\n", ld.count);
         nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
     }
