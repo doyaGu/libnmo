@@ -794,10 +794,6 @@ nmo_status_t nmo_object_import_json(
         /* Get mutable state */
         void *state = nmo_object_get_state(obj);
         if (!state) {
-            /* Fall back to data pointer (legacy) */
-            state = nmo_object_get_data(obj);
-        }
-        if (!state) {
             result->errors++;
             continue;
         }
