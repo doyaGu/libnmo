@@ -306,7 +306,7 @@ set(NMO_SESSION_SOURCES
     src/session/builder.c
     src/session/deserializer.c
     src/session/id_mapping.c
-    src/session/id_remap.c
+    src/session/save_id_remap.c
     src/session/id_sanitizer.c
     src/session/reference_resolver.c
     src/session/session_edit.c

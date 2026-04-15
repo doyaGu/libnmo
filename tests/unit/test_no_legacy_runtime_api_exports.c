@@ -174,9 +174,21 @@ TEST(no_legacy_runtime_api_exports, type_guid_compat_aliases_are_removed) {
     assert_file_not_found("include/type/nmo_type_guid_compat.h");
 }
 
+TEST(no_legacy_runtime_api_exports, session_id_remap_compat_layer_is_removed) {
+    assert_file_not_found("include/session/nmo_id_remap.h");
+    assert_file_not_found("src/session/id_remap.c");
+    assert_file_has_no_substring("src/app/save.c", "nmo_id_remap_table_t");
+    assert_file_has_no_substring("src/app/save.c", "nmo_id_remap_lookup(");
+    assert_file_has_no_substring("src/app/save.c", "nmo_id_remap_plan_");
+    assert_file_has_no_substring("src/session/object_system.c", "nmo_id_remap_table_t");
+    assert_file_has_no_substring("src/session/object_system.c", "nmo_id_remap_table_get_count");
+    assert_file_has_no_substring("src/session/deserializer.c", "session/nmo_id_remap.h");
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_exports);
 REGISTER_TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_pointer_state);
 REGISTER_TEST(no_legacy_runtime_api_exports, runtime_graph_uses_current_ref_graph_names);
 REGISTER_TEST(no_legacy_runtime_api_exports, type_guid_compat_aliases_are_removed);
+REGISTER_TEST(no_legacy_runtime_api_exports, session_id_remap_compat_layer_is_removed);
 TEST_MAIN_END()

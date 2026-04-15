@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file save_pipeline.c
  * @brief Two-phase commit save pipeline implementation (Phase 1.4)
  *
@@ -41,7 +41,7 @@
 #include "format/nmo_manager.h"
 #include "format/nmo_manager_registry.h"
 #include "object/nmo_serialize_context.h"
-#include "session/nmo_id_remap.h"
+#include "session/nmo_save_id_remap.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_system.h"
 #include "object/nmo_shadow_storage.h"
@@ -103,8 +103,8 @@ struct nmo_serializer {
     size_t object_count;
     uint8_t *reference_map;       /**< 1 = save as reference only */
     nmo_object_desc_t *obj_descs;
-    nmo_id_remap_plan_t *remap_plan;
-    nmo_id_remap_table_t *file_index_remap;
+    nmo_save_id_remap_plan_t *remap_plan;
+    nmo_id_remap_t *file_index_remap;
     nmo_chunk_file_context_t *chunk_file_ctx;
 
     /* Phase 1 outputs: Manager info */
@@ -389,7 +389,7 @@ void nmo_serializer_destroy(nmo_serializer_t *ctx) {
 
     /* Clean up remap plan if allocated */
     if (ctx->remap_plan != NULL) {
-        nmo_id_remap_plan_destroy(ctx->remap_plan);
+        nmo_save_id_remap_plan_destroy(ctx->remap_plan);
         ctx->remap_plan = NULL;
     }
 
@@ -554,12 +554,12 @@ nmo_status_t nmo_save_file(
     }
 
     /* Resolve compression settings before handing off to the two-phase
-     * pipeline.  Priority (high → low):
-     *   1. NMO_SAVE_COMPRESSED flag  – forces both sections compressed.
-     *   2. Caller-supplied bools     – when opts != NULL and the flag is
+     * pipeline.  Priority (high to low):
+     *   1. NMO_SAVE_COMPRESSED flag  - forces both sections compressed.
+     *   2. Caller-supplied bools     - when opts != NULL and the flag is
      *                                  absent the compress_header /
      *                                  compress_data fields are used as-is.
-     *   3. Session file_info         – when opts == NULL compression is
+     *   3. Session file_info         - when opts == NULL compression is
      *                                  inherited from the original file
      *                                  (round-trip safe).
      */
@@ -590,7 +590,7 @@ nmo_status_t nmo_save_file(
         return result;
     }
 
-    /* Mark arena before Phase 2 — compression buffers allocated during
+    /* Mark arena before Phase 2 - compression buffers allocated during
        Phase 2 will be reclaimed after the file is written.  Phase 1
        results (serialized chunks, descriptors) are preserved. */
     nmo_arena_mark_t phase2_mark;
@@ -712,7 +712,7 @@ static nmo_status_t save_execute_pre_hooks(nmo_serializer_t *ctx) {
 static nmo_status_t save_build_remap_plan(nmo_serializer_t *ctx) {
     nmo_log(ctx->logger, NMO_LOG_INFO, "Step 1.3: Building ID remap plan");
 
-    ctx->remap_plan = nmo_id_remap_plan_create(
+    ctx->remap_plan = nmo_save_id_remap_plan_create(
         ctx->repo, ctx->objects, ctx->object_count);
 
     if (ctx->remap_plan == NULL) {
@@ -720,8 +720,8 @@ static nmo_status_t save_build_remap_plan(nmo_serializer_t *ctx) {
         return SAVE_ERR(NMO_ERR_NOMEM, "ID remap plan allocation failed");
     }
 
-    nmo_id_remap_table_t *remap_table = nmo_id_remap_plan_get_table(ctx->remap_plan);
-    size_t remap_count = nmo_id_remap_table_get_count(remap_table);
+    nmo_id_remap_t *remap_table = nmo_save_id_remap_plan_get_table(ctx->remap_plan);
+    size_t remap_count = nmo_id_remap_get_count(remap_table);
 
     nmo_log(ctx->logger, NMO_LOG_INFO, "  Created remap plan with %zu entries", remap_count);
 
@@ -758,7 +758,7 @@ static nmo_status_t save_build_remap_plan(nmo_serializer_t *ctx) {
 static nmo_status_t save_serialize_managers(nmo_serializer_t *ctx) {
     nmo_log(ctx->logger, NMO_LOG_INFO, "Step 1.4: Serializing manager chunks");
 
-    nmo_id_remap_table_t *remap_table = ctx->file_index_remap;
+    nmo_id_remap_t *remap_table = ctx->file_index_remap;
 
     /* Get session manager data for round-trip preservation */
     const nmo_file_state_t *mgr_fstate = nmo_session_get_file_state(ctx->session);
@@ -862,7 +862,7 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
     size_t skipped_count = 0;
     const nmo_shadow_storage_t *shadow_storage = nmo_session_get_shadow_storage(ctx->session);
 
-    nmo_id_remap_table_t *remap_table = ctx->file_index_remap;
+    nmo_id_remap_t *remap_table = ctx->file_index_remap;
     const int require_schema = (ctx->options.flags & NMO_SAVE_REQUIRE_SCHEMA) != 0;
     nmo_class_id_t first_require_fail_class = 0;
     nmo_object_id_t first_require_fail_id = 0;
@@ -973,9 +973,9 @@ static nmo_status_t save_build_data_section(nmo_serializer_t *ctx) {
     uint32_t file_version = ctx->file_info.file_version;
     if (file_version == 0) file_version = 8;
 
-    nmo_id_remap_table_t *remap_table = NULL;
+    nmo_id_remap_t *remap_table = NULL;
     if (file_version < 7) {
-        remap_table = nmo_id_remap_plan_get_table(ctx->remap_plan);
+        remap_table = nmo_save_id_remap_plan_get_table(ctx->remap_plan);
         if (remap_table == NULL) {
             return SAVE_ERR(NMO_ERR_INVALID_STATE, "Missing ID remap table for legacy save");
         }
@@ -997,7 +997,7 @@ static nmo_status_t save_build_data_section(nmo_serializer_t *ctx) {
 
         if (file_version < 7) {
             nmo_object_id_t file_id = 0;
-            int lookup_result = nmo_id_remap_lookup(remap_table, ctx->objects[i]->id, &file_id);
+            int lookup_result = nmo_id_remap_lookup_id(remap_table, ctx->objects[i]->id, &file_id);
             if (lookup_result != NMO_OK || file_id == 0) {
                 nmo_log(ctx->logger, NMO_LOG_ERROR,
                         "Failed to map object ID for legacy save (runtime=%u)",
@@ -1038,7 +1038,7 @@ static nmo_status_t save_build_data_section(nmo_serializer_t *ctx) {
 static nmo_status_t save_build_header1(nmo_serializer_t *ctx) {
     nmo_log(ctx->logger, NMO_LOG_INFO, "Step 1.7: Building header1 buffer");
 
-    nmo_id_remap_table_t *remap_table = nmo_id_remap_plan_get_table(ctx->remap_plan);
+    nmo_id_remap_t *remap_table = nmo_save_id_remap_plan_get_table(ctx->remap_plan);
     uint32_t file_version = ctx->file_info.file_version;
     if (file_version == 0) {
         file_version = 8;
@@ -1058,7 +1058,7 @@ static nmo_status_t save_build_header1(nmo_serializer_t *ctx) {
         nmo_object_t *obj = ctx->objects[i];
 
         nmo_object_id_t file_id = 0;
-        int lookup_result = nmo_id_remap_lookup(remap_table, obj->id, &file_id);
+        int lookup_result = nmo_id_remap_lookup_id(remap_table, obj->id, &file_id);
         if (lookup_result != NMO_OK) {
             nmo_log(ctx->logger, NMO_LOG_ERROR,
                     "Failed to lookup file ID for object %u", obj->id);

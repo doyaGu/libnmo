@@ -5,12 +5,54 @@
 
 #include "test_framework.h"
 #include "session/nmo_id_mapping.h"
-#include "session/nmo_id_remap.h"
+#include "session/nmo_save_id_remap.h"
+#include "format/nmo_id_remap.h"
+#include "core/nmo_arena.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static nmo_id_remap_t *test_build_format_remap_table(nmo_id_mapping_t *mapping) {
+    if (mapping == NULL) {
+        return NULL;
+    }
+
+    nmo_object_id_t *file_indices = NULL;
+    nmo_object_id_t *runtime_ids = NULL;
+    size_t count = 0;
+    int result = nmo_id_mapping_get_all(mapping, &file_indices, &runtime_ids, &count);
+    if (result != NMO_OK || count == 0) {
+        return NULL;
+    }
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    if (arena == NULL) {
+        return NULL;
+    }
+
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    if (remap == NULL) {
+        nmo_arena_destroy(arena);
+        return NULL;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        if (nmo_id_remap_add(remap, file_indices[i], runtime_ids[i]) != NMO_OK) {
+            nmo_arena_destroy(arena);
+            return NULL;
+        }
+    }
+
+    return remap;
+}
+
+static void test_destroy_format_remap_table(nmo_id_remap_t *table) {
+    if (table != NULL) {
+        nmo_arena_destroy(table->arena);
+    }
+}
 
 /**
  * Test basic load session creation and destruction
@@ -121,10 +163,10 @@ TEST(load_session_id_remap, build_remap_table) {
     }
 
     /* Build remap table */
-    nmo_id_remap_table_t* table = nmo_build_remap_table(session);
+    nmo_id_remap_t* table = test_build_format_remap_table(session);
     ASSERT_NOT_NULL(table);
 
-    size_t count = nmo_id_remap_table_get_count(table);
+    size_t count = nmo_id_remap_get_count(table);
     ASSERT_EQ(5, count);
 
     /* Test lookups */
@@ -132,17 +174,17 @@ TEST(load_session_id_remap, build_remap_table) {
         nmo_object_id_t file_id = (nmo_object_id_t)i;
         nmo_object_id_t runtime_id;
 
-        int result = nmo_id_remap_lookup(table, file_id, &runtime_id);
+        int result = nmo_id_remap_lookup_id(table, file_id, &runtime_id);
         ASSERT_EQ(NMO_OK, result);
         ASSERT_EQ((nmo_object_id_t)(100 + i), runtime_id);
     }
 
     /* Test lookup of non-existent ID */
     nmo_object_id_t runtime_id;
-    int result = nmo_id_remap_lookup(table, 999, &runtime_id);
+    int result = nmo_id_remap_lookup_id(table, 999, &runtime_id);
     ASSERT_EQ(NMO_ERR_NOT_FOUND, result);
 
-    nmo_id_remap_table_destroy(table);
+    test_destroy_format_remap_table(table);
     nmo_id_mapping_destroy(session);
     nmo_object_repository_destroy(repo);
 }
@@ -168,11 +210,11 @@ TEST(load_session_id_remap, remap_table_iteration) {
         nmo_id_mapping_register(session, repo_obj, (nmo_object_id_t)i);
     }
 
-    nmo_id_remap_table_t* table = nmo_build_remap_table(session);
+    nmo_id_remap_t* table = test_build_format_remap_table(session);
     ASSERT_NOT_NULL(table);
 
     /* Iterate through entries and verify all exist */
-    size_t count = nmo_id_remap_table_get_count(table);
+    size_t count = nmo_id_remap_get_count(table);
     int found[3] = {0, 0, 0};  // Track which file indices we've seen
 
     for (size_t i = 0; i < count; i++) {
@@ -196,7 +238,7 @@ TEST(load_session_id_remap, remap_table_iteration) {
     const nmo_id_remap_entry_t* entry = (999 < table->count) ? &table->entries[999] : NULL;
     ASSERT_NULL(entry);
 
-    nmo_id_remap_table_destroy(table);
+    test_destroy_format_remap_table(table);
     nmo_id_mapping_destroy(session);
     nmo_object_repository_destroy(repo);
 }
@@ -221,10 +263,10 @@ TEST(load_session_id_remap, id_remap_plan_create) {
     }
 
     /* Create remap plan */
-    nmo_id_remap_plan_t* plan = nmo_id_remap_plan_create(repo, (nmo_object_t**)objects, 5);
+    nmo_save_id_remap_plan_t* plan = nmo_save_id_remap_plan_create(repo, (nmo_object_t**)objects, 5);
     ASSERT_NOT_NULL(plan);
 
-    size_t remapped_count = nmo_id_remap_plan_get_remapped_count(plan);
+    size_t remapped_count = nmo_save_id_remap_plan_get_remapped_count(plan);
     ASSERT_EQ(5, remapped_count);
 
     /* Test lookups - runtime IDs should map to sequential file IDs (1-5) */
@@ -232,13 +274,13 @@ TEST(load_session_id_remap, id_remap_plan_create) {
         nmo_object_id_t runtime_id = (nmo_object_id_t)(200 + i);
         nmo_object_id_t file_id;
 
-        nmo_id_remap_table_t* plan_table = nmo_id_remap_plan_get_table(plan);
-        int result = nmo_id_remap_lookup(plan_table, runtime_id, &file_id);
+        nmo_id_remap_t* plan_table = nmo_save_id_remap_plan_get_table(plan);
+        int result = nmo_id_remap_lookup_id(plan_table, runtime_id, &file_id);
         ASSERT_EQ(NMO_OK, result);
         ASSERT_EQ((nmo_object_id_t)(i + 1), file_id);  /* File IDs start from 1, not 0 */
     }
 
-    nmo_id_remap_plan_destroy(plan);
+    nmo_save_id_remap_plan_destroy(plan);
     nmo_object_repository_destroy(repo);
 }
 
@@ -274,29 +316,29 @@ TEST(load_session_id_remap, id_remap_plan_preserve_and_fill_gaps) {
     objects[1]->file_id = 3;
     objects[3]->file_id = 10;
 
-    nmo_id_remap_plan_t* plan = nmo_id_remap_plan_create(repo, (nmo_object_t**)objects, 5);
+    nmo_save_id_remap_plan_t* plan = nmo_save_id_remap_plan_create(repo, (nmo_object_t**)objects, 5);
     ASSERT_NOT_NULL(plan);
 
-    nmo_id_remap_table_t* table = nmo_id_remap_plan_get_table(plan);
+    nmo_id_remap_t* table = nmo_save_id_remap_plan_get_table(plan);
     ASSERT_NOT_NULL(table);
 
     nmo_object_id_t file_id = 0;
-    ASSERT_EQ(NMO_OK, nmo_id_remap_lookup(table, 300, &file_id));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_lookup_id(table, 300, &file_id));
     ASSERT_EQ(1, file_id);
 
-    ASSERT_EQ(NMO_OK, nmo_id_remap_lookup(table, 301, &file_id));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_lookup_id(table, 301, &file_id));
     ASSERT_EQ(3, file_id);
 
-    ASSERT_EQ(NMO_OK, nmo_id_remap_lookup(table, 302, &file_id));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_lookup_id(table, 302, &file_id));
     ASSERT_EQ(2, file_id);
 
-    ASSERT_EQ(NMO_OK, nmo_id_remap_lookup(table, 303, &file_id));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_lookup_id(table, 303, &file_id));
     ASSERT_EQ(10, file_id);
 
-    ASSERT_EQ(NMO_OK, nmo_id_remap_lookup(table, 304, &file_id));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_lookup_id(table, 304, &file_id));
     ASSERT_EQ(4, file_id);
 
-    nmo_id_remap_plan_destroy(plan);
+    nmo_save_id_remap_plan_destroy(plan);
     nmo_object_repository_destroy(repo);
 }
 
@@ -311,9 +353,9 @@ TEST(load_session_id_remap, id_remap_plan_invalid_inputs) {
 
     nmo_object_t* objects[1] = {0};
 
-    ASSERT_NULL(nmo_id_remap_plan_create(NULL, (nmo_object_t**)objects, 1));
-    ASSERT_NULL(nmo_id_remap_plan_create(repo, NULL, 1));
-    ASSERT_NULL(nmo_id_remap_plan_create(repo, (nmo_object_t**)objects, 0));
+    ASSERT_NULL(nmo_save_id_remap_plan_create(NULL, (nmo_object_t**)objects, 1));
+    ASSERT_NULL(nmo_save_id_remap_plan_create(repo, NULL, 1));
+    ASSERT_NULL(nmo_save_id_remap_plan_create(repo, (nmo_object_t**)objects, 0));
 
     nmo_object_repository_destroy(repo);
 }
@@ -339,7 +381,7 @@ TEST(load_session_id_remap, id_remap_plan_rejects_duplicate_preserved_ids) {
     objects[0]->file_id = 7;
     objects[1]->file_id = 7;
 
-    ASSERT_NULL(nmo_id_remap_plan_create(repo, (nmo_object_t**)objects, 2));
+    ASSERT_NULL(nmo_save_id_remap_plan_create(repo, (nmo_object_t**)objects, 2));
 
     nmo_object_repository_destroy(repo);
 }
@@ -367,10 +409,10 @@ TEST(load_session_id_remap, remap_plan_large) {
     }
 
     /* Create remap plan */
-    nmo_id_remap_plan_t* plan = nmo_id_remap_plan_create(repo, objects, count);
+    nmo_save_id_remap_plan_t* plan = nmo_save_id_remap_plan_create(repo, objects, count);
     ASSERT_NOT_NULL(plan);
 
-    size_t remapped_count = nmo_id_remap_plan_get_remapped_count(plan);
+    size_t remapped_count = nmo_save_id_remap_plan_get_remapped_count(plan);
     ASSERT_EQ((size_t)count, remapped_count);
 
     /* Verify all lookups work - file IDs are sequential starting from 1 */
@@ -378,14 +420,14 @@ TEST(load_session_id_remap, remap_plan_large) {
         nmo_object_id_t runtime_id = (nmo_object_id_t)(1000 + i);
         nmo_object_id_t file_id;
 
-        nmo_id_remap_table_t* plan_table = nmo_id_remap_plan_get_table(plan);
-        int result = nmo_id_remap_lookup(plan_table, runtime_id, &file_id);
+        nmo_id_remap_t* plan_table = nmo_save_id_remap_plan_get_table(plan);
+        int result = nmo_id_remap_lookup_id(plan_table, runtime_id, &file_id);
         ASSERT_EQ(NMO_OK, result);
         ASSERT_EQ((nmo_object_id_t)(i + 1), file_id);  /* File IDs start from 1 */
     }
 
     free(objects);
-    nmo_id_remap_plan_destroy(plan);
+    nmo_save_id_remap_plan_destroy(plan);
     nmo_object_repository_destroy(repo);
 }
 

@@ -6,7 +6,7 @@
 #include "session/nmo_object_system.h"
 
 #include "object/nmo_object_repository.h"
-#include "session/nmo_id_remap.h"
+#include "format/nmo_id_remap.h"
 #include "session/nmo_id_sanitizer.h"
 #include "object/nmo_shadow_storage.h"
 #include "session/nmo_reference_resolver.h"
@@ -439,7 +439,7 @@ nmo_status_t nmo_object_system_prepare_loaded_objects(
         nmo_log(logger, NMO_LOG_INFO, "Phase 12 (object_system): Building ID remap table");
     }
 
-    nmo_id_remap_table_t *remap_table = NULL;
+    nmo_id_remap_t *remap_table = NULL;
     if (created_objects != NULL) {
         remap_table = nmo_id_remap_create(scratch_arena);
         if (remap_table == NULL) {
@@ -496,7 +496,7 @@ nmo_status_t nmo_object_system_prepare_loaded_objects(
     if (logger) {
         nmo_log(logger, NMO_LOG_INFO,
                 "  Built remap table with %zu entries",
-                nmo_id_remap_table_get_count(remap_table));
+                nmo_id_remap_get_count(remap_table));
         nmo_log(logger, NMO_LOG_INFO, "Phase 13 (object_system): Remapping IDs in chunks");
     }
 
