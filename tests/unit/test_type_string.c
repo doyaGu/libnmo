@@ -21,6 +21,7 @@
 #include "type/nmo_type_guids.h"
 #include "type/nmo_operations.h"
 #include "type/nmo_reflection.h"
+#include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
 #include <math.h>
@@ -1029,6 +1030,67 @@ TEST(type_string, type_value_to_string_pointer_array_uses_metadata_count) {
     teardown();
 }
 
+TEST(type_string, type_value_to_string_nmo_array_uses_array_count) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    typedef struct test_inline_array_t {
+        uint32_t total;
+        nmo_array_t values;
+    } test_inline_array_t;
+
+    static const nmo_type_field_t fields[] = {
+        NMO_FIELD(test_inline_array_t, total, CKPGUID_UINT32),
+        NMO_FIELD_ARRAY(test_inline_array_t, values, CKPGUID_UINT32),
+    };
+
+    nmo_type_descriptor_t desc = {
+        .guid = NMO_GUID(0xDEADBEEFu, 0x00000003u),
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_STRUCT,
+        .flags = 0,
+        .name = "TestInlineArray",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(test_inline_array_t),
+        .alignment = (uint32_t)alignof(test_inline_array_t),
+        .fields = fields,
+        .field_count = sizeof(fields) / sizeof(fields[0]),
+        .vtable = NULL,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &desc));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, desc.guid);
+    ASSERT_NE(NULL, type);
+
+    uint32_t items[] = {11u, 22u};
+    test_inline_array_t value;
+    memset(&value, 0, sizeof(value));
+    value.total = 2;
+    value.values.data = items;
+    value.values.count = 2;
+    value.values.capacity = 2;
+    value.values.element_size = sizeof(items[0]);
+
+    char buffer[128];
+    nmo_status_t result = nmo_type_value_to_string(&value, type, registry, buffer, sizeof(buffer));
+    ASSERT_EQ(NMO_OK, result);
+    ASSERT_STR_EQ("{total=2, values=[2]}", buffer);
+
+    teardown();
+}
+
 TEST(type_string, type_value_to_string_uint16) {
     setup();
 
@@ -1475,6 +1537,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, type_value_to_string_struct_with_object_id_field);
     REGISTER_TEST(type_string, type_value_to_string_object_ref_with_fields);
     REGISTER_TEST(type_string, type_value_to_string_pointer_array_uses_metadata_count);
+    REGISTER_TEST(type_string, type_value_to_string_nmo_array_uses_array_count);
     REGISTER_TEST(type_string, type_value_to_string_uint16);
     REGISTER_TEST(type_string, type_value_to_string_guid);
     REGISTER_TEST(type_string, type_value_to_string_string_quotes);

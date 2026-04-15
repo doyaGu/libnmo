@@ -13,6 +13,7 @@
 #include "type/nmo_operations.h"
 #include "type/nmo_type_guids.h"
 #include "object/nmo_param_guids.h"
+#include "core/nmo_array.h"
 #include "core/nmo_color.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
@@ -1277,76 +1278,21 @@ static nmo_status_t nmo_struct_like_to_string(
 
         if (field->flags & NMO_FIELD_REPEATED) {
             uint64_t count = 0;
+            bool has_count = false;
 
-            if (field->name && type->fields && type->field_count > 0) {
-                char base_name[96];
-                char count_name[112];
-
-                (void)snprintf(base_name, sizeof(base_name), "%s", field->name);
-                size_t base_len = strlen(base_name);
-
-                struct {
-                    const char *suffix;
-                    size_t suffix_len;
-                } strip_suffixes[] = {
-                    {"_ids", 4},
-                    {"_types", 6},
-                    {"_indices", 8},
-                    {"_chunks", 7},
-                };
-
-                bool stripped = false;
-                for (size_t s = 0; s < sizeof(strip_suffixes) / sizeof(strip_suffixes[0]); s++) {
-                    if (base_len > strip_suffixes[s].suffix_len &&
-                        strcmp(base_name + base_len - strip_suffixes[s].suffix_len, strip_suffixes[s].suffix) == 0) {
-                        base_name[base_len - strip_suffixes[s].suffix_len] = '\0';
-                        stripped = true;
-                        break;
-                    }
-                }
-                if (!stripped) {
-                    base_len = strlen(base_name);
-                    if (base_len > 1 && base_name[base_len - 1] == 's') {
-                        base_name[base_len - 1] = '\0';
-                    }
-                }
-
-                (void)snprintf(count_name, sizeof(count_name), "%s_count", base_name);
-
-                for (size_t j = 0; j < type->field_count; j++) {
-                    const nmo_type_field_t *cf = &type->fields[j];
-                    if (!cf->name || strcmp(cf->name, count_name) != 0) {
-                        continue;
-                    }
-
-                    const nmo_type_descriptor_t *count_type = nmo_to_string_resolve_type(registry, cf->type_guid);
-                    if (!count_type) {
-                        break;
-                    }
-
-                    nmo_guid_t count_guid = count_type->guid;
-
-                    const uint8_t *count_ptr = (const uint8_t *)value + cf->offset;
-                    if (nmo_guid_equals(count_guid, CKPGUID_UINT32)) {
-                        count = *(const uint32_t *)count_ptr;
-                    } else if (nmo_guid_equals(count_guid, CKPGUID_INT)) {
-                        int32_t v = *(const int32_t *)count_ptr;
-                        if (v >= 0) {
-                            count = (uint64_t)v;
-                        }
-                    } else if (nmo_guid_equals(count_guid, CKPGUID_UINT64)) {
-                        count = *(const uint64_t *)count_ptr;
-                    } else if (nmo_guid_equals(count_guid, CKPGUID_INT64)) {
-                        int64_t v = *(const int64_t *)count_ptr;
-                        if (v >= 0) {
-                            count = (uint64_t)v;
-                        }
-                    }
-                    break;
+            if (field->size == sizeof(nmo_array_t)) {
+                const nmo_array_t *arr = (const nmo_array_t *)field_ptr;
+                count = arr->count;
+                has_count = true;
+            } else {
+                uint32_t resolved_count = 0;
+                if (nmo_field_resolve_count(type, field, value, &resolved_count) == NMO_OK) {
+                    count = resolved_count;
+                    has_count = true;
                 }
             }
 
-            if (count > 0) {
+            if (has_count && count > 0) {
                 NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "[%llu]", (unsigned long long)count));
             } else {
                 NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "[...]"));
