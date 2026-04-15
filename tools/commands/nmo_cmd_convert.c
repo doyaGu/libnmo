@@ -256,6 +256,25 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
+    nmo_object_query_t class_query = {0};
+    const nmo_object_query_t *class_filter = NULL;
+    if (class_name) {
+        nmo_status_t st =
+            nmo_core_query_set_class_name(&c, &class_query, class_name, true);
+        if (st != NMO_OK) {
+            fprintf(stderr, "Warning: Unknown class '%s'\n", class_name);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+        class_filter = &class_query;
+    }
+
+    nmo_object_query_t name_query = {0};
+    const nmo_object_query_t *name_filter = NULL;
+    if (name_pattern) {
+        nmo_core_query_set_name_wildcard(&name_query, name_pattern);
+        name_filter = &name_query;
+    }
+
     /* Get repository */
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
     size_t total_count = 0;
@@ -287,29 +306,14 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
             nmo_object_t *obj = all_objects[i];
             bool matches = false;
 
-            if (class_name) {
-                /* Check class match (including derived classes) */
-                nmo_class_id_t filter_class = nmo_cli_class_id_from_name(c.ctx, class_name);
-                if (filter_class == 0) {
-                    fprintf(stderr, "Warning: Unknown class '%s'\n", class_name);
-                    free(ids_to_remove);
-                    free(matched_objects);
-                    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-                }
-
-                nmo_class_id_t obj_class = nmo_object_get_class_id(obj);
-                if (nmo_cli_class_is_derived_from(c.ctx, obj_class, filter_class) ||
-                    obj_class == filter_class) {
-                    matches = true;
-                }
+            if (class_filter != NULL &&
+                nmo_core_query_matches_object(&c, class_filter, obj)) {
+                matches = true;
             }
 
-            if (name_pattern) {
-                /* Check name match */
-                const char *obj_name = nmo_object_get_name(obj);
-                if (obj_name && nmo_tool_match_wildcard_ci(name_pattern, obj_name)) {
-                    matches = true;
-                }
+            if (name_filter != NULL &&
+                nmo_core_query_matches_object(&c, name_filter, obj)) {
+                matches = true;
             }
 
             if (matches) {
