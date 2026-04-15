@@ -481,19 +481,6 @@ int nmo_cmd_object_impact(int argc, char **argv, const nmo_cli_global_opts_t *gl
  * object orphans - Find unreachable objects
  * ============================================================================ */
 
-/** Binary search in sorted ID array */
-static bool orphan_id_in_set(const nmo_object_id_t *arr, size_t count,
-                             nmo_object_id_t id) {
-    size_t lo = 0, hi = count;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        if (arr[mid] < id) lo = mid + 1;
-        else if (arr[mid] > id) hi = mid;
-        else return true;
-    }
-    return false;
-}
-
 int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--class", "-c", NMO_OPT_STRING, "Filter by class name"},
@@ -535,124 +522,38 @@ int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *g
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    /* Arena for mark-sweep allocations (root IDs, reachable set, orphan list) */
     nmo_arena_t *arena = nmo_arena_create(NULL, 0);
     if (!arena) {
         fprintf(stderr, "Error: Failed to create arena\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    /* Collect root IDs using tiered strategy (same as validate orphans) */
-    nmo_object_id_t *root_ids = NULL;
-    size_t root_count = 0;
-    if (object_count > 0) {
-        root_ids = (nmo_object_id_t *)nmo_arena_alloc(arena,
-            object_count * sizeof(nmo_object_id_t),
-            _Alignof(nmo_object_id_t));
-        if (!root_ids) {
-            nmo_arena_destroy(arena);
-            fprintf(stderr, "Error: Allocation failed\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-
-        /* Tier 1: CKLevel / CKScene */
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_class_id_t cid = nmo_object_get_class_id(objects[i]);
-            if (cid == NMO_CID_LEVEL || cid == NMO_CID_SCENE ||
-                nmo_type_registry_is_class_derived_from(c.registry, cid, NMO_CID_LEVEL) ||
-                nmo_type_registry_is_class_derived_from(c.registry, cid, NMO_CID_SCENE)) {
-                root_ids[root_count++] = nmo_object_get_id(objects[i]);
-            }
-        }
-
-        /* Tier 2: CKGroup */
-        if (root_count == 0) {
-            for (size_t i = 0; i < object_count; ++i) {
-                nmo_class_id_t cid = nmo_object_get_class_id(objects[i]);
-                if (cid == NMO_CID_GROUP ||
-                    nmo_type_registry_is_class_derived_from(c.registry, cid, NMO_CID_GROUP)) {
-                    root_ids[root_count++] = nmo_object_get_id(objects[i]);
-                }
-            }
-        }
-
-        /* Tier 3: CK3dEntity / CK3dObject */
-        if (root_count == 0) {
-            for (size_t i = 0; i < object_count; ++i) {
-                nmo_class_id_t cid = nmo_object_get_class_id(objects[i]);
-                if (cid == NMO_CID_3DENTITY || cid == NMO_CID_3DOBJECT ||
-                    nmo_type_registry_is_class_derived_from(c.registry, cid, NMO_CID_3DENTITY)) {
-                    root_ids[root_count++] = nmo_object_get_id(objects[i]);
-                }
-            }
-        }
-
-        /* Tier 4: all objects with zero incoming references */
-        if (root_count == 0) {
-            for (size_t i = 0; i < object_count; ++i) {
-                nmo_object_id_t oid = nmo_object_get_id(objects[i]);
-                nmo_ref_edge_t *edges = NULL;
-                size_t ecount = 0;
-                nmo_ref_graph_get_object_edges(graph, oid, NMO_REF_DIR_INCOMING,
-                                               &edges, &ecount);
-                if (ecount == 0) {
-                    root_ids[root_count++] = oid;
-                }
-            }
-        }
-    }
-
-    /* Mark reachable set */
-    nmo_object_id_t *reachable_ids = NULL;
-    size_t reachable_count = 0;
-    {
-        nmo_status_t ms = nmo_ref_graph_mark_reachable(
-            graph, root_ids, root_count, arena,
-            &reachable_ids, &reachable_count);
-        if (ms != NMO_OK) {
-            nmo_arena_destroy(arena);
-            fprintf(stderr, "Error: mark_reachable failed\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-    }
-
-    /* Collect orphans */
-    typedef struct {
-        nmo_object_t *obj;
-    } orphan_entry_t;
-
-    orphan_entry_t *orphan_list = NULL;
+    /* Use library API for orphan detection */
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_id_t *orphan_ids = NULL;
     size_t orphan_count = 0;
-    if (object_count > 0) {
-        orphan_list = (orphan_entry_t *)nmo_arena_alloc(arena,
-            object_count * sizeof(orphan_entry_t),
-            _Alignof(orphan_entry_t));
-        if (!orphan_list) {
-            nmo_arena_destroy(arena);
-            fprintf(stderr, "Error: Allocation failed\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
+    nmo_status_t st = nmo_ref_graph_find_orphans(
+        graph, repo, c.registry, arena, &orphan_ids, &orphan_count);
+    if (st != NMO_OK) {
+        nmo_arena_destroy(arena);
+        fprintf(stderr, "Error: Orphan detection failed\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_t *o = objects[i];
-        nmo_object_id_t oid = nmo_object_get_id(o);
-
-        /* Skip reachable */
-        if (orphan_id_in_set(reachable_ids, reachable_count, oid))
-            continue;
-
-        /* Apply class filter */
+    /* Apply optional class filter to the orphan list */
+    size_t filtered_count = 0;
+    for (size_t i = 0; i < orphan_count; ++i) {
         if (filter_cid != 0) {
+            nmo_object_t *o = nmo_core_find_by_id(&c, orphan_ids[i]);
+            if (!o) continue;
             nmo_class_id_t cid = nmo_object_get_class_id(o);
             if (cid != filter_cid &&
                 !nmo_type_registry_is_class_derived_from(c.registry, cid, filter_cid))
                 continue;
         }
-
-        orphan_list[orphan_count].obj = o;
-        orphan_count++;
+        orphan_ids[filtered_count++] = orphan_ids[i];
     }
+    orphan_count = filtered_count;
 
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
@@ -660,35 +561,16 @@ int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *g
 
         yyjson_mut_obj_add_uint(doc, data, "total_objects",
                                 (uint64_t)object_count);
-        yyjson_mut_obj_add_uint(doc, data, "root_count",
-                                (uint64_t)root_count);
-
-        /* Roots */
-        yyjson_mut_val *roots = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < root_count; ++i) {
-            yyjson_mut_val *rentry = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, rentry, "id", root_ids[i]);
-            nmo_object_t *robj = nmo_core_find_by_id(&c, root_ids[i]);
-            if (robj) {
-                char cbuf[32];
-                const char *rcls = nmo_core_class_name_or(
-                    &c, nmo_object_get_class_id(robj), cbuf, sizeof(cbuf));
-                yyjson_mut_obj_add_str(doc, rentry, "class_name", rcls);
-            }
-            yyjson_mut_arr_add_val(roots, rentry);
-        }
-        yyjson_mut_obj_add_val(doc, data, "roots", roots);
-
         yyjson_mut_obj_add_uint(doc, data, "orphan_count",
                                 (uint64_t)orphan_count);
 
-        /* Orphan list */
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
         for (size_t i = 0; i < orphan_count; ++i) {
-            nmo_object_t *o = orphan_list[i].obj;
+            nmo_object_t *o = nmo_core_find_by_id(&c, orphan_ids[i]);
+            if (!o) continue;
             yyjson_mut_val *entry = yyjson_mut_obj(doc);
             yyjson_mut_obj_add_uint(doc, entry, "id",
-                                    (uint64_t)nmo_object_get_id(o));
+                                    (uint64_t)orphan_ids[i]);
             nmo_class_id_t cid = nmo_object_get_class_id(o);
             yyjson_mut_obj_add_uint(doc, entry, "class_id", (uint64_t)cid);
             char cbuf[32];
@@ -703,7 +585,6 @@ int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *g
 
         nmo_cmd_ctx_json_end(&c, doc, data, "object.orphans");
     } else {
-        /* Text output */
         fprintf(c.out, "Orphan Analysis: %zu unreachable object(s) (of %zu total)\n\n",
                 orphan_count, object_count);
 
@@ -717,9 +598,10 @@ int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *g
             nmo_cli_table_init(&table, cols, sizeof(cols) / sizeof(cols[0]));
 
             for (size_t i = 0; i < orphan_count; ++i) {
-                nmo_object_t *o = orphan_list[i].obj;
+                nmo_object_t *o = nmo_core_find_by_id(&c, orphan_ids[i]);
+                if (!o) continue;
                 char id_buf[16];
-                snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(o));
+                snprintf(id_buf, sizeof(id_buf), "%u", orphan_ids[i]);
                 char cbuf[32];
                 const char *cname = nmo_core_class_name_or(
                     &c, nmo_object_get_class_id(o), cbuf, sizeof(cbuf));
@@ -731,22 +613,6 @@ int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *g
             nmo_cli_table_print(&table, c.out, c.colorize);
             nmo_cli_table_free(&table);
         }
-
-        /* Root summary */
-        fprintf(c.out, "\nRoot objects used: %zu", root_count);
-        if (root_count > 0 && root_count <= 10) {
-            fprintf(c.out, " (");
-            for (size_t i = 0; i < root_count; ++i) {
-                if (i > 0) fprintf(c.out, ", ");
-                nmo_object_t *robj = nmo_core_find_by_id(&c, root_ids[i]);
-                char cbuf[32];
-                const char *rcls = robj ? nmo_core_class_name_or(
-                    &c, nmo_object_get_class_id(robj), cbuf, sizeof(cbuf)) : "?";
-                fprintf(c.out, "%s #%u", rcls, root_ids[i]);
-            }
-            fprintf(c.out, ")");
-        }
-        fprintf(c.out, "\n");
     }
 
     nmo_arena_destroy(arena);
@@ -756,174 +622,6 @@ int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *g
 /* ============================================================================
  * object cycles - Detect circular references
  * ============================================================================ */
-
-/** Cycle record: array of object IDs forming the cycle */
-typedef struct {
-    nmo_object_id_t *ids;
-    nmo_ref_kind_t *kinds;    /**< ref kinds along edges (length == count) */
-    size_t count;
-} cycle_record_t;
-
-/** DFS state for cycle detection */
-typedef struct {
-    nmo_cmd_ctx_t *c;
-    nmo_ref_graph_t *graph;
-    uint8_t *color;           /**< 0=WHITE, 1=GRAY, 2=BLACK */
-    nmo_object_id_t *stack;   /**< DFS path stack */
-    nmo_ref_kind_t *stack_kinds; /**< ref kind for each stack entry */
-    size_t stack_size;
-
-    cycle_record_t *cycles;
-    size_t cycle_count;
-    size_t cycle_cap;
-
-    nmo_arena_t *arena;
-    nmo_object_id_t max_id;
-} cycle_dfs_state_t;
-
-static void cycle_dfs_record(cycle_dfs_state_t *st, nmo_object_id_t back_target,
-                             nmo_ref_kind_t back_kind) {
-    /* Find back_target in the stack to extract the cycle */
-    size_t start = 0;
-    bool found = false;
-    for (size_t i = 0; i < st->stack_size; ++i) {
-        if (st->stack[i] == back_target) {
-            start = i;
-            found = true;
-            break;
-        }
-    }
-    if (!found) return;
-
-    size_t len = st->stack_size - start;
-    /* Normalize: rotate so minimum ID is first (for dedup across rotations) */
-    size_t min_pos = 0;
-    for (size_t j = 1; j < len; ++j) {
-        if (st->stack[start + j] < st->stack[start + min_pos])
-            min_pos = j;
-    }
-
-    /* Deduplicate: check if we already have this cycle (rotation-normalized) */
-    for (size_t ci = 0; ci < st->cycle_count; ++ci) {
-        if (st->cycles[ci].count == len) {
-            bool same = true;
-            for (size_t j = 0; j < len; ++j) {
-                if (st->cycles[ci].ids[j] != st->stack[start + ((min_pos + j) % len)]) {
-                    same = false;
-                    break;
-                }
-            }
-            if (same) return; /* already recorded */
-        }
-    }
-
-    /* Grow cycle array if needed */
-    if (st->cycle_count >= st->cycle_cap) {
-        size_t new_cap = st->cycle_cap ? st->cycle_cap * 2 : 16;
-        cycle_record_t *tmp = (cycle_record_t *)realloc(
-            st->cycles, new_cap * sizeof(cycle_record_t));
-        if (!tmp) return;
-        st->cycles = tmp;
-        st->cycle_cap = new_cap;
-    }
-
-    nmo_object_id_t *ids = (nmo_object_id_t *)nmo_arena_alloc(
-        st->arena, len * sizeof(nmo_object_id_t),
-        _Alignof(nmo_object_id_t));
-    nmo_ref_kind_t *kinds = (nmo_ref_kind_t *)nmo_arena_alloc(
-        st->arena, len * sizeof(nmo_ref_kind_t),
-        _Alignof(nmo_ref_kind_t));
-    if (!ids || !kinds) return;
-
-    for (size_t j = 0; j < len; ++j) {
-        size_t src_j = (min_pos + j) % len;
-        size_t next_j = (min_pos + j + 1) % len;
-        ids[j] = st->stack[start + src_j];
-        kinds[j] = (j + 1 < len) ? st->stack_kinds[start + next_j] : back_kind;
-    }
-
-    cycle_record_t *rec = &st->cycles[st->cycle_count++];
-    rec->ids = ids;
-    rec->kinds = kinds;
-    rec->count = len;
-}
-
-/* Iterative DFS frame -- avoids C stack overflow on deep graphs */
-typedef struct {
-    nmo_object_id_t id;
-    nmo_ref_kind_t entry_kind;
-    nmo_ref_edge_t *edges;
-    size_t ecount;
-    size_t edge_idx;  /* next edge to process */
-} dfs_frame_t;
-
-static void cycle_dfs_visit(cycle_dfs_state_t *st, nmo_object_id_t start_id,
-                            nmo_ref_kind_t start_kind) {
-    size_t frame_cap = st->max_id < 4096 ? 4096 : (size_t)(st->max_id + 1);
-    dfs_frame_t *frames = (dfs_frame_t *)malloc(frame_cap * sizeof(dfs_frame_t));
-    if (!frames) return;
-    size_t frame_top = 0;
-
-    /* Push initial frame */
-    if (start_id > st->max_id) { free(frames); return; }
-    st->color[start_id] = 1; /* GRAY */
-    st->stack[st->stack_size] = start_id;
-    st->stack_kinds[st->stack_size] = start_kind;
-    st->stack_size++;
-
-    nmo_ref_edge_t *edges = NULL;
-    size_t ecount = 0;
-    nmo_ref_graph_get_object_edges(st->graph, start_id, NMO_REF_DIR_OUTGOING,
-                                   &edges, &ecount);
-    frames[frame_top].id = start_id;
-    frames[frame_top].entry_kind = start_kind;
-    frames[frame_top].edges = edges;
-    frames[frame_top].ecount = ecount;
-    frames[frame_top].edge_idx = 0;
-    frame_top++;
-
-    while (frame_top > 0) {
-        dfs_frame_t *f = &frames[frame_top - 1];
-
-        if (f->edge_idx >= f->ecount) {
-            /* All edges processed -- pop frame, mark BLACK */
-            st->stack_size--;
-            st->color[f->id] = 2; /* BLACK */
-            frame_top--;
-            continue;
-        }
-
-        nmo_ref_edge_t *edge = &f->edges[f->edge_idx++];
-        nmo_object_id_t target = edge->to;
-        if (target > st->max_id) continue;
-
-        if (st->color[target] == 1) {
-            /* Back edge -> cycle */
-            cycle_dfs_record(st, target, edge->kind);
-        } else if (st->color[target] == 0) {
-            /* Unvisited -> push new frame */
-            if (frame_top >= frame_cap || st->stack_size >= frame_cap) continue;
-
-            st->color[target] = 1; /* GRAY */
-            st->stack[st->stack_size] = target;
-            st->stack_kinds[st->stack_size] = edge->kind;
-            st->stack_size++;
-
-            nmo_ref_edge_t *tedges = NULL;
-            size_t tecount = 0;
-            nmo_ref_graph_get_object_edges(st->graph, target, NMO_REF_DIR_OUTGOING,
-                                           &tedges, &tecount);
-            frames[frame_top].id = target;
-            frames[frame_top].entry_kind = edge->kind;
-            frames[frame_top].edges = tedges;
-            frames[frame_top].ecount = tecount;
-            frames[frame_top].edge_idx = 0;
-            frame_top++;
-        }
-    }
-
-    free(frames);
-}
 
 int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_opt_val_t vals[1];
@@ -935,20 +633,6 @@ int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *gl
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    /* Get objects to find max_id */
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
-        fprintf(stderr, "Error: Failed to get objects\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    nmo_object_id_t max_id = 0;
-    for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_id_t oid = nmo_object_get_id(objects[i]);
-        if (oid > max_id) max_id = oid;
-    }
-
     /* Get reference graph from session cache */
     nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
     if (!graph) {
@@ -956,50 +640,22 @@ int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *gl
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    /* Arena for cycle recording */
     nmo_arena_t *arena = nmo_arena_create(NULL, 0);
     if (!arena) {
         fprintf(stderr, "Error: Failed to create arena\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    /* Allocate DFS state */
-    size_t color_size = (size_t)(max_id + 1);
-    uint8_t *color = (uint8_t *)calloc(color_size, sizeof(uint8_t));
-    nmo_object_id_t *stack = (nmo_object_id_t *)malloc(
-        object_count * sizeof(nmo_object_id_t));
-    nmo_ref_kind_t *stack_kinds = (nmo_ref_kind_t *)malloc(
-        object_count * sizeof(nmo_ref_kind_t));
-
-    if (!color || !stack || !stack_kinds) {
-        free(color);
-        free(stack);
-        free(stack_kinds);
+    /* Use library API for cycle detection */
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_ref_cycle_t *cycles = NULL;
+    size_t cycle_count = 0;
+    nmo_status_t st = nmo_ref_graph_find_cycles(graph, repo, arena,
+                                                 &cycles, &cycle_count);
+    if (st != NMO_OK) {
         nmo_arena_destroy(arena);
-        fprintf(stderr, "Error: Allocation failed\n");
+        fprintf(stderr, "Error: Cycle detection failed\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    cycle_dfs_state_t st;
-    memset(&st, 0, sizeof(st));
-    st.c = &c;
-    st.graph = graph;
-    st.color = color;
-    st.stack = stack;
-    st.stack_kinds = stack_kinds;
-    st.stack_size = 0;
-    st.cycles = NULL;
-    st.cycle_count = 0;
-    st.cycle_cap = 0;
-    st.arena = arena;
-    st.max_id = max_id;
-
-    /* Run DFS from each unvisited object */
-    for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_id_t oid = nmo_object_get_id(objects[i]);
-        if (oid <= max_id && color[oid] == 0) {
-            cycle_dfs_visit(&st, oid, NMO_REF_KIND_UNKNOWN);
-        }
     }
 
     /* Output results */
@@ -1008,11 +664,11 @@ int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *gl
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_obj_add_uint(doc, data, "cycle_count",
-                                (uint64_t)st.cycle_count);
+                                (uint64_t)cycle_count);
 
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        for (size_t ci = 0; ci < st.cycle_count; ++ci) {
-            cycle_record_t *rec = &st.cycles[ci];
+        for (size_t ci = 0; ci < cycle_count; ++ci) {
+            nmo_ref_cycle_t *rec = &cycles[ci];
             yyjson_mut_val *cyc = yyjson_mut_obj(doc);
             yyjson_mut_obj_add_uint(doc, cyc, "length", (uint64_t)rec->count);
 
@@ -1047,19 +703,18 @@ int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
         nmo_cmd_ctx_json_end(&c, doc, data, "object.cycles");
     } else {
-        if (st.cycle_count == 0) {
+        if (cycle_count == 0) {
             fprintf(c.out, "No circular references detected.\n");
         } else {
             fprintf(c.out, "Cycle Detection: %zu cycle(s) found\n",
-                    st.cycle_count);
+                    cycle_count);
 
-            for (size_t ci = 0; ci < st.cycle_count; ++ci) {
-                cycle_record_t *rec = &st.cycles[ci];
+            for (size_t ci = 0; ci < cycle_count; ++ci) {
+                nmo_ref_cycle_t *rec = &cycles[ci];
                 fprintf(c.out, "\nCycle %zu (%zu object%s):\n",
                         ci + 1, rec->count,
                         rec->count == 1 ? "" : "s");
 
-                /* Print chain: #A -> #B -> ... -> #A */
                 fprintf(c.out, "  ");
                 for (size_t j = 0; j < rec->count; ++j) {
                     if (j > 0) fprintf(c.out, " -> ");
@@ -1073,7 +728,6 @@ int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 }
                 fprintf(c.out, " -> #%u\n", rec->ids[0]);
 
-                /* Print reference kinds */
                 fprintf(c.out, "  Reference kinds: ");
                 for (size_t j = 0; j < rec->count; ++j) {
                     if (j > 0) fprintf(c.out, " -> ");
@@ -1084,10 +738,6 @@ int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *gl
         }
     }
 
-    free(color);
-    free(stack);
-    free(stack_kinds);
-    free(st.cycles);
     nmo_arena_destroy(arena);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }

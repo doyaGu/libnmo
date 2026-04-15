@@ -188,6 +188,41 @@ NMO_API int nmo_object_repository_rename(nmo_object_repository_t *repository,
  */
 NMO_API int nmo_object_repository_clear(nmo_object_repository_t *repository);
 
+/* ============================================================================
+ * Filtered iteration
+ * ============================================================================ */
+
+/**
+ * @brief Filter criteria for object iteration.
+ */
+typedef struct nmo_object_filter {
+    nmo_class_id_t class_id;       /**< Filter by class (0 = any) */
+    const char *name_pattern;      /**< Wildcard pattern (* and ?) or NULL */
+    const char *name_substring;    /**< Substring match or NULL */
+    bool case_insensitive;         /**< Case-insensitive name matching */
+} nmo_object_filter_t;
+
+/**
+ * @brief Visitor callback for filtered iteration.
+ * @return true to continue, false to stop
+ */
+typedef bool (*nmo_object_visitor_fn)(nmo_object_t *obj, void *user_data);
+
+/**
+ * @brief Iterate objects matching a filter.
+ *
+ * @param repo    Repository
+ * @param filter  Filter criteria (NULL = match all)
+ * @param visitor Callback for each matching object (return false to stop)
+ * @param user    User data passed to visitor
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_object_repository_iter_filtered(
+    nmo_object_repository_t *repo,
+    const nmo_object_filter_t *filter,
+    nmo_object_visitor_fn visitor,
+    void *user_data);
+
 #ifdef __cplusplus
 }
 #endif

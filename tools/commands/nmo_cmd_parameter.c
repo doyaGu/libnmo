@@ -26,6 +26,7 @@
 #include "type/nmo_type_string.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/nmo_object_repository.h"
+#include "behavior/nmo_behavior_edit.h"
 #include "app/nmo_save.h"
 
 #include <stdio.h>
@@ -367,21 +368,8 @@ int nmo_cmd_parameter_show(int argc, char **argv, const nmo_cli_global_opts_t *g
     const char *name = nmo_object_get_name(obj);
     const char *class_name = nmo_cli_class_name_from_id(c.ctx, cid);
 
-    /* Get parameter base state via explicit struct access for each derived type */
-    const nmo_parameter_state_t *pstate = NULL;
-    {
-        const void *raw_state = nmo_object_get_state(obj);
-        if (raw_state) {
-            if (cid == NMO_CID_PARAMETER) {
-                pstate = (const nmo_parameter_state_t *)raw_state;
-            } else if (cid == NMO_CID_PARAMETEROUT) {
-                pstate = &((const nmo_parameterout_state_t *)raw_state)->base;
-            } else if (cid == NMO_CID_PARAMETERLOCAL) {
-                pstate = &((const nmo_parameterlocal_state_t *)raw_state)->base;
-            }
-            /* ParameterIn and ParameterOperation have different base chains */
-        }
-    }
+    /* Get parameter base state (handles CKParameter/Out/Local hierarchy) */
+    const nmo_parameter_state_t *pstate = nmo_parameter_get_state(obj);
 
     /* Dynamic value buffer - only for classes with valid Parameter state */
     char *value_buf = NULL;
@@ -930,25 +918,7 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
  *   nmo parameter set --dry-run <param-id> <value> <file>
  * ============================================================================ */
 
-/**
- * @brief Get mutable parameter base state from an object by class ID.
- *
- * Returns NULL for ParameterIn and ParameterOperation (no buffer data).
- */
-static nmo_parameter_state_t *get_mutable_pstate(nmo_object_t *obj) {
-    void *raw = nmo_object_get_state(obj);
-    if (!raw) return NULL;
-
-    nmo_class_id_t cid = nmo_object_get_class_id(obj);
-    if (cid == NMO_CID_PARAMETER) {
-        return (nmo_parameter_state_t *)raw;
-    } else if (cid == NMO_CID_PARAMETEROUT) {
-        return &((nmo_parameterout_state_t *)raw)->base;
-    } else if (cid == NMO_CID_PARAMETERLOCAL) {
-        return &((nmo_parameterlocal_state_t *)raw)->base;
-    }
-    return NULL;
-}
+/* get_mutable_pstate moved to library: nmo_parameter_get_mutable_state() */
 
 /**
  * @brief Parse a hex string into a byte buffer.
@@ -982,10 +952,9 @@ static size_t parse_hex_bytes(const char *hex_str, uint8_t *out, size_t out_cap)
 }
 
 /**
- * @brief Find a parameter by owner behavior + name.
+ * @brief Find a settable parameter by owner behavior + name.
  *
- * Searches the behavior's in_parameters, out_parameters, and local_parameters
- * arrays.  ParameterIn objects are skipped (no buffer data).
+ * Uses nmo_behavior_find_parameter() then skips ParameterIn (no buffer data).
  */
 static nmo_object_t *find_param_by_owner_name(
     nmo_object_repository_t *repo,
@@ -993,36 +962,12 @@ static nmo_object_t *find_param_by_owner_name(
     nmo_object_t *owner_obj,
     const char *param_name)
 {
-    const void *owner_state = nmo_object_get_state(owner_obj);
-    if (!owner_state) return NULL;
-
-    const nmo_behavior_state_t *bstate = (const nmo_behavior_state_t *)owner_state;
-
-    const nmo_array_t *arrays[] = {
-        &bstate->in_parameters,
-        &bstate->out_parameters,
-        &bstate->local_parameters,
-    };
-
-    for (int a = 0; a < 3; a++) {
-        const nmo_array_t *arr = arrays[a];
-        if (!arr->data || arr->count == 0) continue;
-        const nmo_object_id_t *ids = (const nmo_object_id_t *)arr->data;
-        for (size_t i = 0; i < arr->count; i++) {
-            nmo_object_t *pobj = nmo_object_repository_find_by_id(repo, ids[i]);
-            if (!pobj) continue;
-
-            nmo_class_id_t pcid = nmo_object_get_class_id(pobj);
-            if (pcid == NMO_CID_PARAMETERIN) continue;
-            if (!is_parameter_class(registry, pcid)) continue;
-
-            const char *pname = nmo_object_get_name(pobj);
-            if (pname && strcmp(pname, param_name) == 0) {
-                return pobj;
-            }
-        }
-    }
-    return NULL;
+    (void)registry;
+    nmo_object_t *pobj = nmo_behavior_find_parameter(repo, owner_obj, param_name);
+    if (!pobj) return NULL;
+    /* ParameterIn has no buffer data -- skip it for set operations */
+    if (nmo_object_get_class_id(pobj) == NMO_CID_PARAMETERIN) return NULL;
+    return pobj;
 }
 
 /**
@@ -1193,7 +1138,7 @@ int nmo_cmd_parameter_set(int argc, char **argv, const nmo_cli_global_opts_t *gl
     }
 
     /* ---- Get mutable parameter state ---- */
-    nmo_parameter_state_t *pstate = get_mutable_pstate(param_obj);
+    nmo_parameter_state_t *pstate = nmo_parameter_get_mutable_state(param_obj);
     if (!pstate) {
         fprintf(stderr, "Error: Cannot access parameter state\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);

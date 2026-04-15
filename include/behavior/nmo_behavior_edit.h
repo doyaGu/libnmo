@@ -14,6 +14,8 @@ extern "C" {
 #endif
 
 typedef struct nmo_session nmo_session_t;
+typedef struct nmo_object nmo_object_t;
+typedef struct nmo_object_repository nmo_object_repository_t;
 
 /**
  * @brief Create a behavior graph link.
@@ -52,6 +54,21 @@ NMO_API int nmo_behavior_remove_link(
     nmo_session_t *session,
     nmo_object_id_t parent_behavior_id,
     nmo_object_id_t link_id);
+
+/**
+ * @brief Find a parameter in a behavior by name.
+ *
+ * Searches in_parameters, out_parameters, and local_parameters arrays.
+ *
+ * @param repo      Object repository
+ * @param behavior  Behavior object
+ * @param name      Parameter name to find
+ * @return Parameter object or NULL if not found
+ */
+NMO_API nmo_object_t *nmo_behavior_find_parameter(
+    nmo_object_repository_t *repo,
+    nmo_object_t *behavior,
+    const char *name);
 
 #ifdef __cplusplus
 }

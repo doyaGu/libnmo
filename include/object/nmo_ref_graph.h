@@ -217,6 +217,63 @@ NMO_API nmo_status_t nmo_ref_graph_mark_reachable(
     size_t *out_reachable_count);
 
 /**
+ * @brief Find orphaned (unreachable) objects using tiered root detection.
+ *
+ * Roots are selected by priority:
+ *   Tier 1: CKLevel / CKScene
+ *   Tier 2: CKGroup
+ *   Tier 3: CK3dEntity / CK3dObject
+ *   Tier 4: all objects with zero incoming references
+ *
+ * Objects reachable from roots via reference edges are marked; the rest
+ * are orphans.
+ *
+ * @param graph     Reference graph
+ * @param repo      Object repository
+ * @param registry  Type registry (for class hierarchy checks)
+ * @param arena     Arena for output allocation
+ * @param out_orphans Output: arena-allocated array of orphan IDs
+ * @param out_count   Output: number of orphans
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_ref_graph_find_orphans(
+    nmo_ref_graph_t *graph,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *registry,
+    nmo_arena_t *arena,
+    nmo_object_id_t **out_orphans,
+    size_t *out_count);
+
+/**
+ * @brief A single cycle: array of object IDs forming the cycle.
+ */
+typedef struct nmo_ref_cycle {
+    nmo_object_id_t *ids;         /**< Object IDs in rotation-normalized order */
+    nmo_ref_kind_t *kinds;        /**< Ref kinds along edges (length == count) */
+    size_t count;                 /**< Number of objects in the cycle */
+} nmo_ref_cycle_t;
+
+/**
+ * @brief Detect reference cycles in the object graph.
+ *
+ * Uses iterative DFS with rotation-normalized deduplication.
+ * Each cycle is represented as a sequence of object IDs.
+ *
+ * @param graph       Reference graph
+ * @param repo        Object repository (to enumerate objects)
+ * @param arena       Arena for output allocation
+ * @param out_cycles  Output: array of cycle descriptors
+ * @param out_count   Output: number of distinct cycles found
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_ref_graph_find_cycles(
+    nmo_ref_graph_t *graph,
+    nmo_object_repository_t *repo,
+    nmo_arena_t *arena,
+    nmo_ref_cycle_t **out_cycles,
+    size_t *out_count);
+
+/**
  * @brief Get string name for reference kind
  *
  * @param kind Reference kind

@@ -18,6 +18,8 @@
  */
 
 #include "object/builtin/nmo_parameter_schemas.h"
+#include "object/builtin/nmo_parameterout_schemas.h"
+#include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
@@ -27,12 +29,15 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"
 #include "object/builtin/nmo_object_schemas.h"
+#include "format/nmo_object.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include "type/nmo_type_guids.h"
+#include "type/nmo_type_string.h"
+#include "type/nmo_type_system.h"
 #include "type/nmo_reflection.h"
 #include "object/nmo_object_repository.h"
 #include "nmo_types.h"
@@ -49,6 +54,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     ((void)0))
 #include <stddef.h>
 #include <stdalign.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* =============================================================================
@@ -558,8 +564,76 @@ NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
     &nmo_parameter_vtable,
     nmo_parameter_fields)
 
+/* =============================================================================
+ * PARAMETER STATE HELPERS
+ * ============================================================================= */
 
+nmo_parameter_state_t *nmo_parameter_get_mutable_state(nmo_object_t *obj)
+{
+    if (!obj) return NULL;
+    void *raw = nmo_object_get_state(obj);
+    if (!raw) return NULL;
 
+    nmo_class_id_t cid = nmo_object_get_class_id(obj);
+    if (cid == NMO_CID_PARAMETER)
+        return (nmo_parameter_state_t *)raw;
+    if (cid == NMO_CID_PARAMETEROUT)
+        return &((nmo_parameterout_state_t *)raw)->base;
+    if (cid == NMO_CID_PARAMETERLOCAL)
+        return &((nmo_parameterlocal_state_t *)raw)->base;
+    return NULL;
+}
 
+const nmo_parameter_state_t *nmo_parameter_get_state(const nmo_object_t *obj)
+{
+    return nmo_parameter_get_mutable_state((nmo_object_t *)obj);
+}
+
+nmo_status_t nmo_parameter_set_value(nmo_object_t *obj,
+                                     const char *value_str,
+                                     const nmo_type_registry_t *registry)
+{
+    nmo_parameter_state_t *pstate = nmo_parameter_get_mutable_state(obj);
+    if (!pstate || !value_str || !registry)
+        return NMO_ERR_INVALID_ARGUMENT;
+    if (!pstate->buffer_data.data || pstate->buffer_data.count == 0)
+        return NMO_ERR_INVALID_STATE;
+
+    const nmo_type_descriptor_t *type =
+        nmo_type_registry_find_by_guid(registry, pstate->type_guid);
+    if (!type) return NMO_ERR_NOT_FOUND;
+
+    size_t buf_size = type->size > 0 ? type->size : pstate->buffer_data.count;
+    uint8_t *tmp = (uint8_t *)calloc(1, buf_size);
+    if (!tmp) return NMO_ERR_NOMEM;
+
+    nmo_status_t rc = nmo_type_value_from_string(tmp, type, registry, value_str);
+    if (rc == NMO_OK) {
+        size_t copy_len = buf_size < pstate->buffer_data.count
+                        ? buf_size : pstate->buffer_data.count;
+        memcpy(pstate->buffer_data.data, tmp, copy_len);
+    }
+    free(tmp);
+    return rc;
+}
+
+nmo_status_t nmo_parameter_get_value(const nmo_object_t *obj,
+                                     const nmo_type_registry_t *registry,
+                                     char *out_buf,
+                                     size_t buf_size)
+{
+    const nmo_parameter_state_t *pstate = nmo_parameter_get_state(obj);
+    if (!pstate || !registry || !out_buf || buf_size == 0)
+        return NMO_ERR_INVALID_ARGUMENT;
+    if (!pstate->buffer_data.data || pstate->buffer_data.count == 0)
+        return NMO_ERR_INVALID_STATE;
+
+    const nmo_type_descriptor_t *type =
+        nmo_type_registry_find_by_guid(registry, pstate->type_guid);
+    if (!type) return NMO_ERR_NOT_FOUND;
+
+    return nmo_type_value_to_string(pstate->buffer_data.data,
+                                    type, registry, out_buf, buf_size);
+}
 
 

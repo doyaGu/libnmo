@@ -11,6 +11,7 @@
 #include "core/nmo_hash.h"
 #include "core/nmo_container_lifecycle.h"
 #include "core/nmo_error.h"
+#include <ctype.h>
 #include <string.h>
 
 #define INITIAL_CAPACITY 64
@@ -700,4 +701,138 @@ nmo_object_t **nmo_object_repository_find_by_class(nmo_object_repository_t *repo
  */
 nmo_object_t *nmo_object_repository_get_by_index(const nmo_object_repository_t *repo, size_t index) {
     return nmo_object_repository_get_at(repo, index);
+}
+
+/* ============================================================================
+ * Filtered iteration
+ * ============================================================================ */
+
+/**
+ * Simple wildcard matcher supporting '*' and '?' (case-sensitive).
+ */
+static bool wildcard_match(const char *pattern, const char *text) {
+    if (!pattern || !*pattern) return true;
+    if (!text) text = "";
+
+    char pc = *pattern;
+    if (pc == '*') {
+        pattern++;
+        if (!*pattern) return true;
+        while (*text) {
+            if (wildcard_match(pattern, text)) return true;
+            text++;
+        }
+        return wildcard_match(pattern, text);
+    }
+    if (pc == '?') {
+        if (!*text) return false;
+        return wildcard_match(pattern + 1, text + 1);
+    }
+    if (pc != *text) return false;
+    return wildcard_match(pattern + 1, text + 1);
+}
+
+/**
+ * Simple wildcard matcher supporting '*' and '?' (case-insensitive).
+ */
+static bool wildcard_match_ci(const char *pattern, const char *text) {
+    if (!pattern || !*pattern) return true;
+    if (!text) text = "";
+
+    char pc = *pattern;
+    if (pc == '*') {
+        pattern++;
+        if (!*pattern) return true;
+        while (*text) {
+            if (wildcard_match_ci(pattern, text)) return true;
+            text++;
+        }
+        return wildcard_match_ci(pattern, text);
+    }
+    if (pc == '?') {
+        if (!*text) return false;
+        return wildcard_match_ci(pattern + 1, text + 1);
+    }
+    if (tolower((unsigned char)pc) != tolower((unsigned char)*text)) return false;
+    return wildcard_match_ci(pattern + 1, text + 1);
+}
+
+/**
+ * Case-insensitive substring search.
+ */
+static bool substr_ci(const char *haystack, const char *needle) {
+    if (!haystack || !needle) return false;
+    size_t nlen = strlen(needle);
+    if (nlen == 0) return true;
+    size_t hlen = strlen(haystack);
+    if (nlen > hlen) return false;
+    for (size_t i = 0; i <= hlen - nlen; ++i) {
+        bool match = true;
+        for (size_t j = 0; j < nlen; ++j) {
+            if (tolower((unsigned char)haystack[i + j]) !=
+                tolower((unsigned char)needle[j])) {
+                match = false;
+                break;
+            }
+        }
+        if (match) return true;
+    }
+    return false;
+}
+
+nmo_status_t nmo_object_repository_iter_filtered(
+    nmo_object_repository_t *repo,
+    const nmo_object_filter_t *filter,
+    nmo_object_visitor_fn visitor,
+    void *user_data)
+{
+    if (!repo) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t count = nmo_indexed_map_get_count(repo->id_map);
+
+    for (size_t i = 0; i < count; ++i) {
+        nmo_object_t *obj = NULL;
+        if (!nmo_indexed_map_get_value_at(repo->id_map, i, &obj) || !obj) {
+            continue;
+        }
+
+        if (filter) {
+            /* Class filter */
+            if (filter->class_id != 0) {
+                if (obj->class_id != filter->class_id) continue;
+            }
+
+            /* Name pattern (wildcard) */
+            if (filter->name_pattern) {
+                const char *name = nmo_object_get_name(obj);
+                if (filter->case_insensitive) {
+                    if (!wildcard_match_ci(filter->name_pattern, name ? name : ""))
+                        continue;
+                } else {
+                    if (!wildcard_match(filter->name_pattern, name ? name : ""))
+                        continue;
+                }
+            }
+
+            /* Name substring */
+            if (filter->name_substring) {
+                const char *name = nmo_object_get_name(obj);
+                if (filter->case_insensitive) {
+                    if (!substr_ci(name, filter->name_substring))
+                        continue;
+                } else {
+                    if (!name || !strstr(name, filter->name_substring))
+                        continue;
+                }
+            }
+        }
+
+        if (visitor) {
+            if (!visitor(obj, user_data)) break;
+        }
+    }
+
+    return NMO_OK;
 }

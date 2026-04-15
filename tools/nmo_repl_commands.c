@@ -1530,27 +1530,14 @@ static int cmd_set_param(nmo_repl_context_t *repl, int argc, char **argv) {
     if (index >= object_count) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
 
     nmo_object_t *obj = objects[index];
-    nmo_class_id_t cid = nmo_object_get_class_id(obj);
     const nmo_type_registry_t *registry = nmo_context_get_type_registry(repl->ctx);
 
-    /* Verify it's a parameter class */
-    if (!nmo_type_registry_is_class_derived_from(registry, (uint32_t)cid, (uint32_t)NMO_CID_PARAMETER) &&
-        cid != NMO_CID_PARAMETEROUT && cid != NMO_CID_PARAMETERLOCAL) {
-        fprintf(stderr, "Error: Object is not a parameter (class %u)\n", cid);
+    /* Check that object has a settable parameter state */
+    const nmo_parameter_state_t *pstate = nmo_parameter_get_state(obj);
+    if (!pstate) {
+        fprintf(stderr, "Error: Object is not a parameter (class %u)\n",
+                nmo_object_get_class_id(obj));
         return -1;
-    }
-
-    /* Get parameter state -- navigate to nmo_parameter_state_t base */
-    void *data = nmo_object_get_data(obj);
-    if (!data) { fprintf(stderr, "Error: No data for parameter\n"); return -1; }
-
-    nmo_parameter_state_t *pstate = NULL;
-    if (cid == NMO_CID_PARAMETEROUT) {
-        pstate = &((nmo_parameterout_state_t *)data)->base;
-    } else if (cid == NMO_CID_PARAMETERLOCAL) {
-        pstate = &((nmo_parameterlocal_state_t *)data)->base;
-    } else {
-        pstate = (nmo_parameter_state_t *)data;
     }
 
     if (pstate->mode != CKPARAM_MODE_BUFFER) {
@@ -1558,39 +1545,16 @@ static int cmd_set_param(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
-    /* Resolve type */
-    const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(registry, pstate->type_guid);
-    if (!type_desc) {
-        fprintf(stderr, "Error: Unknown parameter type\n");
-        return -1;
-    }
-
-    /* Parse value */
-    uint8_t value_buf[256];
-    if (type_desc->size > sizeof(value_buf)) {
-        fprintf(stderr, "Error: Parameter type too large (%u bytes)\n", type_desc->size);
-        return -1;
-    }
-    memset(value_buf, 0, type_desc->size);
-
-    nmo_status_t st = nmo_type_value_from_string(value_buf, type_desc, registry, argv[2]);
+    nmo_status_t st = nmo_parameter_set_value(obj, argv[2], registry);
     if (st != NMO_OK) {
-        fprintf(stderr, "Error: Cannot parse '%s' as %s: %s\n",
-                argv[2], type_desc->name ? type_desc->name : "?", nmo_error_string(st));
-        return -1;
-    }
-
-    /* Write value */
-    if (pstate->buffer_data.data && pstate->buffer_data.count >= type_desc->size) {
-        memcpy(pstate->buffer_data.data, value_buf, type_desc->size);
-    } else {
-        fprintf(stderr, "Error: Buffer size mismatch\n");
+        fprintf(stderr, "Error: Cannot set value '%s': %s\n",
+                argv[2], nmo_error_string(st));
         return -1;
     }
 
     const char *name = nmo_object_get_name(obj);
-    printf("Set parameter #%u '%s' (%s) = %s\n",
-           nmo_object_get_id(obj), name ? name : "", type_desc->name ? type_desc->name : "?", argv[2]);
+    printf("Set parameter #%u '%s' = %s\n",
+           nmo_object_get_id(obj), name ? name : "", argv[2]);
 
     repl->dirty = true;
     return 0;

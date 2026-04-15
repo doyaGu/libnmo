@@ -28,6 +28,8 @@ extern "C" {
 /* Forward declarations */
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
+typedef struct nmo_object nmo_object_t;
+typedef struct nmo_type_registry nmo_type_registry_t;
 
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 
@@ -109,6 +111,54 @@ NMO_API nmo_status_t nmo_parameter_remap_dependencies(
     void *context);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_parameter_vtable, nmo_register_parameter_type)
+
+/* =============================================================================
+ * PARAMETER STATE HELPERS
+ * ============================================================================= */
+
+/**
+ * @brief Get mutable parameter state from any parameter object class.
+ *
+ * Handles CKParameter, CKParameterOut, and CKParameterLocal class hierarchy.
+ * Returns NULL if object is not a parameter type or has no state.
+ */
+NMO_API nmo_parameter_state_t *nmo_parameter_get_mutable_state(nmo_object_t *obj);
+
+/**
+ * @brief Get const parameter state from any parameter object class.
+ */
+NMO_API const nmo_parameter_state_t *nmo_parameter_get_state(const nmo_object_t *obj);
+
+/**
+ * @brief Set a parameter's buffer value from a string representation.
+ *
+ * Resolves the parameter's type GUID, parses the value string,
+ * and writes to the parameter's buffer.
+ *
+ * @param obj       Parameter object (CKParameter, CKParameterOut, CKParameterLocal)
+ * @param value_str String representation of the value
+ * @param registry  Type registry for type resolution and parsing
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_parameter_set_value(
+    nmo_object_t *obj,
+    const char *value_str,
+    const nmo_type_registry_t *registry);
+
+/**
+ * @brief Get a parameter's buffer value as a string.
+ *
+ * @param obj       Parameter object (CKParameter, CKParameterOut, CKParameterLocal)
+ * @param registry  Type registry for type resolution
+ * @param out_buf   Output buffer for string representation
+ * @param buf_size  Size of output buffer
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_parameter_get_value(
+    const nmo_object_t *obj,
+    const nmo_type_registry_t *registry,
+    char *out_buf,
+    size_t buf_size);
 
 #ifdef __cplusplus
 }

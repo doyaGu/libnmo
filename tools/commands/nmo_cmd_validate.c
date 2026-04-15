@@ -628,8 +628,8 @@ int nmo_cmd_validate_resources(int argc, char **argv, const nmo_cli_global_opts_
 /**
  * Binary search for an ID in a sorted array.
  */
-static bool id_is_reachable(const nmo_object_id_t *arr, size_t count,
-                             nmo_object_id_t id) {
+static bool id_is_in_set(const nmo_object_id_t *arr, size_t count,
+                          nmo_object_id_t id) {
     size_t lo = 0, hi = count;
     while (lo < hi) {
         size_t mid = lo + (hi - lo) / 2;
@@ -698,101 +698,29 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    /* Arena for mark-sweep allocations (root IDs, reachable set, orphan list) */
+    /* Arena for mark-sweep allocations */
     nmo_arena_t *arena = nmo_arena_create(NULL, 0);
     if (!arena) {
         fprintf(stderr, "Error: Failed to create arena\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    /* --- Mark-sweep orphan detection --- */
-
-    /* Step 1: Collect root IDs using tiered strategy.
-     *
-     * Tier 1: CKLevel / CKScene  -- scene graph roots (main level files)
-     * Tier 2: CKGroup             -- container roots (component files)
-     * Tier 3: CK3dEntity/Object   -- entity roots
-     * Tier 4: All zero-incoming   -- fallback for unusual files
-     *
-     * Use the first non-empty tier. This ensures component NMO files
-     * (which lack CKLevel) still get meaningful orphan analysis.
-     */
-    nmo_object_id_t *root_ids = NULL;
-    size_t root_count = 0;
-    if (object_count > 0) {
-        root_ids = (nmo_object_id_t *)nmo_arena_alloc(arena,
-            object_count * sizeof(nmo_object_id_t),
-            _Alignof(nmo_object_id_t));
-        if (!root_ids) {
-            nmo_arena_destroy(arena);
-            fprintf(stderr, "Error: Allocation failed\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-
-        /* Tier 1: CKLevel / CKScene */
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_class_id_t cid = nmo_object_get_class_id(objects[i]);
-            if (cid == NMO_CID_LEVEL || cid == NMO_CID_SCENE ||
-                nmo_type_registry_is_class_derived_from(c.registry, cid, NMO_CID_LEVEL) ||
-                nmo_type_registry_is_class_derived_from(c.registry, cid, NMO_CID_SCENE)) {
-                root_ids[root_count++] = nmo_object_get_id(objects[i]);
-            }
-        }
-
-        /* Tier 2: CKGroup */
-        if (root_count == 0) {
-            for (size_t i = 0; i < object_count; ++i) {
-                nmo_class_id_t cid = nmo_object_get_class_id(objects[i]);
-                if (cid == NMO_CID_GROUP ||
-                    nmo_type_registry_is_class_derived_from(c.registry, cid, NMO_CID_GROUP)) {
-                    root_ids[root_count++] = nmo_object_get_id(objects[i]);
-                }
-            }
-        }
-
-        /* Tier 3: CK3dEntity / CK3dObject */
-        if (root_count == 0) {
-            for (size_t i = 0; i < object_count; ++i) {
-                nmo_class_id_t cid = nmo_object_get_class_id(objects[i]);
-                if (cid == NMO_CID_3DENTITY || cid == NMO_CID_3DOBJECT ||
-                    nmo_type_registry_is_class_derived_from(c.registry, cid, NMO_CID_3DENTITY)) {
-                    root_ids[root_count++] = nmo_object_get_id(objects[i]);
-                }
-            }
-        }
-
-        /* Tier 4: all objects with zero incoming references */
-        if (root_count == 0) {
-            for (size_t i = 0; i < object_count; ++i) {
-                nmo_object_id_t oid = nmo_object_get_id(objects[i]);
-                nmo_ref_edge_t *in_edges = NULL;
-                size_t in_count = 0;
-                nmo_ref_graph_get_object_edges(graph, oid, NMO_REF_DIR_INCOMING,
-                                               &in_edges, &in_count);
-                if (in_count == 0) {
-                    root_ids[root_count++] = oid;
-                }
-            }
-        }
-    }
-
-    /* Step 2: Mark reachable set */
-    nmo_object_id_t *reachable_ids = NULL;
-    size_t reachable_count = 0;
+    /* Use library API for core orphan detection */
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_id_t *orphan_ids = NULL;
+    size_t orphan_id_count = 0;
     {
-        nmo_status_t ms = nmo_ref_graph_mark_reachable(
-            graph, root_ids, root_count, arena,
-            &reachable_ids, &reachable_count);
+        nmo_status_t ms = nmo_ref_graph_find_orphans(
+            graph, repo, c.registry, arena,
+            &orphan_ids, &orphan_id_count);
         if (ms != NMO_OK) {
             nmo_arena_destroy(arena);
-            fprintf(stderr, "Error: mark_reachable failed\n");
+            fprintf(stderr, "Error: Orphan detection failed\n");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
     }
 
-    /* Binary search helper (reachable_ids is sorted) */
-    #define ID_IS_REACHABLE(id) \
-        id_is_reachable(reachable_ids, reachable_count, (id))
+    size_t reachable_count = object_count - orphan_id_count;
 
     /* Step 3: Classify orphans */
     size_t likely_orphans = 0;
@@ -828,8 +756,8 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
         nmo_object_id_t obj_id = nmo_object_get_id(obj);
         nmo_class_id_t cid = nmo_object_get_class_id(obj);
 
-        /* Skip reachable objects (includes roots) */
-        if (ID_IS_REACHABLE(obj_id)) {
+        /* Skip reachable objects (not in orphan set) */
+        if (!id_is_in_set(orphan_ids, orphan_id_count, obj_id)) {
             /* Still count toward filtered total if class matches */
             if (filter_cid == 0 ||
                 cid == filter_cid ||
@@ -887,8 +815,6 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
         }
     }
 
-    #undef ID_IS_REACHABLE
-
     /* Determine exit code */
     int exit_code = NMO_CLI_EXIT_SUCCESS;
     if (likely_orphans > 0 && strict) {
@@ -913,8 +839,6 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
                                 (uint64_t)reachable_count);
         yyjson_mut_obj_add_uint(doc, data, "unreachable_count",
                                 (uint64_t)unreachable_count);
-        yyjson_mut_obj_add_uint(doc, data, "root_count",
-                                (uint64_t)root_count);
         yyjson_mut_obj_add_uint(doc, data, "likely_orphans",
                                 (uint64_t)likely_orphans);
         yyjson_mut_obj_add_uint(doc, data, "likely_orphan_size",

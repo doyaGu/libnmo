@@ -9,6 +9,8 @@
 #include "object/nmo_ref_graph.h"
 #include "object/nmo_ref_enumerate.h"
 #include "object/nmo_object_repository.h"
+#include "object/nmo_class_ids.h"
+#include "type/nmo_type_system.h"
 #include "format/nmo_object.h"
 
 #include <string.h>
@@ -474,4 +476,384 @@ const char *nmo_ref_kind_name(nmo_ref_kind_t kind) {
         return "unknown";
     }
     return ref_kind_names[kind];
+}
+
+/* ============================================================================
+ * Orphan Detection
+ * ============================================================================ */
+
+nmo_status_t nmo_ref_graph_find_orphans(
+    nmo_ref_graph_t *graph,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *registry,
+    nmo_arena_t *arena,
+    nmo_object_id_t **out_orphans,
+    size_t *out_count)
+{
+    if (!graph || !repo || !registry || !arena || !out_orphans || !out_count) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "NULL argument to find_orphans");
+    }
+
+    *out_orphans = NULL;
+    *out_count = 0;
+
+    /* Get all objects */
+    size_t object_count = 0;
+    nmo_object_t **objects = nmo_object_repository_get_all(repo, &object_count);
+    if (object_count == 0) {
+        NMO_RETURN_OK();
+    }
+
+    /* Allocate root ID array (worst case: all objects are roots) */
+    nmo_object_id_t *root_ids = (nmo_object_id_t *)nmo_arena_alloc(
+        arena, object_count * sizeof(nmo_object_id_t),
+        _Alignof(nmo_object_id_t));
+    if (!root_ids) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "allocation failed in find_orphans");
+    }
+
+    size_t root_count = 0;
+
+    /* Tier 1: CKLevel / CKScene */
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_class_id_t cid = nmo_object_get_class_id(objects[i]);
+        if (cid == NMO_CID_LEVEL || cid == NMO_CID_SCENE ||
+            nmo_type_registry_is_class_derived_from(registry, cid, NMO_CID_LEVEL) ||
+            nmo_type_registry_is_class_derived_from(registry, cid, NMO_CID_SCENE)) {
+            root_ids[root_count++] = nmo_object_get_id(objects[i]);
+        }
+    }
+
+    /* Tier 2: CKGroup */
+    if (root_count == 0) {
+        for (size_t i = 0; i < object_count; ++i) {
+            nmo_class_id_t cid = nmo_object_get_class_id(objects[i]);
+            if (cid == NMO_CID_GROUP ||
+                nmo_type_registry_is_class_derived_from(registry, cid, NMO_CID_GROUP)) {
+                root_ids[root_count++] = nmo_object_get_id(objects[i]);
+            }
+        }
+    }
+
+    /* Tier 3: CK3dEntity / CK3dObject */
+    if (root_count == 0) {
+        for (size_t i = 0; i < object_count; ++i) {
+            nmo_class_id_t cid = nmo_object_get_class_id(objects[i]);
+            if (cid == NMO_CID_3DENTITY || cid == NMO_CID_3DOBJECT ||
+                nmo_type_registry_is_class_derived_from(registry, cid, NMO_CID_3DENTITY)) {
+                root_ids[root_count++] = nmo_object_get_id(objects[i]);
+            }
+        }
+    }
+
+    /* Tier 4: all objects with zero incoming references */
+    if (root_count == 0) {
+        for (size_t i = 0; i < object_count; ++i) {
+            nmo_object_id_t oid = nmo_object_get_id(objects[i]);
+            nmo_ref_edge_t *edges = NULL;
+            size_t ecount = 0;
+            nmo_ref_graph_get_object_edges(graph, oid, NMO_REF_DIR_INCOMING,
+                                           &edges, &ecount);
+            if (ecount == 0) {
+                root_ids[root_count++] = oid;
+            }
+        }
+    }
+
+    /* Mark reachable set */
+    nmo_object_id_t *reachable_ids = NULL;
+    size_t reachable_count = 0;
+    nmo_status_t ms = nmo_ref_graph_mark_reachable(
+        graph, root_ids, root_count, arena,
+        &reachable_ids, &reachable_count);
+    if (ms != NMO_OK) {
+        return ms;
+    }
+
+    /* Collect orphans: objects NOT in the reachable set */
+    nmo_object_id_t *orphans = (nmo_object_id_t *)nmo_arena_alloc(
+        arena, object_count * sizeof(nmo_object_id_t),
+        _Alignof(nmo_object_id_t));
+    if (!orphans) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "allocation failed in find_orphans");
+    }
+
+    size_t orphan_count = 0;
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_id_t oid = nmo_object_get_id(objects[i]);
+        if (!id_in_sorted(reachable_ids, reachable_count, oid)) {
+            orphans[orphan_count++] = oid;
+        }
+    }
+
+    *out_orphans = orphans;
+    *out_count = orphan_count;
+    NMO_RETURN_OK();
+}
+
+/* ============================================================================
+ * Cycle Detection (iterative DFS with rotation-normalized dedup)
+ * ============================================================================ */
+
+/** Internal cycle record used during DFS */
+typedef struct {
+    nmo_object_id_t *ids;
+    nmo_ref_kind_t *kinds;
+    size_t count;
+} cycle_record_t;
+
+/** DFS state for cycle detection */
+typedef struct {
+    nmo_ref_graph_t *graph;
+    uint8_t *color;            /* 0=WHITE, 1=GRAY, 2=BLACK */
+    nmo_object_id_t *stack;
+    nmo_ref_kind_t *stack_kinds;
+    size_t stack_size;
+
+    cycle_record_t *cycles;
+    size_t cycle_count;
+    size_t cycle_cap;
+
+    nmo_arena_t *arena;
+    nmo_object_id_t max_id;
+} cycle_dfs_state_t;
+
+static void cycle_dfs_record(cycle_dfs_state_t *st, nmo_object_id_t back_target,
+                             nmo_ref_kind_t back_kind) {
+    /* Find back_target in the stack to extract the cycle */
+    size_t start = 0;
+    bool found = false;
+    for (size_t i = 0; i < st->stack_size; ++i) {
+        if (st->stack[i] == back_target) {
+            start = i;
+            found = true;
+            break;
+        }
+    }
+    if (!found) return;
+
+    size_t len = st->stack_size - start;
+
+    /* Normalize: rotate so minimum ID is first (for dedup) */
+    size_t min_pos = 0;
+    for (size_t j = 1; j < len; ++j) {
+        if (st->stack[start + j] < st->stack[start + min_pos])
+            min_pos = j;
+    }
+
+    /* Deduplicate: check if we already have this cycle */
+    for (size_t ci = 0; ci < st->cycle_count; ++ci) {
+        if (st->cycles[ci].count == len) {
+            bool same = true;
+            for (size_t j = 0; j < len; ++j) {
+                if (st->cycles[ci].ids[j] != st->stack[start + ((min_pos + j) % len)]) {
+                    same = false;
+                    break;
+                }
+            }
+            if (same) return;
+        }
+    }
+
+    /* Grow cycle array if needed */
+    if (st->cycle_count >= st->cycle_cap) {
+        size_t new_cap = st->cycle_cap ? st->cycle_cap * 2 : 16;
+        cycle_record_t *tmp = (cycle_record_t *)realloc(
+            st->cycles, new_cap * sizeof(cycle_record_t));
+        if (!tmp) return;
+        st->cycles = tmp;
+        st->cycle_cap = new_cap;
+    }
+
+    nmo_object_id_t *ids = (nmo_object_id_t *)nmo_arena_alloc(
+        st->arena, len * sizeof(nmo_object_id_t),
+        _Alignof(nmo_object_id_t));
+    nmo_ref_kind_t *kinds = (nmo_ref_kind_t *)nmo_arena_alloc(
+        st->arena, len * sizeof(nmo_ref_kind_t),
+        _Alignof(nmo_ref_kind_t));
+    if (!ids || !kinds) return;
+
+    for (size_t j = 0; j < len; ++j) {
+        size_t src_j = (min_pos + j) % len;
+        size_t next_j = (min_pos + j + 1) % len;
+        ids[j] = st->stack[start + src_j];
+        kinds[j] = (j + 1 < len) ? st->stack_kinds[start + next_j] : back_kind;
+    }
+
+    cycle_record_t *rec = &st->cycles[st->cycle_count++];
+    rec->ids = ids;
+    rec->kinds = kinds;
+    rec->count = len;
+}
+
+/* Iterative DFS frame */
+typedef struct {
+    nmo_object_id_t id;
+    nmo_ref_kind_t entry_kind;
+    nmo_ref_edge_t *edges;
+    size_t ecount;
+    size_t edge_idx;
+} cycle_dfs_frame_t;
+
+static void cycle_dfs_visit(cycle_dfs_state_t *st, nmo_object_id_t start_id,
+                            nmo_ref_kind_t start_kind) {
+    size_t frame_cap = st->max_id < 4096 ? 4096 : (size_t)(st->max_id + 1);
+    cycle_dfs_frame_t *frames = (cycle_dfs_frame_t *)malloc(
+        frame_cap * sizeof(cycle_dfs_frame_t));
+    if (!frames) return;
+    size_t frame_top = 0;
+
+    if (start_id > st->max_id) { free(frames); return; }
+    st->color[start_id] = 1; /* GRAY */
+    st->stack[st->stack_size] = start_id;
+    st->stack_kinds[st->stack_size] = start_kind;
+    st->stack_size++;
+
+    nmo_ref_edge_t *edges = NULL;
+    size_t ecount = 0;
+    nmo_ref_graph_get_object_edges(st->graph, start_id, NMO_REF_DIR_OUTGOING,
+                                   &edges, &ecount);
+    frames[frame_top].id = start_id;
+    frames[frame_top].entry_kind = start_kind;
+    frames[frame_top].edges = edges;
+    frames[frame_top].ecount = ecount;
+    frames[frame_top].edge_idx = 0;
+    frame_top++;
+
+    while (frame_top > 0) {
+        cycle_dfs_frame_t *f = &frames[frame_top - 1];
+
+        if (f->edge_idx >= f->ecount) {
+            st->stack_size--;
+            st->color[f->id] = 2; /* BLACK */
+            frame_top--;
+            continue;
+        }
+
+        nmo_ref_edge_t *edge = &f->edges[f->edge_idx++];
+        nmo_object_id_t target = edge->to;
+        if (target > st->max_id) continue;
+
+        if (st->color[target] == 1) {
+            /* Back edge -> cycle */
+            cycle_dfs_record(st, target, edge->kind);
+        } else if (st->color[target] == 0) {
+            if (frame_top >= frame_cap || st->stack_size >= frame_cap) continue;
+
+            st->color[target] = 1; /* GRAY */
+            st->stack[st->stack_size] = target;
+            st->stack_kinds[st->stack_size] = edge->kind;
+            st->stack_size++;
+
+            nmo_ref_edge_t *tedges = NULL;
+            size_t tecount = 0;
+            nmo_ref_graph_get_object_edges(st->graph, target, NMO_REF_DIR_OUTGOING,
+                                           &tedges, &tecount);
+            frames[frame_top].id = target;
+            frames[frame_top].entry_kind = edge->kind;
+            frames[frame_top].edges = tedges;
+            frames[frame_top].ecount = tecount;
+            frames[frame_top].edge_idx = 0;
+            frame_top++;
+        }
+    }
+
+    free(frames);
+}
+
+nmo_status_t nmo_ref_graph_find_cycles(
+    nmo_ref_graph_t *graph,
+    nmo_object_repository_t *repo,
+    nmo_arena_t *arena,
+    nmo_ref_cycle_t **out_cycles,
+    size_t *out_count)
+{
+    if (!graph || !repo || !arena || !out_cycles || !out_count) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "NULL argument to find_cycles");
+    }
+
+    *out_cycles = NULL;
+    *out_count = 0;
+
+    /* Get all objects to find max_id */
+    size_t object_count = 0;
+    nmo_object_t **objects = nmo_object_repository_get_all(repo, &object_count);
+    if (object_count == 0) {
+        NMO_RETURN_OK();
+    }
+
+    nmo_object_id_t max_id = 0;
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_id_t oid = nmo_object_get_id(objects[i]);
+        if (oid > max_id) max_id = oid;
+    }
+
+    /* Allocate DFS state */
+    size_t color_size = (size_t)(max_id + 1);
+    uint8_t *color = (uint8_t *)calloc(color_size, sizeof(uint8_t));
+    nmo_object_id_t *stack = (nmo_object_id_t *)malloc(
+        object_count * sizeof(nmo_object_id_t));
+    nmo_ref_kind_t *stack_kinds = (nmo_ref_kind_t *)malloc(
+        object_count * sizeof(nmo_ref_kind_t));
+
+    if (!color || !stack || !stack_kinds) {
+        free(color);
+        free(stack);
+        free(stack_kinds);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "allocation failed in find_cycles");
+    }
+
+    cycle_dfs_state_t st;
+    memset(&st, 0, sizeof(st));
+    st.graph = graph;
+    st.color = color;
+    st.stack = stack;
+    st.stack_kinds = stack_kinds;
+    st.stack_size = 0;
+    st.cycles = NULL;
+    st.cycle_count = 0;
+    st.cycle_cap = 0;
+    st.arena = arena;
+    st.max_id = max_id;
+
+    /* Run DFS from each unvisited object */
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_id_t oid = nmo_object_get_id(objects[i]);
+        if (oid <= max_id && color[oid] == 0) {
+            cycle_dfs_visit(&st, oid, NMO_REF_KIND_UNKNOWN);
+        }
+    }
+
+    free(color);
+    free(stack);
+    free(stack_kinds);
+
+    /* Copy results to arena-allocated output */
+    if (st.cycle_count > 0) {
+        nmo_ref_cycle_t *result = (nmo_ref_cycle_t *)nmo_arena_alloc(
+            arena, st.cycle_count * sizeof(nmo_ref_cycle_t),
+            _Alignof(nmo_ref_cycle_t));
+        if (!result) {
+            free(st.cycles);
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "allocation failed in find_cycles");
+        }
+
+        for (size_t i = 0; i < st.cycle_count; ++i) {
+            result[i].ids = st.cycles[i].ids;
+            result[i].kinds = st.cycles[i].kinds;
+            result[i].count = st.cycles[i].count;
+        }
+
+        *out_cycles = result;
+        *out_count = st.cycle_count;
+    }
+
+    free(st.cycles);
+    NMO_RETURN_OK();
 }
