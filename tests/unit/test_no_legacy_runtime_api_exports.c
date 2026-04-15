@@ -57,7 +57,10 @@ static const char *k_probe_prefixes[] = {
     "..\\..\\..\\..\\"
 };
 
-static const char *k_state_only_cli_sources[] = {
+static const char *k_state_only_sources[] = {
+    "src/app/save.c",
+    "src/object/object_system.c",
+    "src/session/object_system.c",
     "tools/commands/nmo_cmd_animation.c",
     "tools/commands/nmo_cmd_data.c",
     "tools/commands/nmo_cmd_entity.c",
@@ -72,7 +75,8 @@ static int line_has_legacy_api(const char *line) {
 
 static int line_has_legacy_data_access(const char *line) {
     return strstr(line, "nmo_object_get_data(") != NULL ||
-           strstr(line, "nmo_object_set_data(") != NULL;
+           strstr(line, "nmo_object_set_data(") != NULL ||
+           strstr(line, "obj->data") != NULL;
 }
 
 static void assert_file_has_no_legacy_api(const char *relative_path) {
@@ -121,13 +125,13 @@ TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_e
     assert_file_has_no_legacy_api("include/object/nmo_object_type_common.h");
 }
 
-TEST(no_legacy_runtime_api_exports, migrated_cli_sources_do_not_use_data_pointer_state) {
-    for (size_t i = 0; i < sizeof(k_state_only_cli_sources) / sizeof(k_state_only_cli_sources[0]); i++) {
-        assert_file_has_no_legacy_data_access(k_state_only_cli_sources[i]);
+TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_pointer_state) {
+    for (size_t i = 0; i < sizeof(k_state_only_sources) / sizeof(k_state_only_sources[0]); i++) {
+        assert_file_has_no_legacy_data_access(k_state_only_sources[i]);
     }
 }
 
 TEST_MAIN_BEGIN()
 REGISTER_TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_exports);
-REGISTER_TEST(no_legacy_runtime_api_exports, migrated_cli_sources_do_not_use_data_pointer_state);
+REGISTER_TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_pointer_state);
 TEST_MAIN_END()

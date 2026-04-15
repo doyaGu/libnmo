@@ -238,7 +238,6 @@ static void object_system_clear_failed_object_state(nmo_object_t *obj)
         return;
     }
 
-    obj->data = NULL;
     obj->state = NULL;
     obj->state_size = 0;
 }
@@ -679,7 +678,6 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
         }
 
         if (!has_chunk_data) {
-            (void)nmo_object_set_data(obj, state);
             stats.deserialized++;
 
             if (reference_resolver != NULL) {
@@ -726,7 +724,6 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
             state, obj->chunk, schema_type, &deser_ctx);
 
         if (deser_result == NMO_OK) {
-            (void)nmo_object_set_data(obj, state);
             stats.deserialized++;
 
             if (reference_resolver != NULL) {

@@ -282,7 +282,6 @@ nmo_status_t nmo_object_system_deserialize_repository(
         }
 
         if (!has_chunk_data) {
-            (void)nmo_object_set_data(obj, state);
             stats.deserialized++;
             nmo_chunk_close(obj->chunk);
             continue;
@@ -303,7 +302,6 @@ nmo_status_t nmo_object_system_deserialize_repository(
             state, obj->chunk, schema_type, &deser_ctx);
 
         if (deser_result == NMO_OK) {
-            (void)nmo_object_set_data(obj, state);
             stats.deserialized++;
 
             if ((deser_flags & NMO_DESER_FLAG_PRESERVE_RAW) != 0 && shadow_storage != NULL) {
@@ -368,7 +366,9 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
         return NULL;
     }
 
-    if (obj->chunk != NULL && obj->data == NULL) {
+    void *state = nmo_object_get_state(obj);
+
+    if (obj->chunk != NULL && state == NULL) {
         if (logger) {
             nmo_log(logger, NMO_LOG_DEBUG,
                     "    Reusing existing chunk for object %u (unmodified)", obj->id);
@@ -396,10 +396,10 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
         return obj->chunk;
     }
 
-    if (obj->data == NULL) {
+    if (state == NULL) {
         if (logger) {
             nmo_log(logger, NMO_LOG_WARN,
-                    "    Object %u has no data to serialize", obj->id);
+                    "    Object %u has no state to serialize", obj->id);
         }
 
         if (obj->chunk == NULL) {
@@ -458,7 +458,7 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
     nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
         arena, repo, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
 
-    result = schema_type->vtable->serialize(obj->data, new_chunk, schema_type, &ser_ctx);
+    result = schema_type->vtable->serialize(state, new_chunk, schema_type, &ser_ctx);
 
     if (result != NMO_OK) {
         if (logger) {

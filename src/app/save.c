@@ -880,14 +880,14 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
             continue;
         }
 
-        if (require_schema && obj != NULL && obj->data == NULL) {
+        if (require_schema && obj != NULL && nmo_object_get_state(obj) == NULL) {
             save_log_require_schema_failure(
-                ctx->logger, obj, "Schema required but object has no deserialized data");
+                ctx->logger, obj, "Schema required but object has no deserialized state");
             if (first_require_fail_id == 0) {
                 first_require_fail_id = obj->id;
                 first_require_fail_class = obj->class_id;
             }
-            return SAVE_ERR(NMO_ERR_INTERNAL, "Schema serialization required but object has no data");
+            return SAVE_ERR(NMO_ERR_INTERNAL, "Schema serialization required but object has no state");
         }
 
         nmo_chunk_t *old_chunk = obj->chunk;
@@ -1594,118 +1594,4 @@ static nmo_chunk_t *serialize_object_with_schema(
 
     return chunk;
 
-#if 0
-    if (!obj || !arena || !type_reg) {
-        return NULL;
-    }
-
-    /* If object already has a chunk and no data (not modified), reuse it */
-    if (obj->chunk != NULL && obj->data == NULL) {
-        nmo_log(logger, NMO_LOG_DEBUG,
-                "    Reusing existing chunk for object %u (unmodified)", obj->id);
-        return obj->chunk;
-    }
-
-    /* Find schema with inheritance fallback */
-    const nmo_type_descriptor_t *schema_type =
-        nmo_type_registry_find_by_class_id_inherited(type_reg, obj->class_id);
-
-    if (schema_type == NULL) {
-        nmo_log(logger, NMO_LOG_WARN,
-                "    No schema found for class 0x%08X, preserving raw chunk", obj->class_id);
-        return obj->chunk;
-    }
-
-    /* Check if schema has vtable with serialize function */
-    if (schema_type->vtable == NULL || schema_type->vtable->serialize == NULL) {
-        nmo_log(logger, NMO_LOG_WARN,
-                "    Schema '%s' has no write vtable, preserving raw chunk", schema_type->name);
-        return obj->chunk;
-    }
-
-    /* If object has no data, preserve existing chunk or create empty */
-    if (obj->data == NULL) {
-        nmo_log(logger, NMO_LOG_WARN, "    Object %u has no data to serialize", obj->id);
-        if (obj->chunk == NULL) {
-            nmo_chunk_t *empty_chunk = nmo_chunk_create(arena);
-            if (empty_chunk) {
-                empty_chunk->class_id = obj->class_id;
-                empty_chunk->chunk_version = 7;
-                empty_chunk->data_version = 7;
-                empty_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
-                nmo_chunk_start_write(empty_chunk);
-                nmo_chunk_close(empty_chunk);
-                return empty_chunk;
-            }
-        }
-        return obj->chunk;
-    }
-
-    /* Create new chunk for writing */
-    nmo_chunk_t *new_chunk = nmo_chunk_create(arena);
-    if (new_chunk == NULL) {
-        nmo_log(logger, NMO_LOG_ERROR, "    Failed to create chunk for object %u", obj->id);
-        return NULL;
-    }
-
-    const nmo_chunk_t *old_chunk = obj->chunk;
-
-    new_chunk->class_id = obj->class_id;
-    if (old_chunk != NULL) {
-        new_chunk->chunk_version = old_chunk->chunk_version;
-        new_chunk->data_version = old_chunk->data_version;
-        new_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
-    } else {
-        new_chunk->chunk_version = 7;
-        new_chunk->data_version = 7;
-        new_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
-    }
-
-    nmo_status_t result = nmo_chunk_start_write(new_chunk);
-    if (result != NMO_OK) {
-        nmo_log(logger, NMO_LOG_ERROR,
-                "    Failed to start chunk write for object %u", obj->id);
-        return NULL;
-    }
-
-    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
-        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
-
-    /* Call vtable serialize function */
-    result = schema_type->vtable->serialize(obj->data, new_chunk, schema_type, &ser_ctx);
-
-    if (result != NMO_OK) {
-        nmo_log(logger, NMO_LOG_ERROR,
-                "    Failed to serialize object %u with schema '%s'",
-                obj->id, schema_type->name);
-        return obj->chunk;  /* Fall back to existing chunk */
-    }
-
-    if (shadow_storage != NULL) {
-        size_t tail_size = 0;
-        const void *tail = nmo_shadow_get_chunk_tail(shadow_storage, obj->id, &tail_size);
-        if (tail != NULL && tail_size > 0) {
-            nmo_status_t tail_result = nmo_chunk_write_buffer_no_size(new_chunk, tail, tail_size);
-            if (tail_result != NMO_OK) {
-                nmo_log(logger, NMO_LOG_WARN,
-                        "    Failed to append shadow tail for object %u (code=%d)",
-                        obj->id, tail_result);
-            }
-        }
-    }
-
-    nmo_chunk_close(new_chunk);
-
-    if (old_chunk != NULL && new_chunk->data.count == 0) {
-        nmo_log(logger, NMO_LOG_WARN,
-                "    Serialized object %u is empty; preserving original chunk", obj->id);
-        return (nmo_chunk_t *)old_chunk;
-    }
-
-    nmo_log(logger, NMO_LOG_DEBUG,
-            "    Serialized object %u using schema '%s' (%zu bytes)",
-            obj->id, schema_type->name, new_chunk->data.count * 4);
-
-    return new_chunk;
-#endif
 }
