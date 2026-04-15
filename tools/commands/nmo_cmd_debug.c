@@ -5,6 +5,7 @@
 
 #include "nmo_cmd_debug.h"
 
+#include "../nmo_cmd_core.h"
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
 #include "../nmo_tool_common.h"
@@ -17,6 +18,204 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+
+typedef struct nmo_debug_chunks_data {
+    yyjson_mut_doc *doc;
+    yyjson_mut_val *chunks;
+    nmo_cli_table_t *table;
+    size_t chunk_count;
+} nmo_debug_chunks_data_t;
+
+static int debug_chunks_object(size_t index, nmo_object_t *obj,
+                               const nmo_cmd_ctx_t *c, void *user)
+{
+    (void)index;
+
+    nmo_debug_chunks_data_t *data = (nmo_debug_chunks_data_t *)user;
+    if (!data || !obj) {
+        return 0;
+    }
+
+    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+    if (!chunk) {
+        return 0;
+    }
+
+    if (data->doc && data->chunks) {
+        yyjson_mut_val *cv = yyjson_mut_obj(data->doc);
+        yyjson_mut_obj_add_uint(data->doc, cv, "id", nmo_object_get_id(obj));
+        yyjson_mut_obj_add_uint(data->doc, cv, "class_id", chunk->class_id);
+        yyjson_mut_obj_add_uint(data->doc, cv, "data_size",
+                                (uint64_t)nmo_chunk_get_data_size(chunk));
+        yyjson_mut_obj_add_uint(data->doc, cv, "compressed_size",
+                                (uint64_t)chunk->compressed_size);
+        yyjson_mut_obj_add_uint(data->doc, cv, "options", chunk->chunk_options);
+
+        const char *class_name = nmo_cli_class_name_from_id(c->ctx, chunk->class_id);
+        if (class_name) {
+            yyjson_mut_obj_add_str(data->doc, cv, "class_name", class_name);
+        }
+
+        const char *name = nmo_object_get_name(obj);
+        if (name && name[0]) {
+            nmo_cli_json_add_str_safe(data->doc, cv, "name", name);
+        }
+
+        yyjson_mut_arr_add_val(data->chunks, cv);
+    } else if (data->table) {
+        char oid[16], cid[16], dsz[16], csz[16];
+        char opt_buf[64];
+        char opt_cell[96];
+        snprintf(oid, sizeof(oid), "%u", nmo_object_get_id(obj));
+        snprintf(cid, sizeof(cid), "%u", chunk->class_id);
+        snprintf(dsz, sizeof(dsz), "%zu", nmo_chunk_get_data_size(chunk));
+        snprintf(csz, sizeof(csz), "%zu", chunk->compressed_size);
+
+        const char *opt = nmo_cli_chunk_options_to_string(chunk->chunk_options,
+            opt_buf, sizeof(opt_buf));
+        if (chunk->chunk_options == 0) {
+            snprintf(opt_cell, sizeof(opt_cell), "-");
+        } else {
+            snprintf(opt_cell, sizeof(opt_cell), "%s (0x%04X)", opt, chunk->chunk_options);
+        }
+
+        const char *class_name = nmo_cli_class_name_from_id(c->ctx, chunk->class_id);
+
+        const char *cells[] = {oid, cid, class_name ? class_name : "-", dsz, csz, opt_cell};
+        (void)nmo_cli_table_add_row(data->table, cells, 6);
+    }
+
+    data->chunk_count++;
+    return 0;
+}
+
+typedef struct nmo_debug_objects_data {
+    yyjson_mut_doc *doc;
+    yyjson_mut_val *objects;
+    nmo_cli_table_t *table;
+} nmo_debug_objects_data_t;
+
+static int debug_objects_object(size_t index, nmo_object_t *obj,
+                                const nmo_cmd_ctx_t *c, void *user)
+{
+    nmo_debug_objects_data_t *data = (nmo_debug_objects_data_t *)user;
+    if (!data || !obj) {
+        return 0;
+    }
+
+    if (data->doc && data->objects) {
+        yyjson_mut_val *o = yyjson_mut_obj(data->doc);
+        yyjson_mut_obj_add_uint(data->doc, o, "index", (uint64_t)index);
+        yyjson_mut_obj_add_uint(data->doc, o, "id", nmo_object_get_id(obj));
+        yyjson_mut_obj_add_uint(data->doc, o, "class_id", nmo_object_get_class_id(obj));
+        yyjson_mut_obj_add_uint(data->doc, o, "flags", nmo_object_get_flags(obj));
+
+        const char *name = nmo_object_get_name(obj);
+        if (name && name[0]) {
+            nmo_cli_json_add_str_safe(data->doc, o, "name", name);
+        }
+
+        const char *class_name = nmo_cli_class_name_from_id(c->ctx, nmo_object_get_class_id(obj));
+        if (class_name) {
+            yyjson_mut_obj_add_str(data->doc, o, "class_name", class_name);
+        }
+
+        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+        yyjson_mut_obj_add_bool(data->doc, o, "has_chunk", chunk != NULL);
+        if (chunk) {
+            yyjson_mut_obj_add_uint(data->doc, o, "chunk_size",
+                                    (uint64_t)nmo_chunk_get_data_size(chunk));
+        }
+
+        yyjson_mut_arr_add_val(data->objects, o);
+    } else if (data->table) {
+        char idx[24], id[16], flags[16], chunk_sz[24];
+        snprintf(idx, sizeof(idx), "%zu", index);
+        snprintf(id, sizeof(id), "%u", nmo_object_get_id(obj));
+        snprintf(flags, sizeof(flags), "0x%08X", nmo_object_get_flags(obj));
+
+        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+        if (chunk) {
+            snprintf(chunk_sz, sizeof(chunk_sz), "%zu", nmo_chunk_get_data_size(chunk));
+        } else {
+            snprintf(chunk_sz, sizeof(chunk_sz), "-");
+        }
+
+        const char *class_name = nmo_cli_class_name_from_id(c->ctx, nmo_object_get_class_id(obj));
+        const char *name = nmo_object_get_name(obj);
+
+        const char *cells[] = {
+            idx, id, flags,
+            class_name ? class_name : "-",
+            (name && name[0]) ? name : "-",
+            chunk_sz
+        };
+        (void)nmo_cli_table_add_row(data->table, cells, 6);
+    }
+
+    return 0;
+}
+
+typedef struct nmo_debug_export_data {
+    yyjson_mut_doc *doc;
+    yyjson_mut_val *objects;
+    bool include_data;
+    size_t max_bytes;
+} nmo_debug_export_data_t;
+
+static int debug_export_object(size_t index, nmo_object_t *obj,
+                               const nmo_cmd_ctx_t *c, void *user)
+{
+    nmo_debug_export_data_t *data = (nmo_debug_export_data_t *)user;
+    if (!data || !data->doc || !data->objects || !obj) {
+        return 0;
+    }
+
+    yyjson_mut_val *o = yyjson_mut_obj(data->doc);
+    yyjson_mut_obj_add_uint(data->doc, o, "index", (uint64_t)index);
+    yyjson_mut_obj_add_uint(data->doc, o, "id", nmo_object_get_id(obj));
+    yyjson_mut_obj_add_uint(data->doc, o, "class_id", nmo_object_get_class_id(obj));
+    yyjson_mut_obj_add_uint(data->doc, o, "flags", nmo_object_get_flags(obj));
+
+    const char *name = nmo_object_get_name(obj);
+    if (name && name[0]) {
+        nmo_cli_json_add_str_safe(data->doc, o, "name", name);
+    }
+
+    const char *class_name = nmo_cli_class_name_from_id(c->ctx, nmo_object_get_class_id(obj));
+    if (class_name) {
+        yyjson_mut_obj_add_str(data->doc, o, "class_name", class_name);
+    }
+
+    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+    if (chunk) {
+        yyjson_mut_val *cv = yyjson_mut_obj(data->doc);
+        yyjson_mut_obj_add_uint(data->doc, cv, "class_id", chunk->class_id);
+        yyjson_mut_obj_add_uint(data->doc, cv, "data_size",
+                                (uint64_t)nmo_chunk_get_data_size(chunk));
+        yyjson_mut_obj_add_uint(data->doc, cv, "compressed_size",
+                                (uint64_t)chunk->compressed_size);
+        yyjson_mut_obj_add_uint(data->doc, cv, "uncompressed_size",
+                                (uint64_t)chunk->uncompressed_size);
+        yyjson_mut_obj_add_uint(data->doc, cv, "options", (uint64_t)chunk->chunk_options);
+        yyjson_mut_obj_add_uint(data->doc, cv, "id_count",
+                                (uint64_t)nmo_chunk_get_id_count(chunk));
+        yyjson_mut_obj_add_uint(data->doc, cv, "subchunk_count",
+                                (uint64_t)nmo_chunk_get_sub_chunk_count(chunk));
+
+        if (data->include_data) {
+            size_t data_size = 0;
+            const uint8_t *chunk_data = (const uint8_t *)nmo_chunk_get_data(chunk, &data_size);
+            (void)nmo_cli_json_add_data_hex(data->doc, cv, chunk_data,
+                                            data_size, data->max_bytes, false);
+        }
+
+        yyjson_mut_obj_add_val(data->doc, o, "chunk", cv);
+    }
+
+    yyjson_mut_arr_add_val(data->objects, o);
+    return 0;
+}
 
 /* ============================================================================
  * debug load-phases
@@ -110,60 +309,31 @@ int nmo_cmd_debug_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glo
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
-        fprintf(stderr, "Error: Failed to get objects\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    /* Count chunks */
-    size_t chunk_count = 0;
-    for (size_t i = 0; i < object_count; ++i) {
-        if (nmo_object_get_chunk(objects[i])) {
-            chunk_count++;
-        }
-    }
-
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
-        yyjson_mut_obj_add_uint(doc, data, "object_count", (uint64_t)object_count);
-        yyjson_mut_obj_add_uint(doc, data, "chunk_count", (uint64_t)chunk_count);
-
-        /* Detailed chunk info */
         yyjson_mut_val *chunks = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-            if (!chunk) continue;
-
-            yyjson_mut_val *cv = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, cv, "id", nmo_object_get_id(obj));
-            yyjson_mut_obj_add_uint(doc, cv, "class_id", chunk->class_id);
-            yyjson_mut_obj_add_uint(doc, cv, "data_size", (uint64_t)nmo_chunk_get_data_size(chunk));
-            yyjson_mut_obj_add_uint(doc, cv, "compressed_size", (uint64_t)chunk->compressed_size);
-            yyjson_mut_obj_add_uint(doc, cv, "options", chunk->chunk_options);
-
-            const char *class_name = nmo_cli_class_name_from_id(c.ctx, chunk->class_id);
-            if (class_name) {
-                yyjson_mut_obj_add_str(doc, cv, "class_name", class_name);
-            }
-
-            const char *name = nmo_object_get_name(obj);
-            if (name && name[0]) {
-                nmo_cli_json_add_str_safe(doc, cv, "name", name);
-            }
-
-            yyjson_mut_arr_add_val(chunks, cv);
+        nmo_debug_chunks_data_t chunks_data = {
+            .doc = doc,
+            .chunks = chunks,
+        };
+        nmo_core_iter_result_t result = {0};
+        rc = nmo_core_object_query_run(&c, NULL, debug_chunks_object,
+                                       &chunks_data, &result);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            yyjson_mut_doc_free(doc);
+            fprintf(stderr, "Error: Failed to query objects\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
+        yyjson_mut_obj_add_uint(doc, data, "object_count", (uint64_t)result.matched);
+        yyjson_mut_obj_add_uint(doc, data, "chunk_count",
+                                (uint64_t)chunks_data.chunk_count);
         yyjson_mut_obj_add_val(doc, data, "chunks", chunks);
 
         nmo_cmd_ctx_json_end(&c, doc, data, "debug.chunks");
     } else {
         nmo_cli_print_heading(c.out, "Chunk Debug Info", c.colorize);
-        fprintf(c.out, "Chunks: %zu (from %zu objects)\n\n", chunk_count, object_count);
 
         static const nmo_cli_table_col_t columns[] = {
             {"ObjectID", NMO_CLI_ALIGN_RIGHT, 5, 0},
@@ -177,33 +347,20 @@ int nmo_cmd_debug_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glo
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-            if (!chunk) continue;
-
-            char oid[16], cid[16], dsz[16], csz[16];
-            char opt_buf[64];
-            char opt_cell[96];
-            snprintf(oid, sizeof(oid), "%u", nmo_object_get_id(obj));
-            snprintf(cid, sizeof(cid), "%u", chunk->class_id);
-            snprintf(dsz, sizeof(dsz), "%zu", nmo_chunk_get_data_size(chunk));
-            snprintf(csz, sizeof(csz), "%zu", chunk->compressed_size);
-
-            const char *opt = nmo_cli_chunk_options_to_string(chunk->chunk_options,
-                opt_buf, sizeof(opt_buf));
-            if (chunk->chunk_options == 0) {
-                snprintf(opt_cell, sizeof(opt_cell), "-");
-            } else {
-                snprintf(opt_cell, sizeof(opt_cell), "%s (0x%04X)", opt, chunk->chunk_options);
-            }
-
-            const char *class_name = nmo_cli_class_name_from_id(c.ctx, chunk->class_id);
-
-            const char *cells[] = {oid, cid, class_name ? class_name : "-", dsz, csz, opt_cell};
-            nmo_cli_table_add_row(&table, cells, 6);
+        nmo_debug_chunks_data_t chunks_data = {
+            .table = &table,
+        };
+        nmo_core_iter_result_t result = {0};
+        rc = nmo_core_object_query_run(&c, NULL, debug_chunks_object,
+                                       &chunks_data, &result);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            nmo_cli_table_free(&table);
+            fprintf(stderr, "Error: Failed to query objects\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
+        fprintf(c.out, "Chunks: %zu (from %zu objects)\n\n",
+                chunks_data.chunk_count, result.matched);
         nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
     }
@@ -220,53 +377,29 @@ int nmo_cmd_debug_objects(int argc, char **argv, const nmo_cli_global_opts_t *gl
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
-        fprintf(stderr, "Error: Failed to get objects\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
-        yyjson_mut_obj_add_uint(doc, data, "object_count", (uint64_t)object_count);
-
         yyjson_mut_val *objs = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-
-            yyjson_mut_val *o = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, o, "index", (uint64_t)i);
-            yyjson_mut_obj_add_uint(doc, o, "id", nmo_object_get_id(obj));
-            yyjson_mut_obj_add_uint(doc, o, "class_id", nmo_object_get_class_id(obj));
-            yyjson_mut_obj_add_uint(doc, o, "flags", nmo_object_get_flags(obj));
-
-            const char *name = nmo_object_get_name(obj);
-            if (name && name[0]) {
-                nmo_cli_json_add_str_safe(doc, o, "name", name);
-            }
-
-            const char *class_name = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(obj));
-            if (class_name) {
-                yyjson_mut_obj_add_str(doc, o, "class_name", class_name);
-            }
-
-            nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-            yyjson_mut_obj_add_bool(doc, o, "has_chunk", chunk != NULL);
-            if (chunk) {
-                yyjson_mut_obj_add_uint(doc, o, "chunk_size", (uint64_t)nmo_chunk_get_data_size(chunk));
-            }
-
-            yyjson_mut_arr_add_val(objs, o);
+        nmo_debug_objects_data_t objects_data = {
+            .doc = doc,
+            .objects = objs,
+        };
+        nmo_core_iter_result_t result = {0};
+        rc = nmo_core_object_query_run(&c, NULL, debug_objects_object,
+                                       &objects_data, &result);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            yyjson_mut_doc_free(doc);
+            fprintf(stderr, "Error: Failed to query objects\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
+        yyjson_mut_obj_add_uint(doc, data, "object_count", (uint64_t)result.matched);
         yyjson_mut_obj_add_val(doc, data, "objects", objs);
 
         nmo_cmd_ctx_json_end(&c, doc, data, "debug.objects");
     } else {
         nmo_cli_print_heading(c.out, "Object Debug Info", c.colorize);
-        fprintf(c.out, "Objects: %zu\n\n", object_count);
 
         static const nmo_cli_table_col_t columns[] = {
             {"Idx", NMO_CLI_ALIGN_RIGHT, 4, 0},
@@ -280,33 +413,19 @@ int nmo_cmd_debug_objects(int argc, char **argv, const nmo_cli_global_opts_t *gl
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-
-            char idx[24], id[16], flags[16], chunk_sz[24];
-            snprintf(idx, sizeof(idx), "%zu", i);
-            snprintf(id, sizeof(id), "%u", nmo_object_get_id(obj));
-            snprintf(flags, sizeof(flags), "0x%08X", nmo_object_get_flags(obj));
-
-            nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-            if (chunk) {
-                snprintf(chunk_sz, sizeof(chunk_sz), "%zu", nmo_chunk_get_data_size(chunk));
-            } else {
-                snprintf(chunk_sz, sizeof(chunk_sz), "-");
-            }
-
-            const char *class_name = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(obj));
-            const char *name = nmo_object_get_name(obj);
-
-            const char *cells[] = {
-                idx, id, flags,
-                class_name ? class_name : "-",
-                (name && name[0]) ? name : "-",
-                chunk_sz
-            };
-            nmo_cli_table_add_row(&table, cells, 6);
+        nmo_debug_objects_data_t objects_data = {
+            .table = &table,
+        };
+        nmo_core_iter_result_t result = {0};
+        rc = nmo_core_object_query_run(&c, NULL, debug_objects_object,
+                                       &objects_data, &result);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            nmo_cli_table_free(&table);
+            fprintf(stderr, "Error: Failed to query objects\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
+        fprintf(c.out, "Objects: %zu\n\n", result.matched);
         nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
     }
@@ -335,69 +454,35 @@ int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *glo
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
-        fprintf(stderr, "Error: Failed to get objects\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
     yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
     yyjson_mut_val *data = yyjson_mut_obj(doc);
     yyjson_mut_obj_add_str(doc, data, "file", c.file_path);
-    yyjson_mut_obj_add_uint(doc, data, "object_count", (uint64_t)object_count);
     yyjson_mut_obj_add_bool(doc, data, "include_data", include_data);
     yyjson_mut_obj_add_uint(doc, data, "max_bytes", (uint64_t)max_bytes);
 
     yyjson_mut_val *objs = yyjson_mut_arr(doc);
-    for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_t *obj = objects[i];
-        yyjson_mut_val *o = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, o, "index", (uint64_t)i);
-        yyjson_mut_obj_add_uint(doc, o, "id", nmo_object_get_id(obj));
-        yyjson_mut_obj_add_uint(doc, o, "class_id", nmo_object_get_class_id(obj));
-        yyjson_mut_obj_add_uint(doc, o, "flags", nmo_object_get_flags(obj));
-
-        const char *name = nmo_object_get_name(obj);
-        if (name && name[0]) {
-            nmo_cli_json_add_str_safe(doc, o, "name", name);
-        }
-
-        const char *class_name = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(obj));
-        if (class_name) {
-            yyjson_mut_obj_add_str(doc, o, "class_name", class_name);
-        }
-
-        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-        if (chunk) {
-            yyjson_mut_val *cv = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, cv, "class_id", chunk->class_id);
-            yyjson_mut_obj_add_uint(doc, cv, "data_size", (uint64_t)nmo_chunk_get_data_size(chunk));
-            yyjson_mut_obj_add_uint(doc, cv, "compressed_size", (uint64_t)chunk->compressed_size);
-            yyjson_mut_obj_add_uint(doc, cv, "uncompressed_size", (uint64_t)chunk->uncompressed_size);
-            yyjson_mut_obj_add_uint(doc, cv, "options", (uint64_t)chunk->chunk_options);
-            yyjson_mut_obj_add_uint(doc, cv, "id_count", (uint64_t)nmo_chunk_get_id_count(chunk));
-            yyjson_mut_obj_add_uint(doc, cv, "subchunk_count", (uint64_t)nmo_chunk_get_sub_chunk_count(chunk));
-
-            if (include_data) {
-                size_t data_size = 0;
-                const uint8_t *chunk_data = (const uint8_t *)nmo_chunk_get_data(chunk, &data_size);
-                (void)nmo_cli_json_add_data_hex(doc, cv, chunk_data, data_size, max_bytes, false);
-            }
-
-            yyjson_mut_obj_add_val(doc, o, "chunk", cv);
-        }
-
-        yyjson_mut_arr_add_val(objs, o);
+    nmo_debug_export_data_t export_data = {
+        .doc = doc,
+        .objects = objs,
+        .include_data = include_data,
+        .max_bytes = max_bytes,
+    };
+    nmo_core_iter_result_t result = {0};
+    rc = nmo_core_object_query_run(&c, NULL, debug_export_object,
+                                   &export_data, &result);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        yyjson_mut_doc_free(doc);
+        fprintf(stderr, "Error: Failed to query objects\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
+    yyjson_mut_obj_add_uint(doc, data, "object_count", (uint64_t)result.matched);
     yyjson_mut_obj_add_val(doc, data, "objects", objs);
     nmo_cmd_ctx_json_end(&c, doc, data, "debug.export");
 
     if (!c.is_json && global->output_path) {
-        fprintf(stdout, "Exported %zu objects to %s\n", object_count, global->output_path);
+        fprintf(stdout, "Exported %zu objects to %s\n", result.matched, global->output_path);
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
-

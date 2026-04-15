@@ -5,6 +5,7 @@
 #include "nmo_tool_common.h"
 
 #include "core/nmo_path.h"
+#include "object/nmo_object_repository.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -20,11 +21,13 @@ const char *nmo_repl_format_prompt(const nmo_repl_context_t *repl) {
     }
 
     if (repl && repl->has_selection) {
-        size_t object_count = 0;
-        nmo_object_t **objects = NULL;
-        nmo_session_get_objects(repl->session, &objects, &object_count);
-        if (repl->selected_index < object_count) {
-            nmo_object_id_t id = nmo_object_get_id(objects[repl->selected_index]);
+        nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
+        size_t object_count = repo ? nmo_object_repository_get_count(repo) : 0;
+        nmo_object_t *selected = repo
+            ? nmo_object_repository_get_by_index(repo, repl->selected_index)
+            : NULL;
+        if (selected && repl->selected_index < object_count) {
+            nmo_object_id_t id = nmo_object_get_id(selected);
             if (file_label[0]) {
                 snprintf(buf, sizeof(buf), "nmo(repl:%s idx=%zu id=%u)> ", file_label, repl->selected_index, id);
             } else {
@@ -79,7 +82,22 @@ int nmo_repl_parse_command(char *line, char **argv, int max_args) {
 }
 
 void nmo_repl_get_objects(nmo_repl_context_t *repl, nmo_object_t ***objects, size_t *count) {
-    nmo_session_get_objects(repl->session, objects, count);
+    if (objects) {
+        *objects = NULL;
+    }
+    if (count) {
+        *count = 0;
+    }
+    if (!repl || !repl->session || !objects || !count) {
+        return;
+    }
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
+    if (!repo) {
+        return;
+    }
+
+    *objects = nmo_object_repository_get_all(repo, count);
 }
 
 void nmo_repl_print_object_summary(const nmo_repl_context_t *repl, size_t index, nmo_object_t *obj) {

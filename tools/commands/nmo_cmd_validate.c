@@ -18,9 +18,11 @@
 #include "app/nmo_inspector.h"
 #include "app/nmo_save.h"
 #include "session/nmo_session.h"
+#include "session/nmo_context.h"
 #include "core/nmo_arena.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"
+#include "object/nmo_object_query.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_ref_graph.h"
@@ -38,6 +40,141 @@ static bool parse_fix_flag(int argc, char **argv) {
         }
     }
     return false;
+}
+
+typedef struct validate_all_data {
+    const nmo_cli_global_opts_t *global;
+    FILE *out;
+    yyjson_mut_doc *doc;
+    size_t error_count;
+    size_t warning_count;
+} validate_all_data_t;
+
+static bool validate_all_object(size_t index, nmo_object_t *obj, void *user_data)
+{
+    (void)index;
+
+    validate_all_data_t *data = (validate_all_data_t *)user_data;
+    if (!data || !obj) {
+        return true;
+    }
+
+    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+    if (!chunk) {
+        data->warning_count++;
+        if (!data->doc && data->global && data->global->verbosity > 0) {
+            fprintf(data->out, "Warning: Object %u has no chunk\n",
+                    nmo_object_get_id(obj));
+        }
+        return true;
+    }
+
+    nmo_chunk_validation_t result;
+    nmo_status_t rc = nmo_inspector_validate_chunk(chunk, &result);
+    if (rc != NMO_OK || !result.is_valid) {
+        data->error_count++;
+        if (!data->doc) {
+            fprintf(data->out, "Error: Object %u chunk validation failed: %s\n",
+                    nmo_object_get_id(obj),
+                    result.error_message[0] ? result.error_message : "unknown");
+        }
+    }
+
+    return true;
+}
+
+typedef struct validate_structure_data {
+    const nmo_cli_global_opts_t *global;
+    bool suggest_fixes;
+    yyjson_mut_doc *doc;
+    yyjson_mut_val *issues;
+    size_t error_count;
+    size_t warning_count;
+    size_t checked_count;
+} validate_structure_data_t;
+
+static int validate_structure_object(size_t index, nmo_object_t *obj,
+                                     const nmo_cmd_ctx_t *c, void *user)
+{
+    (void)index;
+
+    validate_structure_data_t *data = (validate_structure_data_t *)user;
+    if (!data || !obj) {
+        return 0;
+    }
+
+    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+    nmo_object_id_t obj_id = nmo_object_get_id(obj);
+
+    if (!chunk) {
+        data->warning_count++;
+        if (c->is_json) {
+            yyjson_mut_val *issue = yyjson_mut_obj(data->doc);
+            yyjson_mut_obj_add_str(data->doc, issue, "severity", "warning");
+            yyjson_mut_obj_add_uint(data->doc, issue, "id", obj_id);
+            yyjson_mut_obj_add_uint(data->doc, issue, "class_id",
+                                    nmo_object_get_class_id(obj));
+            const char *class_name = nmo_cli_class_name_from_id(
+                c->ctx, nmo_object_get_class_id(obj));
+            if (class_name) {
+                yyjson_mut_obj_add_str(data->doc, issue, "class_name", class_name);
+            }
+            yyjson_mut_obj_add_str(data->doc, issue, "message", "missing chunk");
+            if (data->suggest_fixes) {
+                yyjson_mut_obj_add_str(data->doc, issue, "fix",
+                                       "re-save file to regenerate chunks");
+            }
+            yyjson_mut_arr_add_val(data->issues, issue);
+        } else if (data->global && data->global->verbosity > 0) {
+            fprintf(c->out, "Warning: Object %u has no chunk\n", obj_id);
+            if (data->suggest_fixes) {
+                fprintf(c->out, "  Fix: Re-save file to regenerate chunks\n");
+            }
+        }
+        return 0;
+    }
+
+    data->checked_count++;
+
+    if (!c->is_json && data->global && data->global->verbosity >= 2) {
+        size_t ds = 0;
+        (void)nmo_chunk_get_data(chunk, &ds);
+        fprintf(c->out, "  Object %u: chunk %zu bytes\n", obj_id, ds);
+    }
+
+    nmo_chunk_validation_t result;
+    nmo_status_t vrc = nmo_inspector_validate_chunk(chunk, &result);
+    if (vrc != NMO_OK || !result.is_valid) {
+        data->error_count++;
+        if (c->is_json) {
+            yyjson_mut_val *issue = yyjson_mut_obj(data->doc);
+            yyjson_mut_obj_add_str(data->doc, issue, "severity", "error");
+            yyjson_mut_obj_add_uint(data->doc, issue, "id", obj_id);
+            yyjson_mut_obj_add_uint(data->doc, issue, "class_id",
+                                    nmo_object_get_class_id(obj));
+            const char *class_name = nmo_cli_class_name_from_id(
+                c->ctx, nmo_object_get_class_id(obj));
+            if (class_name) {
+                yyjson_mut_obj_add_str(data->doc, issue, "class_name", class_name);
+            }
+            yyjson_mut_obj_add_str(data->doc, issue, "message",
+                                   result.error_message[0] ? result.error_message : "validation failed");
+            if (data->suggest_fixes) {
+                yyjson_mut_obj_add_str(data->doc, issue, "fix",
+                                       "re-save with nmo convert to regenerate chunk data");
+            }
+            yyjson_mut_arr_add_val(data->issues, issue);
+        } else {
+            fprintf(c->out, "Error: Object %u chunk invalid: %s\n",
+                    obj_id,
+                    result.error_message[0] ? result.error_message : "validation failed");
+            if (data->suggest_fixes) {
+                fprintf(c->out, "  Fix: Re-save with 'nmo convert' to regenerate chunk data\n");
+            }
+        }
+    }
+
+    return 0;
 }
 
 /* ============================================================================
@@ -67,67 +204,59 @@ static int validate_all_single(const char *file_path,
         return NMO_CLI_EXIT_IO_ERROR;
     }
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(session, &objects, &object_count) != NMO_OK) {
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    if (!repo) {
         nmo_tool_close_session(ctx, session);
         fprintf(stderr, "Error: Failed to get objects\n");
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    size_t error_count = 0;
-    size_t warning_count = 0;
     FILE *out = (text_ctx && text_ctx->out) ? text_ctx->out : stdout;
     bool colorize = (text_ctx != NULL) ? text_ctx->colorize : nmo_cli_should_colorize(global, out);
 
-    for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_t *obj = objects[i];
-        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-
-        if (!chunk) {
-            warning_count++;
-            if (!doc && global->verbosity > 0) {
-                fprintf(out, "Warning: Object %u has no chunk\n", nmo_object_get_id(obj));
-            }
-            continue;
-        }
-
-        nmo_chunk_validation_t result;
-        nmo_status_t rc = nmo_inspector_validate_chunk(chunk, &result);
-        if (rc != NMO_OK || !result.is_valid) {
-            error_count++;
-            if (!doc) {
-                fprintf(out, "Error: Object %u chunk validation failed: %s\n",
-                        nmo_object_get_id(obj),
-                        result.error_message[0] ? result.error_message : "unknown");
-            }
-        }
+    validate_all_data_t validate_data = {
+        .global = global,
+        .out = out,
+        .doc = doc,
+    };
+    nmo_object_query_result_t query_result = {0};
+    nmo_status_t query_status = nmo_object_query_iterate(
+        repo, NULL, nmo_context_get_type_registry(ctx),
+        validate_all_object, &validate_data, &query_result);
+    if (query_status != NMO_OK) {
+        nmo_tool_close_session(ctx, session);
+        fprintf(stderr, "Error: Failed to query objects\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     int exit_code = NMO_CLI_EXIT_SUCCESS;
-    if (error_count > 0) {
+    if (validate_data.error_count > 0) {
         exit_code = global->strict_mode ? NMO_CLI_EXIT_STRICT_FAILURE : NMO_CLI_EXIT_SUCCESS;
     }
-    if (warning_count > 0 && global->fail_on_warning) {
+    if (validate_data.warning_count > 0 && global->fail_on_warning) {
         exit_code = NMO_CLI_EXIT_WARNING;
     }
 
     if (doc && data) {
         /* JSON batch mode: populate data object */
-        yyjson_mut_obj_add_bool(doc, data, "valid", error_count == 0);
-        yyjson_mut_obj_add_uint(doc, data, "error_count", (uint64_t)error_count);
-        yyjson_mut_obj_add_uint(doc, data, "warning_count", (uint64_t)warning_count);
-        yyjson_mut_obj_add_uint(doc, data, "object_count", (uint64_t)object_count);
+        yyjson_mut_obj_add_bool(doc, data, "valid", validate_data.error_count == 0);
+        yyjson_mut_obj_add_uint(doc, data, "error_count",
+                                (uint64_t)validate_data.error_count);
+        yyjson_mut_obj_add_uint(doc, data, "warning_count",
+                                (uint64_t)validate_data.warning_count);
+        yyjson_mut_obj_add_uint(doc, data, "object_count",
+                                (uint64_t)query_result.matched);
     } else {
         /* Text mode: output summary */
         char buf[32];
-        snprintf(buf, sizeof(buf), "%zu", object_count);
+        snprintf(buf, sizeof(buf), "%zu", query_result.matched);
         nmo_cli_print_kv(out, "Objects", buf, 12, colorize);
-        snprintf(buf, sizeof(buf), "%zu", error_count);
+        snprintf(buf, sizeof(buf), "%zu", validate_data.error_count);
         nmo_cli_print_kv(out, "Errors", buf, 12, colorize);
-        snprintf(buf, sizeof(buf), "%zu", warning_count);
+        snprintf(buf, sizeof(buf), "%zu", validate_data.warning_count);
         nmo_cli_print_kv(out, "Warnings", buf, 12, colorize);
-        fprintf(out, "Result: %s\n", error_count == 0 ? "VALID" : "INVALID");
+        fprintf(out, "Result: %s\n",
+                validate_data.error_count == 0 ? "VALID" : "INVALID");
     }
 
     nmo_tool_close_session(ctx, session);
@@ -201,17 +330,6 @@ int nmo_cmd_validate_structure(int argc, char **argv, const nmo_cli_global_opts_
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
-        fprintf(stderr, "Error: Failed to get objects\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    size_t error_count = 0;
-    size_t warning_count = 0;
-    size_t checked_count = 0;
-
     yyjson_mut_doc *doc = NULL;
     yyjson_mut_val *data = NULL;
     yyjson_mut_val *issues = NULL;
@@ -226,104 +344,55 @@ int nmo_cmd_validate_structure(int argc, char **argv, const nmo_cli_global_opts_
         fprintf(c.out, "\n");
     }
 
-    for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_t *obj = objects[i];
-        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-        nmo_object_id_t obj_id = nmo_object_get_id(obj);
-
-        if (!chunk) {
-            warning_count++;
-            if (c.is_json) {
-                yyjson_mut_val *issue = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_str(doc, issue, "severity", "warning");
-                yyjson_mut_obj_add_uint(doc, issue, "id", obj_id);
-                yyjson_mut_obj_add_uint(doc, issue, "class_id", nmo_object_get_class_id(obj));
-                const char *class_name = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(obj));
-                if (class_name) {
-                    yyjson_mut_obj_add_str(doc, issue, "class_name", class_name);
-                }
-                yyjson_mut_obj_add_str(doc, issue, "message", "missing chunk");
-                if (suggest_fixes) {
-                    yyjson_mut_obj_add_str(doc, issue, "fix", "re-save file to regenerate chunks");
-                }
-                yyjson_mut_arr_add_val(issues, issue);
-            } else if (global->verbosity > 0) {
-                fprintf(c.out, "Warning: Object %u has no chunk\n", obj_id);
-                if (suggest_fixes) {
-                    fprintf(c.out, "  Fix: Re-save file to regenerate chunks\n");
-                }
-            }
-            continue;
+    validate_structure_data_t structure_data = {
+        .global = global,
+        .suggest_fixes = suggest_fixes,
+        .doc = doc,
+        .issues = issues,
+    };
+    nmo_core_iter_result_t query_result = {0};
+    rc = nmo_core_object_query_run(&c, NULL, validate_structure_object,
+                                   &structure_data, &query_result);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        if (doc) {
+            yyjson_mut_doc_free(doc);
         }
-
-        checked_count++;
-
-        /* -vv: Show per-object chunk details */
-        if (!c.is_json && global->verbosity >= 2) {
-            size_t ds = 0;
-            (void)nmo_chunk_get_data(chunk, &ds);
-            fprintf(c.out, "  Object %u: chunk %zu bytes\n", obj_id, ds);
-        }
-
-        nmo_chunk_validation_t result;
-        nmo_status_t vrc = nmo_inspector_validate_chunk(chunk, &result);
-        if (vrc != NMO_OK || !result.is_valid) {
-            error_count++;
-            if (c.is_json) {
-                yyjson_mut_val *issue = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_str(doc, issue, "severity", "error");
-                yyjson_mut_obj_add_uint(doc, issue, "id", obj_id);
-                yyjson_mut_obj_add_uint(doc, issue, "class_id", nmo_object_get_class_id(obj));
-                const char *class_name = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(obj));
-                if (class_name) {
-                    yyjson_mut_obj_add_str(doc, issue, "class_name", class_name);
-                }
-                yyjson_mut_obj_add_str(doc, issue, "message",
-                                       result.error_message[0] ? result.error_message : "validation failed");
-                if (suggest_fixes) {
-                    yyjson_mut_obj_add_str(doc, issue, "fix",
-                                           "re-save with nmo convert to regenerate chunk data");
-                }
-                yyjson_mut_arr_add_val(issues, issue);
-            } else {
-                fprintf(c.out, "Error: Object %u chunk invalid: %s\n",
-                        obj_id,
-                        result.error_message[0] ? result.error_message : "validation failed");
-                if (suggest_fixes) {
-                    fprintf(c.out, "  Fix: Re-save with 'nmo convert' to regenerate chunk data\n");
-                }
-            }
-        }
+        fprintf(stderr, "Error: Failed to query objects\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     int exit_code = NMO_CLI_EXIT_SUCCESS;
-    if (error_count > 0 && global->strict_mode) {
+    if (structure_data.error_count > 0 && global->strict_mode) {
         exit_code = NMO_CLI_EXIT_STRICT_FAILURE;
     }
-    if (warning_count > 0 && global->fail_on_warning) {
+    if (structure_data.warning_count > 0 && global->fail_on_warning) {
         exit_code = NMO_CLI_EXIT_WARNING;
     }
 
     if (c.is_json) {
         yyjson_mut_obj_add_str(doc, data, "file", c.file_path);
-        yyjson_mut_obj_add_bool(doc, data, "valid", error_count == 0);
-        yyjson_mut_obj_add_uint(doc, data, "object_count", (uint64_t)object_count);
-        yyjson_mut_obj_add_uint(doc, data, "checked_chunks", (uint64_t)checked_count);
-        yyjson_mut_obj_add_uint(doc, data, "error_count", (uint64_t)error_count);
-        yyjson_mut_obj_add_uint(doc, data, "warning_count", (uint64_t)warning_count);
+        yyjson_mut_obj_add_bool(doc, data, "valid", structure_data.error_count == 0);
+        yyjson_mut_obj_add_uint(doc, data, "object_count",
+                                (uint64_t)query_result.matched);
+        yyjson_mut_obj_add_uint(doc, data, "checked_chunks",
+                                (uint64_t)structure_data.checked_count);
+        yyjson_mut_obj_add_uint(doc, data, "error_count",
+                                (uint64_t)structure_data.error_count);
+        yyjson_mut_obj_add_uint(doc, data, "warning_count",
+                                (uint64_t)structure_data.warning_count);
         yyjson_mut_obj_add_val(doc, data, "issues", issues);
 
         nmo_cmd_ctx_json_end(&c, doc, data, "validate.structure");
     } else {
         fprintf(c.out, "\nSummary:\n");
         char buf[32];
-        snprintf(buf, sizeof(buf), "%zu", object_count);
+        snprintf(buf, sizeof(buf), "%zu", query_result.matched);
         nmo_cli_print_kv(c.out, "Objects", buf, 14, c.colorize);
-        snprintf(buf, sizeof(buf), "%zu", checked_count);
+        snprintf(buf, sizeof(buf), "%zu", structure_data.checked_count);
         nmo_cli_print_kv(c.out, "Chunks", buf, 14, c.colorize);
-        snprintf(buf, sizeof(buf), "%zu", error_count);
+        snprintf(buf, sizeof(buf), "%zu", structure_data.error_count);
         nmo_cli_print_kv(c.out, "Errors", buf, 14, c.colorize);
-        snprintf(buf, sizeof(buf), "%zu", warning_count);
+        snprintf(buf, sizeof(buf), "%zu", structure_data.warning_count);
         nmo_cli_print_kv(c.out, "Warnings", buf, 14, c.colorize);
     }
 
@@ -644,6 +713,88 @@ static bool id_is_in_set(const nmo_object_id_t *arr, size_t count,
     return false;
 }
 
+typedef struct orphan_info {
+    nmo_object_t *obj;
+    size_t outgoing;
+    size_t data_size;
+    bool is_direct;  /* true = zero incoming, false = chain orphan */
+} orphan_info_t;
+
+typedef struct validate_orphan_data {
+    nmo_ref_graph_t *graph;
+    const nmo_object_id_t *orphan_ids;
+    size_t orphan_id_count;
+    const nmo_object_query_t *filter_query;
+    orphan_info_t *orphan_list;
+    size_t orphan_cap;
+    size_t likely_orphans;
+    size_t likely_orphan_size;
+    size_t total_filtered;
+    size_t direct_orphan_count;
+    size_t chain_orphan_count;
+} validate_orphan_data_t;
+
+static int validate_orphan_object(size_t index, nmo_object_t *obj,
+                                  const nmo_cmd_ctx_t *c, void *user)
+{
+    (void)index;
+
+    validate_orphan_data_t *data = (validate_orphan_data_t *)user;
+    if (!data || !obj) {
+        return 0;
+    }
+
+    nmo_object_id_t obj_id = nmo_object_get_id(obj);
+
+    if (!id_is_in_set(data->orphan_ids, data->orphan_id_count, obj_id)) {
+        if (nmo_core_query_matches_object(c, data->filter_query, obj)) {
+            data->total_filtered++;
+        }
+        return 0;
+    }
+
+    if (!nmo_core_query_matches_object(c, data->filter_query, obj)) {
+        return 0;
+    }
+    data->total_filtered++;
+
+    nmo_ref_edge_t *in_edges = NULL;
+    size_t in_count = 0;
+    nmo_ref_graph_get_object_edges(data->graph, obj_id, NMO_REF_DIR_INCOMING,
+                                   &in_edges, &in_count);
+
+    bool is_direct = (in_count == 0);
+
+    nmo_ref_edge_t *out_edges = NULL;
+    size_t out_count = 0;
+    nmo_ref_graph_get_object_edges(data->graph, obj_id, NMO_REF_DIR_OUTGOING,
+                                   &out_edges, &out_count);
+
+    size_t data_size = 0;
+    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+    if (chunk) {
+        data_size = nmo_chunk_get_data_size(chunk);
+    }
+
+    data->likely_orphans++;
+    data->likely_orphan_size += data_size;
+    if (is_direct) {
+        data->direct_orphan_count++;
+    } else {
+        data->chain_orphan_count++;
+    }
+
+    if (data->likely_orphans <= data->orphan_cap) {
+        size_t orphan_index = data->likely_orphans - 1;
+        data->orphan_list[orphan_index].obj = obj;
+        data->orphan_list[orphan_index].outgoing = out_count;
+        data->orphan_list[orphan_index].data_size = data_size;
+        data->orphan_list[orphan_index].is_direct = is_direct;
+    }
+
+    return 0;
+}
+
 int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--class",   "-c", NMO_OPT_STRING, "Filter by class name"},
@@ -685,13 +836,13 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
     const nmo_object_query_t *filter_query =
         class_filter_str != NULL ? &class_query : NULL;
 
-    /* Get objects */
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
-        fprintf(stderr, "Error: Failed to get objects\n");
+    nmo_core_iter_result_t object_query_result = {0};
+    rc = nmo_core_object_query_run(&c, NULL, NULL, NULL, &object_query_result);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Error: Failed to query objects\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
+    size_t object_count = object_query_result.matched;
 
     /* Get reference graph from session cache */
     nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
@@ -724,21 +875,6 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
 
     size_t reachable_count = object_count - orphan_id_count;
 
-    /* Step 3: Classify orphans */
-    size_t likely_orphans = 0;
-    size_t likely_orphan_size = 0;
-    size_t total_filtered = 0;
-    size_t direct_orphan_count = 0;
-    size_t chain_orphan_count = 0;
-
-    /* Per-orphan info for output */
-    typedef struct {
-        nmo_object_t *obj;
-        size_t outgoing;
-        size_t data_size;
-        bool is_direct;  /* true = zero incoming, false = chain orphan */
-    } orphan_info_t;
-
     orphan_info_t *orphan_list = NULL;
     size_t orphan_cap = 0;
     if (object_count > 0) {
@@ -753,72 +889,30 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
         orphan_cap = object_count;
     }
 
-    for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_t *obj = objects[i];
-        nmo_object_id_t obj_id = nmo_object_get_id(obj);
-
-        /* Skip reachable objects (not in orphan set) */
-        if (!id_is_in_set(orphan_ids, orphan_id_count, obj_id)) {
-            /* Still count toward filtered total if class matches */
-            if (nmo_core_query_matches_object(&c, filter_query, obj)) {
-                total_filtered++;
-            }
-            continue;
-        }
-
-        /* Apply class filter for display */
-        if (!nmo_core_query_matches_object(&c, filter_query, obj)) {
-            continue;
-        }
-        total_filtered++;
-
-        /* Unreachable: determine kind (direct vs chain) */
-        nmo_ref_edge_t *in_edges = NULL;
-        size_t in_count = 0;
-        nmo_ref_graph_get_object_edges(graph, obj_id, NMO_REF_DIR_INCOMING,
-                                       &in_edges, &in_count);
-
-        bool is_direct = (in_count == 0);
-
-        /* Get outgoing count */
-        nmo_ref_edge_t *out_edges = NULL;
-        size_t out_count = 0;
-        nmo_ref_graph_get_object_edges(graph, obj_id, NMO_REF_DIR_OUTGOING,
-                                       &out_edges, &out_count);
-
-        /* Get data size */
-        size_t data_size = 0;
-        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-        if (chunk) {
-            data_size = nmo_chunk_get_data_size(chunk);
-        }
-
-        likely_orphans++;
-        likely_orphan_size += data_size;
-        if (is_direct) {
-            direct_orphan_count++;
-        } else {
-            chain_orphan_count++;
-        }
-
-        /* Store for output */
-        if (likely_orphans <= orphan_cap) {
-            size_t idx = likely_orphans - 1;
-            orphan_list[idx].obj = obj;
-            orphan_list[idx].outgoing = out_count;
-            orphan_list[idx].data_size = data_size;
-            orphan_list[idx].is_direct = is_direct;
-        }
+    validate_orphan_data_t orphan_data = {
+        .graph = graph,
+        .orphan_ids = orphan_ids,
+        .orphan_id_count = orphan_id_count,
+        .filter_query = filter_query,
+        .orphan_list = orphan_list,
+        .orphan_cap = orphan_cap,
+    };
+    rc = nmo_core_object_query_run(&c, NULL, validate_orphan_object,
+                                   &orphan_data, NULL);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        nmo_arena_destroy(arena);
+        fprintf(stderr, "Error: Failed to query objects\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     /* Determine exit code */
     int exit_code = NMO_CLI_EXIT_SUCCESS;
-    if (likely_orphans > 0 && strict) {
+    if (orphan_data.likely_orphans > 0 && strict) {
         exit_code = NMO_CLI_EXIT_STRICT_FAILURE;
     }
 
-    double orphan_pct = (total_filtered > 0)
-        ? (100.0 * (double)likely_orphans / (double)total_filtered)
+    double orphan_pct = (orphan_data.total_filtered > 0)
+        ? (100.0 * (double)orphan_data.likely_orphans / (double)orphan_data.total_filtered)
         : 0.0;
 
     /* Global (pre-filter) reachability stats */
@@ -830,19 +924,19 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
 
         yyjson_mut_obj_add_str(doc, data, "file", c.file_path);
         yyjson_mut_obj_add_uint(doc, data, "total_objects",
-                                (uint64_t)total_filtered);
+                                (uint64_t)orphan_data.total_filtered);
         yyjson_mut_obj_add_uint(doc, data, "reachable_count",
                                 (uint64_t)reachable_count);
         yyjson_mut_obj_add_uint(doc, data, "unreachable_count",
                                 (uint64_t)unreachable_count);
         yyjson_mut_obj_add_uint(doc, data, "likely_orphans",
-                                (uint64_t)likely_orphans);
+                                (uint64_t)orphan_data.likely_orphans);
         yyjson_mut_obj_add_uint(doc, data, "likely_orphan_size",
-                                (uint64_t)likely_orphan_size);
+                                (uint64_t)orphan_data.likely_orphan_size);
         yyjson_mut_obj_add_real(doc, data, "orphan_percentage", orphan_pct);
 
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < likely_orphans && i < orphan_cap; ++i) {
+        for (size_t i = 0; i < orphan_data.likely_orphans && i < orphan_cap; ++i) {
             nmo_object_t *obj = orphan_list[i].obj;
             yyjson_mut_val *entry = yyjson_mut_obj(doc);
 
@@ -880,7 +974,7 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
         nmo_cli_print_kv(c.out, "File", c.file_path, 18, c.colorize);
         fprintf(c.out, "\n");
 
-        if (likely_orphans > 0 && !summary_only) {
+        if (orphan_data.likely_orphans > 0 && !summary_only) {
             static const nmo_cli_table_col_t cols[] = {
                 {"ID",       NMO_CLI_ALIGN_RIGHT, 6, 0},
                 {"CLASS",    NMO_CLI_ALIGN_LEFT, 18, 0},
@@ -893,7 +987,7 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
             nmo_cli_table_t table;
             nmo_cli_table_init(&table, cols, sizeof(cols) / sizeof(cols[0]));
 
-            for (size_t i = 0; i < likely_orphans && i < orphan_cap; ++i) {
+            for (size_t i = 0; i < orphan_data.likely_orphans && i < orphan_cap; ++i) {
                 nmo_object_t *obj = orphan_list[i].obj;
                 char id_buf[16], size_buf[16], out_buf[16];
                 snprintf(id_buf, sizeof(id_buf), "%u",
@@ -938,16 +1032,16 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
                 (object_count > 0)
                     ? (100.0 * (double)unreachable_count / (double)object_count)
                     : 0.0,
-                likely_orphan_size);
+                orphan_data.likely_orphan_size);
         fprintf(c.out, "  Direct orphans (zero incoming): %zu\n",
-                direct_orphan_count);
+                orphan_data.direct_orphan_count);
         fprintf(c.out, "  Chain orphans (reachable only from other orphans): %zu\n",
-                chain_orphan_count);
+                orphan_data.chain_orphan_count);
     }
 
     /* --strip: remove orphan objects and save cleaned file */
-    if (do_strip && likely_orphans > 0) {
-        if (likely_orphans >= object_count) {
+    if (do_strip && orphan_data.likely_orphans > 0) {
+        if (orphan_data.likely_orphans >= object_count) {
             if (!c.is_json) {
                 fprintf(c.out, "\nAll objects are orphans - nothing to save.\n");
             }
@@ -956,14 +1050,14 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
         }
 
         nmo_object_id_t *orphan_ids = (nmo_object_id_t *)malloc(
-            likely_orphans * sizeof(nmo_object_id_t));
+            orphan_data.likely_orphans * sizeof(nmo_object_id_t));
         if (!orphan_ids) {
             fprintf(stderr, "Error: Out of memory for strip operation\n");
             if (arena) nmo_arena_destroy(arena);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
         {
-            for (size_t i = 0; i < likely_orphans && i < orphan_cap; i++)
+            for (size_t i = 0; i < orphan_data.likely_orphans && i < orphan_cap; i++)
                 orphan_ids[i] = nmo_object_get_id(orphan_list[i].obj);
 
             /* Destroy arena before modifying session (arena owns mark-sweep data) */
@@ -972,7 +1066,8 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
 
             nmo_runtime_report_t report;
             memset(&report, 0, sizeof(report));
-            nmo_session_destroy_objects(c.session, orphan_ids, likely_orphans, 0, &report);
+            nmo_session_destroy_objects(c.session, orphan_ids,
+                                        orphan_data.likely_orphans, 0, &report);
             free(orphan_ids);
 
             nmo_save_options_t save_opts = nmo_save_options_default();

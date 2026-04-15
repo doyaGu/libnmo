@@ -510,13 +510,13 @@ int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *g
     const nmo_object_query_t *filter_query =
         class_filter_str != NULL ? &class_query : NULL;
 
-    /* Get objects */
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
-        fprintf(stderr, "Error: Failed to get objects\n");
+    nmo_core_iter_result_t object_query_result = {0};
+    rc = nmo_core_object_query_run(&c, NULL, NULL, NULL, &object_query_result);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Error: Failed to query objects\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
+    size_t object_count = object_query_result.matched;
 
     /* Get reference graph from session cache */
     nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
