@@ -106,7 +106,7 @@ int nmo_cmd_animation_list(int argc, char **argv, const nmo_cli_global_opts_t *g
             /* Extract common fields based on class */
             if (cid == NMO_CID_OBJECTANIMATION) {
                 nmo_objectanimation_state_t *st =
-                    (nmo_objectanimation_state_t *)nmo_object_get_data(obj);
+                    (nmo_objectanimation_state_t *)nmo_object_get_state(obj);
                 if (st) {
                     yyjson_mut_obj_add_real(doc, item, "length",
                         st->has_length ? (double)st->length : 0.0);
@@ -115,7 +115,7 @@ int nmo_cmd_animation_list(int argc, char **argv, const nmo_cli_global_opts_t *g
             } else {
                 /* CKAnimation / CKKeyedAnimation base */
                 nmo_animation_state_t *st =
-                    (nmo_animation_state_t *)nmo_object_get_data(obj);
+                    (nmo_animation_state_t *)nmo_object_get_state(obj);
                 if (st) {
                     yyjson_mut_obj_add_real(doc, item, "length",
                         st->has_length ? (double)st->length : 0.0);
@@ -166,7 +166,7 @@ int nmo_cmd_animation_list(int argc, char **argv, const nmo_cli_global_opts_t *g
 
             if (cid == NMO_CID_OBJECTANIMATION) {
                 nmo_objectanimation_state_t *st =
-                    (nmo_objectanimation_state_t *)nmo_object_get_data(obj);
+                    (nmo_objectanimation_state_t *)nmo_object_get_state(obj);
                 if (st) {
                     if (st->has_length)
                         snprintf(len_buf, sizeof(len_buf), "%.1f", (double)st->length);
@@ -174,7 +174,7 @@ int nmo_cmd_animation_list(int argc, char **argv, const nmo_cli_global_opts_t *g
                 }
             } else {
                 nmo_animation_state_t *st =
-                    (nmo_animation_state_t *)nmo_object_get_data(obj);
+                    (nmo_animation_state_t *)nmo_object_get_state(obj);
                 if (st) {
                     if (st->has_length)
                         snprintf(len_buf, sizeof(len_buf), "%.1f", (double)st->length);
@@ -258,7 +258,7 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
 
         if (cid == NMO_CID_OBJECTANIMATION) {
             nmo_objectanimation_state_t *st =
-                (nmo_objectanimation_state_t *)nmo_object_get_data(obj);
+                (nmo_objectanimation_state_t *)nmo_object_get_state(obj);
             if (st) {
                 yyjson_mut_obj_add_str(doc, data, "format",
                                        animation_format_name(st->format));
@@ -279,7 +279,7 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
             }
         } else if (cid == NMO_CID_KEYEDANIMATION) {
             nmo_keyedanimation_state_t *st =
-                (nmo_keyedanimation_state_t *)nmo_object_get_data(obj);
+                (nmo_keyedanimation_state_t *)nmo_object_get_state(obj);
             if (st) {
                 /* Base animation fields */
                 if (st->base.has_data) {
@@ -313,7 +313,7 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
         } else {
             /* CKAnimation base */
             nmo_animation_state_t *st =
-                (nmo_animation_state_t *)nmo_object_get_data(obj);
+                (nmo_animation_state_t *)nmo_object_get_state(obj);
             if (st) {
                 if (st->has_data) {
                     yyjson_mut_obj_add_uint(doc, data, "flags", st->flags);
@@ -343,7 +343,7 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
 
         if (cid == NMO_CID_OBJECTANIMATION) {
             nmo_objectanimation_state_t *st =
-                (nmo_objectanimation_state_t *)nmo_object_get_data(obj);
+                (nmo_objectanimation_state_t *)nmo_object_get_state(obj);
             if (st) {
                 nmo_cli_print_kv(c.out, "Format",
                                  animation_format_name(st->format), 18, c.colorize);
@@ -396,7 +396,7 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
             }
         } else if (cid == NMO_CID_KEYEDANIMATION) {
             nmo_keyedanimation_state_t *st =
-                (nmo_keyedanimation_state_t *)nmo_object_get_data(obj);
+                (nmo_keyedanimation_state_t *)nmo_object_get_state(obj);
             if (st) {
                 if (st->base.has_data) {
                     char flags_buf[16];
@@ -446,7 +446,7 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
         } else {
             /* CKAnimation base */
             nmo_animation_state_t *st =
-                (nmo_animation_state_t *)nmo_object_get_data(obj);
+                (nmo_animation_state_t *)nmo_object_get_state(obj);
             if (st) {
                 if (st->has_data) {
                     char flags_buf[16];
@@ -630,7 +630,7 @@ int nmo_cmd_animation_keys(int argc, char **argv, const nmo_cli_global_opts_t *g
     }
 
     nmo_objectanimation_state_t *st =
-        (nmo_objectanimation_state_t *)nmo_object_get_data(obj);
+        (nmo_objectanimation_state_t *)nmo_object_get_state(obj);
     if (!st) {
         fprintf(stderr, "Error: No data for object %u\n", obj_id);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
@@ -879,7 +879,7 @@ int nmo_cmd_animation_export(int argc, char **argv, const nmo_cli_global_opts_t 
                 continue;
 
             nmo_objectanimation_state_t *st =
-                (nmo_objectanimation_state_t *)nmo_object_get_data(obj);
+                (nmo_objectanimation_state_t *)nmo_object_get_state(obj);
             if (!st) continue;
 
             if (export_one_animation(st, obj, out_dir) == 0)
@@ -904,7 +904,7 @@ int nmo_cmd_animation_export(int argc, char **argv, const nmo_cli_global_opts_t 
         }
 
         nmo_objectanimation_state_t *st =
-            (nmo_objectanimation_state_t *)nmo_object_get_data(obj);
+            (nmo_objectanimation_state_t *)nmo_object_get_state(obj);
         if (!st) {
             fprintf(stderr, "Error: No data for object %u\n", obj_id);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
@@ -1188,18 +1188,20 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
 
     /* Update state */
     nmo_objectanimation_state_t *st =
-        (nmo_objectanimation_state_t *)nmo_object_get_data(target);
+        (nmo_objectanimation_state_t *)nmo_object_get_state(target);
     if (!st) {
-        /* Allocate fresh state */
-        st = (nmo_objectanimation_state_t *)nmo_arena_alloc(
-            arena, sizeof(nmo_objectanimation_state_t),
-            _Alignof(nmo_objectanimation_state_t));
+        nmo_status_t alloc_rc =
+            nmo_object_alloc_state(target, sizeof(nmo_objectanimation_state_t));
+        if (alloc_rc != NMO_OK) {
+            fprintf(stderr, "Error: Failed to allocate animation state\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+        st = (nmo_objectanimation_state_t *)nmo_object_get_state(target);
         if (!st) {
-            fprintf(stderr, "Error: Out of memory\n");
+            fprintf(stderr, "Error: Animation state allocation failed\n");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
         memset(st, 0, sizeof(*st));
-        nmo_object_set_data(target, st);
     }
 
     st->format = format;

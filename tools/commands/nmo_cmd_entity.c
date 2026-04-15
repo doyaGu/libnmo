@@ -127,7 +127,7 @@ int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
                                       (name && name[0]) ? name : "");
 
             const nmo_3dentity_state_t *es =
-                (const nmo_3dentity_state_t *)nmo_object_get_data(obj);
+                (const nmo_3dentity_state_t *)nmo_object_get_state(obj);
             if (es) {
                 yyjson_mut_val *pos_arr = yyjson_mut_arr(doc);
                 yyjson_mut_arr_add_real(doc, pos_arr, (double)es->world_matrix[12]);
@@ -187,7 +187,7 @@ int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
             snprintf(mesh_buf, sizeof(mesh_buf), "-");
 
             const nmo_3dentity_state_t *es =
-                (const nmo_3dentity_state_t *)nmo_object_get_data(obj);
+                (const nmo_3dentity_state_t *)nmo_object_get_state(obj);
             if (es) {
                 format_position(pos_buf, sizeof(pos_buf), es->world_matrix);
                 if (es->current_mesh_id) {
@@ -266,7 +266,7 @@ int nmo_cmd_entity_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
     /* Get base 3D entity state -- always present for any derived type */
     const nmo_3dentity_state_t *es =
-        (const nmo_3dentity_state_t *)nmo_object_get_data(obj);
+        (const nmo_3dentity_state_t *)nmo_object_get_state(obj);
 
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
@@ -333,7 +333,7 @@ int nmo_cmd_entity_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
             /* Camera-specific */
             if (class_id == NMO_CID_CAMERA || class_id == NMO_CID_TARGETCAMERA) {
                 const nmo_camera_state_t *cs =
-                    (const nmo_camera_state_t *)nmo_object_get_data(obj);
+                    (const nmo_camera_state_t *)nmo_object_get_state(obj);
                 if (cs) {
                     yyjson_mut_obj_add_str(doc, data, "projection_type",
                                            projection_type_str(cs->projection_type));
@@ -348,7 +348,7 @@ int nmo_cmd_entity_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
             /* Light-specific */
             if (class_id == NMO_CID_LIGHT || class_id == NMO_CID_TARGETLIGHT) {
                 const nmo_light_state_t *ls =
-                    (const nmo_light_state_t *)nmo_object_get_data(obj);
+                    (const nmo_light_state_t *)nmo_object_get_state(obj);
                 if (ls) {
                     yyjson_mut_obj_add_str(doc, data, "light_type",
                                            light_type_str(ls->light_data.type));
@@ -468,7 +468,7 @@ int nmo_cmd_entity_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
         /* Camera-specific section */
         if (class_id == NMO_CID_CAMERA || class_id == NMO_CID_TARGETCAMERA) {
             const nmo_camera_state_t *cs =
-                (const nmo_camera_state_t *)nmo_object_get_data(obj);
+                (const nmo_camera_state_t *)nmo_object_get_state(obj);
             if (cs) {
                 fprintf(c.out, "\nCamera:\n");
 
@@ -493,7 +493,7 @@ int nmo_cmd_entity_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
         /* Light-specific section */
         if (class_id == NMO_CID_LIGHT || class_id == NMO_CID_TARGETLIGHT) {
             const nmo_light_state_t *ls =
-                (const nmo_light_state_t *)nmo_object_get_data(obj);
+                (const nmo_light_state_t *)nmo_object_get_state(obj);
             if (ls) {
                 fprintf(c.out, "\nLight:\n");
 
@@ -589,7 +589,7 @@ int nmo_cmd_entity_set_position(int argc, char **argv,
     }
 
     nmo_3dentity_state_t *estate =
-        (nmo_3dentity_state_t *)nmo_object_get_data(obj);
+        (nmo_3dentity_state_t *)nmo_object_get_state(obj);
     if (!estate) {
         fprintf(stderr, "Error: Object #%u has no deserialized state\n", object_id);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);

@@ -58,8 +58,12 @@ static const char *k_probe_prefixes[] = {
 };
 
 static const char *k_state_only_cli_sources[] = {
+    "tools/commands/nmo_cmd_animation.c",
     "tools/commands/nmo_cmd_data.c",
+    "tools/commands/nmo_cmd_entity.c",
     "tools/commands/nmo_cmd_material.c",
+    "tools/commands/nmo_cmd_mesh.c",
+    "tools/commands/nmo_cmd_scene.c",
 };
 
 static int line_has_legacy_api(const char *line) {
@@ -67,7 +71,8 @@ static int line_has_legacy_api(const char *line) {
 }
 
 static int line_has_legacy_data_access(const char *line) {
-    return strstr(line, "nmo_object_get_data(") != NULL;
+    return strstr(line, "nmo_object_get_data(") != NULL ||
+           strstr(line, "nmo_object_set_data(") != NULL;
 }
 
 static void assert_file_has_no_legacy_api(const char *relative_path) {

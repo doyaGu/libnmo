@@ -118,7 +118,7 @@ int nmo_cmd_mesh_list(int argc, char **argv, const nmo_cli_global_opts_t *global
                                       (name && name[0]) ? name : "");
 
             const nmo_mesh_state_t *ms =
-                (const nmo_mesh_state_t *)nmo_object_get_data(obj);
+                (const nmo_mesh_state_t *)nmo_object_get_state(obj);
             if (ms) {
                 yyjson_mut_obj_add_uint(doc, item, "vertices", ms->vertex_count);
                 yyjson_mut_obj_add_uint(doc, item, "faces", ms->face_count);
@@ -159,7 +159,7 @@ int nmo_cmd_mesh_list(int argc, char **argv, const nmo_cli_global_opts_t *global
             char vert_buf[16], face_buf[16], mat_buf[16];
 
             const nmo_mesh_state_t *ms =
-                (const nmo_mesh_state_t *)nmo_object_get_data(obj);
+                (const nmo_mesh_state_t *)nmo_object_get_state(obj);
             if (ms) {
                 snprintf(vert_buf, sizeof(vert_buf), "%u", ms->vertex_count);
                 snprintf(face_buf, sizeof(face_buf), "%u", ms->face_count);
@@ -228,7 +228,7 @@ int nmo_cmd_mesh_show(int argc, char **argv, const nmo_cli_global_opts_t *global
 
     const char *name = nmo_object_get_name(obj);
     const nmo_mesh_state_t *ms =
-        (const nmo_mesh_state_t *)nmo_object_get_data(obj);
+        (const nmo_mesh_state_t *)nmo_object_get_state(obj);
 
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
@@ -386,7 +386,7 @@ static int write_mtl_file(const nmo_cmd_ctx_t *c,
             nmo_object_t *mat_obj = nmo_core_find_by_id(c, mid);
             if (mat_obj) {
                 mat_name = nmo_object_get_name(mat_obj);
-                mat = (const nmo_material_state_t *)nmo_object_get_data(mat_obj);
+                mat = (const nmo_material_state_t *)nmo_object_get_state(mat_obj);
             }
         }
 
@@ -520,7 +520,7 @@ static int export_single_mesh(const nmo_cmd_ctx_t *c,
     nmo_object_id_t id = nmo_object_get_id(obj);
     const char *name = nmo_object_get_name(obj);
     const nmo_mesh_state_t *ms =
-        (const nmo_mesh_state_t *)nmo_object_get_data(obj);
+        (const nmo_mesh_state_t *)nmo_object_get_state(obj);
 
     if (!ms || ms->vertex_count == 0) {
         if (is_json && doc && entries) {
@@ -1175,7 +1175,7 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
     /* Get or allocate mesh state */
     nmo_mesh_state_t *ms =
-        (nmo_mesh_state_t *)nmo_object_get_data(mesh_obj);
+        (nmo_mesh_state_t *)nmo_object_get_state(mesh_obj);
     if (!ms) {
         /* Newly created object -- allocate and zero-init state */
         nmo_status_t alloc_rc = nmo_object_alloc_state(mesh_obj, sizeof(nmo_mesh_state_t));
@@ -1189,7 +1189,6 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
         memset(ms, 0, sizeof(*ms));
-        nmo_object_set_data(mesh_obj, ms);
     }
 
     ms->vertex_count = (uint32_t)total_verts;

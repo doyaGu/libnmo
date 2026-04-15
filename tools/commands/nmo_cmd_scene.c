@@ -81,7 +81,7 @@ int nmo_cmd_scene_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
 
             if (cid == NMO_CID_SCENE) {
                 const nmo_scene_state_t *ss =
-                    (const nmo_scene_state_t *)nmo_object_get_data(obj);
+                    (const nmo_scene_state_t *)nmo_object_get_state(obj);
                 if (ss) {
                     yyjson_mut_obj_add_uint(doc, item, "object_count",
                                             (uint64_t)ss->object_descs.count);
@@ -96,7 +96,7 @@ int nmo_cmd_scene_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
                 }
             } else { /* NMO_CID_LEVEL */
                 const nmo_level_state_t *ls =
-                    (const nmo_level_state_t *)nmo_object_get_data(obj);
+                    (const nmo_level_state_t *)nmo_object_get_state(obj);
                 if (ls) {
                     yyjson_mut_obj_add_uint(doc, item, "scene_count",
                                             (uint64_t)ls->scene_ids.count);
@@ -144,7 +144,7 @@ int nmo_cmd_scene_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
 
             if (cid == NMO_CID_SCENE) {
                 const nmo_scene_state_t *ss =
-                    (const nmo_scene_state_t *)nmo_object_get_data(obj);
+                    (const nmo_scene_state_t *)nmo_object_get_state(obj);
                 if (ss) {
                     snprintf(obj_count_buf, sizeof(obj_count_buf), "%zu",
                              ss->object_descs.count);
@@ -163,7 +163,7 @@ int nmo_cmd_scene_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
                 }
             } else { /* NMO_CID_LEVEL */
                 const nmo_level_state_t *ls =
-                    (const nmo_level_state_t *)nmo_object_get_data(obj);
+                    (const nmo_level_state_t *)nmo_object_get_state(obj);
                 if (ls) {
                     snprintf(obj_count_buf, sizeof(obj_count_buf), "%zu",
                              ls->scene_ids.count);
@@ -236,7 +236,7 @@ int nmo_cmd_scene_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
 
     if (class_id == NMO_CID_SCENE) {
         const nmo_scene_state_t *ss =
-            (const nmo_scene_state_t *)nmo_object_get_data(obj);
+            (const nmo_scene_state_t *)nmo_object_get_state(obj);
 
         if (c.is_json) {
             yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
@@ -339,7 +339,7 @@ int nmo_cmd_scene_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         }
     } else { /* NMO_CID_LEVEL */
         const nmo_level_state_t *ls =
-            (const nmo_level_state_t *)nmo_object_get_data(obj);
+            (const nmo_level_state_t *)nmo_object_get_state(obj);
 
         if (c.is_json) {
             yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
