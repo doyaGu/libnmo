@@ -330,6 +330,7 @@ set(NMO_APP_SOURCES
     src/app/chunk_index.c
     src/app/object_hierarchy.c
     src/app/object_diff.c
+    src/app/export_dot.c
 )
 
 # Behavior layer sources
@@ -346,6 +347,7 @@ set(NMO_JSON_SOURCES
     src/app/json_util.c
     src/app/object_summary.c
     src/app/object_import.c
+    src/app/dsl_json.c
 )
 
 # Combine all sources (yyjson compiled directly into nmo)

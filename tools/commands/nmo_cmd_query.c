@@ -19,102 +19,12 @@
 #include "type/nmo_type_system.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
+#include "app/nmo_dsl_json.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
-/**
- * Add a DSL value to a JSON document.
- */
-static void add_dsl_value_to_json(yyjson_mut_doc *doc, yyjson_mut_val *parent,
-                                   const char *key, const nmo_dsl_value_t *value) {
-    if (!value) {
-        yyjson_mut_obj_add_null(doc, parent, key);
-        return;
-    }
-
-    switch (value->kind) {
-        case NMO_DSL_VALUE_NULL:
-            yyjson_mut_obj_add_null(doc, parent, key);
-            break;
-
-        case NMO_DSL_VALUE_BOOL:
-            yyjson_mut_obj_add_bool(doc, parent, key, value->as.b);
-            break;
-
-        case NMO_DSL_VALUE_INT:
-            yyjson_mut_obj_add_sint(doc, parent, key, value->as.i);
-            break;
-
-        case NMO_DSL_VALUE_UINT:
-            yyjson_mut_obj_add_uint(doc, parent, key, value->as.u);
-            break;
-
-        case NMO_DSL_VALUE_REAL:
-            yyjson_mut_obj_add_real(doc, parent, key, value->as.r);
-            break;
-
-        case NMO_DSL_VALUE_STRING:
-            if (value->as.s) {
-                yyjson_mut_obj_add_str(doc, parent, key, value->as.s);
-            } else {
-                yyjson_mut_obj_add_str(doc, parent, key, "");
-            }
-            break;
-
-        case NMO_DSL_VALUE_BYREF:
-        case NMO_DSL_VALUE_OBJECT:
-        case NMO_DSL_VALUE_TYPE: {
-            char buf[64];
-            nmo_core_dsl_format(value, buf, sizeof(buf));
-            yyjson_mut_obj_add_strcpy(doc, parent, key, buf);
-            break;
-        }
-
-        case NMO_DSL_VALUE_SEQ: {
-            uint64_t count = nmo_dsl_seq_count(value->as.seq);
-            yyjson_mut_val *arr = yyjson_mut_arr(doc);
-            for (uint64_t i = 0; i < count; i++) {
-                nmo_dsl_value_t elem = {0};
-                if (nmo_dsl_seq_get(value->as.seq, i, &elem)) {
-                    /* Recursively add sequence elements */
-                    switch (elem.kind) {
-                        case NMO_DSL_VALUE_BOOL:
-                            yyjson_mut_arr_add_bool(doc, arr, elem.as.b);
-                            break;
-                        case NMO_DSL_VALUE_INT:
-                            yyjson_mut_arr_add_sint(doc, arr, elem.as.i);
-                            break;
-                        case NMO_DSL_VALUE_UINT:
-                            yyjson_mut_arr_add_uint(doc, arr, elem.as.u);
-                            break;
-                        case NMO_DSL_VALUE_REAL:
-                            yyjson_mut_arr_add_real(doc, arr, elem.as.r);
-                            break;
-                        case NMO_DSL_VALUE_STRING:
-                            yyjson_mut_arr_add_str(doc, arr, elem.as.s ? elem.as.s : "");
-                            break;
-                        default: {
-                            char elem_buf[64];
-                            nmo_core_dsl_format(&elem, elem_buf, sizeof(elem_buf));
-                            yyjson_mut_arr_add_str(doc, arr, elem_buf);
-                            break;
-                        }
-                    }
-                }
-            }
-            yyjson_mut_obj_add_val(doc, parent, key, arr);
-            break;
-        }
-
-        default: {
-            char buf[64];
-            nmo_core_dsl_format(value, buf, sizeof(buf));
-            yyjson_mut_obj_add_strcpy(doc, parent, key, buf);
-            break;
-        }
-    }
-}
+/* DSL value to JSON serialization is provided by nmo_dsl_value_to_json(). */
 
 /**
  * Read file contents into a malloc'd buffer.
@@ -347,7 +257,7 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
-        add_dsl_value_to_json(doc, data, "result", &result);
+        nmo_dsl_value_to_json(&result, doc, data, "result");
 
         nmo_cli_json_write_enveloped_and_free(doc, data, "query.eval", file_path, c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
@@ -467,7 +377,7 @@ int nmo_cmd_query_script(int argc, char **argv, const nmo_cli_global_opts_t *glo
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
-        add_dsl_value_to_json(doc, data, "result", &result);
+        nmo_dsl_value_to_json(&result, doc, data, "result");
         if (output_path) {
             yyjson_mut_obj_add_str(doc, data, "saved_to", output_path);
         }
@@ -667,7 +577,7 @@ int nmo_cmd_query_module(int argc, char **argv, const nmo_cli_global_opts_t *glo
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
-        add_dsl_value_to_json(doc, data, "result", &result);
+        nmo_dsl_value_to_json(&result, doc, data, "result");
         if (output_path) {
             yyjson_mut_obj_add_str(doc, data, "saved_to", output_path);
         }

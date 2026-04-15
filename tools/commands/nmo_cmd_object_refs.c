@@ -19,6 +19,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
+#include "app/nmo_export_dot.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -746,20 +747,6 @@ int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *gl
  * object graph - Export full reference graph
  * ============================================================================ */
 
-/** Escape a string for DOT record labels: quote special chars */
-static void dot_escape(const char *src, char *dst, size_t dst_size) {
-    size_t j = 0;
-    for (size_t i = 0; src[i] && j + 2 < dst_size; i++) {
-        char ch = src[i];
-        if (ch == '"' || ch == '\\' || ch == '|' || ch == '{' ||
-            ch == '}' || ch == '<' || ch == '>') {
-            dst[j++] = '\\';
-        }
-        dst[j++] = ch;
-    }
-    dst[j] = '\0';
-}
-
 /** Collect unique node IDs from edges into a sorted array */
 static size_t graph_collect_nodes(const nmo_ref_edge_t *edges, size_t edge_count,
                                   nmo_object_id_t *out, size_t cap) {
@@ -788,31 +775,6 @@ static size_t graph_collect_nodes(const nmo_ref_edge_t *edges, size_t edge_count
         out[j] = key;
     }
     return count;
-}
-
-/** DOT edge color palette indexed by ref_kind */
-static const char *graph_dot_color(nmo_ref_kind_t kind) {
-    static const char *colors[] = {
-        [NMO_REF_KIND_UNKNOWN]       = "gray",
-        [NMO_REF_KIND_HIERARCHY]     = "black",
-        [NMO_REF_KIND_MESH]          = "blue",
-        [NMO_REF_KIND_MATERIAL]      = "red",
-        [NMO_REF_KIND_TEXTURE]       = "darkgreen",
-        [NMO_REF_KIND_OWNER]         = "purple",
-        [NMO_REF_KIND_BEHAVIOR_LINK] = "orange",
-        [NMO_REF_KIND_PARAMETER]     = "brown",
-        [NMO_REF_KIND_TARGET]        = "cyan4",
-        [NMO_REF_KIND_GROUP_MEMBER]  = "magenta",
-        [NMO_REF_KIND_SCENE]         = "darkgoldenrod",
-        [NMO_REF_KIND_ANIMATION]     = "deeppink",
-        [NMO_REF_KIND_PLACE]         = "darkolivegreen",
-        [NMO_REF_KIND_SKIN_BONE]     = "chocolate",
-        [NMO_REF_KIND_DATA_ARRAY]    = "navy",
-        [NMO_REF_KIND_SCRIPT]        = "darkslategray",
-    };
-    if ((int)kind >= 0 && kind < NMO_REF_KIND_MAX)
-        return colors[kind];
-    return "gray";
 }
 
 int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -941,41 +903,18 @@ int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
         nmo_cmd_ctx_json_end(&c, doc, data, "object.graph");
     } else if (dot_mode) {
-        /* ---- DOT output ---- */
-        fprintf(c.out, "digraph references {\n");
-        fprintf(c.out, "    rankdir=LR;\n");
-        fprintf(c.out, "    node [shape=record, fontsize=10];\n\n");
-
-        /* Nodes */
-        fprintf(c.out, "    // Nodes\n");
-        for (size_t i = 0; i < node_count; ++i) {
-            nmo_object_t *obj = nmo_core_find_by_id(&c, node_ids[i]);
-            const char *cls = "?";
-            const char *name = "";
-            char cbuf[32];
-            if (obj) {
-                cls = nmo_core_class_name_or(
-                    &c, nmo_object_get_class_id(obj), cbuf, sizeof(cbuf));
-                const char *n = nmo_object_get_name(obj);
-                if (n && n[0]) name = n;
+        /* ---- DOT output via library ---- */
+        uint32_t kind_mask = 0;
+        if (kind_str) {
+            for (int k = 0; k < NMO_REF_KIND_MAX; ++k) {
+                if (nmo_tool_streq_ci(nmo_ref_kind_name((nmo_ref_kind_t)k), kind_str)) {
+                    kind_mask |= (1u << (unsigned)k);
+                    break;
+                }
             }
-            char esc_cls[64], esc_name[128];
-            dot_escape(cls, esc_cls, sizeof(esc_cls));
-            dot_escape(name, esc_name, sizeof(esc_name));
-            fprintf(c.out, "    n%u [label=\"#%u|%s|%s\"];\n",
-                    node_ids[i], node_ids[i], esc_cls, esc_name);
         }
-
-        /* Edges */
-        fprintf(c.out, "\n    // Edges\n");
-        for (size_t i = 0; i < edge_count; ++i) {
-            fprintf(c.out, "    n%u -> n%u [label=\"%s\", color=\"%s\"];\n",
-                    edges[i].from, edges[i].to,
-                    nmo_ref_kind_name(edges[i].kind),
-                    graph_dot_color(edges[i].kind));
-        }
-
-        fprintf(c.out, "}\n");
+        nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+        nmo_ref_graph_to_dot(graph, repo, c.registry, kind_mask, c.out);
     } else {
         /* ---- Text summary ---- */
         fprintf(c.out, "Reference Graph: %zu nodes, %zu edges\n\n",

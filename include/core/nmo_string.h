@@ -249,6 +249,42 @@ NMO_API nmo_status_t nmo_string_from_float(nmo_string_t *string, float value);
 NMO_API nmo_status_t nmo_string_from_double(nmo_string_t *string, double value);
 NMO_API nmo_status_t nmo_string_pop_back(nmo_string_t *string, char *out_char);
 
+/* ------------------------------------------------------------------------- */
+/* Formatting / sanitization helpers                                         */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * @brief Format binary data as a hex dump with optional truncation.
+ *
+ * Writes space-separated hex bytes (e.g. "de ad be ef") into @p out_buf,
+ * truncating after @p max_bytes and appending "... (N)" with the total
+ * byte count when the data is longer.
+ *
+ * @param data      Source bytes (may be NULL if @p len is 0)
+ * @param len       Number of source bytes
+ * @param max_bytes Maximum bytes to display (0 = no limit)
+ * @param out_buf   Destination buffer
+ * @param out_size  Size of destination buffer
+ */
+NMO_API void nmo_format_hex(const void *data, size_t len, size_t max_bytes,
+                             char *out_buf, size_t out_size);
+
+/**
+ * @brief Sanitize a string for use as a filename.
+ *
+ * Replaces unsafe characters (/ \\ : * ? \" < > | space, control chars)
+ * with underscores.  The result is truncated to fit @p dst_size and an
+ * "_<id>" suffix is appended for uniqueness.  If @p name is NULL or empty
+ * the output is "unnamed_<id>".
+ *
+ * @param dst      Destination buffer
+ * @param dst_size Size of destination buffer
+ * @param name     Source name (may be NULL)
+ * @param id       Numeric identifier appended as suffix
+ */
+NMO_API void nmo_sanitize_filename(char *dst, size_t dst_size,
+                                    const char *name, uint32_t id);
+
 #ifdef __cplusplus
 }
 #endif

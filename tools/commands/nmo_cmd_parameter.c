@@ -28,6 +28,7 @@
 #include "object/nmo_object_repository.h"
 #include "behavior/nmo_behavior_edit.h"
 #include "app/nmo_save.h"
+#include "core/nmo_string.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -88,32 +89,7 @@ static char *format_parameter_value(const nmo_parameter_state_t *pstate,
     return buffer;
 }
 
-/**
- * @brief Format hex dump of parameter buffer data (up to max_bytes)
- */
-static void format_hex_dump(const uint8_t *data, size_t len, size_t max_bytes,
-                             char *out_buf, size_t out_size) {
-    if (!data || len == 0 || !out_buf || out_size == 0) {
-        if (out_buf && out_size > 0) {
-            out_buf[0] = '\0';
-        }
-        return;
-    }
-
-    size_t display_len = (max_bytes > 0 && len > max_bytes) ? max_bytes : len;
-    size_t pos = 0;
-
-    for (size_t i = 0; i < display_len && pos + 3 < out_size; ++i) {
-        snprintf(out_buf + pos, out_size - pos, "%02x ", data[i]);
-        pos += 3;
-    }
-
-    if (display_len < len && pos + 10 < out_size) {
-        snprintf(out_buf + pos, out_size - pos, "... (%zu)", len);
-    } else if (pos > 0 && out_buf[pos - 1] == ' ') {
-        out_buf[pos - 1] = '\0';
-    }
-}
+/* Hex formatting is provided by nmo_format_hex() from core/nmo_string.h. */
 
 /* ---- parameter list: per-file handler for batch mode ---- */
 
@@ -434,8 +410,8 @@ int nmo_cmd_parameter_show(int argc, char **argv, const nmo_cli_global_opts_t *g
     if (pstate && pstate->mode == CKPARAM_MODE_BUFFER &&
         pstate->buffer_data.data != NULL &&
         pstate->buffer_data.count > 0 && pstate->buffer_data.count < 64) {
-        format_hex_dump((const uint8_t *)pstate->buffer_data.data,
-                        pstate->buffer_data.count, 64, hex_dump, sizeof(hex_dump));
+        nmo_format_hex(pstate->buffer_data.data,
+                       pstate->buffer_data.count, 64, hex_dump, sizeof(hex_dump));
     }
 
     if (c.is_json) {

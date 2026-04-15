@@ -22,6 +22,7 @@
 #include "object/nmo_object_struct_defs.h"
 #include "format/nmo_obj_parser.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_string.h"
 #include "type/nmo_type_system.h"
 
 #include <stdio.h>
@@ -77,28 +78,7 @@ static char *mesh_join_path(const char *dir, const char *file) {
     return out;
 }
 
-static void sanitize_name(char *dst, size_t dst_size, const char *name,
-                          nmo_object_id_t id) {
-    /* Limit name to 200 chars so that name + "_" + uint32 fits in 256 */
-    if (name && name[0]) {
-        char safe[201];
-        size_t i = 0;
-        for (; name[i] && i < sizeof(safe) - 1; ++i) {
-            unsigned char ch = (unsigned char)name[i];
-            if (ch == '/' || ch == '\\' || ch == ':' || ch == '*' ||
-                ch == '?' || ch == '"' || ch == '<' || ch == '>' ||
-                ch == '|' || ch < 0x20 || ch == ' ') {
-                safe[i] = '_';
-            } else {
-                safe[i] = (char)ch;
-            }
-        }
-        safe[i] = '\0';
-        snprintf(dst, dst_size, "%s_%u", safe, id);
-    } else {
-        snprintf(dst, dst_size, "mesh_%u", id);
-    }
-}
+/* Filename sanitization is provided by nmo_sanitize_filename() from core/nmo_string.h. */
 
 static void argb_to_rgb_float(uint32_t argb, float *r, float *g, float *b) {
     *r = (float)((argb >> 16) & 0xFF) / 255.0f;
@@ -557,7 +537,7 @@ static int export_single_mesh(const nmo_cmd_ctx_t *c,
     }
 
     char safe_name[256];
-    sanitize_name(safe_name, sizeof(safe_name), name, id);
+    nmo_sanitize_filename(safe_name, sizeof(safe_name), name, id);
 
     /* Build file paths */
     char obj_fname[280];

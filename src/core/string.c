@@ -1034,3 +1034,56 @@ nmo_status_t nmo_string_pop_back(nmo_string_t *string, char *out_char) {
     }
     NMO_RETURN_OK();
 }
+
+/* ------------------------------------------------------------------------- */
+/* Formatting / sanitization helpers                                         */
+/* ------------------------------------------------------------------------- */
+
+void nmo_format_hex(const void *data, size_t len, size_t max_bytes,
+                     char *out_buf, size_t out_size) {
+    if (!data || len == 0 || !out_buf || out_size == 0) {
+        if (out_buf && out_size > 0)
+            out_buf[0] = '\0';
+        return;
+    }
+
+    const uint8_t *bytes = (const uint8_t *)data;
+    size_t display_len = (max_bytes > 0 && len > max_bytes) ? max_bytes : len;
+    size_t pos = 0;
+
+    for (size_t i = 0; i < display_len && pos + 3 < out_size; ++i) {
+        snprintf(out_buf + pos, out_size - pos, "%02x ", bytes[i]);
+        pos += 3;
+    }
+
+    if (display_len < len && pos + 10 < out_size) {
+        snprintf(out_buf + pos, out_size - pos, "... (%zu)", len);
+    } else if (pos > 0 && out_buf[pos - 1] == ' ') {
+        out_buf[pos - 1] = '\0';
+    }
+}
+
+void nmo_sanitize_filename(char *dst, size_t dst_size,
+                            const char *name, uint32_t id) {
+    if (!dst || dst_size == 0) return;
+
+    if (name && name[0]) {
+        /* Limit name to 200 chars so that name + "_" + uint32 fits in 256 */
+        char safe[201];
+        size_t i = 0;
+        for (; name[i] && i < sizeof(safe) - 1; ++i) {
+            unsigned char ch = (unsigned char)name[i];
+            if (ch == '/' || ch == '\\' || ch == ':' || ch == '*' ||
+                ch == '?' || ch == '"' || ch == '<' || ch == '>' ||
+                ch == '|' || ch < 0x20 || ch == ' ') {
+                safe[i] = '_';
+            } else {
+                safe[i] = (char)ch;
+            }
+        }
+        safe[i] = '\0';
+        snprintf(dst, dst_size, "%s_%u", safe, (unsigned)id);
+    } else {
+        snprintf(dst, dst_size, "unnamed_%u", (unsigned)id);
+    }
+}
