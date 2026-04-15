@@ -219,32 +219,26 @@ static int object_list_single(const char *file_path,
     c.file_path = file_path;
     c.out = (text_ctx && text_ctx->out) ? text_ctx->out : stdout;
     c.colorize = text_ctx ? text_ctx->colorize : false;
+    int rc = NMO_CLI_EXIT_SUCCESS;
 
     /* Build query */
     nmo_object_query_t query = {0};
     nmo_core_query_dsl_t query_dsl = {0};
-    if (class_filter_str) {
-        if (nmo_core_query_set_class_name(
-                &c, &query, class_filter_str, true) != NMO_OK) {
-            fprintf(stderr, "Error: Unknown class '%s'\n", class_filter_str);
-            nmo_tool_close_session(ctx, session);
-            return NMO_CLI_EXIT_ARG_ERROR;
-        }
-    }
-    if (filter_expr) {
-        nmo_status_t st =
-            nmo_core_query_add_dsl_filter(&c, &query, filter_expr, &query_dsl);
-        if (st != NMO_OK) {
-            nmo_core_dsl_print_error(stderr, filter_expr, "Error: Failed to compile filter expression");
-            nmo_tool_close_session(ctx, session);
-            return NMO_CLI_EXIT_ARG_ERROR;
-        }
+    nmo_core_query_build_options_t query_opts = {
+        .class_name = class_filter_str,
+        .filter_expr = filter_expr,
+        .include_derived_classes = true,
+        .print_dsl_context = true,
+    };
+    rc = nmo_core_query_build(&c, &query, &query_dsl, &query_opts);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        nmo_tool_close_session(ctx, session);
+        return rc;
     }
 
     nmo_cli_sort_key_t sort_key = nmo_cli_parse_sort_key(sort_key_str);
     bool needs_collect = (sort_key != NMO_CLI_SORT_NONE) || (top_n > 0);
     nmo_core_iter_result_t result;
-    int rc = NMO_CLI_EXIT_SUCCESS;
 
     if (needs_collect) {
         obj_collect_t col = {0};
@@ -387,20 +381,15 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
     /* Build query */
     nmo_object_query_t query = {0};
     nmo_core_query_dsl_t query_dsl = {0};
-    if (class_filter_str) {
-        if (nmo_core_query_set_class_name(
-                &c, &query, class_filter_str, true) != NMO_OK) {
-            fprintf(stderr, "Error: Unknown class '%s'\n", class_filter_str);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-        }
-    }
-    if (filter_expr) {
-        nmo_status_t st =
-            nmo_core_query_add_dsl_filter(&c, &query, filter_expr, &query_dsl);
-        if (st != NMO_OK) {
-            nmo_core_dsl_print_error(stderr, filter_expr, "Error: Failed to compile filter expression");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-        }
+    nmo_core_query_build_options_t query_opts = {
+        .class_name = class_filter_str,
+        .filter_expr = filter_expr,
+        .include_derived_classes = true,
+        .print_dsl_context = true,
+    };
+    rc = nmo_core_query_build(&c, &query, &query_dsl, &query_opts);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     bool needs_collect = (sort_key != NMO_CLI_SORT_NONE) || (top_n > 0);
@@ -1026,15 +1015,14 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
     /* Build query */
     nmo_object_query_t query = {0};
-    if (class_filter_str) {
-        if (nmo_core_query_set_class_name(
-                &c, &query, class_filter_str, true) != NMO_OK) {
-            fprintf(stderr, "Error: Unknown class '%s'\n", class_filter_str);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-        }
-    }
-    if (name_filter) {
-        nmo_core_query_set_name_wildcard(&query, name_filter);
+    nmo_core_query_build_options_t query_opts = {
+        .class_name = class_filter_str,
+        .name_wildcard = name_filter,
+        .include_derived_classes = true,
+    };
+    rc = nmo_core_query_build(&c, &query, NULL, &query_opts);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     nmo_core_iter_result_t result;
@@ -1124,26 +1112,18 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
     /* Build query */
     nmo_object_query_t query = {0};
     nmo_core_query_dsl_t query_dsl = {0};
-    if (class_filter_str) {
-        if (nmo_core_query_set_class_name(
-                &c, &query, class_filter_str, true) != NMO_OK) {
-            fprintf(stderr, "Error: Unknown class '%s'\n", class_filter_str);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-        }
-    }
-    if (name_pattern) {
-        nmo_core_query_set_name_wildcard(&query, name_pattern);
-    }
-    if (filter_expr) {
-        nmo_status_t st =
-            nmo_core_query_add_dsl_filter(&c, &query, filter_expr, &query_dsl);
-        if (st != NMO_OK) {
-            nmo_core_dsl_print_error(stderr, filter_expr, "Error: Failed to compile filter expression");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-        }
-    }
-    if (id_filter) {
-        nmo_core_query_set_object_id(&query, id_filter);
+    nmo_core_query_build_options_t query_opts = {
+        .class_name = class_filter_str,
+        .name_wildcard = name_pattern,
+        .filter_expr = filter_expr,
+        .include_derived_classes = true,
+        .has_object_id = id_filter != 0,
+        .object_id = id_filter,
+        .print_dsl_context = true,
+    };
+    rc = nmo_core_query_build(&c, &query, &query_dsl, &query_opts);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     /* Collect matching objects */

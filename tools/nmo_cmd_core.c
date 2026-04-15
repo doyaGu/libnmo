@@ -157,6 +157,61 @@ void nmo_core_query_set_object_id(
     query->object_id = object_id;
 }
 
+int nmo_core_query_build(
+    const nmo_cmd_ctx_t *c,
+    nmo_object_query_t *query,
+    nmo_core_query_dsl_t *out_dsl,
+    const nmo_core_query_build_options_t *opts)
+{
+    if (c == NULL || query == NULL || opts == NULL) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    memset(query, 0, sizeof(*query));
+    if (out_dsl != NULL) {
+        memset(out_dsl, 0, sizeof(*out_dsl));
+    }
+
+    if (opts->class_name != NULL) {
+        if (nmo_core_query_set_class_name(
+                c, query, opts->class_name,
+                opts->include_derived_classes) != NMO_OK) {
+            fprintf(stderr, "Error: Unknown class '%s'\n", opts->class_name);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    }
+
+    if (opts->name_wildcard != NULL) {
+        nmo_core_query_set_name_wildcard(query, opts->name_wildcard);
+    }
+
+    if (opts->filter_expr != NULL) {
+        if (out_dsl == NULL) {
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+
+        nmo_status_t st =
+            nmo_core_query_add_dsl_filter(c, query, opts->filter_expr, out_dsl);
+        if (st != NMO_OK) {
+            const char *prefix = opts->dsl_error_prefix != NULL
+                ? opts->dsl_error_prefix
+                : "Error: Failed to compile filter expression";
+            if (opts->print_dsl_context) {
+                nmo_core_dsl_print_error(stderr, opts->filter_expr, prefix);
+            } else {
+                fprintf(stderr, "%s\n", prefix);
+            }
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    }
+
+    if (opts->has_object_id) {
+        nmo_core_query_set_object_id(query, opts->object_id);
+    }
+
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 nmo_status_t nmo_core_query_add_dsl_filter(
     const nmo_cmd_ctx_t *c,
     nmo_object_query_t *query,

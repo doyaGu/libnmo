@@ -101,6 +101,20 @@ typedef struct nmo_core_query_dsl {
 } nmo_core_query_dsl_t;
 
 /**
+ * @brief Common CLI object query inputs.
+ */
+typedef struct nmo_core_query_build_options {
+    const char *class_name;
+    const char *name_wildcard;
+    const char *filter_expr;
+    bool include_derived_classes;
+    bool has_object_id;
+    nmo_object_id_t object_id;
+    bool print_dsl_context;
+    const char *dsl_error_prefix;
+} nmo_core_query_build_options_t;
+
+/**
  * @brief Set query class filter from a CLI class name.
  */
 nmo_status_t nmo_core_query_set_class_name(
@@ -122,6 +136,15 @@ void nmo_core_query_set_name_wildcard(
 void nmo_core_query_set_object_id(
     nmo_object_query_t *query,
     nmo_object_id_t object_id);
+
+/**
+ * @brief Build a query from common CLI filters and print user-facing errors.
+ */
+int nmo_core_query_build(
+    const nmo_cmd_ctx_t *c,
+    nmo_object_query_t *query,
+    nmo_core_query_dsl_t *out_dsl,
+    const nmo_core_query_build_options_t *opts);
 
 /**
  * @brief Compile a DSL expression and attach it as query->predicate.
