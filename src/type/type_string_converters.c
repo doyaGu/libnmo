@@ -1292,7 +1292,7 @@ static nmo_status_t nmo_struct_like_to_string(
                 }
             }
 
-            if (has_count && count > 0) {
+            if (has_count) {
                 NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "[%llu]", (unsigned long long)count));
             } else {
                 NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "[...]"));
