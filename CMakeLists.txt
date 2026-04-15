@@ -308,6 +308,7 @@ set(NMO_SESSION_SOURCES
     src/session/id_remap.c
     src/session/id_sanitizer.c
     src/session/reference_resolver.c
+    src/session/session_edit.c
     src/session/runtime_graph.c
     src/session/runtime_kernel.c
     src/session/runtime_ref_remap.c

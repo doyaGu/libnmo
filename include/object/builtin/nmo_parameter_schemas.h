@@ -130,22 +130,6 @@ NMO_API nmo_parameter_state_t *nmo_parameter_get_mutable_state(nmo_object_t *obj
 NMO_API const nmo_parameter_state_t *nmo_parameter_get_state(const nmo_object_t *obj);
 
 /**
- * @brief Set a parameter's buffer value from a string representation.
- *
- * Resolves the parameter's type GUID, parses the value string,
- * and writes to the parameter's buffer.
- *
- * @param obj       Parameter object (CKParameter, CKParameterOut, CKParameterLocal)
- * @param value_str String representation of the value
- * @param registry  Type registry for type resolution and parsing
- * @return NMO_OK on success
- */
-NMO_API nmo_status_t nmo_parameter_set_value(
-    nmo_object_t *obj,
-    const char *value_str,
-    const nmo_type_registry_t *registry);
-
-/**
  * @brief Get a parameter's buffer value as a string.
  *
  * @param obj       Parameter object (CKParameter, CKParameterOut, CKParameterLocal)

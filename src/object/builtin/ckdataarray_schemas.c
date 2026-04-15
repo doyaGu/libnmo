@@ -23,6 +23,7 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
 #include "object/nmo_object_repository.h"
+#include "object/nmo_ref_graph.h"
 #include "type/nmo_reflection.h"
 #include "object/nmo_object_struct_guids.h"
 #include "nmo_types.h"
@@ -559,6 +560,56 @@ static void nmo_dataarray_post_delete(
 }
 
 /* ============================================================================
+ * Reference enumeration
+ * ============================================================================ */
+
+static nmo_status_t nmo_dataarray_enumerate_refs(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    nmo_type_ref_visitor_fn visitor,
+    void *user_data)
+{
+    (void)type;
+    const nmo_dataarray_state_t *state = (const nmo_dataarray_state_t *)instance;
+    if (state == NULL || visitor == NULL ||
+        state->rows == NULL || state->column_formats == NULL) {
+        NMO_RETURN_OK();
+    }
+
+    for (uint32_t row = 0; row < state->row_count; row++) {
+        const nmo_dataarray_row_t *row_data = &state->rows[row];
+        if (row_data->cells == NULL) {
+            continue;
+        }
+        uint32_t col_count =
+            row_data->column_count < state->column_count
+                ? row_data->column_count
+                : state->column_count;
+        for (uint32_t col = 0; col < col_count; col++) {
+            CK_ARRAYTYPE col_type = state->column_formats[col].type;
+            nmo_object_id_t target_id = 0;
+            nmo_ref_kind_t kind = NMO_REF_KIND_DATA_ARRAY;
+
+            if (col_type == CKARRAYTYPE_OBJECT) {
+                target_id = row_data->cells[col].object_id;
+            } else if (col_type == CKARRAYTYPE_PARAMETER) {
+                target_id = row_data->cells[col].parameter_id;
+                kind = NMO_REF_KIND_PARAMETER;
+            }
+
+            if (target_id != 0) {
+                uint32_t index = row * state->column_count + col;
+                if (!visitor(user_data, target_id, kind, "rows", index)) {
+                    NMO_RETURN_OK();
+                }
+            }
+        }
+    }
+
+    NMO_RETURN_OK();
+}
+
+/* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
@@ -569,7 +620,7 @@ nmo_type_vtable_t nmo_dataarray_vtable = {
     .remap_dependencies = nmo_dataarray_remap_dependencies,
     .pre_delete = nmo_dataarray_pre_delete,
     .post_delete = nmo_dataarray_post_delete,
-    NMO_OBJECT_VTABLE(
+    NMO_OBJECT_VTABLE_EX(
         nmo_dataarray_create,
         nmo_dataarray_destroy,
         nmo_dataarray_serialize,
@@ -577,7 +628,8 @@ nmo_type_vtable_t nmo_dataarray_vtable = {
         nmo_dataarray_copy,
         nmo_dataarray_validate,
         nmo_dataarray_equals,
-        nmo_dataarray_hash)
+        nmo_dataarray_hash,
+        nmo_dataarray_enumerate_refs)
 };
 
 NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
@@ -589,85 +641,4 @@ NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
     nmo_dataarray_state_t,
     &nmo_dataarray_vtable,
     nmo_dataarray_fields)
-
-/* =============================================================================
- * PUBLIC MUTATION API
- * ============================================================================= */
-
-nmo_status_t nmo_dataarray_set_cell(
-    nmo_dataarray_state_t *state,
-    nmo_arena_t *arena,
-    uint32_t row,
-    uint32_t col,
-    const char *value_str) {
-    if (!state || !value_str)
-        return NMO_ERR_INVALID_ARGUMENT;
-
-    if (row >= state->row_count || col >= state->column_count)
-        return NMO_ERR_OUT_OF_BOUNDS;
-
-    nmo_dataarray_row_t *target_row = &state->rows[row];
-    if (col >= target_row->column_count)
-        return NMO_ERR_OUT_OF_BOUNDS;
-
-    CK_ARRAYTYPE col_type = state->column_formats[col].type;
-    nmo_dataarray_cell_t new_cell;
-    memset(&new_cell, 0, sizeof(new_cell));
-
-    switch (col_type) {
-    case CKARRAYTYPE_INT: {
-        char *end = NULL;
-        long v = strtol(value_str, &end, 0);
-        if (!end || *end != '\0')
-            return NMO_ERR_INVALID_ARGUMENT;
-        new_cell.int_value = (int32_t)v;
-        break;
-    }
-    case CKARRAYTYPE_FLOAT: {
-        char *end = NULL;
-        double v = strtod(value_str, &end);
-        if (!end || *end != '\0')
-            return NMO_ERR_INVALID_ARGUMENT;
-        new_cell.float_value = (float)v;
-        break;
-    }
-    case CKARRAYTYPE_STRING: {
-        if (!arena)
-            return NMO_ERR_INVALID_ARGUMENT;
-        size_t len = strlen(value_str);
-        char *copy = (char *)nmo_arena_alloc(arena, len + 1, 1);
-        if (!copy)
-            return NMO_ERR_NOMEM;
-        memcpy(copy, value_str, len + 1);
-        new_cell.string_value = copy;
-        break;
-    }
-    case CKARRAYTYPE_OBJECT: {
-        const char *s = value_str;
-        if (s[0] == '#') s++;
-        char *end = NULL;
-        unsigned long v = strtoul(s, &end, 10);
-        if (!end || *end != '\0')
-            return NMO_ERR_INVALID_ARGUMENT;
-        new_cell.object_id = (nmo_object_id_t)v;
-        break;
-    }
-    case CKARRAYTYPE_PARAMETER: {
-        const char *s = value_str;
-        if (s[0] == '#') s++;
-        char *end = NULL;
-        unsigned long v = strtoul(s, &end, 10);
-        if (!end || *end != '\0')
-            return NMO_ERR_INVALID_ARGUMENT;
-        new_cell.parameter_id = (nmo_object_id_t)v;
-        break;
-    }
-    default:
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    target_row->cells[col] = new_cell;
-    return NMO_OK;
-}
-
 

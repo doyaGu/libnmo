@@ -12,6 +12,8 @@
 #include "type/nmo_type_system.h"
 #include "format/nmo_object.h"
 
+#define NMO_RUNTIME_REQUEST_DEFER_CACHE_INVALIDATION 0x40000000u
+
 /**
  * @brief Find type descriptor for an object by its class ID (inherited lookup).
  */

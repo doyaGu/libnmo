@@ -589,34 +589,6 @@ const nmo_parameter_state_t *nmo_parameter_get_state(const nmo_object_t *obj)
     return nmo_parameter_get_mutable_state((nmo_object_t *)obj);
 }
 
-nmo_status_t nmo_parameter_set_value(nmo_object_t *obj,
-                                     const char *value_str,
-                                     const nmo_type_registry_t *registry)
-{
-    nmo_parameter_state_t *pstate = nmo_parameter_get_mutable_state(obj);
-    if (!pstate || !value_str || !registry)
-        return NMO_ERR_INVALID_ARGUMENT;
-    if (!pstate->buffer_data.data || pstate->buffer_data.count == 0)
-        return NMO_ERR_INVALID_STATE;
-
-    const nmo_type_descriptor_t *type =
-        nmo_type_registry_find_by_guid(registry, pstate->type_guid);
-    if (!type) return NMO_ERR_NOT_FOUND;
-
-    size_t buf_size = type->size > 0 ? type->size : pstate->buffer_data.count;
-    uint8_t *tmp = (uint8_t *)calloc(1, buf_size);
-    if (!tmp) return NMO_ERR_NOMEM;
-
-    nmo_status_t rc = nmo_type_value_from_string(tmp, type, registry, value_str);
-    if (rc == NMO_OK) {
-        size_t copy_len = buf_size < pstate->buffer_data.count
-                        ? buf_size : pstate->buffer_data.count;
-        memcpy(pstate->buffer_data.data, tmp, copy_len);
-    }
-    free(tmp);
-    return rc;
-}
-
 nmo_status_t nmo_parameter_get_value(const nmo_object_t *obj,
                                      const nmo_type_registry_t *registry,
                                      char *out_buf,

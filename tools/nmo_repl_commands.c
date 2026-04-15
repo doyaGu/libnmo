@@ -21,6 +21,7 @@
 #include "object/nmo_ref_graph.h"
 #include "object/nmo_object_repository.h"
 #include "session/nmo_runtime_kernel.h"
+#include "session/nmo_session_edit.h"
 #include "type/nmo_type_string.h"
 
 #include "nmo_cli_json.h"
@@ -1530,8 +1531,6 @@ static int cmd_set_param(nmo_repl_context_t *repl, int argc, char **argv) {
     if (index >= object_count) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
 
     nmo_object_t *obj = objects[index];
-    const nmo_type_registry_t *registry = nmo_context_get_type_registry(repl->ctx);
-
     /* Check that object has a settable parameter state */
     const nmo_parameter_state_t *pstate = nmo_parameter_get_state(obj);
     if (!pstate) {
@@ -1545,7 +1544,17 @@ static int cmd_set_param(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
-    nmo_status_t st = nmo_parameter_set_value(obj, argv[2], registry);
+    nmo_session_edit_t *edit = NULL;
+    nmo_status_t st = nmo_session_edit_begin(repl->session, "repl set-param", &edit);
+    if (st == NMO_OK) {
+        st = nmo_session_edit_set_parameter_value(
+            edit, nmo_object_get_id(obj), argv[2]);
+    }
+    if (st == NMO_OK) {
+        st = nmo_session_edit_commit(edit);
+    } else if (edit != NULL) {
+        nmo_session_edit_rollback(edit);
+    }
     if (st != NMO_OK) {
         fprintf(stderr, "Error: Cannot set value '%s': %s\n",
                 argv[2], nmo_error_string(st));

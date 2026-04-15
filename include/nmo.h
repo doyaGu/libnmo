@@ -127,6 +127,7 @@
 #include "session/nmo_object_system.h"
 #include "session/nmo_runtime_graph.h"
 #include "session/nmo_runtime_kernel.h"
+#include "session/nmo_session_edit.h"
 
 // Session layer (context, session, serializer)
 #include "session/nmo_context.h"

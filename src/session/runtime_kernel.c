@@ -4,6 +4,7 @@
 
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_edit.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_logger.h"
 #include "format/nmo_id_remap.h"
@@ -678,16 +679,24 @@ int nmo_runtime_kernel_execute(
         }
         case NMO_RUNTIME_OP_CREATE:
             result = runtime_execute_create(session, request, out_report);
-            nmo_session_invalidate_behavior_index(session);
-            nmo_session_invalidate_ref_graph(session);
+            if (result == NMO_OK &&
+                (request->flags & NMO_RUNTIME_REQUEST_DEFER_CACHE_INVALIDATION) == 0u) {
+                (void)nmo_session_apply_edit_flags(
+                    session,
+                    NMO_SESSION_EDIT_BEHAVIOR_GRAPH | NMO_SESSION_EDIT_REFERENCES);
+            }
             break;
         case NMO_RUNTIME_OP_COPY:
             (void)runtime_dispatch_manager_event(
                 session, NMO_RUNTIME_EVENT_PRE_COPY, NULL,
                 out_report != NULL ? &out_report->manager_event_errors : NULL);
             result = runtime_execute_copy(session, request, out_report);
-            nmo_session_invalidate_behavior_index(session);
-            nmo_session_invalidate_ref_graph(session);
+            if (result == NMO_OK &&
+                (request->flags & NMO_RUNTIME_REQUEST_DEFER_CACHE_INVALIDATION) == 0u) {
+                (void)nmo_session_apply_edit_flags(
+                    session,
+                    NMO_SESSION_EDIT_BEHAVIOR_GRAPH | NMO_SESSION_EDIT_REFERENCES);
+            }
             (void)runtime_dispatch_manager_event(
                 session, NMO_RUNTIME_EVENT_POST_COPY, NULL,
                 out_report != NULL ? &out_report->manager_event_errors : NULL);
@@ -697,8 +706,12 @@ int nmo_runtime_kernel_execute(
                 session, NMO_RUNTIME_EVENT_PRE_DELETE, NULL,
                 out_report != NULL ? &out_report->manager_event_errors : NULL);
             result = nmo_runtime_execute_delete(session, request, out_report);
-            nmo_session_invalidate_behavior_index(session);
-            nmo_session_invalidate_ref_graph(session);
+            if (result == NMO_OK &&
+                (request->flags & NMO_RUNTIME_REQUEST_DEFER_CACHE_INVALIDATION) == 0u) {
+                (void)nmo_session_apply_edit_flags(
+                    session,
+                    NMO_SESSION_EDIT_BEHAVIOR_GRAPH | NMO_SESSION_EDIT_REFERENCES);
+            }
             (void)runtime_dispatch_manager_event(
                 session, NMO_RUNTIME_EVENT_POST_DELETE, NULL,
                 out_report != NULL ? &out_report->manager_event_errors : NULL);

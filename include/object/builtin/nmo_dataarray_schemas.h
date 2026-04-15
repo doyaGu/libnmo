@@ -152,26 +152,6 @@ NMO_API nmo_status_t nmo_dataarray_remap_dependencies(
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_dataarray_vtable, nmo_register_dataarray_type)
 
-/**
- * @brief Set a data array cell value from a string.
- *
- * Determines the column type, parses the value string accordingly,
- * and writes to the specified cell.
- *
- * @param state      Mutable data array state
- * @param arena      Arena for string allocation (only used for string columns)
- * @param row        Row index (0-based)
- * @param col        Column index (0-based)
- * @param value_str  String representation of the value
- * @return NMO_OK on success, NMO_ERR_OUT_OF_BOUNDS if row/col invalid
- */
-NMO_API nmo_status_t nmo_dataarray_set_cell(
-    nmo_dataarray_state_t *state,
-    nmo_arena_t *arena,
-    uint32_t row,
-    uint32_t col,
-    const char *value_str);
-
 #ifdef __cplusplus
 }
 #endif

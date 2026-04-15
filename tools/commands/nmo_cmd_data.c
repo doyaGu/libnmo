@@ -662,10 +662,17 @@ int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *gl
     char old_buf[256];
     format_cell(old_buf, sizeof(old_buf), &target_row->cells[col], col_type, &c);
 
-    /* Set cell value via library function */
-    nmo_arena_t *arena = nmo_session_get_arena(c.session);
-    nmo_status_t set_rc = nmo_dataarray_set_cell(state, arena, row, col, value_str);
+    /* Set cell value through a session edit. */
+    nmo_session_edit_t *edit = NULL;
+    nmo_status_t set_rc = nmo_session_edit_begin(c.session, "data set-cell", &edit);
+    if (set_rc == NMO_OK) {
+        set_rc = nmo_session_edit_set_dataarray_cell(
+            edit, obj_id, row, col, value_str);
+    }
     if (set_rc != NMO_OK) {
+        if (edit) {
+            nmo_session_edit_rollback(edit);
+        }
         fprintf(stderr, "Error: Cannot parse '%s' as %s\n",
                 value_str, arraytype_name(col_type));
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
@@ -674,6 +681,17 @@ int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *gl
     /* Format new value for display */
     char new_buf[256];
     format_cell(new_buf, sizeof(new_buf), &target_row->cells[col], col_type, &c);
+
+    if (dry_run) {
+        nmo_session_edit_rollback(edit);
+    } else {
+        nmo_status_t commit_rc = nmo_session_edit_commit(edit);
+        if (commit_rc != NMO_OK) {
+            fprintf(stderr, "Error: Failed to commit edit: %s\n",
+                    nmo_error_string(commit_rc));
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+    }
 
     /* Output */
     const char *name = nmo_object_get_name(obj);

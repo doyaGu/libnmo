@@ -14,8 +14,8 @@
 
 #include "nmo.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_edit.h"
 #include "app/nmo_save.h"
-#include "behavior/nmo_behavior_edit.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
@@ -88,8 +88,17 @@ int nmo_cmd_behavior_add_link(int argc, char **argv,
     nmo_object_id_t link_id = 0;
 
     if (!dry_run) {
-        int add_rc = nmo_behavior_add_link(
-            c.session, parent_id, from_id, to_id, (int16_t)delay, &link_id);
+        nmo_session_edit_t *edit = NULL;
+        int add_rc = nmo_session_edit_begin(c.session, "behavior add-link", &edit);
+        if (add_rc == NMO_OK) {
+            add_rc = nmo_session_edit_add_behavior_link(
+                edit, parent_id, from_id, to_id, (int16_t)delay, &link_id);
+        }
+        if (add_rc == NMO_OK) {
+            add_rc = nmo_session_edit_commit(edit);
+        } else if (edit != NULL) {
+            nmo_session_edit_rollback(edit);
+        }
         if (add_rc != NMO_OK) {
             fprintf(stderr, "Error: Failed to add link: %s\n",
                     nmo_error_string(add_rc));
@@ -203,7 +212,16 @@ int nmo_cmd_behavior_remove_link(int argc, char **argv,
     }
 
     if (!dry_run) {
-        int rm_rc = nmo_behavior_remove_link(c.session, parent_id, link_id_val);
+        nmo_session_edit_t *edit = NULL;
+        int rm_rc = nmo_session_edit_begin(c.session, "behavior remove-link", &edit);
+        if (rm_rc == NMO_OK) {
+            rm_rc = nmo_session_edit_remove_behavior_link(edit, parent_id, link_id_val);
+        }
+        if (rm_rc == NMO_OK) {
+            rm_rc = nmo_session_edit_commit(edit);
+        } else if (edit != NULL) {
+            nmo_session_edit_rollback(edit);
+        }
         if (rm_rc != NMO_OK) {
             fprintf(stderr, "Error: Failed to remove link: %s\n",
                     nmo_error_string(rm_rc));

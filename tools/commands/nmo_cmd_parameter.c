@@ -1130,6 +1130,22 @@ int nmo_cmd_parameter_set(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     /* ---- Parse and write new value ---- */
     int exit_code = NMO_CLI_EXIT_SUCCESS;
+    nmo_session_edit_t *edit = NULL;
+    bool edit_started = false;
+    uint8_t *hex_dry_snapshot = NULL;
+    size_t hex_dry_snapshot_len = 0;
+
+    if (!hex_mode) {
+        nmo_status_t begin_rc =
+            nmo_session_edit_begin(c.session, "parameter set", &edit);
+        if (begin_rc != NMO_OK) {
+            fprintf(stderr, "Error: Failed to begin edit: %s\n",
+                    nmo_error_string(begin_rc));
+            free(old_value_str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+        edit_started = true;
+    }
 
     if (hex_mode) {
         /* Raw hex mode: write bytes directly into buffer */
@@ -1155,6 +1171,18 @@ int nmo_cmd_parameter_set(int argc, char **argv, const nmo_cli_global_opts_t *gl
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
 
+        if (dry_run && pstate->buffer_data.data && pstate->buffer_data.count > 0) {
+            hex_dry_snapshot_len = pstate->buffer_data.count;
+            hex_dry_snapshot = (uint8_t *)malloc(hex_dry_snapshot_len);
+            if (!hex_dry_snapshot) {
+                fprintf(stderr, "Error: Out of memory\n");
+                free(hex_buf);
+                free(old_value_str);
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            }
+            memcpy(hex_dry_snapshot, pstate->buffer_data.data, hex_dry_snapshot_len);
+        }
+
         if (pstate->buffer_data.data && hex_len <= pstate->buffer_data.count) {
             memcpy(pstate->buffer_data.data, hex_buf, hex_len);
             if (hex_len < pstate->buffer_data.count) {
@@ -1169,9 +1197,15 @@ int nmo_cmd_parameter_set(int argc, char **argv, const nmo_cli_global_opts_t *gl
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         } else {
             fprintf(stderr, "Error: No buffer data in parameter\n");
+            free(hex_dry_snapshot);
             free(hex_buf);
             free(old_value_str);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+        if (!dry_run) {
+            (void)nmo_session_apply_edit_flags(
+                c.session,
+                NMO_SESSION_EDIT_OBJECT_STATE | NMO_SESSION_EDIT_REFERENCES);
         }
         free(hex_buf);
     } else if (pstate->mode == CKPARAM_MODE_BUFFER) {
@@ -1180,68 +1214,74 @@ int nmo_cmd_parameter_set(int argc, char **argv, const nmo_cli_global_opts_t *gl
             nmo_type_registry_find_by_guid(c.registry, pstate->type_guid);
         if (!type_desc) {
             fprintf(stderr, "Error: Unknown parameter type\n");
+            nmo_session_edit_rollback(edit);
             free(old_value_str);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
         if (!pstate->buffer_data.data || pstate->buffer_data.count == 0) {
             fprintf(stderr, "Error: Parameter has no buffer data\n");
+            nmo_session_edit_rollback(edit);
             free(old_value_str);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
-        size_t buf_size = type_desc->size > 0 ? type_desc->size : pstate->buffer_data.count;
-        uint8_t *tmp_buf = (uint8_t *)calloc(1, buf_size);
-        if (!tmp_buf) {
-            fprintf(stderr, "Error: Out of memory\n");
-            free(old_value_str);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-
-        nmo_status_t parse_rc = nmo_type_value_from_string(
-            tmp_buf, type_desc, c.registry, value_str);
+        (void)type_desc;
+        nmo_status_t parse_rc =
+            nmo_session_edit_set_parameter_value(
+                edit, nmo_object_get_id(param_obj), value_str);
         if (parse_rc != NMO_OK) {
             fprintf(stderr, "Error: Failed to parse '%s' as %s: %s\n",
                     value_str,
                     type_name ? type_name : "unknown",
                     nmo_error_string(parse_rc));
-            free(tmp_buf);
+            nmo_session_edit_rollback(edit);
             free(old_value_str);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
-
-        size_t copy_len = buf_size < pstate->buffer_data.count
-                        ? buf_size : pstate->buffer_data.count;
-        memcpy(pstate->buffer_data.data, tmp_buf, copy_len);
-        free(tmp_buf);
     } else if (pstate->mode == CKPARAM_MODE_OBJECT) {
         /* Parse as object reference: #<id> or name */
+        uint32_t ref_id = 0;
         if (value_str[0] == '#') {
-            uint32_t ref_id;
             if (!nmo_tool_parse_u32(value_str + 1, &ref_id)) {
                 fprintf(stderr, "Error: Invalid object ID '%s'\n", value_str);
+                nmo_session_edit_rollback(edit);
                 free(old_value_str);
                 return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
             }
-            pstate->object_id = ref_id;
         } else {
             nmo_object_t *ref_obj = nmo_object_repository_find_by_name(repo, value_str);
             if (!ref_obj) {
-                uint32_t ref_id;
                 if (nmo_tool_parse_u32(value_str, &ref_id)) {
-                    pstate->object_id = ref_id;
+                    /* parsed below */
                 } else {
                     fprintf(stderr, "Error: Object '%s' not found\n", value_str);
+                    nmo_session_edit_rollback(edit);
                     free(old_value_str);
                     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
                 }
             } else {
-                pstate->object_id = nmo_object_get_id(ref_obj);
+                ref_id = nmo_object_get_id(ref_obj);
             }
+        }
+        char ref_buf[32];
+        snprintf(ref_buf, sizeof(ref_buf), "%u", ref_id);
+        nmo_status_t ref_rc =
+            nmo_session_edit_set_parameter_value(
+                edit, nmo_object_get_id(param_obj), ref_buf);
+        if (ref_rc != NMO_OK) {
+            fprintf(stderr, "Error: Failed to set object reference: %s\n",
+                    nmo_error_string(ref_rc));
+            nmo_session_edit_rollback(edit);
+            free(old_value_str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
     } else {
         fprintf(stderr, "Error: Unsupported parameter mode '%s'\n",
                 nmo_param_mode_to_string(pstate->mode));
+        if (edit_started) {
+            nmo_session_edit_rollback(edit);
+        }
         free(old_value_str);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
     }
@@ -1249,6 +1289,27 @@ int nmo_cmd_parameter_set(int argc, char **argv, const nmo_cli_global_opts_t *gl
     /* ---- Format new value ---- */
     char *new_value_str = format_parameter_value(pstate,
         (nmo_type_registry_t *)c.registry, c.session, NULL);
+
+    if (hex_dry_snapshot != NULL) {
+        memcpy(pstate->buffer_data.data, hex_dry_snapshot, hex_dry_snapshot_len);
+        free(hex_dry_snapshot);
+        hex_dry_snapshot = NULL;
+    }
+
+    if (edit_started) {
+        if (dry_run) {
+            nmo_session_edit_rollback(edit);
+        } else {
+            nmo_status_t commit_rc = nmo_session_edit_commit(edit);
+            if (commit_rc != NMO_OK) {
+                fprintf(stderr, "Error: Failed to commit edit: %s\n",
+                        nmo_error_string(commit_rc));
+                free(old_value_str);
+                free(new_value_str);
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            }
+        }
+    }
 
     /* ---- Output ---- */
     if (c.is_json) {

@@ -8,6 +8,7 @@
 #include "nmo_tool_common.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_edit.h"
 #include "type/nmo_type_string.h"
 #include "object/nmo_object_repository.h"
 #include "core/nmo_guid.h"
@@ -710,6 +711,16 @@ int nmo_core_set_fields(nmo_cmd_ctx_t *c, nmo_object_id_t object_id,
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
+    nmo_session_edit_t *edit = NULL;
+    nmo_status_t begin_rc =
+        nmo_session_edit_begin(c->session, "cli set fields", &edit);
+    if (begin_rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to begin edit: %s\n",
+                nmo_error_string(begin_rc));
+        if (out_result) *out_result = result;
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
     for (size_t i = 0; i < entry_count; i++) {
         const char *fname = entries[i].field_name;
         const char *vstr  = entries[i].value_str;
@@ -720,33 +731,41 @@ int nmo_core_set_fields(nmo_cmd_ctx_t *c, nmo_object_id_t object_id,
         nmo_type_get_field(state, type, c->registry, fname,
                            old_buf, sizeof(old_buf));
 
-        /* Set new value */
-        if (!dry_run) {
-            nmo_status_t rc = nmo_type_set_field(state, type, c->registry,
-                                                  fname, vstr);
-            if (rc != NMO_OK) {
-                fprintf(stderr, "Error: Failed to set '%s' = '%s': %s\n",
-                        fname, vstr, nmo_error_string(rc));
-                result.failed++;
-                continue;
-            }
+        nmo_session_field_edit_t field = {
+            .field_name = fname,
+            .value_str = vstr,
+        };
+        nmo_status_t rc =
+            nmo_session_edit_set_object_fields(edit, object_id, &field, 1, NULL);
+        if (rc != NMO_OK) {
+            fprintf(stderr, "Error: Failed to set '%s' = '%s': %s\n",
+                    fname, vstr, nmo_error_string(rc));
+            result.failed++;
+            continue;
         }
 
-        /* Read new value (or show what would be set) */
+        /* Read new value */
         char new_buf[256];
-        if (dry_run) {
-            snprintf(new_buf, sizeof(new_buf), "%s", vstr);
-        } else {
-            new_buf[0] = '\0';
-            nmo_type_get_field(state, type, c->registry, fname,
-                               new_buf, sizeof(new_buf));
-        }
+        new_buf[0] = '\0';
+        nmo_type_get_field(state, type, c->registry, fname,
+                           new_buf, sizeof(new_buf));
 
         /* Print change */
         fprintf(c->out, "  %s: %s -> %s%s\n",
                 fname, old_buf, new_buf, dry_run ? " (dry-run)" : "");
 
         result.applied++;
+    }
+
+    if (dry_run || result.failed > 0) {
+        nmo_session_edit_rollback(edit);
+    } else {
+        nmo_status_t commit_rc = nmo_session_edit_commit(edit);
+        if (commit_rc != NMO_OK) {
+            fprintf(stderr, "Error: Failed to commit edit: %s\n",
+                    nmo_error_string(commit_rc));
+            result.failed++;
+        }
     }
 
     if (out_result) *out_result = result;
