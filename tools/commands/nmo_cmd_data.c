@@ -134,7 +134,7 @@ int nmo_cmd_data_list(int argc, char **argv, const nmo_cli_global_opts_t *global
             if (!obj || nmo_object_get_class_id(obj) != NMO_CID_DATAARRAY) continue;
 
             nmo_dataarray_state_t *state =
-                (nmo_dataarray_state_t *)nmo_object_get_data(obj);
+                (nmo_dataarray_state_t *)nmo_object_get_state(obj);
             if (!state) continue;
 
             yyjson_mut_val *item = yyjson_mut_obj(doc);
@@ -168,7 +168,7 @@ int nmo_cmd_data_list(int argc, char **argv, const nmo_cli_global_opts_t *global
             if (!obj || nmo_object_get_class_id(obj) != NMO_CID_DATAARRAY) continue;
 
             nmo_dataarray_state_t *state =
-                (nmo_dataarray_state_t *)nmo_object_get_data(obj);
+                (nmo_dataarray_state_t *)nmo_object_get_state(obj);
             if (!state) continue;
 
             char id_buf[16];
@@ -243,7 +243,7 @@ int nmo_cmd_data_show(int argc, char **argv, const nmo_cli_global_opts_t *global
     }
 
     nmo_dataarray_state_t *state =
-        (nmo_dataarray_state_t *)nmo_object_get_data(obj);
+        (nmo_dataarray_state_t *)nmo_object_get_state(obj);
     if (!state) {
         fprintf(stderr, "Error: No data for object %u\n", obj_id);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
@@ -404,7 +404,7 @@ int nmo_cmd_data_dump(int argc, char **argv, const nmo_cli_global_opts_t *global
     }
 
     nmo_dataarray_state_t *state =
-        (nmo_dataarray_state_t *)nmo_object_get_data(obj);
+        (nmo_dataarray_state_t *)nmo_object_get_state(obj);
     if (!state) {
         fprintf(stderr, "Error: No data for object %u\n", obj_id);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
@@ -628,7 +628,7 @@ int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *gl
     }
 
     nmo_dataarray_state_t *state =
-        (nmo_dataarray_state_t *)nmo_object_get_data(obj);
+        (nmo_dataarray_state_t *)nmo_object_get_state(obj);
     if (!state) {
         fprintf(stderr, "Error: No data for object %u\n", obj_id);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);

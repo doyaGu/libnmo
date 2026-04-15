@@ -57,8 +57,16 @@ static const char *k_probe_prefixes[] = {
     "..\\..\\..\\..\\"
 };
 
+static const char *k_state_only_cli_sources[] = {
+    "tools/commands/nmo_cmd_data.c",
+};
+
 static int line_has_legacy_api(const char *line) {
     return strstr(line, "NMO_API") != NULL && strstr(line, "finish_loading") != NULL;
+}
+
+static int line_has_legacy_data_access(const char *line) {
+    return strstr(line, "nmo_object_get_data(") != NULL;
 }
 
 static void assert_file_has_no_legacy_api(const char *relative_path) {
@@ -80,6 +88,25 @@ static void assert_file_has_no_legacy_api(const char *relative_path) {
     fclose(fp);
 }
 
+static void assert_file_has_no_legacy_data_access(const char *relative_path) {
+    char full_path[512];
+    FILE *fp = NULL;
+    for (size_t i = 0; i < sizeof(k_probe_prefixes) / sizeof(k_probe_prefixes[0]); i++) {
+        snprintf(full_path, sizeof(full_path), "%s%s", k_probe_prefixes[i], relative_path);
+        fp = fopen(full_path, "rb");
+        if (fp != NULL) {
+            break;
+        }
+    }
+
+    ASSERT_NOT_NULL(fp);
+    char line[1024];
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        ASSERT_FALSE(line_has_legacy_data_access(line));
+    }
+    fclose(fp);
+}
+
 TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_exports) {
     for (size_t i = 0; i < sizeof(k_builtin_headers) / sizeof(k_builtin_headers[0]); i++) {
         assert_file_has_no_legacy_api(k_builtin_headers[i]);
@@ -88,6 +115,13 @@ TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_e
     assert_file_has_no_legacy_api("include/object/nmo_object_type_common.h");
 }
 
+TEST(no_legacy_runtime_api_exports, migrated_cli_sources_do_not_use_data_pointer_state) {
+    for (size_t i = 0; i < sizeof(k_state_only_cli_sources) / sizeof(k_state_only_cli_sources[0]); i++) {
+        assert_file_has_no_legacy_data_access(k_state_only_cli_sources[i]);
+    }
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_exports);
+REGISTER_TEST(no_legacy_runtime_api_exports, migrated_cli_sources_do_not_use_data_pointer_state);
 TEST_MAIN_END()
