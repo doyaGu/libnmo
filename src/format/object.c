@@ -202,22 +202,6 @@ nmo_object_t *nmo_object_get_parent(const nmo_object_t *object) {
     return object ? object->parent : NULL;
 }
 
-int nmo_object_set_data(nmo_object_t *object, void *data) {
-    if (object == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    object->data = data;
-    return NMO_OK;
-}
-
-void *nmo_object_get_data(const nmo_object_t *object) {
-    if (object == NULL) {
-        return NULL;
-    }
-    return object->data;
-}
-
 int nmo_object_set_file_index(nmo_object_t *object, nmo_object_id_t file_index) {
     if (object == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -299,4 +283,3 @@ uint32_t nmo_object_get_state_size(const nmo_object_t *object) {
     }
     return object->state_size;
 }
-

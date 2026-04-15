@@ -46,8 +46,7 @@ typedef struct nmo_object {
 
     /* Data */
     nmo_chunk_t *chunk; /**< Associated chunk data (non-owning reference) */
-    void *data;         /**< Custom user data pointer (legacy, prefer using state) */
-    
+
     /* State (ECS-style) - computed offsets within contain all inherited states */
     void *state;            /**< Combined state buffer holding all inherited states */
     uint32_t state_size;    /**< Total size of combined state buffer */
@@ -208,24 +207,6 @@ NMO_API int nmo_object_set_chunk(nmo_object_t *object, nmo_chunk_t *chunk);
  * @ownership borrowed
  */
 NMO_API nmo_chunk_t *nmo_object_get_chunk(const nmo_object_t *object);
-
-/**
- * @brief Set custom data pointer
- *
- * @param object Object (required)
- * @param data Custom data pointer
- * @return NMO_OK on success
- */
-NMO_API int nmo_object_set_data(nmo_object_t *object, void *data);
-
-/**
- * @brief Get custom data pointer
- *
- * @param object Object (required)
- * @return Custom data pointer or NULL
- * @ownership borrowed
- */
-NMO_API void *nmo_object_get_data(const nmo_object_t *object);
 
 /**
  * @brief Set FileIndex offset (Header1)

@@ -540,7 +540,6 @@ TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_finalize) {
     ASSERT_EQ(1u, stats.errors);
     ASSERT_NULL(obj->state);
     ASSERT_EQ(0u, obj->state_size);
-    ASSERT_NULL(obj->data);
 
     g_runtime_finalize_prepare_calls = 0;
     nmo_runtime_report_t report = {0};

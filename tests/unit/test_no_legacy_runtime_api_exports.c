@@ -58,7 +58,9 @@ static const char *k_probe_prefixes[] = {
 };
 
 static const char *k_state_only_sources[] = {
+    "include/format/nmo_object.h",
     "src/app/save.c",
+    "src/format/object.c",
     "src/object/object_system.c",
     "src/session/object_system.c",
     "tools/commands/nmo_cmd_animation.c",
@@ -76,7 +78,8 @@ static int line_has_legacy_api(const char *line) {
 static int line_has_legacy_data_access(const char *line) {
     return strstr(line, "nmo_object_get_data(") != NULL ||
            strstr(line, "nmo_object_set_data(") != NULL ||
-           strstr(line, "obj->data") != NULL;
+           strstr(line, "obj->data") != NULL ||
+           strstr(line, "void *data;") != NULL;
 }
 
 static void assert_file_has_no_legacy_api(const char *relative_path) {
