@@ -253,6 +253,12 @@ TEST(no_legacy_runtime_api_exports, remaining_cli_commands_use_object_query_api)
     assert_file_has_no_substring("tools/nmo_repl_util.c", "nmo_session_get_objects");
 }
 
+TEST(no_legacy_runtime_api_exports, cli_commands_do_not_bypass_shared_object_query_runner) {
+    assert_file_has_no_substring("tools/commands/nmo_cmd_behavior.c", "nmo_object_query_iterate");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_parameter.c", "nmo_object_query_iterate");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_validate.c", "nmo_object_query_iterate");
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_exports);
 REGISTER_TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_pointer_state);
@@ -272,4 +278,5 @@ REGISTER_TEST(no_legacy_runtime_api_exports, parameter_commands_use_object_query
 REGISTER_TEST(no_legacy_runtime_api_exports, behavior_commands_use_object_query_api);
 REGISTER_TEST(no_legacy_runtime_api_exports, object_commands_use_object_query_api);
 REGISTER_TEST(no_legacy_runtime_api_exports, remaining_cli_commands_use_object_query_api);
+REGISTER_TEST(no_legacy_runtime_api_exports, cli_commands_do_not_bypass_shared_object_query_runner);
 TEST_MAIN_END()

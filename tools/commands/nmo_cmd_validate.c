@@ -22,7 +22,6 @@
 #include "core/nmo_arena.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"
-#include "object/nmo_object_query.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_ref_graph.h"
@@ -50,13 +49,15 @@ typedef struct validate_all_data {
     size_t warning_count;
 } validate_all_data_t;
 
-static bool validate_all_object(size_t index, nmo_object_t *obj, void *user_data)
+static int validate_all_object(size_t index, nmo_object_t *obj,
+                               const nmo_cmd_ctx_t *c, void *user)
 {
     (void)index;
+    (void)c;
 
-    validate_all_data_t *data = (validate_all_data_t *)user_data;
+    validate_all_data_t *data = (validate_all_data_t *)user;
     if (!data || !obj) {
-        return true;
+        return 0;
     }
 
     nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
@@ -66,7 +67,7 @@ static bool validate_all_object(size_t index, nmo_object_t *obj, void *user_data
             fprintf(data->out, "Warning: Object %u has no chunk\n",
                     nmo_object_get_id(obj));
         }
-        return true;
+        return 0;
     }
 
     nmo_chunk_validation_t result;
@@ -80,7 +81,7 @@ static bool validate_all_object(size_t index, nmo_object_t *obj, void *user_data
         }
     }
 
-    return true;
+    return 0;
 }
 
 typedef struct validate_structure_data {
@@ -204,13 +205,6 @@ static int validate_all_single(const char *file_path,
         return NMO_CLI_EXIT_IO_ERROR;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
-    if (!repo) {
-        nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: Failed to get objects\n");
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
     FILE *out = (text_ctx && text_ctx->out) ? text_ctx->out : stdout;
     bool colorize = (text_ctx != NULL) ? text_ctx->colorize : nmo_cli_should_colorize(global, out);
 
@@ -219,11 +213,12 @@ static int validate_all_single(const char *file_path,
         .out = out,
         .doc = doc,
     };
-    nmo_object_query_result_t query_result = {0};
-    nmo_status_t query_status = nmo_object_query_iterate(
-        repo, NULL, nmo_context_get_type_registry(ctx),
-        validate_all_object, &validate_data, &query_result);
-    if (query_status != NMO_OK) {
+    nmo_cmd_ctx_t cmd;
+    nmo_cmd_ctx_init_from_repl(&cmd, ctx, session, colorize);
+    nmo_core_iter_result_t query_result = {0};
+    if (nmo_core_object_query_run(&cmd, NULL,
+                                  validate_all_object, &validate_data,
+                                  &query_result) != NMO_CLI_EXIT_SUCCESS) {
         nmo_tool_close_session(ctx, session);
         fprintf(stderr, "Error: Failed to query objects\n");
         return NMO_CLI_EXIT_INTERNAL_ERROR;

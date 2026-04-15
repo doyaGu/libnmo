@@ -104,22 +104,6 @@ typedef struct parameter_list_data {
     size_t count;
 } parameter_list_data_t;
 
-static bool parameter_list_query_visitor(size_t index,
-                                         nmo_object_t *obj,
-                                         void *user_data)
-{
-    (void)index;
-
-    parameter_list_data_t *data = (parameter_list_data_t *)user_data;
-    if (data->arr) {
-        parameter_list_add_json(data->doc, data->arr, data->ctx, obj);
-    } else if (data->table) {
-        parameter_list_add_table_row(data->table, data->ctx, obj);
-    }
-    data->count++;
-    return true;
-}
-
 static int parameter_list_core_visitor(size_t index,
                                        nmo_object_t *obj,
                                        const nmo_cmd_ctx_t *c,
@@ -205,25 +189,20 @@ static int parameter_list_single(const char *file_path,
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
-    if (!repo) {
-        fprintf(stderr, "Error: Failed to get object repository\n");
-        nmo_tool_close_session(ctx, session);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
     nmo_object_query_t query = {
         .predicate = parameter_query_predicate,
         .predicate_user_data = (void *)registry,
     };
-    nmo_object_query_result_t query_result = {0};
+
+    nmo_cmd_ctx_t cmd;
+    nmo_cmd_ctx_init_from_repl(&cmd, ctx, session, false);
 
     if (doc && data) {
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
         parameter_list_data_t ld = { .ctx = ctx, .doc = doc, .arr = arr };
-        if (nmo_object_query_iterate(repo, &query, registry,
-                                     parameter_list_query_visitor, &ld,
-                                     &query_result) != NMO_OK) {
+        if (nmo_core_object_query_run(&cmd, &query,
+                                      parameter_list_core_visitor, &ld,
+                                      NULL) != NMO_CLI_EXIT_SUCCESS) {
             fprintf(stderr, "Error: Failed to query objects\n");
             nmo_tool_close_session(ctx, session);
             return NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -243,9 +222,9 @@ static int parameter_list_single(const char *file_path,
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
         parameter_list_data_t ld = { .ctx = ctx, .table = &table };
-        if (nmo_object_query_iterate(repo, &query, registry,
-                                     parameter_list_query_visitor, &ld,
-                                     &query_result) != NMO_OK) {
+        if (nmo_core_object_query_run(&cmd, &query,
+                                      parameter_list_core_visitor, &ld,
+                                      NULL) != NMO_CLI_EXIT_SUCCESS) {
             fprintf(stderr, "Error: Failed to query objects\n");
             nmo_cli_table_free(&table);
             nmo_tool_close_session(ctx, session);

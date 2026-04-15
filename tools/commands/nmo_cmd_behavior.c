@@ -210,22 +210,6 @@ static void behavior_list_add_table_row(nmo_cli_table_t *table, nmo_object_t *ob
     nmo_cli_table_add_row(table, cells, 7);
 }
 
-static bool behavior_list_query_visitor(size_t index,
-                                        nmo_object_t *obj,
-                                        void *user_data)
-{
-    (void)index;
-
-    behavior_list_data_t *list = (behavior_list_data_t *)user_data;
-    if (list->arr) {
-        behavior_list_add_json(list->doc, list->arr, list->ctx, obj);
-    } else if (list->table) {
-        behavior_list_add_table_row(list->table, obj);
-    }
-    list->count++;
-    return true;
-}
-
 static int behavior_list_core_visitor(size_t index,
                                       nmo_object_t *obj,
                                       const nmo_cmd_ctx_t *c,
@@ -268,25 +252,20 @@ static int behavior_list_single(const char *file_path,
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
-    if (!repo) {
-        fprintf(stderr, "Error: Failed to get object repository\n");
-        nmo_tool_close_session(ctx, session);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
     nmo_object_query_t query = {
         .class_id = NMO_CID_BEHAVIOR,
         .include_derived_classes = true,
     };
-    nmo_object_query_result_t query_result = {0};
+
+    nmo_cmd_ctx_t cmd;
+    nmo_cmd_ctx_init_from_repl(&cmd, ctx, session, false);
 
     if (doc && data) {
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
         behavior_list_data_t ld = { .ctx = ctx, .doc = doc, .arr = arr };
-        if (nmo_object_query_iterate(repo, &query, registry,
-                                     behavior_list_query_visitor, &ld,
-                                     &query_result) != NMO_OK) {
+        if (nmo_core_object_query_run(&cmd, &query,
+                                      behavior_list_core_visitor, &ld,
+                                      NULL) != NMO_CLI_EXIT_SUCCESS) {
             fprintf(stderr, "Error: Failed to query objects\n");
             nmo_tool_close_session(ctx, session);
             return NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -310,9 +289,9 @@ static int behavior_list_single(const char *file_path,
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
         behavior_list_data_t ld = { .ctx = ctx, .table = &table };
-        if (nmo_object_query_iterate(repo, &query, registry,
-                                     behavior_list_query_visitor, &ld,
-                                     &query_result) != NMO_OK) {
+        if (nmo_core_object_query_run(&cmd, &query,
+                                      behavior_list_core_visitor, &ld,
+                                      NULL) != NMO_CLI_EXIT_SUCCESS) {
             fprintf(stderr, "Error: Failed to query objects\n");
             nmo_cli_table_free(&table);
             nmo_tool_close_session(ctx, session);
@@ -551,17 +530,6 @@ static void behavior_stats_consume_object(behavior_stats_data_t *stats,
     }
 }
 
-static bool behavior_stats_query_visitor(size_t index,
-                                         nmo_object_t *obj,
-                                         void *user_data)
-{
-    (void)index;
-
-    behavior_stats_data_t *stats = (behavior_stats_data_t *)user_data;
-    behavior_stats_consume_object(stats, obj);
-    return !stats->oom;
-}
-
 static int behavior_stats_core_visitor(size_t index,
                                        nmo_object_t *obj,
                                        const nmo_cmd_ctx_t *c,
@@ -642,10 +610,12 @@ static int behavior_stats_single(const char *file_path,
         .registry = registry,
         .bb_reg = bb_reg,
     };
-    nmo_object_query_result_t query_result = {0};
-    if (nmo_object_query_iterate(repo, NULL, registry,
-                                 behavior_stats_query_visitor, &stats,
-                                 &query_result) != NMO_OK || stats.oom) {
+    nmo_cmd_ctx_t cmd;
+    nmo_cmd_ctx_init_from_repl(&cmd, ctx, session, false);
+    if (nmo_core_object_query_run(&cmd, NULL,
+                                  behavior_stats_core_visitor, &stats,
+                                  NULL) != NMO_CLI_EXIT_SUCCESS ||
+        stats.oom) {
         fprintf(stderr, "Error: Failed to query objects\n");
         free(stats.protos);
         free(stats.script_ids);
