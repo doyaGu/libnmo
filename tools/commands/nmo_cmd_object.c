@@ -220,20 +220,21 @@ static int object_list_single(const char *file_path,
     c.out = (text_ctx && text_ctx->out) ? text_ctx->out : stdout;
     c.colorize = text_ctx ? text_ctx->colorize : false;
 
-    /* Build filter */
-    nmo_core_object_filter_t filter = {0};
+    /* Build query */
+    nmo_object_query_t query = {0};
+    nmo_core_query_dsl_t query_dsl = {0};
     if (class_filter_str) {
-        filter.class_id = nmo_core_class_id(&c, class_filter_str);
-        if (!filter.class_id) {
+        query.class_id = nmo_core_class_id(&c, class_filter_str);
+        if (!query.class_id) {
             fprintf(stderr, "Error: Unknown class '%s'\n", class_filter_str);
             nmo_tool_close_session(ctx, session);
             return NMO_CLI_EXIT_ARG_ERROR;
         }
-        filter.class_derived = true;
+        query.include_derived_classes = true;
     }
     if (filter_expr) {
-        nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_EXPRESSION };
-        nmo_status_t st = nmo_dsl_compile(c.registry, NULL, filter_expr, &compile_opts, &filter.dsl_filter);
+        nmo_status_t st =
+            nmo_core_query_add_dsl_filter(&c, &query, filter_expr, &query_dsl);
         if (st != NMO_OK) {
             nmo_core_dsl_print_error(stderr, filter_expr, "Error: Failed to compile filter expression");
             nmo_tool_close_session(ctx, session);
@@ -248,7 +249,7 @@ static int object_list_single(const char *file_path,
 
     if (needs_collect) {
         obj_collect_t col = {0};
-        nmo_core_iter_objects(&c, &filter, obj_collect_visitor, &col, &result);
+        nmo_core_iter_objects(&c, &query, obj_collect_visitor, &col, &result);
 
         if (sort_key != NMO_CLI_SORT_NONE && col.count > 1) {
             s_sort_ctx = &c;
@@ -298,7 +299,7 @@ static int object_list_single(const char *file_path,
         if (doc && data) {
             yyjson_mut_val *arr = yyjson_mut_arr(doc);
             list_json_data_t jd = { .doc = doc, .arr = arr, .ctx = &c };
-            nmo_core_iter_objects(&c, &filter, list_json_visitor, &jd, &result);
+            nmo_core_iter_objects(&c, &query, list_json_visitor, &jd, &result);
             yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)result.matched);
             yyjson_mut_obj_add_val(doc, data, "objects", arr);
         } else {
@@ -311,7 +312,7 @@ static int object_list_single(const char *file_path,
             nmo_cli_table_t table;
             nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
             list_table_data_t td = { .table = &table, .ctx = &c };
-            nmo_core_iter_objects(&c, &filter, list_table_visitor, &td, &result);
+            nmo_core_iter_objects(&c, &query, list_table_visitor, &td, &result);
             fprintf(c.out, "Objects: %zu", result.matched);
             if (class_filter_str) fprintf(c.out, " (filtered by class: %s)", class_filter_str);
             if (filter_expr) fprintf(c.out, " (filtered by: %s)", filter_expr);
@@ -321,9 +322,7 @@ static int object_list_single(const char *file_path,
         }
     }
 
-    if (filter.dsl_filter) {
-        nmo_dsl_program_destroy(filter.dsl_filter);
-    }
+    nmo_core_query_dsl_destroy(&query_dsl);
     nmo_tool_close_session(ctx, session);
     return rc;
 }
@@ -386,19 +385,20 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    /* Build filter */
-    nmo_core_object_filter_t filter = {0};
+    /* Build query */
+    nmo_object_query_t query = {0};
+    nmo_core_query_dsl_t query_dsl = {0};
     if (class_filter_str) {
-        filter.class_id = nmo_core_class_id(&c, class_filter_str);
-        if (!filter.class_id) {
+        query.class_id = nmo_core_class_id(&c, class_filter_str);
+        if (!query.class_id) {
             fprintf(stderr, "Error: Unknown class '%s'\n", class_filter_str);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
-        filter.class_derived = true;
+        query.include_derived_classes = true;
     }
     if (filter_expr) {
-        nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_EXPRESSION };
-        nmo_status_t st = nmo_dsl_compile(c.registry, NULL, filter_expr, &compile_opts, &filter.dsl_filter);
+        nmo_status_t st =
+            nmo_core_query_add_dsl_filter(&c, &query, filter_expr, &query_dsl);
         if (st != NMO_OK) {
             nmo_core_dsl_print_error(stderr, filter_expr, "Error: Failed to compile filter expression");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
@@ -411,7 +411,7 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
     if (needs_collect) {
         /* Path A: collect -> sort -> truncate -> output */
         obj_collect_t col = {0};
-        nmo_core_iter_objects(&c, &filter, obj_collect_visitor, &col, &result);
+        nmo_core_iter_objects(&c, &query, obj_collect_visitor, &col, &result);
 
         /* Sort if requested */
         if (sort_key != NMO_CLI_SORT_NONE && col.count > 1) {
@@ -485,7 +485,7 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
             yyjson_mut_val *arr = yyjson_mut_arr(doc);
 
             list_json_data_t jd = { .doc = doc, .arr = arr, .ctx = &c };
-            nmo_core_iter_objects(&c, &filter, list_json_visitor, &jd, &result);
+            nmo_core_iter_objects(&c, &query, list_json_visitor, &jd, &result);
 
             yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)result.matched);
             yyjson_mut_obj_add_val(doc, data, "objects", arr);
@@ -504,7 +504,7 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
             nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
             list_table_data_t td = { .table = &table, .ctx = &c };
-            nmo_core_iter_objects(&c, &filter, list_table_visitor, &td, &result);
+            nmo_core_iter_objects(&c, &query, list_table_visitor, &td, &result);
 
             fprintf(c.out, "Objects: %zu", result.matched);
             if (class_filter_str) {
@@ -520,9 +520,7 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
         }
     }
 
-    if (filter.dsl_filter) {
-        nmo_dsl_program_destroy(filter.dsl_filter);
-    }
+    nmo_core_query_dsl_destroy(&query_dsl);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
@@ -1028,18 +1026,20 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    /* Build filter */
-    nmo_core_object_filter_t filter = {0};
+    /* Build query */
+    nmo_object_query_t query = {0};
     if (class_filter_str) {
-        filter.class_id = nmo_core_class_id(&c, class_filter_str);
-        if (!filter.class_id) {
+        query.class_id = nmo_core_class_id(&c, class_filter_str);
+        if (!query.class_id) {
             fprintf(stderr, "Error: Unknown class '%s'\n", class_filter_str);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
-        filter.class_derived = true;
+        query.include_derived_classes = true;
     }
     if (name_filter) {
-        filter.name_pattern = name_filter;
+        query.name = name_filter;
+        query.name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD;
+        query.name_case_insensitive = true;
     }
 
     nmo_core_iter_result_t result;
@@ -1048,19 +1048,19 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         /* Record query */
-        yyjson_mut_val *query = yyjson_mut_obj(doc);
+        yyjson_mut_val *query_json = yyjson_mut_obj(doc);
         if (class_filter_str) {
-            yyjson_mut_obj_add_str(doc, query, "class_name", class_filter_str);
+            yyjson_mut_obj_add_str(doc, query_json, "class_name", class_filter_str);
         }
         if (name_filter) {
-            yyjson_mut_obj_add_str(doc, query, "name_pattern", name_filter);
+            yyjson_mut_obj_add_str(doc, query_json, "name_pattern", name_filter);
         }
-        yyjson_mut_obj_add_val(doc, data, "query", query);
+        yyjson_mut_obj_add_val(doc, data, "query", query_json);
 
         yyjson_mut_val *matches = yyjson_mut_arr(doc);
 
         find_json_data_t jd = { .doc = doc, .arr = matches, .ctx = &c };
-        nmo_core_iter_objects(&c, &filter, find_json_visitor, &jd, &result);
+        nmo_core_iter_objects(&c, &query, find_json_visitor, &jd, &result);
 
         yyjson_mut_obj_add_uint(doc, data, "match_count", (uint64_t)result.matched);
         yyjson_mut_obj_add_val(doc, data, "matches", matches);
@@ -1078,7 +1078,7 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
         find_table_data_t td = { .table = &table, .ctx = &c };
-        nmo_core_iter_objects(&c, &filter, find_table_visitor, &td, &result);
+        nmo_core_iter_objects(&c, &query, find_table_visitor, &td, &result);
 
         fprintf(c.out, "Found: %zu objects", result.matched);
         if (class_filter_str) {
@@ -1126,35 +1126,38 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    /* Build filter */
-    nmo_core_object_filter_t filter = {0};
+    /* Build query */
+    nmo_object_query_t query = {0};
+    nmo_core_query_dsl_t query_dsl = {0};
     if (class_filter_str) {
-        filter.class_id = nmo_core_class_id(&c, class_filter_str);
-        if (!filter.class_id) {
+        query.class_id = nmo_core_class_id(&c, class_filter_str);
+        if (!query.class_id) {
             fprintf(stderr, "Error: Unknown class '%s'\n", class_filter_str);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
-        filter.class_derived = true;
+        query.include_derived_classes = true;
     }
     if (name_pattern) {
-        filter.name_pattern = name_pattern;
+        query.name = name_pattern;
+        query.name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD;
+        query.name_case_insensitive = true;
     }
     if (filter_expr) {
-        nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_EXPRESSION };
-        nmo_status_t st = nmo_dsl_compile(c.registry, NULL, filter_expr, &compile_opts, &filter.dsl_filter);
+        nmo_status_t st =
+            nmo_core_query_add_dsl_filter(&c, &query, filter_expr, &query_dsl);
         if (st != NMO_OK) {
             nmo_core_dsl_print_error(stderr, filter_expr, "Error: Failed to compile filter expression");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
     }
     if (id_filter) {
-        filter.object_id = id_filter;
+        query.object_id = id_filter;
     }
 
     /* Collect matching objects */
     obj_collect_t col = {0};
     nmo_core_iter_result_t iter_result;
-    nmo_core_iter_objects(&c, &filter, obj_collect_visitor, &col, &iter_result);
+    nmo_core_iter_objects(&c, &query, obj_collect_visitor, &col, &iter_result);
 
     /* Summary config */
     nmo_summary_config_t cfg = nmo_summary_config_default();
@@ -1174,7 +1177,7 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         if (!doc) {
             free(col.objects);
-            if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
+            nmo_core_query_dsl_destroy(&query_dsl);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
         yyjson_mut_val *data = yyjson_mut_obj(doc);
@@ -1253,9 +1256,7 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
     }
 
     free(col.objects);
-    if (filter.dsl_filter) {
-        nmo_dsl_program_destroy(filter.dsl_filter);
-    }
+    nmo_core_query_dsl_destroy(&query_dsl);
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }

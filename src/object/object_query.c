@@ -301,9 +301,9 @@ static nmo_status_t query_match_name(
     return NMO_OK;
 }
 
-static bool query_collect_visitor(size_t match_index, nmo_object_t *object, void *user_data)
+static bool query_collect_visitor(size_t object_index, nmo_object_t *object, void *user_data)
 {
-    (void)match_index;
+    (void)object_index;
     query_collect_ctx_t *ctx = (query_collect_ctx_t *)user_data;
     ctx->objects[ctx->count++] = object;
     return true;
@@ -397,11 +397,10 @@ nmo_status_t nmo_object_query_iterate(
             continue;
         }
 
-        size_t match_index = result.matched;
         result.matched++;
         if (visitor != NULL) {
             result.visited++;
-            if (!visitor(match_index, object, user_data)) {
+            if (!visitor(i, object, user_data)) {
                 result.stopped_early = true;
                 break;
             }

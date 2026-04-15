@@ -821,22 +821,25 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    /* Build filter */
-    nmo_core_object_filter_t filter = {0};
+    /* Build query */
+    nmo_object_query_t query = {0};
+    nmo_core_query_dsl_t query_dsl = {0};
     if (class_filter_str) {
-        filter.class_id = nmo_core_class_id(&c, class_filter_str);
-        if (!filter.class_id) {
+        query.class_id = nmo_core_class_id(&c, class_filter_str);
+        if (!query.class_id) {
             fprintf(stderr, "Error: Unknown class '%s'\n", class_filter_str);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
-        filter.class_derived = true;
+        query.include_derived_classes = true;
     }
     if (name_pattern) {
-        filter.name_pattern = name_pattern;
+        query.name = name_pattern;
+        query.name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD;
+        query.name_case_insensitive = true;
     }
     if (filter_expr) {
-        nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_EXPRESSION };
-        nmo_status_t st = nmo_dsl_compile(c.registry, NULL, filter_expr, &compile_opts, &filter.dsl_filter);
+        nmo_status_t st =
+            nmo_core_query_add_dsl_filter(&c, &query, filter_expr, &query_dsl);
         if (st != NMO_OK) {
             nmo_core_dsl_print_error(stderr, filter_expr, "Error: Failed to compile filter expression");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
@@ -846,12 +849,12 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     /* Collect matching objects */
     convert_obj_collect_t col = {0};
     nmo_core_iter_result_t iter_result;
-    nmo_core_iter_objects(&c, &filter, convert_obj_collect_visitor, &col, &iter_result);
+    nmo_core_iter_objects(&c, &query, convert_obj_collect_visitor, &col, &iter_result);
 
     if (col.count == 0) {
         fprintf(stderr, "No objects matched the filter.\n");
         free(col.objects);
-        if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
+        nmo_core_query_dsl_destroy(&query_dsl);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
     }
 
@@ -870,7 +873,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         if (!seed_ids) {
             fprintf(stderr, "Error: Out of memory\n");
             free(col.objects);
-            if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
+            nmo_core_query_dsl_destroy(&query_dsl);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
         for (size_t i = 0; i < seed_count; i++)
@@ -883,7 +886,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
             fprintf(stderr, "Error: Failed to build reference graph\n");
             free(seed_ids);
             free(col.objects);
-            if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
+            nmo_core_query_dsl_destroy(&query_dsl);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
@@ -892,7 +895,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         if (!deps_arena) {
             free(seed_ids);
             free(col.objects);
-            if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
+            nmo_core_query_dsl_destroy(&query_dsl);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
@@ -907,7 +910,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
             nmo_arena_destroy(deps_arena);
             free(seed_ids);
             free(col.objects);
-            if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
+            nmo_core_query_dsl_destroy(&query_dsl);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
@@ -917,7 +920,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
             nmo_arena_destroy(deps_arena);
             free(seed_ids);
             free(col.objects);
-            if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
+            nmo_core_query_dsl_destroy(&query_dsl);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
@@ -1000,7 +1003,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
         free(final_objects);
         free(col.objects);
-        if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
+        nmo_core_query_dsl_destroy(&query_dsl);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
     }
 
@@ -1009,7 +1012,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     if (!include_ids) {
         free(final_objects);
         free(col.objects);
-        if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
+        nmo_core_query_dsl_destroy(&query_dsl);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
     for (size_t i = 0; i < final_count; i++)
@@ -1030,7 +1033,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         free(include_ids);
         free(final_objects);
         free(col.objects);
-        if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
+        nmo_core_query_dsl_destroy(&query_dsl);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
     }
 
@@ -1064,6 +1067,6 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     free(include_ids);
     free(final_objects);
     free(col.objects);
-    if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
+    nmo_core_query_dsl_destroy(&query_dsl);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }

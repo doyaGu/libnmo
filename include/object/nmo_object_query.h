@@ -52,7 +52,7 @@ typedef struct nmo_object_query_result {
 } nmo_object_query_result_t;
 
 typedef bool (*nmo_object_query_visitor_fn)(
-    size_t match_index,
+    size_t object_index,
     nmo_object_t *object,
     void *user_data);
 

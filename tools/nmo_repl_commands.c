@@ -386,7 +386,7 @@ static int cmd_list(nmo_repl_context_t *repl, int argc, char **argv) {
     nmo_cmd_ctx_t c;
     nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
 
-    nmo_core_object_filter_t filter = {0};
+    nmo_object_query_t query = {0};
     size_t limit = 0;
 
     if (argc > 1) {
@@ -397,16 +397,16 @@ static int cmd_list(nmo_repl_context_t *repl, int argc, char **argv) {
 
         if (token && token[0] != '\0') {
             if (isdigit((unsigned char)token[0]) || token[0] == '-') {
-                filter.class_id = (nmo_class_id_t)atoi(token);
+                query.class_id = (nmo_class_id_t)atoi(token);
             } else {
-                filter.class_id = nmo_core_class_id(&c, token);
-                if (filter.class_id == 0) {
+                query.class_id = nmo_core_class_id(&c, token);
+                if (query.class_id == 0) {
                     fprintf(stderr, "Unknown class: %s\n", token);
                     fprintf(stderr, "Tip: use a numeric class_id or a known type name (e.g. CKCamera).\n");
                     return -1;
                 }
             }
-            filter.class_derived = false; /* REPL uses exact class match */
+            query.include_derived_classes = false; /* REPL uses exact class match */
         }
     }
 
@@ -418,15 +418,15 @@ static int cmd_list(nmo_repl_context_t *repl, int argc, char **argv) {
 
     repl_list_data_t ld = { .repl = repl, .displayed = 0, .limit = limit };
     nmo_core_iter_result_t result;
-    nmo_core_iter_objects(&c, filter.class_id ? &filter : NULL,
+    nmo_core_iter_objects(&c, query.class_id ? &query : NULL,
                           repl_list_visitor, &ld, &result);
 
-    if (filter.class_id) {
+    if (query.class_id) {
         char class_buf[64];
-        const char *class_name = nmo_core_class_name_or(&c, filter.class_id,
+        const char *class_name = nmo_core_class_name_or(&c, query.class_id,
                                                          class_buf, sizeof(class_buf));
         printf("\n%zu/%zu objects shown (class %d, %s)\n",
-               ld.displayed, result.total, (int)filter.class_id, class_name);
+               ld.displayed, result.total, (int)query.class_id, class_name);
     } else {
         printf("\n%zu/%zu objects shown\n", ld.displayed, result.total);
     }
@@ -581,7 +581,7 @@ static int cmd_find(nmo_repl_context_t *repl, int argc, char **argv) {
     nmo_cmd_ctx_t c;
     nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
 
-    nmo_core_object_filter_t filter = {0};
+    nmo_object_query_t query = {0};
     const char *token = argv[1];
 
     /* Buffer for regex pattern extraction (must outlive filter) */
@@ -590,19 +590,19 @@ static int cmd_find(nmo_repl_context_t *repl, int argc, char **argv) {
     if (strcmp(token, "class") == 0 && argc > 2) {
         const char *arg = argv[2];
         if (isdigit((unsigned char)arg[0]) || arg[0] == '-') {
-            filter.class_id = (nmo_class_id_t)atoi(arg);
+            query.class_id = (nmo_class_id_t)atoi(arg);
         } else {
-            filter.class_id = nmo_core_class_id(&c, arg);
-            if (filter.class_id == 0) {
+            query.class_id = nmo_core_class_id(&c, arg);
+            if (query.class_id == 0) {
                 fprintf(stderr, "Unknown class: %s\n", arg);
                 return -1;
             }
         }
-        filter.class_derived = false; /* REPL uses exact match */
+        query.include_derived_classes = false; /* REPL uses exact match */
     } else if (strcmp(token, "id") == 0 && argc > 2) {
         uint32_t id_val = 0;
         if (nmo_repl_parse_u32(argv[2], &id_val)) {
-            filter.object_id = (nmo_object_id_t)id_val;
+            query.object_id = (nmo_object_id_t)id_val;
         }
     } else {
         size_t len = strlen(token);
@@ -614,17 +614,20 @@ static int cmd_find(nmo_repl_context_t *repl, int argc, char **argv) {
             }
             memcpy(regex_buf, token + 1, len);
             regex_buf[len] = '\0';
-            filter.name_regex = regex_buf;
-            filter.regex_icase = repl->regex_icase;
+            query.name = regex_buf;
+            query.name_mode = NMO_OBJECT_QUERY_NAME_REGEX;
+            query.name_case_insensitive = repl->regex_icase;
         } else {
-            filter.name_substr = token;
+            query.name = token;
+            query.name_mode = NMO_OBJECT_QUERY_NAME_SUBSTRING;
+            query.name_case_insensitive = false;
         }
     }
 
     printf("\nMatches:\n");
 
     repl_find_data_t fd = { .repl = repl, .found = 0 };
-    nmo_core_iter_objects(&c, &filter, repl_find_visitor, &fd, NULL);
+    nmo_core_iter_objects(&c, &query, repl_find_visitor, &fd, NULL);
 
     if (!fd.found) {
         printf("No matches.\n");
@@ -943,25 +946,21 @@ static int cmd_query(nmo_repl_context_t *repl, int argc, char **argv) {
     nmo_cmd_ctx_t c;
     nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
 
-    /* Compile DSL filter */
-    nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_EXPRESSION };
-    nmo_dsl_program_t *program = NULL;
-    nmo_status_t st = nmo_dsl_compile(c.registry, NULL, expr_buf, &compile_opts, &program);
+    nmo_object_query_t query = {0};
+    nmo_core_query_dsl_t query_dsl = {0};
+    nmo_status_t st = nmo_core_query_add_dsl_filter(&c, &query, expr_buf, &query_dsl);
     if (st != NMO_OK) {
         nmo_core_dsl_print_error(stderr, expr_buf, "Error: Failed to compile expression");
         return -1;
     }
 
-    nmo_core_object_filter_t filter = {0};
-    filter.dsl_filter = program;
-
     printf("\nQuery matches:\n");
 
     repl_query_data_t qd = { .repl = repl, .found = 0 };
     nmo_core_iter_result_t result;
-    nmo_core_iter_objects(&c, &filter, repl_query_visitor, &qd, &result);
+    nmo_core_iter_objects(&c, &query, repl_query_visitor, &qd, &result);
 
-    nmo_dsl_program_destroy(program);
+    nmo_core_query_dsl_destroy(&query_dsl);
 
     if (!qd.found) {
         printf("No matches.\n");

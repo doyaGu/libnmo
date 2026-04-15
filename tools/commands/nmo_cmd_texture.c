@@ -214,13 +214,14 @@ int nmo_cmd_texture_list(int argc, char **argv, const nmo_cli_global_opts_t *glo
     if (rc) return rc;
 
     /* Collect texture objects */
-    nmo_core_object_filter_t filter = {0};
-    filter.class_id = NMO_CID_TEXTURE;
-    filter.class_derived = true;
+    nmo_object_query_t query = {
+        .class_id = NMO_CID_TEXTURE,
+        .include_derived_classes = true
+    };
 
     texture_list_t tl = {0};
     nmo_core_iter_result_t iter_result;
-    nmo_core_iter_objects(&c, &filter, collect_texture_visitor, &tl, &iter_result);
+    nmo_core_iter_objects(&c, &query, collect_texture_visitor, &tl, &iter_result);
 
     /* Sort if requested */
     if (sort_by && tl.count > 1) {
@@ -860,19 +861,22 @@ int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *
     if (rc) return rc;
 
     /* Collect textures */
-    nmo_core_object_filter_t filter = {0};
-    filter.class_id = NMO_CID_TEXTURE;
-    filter.class_derived = true;
+    nmo_object_query_t query = {
+        .class_id = NMO_CID_TEXTURE,
+        .include_derived_classes = true
+    };
     if (filter_id) {
-        filter.object_id = filter_id;
+        query.object_id = filter_id;
     }
     if (name_pat) {
-        filter.name_pattern = name_pat;
+        query.name = name_pat;
+        query.name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD;
+        query.name_case_insensitive = true;
     }
 
     texture_list_t tl = {0};
     nmo_core_iter_result_t iter_result;
-    nmo_core_iter_objects(&c, &filter, collect_texture_visitor, &tl, &iter_result);
+    nmo_core_iter_objects(&c, &query, collect_texture_visitor, &tl, &iter_result);
 
     if (tl.count == 0) {
         if (filter_id) {

@@ -5,7 +5,6 @@
 
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_index.h"
-#include "object/nmo_object_query.h"
 #include "format/nmo_object.h"
 #include "core/nmo_indexed_map.h"
 #include "core/nmo_hash_table.h"
@@ -701,59 +700,4 @@ nmo_object_t **nmo_object_repository_find_by_class(nmo_object_repository_t *repo
  */
 nmo_object_t *nmo_object_repository_get_by_index(const nmo_object_repository_t *repo, size_t index) {
     return nmo_object_repository_get_at(repo, index);
-}
-
-/* ============================================================================
- * Filtered iteration
- * ============================================================================ */
-
-typedef struct repository_filter_bridge {
-    nmo_object_visitor_fn visitor;
-    void *user_data;
-} repository_filter_bridge_t;
-
-static bool repository_filter_query_visitor(
-    size_t match_index,
-    nmo_object_t *object,
-    void *user_data)
-{
-    (void)match_index;
-    repository_filter_bridge_t *bridge = (repository_filter_bridge_t *)user_data;
-    if (bridge == NULL || bridge->visitor == NULL) {
-        return true;
-    }
-    return bridge->visitor(object, bridge->user_data);
-}
-
-nmo_status_t nmo_object_repository_iter_filtered(
-    nmo_object_repository_t *repo,
-    const nmo_object_filter_t *filter,
-    nmo_object_visitor_fn visitor,
-    void *user_data)
-{
-    nmo_object_query_t query = {0};
-    if (filter != NULL) {
-        query.class_id = filter->class_id;
-        if (filter->name_pattern != NULL) {
-            query.name = filter->name_pattern;
-            query.name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD;
-            query.name_case_insensitive = filter->case_insensitive;
-        } else if (filter->name_substring != NULL) {
-            query.name = filter->name_substring;
-            query.name_mode = NMO_OBJECT_QUERY_NAME_SUBSTRING;
-            query.name_case_insensitive = filter->case_insensitive;
-        }
-    }
-
-    repository_filter_bridge_t bridge = {
-        .visitor = visitor,
-        .user_data = user_data
-    };
-    return nmo_object_query_iterate(
-        repo,
-        filter != NULL ? &query : NULL,
-        NULL,
-        visitor != NULL ? repository_filter_query_visitor : NULL,
-        &bridge,
-        NULL);
 }

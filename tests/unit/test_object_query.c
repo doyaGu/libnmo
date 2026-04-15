@@ -97,6 +97,22 @@ static bool stop_after_first(size_t match_index, nmo_object_t *object, void *use
     return false;
 }
 
+typedef struct query_index_capture {
+    size_t indexes[4];
+    size_t count;
+} query_index_capture_t;
+
+static bool capture_query_index(size_t object_index, nmo_object_t *object, void *user_data)
+{
+    query_index_capture_t *capture = (query_index_capture_t *)user_data;
+    (void)object;
+    if (capture->count >= 4) {
+        return false;
+    }
+    capture->indexes[capture->count++] = object_index;
+    return true;
+}
+
 TEST(object_query, filters_by_object_id)
 {
     setup_objects();
@@ -212,10 +228,32 @@ TEST(object_query, visitor_can_stop_early)
     teardown_objects();
 }
 
+TEST(object_query, visitor_receives_repository_index)
+{
+    setup_objects();
+
+    nmo_object_query_t query = {
+        .name = "player*",
+        .name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD,
+        .name_case_insensitive = true
+    };
+    query_index_capture_t capture = {0};
+    nmo_object_query_result_t result = {0};
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(
+        g_repo, &query, NULL, capture_query_index, &capture, &result));
+    ASSERT_EQ(2, result.matched);
+    ASSERT_EQ(2, capture.count);
+    ASSERT_EQ(1, capture.indexes[0]);
+    ASSERT_EQ(3, capture.indexes[1]);
+
+    teardown_objects();
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(object_query, filters_by_object_id);
 REGISTER_TEST(object_query, exact_and_derived_class_matching);
 REGISTER_TEST(object_query, name_modes_share_case_rules);
 REGISTER_TEST(object_query, predicate_and_collect);
 REGISTER_TEST(object_query, visitor_can_stop_early);
+REGISTER_TEST(object_query, visitor_receives_repository_index);
 TEST_MAIN_END()

@@ -84,20 +84,6 @@ typedef int (*nmo_core_object_fn)(size_t index, nmo_object_t *obj,
                                   const nmo_cmd_ctx_t *c, void *user);
 
 /**
- * @brief Filter criteria for object iteration
- */
-typedef struct {
-    nmo_class_id_t class_id;        /**< Filter by class (0 = any) */
-    bool class_derived;             /**< Match derived classes too */
-    const char *name_pattern;       /**< Wildcard match (*foo*, foo*) */
-    const char *name_substr;        /**< Substring match */
-    const char *name_regex;         /**< Regex match */
-    bool regex_icase;               /**< Case-insensitive regex */
-    nmo_dsl_program_t *dsl_filter;  /**< DSL expression filter */
-    nmo_object_id_t object_id;      /**< Filter by object ID (0 = any) */
-} nmo_core_object_filter_t;
-
-/**
  * @brief Iteration result counters
  */
 typedef struct {
@@ -105,6 +91,28 @@ typedef struct {
     size_t matched;                 /**< Objects passing all filters */
     size_t visited;                 /**< Objects visited (may be < matched if stopped early) */
 } nmo_core_iter_result_t;
+
+/**
+ * @brief Owned DSL predicate attached to an object query.
+ */
+typedef struct nmo_core_query_dsl {
+    const nmo_cmd_ctx_t *cmd;
+    nmo_dsl_program_t *program;
+} nmo_core_query_dsl_t;
+
+/**
+ * @brief Compile a DSL expression and attach it as query->predicate.
+ */
+nmo_status_t nmo_core_query_add_dsl_filter(
+    const nmo_cmd_ctx_t *c,
+    nmo_object_query_t *query,
+    const char *expr,
+    nmo_core_query_dsl_t *out_dsl);
+
+/**
+ * @brief Destroy a DSL predicate helper created by nmo_core_query_add_dsl_filter.
+ */
+void nmo_core_query_dsl_destroy(nmo_core_query_dsl_t *dsl);
 
 /**
  * @brief Iterate objects with optional filtering and visitor callback
@@ -117,7 +125,7 @@ typedef struct {
  * @return NMO_CLI_EXIT_SUCCESS or NMO_CLI_EXIT_INTERNAL_ERROR
  */
 int nmo_core_iter_objects(const nmo_cmd_ctx_t *c,
-                          const nmo_core_object_filter_t *filter,
+                          const nmo_object_query_t *query,
                           nmo_core_object_fn visitor, void *user,
                           nmo_core_iter_result_t *result);
 

@@ -522,23 +522,26 @@ static int delete_batch_handler(
     int rc = nmo_cmd_ctx_init_with_file(&c, input_path, global);
     if (rc) return rc;
 
-    /* Build filter */
-    nmo_core_object_filter_t filter;
-    memset(&filter, 0, sizeof(filter));
+    /* Build query */
+    nmo_object_query_t query;
+    memset(&query, 0, sizeof(query));
+    nmo_core_query_dsl_t query_dsl = {0};
     if (ctx->has_class) {
-        filter.class_id = nmo_core_class_id(&c, ctx->class_str);
-        if (!filter.class_id) {
+        query.class_id = nmo_core_class_id(&c, ctx->class_str);
+        if (!query.class_id) {
             fprintf(stderr, "Error: Unknown class '%s'\n", ctx->class_str);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
-        filter.class_derived = true;
+        query.include_derived_classes = true;
     }
-    if (ctx->has_name) filter.name_pattern = ctx->name_str;
+    if (ctx->has_name) {
+        query.name = ctx->name_str;
+        query.name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD;
+        query.name_case_insensitive = true;
+    }
     if (ctx->has_filter) {
-        nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_EXPRESSION };
-        nmo_status_t st = nmo_dsl_compile(
-            c.registry, NULL, ctx->filter_str,
-            &compile_opts, &filter.dsl_filter);
+        nmo_status_t st =
+            nmo_core_query_add_dsl_filter(&c, &query, ctx->filter_str, &query_dsl);
         if (st != NMO_OK) {
             nmo_core_dsl_print_error(stderr, ctx->filter_str,
                                      "Error: Failed to compile filter expression");
@@ -549,11 +552,9 @@ static int delete_batch_handler(
     /* Collect matching IDs */
     delete_id_collector_t col = {0};
     nmo_core_iter_result_t iter_result;
-    rc = nmo_core_iter_objects(&c, &filter, delete_collect_visitor, &col, &iter_result);
+    rc = nmo_core_iter_objects(&c, &query, delete_collect_visitor, &col, &iter_result);
 
-    if (filter.dsl_filter) {
-        nmo_dsl_program_destroy(filter.dsl_filter);
-    }
+    nmo_core_query_dsl_destroy(&query_dsl);
 
     if (rc < 0) {
         free(col.ids);
@@ -666,25 +667,26 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     if (use_filter) {
         /* Filter-based collection */
-        nmo_core_object_filter_t filter;
-        memset(&filter, 0, sizeof(filter));
+        nmo_object_query_t query;
+        memset(&query, 0, sizeof(query));
+        nmo_core_query_dsl_t query_dsl = {0};
 
         if (vals[OPT_CLASS].present) {
-            filter.class_id = nmo_core_class_id(&c, vals[OPT_CLASS].val.str);
-            if (!filter.class_id) {
+            query.class_id = nmo_core_class_id(&c, vals[OPT_CLASS].val.str);
+            if (!query.class_id) {
                 fprintf(stderr, "Error: Unknown class '%s'\n", vals[OPT_CLASS].val.str);
                 return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
             }
-            filter.class_derived = true;
+            query.include_derived_classes = true;
         }
         if (vals[OPT_NAME].present) {
-            filter.name_pattern = vals[OPT_NAME].val.str;
+            query.name = vals[OPT_NAME].val.str;
+            query.name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD;
+            query.name_case_insensitive = true;
         }
         if (vals[OPT_FILTER].present) {
-            nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_EXPRESSION };
-            nmo_status_t st = nmo_dsl_compile(
-                c.registry, NULL, vals[OPT_FILTER].val.str,
-                &compile_opts, &filter.dsl_filter);
+            nmo_status_t st = nmo_core_query_add_dsl_filter(
+                &c, &query, vals[OPT_FILTER].val.str, &query_dsl);
             if (st != NMO_OK) {
                 fprintf(stderr, "Error: Failed to compile filter expression\n");
                 return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
@@ -693,11 +695,9 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
         delete_id_collector_t col = {0};
         nmo_core_iter_result_t iter_result;
-        rc = nmo_core_iter_objects(&c, &filter, delete_collect_visitor, &col, &iter_result);
+        rc = nmo_core_iter_objects(&c, &query, delete_collect_visitor, &col, &iter_result);
 
-        if (filter.dsl_filter) {
-            nmo_dsl_program_destroy(filter.dsl_filter);
-        }
+        nmo_core_query_dsl_destroy(&query_dsl);
 
         if (rc < 0) {
             free(col.ids);
@@ -1114,25 +1114,26 @@ int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *glob
     bool target_ids_owned = false;
 
     if (use_filter) {
-        nmo_core_object_filter_t filter;
-        memset(&filter, 0, sizeof(filter));
+        nmo_object_query_t query;
+        memset(&query, 0, sizeof(query));
+        nmo_core_query_dsl_t query_dsl = {0};
 
         if (vals[OPT_CLASS].present) {
-            filter.class_id = nmo_core_class_id(&c, vals[OPT_CLASS].val.str);
-            if (!filter.class_id) {
+            query.class_id = nmo_core_class_id(&c, vals[OPT_CLASS].val.str);
+            if (!query.class_id) {
                 fprintf(stderr, "Error: Unknown class '%s'\n", vals[OPT_CLASS].val.str);
                 return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
             }
-            filter.class_derived = true;
+            query.include_derived_classes = true;
         }
         if (vals[OPT_NAME].present) {
-            filter.name_pattern = vals[OPT_NAME].val.str;
+            query.name = vals[OPT_NAME].val.str;
+            query.name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD;
+            query.name_case_insensitive = true;
         }
         if (vals[OPT_FILTER].present) {
-            nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_EXPRESSION };
-            nmo_status_t st = nmo_dsl_compile(
-                c.registry, NULL, vals[OPT_FILTER].val.str,
-                &compile_opts, &filter.dsl_filter);
+            nmo_status_t st = nmo_core_query_add_dsl_filter(
+                &c, &query, vals[OPT_FILTER].val.str, &query_dsl);
             if (st != NMO_OK) {
                 fprintf(stderr, "Error: Failed to compile filter expression\n");
                 return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
@@ -1141,11 +1142,9 @@ int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
         delete_id_collector_t col = {0};
         nmo_core_iter_result_t iter_result;
-        rc = nmo_core_iter_objects(&c, &filter, delete_collect_visitor, &col, &iter_result);
+        rc = nmo_core_iter_objects(&c, &query, delete_collect_visitor, &col, &iter_result);
 
-        if (filter.dsl_filter) {
-            nmo_dsl_program_destroy(filter.dsl_filter);
-        }
+        nmo_core_query_dsl_destroy(&query_dsl);
 
         if (rc < 0) {
             free(col.ids);

@@ -81,11 +81,6 @@ bool nmo_core_regex_match(const char *text, const char *pattern, bool icase) {
  * 3. Object iteration
  * ============================================================================ */
 
-typedef struct nmo_core_query_bridge {
-    const nmo_cmd_ctx_t *cmd;
-    nmo_dsl_program_t *dsl_filter;
-} nmo_core_query_bridge_t;
-
 typedef struct nmo_core_visitor_bridge {
     const nmo_cmd_ctx_t *cmd;
     nmo_core_object_fn cli_visitor;
@@ -96,8 +91,8 @@ static bool nmo_core_object_query_dsl_predicate(
     const nmo_object_t *object,
     void *user_data)
 {
-    nmo_core_query_bridge_t *bridge = (nmo_core_query_bridge_t *)user_data;
-    if (bridge == NULL || bridge->cmd == NULL || bridge->dsl_filter == NULL) {
+    nmo_core_query_dsl_t *bridge = (nmo_core_query_dsl_t *)user_data;
+    if (bridge == NULL || bridge->cmd == NULL || bridge->program == NULL) {
         return true;
     }
 
@@ -107,50 +102,59 @@ static bool nmo_core_object_query_dsl_predicate(
     }
 
     nmo_dsl_value_t val = {0};
-    nmo_status_t st = nmo_dsl_eval_expr(bridge->dsl_filter, &eval_ctx, &val);
+    nmo_status_t st = nmo_dsl_eval_expr(bridge->program, &eval_ctx, &val);
     bool match = (st == NMO_OK) && nmo_core_dsl_is_truthy(&val);
     nmo_dsl_value_destroy(&val);
     return match;
 }
 
-static nmo_object_query_t nmo_core_to_object_query(
-    const nmo_core_object_filter_t *filter,
-    nmo_core_query_bridge_t *bridge)
+nmo_status_t nmo_core_query_add_dsl_filter(
+    const nmo_cmd_ctx_t *c,
+    nmo_object_query_t *query,
+    const char *expr,
+    nmo_core_query_dsl_t *out_dsl)
 {
-    nmo_object_query_t query = {0};
-    if (filter == NULL) {
-        return query;
+    if (c == NULL || query == NULL || out_dsl == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    query.object_id = filter->object_id;
-    query.class_id = filter->class_id;
-    query.include_derived_classes = filter->class_derived;
-
-    if (filter->name_regex != NULL) {
-        query.name = filter->name_regex;
-        query.name_mode = NMO_OBJECT_QUERY_NAME_REGEX;
-        query.name_case_insensitive = filter->regex_icase;
-    } else if (filter->name_pattern != NULL) {
-        query.name = filter->name_pattern;
-        query.name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD;
-        query.name_case_insensitive = true;
-    } else if (filter->name_substr != NULL) {
-        query.name = filter->name_substr;
-        query.name_mode = NMO_OBJECT_QUERY_NAME_SUBSTRING;
-        query.name_case_insensitive = false;
+    memset(out_dsl, 0, sizeof(*out_dsl));
+    if (expr == NULL || expr[0] == '\0') {
+        return NMO_OK;
     }
 
-    if (filter->dsl_filter != NULL && bridge != NULL) {
-        bridge->dsl_filter = filter->dsl_filter;
-        query.predicate = nmo_core_object_query_dsl_predicate;
-        query.predicate_user_data = bridge;
+    if (query->predicate != NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    return query;
+    nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_EXPRESSION };
+    nmo_dsl_program_t *program = NULL;
+    nmo_status_t status =
+        nmo_dsl_compile(c->registry, NULL, expr, &compile_opts, &program);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    out_dsl->cmd = c;
+    out_dsl->program = program;
+    query->predicate = nmo_core_object_query_dsl_predicate;
+    query->predicate_user_data = out_dsl;
+    return NMO_OK;
+}
+
+void nmo_core_query_dsl_destroy(nmo_core_query_dsl_t *dsl)
+{
+    if (dsl == NULL) {
+        return;
+    }
+    if (dsl->program != NULL) {
+        nmo_dsl_program_destroy(dsl->program);
+    }
+    memset(dsl, 0, sizeof(*dsl));
 }
 
 static bool nmo_core_object_query_visitor(
-    size_t match_index,
+    size_t object_index,
     nmo_object_t *object,
     void *user_data)
 {
@@ -159,11 +163,11 @@ static bool nmo_core_object_query_visitor(
         return true;
     }
     return bridge->cli_visitor(
-               match_index, object, bridge->cmd, bridge->cli_user) == 0;
+               object_index, object, bridge->cmd, bridge->cli_user) == 0;
 }
 
 int nmo_core_iter_objects(const nmo_cmd_ctx_t *c,
-                          const nmo_core_object_filter_t *filter,
+                          const nmo_object_query_t *query,
                           nmo_core_object_fn visitor, void *user,
                           nmo_core_iter_result_t *result) {
     if (c == NULL || c->session == NULL) {
@@ -175,12 +179,6 @@ int nmo_core_iter_objects(const nmo_cmd_ctx_t *c,
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_core_query_bridge_t query_bridge = {
-        .cmd = c,
-        .dsl_filter = NULL
-    };
-    nmo_object_query_t query =
-        nmo_core_to_object_query(filter, &query_bridge);
     nmo_core_visitor_bridge_t visitor_bridge = {
         .cmd = c,
         .cli_visitor = visitor,
@@ -190,7 +188,7 @@ int nmo_core_iter_objects(const nmo_cmd_ctx_t *c,
     nmo_object_query_result_t query_result = {0};
     nmo_status_t status = nmo_object_query_iterate(
         repo,
-        filter != NULL ? &query : NULL,
+        query,
         c->registry,
         visitor != NULL ? nmo_core_object_query_visitor : NULL,
         &visitor_bridge,
