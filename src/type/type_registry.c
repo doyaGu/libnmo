@@ -580,6 +580,29 @@ static nmo_status_t validate_type_descriptor(
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                  "Field '%s' exceeds type size", field->name);
             }
+            if ((field->flags & (NMO_FIELD_POINTER | NMO_FIELD_REPEATED)) ==
+                (NMO_FIELD_POINTER | NMO_FIELD_REPEATED)) {
+                if (field->count_field_name == NULL || field->count_field_name[0] == '\0') {
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                     "Pointer array field '%s' must declare count_field_name",
+                                     field->name);
+                }
+                bool found_count_field = false;
+                for (size_t j = 0; j < descriptor->field_count; j++) {
+                    const nmo_type_field_t *candidate = &descriptor->fields[j];
+                    if (candidate->name != NULL &&
+                        strcmp(candidate->name, field->count_field_name) == 0) {
+                        found_count_field = true;
+                        break;
+                    }
+                }
+                if (!found_count_field) {
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                     "Pointer array field '%s' references missing count field '%s'",
+                                     field->name,
+                                     field->count_field_name);
+                }
+            }
 
             /* Check for duplicate field names */
             for (size_t j = 0; j < i; j++) {
