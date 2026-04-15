@@ -708,53 +708,41 @@ nmo_object_t *nmo_object_repository_get_by_index(const nmo_object_repository_t *
  * ============================================================================ */
 
 /**
- * Simple wildcard matcher supporting '*' and '?' (case-sensitive).
+ * Iterative wildcard matcher supporting '*' and '?' — O(n*m) worst case.
+ * Uses backtracking single-pass algorithm (no recursion).
  */
-static bool wildcard_match(const char *pattern, const char *text) {
+static bool wildcard_match_impl(const char *pattern, const char *text, bool icase) {
     if (!pattern || !*pattern) return true;
     if (!text) text = "";
 
-    char pc = *pattern;
-    if (pc == '*') {
-        pattern++;
-        if (!*pattern) return true;
-        while (*text) {
-            if (wildcard_match(pattern, text)) return true;
+    const char *star = NULL;
+    const char *ss = text;
+    while (*text) {
+        char pc = icase ? (char)tolower((unsigned char)*pattern) : *pattern;
+        char tc = icase ? (char)tolower((unsigned char)*text) : *text;
+        if (pc == '?' || pc == tc) {
+            pattern++;
             text++;
+        } else if (*pattern == '*') {
+            star = pattern++;
+            ss = text;
+        } else if (star) {
+            pattern = star + 1;
+            text = ++ss;
+        } else {
+            return false;
         }
-        return wildcard_match(pattern, text);
     }
-    if (pc == '?') {
-        if (!*text) return false;
-        return wildcard_match(pattern + 1, text + 1);
-    }
-    if (pc != *text) return false;
-    return wildcard_match(pattern + 1, text + 1);
+    while (*pattern == '*') pattern++;
+    return !*pattern;
 }
 
-/**
- * Simple wildcard matcher supporting '*' and '?' (case-insensitive).
- */
-static bool wildcard_match_ci(const char *pattern, const char *text) {
-    if (!pattern || !*pattern) return true;
-    if (!text) text = "";
+static bool wildcard_match(const char *pattern, const char *text) {
+    return wildcard_match_impl(pattern, text, false);
+}
 
-    char pc = *pattern;
-    if (pc == '*') {
-        pattern++;
-        if (!*pattern) return true;
-        while (*text) {
-            if (wildcard_match_ci(pattern, text)) return true;
-            text++;
-        }
-        return wildcard_match_ci(pattern, text);
-    }
-    if (pc == '?') {
-        if (!*text) return false;
-        return wildcard_match_ci(pattern + 1, text + 1);
-    }
-    if (tolower((unsigned char)pc) != tolower((unsigned char)*text)) return false;
-    return wildcard_match_ci(pattern + 1, text + 1);
+static bool wildcard_match_ci(const char *pattern, const char *text) {
+    return wildcard_match_impl(pattern, text, true);
 }
 
 /**

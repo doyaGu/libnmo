@@ -23,13 +23,14 @@ void nmo_dot_escape_label(const char *src, char *dst, size_t dst_size) {
         return;
     }
     size_t j = 0;
-    for (size_t i = 0; src[i] && j + 2 < dst_size; i++) {
-        char ch = src[i];
-        if (ch == '"' || ch == '\\' || ch == '|' || ch == '{' ||
-            ch == '}' || ch == '<' || ch == '>') {
-            dst[j++] = '\\';
-        }
-        dst[j++] = ch;
+    for (size_t i = 0; src[i]; i++) {
+        bool need_escape = (src[i] == '"' || src[i] == '\\' || src[i] == '|' ||
+                            src[i] == '{' || src[i] == '}' ||
+                            src[i] == '<' || src[i] == '>');
+        size_t need = need_escape ? 2 : 1;
+        if (j + need >= dst_size) break; /* reserve 1 for NUL */
+        if (need_escape) dst[j++] = '\\';
+        dst[j++] = src[i];
     }
     dst[j] = '\0';
 }
