@@ -220,6 +220,10 @@ TEST(no_legacy_runtime_api_exports, scene_list_uses_shared_object_query_runner) 
     assert_file_has_no_substring("tools/commands/nmo_cmd_scene.c", "nmo_session_get_objects");
 }
 
+TEST(no_legacy_runtime_api_exports, mesh_commands_use_shared_object_query_runner) {
+    assert_file_has_no_substring("tools/commands/nmo_cmd_mesh.c", "nmo_session_get_objects");
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_exports);
 REGISTER_TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_pointer_state);
@@ -232,4 +236,5 @@ REGISTER_TEST(no_legacy_runtime_api_exports, entity_list_uses_shared_object_quer
 REGISTER_TEST(no_legacy_runtime_api_exports, material_list_uses_shared_object_query_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, data_list_uses_shared_object_query_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, scene_list_uses_shared_object_query_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, mesh_commands_use_shared_object_query_runner);
 TEST_MAIN_END()

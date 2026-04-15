@@ -86,6 +86,90 @@ static void argb_to_rgb_float(uint32_t argb, float *r, float *g, float *b) {
     *b = (float)((argb)       & 0xFF) / 255.0f;
 }
 
+typedef struct mesh_list_json_data {
+    yyjson_mut_doc *doc;
+    yyjson_mut_val *arr;
+    uint32_t found;
+} mesh_list_json_data_t;
+
+typedef struct mesh_list_table_data {
+    nmo_cli_table_t *table;
+    uint32_t found;
+} mesh_list_table_data_t;
+
+static int mesh_list_json_visitor(size_t index,
+                                  nmo_object_t *obj,
+                                  const nmo_cmd_ctx_t *c,
+                                  void *user)
+{
+    (void)index;
+    (void)c;
+    mesh_list_json_data_t *data = (mesh_list_json_data_t *)user;
+    if (obj == NULL || data == NULL || data->doc == NULL || data->arr == NULL) {
+        return 0;
+    }
+
+    yyjson_mut_doc *doc = data->doc;
+    yyjson_mut_val *item = yyjson_mut_obj(doc);
+    nmo_object_id_t id = nmo_object_get_id(obj);
+    yyjson_mut_obj_add_uint(doc, item, "id", id);
+
+    const char *name = nmo_object_get_name(obj);
+    nmo_cli_json_add_str_safe(doc, item, "name",
+                              (name && name[0]) ? name : "");
+
+    const nmo_mesh_state_t *ms =
+        (const nmo_mesh_state_t *)nmo_object_get_state(obj);
+    if (ms) {
+        yyjson_mut_obj_add_uint(doc, item, "vertices", ms->vertex_count);
+        yyjson_mut_obj_add_uint(doc, item, "faces", ms->face_count);
+        yyjson_mut_obj_add_uint(doc, item, "materials",
+                                ms->material_group_count);
+    }
+
+    yyjson_mut_arr_add_val(data->arr, item);
+    data->found++;
+    return 0;
+}
+
+static int mesh_list_table_visitor(size_t index,
+                                   nmo_object_t *obj,
+                                   const nmo_cmd_ctx_t *c,
+                                   void *user)
+{
+    (void)index;
+    (void)c;
+    mesh_list_table_data_t *data = (mesh_list_table_data_t *)user;
+    if (obj == NULL || data == NULL || data->table == NULL) {
+        return 0;
+    }
+
+    char id_buf[16];
+    snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
+
+    const char *name = nmo_object_get_name(obj);
+    if (!name || !name[0]) name = "-";
+
+    char vert_buf[16], face_buf[16], mat_buf[16];
+
+    const nmo_mesh_state_t *ms =
+        (const nmo_mesh_state_t *)nmo_object_get_state(obj);
+    if (ms) {
+        snprintf(vert_buf, sizeof(vert_buf), "%u", ms->vertex_count);
+        snprintf(face_buf, sizeof(face_buf), "%u", ms->face_count);
+        snprintf(mat_buf, sizeof(mat_buf), "%u", ms->material_group_count);
+    } else {
+        snprintf(vert_buf, sizeof(vert_buf), "-");
+        snprintf(face_buf, sizeof(face_buf), "-");
+        snprintf(mat_buf, sizeof(mat_buf), "-");
+    }
+
+    const char *cells[] = {id_buf, name, vert_buf, face_buf, mat_buf};
+    nmo_cli_table_add_row(data->table, cells, 5);
+    data->found++;
+    return 0;
+}
+
 /* ============================================================================
  * mesh list
  * ============================================================================ */
@@ -95,42 +179,21 @@ int nmo_cmd_mesh_list(int argc, char **argv, const nmo_cli_global_opts_t *global
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    (void)nmo_session_get_objects(c.session, &objects, &object_count);
+    nmo_object_query_t query = {0};
+    nmo_core_query_set_class_id(&query, NMO_CID_MESH, false);
 
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        uint32_t found = 0;
-
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            if (!obj || nmo_object_get_class_id(obj) != NMO_CID_MESH) continue;
-
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            nmo_object_id_t id = nmo_object_get_id(obj);
-            yyjson_mut_obj_add_uint(doc, item, "id", id);
-
-            const char *name = nmo_object_get_name(obj);
-            nmo_cli_json_add_str_safe(doc, item, "name",
-                                      (name && name[0]) ? name : "");
-
-            const nmo_mesh_state_t *ms =
-                (const nmo_mesh_state_t *)nmo_object_get_state(obj);
-            if (ms) {
-                yyjson_mut_obj_add_uint(doc, item, "vertices", ms->vertex_count);
-                yyjson_mut_obj_add_uint(doc, item, "faces", ms->face_count);
-                yyjson_mut_obj_add_uint(doc, item, "materials",
-                                        ms->material_group_count);
-            }
-
-            yyjson_mut_arr_add_val(arr, item);
-            found++;
+        mesh_list_json_data_t jd = { .doc = doc, .arr = arr };
+        rc = nmo_core_object_query_run(&c, &query,
+                                       mesh_list_json_visitor, &jd, NULL);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            return nmo_cmd_ctx_done(&c, rc);
         }
 
-        yyjson_mut_obj_add_uint(doc, data, "count", found);
+        yyjson_mut_obj_add_uint(doc, data, "count", jd.found);
         yyjson_mut_obj_add_val(doc, data, "meshes", arr);
         nmo_cmd_ctx_json_end(&c, doc, data, "mesh.list");
     } else {
@@ -144,38 +207,15 @@ int nmo_cmd_mesh_list(int argc, char **argv, const nmo_cli_global_opts_t *global
 
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-        uint32_t found = 0;
-
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            if (!obj || nmo_object_get_class_id(obj) != NMO_CID_MESH) continue;
-
-            char id_buf[16];
-            snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
-
-            const char *name = nmo_object_get_name(obj);
-            if (!name || !name[0]) name = "-";
-
-            char vert_buf[16], face_buf[16], mat_buf[16];
-
-            const nmo_mesh_state_t *ms =
-                (const nmo_mesh_state_t *)nmo_object_get_state(obj);
-            if (ms) {
-                snprintf(vert_buf, sizeof(vert_buf), "%u", ms->vertex_count);
-                snprintf(face_buf, sizeof(face_buf), "%u", ms->face_count);
-                snprintf(mat_buf, sizeof(mat_buf), "%u", ms->material_group_count);
-            } else {
-                snprintf(vert_buf, sizeof(vert_buf), "-");
-                snprintf(face_buf, sizeof(face_buf), "-");
-                snprintf(mat_buf, sizeof(mat_buf), "-");
-            }
-
-            const char *cells[] = {id_buf, name, vert_buf, face_buf, mat_buf};
-            nmo_cli_table_add_row(&table, cells, 5);
-            found++;
+        mesh_list_table_data_t td = { .table = &table };
+        rc = nmo_core_object_query_run(&c, &query,
+                                       mesh_list_table_visitor, &td, NULL);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            nmo_cli_table_free(&table);
+            return nmo_cmd_ctx_done(&c, rc);
         }
 
-        fprintf(c.out, "Meshes: %u\n\n", found);
+        fprintf(c.out, "Meshes: %u\n\n", td.found);
         nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
     }
@@ -591,6 +631,35 @@ static int export_single_mesh(const nmo_cmd_ctx_t *c,
     return 0;
 }
 
+typedef struct mesh_export_data {
+    const char *out_dir;
+    yyjson_mut_doc *doc;
+    yyjson_mut_val *entries;
+    uint32_t exported;
+    uint32_t errors;
+} mesh_export_data_t;
+
+static int mesh_export_visitor(size_t index,
+                               nmo_object_t *obj,
+                               const nmo_cmd_ctx_t *c,
+                               void *user)
+{
+    (void)index;
+    mesh_export_data_t *data = (mesh_export_data_t *)user;
+    if (obj == NULL || data == NULL) {
+        return 0;
+    }
+
+    int ret = export_single_mesh(c, obj, data->out_dir, c->out,
+                                 c->is_json, data->doc, data->entries);
+    if (ret < 0) {
+        data->errors++;
+    } else {
+        data->exported++;
+    }
+    return 0;
+}
+
 int nmo_cmd_mesh_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--out-dir", "-d", NMO_OPT_STRING, "Output directory (required)"},
@@ -635,10 +704,6 @@ int nmo_cmd_mesh_export(int argc, char **argv, const nmo_cli_global_opts_t *glob
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    (void)nmo_session_get_objects(c.session, &objects, &object_count);
-
     uint32_t exported = 0;
     uint32_t errors = 0;
 
@@ -655,16 +720,23 @@ int nmo_cmd_mesh_export(int argc, char **argv, const nmo_cli_global_opts_t *glob
         fprintf(c.out, "Exporting meshes to: %s\n", out_dir);
     }
 
-    for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_t *obj = objects[i];
-        if (!obj || nmo_object_get_class_id(obj) != NMO_CID_MESH) continue;
-        if (filter_id && nmo_object_get_id(obj) != filter_id) continue;
-
-        int ret = export_single_mesh(&c, obj, out_dir, c.out,
-                                     c.is_json, doc, entries);
-        if (ret < 0) errors++;
-        else exported++;
+    nmo_object_query_t query = {0};
+    nmo_core_query_set_class_id(&query, NMO_CID_MESH, false);
+    if (filter_id) {
+        query.object_id = filter_id;
     }
+
+    mesh_export_data_t export_data = {
+        .out_dir = out_dir,
+        .doc = doc,
+        .entries = entries
+    };
+    rc = nmo_core_object_query_run(&c, &query, mesh_export_visitor, &export_data, NULL);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return nmo_cmd_ctx_done(&c, rc);
+    }
+    exported = export_data.exported;
+    errors = export_data.errors;
 
     int exit_code = (errors > 0 && exported == 0)
                   ? NMO_CLI_EXIT_IO_ERROR : NMO_CLI_EXIT_SUCCESS;
