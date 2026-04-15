@@ -102,6 +102,118 @@ static bool behavior_has_op_type(
     return false;
 }
 
+typedef struct behavior_find_data {
+    nmo_object_repository_t *repo;
+    const char *name_pat;
+    const char *guid_pat;
+    const char *ptype_pat;
+    const char *optype_pat;
+    bool only_scripts;
+    bool only_bbs;
+    yyjson_mut_doc *doc;
+    yyjson_mut_val *json_results;
+    nmo_cli_table_t *table;
+    size_t match_count;
+} behavior_find_data_t;
+
+static int behavior_find_object(size_t index, nmo_object_t *obj,
+                                const nmo_cmd_ctx_t *c, void *user)
+{
+    (void)index;
+
+    behavior_find_data_t *data = (behavior_find_data_t *)user;
+    if (!data || !obj) {
+        return 0;
+    }
+
+    nmo_class_id_t cid = nmo_object_get_class_id(obj);
+    if (!is_behavior_class(c->registry, cid)) {
+        return 0;
+    }
+
+    const nmo_behavior_state_t *bs =
+        (const nmo_behavior_state_t *)nmo_object_get_state(obj);
+    if (!bs) {
+        return 0;
+    }
+
+    bool is_script = (bs->flags & CKBEHAVIOR_SCRIPT) != 0;
+    bool is_bb = (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0;
+
+    if (data->only_scripts && !is_script) return 0;
+    if (data->only_bbs && !is_bb) return 0;
+
+    const char *name = nmo_object_get_name(obj);
+    if (data->name_pat &&
+        (!name || !nmo_tool_match_wildcard_ci(data->name_pat, name))) {
+        return 0;
+    }
+
+    if (data->guid_pat) {
+        if (nmo_guid_is_null(bs->block_guid) ||
+            !guid_str_match(bs->block_guid, data->guid_pat)) {
+            return 0;
+        }
+    }
+
+    if (data->ptype_pat &&
+        !behavior_has_param_type(data->repo, c->registry, bs, data->ptype_pat)) {
+        return 0;
+    }
+    if (data->optype_pat &&
+        !behavior_has_op_type(data->repo, c->registry, bs, data->optype_pat)) {
+        return 0;
+    }
+
+    if (data->doc && data->json_results) {
+        yyjson_mut_val *item = yyjson_mut_obj(data->doc);
+        yyjson_mut_obj_add_uint(data->doc, item, "id", nmo_object_get_id(obj));
+        nmo_cli_json_add_str_safe(data->doc, item, "name",
+            (name && name[0]) ? name : "");
+        nmo_cli_json_add_str_safe(data->doc, item, "type",
+            is_script ? "Script" : is_bb ? "BB" : "Graph");
+        if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
+            char guid_buf[24];
+            snprintf(guid_buf, sizeof(guid_buf), "%08X-%08X",
+                     bs->block_guid.d1, bs->block_guid.d2);
+            nmo_cli_json_add_str_safe(data->doc, item, "bb_guid", guid_buf);
+            const char *proto_name = nmo_bb_registry_get_name(
+                nmo_context_get_bb_registry(c->ctx), bs->block_guid);
+            if (proto_name) {
+                nmo_cli_json_add_str_safe(data->doc, item, "proto_name",
+                                          proto_name);
+            }
+        }
+        yyjson_mut_arr_add_val(data->json_results, item);
+    } else if (data->table) {
+        char id_buf[16];
+        snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
+
+        char proto_buf[64] = "-";
+        if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
+            const char *proto_name = nmo_bb_registry_get_name(
+                nmo_context_get_bb_registry(c->ctx), bs->block_guid);
+            if (proto_name) {
+                snprintf(proto_buf, sizeof(proto_buf), "%s", proto_name);
+            } else {
+                snprintf(proto_buf, sizeof(proto_buf), "{%08X-%08X}",
+                         bs->block_guid.d1, bs->block_guid.d2);
+            }
+        }
+
+        const char *cells[] = {
+            id_buf,
+            is_script ? "Script" : is_bb ? "BB" : "Graph",
+            proto_buf,
+            (name && name[0]) ? name : "-",
+        };
+        nmo_cli_table_add_row(data->table, cells, 4);
+    }
+
+    data->match_count++;
+    return 0;
+}
+
 int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--name",       "-n", NMO_OPT_STRING, "Filter by name pattern"},
@@ -130,10 +242,16 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
     if (rc) return rc;
 
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    size_t total = 0;
-    nmo_object_t **all = nmo_object_repository_get_all(repo, &total);
 
-    size_t match_count = 0;
+    behavior_find_data_t find_data = {
+        .repo = repo,
+        .name_pat = name_pat,
+        .guid_pat = guid_pat,
+        .ptype_pat = ptype_pat,
+        .optype_pat = optype_pat,
+        .only_scripts = only_scripts,
+        .only_bbs = only_bbs,
+    };
 
     yyjson_mut_doc *doc = NULL;
     yyjson_mut_val *json_data = NULL;
@@ -142,6 +260,8 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
         doc = nmo_cmd_ctx_json_begin(&c);
         json_data = yyjson_mut_obj(doc);
         json_results = yyjson_mut_arr(doc);
+        find_data.doc = doc;
+        find_data.json_results = json_results;
     }
 
     static const nmo_cli_table_col_t columns[] = {
@@ -153,89 +273,25 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
     nmo_cli_table_t table;
     if (!c.is_json) {
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+        find_data.table = &table;
     }
 
-    for (size_t i = 0; i < total; i++) {
-        nmo_class_id_t cid = nmo_object_get_class_id(all[i]);
-        if (!is_behavior_class(c.registry, cid)) continue;
-
-        const nmo_behavior_state_t *bs =
-            (const nmo_behavior_state_t *)nmo_object_get_state(all[i]);
-        if (!bs) continue;
-
-        bool is_script = (bs->flags & CKBEHAVIOR_SCRIPT) != 0;
-        bool is_bb = (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0;
-
-        if (only_scripts && !is_script) continue;
-        if (only_bbs && !is_bb) continue;
-
-        const char *name = nmo_object_get_name(all[i]);
-        if (name_pat && (!name || !nmo_tool_match_wildcard_ci(name_pat, name))) continue;
-
-        if (guid_pat) {
-            if (nmo_guid_is_null(bs->block_guid) || !guid_str_match(bs->block_guid, guid_pat))
-                continue;
-        }
-
-        if (ptype_pat && !behavior_has_param_type(repo, c.registry, bs, ptype_pat)) continue;
-        if (optype_pat && !behavior_has_op_type(repo, c.registry, bs, optype_pat)) continue;
-
-        if (c.is_json) {
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, item, "id",
-                                    nmo_object_get_id(all[i]));
-            nmo_cli_json_add_str_safe(doc, item, "name",
-                (name && name[0]) ? name : "");
-            nmo_cli_json_add_str_safe(doc, item, "type",
-                is_script ? "Script" : is_bb ? "BB" : "Graph");
-            if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
-                char guid_buf[24];
-                snprintf(guid_buf, sizeof(guid_buf), "%08X-%08X",
-                         bs->block_guid.d1, bs->block_guid.d2);
-                nmo_cli_json_add_str_safe(doc, item, "bb_guid", guid_buf);
-                const char *proto_name = nmo_bb_registry_get_name(
-                    nmo_context_get_bb_registry(c.ctx), bs->block_guid);
-                if (proto_name) {
-                    nmo_cli_json_add_str_safe(doc, item, "proto_name",
-                                              proto_name);
-                }
-            }
-            yyjson_mut_arr_add_val(json_results, item);
-        } else {
-            char id_buf[16];
-            snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(all[i]));
-
-            /* Resolve BB prototype name */
-            char proto_buf[64] = "-";
-            if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
-                const char *proto_name = nmo_bb_registry_get_name(
-                    nmo_context_get_bb_registry(c.ctx), bs->block_guid);
-                if (proto_name) {
-                    snprintf(proto_buf, sizeof(proto_buf), "%s", proto_name);
-                } else {
-                    snprintf(proto_buf, sizeof(proto_buf), "{%08X-%08X}",
-                             bs->block_guid.d1, bs->block_guid.d2);
-                }
-            }
-
-            const char *cells[] = {
-                id_buf,
-                is_script ? "Script" : is_bb ? "BB" : "Graph",
-                proto_buf,
-                (name && name[0]) ? name : "-",
-            };
-            nmo_cli_table_add_row(&table, cells, 4);
-        }
-        match_count++;
+    rc = nmo_core_object_query_run(&c, NULL, behavior_find_object,
+                                   &find_data, NULL);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        if (doc) yyjson_mut_doc_free(doc);
+        if (!c.is_json) nmo_cli_table_free(&table);
+        fprintf(stderr, "Error: Failed to query objects\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     if (c.is_json) {
         yyjson_mut_obj_add_uint(doc, json_data, "match_count",
-                                (uint64_t)match_count);
+                                (uint64_t)find_data.match_count);
         yyjson_mut_obj_add_val(doc, json_data, "results", json_results);
         nmo_cmd_ctx_json_end(&c, doc, json_data, "behavior.find");
     } else {
-        fprintf(c.out, "Found: %zu behavior(s)\n\n", match_count);
+        fprintf(c.out, "Found: %zu behavior(s)\n\n", find_data.match_count);
         nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
     }

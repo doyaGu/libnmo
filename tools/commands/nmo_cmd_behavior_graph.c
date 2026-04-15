@@ -880,6 +880,51 @@ static void dump_behavior_tree_json(
     }
 }
 
+typedef struct behavior_dump_all_data {
+    nmo_object_repository_t *repo;
+    const nmo_bb_registry_t *bb_reg;
+    yyjson_mut_doc *doc;
+    yyjson_mut_val *tree;
+    FILE *out;
+    size_t printed;
+} behavior_dump_all_data_t;
+
+static int behavior_dump_all_object(size_t index, nmo_object_t *obj,
+                                    const nmo_cmd_ctx_t *c, void *user)
+{
+    (void)index;
+
+    behavior_dump_all_data_t *data = (behavior_dump_all_data_t *)user;
+    if (!data || !obj) {
+        return 0;
+    }
+
+    nmo_class_id_t cid = nmo_object_get_class_id(obj);
+    if (!is_behavior_class(c->registry, cid)) {
+        return 0;
+    }
+
+    const nmo_behavior_state_t *bs =
+        (const nmo_behavior_state_t *)nmo_object_get_state(obj);
+    if (!bs || !(bs->flags & CKBEHAVIOR_SCRIPT)) {
+        return 0;
+    }
+
+    nmo_object_id_t id = nmo_object_get_id(obj);
+    if (data->doc && data->tree) {
+        dump_behavior_tree_json(data->doc, data->tree, data->repo,
+                                c->registry, data->bb_reg, id, 0);
+    } else if (data->out) {
+        if (data->printed > 0) {
+            fprintf(data->out, "\n");
+        }
+        dump_behavior_tree(data->out, data->repo, c->registry,
+                           id, 0, true, 0);
+    }
+    data->printed++;
+    return 0;
+}
+
 int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--all",  "-a", NMO_OPT_FLAG, "Dump all script behaviors as trees"},
@@ -915,16 +960,18 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
             nmo_context_get_bb_registry(c.ctx);
 
         if (dump_all) {
-            size_t total = 0;
-            nmo_object_t **all = nmo_object_repository_get_all(repo, &total);
-            for (size_t i = 0; i < total; i++) {
-                nmo_class_id_t cid = nmo_object_get_class_id(all[i]);
-                if (!is_behavior_class(c.registry, cid)) continue;
-                const nmo_behavior_state_t *bs =
-                    (const nmo_behavior_state_t *)nmo_object_get_state(all[i]);
-                if (!bs || !(bs->flags & CKBEHAVIOR_SCRIPT)) continue;
-                dump_behavior_tree_json(doc, tree, repo, c.registry, bb_reg,
-                                        nmo_object_get_id(all[i]), 0);
+            behavior_dump_all_data_t dump_data = {
+                .repo = repo,
+                .bb_reg = bb_reg,
+                .doc = doc,
+                .tree = tree,
+            };
+            rc = nmo_core_object_query_run(&c, NULL, behavior_dump_all_object,
+                                           &dump_data, NULL);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                yyjson_mut_doc_free(doc);
+                fprintf(stderr, "Error: Failed to query objects\n");
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
             }
         } else {
             uint32_t object_id;
@@ -940,22 +987,17 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
         yyjson_mut_obj_add_val(doc, data, "tree", tree);
         nmo_cmd_ctx_json_end(&c, doc, data, "behavior.dump");
     } else if (dump_all) {
-        size_t total = 0;
-        nmo_object_t **all = nmo_object_repository_get_all(repo, &total);
-        size_t printed = 0;
-        for (size_t i = 0; i < total; i++) {
-            nmo_class_id_t cid = nmo_object_get_class_id(all[i]);
-            if (!is_behavior_class(c.registry, cid)) continue;
-            const nmo_behavior_state_t *bs =
-                (const nmo_behavior_state_t *)nmo_object_get_state(all[i]);
-            if (!bs || !(bs->flags & CKBEHAVIOR_SCRIPT)) continue;
-
-            if (printed > 0) fprintf(c.out, "\n");
-            dump_behavior_tree(c.out, repo, c.registry,
-                               nmo_object_get_id(all[i]), 0, true, 0);
-            printed++;
+        behavior_dump_all_data_t dump_data = {
+            .repo = repo,
+            .out = c.out,
+        };
+        rc = nmo_core_object_query_run(&c, NULL, behavior_dump_all_object,
+                                       &dump_data, NULL);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            fprintf(stderr, "Error: Failed to query objects\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
-        if (printed == 0) {
+        if (dump_data.printed == 0) {
             fprintf(c.out, "No script behaviors found.\n");
         }
     } else {
