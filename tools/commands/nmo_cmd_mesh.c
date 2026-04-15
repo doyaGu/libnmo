@@ -773,6 +773,106 @@ static void compute_bounds(const nmo_obj_data_t *obj_data,
     *radius = sqrtf(max_dist_sq);
 }
 
+typedef struct mesh_import_dedup_slot {
+    int32_t pos_idx;
+    int32_t uv_idx;
+    int32_t normal_idx;
+    uint16_t idx_plus1;
+} mesh_import_dedup_slot_t;
+
+static uint8_t mesh_import_float_to_u8(float value) {
+    if (value <= 0.0f) return 0;
+    if (value >= 1.0f) return 255;
+    return (uint8_t)(value * 255.0f + 0.5f);
+}
+
+static uint32_t mesh_import_rgb_to_argb(const float *rgb) {
+    uint32_t r = mesh_import_float_to_u8(rgb[0]);
+    uint32_t g = mesh_import_float_to_u8(rgb[1]);
+    uint32_t b = mesh_import_float_to_u8(rgb[2]);
+    return 0xFF000000u | (r << 16) | (g << 8) | b;
+}
+
+static size_t mesh_import_tuple_hash(int32_t pos_idx,
+                                     int32_t uv_idx,
+                                     int32_t normal_idx,
+                                     size_t capacity) {
+    uint64_t h = 1469598103934665603ULL;
+    h ^= (uint32_t)pos_idx; h *= 1099511628211ULL;
+    h ^= (uint32_t)uv_idx; h *= 1099511628211ULL;
+    h ^= (uint32_t)normal_idx; h *= 1099511628211ULL;
+    return (size_t)(h % capacity);
+}
+
+static int mesh_import_get_or_add_vertex(
+    const nmo_obj_data_t *obj_data,
+    const nmo_obj_face_vertex_t *fv,
+    nmo_vertex_t *vertices,
+    uint32_t *vertex_colors,
+    mesh_import_dedup_slot_t *dedup_table,
+    size_t dedup_cap,
+    uint32_t *unique_count,
+    uint16_t *out_index) {
+    int32_t pi = fv->pos_idx;
+    int32_t ui = fv->uv_idx;
+    int32_t ni = fv->normal_idx;
+    size_t slot = mesh_import_tuple_hash(pi, ui, ni, dedup_cap);
+
+    for (;;) {
+        mesh_import_dedup_slot_t *entry = &dedup_table[slot];
+        if (entry->idx_plus1 == 0) {
+            if (*unique_count >= 65535u) return -1;
+
+            nmo_vertex_t *v = &vertices[*unique_count];
+            memset(v, 0, sizeof(*v));
+
+            if (pi >= 0 && (size_t)pi < obj_data->pos_count) {
+                v->position.x = obj_data->positions[(size_t)pi * 3u + 0u];
+                v->position.y = obj_data->positions[(size_t)pi * 3u + 1u];
+                v->position.z = obj_data->positions[(size_t)pi * 3u + 2u];
+            }
+            if (ui >= 0 && (size_t)ui < obj_data->uv_count) {
+                v->uv.x = obj_data->uvs[(size_t)ui * 2u + 0u];
+                v->uv.y = obj_data->uvs[(size_t)ui * 2u + 1u];
+            }
+            if (ni >= 0 && (size_t)ni < obj_data->normal_count) {
+                v->normal.x = obj_data->normals[(size_t)ni * 3u + 0u];
+                v->normal.y = obj_data->normals[(size_t)ni * 3u + 1u];
+                v->normal.z = obj_data->normals[(size_t)ni * 3u + 2u];
+            }
+
+            if (vertex_colors) {
+                uint32_t color = 0xFFFFFFFFu;
+                if (pi >= 0 && obj_data->position_has_color &&
+                    obj_data->colors &&
+                    (size_t)pi < obj_data->pos_count &&
+                    obj_data->position_has_color[pi]) {
+                    color = mesh_import_rgb_to_argb(
+                        &obj_data->colors[(size_t)pi * 3u]);
+                }
+                vertex_colors[*unique_count] = color;
+            }
+
+            entry->pos_idx = pi;
+            entry->uv_idx = ui;
+            entry->normal_idx = ni;
+            entry->idx_plus1 = (uint16_t)(*unique_count + 1u);
+            *out_index = (uint16_t)*unique_count;
+            (*unique_count)++;
+            return 0;
+        }
+
+        if (entry->pos_idx == pi &&
+            entry->uv_idx == ui &&
+            entry->normal_idx == ni) {
+            *out_index = (uint16_t)(entry->idx_plus1 - 1u);
+            return 0;
+        }
+
+        slot = (slot + 1u) % dedup_cap;
+    }
+}
+
 int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--output",  "-o", NMO_OPT_STRING, "Output NMO file (required)"},
@@ -842,15 +942,75 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
     }
 
-    if (obj_data.face_count == 0) {
-        fprintf(stderr, "Error: OBJ file has no faces\n");
+    if (obj_data.face_count == 0 && obj_data.line_count == 0) {
+        fprintf(stderr, "Error: OBJ file has no faces or lines\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
     }
 
-    /* Build deduplicated vertex array from face data.
-     * Worst case is face_count*3 unique vertices; we allocate that and
-     * shrink the effective count after dedup. */
-    size_t max_verts = obj_data.face_count * 3;
+    bool has_vertex_colors = false;
+    if (obj_data.position_has_color) {
+        for (size_t i = 0; i < obj_data.pos_count; ++i) {
+            if (obj_data.position_has_color[i]) {
+                has_vertex_colors = true;
+                break;
+            }
+        }
+    }
+
+    bool has_unassigned_material = false;
+    for (size_t fi = 0; fi < obj_data.face_count; ++fi) {
+        if (obj_data.faces[fi].material_group == NMO_OBJ_NO_MATERIAL) {
+            has_unassigned_material = true;
+            break;
+        }
+    }
+
+    uint32_t material_offset = has_unassigned_material ? 1u : 0u;
+    if (obj_data.material_name_count > UINT32_MAX - material_offset) {
+        fprintf(stderr, "Error: OBJ material group count exceeds supported range\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+    uint32_t mat_group_count = (uint32_t)obj_data.material_name_count + material_offset;
+    if (obj_data.face_count > 0 && mat_group_count == 0) {
+        mat_group_count = 1;
+        has_unassigned_material = true;
+        material_offset = 1;
+    }
+    if (mat_group_count > UINT16_MAX) {
+        fprintf(stderr, "Error: OBJ material group count exceeds CKMesh limit (%u)\n",
+                mat_group_count);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    nmo_material_group_t *mat_groups = NULL;
+    if (mat_group_count > 0) {
+        mat_groups = (nmo_material_group_t *)nmo_arena_alloc(
+            arena, mat_group_count * sizeof(nmo_material_group_t),
+            alignof(nmo_material_group_t));
+        if (!mat_groups) {
+            fprintf(stderr, "Error: Out of memory\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+        for (uint32_t gi = 0; gi < mat_group_count; gi++) {
+            mat_groups[gi].material_id = 0;
+        }
+        for (uint32_t mi = 0; mi < obj_data.material_name_count; ++mi) {
+            uint32_t gi = mi + material_offset;
+            if (obj_data.material_names[mi]) {
+                nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+                nmo_object_t *mat = nmo_object_repository_find_by_name(
+                    repo, obj_data.material_names[mi]);
+                if (mat && nmo_object_get_class_id(mat) == NMO_CID_MATERIAL) {
+                    mat_groups[gi].material_id = nmo_object_get_id(mat);
+                }
+            }
+        }
+    }
+
+    /* Build deduplicated vertex array from face and line data.
+     * Worst case is face_count*3 + line_count*2 unique vertices; we allocate
+     * that and shrink the effective count after dedup. */
+    size_t max_verts = obj_data.face_count * 3u + obj_data.line_count * 2u;
     if (max_verts > 65535) {
         fprintf(stderr, "Error: Mesh exceeds 65535 vertex limit (%zu)\n",
                 max_verts);
@@ -859,89 +1019,64 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
     nmo_vertex_t *vertices = (nmo_vertex_t *)nmo_arena_alloc(
         arena, max_verts * sizeof(nmo_vertex_t), alignof(nmo_vertex_t));
-    uint16_t *face_indices = (uint16_t *)nmo_arena_alloc(
-        arena, obj_data.face_count * 3 * sizeof(uint16_t), alignof(uint16_t));
-    nmo_face_t *faces = (nmo_face_t *)nmo_arena_alloc(
-        arena, obj_data.face_count * sizeof(nmo_face_t), alignof(nmo_face_t));
+    uint16_t *face_indices = NULL;
+    nmo_face_t *faces = NULL;
+    uint16_t *line_indices = NULL;
+    uint32_t *vertex_colors = NULL;
 
-    if (!vertices || !face_indices || !faces) {
+    if (obj_data.face_count > 0) {
+        face_indices = (uint16_t *)nmo_arena_alloc(
+            arena, obj_data.face_count * 3u * sizeof(uint16_t), alignof(uint16_t));
+        faces = (nmo_face_t *)nmo_arena_alloc(
+            arena, obj_data.face_count * sizeof(nmo_face_t), alignof(nmo_face_t));
+    }
+    if (obj_data.line_count > 0) {
+        line_indices = (uint16_t *)nmo_arena_alloc(
+            arena, obj_data.line_count * 2u * sizeof(uint16_t), alignof(uint16_t));
+    }
+    if (has_vertex_colors) {
+        vertex_colors = (uint32_t *)nmo_arena_alloc(
+            arena, max_verts * sizeof(uint32_t), alignof(uint32_t));
+    }
+
+    if (!vertices ||
+        (obj_data.face_count > 0 && (!face_indices || !faces)) ||
+        (obj_data.line_count > 0 && !line_indices) ||
+        (has_vertex_colors && !vertex_colors)) {
         fprintf(stderr, "Error: Out of memory\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     /* Hash-based vertex deduplication.
-     * Key: packed (pos_idx, uv_idx, normal_idx) tuple.
+     * Key: (pos_idx, uv_idx, normal_idx) tuple.
      * Open-addressing hash table mapping tuple -> unified vertex index. */
     size_t dedup_cap = max_verts * 2;   /* load factor <= 0.5 */
     if (dedup_cap < 64) dedup_cap = 64;
 
-    /* Each slot: packed key + 1-based vertex index (0 = empty) */
-    typedef struct { uint64_t key; uint16_t idx_plus1; } dedup_slot_t;
-    dedup_slot_t *dedup_table = (dedup_slot_t *)calloc(dedup_cap, sizeof(dedup_slot_t));
+    mesh_import_dedup_slot_t *dedup_table =
+        (mesh_import_dedup_slot_t *)calloc(dedup_cap, sizeof(mesh_import_dedup_slot_t));
     if (!dedup_table) {
         fprintf(stderr, "Error: Out of memory\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    uint16_t unique_count = 0;
+    uint32_t unique_count = 0;
 
     for (size_t fi = 0; fi < obj_data.face_count; fi++) {
         const nmo_obj_face_t *of = &obj_data.faces[fi];
 
         for (int vi = 0; vi < 3; vi++) {
-            int32_t pi = of->verts[vi].pos_idx;
-            int32_t ui = of->verts[vi].uv_idx;
-            int32_t ni = of->verts[vi].normal_idx;
-
-            /* Pack indices into a 64-bit key.
-             * Shift by 21 bits each gives ~2M indices per component. */
-            uint64_t key = ((uint64_t)(uint32_t)(pi + 1) << 42)
-                         | ((uint64_t)(uint32_t)(ui + 1) << 21)
-                         | (uint64_t)(uint32_t)(ni + 1);
-            /* Avoid key==0 (our empty sentinel) by setting high bit */
-            key |= (uint64_t)1 << 63;
-
-            /* Probe the hash table */
-            uint64_t h = key * 0x9E3779B97F4A7C15ULL;
-            size_t slot = (size_t)(h % dedup_cap);
             uint16_t found_idx = 0;
-
-            for (;;) {
-                if (dedup_table[slot].idx_plus1 == 0) {
-                    /* Empty slot: insert new vertex */
-                    nmo_vertex_t *v = &vertices[unique_count];
-                    memset(v, 0, sizeof(*v));
-
-                    if (pi >= 0 && (size_t)pi < obj_data.pos_count) {
-                        v->position.x = obj_data.positions[pi * 3 + 0];
-                        v->position.y = obj_data.positions[pi * 3 + 1];
-                        v->position.z = obj_data.positions[pi * 3 + 2];
-                    }
-                    if (ui >= 0 && (size_t)ui < obj_data.uv_count) {
-                        v->uv.x = obj_data.uvs[ui * 2 + 0];
-                        v->uv.y = obj_data.uvs[ui * 2 + 1];
-                    }
-                    if (ni >= 0 && (size_t)ni < obj_data.normal_count) {
-                        v->normal.x = obj_data.normals[ni * 3 + 0];
-                        v->normal.y = obj_data.normals[ni * 3 + 1];
-                        v->normal.z = obj_data.normals[ni * 3 + 2];
-                    }
-
-                    dedup_table[slot].key = key;
-                    dedup_table[slot].idx_plus1 = unique_count + 1;
-                    found_idx = unique_count;
-                    unique_count++;
-                    break;
-                }
-                if (dedup_table[slot].key == key) {
-                    /* Existing vertex */
-                    found_idx = dedup_table[slot].idx_plus1 - 1;
-                    break;
-                }
-                slot = (slot + 1) % dedup_cap;
+            if (mesh_import_get_or_add_vertex(&obj_data, &of->verts[vi],
+                                              vertices, vertex_colors,
+                                              dedup_table, dedup_cap,
+                                              &unique_count, &found_idx) < 0) {
+                free(dedup_table);
+                fprintf(stderr, "Error: Mesh exceeds 65535 vertex limit\n");
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
             }
 
-            face_indices[fi * 3 + vi] = found_idx;
+            face_indices[fi * 3u + (size_t)vi] = found_idx;
         }
 
         /* Face normal: compute from cross product */
@@ -963,34 +1098,33 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
         faces[fi].normal.x = nx;
         faces[fi].normal.y = ny;
         faces[fi].normal.z = nz;
-        faces[fi].material_group_idx = (uint16_t)of->material_group;
+        if (of->material_group == NMO_OBJ_NO_MATERIAL) {
+            faces[fi].material_group_idx = 0;
+        } else {
+            faces[fi].material_group_idx =
+                (uint16_t)(of->material_group + material_offset);
+        }
         faces[fi].channel_mask = 0;
+    }
+
+    for (size_t li = 0; li < obj_data.line_count; ++li) {
+        const nmo_obj_line_t *ol = &obj_data.lines[li];
+        for (int vi = 0; vi < 2; ++vi) {
+            uint16_t found_idx = 0;
+            if (mesh_import_get_or_add_vertex(&obj_data, &ol->verts[vi],
+                                              vertices, vertex_colors,
+                                              dedup_table, dedup_cap,
+                                              &unique_count, &found_idx) < 0) {
+                free(dedup_table);
+                fprintf(stderr, "Error: Mesh exceeds 65535 vertex limit\n");
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+            }
+            line_indices[li * 2u + (size_t)vi] = found_idx;
+        }
     }
 
     free(dedup_table);
     size_t total_verts = unique_count;
-
-    /* Build material groups from OBJ material names */
-    uint32_t mat_group_count = obj_data.material_name_count > 0
-                             ? (uint32_t)obj_data.material_name_count : 1;
-    nmo_material_group_t *mat_groups = (nmo_material_group_t *)nmo_arena_alloc(
-        arena, mat_group_count * sizeof(nmo_material_group_t),
-        alignof(nmo_material_group_t));
-    if (!mat_groups) {
-        fprintf(stderr, "Error: Out of memory\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-    for (uint32_t gi = 0; gi < mat_group_count; gi++) {
-        mat_groups[gi].material_id = 0;
-        /* Resolve material by OBJ usemtl name -> NMO CKMaterial name match */
-        if (gi < obj_data.material_name_count && obj_data.material_names[gi]) {
-            nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-            nmo_object_t *mat = nmo_object_repository_find_by_name(repo, obj_data.material_names[gi]);
-            if (mat && nmo_object_get_class_id(mat) == NMO_CID_MATERIAL) {
-                mat_groups[gi].material_id = nmo_object_get_id(mat);
-            }
-        }
-    }
 
     /* Compute bounds */
     nmo_vector_t center, box_min, box_max;
@@ -1083,6 +1217,12 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
     ms->face_count = (uint32_t)obj_data.face_count;
     ms->faces = faces;
     ms->face_vertex_indices = face_indices;
+    ms->line_count = (uint32_t)obj_data.line_count;
+    ms->line_indices = line_indices;
+    ms->vertex_colors = vertex_colors;
+    ms->vertex_specular = NULL;
+    ms->vertex_weights = NULL;
+    ms->vertex_weight_count = 0;
     ms->material_group_count = mat_group_count;
     ms->material_groups = mat_groups;
     ms->bary_center = center;
