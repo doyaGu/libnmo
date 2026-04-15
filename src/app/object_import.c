@@ -300,20 +300,22 @@ static nmo_status_t import_field_value(void *state,
         }
         memset(buf, 0, arr_count * elem_size);
 
-        size_t written = 0;
         size_t idx = 0;
         yyjson_val *elem;
         yyjson_arr_iter iter;
         yyjson_arr_iter_init(json_val, &iter);
         while ((elem = yyjson_arr_iter_next(&iter)) != NULL) {
-            if (field_type) {
-                char conv_buf[IMPORT_VALUE_BUF_SIZE];
-                const char *str = json_val_to_str(elem, conv_buf, sizeof(conv_buf));
-                if (str) {
-                    void *dest = (uint8_t *)buf + idx * elem_size;
-                    nmo_status_t st = nmo_type_value_from_string(dest, field_type, registry, str);
-                    if (st == NMO_OK) written++;
-                }
+            char conv_buf[IMPORT_VALUE_BUF_SIZE];
+            const char *str = json_val_to_str(elem, conv_buf, sizeof(conv_buf));
+            if (!str || !field_type) {
+                result->errors++;
+                return NMO_ERR_INVALID_ARGUMENT;
+            }
+            void *dest = (uint8_t *)buf + idx * elem_size;
+            nmo_status_t st = nmo_type_value_from_string(dest, field_type, registry, str);
+            if (st != NMO_OK) {
+                result->errors++;
+                return st;
             }
             idx++;
         }
