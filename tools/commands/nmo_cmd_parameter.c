@@ -8,6 +8,7 @@
 #include "nmo_cmd_object.h"
 
 #include "../nmo_cmd_ctx.h"
+#include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
 #include "../nmo_tool_common.h"
 #include "../nmo_opt.h"
@@ -48,6 +49,92 @@ static int is_parameter_class(const nmo_type_registry_t *registry, nmo_class_id_
     return class_id == NMO_CID_PARAMETERIN ||
            class_id == NMO_CID_PARAMETEROUT ||
            class_id == NMO_CID_PARAMETEROPERATION;
+}
+
+static bool parameter_query_predicate(const nmo_object_t *obj, void *user_data) {
+    const nmo_type_registry_t *registry = (const nmo_type_registry_t *)user_data;
+    if (!obj) return false;
+    return is_parameter_class(registry, nmo_object_get_class_id(obj)) != 0;
+}
+
+static void parameter_list_add_json(yyjson_mut_doc *doc,
+                                    yyjson_mut_val *arr,
+                                    nmo_context_t *ctx,
+                                    nmo_object_t *obj)
+{
+    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+    yyjson_mut_val *item = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_uint(doc, item, "id", nmo_object_get_id(obj));
+    yyjson_mut_obj_add_uint(doc, item, "class_id", class_id);
+
+    const char *class_name = nmo_cli_class_name_from_id(ctx, class_id);
+    if (class_name) nmo_cli_json_add_str_safe(doc, item, "class_name", class_name);
+
+    const char *name = nmo_object_get_name(obj);
+    if (name && name[0]) nmo_cli_json_add_str_safe(doc, item, "name", name);
+
+    yyjson_mut_arr_add_val(arr, item);
+}
+
+static void parameter_list_add_table_row(nmo_cli_table_t *table,
+                                         nmo_context_t *ctx,
+                                         nmo_object_t *obj)
+{
+    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+
+    char id_buf[16];
+    snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
+
+    const char *class_name = nmo_cli_class_name_from_id(ctx, class_id);
+    const char *name = nmo_object_get_name(obj);
+
+    const char *cells[] = {
+        id_buf,
+        class_name ? class_name : "-",
+        (name && name[0]) ? name : "-",
+    };
+    nmo_cli_table_add_row(table, cells, 3);
+}
+
+typedef struct parameter_list_data {
+    nmo_context_t *ctx;
+    yyjson_mut_doc *doc;
+    yyjson_mut_val *arr;
+    nmo_cli_table_t *table;
+    size_t count;
+} parameter_list_data_t;
+
+static bool parameter_list_query_visitor(size_t index,
+                                         nmo_object_t *obj,
+                                         void *user_data)
+{
+    (void)index;
+
+    parameter_list_data_t *data = (parameter_list_data_t *)user_data;
+    if (data->arr) {
+        parameter_list_add_json(data->doc, data->arr, data->ctx, obj);
+    } else if (data->table) {
+        parameter_list_add_table_row(data->table, data->ctx, obj);
+    }
+    data->count++;
+    return true;
+}
+
+static int parameter_list_core_visitor(size_t index,
+                                       nmo_object_t *obj,
+                                       const nmo_cmd_ctx_t *c,
+                                       void *user)
+{
+    (void)index;
+
+    parameter_list_data_t *data = (parameter_list_data_t *)user;
+    if (data->arr) {
+        parameter_list_add_json(data->doc, data->arr, c->ctx, obj);
+    } else if (data->table) {
+        parameter_list_add_table_row(data->table, c->ctx, obj);
+    }
+    data->count++;
+    return 0;
 }
 
 /**
@@ -118,37 +205,30 @@ static int parameter_list_single(const char *file_path,
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(session, &objects, &object_count) != NMO_OK) {
-        fprintf(stderr, "Error: Failed to get objects\n");
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    if (!repo) {
+        fprintf(stderr, "Error: Failed to get object repository\n");
         nmo_tool_close_session(ctx, session);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    size_t param_count = 0;
+    nmo_object_query_t query = {
+        .predicate = parameter_query_predicate,
+        .predicate_user_data = (void *)registry,
+    };
+    nmo_object_query_result_t query_result = {0};
 
     if (doc && data) {
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-            if (!is_parameter_class(registry, class_id)) continue;
-
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, item, "id", nmo_object_get_id(obj));
-            yyjson_mut_obj_add_uint(doc, item, "class_id", class_id);
-
-            const char *class_name = nmo_cli_class_name_from_id(ctx, class_id);
-            if (class_name) nmo_cli_json_add_str_safe(doc, item, "class_name", class_name);
-
-            const char *name = nmo_object_get_name(obj);
-            if (name && name[0]) nmo_cli_json_add_str_safe(doc, item, "name", name);
-
-            yyjson_mut_arr_add_val(arr, item);
-            param_count++;
+        parameter_list_data_t ld = { .ctx = ctx, .doc = doc, .arr = arr };
+        if (nmo_object_query_iterate(repo, &query, registry,
+                                     parameter_list_query_visitor, &ld,
+                                     &query_result) != NMO_OK) {
+            fprintf(stderr, "Error: Failed to query objects\n");
+            nmo_tool_close_session(ctx, session);
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
-        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)param_count);
+        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)ld.count);
         yyjson_mut_obj_add_val(doc, data, "objects", arr);
     } else {
         FILE *out = (text_ctx && text_ctx->out) ? text_ctx->out : stdout;
@@ -162,27 +242,17 @@ static int parameter_list_single(const char *file_path,
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-            if (!is_parameter_class(registry, class_id)) continue;
-
-            char id_buf[16];
-            snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
-
-            const char *class_name = nmo_cli_class_name_from_id(ctx, class_id);
-            const char *name = nmo_object_get_name(obj);
-
-            const char *cells[] = {
-                id_buf,
-                class_name ? class_name : "-",
-                (name && name[0]) ? name : "-",
-            };
-            nmo_cli_table_add_row(&table, cells, 3);
-            param_count++;
+        parameter_list_data_t ld = { .ctx = ctx, .table = &table };
+        if (nmo_object_query_iterate(repo, &query, registry,
+                                     parameter_list_query_visitor, &ld,
+                                     &query_result) != NMO_OK) {
+            fprintf(stderr, "Error: Failed to query objects\n");
+            nmo_cli_table_free(&table);
+            nmo_tool_close_session(ctx, session);
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
 
-        fprintf(out, "Parameters: %zu\n\n", param_count);
+        fprintf(out, "Parameters: %zu\n\n", ld.count);
         nmo_cli_table_print(&table, out, colorize);
         nmo_cli_table_free(&table);
     }
@@ -216,47 +286,24 @@ int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *g
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
-        fprintf(stderr, "Error: Failed to get objects\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    size_t param_count = 0;
+    nmo_object_query_t query = {
+        .predicate = parameter_query_predicate,
+        .predicate_user_data = (void *)c.registry,
+    };
 
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-
-            if (!is_parameter_class(c.registry, class_id)) {
-                continue;
-            }
-
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, item, "id", nmo_object_get_id(obj));
-            yyjson_mut_obj_add_uint(doc, item, "class_id", class_id);
-
-            const char *class_name = nmo_cli_class_name_from_id(c.ctx, class_id);
-            if (class_name) {
-                yyjson_mut_obj_add_str(doc, item, "class_name", class_name);
-            }
-
-            const char *name = nmo_object_get_name(obj);
-            if (name && name[0]) {
-                nmo_cli_json_add_str_safe(doc, item, "name", name);
-            }
-
-            yyjson_mut_arr_add_val(arr, item);
-            param_count++;
+        parameter_list_data_t ld = { .doc = doc, .arr = arr };
+        rc = nmo_core_object_query_run(&c, &query,
+                                       parameter_list_core_visitor, &ld, NULL);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            return nmo_cmd_ctx_done(&c, rc);
         }
 
-        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)param_count);
+        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)ld.count);
         yyjson_mut_obj_add_val(doc, data, "objects", arr);
 
         nmo_cmd_ctx_json_end(&c, doc, data, "parameter.list");
@@ -270,29 +317,15 @@ int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *g
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-            if (!is_parameter_class(c.registry, class_id)) {
-                continue;
-            }
-
-            char id_buf[16];
-            snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
-
-            const char *class_name = nmo_cli_class_name_from_id(c.ctx, class_id);
-            const char *name = nmo_object_get_name(obj);
-
-            const char *cells[] = {
-                id_buf,
-                class_name ? class_name : "-",
-                (name && name[0]) ? name : "-",
-            };
-            nmo_cli_table_add_row(&table, cells, 3);
-            param_count++;
+        parameter_list_data_t ld = { .table = &table };
+        rc = nmo_core_object_query_run(&c, &query,
+                                       parameter_list_core_visitor, &ld, NULL);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            nmo_cli_table_free(&table);
+            return nmo_cmd_ctx_done(&c, rc);
         }
 
-        fprintf(c.out, "Parameters: %zu\n\n", param_count);
+        fprintf(c.out, "Parameters: %zu\n\n", ld.count);
         nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
     }
@@ -664,6 +697,38 @@ static void dump_parameter_details(nmo_object_t *obj,
     fprintf(out, "\n");
 }
 
+typedef struct parameter_target_list {
+    nmo_object_t **items;
+    size_t count;
+    size_t capacity;
+    bool oom;
+} parameter_target_list_t;
+
+static int parameter_target_collect_visitor(size_t index,
+                                            nmo_object_t *obj,
+                                            const nmo_cmd_ctx_t *c,
+                                            void *user)
+{
+    (void)index;
+    (void)c;
+
+    parameter_target_list_t *list = (parameter_target_list_t *)user;
+    if (list->count == list->capacity) {
+        size_t new_capacity = list->capacity ? list->capacity * 2u : 64u;
+        nmo_object_t **new_items =
+            (nmo_object_t **)realloc(list->items, new_capacity * sizeof(*new_items));
+        if (!new_items) {
+            list->oom = true;
+            return 1;
+        }
+        list->items = new_items;
+        list->capacity = new_capacity;
+    }
+
+    list->items[list->count++] = obj;
+    return 0;
+}
+
 int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--all",  "-a", NMO_OPT_FLAG,   "Dump all parameters"},
@@ -731,32 +796,39 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
 
     size_t dump_count = 0;
 
-    /* Collect objects to dump */
+    parameter_target_list_t all_targets = {0};
+    nmo_object_t *single_target = NULL;
     nmo_object_t **targets = NULL;
     size_t target_count = 0;
 
     if (dump_all) {
-        nmo_object_t **objects = NULL;
-        size_t object_count = 0;
-        if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
-            fprintf(stderr, "Error: Failed to get objects\n");
+        nmo_object_query_t query = {
+            .predicate = parameter_query_predicate,
+            .predicate_user_data = (void *)c.registry,
+        };
+        rc = nmo_core_object_query_run(&c, &query,
+                                       parameter_target_collect_visitor,
+                                       &all_targets, NULL);
+        if (rc != NMO_CLI_EXIT_SUCCESS || all_targets.oom) {
+            free(all_targets.items);
+            fprintf(stderr, "Error: Failed to collect parameters\n");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
-        targets = objects;
-        target_count = object_count;
+        targets = all_targets.items;
+        target_count = all_targets.count;
     } else {
-        nmo_object_t *obj = repo ? nmo_object_repository_find_by_id(repo, object_id) : NULL;
-        if (!obj) {
+        single_target = repo ? nmo_object_repository_find_by_id(repo, object_id) : NULL;
+        if (!single_target) {
             fprintf(stderr, "Error: Object #%u not found\n", object_id);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
 
-        nmo_class_id_t cid = nmo_object_get_class_id(obj);
+        nmo_class_id_t cid = nmo_object_get_class_id(single_target);
         if (!is_parameter_class(c.registry, cid)) {
             fprintf(stderr, "Error: Object #%u is not a parameter (class %u)\n", object_id, cid);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
-        targets = &obj;
+        targets = &single_target;
         target_count = 1;
     }
 
@@ -784,6 +856,7 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
             if (!nmo_guid_equals(obj_type_guid, filter_guid)) {
                 if (!dump_all) {
                     fprintf(stderr, "Error: Parameter #%u type does not match filter\n", object_id);
+                    free(all_targets.items);
                     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
                 }
                 continue;
@@ -881,6 +954,7 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
         nmo_cmd_ctx_json_end(&c, doc, jdata, "parameter.dump");
     }
 
+    free(all_targets.items);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
