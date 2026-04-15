@@ -120,6 +120,25 @@ static void assert_file_has_no_legacy_data_access(const char *relative_path) {
     fclose(fp);
 }
 
+static void assert_file_has_no_substring(const char *relative_path, const char *needle) {
+    char full_path[512];
+    FILE *fp = NULL;
+    for (size_t i = 0; i < sizeof(k_probe_prefixes) / sizeof(k_probe_prefixes[0]); i++) {
+        snprintf(full_path, sizeof(full_path), "%s%s", k_probe_prefixes[i], relative_path);
+        fp = fopen(full_path, "rb");
+        if (fp != NULL) {
+            break;
+        }
+    }
+
+    ASSERT_NOT_NULL(fp);
+    char line[1024];
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        ASSERT_NULL(strstr(line, needle));
+    }
+    fclose(fp);
+}
+
 TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_exports) {
     for (size_t i = 0; i < sizeof(k_builtin_headers) / sizeof(k_builtin_headers[0]); i++) {
         assert_file_has_no_legacy_api(k_builtin_headers[i]);
@@ -134,7 +153,12 @@ TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_point
     }
 }
 
+TEST(no_legacy_runtime_api_exports, runtime_graph_uses_current_ref_graph_names) {
+    assert_file_has_no_substring("src/session/runtime_graph.c", "legacy");
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_exports);
 REGISTER_TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_pointer_state);
+REGISTER_TEST(no_legacy_runtime_api_exports, runtime_graph_uses_current_ref_graph_names);
 TEST_MAIN_END()

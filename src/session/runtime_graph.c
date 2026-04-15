@@ -8,13 +8,13 @@ struct nmo_runtime_graph {
     nmo_object_repository_t *repo;
     const nmo_type_registry_t *type_registry;
     nmo_arena_t *arena;
-    nmo_ref_graph_t *legacy;
+    nmo_ref_graph_t *ref_graph;
 };
 
 static int runtime_graph_copy_edges(
     nmo_runtime_graph_t *graph,
-    nmo_ref_edge_t *legacy_edges,
-    size_t legacy_count,
+    nmo_ref_edge_t *ref_edges,
+    size_t ref_count,
     nmo_runtime_edge_t **out_edges,
     size_t *out_count)
 {
@@ -25,28 +25,28 @@ static int runtime_graph_copy_edges(
     *out_edges = NULL;
     *out_count = 0;
 
-    if (legacy_edges == NULL || legacy_count == 0) {
+    if (ref_edges == NULL || ref_count == 0) {
         return NMO_OK;
     }
 
     nmo_runtime_edge_t *edges = (nmo_runtime_edge_t *)nmo_arena_alloc(
         graph->arena,
-        legacy_count * sizeof(nmo_runtime_edge_t),
+        ref_count * sizeof(nmo_runtime_edge_t),
         _Alignof(nmo_runtime_edge_t));
     if (edges == NULL) {
         return NMO_ERR_NOMEM;
     }
 
-    for (size_t i = 0; i < legacy_count; i++) {
-        edges[i].from = legacy_edges[i].from;
-        edges[i].to = legacy_edges[i].to;
-        edges[i].kind = (uint32_t)legacy_edges[i].kind;
-        edges[i].field_path = legacy_edges[i].field_path;
-        edges[i].index = legacy_edges[i].index;
+    for (size_t i = 0; i < ref_count; i++) {
+        edges[i].from = ref_edges[i].from;
+        edges[i].to = ref_edges[i].to;
+        edges[i].kind = (uint32_t)ref_edges[i].kind;
+        edges[i].field_path = ref_edges[i].field_path;
+        edges[i].index = ref_edges[i].index;
     }
 
     *out_edges = edges;
-    *out_count = legacy_count;
+    *out_count = ref_count;
     return NMO_OK;
 }
 
@@ -71,9 +71,9 @@ nmo_runtime_graph_t *nmo_runtime_graph_create(
     graph->repo = repo;
     graph->type_registry = type_registry;
     graph->arena = arena;
-    graph->legacy = nmo_ref_graph_create(repo, type_registry, arena);
+    graph->ref_graph = nmo_ref_graph_create(repo, type_registry, arena);
 
-    if (graph->legacy == NULL) {
+    if (graph->ref_graph == NULL) {
         return NULL;
     }
 
@@ -85,9 +85,9 @@ void nmo_runtime_graph_destroy(nmo_runtime_graph_t *graph)
     if (graph == NULL) {
         return;
     }
-    if (graph->legacy != NULL) {
-        nmo_ref_graph_destroy(graph->legacy);
-        graph->legacy = NULL;
+    if (graph->ref_graph != NULL) {
+        nmo_ref_graph_destroy(graph->ref_graph);
+        graph->ref_graph = NULL;
     }
 }
 
@@ -97,13 +97,13 @@ int nmo_runtime_graph_rebuild(nmo_runtime_graph_t *graph)
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (graph->legacy != NULL) {
-        nmo_ref_graph_destroy(graph->legacy);
-        graph->legacy = NULL;
+    if (graph->ref_graph != NULL) {
+        nmo_ref_graph_destroy(graph->ref_graph);
+        graph->ref_graph = NULL;
     }
 
-    graph->legacy = nmo_ref_graph_create(graph->repo, graph->type_registry, graph->arena);
-    if (graph->legacy == NULL) {
+    graph->ref_graph = nmo_ref_graph_create(graph->repo, graph->type_registry, graph->arena);
+    if (graph->ref_graph == NULL) {
         return NMO_ERR_NOMEM;
     }
 
@@ -119,14 +119,14 @@ int nmo_runtime_graph_get_edges(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_ref_edge_t *legacy_edges = NULL;
-    size_t legacy_count = 0;
-    int result = nmo_ref_graph_get_edges(graph->legacy, &legacy_edges, &legacy_count);
+    nmo_ref_edge_t *ref_edges = NULL;
+    size_t ref_count = 0;
+    int result = nmo_ref_graph_get_edges(graph->ref_graph, &ref_edges, &ref_count);
     if (result != NMO_OK) {
         return result;
     }
 
-    return runtime_graph_copy_edges(graph, legacy_edges, legacy_count, out_edges, out_count);
+    return runtime_graph_copy_edges(graph, ref_edges, ref_count, out_edges, out_count);
 }
 
 int nmo_runtime_graph_get_object_edges(
@@ -140,22 +140,22 @@ int nmo_runtime_graph_get_object_edges(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_ref_direction_t legacy_dir =
+    nmo_ref_direction_t ref_dir =
         (direction == NMO_RUNTIME_GRAPH_INBOUND) ? NMO_REF_DIR_INCOMING : NMO_REF_DIR_OUTGOING;
 
-    nmo_ref_edge_t *legacy_edges = NULL;
-    size_t legacy_count = 0;
+    nmo_ref_edge_t *ref_edges = NULL;
+    size_t ref_count = 0;
     int result = nmo_ref_graph_get_object_edges(
-        graph->legacy,
+        graph->ref_graph,
         object_id,
-        legacy_dir,
-        &legacy_edges,
-        &legacy_count);
+        ref_dir,
+        &ref_edges,
+        &ref_count);
     if (result != NMO_OK) {
         return result;
     }
 
-    return runtime_graph_copy_edges(graph, legacy_edges, legacy_count, out_edges, out_count);
+    return runtime_graph_copy_edges(graph, ref_edges, ref_count, out_edges, out_count);
 }
 
 int nmo_runtime_graph_get_stats(
@@ -166,14 +166,14 @@ int nmo_runtime_graph_get_stats(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_ref_graph_stats_t legacy_stats;
-    int result = nmo_ref_graph_get_stats(graph->legacy, &legacy_stats);
+    nmo_ref_graph_stats_t ref_stats;
+    int result = nmo_ref_graph_get_stats(graph->ref_graph, &ref_stats);
     if (result != NMO_OK) {
         return result;
     }
 
-    out_stats->total_edges = legacy_stats.total_edges;
-    out_stats->broken_edges = legacy_stats.broken_refs;
-    out_stats->self_edges = legacy_stats.self_refs;
+    out_stats->total_edges = ref_stats.total_edges;
+    out_stats->broken_edges = ref_stats.broken_refs;
+    out_stats->self_edges = ref_stats.self_refs;
     return NMO_OK;
 }
