@@ -6,13 +6,13 @@
 #include "nmo_cmd_resource.h"
 
 #include "../nmo_cmd_ctx.h"
+#include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
 #include "../nmo_tool_common.h"
 #include "../nmo_opt.h"
 
 #include "nmo.h"
 #include "session/nmo_session.h"
-#include "object/nmo_object_repository.h"
 #include "app/nmo_save.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
@@ -116,18 +116,6 @@ static void add_resource_json(yyjson_mut_doc *doc, yyjson_mut_val *obj, const nm
         }
         yyjson_mut_obj_add_val(doc, obj, "owner_ids", owners);
     }
-}
-
-static nmo_object_t *find_object_by_id(nmo_object_t **objects, size_t object_count, nmo_object_id_t id) {
-    if (!objects) {
-        return NULL;
-    }
-    for (size_t i = 0; i < object_count; ++i) {
-        if (objects[i] && nmo_object_get_id(objects[i]) == id) {
-            return objects[i];
-        }
-    }
-    return NULL;
 }
 
 /* ============================================================================
@@ -342,11 +330,6 @@ int nmo_cmd_resource_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
     }
 
-    /* Load objects for owner resolution (best-effort) */
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    (void)nmo_session_get_objects(c.session, &objects, &object_count);
-
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
@@ -362,7 +345,7 @@ int nmo_cmd_resource_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             nmo_object_id_t oid = ids[i];
             yyjson_mut_obj_add_uint(doc, owner, "id", oid);
 
-            nmo_object_t *o = find_object_by_id(objects, object_count, oid);
+            nmo_object_t *o = nmo_core_find_by_id(&c, oid);
             if (o) {
                 nmo_class_id_t class_id = nmo_object_get_class_id(o);
                 yyjson_mut_obj_add_uint(doc, owner, "class_id", class_id);
@@ -403,7 +386,7 @@ int nmo_cmd_resource_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
         const nmo_object_id_t *ids = (const nmo_object_id_t *)res->owner_ids.data;
         for (size_t i = 0; i < res->owner_ids.count; ++i) {
             nmo_object_id_t oid = ids[i];
-            nmo_object_t *o = find_object_by_id(objects, object_count, oid);
+            nmo_object_t *o = nmo_core_find_by_id(&c, oid);
             if (!o) {
                 fprintf(c.out, "  - %u\n", oid);
                 continue;

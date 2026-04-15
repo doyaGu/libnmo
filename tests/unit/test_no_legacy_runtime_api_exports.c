@@ -228,6 +228,10 @@ TEST(no_legacy_runtime_api_exports, animation_commands_use_shared_object_query_r
     assert_file_has_no_substring("tools/commands/nmo_cmd_animation.c", "nmo_session_get_objects");
 }
 
+TEST(no_legacy_runtime_api_exports, resource_commands_use_core_object_lookup) {
+    assert_file_has_no_substring("tools/commands/nmo_cmd_resource.c", "nmo_session_get_objects");
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_exports);
 REGISTER_TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_pointer_state);
@@ -242,4 +246,5 @@ REGISTER_TEST(no_legacy_runtime_api_exports, data_list_uses_shared_object_query_
 REGISTER_TEST(no_legacy_runtime_api_exports, scene_list_uses_shared_object_query_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, mesh_commands_use_shared_object_query_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, animation_commands_use_shared_object_query_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, resource_commands_use_core_object_lookup);
 TEST_MAIN_END()
