@@ -590,9 +590,8 @@ int nmo_cmd_entity_set_position(int argc, char **argv,
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    float old_x = estate->world_matrix[12];
-    float old_y = estate->world_matrix[13];
-    float old_z = estate->world_matrix[14];
+    float old_x, old_y, old_z;
+    nmo_3dentity_get_position(estate, &old_x, &old_y, &old_z);
 
     fprintf(c.out, "Entity #%u:\n", object_id);
     fprintf(c.out, "  position: (%.4f, %.4f, %.4f) -> (%.4f, %.4f, %.4f)%s\n",
@@ -601,9 +600,7 @@ int nmo_cmd_entity_set_position(int argc, char **argv,
             dry_run ? " (dry-run)" : "");
 
     if (!dry_run) {
-        estate->world_matrix[12] = new_x;
-        estate->world_matrix[13] = new_y;
-        estate->world_matrix[14] = new_z;
+        nmo_3dentity_set_position(estate, new_x, new_y, new_z);
 
         if (output) {
             nmo_save_options_t save_opts = nmo_save_options_default();

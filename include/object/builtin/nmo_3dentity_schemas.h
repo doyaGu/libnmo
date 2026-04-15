@@ -85,6 +85,37 @@ NMO_API nmo_status_t nmo_3dentity_remap_dependencies(
     const nmo_type_descriptor_t *type,
     void *context);
 
+/* ============================================================================
+ * Inline position accessors
+ * ============================================================================ */
+
+/**
+ * @brief Set the world position of a 3D entity.
+ * Modifies translation components (indices 12,13,14) of world_matrix.
+ */
+static inline void nmo_3dentity_set_position(
+    nmo_3dentity_state_t *state, float x, float y, float z)
+{
+    if (state) {
+        state->world_matrix[12] = x;
+        state->world_matrix[13] = y;
+        state->world_matrix[14] = z;
+    }
+}
+
+/**
+ * @brief Get the world position of a 3D entity.
+ */
+static inline void nmo_3dentity_get_position(
+    const nmo_3dentity_state_t *state, float *x, float *y, float *z)
+{
+    if (state) {
+        if (x) *x = state->world_matrix[12];
+        if (y) *y = state->world_matrix[13];
+        if (z) *z = state->world_matrix[14];
+    }
+}
+
 #ifdef __cplusplus
 }
 #endif

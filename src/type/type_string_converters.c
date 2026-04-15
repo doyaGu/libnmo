@@ -2554,3 +2554,56 @@ nmo_status_t nmo_vt_to_string_box(
     NMO_RETURN_OK();
 }
 NMO_DEFINE_VT_FROM_STRING(box, nmo_parse_box)
+
+/* ============================================================================
+ * Field-Level String Conversion
+ * ============================================================================ */
+
+nmo_status_t nmo_type_set_field(
+    void *state,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *field_name,
+    const char *value_str)
+{
+    if (!state || !type || !registry || !field_name || !value_str)
+        return NMO_ERR_INVALID_ARGUMENT;
+
+    const nmo_type_field_t *field = nmo_type_get_field_by_name(type, field_name);
+    if (!field) return NMO_ERR_NOT_FOUND;
+
+    const nmo_type_descriptor_t *field_type =
+        nmo_type_registry_find_by_guid(registry, field->type_guid);
+    if (!field_type) return NMO_ERR_NOT_FOUND;
+
+    void *field_ptr = nmo_field_get_ptr(state, field);
+    if (!field_ptr) return NMO_ERR_INVALID_STATE;
+
+    return nmo_type_value_from_string(field_ptr, field_type, registry, value_str);
+}
+
+nmo_status_t nmo_type_get_field(
+    const void *state,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *field_name,
+    char *out_buf,
+    size_t buf_size)
+{
+    if (!state || !type || !registry || !field_name || !out_buf || buf_size == 0)
+        return NMO_ERR_INVALID_ARGUMENT;
+
+    out_buf[0] = '\0';
+
+    const nmo_type_field_t *field = nmo_type_get_field_by_name(type, field_name);
+    if (!field) return NMO_ERR_NOT_FOUND;
+
+    const nmo_type_descriptor_t *field_type =
+        nmo_type_registry_find_by_guid(registry, field->type_guid);
+    if (!field_type) return NMO_ERR_NOT_FOUND;
+
+    const void *field_ptr = nmo_field_get_ptr_const(state, field);
+    if (!field_ptr) return NMO_ERR_INVALID_STATE;
+
+    return nmo_type_value_to_string(field_ptr, field_type, registry, out_buf, buf_size);
+}

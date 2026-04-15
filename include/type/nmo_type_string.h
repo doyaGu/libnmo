@@ -467,6 +467,53 @@ NMO_API size_t nmo_string_unescape(
     size_t dst_size
 );
 
+/* ============================================================================
+ * Field-Level String Conversion API
+ *
+ * Convenience wrappers that resolve a field by name within a typed state
+ * and delegate to nmo_type_value_from_string / nmo_type_value_to_string.
+ * ============================================================================ */
+
+/**
+ * @brief Set a typed field by name from a string representation.
+ *
+ * Resolves the field within the type descriptor, resolves the field's type,
+ * and calls nmo_type_value_from_string to parse and write at the field offset.
+ *
+ * @param state      Mutable typed state instance
+ * @param type       Type descriptor for the state
+ * @param registry   Type registry for field type resolution
+ * @param field_name Field name to set
+ * @param value_str  String representation of the new value
+ * @return NMO_OK on success, NMO_ERR_NOT_FOUND if field not found,
+ *         error from nmo_type_value_from_string on parse failure
+ */
+NMO_API nmo_status_t nmo_type_set_field(
+    void *state,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *field_name,
+    const char *value_str);
+
+/**
+ * @brief Read a typed field value as a string.
+ *
+ * @param state      Typed state instance (read-only)
+ * @param type       Type descriptor
+ * @param registry   Type registry
+ * @param field_name Field name to read
+ * @param out_buf    Output buffer
+ * @param buf_size   Buffer size
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_type_get_field(
+    const void *state,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *field_name,
+    char *out_buf,
+    size_t buf_size);
+
 #ifdef __cplusplus
 }
 #endif
