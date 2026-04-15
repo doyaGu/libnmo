@@ -185,10 +185,30 @@ TEST(no_legacy_runtime_api_exports, session_id_remap_compat_layer_is_removed) {
     assert_file_has_no_substring("src/session/deserializer.c", "session/nmo_id_remap.h");
 }
 
+TEST(no_legacy_runtime_api_exports, cli_uses_shared_library_object_query_bridge) {
+    assert_file_has_no_substring("tools/nmo_cmd_core.h", "nmo_core_iter_objects");
+    assert_file_has_no_substring("tools/nmo_cmd_core.c", "nmo_core_iter_objects");
+    assert_file_has_no_substring("tools/nmo_repl_commands.c", "nmo_core_iter_objects");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_convert.c", "nmo_core_iter_objects");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_object.c", "nmo_core_iter_objects");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_object_write.c", "nmo_core_iter_objects");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_texture.c", "nmo_core_iter_objects");
+}
+
+TEST(no_legacy_runtime_api_exports, cli_object_query_bridge_is_shared) {
+    assert_file_has_no_substring("tools/nmo_repl_commands.c", "query_bridge");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_convert.c", "query_bridge");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_object.c", "query_bridge");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_object_write.c", "query_bridge");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_texture.c", "query_bridge");
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_exports);
 REGISTER_TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_pointer_state);
 REGISTER_TEST(no_legacy_runtime_api_exports, runtime_graph_uses_current_ref_graph_names);
 REGISTER_TEST(no_legacy_runtime_api_exports, type_guid_compat_aliases_are_removed);
 REGISTER_TEST(no_legacy_runtime_api_exports, session_id_remap_compat_layer_is_removed);
+REGISTER_TEST(no_legacy_runtime_api_exports, cli_uses_shared_library_object_query_bridge);
+REGISTER_TEST(no_legacy_runtime_api_exports, cli_object_query_bridge_is_shared);
 TEST_MAIN_END()

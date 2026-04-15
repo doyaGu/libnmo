@@ -21,6 +21,7 @@
 #include "object/nmo_ref_graph.h"
 #include "object/nmo_object_repository.h"
 #include "session/nmo_runtime_kernel.h"
+#include "session/nmo_session.h"
 #include "session/nmo_session_edit.h"
 #include "type/nmo_type_string.h"
 
@@ -432,8 +433,8 @@ static int cmd_list(nmo_repl_context_t *repl, int argc, char **argv) {
     printf("\nObjects:\n");
 
     repl_list_data_t ld = { .repl = repl, .displayed = 0, .limit = limit };
-    nmo_core_iter_result_t result;
-    nmo_core_iter_objects(&c, query.class_id ? &query : NULL,
+    nmo_core_iter_result_t result = {0};
+    nmo_core_object_query_run(&c, query.class_id ? &query : NULL,
                           repl_list_visitor, &ld, &result);
 
     if (query.class_id) {
@@ -649,7 +650,7 @@ static int cmd_find(nmo_repl_context_t *repl, int argc, char **argv) {
     printf("\nMatches:\n");
 
     repl_find_data_t fd = { .repl = repl, .found = 0 };
-    nmo_core_iter_objects(&c, &query, repl_find_visitor, &fd, NULL);
+    nmo_core_object_query_run(&c, &query, repl_find_visitor, &fd, NULL);
 
     if (!fd.found) {
         printf("No matches.\n");
@@ -983,8 +984,8 @@ static int cmd_query(nmo_repl_context_t *repl, int argc, char **argv) {
     printf("\nQuery matches:\n");
 
     repl_query_data_t qd = { .repl = repl, .found = 0 };
-    nmo_core_iter_result_t result;
-    nmo_core_iter_objects(&c, &query, repl_query_visitor, &qd, &result);
+    nmo_core_iter_result_t result = {0};
+    nmo_core_object_query_run(&c, &query, repl_query_visitor, &qd, &result);
 
     nmo_core_query_dsl_destroy(&query_dsl);
 

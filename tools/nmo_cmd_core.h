@@ -177,19 +177,16 @@ nmo_status_t nmo_core_query_add_dsl_filter(
 void nmo_core_query_dsl_destroy(nmo_core_query_dsl_t *dsl);
 
 /**
- * @brief Iterate objects with optional filtering and visitor callback
+ * @brief Run a library object query with CLI visitor/result conventions.
  *
- * @param c       Command context
- * @param query   Query criteria (NULL = match all)
- * @param visitor Callback per matched object (NULL = count only)
- * @param user    User data passed to visitor
- * @param result  Output counters (NULL = don't collect)
- * @return NMO_CLI_EXIT_SUCCESS or NMO_CLI_EXIT_INTERNAL_ERROR
+ * This is the single tools-layer bridge from nmo_object_query_iterate() to
+ * nmo_core_object_fn visitors used by CLI and REPL commands.
  */
-int nmo_core_iter_objects(const nmo_cmd_ctx_t *c,
-                          const nmo_object_query_t *query,
-                          nmo_core_object_fn visitor, void *user,
-                          nmo_core_iter_result_t *result);
+int nmo_core_object_query_run(const nmo_cmd_ctx_t *c,
+                              const nmo_object_query_t *query,
+                              nmo_core_object_fn visitor,
+                              void *user,
+                              nmo_core_iter_result_t *result);
 
 /* ============================================================================
  * 4. Reference iteration

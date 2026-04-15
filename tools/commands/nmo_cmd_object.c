@@ -238,11 +238,11 @@ static int object_list_single(const char *file_path,
 
     nmo_cli_sort_key_t sort_key = nmo_cli_parse_sort_key(sort_key_str);
     bool needs_collect = (sort_key != NMO_CLI_SORT_NONE) || (top_n > 0);
-    nmo_core_iter_result_t result;
+    nmo_core_iter_result_t result = {0};
 
     if (needs_collect) {
         obj_collect_t col = {0};
-        nmo_core_iter_objects(&c, &query, obj_collect_visitor, &col, &result);
+        nmo_core_object_query_run(&c, &query, obj_collect_visitor, &col, &result);
 
         if (sort_key != NMO_CLI_SORT_NONE && col.count > 1) {
             s_sort_ctx = &c;
@@ -292,7 +292,7 @@ static int object_list_single(const char *file_path,
         if (doc && data) {
             yyjson_mut_val *arr = yyjson_mut_arr(doc);
             list_json_data_t jd = { .doc = doc, .arr = arr, .ctx = &c };
-            nmo_core_iter_objects(&c, &query, list_json_visitor, &jd, &result);
+            nmo_core_object_query_run(&c, &query, list_json_visitor, &jd, &result);
             yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)result.matched);
             yyjson_mut_obj_add_val(doc, data, "objects", arr);
         } else {
@@ -305,7 +305,7 @@ static int object_list_single(const char *file_path,
             nmo_cli_table_t table;
             nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
             list_table_data_t td = { .table = &table, .ctx = &c };
-            nmo_core_iter_objects(&c, &query, list_table_visitor, &td, &result);
+            nmo_core_object_query_run(&c, &query, list_table_visitor, &td, &result);
             fprintf(c.out, "Objects: %zu", result.matched);
             if (class_filter_str) fprintf(c.out, " (filtered by class: %s)", class_filter_str);
             if (filter_expr) fprintf(c.out, " (filtered by: %s)", filter_expr);
@@ -393,12 +393,12 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
     }
 
     bool needs_collect = (sort_key != NMO_CLI_SORT_NONE) || (top_n > 0);
-    nmo_core_iter_result_t result;
+    nmo_core_iter_result_t result = {0};
 
     if (needs_collect) {
         /* Path A: collect -> sort -> truncate -> output */
         obj_collect_t col = {0};
-        nmo_core_iter_objects(&c, &query, obj_collect_visitor, &col, &result);
+        nmo_core_object_query_run(&c, &query, obj_collect_visitor, &col, &result);
 
         /* Sort if requested */
         if (sort_key != NMO_CLI_SORT_NONE && col.count > 1) {
@@ -472,7 +472,7 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
             yyjson_mut_val *arr = yyjson_mut_arr(doc);
 
             list_json_data_t jd = { .doc = doc, .arr = arr, .ctx = &c };
-            nmo_core_iter_objects(&c, &query, list_json_visitor, &jd, &result);
+            nmo_core_object_query_run(&c, &query, list_json_visitor, &jd, &result);
 
             yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)result.matched);
             yyjson_mut_obj_add_val(doc, data, "objects", arr);
@@ -491,7 +491,7 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
             nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
             list_table_data_t td = { .table = &table, .ctx = &c };
-            nmo_core_iter_objects(&c, &query, list_table_visitor, &td, &result);
+            nmo_core_object_query_run(&c, &query, list_table_visitor, &td, &result);
 
             fprintf(c.out, "Objects: %zu", result.matched);
             if (class_filter_str) {
@@ -1025,7 +1025,7 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
         return nmo_cmd_ctx_done(&c, rc);
     }
 
-    nmo_core_iter_result_t result;
+    nmo_core_iter_result_t result = {0};
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
@@ -1043,7 +1043,7 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
         yyjson_mut_val *matches = yyjson_mut_arr(doc);
 
         find_json_data_t jd = { .doc = doc, .arr = matches, .ctx = &c };
-        nmo_core_iter_objects(&c, &query, find_json_visitor, &jd, &result);
+        nmo_core_object_query_run(&c, &query, find_json_visitor, &jd, &result);
 
         yyjson_mut_obj_add_uint(doc, data, "match_count", (uint64_t)result.matched);
         yyjson_mut_obj_add_val(doc, data, "matches", matches);
@@ -1061,7 +1061,7 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
         find_table_data_t td = { .table = &table, .ctx = &c };
-        nmo_core_iter_objects(&c, &query, find_table_visitor, &td, &result);
+        nmo_core_object_query_run(&c, &query, find_table_visitor, &td, &result);
 
         fprintf(c.out, "Found: %zu objects", result.matched);
         if (class_filter_str) {
@@ -1128,8 +1128,8 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     /* Collect matching objects */
     obj_collect_t col = {0};
-    nmo_core_iter_result_t iter_result;
-    nmo_core_iter_objects(&c, &query, obj_collect_visitor, &col, &iter_result);
+    nmo_core_iter_result_t iter_result = {0};
+    nmo_core_object_query_run(&c, &query, obj_collect_visitor, &col, &iter_result);
 
     /* Summary config */
     nmo_summary_config_t cfg = nmo_summary_config_default();

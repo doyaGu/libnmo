@@ -81,12 +81,6 @@ bool nmo_core_regex_match(const char *text, const char *pattern, bool icase) {
  * 3. Object iteration
  * ============================================================================ */
 
-typedef struct nmo_core_visitor_bridge {
-    const nmo_cmd_ctx_t *cmd;
-    nmo_core_object_fn cli_visitor;
-    void *cli_user;
-} nmo_core_visitor_bridge_t;
-
 static bool nmo_core_object_query_dsl_predicate(
     const nmo_object_t *object,
     void *user_data)
@@ -106,6 +100,63 @@ static bool nmo_core_object_query_dsl_predicate(
     bool match = (st == NMO_OK) && nmo_core_dsl_is_truthy(&val);
     nmo_dsl_value_destroy(&val);
     return match;
+}
+
+typedef struct nmo_core_object_query_bridge {
+    const nmo_cmd_ctx_t *cmd;
+    nmo_core_object_fn visitor;
+    void *user;
+} nmo_core_object_query_bridge_t;
+
+static bool nmo_core_object_query_visit(
+    size_t object_index,
+    nmo_object_t *object,
+    void *user_data)
+{
+    nmo_core_object_query_bridge_t *bridge =
+        (nmo_core_object_query_bridge_t *)user_data;
+    if (bridge == NULL || bridge->visitor == NULL) {
+        return true;
+    }
+    return bridge->visitor(object_index, object, bridge->cmd, bridge->user) == 0;
+}
+
+int nmo_core_object_query_run(const nmo_cmd_ctx_t *c,
+                              const nmo_object_query_t *query,
+                              nmo_core_object_fn visitor,
+                              void *user,
+                              nmo_core_iter_result_t *result)
+{
+    if (c == NULL || c->session == NULL) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
+    if (repo == NULL) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_core_object_query_bridge_t bridge = {
+        .cmd = c,
+        .visitor = visitor,
+        .user = user
+    };
+    nmo_object_query_result_t query_result = {0};
+    nmo_status_t status = nmo_object_query_iterate(
+        repo,
+        query,
+        c->registry,
+        visitor != NULL ? nmo_core_object_query_visit : NULL,
+        &bridge,
+        &query_result);
+
+    if (result != NULL) {
+        result->total = query_result.total;
+        result->matched = query_result.matched;
+        result->visited = query_result.visited;
+    }
+
+    return status == NMO_OK ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_INTERNAL_ERROR;
 }
 
 nmo_status_t nmo_core_query_set_class_name(
@@ -284,56 +335,6 @@ void nmo_core_query_dsl_destroy(nmo_core_query_dsl_t *dsl)
         nmo_dsl_program_destroy(dsl->program);
     }
     memset(dsl, 0, sizeof(*dsl));
-}
-
-static bool nmo_core_object_query_visitor(
-    size_t object_index,
-    nmo_object_t *object,
-    void *user_data)
-{
-    nmo_core_visitor_bridge_t *bridge = (nmo_core_visitor_bridge_t *)user_data;
-    if (bridge == NULL || bridge->cli_visitor == NULL) {
-        return true;
-    }
-    return bridge->cli_visitor(
-               object_index, object, bridge->cmd, bridge->cli_user) == 0;
-}
-
-int nmo_core_iter_objects(const nmo_cmd_ctx_t *c,
-                          const nmo_object_query_t *query,
-                          nmo_core_object_fn visitor, void *user,
-                          nmo_core_iter_result_t *result) {
-    if (c == NULL || c->session == NULL) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
-    if (repo == NULL) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    nmo_core_visitor_bridge_t visitor_bridge = {
-        .cmd = c,
-        .cli_visitor = visitor,
-        .cli_user = user
-    };
-
-    nmo_object_query_result_t query_result = {0};
-    nmo_status_t status = nmo_object_query_iterate(
-        repo,
-        query,
-        c->registry,
-        visitor != NULL ? nmo_core_object_query_visitor : NULL,
-        &visitor_bridge,
-        &query_result);
-
-    if (result != NULL) {
-        result->total = query_result.total;
-        result->matched = query_result.matched;
-        result->visited = query_result.visited;
-    }
-
-    return status == NMO_OK ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_INTERNAL_ERROR;
 }
 
 /* ============================================================================

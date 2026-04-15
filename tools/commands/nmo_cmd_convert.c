@@ -842,8 +842,8 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
 
     /* Collect matching objects */
     convert_obj_collect_t col = {0};
-    nmo_core_iter_result_t iter_result;
-    nmo_core_iter_objects(&c, &query, convert_obj_collect_visitor, &col, &iter_result);
+    nmo_core_iter_result_t iter_result = {0};
+    nmo_core_object_query_run(&c, &query, convert_obj_collect_visitor, &col, &iter_result);
 
     if (col.count == 0) {
         fprintf(stderr, "No objects matched the filter.\n");

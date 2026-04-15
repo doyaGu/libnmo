@@ -558,8 +558,8 @@ static int delete_batch_handler(
 
     /* Collect matching IDs */
     delete_id_collector_t col = {0};
-    nmo_core_iter_result_t iter_result;
-    rc = nmo_core_iter_objects(&c, &query, delete_collect_visitor, &col, &iter_result);
+    nmo_core_iter_result_t iter_result = {0};
+    rc = nmo_core_object_query_run(&c, &query, delete_collect_visitor, &col, &iter_result);
 
     nmo_core_query_dsl_destroy(&query_dsl);
 
@@ -688,8 +688,8 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
         }
 
         delete_id_collector_t col = {0};
-        nmo_core_iter_result_t iter_result;
-        rc = nmo_core_iter_objects(&c, &query, delete_collect_visitor, &col, &iter_result);
+        nmo_core_iter_result_t iter_result = {0};
+        rc = nmo_core_object_query_run(&c, &query, delete_collect_visitor, &col, &iter_result);
 
         nmo_core_query_dsl_destroy(&query_dsl);
 
@@ -1122,8 +1122,8 @@ int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *glob
         }
 
         delete_id_collector_t col = {0};
-        nmo_core_iter_result_t iter_result;
-        rc = nmo_core_iter_objects(&c, &query, delete_collect_visitor, &col, &iter_result);
+        nmo_core_iter_result_t iter_result = {0};
+        rc = nmo_core_object_query_run(&c, &query, delete_collect_visitor, &col, &iter_result);
 
         nmo_core_query_dsl_destroy(&query_dsl);
 

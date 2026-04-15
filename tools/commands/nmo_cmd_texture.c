@@ -13,11 +13,13 @@
 
 #include "nmo.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_texture_schemas.h"
 #include "format/nmo_stb_adapter.h"
 #include "format/nmo_image.h"
 #include "core/nmo_arena.h"
 #include "app/nmo_save.h"
+#include "session/nmo_session.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -218,8 +220,8 @@ int nmo_cmd_texture_list(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_core_query_set_class_id(&query, NMO_CID_TEXTURE, true);
 
     texture_list_t tl = {0};
-    nmo_core_iter_result_t iter_result;
-    nmo_core_iter_objects(&c, &query, collect_texture_visitor, &tl, &iter_result);
+    nmo_core_iter_result_t iter_result = {0};
+    nmo_core_object_query_run(&c, &query, collect_texture_visitor, &tl, &iter_result);
 
     /* Sort if requested */
     if (sort_by && tl.count > 1) {
@@ -869,8 +871,8 @@ int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *
     }
 
     texture_list_t tl = {0};
-    nmo_core_iter_result_t iter_result;
-    nmo_core_iter_objects(&c, &query, collect_texture_visitor, &tl, &iter_result);
+    nmo_core_iter_result_t iter_result = {0};
+    nmo_core_object_query_run(&c, &query, collect_texture_visitor, &tl, &iter_result);
 
     if (tl.count == 0) {
         if (filter_id) {
