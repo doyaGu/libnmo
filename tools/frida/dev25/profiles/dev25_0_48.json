@@ -1,0 +1,27 @@
+{
+  "name": "Dev 2.5.0.48",
+  "moduleName": "Dev.exe",
+  "idaBase": "0x400000",
+  "sha256": "C4BC2724165730B9CB0EFB8C481D05783BF3DBD7929698C3F863AC06ABEAD4B2",
+  "addresses": {
+    "CUIKLanguageManager_Load": "0x42cfa0",
+    "StatusBarOutput": "0x5d2b00",
+    "CKIsChildClassOfObject": "0x5e72f4",
+    "CKObject_GetName": "0x4014e0",
+    "CKObject_GetClassID": "0x5e72dc",
+    "CKBehavior_GetType": "0x5e7972",
+    "CKBehavior_GetSubBehaviorCount": "0x5e792a",
+    "CKBehavior_GetInputCount": "0x5e7a14",
+    "CKBehavior_GetOutputCount": "0x5e7a08",
+    "CKBehavior_GetSubBehaviorLinkCount": "0x5e7b94",
+    "GetUIElementForCKObject": "0x4ff9e0",
+    "SetUIElementForCKObject": "0x4ffa10",
+    "CUIKSchematicView_LoadBehaviorArrayIntoSchematic": "0x52bc80",
+    "CUIKSchematicView_RebuildMissingBehaviorWindowsFromList": "0x53f2d0",
+    "CUIKSchematicView_ReconstructScriptUIFromRuntimeGraph": "0x538f00",
+    "CUIKSchematicView_CreateBehaviorWindowForBehavior": "0x528d60",
+    "CUIKSchematicView_CollectRuntimeGraphLinkRecords": "0x5391c0",
+    "CUIKSchematicView_AppendRuntimeGraphLinkRecord": "0x539df0",
+    "CUIKSchematicView_CreateUILinksFromRebuildRecords": "0x53a450"
+  }
+}

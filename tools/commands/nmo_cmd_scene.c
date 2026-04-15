@@ -12,6 +12,7 @@
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
+#include "app/nmo_save.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/builtin/nmo_level_schemas.h"
@@ -438,6 +439,103 @@ int nmo_cmd_scene_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
                 }
             }
         }
+    }
+
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+/* ============================================================================
+ * scene set - Set scene properties
+ * ============================================================================ */
+
+int nmo_cmd_scene_set(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--output",    "-o", NMO_OPT_STRING, "Output file"},
+        {"--bg-color",  NULL, NMO_OPT_STRING, "Background color (ARGB hex)"},
+        {"--ambient",   NULL, NMO_OPT_STRING, "Ambient light color (ARGB hex)"},
+        {"--fog-color", NULL, NMO_OPT_STRING, "Fog color (ARGB hex)"},
+        {"--camera",    NULL, NMO_OPT_STRING, "Starting camera ID"},
+        {"--dry-run",   NULL, NMO_OPT_FLAG,   "Preview without saving"},
+    };
+    enum { OPT_OUTPUT, OPT_BG, OPT_AMBIENT, OPT_FOG, OPT_CAMERA,
+           OPT_DRYRUN, OPT_COUNT };
+
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+        return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *output = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+
+    if (!dry_run && !output) {
+        fprintf(stderr, "Error: -o required (or use --dry-run)\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (r.pos_count < 2) {
+        fprintf(stderr, "Usage: nmo scene set <id> [options] <file> -o <output>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    uint32_t object_id;
+    if (!nmo_tool_parse_u32(r.pos_args[0], &object_id)) {
+        fprintf(stderr, "Error: Invalid object ID '%s'\n", r.pos_args[0]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *file_path = r.pos_args[r.pos_count - 1];
+
+    /* Build field entries */
+    nmo_field_set_entry_t entries[4];
+    size_t entry_count = 0;
+
+    if (vals[OPT_BG].present)
+        entries[entry_count++] = (nmo_field_set_entry_t){"background_color", vals[OPT_BG].val.str};
+    if (vals[OPT_AMBIENT].present)
+        entries[entry_count++] = (nmo_field_set_entry_t){"ambient_light_color", vals[OPT_AMBIENT].val.str};
+    if (vals[OPT_FOG].present)
+        entries[entry_count++] = (nmo_field_set_entry_t){"fog_color", vals[OPT_FOG].val.str};
+    if (vals[OPT_CAMERA].present)
+        entries[entry_count++] = (nmo_field_set_entry_t){"starting_camera_id", vals[OPT_CAMERA].val.str};
+
+    if (entry_count == 0) {
+        fprintf(stderr, "Error: No scene properties specified. Use --bg-color, --ambient, --fog-color, or --camera\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
+    if (rc) return rc;
+
+    /* Validate object is a scene */
+    nmo_object_t *obj = nmo_core_find_by_id(&c, object_id);
+    if (!obj) {
+        fprintf(stderr, "Error: Object #%u not found\n", object_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+    }
+    if (nmo_object_get_class_id(obj) != NMO_CID_SCENE) {
+        fprintf(stderr, "Error: Object #%u is not a CKScene\n", object_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    fprintf(c.out, "Scene #%u:\n", object_id);
+
+    nmo_field_set_result_t result;
+    int set_rc = nmo_core_set_fields(&c, object_id, entries, entry_count,
+                                     dry_run, &result);
+    if (set_rc != NMO_CLI_EXIT_SUCCESS)
+        return nmo_cmd_ctx_done(&c, set_rc);
+
+    if (!dry_run && output) {
+        nmo_save_options_t save_opts = nmo_save_options_default();
+        int save_rc = nmo_save_file(c.session, output, &save_opts);
+        if (save_rc != NMO_OK) {
+            fprintf(stderr, "Error: Save failed: %s\n", nmo_error_string(save_rc));
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+        }
+        fprintf(c.out, "Saved to: %s\n", output);
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);

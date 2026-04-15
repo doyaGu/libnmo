@@ -15,6 +15,7 @@ extern "C" {
 int nmo_cmd_data_list(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_data_show(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_data_dump(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
 #ifdef __cplusplus
 }

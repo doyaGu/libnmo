@@ -21,6 +21,8 @@
 #include "dsl/nmo_dsl.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
+#include "type/nmo_type_string.h"
+#include "type/nmo_reflection.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -1258,4 +1260,72 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
+/* ============================================================================
+ * object list-fields - List all typed fields of an object
+ *
+ *   nmo object list-fields <id> <file>
+ * ============================================================================ */
 
+int nmo_cmd_object_list_fields(int argc, char **argv,
+                               const nmo_cli_global_opts_t *global)
+{
+    if (argc < 3) {
+        fprintf(stderr, "Usage: nmo object list-fields <id> <file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    uint32_t object_id;
+    if (!nmo_tool_parse_u32(argv[1], &object_id)) {
+        fprintf(stderr, "Error: Invalid object ID '%s'\n", argv[1]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_t *obj = repo ? nmo_object_repository_find_by_id(repo, object_id) : NULL;
+    if (!obj) {
+        fprintf(stderr, "Error: Object #%u not found\n", object_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+    }
+
+    void *state = nmo_object_get_state(obj);
+    const nmo_type_descriptor_t *type =
+        nmo_type_registry_find_by_class_id_inherited(
+            (nmo_type_registry_t *)c.registry, nmo_object_get_class_id(obj));
+
+    if (!type || !state) {
+        fprintf(stderr, "Error: No typed state for object #%u\n", object_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    fprintf(c.out, "Object #%u (%s) -- %zu fields:\n",
+            object_id, type->name ? type->name : "<unnamed>",
+            type->field_count);
+
+    for (size_t i = 0; i < type->field_count; i++) {
+        const nmo_type_field_t *field = &type->fields[i];
+        const nmo_type_descriptor_t *ftype =
+            nmo_type_registry_find_by_guid(
+                (nmo_type_registry_t *)c.registry, field->type_guid);
+
+        char val_buf[256];
+        val_buf[0] = '\0';
+        if (state && ftype) {
+            const void *fptr = nmo_field_get_ptr_const(state, field);
+            if (fptr) {
+                nmo_type_value_to_string(fptr, ftype,
+                    (nmo_type_registry_t *)c.registry, val_buf, sizeof(val_buf));
+            }
+        }
+
+        fprintf(c.out, "  %-30s %-20s = %s\n",
+                field->name ? field->name : "<unnamed>",
+                ftype && ftype->name ? ftype->name : "???",
+                val_buf[0] ? val_buf : "(empty)");
+    }
+
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}

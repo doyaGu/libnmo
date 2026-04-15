@@ -214,6 +214,37 @@ bool nmo_core_dsl_format(const nmo_dsl_value_t *val, char *buf, size_t sz);
 void nmo_core_dsl_print_error(FILE *stream, const char *source,
                               const char *prefix);
 
+/* ============================================================================
+ * 7. Field mutation
+ * ============================================================================ */
+
+typedef struct nmo_field_set_entry {
+    const char *field_name;
+    const char *value_str;
+} nmo_field_set_entry_t;
+
+typedef struct nmo_field_set_result {
+    size_t applied;
+    size_t failed;
+} nmo_field_set_result_t;
+
+/**
+ * @brief Set one or more fields on an object's typed state.
+ *
+ * For each entry, looks up the field by name in the object's type descriptor,
+ * parses the value string via nmo_type_value_from_string, and writes it.
+ * Prints old->new for each field.
+ *
+ * @return NMO_CLI_EXIT_SUCCESS on success
+ */
+int nmo_core_set_fields(
+    nmo_cmd_ctx_t *c,
+    nmo_object_id_t object_id,
+    const nmo_field_set_entry_t *entries,
+    size_t entry_count,
+    bool dry_run,
+    nmo_field_set_result_t *out_result);
+
 #ifdef __cplusplus
 }
 #endif

@@ -15,6 +15,7 @@ extern "C" {
 int nmo_cmd_texture_list(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_texture_show(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_texture_replace(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
 #ifdef __cplusplus
 }

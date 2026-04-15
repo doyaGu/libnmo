@@ -1405,3 +1405,74 @@ int nmo_cmd_object_import_json(int argc, char **argv, const nmo_cli_global_opts_
 
     return nmo_cmd_ctx_done(&c, result.errors > 0 ? NMO_CLI_EXIT_INTERNAL_ERROR : NMO_CLI_EXIT_SUCCESS);
 }
+
+/* ============================================================================
+ * object set-field - Set a typed field value on an object
+ *
+ *   nmo object set-field <id> <field> <value> <file> -o <output>
+ *   nmo object set-field <id> <field> <value> <file> --dry-run
+ * ============================================================================ */
+
+int nmo_cmd_object_set_field(int argc, char **argv,
+                             const nmo_cli_global_opts_t *global)
+{
+    static const nmo_opt_def_t opts[] = {
+        {"--output",  "-o", NMO_OPT_STRING, "Output file"},
+        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+    };
+    enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+        return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *output = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+
+    if (!dry_run && !output) {
+        fprintf(stderr, "Error: -o required (or use --dry-run)\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (r.pos_count < 4) {
+        fprintf(stderr, "Usage: nmo object set-field <id> <field> <value> <file> [-o output]\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    uint32_t object_id;
+    if (!nmo_tool_parse_u32(r.pos_args[0], &object_id)) {
+        fprintf(stderr, "Error: Invalid object ID '%s'\n", r.pos_args[0]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *field_name = r.pos_args[1];
+    const char *value_str  = r.pos_args[2];
+    const char *file_path  = r.pos_args[r.pos_count - 1];
+
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
+    if (rc) return rc;
+
+    fprintf(c.out, "Object #%u:\n", object_id);
+
+    nmo_field_set_entry_t entry = { .field_name = field_name, .value_str = value_str };
+    nmo_field_set_result_t result = {0, 0};
+    int set_rc = nmo_core_set_fields(&c, object_id, &entry, 1, dry_run, &result);
+
+    if (set_rc != NMO_CLI_EXIT_SUCCESS) {
+        return nmo_cmd_ctx_done(&c, set_rc);
+    }
+
+    if (!dry_run && output) {
+        nmo_save_options_t save_opts = nmo_save_options_default();
+        int save_rc = nmo_save_file(c.session, output, &save_opts);
+        if (save_rc != NMO_OK) {
+            fprintf(stderr, "Error: Save failed: %s\n", nmo_error_string(save_rc));
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+        }
+        fprintf(c.out, "Saved to: %s\n", output);
+    }
+
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}

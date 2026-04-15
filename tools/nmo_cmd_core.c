@@ -11,6 +11,8 @@
 #include "object/nmo_object_repository.h"
 #include "core/nmo_guid.h"
 #include "type/nmo_type_guids.h"
+#include "type/nmo_type_string.h"
+#include "type/nmo_reflection.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -665,4 +667,108 @@ void nmo_core_dsl_print_error(FILE *stream, const char *source,
             fprintf(stream, "^\n");
         }
     }
+}
+
+/* ============================================================================
+ * 7. Field mutation
+ * ============================================================================ */
+
+int nmo_core_set_fields(nmo_cmd_ctx_t *c, nmo_object_id_t object_id,
+                        const nmo_field_set_entry_t *entries, size_t entry_count,
+                        bool dry_run, nmo_field_set_result_t *out_result)
+{
+    nmo_field_set_result_t result = {0, 0};
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
+    nmo_object_t *obj = nmo_object_repository_find_by_id(repo, object_id);
+    if (!obj) {
+        fprintf(stderr, "Error: Object #%u not found\n", object_id);
+        if (out_result) *out_result = result;
+        return NMO_CLI_EXIT_NOT_FOUND;
+    }
+
+    void *state = nmo_object_get_state(obj);
+    if (!state) {
+        fprintf(stderr, "Error: Object #%u has no typed state\n", object_id);
+        if (out_result) *out_result = result;
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    const nmo_type_descriptor_t *type =
+        nmo_type_registry_find_by_class_id_inherited(
+            (nmo_type_registry_t *)c->registry, nmo_object_get_class_id(obj));
+    if (!type) {
+        fprintf(stderr, "Error: No type descriptor for class %u\n",
+                nmo_object_get_class_id(obj));
+        if (out_result) *out_result = result;
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    for (size_t i = 0; i < entry_count; i++) {
+        const char *fname = entries[i].field_name;
+        const char *vstr  = entries[i].value_str;
+
+        const nmo_type_field_t *field = nmo_type_get_field_by_name(type, fname);
+        if (!field) {
+            fprintf(stderr, "Error: Field '%s' not found in type '%s'\n",
+                    fname, type->name ? type->name : "<unnamed>");
+            result.failed++;
+            continue;
+        }
+
+        /* Resolve field type for value parsing */
+        const nmo_type_descriptor_t *field_type =
+            nmo_type_registry_find_by_guid(
+                (nmo_type_registry_t *)c->registry, field->type_guid);
+        if (!field_type) {
+            fprintf(stderr, "Error: Cannot resolve type for field '%s'\n", fname);
+            result.failed++;
+            continue;
+        }
+
+        void *field_ptr = nmo_field_get_ptr(state, field);
+        if (!field_ptr) {
+            fprintf(stderr, "Error: Cannot access field '%s'\n", fname);
+            result.failed++;
+            continue;
+        }
+
+        /* Read old value */
+        char old_buf[256];
+        old_buf[0] = '\0';
+        nmo_type_value_to_string(field_ptr, field_type,
+            (nmo_type_registry_t *)c->registry, old_buf, sizeof(old_buf));
+
+        /* Parse new value */
+        if (!dry_run) {
+            nmo_status_t rc = nmo_type_value_from_string(
+                field_ptr, field_type,
+                (nmo_type_registry_t *)c->registry, vstr);
+            if (rc != NMO_OK) {
+                fprintf(stderr, "Error: Failed to parse '%s' for field '%s': %s\n",
+                        vstr, fname, nmo_error_string(rc));
+                result.failed++;
+                continue;
+            }
+        }
+
+        /* Read new value (or show what would be set) */
+        char new_buf[256];
+        if (dry_run) {
+            snprintf(new_buf, sizeof(new_buf), "%s", vstr);
+        } else {
+            new_buf[0] = '\0';
+            nmo_type_value_to_string(field_ptr, field_type,
+                (nmo_type_registry_t *)c->registry, new_buf, sizeof(new_buf));
+        }
+
+        /* Print change */
+        fprintf(c->out, "  %s: %s -> %s%s\n",
+                fname, old_buf, new_buf, dry_run ? " (dry-run)" : "");
+
+        result.applied++;
+    }
+
+    if (out_result) *out_result = result;
+    return result.failed > 0 ? NMO_CLI_EXIT_INTERNAL_ERROR : NMO_CLI_EXIT_SUCCESS;
 }

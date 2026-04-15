@@ -14,12 +14,15 @@
 #include "nmo.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "app/nmo_save.h"
+#include "core/nmo_arena.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/nmo_object_enum_defs.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* ============================================================================
@@ -542,4 +545,245 @@ int nmo_cmd_data_dump(int argc, char **argv, const nmo_cli_global_opts_t *global
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+/* ============================================================================
+ * data set-cell
+ * ============================================================================ */
+
+/**
+ * Parse a value string and write it into a cell according to column type.
+ * For string type, allocates from the arena.
+ * Returns true on success, false on parse error.
+ */
+static bool parse_cell_value(const char *value_str,
+                             CK_ARRAYTYPE type,
+                             nmo_dataarray_cell_t *cell,
+                             nmo_arena_t *arena) {
+    switch (type) {
+    case CKARRAYTYPE_INT: {
+        char *end = NULL;
+        long v = strtol(value_str, &end, 0);
+        if (!end || *end != '\0') return false;
+        cell->int_value = (int32_t)v;
+        return true;
+    }
+    case CKARRAYTYPE_FLOAT: {
+        char *end = NULL;
+        double v = strtod(value_str, &end);
+        if (!end || *end != '\0') return false;
+        cell->float_value = (float)v;
+        return true;
+    }
+    case CKARRAYTYPE_STRING: {
+        size_t len = strlen(value_str);
+        char *copy = (char *)nmo_arena_alloc(arena, len + 1, 1);
+        if (!copy) return false;
+        memcpy(copy, value_str, len + 1);
+        cell->string_value = copy;
+        return true;
+    }
+    case CKARRAYTYPE_OBJECT: {
+        /* Accept #<id> or plain <id> */
+        const char *s = value_str;
+        if (s[0] == '#') s++;
+        char *end = NULL;
+        unsigned long v = strtoul(s, &end, 10);
+        if (!end || *end != '\0') return false;
+        cell->object_id = (nmo_object_id_t)v;
+        return true;
+    }
+    case CKARRAYTYPE_PARAMETER: {
+        const char *s = value_str;
+        if (s[0] == '#') s++;
+        char *end = NULL;
+        unsigned long v = strtoul(s, &end, 10);
+        if (!end || *end != '\0') return false;
+        cell->parameter_id = (nmo_object_id_t)v;
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
+int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        {"--row",     "-r", NMO_OPT_UINT,   "Row index (0-based)"},
+        {"--col",     "-c", NMO_OPT_UINT,   "Column index (0-based)"},
+        {"--value",   "-v", NMO_OPT_STRING, "New cell value"},
+        {"--dry-run", NULL,  NMO_OPT_FLAG,   "Preview without saving"},
+    };
+    enum { OPT_OUTPUT, OPT_ROW, OPT_COL, OPT_VALUE, OPT_DRYRUN, OPT_COUNT };
+
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+        return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    bool has_row   = vals[OPT_ROW].present;
+    uint32_t row   = has_row ? vals[OPT_ROW].val.u : 0;
+    bool has_col   = vals[OPT_COL].present;
+    uint32_t col   = has_col ? vals[OPT_COL].val.u : 0;
+    const char *value_str = vals[OPT_VALUE].present ? vals[OPT_VALUE].val.str : NULL;
+    bool dry_run   = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+
+    /* Positional: <id> <file> */
+    const char *id_str = NULL;
+    const char *file_path = NULL;
+    if (r.pos_count >= 2) {
+        id_str = r.pos_args[0];
+        file_path = r.pos_args[r.pos_count - 1];
+    } else if (r.pos_count == 1) {
+        id_str = r.pos_args[0];
+    }
+
+    if (!id_str) {
+        fprintf(stderr, "Error: No object ID specified\n");
+        fprintf(stderr, "Usage: nmo data set-cell <id> --row <r> --col <c> --value <val> <file> -o <output>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!has_row || !has_col || !value_str) {
+        fprintf(stderr, "Error: --row, --col, and --value are required\n");
+        fprintf(stderr, "Usage: nmo data set-cell <id> --row <r> --col <c> --value <val> <file> -o <output>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!dry_run && !output_path) {
+        fprintf(stderr, "Error: -o/--output is required (or use --dry-run)\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    uint32_t obj_id;
+    if (!nmo_tool_parse_u32_dec(id_str, &obj_id)) {
+        fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    /* Open session with explicit file path */
+    nmo_cmd_ctx_t c;
+    int rc;
+    if (file_path) {
+        rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
+    } else {
+        rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    }
+    if (rc) return rc;
+
+    /* Find object */
+    nmo_object_t *obj = nmo_core_find_by_id(&c, obj_id);
+    if (!obj) {
+        fprintf(stderr, "Error: Object %u not found\n", obj_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+    }
+    if (nmo_object_get_class_id(obj) != NMO_CID_DATAARRAY) {
+        fprintf(stderr, "Error: Object %u is not a CKDataArray\n", obj_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    nmo_dataarray_state_t *state =
+        (nmo_dataarray_state_t *)nmo_object_get_data(obj);
+    if (!state) {
+        fprintf(stderr, "Error: No data for object %u\n", obj_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    /* Validate bounds */
+    if (row >= state->row_count) {
+        fprintf(stderr, "Error: Row %u out of range (row_count=%u)\n",
+                row, state->row_count);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+    if (col >= state->column_count) {
+        fprintf(stderr, "Error: Column %u out of range (column_count=%u)\n",
+                col, state->column_count);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    /* Get column type */
+    CK_ARRAYTYPE col_type = state->column_formats[col].type;
+    const char *col_name = state->column_formats[col].name;
+    if (!col_name || !col_name[0]) col_name = "(unnamed)";
+
+    /* Format old value */
+    nmo_dataarray_row_t *target_row = &state->rows[row];
+    if (col >= target_row->column_count) {
+        fprintf(stderr, "Error: Row %u has only %u cells (column %u requested)\n",
+                row, target_row->column_count, col);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    char old_buf[256];
+    format_cell(old_buf, sizeof(old_buf), &target_row->cells[col], col_type, &c);
+
+    /* Parse new value */
+    nmo_arena_t *arena = nmo_session_get_arena(c.session);
+    nmo_dataarray_cell_t new_cell;
+    memset(&new_cell, 0, sizeof(new_cell));
+
+    if (!parse_cell_value(value_str, col_type, &new_cell, arena)) {
+        fprintf(stderr, "Error: Cannot parse '%s' as %s\n",
+                value_str, arraytype_name(col_type));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    /* Write the cell */
+    target_row->cells[col] = new_cell;
+
+    /* Format new value for display */
+    char new_buf[256];
+    format_cell(new_buf, sizeof(new_buf), &target_row->cells[col], col_type, &c);
+
+    /* Output */
+    const char *name = nmo_object_get_name(obj);
+    int exit_code = NMO_CLI_EXIT_SUCCESS;
+
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        if (!doc) return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, data, "id", obj_id);
+        nmo_cli_json_add_str_safe(doc, data, "name",
+                                  (name && name[0]) ? name : "");
+        yyjson_mut_obj_add_uint(doc, data, "row", row);
+        yyjson_mut_obj_add_uint(doc, data, "col", col);
+        nmo_cli_json_add_str_safe(doc, data, "column_name", col_name);
+        yyjson_mut_obj_add_str(doc, data, "column_type", arraytype_name(col_type));
+        nmo_cli_json_add_str_safe(doc, data, "old_value", old_buf);
+        nmo_cli_json_add_str_safe(doc, data, "new_value", new_buf);
+        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
+        if (!dry_run && output_path)
+            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+
+        nmo_cmd_ctx_json_end(&c, doc, data, "data.set-cell");
+    } else {
+        fprintf(c.out, "Data array #%u", obj_id);
+        if (name && name[0]) fprintf(c.out, " (%s)", name);
+        fprintf(c.out, "\n");
+        fprintf(c.out, "  Cell:  [%u,%u] (column '%s', type %s)\n",
+                row, col, col_name, arraytype_name(col_type));
+        fprintf(c.out, "  Old:   %s\n", old_buf);
+        fprintf(c.out, "  New:   %s\n", new_buf);
+
+        if (dry_run) {
+            fprintf(c.out, "  (dry run - not saved)\n");
+        }
+    }
+
+    /* Save */
+    if (!dry_run && output_path) {
+        nmo_save_options_t save_opts = nmo_save_options_default();
+        int save_rc = nmo_save_file(c.session, output_path, &save_opts);
+        if (save_rc != NMO_OK) {
+            fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_rc));
+            exit_code = NMO_CLI_EXIT_IO_ERROR;
+        } else if (!c.is_json) {
+            fprintf(c.out, "Saved to: %s\n", output_path);
+        }
+    }
+
+    return nmo_cmd_ctx_done(&c, exit_code);
 }

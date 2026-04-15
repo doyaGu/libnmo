@@ -220,6 +220,19 @@ static void object_import_json_usage(FILE *out) {
     fprintf(out, "  --dry-run            Preview changes without saving\n");
 }
 
+static void object_set_field_usage(FILE *out) {
+    fprintf(out, "Usage: nmo object set-field <id> <field> <value> <file> -o <output>\n\n");
+    fprintf(out, "Set an object's typed field and save. Use 'object list-fields' to see field names.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>  Output file (required unless --dry-run)\n");
+    fprintf(out, "  --dry-run            Preview without saving\n");
+}
+
+static void object_list_fields_usage(FILE *out) {
+    fprintf(out, "Usage: nmo object list-fields <id> <file>\n\n");
+    fprintf(out, "List all typed fields of an object with current values.\n");
+}
+
 static void debug_load_phases_usage(FILE *out) {
     fprintf(out, "Usage: nmo debug load-phases <file>\n\n");
     fprintf(out, "Show load pipeline phase details including reference resolution\n");
@@ -610,6 +623,17 @@ static void texture_extract_usage(FILE *out) {
     fprintf(out, "  --overwrite          Overwrite existing files\n");
 }
 
+static void texture_replace_usage(FILE *out) {
+    fprintf(out, "Usage: nmo texture replace <id> --file <image> <nmo-file> -o <output> [--dry-run]\n\n");
+    fprintf(out, "Replace texture bitmap data with image from disk.\n\n");
+    fprintf(out, "Loads the image, decodes to RGBA, re-encodes as PNG into the\n");
+    fprintf(out, "texture's reader slot, and updates dimensions.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -f, --file <path>    Image file to load (required)\n");
+    fprintf(out, "  -o, --output <path>  Output file (required unless --dry-run)\n");
+    fprintf(out, "  --dry-run            Preview without saving\n");
+}
+
 /* Data array command usage */
 static void data_list_usage(FILE *out) {
     fprintf(out, "Usage: nmo data list <file>\n\n");
@@ -628,6 +652,23 @@ static void data_dump_usage(FILE *out) {
     fprintf(out, "  --row, -r <n>   Dump a single row by index (key-value format)\n");
 }
 
+static void data_set_cell_usage(FILE *out) {
+    fprintf(out, "Usage: nmo data set-cell <id> --row <r> --col <c> --value <val> <file> -o <output>\n\n");
+    fprintf(out, "Modify a single cell in a CKDataArray.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -r, --row <n>        Row index (0-based, required)\n");
+    fprintf(out, "  -c, --col <n>        Column index (0-based, required)\n");
+    fprintf(out, "  -v, --value <val>    New cell value (required)\n");
+    fprintf(out, "  -o, --output <path>  Output file (required unless --dry-run)\n");
+    fprintf(out, "  --dry-run            Preview without saving\n\n");
+    fprintf(out, "Value format depends on column type:\n");
+    fprintf(out, "  int:       integer (decimal or 0x hex)\n");
+    fprintf(out, "  float:     floating point number\n");
+    fprintf(out, "  string:    text string\n");
+    fprintf(out, "  object:    object ID (e.g. 42 or #42)\n");
+    fprintf(out, "  parameter: parameter ID (e.g. 42 or #42)\n");
+}
+
 /* Scene command usage */
 static void scene_list_usage(FILE *out) {
     fprintf(out, "Usage: nmo scene list <file>\n\n");
@@ -639,6 +680,18 @@ static void scene_show_usage(FILE *out) {
     fprintf(out, "Show scene or level details.\n\n");
     fprintf(out, "For CKScene: background, ambient, fog, camera, environment.\n");
     fprintf(out, "For CKLevel: scene list, current scene, level scene.\n");
+}
+
+static void scene_set_usage(FILE *out) {
+    fprintf(out, "Usage: nmo scene set <id> [options] <file> -o <output>\n\n");
+    fprintf(out, "Set scene properties.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
+    fprintf(out, "  --bg-color <color>     Background color (ARGB hex, e.g. 0xFF000000)\n");
+    fprintf(out, "  --ambient <color>      Ambient light color (ARGB hex)\n");
+    fprintf(out, "  --fog-color <color>    Fog color (ARGB hex)\n");
+    fprintf(out, "  --camera <id>          Starting camera object ID\n");
+    fprintf(out, "  --dry-run              Preview without saving\n");
 }
 
 /* Entity command usage */
@@ -656,6 +709,43 @@ static void entity_show_usage(FILE *out) {
     fprintf(out, "For CKLight: also shows light type, color, range, attenuation.\n");
 }
 
+static void entity_set_position_usage(FILE *out) {
+    fprintf(out, "Usage: nmo entity set-position <id> <x> <y> <z> <file> -o <output>\n\n");
+    fprintf(out, "Set the world position (translation) of a 3D entity.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
+    fprintf(out, "  --dry-run              Preview without saving\n");
+}
+
+static void entity_set_parent_usage(FILE *out) {
+    fprintf(out, "Usage: nmo entity set-parent <id> <parent-id> <file> -o <output>\n\n");
+    fprintf(out, "Set the parent of a 3D entity. Use 0 to unparent.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
+    fprintf(out, "  --dry-run              Preview without saving\n");
+}
+
+static void entity_set_camera_usage(FILE *out) {
+    fprintf(out, "Usage: nmo entity set-camera <id> [options] <file> -o <output>\n\n");
+    fprintf(out, "Set camera properties on a CKCamera or CKTargetCamera.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
+    fprintf(out, "  --fov <float>          Field of view (radians)\n");
+    fprintf(out, "  --near <float>         Near clipping plane\n");
+    fprintf(out, "  --far <float>          Far clipping plane\n");
+    fprintf(out, "  --dry-run              Preview without saving\n");
+}
+
+static void entity_set_light_usage(FILE *out) {
+    fprintf(out, "Usage: nmo entity set-light <id> [options] <file> -o <output>\n\n");
+    fprintf(out, "Set light properties on a CKLight or CKTargetLight.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
+    fprintf(out, "  --diffuse <color>      Diffuse color\n");
+    fprintf(out, "  --range <float>        Light range\n");
+    fprintf(out, "  --dry-run              Preview without saving\n");
+}
+
 /* Material command usage */
 static void material_list_usage(FILE *out) {
     fprintf(out, "Usage: nmo material list <file>\n\n");
@@ -665,6 +755,19 @@ static void material_list_usage(FILE *out) {
 static void material_show_usage(FILE *out) {
     fprintf(out, "Usage: nmo material show <id> <file>\n\n");
     fprintf(out, "Show material details: colors, specular power, textures, blend modes.\n");
+}
+
+static void material_set_usage(FILE *out) {
+    fprintf(out, "Usage: nmo material set <id> [options] <file> -o <output>\n\n");
+    fprintf(out, "Set material properties.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
+    fprintf(out, "  --diffuse <color>      Diffuse color (ARGB hex, e.g. 0xFFFF0000)\n");
+    fprintf(out, "  --ambient <color>      Ambient color (ARGB hex)\n");
+    fprintf(out, "  --specular <color>     Specular color (ARGB hex)\n");
+    fprintf(out, "  --emissive <color>     Emissive color (ARGB hex)\n");
+    fprintf(out, "  --power <float>        Specular power\n");
+    fprintf(out, "  --dry-run              Preview without saving\n");
 }
 
 /* Mesh command usage */
@@ -769,6 +872,8 @@ static const nmo_cli_action_t object_actions[] = {
     {"copy", "cp", "Copy objects", nmo_cmd_object_copy, object_copy_usage, NULL, 0, NULL},
     {"import-json", NULL, "Import objects from JSON", nmo_cmd_object_import_json, object_import_json_usage, NULL, 0, NULL},
     {"graph", "gr", "Export reference graph", nmo_cmd_object_graph, object_graph_usage, NULL, 0, NULL},
+    {"set-field", "sf", "Set typed field value", nmo_cmd_object_set_field, object_set_field_usage, NULL, 0, NULL},
+    {"list-fields", "lf", "List object fields and values", nmo_cmd_object_list_fields, object_list_fields_usage, NULL, 0, NULL},
 };
 
 /* behavior group actions */
@@ -857,6 +962,7 @@ static const nmo_cli_action_t texture_actions[] = {
     {"list", "ls", "List textures", nmo_cmd_texture_list, texture_list_usage, NULL, 0, NULL},
     {"show", "s", "Show texture details", nmo_cmd_texture_show, texture_show_usage, NULL, 0, NULL},
     {"extract", "x", "Extract textures as images", nmo_cmd_texture_extract, texture_extract_usage, NULL, 0, NULL},
+    {"replace", "rep", "Replace texture bitmap data", nmo_cmd_texture_replace, texture_replace_usage, NULL, 0, NULL},
 };
 
 /* data array group actions */
@@ -864,24 +970,31 @@ static const nmo_cli_action_t data_actions[] = {
     {"list", "ls", "List data arrays", nmo_cmd_data_list, data_list_usage, NULL, 0, NULL},
     {"show", "s", "Show data array schema", nmo_cmd_data_show, data_show_usage, NULL, 0, NULL},
     {"dump", "d", "Dump data array contents", nmo_cmd_data_dump, data_dump_usage, NULL, 0, NULL},
+    {"set-cell", "sc", "Modify a single cell", nmo_cmd_data_set_cell, data_set_cell_usage, NULL, 0, NULL},
 };
 
 /* scene group actions */
 static const nmo_cli_action_t scene_actions[] = {
     {"list", "ls", "List scenes and levels", nmo_cmd_scene_list, scene_list_usage, NULL, 0, NULL},
     {"show", "s", "Show scene/level details", nmo_cmd_scene_show, scene_show_usage, NULL, 0, NULL},
+    {"set", NULL, "Set scene properties", nmo_cmd_scene_set, scene_set_usage, NULL, 0, NULL},
 };
 
 /* entity group actions */
 static const nmo_cli_action_t entity_actions[] = {
     {"list", "ls", "List 3D entities", nmo_cmd_entity_list, entity_list_usage, NULL, 0, NULL},
     {"show", "s", "Show entity details", nmo_cmd_entity_show, entity_show_usage, NULL, 0, NULL},
+    {"set-position", "sp", "Set entity position", nmo_cmd_entity_set_position, entity_set_position_usage, NULL, 0, NULL},
+    {"set-parent", NULL, "Set entity parent", nmo_cmd_entity_set_parent, entity_set_parent_usage, NULL, 0, NULL},
+    {"set-camera", "sc", "Set camera properties", nmo_cmd_entity_set_camera, entity_set_camera_usage, NULL, 0, NULL},
+    {"set-light", "sl", "Set light properties", nmo_cmd_entity_set_light, entity_set_light_usage, NULL, 0, NULL},
 };
 
 /* material group actions */
 static const nmo_cli_action_t material_actions[] = {
     {"list", "ls", "List materials", nmo_cmd_material_list, material_list_usage, NULL, 0, NULL},
     {"show", "s", "Show material details", nmo_cmd_material_show, material_show_usage, NULL, 0, NULL},
+    {"set", NULL, "Set material properties", nmo_cmd_material_set, material_set_usage, NULL, 0, NULL},
 };
 
 /* mesh group actions */

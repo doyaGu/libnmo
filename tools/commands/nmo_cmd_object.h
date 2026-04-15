@@ -87,6 +87,16 @@ int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *gl
  */
 int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
+/**
+ * @brief nmo object set-field - Set typed field value
+ */
+int nmo_cmd_object_set_field(int argc, char **argv, const nmo_cli_global_opts_t *global);
+
+/**
+ * @brief nmo object list-fields - List object fields and values
+ */
+int nmo_cmd_object_list_fields(int argc, char **argv, const nmo_cli_global_opts_t *global);
+
 #ifdef __cplusplus
 }
 #endif

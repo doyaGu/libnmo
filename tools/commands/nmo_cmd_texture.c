@@ -17,6 +17,7 @@
 #include "format/nmo_stb_adapter.h"
 #include "format/nmo_image.h"
 #include "core/nmo_arena.h"
+#include "app/nmo_save.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -1185,5 +1186,247 @@ int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *
     }
 
     free(tl.objects);
+    return nmo_cmd_ctx_done(&c, exit_code);
+}
+
+/* ============================================================================
+ * texture replace
+ * ============================================================================ */
+
+int nmo_cmd_texture_replace(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--file",    "-f", NMO_OPT_STRING, "Image file to load"},
+        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        {"--dry-run", NULL,  NMO_OPT_FLAG,   "Preview without saving"},
+    };
+    enum { OPT_FILE, OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+        return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *image_path  = vals[OPT_FILE].present   ? vals[OPT_FILE].val.str   : NULL;
+    const char *output_path = vals[OPT_OUTPUT].present  ? vals[OPT_OUTPUT].val.str : NULL;
+    bool dry_run            = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+
+    /* Positional: <id> <nmo-file> */
+    const char *id_str = NULL;
+    const char *file_path = NULL;
+    if (r.pos_count >= 2) {
+        id_str = r.pos_args[0];
+        file_path = r.pos_args[r.pos_count - 1];
+    } else if (r.pos_count == 1) {
+        id_str = r.pos_args[0];
+    }
+
+    if (!id_str) {
+        fprintf(stderr, "Error: No texture ID specified\n");
+        fprintf(stderr, "Usage: nmo texture replace <id> --file <image> <nmo-file> -o <output>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!image_path) {
+        fprintf(stderr, "Error: --file is required\n");
+        fprintf(stderr, "Usage: nmo texture replace <id> --file <image> <nmo-file> -o <output>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!dry_run && !output_path) {
+        fprintf(stderr, "Error: -o/--output is required (or use --dry-run)\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    uint32_t object_id;
+    if (!nmo_tool_parse_u32(id_str, &object_id)) {
+        fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    /* Read image file from disk */
+    FILE *img_fp = fopen(image_path, "rb");
+    if (!img_fp) {
+        fprintf(stderr, "Error: Cannot open image file '%s': %s\n",
+                image_path, strerror(errno));
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+    fseek(img_fp, 0, SEEK_END);
+    long img_file_size = ftell(img_fp);
+    fseek(img_fp, 0, SEEK_SET);
+    if (img_file_size <= 0 || img_file_size > (long)(256 * 1024 * 1024)) {
+        fprintf(stderr, "Error: Image file size invalid or too large (%ld bytes)\n",
+                img_file_size);
+        fclose(img_fp);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+    uint8_t *img_data = (uint8_t *)malloc((size_t)img_file_size);
+    if (!img_data) {
+        fprintf(stderr, "Error: Out of memory\n");
+        fclose(img_fp);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    size_t read_bytes = fread(img_data, 1, (size_t)img_file_size, img_fp);
+    fclose(img_fp);
+    if (read_bytes != (size_t)img_file_size) {
+        fprintf(stderr, "Error: Failed to read image file\n");
+        free(img_data);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    /* Open session */
+    nmo_cmd_ctx_t c;
+    int rc;
+    if (file_path) {
+        rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
+    } else {
+        rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    }
+    if (rc) { free(img_data); return rc; }
+
+    nmo_arena_t *arena = nmo_session_get_arena(c.session);
+
+    /* Decode image via stb_image (force RGBA) */
+    int img_w = 0, img_h = 0, img_ch = 0;
+    uint8_t *pixels = nmo_stbi_load_from_memory(
+        arena, img_data, (int)img_file_size, &img_w, &img_h, &img_ch, 4);
+    free(img_data);
+
+    if (!pixels || img_w <= 0 || img_h <= 0) {
+        fprintf(stderr, "Error: Failed to decode image '%s'\n", image_path);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+    }
+
+    /* Find texture object */
+    nmo_object_t *obj = nmo_core_find_by_id(&c, object_id);
+    if (!obj) {
+        fprintf(stderr, "Error: Object %u not found\n", object_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+    }
+
+    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+    if (!nmo_core_class_derives(&c, class_id, NMO_CID_TEXTURE)) {
+        fprintf(stderr, "Error: Object %u is not a CKTexture (class %u)\n",
+                object_id, class_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    nmo_texture_state_t *ts =
+        (nmo_texture_state_t *)nmo_object_get_state(obj);
+    if (!ts) {
+        fprintf(stderr, "Error: No texture state for object %u\n", object_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    /* Record old dimensions for display */
+    int32_t old_w = ts->reader_width;
+    int32_t old_h = ts->reader_height;
+    CKTEXTURE_BITMAP_KIND old_kind = ts->bitmap_kind;
+
+    /* Encode pixels as PNG for the reader slot */
+    size_t encoded_size = 0;
+    uint8_t *encoded = nmo_stbi_write_to_memory(
+        arena, NMO_BITMAP_FORMAT_PNG, img_w, img_h, 4, pixels, 0, &encoded_size);
+    if (!encoded || encoded_size == 0) {
+        fprintf(stderr, "Error: Failed to encode replacement image as PNG\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    /* Update texture state */
+    ts->reader_width = img_w;
+    ts->reader_height = img_h;
+    ts->reader_bpp = 32;
+
+    /* Ensure we have at least one slot */
+    if (ts->slot_count == 0) {
+        ts->slot_count = 1;
+    }
+
+    /* Allocate/replace reader slot data */
+    if (ts->bitmap_kind != CKTEXTURE_BITMAP_READER || !ts->reader_slots) {
+        /* Switch to reader mode and allocate a new reader slot array */
+        ts->bitmap_kind = CKTEXTURE_BITMAP_READER;
+        ts->reader_slots = (nmo_texture_reader_slot_t *)nmo_arena_alloc(
+            arena, ts->slot_count * sizeof(nmo_texture_reader_slot_t), 8);
+        if (!ts->reader_slots) {
+            fprintf(stderr, "Error: Out of memory allocating reader slot\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+        memset(ts->reader_slots, 0,
+               ts->slot_count * sizeof(nmo_texture_reader_slot_t));
+        /* Clear other slot types since we're switching kind */
+        ts->raw_slots = NULL;
+        ts->bitmap2_slots = NULL;
+    }
+
+    /* Update slot 0 with the new PNG data */
+    nmo_texture_reader_slot_t *slot = &ts->reader_slots[0];
+    slot->data = (uint8_t *)encoded;
+    slot->data_size = (uint32_t)encoded_size;
+    /* PNG format type/extension (standard Virtools reader) */
+    slot->format_type = 0;
+    slot->extension = 0;
+    slot->alpha_plane = NULL;
+    slot->alpha_plane_size = 0;
+
+    const char *name = nmo_object_get_name(obj);
+    int exit_code = NMO_CLI_EXIT_SUCCESS;
+
+    /* Output */
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        if (!doc) return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, data, "id", object_id);
+        nmo_cli_json_add_str_safe(doc, data, "name",
+                                  (name && name[0]) ? name : "");
+        nmo_cli_json_add_str_safe(doc, data, "image_file", image_path);
+
+        yyjson_mut_val *old_dims = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_int(doc, old_dims, "width", old_w);
+        yyjson_mut_obj_add_int(doc, old_dims, "height", old_h);
+        yyjson_mut_obj_add_str(doc, old_dims, "bitmap_kind",
+                               bitmap_kind_str(old_kind));
+        yyjson_mut_obj_add_val(doc, data, "old", old_dims);
+
+        yyjson_mut_val *new_dims = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_int(doc, new_dims, "width", img_w);
+        yyjson_mut_obj_add_int(doc, new_dims, "height", img_h);
+        yyjson_mut_obj_add_uint(doc, new_dims, "encoded_size",
+                                (uint64_t)encoded_size);
+        yyjson_mut_obj_add_str(doc, new_dims, "bitmap_kind", "reader");
+        yyjson_mut_obj_add_val(doc, data, "new", new_dims);
+
+        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
+        if (!dry_run && output_path)
+            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+
+        nmo_cmd_ctx_json_end(&c, doc, data, "texture.replace");
+    } else {
+        fprintf(c.out, "Texture #%u", object_id);
+        if (name && name[0]) fprintf(c.out, " (%s)", name);
+        fprintf(c.out, "\n");
+        fprintf(c.out, "  Image:    %s\n", image_path);
+        fprintf(c.out, "  Old dims: %dx%d (%s)\n", old_w, old_h,
+                bitmap_kind_str(old_kind));
+        fprintf(c.out, "  New dims: %dx%d (reader, %zu bytes PNG)\n",
+                img_w, img_h, encoded_size);
+
+        if (dry_run) {
+            fprintf(c.out, "  (dry run - not saved)\n");
+        }
+    }
+
+    /* Save */
+    if (!dry_run && output_path) {
+        nmo_save_options_t save_opts = nmo_save_options_default();
+        int save_rc = nmo_save_file(c.session, output_path, &save_opts);
+        if (save_rc != NMO_OK) {
+            fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_rc));
+            exit_code = NMO_CLI_EXIT_IO_ERROR;
+        } else if (!c.is_json) {
+            fprintf(c.out, "Saved to: %s\n", output_path);
+        }
+    }
+
     return nmo_cmd_ctx_done(&c, exit_code);
 }
