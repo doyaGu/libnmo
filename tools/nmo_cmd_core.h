@@ -124,6 +124,14 @@ nmo_status_t nmo_core_query_set_class_name(
     bool include_derived);
 
 /**
+ * @brief Set query class filter from a known class ID.
+ */
+void nmo_core_query_set_class_id(
+    nmo_object_query_t *query,
+    nmo_class_id_t class_id,
+    bool include_derived);
+
+/**
  * @brief Set query name filter to the CLI wildcard semantics.
  */
 void nmo_core_query_set_name_wildcard(

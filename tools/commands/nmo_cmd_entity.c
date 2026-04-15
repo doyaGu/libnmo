@@ -82,15 +82,20 @@ int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    /* Resolve optional class filter to class ID */
-    nmo_class_id_t filter_cid = 0;
-    if (class_filter) {
-        filter_cid = nmo_core_class_id(&c, class_filter);
-        if (filter_cid == 0) {
-            fprintf(stderr, "Error: Unknown class '%s'\n", class_filter);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-        }
+    nmo_object_query_t entity_query = {0};
+    nmo_core_query_set_class_id(&entity_query, NMO_CID_3DENTITY, true);
+
+    nmo_object_query_t class_query = {0};
+    nmo_core_query_build_options_t query_opts = {
+        .class_name = class_filter,
+        .include_derived_classes = true,
+    };
+    rc = nmo_core_query_build(&c, &class_query, NULL, &query_opts);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return nmo_cmd_ctx_done(&c, rc);
     }
+    const nmo_object_query_t *filter_query =
+        class_filter != NULL ? &class_query : NULL;
 
     nmo_object_t **objects = NULL;
     size_t object_count = 0;
@@ -107,8 +112,8 @@ int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
             if (!obj) continue;
             nmo_class_id_t cid = nmo_object_get_class_id(obj);
 
-            if (!nmo_core_class_derives(&c, cid, NMO_CID_3DENTITY)) continue;
-            if (filter_cid && !nmo_core_class_derives(&c, cid, filter_cid)) continue;
+            if (!nmo_core_query_matches_object(&c, &entity_query, obj)) continue;
+            if (!nmo_core_query_matches_object(&c, filter_query, obj)) continue;
 
             yyjson_mut_val *item = yyjson_mut_obj(doc);
             nmo_object_id_t id = nmo_object_get_id(obj);
@@ -164,8 +169,8 @@ int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
             if (!obj) continue;
             nmo_class_id_t cid = nmo_object_get_class_id(obj);
 
-            if (!nmo_core_class_derives(&c, cid, NMO_CID_3DENTITY)) continue;
-            if (filter_cid && !nmo_core_class_derives(&c, cid, filter_cid)) continue;
+            if (!nmo_core_query_matches_object(&c, &entity_query, obj)) continue;
+            if (!nmo_core_query_matches_object(&c, filter_query, obj)) continue;
 
             char id_buf[16];
             snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));

@@ -214,10 +214,8 @@ int nmo_cmd_texture_list(int argc, char **argv, const nmo_cli_global_opts_t *glo
     if (rc) return rc;
 
     /* Collect texture objects */
-    nmo_object_query_t query = {
-        .class_id = NMO_CID_TEXTURE,
-        .include_derived_classes = true
-    };
+    nmo_object_query_t query = {0};
+    nmo_core_query_set_class_id(&query, NMO_CID_TEXTURE, true);
 
     texture_list_t tl = {0};
     nmo_core_iter_result_t iter_result;
@@ -861,10 +859,8 @@ int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *
     if (rc) return rc;
 
     /* Collect textures */
-    nmo_object_query_t query = {
-        .class_id = NMO_CID_TEXTURE,
-        .include_derived_classes = true
-    };
+    nmo_object_query_t query = {0};
+    nmo_core_query_set_class_id(&query, NMO_CID_TEXTURE, true);
     if (filter_id) {
         nmo_core_query_set_object_id(&query, filter_id);
     }

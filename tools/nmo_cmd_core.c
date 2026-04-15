@@ -128,6 +128,18 @@ nmo_status_t nmo_core_query_set_class_name(
     return NMO_OK;
 }
 
+void nmo_core_query_set_class_id(
+    nmo_object_query_t *query,
+    nmo_class_id_t class_id,
+    bool include_derived)
+{
+    if (query == NULL) {
+        return;
+    }
+    query->class_id = class_id;
+    query->include_derived_classes = include_derived;
+}
+
 void nmo_core_query_set_name_wildcard(
     nmo_object_query_t *query,
     const char *pattern)
