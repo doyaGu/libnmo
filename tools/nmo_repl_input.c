@@ -170,9 +170,8 @@ static void rebuild_name_cache(nmo_repl_context_t *repl) {
         return;
     }
 
-    size_t obj_count = 0;
-    nmo_object_t **objects = nmo_object_repository_get_all(repo, &obj_count);
-    if (!objects || obj_count == 0) {
+    size_t obj_count = nmo_object_repository_get_count(repo);
+    if (obj_count == 0) {
         return;
     }
 
@@ -185,7 +184,8 @@ static void rebuild_name_cache(nmo_repl_context_t *repl) {
     /* First pass: count non-empty names */
     size_t name_count = 0;
     for (size_t i = 0; i < obj_count; i++) {
-        const char *name = nmo_object_get_name(objects[i]);
+        nmo_object_t *obj = nmo_object_repository_get_by_index(repo, i);
+        const char *name = obj ? nmo_object_get_name(obj) : NULL;
         if (name && name[0]) {
             name_count++;
         }
@@ -207,7 +207,8 @@ static void rebuild_name_cache(nmo_repl_context_t *repl) {
     /* Second pass: deep-copy names into arena */
     size_t idx = 0;
     for (size_t i = 0; i < obj_count && idx < name_count; i++) {
-        const char *name = nmo_object_get_name(objects[i]);
+        nmo_object_t *obj = nmo_object_repository_get_by_index(repo, i);
+        const char *name = obj ? nmo_object_get_name(obj) : NULL;
         if (name && name[0]) {
             const char *dup = nmo_arena_strdup(arena, name);
             if (dup) {

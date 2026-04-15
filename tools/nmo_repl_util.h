@@ -14,7 +14,8 @@ const char *nmo_repl_format_prompt(const nmo_repl_context_t *repl);
 
 int nmo_repl_parse_command(char *line, char **argv, int max_args);
 
-void nmo_repl_get_objects(nmo_repl_context_t *repl, nmo_object_t ***objects, size_t *count);
+size_t nmo_repl_object_count(nmo_repl_context_t *repl);
+nmo_object_t *nmo_repl_object_at(nmo_repl_context_t *repl, size_t index);
 
 void nmo_repl_print_object_summary(const nmo_repl_context_t *repl, size_t index, nmo_object_t *obj);
 void nmo_repl_print_object_summary_marked(const nmo_repl_context_t *repl,

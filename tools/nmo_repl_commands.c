@@ -476,12 +476,11 @@ static int cmd_select(nmo_repl_context_t *repl, int argc, char **argv) {
     repl->selected_index = index;
     repl->has_selection = true;
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    nmo_repl_get_objects(repl, &objects, &object_count);
-    if (index < object_count) {
+    size_t object_count = nmo_repl_object_count(repl);
+    nmo_object_t *obj = nmo_repl_object_at(repl, index);
+    if (obj && index < object_count) {
         printf("Selected object:\n");
-        nmo_repl_print_object_summary(repl, index, objects[index]);
+        nmo_repl_print_object_summary(repl, index, obj);
     }
 
     return 0;
@@ -493,16 +492,14 @@ static int cmd_show(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
-    size_t object_count = 0;
-    nmo_object_t **objects = NULL;
-    nmo_repl_get_objects(repl, &objects, &object_count);
+    size_t object_count = nmo_repl_object_count(repl);
+    nmo_object_t *obj = nmo_repl_object_at(repl, index);
 
-    if (index >= object_count) {
+    if (index >= object_count || !obj) {
         fprintf(stderr, "Error: Index %zu out of range (0-%zu)\n", index, object_count ? object_count - 1 : 0);
         return -1;
     }
 
-    nmo_object_t *obj = objects[index];
     nmo_object_id_t obj_id = nmo_object_get_id(obj);
     nmo_class_id_t class_id = nmo_object_get_class_id(obj);
     const char *name = nmo_object_get_name(obj);
@@ -548,16 +545,14 @@ static int cmd_dump(nmo_repl_context_t *repl, int argc, char **argv) {
         }
     }
 
-    size_t object_count = 0;
-    nmo_object_t **objects = NULL;
-    nmo_repl_get_objects(repl, &objects, &object_count);
+    size_t object_count = nmo_repl_object_count(repl);
+    nmo_object_t *obj = nmo_repl_object_at(repl, index);
 
-    if (index >= object_count) {
+    if (index >= object_count || !obj) {
         fprintf(stderr, "Error: Index %zu out of range (0-%zu)\n", index, object_count ? object_count - 1 : 0);
         return -1;
     }
 
-    nmo_object_t *obj = objects[index];
     nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
 
     if (!chunk) {
@@ -701,16 +696,14 @@ static int cmd_trace(nmo_repl_context_t *repl, int argc, char **argv) {
         }
     }
 
-    size_t object_count = 0;
-    nmo_object_t **objects = NULL;
-    nmo_repl_get_objects(repl, &objects, &object_count);
+    size_t object_count = nmo_repl_object_count(repl);
+    nmo_object_t *obj = nmo_repl_object_at(repl, index);
 
-    if (index >= object_count) {
+    if (index >= object_count || !obj) {
         fprintf(stderr, "Error: Index %zu out of range\n", index);
         return -1;
     }
 
-    nmo_object_t *obj = objects[index];
     nmo_object_id_t obj_id = nmo_object_get_id(obj);
     const char *obj_name = nmo_object_get_name(obj);
 
@@ -741,16 +734,14 @@ static int cmd_param(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
-    size_t object_count = 0;
-    nmo_object_t **objects = NULL;
-    nmo_repl_get_objects(repl, &objects, &object_count);
+    size_t object_count = nmo_repl_object_count(repl);
+    nmo_object_t *obj = nmo_repl_object_at(repl, index);
 
-    if (index >= object_count) {
+    if (index >= object_count || !obj) {
         fprintf(stderr, "Error: Index %zu out of range\n", index);
         return -1;
     }
 
-    nmo_object_t *obj = objects[index];
     nmo_class_id_t class_id = nmo_object_get_class_id(obj);
     nmo_type_registry_t *registry = nmo_context_get_type_registry(repl->ctx);
 
@@ -844,16 +835,14 @@ static int cmd_refs(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
-    size_t object_count = 0;
-    nmo_object_t **objects = NULL;
-    nmo_repl_get_objects(repl, &objects, &object_count);
+    size_t object_count = nmo_repl_object_count(repl);
+    nmo_object_t *obj = nmo_repl_object_at(repl, index);
 
-    if (index >= object_count) {
+    if (index >= object_count || !obj) {
         fprintf(stderr, "Error: Index %zu out of range\n", index);
         return -1;
     }
 
-    nmo_object_t *obj = objects[index];
     nmo_object_id_t obj_id = nmo_object_get_id(obj);
     const char *obj_name = nmo_object_get_name(obj);
     nmo_class_id_t class_id = nmo_object_get_class_id(obj);
@@ -890,11 +879,10 @@ static int cmd_eval(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
-    size_t object_count = 0;
-    nmo_object_t **objects = NULL;
-    nmo_repl_get_objects(repl, &objects, &object_count);
+    size_t object_count = nmo_repl_object_count(repl);
+    nmo_object_t *obj = nmo_repl_object_at(repl, repl->selected_index);
 
-    if (repl->selected_index >= object_count) {
+    if (repl->selected_index >= object_count || !obj) {
         fprintf(stderr, "Error: Selected index out of range\n");
         return -1;
     }
@@ -914,8 +902,6 @@ static int cmd_eval(nmo_repl_context_t *repl, int argc, char **argv) {
         pos += len;
     }
     expr_buf[pos] = '\0';
-
-    nmo_object_t *obj = objects[repl->selected_index];
 
     nmo_cmd_ctx_t c;
     nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
@@ -1056,9 +1042,7 @@ static int cmd_verify(nmo_repl_context_t *repl, int argc, char **argv) {
         }
     }
 
-    size_t object_count = 0;
-    nmo_object_t **objects = NULL;
-    nmo_repl_get_objects(repl, &objects, &object_count);
+    size_t object_count = nmo_repl_object_count(repl);
 
     size_t errors = 0;
     size_t checked = 0;
@@ -1069,7 +1053,10 @@ static int cmd_verify(nmo_repl_context_t *repl, int argc, char **argv) {
             continue;
         }
 
-        nmo_object_t *obj = objects[i];
+        nmo_object_t *obj = nmo_repl_object_at(repl, i);
+        if (!obj) {
+            continue;
+        }
         nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
         if (!chunk) {
             continue;
@@ -1135,16 +1122,14 @@ static int cmd_meta(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
-    size_t object_count = 0;
-    nmo_object_t **objects = NULL;
-    nmo_repl_get_objects(repl, &objects, &object_count);
+    size_t object_count = nmo_repl_object_count(repl);
+    nmo_object_t *obj = nmo_repl_object_at(repl, index);
 
-    if (index >= object_count) {
+    if (index >= object_count || !obj) {
         fprintf(stderr, "Error: Index %zu out of range (0-%zu)\n", index, object_count ? object_count - 1 : 0);
         return -1;
     }
 
-    nmo_object_t *obj = objects[index];
     nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
     if (!chunk) {
         fprintf(stderr, "Error: Object has no chunk\n");
@@ -1185,9 +1170,7 @@ static int cmd_export(nmo_repl_context_t *repl, int argc, char **argv) {
         include_data = true;
     }
 
-    size_t object_count = 0;
-    nmo_object_t **objects = NULL;
-    nmo_repl_get_objects(repl, &objects, &object_count);
+    size_t object_count = nmo_repl_object_count(repl);
 
     bool export_all = false;
     size_t single_index = 0;
@@ -1217,7 +1200,10 @@ static int cmd_export(nmo_repl_context_t *repl, int argc, char **argv) {
             continue;
         }
 
-        nmo_object_t *obj = objects[i];
+        nmo_object_t *obj = nmo_repl_object_at(repl, i);
+        if (!obj) {
+            continue;
+        }
         nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
 
         yyjson_mut_val *entry = yyjson_mut_obj(doc);
@@ -1409,12 +1395,10 @@ static int cmd_rename(nmo_repl_context_t *repl, int argc, char **argv) {
     size_t index = 0;
     if (nmo_repl_resolve_object_index(repl, argv[1], &index, false) != 0) return -1;
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    nmo_repl_get_objects(repl, &objects, &object_count);
-    if (index >= object_count) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
+    size_t object_count = nmo_repl_object_count(repl);
+    nmo_object_t *obj = nmo_repl_object_at(repl, index);
+    if (index >= object_count || !obj) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
 
-    nmo_object_t *obj = objects[index];
     nmo_object_id_t id = nmo_object_get_id(obj);
     const char *old_name = nmo_object_get_name(obj);
     printf("Renaming #%u '%s' -> '%s'\n", id, old_name ? old_name : "", argv[2]);
@@ -1449,17 +1433,15 @@ static int cmd_delete(nmo_repl_context_t *repl, int argc, char **argv) {
     size_t index = 0;
     if (nmo_repl_resolve_object_index(repl, argv[1], &index, false) != 0) return -1;
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    nmo_repl_get_objects(repl, &objects, &object_count);
-    if (index >= object_count) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
+    size_t object_count = nmo_repl_object_count(repl);
+    nmo_object_t *obj = nmo_repl_object_at(repl, index);
+    if (index >= object_count || !obj) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
 
     bool cascade = false;
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "--cascade") == 0) cascade = true;
     }
 
-    nmo_object_t *obj = objects[index];
     nmo_object_id_t id = nmo_object_get_id(obj);
     const char *name = nmo_object_get_name(obj);
 
@@ -1530,17 +1512,16 @@ static int cmd_copy(nmo_repl_context_t *repl, int argc, char **argv) {
     size_t index = 0;
     if (nmo_repl_resolve_object_index(repl, argv[1], &index, false) != 0) return -1;
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    nmo_repl_get_objects(repl, &objects, &object_count);
-    if (index >= object_count) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
+    size_t object_count = nmo_repl_object_count(repl);
+    nmo_object_t *obj = nmo_repl_object_at(repl, index);
+    if (index >= object_count || !obj) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
 
     bool cascade = false;
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "--cascade") == 0) cascade = true;
     }
 
-    nmo_object_id_t id = nmo_object_get_id(objects[index]);
+    nmo_object_id_t id = nmo_object_get_id(obj);
     uint32_t flags = cascade ? NMO_RUNTIME_REQUEST_CASCADE : 0;
 
     nmo_runtime_report_t report;
@@ -1568,12 +1549,10 @@ static int cmd_set_param(nmo_repl_context_t *repl, int argc, char **argv) {
     size_t index = 0;
     if (nmo_repl_resolve_object_index(repl, argv[1], &index, false) != 0) return -1;
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    nmo_repl_get_objects(repl, &objects, &object_count);
-    if (index >= object_count) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
+    size_t object_count = nmo_repl_object_count(repl);
+    nmo_object_t *obj = nmo_repl_object_at(repl, index);
+    if (index >= object_count || !obj) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
 
-    nmo_object_t *obj = objects[index];
     /* Check that object has a settable parameter state */
     const nmo_parameter_state_t *pstate = nmo_parameter_get_state(obj);
     if (!pstate) {

@@ -26,6 +26,104 @@
  * Helper functions
  * ============================================================================ */
 
+typedef struct nmo_convert_strip_collect {
+    const nmo_object_query_t *class_filter;
+    const nmo_object_query_t *name_filter;
+    nmo_object_id_t *ids;
+    nmo_object_t **objects;
+    size_t count;
+    size_t capacity;
+    bool oom;
+} nmo_convert_strip_collect_t;
+
+static int convert_strip_collect_object(size_t index,
+                                        nmo_object_t *obj,
+                                        const nmo_cmd_ctx_t *c,
+                                        void *user)
+{
+    (void)index;
+
+    nmo_convert_strip_collect_t *collect =
+        (nmo_convert_strip_collect_t *)user;
+    if (!collect || !obj) {
+        return 0;
+    }
+
+    bool matches = false;
+    if (collect->class_filter != NULL &&
+        nmo_core_query_matches_object(c, collect->class_filter, obj)) {
+        matches = true;
+    }
+    if (collect->name_filter != NULL &&
+        nmo_core_query_matches_object(c, collect->name_filter, obj)) {
+        matches = true;
+    }
+    if (!matches) {
+        return 0;
+    }
+
+    if (collect->count == collect->capacity) {
+        size_t new_capacity = collect->capacity ? collect->capacity * 2 : 32;
+        nmo_object_id_t *new_ids = (nmo_object_id_t *)realloc(
+            collect->ids, new_capacity * sizeof(*new_ids));
+        if (!new_ids) {
+            collect->oom = true;
+            return 1;
+        }
+        collect->ids = new_ids;
+
+        nmo_object_t **new_objects = (nmo_object_t **)realloc(
+            collect->objects, new_capacity * sizeof(*new_objects));
+        if (!new_objects) {
+            collect->oom = true;
+            return 1;
+        }
+        collect->objects = new_objects;
+        collect->capacity = new_capacity;
+    }
+
+    collect->ids[collect->count] = nmo_object_get_id(obj);
+    collect->objects[collect->count] = obj;
+    collect->count++;
+    return 0;
+}
+
+typedef struct nmo_convert_id_collect {
+    nmo_object_id_t *ids;
+    size_t count;
+    size_t capacity;
+    bool oom;
+} nmo_convert_id_collect_t;
+
+static int convert_collect_id(size_t index,
+                              nmo_object_t *obj,
+                              const nmo_cmd_ctx_t *c,
+                              void *user)
+{
+    (void)index;
+    (void)c;
+
+    nmo_convert_id_collect_t *collect = (nmo_convert_id_collect_t *)user;
+    if (!collect || !obj) {
+        return 0;
+    }
+
+    if (collect->count == collect->capacity) {
+        size_t new_capacity = collect->capacity ? collect->capacity * 2 : 64;
+        nmo_object_id_t *new_ids = (nmo_object_id_t *)realloc(
+            collect->ids, new_capacity * sizeof(*new_ids));
+        if (!new_ids) {
+            collect->oom = true;
+            return 1;
+        }
+        collect->ids = new_ids;
+        collect->capacity = new_capacity;
+    }
+
+    collect->ids[collect->count++] = nmo_object_get_id(obj);
+    return 0;
+}
+
 /**
  * @brief Parse compression level from string
  * @return true on success, false on error
@@ -275,54 +373,22 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
         name_filter = &name_query;
     }
 
-    /* Get repository */
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    size_t total_count = 0;
-    nmo_object_t **all_objects = nmo_object_repository_get_all(repo, &total_count);
-
-    if (!all_objects && total_count > 0) {
-        fprintf(stderr, "Error: Failed to get object list\n");
+    nmo_convert_strip_collect_t collect = {
+        .class_filter = class_filter,
+        .name_filter = name_filter,
+    };
+    rc = nmo_core_object_query_run(&c, NULL, convert_strip_collect_object,
+                                   &collect, NULL);
+    if (rc != NMO_CLI_EXIT_SUCCESS || collect.oom) {
+        fprintf(stderr, "Error: Failed to collect removal list\n");
+        free(collect.ids);
+        free(collect.objects);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
-
-    /* Collect matching object IDs and object pointers */
-    nmo_object_id_t *ids_to_remove = NULL;
-    nmo_object_t **matched_objects = NULL;
-    size_t remove_count = 0;
-
-    if (all_objects) {
-        /* Allocate capacity for both arrays */
-        ids_to_remove = (nmo_object_id_t *)malloc(total_count * sizeof(nmo_object_id_t));
-        matched_objects = (nmo_object_t **)malloc(total_count * sizeof(nmo_object_t *));
-        if (!ids_to_remove || !matched_objects) {
-            fprintf(stderr, "Error: Failed to allocate removal list\n");
-            free(ids_to_remove);
-            free(matched_objects);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-
-        /* Filter by class or name */
-        for (size_t i = 0; i < total_count; ++i) {
-            nmo_object_t *obj = all_objects[i];
-            bool matches = false;
-
-            if (class_filter != NULL &&
-                nmo_core_query_matches_object(&c, class_filter, obj)) {
-                matches = true;
-            }
-
-            if (name_filter != NULL &&
-                nmo_core_query_matches_object(&c, name_filter, obj)) {
-                matches = true;
-            }
-
-            if (matches) {
-                ids_to_remove[remove_count] = nmo_object_get_id(obj);
-                matched_objects[remove_count] = obj;
-                remove_count++;
-            }
-        }
-    }
+    nmo_object_id_t *ids_to_remove = collect.ids;
+    nmo_object_t **matched_objects = collect.objects;
+    size_t remove_count = collect.count;
 
     /* Dry-run: output preview and exit */
     if (dry_run) {
@@ -647,32 +713,20 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
     }
 
     /* Get all objects from source */
-    nmo_object_repository_t *src_repo = nmo_session_get_repository(src_session);
-    size_t src_count = 0;
-    nmo_object_t **src_objects = nmo_object_repository_get_all(src_repo, &src_count);
-
-    if (!src_objects && src_count > 0) {
-        fprintf(stderr, "Error: Failed to get source object list\n");
+    nmo_cmd_ctx_t src_cmd;
+    nmo_cmd_ctx_init_from_repl(&src_cmd, src_ctx, src_session, false);
+    nmo_convert_id_collect_t src_collect = {0};
+    if (nmo_core_object_query_run(&src_cmd, NULL, convert_collect_id,
+                                  &src_collect, NULL) != NMO_CLI_EXIT_SUCCESS ||
+        src_collect.oom) {
+        fprintf(stderr, "Error: Failed to collect source object IDs\n");
+        free(src_collect.ids);
         nmo_tool_close_session(src_ctx, src_session);
         nmo_tool_close_session(tgt_ctx, tgt_session);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
-
-    /* Collect source object IDs */
-    nmo_object_id_t *src_ids = NULL;
-    if (src_count > 0 && src_objects) {
-        src_ids = (nmo_object_id_t *)malloc(src_count * sizeof(nmo_object_id_t));
-        if (!src_ids) {
-            fprintf(stderr, "Error: Failed to allocate ID list\n");
-            nmo_tool_close_session(src_ctx, src_session);
-            nmo_tool_close_session(tgt_ctx, tgt_session);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-
-        for (size_t i = 0; i < src_count; ++i) {
-            src_ids[i] = nmo_object_get_id(src_objects[i]);
-        }
-    }
+    nmo_object_id_t *src_ids = src_collect.ids;
+    size_t src_count = src_collect.count;
 
     /* Copy objects from source to target */
     nmo_runtime_report_t report;

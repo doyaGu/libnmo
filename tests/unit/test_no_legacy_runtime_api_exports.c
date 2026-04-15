@@ -264,6 +264,18 @@ TEST(no_legacy_runtime_api_exports, behavior_graph_commands_use_core_object_quer
     assert_file_has_no_substring("tools/commands/nmo_cmd_behavior_search.c", "nmo_object_repository_get_all");
 }
 
+TEST(no_legacy_runtime_api_exports, remaining_tools_do_not_use_repository_get_all_scans) {
+    assert_file_has_no_substring("tools/commands/nmo_cmd_convert.c", "nmo_object_repository_get_all");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_diff.c", "nmo_object_repository_get_all");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_file.c", "nmo_object_repository_get_all");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_object_write.c", "nmo_object_repository_get_all");
+    assert_file_has_no_substring("tools/nmo_repl_input.c", "nmo_object_repository_get_all");
+    assert_file_has_no_substring("tools/nmo_repl_util.c", "nmo_object_repository_get_all");
+    assert_file_has_no_substring("tools/nmo_repl_commands.c", "nmo_repl_get_objects");
+    assert_file_has_no_substring("tools/nmo_repl_util.c", "nmo_repl_get_objects");
+    assert_file_has_no_substring("tools/nmo_repl_util.h", "nmo_repl_get_objects");
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_exports);
 REGISTER_TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_pointer_state);
@@ -285,4 +297,5 @@ REGISTER_TEST(no_legacy_runtime_api_exports, object_commands_use_object_query_ap
 REGISTER_TEST(no_legacy_runtime_api_exports, remaining_cli_commands_use_object_query_api);
 REGISTER_TEST(no_legacy_runtime_api_exports, cli_commands_do_not_bypass_shared_object_query_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, behavior_graph_commands_use_core_object_query_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, remaining_tools_do_not_use_repository_get_all_scans);
 TEST_MAIN_END()

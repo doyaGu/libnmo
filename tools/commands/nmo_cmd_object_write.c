@@ -44,6 +44,101 @@ typedef struct {
     bool collision;
 } rename_entry_t;
 
+typedef struct rename_collect_data {
+    nmo_object_repository_t *repo;
+    const nmo_object_query_t *filter_query;
+    const char *name_pattern;
+    const char *to_template;
+    bool use_regex;
+    rename_entry_t *entries;
+    size_t count;
+    size_t capacity;
+    size_t collision_count;
+    bool oom;
+} rename_collect_data_t;
+
+static int collect_rename_entry(size_t index,
+                                nmo_object_t *obj,
+                                const nmo_cmd_ctx_t *c,
+                                void *user)
+{
+    (void)index;
+
+    rename_collect_data_t *data = (rename_collect_data_t *)user;
+    if (!data || !obj) {
+        return 0;
+    }
+
+    const char *name = nmo_object_get_name(obj);
+    if (!name || !name[0]) return 0;
+
+    if (!nmo_core_query_matches_object(c, data->filter_query, obj)) {
+        return 0;
+    }
+
+    char new_name_buf[256];
+    if (data->use_regex) {
+        if (!nmo_core_regex_match(name, data->name_pattern, true)) {
+            return 0;
+        }
+
+        char no_captures[1][256];
+        if (nmo_tool_apply_rename_template(data->to_template, name,
+                                           no_captures, 0,
+                                           new_name_buf,
+                                           sizeof(new_name_buf)) < 0) {
+            fprintf(stderr, "Warning: Template expansion failed for '%s'\n",
+                    name);
+            return 0;
+        }
+    } else {
+        char captures[16][256];
+        size_t cap_count = 0;
+        if (!nmo_tool_wildcard_capture_ci(data->name_pattern, name,
+                                          captures, 16, &cap_count)) {
+            return 0;
+        }
+        if (nmo_tool_apply_rename_template(data->to_template, name,
+                                           captures, cap_count,
+                                           new_name_buf,
+                                           sizeof(new_name_buf)) < 0) {
+            fprintf(stderr, "Warning: Template expansion failed for '%s'\n",
+                    name);
+            return 0;
+        }
+    }
+
+    if (strcmp(name, new_name_buf) == 0) return 0;
+
+    if (data->count >= data->capacity) {
+        size_t new_capacity = data->capacity ? data->capacity * 2 : 32;
+        rename_entry_t *new_entries = (rename_entry_t *)realloc(
+            data->entries, new_capacity * sizeof(*new_entries));
+        if (!new_entries) {
+            data->oom = true;
+            return 1;
+        }
+        data->entries = new_entries;
+        data->capacity = new_capacity;
+    }
+
+    rename_entry_t *entry = &data->entries[data->count++];
+    entry->id = nmo_object_get_id(obj);
+    entry->class_id = nmo_object_get_class_id(obj);
+    snprintf(entry->old_name, sizeof(entry->old_name), "%s", name);
+    snprintf(entry->new_name, sizeof(entry->new_name), "%s", new_name_buf);
+
+    nmo_object_t *existing = nmo_object_repository_find_by_name(
+        data->repo, new_name_buf);
+    entry->collision =
+        (existing && nmo_object_get_id(existing) != entry->id);
+    if (entry->collision) {
+        data->collision_count++;
+    }
+
+    return 0;
+}
+
 static nmo_status_t nmo_cmd_object_rename_with_edit(
     nmo_cmd_ctx_t *c,
     nmo_object_id_t object_id,
@@ -114,90 +209,24 @@ static int nmo_cmd_object_rename_batch(
     const nmo_object_query_t *filter_query =
         class_filter != NULL ? &class_query : NULL;
 
-    /* Get all objects */
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    size_t obj_count = 0;
-    nmo_object_t **objects = nmo_object_repository_get_all(repo, &obj_count);
-
-    /* Collect rename entries */
-    rename_entry_t *entries = NULL;
-    size_t entry_count = 0;
-    size_t entry_cap = 0;
-    size_t collision_count = 0;
-
-    for (size_t i = 0; i < obj_count; i++) {
-        nmo_object_t *obj = objects[i];
-        const char *name = nmo_object_get_name(obj);
-        if (!name || !name[0]) continue;
-
-        if (!nmo_core_query_matches_object(&c, filter_query, obj)) {
-            continue;
-        }
-
-        /* Pattern match + template application */
-        char new_name_buf[256];
-        if (use_regex) {
-            /* Regex mode: match via lightweight regex, full name as {0} */
-            if (!nmo_core_regex_match(name, name_pattern, true))
-                continue;
-
-            char no_captures[1][256];
-            if (nmo_tool_apply_rename_template(to_template, name,
-                                               no_captures, 0,
-                                               new_name_buf,
-                                               sizeof(new_name_buf)) < 0) {
-                fprintf(stderr, "Warning: Template expansion failed for '%s'\n",
-                        name);
-                continue;
-            }
-        } else {
-            /* Glob mode */
-            char captures[16][256];
-            size_t cap_count = 0;
-            if (!nmo_tool_wildcard_capture_ci(name_pattern, name,
-                                              captures, 16, &cap_count)) {
-                continue;
-            }
-            if (nmo_tool_apply_rename_template(to_template, name,
-                                               captures, cap_count,
-                                               new_name_buf,
-                                               sizeof(new_name_buf)) < 0) {
-                fprintf(stderr, "Warning: Template expansion failed for '%s'\n",
-                        name);
-                continue;
-            }
-        }
-
-        /* Skip if name unchanged */
-        if (strcmp(name, new_name_buf) == 0) continue;
-
-        /* Grow entries array */
-        if (entry_count >= entry_cap) {
-            size_t new_cap = entry_cap ? entry_cap * 2 : 32;
-            rename_entry_t *tmp = (rename_entry_t *)realloc(
-                entries, new_cap * sizeof(rename_entry_t));
-            if (!tmp) {
-                fprintf(stderr, "Error: Out of memory\n");
-                free(entries);
-                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-            }
-            entries = tmp;
-            entry_cap = new_cap;
-        }
-
-        rename_entry_t *e = &entries[entry_count++];
-        e->id = nmo_object_get_id(obj);
-        e->class_id = nmo_object_get_class_id(obj);
-        snprintf(e->old_name, sizeof(e->old_name), "%s", name);
-        snprintf(e->new_name, sizeof(e->new_name), "%s", new_name_buf);
-
-        /* Collision check */
-        nmo_object_t *existing = nmo_object_repository_find_by_name(
-            repo, new_name_buf);
-        e->collision = (existing &&
-                        nmo_object_get_id(existing) != e->id);
-        if (e->collision) collision_count++;
+    rename_collect_data_t rename_data = {
+        .repo = repo,
+        .filter_query = filter_query,
+        .name_pattern = name_pattern,
+        .to_template = to_template,
+        .use_regex = use_regex,
+    };
+    rc = nmo_core_object_query_run(&c, NULL, collect_rename_entry,
+                                   &rename_data, NULL);
+    if (rc != NMO_CLI_EXIT_SUCCESS || rename_data.oom) {
+        fprintf(stderr, "Error: Out of memory\n");
+        free(rename_data.entries);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
+    rename_entry_t *entries = rename_data.entries;
+    size_t entry_count = rename_data.count;
+    size_t collision_count = rename_data.collision_count;
 
     /* Perform renames (unless dry-run) */
     size_t rename_errors = 0;

@@ -75,17 +75,24 @@ static void build_class_histogram(nmo_object_repository_t *repo1,
 {
     class_histogram_init(hist);
 
-    size_t n1 = 0, n2 = 0;
-    nmo_object_t **objs1 = nmo_object_repository_get_all(repo1, &n1);
-    nmo_object_t **objs2 = nmo_object_repository_get_all(repo2, &n2);
+    size_t n1 = nmo_object_repository_get_count(repo1);
+    size_t n2 = nmo_object_repository_get_count(repo2);
 
     for (size_t i = 0; i < n1; i++) {
-        nmo_class_id_t cid = nmo_object_get_class_id(objs1[i]);
+        nmo_object_t *obj = nmo_object_repository_get_by_index(repo1, i);
+        if (!obj) {
+            continue;
+        }
+        nmo_class_id_t cid = nmo_object_get_class_id(obj);
         class_count_entry_t *e = class_histogram_add(hist, cid);
         if (e) e->count1++;
     }
     for (size_t i = 0; i < n2; i++) {
-        nmo_class_id_t cid = nmo_object_get_class_id(objs2[i]);
+        nmo_object_t *obj = nmo_object_repository_get_by_index(repo2, i);
+        if (!obj) {
+            continue;
+        }
+        nmo_class_id_t cid = nmo_object_get_class_id(obj);
         class_count_entry_t *e = class_histogram_add(hist, cid);
         if (e) e->count2++;
     }
@@ -957,4 +964,3 @@ int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
-

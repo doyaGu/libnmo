@@ -423,6 +423,65 @@ static class_compare_fn class_sort_comparator(nmo_cli_sort_key_t key) {
     }
 }
 
+typedef struct file_class_collect {
+    nmo_class_count_entry_t *entries;
+    size_t count;
+    size_t capacity;
+    size_t grand_total_size;
+    bool oom;
+} file_class_collect_t;
+
+static int file_classes_object(size_t index,
+                               nmo_object_t *obj,
+                               const nmo_cmd_ctx_t *c,
+                               void *user)
+{
+    (void)index;
+    (void)c;
+
+    file_class_collect_t *collect = (file_class_collect_t *)user;
+    if (!collect || !obj) {
+        return 0;
+    }
+
+    uint32_t class_id = nmo_object_get_class_id(obj);
+    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+    size_t obj_size = chunk ? nmo_chunk_get_data_size(chunk) : 0;
+    collect->grand_total_size += obj_size;
+
+    size_t found = (size_t)-1;
+    for (size_t j = 0; j < collect->count; j++) {
+        if (collect->entries[j].class_id == class_id) {
+            found = j;
+            break;
+        }
+    }
+
+    if (found == (size_t)-1) {
+        if (collect->count == collect->capacity) {
+            size_t new_capacity = collect->capacity ? collect->capacity * 2 : 16;
+            nmo_class_count_entry_t *new_entries =
+                (nmo_class_count_entry_t *)realloc(
+                    collect->entries,
+                    new_capacity * sizeof(*new_entries));
+            if (!new_entries) {
+                collect->oom = true;
+                return 1;
+            }
+            collect->entries = new_entries;
+            collect->capacity = new_capacity;
+        }
+        found = collect->count++;
+        collect->entries[found].class_id = class_id;
+        collect->entries[found].count = 0;
+        collect->entries[found].total_size = 0;
+    }
+
+    collect->entries[found].count++;
+    collect->entries[found].total_size += obj_size;
+    return 0;
+}
+
 int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--sort", "-s", NMO_OPT_STRING, "Sort by: id (default), size, count, name"},
@@ -447,56 +506,17 @@ int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *glo
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    size_t object_count = 0;
-    nmo_object_t **objects = nmo_object_repository_get_all(repo, &object_count);
-
-    nmo_class_count_entry_t *entries = NULL;
-    size_t entry_count = 0;
-    size_t entry_capacity = 0;
-    size_t grand_total_size = 0;
-
-    for (size_t i = 0; i < object_count; i++) {
-        nmo_object_t *obj = objects[i];
-        if (obj == NULL) {
-            continue;
-        }
-
-        uint32_t class_id = nmo_object_get_class_id(obj);
-        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-        size_t obj_size = chunk ? nmo_chunk_get_data_size(chunk) : 0;
-        grand_total_size += obj_size;
-
-        size_t found = (size_t)-1;
-        for (size_t j = 0; j < entry_count; j++) {
-            if (entries[j].class_id == class_id) {
-                found = j;
-                break;
-            }
-        }
-
-        if (found == (size_t)-1) {
-            if (entry_count == entry_capacity) {
-                size_t new_capacity = (entry_capacity == 0) ? 16 : entry_capacity * 2;
-                nmo_class_count_entry_t *new_entries =
-                    (nmo_class_count_entry_t *)realloc(entries, new_capacity * sizeof(nmo_class_count_entry_t));
-                if (new_entries == NULL) {
-                    free(entries);
-                    fprintf(stderr, "Error: Out of memory\n");
-                    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-                }
-                entries = new_entries;
-                entry_capacity = new_capacity;
-            }
-            entries[entry_count].class_id = class_id;
-            entries[entry_count].count = 1;
-            entries[entry_count].total_size = obj_size;
-            entry_count++;
-        } else {
-            entries[found].count++;
-            entries[found].total_size += obj_size;
-        }
+    file_class_collect_t collect = {0};
+    rc = nmo_core_object_query_run(&c, NULL, file_classes_object,
+                                   &collect, NULL);
+    if (rc != NMO_CLI_EXIT_SUCCESS || collect.oom) {
+        free(collect.entries);
+        fprintf(stderr, "Error: Out of memory\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
+    nmo_class_count_entry_t *entries = collect.entries;
+    size_t entry_count = collect.count;
+    size_t grand_total_size = collect.grand_total_size;
 
     /* Sort entries */
     if (entry_count > 1) {
@@ -665,6 +685,82 @@ static int space_class_cmp_size(const void *a, const void *b) {
     return 0;
 }
 
+typedef struct {
+    nmo_object_t *obj;
+    uint64_t data_sz;
+    uint64_t pack_sz;
+} file_space_obj_entry_t;
+
+typedef struct file_space_collect {
+    space_class_entry_t classes[256];
+    size_t class_count;
+    file_space_obj_entry_t *objects;
+    size_t object_count;
+    size_t object_capacity;
+    uint64_t total_data;
+    uint64_t total_pack;
+    uint64_t compressed_count;
+    bool oom;
+} file_space_collect_t;
+
+static int file_space_object(size_t index,
+                             nmo_object_t *obj,
+                             const nmo_cmd_ctx_t *c,
+                             void *user)
+{
+    (void)index;
+
+    file_space_collect_t *collect = (file_space_collect_t *)user;
+    if (!collect || !obj) {
+        return 0;
+    }
+
+    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+    uint64_t data_sz = chunk ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0;
+    uint64_t pack_sz = chunk ? (uint64_t)chunk->compressed_size : 0;
+    if (chunk && chunk->is_compressed) {
+        collect->compressed_count++;
+    }
+
+    collect->total_data += data_sz;
+    collect->total_pack += pack_sz;
+
+    if (collect->object_count == collect->object_capacity) {
+        size_t new_capacity = collect->object_capacity ? collect->object_capacity * 2 : 64;
+        file_space_obj_entry_t *new_objects =
+            (file_space_obj_entry_t *)realloc(
+                collect->objects, new_capacity * sizeof(*new_objects));
+        if (!new_objects) {
+            collect->oom = true;
+            return 1;
+        }
+        collect->objects = new_objects;
+        collect->object_capacity = new_capacity;
+    }
+    collect->objects[collect->object_count++] =
+        (file_space_obj_entry_t){ .obj = obj, .data_sz = data_sz, .pack_sz = pack_sz };
+
+    nmo_class_id_t cid = nmo_object_get_class_id(obj);
+    size_t ci;
+    for (ci = 0; ci < collect->class_count; ci++) {
+        if (collect->classes[ci].class_id == cid) break;
+    }
+    if (ci == collect->class_count && collect->class_count < 256) {
+        collect->classes[collect->class_count].class_id = cid;
+        collect->classes[collect->class_count].class_name = nmo_core_class_name(c, cid);
+        collect->classes[collect->class_count].count = 0;
+        collect->classes[collect->class_count].data_size = 0;
+        collect->classes[collect->class_count].pack_size = 0;
+        collect->class_count++;
+    }
+    if (ci < 256) {
+        collect->classes[ci].count++;
+        collect->classes[ci].data_size += data_sz;
+        collect->classes[ci].pack_size += pack_sz;
+    }
+    return 0;
+}
+
 int nmo_cmd_file_space(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--top", "-t", NMO_OPT_UINT, "Show top N objects by size (default: 15)"},
@@ -683,57 +779,21 @@ int nmo_cmd_file_space(int argc, char **argv, const nmo_cli_global_opts_t *globa
 
     nmo_file_info_t info = nmo_session_get_file_info(c.session);
 
-    /* Collect all objects */
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    size_t obj_count = 0;
-    nmo_object_t **objects = nmo_object_repository_get_all(repo, &obj_count);
-
-    /* Per-class aggregation */
-    space_class_entry_t classes[256];
-    size_t class_count = 0;
-
-    /* Per-object data for top-N */
-    typedef struct { nmo_object_t *obj; uint64_t data_sz; uint64_t pack_sz; } obj_entry_t;
-    obj_entry_t *obj_entries = NULL;
-    if (obj_count > 0)
-        obj_entries = (obj_entry_t *)malloc(obj_count * sizeof(obj_entry_t));
-
-    uint64_t total_data = 0, total_pack = 0;
-    uint64_t compressed_count = 0;
-
-    for (size_t i = 0; i < obj_count; i++) {
-        nmo_object_t *obj = objects[i];
-        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-        uint64_t data_sz = chunk ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0;
-        uint64_t pack_sz = chunk ? (uint64_t)chunk->compressed_size : 0;
-        if (chunk && chunk->is_compressed) compressed_count++;
-
-        total_data += data_sz;
-        total_pack += pack_sz;
-
-        if (obj_entries)
-            obj_entries[i] = (obj_entry_t){ .obj = obj, .data_sz = data_sz, .pack_sz = pack_sz };
-
-        /* Accumulate into class bucket */
-        nmo_class_id_t cid = nmo_object_get_class_id(obj);
-        size_t ci;
-        for (ci = 0; ci < class_count; ci++) {
-            if (classes[ci].class_id == cid) break;
-        }
-        if (ci == class_count && class_count < 256) {
-            classes[class_count].class_id = cid;
-            classes[class_count].class_name = nmo_core_class_name(&c, cid);
-            classes[class_count].count = 0;
-            classes[class_count].data_size = 0;
-            classes[class_count].pack_size = 0;
-            class_count++;
-        }
-        if (ci < 256) {
-            classes[ci].count++;
-            classes[ci].data_size += data_sz;
-            classes[ci].pack_size += pack_sz;
-        }
+    file_space_collect_t collect = {0};
+    rc = nmo_core_object_query_run(&c, NULL, file_space_object,
+                                   &collect, NULL);
+    if (rc != NMO_CLI_EXIT_SUCCESS || collect.oom) {
+        free(collect.objects);
+        fprintf(stderr, "Error: Out of memory\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
+    space_class_entry_t *classes = collect.classes;
+    size_t class_count = collect.class_count;
+    file_space_obj_entry_t *obj_entries = collect.objects;
+    size_t obj_count = collect.object_count;
+    uint64_t total_data = collect.total_data;
+    uint64_t total_pack = collect.total_pack;
+    uint64_t compressed_count = collect.compressed_count;
 
     /* Sort classes by data_size descending */
     qsort(classes, class_count, sizeof(space_class_entry_t), space_class_cmp_size);
@@ -744,7 +804,7 @@ int nmo_cmd_file_space(int argc, char **argv, const nmo_cli_global_opts_t *globa
         for (size_t i = 0; i < sort_limit; i++) {
             for (size_t j = i + 1; j < obj_count; j++) {
                 if (obj_entries[j].data_sz > obj_entries[i].data_sz) {
-                    obj_entry_t tmp = obj_entries[i];
+                    file_space_obj_entry_t tmp = obj_entries[i];
                     obj_entries[i] = obj_entries[j];
                     obj_entries[j] = tmp;
                 }

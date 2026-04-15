@@ -81,23 +81,20 @@ int nmo_repl_parse_command(char *line, char **argv, int max_args) {
     return argc;
 }
 
-void nmo_repl_get_objects(nmo_repl_context_t *repl, nmo_object_t ***objects, size_t *count) {
-    if (objects) {
-        *objects = NULL;
+size_t nmo_repl_object_count(nmo_repl_context_t *repl) {
+    if (!repl || !repl->session) {
+        return 0;
     }
-    if (count) {
-        *count = 0;
-    }
-    if (!repl || !repl->session || !objects || !count) {
-        return;
-    }
-
     nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
-    if (!repo) {
-        return;
-    }
+    return repo ? nmo_object_repository_get_count(repo) : 0;
+}
 
-    *objects = nmo_object_repository_get_all(repo, count);
+nmo_object_t *nmo_repl_object_at(nmo_repl_context_t *repl, size_t index) {
+    if (!repl || !repl->session) {
+        return NULL;
+    }
+    nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
+    return repo ? nmo_object_repository_get_by_index(repo, index) : NULL;
 }
 
 void nmo_repl_print_object_summary(const nmo_repl_context_t *repl, size_t index, nmo_object_t *obj) {
@@ -229,11 +226,10 @@ int nmo_repl_resolve_object_index(nmo_repl_context_t *repl,
 
     uint32_t id = 0;
     if (selector_is_id(selector, &id)) {
-        size_t object_count = 0;
-        nmo_object_t **objects = NULL;
-        nmo_repl_get_objects(repl, &objects, &object_count);
+        size_t object_count = nmo_repl_object_count(repl);
         for (size_t i = 0; i < object_count; ++i) {
-            if (nmo_object_get_id(objects[i]) == id) {
+            nmo_object_t *obj = nmo_repl_object_at(repl, i);
+            if (obj && nmo_object_get_id(obj) == id) {
                 *out_index = i;
                 return 0;
             }
@@ -244,9 +240,7 @@ int nmo_repl_resolve_object_index(nmo_repl_context_t *repl,
 
     const char *name = NULL;
     if (selector_is_name(selector, &name)) {
-        size_t object_count = 0;
-        nmo_object_t **objects = NULL;
-        nmo_repl_get_objects(repl, &objects, &object_count);
+        size_t object_count = nmo_repl_object_count(repl);
 
         if (name && name[0] == '/' && name[strlen(name) - 1] == '/') {
             char pattern[256];
@@ -259,7 +253,8 @@ int nmo_repl_resolve_object_index(nmo_repl_context_t *repl,
             pattern[copy_len] = '\0';
 
             for (size_t i = 0; i < object_count; ++i) {
-                const char *obj_name = nmo_object_get_name(objects[i]);
+                nmo_object_t *obj = nmo_repl_object_at(repl, i);
+                const char *obj_name = obj ? nmo_object_get_name(obj) : NULL;
                 if (obj_name && nmo_core_regex_match(obj_name, pattern, repl->regex_icase)) {
                     *out_index = i;
                     return 0;
@@ -270,7 +265,8 @@ int nmo_repl_resolve_object_index(nmo_repl_context_t *repl,
         }
 
         for (size_t i = 0; i < object_count; ++i) {
-            const char *obj_name = nmo_object_get_name(objects[i]);
+            nmo_object_t *obj = nmo_repl_object_at(repl, i);
+            const char *obj_name = obj ? nmo_object_get_name(obj) : NULL;
             if (obj_name && strstr(obj_name, name)) {
                 *out_index = i;
                 return 0;
