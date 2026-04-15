@@ -551,62 +551,6 @@ int nmo_cmd_data_dump(int argc, char **argv, const nmo_cli_global_opts_t *global
  * data set-cell
  * ============================================================================ */
 
-/**
- * Parse a value string and write it into a cell according to column type.
- * For string type, allocates from the arena.
- * Returns true on success, false on parse error.
- */
-static bool parse_cell_value(const char *value_str,
-                             CK_ARRAYTYPE type,
-                             nmo_dataarray_cell_t *cell,
-                             nmo_arena_t *arena) {
-    switch (type) {
-    case CKARRAYTYPE_INT: {
-        char *end = NULL;
-        long v = strtol(value_str, &end, 0);
-        if (!end || *end != '\0') return false;
-        cell->int_value = (int32_t)v;
-        return true;
-    }
-    case CKARRAYTYPE_FLOAT: {
-        char *end = NULL;
-        double v = strtod(value_str, &end);
-        if (!end || *end != '\0') return false;
-        cell->float_value = (float)v;
-        return true;
-    }
-    case CKARRAYTYPE_STRING: {
-        size_t len = strlen(value_str);
-        char *copy = (char *)nmo_arena_alloc(arena, len + 1, 1);
-        if (!copy) return false;
-        memcpy(copy, value_str, len + 1);
-        cell->string_value = copy;
-        return true;
-    }
-    case CKARRAYTYPE_OBJECT: {
-        /* Accept #<id> or plain <id> */
-        const char *s = value_str;
-        if (s[0] == '#') s++;
-        char *end = NULL;
-        unsigned long v = strtoul(s, &end, 10);
-        if (!end || *end != '\0') return false;
-        cell->object_id = (nmo_object_id_t)v;
-        return true;
-    }
-    case CKARRAYTYPE_PARAMETER: {
-        const char *s = value_str;
-        if (s[0] == '#') s++;
-        char *end = NULL;
-        unsigned long v = strtoul(s, &end, 10);
-        if (!end || *end != '\0') return false;
-        cell->parameter_id = (nmo_object_id_t)v;
-        return true;
-    }
-    default:
-        return false;
-    }
-}
-
 int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
@@ -718,19 +662,14 @@ int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *gl
     char old_buf[256];
     format_cell(old_buf, sizeof(old_buf), &target_row->cells[col], col_type, &c);
 
-    /* Parse new value */
+    /* Set cell value via library function */
     nmo_arena_t *arena = nmo_session_get_arena(c.session);
-    nmo_dataarray_cell_t new_cell;
-    memset(&new_cell, 0, sizeof(new_cell));
-
-    if (!parse_cell_value(value_str, col_type, &new_cell, arena)) {
+    nmo_status_t set_rc = nmo_dataarray_set_cell(state, arena, row, col, value_str);
+    if (set_rc != NMO_OK) {
         fprintf(stderr, "Error: Cannot parse '%s' as %s\n",
                 value_str, arraytype_name(col_type));
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
     }
-
-    /* Write the cell */
-    target_row->cells[col] = new_cell;
 
     /* Format new value for display */
     char new_buf[256];

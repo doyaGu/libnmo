@@ -23,6 +23,7 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
 #include "format/nmo_image.h"
+#include "format/nmo_stb_adapter.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <string.h>
@@ -1098,3 +1099,59 @@ NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
     nmo_texture_state_t,
     &nmo_texture_vtable,
     nmo_texture_fields)
+
+/* =============================================================================
+ * PUBLIC MUTATION API
+ * ============================================================================= */
+
+nmo_status_t nmo_texture_replace_bitmap(
+    nmo_texture_state_t *state,
+    nmo_arena_t *arena,
+    const void *rgba_pixels,
+    uint32_t width,
+    uint32_t height) {
+    if (!state || !arena || !rgba_pixels || width == 0 || height == 0)
+        return NMO_ERR_INVALID_ARGUMENT;
+
+    /* Encode pixels as PNG */
+    size_t encoded_size = 0;
+    uint8_t *encoded = nmo_stbi_write_to_memory(
+        arena, NMO_BITMAP_FORMAT_PNG,
+        (int)width, (int)height, 4,
+        (const uint8_t *)rgba_pixels, 0, &encoded_size);
+    if (!encoded || encoded_size == 0)
+        return NMO_ERR_INTERNAL;
+
+    /* Update dimensions */
+    state->reader_width = (int32_t)width;
+    state->reader_height = (int32_t)height;
+    state->reader_bpp = 32;
+
+    /* Ensure at least one slot */
+    if (state->slot_count == 0)
+        state->slot_count = 1;
+
+    /* Switch to reader mode if needed */
+    if (state->bitmap_kind != CKTEXTURE_BITMAP_READER || !state->reader_slots) {
+        state->bitmap_kind = CKTEXTURE_BITMAP_READER;
+        state->reader_slots = (nmo_texture_reader_slot_t *)nmo_arena_alloc(
+            arena, state->slot_count * sizeof(nmo_texture_reader_slot_t), 8);
+        if (!state->reader_slots)
+            return NMO_ERR_NOMEM;
+        memset(state->reader_slots, 0,
+               state->slot_count * sizeof(nmo_texture_reader_slot_t));
+        state->raw_slots = NULL;
+        state->bitmap2_slots = NULL;
+    }
+
+    /* Write encoded PNG into slot 0 */
+    nmo_texture_reader_slot_t *slot = &state->reader_slots[0];
+    slot->data = encoded;
+    slot->data_size = (uint32_t)encoded_size;
+    slot->format_type = 0;
+    slot->extension = 0;
+    slot->alpha_plane = NULL;
+    slot->alpha_plane_size = 0;
+
+    return NMO_OK;
+}

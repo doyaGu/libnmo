@@ -13,13 +13,10 @@
 #include "../nmo_opt.h"
 
 #include "nmo.h"
-#include "session/nmo_context.h"
 #include "session/nmo_session.h"
-#include "core/nmo_array.h"
 #include "app/nmo_save.h"
-#include "object/builtin/nmo_behavior_schemas.h"
+#include "behavior/nmo_behavior_edit.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
-#include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 
@@ -88,90 +85,17 @@ int nmo_cmd_behavior_add_link(int argc, char **argv,
     int rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
     if (rc) return rc;
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-
-    /* Validate parent behavior */
-    nmo_object_t *parent_obj = nmo_object_repository_find_by_id(repo, parent_id);
-    if (!parent_obj) {
-        fprintf(stderr, "Error: Parent object #%u not found\n", parent_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
-    if (!c.registry ||
-        !is_behavior_class(c.registry, nmo_object_get_class_id(parent_obj))) {
-        fprintf(stderr, "Error: Object #%u is not a CKBehavior\n", parent_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
-
-    /* Validate from/to IO objects exist */
-    nmo_object_t *from_obj = nmo_object_repository_find_by_id(repo, from_id);
-    if (!from_obj) {
-        fprintf(stderr, "Error: Source IO object #%u not found\n", from_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
-    nmo_object_t *to_obj = nmo_object_repository_find_by_id(repo, to_id);
-    if (!to_obj) {
-        fprintf(stderr, "Error: Target IO object #%u not found\n", to_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
-
-    /* Create CKBehaviorLink object */
     nmo_object_id_t link_id = 0;
-    nmo_runtime_report_t report;
-    memset(&report, 0, sizeof(report));
 
-    int create_rc = nmo_session_create_object(
-        c.session, NMO_CID_BEHAVIORLINK, NULL,
-        (nmo_guid_t){0, 0}, &link_id, &report);
-    if (create_rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to create CKBehaviorLink: %s\n",
-                nmo_error_string(create_rc));
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
+    if (!dry_run) {
+        int add_rc = nmo_behavior_add_link(
+            c.session, parent_id, from_id, to_id, (int16_t)delay, &link_id);
+        if (add_rc != NMO_OK) {
+            fprintf(stderr, "Error: Failed to add link: %s\n",
+                    nmo_error_string(add_rc));
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
 
-    /* Configure the link state */
-    nmo_object_t *link_obj = nmo_object_repository_find_by_id(repo, link_id);
-    if (!link_obj) {
-        fprintf(stderr, "Error: Created link #%u not found in repository\n", link_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    nmo_behaviorlink_state_t *link_state =
-        (nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj);
-    if (!link_state) {
-        fprintf(stderr, "Error: Link #%u has no state\n", link_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    link_state->in_io_id = from_id;
-    link_state->out_io_id = to_id;
-    link_state->activation_delay = (int16_t)delay;
-    link_state->initial_activation_delay = (int16_t)delay;
-    link_state->use_new_format = true;
-    link_state->has_format = true;
-
-    /* Add link ID to parent behavior's sub_behavior_links array */
-    nmo_behavior_state_t *beh_state =
-        (nmo_behavior_state_t *)nmo_object_get_state(parent_obj);
-    if (!beh_state) {
-        fprintf(stderr, "Error: Parent behavior #%u has no state\n", parent_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    nmo_status_t append_rc = nmo_array_append(&beh_state->sub_behavior_links, &link_id);
-    if (append_rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to append link to parent: %s\n",
-                nmo_error_string(append_rc));
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    /* Save or dry-run */
-    if (dry_run) {
-        /* Clean up: remove from parent and destroy link */
-        size_t idx;
-        if (nmo_array_find(&beh_state->sub_behavior_links, &link_id, &idx) == NMO_OK)
-            nmo_array_remove(&beh_state->sub_behavior_links, idx, NULL);
-        nmo_session_destroy_objects(c.session, &link_id, 1, 0, NULL);
-    } else {
         nmo_save_options_t save_opts = nmo_save_options_default();
         int save_rc = nmo_save_file(c.session, output_path, &save_opts);
         if (save_rc != NMO_OK) {
@@ -265,64 +189,27 @@ int nmo_cmd_behavior_remove_link(int argc, char **argv,
     int rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
     if (rc) return rc;
 
+    /* Read link state for reporting before potential removal */
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-
-    /* Validate link exists and is a CKBehaviorLink */
     nmo_object_t *link_obj = nmo_object_repository_find_by_id(repo, link_id_val);
-    if (!link_obj) {
-        fprintf(stderr, "Error: Link object #%u not found\n", link_id_val);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
-    if (nmo_object_get_class_id(link_obj) != NMO_CID_BEHAVIORLINK) {
-        fprintf(stderr, "Error: Object #%u is not a CKBehaviorLink (class_id=%u)\n",
-                link_id_val, nmo_object_get_class_id(link_obj));
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
-
-    /* Get link state for reporting */
-    const nmo_behaviorlink_state_t *link_state =
-        (const nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj);
-    nmo_object_id_t from_id = link_state ? link_state->in_io_id : 0;
-    nmo_object_id_t to_id   = link_state ? link_state->out_io_id : 0;
-
-    /* Validate parent behavior */
-    nmo_object_t *parent_obj = nmo_object_repository_find_by_id(repo, parent_id);
-    if (!parent_obj) {
-        fprintf(stderr, "Error: Parent object #%u not found\n", parent_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
-    if (!c.registry ||
-        !is_behavior_class(c.registry, nmo_object_get_class_id(parent_obj))) {
-        fprintf(stderr, "Error: Object #%u is not a CKBehavior\n", parent_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    nmo_object_id_t from_id = 0, to_id = 0;
+    if (link_obj) {
+        const nmo_behaviorlink_state_t *link_state =
+            (const nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj);
+        if (link_state) {
+            from_id = link_state->in_io_id;
+            to_id   = link_state->out_io_id;
+        }
     }
 
-    /* Remove link from parent's sub_behavior_links */
-    nmo_behavior_state_t *beh_state =
-        (nmo_behavior_state_t *)nmo_object_get_state(parent_obj);
-    if (!beh_state) {
-        fprintf(stderr, "Error: Parent behavior #%u has no state\n", parent_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    nmo_object_id_t link_id_search = link_id_val;
-    size_t idx;
-    if (nmo_array_find(&beh_state->sub_behavior_links, &link_id_search, &idx) == NMO_OK) {
-        if (!dry_run)
-            nmo_array_remove(&beh_state->sub_behavior_links, idx, NULL);
-    } else {
-        fprintf(stderr, "Warning: Link #%u not found in parent #%u's link list\n",
-                link_id_val, parent_id);
-    }
-
-    /* Delete the link object */
     if (!dry_run) {
-        nmo_object_id_t destroy_id = link_id_val;
-        nmo_session_destroy_objects(c.session, &destroy_id, 1, 0, NULL);
-    }
+        int rm_rc = nmo_behavior_remove_link(c.session, parent_id, link_id_val);
+        if (rm_rc != NMO_OK) {
+            fprintf(stderr, "Error: Failed to remove link: %s\n",
+                    nmo_error_string(rm_rc));
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
 
-    /* Save or dry-run */
-    if (!dry_run) {
         nmo_save_options_t save_opts = nmo_save_options_default();
         int save_rc = nmo_save_file(c.session, output_path, &save_opts);
         if (save_rc != NMO_OK) {

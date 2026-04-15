@@ -155,6 +155,26 @@ NMO_API nmo_status_t nmo_texture_remap_dependencies(
     void *context);
 
 /**
+ * @brief Replace a texture's bitmap data with new RGBA pixels.
+ *
+ * Encodes the pixels as PNG and updates the texture state's reader slot.
+ * The caller must decode the source image (e.g., via stbi_load) beforehand.
+ *
+ * @param state       Mutable texture state
+ * @param arena       Arena for encoded data allocation
+ * @param rgba_pixels RGBA pixel data (4 bytes per pixel, row-major)
+ * @param width       Image width
+ * @param height      Image height
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_texture_replace_bitmap(
+    nmo_texture_state_t *state,
+    nmo_arena_t *arena,
+    const void *rgba_pixels,
+    uint32_t width,
+    uint32_t height);
+
+/**
  * @}
  */
 

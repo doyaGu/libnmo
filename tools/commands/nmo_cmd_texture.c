@@ -1321,51 +1321,19 @@ int nmo_cmd_texture_replace(int argc, char **argv, const nmo_cli_global_opts_t *
     int32_t old_h = ts->reader_height;
     CKTEXTURE_BITMAP_KIND old_kind = ts->bitmap_kind;
 
-    /* Encode pixels as PNG for the reader slot */
-    size_t encoded_size = 0;
-    uint8_t *encoded = nmo_stbi_write_to_memory(
-        arena, NMO_BITMAP_FORMAT_PNG, img_w, img_h, 4, pixels, 0, &encoded_size);
-    if (!encoded || encoded_size == 0) {
-        fprintf(stderr, "Error: Failed to encode replacement image as PNG\n");
+    /* Replace bitmap via library function */
+    nmo_status_t replace_rc = nmo_texture_replace_bitmap(
+        ts, arena, pixels, (uint32_t)img_w, (uint32_t)img_h);
+    if (replace_rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to replace bitmap: %s\n",
+                nmo_error_string(replace_rc));
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    /* Update texture state */
-    ts->reader_width = img_w;
-    ts->reader_height = img_h;
-    ts->reader_bpp = 32;
-
-    /* Ensure we have at least one slot */
-    if (ts->slot_count == 0) {
-        ts->slot_count = 1;
-    }
-
-    /* Allocate/replace reader slot data */
-    if (ts->bitmap_kind != CKTEXTURE_BITMAP_READER || !ts->reader_slots) {
-        /* Switch to reader mode and allocate a new reader slot array */
-        ts->bitmap_kind = CKTEXTURE_BITMAP_READER;
-        ts->reader_slots = (nmo_texture_reader_slot_t *)nmo_arena_alloc(
-            arena, ts->slot_count * sizeof(nmo_texture_reader_slot_t), 8);
-        if (!ts->reader_slots) {
-            fprintf(stderr, "Error: Out of memory allocating reader slot\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-        memset(ts->reader_slots, 0,
-               ts->slot_count * sizeof(nmo_texture_reader_slot_t));
-        /* Clear other slot types since we're switching kind */
-        ts->raw_slots = NULL;
-        ts->bitmap2_slots = NULL;
-    }
-
-    /* Update slot 0 with the new PNG data */
-    nmo_texture_reader_slot_t *slot = &ts->reader_slots[0];
-    slot->data = (uint8_t *)encoded;
-    slot->data_size = (uint32_t)encoded_size;
-    /* PNG format type/extension (standard Virtools reader) */
-    slot->format_type = 0;
-    slot->extension = 0;
-    slot->alpha_plane = NULL;
-    slot->alpha_plane_size = 0;
+    /* Get encoded size for display */
+    size_t encoded_size = 0;
+    if (ts->reader_slots)
+        encoded_size = ts->reader_slots[0].data_size;
 
     const char *name = nmo_object_get_name(obj);
     int exit_code = NMO_CLI_EXIT_SUCCESS;
