@@ -971,7 +971,7 @@ TEST(type_string, type_value_to_string_object_ref_with_fields) {
     teardown();
 }
 
-TEST(type_string, type_value_to_string_pointer_array_uses_legacy_count) {
+TEST(type_string, type_value_to_string_pointer_array_uses_metadata_count) {
     setup();
 
     ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
@@ -983,20 +983,7 @@ TEST(type_string, type_value_to_string_pointer_array_uses_legacy_count) {
 
     static const nmo_type_field_t fields[] = {
         NMO_FIELD(test_widget_array_t, widget_count, CKPGUID_UINT32),
-        {
-            .name = "widgets",
-            .description = NULL,
-            .type_guid = CKPGUID_UINT32_INIT,
-            .offset = (uint32_t)offsetof(test_widget_array_t, widgets),
-            .size = sizeof(uint32_t *),
-            .flags = NMO_FIELD_POINTER | NMO_FIELD_REPEATED,
-            .added_version = 0,
-            .removed_version = 0,
-            .semantic = NMO_SEMANTIC_NONE,
-            .units = NMO_UNITS_NONE,
-            .default_value = NULL,
-            .count_field_name = NULL,
-        },
+        NMO_FIELD_PTR_ARRAY(test_widget_array_t, widgets, widget_count, CKPGUID_UINT32),
     };
 
     nmo_type_descriptor_t desc = {
@@ -1487,7 +1474,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, type_value_to_string_object_id);
     REGISTER_TEST(type_string, type_value_to_string_struct_with_object_id_field);
     REGISTER_TEST(type_string, type_value_to_string_object_ref_with_fields);
-    REGISTER_TEST(type_string, type_value_to_string_pointer_array_uses_legacy_count);
+    REGISTER_TEST(type_string, type_value_to_string_pointer_array_uses_metadata_count);
     REGISTER_TEST(type_string, type_value_to_string_uint16);
     REGISTER_TEST(type_string, type_value_to_string_guid);
     REGISTER_TEST(type_string, type_value_to_string_string_quotes);

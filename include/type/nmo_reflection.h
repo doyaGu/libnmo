@@ -357,8 +357,8 @@ static inline bool nmo_field_is_optional(const nmo_type_field_t *field) {
 /**
  * @brief Get the count field for a pointer-array field.
  *
- * Uses explicit metadata (count_field_name) when available.
- * Returns NULL if no metadata set (caller should use heuristic fallback).
+ * Uses explicit count_field_name metadata only.
+ * Returns NULL if no metadata is set or the named field is missing.
  */
 static inline const nmo_type_field_t *nmo_field_get_count_field(
     const nmo_type_descriptor_t *type,
@@ -371,12 +371,22 @@ static inline const nmo_type_field_t *nmo_field_get_count_field(
 }
 
 /**
+ * @brief Resolve the companion count field for an array field.
+ *
+ * Uses explicit count_field_name metadata only.
+ *
+ * @param type Type descriptor that owns array_field
+ * @param array_field Array field descriptor
+ * @return Count field descriptor, or NULL when not found
+ */
+NMO_API const nmo_type_field_t *nmo_field_resolve_count_field(
+    const nmo_type_descriptor_t *type,
+    const nmo_type_field_t *array_field);
+
+/**
  * @brief Resolve the runtime element count for a pointer-array field.
  *
- * Uses explicit count_field_name metadata first. If metadata is absent, falls
- * back to the legacy naming convention used by older schemas:
- * field_ids -> field_count, field_id -> field_count, fields -> field_count,
- * and long_prefix_items -> long_prefix_count.
+ * Uses explicit count_field_name metadata only.
  *
  * @param type Type descriptor that owns array_field
  * @param array_field Pointer-array field descriptor

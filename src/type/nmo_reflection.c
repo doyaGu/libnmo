@@ -53,6 +53,13 @@ NMO_API bool nmo_type_has_reflection(const nmo_type_descriptor_t *type)
     return type && type->fields && type->field_count > 0;
 }
 
+NMO_API const nmo_type_field_t *nmo_field_resolve_count_field(
+    const nmo_type_descriptor_t *type,
+    const nmo_type_field_t *array_field)
+{
+    return nmo_field_get_count_field(type, array_field);
+}
+
 NMO_API nmo_status_t nmo_field_resolve_count(
     const nmo_type_descriptor_t *type,
     const nmo_type_field_t *array_field,
@@ -66,52 +73,8 @@ NMO_API nmo_status_t nmo_field_resolve_count(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    const nmo_type_field_t *count_field = nmo_field_get_count_field(type, array_field);
-    if (count_field != NULL) {
-        *out_count = nmo_field_get_uint32(instance, count_field);
-        return NMO_OK;
-    }
-
-    const char *field_name = array_field->name;
-    if (field_name == NULL) {
-        return NMO_ERR_NOT_FOUND;
-    }
-
-    size_t name_len = strlen(field_name);
-    size_t base_len = name_len;
-    if (name_len > 4 && strcmp(field_name + name_len - 4, "_ids") == 0) {
-        base_len = name_len - 4;
-    } else if (name_len > 3 && strcmp(field_name + name_len - 3, "_id") == 0) {
-        base_len = name_len - 3;
-    } else if (name_len > 1 && field_name[name_len - 1] == 's') {
-        base_len = name_len - 1;
-    }
-
-    char count_name[128];
-    if (base_len == 0 || base_len + 6 >= sizeof(count_name)) {
-        return NMO_ERR_NOT_FOUND;
-    }
-    memcpy(count_name, field_name, base_len);
-    memcpy(count_name + base_len, "_count", 7);
-
-    count_field = nmo_type_get_field_by_name(type, count_name);
-    if (count_field == NULL && base_len > 0) {
-        const char *last_underscore = NULL;
-        for (size_t i = 0; i < base_len; ++i) {
-            if (field_name[i] == '_') {
-                last_underscore = field_name + i;
-            }
-        }
-        if (last_underscore != NULL) {
-            size_t short_base_len = (size_t)(last_underscore - field_name);
-            if (short_base_len > 0 && short_base_len + 6 < sizeof(count_name)) {
-                memcpy(count_name, field_name, short_base_len);
-                memcpy(count_name + short_base_len, "_count", 7);
-                count_field = nmo_type_get_field_by_name(type, count_name);
-            }
-        }
-    }
-
+    const nmo_type_field_t *count_field =
+        nmo_field_resolve_count_field(type, array_field);
     if (count_field == NULL) {
         return NMO_ERR_NOT_FOUND;
     }

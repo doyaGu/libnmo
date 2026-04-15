@@ -161,36 +161,6 @@ static const char *json_val_to_str(yyjson_val *val, char *buf, size_t buf_size)
 }
 
 /**
- * @brief Try to find a companion count field for a pointer+count array.
- *
- * Looks for "{field_name}_count" or "{singular}_count" in the same type.
- */
-static const nmo_type_field_t *find_count_field(const nmo_type_descriptor_t *type,
-                                                const nmo_type_field_t *ptr_field)
-{
-    if (!type || !ptr_field || !ptr_field->name) return NULL;
-
-    /* Fast path: explicit count_field_name metadata */
-    const nmo_type_field_t *meta_cf = nmo_field_get_count_field(type, ptr_field);
-    if (meta_cf != NULL) return meta_cf;
-
-    /* Heuristic fallback */
-    char name_buf[128];
-    snprintf(name_buf, sizeof(name_buf), "%s_count", ptr_field->name);
-    const nmo_type_field_t *cf = nmo_type_get_field_by_name(type, name_buf);
-    if (cf) return cf;
-
-    size_t len = strlen(ptr_field->name);
-    if (len > 1 && ptr_field->name[len - 1] == 's') {
-        snprintf(name_buf, sizeof(name_buf), "%.*s_count", (int)(len - 1), ptr_field->name);
-        cf = nmo_type_get_field_by_name(type, name_buf);
-        if (cf) return cf;
-    }
-
-    return NULL;
-}
-
-/**
  * @brief Write an integer count value into a field of variable size.
  */
 static void write_count_field(void *state, const nmo_type_field_t *count_field, uint64_t count)
@@ -311,7 +281,8 @@ static nmo_status_t import_field_value(void *state,
         if (arr_count == 0) {
             if (!dry_run) {
                 *(void **)fptr = NULL;
-                const nmo_type_field_t *cf = find_count_field(owner_type, field);
+                const nmo_type_field_t *cf =
+                    nmo_field_resolve_count_field(owner_type, field);
                 if (cf) write_count_field(state, cf, 0);
             }
             result->fields_written++;
@@ -345,7 +316,8 @@ static nmo_status_t import_field_value(void *state,
 
         if (!dry_run) {
             *(void **)fptr = buf;
-            const nmo_type_field_t *cf = find_count_field(owner_type, field);
+            const nmo_type_field_t *cf =
+                nmo_field_resolve_count_field(owner_type, field);
             if (cf) write_count_field(state, cf, arr_count);
         }
         result->fields_written++;
