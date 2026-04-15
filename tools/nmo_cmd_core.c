@@ -120,7 +120,7 @@ nmo_status_t nmo_core_query_add_dsl_filter(
 
     memset(out_dsl, 0, sizeof(*out_dsl));
     if (expr == NULL || expr[0] == '\0') {
-        return NMO_OK;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
     if (query->predicate != NULL) {

@@ -1345,6 +1345,25 @@ TEST(cli, object_delete_batch_name_filter_saves) {
     remove(output);
 }
 
+TEST(cli, object_delete_rejects_empty_dsl_filter) {
+    const char *fixture = "test_delete_empty_filter_fixture.nmo";
+    remove(fixture);
+
+    ASSERT_TRUE(create_rename_test_fixture(fixture));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "object delete --dry-run --filter \"\" \"%s\"",
+             fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "filter");
+    free(result.output);
+
+    remove(fixture);
+}
+
 /* ============================================================================
  * convert strip --dry-run
  * ============================================================================ */
@@ -1532,6 +1551,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, object_rename_nonexistent_id);
     REGISTER_TEST(cli, object_rename_missing_output);
     REGISTER_TEST(cli, object_delete_batch_name_filter_saves);
+    REGISTER_TEST(cli, object_delete_rejects_empty_dsl_filter);
 
     /* convert strip --dry-run */
     REGISTER_TEST(cli, convert_strip_dry_run_json);
