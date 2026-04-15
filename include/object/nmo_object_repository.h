@@ -193,7 +193,10 @@ NMO_API int nmo_object_repository_clear(nmo_object_repository_t *repository);
  * ============================================================================ */
 
 /**
- * @brief Filter criteria for object iteration.
+ * @brief Legacy narrow filter criteria for repository iteration.
+ *
+ * Prefer nmo_object_query_t for new code. This type is retained for
+ * source compatibility with existing repository-level callers.
  */
 typedef struct nmo_object_filter {
     nmo_class_id_t class_id;       /**< Filter by class (0 = any) */

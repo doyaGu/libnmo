@@ -97,6 +97,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_repository.h"
+#include "object/nmo_object_query.h"
 #include "object/nmo_object_index.h"
 #include "object/nmo_shadow_storage.h"
 #include "object/nmo_object_system.h"

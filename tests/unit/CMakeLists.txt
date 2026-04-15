@@ -135,6 +135,7 @@ add_unit_test(test_id_sanitizer)  # Phase 1.1: ID sanitization pipeline
 add_unit_test(test_shadow_storage)  # Phase 1.2: Shadow blob preservation
 add_unit_test(test_repository)
 add_unit_test(test_object_repository)
+add_unit_test(test_object_query)
 add_unit_test(test_builder)
 add_unit_test(test_object_index)  # Phase 5: Object indexing tests
 add_unit_test(test_chunk_advanced)  # Phase 6: Advanced chunk features tests

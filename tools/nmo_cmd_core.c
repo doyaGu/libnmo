@@ -15,7 +15,6 @@
 #include "type/nmo_type_guids.h"
 #include "type/nmo_reflection.h"
 
-#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -61,268 +60,149 @@ nmo_object_t *nmo_core_find_by_id(const nmo_cmd_ctx_t *c, nmo_object_id_t id) {
     return nmo_object_repository_find_by_id(repo, id);
 }
 
-/* ============================================================================
- * 2b. Regex matching (lightweight, no external dependency)
- *
- * Supports: . * [] [^] ^ $ \-escapes, case-insensitive mode
- * ============================================================================ */
-
-static char regex_fold_char(char c, bool icase) {
-    if (!icase) {
-        return c;
-    }
-    return (char)tolower((unsigned char)c);
-}
-
-static size_t regex_atom_length(const char *pattern) {
-    if (!pattern || *pattern == '\0') {
-        return 0;
-    }
-    if (pattern[0] == '\\' && pattern[1] != '\0') {
-        return 2;
-    }
-    if (pattern[0] == '[') {
-        size_t i = 1;
-        if (pattern[i] == '^') {
-            i++;
-        }
-        if (pattern[i] == ']') {
-            i++;
-        }
-        while (pattern[i] && pattern[i] != ']') {
-            if (pattern[i] == '\\' && pattern[i + 1]) {
-                i += 2;
-            } else {
-                i++;
-            }
-        }
-        if (pattern[i] == ']') {
-            return i + 1;
-        }
-        return 0;
-    }
-    return 1;
-}
-
-static bool regex_class_match(const char *pattern, size_t len, char c,
-                              bool icase) {
-    bool negate = false;
-    size_t i = 1;
-    if (i < len && pattern[i] == '^') {
-        negate = true;
-        i++;
-    }
-
-    bool matched = false;
-    char target = regex_fold_char(c, icase);
-
-    while (i < len && pattern[i] != ']') {
-        if (pattern[i] == '\\' && (i + 1) < len) {
-            i++;
-            if (regex_fold_char(pattern[i], icase) == target) {
-                matched = true;
-            }
-            i++;
-            continue;
-        }
-
-        if ((i + 2) < len && pattern[i + 1] == '-') {
-            char start = regex_fold_char(pattern[i], icase);
-            char end = regex_fold_char(pattern[i + 2], icase);
-            if (start <= target && target <= end) {
-                matched = true;
-            }
-            i += 3;
-            continue;
-        }
-
-        if (regex_fold_char(pattern[i], icase) == target) {
-            matched = true;
-        }
-        i++;
-    }
-
-    return negate ? !matched : matched;
-}
-
-static bool regex_match_here(const char *text, const char *pattern,
-                             bool icase) {
-    if (*pattern == '\0') {
-        return true;
-    }
-
-    if (pattern[0] == '$' && pattern[1] == '\0') {
-        return *text == '\0';
-    }
-
-    size_t atom_len = regex_atom_length(pattern);
-    if (atom_len == 0) {
-        return false;
-    }
-
-    bool star = pattern[atom_len] == '*';
-    const char *next = pattern + atom_len + (star ? 1 : 0);
-
-    if (star) {
-        const char *t = text;
-        while (*t) {
-            bool atom_match = false;
-            if (pattern[0] == '.') {
-                atom_match = true;
-            } else if (pattern[0] == '[') {
-                atom_match = regex_class_match(pattern, atom_len, *t, icase);
-            } else if (pattern[0] == '\\' && atom_len >= 2) {
-                atom_match = regex_fold_char(pattern[1], icase) ==
-                             regex_fold_char(*t, icase);
-            } else {
-                atom_match = regex_fold_char(pattern[0], icase) ==
-                             regex_fold_char(*t, icase);
-            }
-
-            if (!atom_match) {
-                break;
-            }
-
-            if (regex_match_here(t + 1, next, icase)) {
-                return true;
-            }
-            t++;
-        }
-        return regex_match_here(text, next, icase);
-    }
-
-    if (*text == '\0') {
-        return false;
-    }
-
-    if (pattern[0] == '.') {
-        return regex_match_here(text + 1, next, icase);
-    }
-
-    if (pattern[0] == '[') {
-        if (!regex_class_match(pattern, atom_len, *text, icase)) {
-            return false;
-        }
-        return regex_match_here(text + 1, next, icase);
-    }
-
-    if (pattern[0] == '\\' && atom_len >= 2) {
-        if (regex_fold_char(pattern[1], icase) !=
-            regex_fold_char(*text, icase)) {
-            return false;
-        }
-        return regex_match_here(text + 1, next, icase);
-    }
-
-    if (regex_fold_char(pattern[0], icase) !=
-        regex_fold_char(*text, icase)) {
-        return false;
-    }
-
-    return regex_match_here(text + 1, next, icase);
-}
-
 bool nmo_core_regex_match(const char *text, const char *pattern, bool icase) {
-    if (!pattern) {
+    if (pattern == NULL) {
         return false;
     }
 
-    if (pattern[0] == '^') {
-        return regex_match_here(text ? text : "", pattern + 1, icase);
-    }
-
-    const char *t = text ? text : "";
-    do {
-        if (regex_match_here(t, pattern, icase)) {
-            return true;
-        }
-    } while (*t++);
-
-    return false;
+    nmo_object_t object = {0};
+    object.name = text;
+    nmo_object_query_t query = {
+        .name = pattern,
+        .name_mode = NMO_OBJECT_QUERY_NAME_REGEX,
+        .name_case_insensitive = icase
+    };
+    bool matches = false;
+    return nmo_object_query_matches(&object, &query, NULL, &matches) == NMO_OK &&
+           matches;
 }
 
 /* ============================================================================
  * 3. Object iteration
  * ============================================================================ */
 
+typedef struct nmo_core_query_bridge {
+    const nmo_cmd_ctx_t *cmd;
+    nmo_dsl_program_t *dsl_filter;
+} nmo_core_query_bridge_t;
+
+typedef struct nmo_core_visitor_bridge {
+    const nmo_cmd_ctx_t *cmd;
+    nmo_core_object_fn cli_visitor;
+    void *cli_user;
+} nmo_core_visitor_bridge_t;
+
+static bool nmo_core_object_query_dsl_predicate(
+    const nmo_object_t *object,
+    void *user_data)
+{
+    nmo_core_query_bridge_t *bridge = (nmo_core_query_bridge_t *)user_data;
+    if (bridge == NULL || bridge->cmd == NULL || bridge->dsl_filter == NULL) {
+        return true;
+    }
+
+    nmo_dsl_eval_context_t eval_ctx;
+    if (!nmo_core_dsl_setup_ctx(bridge->cmd, (nmo_object_t *)object, &eval_ctx)) {
+        return false;
+    }
+
+    nmo_dsl_value_t val = {0};
+    nmo_status_t st = nmo_dsl_eval_expr(bridge->dsl_filter, &eval_ctx, &val);
+    bool match = (st == NMO_OK) && nmo_core_dsl_is_truthy(&val);
+    nmo_dsl_value_destroy(&val);
+    return match;
+}
+
+static nmo_object_query_t nmo_core_to_object_query(
+    const nmo_core_object_filter_t *filter,
+    nmo_core_query_bridge_t *bridge)
+{
+    nmo_object_query_t query = {0};
+    if (filter == NULL) {
+        return query;
+    }
+
+    query.object_id = filter->object_id;
+    query.class_id = filter->class_id;
+    query.include_derived_classes = filter->class_derived;
+
+    if (filter->name_regex != NULL) {
+        query.name = filter->name_regex;
+        query.name_mode = NMO_OBJECT_QUERY_NAME_REGEX;
+        query.name_case_insensitive = filter->regex_icase;
+    } else if (filter->name_pattern != NULL) {
+        query.name = filter->name_pattern;
+        query.name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD;
+        query.name_case_insensitive = true;
+    } else if (filter->name_substr != NULL) {
+        query.name = filter->name_substr;
+        query.name_mode = NMO_OBJECT_QUERY_NAME_SUBSTRING;
+        query.name_case_insensitive = false;
+    }
+
+    if (filter->dsl_filter != NULL && bridge != NULL) {
+        bridge->dsl_filter = filter->dsl_filter;
+        query.predicate = nmo_core_object_query_dsl_predicate;
+        query.predicate_user_data = bridge;
+    }
+
+    return query;
+}
+
+static bool nmo_core_object_query_visitor(
+    size_t match_index,
+    nmo_object_t *object,
+    void *user_data)
+{
+    nmo_core_visitor_bridge_t *bridge = (nmo_core_visitor_bridge_t *)user_data;
+    if (bridge == NULL || bridge->cli_visitor == NULL) {
+        return true;
+    }
+    return bridge->cli_visitor(
+               match_index, object, bridge->cmd, bridge->cli_user) == 0;
+}
+
 int nmo_core_iter_objects(const nmo_cmd_ctx_t *c,
                           const nmo_core_object_filter_t *filter,
                           nmo_core_object_fn visitor, void *user,
                           nmo_core_iter_result_t *result) {
-    nmo_object_t **objects = NULL;
-    size_t count = 0;
-    if (nmo_session_get_objects(c->session, &objects, &count) != NMO_OK) {
+    if (c == NULL || c->session == NULL) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_core_iter_result_t r = { .total = count, .matched = 0, .visited = 0 };
-
-    for (size_t i = 0; i < count; i++) {
-        nmo_object_t *obj = objects[i];
-
-        if (filter) {
-            /* Class filter */
-            if (filter->class_id) {
-                nmo_class_id_t cid = nmo_object_get_class_id(obj);
-                if (filter->class_derived) {
-                    if (!nmo_core_class_derives(c, cid, filter->class_id))
-                        continue;
-                } else {
-                    if (cid != filter->class_id) continue;
-                }
-            }
-
-            /* Object ID filter */
-            if (filter->object_id &&
-                nmo_object_get_id(obj) != filter->object_id)
-                continue;
-
-            /* Name wildcard */
-            if (filter->name_pattern) {
-                const char *name = nmo_object_get_name(obj);
-                if (!nmo_tool_match_wildcard_ci(filter->name_pattern,
-                                               name ? name : ""))
-                    continue;
-            }
-
-            /* Name substring */
-            if (filter->name_substr) {
-                const char *name = nmo_object_get_name(obj);
-                if (!name || !strstr(name, filter->name_substr)) continue;
-            }
-
-            /* Name regex */
-            if (filter->name_regex) {
-                const char *name = nmo_object_get_name(obj);
-                if (!nmo_core_regex_match(name ? name : "",
-                                         filter->name_regex,
-                                         filter->regex_icase))
-                    continue;
-            }
-
-            /* DSL filter */
-            if (filter->dsl_filter) {
-                nmo_dsl_eval_context_t eval_ctx;
-                if (!nmo_core_dsl_setup_ctx(c, obj, &eval_ctx)) continue;
-                nmo_dsl_value_t val = {0};
-                nmo_status_t st = nmo_dsl_eval_expr(filter->dsl_filter,
-                                                    &eval_ctx, &val);
-                bool match = (st == NMO_OK) && nmo_core_dsl_is_truthy(&val);
-                nmo_dsl_value_destroy(&val);
-                if (!match) continue;
-            }
-        }
-
-        r.matched++;
-        if (visitor) {
-            int rc = visitor(i, obj, c, user);
-            r.visited++;
-            if (rc != 0) break;
-        }
+    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
+    if (repo == NULL) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    if (result) *result = r;
-    return NMO_CLI_EXIT_SUCCESS;
+    nmo_core_query_bridge_t query_bridge = {
+        .cmd = c,
+        .dsl_filter = NULL
+    };
+    nmo_object_query_t query =
+        nmo_core_to_object_query(filter, &query_bridge);
+    nmo_core_visitor_bridge_t visitor_bridge = {
+        .cmd = c,
+        .cli_visitor = visitor,
+        .cli_user = user
+    };
+
+    nmo_object_query_result_t query_result = {0};
+    nmo_status_t status = nmo_object_query_iterate(
+        repo,
+        filter != NULL ? &query : NULL,
+        c->registry,
+        visitor != NULL ? nmo_core_object_query_visitor : NULL,
+        &visitor_bridge,
+        &query_result);
+
+    if (result != NULL) {
+        result->total = query_result.total;
+        result->matched = query_result.matched;
+        result->visited = query_result.visited;
+    }
+
+    return status == NMO_OK ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_INTERNAL_ERROR;
 }
 
 /* ============================================================================

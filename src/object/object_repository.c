@@ -5,13 +5,13 @@
 
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_index.h"
+#include "object/nmo_object_query.h"
 #include "format/nmo_object.h"
 #include "core/nmo_indexed_map.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_hash.h"
 #include "core/nmo_container_lifecycle.h"
 #include "core/nmo_error.h"
-#include <ctype.h>
 #include <string.h>
 
 #define INITIAL_CAPACITY 64
@@ -707,65 +707,22 @@ nmo_object_t *nmo_object_repository_get_by_index(const nmo_object_repository_t *
  * Filtered iteration
  * ============================================================================ */
 
-/**
- * Iterative wildcard matcher supporting '*' and '?' — O(n*m) worst case.
- * Uses backtracking single-pass algorithm (no recursion).
- */
-static bool wildcard_match_impl(const char *pattern, const char *text, bool icase) {
-    if (!pattern || !*pattern) return true;
-    if (!text) text = "";
+typedef struct repository_filter_bridge {
+    nmo_object_visitor_fn visitor;
+    void *user_data;
+} repository_filter_bridge_t;
 
-    const char *star = NULL;
-    const char *ss = text;
-    while (*text) {
-        char pc = icase ? (char)tolower((unsigned char)*pattern) : *pattern;
-        char tc = icase ? (char)tolower((unsigned char)*text) : *text;
-        if (pc == '?' || pc == tc) {
-            pattern++;
-            text++;
-        } else if (*pattern == '*') {
-            star = pattern++;
-            ss = text;
-        } else if (star) {
-            pattern = star + 1;
-            text = ++ss;
-        } else {
-            return false;
-        }
+static bool repository_filter_query_visitor(
+    size_t match_index,
+    nmo_object_t *object,
+    void *user_data)
+{
+    (void)match_index;
+    repository_filter_bridge_t *bridge = (repository_filter_bridge_t *)user_data;
+    if (bridge == NULL || bridge->visitor == NULL) {
+        return true;
     }
-    while (*pattern == '*') pattern++;
-    return !*pattern;
-}
-
-static bool wildcard_match(const char *pattern, const char *text) {
-    return wildcard_match_impl(pattern, text, false);
-}
-
-static bool wildcard_match_ci(const char *pattern, const char *text) {
-    return wildcard_match_impl(pattern, text, true);
-}
-
-/**
- * Case-insensitive substring search.
- */
-static bool substr_ci(const char *haystack, const char *needle) {
-    if (!haystack || !needle) return false;
-    size_t nlen = strlen(needle);
-    if (nlen == 0) return true;
-    size_t hlen = strlen(haystack);
-    if (nlen > hlen) return false;
-    for (size_t i = 0; i <= hlen - nlen; ++i) {
-        bool match = true;
-        for (size_t j = 0; j < nlen; ++j) {
-            if (tolower((unsigned char)haystack[i + j]) !=
-                tolower((unsigned char)needle[j])) {
-                match = false;
-                break;
-            }
-        }
-        if (match) return true;
-    }
-    return false;
+    return bridge->visitor(object, bridge->user_data);
 }
 
 nmo_status_t nmo_object_repository_iter_filtered(
@@ -774,53 +731,29 @@ nmo_status_t nmo_object_repository_iter_filtered(
     nmo_object_visitor_fn visitor,
     void *user_data)
 {
-    if (!repo) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    size_t count = nmo_indexed_map_get_count(repo->id_map);
-
-    for (size_t i = 0; i < count; ++i) {
-        nmo_object_t *obj = NULL;
-        if (!nmo_indexed_map_get_value_at(repo->id_map, i, &obj) || !obj) {
-            continue;
-        }
-
-        if (filter) {
-            /* Class filter */
-            if (filter->class_id != 0) {
-                if (obj->class_id != filter->class_id) continue;
-            }
-
-            /* Name pattern (wildcard) */
-            if (filter->name_pattern) {
-                const char *name = nmo_object_get_name(obj);
-                if (filter->case_insensitive) {
-                    if (!wildcard_match_ci(filter->name_pattern, name ? name : ""))
-                        continue;
-                } else {
-                    if (!wildcard_match(filter->name_pattern, name ? name : ""))
-                        continue;
-                }
-            }
-
-            /* Name substring */
-            if (filter->name_substring) {
-                const char *name = nmo_object_get_name(obj);
-                if (filter->case_insensitive) {
-                    if (!substr_ci(name, filter->name_substring))
-                        continue;
-                } else {
-                    if (!name || !strstr(name, filter->name_substring))
-                        continue;
-                }
-            }
-        }
-
-        if (visitor) {
-            if (!visitor(obj, user_data)) break;
+    nmo_object_query_t query = {0};
+    if (filter != NULL) {
+        query.class_id = filter->class_id;
+        if (filter->name_pattern != NULL) {
+            query.name = filter->name_pattern;
+            query.name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD;
+            query.name_case_insensitive = filter->case_insensitive;
+        } else if (filter->name_substring != NULL) {
+            query.name = filter->name_substring;
+            query.name_mode = NMO_OBJECT_QUERY_NAME_SUBSTRING;
+            query.name_case_insensitive = filter->case_insensitive;
         }
     }
 
-    return NMO_OK;
+    repository_filter_bridge_t bridge = {
+        .visitor = visitor,
+        .user_data = user_data
+    };
+    return nmo_object_query_iterate(
+        repo,
+        filter != NULL ? &query : NULL,
+        NULL,
+        visitor != NULL ? repository_filter_query_visitor : NULL,
+        &bridge,
+        NULL);
 }
