@@ -971,6 +971,77 @@ TEST(type_string, type_value_to_string_object_ref_with_fields) {
     teardown();
 }
 
+TEST(type_string, type_value_to_string_pointer_array_uses_legacy_count) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    typedef struct test_widget_array_t {
+        uint32_t widget_count;
+        uint32_t *widgets;
+    } test_widget_array_t;
+
+    static const nmo_type_field_t fields[] = {
+        NMO_FIELD(test_widget_array_t, widget_count, CKPGUID_UINT32),
+        {
+            .name = "widgets",
+            .description = NULL,
+            .type_guid = CKPGUID_UINT32_INIT,
+            .offset = (uint32_t)offsetof(test_widget_array_t, widgets),
+            .size = sizeof(uint32_t *),
+            .flags = NMO_FIELD_POINTER | NMO_FIELD_REPEATED,
+            .added_version = 0,
+            .removed_version = 0,
+            .semantic = NMO_SEMANTIC_NONE,
+            .units = NMO_UNITS_NONE,
+            .default_value = NULL,
+            .count_field_name = NULL,
+        },
+    };
+
+    nmo_type_descriptor_t desc = {
+        .guid = NMO_GUID(0xDEADBEEFu, 0x00000002u),
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_STRUCT,
+        .flags = 0,
+        .name = "TestWidgetArray",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(test_widget_array_t),
+        .alignment = (uint32_t)alignof(test_widget_array_t),
+        .fields = fields,
+        .field_count = sizeof(fields) / sizeof(fields[0]),
+        .vtable = NULL,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &desc));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, desc.guid);
+    ASSERT_NE(NULL, type);
+
+    uint32_t widgets[] = {10u, 20u, 30u};
+    test_widget_array_t value = {
+        .widget_count = 3,
+        .widgets = widgets,
+    };
+
+    char buffer[128];
+    nmo_status_t result = nmo_type_value_to_string(&value, type, registry, buffer, sizeof(buffer));
+    ASSERT_EQ(NMO_OK, result);
+    ASSERT_STR_EQ("{widget_count=3, widgets=[3 items]}", buffer);
+
+    teardown();
+}
+
 TEST(type_string, type_value_to_string_uint16) {
     setup();
 
@@ -1416,6 +1487,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, type_value_to_string_object_id);
     REGISTER_TEST(type_string, type_value_to_string_struct_with_object_id_field);
     REGISTER_TEST(type_string, type_value_to_string_object_ref_with_fields);
+    REGISTER_TEST(type_string, type_value_to_string_pointer_array_uses_legacy_count);
     REGISTER_TEST(type_string, type_value_to_string_uint16);
     REGISTER_TEST(type_string, type_value_to_string_guid);
     REGISTER_TEST(type_string, type_value_to_string_string_quotes);
@@ -1434,4 +1506,3 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, object_id_to_string_falls_back_on_unsafe_name);
     REGISTER_TEST(type_string, object_id_from_string_name_not_found);
 TEST_MAIN_END()
-

@@ -1265,16 +1265,10 @@ static nmo_status_t nmo_struct_like_to_string(
                 }
                 field_ptr = (const uint8_t *)ptr_val;
             } else {
-                /* pointer+repeated: show count if metadata available */
-                if (field->count_field_name != NULL) {
-                    const nmo_type_field_t *cf = nmo_type_get_field_by_name(type, field->count_field_name);
-                    if (cf != NULL) {
-                        uint32_t cnt = nmo_field_get_uint32(value, cf);
-                        char buf[32];
-                        snprintf(buf, sizeof(buf), "[%u items]", cnt);
-                        NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, buf));
-                        continue;
-                    }
+                uint32_t cnt = 0;
+                if (nmo_field_resolve_count(type, field, value, &cnt) == NMO_OK) {
+                    NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "[%u items]", cnt));
+                    continue;
                 }
                 NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "[...]"));
                 continue;
