@@ -422,6 +422,159 @@ static int bb_proto_count_cmp_desc(const void *a, const void *b) {
     return 0;
 }
 
+typedef struct behavior_stats_data {
+    const nmo_type_registry_t *registry;
+    const nmo_bb_registry_t *bb_reg;
+    size_t total_behaviors;
+    size_t n_scripts;
+    size_t n_graphs;
+    size_t n_bbs;
+    size_t n_parameters;
+    size_t n_links;
+    size_t n_operations;
+    size_t n_with_interface;
+    size_t n_total_comments;
+    size_t n_total_routing_points;
+    size_t n_folded;
+    size_t n_with_snapshot;
+    nmo_cli_bb_proto_count_t *protos;
+    size_t proto_count;
+    size_t proto_cap;
+    nmo_object_id_t *script_ids;
+    size_t script_id_count;
+    size_t script_id_cap;
+    bool oom;
+} behavior_stats_data_t;
+
+static void behavior_stats_add_script_id(behavior_stats_data_t *stats,
+                                         nmo_object_id_t id)
+{
+    if (stats->script_id_count == stats->script_id_cap) {
+        size_t new_cap = (stats->script_id_cap == 0) ? 16 : (stats->script_id_cap * 2);
+        nmo_object_id_t *na = (nmo_object_id_t *)realloc(
+            stats->script_ids, new_cap * sizeof(*stats->script_ids));
+        if (!na) {
+            stats->oom = true;
+            return;
+        }
+        stats->script_ids = na;
+        stats->script_id_cap = new_cap;
+    }
+    stats->script_ids[stats->script_id_count++] = id;
+}
+
+static void behavior_stats_add_proto(behavior_stats_data_t *stats,
+                                     nmo_guid_t guid)
+{
+    for (size_t j = 0; j < stats->proto_count; j++) {
+        if (stats->protos[j].guid.d1 == guid.d1 &&
+            stats->protos[j].guid.d2 == guid.d2) {
+            stats->protos[j].count++;
+            return;
+        }
+    }
+
+    if (stats->proto_count == stats->proto_cap) {
+        size_t new_cap = (stats->proto_cap == 0) ? 64 : (stats->proto_cap * 2);
+        nmo_cli_bb_proto_count_t *na =
+            (nmo_cli_bb_proto_count_t *)realloc(
+                stats->protos, new_cap * sizeof(*stats->protos));
+        if (!na) {
+            stats->oom = true;
+            return;
+        }
+        stats->protos = na;
+        stats->proto_cap = new_cap;
+    }
+
+    stats->protos[stats->proto_count] = (nmo_cli_bb_proto_count_t){
+        .guid = guid,
+        .name = nmo_bb_registry_get_name(stats->bb_reg, guid),
+        .count = 1,
+    };
+    stats->proto_count++;
+}
+
+static void behavior_stats_consume_object(behavior_stats_data_t *stats,
+                                          nmo_object_t *obj)
+{
+    nmo_class_id_t cid = nmo_object_get_class_id(obj);
+
+    if (cid == NMO_CID_PARAMETERIN || cid == NMO_CID_PARAMETEROUT ||
+        cid == NMO_CID_PARAMETERLOCAL || cid == NMO_CID_PARAMETER) {
+        stats->n_parameters++;
+        return;
+    }
+    if (cid == NMO_CID_BEHAVIORLINK) {
+        stats->n_links++;
+        return;
+    }
+    if (cid == NMO_CID_PARAMETEROPERATION) {
+        stats->n_operations++;
+        return;
+    }
+    if (!is_behavior_class(stats->registry, cid)) {
+        return;
+    }
+
+    stats->total_behaviors++;
+    const nmo_behavior_state_t *bs =
+        (const nmo_behavior_state_t *)nmo_object_get_state(obj);
+    if (!bs) return;
+
+    if (bs->interface_data) {
+        stats->n_with_interface++;
+        const nmo_interface_data_t *id = bs->interface_data;
+        stats->n_total_comments += id->script.body.comment_count;
+        if (id->script.has_snapshot) stats->n_with_snapshot++;
+        if (id->script.flags & NMO_INTERFACE_FLAG_FOLDED) stats->n_folded++;
+        for (size_t s = 0; s < id->sub_count; s++) {
+            stats->n_total_comments += id->subs[s].body.comment_count;
+            if (id->subs[s].flags & NMO_INTERFACE_FLAG_FOLDED) stats->n_folded++;
+            for (size_t l = 0; l < id->subs[s].body.link_count; l++)
+                stats->n_total_routing_points += id->subs[s].body.links[l].point_count;
+        }
+        for (size_t l = 0; l < id->script.body.link_count; l++)
+            stats->n_total_routing_points += id->script.body.links[l].point_count;
+    }
+
+    if (bs->flags & CKBEHAVIOR_SCRIPT) {
+        stats->n_scripts++;
+        behavior_stats_add_script_id(stats, nmo_object_get_id(obj));
+    } else if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) {
+        stats->n_bbs++;
+        if (!nmo_guid_is_null(bs->block_guid)) {
+            behavior_stats_add_proto(stats, bs->block_guid);
+        }
+    } else {
+        stats->n_graphs++;
+    }
+}
+
+static bool behavior_stats_query_visitor(size_t index,
+                                         nmo_object_t *obj,
+                                         void *user_data)
+{
+    (void)index;
+
+    behavior_stats_data_t *stats = (behavior_stats_data_t *)user_data;
+    behavior_stats_consume_object(stats, obj);
+    return !stats->oom;
+}
+
+static int behavior_stats_core_visitor(size_t index,
+                                       nmo_object_t *obj,
+                                       const nmo_cmd_ctx_t *c,
+                                       void *user)
+{
+    (void)index;
+    (void)c;
+
+    behavior_stats_data_t *stats = (behavior_stats_data_t *)user;
+    behavior_stats_consume_object(stats, obj);
+    return stats->oom ? 1 : 0;
+}
+
 /* Compute max depth of behavior tree rooted at beh_id */
 static uint32_t compute_tree_depth(nmo_object_repository_t *repo,
                                    const nmo_type_registry_t *registry,
@@ -477,103 +630,45 @@ static int behavior_stats_single(const char *file_path,
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(session, &objects, &object_count) != NMO_OK) {
-        fprintf(stderr, "Error: Failed to get objects\n");
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    if (!repo) {
+        fprintf(stderr, "Error: Failed to get object repository\n");
+        nmo_tool_close_session(ctx, session);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    const nmo_bb_registry_t *bb_reg = nmo_context_get_bb_registry(ctx);
+
+    behavior_stats_data_t stats = {
+        .registry = registry,
+        .bb_reg = bb_reg,
+    };
+    nmo_object_query_result_t query_result = {0};
+    if (nmo_object_query_iterate(repo, NULL, registry,
+                                 behavior_stats_query_visitor, &stats,
+                                 &query_result) != NMO_OK || stats.oom) {
+        fprintf(stderr, "Error: Failed to query objects\n");
+        free(stats.protos);
+        free(stats.script_ids);
         nmo_tool_close_session(ctx, session);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
-    const nmo_bb_registry_t *bb_reg = nmo_context_get_bb_registry(ctx);
-
-    size_t total_behaviors = 0, n_scripts = 0, n_graphs = 0, n_bbs = 0;
-    size_t n_parameters = 0, n_links = 0, n_operations = 0;
-    size_t n_with_interface = 0, n_total_comments = 0;
-    size_t n_total_routing_points = 0, n_folded = 0, n_with_snapshot = 0;
-
-    nmo_cli_bb_proto_count_t *protos = NULL;
-    size_t proto_count = 0, proto_cap = 0;
-
-    nmo_object_id_t *script_ids = NULL;
-    size_t script_id_count = 0, script_id_cap = 0;
-
-    for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_t *obj = objects[i];
-        nmo_class_id_t cid = nmo_object_get_class_id(obj);
-
-        if (cid == NMO_CID_PARAMETERIN || cid == NMO_CID_PARAMETEROUT ||
-            cid == NMO_CID_PARAMETERLOCAL || cid == NMO_CID_PARAMETER) {
-            n_parameters++; continue;
-        }
-        if (cid == NMO_CID_BEHAVIORLINK) { n_links++; continue; }
-        if (cid == NMO_CID_PARAMETEROPERATION) { n_operations++; continue; }
-        if (!is_behavior_class(registry, cid)) continue;
-
-        total_behaviors++;
-        const nmo_behavior_state_t *bs =
-            (const nmo_behavior_state_t *)nmo_object_get_state(obj);
-        if (!bs) continue;
-
-        if (bs->interface_data) {
-            n_with_interface++;
-            const nmo_interface_data_t *id = bs->interface_data;
-            n_total_comments += id->script.body.comment_count;
-            if (id->script.has_snapshot) n_with_snapshot++;
-            if (id->script.flags & NMO_INTERFACE_FLAG_FOLDED) n_folded++;
-            for (size_t s = 0; s < id->sub_count; s++) {
-                n_total_comments += id->subs[s].body.comment_count;
-                if (id->subs[s].flags & NMO_INTERFACE_FLAG_FOLDED) n_folded++;
-                for (size_t l = 0; l < id->subs[s].body.link_count; l++)
-                    n_total_routing_points += id->subs[s].body.links[l].point_count;
-            }
-            for (size_t l = 0; l < id->script.body.link_count; l++)
-                n_total_routing_points += id->script.body.links[l].point_count;
-        }
-
-        if (bs->flags & CKBEHAVIOR_SCRIPT) {
-            n_scripts++;
-            if (script_id_count == script_id_cap) {
-                size_t new_cap = (script_id_cap == 0) ? 16 : (script_id_cap * 2);
-                nmo_object_id_t *na = (nmo_object_id_t *)realloc(
-                    script_ids, new_cap * sizeof(*script_ids));
-                if (na) { script_ids = na; script_id_cap = new_cap; }
-            }
-            if (script_id_count < script_id_cap)
-                script_ids[script_id_count++] = nmo_object_get_id(obj);
-        } else if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) {
-            n_bbs++;
-            if (!nmo_guid_is_null(bs->block_guid)) {
-                bool found = false;
-                for (size_t j = 0; j < proto_count; j++) {
-                    if (protos[j].guid.d1 == bs->block_guid.d1 &&
-                        protos[j].guid.d2 == bs->block_guid.d2) {
-                        protos[j].count++; found = true; break;
-                    }
-                }
-                if (!found) {
-                    if (proto_count == proto_cap) {
-                        size_t new_cap = (proto_cap == 0) ? 64 : (proto_cap * 2);
-                        nmo_cli_bb_proto_count_t *na =
-                            (nmo_cli_bb_proto_count_t *)realloc(
-                                protos, new_cap * sizeof(*protos));
-                        if (na) { protos = na; proto_cap = new_cap; }
-                    }
-                    if (proto_count < proto_cap) {
-                        protos[proto_count] = (nmo_cli_bb_proto_count_t){
-                            .guid = bs->block_guid,
-                            .name = nmo_bb_registry_get_name(bb_reg, bs->block_guid),
-                            .count = 1,
-                        };
-                        proto_count++;
-                    }
-                }
-            }
-        } else {
-            n_graphs++;
-        }
-    }
+    size_t total_behaviors = stats.total_behaviors;
+    size_t n_scripts = stats.n_scripts;
+    size_t n_graphs = stats.n_graphs;
+    size_t n_bbs = stats.n_bbs;
+    size_t n_parameters = stats.n_parameters;
+    size_t n_links = stats.n_links;
+    size_t n_operations = stats.n_operations;
+    size_t n_with_interface = stats.n_with_interface;
+    size_t n_total_comments = stats.n_total_comments;
+    size_t n_total_routing_points = stats.n_total_routing_points;
+    size_t n_folded = stats.n_folded;
+    size_t n_with_snapshot = stats.n_with_snapshot;
+    nmo_cli_bb_proto_count_t *protos = stats.protos;
+    size_t proto_count = stats.proto_count;
+    nmo_object_id_t *script_ids = stats.script_ids;
+    size_t script_id_count = stats.script_id_count;
 
     if (proto_count > 1)
         qsort(protos, proto_count, sizeof(*protos), bb_proto_count_cmp_desc);
@@ -724,133 +819,42 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
-        fprintf(stderr, "Error: Failed to get objects\n");
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    if (!repo) {
+        fprintf(stderr, "Error: Failed to get object repository\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+    const nmo_bb_registry_t *bb_reg = nmo_context_get_bb_registry(c.ctx);
+
+    behavior_stats_data_t stats = {
+        .registry = c.registry,
+        .bb_reg = bb_reg,
+    };
+    rc = nmo_core_object_query_run(&c, NULL,
+                                   behavior_stats_core_visitor, &stats, NULL);
+    if (rc != NMO_CLI_EXIT_SUCCESS || stats.oom) {
+        free(stats.protos);
+        free(stats.script_ids);
+        fprintf(stderr, "Error: Failed to query objects\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    const nmo_bb_registry_t *bb_reg = nmo_context_get_bb_registry(c.ctx);
-
-    /* Counters */
-    size_t total_behaviors = 0;
-    size_t n_scripts = 0;
-    size_t n_graphs = 0;
-    size_t n_bbs = 0;
-    size_t n_parameters = 0;
-    size_t n_links = 0;
-    size_t n_operations = 0;
-    size_t n_with_interface = 0, n_total_comments = 0;
-    size_t n_total_routing_points = 0, n_folded = 0, n_with_snapshot = 0;
-
-    /* BB prototype counting */
-    nmo_cli_bb_proto_count_t *protos = NULL;
-    size_t proto_count = 0;
-    size_t proto_cap = 0;
-
-    /* Script IDs for depth computation */
-    nmo_object_id_t *script_ids = NULL;
-    size_t script_id_count = 0;
-    size_t script_id_cap = 0;
-
-    for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_t *obj = objects[i];
-        nmo_class_id_t cid = nmo_object_get_class_id(obj);
-
-        /* Count parameters, links, operations by class */
-        if (cid == NMO_CID_PARAMETERIN || cid == NMO_CID_PARAMETEROUT ||
-            cid == NMO_CID_PARAMETERLOCAL || cid == NMO_CID_PARAMETER) {
-            n_parameters++;
-            continue;
-        }
-        if (cid == NMO_CID_BEHAVIORLINK) {
-            n_links++;
-            continue;
-        }
-        if (cid == NMO_CID_PARAMETEROPERATION) {
-            n_operations++;
-            continue;
-        }
-
-        if (!is_behavior_class(c.registry, cid))
-            continue;
-
-        total_behaviors++;
-        const nmo_behavior_state_t *bs =
-            (const nmo_behavior_state_t *)nmo_object_get_state(obj);
-        if (!bs) continue;
-
-        if (bs->interface_data) {
-            n_with_interface++;
-            const nmo_interface_data_t *id = bs->interface_data;
-            n_total_comments += id->script.body.comment_count;
-            if (id->script.has_snapshot) n_with_snapshot++;
-            if (id->script.flags & NMO_INTERFACE_FLAG_FOLDED) n_folded++;
-            for (size_t si = 0; si < id->sub_count; si++) {
-                n_total_comments += id->subs[si].body.comment_count;
-                if (id->subs[si].flags & NMO_INTERFACE_FLAG_FOLDED) n_folded++;
-                for (size_t li = 0; li < id->subs[si].body.link_count; li++)
-                    n_total_routing_points += id->subs[si].body.links[li].point_count;
-            }
-            for (size_t li = 0; li < id->script.body.link_count; li++)
-                n_total_routing_points += id->script.body.links[li].point_count;
-        }
-
-        if (bs->flags & CKBEHAVIOR_SCRIPT) {
-            n_scripts++;
-            if (script_id_count == script_id_cap) {
-                size_t new_cap = (script_id_cap == 0) ? 16 : (script_id_cap * 2);
-                nmo_object_id_t *na = (nmo_object_id_t *)realloc(
-                    script_ids, new_cap * sizeof(*script_ids));
-                if (na) {
-                    script_ids = na;
-                    script_id_cap = new_cap;
-                }
-            }
-            if (script_id_count < script_id_cap) {
-                script_ids[script_id_count++] = nmo_object_get_id(obj);
-            }
-        } else if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) {
-            n_bbs++;
-            if (!nmo_guid_is_null(bs->block_guid)) {
-                bool found = false;
-                for (size_t j = 0; j < proto_count; j++) {
-                    if (protos[j].guid.d1 == bs->block_guid.d1 &&
-                        protos[j].guid.d2 == bs->block_guid.d2) {
-                        protos[j].count++;
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    if (proto_count == proto_cap) {
-                        size_t new_cap = (proto_cap == 0) ? 64 : (proto_cap * 2);
-                        nmo_cli_bb_proto_count_t *na =
-                            (nmo_cli_bb_proto_count_t *)realloc(
-                                protos, new_cap * sizeof(*protos));
-                        if (na) {
-                            protos = na;
-                            proto_cap = new_cap;
-                        }
-                    }
-                    if (proto_count < proto_cap) {
-                        const char *pname = nmo_bb_registry_get_name(
-                            bb_reg, bs->block_guid);
-                        protos[proto_count] = (nmo_cli_bb_proto_count_t){
-                            .guid = bs->block_guid,
-                            .name = pname,
-                            .count = 1,
-                        };
-                        proto_count++;
-                    }
-                }
-            }
-        } else {
-            n_graphs++;
-        }
-    }
+    size_t total_behaviors = stats.total_behaviors;
+    size_t n_scripts = stats.n_scripts;
+    size_t n_graphs = stats.n_graphs;
+    size_t n_bbs = stats.n_bbs;
+    size_t n_parameters = stats.n_parameters;
+    size_t n_links = stats.n_links;
+    size_t n_operations = stats.n_operations;
+    size_t n_with_interface = stats.n_with_interface;
+    size_t n_total_comments = stats.n_total_comments;
+    size_t n_total_routing_points = stats.n_total_routing_points;
+    size_t n_folded = stats.n_folded;
+    size_t n_with_snapshot = stats.n_with_snapshot;
+    nmo_cli_bb_proto_count_t *protos = stats.protos;
+    size_t proto_count = stats.proto_count;
+    nmo_object_id_t *script_ids = stats.script_ids;
+    size_t script_id_count = stats.script_id_count;
 
     /* Sort prototypes by count descending */
     if (proto_count > 1) {
