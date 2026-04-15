@@ -63,6 +63,128 @@ static void format_color_rgba(char *buf, size_t buf_size, const nmo_color_t *col
              (double)color->b, (double)color->a);
 }
 
+typedef struct entity_list_filter {
+    const nmo_cmd_ctx_t *cmd;
+    const nmo_object_query_t *class_query;
+} entity_list_filter_t;
+
+typedef struct entity_list_json_data {
+    yyjson_mut_doc *doc;
+    yyjson_mut_val *arr;
+    uint32_t found;
+} entity_list_json_data_t;
+
+typedef struct entity_list_table_data {
+    nmo_cli_table_t *table;
+    uint32_t found;
+} entity_list_table_data_t;
+
+static bool entity_list_filter_predicate(const nmo_object_t *object, void *user_data) {
+    const entity_list_filter_t *filter = (const entity_list_filter_t *)user_data;
+    if (filter == NULL || filter->class_query == NULL) {
+        return true;
+    }
+
+    bool matches = false;
+    return nmo_object_query_matches(object, filter->class_query, filter->cmd->registry,
+                                    &matches) == NMO_OK && matches;
+}
+
+static int entity_list_json_visitor(size_t index,
+                                    nmo_object_t *obj,
+                                    const nmo_cmd_ctx_t *c,
+                                    void *user)
+{
+    (void)index;
+    entity_list_json_data_t *data = (entity_list_json_data_t *)user;
+    if (obj == NULL || data == NULL || data->doc == NULL || data->arr == NULL) {
+        return 0;
+    }
+
+    yyjson_mut_doc *doc = data->doc;
+    yyjson_mut_val *item = yyjson_mut_obj(doc);
+    nmo_object_id_t id = nmo_object_get_id(obj);
+    nmo_class_id_t cid = nmo_object_get_class_id(obj);
+    yyjson_mut_obj_add_uint(doc, item, "id", id);
+
+    const char *cn = nmo_core_class_name(c, cid);
+    if (cn) yyjson_mut_obj_add_str(doc, item, "class", cn);
+
+    const char *name = nmo_object_get_name(obj);
+    nmo_cli_json_add_str_safe(doc, item, "name",
+                              (name && name[0]) ? name : "");
+
+    const nmo_3dentity_state_t *es =
+        (const nmo_3dentity_state_t *)nmo_object_get_state(obj);
+    if (es) {
+        yyjson_mut_val *pos_arr = yyjson_mut_arr(doc);
+        yyjson_mut_arr_add_real(doc, pos_arr, (double)es->world_matrix[12]);
+        yyjson_mut_arr_add_real(doc, pos_arr, (double)es->world_matrix[13]);
+        yyjson_mut_arr_add_real(doc, pos_arr, (double)es->world_matrix[14]);
+        yyjson_mut_obj_add_val(doc, item, "position", pos_arr);
+
+        if (es->current_mesh_id) {
+            yyjson_mut_obj_add_uint(doc, item, "mesh_id", es->current_mesh_id);
+            const char *mn = resolve_name(c, es->current_mesh_id);
+            if (mn && mn[0]) {
+                nmo_cli_json_add_str_safe(doc, item, "mesh", mn);
+            }
+        }
+    }
+
+    yyjson_mut_arr_add_val(data->arr, item);
+    data->found++;
+    return 0;
+}
+
+static int entity_list_table_visitor(size_t index,
+                                     nmo_object_t *obj,
+                                     const nmo_cmd_ctx_t *c,
+                                     void *user)
+{
+    (void)index;
+    entity_list_table_data_t *data = (entity_list_table_data_t *)user;
+    if (obj == NULL || data == NULL || data->table == NULL) {
+        return 0;
+    }
+
+    char id_buf[16];
+    snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
+
+    nmo_class_id_t cid = nmo_object_get_class_id(obj);
+    const char *cn = nmo_core_class_name(c, cid);
+    if (!cn) cn = "-";
+
+    const char *name = nmo_object_get_name(obj);
+    if (!name || !name[0]) name = "-";
+
+    char pos_buf[64];
+    char mesh_buf[64];
+    snprintf(pos_buf, sizeof(pos_buf), "-");
+    snprintf(mesh_buf, sizeof(mesh_buf), "-");
+
+    const nmo_3dentity_state_t *es =
+        (const nmo_3dentity_state_t *)nmo_object_get_state(obj);
+    if (es) {
+        format_position(pos_buf, sizeof(pos_buf), es->world_matrix);
+        if (es->current_mesh_id) {
+            const char *mn = resolve_name(c, es->current_mesh_id);
+            if (mn && mn[0]) {
+                snprintf(mesh_buf, sizeof(mesh_buf), "#%u (%s)",
+                         es->current_mesh_id, mn);
+            } else {
+                snprintf(mesh_buf, sizeof(mesh_buf), "#%u",
+                         es->current_mesh_id);
+            }
+        }
+    }
+
+    const char *cells[] = {id_buf, cn, name, pos_buf, mesh_buf};
+    nmo_cli_table_add_row(data->table, cells, 5);
+    data->found++;
+    return 0;
+}
+
 /* ============================================================================
  * entity list
  * ============================================================================ */
@@ -86,69 +208,33 @@ int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
     nmo_core_query_set_class_id(&entity_query, NMO_CID_3DENTITY, true);
 
     nmo_object_query_t class_query = {0};
-    nmo_core_query_build_options_t query_opts = {
-        .class_name = class_filter,
-        .include_derived_classes = true,
-    };
-    rc = nmo_core_query_build(&c, &class_query, NULL, &query_opts);
-    if (rc != NMO_CLI_EXIT_SUCCESS) {
-        return nmo_cmd_ctx_done(&c, rc);
+    entity_list_filter_t filter = { .cmd = &c };
+    if (class_filter != NULL) {
+        nmo_core_query_build_options_t query_opts = {
+            .class_name = class_filter,
+            .include_derived_classes = true,
+        };
+        rc = nmo_core_query_build(&c, &class_query, NULL, &query_opts);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            return nmo_cmd_ctx_done(&c, rc);
+        }
+        filter.class_query = &class_query;
+        entity_query.predicate = entity_list_filter_predicate;
+        entity_query.predicate_user_data = &filter;
     }
-    const nmo_object_query_t *filter_query =
-        class_filter != NULL ? &class_query : NULL;
-
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    (void)nmo_session_get_objects(c.session, &objects, &object_count);
 
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        uint32_t found = 0;
-
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            if (!obj) continue;
-            nmo_class_id_t cid = nmo_object_get_class_id(obj);
-
-            if (!nmo_core_query_matches_object(&c, &entity_query, obj)) continue;
-            if (!nmo_core_query_matches_object(&c, filter_query, obj)) continue;
-
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            nmo_object_id_t id = nmo_object_get_id(obj);
-            yyjson_mut_obj_add_uint(doc, item, "id", id);
-
-            const char *cn = nmo_core_class_name(&c, cid);
-            if (cn) yyjson_mut_obj_add_str(doc, item, "class", cn);
-
-            const char *name = nmo_object_get_name(obj);
-            nmo_cli_json_add_str_safe(doc, item, "name",
-                                      (name && name[0]) ? name : "");
-
-            const nmo_3dentity_state_t *es =
-                (const nmo_3dentity_state_t *)nmo_object_get_state(obj);
-            if (es) {
-                yyjson_mut_val *pos_arr = yyjson_mut_arr(doc);
-                yyjson_mut_arr_add_real(doc, pos_arr, (double)es->world_matrix[12]);
-                yyjson_mut_arr_add_real(doc, pos_arr, (double)es->world_matrix[13]);
-                yyjson_mut_arr_add_real(doc, pos_arr, (double)es->world_matrix[14]);
-                yyjson_mut_obj_add_val(doc, item, "position", pos_arr);
-
-                if (es->current_mesh_id) {
-                    yyjson_mut_obj_add_uint(doc, item, "mesh_id", es->current_mesh_id);
-                    const char *mn = resolve_name(&c, es->current_mesh_id);
-                    if (mn && mn[0]) {
-                        nmo_cli_json_add_str_safe(doc, item, "mesh", mn);
-                    }
-                }
-            }
-
-            yyjson_mut_arr_add_val(arr, item);
-            found++;
+        entity_list_json_data_t jd = { .doc = doc, .arr = arr };
+        rc = nmo_core_object_query_run(&c, &entity_query,
+                                       entity_list_json_visitor, &jd, NULL);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            return nmo_cmd_ctx_done(&c, rc);
         }
 
-        yyjson_mut_obj_add_uint(doc, data, "count", found);
+        yyjson_mut_obj_add_uint(doc, data, "count", jd.found);
         yyjson_mut_obj_add_val(doc, data, "entities", arr);
         nmo_cmd_ctx_json_end(&c, doc, data, "entity.list");
     } else {
@@ -162,52 +248,15 @@ int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-        uint32_t found = 0;
-
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            if (!obj) continue;
-            nmo_class_id_t cid = nmo_object_get_class_id(obj);
-
-            if (!nmo_core_query_matches_object(&c, &entity_query, obj)) continue;
-            if (!nmo_core_query_matches_object(&c, filter_query, obj)) continue;
-
-            char id_buf[16];
-            snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
-
-            const char *cn = nmo_core_class_name(&c, cid);
-            if (!cn) cn = "-";
-
-            const char *name = nmo_object_get_name(obj);
-            if (!name || !name[0]) name = "-";
-
-            char pos_buf[64];
-            char mesh_buf[64];
-            snprintf(pos_buf, sizeof(pos_buf), "-");
-            snprintf(mesh_buf, sizeof(mesh_buf), "-");
-
-            const nmo_3dentity_state_t *es =
-                (const nmo_3dentity_state_t *)nmo_object_get_state(obj);
-            if (es) {
-                format_position(pos_buf, sizeof(pos_buf), es->world_matrix);
-                if (es->current_mesh_id) {
-                    const char *mn = resolve_name(&c, es->current_mesh_id);
-                    if (mn && mn[0]) {
-                        snprintf(mesh_buf, sizeof(mesh_buf), "#%u (%s)",
-                                 es->current_mesh_id, mn);
-                    } else {
-                        snprintf(mesh_buf, sizeof(mesh_buf), "#%u",
-                                 es->current_mesh_id);
-                    }
-                }
-            }
-
-            const char *cells[] = {id_buf, cn, name, pos_buf, mesh_buf};
-            nmo_cli_table_add_row(&table, cells, 5);
-            found++;
+        entity_list_table_data_t td = { .table = &table };
+        rc = nmo_core_object_query_run(&c, &entity_query,
+                                       entity_list_table_visitor, &td, NULL);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            nmo_cli_table_free(&table);
+            return nmo_cmd_ctx_done(&c, rc);
         }
 
-        fprintf(c.out, "3D Entities: %u\n\n", found);
+        fprintf(c.out, "3D Entities: %u\n\n", td.found);
         nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
     }

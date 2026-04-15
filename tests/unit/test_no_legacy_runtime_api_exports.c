@@ -203,6 +203,11 @@ TEST(no_legacy_runtime_api_exports, cli_object_query_bridge_is_shared) {
     assert_file_has_no_substring("tools/commands/nmo_cmd_texture.c", "query_bridge");
 }
 
+TEST(no_legacy_runtime_api_exports, entity_list_uses_shared_object_query_runner) {
+    assert_file_has_no_substring("tools/commands/nmo_cmd_entity.c", "nmo_session_get_objects");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_entity.c", "nmo_core_query_matches_object");
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_exports);
 REGISTER_TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_pointer_state);
@@ -211,4 +216,5 @@ REGISTER_TEST(no_legacy_runtime_api_exports, type_guid_compat_aliases_are_remove
 REGISTER_TEST(no_legacy_runtime_api_exports, session_id_remap_compat_layer_is_removed);
 REGISTER_TEST(no_legacy_runtime_api_exports, cli_uses_shared_library_object_query_bridge);
 REGISTER_TEST(no_legacy_runtime_api_exports, cli_object_query_bridge_is_shared);
+REGISTER_TEST(no_legacy_runtime_api_exports, entity_list_uses_shared_object_query_runner);
 TEST_MAIN_END()
