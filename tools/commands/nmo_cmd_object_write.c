@@ -80,15 +80,17 @@ static int nmo_cmd_object_rename_batch(
     int rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
     if (rc) return rc;
 
-    /* Resolve class filter */
-    nmo_class_id_t filter_cid = 0;
-    if (class_filter) {
-        filter_cid = nmo_core_class_id(&c, class_filter);
-        if (!filter_cid) {
-            fprintf(stderr, "Error: Unknown class '%s'\n", class_filter);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-        }
+    nmo_object_query_t class_query = {0};
+    nmo_core_query_build_options_t query_opts = {
+        .class_name = class_filter,
+        .include_derived_classes = true,
+    };
+    rc = nmo_core_query_build(&c, &class_query, NULL, &query_opts);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return nmo_cmd_ctx_done(&c, rc);
     }
+    const nmo_object_query_t *filter_query =
+        class_filter != NULL ? &class_query : NULL;
 
     /* Get all objects */
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
@@ -106,13 +108,8 @@ static int nmo_cmd_object_rename_batch(
         const char *name = nmo_object_get_name(obj);
         if (!name || !name[0]) continue;
 
-        /* Class filter */
-        if (filter_cid) {
-            nmo_class_id_t ocid = nmo_object_get_class_id(obj);
-            if (ocid != filter_cid &&
-                !nmo_core_class_derives(&c, ocid, filter_cid)) {
-                continue;
-            }
+        if (!nmo_core_query_matches_object(&c, filter_query, obj)) {
+            continue;
         }
 
         /* Pattern match + template application */
