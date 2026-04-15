@@ -110,6 +110,84 @@ static void add_cell_json(yyjson_mut_doc *doc, yyjson_mut_val *arr,
     }
 }
 
+typedef struct data_list_json_data {
+    yyjson_mut_doc *doc;
+    yyjson_mut_val *arr;
+    uint32_t found;
+} data_list_json_data_t;
+
+typedef struct data_list_table_data {
+    nmo_cli_table_t *table;
+    uint32_t found;
+} data_list_table_data_t;
+
+static int data_list_json_visitor(size_t index,
+                                  nmo_object_t *obj,
+                                  const nmo_cmd_ctx_t *c,
+                                  void *user)
+{
+    (void)index;
+    (void)c;
+    data_list_json_data_t *data = (data_list_json_data_t *)user;
+    if (obj == NULL || data == NULL || data->doc == NULL || data->arr == NULL) {
+        return 0;
+    }
+
+    const nmo_dataarray_state_t *state =
+        (const nmo_dataarray_state_t *)nmo_object_get_state(obj);
+    if (state == NULL) {
+        return 0;
+    }
+
+    yyjson_mut_doc *doc = data->doc;
+    yyjson_mut_val *item = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_uint(doc, item, "id", nmo_object_get_id(obj));
+    const char *name = nmo_object_get_name(obj);
+    nmo_cli_json_add_str_safe(doc, item, "name",
+                              (name && name[0]) ? name : "");
+    yyjson_mut_obj_add_uint(doc, item, "column_count", state->column_count);
+    yyjson_mut_obj_add_uint(doc, item, "row_count", state->row_count);
+    yyjson_mut_arr_add_val(data->arr, item);
+    data->found++;
+    return 0;
+}
+
+static int data_list_table_visitor(size_t index,
+                                   nmo_object_t *obj,
+                                   const nmo_cmd_ctx_t *c,
+                                   void *user)
+{
+    (void)index;
+    (void)c;
+    data_list_table_data_t *data = (data_list_table_data_t *)user;
+    if (obj == NULL || data == NULL || data->table == NULL) {
+        return 0;
+    }
+
+    const nmo_dataarray_state_t *state =
+        (const nmo_dataarray_state_t *)nmo_object_get_state(obj);
+    if (state == NULL) {
+        return 0;
+    }
+
+    char id_buf[16];
+    snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
+
+    const char *name = nmo_object_get_name(obj);
+    if (!name || !name[0]) name = "-";
+
+    char col_buf[16];
+    snprintf(col_buf, sizeof(col_buf), "%u", state->column_count);
+
+    char row_buf[16];
+    snprintf(row_buf, sizeof(row_buf), "%u", state->row_count);
+
+    const char *cells[] = {id_buf, name, col_buf, row_buf};
+    nmo_cli_table_add_row(data->table, cells, 4);
+    data->found++;
+    return 0;
+}
+
 /* ============================================================================
  * data list
  * ============================================================================ */
@@ -119,36 +197,21 @@ int nmo_cmd_data_list(int argc, char **argv, const nmo_cli_global_opts_t *global
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    (void)nmo_session_get_objects(c.session, &objects, &object_count);
+    nmo_object_query_t query = {0};
+    nmo_core_query_set_class_id(&query, NMO_CID_DATAARRAY, false);
 
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        uint32_t found = 0;
-
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            if (!obj || nmo_object_get_class_id(obj) != NMO_CID_DATAARRAY) continue;
-
-            nmo_dataarray_state_t *state =
-                (nmo_dataarray_state_t *)nmo_object_get_state(obj);
-            if (!state) continue;
-
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, item, "id", nmo_object_get_id(obj));
-            const char *name = nmo_object_get_name(obj);
-            nmo_cli_json_add_str_safe(doc, item, "name",
-                                      (name && name[0]) ? name : "");
-            yyjson_mut_obj_add_uint(doc, item, "column_count", state->column_count);
-            yyjson_mut_obj_add_uint(doc, item, "row_count", state->row_count);
-            yyjson_mut_arr_add_val(arr, item);
-            found++;
+        data_list_json_data_t jd = { .doc = doc, .arr = arr };
+        rc = nmo_core_object_query_run(&c, &query,
+                                       data_list_json_visitor, &jd, NULL);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            return nmo_cmd_ctx_done(&c, rc);
         }
 
-        yyjson_mut_obj_add_uint(doc, data, "count", found);
+        yyjson_mut_obj_add_uint(doc, data, "count", jd.found);
         yyjson_mut_obj_add_val(doc, data, "arrays", arr);
         nmo_cmd_ctx_json_end(&c, doc, data, "data.list");
     } else {
@@ -161,34 +224,15 @@ int nmo_cmd_data_list(int argc, char **argv, const nmo_cli_global_opts_t *global
 
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-        uint32_t found = 0;
-
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            if (!obj || nmo_object_get_class_id(obj) != NMO_CID_DATAARRAY) continue;
-
-            nmo_dataarray_state_t *state =
-                (nmo_dataarray_state_t *)nmo_object_get_state(obj);
-            if (!state) continue;
-
-            char id_buf[16];
-            snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
-
-            const char *name = nmo_object_get_name(obj);
-            if (!name || !name[0]) name = "-";
-
-            char col_buf[16];
-            snprintf(col_buf, sizeof(col_buf), "%u", state->column_count);
-
-            char row_buf[16];
-            snprintf(row_buf, sizeof(row_buf), "%u", state->row_count);
-
-            const char *cells[] = {id_buf, name, col_buf, row_buf};
-            nmo_cli_table_add_row(&table, cells, 4);
-            found++;
+        data_list_table_data_t td = { .table = &table };
+        rc = nmo_core_object_query_run(&c, &query,
+                                       data_list_table_visitor, &td, NULL);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            nmo_cli_table_free(&table);
+            return nmo_cmd_ctx_done(&c, rc);
         }
 
-        fprintf(c.out, "Data arrays: %u\n\n", found);
+        fprintf(c.out, "Data arrays: %u\n\n", td.found);
         nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
     }
