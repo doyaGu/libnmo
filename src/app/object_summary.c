@@ -396,17 +396,6 @@ static bool nmo_summary_str_ends_with(const char *str, const char *suffix) {
     return memcmp(str + (slen - tlen), suffix, tlen) == 0;
 }
 
-static size_t nmo_summary_common_prefix_len(const char *a, const char *b) {
-    if (!a || !b) {
-        return 0;
-    }
-    size_t i = 0;
-    while (a[i] && b[i] && a[i] == b[i]) {
-        i++;
-    }
-    return i;
-}
-
 static bool nmo_summary_is_count_field_name(const char *name) {
     return name && nmo_summary_str_ends_with(name, "_count");
 }
@@ -428,81 +417,9 @@ static uint64_t nmo_summary_guess_array_count(
         }
     }
 
-    /* Fast path: explicit count_field_name metadata */
-    const nmo_type_field_t *meta_cf = nmo_field_get_count_field(owner_type, field);
-    if (meta_cf != NULL) {
-        return (uint64_t)nmo_field_get_uint32(owner_instance, meta_cf);
-    }
-
-    /* Heuristic fallback: look for {field_name}_count naming convention */
-    char count_field_name[128];
-    snprintf(count_field_name, sizeof(count_field_name), "%s_count", field->name);
-
-    const nmo_type_field_t *count_field = nmo_type_get_field_by_name(owner_type, count_field_name);
-    uint64_t count = 0;
-    if (count_field && nmo_summary_read_u64_field(owner_instance, count_field, &count)) {
-        return count;
-    }
-
-    /* Alternative: {field_name}s -> {field_name}_count (plural removal) */
-    size_t name_len = strlen(field->name);
-    if (name_len > 1 && field->name[name_len - 1] == 's') {
-        char singular[128];
-        snprintf(singular, sizeof(singular), "%.*s_count", (int)(name_len - 1), field->name);
-        count_field = nmo_type_get_field_by_name(owner_type, singular);
-        if (count_field && nmo_summary_read_u64_field(owner_instance, count_field, &count)) {
-            return count;
-        }
-    }
-
-    /* Fallback: choose the best matching "*_count" field by prefix similarity.
-     * This handles common mismatches like "vertices" -> "vertex_count" without hardcoding plural rules. */
-    const size_t owner_field_count = nmo_type_get_field_count(owner_type);
-    const nmo_type_field_t *best_field = NULL;
-    size_t best_score = 0;
-
-    for (size_t i = 0; i < owner_field_count; ++i) {
-        const nmo_type_field_t *cand = nmo_type_get_field_by_index(owner_type, i);
-        if (!cand || !cand->name) {
-            continue;
-        }
-        if (cand->flags & NMO_FIELD_REPEATED) {
-            continue;
-        }
-        if (!nmo_summary_str_ends_with(cand->name, "_count")) {
-            continue;
-        }
-        if (cand->size != 1 && cand->size != 2 && cand->size != 4 && cand->size != 8) {
-            continue;
-        }
-
-        const size_t cand_len = strlen(cand->name);
-        const size_t base_len = cand_len - strlen("_count");
-        if (base_len == 0) {
-            continue;
-        }
-
-        /* Compare repeated field name with base name (without "_count"). */
-        char base_buf[128];
-        if (base_len >= sizeof(base_buf)) {
-            continue;
-        }
-        memcpy(base_buf, cand->name, base_len);
-        base_buf[base_len] = '\0';
-
-        size_t score = nmo_summary_common_prefix_len(field->name, base_buf);
-        if (score > best_score) {
-            best_score = score;
-            best_field = cand;
-        }
-    }
-
-    if (best_field) {
-        /* Require some similarity to avoid spurious matches. */
-        const size_t min_score = (strlen(field->name) <= 3) ? 1 : 3;
-        if (best_score >= min_score && nmo_summary_read_u64_field(owner_instance, best_field, &count)) {
-            return count;
-        }
+    uint32_t count = 0;
+    if (nmo_field_resolve_count(owner_type, field, owner_instance, &count) == NMO_OK) {
+        return (uint64_t)count;
     }
 
     return 0;

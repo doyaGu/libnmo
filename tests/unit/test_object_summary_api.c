@@ -8,7 +8,36 @@
 
 #include "app/nmo_object_summary.h"
 #include "session/nmo_session_util.h"
+#include "type/nmo_reflection.h"
 #include "yyjson.h"
+
+#include <stdalign.h>
+#include <string.h>
+
+typedef struct summary_raw_array_state {
+    uint32_t item_count;
+    uint32_t *items;
+} summary_raw_array_state_t;
+
+static const nmo_type_field_t summary_raw_array_fields[] = {
+    NMO_FIELD(summary_raw_array_state_t, item_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(summary_raw_array_state_t, items, CKPGUID_UINT32),
+};
+
+static const nmo_guid_t summary_raw_array_guid = NMO_GUID_INIT(0x51A4E001u, 0x00000001u);
+
+static yyjson_mut_val *find_summary_field(yyjson_mut_val *fields, const char *name) {
+    yyjson_mut_arr_iter iter;
+    yyjson_mut_arr_iter_init(fields, &iter);
+    yyjson_mut_val *field = NULL;
+    while ((field = yyjson_mut_arr_iter_next(&iter)) != NULL) {
+        yyjson_mut_val *field_name = yyjson_mut_obj_get(field, "name");
+        if (field_name && strcmp(yyjson_mut_get_str(field_name), name) == 0) {
+            return field;
+        }
+    }
+    return NULL;
+}
 
 static nmo_object_t *find_reflective_object(nmo_context_t *ctx, nmo_session_t *session) {
     nmo_object_t **objects = NULL;
@@ -78,6 +107,81 @@ TEST(object_summary_api, summarize_to_text_and_json) {
     nmo_session_close_with_context(ctx, session);
 }
 
+TEST(object_summary_api, raw_array_without_metadata_does_not_guess_count) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_type_descriptor_t desc = {
+        .guid = summary_raw_array_guid,
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_STRUCT,
+        .flags = 0,
+        .name = "SummaryRawArrayState",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(summary_raw_array_state_t),
+        .alignment = (uint32_t)alignof(summary_raw_array_state_t),
+        .fields = summary_raw_array_fields,
+        .field_count = sizeof(summary_raw_array_fields) / sizeof(summary_raw_array_fields[0]),
+        .vtable = NULL,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL,
+    };
+    nmo_status_t status = nmo_type_registry_begin_update(nmo_context_get_type_registry(ctx));
+    ASSERT_EQ(NMO_OK, status);
+    status = nmo_type_registry_register(nmo_context_get_type_registry(ctx), &desc);
+    ASSERT_EQ(NMO_OK, status);
+
+    uint32_t item_values[] = {10u, 20u};
+    summary_raw_array_state_t state = {
+        .item_count = 2u,
+        .items = item_values,
+    };
+
+    nmo_object_t *obj = nmo_object_create(NULL, 100u, 0);
+    ASSERT_NOT_NULL(obj);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(obj, summary_raw_array_guid));
+    ASSERT_EQ(NMO_OK, nmo_object_alloc_state(obj, sizeof(state)));
+    memcpy(nmo_object_get_state(obj), &state, sizeof(state));
+
+    yyjson_mut_doc *doc = yyjson_mut_doc_new(NULL);
+    ASSERT_NOT_NULL(doc);
+    yyjson_mut_val *data = yyjson_mut_obj(doc);
+    ASSERT_NOT_NULL(data);
+    yyjson_mut_doc_set_root(doc, data);
+
+    nmo_summary_output_t json_out = {
+        .stream = NULL,
+        .json_doc = doc,
+        .json_data = data,
+        .is_json = true,
+        .colorize = false,
+        .ctx = ctx,
+        .session = NULL,
+    };
+    ASSERT_TRUE(nmo_object_summary(obj, &json_out));
+
+    yyjson_mut_val *fields = yyjson_mut_obj_get(data, "fields");
+    ASSERT_NOT_NULL(fields);
+    yyjson_mut_val *items = find_summary_field(fields, "items");
+    ASSERT_NOT_NULL(items);
+    yyjson_mut_val *count = yyjson_mut_obj_get(items, "count");
+    ASSERT_NOT_NULL(count);
+    ASSERT_EQ(0u, yyjson_mut_get_uint(count));
+
+    yyjson_mut_doc_free(doc);
+    nmo_object_destroy(obj);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_summary_api, summarize_to_text_and_json);
+    REGISTER_TEST(object_summary_api, raw_array_without_metadata_does_not_guess_count);
 TEST_MAIN_END()
