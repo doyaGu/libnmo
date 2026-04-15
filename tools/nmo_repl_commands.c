@@ -382,6 +382,31 @@ static int repl_list_visitor(size_t index, nmo_object_t *obj,
     return 0;
 }
 
+static int repl_query_set_exact_class(
+    const nmo_cmd_ctx_t *c,
+    nmo_object_query_t *query,
+    const char *class_token,
+    bool print_tip)
+{
+    if (class_token == NULL || class_token[0] == '\0') {
+        return 0;
+    }
+
+    if (isdigit((unsigned char)class_token[0]) || class_token[0] == '-') {
+        query->class_id = (nmo_class_id_t)atoi(class_token);
+    } else if (nmo_core_query_set_class_name(
+                   c, query, class_token, false) != NMO_OK) {
+        fprintf(stderr, "Unknown class: %s\n", class_token);
+        if (print_tip) {
+            fprintf(stderr, "Tip: use a numeric class_id or a known type name (e.g. CKCamera).\n");
+        }
+        return -1;
+    }
+
+    query->include_derived_classes = false; /* REPL uses exact class match */
+    return 0;
+}
+
 static int cmd_list(nmo_repl_context_t *repl, int argc, char **argv) {
     nmo_cmd_ctx_t c;
     nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
@@ -395,18 +420,8 @@ static int cmd_list(nmo_repl_context_t *repl, int argc, char **argv) {
             token = token + 6;
         }
 
-        if (token && token[0] != '\0') {
-            if (isdigit((unsigned char)token[0]) || token[0] == '-') {
-                query.class_id = (nmo_class_id_t)atoi(token);
-            } else {
-                if (nmo_core_query_set_class_name(
-                        &c, &query, token, false) != NMO_OK) {
-                    fprintf(stderr, "Unknown class: %s\n", token);
-                    fprintf(stderr, "Tip: use a numeric class_id or a known type name (e.g. CKCamera).\n");
-                    return -1;
-                }
-            }
-            query.include_derived_classes = false; /* REPL uses exact class match */
+        if (repl_query_set_exact_class(&c, &query, token, true) != 0) {
+            return -1;
         }
     }
 
@@ -572,6 +587,49 @@ static int repl_find_visitor(size_t index, nmo_object_t *obj,
     return 0;
 }
 
+static int repl_query_build_find(
+    nmo_repl_context_t *repl,
+    const nmo_cmd_ctx_t *c,
+    int argc,
+    char **argv,
+    nmo_object_query_t *query,
+    char *regex_buf,
+    size_t regex_buf_size)
+{
+    const char *token = argv[1];
+
+    if (strcmp(token, "class") == 0 && argc > 2) {
+        return repl_query_set_exact_class(c, query, argv[2], false);
+    }
+
+    if (strcmp(token, "id") == 0 && argc > 2) {
+        uint32_t id_val = 0;
+        if (nmo_repl_parse_u32(argv[2], &id_val)) {
+            nmo_core_query_set_object_id(query, (nmo_object_id_t)id_val);
+        }
+        return 0;
+    }
+
+    size_t len = strlen(token);
+    if (len >= 2 && token[0] == '/' && token[len - 1] == '/') {
+        len -= 2;
+        if (len >= regex_buf_size) {
+            len = regex_buf_size - 1;
+        }
+        memcpy(regex_buf, token + 1, len);
+        regex_buf[len] = '\0';
+        query->name = regex_buf;
+        query->name_mode = NMO_OBJECT_QUERY_NAME_REGEX;
+        query->name_case_insensitive = repl->regex_icase;
+    } else {
+        query->name = token;
+        query->name_mode = NMO_OBJECT_QUERY_NAME_SUBSTRING;
+        query->name_case_insensitive = false;
+    }
+
+    return 0;
+}
+
 static int cmd_find(nmo_repl_context_t *repl, int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Usage: find <substr>|/<regex>/ | class <id|name> | id <id>\n");
@@ -582,46 +640,10 @@ static int cmd_find(nmo_repl_context_t *repl, int argc, char **argv) {
     nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
 
     nmo_object_query_t query = {0};
-    const char *token = argv[1];
-
-    /* Buffer for regex pattern extraction (must outlive filter) */
     char regex_buf[256];
-
-    if (strcmp(token, "class") == 0 && argc > 2) {
-        const char *arg = argv[2];
-        if (isdigit((unsigned char)arg[0]) || arg[0] == '-') {
-            query.class_id = (nmo_class_id_t)atoi(arg);
-        } else {
-            if (nmo_core_query_set_class_name(
-                    &c, &query, arg, false) != NMO_OK) {
-                fprintf(stderr, "Unknown class: %s\n", arg);
-                return -1;
-            }
-        }
-        query.include_derived_classes = false; /* REPL uses exact match */
-    } else if (strcmp(token, "id") == 0 && argc > 2) {
-        uint32_t id_val = 0;
-        if (nmo_repl_parse_u32(argv[2], &id_val)) {
-            nmo_core_query_set_object_id(&query, (nmo_object_id_t)id_val);
-        }
-    } else {
-        size_t len = strlen(token);
-        if (len >= 2 && token[0] == '/' && token[len - 1] == '/') {
-            /* Regex pattern */
-            len -= 2;
-            if (len >= sizeof(regex_buf)) {
-                len = sizeof(regex_buf) - 1;
-            }
-            memcpy(regex_buf, token + 1, len);
-            regex_buf[len] = '\0';
-            query.name = regex_buf;
-            query.name_mode = NMO_OBJECT_QUERY_NAME_REGEX;
-            query.name_case_insensitive = repl->regex_icase;
-        } else {
-            query.name = token;
-            query.name_mode = NMO_OBJECT_QUERY_NAME_SUBSTRING;
-            query.name_case_insensitive = false;
-        }
+    if (repl_query_build_find(
+            repl, &c, argc, argv, &query, regex_buf, sizeof(regex_buf)) != 0) {
+        return -1;
     }
 
     printf("\nMatches:\n");
@@ -948,9 +970,13 @@ static int cmd_query(nmo_repl_context_t *repl, int argc, char **argv) {
 
     nmo_object_query_t query = {0};
     nmo_core_query_dsl_t query_dsl = {0};
-    nmo_status_t st = nmo_core_query_add_dsl_filter(&c, &query, expr_buf, &query_dsl);
-    if (st != NMO_OK) {
-        nmo_core_dsl_print_error(stderr, expr_buf, "Error: Failed to compile expression");
+    nmo_core_query_build_options_t query_opts = {
+        .filter_expr = expr_buf,
+        .print_dsl_context = true,
+        .dsl_error_prefix = "Error: Failed to compile expression",
+    };
+    if (nmo_core_query_build(&c, &query, &query_dsl, &query_opts) !=
+        NMO_CLI_EXIT_SUCCESS) {
         return -1;
     }
 
