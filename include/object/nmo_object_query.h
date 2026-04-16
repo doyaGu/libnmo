@@ -91,6 +91,10 @@ NMO_API void nmo_object_query_index_invalidate(
     nmo_object_query_index_t *index,
     uint32_t flags);
 
+NMO_API void nmo_object_query_index_trim(
+    nmo_object_query_index_t *index,
+    uint32_t flags);
+
 NMO_API nmo_status_t nmo_object_query_index_attach_repository_observer(
     nmo_object_query_index_t *index);
 

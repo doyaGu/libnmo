@@ -472,6 +472,20 @@ void nmo_object_query_index_invalidate(nmo_object_query_index_t *index, uint32_t
     }
 }
 
+void nmo_object_query_index_trim(nmo_object_query_index_t *index, uint32_t flags)
+{
+    if (index == NULL) {
+        return;
+    }
+    if (flags == 0 ||
+        (flags & NMO_OBJECT_QUERY_INDEX_ALL) != 0u ||
+        (flags & NMO_OBJECT_QUERY_INDEX_TEXT) != 0u) {
+        nmo_array_dispose(&index->trigram_entries);
+        index->text_built = false;
+        index->text_dirty = true;
+    }
+}
+
 nmo_status_t nmo_object_query_index_attach_repository_observer(
     nmo_object_query_index_t *index)
 {
