@@ -447,6 +447,48 @@ TEST(object_query, indexed_text_reducers_preserve_matches)
     teardown_objects();
 }
 
+TEST(object_query, indexed_text_single_trigram_deduplicates_repeated_names)
+{
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_object_repository_t *repo = nmo_object_repository_create(&allocator);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_t *object = make_object(&allocator, 1, NMO_CID_OBJECT, "aaaaaa");
+    ASSERT_NOT_NULL(object);
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &object));
+
+    nmo_object_query_index_t *index = nmo_object_query_index_create(
+        repo,
+        nmo_context_get_type_registry(ctx),
+        &allocator);
+    ASSERT_NOT_NULL(index);
+    ASSERT_EQ(NMO_OK, nmo_object_query_index_rebuild(index));
+
+    nmo_object_query_context_t qctx = {
+        .repository = repo,
+        .index = index,
+        .registry = nmo_context_get_type_registry(ctx)
+    };
+    nmo_object_query_t query = {
+        .name = "aaa",
+        .name_mode = NMO_OBJECT_QUERY_NAME_SUBSTRING,
+        .name_case_insensitive = true
+    };
+    query_index_capture_t capture = {0};
+    nmo_object_query_result_t result = {0};
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(
+        &qctx, &query, capture_query_index, &capture, &result));
+    ASSERT_EQ(1, result.matched);
+    ASSERT_EQ(1, capture.count);
+    ASSERT_EQ(0, capture.indexes[0]);
+
+    nmo_object_query_index_destroy(index);
+    nmo_object_repository_destroy(repo);
+    nmo_context_release(ctx);
+}
+
 TEST(object_query, session_query_context_tracks_direct_repository_mutation)
 {
     nmo_allocator_t allocator = nmo_allocator_default();
@@ -574,6 +616,7 @@ REGISTER_TEST(object_query, visitor_can_stop_early);
 REGISTER_TEST(object_query, visitor_receives_repository_index);
 REGISTER_TEST(object_query, indexed_query_handles_duplicate_names_and_rename);
 REGISTER_TEST(object_query, indexed_text_reducers_preserve_matches);
+REGISTER_TEST(object_query, indexed_text_single_trigram_deduplicates_repeated_names);
 REGISTER_TEST(object_query, session_query_context_tracks_direct_repository_mutation);
 REGISTER_TEST(object_query, attached_query_index_tracks_repository_mutation);
 REGISTER_TEST(object_query, query_index_detach_preserves_other_repository_observers);

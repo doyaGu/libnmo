@@ -894,7 +894,7 @@ static nmo_status_t query_text_candidate_for_literal(
 
     if (range_count == 1) {
         query_trigram_range_t *best = &ranges[best_range_index];
-        *out_candidate = query_id_entries_candidate(
+        *out_candidate = query_id_entries_candidate_with_duplicates(
             trigram_entries + best->start, best->count);
         return NMO_OK;
     }
@@ -911,7 +911,7 @@ static nmo_status_t query_text_candidate_for_literal(
         uint32_t base_generation = query_index_reserve_mark_generations(
             index, (uint32_t)range_count + 2u);
         if (base_generation == 0) {
-            *out_candidate = query_id_entries_candidate(
+            *out_candidate = query_id_entries_candidate_with_duplicates(
                 trigram_entries + best->start, best->count);
             return NMO_OK;
         }

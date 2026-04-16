@@ -78,6 +78,7 @@ typedef struct query_candidate {
     size_t single_meta_index;
     const query_id_entry_t *id_entries;
     const query_name_entry_t *name_entries;
+    bool may_contain_duplicates;
 } query_candidate_t;
 
 static inline char query_fold_ascii(char c)
@@ -104,6 +105,15 @@ static inline query_candidate_t query_id_entries_candidate(
         .count = count,
         .id_entries = entries
     };
+}
+
+static inline query_candidate_t query_id_entries_candidate_with_duplicates(
+    const query_id_entry_t *entries,
+    size_t count)
+{
+    query_candidate_t candidate = query_id_entries_candidate(entries, count);
+    candidate.may_contain_duplicates = candidate.kind == QUERY_CANDIDATE_ID_ENTRIES;
+    return candidate;
 }
 
 static inline query_candidate_t query_name_entries_candidate(

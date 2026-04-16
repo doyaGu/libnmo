@@ -475,7 +475,9 @@ static nmo_status_t query_iterate_candidate(
         return NMO_OK;
     }
 
-    query_index_next_generation(index);
+    if (candidate->may_contain_duplicates) {
+        query_index_next_generation(index);
+    }
     for (size_t i = 0; i < candidate->count; i++) {
         size_t meta_index = candidate->single_meta_index;
         if (candidate->kind == QUERY_CANDIDATE_ID_ENTRIES) {
@@ -483,13 +485,15 @@ static nmo_status_t query_iterate_candidate(
         } else if (candidate->kind == QUERY_CANDIDATE_NAME_ENTRIES) {
             meta_index = candidate->name_entries[i].meta_index;
         }
-        if (meta_index >= index->meta_count ||
+        if (meta_index >= index->meta_count) {
+            continue;
+        }
+        if (candidate->may_contain_duplicates &&
             !query_index_mark_meta(index, meta_index)) {
             continue;
         }
         query_meta_t *meta = &index->metas[meta_index];
-        nmo_object_t *object =
-            nmo_object_repository_find_by_id(ctx->repository, meta->object_id);
+        nmo_object_t *object = meta->object;
         bool keep_going = true;
         nmo_status_t status = query_visit_object(
             ctx, query, object, meta->repository_index, assume_match,
