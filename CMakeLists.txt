@@ -360,7 +360,6 @@ set(NMO_APP_SOURCES
 # Behavior layer sources
 set(NMO_BEHAVIOR_SOURCES
     src/behavior/bb_registry.c
-    src/behavior/behavior_edit.c
     src/behavior/behavior_graph.c
     src/behavior/behavior_index.c
     src/behavior/script_walker.c

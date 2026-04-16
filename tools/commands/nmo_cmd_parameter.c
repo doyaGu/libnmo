@@ -27,7 +27,6 @@
 #include "type/nmo_type_string.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/nmo_object_repository.h"
-#include "behavior/nmo_behavior_edit.h"
 #include "app/nmo_save.h"
 #include "core/nmo_string.h"
 
@@ -55,6 +54,47 @@ static bool parameter_query_predicate(const nmo_object_t *obj, void *user_data) 
     const nmo_type_registry_t *registry = (const nmo_type_registry_t *)user_data;
     if (!obj) return false;
     return is_parameter_class(registry, nmo_object_get_class_id(obj)) != 0;
+}
+
+static nmo_object_t *find_behavior_parameter_by_name(
+    nmo_object_repository_t *repo,
+    nmo_object_t *behavior,
+    const char *name)
+{
+    if (!repo || !behavior || !name) {
+        return NULL;
+    }
+
+    const nmo_behavior_state_t *bstate =
+        (const nmo_behavior_state_t *)nmo_object_get_state(behavior);
+    if (!bstate) {
+        return NULL;
+    }
+
+    const nmo_array_t *arrays[] = {
+        &bstate->in_parameters,
+        &bstate->out_parameters,
+        &bstate->local_parameters,
+    };
+
+    for (int array_index = 0; array_index < 3; array_index++) {
+        const nmo_array_t *arr = arrays[array_index];
+        if (!arr->data || arr->count == 0) continue;
+
+        const nmo_object_id_t *ids = (const nmo_object_id_t *)arr->data;
+        for (size_t i = 0; i < arr->count; i++) {
+            nmo_object_t *param_obj =
+                nmo_object_repository_find_by_id(repo, ids[i]);
+            if (!param_obj) continue;
+
+            const char *param_obj_name = nmo_object_get_name(param_obj);
+            if (param_obj_name && strcmp(param_obj_name, name) == 0) {
+                return param_obj;
+            }
+        }
+    }
+
+    return NULL;
 }
 
 static void parameter_list_add_json(yyjson_mut_doc *doc,
@@ -983,7 +1023,8 @@ static size_t parse_hex_bytes(const char *hex_str, uint8_t *out, size_t out_cap)
 /**
  * @brief Find a settable parameter by owner behavior + name.
  *
- * Uses nmo_behavior_find_parameter() then skips ParameterIn (no buffer data).
+ * Looks up the parameter in the owner's behavior arrays, then skips
+ * ParameterIn (no buffer data).
  */
 static nmo_object_t *find_param_by_owner_name(
     nmo_object_repository_t *repo,
@@ -992,7 +1033,8 @@ static nmo_object_t *find_param_by_owner_name(
     const char *param_name)
 {
     (void)registry;
-    nmo_object_t *pobj = nmo_behavior_find_parameter(repo, owner_obj, param_name);
+    nmo_object_t *pobj =
+        find_behavior_parameter_by_name(repo, owner_obj, param_name);
     if (!pobj) return NULL;
     /* ParameterIn has no buffer data -- skip it for set operations */
     if (nmo_object_get_class_id(pobj) == NMO_CID_PARAMETERIN) return NULL;
