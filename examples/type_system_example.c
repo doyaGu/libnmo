@@ -14,7 +14,7 @@
 #include "type/nmo_dynamic_types.h"
 #include <stdio.h>
 
-static nmo_result_t register_example_types(nmo_type_registry_t *registry) {
+static nmo_status_t register_example_types(nmo_type_registry_t *registry) {
     nmo_enum_value_def_t blend_values[] = {
         {"BlendZero", 0, "Zero"},
         {"BlendOne", 1, "One"},
@@ -31,8 +31,8 @@ static nmo_result_t register_example_types(nmo_type_registry_t *registry) {
         .default_value = 0
     };
 
-    nmo_result_t result = nmo_type_registry_register_enum(registry, &blend_enum, NULL);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_type_registry_register_enum(registry, &blend_enum, NULL);
+    if (result != NMO_OK) {
         return result;
     }
 
@@ -52,7 +52,7 @@ static nmo_result_t register_example_types(nmo_type_registry_t *registry) {
     };
 
     result = nmo_type_registry_register_flags(registry, &access_flags, NULL);
-    if (result.code != NMO_OK) {
+    if (result != NMO_OK) {
         return result;
     }
 
@@ -91,18 +91,18 @@ int main(void) {
         return 1;
     }
 
-    nmo_result_t result = nmo_register_builtin_types(registry);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_register_builtin_types(registry);
+    if (result != NMO_OK) {
         fprintf(stderr, "Error: Failed to register builtin types (%s)\n",
-                nmo_error_string(result.code));
+                nmo_error_string(result));
         nmo_arena_destroy(arena);
         return 1;
     }
 
     result = register_example_types(registry);
-    if (result.code != NMO_OK) {
+    if (result != NMO_OK) {
         fprintf(stderr, "Error: Failed to register example types (%s)\n",
-                nmo_error_string(result.code));
+                nmo_error_string(result));
         nmo_arena_destroy(arena);
         return 1;
     }

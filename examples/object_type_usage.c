@@ -35,8 +35,8 @@ void example_basic_usage(void) {
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
     
     /* Register builtin primitive types (INT, FLOAT, BOOL) */
-    nmo_result_t result = nmo_register_builtin_types(registry);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_register_builtin_types(registry);
+    if (result != NMO_OK) {
         printf("Failed to register builtin types\n");
         nmo_arena_destroy(arena);
         return;
@@ -44,7 +44,7 @@ void example_basic_usage(void) {
     
     /* Register all Virtools object types */
     result = nmo_register_object_types(registry);
-    if (result.code != NMO_OK) {
+    if (result != NMO_OK) {
         printf("Failed to register object types\n");
         nmo_arena_destroy(arena);
         return;
@@ -88,7 +88,12 @@ void example_inheritance(void) {
 
     nmo_arena_t *arena = nmo_arena_create(NULL, 1024 * 1024);
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
-    nmo_register_object_types(registry);
+    nmo_status_t result = nmo_register_object_types(registry);
+    if (result != NMO_OK) {
+        printf("Failed to register object types\n");
+        nmo_arena_destroy(arena);
+        return;
+    }
     
     /* Get types */
     const nmo_type_descriptor_t *sprite = nmo_type_registry_find_by_class_id(
@@ -135,7 +140,12 @@ void example_serialization(void) {
 
     nmo_arena_t *arena = nmo_arena_create(NULL, 1024 * 1024);
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
-    nmo_register_object_types(registry);
+    nmo_status_t result = nmo_register_object_types(registry);
+    if (result != NMO_OK) {
+        printf("Failed to register object types\n");
+        nmo_arena_destroy(arena);
+        return;
+    }
     
     /* Get CKObject type */
     const nmo_type_descriptor_t *ckobject_type = nmo_type_registry_find_by_guid(
@@ -158,10 +168,10 @@ void example_serialization(void) {
     
     /* Serialize */
     printf("Serializing CKObject (visible)...\n");
-    nmo_result_t result = ckobject_type->vtable->serialize(
+    result = ckobject_type->vtable->serialize(
         &obj_state, chunk, ckobject_type, arena);
     
-    if (result.code == NMO_OK) {
+    if (result == NMO_OK) {
         printf("✓ Serialization successful\n");
         printf("  Chunk size: %zu bytes\n", nmo_chunk_get_data_size(chunk));
     } else {
@@ -176,7 +186,7 @@ void example_serialization(void) {
     result = ckobject_type->vtable->deserialize(
         &obj_state_in, chunk, ckobject_type, arena);
     
-    if (result.code == NMO_OK) {
+    if (result == NMO_OK) {
         printf("✓ Deserialization successful\n");
         printf("  Visibility flags: 0x%02X\n", obj_state_in.visibility_flags);
         printf("  Is visible: %s\n",
@@ -198,7 +208,12 @@ void example_3d_entity(void) {
 
     nmo_arena_t *arena = nmo_arena_create(NULL, 1024 * 1024);
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
-    nmo_register_object_types(registry);
+    nmo_status_t result = nmo_register_object_types(registry);
+    if (result != NMO_OK) {
+        printf("Failed to register object types\n");
+        nmo_arena_destroy(arena);
+        return;
+    }
     
     /* Get CK3dEntity type */
     const nmo_type_descriptor_t *entity3d_type = nmo_type_registry_find_by_guid(
@@ -235,17 +250,17 @@ void example_3d_entity(void) {
     nmo_chunk_t *chunk = nmo_chunk_create(arena);
     nmo_chunk_start_write(chunk);
     
-    nmo_result_t result = entity3d_type->vtable->serialize(
+    result = entity3d_type->vtable->serialize(
         &entity_out, chunk, entity3d_type, arena);
     
-    if (result.code == NMO_OK) {
+    if (result == NMO_OK) {
         printf("✓ Serialized CK3dEntity\n");
          size_t chunk_bytes = nmo_chunk_get_data_size(chunk);
          printf("  Chunk size: %zu bytes (%zu DWORDs)\n", 
              chunk_bytes,
              chunk_bytes / 4);
     } else {
-        printf("✗ Serialization failed with code %d\n", result.code);
+        printf("✗ Serialization failed with code %d\n", result);
         nmo_arena_destroy(arena);
         return;
     }
@@ -257,7 +272,7 @@ void example_3d_entity(void) {
     result = entity3d_type->vtable->deserialize(
         &entity_in, chunk, entity3d_type, arena);
     
-    if (result.code == NMO_OK) {
+    if (result == NMO_OK) {
         printf("✓ Deserialized CK3dEntity\n");
         printf("  Position: (%.1f, %.1f, %.1f)\n",
                entity_in.world_matrix[12],
@@ -267,7 +282,7 @@ void example_3d_entity(void) {
         printf("  Flags match: %s\n",
                (entity_in.flags == entity_out.flags) ? "YES" : "NO");
     } else {
-        printf("✗ Deserialization failed with code %d\n", result.code);
+        printf("✗ Deserialization failed with code %d\n", result);
     }
     printf("\n");
     

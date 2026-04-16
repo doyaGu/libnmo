@@ -19,7 +19,7 @@
  * if (!txn) return ERROR;
  *
  * nmo_status_t result = nmo_txn_write(txn, data, size);
- * if (result.code != NMO_OK) {
+ * if (result != NMO_OK) {
  *     nmo_txn_rollback(txn);
  *     nmo_txn_close(txn);
  *     return result;
