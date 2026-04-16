@@ -48,11 +48,12 @@ nmo_id_mapping_t *nmo_id_mapping_create(
 
     size_t existing_count = nmo_object_repository_get_count(repo);
     if (existing_count > 0) {
-        size_t count;
-        nmo_object_t **objects = nmo_object_repository_get_all(repo, &count);
         nmo_object_id_t max_id = 0;
-        for (size_t i = 0; i < count; i++) {
-            if (objects[i]->id > max_id) max_id = objects[i]->id;
+        for (size_t i = 0; i < existing_count; i++) {
+            nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+            if (object != NULL && object->id > max_id) {
+                max_id = object->id;
+            }
         }
         m->id_base = max_id + 1;
     } else {

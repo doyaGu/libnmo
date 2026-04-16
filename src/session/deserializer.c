@@ -1056,8 +1056,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
 skip_object_processing:
     /* Update stats */
     {
-        size_t repo_count = 0;
-        nmo_object_repository_get_all(repo, &repo_count);
+        size_t repo_count = nmo_object_repository_get_count(repo);
         ds->stats.object_count = repo_count;
     }
     ds->stats.manager_count = ds->data_sect.manager_count;

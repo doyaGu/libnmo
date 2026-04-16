@@ -194,10 +194,9 @@ int nmo_runtime_remap_all_refs(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    size_t object_count = 0;
-    nmo_object_t **objects = nmo_object_repository_get_all(repo, &object_count);
+    size_t object_count = nmo_object_repository_get_count(repo);
     for (size_t i = 0; i < object_count; i++) {
-        nmo_object_t *obj = objects[i];
+        nmo_object_t *obj = nmo_object_repository_get_by_index(repo, i);
         if (obj == NULL || obj->state == NULL) {
             continue;
         }
