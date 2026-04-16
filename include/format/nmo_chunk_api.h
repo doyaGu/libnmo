@@ -1207,6 +1207,17 @@ NMO_API nmo_status_t nmo_chunk_unpack(nmo_chunk_t *chunk);
 NMO_API nmo_status_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
                                                 const nmo_id_remap_t *remap);
 
+/**
+ * @brief Remap object IDs with an optional scratch arena for backup buffers.
+ *
+ * Behaves identically to nmo_chunk_remap_object_ids() but allocates rollback
+ * backup buffers from @p scratch instead of chunk->arena.  Pass NULL for
+ * @p scratch to fall back to chunk->arena (same as the non-_ex variant).
+ */
+NMO_API nmo_status_t nmo_chunk_remap_object_ids_ex(nmo_chunk_t *chunk,
+                                                    const nmo_id_remap_t *remap,
+                                                    nmo_arena_t *scratch);
+
 // =============================================================================
 // BITMAP OPERATIONS
 // =============================================================================

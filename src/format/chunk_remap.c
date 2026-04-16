@@ -358,14 +358,19 @@ static nmo_status_t remap_object_ids_recursive(nmo_chunk_t *chunk,
 // ID Remapping
 // =============================================================================
 
-nmo_status_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
-                                        const nmo_id_remap_t *remap) {
+nmo_status_t nmo_chunk_remap_object_ids_ex(nmo_chunk_t *chunk,
+                                            const nmo_id_remap_t *remap,
+                                            nmo_arena_t *scratch) {
     if (!chunk || !remap) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
 
-    if (chunk->arena == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Chunk arena unavailable for remap backup");
+    /* Use scratch arena for backup buffers when provided, otherwise fall
+       back to chunk->arena (preserves original behaviour for callers that
+       do not supply a scratch arena). */
+    nmo_arena_t *backup_arena = scratch ? scratch : chunk->arena;
+    if (backup_arena == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "No arena available for remap backup");
     }
 
     void *data_backup = NULL;
@@ -379,7 +384,7 @@ nmo_status_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
 
     if (chunk->data.count > 0 && chunk->data.data != NULL) {
         data_bytes = chunk->data.count * chunk->data.element_size;
-        data_backup = nmo_arena_alloc(chunk->arena, data_bytes, 8);
+        data_backup = nmo_arena_alloc(backup_arena, data_bytes, 8);
         if (data_backup == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate chunk data backup");
         }
@@ -388,7 +393,7 @@ nmo_status_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
 
     if (chunk->ids.count > 0 && chunk->ids.data != NULL) {
         ids_bytes = chunk->ids.count * chunk->ids.element_size;
-        ids_backup = nmo_arena_alloc(chunk->arena, ids_bytes, 8);
+        ids_backup = nmo_arena_alloc(backup_arena, ids_bytes, 8);
         if (ids_backup == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate chunk ids backup");
         }
@@ -397,7 +402,7 @@ nmo_status_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
 
     if (chunk->chunk_refs.count > 0 && chunk->chunk_refs.data != NULL) {
         refs_bytes = chunk->chunk_refs.count * chunk->chunk_refs.element_size;
-        refs_backup = nmo_arena_alloc(chunk->arena, refs_bytes, 8);
+        refs_backup = nmo_arena_alloc(backup_arena, refs_bytes, 8);
         if (refs_backup == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate chunk refs backup");
         }
@@ -406,7 +411,7 @@ nmo_status_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
 
     if (chunk->managers.count > 0 && chunk->managers.data != NULL) {
         mgrs_bytes = chunk->managers.count * chunk->managers.element_size;
-        mgrs_backup = nmo_arena_alloc(chunk->arena, mgrs_bytes, 8);
+        mgrs_backup = nmo_arena_alloc(backup_arena, mgrs_bytes, 8);
         if (mgrs_backup == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate chunk managers backup");
         }
@@ -433,4 +438,9 @@ nmo_status_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
     }
 
     return result;
+}
+
+nmo_status_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
+                                        const nmo_id_remap_t *remap) {
+    return nmo_chunk_remap_object_ids_ex(chunk, remap, NULL);
 }
