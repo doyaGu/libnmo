@@ -183,13 +183,14 @@ static int build_class_index(nmo_object_index_t *index) {
     }
     object_index_prepare_lifecycle(index->class_index, &index->allocator);
     
-    /* Get all objects from repository */
-    size_t obj_count;
-    nmo_object_t **objects = nmo_object_repository_get_all(index->repo, &obj_count);
+    size_t obj_count = nmo_object_repository_get_count(index->repo);
     
     /* Group objects by class ID */
     for (size_t i = 0; i < obj_count; i++) {
-        nmo_object_t *obj = objects[i];
+        nmo_object_t *obj = nmo_object_repository_get_by_index(index->repo, i);
+        if (obj == NULL) {
+            continue;
+        }
         object_array_t *arr = NULL;
         
         /* Check if class already has an array */
@@ -251,13 +252,14 @@ static int build_name_index(nmo_object_index_t *index) {
     }
     object_index_prepare_lifecycle(index->name_index, &index->allocator);
     
-    /* Get all objects from repository */
-    size_t obj_count;
-    nmo_object_t **objects = nmo_object_repository_get_all(index->repo, &obj_count);
+    size_t obj_count = nmo_object_repository_get_count(index->repo);
     
     /* Group objects by name */
     for (size_t i = 0; i < obj_count; i++) {
-        nmo_object_t *obj = objects[i];
+        nmo_object_t *obj = nmo_object_repository_get_by_index(index->repo, i);
+        if (obj == NULL) {
+            continue;
+        }
         const char *name = nmo_object_get_name(obj);
         
         /* Skip objects without name */
@@ -326,13 +328,14 @@ static int build_guid_index(nmo_object_index_t *index) {
     }
     object_index_prepare_lifecycle(index->guid_index, &index->allocator);
     
-    /* Get all objects from repository */
-    size_t obj_count;
-    nmo_object_t **objects = nmo_object_repository_get_all(index->repo, &obj_count);
+    size_t obj_count = nmo_object_repository_get_count(index->repo);
     
     /* Group objects by GUID */
     for (size_t i = 0; i < obj_count; i++) {
-        nmo_object_t *obj = objects[i];
+        nmo_object_t *obj = nmo_object_repository_get_by_index(index->repo, i);
+        if (obj == NULL) {
+            continue;
+        }
         
         /* Skip objects with null GUID */
         if (nmo_guid_is_null(obj->type_guid)) {
@@ -840,14 +843,17 @@ nmo_object_t *nmo_object_index_find_by_name_fuzzy(
     }
     
     /* Linear search with case-insensitive comparison */
-    size_t obj_count;
-    nmo_object_t **objects = nmo_object_repository_get_all(index->repo, &obj_count);
+    size_t obj_count = nmo_object_repository_get_count(index->repo);
     
     for (size_t i = 0; i < obj_count; i++) {
-        const char *obj_name = nmo_object_get_name(objects[i]);
+        nmo_object_t *object = nmo_object_repository_get_by_index(index->repo, i);
+        if (object == NULL) {
+            continue;
+        }
+        const char *obj_name = nmo_object_get_name(object);
         if (obj_name != NULL && strcasecmp_portable(obj_name, name) == 0) {
-            if (class_id == 0 || objects[i]->class_id == class_id) {
-                return objects[i];
+            if (class_id == 0 || object->class_id == class_id) {
+                return object;
             }
         }
     }
@@ -882,12 +888,12 @@ nmo_object_t *nmo_object_index_find_by_guid(
     }
     
     /* Fall back to linear search */
-    size_t obj_count;
-    nmo_object_t **objects = nmo_object_repository_get_all(index->repo, &obj_count);
+    size_t obj_count = nmo_object_repository_get_count(index->repo);
     
     for (size_t i = 0; i < obj_count; i++) {
-        if (nmo_guid_equals(objects[i]->type_guid, guid)) {
-            return objects[i];
+        nmo_object_t *object = nmo_object_repository_get_by_index(index->repo, i);
+        if (object != NULL && nmo_guid_equals(object->type_guid, guid)) {
+            return object;
         }
     }
     

@@ -169,18 +169,13 @@ nmo_status_t nmo_object_system_deserialize_repository(
 
     nmo_object_system_deserialize_stats_t stats = {0};
 
-    size_t repo_count = 0;
-    nmo_object_t **objects = nmo_object_repository_get_all(repo, &repo_count);
-
-    if (repo_count > 0 && objects == NULL) {
-        return NMO_ERR_NOMEM;
-    }
+    size_t repo_count = nmo_object_repository_get_count(repo);
 
     nmo_deserialize_context_t deser_ctx = nmo_deserialize_context_create(
         arena, repo, type_rt, deser_flags);
 
     for (size_t i = 0; i < repo_count; i++) {
-        nmo_object_t *obj = objects[i];
+        nmo_object_t *obj = nmo_object_repository_get_by_index(repo, i);
 
         if (obj == NULL) {
             stats.skipped_null++;
