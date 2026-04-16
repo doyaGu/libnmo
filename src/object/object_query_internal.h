@@ -53,6 +53,7 @@ struct nmo_object_query_index {
     nmo_array_t folded_name_entries;  /* query_name_entry_t */
 
     nmo_array_t trigram_entries;      /* query_id_entry_t */
+    nmo_array_t text_candidate_entries; /* query_id_entry_t */
     bool text_built;
 
     uint32_t *visit_marks;

@@ -68,6 +68,16 @@ static nmo_status_t query_index_init_entry_arrays(nmo_object_query_index_t *inde
         nmo_array_dispose(&index->class_entries);
         return status;
     }
+    status = nmo_array_init(
+        &index->text_candidate_entries, sizeof(query_id_entry_t), 0, &index->allocator);
+    if (status != NMO_OK) {
+        nmo_array_dispose(&index->trigram_entries);
+        nmo_array_dispose(&index->folded_name_entries);
+        nmo_array_dispose(&index->name_entries);
+        nmo_array_dispose(&index->derived_entries);
+        nmo_array_dispose(&index->class_entries);
+        return status;
+    }
     return NMO_OK;
 }
 
@@ -81,6 +91,7 @@ static void query_index_clear_entry_arrays(nmo_object_query_index_t *index)
     nmo_array_clear(&index->name_entries);
     nmo_array_clear(&index->folded_name_entries);
     nmo_array_clear(&index->trigram_entries);
+    nmo_array_clear(&index->text_candidate_entries);
 }
 
 static void query_index_dispose_entry_arrays(nmo_object_query_index_t *index)
@@ -88,6 +99,7 @@ static void query_index_dispose_entry_arrays(nmo_object_query_index_t *index)
     if (index == NULL) {
         return;
     }
+    nmo_array_dispose(&index->text_candidate_entries);
     nmo_array_dispose(&index->trigram_entries);
     nmo_array_dispose(&index->folded_name_entries);
     nmo_array_dispose(&index->name_entries);
@@ -481,6 +493,7 @@ void nmo_object_query_index_trim(nmo_object_query_index_t *index, uint32_t flags
         (flags & NMO_OBJECT_QUERY_INDEX_ALL) != 0u ||
         (flags & NMO_OBJECT_QUERY_INDEX_TEXT) != 0u) {
         nmo_array_dispose(&index->trigram_entries);
+        nmo_array_dispose(&index->text_candidate_entries);
         index->text_built = false;
         index->text_dirty = true;
     }
@@ -619,6 +632,22 @@ static bool query_id_range(
     *out_start = start;
     *out_count = lo - start;
     return *out_count > 0;
+}
+
+static uint32_t query_index_reserve_mark_generations(
+    nmo_object_query_index_t *index,
+    uint32_t count)
+{
+    if (index == NULL || index->visit_marks == NULL || count == 0) {
+        return 0;
+    }
+    if (UINT32_MAX - index->visit_generation <= count) {
+        memset(index->visit_marks, 0, index->meta_count * sizeof(*index->visit_marks));
+        index->visit_generation = 1;
+        return index->visit_generation;
+    }
+    index->visit_generation++;
+    return index->visit_generation;
 }
 
 static bool query_name_range(
@@ -807,6 +836,13 @@ static nmo_status_t query_text_candidate_for_literal(
     const char *literal,
     query_candidate_t *out_candidate)
 {
+    enum { QUERY_MAX_LITERAL_TRIGRAMS = 512 };
+    typedef struct query_trigram_range {
+        uint32_t key;
+        size_t start;
+        size_t count;
+    } query_trigram_range_t;
+
     *out_candidate = query_all_candidate();
     if (index == NULL || literal == NULL || strlen(literal) < 3) {
         return NMO_OK;
@@ -820,26 +856,111 @@ static nmo_status_t query_text_candidate_for_literal(
     const query_id_entry_t *trigram_entries =
         (const query_id_entry_t *)nmo_array_data(&index->trigram_entries);
     size_t trigram_count = nmo_array_size(&index->trigram_entries);
-    bool found_any = false;
-    size_t best_start = 0;
-    size_t best_count = 0;
+    query_trigram_range_t ranges[QUERY_MAX_LITERAL_TRIGRAMS];
+    size_t range_count = 0;
+    size_t best_range_index = 0;
     for (size_t i = 0; i + 2 < len; i++) {
         uint32_t tri = query_make_trigram(literal + i);
+        bool duplicate = false;
+        for (size_t j = 0; j < range_count; j++) {
+            if (ranges[j].key == tri) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (duplicate) {
+            continue;
+        }
+        if (range_count == QUERY_MAX_LITERAL_TRIGRAMS) {
+            break;
+        }
+
         size_t start = 0;
         size_t count = 0;
         if (!query_id_range(trigram_entries, trigram_count, tri, &start, &count)) {
             *out_candidate = query_none_candidate();
             return NMO_OK;
         }
-        if (!found_any || count < best_count) {
-            found_any = true;
-            best_start = start;
-            best_count = count;
+        ranges[range_count] = (query_trigram_range_t){
+            .key = tri,
+            .start = start,
+            .count = count
+        };
+        if (range_count == 0 || count < ranges[best_range_index].count) {
+            best_range_index = range_count;
         }
+        range_count++;
     }
-    if (found_any) {
+
+    if (range_count == 1) {
+        query_trigram_range_t *best = &ranges[best_range_index];
         *out_candidate = query_id_entries_candidate(
-            trigram_entries + best_start, best_count);
+            trigram_entries + best->start, best->count);
+        return NMO_OK;
+    }
+
+    if (range_count > 1) {
+        query_trigram_range_t *best = &ranges[best_range_index];
+        nmo_array_clear(&index->text_candidate_entries);
+        nmo_status_t reserve_status =
+            nmo_array_reserve(&index->text_candidate_entries, best->count);
+        if (reserve_status != NMO_OK) {
+            return reserve_status;
+        }
+
+        uint32_t base_generation = query_index_reserve_mark_generations(
+            index, (uint32_t)range_count + 2u);
+        if (base_generation == 0) {
+            *out_candidate = query_id_entries_candidate(
+                trigram_entries + best->start, best->count);
+            return NMO_OK;
+        }
+
+        const query_id_entry_t *best_entries = trigram_entries + best->start;
+        for (size_t i = 0; i < best->count; i++) {
+            if (best_entries[i].meta_index < index->meta_count) {
+                index->visit_marks[best_entries[i].meta_index] = base_generation;
+            }
+        }
+
+        uint32_t current_generation = base_generation;
+        for (size_t j = 0; j < range_count; j++) {
+            if (j == best_range_index) {
+                continue;
+            }
+            const query_trigram_range_t *range = &ranges[j];
+            uint32_t next_generation = current_generation + 1u;
+            const query_id_entry_t *range_entries = trigram_entries + range->start;
+            for (size_t i = 0; i < range->count; i++) {
+                size_t meta_index = range_entries[i].meta_index;
+                if (meta_index < index->meta_count &&
+                    index->visit_marks[meta_index] == current_generation) {
+                    index->visit_marks[meta_index] = next_generation;
+                }
+            }
+            current_generation = next_generation;
+        }
+
+        uint32_t output_generation = current_generation + 1u;
+        for (size_t i = 0; i < best->count; i++) {
+            size_t meta_index = best_entries[i].meta_index;
+            if (meta_index >= index->meta_count ||
+                index->visit_marks[meta_index] != current_generation) {
+                continue;
+            }
+            index->visit_marks[meta_index] = output_generation;
+            query_id_entry_t entry = { 0u, meta_index };
+            nmo_status_t append_status =
+                nmo_array_append(&index->text_candidate_entries, &entry);
+            if (append_status != NMO_OK) {
+                return append_status;
+            }
+        }
+
+        *out_candidate = query_id_entries_candidate(
+            (const query_id_entry_t *)nmo_array_data(&index->text_candidate_entries),
+            nmo_array_size(&index->text_candidate_entries));
+        index->visit_generation = output_generation;
     }
     return NMO_OK;
 }

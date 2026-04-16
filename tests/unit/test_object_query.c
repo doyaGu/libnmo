@@ -246,6 +246,63 @@ TEST(object_query, name_modes_share_case_rules)
     teardown_objects();
 }
 
+TEST(object_query, text_reducer_marks_do_not_poison_later_queries)
+{
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_object_repository_t *repo = nmo_object_repository_create(&allocator);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_t *target = make_object(&allocator, 1, NMO_CID_OBJECT, "ABCDEF_target");
+    nmo_object_t *partial = make_object(&allocator, 2, NMO_CID_OBJECT, "ABCDE_partial");
+    nmo_object_t *abc = make_object(&allocator, 3, NMO_CID_OBJECT, "ABC_only");
+    nmo_object_t *bcd = make_object(&allocator, 4, NMO_CID_OBJECT, "BCD_only");
+    nmo_object_t *def = make_object(&allocator, 5, NMO_CID_OBJECT, "DEF_only");
+    ASSERT_NOT_NULL(target);
+    ASSERT_NOT_NULL(partial);
+    ASSERT_NOT_NULL(abc);
+    ASSERT_NOT_NULL(bcd);
+    ASSERT_NOT_NULL(def);
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &target));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &partial));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &abc));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &bcd));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &def));
+
+    nmo_object_query_index_t *index = nmo_object_query_index_create(
+        repo,
+        nmo_context_get_type_registry(ctx),
+        &allocator);
+    ASSERT_NOT_NULL(index);
+    ASSERT_EQ(NMO_OK, nmo_object_query_index_rebuild(index));
+
+    nmo_object_query_context_t qctx = {
+        .repository = repo,
+        .index = index,
+        .registry = nmo_context_get_type_registry(ctx)
+    };
+    nmo_object_query_t substring = {
+        .name = "abcdef",
+        .name_mode = NMO_OBJECT_QUERY_NAME_SUBSTRING,
+        .name_case_insensitive = true
+    };
+    nmo_object_query_result_t result = {0};
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&qctx, &substring, NULL, NULL, &result));
+    ASSERT_EQ(1, result.matched);
+
+    nmo_object_query_t class_query = {
+        .class_id = NMO_CID_OBJECT
+    };
+    result = (nmo_object_query_result_t){0};
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&qctx, &class_query, NULL, NULL, &result));
+    ASSERT_EQ(5, result.matched);
+
+    nmo_object_query_index_destroy(index);
+    nmo_object_repository_destroy(repo);
+    nmo_context_release(ctx);
+}
+
 TEST(object_query, predicate_and_collect)
 {
     setup_objects();
@@ -511,6 +568,7 @@ REGISTER_TEST(object_query, filters_by_object_id);
 REGISTER_TEST(object_query, exact_and_derived_class_matching);
 REGISTER_TEST(object_query, derived_class_query_without_registry_reports_error);
 REGISTER_TEST(object_query, name_modes_share_case_rules);
+REGISTER_TEST(object_query, text_reducer_marks_do_not_poison_later_queries);
 REGISTER_TEST(object_query, predicate_and_collect);
 REGISTER_TEST(object_query, visitor_can_stop_early);
 REGISTER_TEST(object_query, visitor_receives_repository_index);
