@@ -48,6 +48,7 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 typedef struct nmo_serialize_context {
     uint32_t magic;              /**< Must be NMO_SERIALIZE_CONTEXT_MAGIC */
     nmo_arena_t *arena;           /**< Arena for allocations */
+    nmo_arena_t *scratch;         /**< Optional scratch arena for temporaries (may be NULL) */
     void *repository;             /**< Object repository for reference resolution */
     uint32_t flags;               /**< Operation flags */
     uint32_t save_flags;          /**< Optional CK_STATESAVE_* flags for non-file saves */
@@ -121,6 +122,27 @@ static inline nmo_serialize_context_t nmo_serialize_context_create(
     nmo_serialize_context_t ctx = {
         .magic = NMO_SERIALIZE_CONTEXT_MAGIC,
         .arena = arena,
+        .repository = repository,
+        .flags = flags,
+        .save_flags = save_flags
+    };
+    return ctx;
+}
+
+/**
+ * @brief Create serialization context with a scratch arena for temporaries
+ */
+static inline nmo_serialize_context_t nmo_serialize_context_create_with_scratch(
+    nmo_arena_t *arena,
+    nmo_arena_t *scratch,
+    void *repository,
+    uint32_t flags,
+    uint32_t save_flags)
+{
+    nmo_serialize_context_t ctx = {
+        .magic = NMO_SERIALIZE_CONTEXT_MAGIC,
+        .arena = arena,
+        .scratch = scratch,
         .repository = repository,
         .flags = flags,
         .save_flags = save_flags
