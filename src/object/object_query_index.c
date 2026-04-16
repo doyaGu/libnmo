@@ -172,6 +172,9 @@ static void query_index_repository_mutated(
     if ((flags & NMO_OBJECT_REPOSITORY_MUTATION_NAMES) != 0u) {
         query_flags |= NMO_OBJECT_QUERY_INDEX_NAMES;
     }
+    if ((flags & NMO_OBJECT_REPOSITORY_MUTATION_TYPE_GUID) != 0u) {
+        query_flags |= NMO_OBJECT_QUERY_INDEX_TYPE_GUID;
+    }
     if (query_flags != 0u) {
         nmo_object_query_index_invalidate(index, query_flags);
     }
@@ -560,7 +563,9 @@ void nmo_object_query_index_invalidate(nmo_object_query_index_t *index, uint32_t
         return;
     }
     if (flags == 0 || (flags & NMO_OBJECT_QUERY_INDEX_ALL) != 0u ||
-        (flags & (NMO_OBJECT_QUERY_INDEX_MEMBERSHIP | NMO_OBJECT_QUERY_INDEX_NAMES)) != 0u) {
+        (flags & (NMO_OBJECT_QUERY_INDEX_MEMBERSHIP |
+                  NMO_OBJECT_QUERY_INDEX_NAMES |
+                  NMO_OBJECT_QUERY_INDEX_TYPE_GUID)) != 0u) {
         index->eager_dirty = true;
         index->text_dirty = true;
         return;

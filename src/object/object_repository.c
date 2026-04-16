@@ -617,6 +617,59 @@ int nmo_object_repository_rename(nmo_object_repository_t *repo,
     return NMO_OK;
 }
 
+int nmo_object_repository_set_type_guid(nmo_object_repository_t *repo,
+                                        nmo_object_id_t id,
+                                        nmo_guid_t type_guid) {
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_t *obj = NULL;
+    if (nmo_indexed_map_get(repo->id_map, &id, &obj) != NMO_OK || obj == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    nmo_guid_t old_guid = nmo_object_get_type_guid(obj);
+    if (nmo_guid_equals(old_guid, type_guid)) {
+        return NMO_OK;
+    }
+
+    uint32_t guid_index_flags =
+        nmo_object_repository_get_active_index_flags(repo) & NMO_INDEX_BUILD_GUID;
+    if (guid_index_flags != 0u) {
+        int remove_result = nmo_object_index_remove_object(
+            repo->attached_index, id, guid_index_flags);
+        if (remove_result != NMO_OK) {
+            return remove_result;
+        }
+    }
+
+    int set_result = nmo_object_set_type_guid(obj, type_guid);
+    if (set_result != NMO_OK) {
+        if (guid_index_flags != 0u) {
+            (void)nmo_object_index_add_object(repo->attached_index, obj, guid_index_flags);
+        }
+        return set_result;
+    }
+
+    if (guid_index_flags != 0u) {
+        int add_result = nmo_object_index_add_object(
+            repo->attached_index, obj, guid_index_flags);
+        if (add_result != NMO_OK) {
+            (void)nmo_object_index_remove_object(
+                repo->attached_index, id, guid_index_flags);
+            (void)nmo_object_set_type_guid(obj, old_guid);
+            int rollback_result = nmo_object_index_add_object(
+                repo->attached_index, obj, guid_index_flags);
+            return rollback_result != NMO_OK ? rollback_result : add_result;
+        }
+    }
+
+    nmo_object_repository_notify_mutation(
+        repo, NMO_OBJECT_REPOSITORY_MUTATION_TYPE_GUID);
+    return NMO_OK;
+}
+
 /**
  * Check if object exists
  */

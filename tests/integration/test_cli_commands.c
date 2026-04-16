@@ -486,12 +486,25 @@ TEST(cli, query_eval_numeric_object_selector_does_not_fall_back_to_name) {
              "query eval --object 424242 has_target \"%s\"",
              fixture);
     cli_run_result_t result = run_cli_capture(args);
-    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
+    ASSERT_EQ(NMO_CLI_EXIT_NOT_FOUND, result.exit_code);
     ASSERT_NOT_NULL(result.output);
     ASSERT_STR_CONTAINS(result.output, "Object not found: 424242");
     ASSERT_FALSE(strstr(result.output, "has no reflection data") != NULL);
     free(result.output);
     remove(fixture);
+}
+
+TEST(cli, query_eval_missing_object_name_returns_not_found) {
+    const char *file_path = NMO_TEST_DATA_FILE("Ballance/Camera.nmo");
+    char args[512];
+    snprintf(args, sizeof(args),
+             "query eval --object DefinitelyMissingObject has_target \"%s\"",
+             file_path);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_EQ(NMO_CLI_EXIT_NOT_FOUND, result.exit_code);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_STR_CONTAINS(result.output, "Object not found: DefinitelyMissingObject");
+    free(result.output);
 }
 
 TEST(cli, query_eval_object_name_uses_object_query_lookup) {
@@ -1750,6 +1763,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, object_list_sort_and_top_combined);
     REGISTER_TEST(cli, query_eval_object_id_uses_object_query_lookup);
     REGISTER_TEST(cli, query_eval_numeric_object_selector_does_not_fall_back_to_name);
+    REGISTER_TEST(cli, query_eval_missing_object_name_returns_not_found);
     REGISTER_TEST(cli, query_eval_object_name_uses_object_query_lookup);
     REGISTER_TEST(cli, entity_list_class_filter_accepts_entity_derived_class);
     REGISTER_TEST(cli, entity_list_class_filter_non_entity_class_returns_empty_result);

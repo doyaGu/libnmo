@@ -9,6 +9,7 @@
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_allocator.h"
+#include "core/nmo_guid.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,7 +35,8 @@ typedef struct nmo_object_repository nmo_object_repository_t;
 typedef enum nmo_object_repository_mutation_flags {
     NMO_OBJECT_REPOSITORY_MUTATION_MEMBERSHIP = 1u << 0,
     NMO_OBJECT_REPOSITORY_MUTATION_NAMES      = 1u << 1,
-    NMO_OBJECT_REPOSITORY_MUTATION_ALL        = (1u << 0) | (1u << 1)
+    NMO_OBJECT_REPOSITORY_MUTATION_TYPE_GUID  = 1u << 2,
+    NMO_OBJECT_REPOSITORY_MUTATION_ALL        = (1u << 0) | (1u << 1) | (1u << 2)
 } nmo_object_repository_mutation_flags_t;
 
 typedef void (*nmo_object_repository_mutation_fn)(
@@ -215,6 +217,21 @@ NMO_API int nmo_object_repository_take(nmo_object_repository_t *repository,
 NMO_API int nmo_object_repository_rename(nmo_object_repository_t *repository,
                                          nmo_object_id_t id,
                                          const char *new_name);
+
+/**
+ * @brief Set the type GUID of an object already in the repository
+ *
+ * Safely updates attached indexes and notifies mutation observers. Use this
+ * for repository-owned objects instead of nmo_object_set_type_guid().
+ *
+ * @param repository Repository
+ * @param id         Object ID
+ * @param type_guid  New type GUID
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_object_repository_set_type_guid(nmo_object_repository_t *repository,
+                                               nmo_object_id_t id,
+                                               nmo_guid_t type_guid);
 
 /**
  * @brief Clear all objects

@@ -660,6 +660,44 @@ TEST(object_query, session_query_api_tracks_direct_repository_mutation)
     nmo_context_release(ctx);
 }
 
+TEST(object_query, session_query_api_tracks_type_guid_mutation)
+{
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_t *obj = make_object(&allocator, 20, NMO_CID_OBJECT, "GuidObject");
+    ASSERT_NOT_NULL(obj);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(obj, TEST_GUID_SHARED));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &obj));
+
+    nmo_object_query_t old_guid = {
+        .has_type_guid = true,
+        .type_guid = TEST_GUID_SHARED
+    };
+    nmo_object_query_t new_guid = {
+        .has_type_guid = true,
+        .type_guid = TEST_GUID_MISSING
+    };
+    nmo_object_query_result_t result = {0};
+    ASSERT_EQ(NMO_OK, nmo_session_query_objects(session, &old_guid, NULL, NULL, &result));
+    ASSERT_EQ(1, result.matched);
+
+    ASSERT_EQ(NMO_OK, nmo_object_repository_set_type_guid(repo, 20, TEST_GUID_MISSING));
+
+    ASSERT_EQ(NMO_OK, nmo_session_query_objects(session, &old_guid, NULL, NULL, &result));
+    ASSERT_EQ(0, result.matched);
+    ASSERT_EQ(NMO_OK, nmo_session_query_objects(session, &new_guid, NULL, NULL, &result));
+    ASSERT_EQ(1, result.matched);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(object_query, attached_query_index_tracks_repository_mutation)
 {
     setup_objects();
@@ -692,6 +730,40 @@ TEST(object_query, attached_query_index_tracks_repository_mutation)
     ASSERT_EQ(NMO_OK, nmo_object_repository_remove(g_repo, 6));
     ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &renamed_query, NULL, NULL, &result));
     ASSERT_EQ(0, result.matched);
+
+    nmo_object_query_index_detach_repository_observer(g_query_index);
+    teardown_objects();
+}
+
+TEST(object_query, attached_query_index_tracks_type_guid_mutation)
+{
+    setup_objects();
+    ASSERT_EQ(NMO_OK, nmo_object_query_index_attach_repository_observer(g_query_index));
+
+    nmo_object_query_context_t ctx = query_ctx();
+    nmo_object_query_t shared_guid = {
+        .has_type_guid = true,
+        .type_guid = TEST_GUID_SHARED
+    };
+    nmo_object_query_t changed_guid = {
+        .has_type_guid = true,
+        .type_guid = TEST_GUID_MISSING
+    };
+    nmo_object_query_result_t result = {0};
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &shared_guid, NULL, NULL, &result));
+    ASSERT_EQ(2, result.matched);
+
+    ASSERT_EQ(NMO_OK, nmo_object_repository_set_type_guid(g_repo, 3, TEST_GUID_MISSING));
+
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &shared_guid, NULL, NULL, &result));
+    ASSERT_EQ(1, result.matched);
+
+    query_index_capture_t capture = {0};
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(
+        &ctx, &changed_guid, capture_query_index, &capture, &result));
+    ASSERT_EQ(1, result.matched);
+    ASSERT_EQ(1, capture.count);
+    ASSERT_EQ(2, capture.indexes[0]);
 
     nmo_object_query_index_detach_repository_observer(g_query_index);
     teardown_objects();
@@ -739,6 +811,8 @@ REGISTER_TEST(object_query, indexed_query_handles_duplicate_names_and_rename);
 REGISTER_TEST(object_query, indexed_text_reducers_preserve_matches);
 REGISTER_TEST(object_query, indexed_text_single_trigram_deduplicates_repeated_names);
 REGISTER_TEST(object_query, session_query_api_tracks_direct_repository_mutation);
+REGISTER_TEST(object_query, session_query_api_tracks_type_guid_mutation);
 REGISTER_TEST(object_query, attached_query_index_tracks_repository_mutation);
+REGISTER_TEST(object_query, attached_query_index_tracks_type_guid_mutation);
 REGISTER_TEST(object_query, query_index_detach_preserves_other_repository_observers);
 TEST_MAIN_END()

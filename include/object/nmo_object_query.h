@@ -28,7 +28,8 @@ typedef enum nmo_object_query_index_flags {
     NMO_OBJECT_QUERY_INDEX_MEMBERSHIP = 1u << 0,
     NMO_OBJECT_QUERY_INDEX_NAMES      = 1u << 1,
     NMO_OBJECT_QUERY_INDEX_TEXT       = 1u << 2,
-    NMO_OBJECT_QUERY_INDEX_ALL        = (1u << 0) | (1u << 1) | (1u << 2)
+    NMO_OBJECT_QUERY_INDEX_TYPE_GUID  = 1u << 3,
+    NMO_OBJECT_QUERY_INDEX_ALL        = (1u << 0) | (1u << 1) | (1u << 2) | (1u << 3)
 } nmo_object_query_index_flags_t;
 
 typedef enum nmo_object_query_name_mode {

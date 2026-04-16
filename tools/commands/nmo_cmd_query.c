@@ -199,7 +199,7 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
         if (!target_obj) {
             free(stdin_buffer);
             fprintf(stderr, "Error: Object not found: %s\n", obj_opt);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
         }
 
         /* Resolve type descriptor for this object */

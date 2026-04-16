@@ -526,7 +526,7 @@ NMO_API nmo_status_t nmo_session_query_first(
     size_t *out_index);
 
 /**
- * @brief Count all session objects using the query engine.
+ * @brief Count all session objects using the repository's O(1) object count.
  */
 NMO_API nmo_status_t nmo_session_count_objects(
     nmo_session_t *session,

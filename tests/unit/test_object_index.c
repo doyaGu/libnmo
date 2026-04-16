@@ -325,6 +325,35 @@ TEST(object_index, remove_clears_empty_entries) {
     teardown_fixture(f);
 }
 
+TEST(object_index, repository_type_guid_update_refreshes_guid_index) {
+    test_fixture_t *f = setup_fixture();
+    ASSERT_NOT_NULL(f);
+
+    nmo_guid_t old_guid = {0x11111111, 0x2222};
+    nmo_guid_t new_guid = {0x33333333, 0x4444};
+
+    nmo_object_t *obj = nmo_object_create(&f->allocator, 1, 100);
+    ASSERT_NOT_NULL(obj);
+    ASSERT_EQ(NMO_OK, nmo_object_set_name(obj, "GuidObject"));
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(obj, old_guid));
+    nmo_object_t *repo_obj = obj;
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(f->repo, &obj));
+    ASSERT_NULL(obj);
+
+    ASSERT_EQ(NMO_OK, nmo_object_index_build(f->index, NMO_INDEX_BUILD_ALL));
+    nmo_object_repository_set_index(f->repo, f->index);
+
+    ASSERT_EQ(repo_obj, nmo_object_index_find_by_guid(f->index, old_guid));
+    ASSERT_NULL(nmo_object_index_find_by_guid(f->index, new_guid));
+
+    ASSERT_EQ(NMO_OK, nmo_object_repository_set_type_guid(f->repo, repo_obj->id, new_guid));
+
+    ASSERT_NULL(nmo_object_index_find_by_guid(f->index, old_guid));
+    ASSERT_EQ(repo_obj, nmo_object_index_find_by_guid(f->index, new_guid));
+
+    teardown_fixture(f);
+}
+
 /**
  * Test: Index statistics
  */
@@ -418,6 +447,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_index, guid_index);
     REGISTER_TEST(object_index, incremental_update);
     REGISTER_TEST(object_index, remove_clears_empty_entries);
+    REGISTER_TEST(object_index, repository_type_guid_update_refreshes_guid_index);
     REGISTER_TEST(object_index, statistics);
     REGISTER_TEST(object_index, active_flags);
     REGISTER_TEST(object_index, rebuild);

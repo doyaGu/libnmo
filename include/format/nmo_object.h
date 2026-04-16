@@ -239,7 +239,9 @@ NMO_API nmo_guid_t nmo_object_get_type_guid(const nmo_object_t *object);
 /**
  * @brief Set object type GUID
  *
- * Sets the type GUID for typed objects.
+ * Low-level setter for typed objects. For objects already owned by a repository,
+ * use nmo_object_repository_set_type_guid() so retained indexes and query
+ * observers are updated.
  *
  * @param object Object (required)
  * @param guid Type GUID

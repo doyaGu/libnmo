@@ -245,15 +245,22 @@ TEST(no_legacy_runtime_api_exports, object_query_context_is_not_public_api) {
 TEST(no_legacy_runtime_api_exports, legacy_session_query_api_is_removed) {
     assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_find_by_name");
     assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_find_by_guid");
+    assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_find_object_by_guid");
     assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_get_objects_by_class");
     assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_count_objects_by_class");
 }
 
 TEST(no_legacy_runtime_api_exports, session_object_count_does_not_scan_via_query_runner) {
+    const char *stale_count_comment =
+        "Count all session objects "
+        "using the query engine";
     assert_function_has_no_substring(
         "src/app/session.c",
         "nmo_session_count_objects",
         "nmo_session_query_objects");
+    assert_file_has_no_substring(
+        "include/session/nmo_session.h",
+        stale_count_comment);
 }
 
 TEST(no_legacy_runtime_api_exports, app_layer_does_not_include_session_internal_header) {
