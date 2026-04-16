@@ -134,6 +134,18 @@ static bool capture_query_index(size_t object_index, nmo_object_t *object, void 
     return true;
 }
 
+static void count_repository_mutation(
+    nmo_object_repository_t *repository,
+    uint32_t flags,
+    void *user_data)
+{
+    (void)repository;
+    if (flags != 0 && user_data != NULL) {
+        size_t *count = (size_t *)user_data;
+        (*count)++;
+    }
+}
+
 TEST(object_query, filters_by_object_id)
 {
     setup_objects();
@@ -172,6 +184,32 @@ TEST(object_query, exact_and_derived_class_matching)
     ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &derived, NULL, NULL, &result));
     ASSERT_EQ(2, result.matched);
 
+    teardown_objects();
+}
+
+TEST(object_query, derived_class_query_without_registry_reports_error)
+{
+    setup_objects();
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_object_query_index_t *index =
+        nmo_object_query_index_create(g_repo, NULL, &allocator);
+    ASSERT_NOT_NULL(index);
+    ASSERT_EQ(NMO_OK, nmo_object_query_index_rebuild(index));
+
+    nmo_object_query_context_t ctx = {
+        .repository = g_repo,
+        .index = index,
+        .registry = NULL
+    };
+    nmo_object_query_t derived = {
+        .class_id = NMO_CID_3DENTITY,
+        .include_derived_classes = true
+    };
+    nmo_object_query_result_t result = {0};
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_object_query_iterate(&ctx, &derived, NULL, NULL, &result));
+
+    nmo_object_query_index_destroy(index);
     teardown_objects();
 }
 
@@ -352,7 +390,7 @@ TEST(object_query, indexed_text_reducers_preserve_matches)
     teardown_objects();
 }
 
-TEST(object_query, session_query_context_tracks_repository_mutation)
+TEST(object_query, session_query_context_tracks_direct_repository_mutation)
 {
     nmo_allocator_t allocator = nmo_allocator_default();
     nmo_context_t *ctx = nmo_context_create(NULL);
@@ -377,23 +415,108 @@ TEST(object_query, session_query_context_tracks_repository_mutation)
     ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&qctx, &query, NULL, NULL, &result));
     ASSERT_EQ(1, result.matched);
 
-    ASSERT_EQ(NMO_OK, nmo_object_repository_remove(repo, 10));
-    nmo_object_query_index_invalidate(qctx.index, NMO_OBJECT_QUERY_INDEX_MEMBERSHIP);
+    nmo_object_t *added = make_object(&allocator, 11, NMO_CID_OBJECT, "AddedObject");
+    ASSERT_NOT_NULL(added);
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &added));
+
+    nmo_object_query_t added_query = {
+        .name = "AddedObject",
+        .name_mode = NMO_OBJECT_QUERY_NAME_EXACT
+    };
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&qctx, &added_query, NULL, NULL, &result));
+    ASSERT_EQ(1, result.matched);
+
+    ASSERT_EQ(NMO_OK, nmo_object_repository_rename(repo, 10, "RenamedSessionObject"));
+    nmo_object_query_t renamed_query = {
+        .name = "RenamedSessionObject",
+        .name_mode = NMO_OBJECT_QUERY_NAME_EXACT
+    };
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&qctx, &renamed_query, NULL, NULL, &result));
+    ASSERT_EQ(1, result.matched);
     ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&qctx, &query, NULL, NULL, &result));
+    ASSERT_EQ(0, result.matched);
+
+    ASSERT_EQ(NMO_OK, nmo_object_repository_remove(repo, 10));
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&qctx, &renamed_query, NULL, NULL, &result));
     ASSERT_EQ(0, result.matched);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
 }
 
+TEST(object_query, attached_query_index_tracks_repository_mutation)
+{
+    setup_objects();
+    ASSERT_EQ(NMO_OK, nmo_object_query_index_attach_repository_observer(g_query_index));
+
+    nmo_object_query_context_t ctx = query_ctx();
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_object_t *added = make_object(&allocator, 6, NMO_CID_OBJECT, "ObserverObject");
+    ASSERT_NOT_NULL(added);
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(g_repo, &added));
+
+    nmo_object_query_t added_query = {
+        .name = "ObserverObject",
+        .name_mode = NMO_OBJECT_QUERY_NAME_EXACT
+    };
+    nmo_object_query_result_t result = {0};
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &added_query, NULL, NULL, &result));
+    ASSERT_EQ(1, result.matched);
+
+    ASSERT_EQ(NMO_OK, nmo_object_repository_rename(g_repo, 6, "RenamedObserverObject"));
+    nmo_object_query_t renamed_query = {
+        .name = "RenamedObserverObject",
+        .name_mode = NMO_OBJECT_QUERY_NAME_EXACT
+    };
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &renamed_query, NULL, NULL, &result));
+    ASSERT_EQ(1, result.matched);
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &added_query, NULL, NULL, &result));
+    ASSERT_EQ(0, result.matched);
+
+    ASSERT_EQ(NMO_OK, nmo_object_repository_remove(g_repo, 6));
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &renamed_query, NULL, NULL, &result));
+    ASSERT_EQ(0, result.matched);
+
+    nmo_object_query_index_detach_repository_observer(g_query_index);
+    teardown_objects();
+}
+
+TEST(object_query, query_index_detach_preserves_other_repository_observers)
+{
+    setup_objects();
+    ASSERT_EQ(NMO_OK, nmo_object_query_index_attach_repository_observer(g_query_index));
+
+    size_t mutation_count = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add_mutation_observer(
+        g_repo,
+        count_repository_mutation,
+        &mutation_count));
+    nmo_object_query_index_detach_repository_observer(g_query_index);
+
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_object_t *added = make_object(&allocator, 7, NMO_CID_OBJECT, "ReplacementObserver");
+    ASSERT_NOT_NULL(added);
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(g_repo, &added));
+    ASSERT_EQ(1, mutation_count);
+
+    nmo_object_repository_remove_mutation_observer(
+        g_repo,
+        count_repository_mutation,
+        &mutation_count);
+    teardown_objects();
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(object_query, filters_by_object_id);
 REGISTER_TEST(object_query, exact_and_derived_class_matching);
+REGISTER_TEST(object_query, derived_class_query_without_registry_reports_error);
 REGISTER_TEST(object_query, name_modes_share_case_rules);
 REGISTER_TEST(object_query, predicate_and_collect);
 REGISTER_TEST(object_query, visitor_can_stop_early);
 REGISTER_TEST(object_query, visitor_receives_repository_index);
 REGISTER_TEST(object_query, indexed_query_handles_duplicate_names_and_rename);
 REGISTER_TEST(object_query, indexed_text_reducers_preserve_matches);
-REGISTER_TEST(object_query, session_query_context_tracks_repository_mutation);
+REGISTER_TEST(object_query, session_query_context_tracks_direct_repository_mutation);
+REGISTER_TEST(object_query, attached_query_index_tracks_repository_mutation);
+REGISTER_TEST(object_query, query_index_detach_preserves_other_repository_observers);
 TEST_MAIN_END()

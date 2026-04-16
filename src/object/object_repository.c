@@ -6,6 +6,7 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_index.h"
 #include "format/nmo_object.h"
+#include "core/nmo_array.h"
 #include "core/nmo_indexed_map.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_hash.h"
@@ -14,9 +15,13 @@
 #include <string.h>
 
 #define INITIAL_CAPACITY 64
-
 // Forward declaration for private helper
 static nmo_object_id_t nmo_object_repository_allocate_id(nmo_object_repository_t *repo);
+
+typedef struct nmo_object_repository_mutation_observer {
+    nmo_object_repository_mutation_fn callback;
+    void *user_data;
+} nmo_object_repository_mutation_observer_t;
 
 /**
  * Object repository structure
@@ -40,6 +45,9 @@ typedef struct nmo_object_repository {
 
     /* Optional attached index for incremental maintenance */
     nmo_object_index_t *attached_index;
+
+    nmo_array_t mutation_observers; /* nmo_object_repository_mutation_observer_t */
+
 
     /* Scratch arrays for query results (caller must not free).
      * OWNERSHIP: repo allocator, valid until next query or destroy.
@@ -266,6 +274,18 @@ nmo_object_repository_t *nmo_object_repository_create(const nmo_allocator_t *all
         return NULL;
     }
 
+    if (nmo_array_init(
+            &repo->mutation_observers,
+            sizeof(nmo_object_repository_mutation_observer_t),
+            0,
+            &repo->allocator) != NMO_OK) {
+        nmo_hash_table_destroy(repo->file_id_table);
+        nmo_hash_table_destroy(repo->name_table);
+        nmo_indexed_map_destroy(repo->id_map);
+        nmo_free(&repo->base_allocator, repo);
+        return NULL;
+    }
+
     repo->next_runtime_id = 1; /* Start from 1 (0 is invalid) */
     return repo;
 }
@@ -280,6 +300,7 @@ void nmo_object_repository_destroy(nmo_object_repository_t *repo) {
         nmo_hash_table_destroy(repo->file_id_table);
         nmo_free(&repo->allocator, repo->scratch_all);
         nmo_free(&repo->allocator, repo->scratch_class);
+        nmo_array_dispose(&repo->mutation_observers);
         nmo_free(&repo->base_allocator, repo);
     }
 }
@@ -292,6 +313,78 @@ void nmo_object_repository_set_index(
         return;
     }
     repo->attached_index = index;
+}
+
+int nmo_object_repository_add_mutation_observer(
+    nmo_object_repository_t *repo,
+    nmo_object_repository_mutation_fn observer,
+    void *user_data
+) {
+    if (repo == NULL || observer == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    size_t count = nmo_array_size(&repo->mutation_observers);
+    for (size_t i = 0; i < count; i++) {
+        nmo_object_repository_mutation_observer_t *entry =
+            (nmo_object_repository_mutation_observer_t *)nmo_array_get(
+                &repo->mutation_observers, i);
+        if (entry != NULL &&
+            entry->callback == observer &&
+            entry->user_data == user_data) {
+            return NMO_OK;
+        }
+    }
+
+    nmo_object_repository_mutation_observer_t entry = {
+        .callback = observer,
+        .user_data = user_data
+    };
+    return nmo_array_append(&repo->mutation_observers, &entry);
+}
+
+void nmo_object_repository_remove_mutation_observer(
+    nmo_object_repository_t *repo,
+    nmo_object_repository_mutation_fn observer,
+    void *user_data
+) {
+    if (repo == NULL || observer == NULL) {
+        return;
+    }
+    size_t count = nmo_array_size(&repo->mutation_observers);
+    for (size_t i = 0; i < count; i++) {
+        nmo_object_repository_mutation_observer_t *entry =
+            (nmo_object_repository_mutation_observer_t *)nmo_array_get(
+                &repo->mutation_observers, i);
+        if (entry == NULL ||
+            entry->callback != observer ||
+            entry->user_data != user_data) {
+            continue;
+        }
+        (void)nmo_array_remove(&repo->mutation_observers, i, NULL);
+        return;
+    }
+}
+
+static void nmo_object_repository_notify_mutation(
+    nmo_object_repository_t *repo,
+    uint32_t flags
+) {
+    if (repo == NULL || flags == 0) {
+        return;
+    }
+    size_t count = nmo_array_size(&repo->mutation_observers);
+    for (size_t i = 0; i < count; i++) {
+        nmo_object_repository_mutation_observer_t *entry =
+            (nmo_object_repository_mutation_observer_t *)nmo_array_get(
+                &repo->mutation_observers, i);
+        if (entry == NULL || entry->callback == NULL) {
+            continue;
+        }
+        entry->callback(
+            repo,
+            flags,
+            entry->user_data);
+    }
 }
 
 /**
@@ -355,6 +448,8 @@ int nmo_object_repository_add(nmo_object_repository_t *repo, nmo_object_t **obj_
     }
 
     *obj_ref = NULL;
+    nmo_object_repository_notify_mutation(
+        repo, NMO_OBJECT_REPOSITORY_MUTATION_MEMBERSHIP);
     return NMO_OK;
 }
 
@@ -447,6 +542,8 @@ int nmo_object_repository_take(
     }
 
     *out_object = obj;
+    nmo_object_repository_notify_mutation(
+        repo, NMO_OBJECT_REPOSITORY_MUTATION_MEMBERSHIP);
     return NMO_OK;
 }
 
@@ -511,7 +608,13 @@ int nmo_object_repository_rename(nmo_object_repository_t *repo,
         }
     }
 
-    return nmo_object_repository_notify_add(repo, obj);
+    int add_result = nmo_object_repository_notify_add(repo, obj);
+    if (add_result != NMO_OK) {
+        return add_result;
+    }
+    nmo_object_repository_notify_mutation(
+        repo, NMO_OBJECT_REPOSITORY_MUTATION_NAMES);
+    return NMO_OK;
 }
 
 /**
@@ -644,6 +747,8 @@ int nmo_object_repository_clear(nmo_object_repository_t *repo) {
     nmo_hash_table_clear(repo->name_table);
     nmo_hash_table_clear(repo->file_id_table);
     repo->next_runtime_id = 1;
+    nmo_object_repository_notify_mutation(
+        repo, NMO_OBJECT_REPOSITORY_MUTATION_ALL);
 
     return NMO_OK;
 }

@@ -91,6 +91,12 @@ NMO_API void nmo_object_query_index_invalidate(
     nmo_object_query_index_t *index,
     uint32_t flags);
 
+NMO_API nmo_status_t nmo_object_query_index_attach_repository_observer(
+    nmo_object_query_index_t *index);
+
+NMO_API void nmo_object_query_index_detach_repository_observer(
+    nmo_object_query_index_t *index);
+
 NMO_API nmo_status_t nmo_object_query_iterate(
     const nmo_object_query_context_t *ctx,
     const nmo_object_query_t *query,

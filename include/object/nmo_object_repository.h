@@ -31,6 +31,17 @@ typedef struct nmo_object_index nmo_object_index_t;
  */
 typedef struct nmo_object_repository nmo_object_repository_t;
 
+typedef enum nmo_object_repository_mutation_flags {
+    NMO_OBJECT_REPOSITORY_MUTATION_MEMBERSHIP = 1u << 0,
+    NMO_OBJECT_REPOSITORY_MUTATION_NAMES      = 1u << 1,
+    NMO_OBJECT_REPOSITORY_MUTATION_ALL        = (1u << 0) | (1u << 1)
+} nmo_object_repository_mutation_flags_t;
+
+typedef void (*nmo_object_repository_mutation_fn)(
+    nmo_object_repository_t *repository,
+    uint32_t flags,
+    void *user_data);
+
 /**
  * @brief Create object repository
  * @param allocator Allocator for repository-owned allocations (NULL for default)
@@ -53,6 +64,31 @@ NMO_API void nmo_object_repository_destroy(nmo_object_repository_t *repository);
 NMO_API void nmo_object_repository_set_index(
     nmo_object_repository_t *repository,
     nmo_object_index_t *index);
+
+/**
+ * @brief Add a mutation observer for retained external caches
+ * @param repository Repository
+ * @param observer Observer callback
+ * @param user_data User data passed to observer
+ * @note Observers must not add or remove mutation observers from inside the
+ *       callback.
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_object_repository_add_mutation_observer(
+    nmo_object_repository_t *repository,
+    nmo_object_repository_mutation_fn observer,
+    void *user_data);
+
+/**
+ * @brief Remove a previously added mutation observer
+ * @param repository Repository
+ * @param observer Observer callback
+ * @param user_data Observer user data
+ */
+NMO_API void nmo_object_repository_remove_mutation_observer(
+    nmo_object_repository_t *repository,
+    nmo_object_repository_mutation_fn observer,
+    void *user_data);
 
 /**
  * @brief Add object to repository

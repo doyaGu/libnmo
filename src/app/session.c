@@ -143,7 +143,6 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
         nmo_context_release(ctx);
         return NULL;
     }
-
     if (nmo_arena_array_init(&session->included_files, sizeof(nmo_included_file_t), 0, session->arena) != NMO_OK) {
         nmo_object_repository_destroy(session->repository);
         nmo_arena_destroy(session->arena);
@@ -994,23 +993,12 @@ int nmo_session_rebuild_indexes(nmo_session_t *session, uint32_t flags) {
         return result;
     }
 
-    if (session->object_query_index == NULL) {
-        const nmo_type_registry_t *registry = NULL;
-        if (session->context != NULL) {
-            registry = nmo_context_get_type_registry(session->context);
-        }
-        session->object_query_index = nmo_object_query_index_create(
-            session->repository,
-            registry,
-            &session->allocator);
-        if (session->object_query_index == NULL) {
-            return NMO_ERR_NOMEM;
-        }
+    if (session->object_query_index != NULL) {
+        nmo_object_query_index_invalidate(
+            session->object_query_index,
+            NMO_OBJECT_QUERY_INDEX_ALL);
     }
-    nmo_object_query_index_invalidate(
-        session->object_query_index,
-        NMO_OBJECT_QUERY_INDEX_ALL);
-    return nmo_object_query_index_rebuild(session->object_query_index);
+    return NMO_OK;
 }
 
 int nmo_session_get_object_index_stats(
@@ -1052,6 +1040,13 @@ int nmo_session_get_object_query_context(
             &session->allocator);
         if (session->object_query_index == NULL) {
             return NMO_ERR_NOMEM;
+        }
+        int attach_result =
+            nmo_object_query_index_attach_repository_observer(session->object_query_index);
+        if (attach_result != NMO_OK) {
+            nmo_object_query_index_destroy(session->object_query_index);
+            session->object_query_index = NULL;
+            return attach_result;
         }
     }
 

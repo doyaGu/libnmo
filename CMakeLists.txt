@@ -207,6 +207,7 @@ set(NMO_OBJECT_SOURCES
     src/object/object_types.c
     src/object/object_repository.c
     src/object/object_query.c
+    src/object/object_query_index.c
     src/object/object_index.c
     src/object/object_system.c
     src/object/shadow_storage.c
