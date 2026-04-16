@@ -72,6 +72,11 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
+    if (nmo_session_ensure_behavior_acceleration(c.session) != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build behavior acceleration\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
     nmo_object_t *beh = nmo_object_repository_find_by_id(repo, target_id);
     if (!beh) {

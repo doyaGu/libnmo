@@ -234,9 +234,9 @@ static void object_list_fields_usage(FILE *out) {
 }
 
 static void debug_load_phases_usage(FILE *out) {
-    fprintf(out, "Usage: nmo debug load-phases <file>\n\n");
+    fprintf(out, "Usage: nmo debug load-phases [--profile=full|metadata|header-only] <file>\n\n");
     fprintf(out, "Show load pipeline phase details including reference resolution\n");
-    fprintf(out, "statistics and index memory usage.\n");
+    fprintf(out, "statistics and index memory usage when a full load is used.\n");
 }
 
 static void debug_chunks_usage(FILE *out) {
@@ -501,11 +501,12 @@ static void convert_copy_usage(FILE *out) {
     fprintf(out, "  --no-managers          Exclude manager state\n");
     fprintf(out, "  --strip-resources      Strip included files/resources\n");
     fprintf(out, "  --validate             Validate before writing\n");
+    fprintf(out, "  --fast-save            Skip explicit save flush/write-through\n");
 }
 
 static void convert_version_usage(FILE *out) {
-    fprintf(out, "Usage: nmo convert version <file>\n");
-    fprintf(out, "       nmo convert version -o <output> <file>\n\n");
+    fprintf(out, "Usage: nmo convert version [--fast-save] <file>\n");
+    fprintf(out, "       nmo convert version [--fast-save] -o <output> <file>\n\n");
     fprintf(out, "Show file version metadata, or copy with version info.\n");
 }
 
@@ -517,13 +518,15 @@ static void convert_strip_usage(FILE *out) {
     fprintf(out, "  --class, -c <name>     Strip objects of this class\n");
     fprintf(out, "  --name <pattern>       Strip objects matching name pattern\n");
     fprintf(out, "  --dry-run              Preview matching objects without modifying\n");
+    fprintf(out, "  --fast-save            Skip explicit save flush/write-through\n");
 }
 
 static void convert_merge_usage(FILE *out) {
-    fprintf(out, "Usage: nmo convert merge -o <output> <source> <target>\n\n");
+    fprintf(out, "Usage: nmo convert merge [--fast-save] -o <output> <source> <target>\n\n");
     fprintf(out, "Merge objects from source file into target file.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  -o, --output <path>    Output file (required)\n");
+    fprintf(out, "  --fast-save            Skip explicit save flush/write-through\n");
 }
 
 static void convert_export_usage(FILE *out) {
@@ -538,6 +541,7 @@ static void convert_export_usage(FILE *out) {
     fprintf(out, "  --deps                 Include transitive dependencies\n");
     fprintf(out, "  --dry-run              Preview matching objects without writing\n");
     fprintf(out, "  --compress <0-9>       Compression level\n");
+    fprintf(out, "  --fast-save            Skip explicit save flush/write-through\n");
 }
 
 /* Diff command usage */

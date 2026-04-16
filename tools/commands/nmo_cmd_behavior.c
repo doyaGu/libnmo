@@ -604,6 +604,11 @@ static int behavior_stats_single(const char *file_path,
         nmo_tool_close_session(ctx, session);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
+    if (nmo_session_ensure_behavior_acceleration(session) != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build behavior acceleration\n");
+        nmo_tool_close_session(ctx, session);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
     const nmo_bb_registry_t *bb_reg = nmo_context_get_bb_registry(ctx);
 
     behavior_stats_data_t stats = {
@@ -792,6 +797,10 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
     if (!repo) {
         fprintf(stderr, "Error: Failed to get object repository\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+    if (nmo_session_ensure_behavior_acceleration(c.session) != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build behavior acceleration\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
     const nmo_bb_registry_t *bb_reg = nmo_context_get_bb_registry(c.ctx);

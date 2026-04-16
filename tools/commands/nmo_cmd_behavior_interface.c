@@ -333,6 +333,10 @@ static nmo_interface_data_t *iface_edit_get_data(
     nmo_object_t **out_obj)
 {
     nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
+    if (nmo_session_ensure_behavior_acceleration(c->session) != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build behavior acceleration\n");
+        return NULL;
+    }
     nmo_object_t *beh = nmo_object_repository_find_by_id(repo, target_id);
     if (!beh) {
         fprintf(stderr, "Error: Object %u not found\n", target_id);

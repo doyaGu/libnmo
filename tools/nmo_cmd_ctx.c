@@ -14,6 +14,13 @@
 int nmo_cmd_ctx_init(nmo_cmd_ctx_t *c, int argc, char **argv,
                      const nmo_cli_global_opts_t *global)
 {
+    return nmo_cmd_ctx_init_with_load_options(c, argc, argv, global, NULL);
+}
+
+int nmo_cmd_ctx_init_with_load_options(nmo_cmd_ctx_t *c, int argc, char **argv,
+                                       const nmo_cli_global_opts_t *global,
+                                       const nmo_load_options_t *options)
+{
     memset(c, 0, sizeof(*c));
     c->global = global;
     c->is_json = (global->format == NMO_CLI_FORMAT_JSON ||
@@ -29,8 +36,12 @@ int nmo_cmd_ctx_init(nmo_cmd_ctx_t *c, int argc, char **argv,
     /* Open session. Command-level --strict is handled by validators/mutations,
      * not by rejecting files during load. */
     char errbuf[256];
-    if (!nmo_tool_open_session(c->file_path, &c->ctx, &c->session,
-                               errbuf, sizeof(errbuf))) {
+    bool opened = (options != NULL)
+        ? nmo_tool_open_session_opts(c->file_path, options, &c->ctx, &c->session,
+                                     errbuf, sizeof(errbuf))
+        : nmo_tool_open_session(c->file_path, &c->ctx, &c->session,
+                                errbuf, sizeof(errbuf));
+    if (!opened) {
         fprintf(stderr, "Error: %s\n", errbuf);
         return NMO_CLI_EXIT_IO_ERROR;
     }

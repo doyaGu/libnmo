@@ -144,6 +144,69 @@ static bool parse_compression_level(const char *str, int *out_level)
     return true;
 }
 
+static const char *convert_save_durability_name(nmo_save_durability_t durability)
+{
+    switch (durability) {
+        case NMO_SAVE_DURABILITY_FAST:
+            return "fast";
+        case NMO_SAVE_DURABILITY_FSYNC:
+            return "fsync";
+        case NMO_SAVE_DURABILITY_DEFAULT:
+        default:
+            return "default";
+    }
+}
+
+static void convert_add_save_phase_stats_json(yyjson_mut_doc *doc,
+                                              yyjson_mut_val *data,
+                                              const nmo_save_perf_stats_t *stats) {
+    if (doc == NULL || data == NULL || stats == NULL) {
+        return;
+    }
+
+    yyjson_mut_val *phase_stats = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_uint(doc, phase_stats, "planned_chunk_bytes", (uint64_t)stats->planned_chunk_bytes);
+    yyjson_mut_obj_add_uint(doc, phase_stats, "header1_unpacked_bytes", (uint64_t)stats->header1_unpacked_bytes);
+    yyjson_mut_obj_add_uint(doc, phase_stats, "data_unpacked_bytes", (uint64_t)stats->data_unpacked_bytes);
+    yyjson_mut_obj_add_uint(doc, phase_stats, "header1_packed_bytes", (uint64_t)stats->header1_packed_bytes);
+    yyjson_mut_obj_add_uint(doc, phase_stats, "data_packed_bytes", (uint64_t)stats->data_packed_bytes);
+
+    yyjson_mut_val *phases = yyjson_mut_obj(doc);
+    for (int i = 0; i < NMO_SAVE_PERF_PHASE_COUNT; i++) {
+        const nmo_phase_time_t *phase = &stats->phases[i];
+        yyjson_mut_val *entry = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, entry, "calls", phase->calls);
+        yyjson_mut_obj_add_real(doc, entry, "milliseconds", phase->milliseconds);
+        yyjson_mut_obj_add_val(doc, phases, nmo_save_perf_phase_name((nmo_save_perf_phase_t)i), entry);
+    }
+    yyjson_mut_obj_add_val(doc, phase_stats, "phases", phases);
+    yyjson_mut_obj_add_val(doc, data, "save_phase_stats", phase_stats);
+}
+
+static void convert_print_save_phase_stats(FILE *out, const nmo_save_perf_stats_t *stats) {
+    if (out == NULL || stats == NULL) {
+        return;
+    }
+
+    fprintf(out, "\nSave Phase Timings:\n");
+    fprintf(out, "  %-28s %8s %12s\n", "phase", "calls", "ms");
+    for (int i = 0; i < NMO_SAVE_PERF_PHASE_COUNT; i++) {
+        const nmo_phase_time_t *phase = &stats->phases[i];
+        fprintf(out, "  %-28s %8llu %12.3f\n",
+                nmo_save_perf_phase_name((nmo_save_perf_phase_t)i),
+                (unsigned long long)phase->calls,
+                phase->milliseconds);
+    }
+
+    fprintf(out, "\nSave Section Bytes:\n");
+    fprintf(out, "  Header1: packed=%zu unpacked=%zu\n",
+            stats->header1_packed_bytes,
+            stats->header1_unpacked_bytes);
+    fprintf(out, "  Data:    packed=%zu unpacked=%zu\n",
+            stats->data_packed_bytes,
+            stats->data_unpacked_bytes);
+}
+
 /* ============================================================================
  * nmo convert copy - Round-trip copy with save options
  * ============================================================================ */
@@ -157,8 +220,9 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
         {"--no-managers",     NULL, NMO_OPT_FLAG,   "Strip manager data"},
         {"--strip-resources", NULL, NMO_OPT_FLAG,   "Strip embedded resources"},
         {"--validate",        NULL, NMO_OPT_FLAG,   "Validate after copy"},
+        {"--fast-save",       NULL, NMO_OPT_FLAG,   "Skip explicit save flush/write-through"},
     };
-    enum { OPT_OUTPUT, OPT_COMPRESS, OPT_SEQIDS, OPT_NOMGR, OPT_STRIPRES, OPT_VALIDATE, OPT_COUNT };
+    enum { OPT_OUTPUT, OPT_COMPRESS, OPT_SEQIDS, OPT_NOMGR, OPT_STRIPRES, OPT_VALIDATE, OPT_FAST_SAVE, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
@@ -170,6 +234,7 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
     bool no_managers          = vals[OPT_NOMGR].present && vals[OPT_NOMGR].val.flag;
     bool strip_resources      = vals[OPT_STRIPRES].present && vals[OPT_STRIPRES].val.flag;
     bool validate             = vals[OPT_VALIDATE].present && vals[OPT_VALIDATE].val.flag;
+    bool fast_save            = vals[OPT_FAST_SAVE].present && vals[OPT_FAST_SAVE].val.flag;
 
     if (!output_path) {
         fprintf(stderr, "Error: Output file not specified (use -o or --output)\n");
@@ -182,6 +247,10 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
     /* Build save options */
     nmo_save_options_t save_opts = nmo_save_options_default();
+    nmo_save_perf_stats_t save_phase_stats;
+    nmo_save_perf_stats_reset(&save_phase_stats);
+    save_opts.collect_perf_stats = true;
+    save_opts.perf_stats = &save_phase_stats;
 
     if (compress_str) {
         int level = 0;
@@ -209,6 +278,10 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
         save_opts.flags |= NMO_SAVE_VALIDATE_BEFORE;
     }
 
+    if (fast_save) {
+        save_opts.durability = NMO_SAVE_DURABILITY_FAST;
+    }
+
     /* Save file */
     int result = nmo_save_file(c.session, output_path, &save_opts);
     if (result != NMO_OK) {
@@ -228,10 +301,15 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
         nmo_cli_json_add_str_safe(doc, data, "output_file", output_path);
         nmo_cli_json_add_uint_safe(doc, data, "flags", save_opts.flags);
         nmo_cli_json_add_int_safe(doc, data, "compression_level", save_opts.compression_level);
+        nmo_cli_json_add_str_safe(doc, data, "save_durability",
+                                  convert_save_durability_name(save_opts.durability));
+        convert_add_save_phase_stats_json(doc, data, &save_phase_stats);
 
         nmo_cmd_ctx_json_end(&c, doc, data, "convert.copy");
     } else {
         fprintf(c.out, "Saved to %s\n", output_path);
+        fprintf(c.out, "Durability: %s\n", convert_save_durability_name(save_opts.durability));
+        convert_print_save_phase_stats(c.out, &save_phase_stats);
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
@@ -245,13 +323,16 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
 {
     static const nmo_opt_def_t opts[] = {
         {"--output", "-o", NMO_OPT_STRING, "Output file path"},
+        {"--fast-save", NULL, NMO_OPT_FLAG, "Skip explicit save flush/write-through"},
     };
-    nmo_opt_val_t vals[1];
+    enum { OPT_VERSION_OUTPUT, OPT_VERSION_FAST_SAVE, OPT_VERSION_COUNT };
+    nmo_opt_val_t vals[OPT_VERSION_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, OPT_VERSION_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[0].present ? vals[0].val.str : NULL;
+    const char *output_path = vals[OPT_VERSION_OUTPUT].present ? vals[OPT_VERSION_OUTPUT].val.str : NULL;
+    bool fast_save = vals[OPT_VERSION_FAST_SAVE].present && vals[OPT_VERSION_FAST_SAVE].val.flag;
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
@@ -293,6 +374,9 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
 
     /* If output specified, save the file (equivalent to copy) */
     nmo_save_options_t save_opts = nmo_save_options_default();
+    if (fast_save) {
+        save_opts.durability = NMO_SAVE_DURABILITY_FAST;
+    }
     int result = nmo_save_file(c.session, output_path, &save_opts);
     if (result != NMO_OK) {
         fprintf(stderr, "Error saving file: %s\n", nmo_error_string(result));
@@ -308,10 +392,13 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         nmo_cli_json_add_str_safe(doc, data, "input_file", c.file_path);
         nmo_cli_json_add_str_safe(doc, data, "output_file", output_path);
+        nmo_cli_json_add_str_safe(doc, data, "save_durability",
+                                  convert_save_durability_name(save_opts.durability));
 
         nmo_cmd_ctx_json_end(&c, doc, data, "convert.version");
     } else {
         fprintf(c.out, "Saved to %s\n", output_path);
+        fprintf(c.out, "Durability: %s\n", convert_save_durability_name(save_opts.durability));
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
@@ -328,8 +415,9 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
         {"--class",   "-c", NMO_OPT_STRING, "Filter by class name"},
         {"--name",    "-n", NMO_OPT_STRING, "Filter by name pattern"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without modifying"},
+        {"--fast-save", NULL, NMO_OPT_FLAG, "Skip explicit save flush/write-through"},
     };
-    enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_DRYRUN, OPT_COUNT };
+    enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_DRYRUN, OPT_FAST_SAVE, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
@@ -339,6 +427,7 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
     const char *class_name  = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL;
     const char *name_pattern = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
     bool dry_run            = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    bool fast_save          = vals[OPT_FAST_SAVE].present && vals[OPT_FAST_SAVE].val.flag;
 
     if (!output_path && !dry_run) {
         fprintf(stderr, "Error: Output file not specified (use -o or --output)\n");
@@ -628,6 +717,9 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     /* Save file */
     nmo_save_options_t save_opts = nmo_save_options_default();
+    if (fast_save) {
+        save_opts.durability = NMO_SAVE_DURABILITY_FAST;
+    }
     int result = nmo_save_file(c.session, output_path, &save_opts);
     if (result != NMO_OK) {
         fprintf(stderr, "Error saving file: %s\n", nmo_error_string(result));
@@ -644,6 +736,8 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         nmo_cli_json_add_str_safe(doc, data, "input_file", c.file_path);
         nmo_cli_json_add_str_safe(doc, data, "output_file", output_path);
+        nmo_cli_json_add_str_safe(doc, data, "save_durability",
+                                  convert_save_durability_name(save_opts.durability));
         nmo_cli_json_add_uint_safe(doc, data, "objects_removed", (uint64_t)report.deleted_objects);
         if (class_name) {
             nmo_cli_json_add_str_safe(doc, data, "filter_class", class_name);
@@ -656,6 +750,7 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
     } else {
         fprintf(c.out, "Removed %zu object(s)\n", report.deleted_objects);
         fprintf(c.out, "Saved to %s\n", output_path);
+        fprintf(c.out, "Durability: %s\n", convert_save_durability_name(save_opts.durability));
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
@@ -688,6 +783,7 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
         fprintf(stderr, "Error: Output file not specified (use -o or --output)\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
+    bool fast_save = nmo_tool_has_flag(argc, argv, "--fast-save", NULL);
 
     /* Use init_no_file since we manage two sessions manually */
     nmo_cmd_ctx_t c;
@@ -748,6 +844,9 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     /* Save target to output */
     nmo_save_options_t save_opts = nmo_save_options_default();
+    if (fast_save) {
+        save_opts.durability = NMO_SAVE_DURABILITY_FAST;
+    }
     int result = nmo_save_file(tgt_session, output_path, &save_opts);
     if (result != NMO_OK) {
         fprintf(stderr, "Error saving file: %s\n", nmo_error_string(result));
@@ -769,6 +868,8 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
         nmo_cli_json_add_str_safe(doc, data, "source_file", source_path);
         nmo_cli_json_add_str_safe(doc, data, "target_file", target_path);
         nmo_cli_json_add_str_safe(doc, data, "output_file", output_path);
+        nmo_cli_json_add_str_safe(doc, data, "save_durability",
+                                  convert_save_durability_name(save_opts.durability));
         nmo_cli_json_add_uint_safe(doc, data, "objects_copied", (uint64_t)report.copied_objects);
 
         /* Use manual write since c.file_path is NULL for no_file init */
@@ -777,6 +878,7 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
     } else {
         fprintf(c.out, "Copied %zu object(s) from source to target\n", report.copied_objects);
         fprintf(c.out, "Saved to %s\n", output_path);
+        fprintf(c.out, "Durability: %s\n", convert_save_durability_name(save_opts.durability));
     }
 
     nmo_tool_close_session(src_ctx, src_session);
@@ -839,9 +941,10 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         {"--all",      NULL, NMO_OPT_FLAG,   "Export all objects (no filter required)"},
         {"--dry-run",  NULL, NMO_OPT_FLAG,   "Preview matching objects without writing"},
         {"--compress", NULL, NMO_OPT_STRING, "Compression level (0-9)"},
+        {"--fast-save", NULL, NMO_OPT_FLAG,  "Skip explicit save flush/write-through"},
     };
     enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_FILTER, OPT_DEPS,
-           OPT_ALL, OPT_DRYRUN, OPT_COMPRESS, OPT_COUNT };
+           OPT_ALL, OPT_DRYRUN, OPT_COMPRESS, OPT_FAST_SAVE, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
@@ -855,6 +958,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     bool export_all              = vals[OPT_ALL].present && vals[OPT_ALL].val.flag;
     bool dry_run                 = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
     const char *compress_str     = vals[OPT_COMPRESS].present ? vals[OPT_COMPRESS].val.str : NULL;
+    bool fast_save               = vals[OPT_FAST_SAVE].present && vals[OPT_FAST_SAVE].val.flag;
 
     if (!dry_run && !output_path) {
         fprintf(stderr, "Error: -o/--output is required (or use --dry-run)\n");
@@ -1070,6 +1174,9 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     nmo_save_options_t save_opts = nmo_save_options_default();
     save_opts.include_ids = include_ids;
     save_opts.include_count = final_count;
+    if (fast_save) {
+        save_opts.durability = NMO_SAVE_DURABILITY_FAST;
+    }
     if (compress_str) {
         save_opts.compression_level = compress_level;
         save_opts.flags |= NMO_SAVE_COMPRESSED;
@@ -1092,6 +1199,8 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
             yyjson_mut_val *data = yyjson_mut_obj(doc);
             nmo_cli_json_add_str_safe(doc, data, "input_file", c.file_path);
             nmo_cli_json_add_str_safe(doc, data, "output_file", output_path);
+            nmo_cli_json_add_str_safe(doc, data, "save_durability",
+                                      convert_save_durability_name(save_opts.durability));
             nmo_cli_json_add_uint_safe(doc, data, "matched", (uint64_t)seed_count);
             if (include_deps) {
                 nmo_cli_json_add_bool_safe(doc, data, "deps", true);
@@ -1110,6 +1219,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         } else {
             fprintf(c.out, "Exported %zu object(s) to %s\n", final_count, output_path);
         }
+        fprintf(c.out, "Durability: %s\n", convert_save_durability_name(save_opts.durability));
     }
 
     free(include_ids);

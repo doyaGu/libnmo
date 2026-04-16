@@ -743,6 +743,38 @@ TEST(cli, convert_version_output_file_json) {
     remove(report_path);
 }
 
+TEST(cli, convert_version_fast_save_json_reports_durability) {
+    const char *report_path = "test_cli_convert_version_fast_report.json";
+    const char *save_path = "test_cli_convert_version_fast_output.nmo";
+    remove(report_path);
+    remove(save_path);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "--output \"%s\" -f json convert version --fast-save -o \"%s\" \"%s\"",
+             report_path, save_path, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_EQ(result.output, "");
+    ASSERT_TRUE(file_exists(save_path));
+
+    char *report = read_file_text(report_path);
+    ASSERT_NOT_NULL(report);
+    yyjson_doc *doc = yyjson_read(report, strlen(report), 0);
+    ASSERT_NOT_NULL(doc);
+    ASSERT_STR_EQ(json_envelope_command(doc), "convert.version");
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_STR_EQ(yyjson_get_str(yyjson_obj_get(data, "save_durability")), "fast");
+
+    yyjson_doc_free(doc);
+    free(report);
+    free(result.output);
+    remove(report_path);
+    remove(save_path);
+}
+
 TEST(cli, convert_copy_output_and_report_files) {
     const char *report_path = "test_cli_convert_copy_report.txt";
     const char *save_path = "test_cli_convert_copy_output.nmo";
@@ -763,6 +795,38 @@ TEST(cli, convert_copy_output_and_report_files) {
     ASSERT_STR_CONTAINS(report, "Saved to");
     ASSERT_STR_CONTAINS(report, save_path);
 
+    free(report);
+    free(result.output);
+    remove(report_path);
+    remove(save_path);
+}
+
+TEST(cli, convert_copy_fast_save_json_reports_durability) {
+    const char *report_path = "test_cli_convert_copy_fast_report.json";
+    const char *save_path = "test_cli_convert_copy_fast_output.nmo";
+    remove(report_path);
+    remove(save_path);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "--output \"%s\" -f json convert copy --fast-save -o \"%s\" \"%s\"",
+             report_path, save_path, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_EQ(result.output, "");
+    ASSERT_TRUE(file_exists(save_path));
+
+    char *report = read_file_text(report_path);
+    ASSERT_NOT_NULL(report);
+    yyjson_doc *doc = yyjson_read(report, strlen(report), 0);
+    ASSERT_NOT_NULL(doc);
+    ASSERT_STR_EQ(json_envelope_command(doc), "convert.copy");
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_STR_EQ(yyjson_get_str(yyjson_obj_get(data, "save_durability")), "fast");
+
+    yyjson_doc_free(doc);
     free(report);
     free(result.output);
     remove(report_path);
@@ -1535,7 +1599,9 @@ TEST_MAIN_BEGIN()
     /* convert command output redirection */
     REGISTER_TEST(cli, convert_version_output_file_text);
     REGISTER_TEST(cli, convert_version_output_file_json);
+    REGISTER_TEST(cli, convert_version_fast_save_json_reports_durability);
     REGISTER_TEST(cli, convert_copy_output_and_report_files);
+    REGISTER_TEST(cli, convert_copy_fast_save_json_reports_durability);
     REGISTER_TEST(cli, convert_merge_option_values_not_treated_as_files);
     REGISTER_TEST(cli, diff_chunks_object_option_value_not_treated_as_file);
 

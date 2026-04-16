@@ -34,6 +34,29 @@ End-to-end file I/O benchmarks on real NMO/CMO samples:
 
 This is the only benchmark with CI threshold enforcement (see below).
 
+### test_load_save_phase_stats.c
+
+Structural load/save phase-stat checks plus an ad-hoc benchmark mode for
+before/after save/load work:
+
+- **CTest mode** -- validates that required load/save phases are recorded,
+  metadata loads skip full data/object phases, saved output round-trips, fast
+  save uses the fast durability option, and planned data bytes match the final
+  serialized Data section size.
+- **Benchmark mode** -- accepts a fixture path and iteration count, prints
+  aggregate wall-clock timings, phase timings, section byte counters, and
+  save round-trip status.
+
+Supported benchmark flags:
+
+```text
+--fixture <path>
+--iterations <n>
+--save-copy
+--fast-save
+--json
+```
+
 ### test_index_queries.c
 
 Object-repository query performance on a synthetic 20 000-object repository:
@@ -63,6 +86,13 @@ Run a single benchmark:
 
 ```bash
 ./build/tests/performance/test_performance
+```
+
+Run the phase-stat save/load benchmark with JSON output:
+
+```powershell
+ctest --test-dir build_check -L performance --output-on-failure
+.\build_check\tests\performance\test_load_save_phase_stats.exe --fixture data\Demo\Hydroboat\Hydroboat.cmo --iterations 5 --save-copy --fast-save --json
 ```
 
 ## CI enforcement

@@ -38,7 +38,9 @@ static int file_info_single(const char *file_path,
     nmo_session_t *session = NULL;
     char errbuf[256];
 
-    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
+    nmo_load_options_t opts = nmo_load_options_default();
+    opts.profile = NMO_LOAD_PROFILE_METADATA;
+    if (!nmo_tool_open_session_opts(file_path, &opts, &ctx, &session, errbuf, sizeof(errbuf))) {
         fprintf(stderr, "Error: %s\n", errbuf);
         return NMO_CLI_EXIT_IO_ERROR;
     }
@@ -152,8 +154,11 @@ int nmo_cmd_file_info(int argc, char **argv, const nmo_cli_global_opts_t *global
  * ============================================================================ */
 
 int nmo_cmd_file_header(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    nmo_load_options_t opts = nmo_load_options_default();
+    opts.profile = NMO_LOAD_PROFILE_HEADER_ONLY;
+
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    int rc = nmo_cmd_ctx_init_with_load_options(&c, argc, argv, global, &opts);
     if (rc) return rc;
 
     /* Get header - cast from opaque nmo_header_t to public nmo_file_header_t */
@@ -589,8 +594,11 @@ int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *glo
  * ============================================================================ */
 
 int nmo_cmd_file_plugins(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    nmo_load_options_t opts = nmo_load_options_default();
+    opts.profile = NMO_LOAD_PROFILE_METADATA;
+
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    int rc = nmo_cmd_ctx_init_with_load_options(&c, argc, argv, global, &opts);
     if (rc) return rc;
 
     /* Get plugin diagnostics */

@@ -26,6 +26,87 @@ typedef struct nmo_debug_chunks_data {
     size_t chunk_count;
 } nmo_debug_chunks_data_t;
 
+static void debug_add_load_phase_stats_json(yyjson_mut_doc *doc,
+                                            yyjson_mut_val *data,
+                                            const nmo_load_perf_stats_t *stats) {
+    if (doc == NULL || data == NULL || stats == NULL) {
+        return;
+    }
+
+    yyjson_mut_val *phase_stats = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_uint(doc, phase_stats, "packed_header1_bytes", (uint64_t)stats->packed_header1_bytes);
+    yyjson_mut_obj_add_uint(doc, phase_stats, "unpacked_header1_bytes", (uint64_t)stats->unpacked_header1_bytes);
+    yyjson_mut_obj_add_uint(doc, phase_stats, "packed_data_bytes", (uint64_t)stats->packed_data_bytes);
+    yyjson_mut_obj_add_uint(doc, phase_stats, "unpacked_data_bytes", (uint64_t)stats->unpacked_data_bytes);
+
+    yyjson_mut_val *phases = yyjson_mut_obj(doc);
+    for (int i = 0; i < NMO_LOAD_PERF_PHASE_COUNT; i++) {
+        const nmo_phase_time_t *phase = &stats->phases[i];
+        yyjson_mut_val *entry = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, entry, "calls", phase->calls);
+        yyjson_mut_obj_add_real(doc, entry, "milliseconds", phase->milliseconds);
+        yyjson_mut_obj_add_val(doc, phases, nmo_load_perf_phase_name((nmo_load_perf_phase_t)i), entry);
+    }
+    yyjson_mut_obj_add_val(doc, phase_stats, "phases", phases);
+    yyjson_mut_obj_add_val(doc, data, "phase_stats", phase_stats);
+}
+
+static void debug_print_load_phase_stats(FILE *out, const nmo_load_perf_stats_t *stats) {
+    if (out == NULL || stats == NULL) {
+        return;
+    }
+
+    fprintf(out, "\nPhase Timings:\n");
+    fprintf(out, "  %-28s %8s %12s\n", "phase", "calls", "ms");
+    for (int i = 0; i < NMO_LOAD_PERF_PHASE_COUNT; i++) {
+        const nmo_phase_time_t *phase = &stats->phases[i];
+        fprintf(out, "  %-28s %8llu %12.3f\n",
+                nmo_load_perf_phase_name((nmo_load_perf_phase_t)i),
+                (unsigned long long)phase->calls,
+                phase->milliseconds);
+    }
+
+    fprintf(out, "\nSection Bytes:\n");
+    fprintf(out, "  Header1: packed=%zu unpacked=%zu\n",
+            stats->packed_header1_bytes,
+            stats->unpacked_header1_bytes);
+    fprintf(out, "  Data:    packed=%zu unpacked=%zu\n",
+            stats->packed_data_bytes,
+            stats->unpacked_data_bytes);
+}
+
+static bool debug_load_profile_from_arg(const char *arg, nmo_load_profile_t *out_profile) {
+    if (arg == NULL || out_profile == NULL) {
+        return false;
+    }
+    if (strcmp(arg, "full") == 0) {
+        *out_profile = NMO_LOAD_PROFILE_FULL;
+        return true;
+    }
+    if (strcmp(arg, "metadata") == 0) {
+        *out_profile = NMO_LOAD_PROFILE_METADATA;
+        return true;
+    }
+    if (strcmp(arg, "header") == 0 || strcmp(arg, "header-only") == 0) {
+        *out_profile = NMO_LOAD_PROFILE_HEADER_ONLY;
+        return true;
+    }
+    return false;
+}
+
+static const char *debug_load_profile_name(nmo_load_profile_t profile) {
+    switch (profile) {
+        case NMO_LOAD_PROFILE_FULL:
+            return "full";
+        case NMO_LOAD_PROFILE_METADATA:
+            return "metadata";
+        case NMO_LOAD_PROFILE_HEADER_ONLY:
+            return "header-only";
+        default:
+            return "unknown";
+    }
+}
+
 static int debug_chunks_object(size_t index, nmo_object_t *obj,
                                const nmo_cmd_ctx_t *c, void *user)
 {
@@ -223,8 +304,45 @@ static int debug_export_object(size_t index, nmo_object_t *obj,
 
 int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    int rc = nmo_cmd_ctx_init_no_file(&c, global);
     if (rc) return rc;
+
+    nmo_load_profile_t profile = NMO_LOAD_PROFILE_FULL;
+    for (int i = 0; i < argc; i++) {
+        const char *value = NULL;
+        if (strncmp(argv[i], "--profile=", 10) == 0) {
+            value = argv[i] + 10;
+        } else if (strncmp(argv[i], "--load-profile=", 15) == 0) {
+            value = argv[i] + 15;
+        }
+
+        if (value != NULL && !debug_load_profile_from_arg(value, &profile)) {
+            fprintf(stderr, "Error: Invalid load profile '%s'\n", value);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+    }
+
+    c.file_path = nmo_tool_find_file_arg_last(argc, argv);
+    if (!c.file_path) {
+        fprintf(stderr, "Error: No file specified\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    nmo_load_perf_stats_t phase_stats;
+    nmo_load_perf_stats_reset(&phase_stats);
+    nmo_load_options_t load_opts = nmo_load_options_default();
+    load_opts.profile = profile;
+    load_opts.collect_perf_stats = true;
+    load_opts.perf_stats = &phase_stats;
+
+    char errbuf[256];
+    if (!nmo_tool_open_session_opts(c.file_path, &load_opts,
+                                    &c.ctx, &c.session,
+                                    errbuf, sizeof(errbuf))) {
+        fprintf(stderr, "Error: %s\n", errbuf);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+    }
+    c.registry = nmo_context_get_type_registry(c.ctx);
 
     /* Get finish loading stats */
     nmo_runtime_load_stats_t stats;
@@ -235,6 +353,7 @@ int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_obj_add_str(doc, data, "file", c.file_path);
+        yyjson_mut_obj_add_str(doc, data, "profile", debug_load_profile_name(profile));
         yyjson_mut_obj_add_bool(doc, data, "stats_available", has_stats);
 
         if (has_stats) {
@@ -256,11 +375,13 @@ int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t
 
             yyjson_mut_obj_add_uint(doc, data, "manager_errors", stats.manager_errors);
         }
+        debug_add_load_phase_stats_json(doc, data, &phase_stats);
 
         nmo_cmd_ctx_json_end(&c, doc, data, "debug.load-phases");
     } else {
         nmo_cli_print_heading(c.out, "Load Phases", c.colorize);
         nmo_cli_print_kv(c.out, "File", c.file_path, 16, c.colorize);
+        nmo_cli_print_kv(c.out, "Profile", debug_load_profile_name(profile), 16, c.colorize);
 
         if (!has_stats) {
             fprintf(c.out, "\nLoad statistics unavailable\n");
@@ -295,6 +416,7 @@ int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t
             snprintf(buf, sizeof(buf), "%u", stats.manager_errors);
             nmo_cli_print_kv(c.out, "Manager Errors", buf, 16, c.colorize);
         }
+        debug_print_load_phase_stats(c.out, &phase_stats);
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
