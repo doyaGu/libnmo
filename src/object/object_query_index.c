@@ -38,6 +38,74 @@ static void query_index_free_meta_names(nmo_object_query_index_t *index)
     }
 }
 
+static nmo_status_t query_index_init_entry_arrays(nmo_object_query_index_t *index)
+{
+    if (index == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_status_t status = nmo_array_init(
+        &index->class_entries, sizeof(query_id_entry_t), 0, &index->allocator);
+    if (status != NMO_OK) {
+        return status;
+    }
+    status = nmo_array_init(
+        &index->derived_entries, sizeof(query_id_entry_t), 0, &index->allocator);
+    if (status != NMO_OK) {
+        nmo_array_dispose(&index->class_entries);
+        return status;
+    }
+    status = nmo_array_init(
+        &index->name_entries, sizeof(query_name_entry_t), 0, &index->allocator);
+    if (status != NMO_OK) {
+        nmo_array_dispose(&index->derived_entries);
+        nmo_array_dispose(&index->class_entries);
+        return status;
+    }
+    status = nmo_array_init(
+        &index->folded_name_entries, sizeof(query_name_entry_t), 0, &index->allocator);
+    if (status != NMO_OK) {
+        nmo_array_dispose(&index->name_entries);
+        nmo_array_dispose(&index->derived_entries);
+        nmo_array_dispose(&index->class_entries);
+        return status;
+    }
+    status = nmo_array_init(
+        &index->trigram_entries, sizeof(query_id_entry_t), 0, &index->allocator);
+    if (status != NMO_OK) {
+        nmo_array_dispose(&index->folded_name_entries);
+        nmo_array_dispose(&index->name_entries);
+        nmo_array_dispose(&index->derived_entries);
+        nmo_array_dispose(&index->class_entries);
+        return status;
+    }
+    return NMO_OK;
+}
+
+static void query_index_clear_entry_arrays(nmo_object_query_index_t *index)
+{
+    if (index == NULL) {
+        return;
+    }
+    nmo_array_clear(&index->class_entries);
+    nmo_array_clear(&index->derived_entries);
+    nmo_array_clear(&index->name_entries);
+    nmo_array_clear(&index->folded_name_entries);
+    nmo_array_clear(&index->trigram_entries);
+}
+
+static void query_index_dispose_entry_arrays(nmo_object_query_index_t *index)
+{
+    if (index == NULL) {
+        return;
+    }
+    nmo_array_dispose(&index->trigram_entries);
+    nmo_array_dispose(&index->folded_name_entries);
+    nmo_array_dispose(&index->name_entries);
+    nmo_array_dispose(&index->derived_entries);
+    nmo_array_dispose(&index->class_entries);
+}
+
 static void query_index_clear_storage(nmo_object_query_index_t *index)
 {
     if (index == NULL) {
@@ -46,11 +114,7 @@ static void query_index_clear_storage(nmo_object_query_index_t *index)
 
     query_index_free_meta_names(index);
     query_index_free(index, index->metas);
-    query_index_free(index, index->class_entries);
-    query_index_free(index, index->derived_entries);
-    query_index_free(index, index->name_entries);
-    query_index_free(index, index->folded_name_entries);
-    query_index_free(index, index->trigram_entries);
+    query_index_clear_entry_arrays(index);
     query_index_free(index, index->visit_marks);
     if (index->id_to_meta != NULL) {
         nmo_hash_table_destroy(index->id_to_meta);
@@ -60,21 +124,6 @@ static void query_index_clear_storage(nmo_object_query_index_t *index)
     index->meta_count = 0;
     index->meta_capacity = 0;
     index->id_to_meta = NULL;
-    index->class_entries = NULL;
-    index->class_count = 0;
-    index->class_capacity = 0;
-    index->derived_entries = NULL;
-    index->derived_count = 0;
-    index->derived_capacity = 0;
-    index->name_entries = NULL;
-    index->name_count = 0;
-    index->name_capacity = 0;
-    index->folded_name_entries = NULL;
-    index->folded_name_count = 0;
-    index->folded_name_capacity = 0;
-    index->trigram_entries = NULL;
-    index->trigram_count = 0;
-    index->trigram_capacity = 0;
     index->visit_marks = NULL;
     index->visit_generation = 0;
     index->text_built = false;
@@ -103,76 +152,22 @@ static void query_index_repository_mutated(
     }
 }
 
-static nmo_status_t query_reserve_bytes(
-    nmo_object_query_index_t *index,
-    void **ptr,
-    size_t *capacity,
-    size_t required,
-    size_t element_size,
-    size_t align)
-{
-    if (required <= *capacity) {
-        return NMO_OK;
-    }
-    size_t new_capacity = *capacity == 0 ? 16 : *capacity;
-    while (new_capacity < required) {
-        if (new_capacity > SIZE_MAX / 2) {
-            return NMO_ERR_NOMEM;
-        }
-        new_capacity *= 2;
-    }
-    if (new_capacity > SIZE_MAX / element_size) {
-        return NMO_ERR_NOMEM;
-    }
-    void *new_ptr = query_index_alloc(index, new_capacity * element_size, align);
-    if (new_ptr == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-    if (*ptr != NULL && *capacity > 0) {
-        memcpy(new_ptr, *ptr, *capacity * element_size);
-        query_index_free(index, *ptr);
-    }
-    *ptr = new_ptr;
-    *capacity = new_capacity;
-    return NMO_OK;
-}
-
 static nmo_status_t query_append_id_entry(
-    nmo_object_query_index_t *index,
-    query_id_entry_t **entries,
-    size_t *count,
-    size_t *capacity,
+    nmo_array_t *entries,
     uint32_t key,
     size_t meta_index)
 {
-    nmo_status_t status = query_reserve_bytes(
-        index, (void **)entries, capacity, *count + 1,
-        sizeof(**entries), _Alignof(query_id_entry_t));
-    if (status != NMO_OK) {
-        return status;
-    }
-    (*entries)[*count] = (query_id_entry_t){ key, meta_index };
-    (*count)++;
-    return NMO_OK;
+    query_id_entry_t entry = { key, meta_index };
+    return nmo_array_append(entries, &entry);
 }
 
 static nmo_status_t query_append_name_entry(
-    nmo_object_query_index_t *index,
-    query_name_entry_t **entries,
-    size_t *count,
-    size_t *capacity,
+    nmo_array_t *entries,
     const char *key,
     size_t meta_index)
 {
-    nmo_status_t status = query_reserve_bytes(
-        index, (void **)entries, capacity, *count + 1,
-        sizeof(**entries), _Alignof(query_name_entry_t));
-    if (status != NMO_OK) {
-        return status;
-    }
-    (*entries)[*count] = (query_name_entry_t){ key, meta_index };
-    (*count)++;
-    return NMO_OK;
+    query_name_entry_t entry = { key, meta_index };
+    return nmo_array_append(entries, &entry);
 }
 
 static int compare_id_entry(const void *a, const void *b)
@@ -195,6 +190,22 @@ static int compare_name_entry(const void *a, const void *b)
     if (ea->meta_index < eb->meta_index) return -1;
     if (ea->meta_index > eb->meta_index) return 1;
     return 0;
+}
+
+static void query_sort_id_entries(nmo_array_t *entries)
+{
+    size_t count = nmo_array_size(entries);
+    if (count > 1) {
+        qsort(nmo_array_data(entries), count, sizeof(query_id_entry_t), compare_id_entry);
+    }
+}
+
+static void query_sort_name_entries(nmo_array_t *entries)
+{
+    size_t count = nmo_array_size(entries);
+    if (count > 1) {
+        qsort(nmo_array_data(entries), count, sizeof(query_name_entry_t), compare_name_entry);
+    }
 }
 
 static char *query_fold_copy(nmo_object_query_index_t *index, const char *name)
@@ -227,10 +238,7 @@ static nmo_status_t query_index_add_derived_chain(
     nmo_class_id_t current = class_id;
     for (size_t depth = 0; current != 0 && depth < 64; depth++) {
         nmo_status_t status = query_append_id_entry(
-            index,
             &index->derived_entries,
-            &index->derived_count,
-            &index->derived_capacity,
             current,
             meta_index);
         if (status != NMO_OK) {
@@ -269,6 +277,10 @@ nmo_object_query_index_t *nmo_object_query_index_create(
     index->allocator = alloc;
     index->eager_dirty = true;
     index->text_dirty = true;
+    if (query_index_init_entry_arrays(index) != NMO_OK) {
+        nmo_free(&alloc, index);
+        return NULL;
+    }
     return index;
 }
 
@@ -280,6 +292,7 @@ void nmo_object_query_index_destroy(nmo_object_query_index_t *index)
     nmo_allocator_t alloc = index->allocator;
     nmo_object_query_index_detach_repository_observer(index);
     query_index_clear_storage(index);
+    query_index_dispose_entry_arrays(index);
     nmo_free(&alloc, index);
 }
 
@@ -348,8 +361,7 @@ nmo_status_t nmo_object_query_index_rebuild(nmo_object_query_index_t *index)
         }
 
         status = query_append_id_entry(
-            index, &index->class_entries, &index->class_count,
-            &index->class_capacity, meta->class_id, meta_index);
+            &index->class_entries, meta->class_id, meta_index);
         if (status != NMO_OK) {
             query_index_clear_storage(index);
             return status;
@@ -363,26 +375,24 @@ nmo_status_t nmo_object_query_index_rebuild(nmo_object_query_index_t *index)
 
         const char *name = nmo_object_get_name(object);
         status = query_append_name_entry(
-            index, &index->name_entries, &index->name_count,
-            &index->name_capacity, name != NULL ? name : "", meta_index);
+            &index->name_entries, name != NULL ? name : "", meta_index);
         if (status != NMO_OK) {
             query_index_clear_storage(index);
             return status;
         }
 
         status = query_append_name_entry(
-            index, &index->folded_name_entries, &index->folded_name_count,
-            &index->folded_name_capacity, meta->folded_name, meta_index);
+            &index->folded_name_entries, meta->folded_name, meta_index);
         if (status != NMO_OK) {
             query_index_clear_storage(index);
             return status;
         }
     }
 
-    qsort(index->class_entries, index->class_count, sizeof(*index->class_entries), compare_id_entry);
-    qsort(index->derived_entries, index->derived_count, sizeof(*index->derived_entries), compare_id_entry);
-    qsort(index->name_entries, index->name_count, sizeof(*index->name_entries), compare_name_entry);
-    qsort(index->folded_name_entries, index->folded_name_count, sizeof(*index->folded_name_entries), compare_name_entry);
+    query_sort_id_entries(&index->class_entries);
+    query_sort_id_entries(&index->derived_entries);
+    query_sort_name_entries(&index->name_entries);
+    query_sort_name_entries(&index->folded_name_entries);
 
     index->eager_dirty = false;
     index->text_dirty = true;
@@ -456,10 +466,7 @@ static nmo_status_t query_index_build_text(nmo_object_query_index_t *index)
         return NMO_OK;
     }
 
-    query_index_free(index, index->trigram_entries);
-    index->trigram_entries = NULL;
-    index->trigram_count = 0;
-    index->trigram_capacity = 0;
+    nmo_array_clear(&index->trigram_entries);
 
     for (size_t i = 0; i < index->meta_count; i++) {
         const char *name = index->metas[i].folded_name != NULL ? index->metas[i].folded_name : "";
@@ -470,15 +477,14 @@ static nmo_status_t query_index_build_text(nmo_object_query_index_t *index)
         for (size_t pos = 0; pos + 2 < len; pos++) {
             uint32_t tri = query_make_trigram(name + pos);
             nmo_status_t status = query_append_id_entry(
-                index, &index->trigram_entries, &index->trigram_count,
-                &index->trigram_capacity, tri, i);
+                &index->trigram_entries, tri, i);
             if (status != NMO_OK) {
                 return status;
             }
         }
     }
 
-    qsort(index->trigram_entries, index->trigram_count, sizeof(*index->trigram_entries), compare_id_entry);
+    query_sort_id_entries(&index->trigram_entries);
     index->text_built = true;
     index->text_dirty = false;
     return NMO_OK;
@@ -706,6 +712,9 @@ static nmo_status_t query_text_candidate_for_literal(
     }
 
     size_t len = strlen(literal);
+    const query_id_entry_t *trigram_entries =
+        (const query_id_entry_t *)nmo_array_data(&index->trigram_entries);
+    size_t trigram_count = nmo_array_size(&index->trigram_entries);
     bool found_any = false;
     size_t best_start = 0;
     size_t best_count = 0;
@@ -713,7 +722,7 @@ static nmo_status_t query_text_candidate_for_literal(
         uint32_t tri = query_make_trigram(literal + i);
         size_t start = 0;
         size_t count = 0;
-        if (!query_id_range(index->trigram_entries, index->trigram_count, tri, &start, &count)) {
+        if (!query_id_range(trigram_entries, trigram_count, tri, &start, &count)) {
             *out_candidate = query_none_candidate();
             return NMO_OK;
         }
@@ -725,7 +734,7 @@ static nmo_status_t query_text_candidate_for_literal(
     }
     if (found_any) {
         *out_candidate = query_id_entries_candidate(
-            index->trigram_entries + best_start, best_count);
+            trigram_entries + best_start, best_count);
     }
     return NMO_OK;
 }
@@ -763,10 +772,11 @@ nmo_status_t query_plan_candidate(
     if (query->class_id != 0 &&
         (!query->include_derived_classes ||
          (index->registry != NULL && index->registry == registry))) {
+        const nmo_array_t *entry_array =
+            query->include_derived_classes ? &index->derived_entries : &index->class_entries;
         const query_id_entry_t *entries =
-            query->include_derived_classes ? index->derived_entries : index->class_entries;
-        size_t count =
-            query->include_derived_classes ? index->derived_count : index->class_count;
+            (const query_id_entry_t *)nmo_array_data(entry_array);
+        size_t count = nmo_array_size(entry_array);
         size_t start = 0;
         size_t range_count = 0;
         query_candidate_t class_candidate = query_none_candidate();
@@ -779,8 +789,10 @@ nmo_status_t query_plan_candidate(
     if (query->name_mode == NMO_OBJECT_QUERY_NAME_EXACT) {
         char folded[512];
         const char *needle = query->name != NULL ? query->name : "";
-        const query_name_entry_t *entries = index->name_entries;
-        size_t count = index->name_count;
+        const nmo_array_t *entry_array = &index->name_entries;
+        const query_name_entry_t *entries =
+            (const query_name_entry_t *)nmo_array_data(entry_array);
+        size_t count = nmo_array_size(entry_array);
         if (query->name_case_insensitive) {
             if (strlen(needle) >= sizeof(folded)) {
                 *out_candidate = candidate;
@@ -788,8 +800,9 @@ nmo_status_t query_plan_candidate(
             }
             query_fold_pattern(needle, true, folded, sizeof(folded));
             needle = folded;
-            entries = index->folded_name_entries;
-            count = index->folded_name_count;
+            entry_array = &index->folded_name_entries;
+            entries = (const query_name_entry_t *)nmo_array_data(entry_array);
+            count = nmo_array_size(entry_array);
         }
         size_t start = 0;
         size_t range_count = 0;

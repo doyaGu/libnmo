@@ -8,6 +8,7 @@
 
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_repository.h"
+#include "core/nmo_array.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_hash_table.h"
 
@@ -43,22 +44,12 @@ struct nmo_object_query_index {
     size_t meta_capacity;
 
     nmo_hash_table_t *id_to_meta;
-    query_id_entry_t *class_entries;
-    size_t class_count;
-    size_t class_capacity;
-    query_id_entry_t *derived_entries;
-    size_t derived_count;
-    size_t derived_capacity;
-    query_name_entry_t *name_entries;
-    size_t name_count;
-    size_t name_capacity;
-    query_name_entry_t *folded_name_entries;
-    size_t folded_name_count;
-    size_t folded_name_capacity;
+    nmo_array_t class_entries;        /* query_id_entry_t */
+    nmo_array_t derived_entries;      /* query_id_entry_t */
+    nmo_array_t name_entries;         /* query_name_entry_t */
+    nmo_array_t folded_name_entries;  /* query_name_entry_t */
 
-    query_id_entry_t *trigram_entries;
-    size_t trigram_count;
-    size_t trigram_capacity;
+    nmo_array_t trigram_entries;      /* query_id_entry_t */
     bool text_built;
 
     uint32_t *visit_marks;
