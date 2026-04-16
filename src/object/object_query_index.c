@@ -45,8 +45,16 @@ static nmo_status_t query_index_init_entry_arrays(nmo_object_query_index_t *inde
         return status;
     }
     status = nmo_array_init(
+        &index->guid_entries, sizeof(query_guid_entry_t), 0, &index->allocator);
+    if (status != NMO_OK) {
+        nmo_array_dispose(&index->derived_entries);
+        nmo_array_dispose(&index->class_entries);
+        return status;
+    }
+    status = nmo_array_init(
         &index->name_entries, sizeof(query_name_entry_t), 0, &index->allocator);
     if (status != NMO_OK) {
+        nmo_array_dispose(&index->guid_entries);
         nmo_array_dispose(&index->derived_entries);
         nmo_array_dispose(&index->class_entries);
         return status;
@@ -55,6 +63,7 @@ static nmo_status_t query_index_init_entry_arrays(nmo_object_query_index_t *inde
         &index->folded_name_entries, sizeof(query_name_entry_t), 0, &index->allocator);
     if (status != NMO_OK) {
         nmo_array_dispose(&index->name_entries);
+        nmo_array_dispose(&index->guid_entries);
         nmo_array_dispose(&index->derived_entries);
         nmo_array_dispose(&index->class_entries);
         return status;
@@ -64,6 +73,7 @@ static nmo_status_t query_index_init_entry_arrays(nmo_object_query_index_t *inde
     if (status != NMO_OK) {
         nmo_array_dispose(&index->folded_name_entries);
         nmo_array_dispose(&index->name_entries);
+        nmo_array_dispose(&index->guid_entries);
         nmo_array_dispose(&index->derived_entries);
         nmo_array_dispose(&index->class_entries);
         return status;
@@ -74,6 +84,7 @@ static nmo_status_t query_index_init_entry_arrays(nmo_object_query_index_t *inde
         nmo_array_dispose(&index->trigram_entries);
         nmo_array_dispose(&index->folded_name_entries);
         nmo_array_dispose(&index->name_entries);
+        nmo_array_dispose(&index->guid_entries);
         nmo_array_dispose(&index->derived_entries);
         nmo_array_dispose(&index->class_entries);
         return status;
@@ -88,6 +99,7 @@ static void query_index_clear_entry_arrays(nmo_object_query_index_t *index)
     }
     nmo_array_clear(&index->class_entries);
     nmo_array_clear(&index->derived_entries);
+    nmo_array_clear(&index->guid_entries);
     nmo_array_clear(&index->name_entries);
     nmo_array_clear(&index->folded_name_entries);
     nmo_array_clear(&index->trigram_entries);
@@ -103,6 +115,7 @@ static void query_index_dispose_entry_arrays(nmo_object_query_index_t *index)
     nmo_array_dispose(&index->trigram_entries);
     nmo_array_dispose(&index->folded_name_entries);
     nmo_array_dispose(&index->name_entries);
+    nmo_array_dispose(&index->guid_entries);
     nmo_array_dispose(&index->derived_entries);
     nmo_array_dispose(&index->class_entries);
 }
@@ -228,12 +241,32 @@ static nmo_status_t query_append_name_entry(
     return nmo_array_append(entries, &entry);
 }
 
+static nmo_status_t query_append_guid_entry(
+    nmo_array_t *entries,
+    nmo_guid_t key,
+    size_t meta_index)
+{
+    query_guid_entry_t entry = { key, meta_index };
+    return nmo_array_append(entries, &entry);
+}
+
 static int compare_id_entry(const void *a, const void *b)
 {
     const query_id_entry_t *ea = (const query_id_entry_t *)a;
     const query_id_entry_t *eb = (const query_id_entry_t *)b;
     if (ea->key < eb->key) return -1;
     if (ea->key > eb->key) return 1;
+    if (ea->meta_index < eb->meta_index) return -1;
+    if (ea->meta_index > eb->meta_index) return 1;
+    return 0;
+}
+
+static int compare_guid_entry(const void *a, const void *b)
+{
+    const query_guid_entry_t *ea = (const query_guid_entry_t *)a;
+    const query_guid_entry_t *eb = (const query_guid_entry_t *)b;
+    int cmp = nmo_guid_compare(ea->key, eb->key);
+    if (cmp != 0) return cmp;
     if (ea->meta_index < eb->meta_index) return -1;
     if (ea->meta_index > eb->meta_index) return 1;
     return 0;
@@ -297,6 +330,14 @@ static void query_sort_name_entries(nmo_array_t *entries)
     size_t count = nmo_array_size(entries);
     if (count > 1) {
         qsort(nmo_array_data(entries), count, sizeof(query_name_entry_t), compare_name_entry);
+    }
+}
+
+static void query_sort_guid_entries(nmo_array_t *entries)
+{
+    size_t count = nmo_array_size(entries);
+    if (count > 1) {
+        qsort(nmo_array_data(entries), count, sizeof(query_guid_entry_t), compare_guid_entry);
     }
 }
 
@@ -448,6 +489,7 @@ nmo_status_t nmo_object_query_index_rebuild(nmo_object_query_index_t *index)
         query_meta_t *meta = &index->metas[meta_index];
         meta->object_id = nmo_object_get_id(object);
         meta->class_id = nmo_object_get_class_id(object);
+        meta->type_guid = nmo_object_get_type_guid(object);
         meta->repository_index = i;
         meta->object = object;
         meta->folded_name = query_fold_name_to_slab(index, nmo_object_get_name(object));
@@ -475,6 +517,15 @@ nmo_status_t nmo_object_query_index_rebuild(nmo_object_query_index_t *index)
             return status;
         }
 
+        if (!nmo_guid_is_null(meta->type_guid)) {
+            status = query_append_guid_entry(
+                &index->guid_entries, meta->type_guid, meta_index);
+            if (status != NMO_OK) {
+                query_index_clear_storage(index);
+                return status;
+            }
+        }
+
         const char *name = nmo_object_get_name(object);
         status = query_append_name_entry(
             &index->name_entries, name != NULL ? name : "", meta_index);
@@ -493,6 +544,7 @@ nmo_status_t nmo_object_query_index_rebuild(nmo_object_query_index_t *index)
 
     query_sort_id_entries(&index->class_entries);
     query_sort_id_entries(&index->derived_entries);
+    query_sort_guid_entries(&index->guid_entries);
     query_sort_name_entries(&index->name_entries);
     query_sort_name_entries(&index->folded_name_entries);
 
@@ -671,6 +723,32 @@ static bool query_id_range(
     }
     size_t start = lo;
     while (lo < count && entries[lo].key == key) {
+        lo++;
+    }
+    *out_start = start;
+    *out_count = lo - start;
+    return *out_count > 0;
+}
+
+static bool query_guid_range(
+    const query_guid_entry_t *entries,
+    size_t count,
+    nmo_guid_t key,
+    size_t *out_start,
+    size_t *out_count)
+{
+    size_t lo = 0;
+    size_t hi = count;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (nmo_guid_compare(entries[mid].key, key) < 0) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    size_t start = lo;
+    while (lo < count && nmo_guid_equals(entries[lo].key, key)) {
         lo++;
     }
     *out_start = start;
@@ -1024,6 +1102,24 @@ nmo_status_t query_plan_candidate(
         *out_candidate = query_single_candidate(meta_index);
         out_candidate->covered_filters = QUERY_CANDIDATE_COVERS_OBJECT_ID;
         return NMO_OK;
+    }
+
+    if (query->has_type_guid) {
+        if (nmo_guid_is_null(query->type_guid)) {
+            *out_candidate = query_none_candidate();
+            return NMO_OK;
+        }
+        const query_guid_entry_t *entries =
+            (const query_guid_entry_t *)nmo_array_data(&index->guid_entries);
+        size_t count = nmo_array_size(&index->guid_entries);
+        size_t start = 0;
+        size_t range_count = 0;
+        query_candidate_t guid_candidate = query_none_candidate();
+        if (query_guid_range(entries, count, query->type_guid, &start, &range_count)) {
+            guid_candidate = query_guid_entries_candidate(entries + start, range_count);
+            guid_candidate.covered_filters = QUERY_CANDIDATE_COVERS_TYPE_GUID;
+        }
+        candidate = query_choose_smaller(candidate, guid_candidate, total);
     }
 
     if (query->class_id != 0 &&

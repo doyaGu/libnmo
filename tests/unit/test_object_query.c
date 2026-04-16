@@ -10,6 +10,7 @@
 #include "format/nmo_object.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "core/nmo_guid.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_arena.h"
 #include "type/nmo_type_system.h"
@@ -21,6 +22,10 @@ static nmo_object_t *g_base;
 static nmo_object_t *g_entity;
 static nmo_object_t *g_camera;
 static nmo_object_t *g_mesh;
+
+static const nmo_guid_t TEST_GUID_SHARED = NMO_GUID_INIT(0x11111111u, 0x22222222u);
+static const nmo_guid_t TEST_GUID_ENTITY = NMO_GUID_INIT(0x33333333u, 0x44444444u);
+static const nmo_guid_t TEST_GUID_MISSING = NMO_GUID_INIT(0x55555555u, 0x66666666u);
 
 static nmo_object_t *make_object(
     const nmo_allocator_t *allocator,
@@ -56,6 +61,9 @@ static void setup_objects(void)
     ASSERT_NOT_NULL(entity);
     ASSERT_NOT_NULL(camera);
     ASSERT_NOT_NULL(mesh);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(entity, TEST_GUID_ENTITY));
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(camera, TEST_GUID_SHARED));
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(mesh, TEST_GUID_SHARED));
 
     ASSERT_EQ(NMO_OK, nmo_object_repository_add(g_repo, &base));
     ASSERT_EQ(NMO_OK, nmo_object_repository_add(g_repo, &entity));
@@ -244,6 +252,118 @@ TEST(object_query, name_modes_share_case_rules)
     ASSERT_EQ(1, result.matched);
 
     teardown_objects();
+}
+
+TEST(object_query, guid_matching_filters_exact_type_guid)
+{
+    setup_objects();
+
+    nmo_object_query_t query = {
+        .has_type_guid = true,
+        .type_guid = TEST_GUID_SHARED
+    };
+    bool matches = true;
+    ASSERT_EQ(NMO_OK, nmo_object_query_matches(g_entity, &query, NULL, &matches));
+    ASSERT_FALSE(matches);
+    ASSERT_EQ(NMO_OK, nmo_object_query_matches(g_camera, &query, NULL, &matches));
+    ASSERT_TRUE(matches);
+
+    nmo_object_query_result_t result = {0};
+    nmo_object_query_context_t ctx = query_ctx();
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &query, NULL, NULL, &result));
+    ASSERT_EQ(4, result.total);
+    ASSERT_EQ(2, result.matched);
+
+    teardown_objects();
+}
+
+TEST(object_query, null_guid_query_matches_no_objects)
+{
+    setup_objects();
+
+    nmo_object_query_t query = {
+        .has_type_guid = true,
+        .type_guid = NMO_GUID_NULL
+    };
+    nmo_object_query_result_t result = {0};
+    nmo_object_query_context_t ctx = query_ctx();
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &query, NULL, NULL, &result));
+    ASSERT_EQ(4, result.total);
+    ASSERT_EQ(0, result.matched);
+
+    teardown_objects();
+}
+
+TEST(object_query, guid_query_combines_with_class_and_name_filters)
+{
+    setup_objects();
+
+    nmo_object_query_t query = {
+        .class_id = NMO_CID_CAMERA,
+        .include_derived_classes = false,
+        .has_type_guid = true,
+        .type_guid = TEST_GUID_SHARED,
+        .name = "MainCamera",
+        .name_mode = NMO_OBJECT_QUERY_NAME_EXACT
+    };
+    query_index_capture_t capture = {0};
+    nmo_object_query_result_t result = {0};
+    nmo_object_query_context_t ctx = query_ctx();
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(
+        &ctx, &query, capture_query_index, &capture, &result));
+    ASSERT_EQ(1, result.matched);
+    ASSERT_EQ(1, capture.count);
+    ASSERT_EQ(2, capture.indexes[0]);
+
+    nmo_object_query_t missing = query;
+    missing.type_guid = TEST_GUID_MISSING;
+    capture = (query_index_capture_t){0};
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(
+        &ctx, &missing, capture_query_index, &capture, &result));
+    ASSERT_EQ(0, result.matched);
+    ASSERT_EQ(0, capture.count);
+
+    teardown_objects();
+}
+
+TEST(object_query, session_query_first_filters_by_guid)
+{
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_t *target = make_object(&allocator, 10, NMO_CID_OBJECT, "GuidTarget");
+    ASSERT_NOT_NULL(target);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(target, TEST_GUID_SHARED));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &target));
+
+    nmo_object_query_t query = {
+        .has_type_guid = true,
+        .type_guid = TEST_GUID_SHARED
+    };
+    nmo_object_t *found = NULL;
+    size_t found_index = SIZE_MAX;
+    ASSERT_EQ(NMO_OK, nmo_session_query_first(session, &query, &found, &found_index));
+    ASSERT_NOT_NULL(found);
+    ASSERT_EQ(10, nmo_object_get_id(found));
+    ASSERT_EQ(0, found_index);
+
+    nmo_object_query_t missing = {
+        .has_type_guid = true,
+        .type_guid = TEST_GUID_MISSING
+    };
+    found = (nmo_object_t *)0x1;
+    found_index = 42;
+    ASSERT_EQ(NMO_ERR_NOT_FOUND,
+              nmo_session_query_first(session, &missing, &found, &found_index));
+    ASSERT_NULL(found);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
 }
 
 TEST(object_query, text_reducer_marks_do_not_poison_later_queries)
@@ -489,7 +609,7 @@ TEST(object_query, indexed_text_single_trigram_deduplicates_repeated_names)
     nmo_context_release(ctx);
 }
 
-TEST(object_query, session_query_context_tracks_direct_repository_mutation)
+TEST(object_query, session_query_api_tracks_direct_repository_mutation)
 {
     nmo_allocator_t allocator = nmo_allocator_default();
     nmo_context_t *ctx = nmo_context_create(NULL);
@@ -503,15 +623,12 @@ TEST(object_query, session_query_context_tracks_direct_repository_mutation)
     ASSERT_NOT_NULL(obj);
     ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &obj));
 
-    nmo_object_query_context_t qctx = {0};
-    ASSERT_EQ(NMO_OK, nmo_session_get_object_query_context(session, &qctx));
-
     nmo_object_query_t query = {
         .name = "SessionObject",
         .name_mode = NMO_OBJECT_QUERY_NAME_EXACT
     };
     nmo_object_query_result_t result = {0};
-    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&qctx, &query, NULL, NULL, &result));
+    ASSERT_EQ(NMO_OK, nmo_session_query_objects(session, &query, NULL, NULL, &result));
     ASSERT_EQ(1, result.matched);
 
     nmo_object_t *added = make_object(&allocator, 11, NMO_CID_OBJECT, "AddedObject");
@@ -522,7 +639,7 @@ TEST(object_query, session_query_context_tracks_direct_repository_mutation)
         .name = "AddedObject",
         .name_mode = NMO_OBJECT_QUERY_NAME_EXACT
     };
-    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&qctx, &added_query, NULL, NULL, &result));
+    ASSERT_EQ(NMO_OK, nmo_session_query_objects(session, &added_query, NULL, NULL, &result));
     ASSERT_EQ(1, result.matched);
 
     ASSERT_EQ(NMO_OK, nmo_object_repository_rename(repo, 10, "RenamedSessionObject"));
@@ -530,13 +647,13 @@ TEST(object_query, session_query_context_tracks_direct_repository_mutation)
         .name = "RenamedSessionObject",
         .name_mode = NMO_OBJECT_QUERY_NAME_EXACT
     };
-    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&qctx, &renamed_query, NULL, NULL, &result));
+    ASSERT_EQ(NMO_OK, nmo_session_query_objects(session, &renamed_query, NULL, NULL, &result));
     ASSERT_EQ(1, result.matched);
-    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&qctx, &query, NULL, NULL, &result));
+    ASSERT_EQ(NMO_OK, nmo_session_query_objects(session, &query, NULL, NULL, &result));
     ASSERT_EQ(0, result.matched);
 
     ASSERT_EQ(NMO_OK, nmo_object_repository_remove(repo, 10));
-    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&qctx, &renamed_query, NULL, NULL, &result));
+    ASSERT_EQ(NMO_OK, nmo_session_query_objects(session, &renamed_query, NULL, NULL, &result));
     ASSERT_EQ(0, result.matched);
 
     nmo_session_destroy(session);
@@ -610,6 +727,10 @@ REGISTER_TEST(object_query, filters_by_object_id);
 REGISTER_TEST(object_query, exact_and_derived_class_matching);
 REGISTER_TEST(object_query, derived_class_query_without_registry_reports_error);
 REGISTER_TEST(object_query, name_modes_share_case_rules);
+REGISTER_TEST(object_query, guid_matching_filters_exact_type_guid);
+REGISTER_TEST(object_query, null_guid_query_matches_no_objects);
+REGISTER_TEST(object_query, guid_query_combines_with_class_and_name_filters);
+REGISTER_TEST(object_query, session_query_first_filters_by_guid);
 REGISTER_TEST(object_query, text_reducer_marks_do_not_poison_later_queries);
 REGISTER_TEST(object_query, predicate_and_collect);
 REGISTER_TEST(object_query, visitor_can_stop_early);
@@ -617,7 +738,7 @@ REGISTER_TEST(object_query, visitor_receives_repository_index);
 REGISTER_TEST(object_query, indexed_query_handles_duplicate_names_and_rename);
 REGISTER_TEST(object_query, indexed_text_reducers_preserve_matches);
 REGISTER_TEST(object_query, indexed_text_single_trigram_deduplicates_repeated_names);
-REGISTER_TEST(object_query, session_query_context_tracks_direct_repository_mutation);
+REGISTER_TEST(object_query, session_query_api_tracks_direct_repository_mutation);
 REGISTER_TEST(object_query, attached_query_index_tracks_repository_mutation);
 REGISTER_TEST(object_query, query_index_detach_preserves_other_repository_observers);
 TEST_MAIN_END()

@@ -63,11 +63,6 @@ static void format_color_rgba(char *buf, size_t buf_size, const nmo_color_t *col
              (double)color->b, (double)color->a);
 }
 
-typedef struct entity_list_filter {
-    const nmo_cmd_ctx_t *cmd;
-    const nmo_object_query_t *class_query;
-} entity_list_filter_t;
-
 typedef struct entity_list_json_data {
     yyjson_mut_doc *doc;
     yyjson_mut_val *arr;
@@ -78,17 +73,6 @@ typedef struct entity_list_table_data {
     nmo_cli_table_t *table;
     uint32_t found;
 } entity_list_table_data_t;
-
-static bool entity_list_filter_predicate(const nmo_object_t *object, void *user_data) {
-    const entity_list_filter_t *filter = (const entity_list_filter_t *)user_data;
-    if (filter == NULL || filter->class_query == NULL) {
-        return true;
-    }
-
-    bool matches = false;
-    return nmo_object_query_matches(object, filter->class_query, filter->cmd->registry,
-                                    &matches) == NMO_OK && matches;
-}
 
 static int entity_list_json_visitor(size_t index,
                                     nmo_object_t *obj,
@@ -207,20 +191,18 @@ int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
     nmo_object_query_t entity_query = {0};
     nmo_core_query_set_class_id(&entity_query, NMO_CID_3DENTITY, true);
 
-    nmo_object_query_t class_query = {0};
-    entity_list_filter_t filter = { .cmd = &c };
+    bool class_filter_is_entity = true;
     if (class_filter != NULL) {
         nmo_core_query_build_options_t query_opts = {
             .class_name = class_filter,
             .include_derived_classes = true,
         };
-        rc = nmo_core_query_build(&c, &class_query, NULL, &query_opts);
+        rc = nmo_core_query_build(&c, &entity_query, NULL, &query_opts);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
             return nmo_cmd_ctx_done(&c, rc);
         }
-        filter.class_query = &class_query;
-        entity_query.predicate = entity_list_filter_predicate;
-        entity_query.predicate_user_data = &filter;
+        class_filter_is_entity =
+            nmo_core_class_derives(&c, entity_query.class_id, NMO_CID_3DENTITY);
     }
 
     if (c.is_json) {
@@ -228,10 +210,12 @@ int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
         entity_list_json_data_t jd = { .doc = doc, .arr = arr };
-        rc = nmo_core_object_query_run(&c, &entity_query,
-                                       entity_list_json_visitor, &jd, NULL);
-        if (rc != NMO_CLI_EXIT_SUCCESS) {
-            return nmo_cmd_ctx_done(&c, rc);
+        if (class_filter_is_entity) {
+            rc = nmo_core_object_query_run(&c, &entity_query,
+                                           entity_list_json_visitor, &jd, NULL);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                return nmo_cmd_ctx_done(&c, rc);
+            }
         }
 
         yyjson_mut_obj_add_uint(doc, data, "count", jd.found);
@@ -249,11 +233,13 @@ int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
         entity_list_table_data_t td = { .table = &table };
-        rc = nmo_core_object_query_run(&c, &entity_query,
-                                       entity_list_table_visitor, &td, NULL);
-        if (rc != NMO_CLI_EXIT_SUCCESS) {
-            nmo_cli_table_free(&table);
-            return nmo_cmd_ctx_done(&c, rc);
+        if (class_filter_is_entity) {
+            rc = nmo_core_object_query_run(&c, &entity_query,
+                                           entity_list_table_visitor, &td, NULL);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                nmo_cli_table_free(&table);
+                return nmo_cmd_ctx_done(&c, rc);
+            }
         }
 
         fprintf(c.out, "3D Entities: %u\n\n", td.found);

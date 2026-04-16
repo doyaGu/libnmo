@@ -8,6 +8,7 @@
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
+#include "core/nmo_guid.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -46,6 +47,8 @@ typedef struct nmo_object_query {
     nmo_object_id_t object_id;
     nmo_class_id_t class_id;
     bool include_derived_classes;
+    bool has_type_guid;
+    nmo_guid_t type_guid;
     const char *name;
     nmo_object_query_name_mode_t name_mode;
     bool name_case_insensitive;

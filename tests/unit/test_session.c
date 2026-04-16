@@ -37,6 +37,21 @@ static nmo_object_t *create_session_object(
     return repo_object;
 }
 
+static size_t count_session_objects_by_class(
+    nmo_session_t *session,
+    nmo_class_id_t class_id)
+{
+    nmo_object_query_t query = {
+        .class_id = class_id,
+        .include_derived_classes = false
+    };
+    nmo_object_query_result_t result = {0};
+    if (nmo_session_query_objects(session, &query, NULL, NULL, &result) != NMO_OK) {
+        return (size_t)-1;
+    }
+    return result.matched;
+}
+
 /**
  * Test session creation and destruction
  */
@@ -83,18 +98,24 @@ TEST(session, index_incremental_updates) {
     ASSERT_NOT_NULL(create_session_object(session, 11, 42, "Beta"));
 
     ASSERT_EQ(NMO_OK, nmo_session_rebuild_indexes(session, NMO_INDEX_BUILD_ALL));
-    ASSERT_EQ(2u, nmo_session_count_objects_by_class(session, 42));
+    ASSERT_EQ(2u, count_session_objects_by_class(session, 42));
 
     ASSERT_NOT_NULL(create_session_object(session, 12, 42, "Gamma"));
-    ASSERT_EQ(3u, nmo_session_count_objects_by_class(session, 42));
+    ASSERT_EQ(3u, count_session_objects_by_class(session, 42));
 
-    nmo_object_t *found = nmo_session_find_by_name(session, "Gamma", 0);
+    nmo_object_query_t gamma_query = {
+        .name = "Gamma",
+        .name_mode = NMO_OBJECT_QUERY_NAME_EXACT,
+        .name_case_insensitive = false
+    };
+    nmo_object_t *found = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_query_first(session, &gamma_query, &found, NULL));
     ASSERT_NOT_NULL(found);
     ASSERT_EQ(12, found->id);
 
     ASSERT_EQ(NMO_OK, nmo_object_repository_remove(
         nmo_session_get_repository(session), obj1->id));
-    ASSERT_EQ(2u, nmo_session_count_objects_by_class(session, 42));
+    ASSERT_EQ(2u, count_session_objects_by_class(session, 42));
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);

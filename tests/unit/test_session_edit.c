@@ -57,6 +57,16 @@ static void create_object_or_fail(
     ASSERT_TRUE(*out_id != 0);
 }
 
+static nmo_object_t *find_object_by_name_or_null(
+    nmo_session_t *session,
+    const char *name)
+{
+    nmo_object_t *object = NULL;
+    return nmo_session_find_object_by_name(session, name, &object) == NMO_OK
+        ? object
+        : NULL;
+}
+
 static int g_behaviorlink_post_delete_called = 0;
 
 static void behaviorlink_post_delete_probe(
@@ -345,15 +355,15 @@ TEST(session_edit, rename_object_commit_rebuilds_name_index) {
     nmo_object_id_t object_id = 0;
     create_object_or_fail(session, NMO_CID_OBJECT, "old-name", &object_id);
     ASSERT_EQ(NMO_OK, nmo_session_rebuild_indexes(session, NMO_INDEX_BUILD_ALL));
-    ASSERT_NOT_NULL(nmo_session_find_by_name(session, "old-name", 0));
+    ASSERT_NOT_NULL(find_object_by_name_or_null(session, "old-name"));
 
     nmo_session_edit_t *edit = NULL;
     ASSERT_EQ(NMO_OK, nmo_session_edit_begin(session, "rename commit", &edit));
     ASSERT_EQ(NMO_OK, nmo_session_edit_rename_object(edit, object_id, "new-name"));
     ASSERT_EQ(NMO_OK, nmo_session_edit_commit(edit));
 
-    ASSERT_NULL(nmo_session_find_by_name(session, "old-name", 0));
-    nmo_object_t *renamed = nmo_session_find_by_name(session, "new-name", 0);
+    ASSERT_NULL(find_object_by_name_or_null(session, "old-name"));
+    nmo_object_t *renamed = find_object_by_name_or_null(session, "new-name");
     ASSERT_NOT_NULL(renamed);
     ASSERT_EQ(object_id, nmo_object_get_id(renamed));
 
@@ -379,10 +389,10 @@ TEST(session_edit, rename_object_rollback_restores_name_without_rebuilding_index
     nmo_session_edit_rollback(edit);
 
     ASSERT_TRUE(before_index == nmo_session_get_object_index(session));
-    nmo_object_t *restored = nmo_session_find_by_name(session, "old-name", 0);
+    nmo_object_t *restored = find_object_by_name_or_null(session, "old-name");
     ASSERT_NOT_NULL(restored);
     ASSERT_EQ(object_id, nmo_object_get_id(restored));
-    ASSERT_NULL(nmo_session_find_by_name(session, "new-name", 0));
+    ASSERT_NULL(find_object_by_name_or_null(session, "new-name"));
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);

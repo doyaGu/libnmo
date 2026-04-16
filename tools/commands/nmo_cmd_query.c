@@ -159,20 +159,16 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    /* Open session */
-    nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
-    char errbuf[256];
-
-    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
+    nmo_cmd_ctx_t c;
+    int out_rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
+    if (out_rc) {
         free(stdin_buffer);
-        fprintf(stderr, "Error: %s\n", errbuf);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return out_rc;
     }
 
     /* Set up eval context */
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(c.ctx);
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
 
     nmo_dsl_eval_context_t eval_ctx;
     memset(&eval_ctx, 0, sizeof(eval_ctx));
@@ -183,20 +179,27 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
     const char *obj_opt = vals[OPT_OBJECT].present ? vals[OPT_OBJECT].val.str : NULL;
     nmo_object_t *target_obj = NULL;
     if (obj_opt) {
-        /* Try as numeric ID first, then as name */
+        /* Numeric selectors are IDs; non-numeric selectors are names. */
         char *end = NULL;
         long id = strtol(obj_opt, &end, 10);
-        if (end && end != obj_opt && *end == '\0' && id > 0) {
-            target_obj = nmo_object_repository_find_by_id(repo, (nmo_object_id_t)id);
-        }
-        if (!target_obj) {
-            target_obj = nmo_object_repository_find_by_name(repo, obj_opt);
+        bool numeric_selector = end && end != obj_opt && *end == '\0';
+        if (numeric_selector) {
+            if (id > 0) {
+                target_obj = nmo_core_find_by_id(&c, (nmo_object_id_t)id);
+            }
+        } else {
+            int lookup_rc = nmo_core_find_by_name(&c, obj_opt, &target_obj);
+            if (lookup_rc == NMO_CLI_EXIT_NOT_FOUND) {
+                target_obj = NULL;
+            } else if (lookup_rc != NMO_CLI_EXIT_SUCCESS) {
+                free(stdin_buffer);
+                return nmo_cmd_ctx_done(&c, lookup_rc);
+            }
         }
         if (!target_obj) {
             free(stdin_buffer);
-            nmo_tool_close_session(ctx, session);
             fprintf(stderr, "Error: Object not found: %s\n", obj_opt);
-            return NMO_CLI_EXIT_ARG_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
 
         /* Resolve type descriptor for this object */
@@ -218,9 +221,8 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
             eval_ctx.current_instance = state;
         } else {
             free(stdin_buffer);
-            nmo_tool_close_session(ctx, session);
             fprintf(stderr, "Error: Object '%s' has no reflection data\n", obj_opt);
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
     } else {
         eval_ctx.root_type = NULL;
@@ -236,21 +238,10 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
     if (status != NMO_OK) {
         nmo_core_dsl_print_error(stderr, expr_str, "Error: DSL evaluation failed");
         free(stdin_buffer);
-        nmo_tool_close_session(ctx, session);
         if (!obj_opt) {
             fprintf(stderr, "Hint: Use --object <id|name> to evaluate in the context of an object\n");
         }
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    /* Output result */
-    nmo_cmd_ctx_t c;
-    int out_rc = nmo_cmd_ctx_init_no_file(&c, global);
-    if (out_rc) {
-        free(stdin_buffer);
-        nmo_dsl_value_destroy(&result);
-        nmo_tool_close_session(ctx, session);
-        return out_rc;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     if (c.is_json) {
@@ -268,7 +259,6 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
 
     free(stdin_buffer);
     nmo_dsl_value_destroy(&result);
-    nmo_tool_close_session(ctx, session);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
@@ -304,18 +294,15 @@ int nmo_cmd_query_script(int argc, char **argv, const nmo_cli_global_opts_t *glo
         return NMO_CLI_EXIT_IO_ERROR;
     }
 
-    /* Open session */
-    nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
-
-    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
+    nmo_cmd_ctx_t c;
+    int out_rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
+    if (out_rc) {
         free(script_source);
-        fprintf(stderr, "Error: %s\n", errbuf);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return out_rc;
     }
 
     /* Compile script */
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(c.ctx);
     nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_SCRIPT, .flags = 0 };
     nmo_dsl_program_t *program = NULL;
 
@@ -323,14 +310,13 @@ int nmo_cmd_query_script(int argc, char **argv, const nmo_cli_global_opts_t *glo
     if (status != NMO_OK) {
         nmo_core_dsl_print_error(stderr, script_source, "Error: Failed to compile script");
         free(script_source);
-        nmo_tool_close_session(ctx, session);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     free(script_source);
 
     /* Set up eval context */
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
 
     nmo_dsl_eval_context_t eval_ctx;
     memset(&eval_ctx, 0, sizeof(eval_ctx));
@@ -348,29 +334,18 @@ int nmo_cmd_query_script(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_dsl_program_destroy(program);
 
     if (status != NMO_OK) {
-        nmo_tool_close_session(ctx, session);
         fprintf(stderr, "Error: Failed to execute script: %s\n", nmo_error_string(status));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     /* Save session if output path specified */
     if (output_path) {
-        status = nmo_session_save(session, output_path);
+        status = nmo_session_save(c.session, output_path);
         if (status != NMO_OK) {
             nmo_dsl_value_destroy(&result);
-            nmo_tool_close_session(ctx, session);
             fprintf(stderr, "Error: Failed to save session: %s\n", nmo_error_string(status));
-            return NMO_CLI_EXIT_IO_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
         }
-    }
-
-    /* Output result */
-    nmo_cmd_ctx_t c;
-    int out_rc = nmo_cmd_ctx_init_no_file(&c, global);
-    if (out_rc) {
-        nmo_dsl_value_destroy(&result);
-        nmo_tool_close_session(ctx, session);
-        return out_rc;
     }
 
     if (c.is_json) {
@@ -393,7 +368,6 @@ int nmo_cmd_query_script(int argc, char **argv, const nmo_cli_global_opts_t *glo
     }
 
     nmo_dsl_value_destroy(&result);
-    nmo_tool_close_session(ctx, session);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
@@ -504,18 +478,15 @@ int nmo_cmd_query_module(int argc, char **argv, const nmo_cli_global_opts_t *glo
         return NMO_CLI_EXIT_IO_ERROR;
     }
 
-    /* Open session */
-    nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
-
-    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
+    nmo_cmd_ctx_t c;
+    int out_rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
+    if (out_rc) {
         free(module_source);
-        fprintf(stderr, "Error: %s\n", errbuf);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return out_rc;
     }
 
     /* Compile module */
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(c.ctx);
     nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_MODULE, .flags = 0 };
     nmo_dsl_program_t *program = NULL;
 
@@ -523,14 +494,13 @@ int nmo_cmd_query_module(int argc, char **argv, const nmo_cli_global_opts_t *glo
     if (status != NMO_OK) {
         nmo_core_dsl_print_error(stderr, module_source, "Error: Failed to compile module");
         free(module_source);
-        nmo_tool_close_session(ctx, session);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     free(module_source);
 
     /* Set up eval context */
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
 
     nmo_dsl_eval_context_t eval_ctx;
     memset(&eval_ctx, 0, sizeof(eval_ctx));
@@ -548,29 +518,18 @@ int nmo_cmd_query_module(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_dsl_program_destroy(program);
 
     if (status != NMO_OK) {
-        nmo_tool_close_session(ctx, session);
         fprintf(stderr, "Error: Failed to run module: %s\n", nmo_error_string(status));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     /* Save session if output path specified */
     if (output_path) {
-        status = nmo_session_save(session, output_path);
+        status = nmo_session_save(c.session, output_path);
         if (status != NMO_OK) {
             nmo_dsl_value_destroy(&result);
-            nmo_tool_close_session(ctx, session);
             fprintf(stderr, "Error: Failed to save session: %s\n", nmo_error_string(status));
-            return NMO_CLI_EXIT_IO_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
         }
-    }
-
-    /* Output result */
-    nmo_cmd_ctx_t c;
-    int out_rc = nmo_cmd_ctx_init_no_file(&c, global);
-    if (out_rc) {
-        nmo_dsl_value_destroy(&result);
-        nmo_tool_close_session(ctx, session);
-        return out_rc;
     }
 
     if (c.is_json) {
@@ -593,7 +552,6 @@ int nmo_cmd_query_module(int argc, char **argv, const nmo_cli_global_opts_t *glo
     }
 
     nmo_dsl_value_destroy(&result);
-    nmo_tool_close_session(ctx, session);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 

@@ -1102,7 +1102,7 @@ int nmo_session_get_object_index_stats(
     return nmo_object_index_get_stats(session->object_index, stats);
 }
 
-int nmo_session_get_object_query_context(
+static int session_object_query_context(
     nmo_session_t *session,
     nmo_object_query_context_t *out_ctx)
 {
@@ -1141,6 +1141,141 @@ int nmo_session_get_object_query_context(
         ? nmo_context_get_type_registry(session->context)
         : NULL;
     return NMO_OK;
+}
+
+void nmo_session_invalidate_object_query(
+    nmo_session_t *session,
+    uint32_t flags)
+{
+    if (session == NULL || session->object_query_index == NULL) {
+        return;
+    }
+    nmo_object_query_index_invalidate(session->object_query_index, flags);
+}
+
+nmo_status_t nmo_session_query_objects(
+    nmo_session_t *session,
+    const nmo_object_query_t *query,
+    nmo_object_query_visitor_fn visitor,
+    void *user_data,
+    nmo_object_query_result_t *out_result)
+{
+    nmo_object_query_context_t query_ctx = {0};
+    nmo_status_t status = session_object_query_context(session, &query_ctx);
+    if (status != NMO_OK) {
+        return status;
+    }
+    return nmo_object_query_iterate(
+        &query_ctx,
+        query,
+        visitor,
+        user_data,
+        out_result);
+}
+
+nmo_status_t nmo_session_query_collect(
+    nmo_session_t *session,
+    const nmo_object_query_t *query,
+    nmo_arena_t *arena,
+    nmo_object_t ***out_objects,
+    size_t *out_count,
+    nmo_object_query_result_t *out_result)
+{
+    nmo_object_query_context_t query_ctx = {0};
+    nmo_status_t status = session_object_query_context(session, &query_ctx);
+    if (status != NMO_OK) {
+        return status;
+    }
+    return nmo_object_query_collect(
+        &query_ctx,
+        query,
+        arena,
+        out_objects,
+        out_count,
+        out_result);
+}
+
+typedef struct session_query_first_ctx {
+    nmo_object_t *object;
+    size_t index;
+} session_query_first_ctx_t;
+
+static bool session_query_first_visitor(
+    size_t object_index,
+    nmo_object_t *object,
+    void *user_data)
+{
+    session_query_first_ctx_t *ctx = (session_query_first_ctx_t *)user_data;
+    if (ctx != NULL) {
+        ctx->object = object;
+        ctx->index = object_index;
+    }
+    return false;
+}
+
+nmo_status_t nmo_session_query_first(
+    nmo_session_t *session,
+    const nmo_object_query_t *query,
+    nmo_object_t **out_object,
+    size_t *out_index)
+{
+    if (out_object == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_object = NULL;
+    if (out_index != NULL) {
+        *out_index = 0;
+    }
+
+    session_query_first_ctx_t first = {0};
+    nmo_object_query_result_t result = {0};
+    nmo_status_t status = nmo_session_query_objects(
+        session,
+        query,
+        session_query_first_visitor,
+        &first,
+        &result);
+    if (status != NMO_OK) {
+        return status;
+    }
+    if (first.object == NULL || result.matched == 0) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    *out_object = first.object;
+    if (out_index != NULL) {
+        *out_index = first.index;
+    }
+    return NMO_OK;
+}
+
+nmo_status_t nmo_session_count_objects(
+    nmo_session_t *session,
+    size_t *out_count)
+{
+    if (session == NULL || out_count == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_count = session->repository != NULL
+        ? nmo_object_repository_get_count(session->repository)
+        : 0;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_session_find_object_by_name(
+    nmo_session_t *session,
+    const char *name,
+    nmo_object_t **out_object)
+{
+    if (name == NULL || out_object == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_object_query_t query = {
+        .name = name,
+        .name_mode = NMO_OBJECT_QUERY_NAME_EXACT,
+        .name_case_insensitive = false
+    };
+    return nmo_session_query_first(session, &query, out_object, NULL);
 }
 
 int nmo_session_get_runtime_load_stats(
@@ -1340,97 +1475,6 @@ void nmo_session_set_file_header(nmo_session_t *session, const void *header, siz
     }
 }
 
-/* ==================== Object Query API (Phase 5) ==================== */
-
-/**
- * Find object by name
- */
-nmo_object_t *nmo_session_find_by_name(
-    nmo_session_t *session,
-    const char *name,
-    nmo_class_id_t class_id
-) {
-    if (session == NULL || name == NULL) {
-        return NULL;
-    }
-    
-    /* Use index if available */
-    if (session->object_index != NULL) {
-        return nmo_object_index_find_by_name(session->object_index, name, class_id);
-    }
-    
-    /* Fall back to repository linear search */
-    return nmo_object_repository_find_by_name(session->repository, name);
-}
-
-/**
- * Find object by GUID
- */
-nmo_object_t *nmo_session_find_by_guid(
-    nmo_session_t *session,
-    nmo_guid_t guid
-) {
-    if (session == NULL) {
-        return NULL;
-    }
-    
-    /* Use index if available */
-    if (session->object_index != NULL) {
-        return nmo_object_index_find_by_guid(session->object_index, guid);
-    }
-    
-    /* Fall back to repository linear search */
-    size_t count;
-    nmo_object_t **objects = nmo_object_repository_get_all(session->repository, &count);
-    
-    for (size_t i = 0; i < count; i++) {
-        if (nmo_guid_equals(objects[i]->type_guid, guid)) {
-            return objects[i];
-        }
-    }
-    
-    return NULL;
-}
-
-/**
- * Get all objects of a specific class
- */
-nmo_object_t **nmo_session_get_objects_by_class(
-    nmo_session_t *session,
-    nmo_class_id_t class_id,
-    size_t *out_count
-) {
-    if (session == NULL || out_count == NULL) {
-        if (out_count != NULL) {
-            *out_count = 0;
-        }
-        return NULL;
-    }
-    
-    /* Use index if available */
-    if (session->object_index != NULL) {
-        return nmo_object_index_get_by_class(session->object_index, class_id, out_count);
-    }
-    
-    /* Fall back to repository search */
-    return nmo_object_repository_find_by_class(session->repository, class_id, out_count);
-}
-
-/**
- * Count objects of a specific class
- */
-size_t nmo_session_count_objects_by_class(
-    nmo_session_t *session,
-    nmo_class_id_t class_id
-) {
-    if (session == NULL) {
-        return 0;
-    }
-    
-    size_t count = 0;
-    nmo_session_get_objects_by_class(session, class_id, &count);
-    return count;
-}
 nmo_reference_resolver_t *nmo_session_get_reference_resolver(
     const nmo_session_t *session
 ) {

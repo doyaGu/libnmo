@@ -78,7 +78,12 @@ static int collect_rename_entry(size_t index,
 
     char new_name_buf[256];
     if (data->use_regex) {
-        if (!nmo_core_regex_match(name, data->name_pattern, true)) {
+        nmo_object_query_t name_query = {
+            .name = data->name_pattern,
+            .name_mode = NMO_OBJECT_QUERY_NAME_REGEX,
+            .name_case_insensitive = true
+        };
+        if (!nmo_core_query_matches_object(c, &name_query, obj)) {
             return 0;
         }
 

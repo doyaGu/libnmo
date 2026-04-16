@@ -21,11 +21,9 @@ const char *nmo_repl_format_prompt(const nmo_repl_context_t *repl) {
     }
 
     if (repl && repl->has_selection) {
-        nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
-        size_t object_count = repo ? nmo_object_repository_get_count(repo) : 0;
-        nmo_object_t *selected = repo
-            ? nmo_object_repository_get_by_index(repo, repl->selected_index)
-            : NULL;
+        size_t object_count = nmo_repl_object_count((nmo_repl_context_t *)repl);
+        nmo_object_t *selected =
+            nmo_repl_object_at((nmo_repl_context_t *)repl, repl->selected_index);
         if (selected && repl->selected_index < object_count) {
             nmo_object_id_t id = nmo_object_get_id(selected);
             if (file_label[0]) {
@@ -85,8 +83,10 @@ size_t nmo_repl_object_count(nmo_repl_context_t *repl) {
     if (!repl || !repl->session) {
         return 0;
     }
-    nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
-    return repo ? nmo_object_repository_get_count(repo) : 0;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
+    size_t count = 0;
+    return nmo_core_object_count(&c, &count) == NMO_CLI_EXIT_SUCCESS ? count : 0;
 }
 
 nmo_object_t *nmo_repl_object_at(nmo_repl_context_t *repl, size_t index) {
@@ -226,13 +226,14 @@ int nmo_repl_resolve_object_index(nmo_repl_context_t *repl,
 
     uint32_t id = 0;
     if (selector_is_id(selector, &id)) {
-        size_t object_count = nmo_repl_object_count(repl);
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = nmo_repl_object_at(repl, i);
-            if (obj && nmo_object_get_id(obj) == id) {
-                *out_index = i;
-                return 0;
-            }
+        nmo_cmd_ctx_t c;
+        nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
+        nmo_object_query_t query = {0};
+        nmo_core_query_set_object_id(&query, id);
+        nmo_object_t *match = NULL;
+        if (nmo_core_object_query_first(&c, &query, &match, out_index) ==
+            NMO_CLI_EXIT_SUCCESS) {
+            return 0;
         }
         fprintf(stderr, "Error: No object with id %u\n", id);
         return -1;
@@ -240,7 +241,10 @@ int nmo_repl_resolve_object_index(nmo_repl_context_t *repl,
 
     const char *name = NULL;
     if (selector_is_name(selector, &name)) {
-        size_t object_count = nmo_repl_object_count(repl);
+        nmo_cmd_ctx_t c;
+        nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
+        nmo_object_query_t query = {0};
+        nmo_object_t *match = NULL;
 
         if (name && name[0] == '/' && name[strlen(name) - 1] == '/') {
             char pattern[256];
@@ -252,25 +256,23 @@ int nmo_repl_resolve_object_index(nmo_repl_context_t *repl,
             memcpy(pattern, name + 1, copy_len);
             pattern[copy_len] = '\0';
 
-            for (size_t i = 0; i < object_count; ++i) {
-                nmo_object_t *obj = nmo_repl_object_at(repl, i);
-                const char *obj_name = obj ? nmo_object_get_name(obj) : NULL;
-                if (obj_name && nmo_core_regex_match(obj_name, pattern, repl->regex_icase)) {
-                    *out_index = i;
-                    return 0;
-                }
+            query.name = pattern;
+            query.name_mode = NMO_OBJECT_QUERY_NAME_REGEX;
+            query.name_case_insensitive = repl->regex_icase;
+            if (nmo_core_object_query_first(&c, &query, &match, out_index) ==
+                NMO_CLI_EXIT_SUCCESS) {
+                return 0;
             }
             fprintf(stderr, "Error: No object name matches /%s/\n", pattern);
             return -1;
         }
 
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = nmo_repl_object_at(repl, i);
-            const char *obj_name = obj ? nmo_object_get_name(obj) : NULL;
-            if (obj_name && strstr(obj_name, name)) {
-                *out_index = i;
-                return 0;
-            }
+        query.name = name;
+        query.name_mode = NMO_OBJECT_QUERY_NAME_SUBSTRING;
+        query.name_case_insensitive = false;
+        if (nmo_core_object_query_first(&c, &query, &match, out_index) ==
+            NMO_CLI_EXIT_SUCCESS) {
+            return 0;
         }
         fprintf(stderr, "Error: No object name contains '%s'\n", name);
         return -1;

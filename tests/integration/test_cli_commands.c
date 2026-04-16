@@ -377,6 +377,181 @@ TEST(cli, object_list_json) {
  * validate commands
  * ============================================================================ */
 
+/* ============================================================================
+ * query and entity commands
+ * ============================================================================ */
+
+static bool find_object_id_by_name(
+    const char *file_path,
+    const char *target_name,
+    uint64_t *out_id)
+{
+    if (out_id == NULL) {
+        return false;
+    }
+    *out_id = 0;
+
+    char args[512];
+    snprintf(args, sizeof(args), "object list \"%s\"", file_path);
+    yyjson_doc *doc = run_cli_json(args);
+    if (doc == NULL) {
+        return false;
+    }
+
+    yyjson_val *data = json_envelope_data(doc);
+    if (data == NULL) {
+        yyjson_doc_free(doc);
+        return false;
+    }
+    yyjson_val *objects = yyjson_obj_get(data, "objects");
+    if (objects == NULL) {
+        yyjson_doc_free(doc);
+        return false;
+    }
+
+    size_t idx, max;
+    yyjson_val *obj;
+    yyjson_arr_foreach(objects, idx, max, obj) {
+        yyjson_val *name = yyjson_obj_get(obj, "name");
+        if (name != NULL && strcmp(yyjson_get_str(name), target_name) == 0) {
+            *out_id = yyjson_get_uint(yyjson_obj_get(obj, "id"));
+            break;
+        }
+    }
+    yyjson_doc_free(doc);
+    return *out_id != 0;
+}
+
+static bool create_numeric_name_query_fixture(const char *path) {
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    if (!ctx) {
+        return false;
+    }
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    if (!session) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    nmo_runtime_report_t report = {0};
+    nmo_object_id_t id = 0;
+    bool ok = nmo_session_create_object(
+        session,
+        NMO_CID_OBJECT,
+        "424242",
+        (nmo_guid_t){0, 0},
+        &id,
+        &report) == NMO_OK;
+    if (ok) {
+        nmo_save_options_t save_opts = nmo_save_options_default();
+        ok = nmo_save_file(session, path, &save_opts) == NMO_OK;
+    }
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+    return ok;
+}
+
+TEST(cli, query_eval_object_id_uses_object_query_lookup) {
+    const char *file_path = NMO_TEST_DATA_FILE("Ballance/Camera.nmo");
+    uint64_t object_id = 0;
+    ASSERT_TRUE(find_object_id_by_name(file_path, "InGameCam", &object_id));
+
+    char args[512];
+    snprintf(args, sizeof(args),
+             "query eval --object %u has_target \"%s\"",
+             (unsigned)object_id,
+             file_path);
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    ASSERT_STR_EQ(json_envelope_command(doc), "query.eval");
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    yyjson_val *result = yyjson_obj_get(data, "result");
+    ASSERT_NOT_NULL(result);
+    ASSERT_NOT_NULL(yyjson_get_str(result));
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, query_eval_numeric_object_selector_does_not_fall_back_to_name) {
+    const char *fixture = "test_query_numeric_name_fixture.nmo";
+    remove(fixture);
+    ASSERT_TRUE(create_numeric_name_query_fixture(fixture));
+
+    char args[512];
+    snprintf(args, sizeof(args),
+             "query eval --object 424242 has_target \"%s\"",
+             fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_STR_CONTAINS(result.output, "Object not found: 424242");
+    ASSERT_FALSE(strstr(result.output, "has no reflection data") != NULL);
+    free(result.output);
+    remove(fixture);
+}
+
+TEST(cli, query_eval_object_name_uses_object_query_lookup) {
+    const char *file_path = NMO_TEST_DATA_FILE("Ballance/Camera.nmo");
+    char args[512];
+    snprintf(args, sizeof(args),
+             "query eval --object InGameCam has_target \"%s\"",
+             file_path);
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    ASSERT_STR_EQ(json_envelope_command(doc), "query.eval");
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    yyjson_val *result = yyjson_obj_get(data, "result");
+    ASSERT_NOT_NULL(result);
+    ASSERT_NOT_NULL(yyjson_get_str(result));
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, entity_list_class_filter_accepts_entity_derived_class) {
+    char args[512];
+    snprintf(args, sizeof(args),
+             "entity list --class CKCamera \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    ASSERT_STR_EQ(json_envelope_command(doc), "entity.list");
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    yyjson_val *count = yyjson_obj_get(data, "count");
+    yyjson_val *entities = yyjson_obj_get(data, "entities");
+    ASSERT_NOT_NULL(count);
+    ASSERT_NOT_NULL(entities);
+    ASSERT_TRUE(yyjson_get_uint(count) > 0);
+    ASSERT_TRUE(yyjson_arr_size(entities) > 0);
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, entity_list_class_filter_non_entity_class_returns_empty_result) {
+    char args[512];
+    snprintf(args, sizeof(args),
+             "entity list --class CKMaterial \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    ASSERT_STR_EQ(json_envelope_command(doc), "entity.list");
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    yyjson_val *count = yyjson_obj_get(data, "count");
+    yyjson_val *entities = yyjson_obj_get(data, "entities");
+    ASSERT_NOT_NULL(count);
+    ASSERT_NOT_NULL(entities);
+    ASSERT_TRUE(yyjson_get_uint(count) == 0);
+    ASSERT_TRUE(yyjson_arr_size(entities) == 0);
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, validate_all_text) {
     char args[512];
     snprintf(args, sizeof(args), "validate all \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
@@ -1573,6 +1748,11 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, object_list_sort_by_size_json);
     REGISTER_TEST(cli, object_list_top_limits_output);
     REGISTER_TEST(cli, object_list_sort_and_top_combined);
+    REGISTER_TEST(cli, query_eval_object_id_uses_object_query_lookup);
+    REGISTER_TEST(cli, query_eval_numeric_object_selector_does_not_fall_back_to_name);
+    REGISTER_TEST(cli, query_eval_object_name_uses_object_query_lookup);
+    REGISTER_TEST(cli, entity_list_class_filter_accepts_entity_derived_class);
+    REGISTER_TEST(cli, entity_list_class_filter_non_entity_class_returns_empty_result);
 
     /* validate commands */
     REGISTER_TEST(cli, validate_all_text);

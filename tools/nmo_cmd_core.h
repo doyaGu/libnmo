@@ -65,12 +65,11 @@ bool nmo_core_class_derives(const nmo_cmd_ctx_t *c, nmo_class_id_t id,
 nmo_object_t *nmo_core_find_by_id(const nmo_cmd_ctx_t *c, nmo_object_id_t id);
 
 /**
- * @brief Lightweight regex match (supports . * [] ^ $ and \-escapes)
- * @param text    Text to search in
- * @param pattern Regex pattern
- * @param icase   Case-insensitive matching
+ * @brief Find the first object with an exact name match.
  */
-bool nmo_core_regex_match(const char *text, const char *pattern, bool icase);
+int nmo_core_find_by_name(const nmo_cmd_ctx_t *c,
+                          const char *name,
+                          nmo_object_t **out_object);
 
 /* ============================================================================
  * 3. Object iteration with visitor pattern
@@ -179,7 +178,7 @@ void nmo_core_query_dsl_destroy(nmo_core_query_dsl_t *dsl);
 /**
  * @brief Run a library object query with CLI visitor/result conventions.
  *
- * This is the single tools-layer bridge from nmo_object_query_iterate() to
+ * This is the single tools-layer bridge from the session query runner to
  * nmo_core_object_fn visitors used by CLI and REPL commands.
  */
 int nmo_core_object_query_run(const nmo_cmd_ctx_t *c,
@@ -187,6 +186,19 @@ int nmo_core_object_query_run(const nmo_cmd_ctx_t *c,
                               nmo_core_object_fn visitor,
                               void *user,
                               nmo_core_iter_result_t *result);
+
+/**
+ * @brief Return the first object matching a shared object query.
+ */
+int nmo_core_object_query_first(const nmo_cmd_ctx_t *c,
+                                const nmo_object_query_t *query,
+                                nmo_object_t **out_object,
+                                size_t *out_index);
+
+/**
+ * @brief Count session objects through the shared query runner.
+ */
+int nmo_core_object_count(const nmo_cmd_ctx_t *c, size_t *out_count);
 
 /* ============================================================================
  * 4. Reference iteration

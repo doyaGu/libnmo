@@ -345,6 +345,13 @@ nmo_status_t nmo_object_query_matches(
         }
     }
 
+    if (query->has_type_guid) {
+        if (nmo_guid_is_null(query->type_guid) ||
+            !nmo_guid_equals(nmo_object_get_type_guid(object), query->type_guid)) {
+            return NMO_OK;
+        }
+    }
+
     if (query->name_mode != NMO_OBJECT_QUERY_NAME_NONE) {
         bool name_matches = false;
         nmo_status_t status = query_match_name(object, query, &name_matches);
@@ -442,6 +449,10 @@ static bool query_candidate_covers_indexed_filters(
         (covered & QUERY_CANDIDATE_COVERS_NAME) == 0u) {
         return false;
     }
+    if (query->has_type_guid &&
+        (covered & QUERY_CANDIDATE_COVERS_TYPE_GUID) == 0u) {
+        return false;
+    }
     return true;
 }
 
@@ -501,6 +512,8 @@ static nmo_status_t query_iterate_candidate(
             meta_index = candidate->id_entries[i].meta_index;
         } else if (candidate->kind == QUERY_CANDIDATE_NAME_ENTRIES) {
             meta_index = candidate->name_entries[i].meta_index;
+        } else if (candidate->kind == QUERY_CANDIDATE_GUID_ENTRIES) {
+            meta_index = candidate->guid_entries[i].meta_index;
         }
         if (meta_index >= index->meta_count) {
             continue;
@@ -555,6 +568,8 @@ static nmo_status_t query_collect_candidate(
             meta_index = candidate->id_entries[i].meta_index;
         } else if (candidate->kind == QUERY_CANDIDATE_NAME_ENTRIES) {
             meta_index = candidate->name_entries[i].meta_index;
+        } else if (candidate->kind == QUERY_CANDIDATE_GUID_ENTRIES) {
+            meta_index = candidate->guid_entries[i].meta_index;
         }
         if (meta_index >= index->meta_count) {
             continue;

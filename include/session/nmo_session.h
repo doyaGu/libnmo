@@ -11,6 +11,7 @@
 #include "session/nmo_runtime_kernel.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_arena_array.h"
+#include "object/nmo_object_query.h"
 #include "session/nmo_runtime_kernel.h"
 
 #ifdef __cplusplus
@@ -416,7 +417,6 @@ NMO_API int nmo_session_save(nmo_session_t *session, const char *filename);
 typedef struct nmo_object nmo_object_t;
 typedef struct nmo_header nmo_header_t;
 typedef struct nmo_object_index nmo_object_index_t;
-typedef struct nmo_object_query_context nmo_object_query_context_t;
 typedef struct nmo_index_stats nmo_index_stats_t;
 
 /**
@@ -493,19 +493,59 @@ NMO_API int nmo_session_get_object_index_stats(
     nmo_index_stats_t *stats);
 
 /**
- * @brief Get the session-scoped object query context.
+ * @brief Run a session-scoped object query.
  *
- * Creates the session query index if needed. Query execution refreshes dirty
- * index contents before planning candidates. The returned context borrows all
- * pointers from the session.
- *
- * @param session Session
- * @param out_ctx Output query context
- * @return NMO_OK on success, otherwise an NMO_ERR_* code
+ * Uses the session-owned query index and refreshes dirty index contents before
+ * planning candidates.
  */
-NMO_API int nmo_session_get_object_query_context(
+NMO_API nmo_status_t nmo_session_query_objects(
     nmo_session_t *session,
-    nmo_object_query_context_t *out_ctx);
+    const nmo_object_query_t *query,
+    nmo_object_query_visitor_fn visitor,
+    void *user_data,
+    nmo_object_query_result_t *out_result);
+
+/**
+ * @brief Collect session query matches into an arena-allocated pointer array.
+ */
+NMO_API nmo_status_t nmo_session_query_collect(
+    nmo_session_t *session,
+    const nmo_object_query_t *query,
+    nmo_arena_t *arena,
+    nmo_object_t ***out_objects,
+    size_t *out_count,
+    nmo_object_query_result_t *out_result);
+
+/**
+ * @brief Return the first session object matching a query.
+ */
+NMO_API nmo_status_t nmo_session_query_first(
+    nmo_session_t *session,
+    const nmo_object_query_t *query,
+    nmo_object_t **out_object,
+    size_t *out_index);
+
+/**
+ * @brief Count all session objects using the query engine.
+ */
+NMO_API nmo_status_t nmo_session_count_objects(
+    nmo_session_t *session,
+    size_t *out_count);
+
+/**
+ * @brief Find the first session object with an exact name match.
+ */
+NMO_API nmo_status_t nmo_session_find_object_by_name(
+    nmo_session_t *session,
+    const char *name,
+    nmo_object_t **out_object);
+
+/**
+ * @brief Invalidate the session-owned object query index when low-level state changes.
+ */
+NMO_API void nmo_session_invalidate_object_query(
+    nmo_session_t *session,
+    uint32_t flags);
 
 /* Included file management */
 
@@ -668,71 +708,6 @@ NMO_API void nmo_session_set_plugin_diagnostics(
 /** @ownership borrowed */
 NMO_API const nmo_session_plugin_diagnostics_t *nmo_session_get_plugin_diagnostics(
     const nmo_session_t *session);
-
-/* ==================== Object Query API (Phase 5) ==================== */
-
-/**
- * @brief Find object by name
- *
- * Searches for an object by name. Uses index if available for fast lookup.
- *
- * @param session Session
- * @param name Object name to search for
- * @param class_id Optional class filter (0 = any class)
- * @return Object pointer or NULL if not found
- * @ownership borrowed
- */
-NMO_API nmo_object_t *nmo_session_find_by_name(
-    nmo_session_t *session,
-    const char *name,
-    nmo_class_id_t class_id
-);
-
-/**
- * @brief Find object by GUID
- *
- * Searches for an object by type GUID. Uses index if available.
- *
- * @param session Session
- * @param guid GUID to search for
- * @return Object pointer or NULL if not found
- * @ownership borrowed
- */
-NMO_API nmo_object_t *nmo_session_find_by_guid(
-    nmo_session_t *session,
-    nmo_guid_t guid
-);
-
-/**
- * @brief Get all objects of a specific class
- *
- * Returns all objects with the specified class ID. Uses index if available.
- *
- * @param session Session
- * @param class_id Class ID to search for
- * @param out_count Output: number of objects found
- * @return Array of object pointers, or NULL if none found
- * @ownership borrowed
- */
-NMO_API nmo_object_t **nmo_session_get_objects_by_class(
-    nmo_session_t *session,
-    nmo_class_id_t class_id,
-    size_t *out_count
-);
-
-/**
- * @brief Count objects of a specific class
- *
- * Returns the number of objects with the specified class ID.
- *
- * @param session Session
- * @param class_id Class ID
- * @return Number of objects
- */
-NMO_API size_t nmo_session_count_objects_by_class(
-    nmo_session_t *session,
-    nmo_class_id_t class_id
-);
 
 /* ==================== Internal API (Used by Parser) ==================== */
 

@@ -1,5 +1,6 @@
 #include "test_framework.h"
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -139,6 +140,54 @@ static void assert_file_has_no_substring(const char *relative_path, const char *
     fclose(fp);
 }
 
+static void assert_function_has_no_substring(
+    const char *relative_path,
+    const char *function_name,
+    const char *needle)
+{
+    char full_path[512];
+    FILE *fp = NULL;
+    for (size_t i = 0; i < sizeof(k_probe_prefixes) / sizeof(k_probe_prefixes[0]); i++) {
+        snprintf(full_path, sizeof(full_path), "%s%s", k_probe_prefixes[i], relative_path);
+        fp = fopen(full_path, "rb");
+        if (fp != NULL) {
+            break;
+        }
+    }
+
+    ASSERT_NOT_NULL(fp);
+    char line[1024];
+    bool in_function = false;
+    bool saw_function = false;
+    int brace_depth = 0;
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        if (!in_function && strstr(line, function_name) != NULL) {
+            in_function = true;
+            saw_function = true;
+        }
+
+        if (!in_function) {
+            continue;
+        }
+
+        ASSERT_NULL(strstr(line, needle));
+        for (const char *p = line; *p != '\0'; p++) {
+            if (*p == '{') {
+                brace_depth++;
+            } else if (*p == '}') {
+                brace_depth--;
+                if (brace_depth == 0) {
+                    fclose(fp);
+                    ASSERT_TRUE(saw_function);
+                    return;
+                }
+            }
+        }
+    }
+    fclose(fp);
+    ASSERT_TRUE(saw_function);
+}
+
 static void assert_file_not_found(const char *relative_path) {
     char full_path[512];
     for (size_t i = 0; i < sizeof(k_probe_prefixes) / sizeof(k_probe_prefixes[0]); i++) {
@@ -187,6 +236,24 @@ TEST(no_legacy_runtime_api_exports, session_id_remap_compat_layer_is_removed) {
 
 TEST(no_legacy_runtime_api_exports, partial_load_state_setter_is_not_public) {
     assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_set_partial_load");
+}
+
+TEST(no_legacy_runtime_api_exports, object_query_context_is_not_public_api) {
+    assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_get_object_query_context");
+}
+
+TEST(no_legacy_runtime_api_exports, legacy_session_query_api_is_removed) {
+    assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_find_by_name");
+    assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_find_by_guid");
+    assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_get_objects_by_class");
+    assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_count_objects_by_class");
+}
+
+TEST(no_legacy_runtime_api_exports, session_object_count_does_not_scan_via_query_runner) {
+    assert_function_has_no_substring(
+        "src/app/session.c",
+        "nmo_session_count_objects",
+        "nmo_session_query_objects");
 }
 
 TEST(no_legacy_runtime_api_exports, app_layer_does_not_include_session_internal_header) {
@@ -269,6 +336,20 @@ TEST(no_legacy_runtime_api_exports, cli_commands_do_not_bypass_shared_object_que
     assert_file_has_no_substring("tools/commands/nmo_cmd_validate.c", "nmo_object_query_iterate");
 }
 
+TEST(no_legacy_runtime_api_exports, tools_do_not_bypass_shared_query_matching) {
+    assert_file_has_no_substring("tools/commands/nmo_cmd_entity.c", "nmo_object_query_matches");
+    assert_file_has_no_substring("tools/nmo_repl_util.c", "nmo_core_regex_match");
+    assert_file_has_no_substring("tools/nmo_repl_input.c", "nmo_object_repository_get_count");
+    assert_file_has_no_substring("tools/nmo_repl_input.c", "nmo_object_repository_get_by_index");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_query.c", "nmo_object_repository_find_by_name");
+}
+
+TEST(no_legacy_runtime_api_exports, query_object_name_lookup_preserves_internal_errors) {
+    assert_file_has_no_substring(
+        "tools/commands/nmo_cmd_query.c",
+        "            if (lookup_rc != NMO_CLI_EXIT_SUCCESS) {");
+}
+
 TEST(no_legacy_runtime_api_exports, behavior_graph_commands_use_core_object_query_runner) {
     assert_file_has_no_substring("tools/commands/nmo_cmd_behavior_graph.c", "nmo_object_repository_get_all");
     assert_file_has_no_substring("tools/commands/nmo_cmd_behavior_search.c", "nmo_object_repository_get_all");
@@ -315,6 +396,9 @@ REGISTER_TEST(no_legacy_runtime_api_exports, runtime_graph_uses_current_ref_grap
 REGISTER_TEST(no_legacy_runtime_api_exports, type_guid_compat_aliases_are_removed);
 REGISTER_TEST(no_legacy_runtime_api_exports, session_id_remap_compat_layer_is_removed);
 REGISTER_TEST(no_legacy_runtime_api_exports, partial_load_state_setter_is_not_public);
+REGISTER_TEST(no_legacy_runtime_api_exports, object_query_context_is_not_public_api);
+REGISTER_TEST(no_legacy_runtime_api_exports, legacy_session_query_api_is_removed);
+REGISTER_TEST(no_legacy_runtime_api_exports, session_object_count_does_not_scan_via_query_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, app_layer_does_not_include_session_internal_header);
 REGISTER_TEST(no_legacy_runtime_api_exports, cli_uses_shared_library_object_query_bridge);
 REGISTER_TEST(no_legacy_runtime_api_exports, cli_object_query_bridge_is_shared);
@@ -330,6 +414,8 @@ REGISTER_TEST(no_legacy_runtime_api_exports, behavior_commands_use_object_query_
 REGISTER_TEST(no_legacy_runtime_api_exports, object_commands_use_object_query_api);
 REGISTER_TEST(no_legacy_runtime_api_exports, remaining_cli_commands_use_object_query_api);
 REGISTER_TEST(no_legacy_runtime_api_exports, cli_commands_do_not_bypass_shared_object_query_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, tools_do_not_bypass_shared_query_matching);
+REGISTER_TEST(no_legacy_runtime_api_exports, query_object_name_lookup_preserves_internal_errors);
 REGISTER_TEST(no_legacy_runtime_api_exports, behavior_graph_commands_use_core_object_query_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, remaining_tools_do_not_use_repository_get_all_scans);
 REGISTER_TEST(no_legacy_runtime_api_exports, session_internals_do_not_use_repository_get_all_snapshots);

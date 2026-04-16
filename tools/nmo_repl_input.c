@@ -5,11 +5,12 @@
 
 #ifdef NMO_HAVE_ISOCLINE
 
+#include "nmo_cmd_core.h"
+#include "nmo_cmd_ctx.h"
 #include "nmo_repl_commands.h"
 #include "session/nmo_session.h"
 #include "core/nmo_arena.h"
 #include "format/nmo_object.h"
-#include "object/nmo_object_repository.h"
 
 static const char *nmo_repl_get_history_path(void) {
     static char path[512];
@@ -148,6 +149,35 @@ static int name_cmp_icase(const void *a, const void *b) {
 #endif
 }
 
+typedef struct name_cache_build_ctx {
+    nmo_arena_t *arena;
+    const char **names;
+    size_t count;
+    size_t capacity;
+} name_cache_build_ctx_t;
+
+static int collect_object_name_for_completion(
+    size_t index,
+    nmo_object_t *obj,
+    const nmo_cmd_ctx_t *c,
+    void *user)
+{
+    (void)index;
+    (void)c;
+    name_cache_build_ctx_t *build = (name_cache_build_ctx_t *)user;
+    const char *name = obj ? nmo_object_get_name(obj) : NULL;
+    if (build == NULL || name == NULL || name[0] == '\0' ||
+        build->count >= build->capacity) {
+        return 0;
+    }
+
+    const char *dup = nmo_arena_strdup(build->arena, name);
+    if (dup != NULL) {
+        build->names[build->count++] = dup;
+    }
+    return 0;
+}
+
 /**
  * Build (or rebuild) the sorted, deduplicated name cache from the session.
  */
@@ -165,60 +195,42 @@ static void rebuild_name_cache(nmo_repl_context_t *repl) {
         return;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
-    if (!repo) {
+    nmo_cmd_ctx_t cmd;
+    nmo_cmd_ctx_init_from_repl(&cmd, repl->ctx, repl->session, false);
+
+    size_t obj_count = 0;
+    if (nmo_core_object_count(&cmd, &obj_count) != NMO_CLI_EXIT_SUCCESS ||
+        obj_count == 0) {
         return;
     }
 
-    size_t obj_count = nmo_object_repository_get_count(repo);
-    if (obj_count == 0) {
-        return;
-    }
-
-    /* Create arena sized for names */
     nmo_arena_t *arena = nmo_arena_create(NULL, 0);
     if (!arena) {
         return;
     }
 
-    /* First pass: count non-empty names */
-    size_t name_count = 0;
-    for (size_t i = 0; i < obj_count; i++) {
-        nmo_object_t *obj = nmo_object_repository_get_by_index(repo, i);
-        const char *name = obj ? nmo_object_get_name(obj) : NULL;
-        if (name && name[0]) {
-            name_count++;
-        }
-    }
-
-    if (name_count == 0) {
-        nmo_arena_destroy(arena);
-        return;
-    }
-
-    /* Allocate pointer array in arena */
     const char **names = (const char **)nmo_arena_alloc(
-        arena, name_count * sizeof(const char *), sizeof(void *));
+        arena, obj_count * sizeof(const char *), sizeof(void *));
     if (!names) {
         nmo_arena_destroy(arena);
         return;
     }
 
-    /* Second pass: deep-copy names into arena */
-    size_t idx = 0;
-    for (size_t i = 0; i < obj_count && idx < name_count; i++) {
-        nmo_object_t *obj = nmo_object_repository_get_by_index(repo, i);
-        const char *name = obj ? nmo_object_get_name(obj) : NULL;
-        if (name && name[0]) {
-            const char *dup = nmo_arena_strdup(arena, name);
-            if (dup) {
-                names[idx++] = dup;
-            }
-        }
+    name_cache_build_ctx_t build = {
+        .arena = arena,
+        .names = names,
+        .capacity = obj_count
+    };
+    if (nmo_core_object_query_run(
+            &cmd, NULL, collect_object_name_for_completion, &build, NULL) !=
+        NMO_CLI_EXIT_SUCCESS ||
+        build.count == 0) {
+        nmo_arena_destroy(arena);
+        return;
     }
-    name_count = idx;
 
     /* Sort case-insensitively */
+    size_t name_count = build.count;
     qsort(names, name_count, sizeof(const char *), name_cmp_icase);
 
     /* Deduplicate in-place */

@@ -19,6 +19,7 @@
 typedef struct query_meta {
     nmo_object_id_t object_id;
     nmo_class_id_t class_id;
+    nmo_guid_t type_guid;
     size_t repository_index;
     nmo_object_t *object;
     char *folded_name;
@@ -34,10 +35,16 @@ typedef struct query_name_entry {
     size_t meta_index;
 } query_name_entry_t;
 
+typedef struct query_guid_entry {
+    nmo_guid_t key;
+    size_t meta_index;
+} query_guid_entry_t;
+
 typedef enum query_candidate_filter_flags {
     QUERY_CANDIDATE_COVERS_OBJECT_ID = 1u << 0,
     QUERY_CANDIDATE_COVERS_CLASS     = 1u << 1,
-    QUERY_CANDIDATE_COVERS_NAME      = 1u << 2
+    QUERY_CANDIDATE_COVERS_NAME      = 1u << 2,
+    QUERY_CANDIDATE_COVERS_TYPE_GUID = 1u << 3
 } query_candidate_filter_flags_t;
 
 struct nmo_object_query_index {
@@ -55,6 +62,7 @@ struct nmo_object_query_index {
     nmo_hash_table_t *id_to_meta;
     nmo_array_t class_entries;        /* query_id_entry_t */
     nmo_array_t derived_entries;      /* query_id_entry_t */
+    nmo_array_t guid_entries;         /* query_guid_entry_t */
     nmo_array_t name_entries;         /* query_name_entry_t */
     nmo_array_t folded_name_entries;  /* query_name_entry_t */
 
@@ -75,7 +83,8 @@ typedef enum query_candidate_kind {
     QUERY_CANDIDATE_NONE,
     QUERY_CANDIDATE_SINGLE,
     QUERY_CANDIDATE_ID_ENTRIES,
-    QUERY_CANDIDATE_NAME_ENTRIES
+    QUERY_CANDIDATE_NAME_ENTRIES,
+    QUERY_CANDIDATE_GUID_ENTRIES
 } query_candidate_kind_t;
 
 typedef struct query_candidate {
@@ -84,6 +93,7 @@ typedef struct query_candidate {
     size_t single_meta_index;
     const query_id_entry_t *id_entries;
     const query_name_entry_t *name_entries;
+    const query_guid_entry_t *guid_entries;
     bool may_contain_duplicates;
     uint32_t covered_filters;
 } query_candidate_t;
@@ -134,6 +144,17 @@ static inline query_candidate_t query_name_entries_candidate(
     };
 }
 
+static inline query_candidate_t query_guid_entries_candidate(
+    const query_guid_entry_t *entries,
+    size_t count)
+{
+    return (query_candidate_t){
+        .kind = count == 0 ? QUERY_CANDIDATE_NONE : QUERY_CANDIDATE_GUID_ENTRIES,
+        .count = count,
+        .guid_entries = entries
+    };
+}
+
 static inline query_candidate_t query_single_candidate(size_t meta_index)
 {
     return (query_candidate_t){
@@ -158,6 +179,7 @@ static inline size_t query_candidate_upper_bound(
     case QUERY_CANDIDATE_SINGLE:
     case QUERY_CANDIDATE_ID_ENTRIES:
     case QUERY_CANDIDATE_NAME_ENTRIES:
+    case QUERY_CANDIDATE_GUID_ENTRIES:
         return candidate->count;
     default:
         return total;

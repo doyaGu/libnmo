@@ -60,21 +60,20 @@ nmo_object_t *nmo_core_find_by_id(const nmo_cmd_ctx_t *c, nmo_object_id_t id) {
     return nmo_object_repository_find_by_id(repo, id);
 }
 
-bool nmo_core_regex_match(const char *text, const char *pattern, bool icase) {
-    if (pattern == NULL) {
-        return false;
+int nmo_core_find_by_name(const nmo_cmd_ctx_t *c,
+                          const char *name,
+                          nmo_object_t **out_object)
+{
+    if (c == NULL || c->session == NULL || name == NULL || out_object == NULL) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_object_t object = {0};
-    object.name = text;
-    nmo_object_query_t query = {
-        .name = pattern,
-        .name_mode = NMO_OBJECT_QUERY_NAME_REGEX,
-        .name_case_insensitive = icase
-    };
-    bool matches = false;
-    return nmo_object_query_matches(&object, &query, NULL, &matches) == NMO_OK &&
-           matches;
+    nmo_status_t status =
+        nmo_session_find_object_by_name(c->session, name, out_object);
+    if (status == NMO_ERR_NOT_FOUND) {
+        return NMO_CLI_EXIT_NOT_FOUND;
+    }
+    return status == NMO_OK ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_INTERNAL_ERROR;
 }
 
 /* ============================================================================
@@ -131,20 +130,14 @@ int nmo_core_object_query_run(const nmo_cmd_ctx_t *c,
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_object_query_context_t query_ctx = {0};
-    if (nmo_session_get_object_query_context(c->session, &query_ctx) != NMO_OK ||
-        query_ctx.repository == NULL) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
     nmo_core_object_query_bridge_t bridge = {
         .cmd = c,
         .visitor = visitor,
         .user = user
     };
     nmo_object_query_result_t query_result = {0};
-    nmo_status_t status = nmo_object_query_iterate(
-        &query_ctx,
+    nmo_status_t status = nmo_session_query_objects(
+        c->session,
         query,
         visitor != NULL ? nmo_core_object_query_visit : NULL,
         &bridge,
@@ -156,6 +149,33 @@ int nmo_core_object_query_run(const nmo_cmd_ctx_t *c,
         result->visited = query_result.visited;
     }
 
+    return status == NMO_OK ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_INTERNAL_ERROR;
+}
+
+int nmo_core_object_query_first(const nmo_cmd_ctx_t *c,
+                                const nmo_object_query_t *query,
+                                nmo_object_t **out_object,
+                                size_t *out_index)
+{
+    if (c == NULL || c->session == NULL || out_object == NULL) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_status_t status =
+        nmo_session_query_first(c->session, query, out_object, out_index);
+    if (status == NMO_ERR_NOT_FOUND) {
+        return NMO_CLI_EXIT_NOT_FOUND;
+    }
+    return status == NMO_OK ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_INTERNAL_ERROR;
+}
+
+int nmo_core_object_count(const nmo_cmd_ctx_t *c, size_t *out_count)
+{
+    if (c == NULL || c->session == NULL || out_count == NULL) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_status_t status = nmo_session_count_objects(c->session, out_count);
     return status == NMO_OK ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_INTERNAL_ERROR;
 }
 

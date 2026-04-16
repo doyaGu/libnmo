@@ -350,10 +350,9 @@ static int cmd_info(nmo_repl_context_t *repl, int argc, char **argv) {
 
     nmo_file_info_t info = nmo_session_get_file_info(repl->session);
     size_t object_count = 0;
-    nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
-    if (repo) {
-        object_count = nmo_object_repository_get_count(repo);
-    }
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
+    nmo_core_object_count(&c, &object_count);
 
     printf("\nSession:\n");
     printf("  File: %s\n", repl->filename ? repl->filename : "(unknown)");
@@ -362,7 +361,7 @@ static int cmd_info(nmo_repl_context_t *repl, int argc, char **argv) {
     printf("  CK version: %u\n", info.ck_version);
     printf("  File version: %u\n", info.file_version);
     if (repl->has_selection && repl->selected_index < object_count) {
-        nmo_object_t *selected = nmo_object_repository_get_by_index(repo, repl->selected_index);
+        nmo_object_t *selected = nmo_repl_object_at(repl, repl->selected_index);
         printf("  Selected: idx=%zu id=%u\n",
                repl->selected_index,
                selected ? nmo_object_get_id(selected) : 0);
