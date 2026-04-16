@@ -282,6 +282,16 @@ static nmo_status_t query_unique_sorted_id_entries(nmo_array_t *entries)
     return nmo_array_resize(entries, write);
 }
 
+static bool query_array_should_compact(const nmo_array_t *array)
+{
+    size_t count = nmo_array_size(array);
+    size_t capacity = nmo_array_capacity(array);
+    if (count == 0 || count >= capacity) {
+        return false;
+    }
+    return count <= capacity / 2;
+}
+
 static void query_sort_name_entries(nmo_array_t *entries)
 {
     size_t count = nmo_array_size(entries);
@@ -631,7 +641,7 @@ static nmo_status_t query_index_build_text(nmo_object_query_index_t *index)
     if (status != NMO_OK) {
         return status;
     }
-    if (nmo_array_size(&index->trigram_entries) < nmo_array_capacity(&index->trigram_entries)) {
+    if (query_array_should_compact(&index->trigram_entries)) {
         status = nmo_array_shrink_to_fit(&index->trigram_entries);
         if (status != NMO_OK) {
             return status;

@@ -484,7 +484,7 @@ TEST(object_query_perf, text_index_build_reserves_trigram_storage)
     size_t text_allocations = stats.total_allocations - allocations_after_eager;
     printf("[object_query_perf] text index build allocations: %zu for %zu objects\n",
            text_allocations, object_count);
-    ASSERT_LE(text_allocations, 3);
+    ASSERT_LE(text_allocations, 2);
 
     nmo_object_query_index_destroy(index);
     nmo_object_repository_destroy(repo);
