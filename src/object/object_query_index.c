@@ -258,6 +258,30 @@ static void query_sort_id_entries(nmo_array_t *entries)
     }
 }
 
+static nmo_status_t query_unique_sorted_id_entries(nmo_array_t *entries)
+{
+    query_id_entry_t *data = (query_id_entry_t *)nmo_array_data(entries);
+    size_t count = nmo_array_size(entries);
+    if (data == NULL || count < 2) {
+        return NMO_OK;
+    }
+
+    size_t write = 1;
+    for (size_t read = 1; read < count; read++) {
+        query_id_entry_t *prev = &data[write - 1];
+        query_id_entry_t *cur = &data[read];
+        if (prev->key == cur->key && prev->meta_index == cur->meta_index) {
+            continue;
+        }
+        if (write != read) {
+            data[write] = *cur;
+        }
+        write++;
+    }
+
+    return nmo_array_resize(entries, write);
+}
+
 static void query_sort_name_entries(nmo_array_t *entries)
 {
     size_t count = nmo_array_size(entries);
@@ -603,6 +627,10 @@ static nmo_status_t query_index_build_text(nmo_object_query_index_t *index)
     }
 
     query_sort_id_entries(&index->trigram_entries);
+    status = query_unique_sorted_id_entries(&index->trigram_entries);
+    if (status != NMO_OK) {
+        return status;
+    }
     index->text_built = true;
     index->text_dirty = false;
     return NMO_OK;
@@ -978,6 +1006,7 @@ nmo_status_t query_plan_candidate(
             return NMO_OK;
         }
         *out_candidate = query_single_candidate(meta_index);
+        out_candidate->covered_filters = QUERY_CANDIDATE_COVERS_OBJECT_ID;
         return NMO_OK;
     }
 
@@ -994,6 +1023,7 @@ nmo_status_t query_plan_candidate(
         query_candidate_t class_candidate = query_none_candidate();
         if (query_id_range(entries, count, query->class_id, &start, &range_count)) {
             class_candidate = query_id_entries_candidate(entries + start, range_count);
+            class_candidate.covered_filters = QUERY_CANDIDATE_COVERS_CLASS;
         }
         candidate = query_choose_smaller(candidate, class_candidate, total);
     }
@@ -1021,6 +1051,7 @@ nmo_status_t query_plan_candidate(
         query_candidate_t name_candidate = query_none_candidate();
         if (query_name_range(entries, count, needle, &start, &range_count)) {
             name_candidate = query_name_entries_candidate(entries + start, range_count);
+            name_candidate.covered_filters = QUERY_CANDIDATE_COVERS_NAME;
         }
         candidate = query_choose_smaller(candidate, name_candidate, total);
     } else if (query->name_mode == NMO_OBJECT_QUERY_NAME_SUBSTRING) {
@@ -1030,6 +1061,9 @@ nmo_status_t query_plan_candidate(
         status = query_text_candidate_for_literal(index, folded, &text_candidate);
         if (status != NMO_OK) {
             return status;
+        }
+        if (query->name_case_insensitive && strlen(folded) == 3) {
+            text_candidate.covered_filters |= QUERY_CANDIDATE_COVERS_NAME;
         }
         candidate = query_choose_smaller(candidate, text_candidate, total);
     } else if (query->name_mode == NMO_OBJECT_QUERY_NAME_WILDCARD) {

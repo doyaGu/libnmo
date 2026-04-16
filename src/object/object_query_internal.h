@@ -34,6 +34,12 @@ typedef struct query_name_entry {
     size_t meta_index;
 } query_name_entry_t;
 
+typedef enum query_candidate_filter_flags {
+    QUERY_CANDIDATE_COVERS_OBJECT_ID = 1u << 0,
+    QUERY_CANDIDATE_COVERS_CLASS     = 1u << 1,
+    QUERY_CANDIDATE_COVERS_NAME      = 1u << 2
+} query_candidate_filter_flags_t;
+
 struct nmo_object_query_index {
     nmo_object_repository_t *repository;
     const nmo_type_registry_t *registry;
@@ -79,6 +85,7 @@ typedef struct query_candidate {
     const query_id_entry_t *id_entries;
     const query_name_entry_t *name_entries;
     bool may_contain_duplicates;
+    uint32_t covered_filters;
 } query_candidate_t;
 
 static inline char query_fold_ascii(char c)

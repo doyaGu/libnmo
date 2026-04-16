@@ -422,36 +422,37 @@ static bool query_index_mark_meta(nmo_object_query_index_t *index, size_t meta_i
     return true;
 }
 
-static bool query_candidate_covers_query(const nmo_object_query_t *query)
+static bool query_candidate_covers_indexed_filters(
+    const nmo_object_query_t *query,
+    const query_candidate_t *candidate)
 {
-    if (query == NULL || query->predicate != NULL) {
+    uint32_t covered = candidate != NULL ? candidate->covered_filters : 0u;
+    if (query == NULL) {
+        return true;
+    }
+    if (query->object_id != 0 &&
+        (covered & QUERY_CANDIDATE_COVERS_OBJECT_ID) == 0u) {
         return false;
     }
-    if (query->object_id != 0) {
-        return query->class_id == 0 &&
-               query->name_mode == NMO_OBJECT_QUERY_NAME_NONE;
+    if (query->class_id != 0 &&
+        (covered & QUERY_CANDIDATE_COVERS_CLASS) == 0u) {
+        return false;
     }
-    if (query->class_id != 0) {
-        return !query->include_derived_classes &&
-               query->name_mode == NMO_OBJECT_QUERY_NAME_NONE;
+    if (query->name_mode != NMO_OBJECT_QUERY_NAME_NONE &&
+        (covered & QUERY_CANDIDATE_COVERS_NAME) == 0u) {
+        return false;
     }
-    return query->name_mode == NMO_OBJECT_QUERY_NAME_EXACT;
+    return true;
 }
 
-static bool query_candidate_covers_indexed_filters(const nmo_object_query_t *query)
+static bool query_candidate_covers_query(
+    const nmo_object_query_t *query,
+    const query_candidate_t *candidate)
 {
-    if (query == NULL) {
+    if (query != NULL && query->predicate != NULL) {
         return false;
     }
-    if (query->object_id != 0) {
-        return query->class_id == 0 &&
-               query->name_mode == NMO_OBJECT_QUERY_NAME_NONE;
-    }
-    if (query->class_id != 0) {
-        return !query->include_derived_classes &&
-               query->name_mode == NMO_OBJECT_QUERY_NAME_NONE;
-    }
-    return query->name_mode == NMO_OBJECT_QUERY_NAME_EXACT;
+    return query_candidate_covers_indexed_filters(query, candidate);
 }
 
 static nmo_status_t query_iterate_candidate(
@@ -465,7 +466,7 @@ static nmo_status_t query_iterate_candidate(
     nmo_object_query_index_t *index = ctx->index;
     size_t total = nmo_object_repository_get_count(ctx->repository);
     result->total = total;
-    bool assume_match = query_candidate_covers_query(query) &&
+    bool assume_match = query_candidate_covers_query(query, candidate) &&
                         candidate->kind != QUERY_CANDIDATE_ALL &&
                         candidate->kind != QUERY_CANDIDATE_NONE;
 
@@ -543,7 +544,7 @@ static nmo_status_t query_collect_candidate(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    bool assume_indexed_filters = query_candidate_covers_indexed_filters(query);
+    bool assume_indexed_filters = query_candidate_covers_indexed_filters(query, candidate);
     if (candidate->may_contain_duplicates) {
         query_index_next_generation(index);
     }
