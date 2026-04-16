@@ -13,6 +13,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_guids.h"
 #include "object/nmo_object_index.h"
+#include "object/nmo_object_query.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
@@ -490,7 +491,21 @@ nmo_status_t nmo_session_apply_edit_flags(nmo_session_t *session, uint32_t flags
         nmo_session_invalidate_ref_graph(session);
     }
     if ((flags & NMO_SESSION_EDIT_NAMES) != 0u) {
+        nmo_object_query_context_t query_ctx = {0};
+        if (nmo_session_get_object_query_context(session, &query_ctx) == NMO_OK) {
+            nmo_object_query_index_invalidate(
+                query_ctx.index,
+                NMO_OBJECT_QUERY_INDEX_NAMES);
+        }
         return nmo_session_rebuild_indexes(session, NMO_INDEX_BUILD_ALL);
+    }
+    if ((flags & NMO_SESSION_EDIT_BEHAVIOR_GRAPH) != 0u) {
+        nmo_object_query_context_t query_ctx = {0};
+        if (nmo_session_get_object_query_context(session, &query_ctx) == NMO_OK) {
+            nmo_object_query_index_invalidate(
+                query_ctx.index,
+                NMO_OBJECT_QUERY_INDEX_MEMBERSHIP);
+        }
     }
     return NMO_OK;
 }

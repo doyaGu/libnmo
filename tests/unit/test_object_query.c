@@ -9,12 +9,14 @@
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "session/nmo_context.h"
+#include "session/nmo_session.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_arena.h"
 #include "type/nmo_type_system.h"
 
 static nmo_context_t *g_ctx;
 static nmo_object_repository_t *g_repo;
+static nmo_object_query_index_t *g_query_index;
 static nmo_object_t *g_base;
 static nmo_object_t *g_entity;
 static nmo_object_t *g_camera;
@@ -68,18 +70,37 @@ static void setup_objects(void)
     ASSERT_NOT_NULL(g_entity);
     ASSERT_NOT_NULL(g_camera);
     ASSERT_NOT_NULL(g_mesh);
+
+    g_query_index = nmo_object_query_index_create(
+        g_repo,
+        nmo_context_get_type_registry(g_ctx),
+        &allocator);
+    ASSERT_NOT_NULL(g_query_index);
+    ASSERT_EQ(NMO_OK, nmo_object_query_index_rebuild(g_query_index));
 }
 
 static void teardown_objects(void)
 {
     nmo_object_repository_destroy(g_repo);
     g_repo = NULL;
+    nmo_object_query_index_destroy(g_query_index);
+    g_query_index = NULL;
     g_base = NULL;
     g_entity = NULL;
     g_camera = NULL;
     g_mesh = NULL;
     nmo_context_release(g_ctx);
     g_ctx = NULL;
+}
+
+static nmo_object_query_context_t query_ctx(void)
+{
+    nmo_object_query_context_t ctx = {
+        .repository = g_repo,
+        .index = g_query_index,
+        .registry = nmo_context_get_type_registry(g_ctx)
+    };
+    return ctx;
 }
 
 static bool only_non_mesh(const nmo_object_t *object, void *user_data)
@@ -133,14 +154,14 @@ TEST(object_query, filters_by_object_id)
 TEST(object_query, exact_and_derived_class_matching)
 {
     setup_objects();
-    const nmo_type_registry_t *registry = nmo_context_get_type_registry(g_ctx);
 
     nmo_object_query_t exact = {
         .class_id = NMO_CID_3DENTITY,
         .include_derived_classes = false
     };
     nmo_object_query_result_t result = {0};
-    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(g_repo, &exact, registry, NULL, NULL, &result));
+    nmo_object_query_context_t ctx = query_ctx();
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &exact, NULL, NULL, &result));
     ASSERT_EQ(4, result.total);
     ASSERT_EQ(1, result.matched);
 
@@ -148,7 +169,7 @@ TEST(object_query, exact_and_derived_class_matching)
         .class_id = NMO_CID_3DENTITY,
         .include_derived_classes = true
     };
-    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(g_repo, &derived, registry, NULL, NULL, &result));
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &derived, NULL, NULL, &result));
     ASSERT_EQ(2, result.matched);
 
     teardown_objects();
@@ -164,7 +185,8 @@ TEST(object_query, name_modes_share_case_rules)
         .name_case_insensitive = true
     };
     nmo_object_query_result_t result = {0};
-    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(g_repo, &contains, NULL, NULL, NULL, &result));
+    nmo_object_query_context_t ctx = query_ctx();
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &contains, NULL, NULL, &result));
     ASSERT_EQ(1, result.matched);
 
     nmo_object_query_t wildcard = {
@@ -172,7 +194,7 @@ TEST(object_query, name_modes_share_case_rules)
         .name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD,
         .name_case_insensitive = true
     };
-    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(g_repo, &wildcard, NULL, NULL, NULL, &result));
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &wildcard, NULL, NULL, &result));
     ASSERT_EQ(2, result.matched);
 
     nmo_object_query_t regex = {
@@ -180,7 +202,7 @@ TEST(object_query, name_modes_share_case_rules)
         .name_mode = NMO_OBJECT_QUERY_NAME_REGEX,
         .name_case_insensitive = false
     };
-    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(g_repo, &regex, NULL, NULL, NULL, &result));
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &regex, NULL, NULL, &result));
     ASSERT_EQ(1, result.matched);
 
     teardown_objects();
@@ -201,8 +223,9 @@ TEST(object_query, predicate_and_collect)
     nmo_object_t **objects = NULL;
     size_t count = 0;
     nmo_object_query_result_t result = {0};
+    nmo_object_query_context_t ctx = query_ctx();
     ASSERT_EQ(NMO_OK, nmo_object_query_collect(
-        g_repo, &query, NULL, arena, &objects, &count, &result));
+        &ctx, &query, arena, &objects, &count, &result));
     ASSERT_EQ(1, count);
     ASSERT_EQ(1, result.matched);
     ASSERT_EQ(g_entity, objects[0]);
@@ -217,8 +240,9 @@ TEST(object_query, visitor_can_stop_early)
 
     size_t seen = 0;
     nmo_object_query_result_t result = {0};
+    nmo_object_query_context_t ctx = query_ctx();
     ASSERT_EQ(NMO_OK, nmo_object_query_iterate(
-        g_repo, NULL, NULL, stop_after_first, &seen, &result));
+        &ctx, NULL, stop_after_first, &seen, &result));
     ASSERT_EQ(4, result.total);
     ASSERT_EQ(1, result.matched);
     ASSERT_EQ(1, result.visited);
@@ -239,14 +263,127 @@ TEST(object_query, visitor_receives_repository_index)
     };
     query_index_capture_t capture = {0};
     nmo_object_query_result_t result = {0};
+    nmo_object_query_context_t ctx = query_ctx();
     ASSERT_EQ(NMO_OK, nmo_object_query_iterate(
-        g_repo, &query, NULL, capture_query_index, &capture, &result));
+        &ctx, &query, capture_query_index, &capture, &result));
     ASSERT_EQ(2, result.matched);
     ASSERT_EQ(2, capture.count);
     ASSERT_EQ(1, capture.indexes[0]);
     ASSERT_EQ(3, capture.indexes[1]);
 
     teardown_objects();
+}
+
+TEST(object_query, indexed_query_handles_duplicate_names_and_rename)
+{
+    setup_objects();
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_object_t *duplicate = make_object(&allocator, 5, NMO_CID_MATERIAL, "MainCamera");
+    ASSERT_NOT_NULL(duplicate);
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(g_repo, &duplicate));
+    ASSERT_EQ(NMO_OK, nmo_object_query_index_rebuild(g_query_index));
+
+    nmo_object_query_t exact = {
+        .name = "MainCamera",
+        .name_mode = NMO_OBJECT_QUERY_NAME_EXACT,
+        .name_case_insensitive = false
+    };
+    nmo_object_query_result_t result = {0};
+    nmo_object_query_context_t ctx = query_ctx();
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &exact, NULL, NULL, &result));
+    ASSERT_EQ(2, result.matched);
+
+    ASSERT_EQ(NMO_OK, nmo_object_repository_rename(g_repo, 3, "RenamedCamera"));
+    nmo_object_query_index_invalidate(g_query_index, NMO_OBJECT_QUERY_INDEX_NAMES);
+    ASSERT_EQ(NMO_OK, nmo_object_query_index_rebuild(g_query_index));
+
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &exact, NULL, NULL, &result));
+    ASSERT_EQ(1, result.matched);
+
+    nmo_object_query_t renamed = {
+        .name = "renamedcamera",
+        .name_mode = NMO_OBJECT_QUERY_NAME_EXACT,
+        .name_case_insensitive = true
+    };
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &renamed, NULL, NULL, &result));
+    ASSERT_EQ(1, result.matched);
+
+    teardown_objects();
+}
+
+TEST(object_query, indexed_text_reducers_preserve_matches)
+{
+    setup_objects();
+
+    nmo_object_query_t substring = {
+        .name = "ayer_",
+        .name_mode = NMO_OBJECT_QUERY_NAME_SUBSTRING,
+        .name_case_insensitive = true
+    };
+    nmo_object_query_result_t result = {0};
+    nmo_object_query_context_t ctx = query_ctx();
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &substring, NULL, NULL, &result));
+    ASSERT_EQ(1, result.matched);
+
+    nmo_object_query_t case_sensitive_substring = {
+        .name = "Main",
+        .name_mode = NMO_OBJECT_QUERY_NAME_SUBSTRING,
+        .name_case_insensitive = false
+    };
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &case_sensitive_substring, NULL, NULL, &result));
+    ASSERT_EQ(1, result.matched);
+
+    nmo_object_query_t wildcard = {
+        .name = "*Camera",
+        .name_mode = NMO_OBJECT_QUERY_NAME_WILDCARD,
+        .name_case_insensitive = true
+    };
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &wildcard, NULL, NULL, &result));
+    ASSERT_EQ(1, result.matched);
+
+    nmo_object_query_t regex = {
+        .name = "Main.*ra",
+        .name_mode = NMO_OBJECT_QUERY_NAME_REGEX,
+        .name_case_insensitive = false
+    };
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&ctx, &regex, NULL, NULL, &result));
+    ASSERT_EQ(1, result.matched);
+
+    teardown_objects();
+}
+
+TEST(object_query, session_query_context_tracks_repository_mutation)
+{
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_t *obj = make_object(&allocator, 10, NMO_CID_OBJECT, "SessionObject");
+    ASSERT_NOT_NULL(obj);
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &obj));
+
+    nmo_object_query_context_t qctx = {0};
+    ASSERT_EQ(NMO_OK, nmo_session_get_object_query_context(session, &qctx));
+
+    nmo_object_query_t query = {
+        .name = "SessionObject",
+        .name_mode = NMO_OBJECT_QUERY_NAME_EXACT
+    };
+    nmo_object_query_result_t result = {0};
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&qctx, &query, NULL, NULL, &result));
+    ASSERT_EQ(1, result.matched);
+
+    ASSERT_EQ(NMO_OK, nmo_object_repository_remove(repo, 10));
+    nmo_object_query_index_invalidate(qctx.index, NMO_OBJECT_QUERY_INDEX_MEMBERSHIP);
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&qctx, &query, NULL, NULL, &result));
+    ASSERT_EQ(0, result.matched);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
 }
 
 TEST_MAIN_BEGIN()
@@ -256,4 +393,7 @@ REGISTER_TEST(object_query, name_modes_share_case_rules);
 REGISTER_TEST(object_query, predicate_and_collect);
 REGISTER_TEST(object_query, visitor_can_stop_early);
 REGISTER_TEST(object_query, visitor_receives_repository_index);
+REGISTER_TEST(object_query, indexed_query_handles_duplicate_names_and_rename);
+REGISTER_TEST(object_query, indexed_text_reducers_preserve_matches);
+REGISTER_TEST(object_query, session_query_context_tracks_repository_mutation);
 TEST_MAIN_END()

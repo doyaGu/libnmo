@@ -131,8 +131,9 @@ int nmo_core_object_query_run(const nmo_cmd_ctx_t *c,
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
-    if (repo == NULL) {
+    nmo_object_query_context_t query_ctx = {0};
+    if (nmo_session_get_object_query_context(c->session, &query_ctx) != NMO_OK ||
+        query_ctx.repository == NULL) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
@@ -143,9 +144,8 @@ int nmo_core_object_query_run(const nmo_cmd_ctx_t *c,
     };
     nmo_object_query_result_t query_result = {0};
     nmo_status_t status = nmo_object_query_iterate(
-        repo,
+        &query_ctx,
         query,
-        c->registry,
         visitor != NULL ? nmo_core_object_query_visit : NULL,
         &bridge,
         &query_result);

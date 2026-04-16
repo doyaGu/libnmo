@@ -17,9 +17,18 @@ extern "C" {
 #endif
 
 typedef struct nmo_arena nmo_arena_t;
+typedef struct nmo_allocator nmo_allocator_t;
 typedef struct nmo_object nmo_object_t;
 typedef struct nmo_object_repository nmo_object_repository_t;
+typedef struct nmo_object_query_index nmo_object_query_index_t;
 typedef struct nmo_type_registry nmo_type_registry_t;
+
+typedef enum nmo_object_query_index_flags {
+    NMO_OBJECT_QUERY_INDEX_MEMBERSHIP = 1u << 0,
+    NMO_OBJECT_QUERY_INDEX_NAMES      = 1u << 1,
+    NMO_OBJECT_QUERY_INDEX_TEXT       = 1u << 2,
+    NMO_OBJECT_QUERY_INDEX_ALL        = (1u << 0) | (1u << 1) | (1u << 2)
+} nmo_object_query_index_flags_t;
 
 typedef enum nmo_object_query_name_mode {
     NMO_OBJECT_QUERY_NAME_NONE = 0,
@@ -44,6 +53,12 @@ typedef struct nmo_object_query {
     void *predicate_user_data;
 } nmo_object_query_t;
 
+typedef struct nmo_object_query_context {
+    nmo_object_repository_t *repository;
+    nmo_object_query_index_t *index;
+    const nmo_type_registry_t *registry;
+} nmo_object_query_context_t;
+
 typedef struct nmo_object_query_result {
     size_t total;
     size_t matched;
@@ -62,18 +77,30 @@ NMO_API nmo_status_t nmo_object_query_matches(
     const nmo_type_registry_t *registry,
     bool *out_matches);
 
-NMO_API nmo_status_t nmo_object_query_iterate(
+NMO_API nmo_object_query_index_t *nmo_object_query_index_create(
     nmo_object_repository_t *repository,
-    const nmo_object_query_t *query,
     const nmo_type_registry_t *registry,
+    const nmo_allocator_t *allocator);
+
+NMO_API void nmo_object_query_index_destroy(nmo_object_query_index_t *index);
+
+NMO_API nmo_status_t nmo_object_query_index_rebuild(
+    nmo_object_query_index_t *index);
+
+NMO_API void nmo_object_query_index_invalidate(
+    nmo_object_query_index_t *index,
+    uint32_t flags);
+
+NMO_API nmo_status_t nmo_object_query_iterate(
+    const nmo_object_query_context_t *ctx,
+    const nmo_object_query_t *query,
     nmo_object_query_visitor_fn visitor,
     void *user_data,
     nmo_object_query_result_t *out_result);
 
 NMO_API nmo_status_t nmo_object_query_collect(
-    nmo_object_repository_t *repository,
+    const nmo_object_query_context_t *ctx,
     const nmo_object_query_t *query,
-    const nmo_type_registry_t *registry,
     nmo_arena_t *arena,
     nmo_object_t ***out_objects,
     size_t *out_count,

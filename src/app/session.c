@@ -15,6 +15,7 @@
 #include "core/nmo_allocator.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_index.h"
+#include "object/nmo_object_query.h"
 #include "session/nmo_reference_resolver.h"
 #include "session/nmo_id_sanitizer.h"
 #include "object/nmo_shadow_storage.h"
@@ -47,6 +48,7 @@ typedef struct nmo_session {
 
     /* Object index (Phase 5) */
     nmo_object_index_t *object_index;
+    nmo_object_query_index_t *object_query_index;
 
     /* Reference resolver (initialised on demand) */
     nmo_reference_resolver_t *reference_resolver;
@@ -172,6 +174,7 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
 
     /* Initialize object index */
     session->object_index = NULL;
+    session->object_query_index = NULL;
 
     /* Initialize reference resolver */
     session->reference_resolver = NULL;
@@ -222,6 +225,11 @@ void nmo_session_destroy(nmo_session_t *session) {
             }
             nmo_object_index_destroy(session->object_index);
             session->object_index = NULL;
+        }
+
+        if (session->object_query_index != NULL) {
+            nmo_object_query_index_destroy(session->object_query_index);
+            session->object_query_index = NULL;
         }
 
         /* Destroy owned resources */
@@ -981,7 +989,28 @@ int nmo_session_rebuild_indexes(nmo_session_t *session, uint32_t flags) {
     }
     
     /* Rebuild object index */
-    return nmo_object_index_rebuild(session->object_index, flags);
+    int result = nmo_object_index_rebuild(session->object_index, flags);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    if (session->object_query_index == NULL) {
+        const nmo_type_registry_t *registry = NULL;
+        if (session->context != NULL) {
+            registry = nmo_context_get_type_registry(session->context);
+        }
+        session->object_query_index = nmo_object_query_index_create(
+            session->repository,
+            registry,
+            &session->allocator);
+        if (session->object_query_index == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+    }
+    nmo_object_query_index_invalidate(
+        session->object_query_index,
+        NMO_OBJECT_QUERY_INDEX_ALL);
+    return nmo_object_query_index_rebuild(session->object_query_index);
 }
 
 int nmo_session_get_object_index_stats(
@@ -998,6 +1027,40 @@ int nmo_session_get_object_index_stats(
     }
 
     return nmo_object_index_get_stats(session->object_index, stats);
+}
+
+int nmo_session_get_object_query_context(
+    nmo_session_t *session,
+    nmo_object_query_context_t *out_ctx)
+{
+    if (session == NULL || out_ctx == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (session->repository == NULL) {
+        memset(out_ctx, 0, sizeof(*out_ctx));
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    if (session->object_query_index == NULL) {
+        const nmo_type_registry_t *registry = NULL;
+        if (session->context != NULL) {
+            registry = nmo_context_get_type_registry(session->context);
+        }
+        session->object_query_index = nmo_object_query_index_create(
+            session->repository,
+            registry,
+            &session->allocator);
+        if (session->object_query_index == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+    }
+
+    out_ctx->repository = session->repository;
+    out_ctx->index = session->object_query_index;
+    out_ctx->registry = session->context != NULL
+        ? nmo_context_get_type_registry(session->context)
+        : NULL;
+    return NMO_OK;
 }
 
 int nmo_session_get_runtime_load_stats(

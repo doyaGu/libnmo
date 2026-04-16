@@ -389,6 +389,7 @@ NMO_API int nmo_session_save(nmo_session_t *session, const char *filename);
 typedef struct nmo_object nmo_object_t;
 typedef struct nmo_header nmo_header_t;
 typedef struct nmo_object_index nmo_object_index_t;
+typedef struct nmo_object_query_context nmo_object_query_context_t;
 typedef struct nmo_index_stats nmo_index_stats_t;
 
 /**
@@ -463,6 +464,21 @@ NMO_API int nmo_session_rebuild_indexes(nmo_session_t *session, uint32_t flags);
 NMO_API int nmo_session_get_object_index_stats(
     const nmo_session_t *session,
     nmo_index_stats_t *stats);
+
+/**
+ * @brief Get the session-scoped object query context.
+ *
+ * Creates the session query index if needed. Query execution refreshes dirty
+ * index contents before planning candidates. The returned context borrows all
+ * pointers from the session.
+ *
+ * @param session Session
+ * @param out_ctx Output query context
+ * @return NMO_OK on success, otherwise an NMO_ERR_* code
+ */
+NMO_API int nmo_session_get_object_query_context(
+    nmo_session_t *session,
+    nmo_object_query_context_t *out_ctx);
 
 /* Included file management */
 
