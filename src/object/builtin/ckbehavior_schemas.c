@@ -707,6 +707,9 @@ nmo_status_t nmo_behavior_serialize(
             nmo_object_repository_t *repo = ser_ctx
                 ? (nmo_object_repository_t *)ser_ctx->repository
                 : NULL;
+            /* Use scratch arena for interface temporaries when available */
+            nmo_arena_t *temp_arena = (ser_ctx && ser_ctx->scratch)
+                ? ser_ctx->scratch : out_chunk->arena;
             if (out_chunk->file_context != NULL &&
                 out_chunk->file_context->runtime_to_file != NULL) {
                 if (in_state->interface_ids_are_runtime) {
@@ -714,7 +717,7 @@ nmo_status_t nmo_behavior_serialize(
                 } else if (repo != NULL) {
                     nmo_id_remap_t *interface_remap = NULL;
                     result = build_interface_file_index_remap(
-                        out_chunk->arena,
+                        temp_arena,
                         repo,
                         out_chunk->file_context->runtime_to_file,
                         &interface_remap);
@@ -722,7 +725,7 @@ nmo_status_t nmo_behavior_serialize(
 
                     nmo_chunk_file_context_t *interface_file_ctx =
                         (nmo_chunk_file_context_t *)nmo_arena_alloc(
-                            out_chunk->arena,
+                            temp_arena,
                             sizeof(nmo_chunk_file_context_t),
                             alignof(nmo_chunk_file_context_t));
                     if (!interface_file_ctx) {

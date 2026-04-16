@@ -83,6 +83,7 @@ struct nmo_serializer {
     nmo_session_t *session;
     nmo_context_t *context;
     nmo_arena_t *arena;
+    nmo_arena_t *scratch;             /**< Scratch arena for save-only temporaries */
     nmo_object_repository_t *repo;
     nmo_logger_t *logger;
     nmo_type_registry_t *type_reg;
@@ -132,6 +133,10 @@ struct nmo_serializer {
     int phase2_complete;
 };
 
+static inline nmo_arena_t *save_scratch(const nmo_serializer_t *ctx) {
+    return ctx->scratch;
+}
+
 /* ============================================================================
  * Forward Declarations (Internal Functions)
  * ============================================================================ */
@@ -157,6 +162,7 @@ static nmo_chunk_t *serialize_object_with_schema(
     nmo_object_t *obj,
     const nmo_type_runtime_t *type_rt,
     nmo_arena_t *arena,
+    nmo_arena_t *scratch,
     nmo_object_repository_t *repo,
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage,
@@ -164,6 +170,7 @@ static nmo_chunk_t *serialize_object_with_schema(
     int require_schema);
 
 static int should_save_as_reference(const nmo_object_t *obj, uint32_t flags);
+static void save_clear_chunk_file_context(nmo_chunk_t *chunk);
 static nmo_status_t save_report_progress(nmo_serializer_t *ctx,
                                          nmo_serialize_phase_t phase,
                                          float progress,
@@ -267,7 +274,7 @@ static nmo_status_t save_compute_manager_data_size(nmo_serializer_t *ctx, size_t
         if (mgr->data_size > 0) {
             chunk_size = mgr->data_size;
         } else if (mgr->chunk != NULL) {
-            NMO_RETURN_IF_ERROR(save_get_chunk_size(mgr->chunk, ctx->arena, &chunk_size));
+            NMO_RETURN_IF_ERROR(save_get_chunk_size(mgr->chunk, save_scratch(ctx), &chunk_size));
         }
 
         size_t entry_size = 0;
@@ -306,7 +313,7 @@ static nmo_status_t save_fill_file_indices(nmo_serializer_t *ctx,
         nmo_object_t *obj = ctx->objects[i];
         size_t chunk_size = 0;
         if (obj != NULL) {
-            NMO_RETURN_IF_ERROR(save_get_chunk_size(obj->chunk, ctx->arena, &chunk_size));
+            NMO_RETURN_IF_ERROR(save_get_chunk_size(obj->chunk, save_scratch(ctx), &chunk_size));
         }
 
         if (offset > UINT32_MAX) {
@@ -584,25 +591,26 @@ nmo_status_t nmo_save_file(
         return SAVE_ERR(NMO_ERR_NOMEM, "Failed to create save context");
     }
 
+    /* Create scratch arena for save-only temporaries.  All intermediate
+       allocations (data buffers, header1, compression, remap backups, etc.)
+       go here and are reclaimed in one shot when the arena is destroyed. */
+    nmo_arena_t *scratch = nmo_arena_create(NULL, 256 * 1024);
+    if (scratch == NULL) {
+        nmo_serializer_destroy(ctx);
+        return SAVE_ERR(NMO_ERR_NOMEM, "Failed to create save scratch arena");
+    }
+    ctx->scratch = scratch;
+
     nmo_status_t result = nmo_serializer_layout(ctx);
     if (result != NMO_OK) {
+        nmo_arena_destroy(scratch);
         nmo_serializer_destroy(ctx);
         return result;
     }
 
-    /* Mark arena before Phase 2 - compression buffers allocated during
-       Phase 2 will be reclaimed after the file is written.  Phase 1
-       results (serialized chunks, descriptors) are preserved. */
-    nmo_arena_mark_t phase2_mark;
-    nmo_status_t mark_st = nmo_arena_mark(ctx->arena, &phase2_mark);
-
     result = nmo_serializer_commit(ctx, path);
 
-    /* Rewind to reclaim Phase 2 temporaries regardless of outcome */
-    if (mark_st == NMO_OK) {
-        nmo_arena_rewind(ctx->arena, &phase2_mark);
-    }
-
+    nmo_arena_destroy(scratch);
     nmo_serializer_destroy(ctx);
 
     return result;
@@ -619,7 +627,7 @@ static nmo_status_t save_validate_session(nmo_serializer_t *ctx) {
     if (ctx->options.include_ids != NULL && ctx->options.include_count > 0) {
         size_t cap = ctx->options.include_count;
         ctx->objects = (nmo_object_t **)nmo_arena_alloc(
-            ctx->arena, cap * sizeof(nmo_object_t *), _Alignof(nmo_object_t *));
+            save_scratch(ctx), cap * sizeof(nmo_object_t *), _Alignof(nmo_object_t *));
         if (ctx->objects == NULL) {
             return SAVE_ERR(NMO_ERR_NOMEM, "Object filter list allocation failed");
         }
@@ -652,7 +660,7 @@ static nmo_status_t save_validate_session(nmo_serializer_t *ctx) {
 
     /* Build reference map */
     ctx->reference_map = (uint8_t *)nmo_arena_alloc(
-        ctx->arena, ctx->object_count * sizeof(uint8_t), 1);
+        save_scratch(ctx), ctx->object_count * sizeof(uint8_t), 1);
 
     if (ctx->reference_map == NULL) {
         return SAVE_ERR(NMO_ERR_NOMEM, "Failed to allocate reference map");
@@ -725,7 +733,7 @@ static nmo_status_t save_build_remap_plan(nmo_serializer_t *ctx) {
 
     nmo_log(ctx->logger, NMO_LOG_INFO, "  Created remap plan with %zu entries", remap_count);
 
-    ctx->file_index_remap = nmo_id_remap_create(ctx->arena);
+    ctx->file_index_remap = nmo_id_remap_create(save_scratch(ctx));
     if (ctx->file_index_remap == NULL) {
         return SAVE_ERR(NMO_ERR_NOMEM, "File index remap allocation failed");
     }
@@ -745,7 +753,7 @@ static nmo_status_t save_build_remap_plan(nmo_serializer_t *ctx) {
     }
 
     ctx->chunk_file_ctx = (nmo_chunk_file_context_t *)nmo_arena_alloc(
-        ctx->arena, sizeof(nmo_chunk_file_context_t), alignof(nmo_chunk_file_context_t));
+        save_scratch(ctx), sizeof(nmo_chunk_file_context_t), alignof(nmo_chunk_file_context_t));
     if (ctx->chunk_file_ctx == NULL) {
         return SAVE_ERR(NMO_ERR_NOMEM, "Chunk file context allocation failed");
     }
@@ -779,7 +787,7 @@ static nmo_status_t save_serialize_managers(nmo_serializer_t *ctx) {
     }
 
     ctx->manager_entries = (nmo_manager_data_t *)nmo_arena_alloc(
-        ctx->arena,
+        save_scratch(ctx),
         sizeof(nmo_manager_data_t) * manager_capacity,
         alignof(nmo_manager_data_t));
 
@@ -822,7 +830,7 @@ static nmo_status_t save_serialize_managers(nmo_serializer_t *ctx) {
             entry->flags = NMO_MANAGER_DATA_FLAG_DISPATCHED;
 
             if (chunk->raw_data == NULL && remap_table != NULL) {
-                nmo_status_t remap_result = nmo_chunk_remap_object_ids(chunk, remap_table);
+                nmo_status_t remap_result = nmo_chunk_remap_object_ids_ex(chunk, remap_table, save_scratch(ctx));
                 if (remap_result != NMO_OK) {
                     nmo_log(ctx->logger, NMO_LOG_WARN,
                             "  Manager %s: failed to remap object IDs (code=%d)",
@@ -892,8 +900,8 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
 
         nmo_chunk_t *old_chunk = obj->chunk;
         obj->chunk = serialize_object_with_schema(
-            obj, ctx->type_rt, ctx->arena, ctx->repo, ctx->logger, shadow_storage,
-            ctx->chunk_file_ctx, require_schema);
+            obj, ctx->type_rt, ctx->arena, save_scratch(ctx), ctx->repo, ctx->logger,
+            shadow_storage, ctx->chunk_file_ctx, require_schema);
 
         if (obj->chunk == NULL) {
             if (require_schema) {
@@ -924,13 +932,17 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
             reused_count++;
         } else {
             if (obj->chunk != NULL && obj->chunk->raw_data == NULL && remap_table != NULL) {
-                nmo_status_t remap_result = nmo_chunk_remap_object_ids(obj->chunk, remap_table);
+                nmo_status_t remap_result = nmo_chunk_remap_object_ids_ex(obj->chunk, remap_table, save_scratch(ctx));
                 if (remap_result != NMO_OK) {
                     nmo_log(ctx->logger, NMO_LOG_WARN,
                             "    Failed to remap object IDs for object %u (code=%d)",
                             obj->id, remap_result);
                 }
             }
+            /* Clear file_context pointers that refer to scratch-arena memory.
+               Must happen after remap (which no longer needs file_context)
+               and before scratch arena destruction. */
+            save_clear_chunk_file_context(obj->chunk);
             serialized_count++;
         }
     }
@@ -962,7 +974,7 @@ static nmo_status_t save_build_data_section(nmo_serializer_t *ctx) {
 
     /* Allocate object data array */
     data_sect.objects = (nmo_object_data_t *)nmo_arena_alloc(
-        ctx->arena,
+        save_scratch(ctx),
         sizeof(nmo_object_data_t) * ctx->object_count,
         sizeof(void *));
 
@@ -1009,11 +1021,11 @@ static nmo_status_t save_build_data_section(nmo_serializer_t *ctx) {
     }
 
     /* Calculate data section size */
-    size_t data_size = nmo_data_section_calculate_size(&data_sect, file_version, ctx->arena);
+    size_t data_size = nmo_data_section_calculate_size(&data_sect, file_version, save_scratch(ctx));
     nmo_log(ctx->logger, NMO_LOG_INFO, "  Data section unpack size: %zu bytes", data_size);
 
     /* Allocate buffer */
-    ctx->data_buffer = nmo_arena_alloc(ctx->arena, data_size, 16);
+    ctx->data_buffer = nmo_arena_alloc(save_scratch(ctx), data_size, 16);
     if (ctx->data_buffer == NULL) {
         return SAVE_ERR(NMO_ERR_NOMEM, "Data buffer allocation failed");
     }
@@ -1021,7 +1033,7 @@ static nmo_status_t save_build_data_section(nmo_serializer_t *ctx) {
     /* Serialize data section */
     size_t bytes_written = 0;
     nmo_status_t result = nmo_data_section_serialize(
-        &data_sect, file_version, ctx->data_buffer, data_size, &bytes_written, ctx->arena);
+        &data_sect, file_version, ctx->data_buffer, data_size, &bytes_written, save_scratch(ctx));
 
     if (result != NMO_OK) {
         return result;
@@ -1046,7 +1058,7 @@ static nmo_status_t save_build_header1(nmo_serializer_t *ctx) {
 
     /* Build object descriptors */
     ctx->obj_descs = (nmo_object_desc_t *)nmo_arena_alloc(
-        ctx->arena,
+        save_scratch(ctx),
         sizeof(nmo_object_desc_t) * ctx->object_count,
         sizeof(void *));
 
@@ -1092,7 +1104,7 @@ static nmo_status_t save_build_header1(nmo_serializer_t *ctx) {
 
             if (plugins != NULL && plugin_count > 0) {
                 nmo_plugin_dep_t *deps = (nmo_plugin_dep_t *)nmo_arena_alloc(
-                    ctx->arena,
+                    save_scratch(ctx),
                     plugin_count * sizeof(nmo_plugin_dep_t),
                     alignof(nmo_plugin_dep_t));
                 if (deps == NULL) {
@@ -1149,7 +1161,7 @@ static nmo_status_t save_build_header1(nmo_serializer_t *ctx) {
     void *header1_probe = NULL;
     size_t header1_probe_size = 0;
     nmo_status_t result = nmo_header1_serialize(
-        &hdr1, &header1_probe, &header1_probe_size, ctx->arena);
+        &hdr1, &header1_probe, &header1_probe_size, save_scratch(ctx));
 
     if (result != NMO_OK) {
         return result;
@@ -1164,7 +1176,7 @@ static nmo_status_t save_build_header1(nmo_serializer_t *ctx) {
 
     /* Final serialize with correct FileIndex values */
     result = nmo_header1_serialize(
-        &hdr1, &ctx->header1_buffer, &ctx->header1_unpack_size, ctx->arena);
+        &hdr1, &ctx->header1_buffer, &ctx->header1_unpack_size, save_scratch(ctx));
 
     if (result != NMO_OK) {
         return result;
@@ -1199,7 +1211,7 @@ static nmo_status_t save_compress_sections(nmo_serializer_t *ctx) {
     /* Compress Header1 if requested */
     if (ctx->options.compress_header && ctx->header1_unpack_size > 0) {
         mz_ulong bound = mz_compressBound((mz_ulong)ctx->header1_unpack_size);
-        void *compressed = nmo_arena_alloc(ctx->arena, bound, 16);
+        void *compressed = nmo_arena_alloc(save_scratch(ctx), bound, 16);
         if (compressed == NULL) {
             return SAVE_ERR(NMO_ERR_NOMEM, "Header1 compression buffer allocation failed");
         }
@@ -1235,7 +1247,7 @@ static nmo_status_t save_compress_sections(nmo_serializer_t *ctx) {
     /* Compress Data section if requested */
     if (ctx->options.compress_data && ctx->data_unpack_size > 0) {
         mz_ulong bound = mz_compressBound((mz_ulong)ctx->data_unpack_size);
-        void *compressed = nmo_arena_alloc(ctx->arena, bound, 16);
+        void *compressed = nmo_arena_alloc(save_scratch(ctx), bound, 16);
         if (compressed == NULL) {
             return SAVE_ERR(NMO_ERR_NOMEM, "Data compression buffer allocation failed");
         }
@@ -1538,6 +1550,21 @@ static nmo_status_t save_execute_post_hooks(nmo_serializer_t *ctx) {
  * Helper Functions
  * ============================================================================ */
 
+/**
+ * Recursively clear file_context pointers from a chunk and all its sub-chunks.
+ * Must be called after serialization before scratch arena destruction to avoid
+ * dangling pointers into freed memory.
+ */
+static void save_clear_chunk_file_context(nmo_chunk_t *chunk) {
+    if (chunk == NULL) return;
+    nmo_chunk_set_file_context(chunk, NULL);
+    size_t sub_count = chunk->chunks.count;
+    nmo_chunk_t **subs = (nmo_chunk_t **)chunk->chunks.data;
+    for (size_t i = 0; i < sub_count; i++) {
+        save_clear_chunk_file_context(subs[i]);
+    }
+}
+
 static int should_save_as_reference(const nmo_object_t *obj, uint32_t flags) {
     if (obj == NULL) {
         return 0;
@@ -1562,6 +1589,7 @@ static nmo_chunk_t *serialize_object_with_schema(
     nmo_object_t *obj,
     const nmo_type_runtime_t *type_rt,
     nmo_arena_t *arena,
+    nmo_arena_t *scratch,
     nmo_object_repository_t *repo,
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage,
@@ -1569,7 +1597,7 @@ static nmo_chunk_t *serialize_object_with_schema(
     int require_schema)
 {
     nmo_chunk_t *chunk = nmo_object_system_serialize_object_chunk(
-        obj, type_rt, arena, repo, logger,
+        obj, type_rt, arena, scratch, repo, logger,
         shadow_storage, file_ctx);
 
     if (!require_schema) {

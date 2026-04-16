@@ -85,6 +85,7 @@ NMO_API nmo_chunk_t *nmo_object_system_serialize_object_chunk(
     nmo_object_t *obj,
     const nmo_type_runtime_t *type_rt,
     nmo_arena_t *arena,
+    nmo_arena_t *scratch,
     nmo_object_repository_t *repo,
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage,

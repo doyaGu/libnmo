@@ -357,6 +357,7 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
     nmo_object_t *obj,
     const nmo_type_runtime_t *type_rt,
     nmo_arena_t *arena,
+    nmo_arena_t *scratch,
     nmo_object_repository_t *repo,
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage,
@@ -455,8 +456,8 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
         return NULL;
     }
 
-    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
-        arena, repo, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create_with_scratch(
+        arena, scratch, repo, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
 
     result = schema_type->vtable->serialize(state, new_chunk, schema_type, &ser_ctx);
 
@@ -471,6 +472,9 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
                     schema_type->name ? schema_type->name : "<unnamed>",
                     error_msg[0] ? error_msg : "<no error>");
         }
+        /* Clear file_context on the orphaned new_chunk so it does not hold
+           a dangling pointer into scratch-arena memory. */
+        nmo_chunk_set_file_context(new_chunk, NULL);
         return obj->chunk;
     }
 
