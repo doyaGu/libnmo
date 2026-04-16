@@ -635,6 +635,51 @@ TEST(object_query_perf, text_index_deduplicates_repeated_object_trigrams)
     nmo_context_release(ctx);
 }
 
+TEST(object_query_perf, text_index_compacts_repeated_trigram_storage)
+{
+    const size_t object_count = 5000;
+
+    nmo_allocator_t base_allocator = nmo_allocator_default();
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+
+    nmo_object_repository_t *repo = nmo_object_repository_create(&base_allocator);
+    ASSERT_NOT_NULL(repo);
+    populate_repeated_trigram_repo(repo, &base_allocator, object_count);
+
+    nmo_allocator_stats_t stats = {0};
+    nmo_allocator_tracking_t tracking = {0};
+    nmo_allocator_t index_allocator =
+        nmo_allocator_tracking_init(&tracking, base_allocator, &stats);
+
+    nmo_object_query_index_t *index =
+        nmo_object_query_index_create(repo, registry, &index_allocator);
+    ASSERT_NOT_NULL(index);
+    ASSERT_EQ(NMO_OK, nmo_object_query_index_rebuild(index));
+    size_t bytes_after_eager = stats.current_bytes;
+
+    nmo_object_query_context_t qctx = {
+        .repository = repo,
+        .index = index,
+        .registry = registry
+    };
+    nmo_object_query_t substring_query = {
+        .name = "aaa",
+        .name_mode = NMO_OBJECT_QUERY_NAME_SUBSTRING,
+        .name_case_insensitive = true
+    };
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(&qctx, &substring_query, NULL, NULL, NULL));
+    size_t text_overhead = stats.current_bytes - bytes_after_eager;
+    printf("[object_query_perf] repeated trigram text bytes: eager=%zu text=%zu overhead=%zu\n",
+           bytes_after_eager, stats.current_bytes, text_overhead);
+    ASSERT_LT(text_overhead, object_count * 384);
+
+    nmo_object_query_index_destroy(index);
+    nmo_object_repository_destroy(repo);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST_CATEGORIZED(object_query_perf, session_index_accelerates_repeated_queries, TEST_CATEGORY_PERFORMANCE);
     REGISTER_TEST_CATEGORIZED(object_query_perf, indexed_collect_predicate_uses_single_candidate_pass, TEST_CATEGORY_PERFORMANCE);
@@ -644,4 +689,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST_CATEGORIZED(object_query_perf, trim_releases_text_index_storage, TEST_CATEGORY_PERFORMANCE);
     REGISTER_TEST_CATEGORIZED(object_query_perf, text_reducer_intersects_common_trigrams, TEST_CATEGORY_PERFORMANCE);
     REGISTER_TEST_CATEGORIZED(object_query_perf, text_index_deduplicates_repeated_object_trigrams, TEST_CATEGORY_PERFORMANCE);
+    REGISTER_TEST_CATEGORIZED(object_query_perf, text_index_compacts_repeated_trigram_storage, TEST_CATEGORY_PERFORMANCE);
 TEST_MAIN_END()

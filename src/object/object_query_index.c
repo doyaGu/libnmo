@@ -631,6 +631,12 @@ static nmo_status_t query_index_build_text(nmo_object_query_index_t *index)
     if (status != NMO_OK) {
         return status;
     }
+    if (nmo_array_size(&index->trigram_entries) < nmo_array_capacity(&index->trigram_entries)) {
+        status = nmo_array_shrink_to_fit(&index->trigram_entries);
+        if (status != NMO_OK) {
+            return status;
+        }
+    }
     index->text_built = true;
     index->text_dirty = false;
     return NMO_OK;
