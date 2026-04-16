@@ -38,19 +38,35 @@ static int nmo_hash_table_default_compare(const void *a, const void *b, size_t s
 }
 
 static void nmo_hash_table_copy_key(const nmo_hash_table_t *table, void *dest, const void *src) {
-    nmo_container_copy_element(&table->key_lifecycle, dest, src, table->key_size);
+    if (table->key_lifecycle.copy) {
+        nmo_container_copy_element(&table->key_lifecycle, dest, src, table->key_size);
+    } else {
+        memcpy(dest, src, table->key_size);
+    }
 }
 
 static void nmo_hash_table_copy_value(const nmo_hash_table_t *table, void *dest, const void *src) {
-    nmo_container_copy_element(&table->value_lifecycle, dest, src, table->value_size);
+    if (table->value_lifecycle.copy) {
+        nmo_container_copy_element(&table->value_lifecycle, dest, src, table->value_size);
+    } else {
+        memcpy(dest, src, table->value_size);
+    }
 }
 
 static void nmo_hash_table_move_key(nmo_hash_table_t *table, void *dest, void *src) {
-    nmo_container_move_element(&table->key_lifecycle, dest, src, table->key_size);
+    if (table->key_lifecycle.move) {
+        nmo_container_move_element(&table->key_lifecycle, dest, src, table->key_size);
+    } else {
+        memmove(dest, src, table->key_size);
+    }
 }
 
 static void nmo_hash_table_move_value(nmo_hash_table_t *table, void *dest, void *src) {
-    nmo_container_move_element(&table->value_lifecycle, dest, src, table->value_size);
+    if (table->value_lifecycle.move) {
+        nmo_container_move_element(&table->value_lifecycle, dest, src, table->value_size);
+    } else {
+        memmove(dest, src, table->value_size);
+    }
 }
 
 static size_t nmo_hash_table_next_capacity(size_t min_capacity) {
@@ -371,7 +387,21 @@ nmo_status_t nmo_hash_table_insert(nmo_hash_table_t *table, const void *key, con
 
     uint8_t *value_dest = table->values + ((size_t)slot * table->value_size);
     if (found) {
-        nmo_container_reset_element(&table->value_lifecycle, value_dest, table->value_size);
+        if (table->value_lifecycle.reset == NULL &&
+            table->value_lifecycle.dispose == NULL &&
+            table->value_lifecycle.copy == NULL) {
+            memcpy(value_dest, value, table->value_size);
+            NMO_RETURN_OK();
+        }
+
+        if (table->value_lifecycle.reset) {
+            nmo_container_reset_element(&table->value_lifecycle, value_dest, table->value_size);
+        } else if (table->value_lifecycle.dispose) {
+            table->value_lifecycle.dispose(value_dest, table->value_lifecycle.user_data);
+            memset(value_dest, 0, table->value_size);
+        } else {
+            memset(value_dest, 0, table->value_size);
+        }
         nmo_hash_table_copy_value(table, value_dest, value);
         NMO_RETURN_OK();
     }
@@ -490,6 +520,13 @@ float nmo_hash_table_load_factor(const nmo_hash_table_t *table) {
 
 void nmo_hash_table_clear(nmo_hash_table_t *table) {
     if (table == NULL || table->states == NULL) {
+        return;
+    }
+
+    if (table->key_lifecycle.dispose == NULL &&
+        table->value_lifecycle.dispose == NULL) {
+        memset(table->states, NMO_HASH_ENTRY_EMPTY, table->capacity);
+        table->count = 0;
         return;
     }
 

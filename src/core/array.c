@@ -37,11 +37,20 @@ static void nmo_array_init_range(nmo_array_t *array, size_t start, size_t count)
         return;
     }
 
-    if (start >= array->count + count) {
+    if (start > array->capacity || count > array->capacity - start) {
         return;
     }
 
     uint8_t *base = (uint8_t *)array->data + (start * array->element_size);
+    size_t bytes = 0;
+    if (!nmo_safe_mul_size(count, array->element_size, &bytes)) {
+        return;
+    }
+    if (array->lifecycle.init == NULL) {
+        memset(base, 0, bytes);
+        return;
+    }
+
     for (size_t i = 0; i < count; ++i) {
         nmo_container_init_element(&array->lifecycle,
                                    base + (i * array->element_size),
@@ -112,6 +121,15 @@ static void nmo_array_reset_range(nmo_array_t *array, size_t start, size_t count
     }
 
     uint8_t *base = (uint8_t *)array->data + (start * array->element_size);
+    if (array->lifecycle.reset == NULL && array->lifecycle.dispose == NULL) {
+        size_t bytes = 0;
+        if (!nmo_safe_mul_size(count, array->element_size, &bytes)) {
+            return;
+        }
+        memset(base, 0, bytes);
+        return;
+    }
+
     for (size_t i = 0; i < count; ++i) {
         nmo_container_reset_element(&array->lifecycle,
                                     base + (i * array->element_size),
@@ -155,8 +173,6 @@ nmo_status_t nmo_array_init(nmo_array_t *array,
     array->lifecycle.move = NULL;
     array->lifecycle.dispose = NULL;
     array->lifecycle.user_data = NULL;
-    array->lifecycle.init = NULL;
-    array->lifecycle.reset = NULL;
 
     if (initial_capacity > 0) {
         return nmo_array_reserve(array, initial_capacity);
@@ -240,7 +256,11 @@ nmo_status_t nmo_array_append(nmo_array_t *array, const void *element) {
     }
 
     uint8_t *dest = (uint8_t *)array->data + (array->count * array->element_size);
-    nmo_container_copy_element(&array->lifecycle, dest, element, array->element_size);
+    if (array->lifecycle.copy) {
+        nmo_container_copy_element(&array->lifecycle, dest, element, array->element_size);
+    } else {
+        memcpy(dest, element, array->element_size);
+    }
     array->count++;
 
     NMO_RETURN_OK();
@@ -314,8 +334,19 @@ nmo_status_t nmo_array_set(nmo_array_t *array, size_t index, const void *element
     }
 
     uint8_t *dest = (uint8_t *)array->data + (index * array->element_size);
+    if (array->lifecycle.reset == NULL &&
+        array->lifecycle.dispose == NULL &&
+        array->lifecycle.copy == NULL) {
+        memcpy(dest, element, array->element_size);
+        NMO_RETURN_OK();
+    }
+
     nmo_array_reset_range(array, index, 1);
-    nmo_container_copy_element(&array->lifecycle, dest, element, array->element_size);
+    if (array->lifecycle.copy) {
+        nmo_container_copy_element(&array->lifecycle, dest, element, array->element_size);
+    } else {
+        memcpy(dest, element, array->element_size);
+    }
 
     NMO_RETURN_OK();
 }
@@ -359,7 +390,11 @@ nmo_status_t nmo_array_insert(nmo_array_t *array,
                              move_count);
     }
 
-    nmo_container_copy_element(&array->lifecycle, dest, element, array->element_size);
+    if (array->lifecycle.copy) {
+        nmo_container_copy_element(&array->lifecycle, dest, element, array->element_size);
+    } else {
+        memcpy(dest, element, array->element_size);
+    }
     array->count++;
 
     NMO_RETURN_OK();

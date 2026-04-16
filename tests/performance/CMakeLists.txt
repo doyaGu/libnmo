@@ -7,6 +7,7 @@ macro(add_performance_test name)
 endmacro()
 
 add_performance_test(test_performance)
+add_performance_test(test_array_perf)
 add_performance_test(test_index_queries)
 add_performance_test(test_object_query_perf)
 add_performance_test(test_load_save_mmap_baseline)

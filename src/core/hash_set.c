@@ -36,11 +36,19 @@ static int nmo_hash_set_default_compare(const void *a, const void *b, size_t siz
 }
 
 static void nmo_hash_set_copy_key(nmo_hash_set_t *set, void *dest, const void *src) {
-    nmo_container_copy_element(&set->key_lifecycle, dest, src, set->key_size);
+    if (set->key_lifecycle.copy) {
+        nmo_container_copy_element(&set->key_lifecycle, dest, src, set->key_size);
+    } else {
+        memcpy(dest, src, set->key_size);
+    }
 }
 
 static void nmo_hash_set_move_key(nmo_hash_set_t *set, void *dest, void *src) {
-    nmo_container_move_element(&set->key_lifecycle, dest, src, set->key_size);
+    if (set->key_lifecycle.move) {
+        nmo_container_move_element(&set->key_lifecycle, dest, src, set->key_size);
+    } else {
+        memmove(dest, src, set->key_size);
+    }
 }
 
 static size_t nmo_hash_set_next_capacity(size_t min_capacity) {
@@ -387,6 +395,12 @@ float nmo_hash_set_load_factor(const nmo_hash_set_t *set) {
 
 void nmo_hash_set_clear(nmo_hash_set_t *set) {
     if (!set || !set->states) {
+        return;
+    }
+
+    if (set->key_lifecycle.dispose == NULL) {
+        memset(set->states, NMO_HASH_SET_ENTRY_EMPTY, set->capacity);
+        set->count = 0;
         return;
     }
 
