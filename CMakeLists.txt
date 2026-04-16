@@ -6,6 +6,26 @@ project(libnmo
     LANGUAGES C
 )
 
+set(NMO_PUBLIC_VERSION_HEADER "${PROJECT_SOURCE_DIR}/include/nmo_types.h")
+foreach(_nmo_version_part MAJOR MINOR PATCH)
+    file(STRINGS "${NMO_PUBLIC_VERSION_HEADER}" _nmo_version_line
+        REGEX "^#define NMO_VERSION_${_nmo_version_part} [0-9]+$")
+    if(NOT _nmo_version_line)
+        message(FATAL_ERROR
+            "Failed to parse NMO_VERSION_${_nmo_version_part} from ${NMO_PUBLIC_VERSION_HEADER}")
+    endif()
+    string(REGEX REPLACE "^#define NMO_VERSION_${_nmo_version_part} ([0-9]+)$" "\\1"
+        NMO_PUBLIC_VERSION_${_nmo_version_part} "${_nmo_version_line}")
+endforeach()
+
+set(NMO_PUBLIC_VERSION
+    "${NMO_PUBLIC_VERSION_MAJOR}.${NMO_PUBLIC_VERSION_MINOR}.${NMO_PUBLIC_VERSION_PATCH}")
+if(NOT NMO_PUBLIC_VERSION STREQUAL PROJECT_VERSION)
+    message(FATAL_ERROR
+        "Public version macros in ${NMO_PUBLIC_VERSION_HEADER} (${NMO_PUBLIC_VERSION}) do not match "
+        "project() VERSION (${PROJECT_VERSION}).")
+endif()
+
 # Set C standard to C17
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
