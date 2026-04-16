@@ -27,17 +27,6 @@ static void query_index_free(nmo_object_query_index_t *index, void *ptr)
     }
 }
 
-static void query_index_free_meta_names(nmo_object_query_index_t *index)
-{
-    if (index == NULL || index->metas == NULL) {
-        return;
-    }
-    for (size_t i = 0; i < index->meta_count; i++) {
-        query_index_free(index, index->metas[i].folded_name);
-        index->metas[i].folded_name = NULL;
-    }
-}
-
 static nmo_status_t query_index_init_entry_arrays(nmo_object_query_index_t *index)
 {
     if (index == NULL) {
@@ -106,13 +95,23 @@ static void query_index_dispose_entry_arrays(nmo_object_query_index_t *index)
     nmo_array_dispose(&index->class_entries);
 }
 
+static void query_index_dispose_name_slab(nmo_object_query_index_t *index)
+{
+    if (index == NULL) {
+        return;
+    }
+    query_index_free(index, index->folded_name_slab);
+    index->folded_name_slab = NULL;
+    index->folded_name_slab_size = 0;
+    index->folded_name_slab_capacity = 0;
+}
+
 static void query_index_clear_storage(nmo_object_query_index_t *index)
 {
     if (index == NULL) {
         return;
     }
 
-    query_index_free_meta_names(index);
     query_index_free(index, index->metas);
     query_index_clear_entry_arrays(index);
     query_index_free(index, index->visit_marks);
@@ -123,6 +122,7 @@ static void query_index_clear_storage(nmo_object_query_index_t *index)
     index->metas = NULL;
     index->meta_count = 0;
     index->meta_capacity = 0;
+    index->folded_name_slab_size = 0;
     index->id_to_meta = NULL;
     index->visit_marks = NULL;
     index->visit_generation = 0;
@@ -150,6 +150,52 @@ static void query_index_repository_mutated(
     if (query_flags != 0u) {
         nmo_object_query_index_invalidate(index, query_flags);
     }
+}
+
+static nmo_status_t query_index_reserve_name_slab(
+    nmo_object_query_index_t *index,
+    size_t required)
+{
+    if (index == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (required <= index->folded_name_slab_capacity) {
+        index->folded_name_slab_size = 0;
+        return NMO_OK;
+    }
+
+    char *new_slab = (char *)query_index_alloc(index, required, _Alignof(char));
+    if (new_slab == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    query_index_free(index, index->folded_name_slab);
+    index->folded_name_slab = new_slab;
+    index->folded_name_slab_capacity = required;
+    index->folded_name_slab_size = 0;
+    return NMO_OK;
+}
+
+static nmo_status_t query_index_prepare_name_slab(nmo_object_query_index_t *index)
+{
+    if (index == NULL || index->repository == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t total = nmo_object_repository_get_count(index->repository);
+    size_t required = 0;
+    for (size_t i = 0; i < total; i++) {
+        nmo_object_t *object = nmo_object_repository_get_by_index(index->repository, i);
+        if (object == NULL) {
+            continue;
+        }
+        const char *name = nmo_object_get_name(object);
+        size_t len = strlen(name != NULL ? name : "");
+        if (required > SIZE_MAX - len - 1) {
+            return NMO_ERR_NOMEM;
+        }
+        required += len + 1;
+    }
+    return query_index_reserve_name_slab(index, required);
 }
 
 static nmo_status_t query_append_id_entry(
@@ -208,18 +254,22 @@ static void query_sort_name_entries(nmo_array_t *entries)
     }
 }
 
-static char *query_fold_copy(nmo_object_query_index_t *index, const char *name)
+static char *query_fold_name_to_slab(nmo_object_query_index_t *index, const char *name)
 {
     const char *src = name != NULL ? name : "";
     size_t len = strlen(src);
-    char *copy = (char *)query_index_alloc(index, len + 1, _Alignof(char));
-    if (copy == NULL) {
+    if (index == NULL ||
+        index->folded_name_slab == NULL ||
+        index->folded_name_slab_size > SIZE_MAX - len - 1 ||
+        index->folded_name_slab_size + len + 1 > index->folded_name_slab_capacity) {
         return NULL;
     }
+    char *copy = index->folded_name_slab + index->folded_name_slab_size;
     for (size_t i = 0; i < len; i++) {
         copy[i] = query_fold_ascii(src[i]);
     }
     copy[len] = '\0';
+    index->folded_name_slab_size += len + 1;
     return copy;
 }
 
@@ -292,6 +342,7 @@ void nmo_object_query_index_destroy(nmo_object_query_index_t *index)
     nmo_allocator_t alloc = index->allocator;
     nmo_object_query_index_detach_repository_observer(index);
     query_index_clear_storage(index);
+    query_index_dispose_name_slab(index);
     query_index_dispose_entry_arrays(index);
     nmo_free(&alloc, index);
 }
@@ -335,6 +386,12 @@ nmo_status_t nmo_object_query_index_rebuild(nmo_object_query_index_t *index)
         return NMO_ERR_NOMEM;
     }
 
+    nmo_status_t status = query_index_prepare_name_slab(index);
+    if (status != NMO_OK) {
+        query_index_clear_storage(index);
+        return status;
+    }
+
     for (size_t i = 0; i < total; i++) {
         nmo_object_t *object = nmo_object_repository_get_by_index(index->repository, i);
         if (object == NULL) {
@@ -347,14 +404,13 @@ nmo_status_t nmo_object_query_index_rebuild(nmo_object_query_index_t *index)
         meta->class_id = nmo_object_get_class_id(object);
         meta->repository_index = i;
         meta->object = object;
-        meta->folded_name = query_fold_copy(index, nmo_object_get_name(object));
+        meta->folded_name = query_fold_name_to_slab(index, nmo_object_get_name(object));
         if (meta->folded_name == NULL) {
             query_index_clear_storage(index);
             return NMO_ERR_NOMEM;
         }
 
-        nmo_status_t status =
-            nmo_hash_table_insert(index->id_to_meta, &meta->object_id, &meta_index);
+        status = nmo_hash_table_insert(index->id_to_meta, &meta->object_id, &meta_index);
         if (status != NMO_OK) {
             query_index_clear_storage(index);
             return status;

@@ -42,6 +42,9 @@ struct nmo_object_query_index {
     query_meta_t *metas;
     size_t meta_count;
     size_t meta_capacity;
+    char *folded_name_slab;
+    size_t folded_name_slab_size;
+    size_t folded_name_slab_capacity;
 
     nmo_hash_table_t *id_to_meta;
     nmo_array_t class_entries;        /* query_id_entry_t */

@@ -192,6 +192,40 @@ TEST(object_query_perf, session_index_accelerates_repeated_queries)
     nmo_context_release(ctx);
 }
 
+TEST(object_query_perf, eager_rebuild_uses_batched_name_storage)
+{
+    const size_t object_count = 5000;
+    const size_t class_bucket_count = 32;
+
+    nmo_allocator_t base_allocator = nmo_allocator_default();
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+
+    nmo_object_repository_t *repo = nmo_object_repository_create(&base_allocator);
+    ASSERT_NOT_NULL(repo);
+    populate_perf_repo(repo, &base_allocator, object_count, class_bucket_count);
+
+    nmo_allocator_stats_t stats = {0};
+    nmo_allocator_tracking_t tracking = {0};
+    nmo_allocator_t index_allocator =
+        nmo_allocator_tracking_init(&tracking, base_allocator, &stats);
+
+    nmo_object_query_index_t *index =
+        nmo_object_query_index_create(repo, registry, &index_allocator);
+    ASSERT_NOT_NULL(index);
+    ASSERT_EQ(NMO_OK, nmo_object_query_index_rebuild(index));
+
+    printf("[object_query_perf] eager rebuild allocations: %zu for %zu objects\n",
+           stats.total_allocations, object_count);
+    ASSERT_LT(stats.total_allocations, object_count / 4);
+
+    nmo_object_query_index_destroy(index);
+    nmo_object_repository_destroy(repo);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST_CATEGORIZED(object_query_perf, session_index_accelerates_repeated_queries, TEST_CATEGORY_PERFORMANCE);
+    REGISTER_TEST_CATEGORIZED(object_query_perf, eager_rebuild_uses_batched_name_storage, TEST_CATEGORY_PERFORMANCE);
 TEST_MAIN_END()
