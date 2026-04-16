@@ -69,6 +69,19 @@ static nmo_status_t save_txn_write_u32_le(nmo_txn_handle_t *txn, uint32_t value)
     return nmo_txn_write(txn, encoded, sizeof(encoded));
 }
 
+static nmo_txn_durability_t save_txn_durability_from_options(
+    nmo_save_durability_t durability)
+{
+    switch (durability) {
+        case NMO_SAVE_DURABILITY_FAST:
+            return NMO_TXN_NONE;
+        case NMO_SAVE_DURABILITY_FSYNC:
+        case NMO_SAVE_DURABILITY_DEFAULT:
+        default:
+            return NMO_TXN_FSYNC;
+    }
+}
+
 /* ============================================================================
  * Internal Structures
  * ============================================================================ */
@@ -127,6 +140,8 @@ struct nmo_serializer {
 
     /* Statistics */
     nmo_save_stats_t stats;
+    nmo_save_perf_stats_t local_perf_stats;
+    nmo_save_perf_stats_t *perf_stats;
 
     /* Phase tracking */
     int phase1_complete;
@@ -135,6 +150,21 @@ struct nmo_serializer {
 
 static inline nmo_arena_t *save_scratch(const nmo_serializer_t *ctx) {
     return ctx->scratch;
+}
+
+static uint64_t save_perf_begin(const nmo_serializer_t *ctx) {
+    return (ctx != NULL && ctx->perf_stats != NULL) ? nmo_perf_now_ticks() : 0u;
+}
+
+static void save_perf_end(const nmo_serializer_t *ctx,
+                          nmo_save_perf_phase_t phase,
+                          uint64_t start_ticks) {
+    if (ctx == NULL || ctx->perf_stats == NULL) {
+        return;
+    }
+    uint64_t end_ticks = nmo_perf_now_ticks();
+    nmo_save_perf_stats_record(ctx->perf_stats, phase,
+                               nmo_perf_elapsed_ms(start_ticks, end_ticks));
 }
 
 /* ============================================================================
@@ -186,6 +216,7 @@ static void save_log_require_schema_failure(nmo_logger_t *logger,
 nmo_save_options_t nmo_save_options_default(void) {
     nmo_save_options_t opts = {0};
     opts.flags = NMO_SAVE_DEFAULT;
+    opts.durability = NMO_SAVE_DURABILITY_DEFAULT;
     opts.compress_header = true;
     opts.compress_data = true;
     opts.compute_crc = true;
@@ -382,6 +413,12 @@ nmo_serializer_t *nmo_serializer_create(
     } else {
         save_ctx->options = nmo_save_options_default();
     }
+    if (save_ctx->options.collect_perf_stats) {
+        save_ctx->perf_stats = (save_ctx->options.perf_stats != NULL)
+            ? save_ctx->options.perf_stats
+            : &save_ctx->local_perf_stats;
+        save_ctx->options.perf_stats = save_ctx->perf_stats;
+    }
 
     /* Get file info from session */
     save_ctx->file_info = nmo_session_get_file_info(session);
@@ -407,6 +444,9 @@ nmo_status_t nmo_serializer_layout(nmo_serializer_t *ctx) {
     if (ctx == NULL) {
         return SAVE_ERR(NMO_ERR_INVALID_ARGUMENT, "NULL context");
     }
+    if (nmo_session_is_partial_load(ctx->session)) {
+        return SAVE_ERR(NMO_ERR_INVALID_STATE, "Cannot save partial-load session");
+    }
 
     nmo_log(ctx->logger, NMO_LOG_INFO, "=== Save Pipeline Phase 1: Layout & Serialize ===");
 
@@ -425,7 +465,9 @@ nmo_status_t nmo_serializer_layout(nmo_serializer_t *ctx) {
     if (result != NMO_OK) return result;
 
     /* Step 1.2: Execute manager pre-save hooks */
+    uint64_t pre_hooks_start = save_perf_begin(ctx);
     result = save_execute_pre_hooks(ctx);
+    save_perf_end(ctx, NMO_SAVE_PERF_PRE_HOOKS, pre_hooks_start);
     if (result != NMO_OK) return result;
 
     result = save_report_progress(ctx, NMO_SERIALIZE_PHASE_SERIALIZE, 0.2f,
@@ -433,7 +475,9 @@ nmo_status_t nmo_serializer_layout(nmo_serializer_t *ctx) {
     if (result != NMO_OK) return result;
 
     /* Step 1.3: Build ID remap plan */
+    uint64_t remap_start = save_perf_begin(ctx);
     result = save_build_remap_plan(ctx);
+    save_perf_end(ctx, NMO_SAVE_PERF_REMAP_PLAN, remap_start);
     if (result != NMO_OK) return result;
 
     result = save_report_progress(ctx, NMO_SERIALIZE_PHASE_SERIALIZE, 0.35f,
@@ -441,7 +485,9 @@ nmo_status_t nmo_serializer_layout(nmo_serializer_t *ctx) {
     if (result != NMO_OK) return result;
 
     /* Step 1.4: Serialize managers */
+    uint64_t managers_start = save_perf_begin(ctx);
     result = save_serialize_managers(ctx);
+    save_perf_end(ctx, NMO_SAVE_PERF_MANAGER_SERIALIZE, managers_start);
     if (result != NMO_OK) return result;
 
     result = save_report_progress(ctx, NMO_SERIALIZE_PHASE_SERIALIZE, 0.55f,
@@ -449,7 +495,9 @@ nmo_status_t nmo_serializer_layout(nmo_serializer_t *ctx) {
     if (result != NMO_OK) return result;
 
     /* Step 1.5: Serialize objects */
+    uint64_t objects_start = save_perf_begin(ctx);
     result = save_serialize_objects(ctx);
+    save_perf_end(ctx, NMO_SAVE_PERF_OBJECT_SERIALIZE, objects_start);
     if (result != NMO_OK) return result;
 
     result = save_report_progress(ctx, NMO_SERIALIZE_PHASE_SERIALIZE, 0.75f,
@@ -527,7 +575,9 @@ nmo_status_t nmo_serializer_commit(nmo_serializer_t *ctx, const char *path) {
     if (result != NMO_OK) return result;
 
     /* Step 2.3: Execute post-save hooks */
+    uint64_t post_hooks_start = save_perf_begin(ctx);
     result = save_execute_post_hooks(ctx);
+    save_perf_end(ctx, NMO_SAVE_PERF_POST_HOOKS, post_hooks_start);
     if (result != NMO_OK) return result;
 
     result = save_report_progress(ctx, NMO_SERIALIZE_PHASE_POST_HOOKS, 1.0f,
@@ -551,6 +601,14 @@ nmo_save_stats_t nmo_serializer_get_stats(const nmo_serializer_t *ctx) {
     return ctx->stats;
 }
 
+nmo_save_perf_stats_t nmo_serializer_get_perf_stats(const nmo_serializer_t *ctx) {
+    if (ctx == NULL || ctx->perf_stats == NULL) {
+        nmo_save_perf_stats_t empty = {0};
+        return empty;
+    }
+    return *ctx->perf_stats;
+}
+
 nmo_status_t nmo_save_file(
     nmo_session_t *session,
     const char *path,
@@ -558,6 +616,9 @@ nmo_status_t nmo_save_file(
 {
     if (session == NULL || path == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (nmo_session_is_partial_load(session)) {
+        return NMO_ERR_INVALID_STATE;
     }
 
     /* Resolve compression settings before handing off to the two-phase
@@ -1020,9 +1081,20 @@ static nmo_status_t save_build_data_section(nmo_serializer_t *ctx) {
         }
     }
 
-    /* Calculate data section size */
-    size_t data_size = nmo_data_section_calculate_size(&data_sect, file_version, save_scratch(ctx));
+    /* Build data section plan and serialize generated chunks once. */
+    nmo_data_section_plan_t data_plan = {0};
+    uint64_t data_plan_start = save_perf_begin(ctx);
+    nmo_status_t result = nmo_data_section_plan_build(&data_sect, file_version, save_scratch(ctx), &data_plan);
+    save_perf_end(ctx, NMO_SAVE_PERF_DATA_PLAN, data_plan_start);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    size_t data_size = data_plan.total_size;
     nmo_log(ctx->logger, NMO_LOG_INFO, "  Data section unpack size: %zu bytes", data_size);
+    if (ctx->perf_stats != NULL) {
+        ctx->perf_stats->planned_chunk_bytes = data_size;
+    }
 
     /* Allocate buffer */
     ctx->data_buffer = nmo_arena_alloc(save_scratch(ctx), data_size, 16);
@@ -1031,18 +1103,22 @@ static nmo_status_t save_build_data_section(nmo_serializer_t *ctx) {
     }
 
     /* Serialize data section */
-    size_t bytes_written = 0;
-    nmo_status_t result = nmo_data_section_serialize(
-        &data_sect, file_version, ctx->data_buffer, data_size, &bytes_written, save_scratch(ctx));
+    uint64_t data_write_start = save_perf_begin(ctx);
+    result = nmo_data_section_plan_write(
+        &data_sect, &data_plan, file_version, (uint8_t *)ctx->data_buffer, data_size);
+    save_perf_end(ctx, NMO_SAVE_PERF_DATA_WRITE, data_write_start);
 
     if (result != NMO_OK) {
         return result;
     }
 
-    ctx->data_unpack_size = bytes_written;
-    ctx->stats.data_unpack_size = bytes_written;
+    ctx->data_unpack_size = data_size;
+    ctx->stats.data_unpack_size = data_size;
+    if (ctx->perf_stats != NULL) {
+        ctx->perf_stats->data_unpacked_bytes = data_size;
+    }
 
-    nmo_log(ctx->logger, NMO_LOG_INFO, "  Data section serialized: %zu bytes", bytes_written);
+    nmo_log(ctx->logger, NMO_LOG_INFO, "  Data section serialized: %zu bytes", data_size);
 
     NMO_RETURN_OK();
 }
@@ -1157,32 +1233,41 @@ static nmo_status_t save_build_header1(nmo_serializer_t *ctx) {
         hdr1.included_files = NULL;
     }
 
-    /* First pass: serialize to get Header1 unpack size */
-    void *header1_probe = NULL;
-    size_t header1_probe_size = 0;
-    nmo_status_t result = nmo_header1_serialize(
-        &hdr1, &header1_probe, &header1_probe_size, save_scratch(ctx));
+    /* Plan Header1 size before FileIndex values are filled. The final values
+     * do not affect serialized width, so the same layout can be reused.
+     */
+    nmo_header1_layout_t header1_layout = {0};
+    uint64_t header_plan_start = save_perf_begin(ctx);
+    nmo_status_t result = nmo_header1_plan(&hdr1, save_scratch(ctx), &header1_layout);
 
     if (result != NMO_OK) {
+        save_perf_end(ctx, NMO_SAVE_PERF_HEADER1_PLAN, header_plan_start);
         return result;
     }
-    (void)header1_probe;
 
     /* Fill FileIndex offsets (uncompressed file buffer) */
-    result = save_fill_file_indices(ctx, header1_probe_size, file_version);
+    result = save_fill_file_indices(ctx, header1_layout.total_size, file_version);
+    save_perf_end(ctx, NMO_SAVE_PERF_HEADER1_PLAN, header_plan_start);
     if (result != NMO_OK) {
         return result;
     }
 
     /* Final serialize with correct FileIndex values */
-    result = nmo_header1_serialize(
-        &hdr1, &ctx->header1_buffer, &ctx->header1_unpack_size, save_scratch(ctx));
+    uint64_t header_write_start = save_perf_begin(ctx);
+    uint8_t *header1_buffer = NULL;
+    result = nmo_header1_write_planned(
+        &hdr1, &header1_layout, save_scratch(ctx), &header1_buffer, &ctx->header1_unpack_size);
+    ctx->header1_buffer = header1_buffer;
+    save_perf_end(ctx, NMO_SAVE_PERF_HEADER1_WRITE, header_write_start);
 
     if (result != NMO_OK) {
         return result;
     }
 
     ctx->stats.header1_unpack_size = ctx->header1_unpack_size;
+    if (ctx->perf_stats != NULL) {
+        ctx->perf_stats->header1_unpacked_bytes = ctx->header1_unpack_size;
+    }
 
     nmo_log(ctx->logger, NMO_LOG_INFO, "  Header1 serialized: %zu bytes", ctx->header1_unpack_size);
 
@@ -1217,12 +1302,14 @@ static nmo_status_t save_compress_sections(nmo_serializer_t *ctx) {
         }
 
         mz_ulong dest_len = bound;
+        uint64_t header_compress_start = save_perf_begin(ctx);
         int comp_result = mz_compress2(
             (unsigned char *)compressed,
             &dest_len,
             (const unsigned char *)ctx->header1_buffer,
             (mz_ulong)ctx->header1_unpack_size,
             compression_level);
+        save_perf_end(ctx, NMO_SAVE_PERF_HEADER1_COMPRESS, header_compress_start);
 
         if (comp_result != MZ_OK) {
             return SAVE_ERR(NMO_ERR_INTERNAL, "Header1 compression failed");
@@ -1253,12 +1340,14 @@ static nmo_status_t save_compress_sections(nmo_serializer_t *ctx) {
         }
 
         mz_ulong dest_len = bound;
+        uint64_t data_compress_start = save_perf_begin(ctx);
         int comp_result = mz_compress2(
             (unsigned char *)compressed,
             &dest_len,
             (const unsigned char *)ctx->data_buffer,
             (mz_ulong)ctx->data_unpack_size,
             compression_level);
+        save_perf_end(ctx, NMO_SAVE_PERF_DATA_COMPRESS, data_compress_start);
 
         if (comp_result != MZ_OK) {
             return SAVE_ERR(NMO_ERR_INTERNAL, "Data compression failed");
@@ -1282,6 +1371,10 @@ static nmo_status_t save_compress_sections(nmo_serializer_t *ctx) {
 
     ctx->stats.header1_pack_size = ctx->header1_pack_size;
     ctx->stats.data_pack_size = ctx->data_pack_size;
+    if (ctx->perf_stats != NULL) {
+        ctx->perf_stats->header1_packed_bytes = ctx->header1_pack_size;
+        ctx->perf_stats->data_packed_bytes = ctx->data_pack_size;
+    }
 
     /* Calculate overall compression ratio */
     size_t total_unpack = ctx->header1_unpack_size + ctx->data_unpack_size;
@@ -1350,10 +1443,12 @@ static nmo_status_t save_write_file(nmo_serializer_t *ctx, const char *path) {
     /* Calculate CRC (Adler-32) over all sections */
     uint32_t crc = 0;
     if (ctx->options.compute_crc) {
+        uint64_t crc_start = save_perf_begin(ctx);
         crc = mz_adler32(crc, (const uint8_t *)&header, 32);               /* Part0 */
         crc = mz_adler32(crc, (const uint8_t *)&header.object_count, 56);  /* Part1 */
         crc = mz_adler32(crc, (const uint8_t *)ctx->header1_packed, ctx->header1_pack_size);
         crc = mz_adler32(crc, (const uint8_t *)ctx->data_packed, ctx->data_pack_size);
+        save_perf_end(ctx, NMO_SAVE_PERF_CRC, crc_start);
     }
     header.crc = crc;
     ctx->stats.crc = crc;
@@ -1371,9 +1466,10 @@ static nmo_status_t save_write_file(nmo_serializer_t *ctx, const char *path) {
 
     /* Open atomic transaction */
     nmo_log(ctx->logger, NMO_LOG_INFO, "  Opening output transaction: %s", path);
+    uint64_t txn_write_start = save_perf_begin(ctx);
     nmo_txn_desc_t txn_desc = {
         .path = path,
-        .durability = NMO_TXN_FSYNC,
+        .durability = save_txn_durability_from_options(ctx->options.durability),
         .staging_dir = NULL
     };
 
@@ -1501,8 +1597,11 @@ static nmo_status_t save_write_file(nmo_serializer_t *ctx, const char *path) {
             }
         }
     }
+    save_perf_end(ctx, NMO_SAVE_PERF_TXN_WRITE, txn_write_start);
 
+    uint64_t txn_commit_start = save_perf_begin(ctx);
     write_result = nmo_txn_commit(txn);
+    save_perf_end(ctx, NMO_SAVE_PERF_TXN_COMMIT, txn_commit_start);
     if (write_result != NMO_OK) {
         nmo_txn_rollback(txn);
         nmo_txn_close(txn);

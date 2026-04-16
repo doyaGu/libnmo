@@ -185,6 +185,16 @@ TEST(no_legacy_runtime_api_exports, session_id_remap_compat_layer_is_removed) {
     assert_file_has_no_substring("src/session/deserializer.c", "session/nmo_id_remap.h");
 }
 
+TEST(no_legacy_runtime_api_exports, partial_load_state_setter_is_not_public) {
+    assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_set_partial_load");
+}
+
+TEST(no_legacy_runtime_api_exports, app_layer_does_not_include_session_internal_header) {
+    assert_file_has_no_substring("src/app/load.c", "session_internal.h");
+    assert_file_has_no_substring("src/app/load.c", "nmo_session_internal_has_materialized_load_state");
+    assert_file_has_no_substring("src/app/session.c", "session_internal.h");
+}
+
 TEST(no_legacy_runtime_api_exports, cli_uses_shared_library_object_query_bridge) {
     assert_file_has_no_substring("tools/nmo_cmd_core.h", "nmo_core_iter_objects");
     assert_file_has_no_substring("tools/nmo_cmd_core.c", "nmo_core_iter_objects");
@@ -304,6 +314,8 @@ REGISTER_TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_d
 REGISTER_TEST(no_legacy_runtime_api_exports, runtime_graph_uses_current_ref_graph_names);
 REGISTER_TEST(no_legacy_runtime_api_exports, type_guid_compat_aliases_are_removed);
 REGISTER_TEST(no_legacy_runtime_api_exports, session_id_remap_compat_layer_is_removed);
+REGISTER_TEST(no_legacy_runtime_api_exports, partial_load_state_setter_is_not_public);
+REGISTER_TEST(no_legacy_runtime_api_exports, app_layer_does_not_include_session_internal_header);
 REGISTER_TEST(no_legacy_runtime_api_exports, cli_uses_shared_library_object_query_bridge);
 REGISTER_TEST(no_legacy_runtime_api_exports, cli_object_query_bridge_is_shared);
 REGISTER_TEST(no_legacy_runtime_api_exports, entity_list_uses_shared_object_query_runner);

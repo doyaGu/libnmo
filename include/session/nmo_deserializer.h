@@ -28,6 +28,7 @@
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
+#include "app/nmo_perf_stats.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -67,13 +68,25 @@ typedef enum nmo_load_flags {
 } nmo_load_flags_t;
 
 /**
+ * @brief Amount of file data to materialize during load.
+ */
+typedef enum nmo_load_profile {
+    NMO_LOAD_PROFILE_FULL = 0,       /**< Parse and finalize the complete file */
+    NMO_LOAD_PROFILE_METADATA,       /**< Parse file header/Header1 only */
+    NMO_LOAD_PROFILE_HEADER_ONLY     /**< Parse file header/Header1 only */
+} nmo_load_profile_t;
+
+/**
  * @brief Load pipeline options
  */
 typedef struct nmo_load_options {
     nmo_allocator_t *allocator;      /**< Custom allocator (NULL for default) */
     nmo_load_flags_t flags;          /**< Standard load flags */
+    nmo_load_profile_t profile;      /**< Load depth profile */
     uint32_t max_included_name_len;  /**< Max included filename length */
     uint32_t max_included_file_size; /**< Max included file payload size */
+    bool collect_perf_stats;         /**< Collect phase-level timing stats */
+    nmo_load_perf_stats_t *perf_stats; /**< Optional caller-owned stats sink */
 } nmo_load_options_t;
 
 /**
@@ -155,6 +168,15 @@ NMO_API nmo_status_t nmo_deserializer_finalize(nmo_deserializer_t *ctx);
  * @return Load statistics (valid after all phases complete)
  */
 NMO_API nmo_load_stats_t nmo_deserializer_get_stats(
+    const nmo_deserializer_t *ctx);
+
+/**
+ * @brief Get phase-level load performance statistics.
+ *
+ * @param ctx Deserializer context
+ * @return Performance statistics collected so far, or all-zero stats
+ */
+NMO_API nmo_load_perf_stats_t nmo_deserializer_get_perf_stats(
     const nmo_deserializer_t *ctx);
 
 /**

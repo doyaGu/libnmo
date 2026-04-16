@@ -429,10 +429,14 @@ nmo_status_t nmo_txn_commit(nmo_txn_handle_t *txn) {
     wchar_t *wtemp = utf8_to_utf16(txn->temp_path, &txn->allocator);
     wchar_t *wfinal = utf8_to_utf16(txn->final_path, &txn->allocator);
 
+    DWORD move_flags = MOVEFILE_REPLACE_EXISTING;
+    if (txn->durability != NMO_TXN_NONE) {
+        move_flags |= MOVEFILE_WRITE_THROUGH;
+    }
+
     BOOL rename_result = FALSE;
     if (wtemp && wfinal) {
-        rename_result = MoveFileExW(wtemp, wfinal,
-                                   MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+        rename_result = MoveFileExW(wtemp, wfinal, move_flags);
     }
 
     if (wtemp) nmo_free(&txn->allocator, wtemp);

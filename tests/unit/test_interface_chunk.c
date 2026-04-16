@@ -1466,7 +1466,9 @@ TEST(interface_chunk, integration_real_file) {
         return;
     }
 
-    /* post_load should have called nmo_behavior_parse_all_interfaces.
+    ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session));
+
+    /* Behavior acceleration should parse interface chunks on demand.
      * Iterate all behaviors and check that at least one has interface_data. */
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
     ASSERT_NOT_NULL(repo);
@@ -1535,6 +1537,7 @@ TEST(interface_chunk, integration_prevent_collision_parses_all_interfaces) {
         nmo_context_release(ctx);
         return;
     }
+    ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session));
 
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
     ASSERT_NOT_NULL(repo);
@@ -1925,6 +1928,7 @@ TEST(interface_chunk, write_real_file_byte_level_oracle) {
         nmo_context_release(ctx);
         return;  /* skip if data not available */
     }
+    ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session));
 
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
     size_t count = 0;
@@ -2109,6 +2113,7 @@ TEST(interface_chunk, serialize_structured_write_round_trip) {
     ASSERT_NOT_NULL(session2);
     int load2_ok = nmo_session_load_file(session2, temp_path, NULL, NULL);
     ASSERT_EQ(NMO_OK, load2_ok);
+    ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session2));
 
     nmo_object_repository_t *repo2 = nmo_session_get_repository(session2);
     nmo_object_t *obj2 = nmo_object_repository_find_by_file_id(repo2, 250);
@@ -2134,6 +2139,7 @@ TEST(interface_chunk, serialize_structured_write_round_trip) {
     ASSERT_NOT_NULL(session3);
     int load3_ok = nmo_session_load_file(session3, temp_path2, NULL, NULL);
     ASSERT_EQ(NMO_OK, load3_ok);
+    ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session3));
 
     nmo_object_repository_t *repo3 = nmo_session_get_repository(session3);
     nmo_object_t *obj3 = nmo_object_repository_find_by_file_id(repo3, 250);

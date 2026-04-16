@@ -86,9 +86,14 @@ typedef struct nmo_session {
     /* Backing store for plugin diagnostics entries (arena-backed) */
     nmo_arena_array_t plugin_diag_entries;
 
-    /* Behavior ownership index (built after load, lazy-rebuilt when dirty) */
+    /* Behavior acceleration (lazy after load, lazy-rebuilt when dirty) */
     nmo_behavior_index_t *behavior_index;
-    int behavior_index_dirty;
+    int behavior_accel_dirty;
+    int behavior_accel_built;
+    int behavior_interface_dirty;
+
+    /* Partial loads contain only metadata/header state and cannot be mutated. */
+    int partial_load;
 
     /* Cached reference graph (lazy-built, invalidated on mutation) */
     nmo_ref_graph_t *cached_ref_graph;
@@ -101,7 +106,8 @@ typedef struct nmo_session {
 /**
  * Create session
  */
-static void nmo_session_build_behavior_index(nmo_session_t *session);
+static int nmo_session_build_behavior_index(nmo_session_t *session);
+static int nmo_session_ensure_behavior_index(nmo_session_t *session);
 static void nmo_session_post_load(nmo_session_t *session);
 nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     if (ctx == NULL) {
@@ -319,19 +325,18 @@ nmo_object_repository_t *nmo_session_get_repository(const nmo_session_t *session
 
 nmo_behavior_index_t *nmo_session_get_behavior_index(nmo_session_t *session) {
     if (session == NULL) return NULL;
-    /* Lazy rebuild when dirty */
-    if (session->behavior_index_dirty && session->behavior_index != NULL) {
-        nmo_behavior_index_destroy(session->behavior_index);
-        session->behavior_index = NULL;
-        nmo_session_build_behavior_index(session);
-        session->behavior_index_dirty = 0;
+    int index_result = nmo_session_ensure_behavior_index(session);
+    if (index_result != NMO_OK) {
+        return NULL;
     }
     return session->behavior_index;
 }
 
 void nmo_session_invalidate_behavior_index(nmo_session_t *session) {
     if (session != NULL) {
-        session->behavior_index_dirty = 1;
+        session->behavior_accel_dirty = 1;
+        session->behavior_interface_dirty = 1;
+        session->behavior_accel_built = 0;
     }
 }
 
@@ -378,29 +383,96 @@ void nmo_session_invalidate_ref_graph(nmo_session_t *session) {
     }
 }
 
-static void nmo_session_build_behavior_index(nmo_session_t *session) {
-    if (!session || !session->context || session->behavior_index != NULL)
-        return;
+static int nmo_session_build_behavior_index(nmo_session_t *session) {
+    if (session == NULL || session->context == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (session->behavior_index != NULL) {
+        return NMO_OK;
+    }
+
     session->behavior_index = nmo_behavior_index_create(session->arena);
     if (session->behavior_index != NULL) {
-        nmo_behavior_index_build(session->behavior_index, session->context, session);
-        session->behavior_index_dirty = 0;
+        int build_result = nmo_behavior_index_build(session->behavior_index, session->context, session);
+        if (build_result != NMO_OK) {
+            nmo_behavior_index_destroy(session->behavior_index);
+            session->behavior_index = NULL;
+            return build_result;
+        }
+        return NMO_OK;
     }
+    return NMO_ERR_NOMEM;
 }
 
-static void nmo_session_post_load(nmo_session_t *session) {
-    nmo_session_build_behavior_index(session);
-    if (session && session->repository) {
+static int nmo_session_ensure_behavior_index(nmo_session_t *session) {
+    if (session == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (session->behavior_accel_dirty && session->behavior_index != NULL) {
+        nmo_behavior_index_destroy(session->behavior_index);
+        session->behavior_index = NULL;
+    }
+
+    if (session->behavior_accel_dirty || session->behavior_index == NULL) {
+        int build_result = nmo_session_build_behavior_index(session);
+        if (build_result != NMO_OK) {
+            session->behavior_accel_built = 0;
+            session->behavior_accel_dirty = 1;
+            return build_result;
+        }
+        session->behavior_accel_dirty = 0;
+    }
+
+    return NMO_OK;
+}
+
+int nmo_session_ensure_behavior_acceleration(nmo_session_t *session) {
+    if (session == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (session->behavior_accel_built &&
+        !session->behavior_accel_dirty &&
+        !session->behavior_interface_dirty) {
+        return NMO_OK;
+    }
+
+    int index_result = nmo_session_ensure_behavior_index(session);
+    if (index_result != NMO_OK) {
+        return index_result;
+    }
+
+    if ((session->behavior_interface_dirty || !session->behavior_accel_built) &&
+        session->repository != NULL) {
         nmo_logger_t *logger = session->context
             ? nmo_context_get_logger(session->context)
             : NULL;
-        nmo_status_t st = nmo_behavior_parse_all_interfaces(
+        nmo_status_t parse_result = nmo_behavior_parse_all_interfaces(
             session->repository, logger);
-        if (st != NMO_OK && logger) {
-            nmo_log(logger, NMO_LOG_WARN,
-                    "Post-load interface parsing reported errors; first status=%d",
-                    st);
+        if (parse_result != NMO_OK) {
+            if (logger) {
+                nmo_log(logger, NMO_LOG_WARN,
+                        "Behavior interface parsing reported errors; first status=%d",
+                        parse_result);
+            }
+            session->behavior_accel_built = 0;
+            session->behavior_interface_dirty = 1;
+            return parse_result;
         }
+        session->behavior_interface_dirty = 0;
+    }
+
+    session->behavior_accel_built = 1;
+    session->behavior_accel_dirty = 0;
+    return NMO_OK;
+}
+
+static void nmo_session_post_load(nmo_session_t *session) {
+    if (session != NULL) {
+        session->behavior_accel_built = 0;
+        session->behavior_accel_dirty = 1;
+        session->behavior_interface_dirty = 1;
     }
 }
 
@@ -780,6 +852,16 @@ int nmo_session_execute(
     const nmo_runtime_request_t *request,
     nmo_runtime_report_t *out_report
 ) {
+    if (session == NULL || request == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (session->partial_load && request->kind != NMO_RUNTIME_OP_LOAD) {
+        if (out_report != NULL) {
+            memset(out_report, 0, sizeof(*out_report));
+            out_report->status = NMO_ERR_INVALID_STATE;
+        }
+        return NMO_ERR_INVALID_STATE;
+    }
     return nmo_runtime_kernel_execute(session, request, out_report);
 }
 
@@ -896,6 +978,9 @@ int nmo_session_preview_destroy(
     if (session == NULL || object_ids == NULL || object_count == 0 ||
         out_expanded_ids == NULL || out_expanded_count == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (session->partial_load) {
+        return NMO_ERR_INVALID_STATE;
     }
 
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
@@ -1407,4 +1492,56 @@ void nmo_session_set_runtime_ops(nmo_session_t *session,
 const nmo_runtime_ops_t *nmo_session_get_runtime_ops(
     const nmo_session_t *session) {
     return session ? &session->runtime_ops : NULL;
+}
+
+void nmo_session_internal_set_partial_load(nmo_session_t *session, int partial) {
+    if (session != NULL) {
+        session->partial_load = partial ? 1 : 0;
+    }
+}
+
+int nmo_session_has_materialized_load_state(const nmo_session_t *session) {
+    if (session == NULL) {
+        return 0;
+    }
+    if (session->partial_load) {
+        return 1;
+    }
+    if (session->file_header != NULL || session->file_header_size != 0) {
+        return 1;
+    }
+    if (session->file_state.info.file_version != 0 ||
+        session->file_state.info.file_version2 != 0 ||
+        session->file_state.info.ck_version != 0 ||
+        session->file_state.info.product_version != 0 ||
+        session->file_state.info.product_build != 0 ||
+        session->file_state.info.file_size != 0 ||
+        session->file_state.info.object_count != 0 ||
+        session->file_state.info.manager_count != 0 ||
+        session->file_state.info.write_mode != 0) {
+        return 1;
+    }
+    if (session->file_state.manager_data != NULL ||
+        session->file_state.manager_data_count != 0 ||
+        session->file_state.plugin_deps != NULL ||
+        session->file_state.plugin_dep_count != 0) {
+        return 1;
+    }
+    if (session->repository != NULL &&
+        nmo_object_repository_get_count(session->repository) > 0) {
+        return 1;
+    }
+    if (session->included_files.count > 0 ||
+        session->finish_stats_valid ||
+        session->plugin_diag_valid ||
+        session->chunk_pool != NULL ||
+        (session->shadow_storage != NULL &&
+         nmo_shadow_has_included_files(session->shadow_storage))) {
+        return 1;
+    }
+    return 0;
+}
+
+int nmo_session_is_partial_load(const nmo_session_t *session) {
+    return (session != NULL) ? session->partial_load : 0;
 }

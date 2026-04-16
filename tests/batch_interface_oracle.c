@@ -64,6 +64,12 @@ static void verify_file(const char *path, oracle_stats_t *stats) {
     }
     stats->files_loaded++;
 
+    if (nmo_session_ensure_behavior_acceleration(session) != NMO_OK) {
+        nmo_session_destroy(session);
+        nmo_context_release(ctx);
+        return;
+    }
+
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
     size_t count = 0;
     nmo_object_t **all = nmo_object_repository_get_all(repo, &count);

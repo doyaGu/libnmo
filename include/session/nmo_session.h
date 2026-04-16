@@ -121,14 +121,26 @@ NMO_API nmo_object_repository_t *nmo_session_get_repository(const nmo_session_t 
 /**
  * @brief Get behavior ownership index.
  *
- * Built automatically during file loading. Returns NULL if no file loaded.
- * Lazily rebuilt when stale after any session-execute mutation
+ * Lazily built on first access after file loading. Returns NULL if the build
+ * fails. Rebuilt when stale after any session-execute mutation
  * (nmo_session_create_object, nmo_session_copy_objects,
  * nmo_session_destroy_objects, or any nmo_session_execute call).
  *
  * @ownership borrowed (owned by session, valid until next mutation)
  */
 NMO_API nmo_behavior_index_t *nmo_session_get_behavior_index(nmo_session_t *session);
+
+/**
+ * @brief Ensure behavior acceleration structures are built.
+ *
+ * Builds or refreshes the behavior ownership index and parses pending behavior
+ * interface chunks into structured interface data. This is used by behavior
+ * graph/read/edit APIs and is lazy after load.
+ *
+ * @param session Session
+ * @return NMO_OK on success, otherwise an NMO_ERR_* code
+ */
+NMO_API int nmo_session_ensure_behavior_acceleration(nmo_session_t *session);
 
 /**
  * @brief Get or lazily build the reference graph for this session.
@@ -154,7 +166,7 @@ NMO_API void nmo_session_invalidate_ref_graph(nmo_session_t *session);
  * @brief Mark the behavior index as stale.
  *
  * Called internally after mutations (create/copy/delete). The index will
- * be rebuilt lazily on the next call to nmo_session_get_behavior_index().
+ * be rebuilt lazily on the next behavior acceleration access.
  */
 NMO_API void nmo_session_invalidate_behavior_index(nmo_session_t *session);
 
@@ -188,6 +200,21 @@ NMO_API void nmo_session_set_runtime_ops(nmo_session_t *session,
  */
 NMO_API const nmo_runtime_ops_t *nmo_session_get_runtime_ops(
     const nmo_session_t *session);
+
+/**
+ * @brief Return non-zero when the session contains partial load data only.
+ */
+NMO_API int nmo_session_is_partial_load(const nmo_session_t *session);
+
+/**
+ * @brief Return non-zero when the session already contains loaded file state.
+ *
+ * This includes full object data as well as non-object runtime state such as
+ * file headers, manager data, plugin dependencies, included files, and cached
+ * load diagnostics. Partial metadata/header-only loads require this to be
+ * false before they can safely populate a session.
+ */
+NMO_API int nmo_session_has_materialized_load_state(const nmo_session_t *session);
 
 /**
  * @brief Execute unified runtime operation.

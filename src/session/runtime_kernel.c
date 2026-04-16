@@ -35,6 +35,31 @@ static int runtime_init_report(nmo_runtime_report_t *report)
 
 /* ── Manager event dispatch ────────────────────────────────────── */
 
+static nmo_load_perf_stats_t *runtime_load_perf_stats(const nmo_runtime_request_t *request)
+{
+    if (request == NULL || request->payload.load.options == NULL ||
+        !request->payload.load.options->collect_perf_stats) {
+        return NULL;
+    }
+    return request->payload.load.options->perf_stats;
+}
+
+static uint64_t runtime_load_perf_begin(nmo_load_perf_stats_t *stats)
+{
+    return (stats != NULL) ? nmo_perf_now_ticks() : 0u;
+}
+
+static void runtime_load_perf_end(nmo_load_perf_stats_t *stats,
+                                  nmo_load_perf_phase_t phase,
+                                  uint64_t start_ticks)
+{
+    if (stats == NULL) {
+        return;
+    }
+    uint64_t end_ticks = nmo_perf_now_ticks();
+    nmo_load_perf_stats_record(stats, phase, nmo_perf_elapsed_ms(start_ticks, end_ticks));
+}
+
 static int runtime_dispatch_manager_event(
     nmo_session_t *session,
     nmo_runtime_event_kind_t event_kind,
@@ -513,9 +538,11 @@ int nmo_runtime_kernel_finalize_load(
 
     nmo_runtime_load_stats_t finish_stats;
     memset(&finish_stats, 0, sizeof(finish_stats));
+    nmo_load_perf_stats_t *perf_stats = runtime_load_perf_stats(request);
 
     nmo_reference_resolver_t *resolver = nmo_session_get_reference_resolver(session);
     if (resolver != NULL) {
+        uint64_t reference_start = runtime_load_perf_begin(perf_stats);
         (void)nmo_reference_resolver_resolve_all(resolver);
 
         nmo_reference_stats_t resolver_stats;
@@ -542,6 +569,7 @@ int nmo_runtime_kernel_finalize_load(
                 }
             }
         }
+        runtime_load_perf_end(perf_stats, NMO_LOAD_PERF_REFERENCE_RESOLVE, reference_start);
     }
 
     /* Strict mode: fail if any references are unresolved */
@@ -611,22 +639,30 @@ int nmo_runtime_kernel_finalize_load(
     /* Post-load callback (e.g., build behavior index) */
     {
         const nmo_runtime_ops_t *ops = nmo_session_get_runtime_ops(session);
-        if (ops && ops->post_load) ops->post_load(session);
+        if (ops && ops->post_load) {
+            uint64_t behavior_start = runtime_load_perf_begin(perf_stats);
+            ops->post_load(session);
+            runtime_load_perf_end(perf_stats, NMO_LOAD_PERF_BEHAVIOR_POST_LOAD, behavior_start);
+        }
     }
 
     uint32_t manager_errors = 0;
+    uint64_t manager_start = runtime_load_perf_begin(perf_stats);
     (void)runtime_dispatch_manager_event(
         session,
         NMO_RUNTIME_EVENT_POST_LOAD,
         NULL,
         &manager_errors);
+    runtime_load_perf_end(perf_stats, NMO_LOAD_PERF_MANAGER_POST_LOAD, manager_start);
     finish_stats.manager_errors = manager_errors;
 
     if (out_report != NULL) {
         out_report->manager_event_errors += manager_errors;
     }
 
+    uint64_t index_start = runtime_load_perf_begin(perf_stats);
     int index_result = nmo_session_rebuild_indexes(session, NMO_INDEX_BUILD_ALL);
+    runtime_load_perf_end(perf_stats, NMO_LOAD_PERF_INDEX_REBUILD, index_start);
     if (index_result != NMO_OK && logger != NULL) {
         nmo_log(logger, NMO_LOG_WARN,
                 "Runtime index rebuild failed: %d", index_result);

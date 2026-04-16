@@ -405,6 +405,9 @@ nmo_status_t nmo_session_edit_begin(
         return NMO_ERR_INVALID_ARGUMENT;
     }
     *out_edit = NULL;
+    if (nmo_session_is_partial_load(session)) {
+        return NMO_ERR_INVALID_STATE;
+    }
 
     nmo_session_edit_t *edit = (nmo_session_edit_t *)calloc(1, sizeof(*edit));
     if (edit == NULL) {
@@ -483,6 +486,9 @@ nmo_status_t nmo_session_apply_edit_flags(nmo_session_t *session, uint32_t flags
 {
     if (session == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (nmo_session_is_partial_load(session)) {
+        return NMO_ERR_INVALID_STATE;
     }
     if ((flags & NMO_SESSION_EDIT_BEHAVIOR_GRAPH) != 0u) {
         nmo_session_invalidate_behavior_index(session);

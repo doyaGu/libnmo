@@ -29,6 +29,7 @@
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "app/nmo_perf_stats.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -76,10 +77,20 @@ typedef enum nmo_save_flags {
 } nmo_save_flags_t;
 
 /**
+ * @brief Save transaction durability mode.
+ */
+typedef enum nmo_save_durability {
+    NMO_SAVE_DURABILITY_DEFAULT = 0, /**< Current durable default behavior */
+    NMO_SAVE_DURABILITY_FSYNC,       /**< Explicit durable fsync/write-through behavior */
+    NMO_SAVE_DURABILITY_FAST         /**< Atomic write without explicit flush/write-through */
+} nmo_save_durability_t;
+
+/**
  * @brief Save pipeline options
  */
 typedef struct nmo_save_options {
     uint32_t flags;              /**< nmo_save_flags_t bitmask */
+    nmo_save_durability_t durability; /**< Transaction durability mode */
     bool compress_header;        /**< Compress Header1 section */
     bool compress_data;          /**< Compress Data section */
     bool compute_crc;            /**< Compute and write CRC (default: true) */
@@ -88,6 +99,8 @@ typedef struct nmo_save_options {
     nmo_save_progress_callback_t progress_fn; /**< Progress callback (optional) */
     void *progress_user_data;     /**< User data for progress callback */
     bool allow_cancel;            /**< Allow cancellation via callback */
+    bool collect_perf_stats;      /**< Collect phase-level timing stats */
+    nmo_save_perf_stats_t *perf_stats; /**< Optional caller-owned stats sink */
 
     /** Object filter: if non-NULL, only save objects whose IDs appear
      *  in this array. The array must remain valid until save completes. */
@@ -194,6 +207,14 @@ NMO_API nmo_status_t nmo_serializer_commit(nmo_serializer_t *ctx, const char *pa
  * @return Save statistics (valid only after Phase 2)
  */
 NMO_API nmo_save_stats_t nmo_serializer_get_stats(const nmo_serializer_t *ctx);
+
+/**
+ * @brief Get phase-level save performance statistics.
+ *
+ * @param ctx Save context
+ * @return Performance statistics collected so far, or all-zero stats
+ */
+NMO_API nmo_save_perf_stats_t nmo_serializer_get_perf_stats(const nmo_serializer_t *ctx);
 
 #ifdef __cplusplus
 }

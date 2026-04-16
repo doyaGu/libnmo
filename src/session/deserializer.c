@@ -5,6 +5,7 @@
 
 #include "session/nmo_deserializer.h"
 #include "session/nmo_id_mapping.h"
+#include "session_internal.h"
 
 #include "session/nmo_session.h"
 #include "session/nmo_context.h"
@@ -59,6 +60,8 @@ typedef struct nmo_deserializer {
     nmo_io_interface_t *io;
     nmo_load_options_t options;
     nmo_load_stats_t stats;
+    nmo_load_perf_stats_t local_perf_stats;
+    nmo_load_perf_stats_t *perf_stats;
 
     /* Derived from session */
     nmo_context_t *ctx;
@@ -93,6 +96,21 @@ static int cb_id_register(void *ctx, nmo_object_t *obj, nmo_object_id_t file_ind
 
 static int cb_id_lookup(void *ctx, nmo_object_id_t file_index, nmo_object_id_t *out_id) {
     return nmo_id_mapping_get_runtime_id((const nmo_id_mapping_t *)ctx, file_index, out_id);
+}
+
+static uint64_t load_perf_begin(const nmo_deserializer_t *ds) {
+    return (ds != NULL && ds->perf_stats != NULL) ? nmo_perf_now_ticks() : 0u;
+}
+
+static void load_perf_end(const nmo_deserializer_t *ds,
+                          nmo_load_perf_phase_t phase,
+                          uint64_t start_ticks) {
+    if (ds == NULL || ds->perf_stats == NULL) {
+        return;
+    }
+    uint64_t end_ticks = nmo_perf_now_ticks();
+    nmo_load_perf_stats_record(ds->perf_stats, phase,
+                               nmo_perf_elapsed_ms(start_ticks, end_ticks));
 }
 
 
@@ -420,6 +438,7 @@ nmo_load_options_t nmo_load_options_default(void) {
     memset(&opts, 0, sizeof(opts));
     opts.allocator = NULL;
     opts.flags = NMO_LOAD_DEFAULT;
+    opts.profile = NMO_LOAD_PROFILE_FULL;
     opts.max_included_name_len = NMO_LOAD_DEFAULT_MAX_INCLUDED_NAME_LEN;
     opts.max_included_file_size = NMO_LOAD_DEFAULT_MAX_INCLUDED_FILE_SIZE;
     return opts;
@@ -458,6 +477,12 @@ nmo_deserializer_t *nmo_deserializer_create(
     } else {
         ds->options = nmo_load_options_default();
     }
+    if (ds->options.collect_perf_stats) {
+        ds->perf_stats = (ds->options.perf_stats != NULL)
+            ? ds->options.perf_stats
+            : &ds->local_perf_stats;
+        ds->options.perf_stats = ds->perf_stats;
+    }
 
     /* Derive subsystems from session */
     ds->ctx = nmo_session_get_context(session);
@@ -488,6 +513,11 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
     nmo_logger_t *logger = ds->logger;
     const nmo_load_flags_t flags = ds->options.flags;
     const int preserve_shadow = (flags & NMO_LOAD_PRESERVE_SHADOW) != 0;
+
+    if (ds->options.profile != NMO_LOAD_PROFILE_FULL &&
+        nmo_session_has_materialized_load_state(session)) {
+        return NMO_ERR_INVALID_STATE;
+    }
 
     if (ds->shadow_storage != NULL) {
         nmo_shadow_storage_reset(ds->shadow_storage);
@@ -565,7 +595,9 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
         }
 
         size_t bytes_read = 0;
+        uint64_t read_start = load_perf_begin(ds);
         int read_result = nmo_io_read(io, packed_hdr1, ds->header.hdr1_pack_size, &bytes_read);
+        load_perf_end(ds, NMO_LOAD_PERF_HEADER1_READ, read_start);
         if (read_result != NMO_OK || bytes_read != ds->header.hdr1_pack_size) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to read header1 data");
             return NMO_ERR_INVALID_ARGUMENT;
@@ -586,9 +618,11 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
             }
 
             mz_ulong dest_len = ds->header.hdr1_unpack_size;
+            uint64_t inflate_start = load_perf_begin(ds);
             int uncompress_result = mz_uncompress((unsigned char *) hdr1_data, &dest_len,
                                                   (const unsigned char *) packed_hdr1,
                                                   ds->header.hdr1_pack_size);
+            load_perf_end(ds, NMO_LOAD_PERF_HEADER1_INFLATE, inflate_start);
             if (uncompress_result != MZ_OK) {
                 nmo_log(logger, NMO_LOG_ERROR, "Failed to decompress header1: %d",
                         uncompress_result);
@@ -611,7 +645,9 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
 
         /* Phase 4: Parse Header1 */
         nmo_log(logger, NMO_LOG_INFO, "Phase 4: Parsing header1");
+        uint64_t parse_start = load_perf_begin(ds);
         result = nmo_header1_parse(hdr1_data, hdr1_size, &ds->hdr1, arena);
+        load_perf_end(ds, NMO_LOAD_PERF_HEADER1_PARSE, parse_start);
         if (result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to parse header1");
             return NMO_ERR_INVALID_ARGUMENT;
@@ -633,8 +669,16 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
     ds->stats.crc = ds->header.crc;
     ds->stats.header_compressed = (ds->header.hdr1_pack_size != ds->header.hdr1_unpack_size);
     ds->stats.header1_size = ds->header.hdr1_unpack_size;
+    if (ds->perf_stats != NULL) {
+        ds->perf_stats->packed_header1_bytes = ds->header.hdr1_pack_size;
+        ds->perf_stats->unpacked_header1_bytes = ds->header.hdr1_unpack_size;
+        ds->perf_stats->packed_data_bytes = ds->header.data_pack_size;
+        ds->perf_stats->unpacked_data_bytes = ds->header.data_unpack_size;
+    }
 
     ds->phase_completed = 1;
+    nmo_session_internal_set_partial_load(
+        session, ds->options.profile != NMO_LOAD_PROFILE_FULL);
     return NMO_OK;
 }
 
@@ -644,6 +688,9 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         return NMO_ERR_INVALID_ARGUMENT;
     }
     if (ds->phase_completed != 1) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    if (ds->options.profile != NMO_LOAD_PROFILE_FULL) {
         return NMO_ERR_INVALID_STATE;
     }
 
@@ -658,6 +705,8 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
     const int preserve_shadow = (flags & NMO_LOAD_PRESERVE_SHADOW) != 0;
     const int enforce_plugin_dependencies = (flags & NMO_LOAD_CHECK_DEPENDENCIES) != 0;
     nmo_status_t result;
+
+    nmo_session_internal_set_partial_load(session, 0);
 
     /* Phase 5: Start Load Session */
     nmo_log(logger, NMO_LOG_INFO, "Phase 5: Starting load session (max ID: %u)",
@@ -783,7 +832,9 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         }
 
         size_t bytes_read = 0;
+        uint64_t data_read_start = load_perf_begin(ds);
         int read_result = nmo_io_read(io, packed_buffer, ds->header.data_pack_size, &bytes_read);
+        load_perf_end(ds, NMO_LOAD_PERF_DATA_READ, data_read_start);
         if (read_result != NMO_OK || bytes_read != ds->header.data_pack_size) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to read data section");
             nmo_id_mapping_destroy(id_map);
@@ -808,9 +859,11 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             }
 
             mz_ulong dest_len = ds->header.data_unpack_size;
+            uint64_t data_inflate_start = load_perf_begin(ds);
             int uncompress_result = mz_uncompress((unsigned char *) data_buffer, &dest_len,
                                                   (const unsigned char *) packed_buffer,
                                                   ds->header.data_pack_size);
+            load_perf_end(ds, NMO_LOAD_PERF_DATA_INFLATE, data_inflate_start);
             if (uncompress_result != MZ_OK) {
                 nmo_log(logger, NMO_LOG_ERROR, "Failed to decompress data section: %d",
                         uncompress_result);
@@ -845,8 +898,10 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             }
         }
 
+        uint64_t data_parse_start = load_perf_begin(ds);
         result = nmo_data_section_parse(data_buffer, data_size, ds->header.file_version,
                                         &ds->data_sect, ds->chunk_pool, arena);
+        load_perf_end(ds, NMO_LOAD_PERF_DATA_PARSE, data_parse_start);
         if (result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to parse data section");
             nmo_id_mapping_destroy(id_map);
@@ -913,6 +968,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
 
     {
         const nmo_allocator_t *obj_allocator = nmo_context_get_allocator(ds->ctx);
+        uint64_t object_create_start = load_perf_begin(ds);
         int prep_result = nmo_object_system_prepare_loaded_objects(
             obj_allocator,
             arena,
@@ -928,6 +984,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             ds->data_sect.manager_count,
             logger,
             &remap_error_count);
+        load_perf_end(ds, NMO_LOAD_PERF_OBJECT_CREATE, object_create_start);
 
         if (prep_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR,
@@ -1022,6 +1079,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
                     "  Failed to create session reference resolver; continuing without registration");
         }
 
+        uint64_t object_deser_start = load_perf_begin(ds);
         nmo_status_t deser_result = nmo_object_system_deserialize_loaded_objects(
             repo,
             type_rt,
@@ -1034,6 +1092,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             id_map,
             ds->hdr1.object_count,
             &deser_stats);
+        load_perf_end(ds, NMO_LOAD_PERF_OBJECT_DESERIALIZE, object_deser_start);
 
         if (deser_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "  Repository deserialization failed (code=%d)", deser_result);
@@ -1085,6 +1144,9 @@ nmo_status_t nmo_deserializer_finalize(nmo_deserializer_t *ds)
     if (ds->phase_completed != 2) {
         return NMO_ERR_INVALID_STATE;
     }
+    if (ds->options.profile != NMO_LOAD_PROFILE_FULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
 
     nmo_logger_t *logger = ds->logger;
 
@@ -1134,6 +1196,16 @@ nmo_load_stats_t nmo_deserializer_get_stats(const nmo_deserializer_t *ds)
     memset(&stats, 0, sizeof(stats));
     if (ds != NULL) {
         stats = ds->stats;
+    }
+    return stats;
+}
+
+nmo_load_perf_stats_t nmo_deserializer_get_perf_stats(const nmo_deserializer_t *ds)
+{
+    nmo_load_perf_stats_t stats;
+    memset(&stats, 0, sizeof(stats));
+    if (ds != NULL && ds->perf_stats != NULL) {
+        stats = *ds->perf_stats;
     }
     return stats;
 }

@@ -18,6 +18,36 @@
 #include "core/nmo_error.h"
 #include <string.h>
 
+static nmo_load_perf_stats_t *load_perf_sink_from_options(
+    const nmo_load_options_t *opts,
+    nmo_load_perf_stats_t *local_stats)
+{
+    if (opts == NULL || !opts->collect_perf_stats) {
+        return NULL;
+    }
+    return (opts->perf_stats != NULL) ? opts->perf_stats : local_stats;
+}
+
+static uint64_t load_perf_begin(nmo_load_perf_stats_t *stats) {
+    return (stats != NULL) ? nmo_perf_now_ticks() : 0u;
+}
+
+static void load_perf_end(nmo_load_perf_stats_t *stats,
+                          nmo_load_perf_phase_t phase,
+                          uint64_t start_ticks) {
+    if (stats == NULL) {
+        return;
+    }
+    uint64_t end_ticks = nmo_perf_now_ticks();
+    nmo_load_perf_stats_record(stats, phase, nmo_perf_elapsed_ms(start_ticks, end_ticks));
+}
+
+static int nmo_load_profile_is_valid(nmo_load_profile_t profile) {
+    return profile == NMO_LOAD_PROFILE_FULL ||
+           profile == NMO_LOAD_PROFILE_METADATA ||
+           profile == NMO_LOAD_PROFILE_HEADER_ONLY;
+}
+
 /**
  * @brief Detect if a file uses compression by reading its header
  *
@@ -75,13 +105,30 @@ int nmo_load_file(nmo_session_t *session,
         local_opts = nmo_load_options_default();
         opts = &local_opts;
     }
+    nmo_load_perf_stats_t local_perf_stats = {0};
+    if (opts->collect_perf_stats && opts->perf_stats == NULL) {
+        local_opts = *opts;
+        local_opts.perf_stats = &local_perf_stats;
+        opts = &local_opts;
+    }
+    if (!nmo_load_profile_is_valid(opts->profile)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (opts->profile != NMO_LOAD_PROFILE_FULL) {
+        if (nmo_session_has_materialized_load_state(session)) {
+            return NMO_ERR_INVALID_STATE;
+        }
+    }
+    nmo_load_perf_stats_t *perf_stats = load_perf_sink_from_options(opts, &local_perf_stats);
 
     nmo_context_t *ctx = nmo_session_get_context(session);
     nmo_logger_t *logger = nmo_context_get_logger(ctx);
 
     /* Select best IO path automatically (mmap for uncompressed, fallback to standard) */
+    uint64_t open_detect_start = load_perf_begin(perf_stats);
     int is_compressed = nmo_detect_file_compression(path);
     if (is_compressed < 0) {
+        load_perf_end(perf_stats, NMO_LOAD_PERF_OPEN_DETECT, open_detect_start);
         nmo_log(logger, NMO_LOG_ERROR, "Failed to detect file compression for: %s", path);
         return NMO_ERR_FILE_NOT_FOUND;
     }
@@ -102,9 +149,11 @@ int nmo_load_file(nmo_session_t *session,
         io = nmo_file_io_open(path, NMO_IO_READ);
         if (io == NULL) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to open file: %s", path);
+            load_perf_end(perf_stats, NMO_LOAD_PERF_OPEN_DETECT, open_detect_start);
             return NMO_ERR_FILE_NOT_FOUND;
         }
     }
+    load_perf_end(perf_stats, NMO_LOAD_PERF_OPEN_DETECT, open_detect_start);
 
     /* Run the phased deserializer pipeline */
     nmo_deserializer_t *ds = nmo_deserializer_create(session, io, opts);
@@ -114,6 +163,10 @@ int nmo_load_file(nmo_session_t *session,
     }
 
     nmo_status_t st = nmo_deserializer_parse_header(ds);
+    if (st == NMO_OK && opts->profile != NMO_LOAD_PROFILE_FULL) {
+        nmo_deserializer_destroy(ds);
+        return NMO_OK;
+    }
     if (st == NMO_OK) {
         st = nmo_deserializer_parse_objects(ds);
     }

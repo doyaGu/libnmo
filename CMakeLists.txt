@@ -324,6 +324,7 @@ set(NMO_APP_SOURCES
     src/app/session_util.c
     src/app/load.c
     src/app/save.c
+    src/app/perf_stats.c
     src/app/save_buffer.c
     src/app/comparison.c
     src/app/stats.c
