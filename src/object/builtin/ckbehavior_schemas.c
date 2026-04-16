@@ -571,10 +571,9 @@ static nmo_status_t build_interface_file_index_remap(
                          "Cannot allocate interface ID remap");
     }
 
-    size_t count = 0;
-    nmo_object_t **all = nmo_object_repository_get_all(repo, &count);
-    for (size_t i = 0; all && i < count; ++i) {
-        nmo_object_t *obj = all[i];
+    size_t count = nmo_object_repository_get_count(repo);
+    for (size_t i = 0; i < count; ++i) {
+        nmo_object_t *obj = nmo_object_repository_get_by_index(repo, i);
         if (!obj || obj->file_id == 0) {
             continue;
         }
@@ -1492,9 +1491,8 @@ nmo_status_t nmo_behavior_parse_all_interfaces(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    size_t count = 0;
-    nmo_object_t **all = nmo_object_repository_get_all(repo, &count);
-    if (!all || count == 0) {
+    size_t count = nmo_object_repository_get_count(repo);
+    if (count == 0) {
         return NMO_OK;
     }
 
@@ -1510,7 +1508,7 @@ nmo_status_t nmo_behavior_parse_all_interfaces(
 
     nmo_status_t first_error = NMO_OK;
     for (size_t i = 0; i < count; i++) {
-        nmo_object_t *obj = all[i];
+        nmo_object_t *obj = nmo_object_repository_get_by_index(repo, i);
         if (!obj || obj->class_id != NMO_CID_BEHAVIOR) continue;
 
         nmo_behavior_state_t *state =

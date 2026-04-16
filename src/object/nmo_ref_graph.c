@@ -166,17 +166,14 @@ nmo_ref_graph_t *nmo_ref_graph_create(
     graph->repo = repo;
     graph->type_registry = type_registry;
     
-    /* Get all objects and enumerate references using the registry */
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    
-    objects = nmo_object_repository_get_all(repo, &object_count);
-    if (object_count > 0 && objects == NULL) {
-        return NULL;
-    }
+    /* Enumerate all repository objects using the registry. */
+    size_t object_count = nmo_object_repository_get_count(repo);
     
     for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_t *obj = objects[i];
+        nmo_object_t *obj = nmo_object_repository_get_by_index(repo, i);
+        if (obj == NULL) {
+            continue;
+        }
         graph->current_object_id = nmo_object_get_id(obj);
         
         nmo_ref_enumerate_object(graph->type_registry, obj, ref_graph_visitor, graph);
@@ -498,9 +495,7 @@ nmo_status_t nmo_ref_graph_find_orphans(
     *out_orphans = NULL;
     *out_count = 0;
 
-    /* Get all objects */
-    size_t object_count = 0;
-    nmo_object_t **objects = nmo_object_repository_get_all(repo, &object_count);
+    size_t object_count = nmo_object_repository_get_count(repo);
     if (object_count == 0) {
         NMO_RETURN_OK();
     }
@@ -518,21 +513,29 @@ nmo_status_t nmo_ref_graph_find_orphans(
 
     /* Tier 1: CKLevel / CKScene */
     for (size_t i = 0; i < object_count; ++i) {
-        nmo_class_id_t cid = nmo_object_get_class_id(objects[i]);
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        if (object == NULL) {
+            continue;
+        }
+        nmo_class_id_t cid = nmo_object_get_class_id(object);
         if (cid == NMO_CID_LEVEL || cid == NMO_CID_SCENE ||
             nmo_type_registry_is_class_derived_from(registry, cid, NMO_CID_LEVEL) ||
             nmo_type_registry_is_class_derived_from(registry, cid, NMO_CID_SCENE)) {
-            root_ids[root_count++] = nmo_object_get_id(objects[i]);
+            root_ids[root_count++] = nmo_object_get_id(object);
         }
     }
 
     /* Tier 2: CKGroup */
     if (root_count == 0) {
         for (size_t i = 0; i < object_count; ++i) {
-            nmo_class_id_t cid = nmo_object_get_class_id(objects[i]);
+            nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+            if (object == NULL) {
+                continue;
+            }
+            nmo_class_id_t cid = nmo_object_get_class_id(object);
             if (cid == NMO_CID_GROUP ||
                 nmo_type_registry_is_class_derived_from(registry, cid, NMO_CID_GROUP)) {
-                root_ids[root_count++] = nmo_object_get_id(objects[i]);
+                root_ids[root_count++] = nmo_object_get_id(object);
             }
         }
     }
@@ -540,10 +543,14 @@ nmo_status_t nmo_ref_graph_find_orphans(
     /* Tier 3: CK3dEntity / CK3dObject */
     if (root_count == 0) {
         for (size_t i = 0; i < object_count; ++i) {
-            nmo_class_id_t cid = nmo_object_get_class_id(objects[i]);
+            nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+            if (object == NULL) {
+                continue;
+            }
+            nmo_class_id_t cid = nmo_object_get_class_id(object);
             if (cid == NMO_CID_3DENTITY || cid == NMO_CID_3DOBJECT ||
                 nmo_type_registry_is_class_derived_from(registry, cid, NMO_CID_3DENTITY)) {
-                root_ids[root_count++] = nmo_object_get_id(objects[i]);
+                root_ids[root_count++] = nmo_object_get_id(object);
             }
         }
     }
@@ -551,7 +558,11 @@ nmo_status_t nmo_ref_graph_find_orphans(
     /* Tier 4: all objects with zero incoming references */
     if (root_count == 0) {
         for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_id_t oid = nmo_object_get_id(objects[i]);
+            nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+            if (object == NULL) {
+                continue;
+            }
+            nmo_object_id_t oid = nmo_object_get_id(object);
             nmo_ref_edge_t *edges = NULL;
             size_t ecount = 0;
             nmo_ref_graph_get_object_edges(graph, oid, NMO_REF_DIR_INCOMING,
@@ -583,7 +594,11 @@ nmo_status_t nmo_ref_graph_find_orphans(
 
     size_t orphan_count = 0;
     for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_id_t oid = nmo_object_get_id(objects[i]);
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        if (object == NULL) {
+            continue;
+        }
+        nmo_object_id_t oid = nmo_object_get_id(object);
         if (!id_in_sorted(reachable_ids, reachable_count, oid)) {
             orphans[orphan_count++] = oid;
         }
@@ -779,16 +794,19 @@ nmo_status_t nmo_ref_graph_find_cycles(
     *out_cycles = NULL;
     *out_count = 0;
 
-    /* Get all objects to find max_id */
-    size_t object_count = 0;
-    nmo_object_t **objects = nmo_object_repository_get_all(repo, &object_count);
+    /* Find max_id across all objects. */
+    size_t object_count = nmo_object_repository_get_count(repo);
     if (object_count == 0) {
         NMO_RETURN_OK();
     }
 
     nmo_object_id_t max_id = 0;
     for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_id_t oid = nmo_object_get_id(objects[i]);
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        if (object == NULL) {
+            continue;
+        }
+        nmo_object_id_t oid = nmo_object_get_id(object);
         if (oid > max_id) max_id = oid;
     }
 
@@ -823,7 +841,11 @@ nmo_status_t nmo_ref_graph_find_cycles(
 
     /* Run DFS from each unvisited object */
     for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_id_t oid = nmo_object_get_id(objects[i]);
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        if (object == NULL) {
+            continue;
+        }
+        nmo_object_id_t oid = nmo_object_get_id(object);
         if (oid <= max_id && color[oid] == 0) {
             cycle_dfs_visit(&st, oid, NMO_REF_KIND_UNKNOWN);
         }

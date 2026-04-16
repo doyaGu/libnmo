@@ -288,6 +288,11 @@ TEST(no_legacy_runtime_api_exports, object_index_and_system_do_not_use_repositor
     assert_file_has_no_substring("src/object/object_system.c", "nmo_object_repository_get_all");
 }
 
+TEST(no_legacy_runtime_api_exports, ref_graph_and_behavior_schemas_do_not_use_repository_get_all_snapshots) {
+    assert_file_has_no_substring("src/object/nmo_ref_graph.c", "nmo_object_repository_get_all");
+    assert_file_has_no_substring("src/object/builtin/ckbehavior_schemas.c", "nmo_object_repository_get_all");
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_exports);
 REGISTER_TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_pointer_state);
@@ -312,4 +317,5 @@ REGISTER_TEST(no_legacy_runtime_api_exports, behavior_graph_commands_use_core_ob
 REGISTER_TEST(no_legacy_runtime_api_exports, remaining_tools_do_not_use_repository_get_all_scans);
 REGISTER_TEST(no_legacy_runtime_api_exports, session_internals_do_not_use_repository_get_all_snapshots);
 REGISTER_TEST(no_legacy_runtime_api_exports, object_index_and_system_do_not_use_repository_get_all_snapshots);
+REGISTER_TEST(no_legacy_runtime_api_exports, ref_graph_and_behavior_schemas_do_not_use_repository_get_all_snapshots);
 TEST_MAIN_END()
