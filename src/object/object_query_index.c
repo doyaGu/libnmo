@@ -513,6 +513,32 @@ static nmo_status_t query_index_ensure_eager(nmo_object_query_index_t *index)
     return nmo_object_query_index_rebuild(index);
 }
 
+static nmo_status_t query_index_estimate_trigram_count(
+    const nmo_object_query_index_t *index,
+    size_t *out_count)
+{
+    if (index == NULL || out_count == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t count = 0;
+    for (size_t i = 0; i < index->meta_count; i++) {
+        const char *name = index->metas[i].folded_name != NULL ? index->metas[i].folded_name : "";
+        size_t len = strlen(name);
+        if (len < 3) {
+            continue;
+        }
+        size_t trigrams = len - 2;
+        if (count > SIZE_MAX - trigrams) {
+            return NMO_ERR_NOMEM;
+        }
+        count += trigrams;
+    }
+
+    *out_count = count;
+    return NMO_OK;
+}
+
 static nmo_status_t query_index_build_text(nmo_object_query_index_t *index)
 {
     if (index == NULL) {
@@ -523,6 +549,15 @@ static nmo_status_t query_index_build_text(nmo_object_query_index_t *index)
     }
 
     nmo_array_clear(&index->trigram_entries);
+    size_t trigram_count = 0;
+    nmo_status_t status = query_index_estimate_trigram_count(index, &trigram_count);
+    if (status != NMO_OK) {
+        return status;
+    }
+    status = nmo_array_reserve(&index->trigram_entries, trigram_count);
+    if (status != NMO_OK) {
+        return status;
+    }
 
     for (size_t i = 0; i < index->meta_count; i++) {
         const char *name = index->metas[i].folded_name != NULL ? index->metas[i].folded_name : "";
@@ -532,7 +567,7 @@ static nmo_status_t query_index_build_text(nmo_object_query_index_t *index)
         }
         for (size_t pos = 0; pos + 2 < len; pos++) {
             uint32_t tri = query_make_trigram(name + pos);
-            nmo_status_t status = query_append_id_entry(
+            status = query_append_id_entry(
                 &index->trigram_entries, tri, i);
             if (status != NMO_OK) {
                 return status;
