@@ -155,16 +155,11 @@ add_unit_test(test_session)
 # Public API / umbrella header smoke test
 add_unit_test(test_public_api_smoke)
 add_unit_test(test_json_stream)
-if(TARGET nmo_json)
-    add_unit_test(test_app_util)
-    target_link_libraries(test_app_util PRIVATE nmo_json)
-    add_unit_test(test_object_summary_api)
-    target_link_libraries(test_object_summary_api PRIVATE nmo_json)
-    add_unit_test(test_object_import_api)
-    target_link_libraries(test_object_import_api PRIVATE nmo_json)
-else()
-    message(STATUS "Skipping app JSON API tests (nmo_json target unavailable)")
-endif()
+add_unit_test(test_app_util)
+target_link_libraries(test_app_util PRIVATE yyjson)
+add_unit_test(test_object_summary_api)
+target_link_libraries(test_object_summary_api PRIVATE yyjson)
+add_unit_test(test_object_import_api)
 
 # Batch rename helpers (wildcard capture + template substitution)
 # Compiles tool common sources directly; needs CLI support files for linkage.
@@ -174,7 +169,7 @@ add_executable(test_batch_rename test_batch_rename.c
     ../../tools/nmo_cli_output.c
     ../../tools/nmo_cli_json.c
 )
-target_link_libraries(test_batch_rename PRIVATE nmo nmo_json test_framework yyjson)
+target_link_libraries(test_batch_rename PRIVATE nmo test_framework yyjson)
 target_include_directories(test_batch_rename PRIVATE ../../tools)
 add_test(NAME test_batch_rename COMMAND test_batch_rename)
 

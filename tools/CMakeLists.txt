@@ -61,7 +61,7 @@ add_executable(nmo_cli
     commands/nmo_cmd_animation.c
 )
 set_target_properties(nmo_cli PROPERTIES OUTPUT_NAME nmo)
-target_link_libraries(nmo_cli PRIVATE nmo nmo_json yyjson)
+target_link_libraries(nmo_cli PRIVATE nmo yyjson)
 
 # Include commands subdirectory
 target_include_directories(nmo_cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

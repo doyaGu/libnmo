@@ -117,7 +117,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 if(ZLIB_INCLUDE_DIRS)
     include_directories(SYSTEM ${ZLIB_INCLUDE_DIRS})
 endif()
-# yyjson include dirs are provided to targets that link yyjson (e.g. nmo_json, nmo_cli).
+# yyjson include dirs are provided to targets that include yyjson directly (e.g. nmo_cli).
 
 # Core library sources
 set(NMO_CORE_SOURCES
@@ -366,6 +366,7 @@ set(NMO_SOURCES
     ${NMO_BEHAVIOR_SOURCES}
     ${NMO_EXTENSION_SOURCES}
     ${NMO_APP_SOURCES}
+    ${NMO_JSON_SOURCES}
     ${YYJSON_DIR}/src/yyjson.c
 )
 
@@ -382,12 +383,6 @@ target_compile_definitions(nmo PUBLIC $<$<CONFIG:Debug>:NMO_ENABLE_DEBUG_ASSERTS
 target_link_libraries(nmo PUBLIC ${ZLIB_LIBRARIES})
 
 target_include_directories(nmo PRIVATE ${PROJECT_SOURCE_DIR}/deps ${YYJSON_DIR}/src)
-
-if(YYJSON_FOUND)
-    add_library(nmo_json STATIC ${NMO_JSON_SOURCES})
-    target_link_libraries(nmo_json PUBLIC nmo yyjson)
-    target_include_directories(nmo_json PRIVATE ${PROJECT_SOURCE_DIR}/deps)
-endif()
 
 # Enable threads support
 find_package(Threads REQUIRED)
