@@ -68,6 +68,22 @@ typedef struct nmo_header1 {
 } nmo_header1_t;
 
 /**
+ * @brief Header1 serialized layout plan.
+ *
+ * The size fields describe the three Header1 regions. Plugin category order is
+ * cached in the caller-provided arena so a planned write does not need to
+ * rediscover grouping.
+ */
+typedef struct nmo_header1_layout {
+    size_t total_size;              /**< Complete serialized Header1 size */
+    size_t object_table_size;       /**< Serialized object descriptor bytes */
+    size_t plugin_dep_size;         /**< Serialized plugin dependency bytes */
+    size_t included_metadata_size;  /**< Serialized included-file metadata bytes */
+    uint32_t *plugin_categories;    /**< Unique plugin categories in first-seen order */
+    size_t plugin_category_count;   /**< Number of plugin_categories entries */
+} nmo_header1_layout_t;
+
+/**
  * @brief Parse Header1 from buffer
  *
  * Parses object descriptors, plugin dependencies, and included files stub
@@ -102,6 +118,36 @@ NMO_API nmo_status_t nmo_header1_serialize(
     void **out_data,
     size_t *out_size,
     nmo_arena_t *arena);
+
+/**
+ * @brief Plan Header1 serialized layout without writing bytes.
+ *
+ * @param header Header1 structure to plan
+ * @param arena Arena allocator for cached planning data
+ * @param out_layout Output layout
+ * @return NMO_OK on success, error code otherwise
+ */
+NMO_API nmo_status_t nmo_header1_plan(
+    const nmo_header1_t *header,
+    nmo_arena_t *arena,
+    nmo_header1_layout_t *out_layout);
+
+/**
+ * @brief Serialize Header1 using a previously computed layout.
+ *
+ * @param header Header1 structure to serialize
+ * @param layout Layout produced by nmo_header1_plan
+ * @param arena Arena allocator for output bytes
+ * @param out_buffer Output buffer pointer
+ * @param out_size Output buffer size
+ * @return NMO_OK on success, error code otherwise
+ */
+NMO_API nmo_status_t nmo_header1_write_planned(
+    const nmo_header1_t *header,
+    const nmo_header1_layout_t *layout,
+    nmo_arena_t *arena,
+    uint8_t **out_buffer,
+    size_t *out_size);
 
 /**
  * @brief Free Header1 resources

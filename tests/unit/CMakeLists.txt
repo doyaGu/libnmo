@@ -49,6 +49,7 @@ add_unit_test(test_chunk_writer_context)  # Phase 1.3: Version context stack
 add_unit_test(test_chunk_writer_reserve)  # Phase 2.2: Reserve-and-patch API
 add_unit_test(test_chunk_writer_intlist_audit)  # Phase 2.3: IntList auditor
 add_unit_test(test_chunk_serialize)
+add_unit_test(test_data_section_plan)
 # Add new chunk API test
 add_unit_test(test_chunk_api)
 add_unit_test(test_chunk_helpers)
@@ -208,8 +209,9 @@ add_unit_test(test_context_session)
 add_unit_test(test_context_threadsafe)  # Thread-safety tests
 
 # Phase 2.1: Dual-Track IO API tests
-# Load skip flags removed in runtime clean-break.
-# add_unit_test(test_load_options)
+# Partial load profiles
+add_unit_test(test_load_options)
+set_tests_properties(test_load_options PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 # Runtime clean-break tests
 add_unit_test(test_runtime_kernel)

@@ -81,6 +81,29 @@ typedef struct nmo_data_section {
 } nmo_data_section_t;
 
 /**
+ * @brief Planned serialized bytes for one Data section chunk.
+ *
+ * A slice either borrows existing raw chunk bytes or points at bytes serialized
+ * into the caller-provided arena during plan construction.
+ */
+typedef struct nmo_data_chunk_slice {
+    const uint8_t *bytes; /**< Serialized chunk bytes, or NULL for an empty chunk */
+    size_t size;          /**< Serialized byte count */
+    bool borrowed;        /**< true when bytes points at pre-existing raw chunk data */
+} nmo_data_chunk_slice_t;
+
+/**
+ * @brief Single-serialize plan for writing a Data section.
+ */
+typedef struct nmo_data_section_plan {
+    nmo_data_chunk_slice_t *manager_slices; /**< One slice per manager entry */
+    size_t manager_count;                   /**< Number of manager slices */
+    nmo_data_chunk_slice_t *object_slices;  /**< One slice per object entry */
+    size_t object_count;                    /**< Number of object slices */
+    size_t total_size;                      /**< Complete serialized Data section size */
+} nmo_data_section_plan_t;
+
+/**
  * @brief Parse Data section from buffer
  *
  * Parses the Data section which contains manager and object state chunks.
@@ -120,6 +143,41 @@ NMO_API nmo_status_t nmo_data_section_serialize(
     size_t buffer_size,
     size_t *bytes_written,
     nmo_arena_t *arena);
+
+/**
+ * @brief Build a single-serialize Data section plan.
+ *
+ * Raw chunks are borrowed directly. Generated chunks are serialized once into
+ * the provided arena and then referenced by the plan.
+ *
+ * @param data_section Data section to plan
+ * @param file_version File format version
+ * @param arena Arena for generated chunk bytes and slice arrays
+ * @param out_plan Output plan
+ * @return NMO_OK on success, error code otherwise
+ */
+NMO_API nmo_status_t nmo_data_section_plan_build(
+    const nmo_data_section_t *data_section,
+    uint32_t file_version,
+    nmo_arena_t *arena,
+    nmo_data_section_plan_t *out_plan);
+
+/**
+ * @brief Write a Data section from a previously built plan.
+ *
+ * @param data_section Data section associated with the plan
+ * @param plan Plan built by nmo_data_section_plan_build
+ * @param file_version File format version
+ * @param output Output buffer
+ * @param output_size Output buffer size
+ * @return NMO_OK on success, error code otherwise
+ */
+NMO_API nmo_status_t nmo_data_section_plan_write(
+    const nmo_data_section_t *data_section,
+    const nmo_data_section_plan_t *plan,
+    uint32_t file_version,
+    uint8_t *output,
+    size_t output_size);
 
 /**
  * @brief Calculate serialized size of Data section

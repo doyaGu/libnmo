@@ -5,7 +5,6 @@
 
 #include "format/nmo_header1.h"
 #include "core/nmo_utils.h"
-#include "core/nmo_allocator.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -357,8 +356,9 @@ static nmo_status_t serialize_objects(
 /**
  * @brief Serialize plugin dependencies to buffer
  */
-static nmo_status_t serialize_plugin_deps(
+static nmo_status_t serialize_plugin_deps_planned(
     const nmo_header1_t *header,
+    const nmo_header1_layout_t *layout,
     uint8_t *buffer,
     size_t buffer_size,
     size_t *pos) {
@@ -372,47 +372,23 @@ static nmo_status_t serialize_plugin_deps(
         NMO_RETURN_OK();
     }
 
-    /* Build unique category list in first-seen order (CK2 preserves array order). */
-    nmo_last_error_clear();
-    nmo_status_t result = NMO_OK;
-    uint32_t unique_count = 0;
-    size_t ordering_bytes = 0;
-    if (!nmo_safe_mul_size(header->plugin_dep_count, sizeof(uint32_t), &ordering_bytes)) {
-        NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Plugin category allocation overflow");
-    }
-    
-    nmo_allocator_t alloc = nmo_allocator_default();
-    uint32_t *category_ordering = (uint32_t *) nmo_alloc(&alloc, ordering_bytes, _Alignof(uint32_t));
-    if (category_ordering == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate plugin category order");
-    }
-
-    for (uint32_t i = 0; i < header->plugin_dep_count; i++) {
-        uint32_t cat = header->plugin_deps[i].category;
-        int found = 0;
-        for (uint32_t j = 0; j < unique_count; j++) {
-            if (category_ordering[j] == cat) {
-                found = 1;
-                break;
-            }
-        }
-        if (!found) {
-            category_ordering[unique_count++] = cat;
-        }
+    if (layout == NULL ||
+        layout->plugin_categories == NULL ||
+        layout->plugin_category_count == 0 ||
+        layout->plugin_category_count > UINT32_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid Header1 plugin layout");
     }
 
     /* Write category count */
     if (*pos + sizeof(uint32_t) > buffer_size) {
-        NMO_SET_LAST_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small for category count");
-        result = NMO_ERR_BUFFER_OVERRUN;
-        goto cleanup;
+        NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small for category count");
     }
-    nmo_write_u32_le(buffer + *pos, unique_count);
+    nmo_write_u32_le(buffer + *pos, (uint32_t)layout->plugin_category_count);
     *pos += sizeof(uint32_t);
 
     /* Write each category in recorded order */
-    for (uint32_t c = 0; c < unique_count; c++) {
-        uint32_t cat = category_ordering[c];
+    for (size_t c = 0; c < layout->plugin_category_count; c++) {
+        uint32_t cat = layout->plugin_categories[c];
         uint32_t cat_count = 0;
         for (uint32_t i = 0; i < header->plugin_dep_count; i++) {
             if (header->plugin_deps[i].category == cat) {
@@ -422,18 +398,14 @@ static nmo_status_t serialize_plugin_deps(
 
         /* Write category type */
         if (*pos + sizeof(uint32_t) > buffer_size) {
-            NMO_SET_LAST_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small for category type");
-            result = NMO_ERR_BUFFER_OVERRUN;
-            goto cleanup;
+            NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small for category type");
         }
         nmo_write_u32_le(buffer + *pos, cat);
         *pos += sizeof(uint32_t);
 
         /* Write GUID count */
         if (*pos + sizeof(uint32_t) > buffer_size) {
-            NMO_SET_LAST_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small for GUID count");
-            result = NMO_ERR_BUFFER_OVERRUN;
-            goto cleanup;
+            NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small for GUID count");
         }
         nmo_write_u32_le(buffer + *pos, cat_count);
         *pos += sizeof(uint32_t);
@@ -442,9 +414,7 @@ static nmo_status_t serialize_plugin_deps(
         for (uint32_t i = 0; i < header->plugin_dep_count; i++) {
             if (header->plugin_deps[i].category == cat) {
                 if (*pos + sizeof(nmo_guid_t) > buffer_size) {
-                    NMO_SET_LAST_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small for GUID");
-                    result = NMO_ERR_BUFFER_OVERRUN;
-                    goto cleanup;
+                    NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small for GUID");
                 }
                 nmo_write_u32_le(buffer + *pos, header->plugin_deps[i].guid.d1);
                 *pos += sizeof(uint32_t);
@@ -453,19 +423,16 @@ static nmo_status_t serialize_plugin_deps(
             }
         }
     }
-cleanup:
-    nmo_free(&alloc, category_ordering);
-    return result;
+
+    NMO_RETURN_OK();
 }
 
 /**
- * @brief Calculate required buffer size for serialization
+ * @brief Validate Header1 serialization input
  */
-static nmo_status_t calculate_serialize_size(const nmo_header1_t *header, size_t *out_size) {
-    size_t size = 0;
-
-    if (header == NULL || out_size == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid header size arguments");
+static nmo_status_t validate_header1_for_write(const nmo_header1_t *header) {
+    if (header == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL Header1");
     }
     if (header->object_count > 0 && header->objects == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
@@ -475,86 +442,161 @@ static nmo_status_t calculate_serialize_size(const nmo_header1_t *header, size_t
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
                          "Header1 plugin dependency count is non-zero but dependency array is NULL");
     }
+    NMO_RETURN_OK();
+}
+
+/**
+ * @brief Plan required buffer size and plugin category order for serialization
+ */
+nmo_status_t nmo_header1_plan(
+    const nmo_header1_t *header,
+    nmo_arena_t *arena,
+    nmo_header1_layout_t *out_layout) {
+    if (header == NULL || arena == NULL || out_layout == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid Header1 plan arguments");
+    }
+    NMO_RETURN_IF_ERROR(validate_header1_for_write(header));
+
+    memset(out_layout, 0, sizeof(*out_layout));
 
     /* NOTE: Object count is NOT in buffer - it's in file header */
 
     /* Object descriptors */
     for (uint32_t i = 0; i < header->object_count; i++) {
         size_t name_len = header->objects[i].name ? strlen(header->objects[i].name) : 0;
-        if (!nmo_safe_add_size(size, sizeof(uint32_t) * 4u, &size)) {
+        if (!nmo_safe_add_size(out_layout->object_table_size,
+                               sizeof(uint32_t) * 4u,
+                               &out_layout->object_table_size)) {
             NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (object fields)");
         }
-        if (!nmo_safe_add_size(size, name_len, &size)) {
+        if (!nmo_safe_add_size(out_layout->object_table_size, name_len, &out_layout->object_table_size)) {
             NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (object name)");
         }
     }
 
     /* Plugin dependencies */
-    if (!nmo_safe_add_size(size, sizeof(uint32_t), &size)) {
-        NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (category count)");
-    }
+    out_layout->plugin_dep_size = sizeof(uint32_t);
 
     if (header->plugin_dep_count > 0) {
-        uint32_t unique_count = 0;
         size_t ordering_bytes = 0;
         if (!nmo_safe_mul_size(header->plugin_dep_count, sizeof(uint32_t), &ordering_bytes)) {
             NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (category ordering)");
         }
 
-        nmo_allocator_t alloc = nmo_allocator_default();
-        uint32_t *category_ordering = (uint32_t *) nmo_alloc(&alloc, ordering_bytes, _Alignof(uint32_t));
-        if (category_ordering != NULL) {
+        out_layout->plugin_categories = (uint32_t *)nmo_arena_alloc(arena, ordering_bytes, _Alignof(uint32_t));
+        if (out_layout->plugin_categories == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate plugin category order");
+        }
+
+        for (uint32_t i = 0; i < header->plugin_dep_count; i++) {
+            uint32_t cat = header->plugin_deps[i].category;
+            int found = 0;
+            for (size_t j = 0; j < out_layout->plugin_category_count; j++) {
+                if (out_layout->plugin_categories[j] == cat) {
+                    found = 1;
+                    break;
+                }
+            }
+            if (!found) {
+                out_layout->plugin_categories[out_layout->plugin_category_count++] = cat;
+            }
+        }
+
+        for (size_t c = 0; c < out_layout->plugin_category_count; c++) {
+            uint32_t cat = out_layout->plugin_categories[c];
+            uint32_t cat_count = 0;
             for (uint32_t i = 0; i < header->plugin_dep_count; i++) {
-                uint32_t cat = header->plugin_deps[i].category;
-                int found = 0;
-                for (uint32_t j = 0; j < unique_count; j++) {
-                    if (category_ordering[j] == cat) {
-                        found = 1;
-                        break;
-                    }
-                }
-                if (!found) {
-                    category_ordering[unique_count++] = cat;
+                if (header->plugin_deps[i].category == cat) {
+                    cat_count++;
                 }
             }
-
-            for (uint32_t c = 0; c < unique_count; c++) {
-                uint32_t cat = category_ordering[c];
-                uint32_t cat_count = 0;
-                for (uint32_t i = 0; i < header->plugin_dep_count; i++) {
-                    if (header->plugin_deps[i].category == cat) {
-                        cat_count++;
-                    }
-                }
-                if (!nmo_safe_add_size(size, sizeof(uint32_t) * 2u, &size)) {
-                    nmo_free(&alloc, category_ordering);
-                    NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (category header)");
-                }
-                size_t guid_bytes = 0;
-                if (!nmo_safe_mul_size(cat_count, sizeof(nmo_guid_t), &guid_bytes) ||
-                    !nmo_safe_add_size(size, guid_bytes, &size)) {
-                    nmo_free(&alloc, category_ordering);
-                    NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (category GUIDs)");
-                }
+            if (!nmo_safe_add_size(out_layout->plugin_dep_size,
+                                   sizeof(uint32_t) * 2u,
+                                   &out_layout->plugin_dep_size)) {
+                NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (category header)");
             }
-
-            nmo_free(&alloc, category_ordering);
-        } else {
-            /* Fallback: assume each dep is its own category (over-allocate) */
-            size_t per_dep = sizeof(uint32_t) + sizeof(uint32_t) + sizeof(nmo_guid_t);
-            size_t deps_size = 0;
-            if (!nmo_safe_mul_size(header->plugin_dep_count, per_dep, &deps_size) ||
-                !nmo_safe_add_size(size, deps_size, &size)) {
-                NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (plugin deps)");
+            size_t guid_bytes = 0;
+            if (!nmo_safe_mul_size(cat_count, sizeof(nmo_guid_t), &guid_bytes) ||
+                !nmo_safe_add_size(out_layout->plugin_dep_size, guid_bytes, &out_layout->plugin_dep_size)) {
+                NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (category GUIDs)");
             }
         }
     }
 
-    if (!nmo_safe_add_size(size, sizeof(uint32_t) * 2u, &size)) {
-        NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (included metadata)");
+    out_layout->included_metadata_size = sizeof(uint32_t) * 2u;
+
+    if (!nmo_safe_add_size(out_layout->object_table_size,
+                           out_layout->plugin_dep_size,
+                           &out_layout->total_size) ||
+        !nmo_safe_add_size(out_layout->total_size,
+                           out_layout->included_metadata_size,
+                           &out_layout->total_size)) {
+        NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow");
     }
 
-    *out_size = size;
+    NMO_RETURN_OK();
+}
+
+/**
+ * @brief Serialize Header1 using a planned layout
+ */
+nmo_status_t nmo_header1_write_planned(
+    const nmo_header1_t *header,
+    const nmo_header1_layout_t *layout,
+    nmo_arena_t *arena,
+    uint8_t **out_buffer,
+    size_t *out_size) {
+    if (header == NULL || layout == NULL || arena == NULL || out_buffer == NULL || out_size == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid Header1 planned write arguments");
+    }
+    NMO_RETURN_IF_ERROR(validate_header1_for_write(header));
+
+    size_t expected_total = 0;
+    if (!nmo_safe_add_size(layout->object_table_size, layout->plugin_dep_size, &expected_total) ||
+        !nmo_safe_add_size(expected_total, layout->included_metadata_size, &expected_total) ||
+        expected_total != layout->total_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid Header1 layout sizes");
+    }
+
+    /* Allocate buffer */
+    uint8_t *buffer = (uint8_t *) nmo_arena_alloc(arena, layout->total_size, 1);
+    if (buffer == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate serialization buffer");
+    }
+
+    size_t pos = 0;
+
+    /* Serialize object descriptors */
+    nmo_status_t result = serialize_objects(header, buffer, layout->total_size, &pos);
+    NMO_RETURN_IF_ERROR(result);
+    if (pos != layout->object_table_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Header1 object layout size mismatch");
+    }
+
+    /* Serialize plugin dependencies */
+    result = serialize_plugin_deps_planned(header, layout, buffer, layout->total_size, &pos);
+    NMO_RETURN_IF_ERROR(result);
+    if (pos != layout->object_table_size + layout->plugin_dep_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Header1 plugin layout size mismatch");
+    }
+
+    if (pos + (2 * sizeof(uint32_t)) > layout->total_size) {
+        NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small for included metadata");
+    }
+
+    uint32_t payload_size = sizeof(uint32_t);
+    nmo_write_u32_le(buffer + pos, payload_size);
+    pos += sizeof(uint32_t);
+    nmo_write_u32_le(buffer + pos, header->included_file_count);
+    pos += sizeof(uint32_t);
+
+    if (pos != layout->total_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Header1 total layout size mismatch");
+    }
+
+    *out_buffer = buffer;
+    *out_size = pos;
+
     NMO_RETURN_OK();
 }
 
@@ -569,48 +611,13 @@ nmo_status_t nmo_header1_serialize(
     if (header == NULL || out_data == NULL || out_size == NULL || arena == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL pointer passed to nmo_header1_serialize");
     }
-    if (header->object_count > 0 && header->objects == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
-                         "Header1 object count is non-zero but object array is NULL");
-    }
-    if (header->plugin_dep_count > 0 && header->plugin_deps == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
-                         "Header1 plugin dependency count is non-zero but dependency array is NULL");
-    }
 
-    /* Calculate required buffer size */
-    size_t buffer_size = 0;
-    nmo_status_t size_result = calculate_serialize_size(header, &buffer_size);
-    NMO_RETURN_IF_ERROR(size_result);
+    nmo_header1_layout_t layout = {0};
+    NMO_RETURN_IF_ERROR(nmo_header1_plan(header, arena, &layout));
 
-    /* Allocate buffer */
-    uint8_t *buffer = (uint8_t *) nmo_arena_alloc(arena, buffer_size, 1);
-    if (buffer == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate serialization buffer");
-    }
-
-    size_t pos = 0;
-
-    /* Serialize object descriptors */
-    nmo_status_t result = serialize_objects(header, buffer, buffer_size, &pos);
-    NMO_RETURN_IF_ERROR(result);
-
-    /* Serialize plugin dependencies */
-    result = serialize_plugin_deps(header, buffer, buffer_size, &pos);
-    NMO_RETURN_IF_ERROR(result);
-
-    if (pos + (2 * sizeof(uint32_t)) > buffer_size) {
-        NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small for included metadata");
-    }
-
-    uint32_t payload_size = sizeof(uint32_t);
-    nmo_write_u32_le(buffer + pos, payload_size);
-    pos += sizeof(uint32_t);
-    nmo_write_u32_le(buffer + pos, header->included_file_count);
-    pos += sizeof(uint32_t);
-
+    uint8_t *buffer = NULL;
+    NMO_RETURN_IF_ERROR(nmo_header1_write_planned(header, &layout, arena, &buffer, out_size));
     *out_data = buffer;
-    *out_size = pos;
 
     NMO_RETURN_OK();
 }

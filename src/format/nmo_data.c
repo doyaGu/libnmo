@@ -378,6 +378,232 @@ nmo_status_t nmo_data_section_serialize(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t data_section_make_slice(
+    const nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    nmo_data_chunk_slice_t *out_slice) {
+    if (out_slice == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL data slice output");
+    }
+
+    memset(out_slice, 0, sizeof(*out_slice));
+    out_slice->borrowed = true;
+
+    if (chunk == NULL) {
+        NMO_RETURN_OK();
+    }
+
+    if (chunk->raw_data != NULL && chunk->raw_size > 0) {
+        out_slice->bytes = chunk->raw_data;
+        out_slice->size = chunk->raw_size;
+        out_slice->borrowed = true;
+        NMO_RETURN_OK();
+    }
+
+    void *serialized_data = NULL;
+    size_t serialized_size = 0;
+    NMO_RETURN_IF_ERROR_CTX(nmo_chunk_serialize_version1(chunk, &serialized_data, &serialized_size, arena),
+                            "Failed to serialize data section chunk for plan");
+
+    out_slice->bytes = (const uint8_t *)serialized_data;
+    out_slice->size = serialized_size;
+    out_slice->borrowed = false;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t data_section_plan_add_entry_size(size_t *total_size, size_t header_bytes, size_t chunk_size) {
+    if (total_size == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL data plan size output");
+    }
+    if (chunk_size > (size_t)UINT32_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR,
+                         "Data section chunk too large to serialize (size=%zu)", chunk_size);
+    }
+    if (!nmo_safe_add_size(*total_size, header_bytes, total_size) ||
+        !nmo_safe_add_size(*total_size, chunk_size, total_size)) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Data section plan size overflow");
+    }
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_data_section_plan_build(
+    const nmo_data_section_t *data_section,
+    uint32_t file_version,
+    nmo_arena_t *arena,
+    nmo_data_section_plan_t *out_plan) {
+    if (data_section == NULL || arena == NULL || out_plan == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_data_section_plan_build");
+    }
+
+    memset(out_plan, 0, sizeof(*out_plan));
+
+    if (data_section->managers != NULL && data_section->manager_count > 0) {
+        size_t slice_bytes = 0;
+        if (!nmo_safe_mul_size(sizeof(nmo_data_chunk_slice_t),
+                               data_section->manager_count,
+                               &slice_bytes)) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Manager slice allocation overflow");
+        }
+
+        out_plan->manager_slices = (nmo_data_chunk_slice_t *)nmo_arena_alloc(
+            arena, slice_bytes, alignof(nmo_data_chunk_slice_t));
+        if (out_plan->manager_slices == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate manager slices");
+        }
+        out_plan->manager_count = data_section->manager_count;
+
+        for (uint32_t i = 0; i < data_section->manager_count; i++) {
+            const nmo_manager_data_t *mgr = &data_section->managers[i];
+            nmo_data_chunk_slice_t *slice = &out_plan->manager_slices[i];
+            NMO_RETURN_IF_ERROR_CTX(data_section_make_slice(mgr->chunk, arena, slice),
+                                    "Failed to plan manager data chunk (index=%u)",
+                                    (unsigned)i);
+            NMO_RETURN_IF_ERROR(data_section_plan_add_entry_size(&out_plan->total_size, 12u, slice->size));
+        }
+    }
+
+    if (data_section->objects != NULL && data_section->object_count > 0) {
+        size_t slice_bytes = 0;
+        if (!nmo_safe_mul_size(sizeof(nmo_data_chunk_slice_t),
+                               data_section->object_count,
+                               &slice_bytes)) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Object slice allocation overflow");
+        }
+
+        out_plan->object_slices = (nmo_data_chunk_slice_t *)nmo_arena_alloc(
+            arena, slice_bytes, alignof(nmo_data_chunk_slice_t));
+        if (out_plan->object_slices == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate object slices");
+        }
+        out_plan->object_count = data_section->object_count;
+
+        size_t entry_header_bytes = (file_version < 7) ? 8u : 4u;
+        for (uint32_t i = 0; i < data_section->object_count; i++) {
+            const nmo_object_data_t *obj = &data_section->objects[i];
+            nmo_data_chunk_slice_t *slice = &out_plan->object_slices[i];
+            NMO_RETURN_IF_ERROR_CTX(data_section_make_slice(obj->chunk, arena, slice),
+                                    "Failed to plan object data chunk (index=%u)",
+                                    (unsigned)i);
+            NMO_RETURN_IF_ERROR(data_section_plan_add_entry_size(&out_plan->total_size,
+                                                                 entry_header_bytes,
+                                                                 slice->size));
+        }
+    }
+
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_data_section_plan_write(
+    const nmo_data_section_t *data_section,
+    const nmo_data_section_plan_t *plan,
+    uint32_t file_version,
+    uint8_t *output,
+    size_t output_size) {
+    if (data_section == NULL || plan == NULL || (output == NULL && output_size > 0)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_data_section_plan_write");
+    }
+    if (output_size < plan->total_size) {
+        NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
+                         "Data section output buffer too small (need=%zu, have=%zu)",
+                         plan->total_size, output_size);
+    }
+    if (plan->manager_count != ((data_section->managers != NULL) ? data_section->manager_count : 0u) ||
+        plan->object_count != ((data_section->objects != NULL) ? data_section->object_count : 0u)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Data section plan does not match section counts");
+    }
+
+    size_t pos = 0;
+
+    if (data_section->managers != NULL) {
+        if (data_section->manager_count > 0 && plan->manager_slices == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Missing manager slices");
+        }
+
+        for (uint32_t i = 0; i < data_section->manager_count; i++) {
+            const nmo_manager_data_t *mgr = &data_section->managers[i];
+            const nmo_data_chunk_slice_t *slice = &plan->manager_slices[i];
+            size_t next_pos = 0;
+
+            if (slice->size > (size_t)UINT32_MAX) {
+                NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR,
+                                 "Manager chunk too large to write (index=%u, size=%zu)",
+                                 (unsigned)i, slice->size);
+            }
+            if (!nmo_safe_add_size(pos, 12u, &next_pos) ||
+                !nmo_safe_add_size(next_pos, slice->size, &next_pos) ||
+                next_pos > output_size) {
+                NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
+                                 "Buffer too small for manager data (index=%u)", (unsigned)i);
+            }
+
+            nmo_write_u32_le(output + pos, mgr->guid.d1);
+            pos += 4;
+            nmo_write_u32_le(output + pos, mgr->guid.d2);
+            pos += 4;
+            nmo_write_u32_le(output + pos, (uint32_t)slice->size);
+            pos += 4;
+            if (slice->size > 0) {
+                NMO_ENSURE(slice->bytes != NULL, NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                           "Manager plan slice has size but no bytes (index=%u)", (unsigned)i);
+                memcpy(output + pos, slice->bytes, slice->size);
+                pos += slice->size;
+            }
+        }
+    }
+
+    if (data_section->objects != NULL) {
+        if (data_section->object_count > 0 && plan->object_slices == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Missing object slices");
+        }
+
+        for (uint32_t i = 0; i < data_section->object_count; i++) {
+            const nmo_object_data_t *obj = &data_section->objects[i];
+            const nmo_data_chunk_slice_t *slice = &plan->object_slices[i];
+            size_t header_bytes = (file_version < 7) ? 8u : 4u;
+            size_t next_pos = 0;
+
+            if (slice->size > (size_t)UINT32_MAX) {
+                NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR,
+                                 "Object chunk too large to write (index=%u, size=%zu)",
+                                 (unsigned)i, slice->size);
+            }
+            if (!nmo_safe_add_size(pos, header_bytes, &next_pos) ||
+                !nmo_safe_add_size(next_pos, slice->size, &next_pos) ||
+                next_pos > output_size) {
+                NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
+                                 "Buffer too small for object data (index=%u)", (unsigned)i);
+            }
+
+            if (file_version < 7) {
+                NMO_ENSURE(obj->object_id != 0, NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                           "Missing object ID for legacy data section (index=%u)", (unsigned)i);
+                nmo_write_u32_le(output + pos, obj->object_id);
+                pos += 4;
+            }
+
+            nmo_write_u32_le(output + pos, (uint32_t)slice->size);
+            pos += 4;
+            if (slice->size > 0) {
+                NMO_ENSURE(slice->bytes != NULL, NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                           "Object plan slice has size but no bytes (index=%u)", (unsigned)i);
+                memcpy(output + pos, slice->bytes, slice->size);
+                pos += slice->size;
+            }
+        }
+    }
+
+    if (pos != plan->total_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                         "Data section plan write size mismatch (expected=%zu, actual=%zu)",
+                         plan->total_size, pos);
+    }
+
+    NMO_RETURN_OK();
+}
+
 size_t nmo_data_section_calculate_size(
     const nmo_data_section_t *data_section,
     uint32_t file_version,

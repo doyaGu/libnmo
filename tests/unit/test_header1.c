@@ -75,6 +75,60 @@ TEST(header1, round_trip) {
     nmo_arena_destroy(arena);
 }
 
+TEST(header1, planned_write_matches_serialize) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_object_desc_t objects[2];
+    memset(objects, 0, sizeof(objects));
+    objects[0].file_id = 101;
+    objects[0].class_id = 0x1111u;
+    objects[0].file_index = 64;
+    objects[0].name = "alpha";
+    objects[1].file_id = 102;
+    objects[1].class_id = 0x2222u;
+    objects[1].file_index = 128;
+    objects[1].name = "beta";
+    objects[1].flags = NMO_OBJECT_REFERENCE_FLAG;
+
+    nmo_plugin_dep_t deps[3];
+    memset(deps, 0, sizeof(deps));
+    deps[0].category = 11;
+    deps[0].guid = (nmo_guid_t){0xAAAA0001u, 0xBBBB0001u};
+    deps[1].category = 22;
+    deps[1].guid = (nmo_guid_t){0xAAAA0002u, 0xBBBB0002u};
+    deps[2].category = 11;
+    deps[2].guid = (nmo_guid_t){0xAAAA0003u, 0xBBBB0003u};
+
+    nmo_header1_t header;
+    memset(&header, 0, sizeof(header));
+    header.object_count = 2;
+    header.objects = objects;
+    header.plugin_dep_count = 3;
+    header.plugin_deps = deps;
+    header.included_file_count = 1;
+
+    void* legacy_data = NULL;
+    size_t legacy_size = 0;
+    ASSERT_EQ(NMO_OK, nmo_header1_serialize(&header, &legacy_data, &legacy_size, arena));
+
+    nmo_header1_layout_t layout;
+    memset(&layout, 0, sizeof(layout));
+    ASSERT_EQ(NMO_OK, nmo_header1_plan(&header, arena, &layout));
+    ASSERT_EQ((size_t)41, layout.object_table_size);
+    ASSERT_EQ((size_t)44, layout.plugin_dep_size);
+    ASSERT_EQ((size_t)8, layout.included_metadata_size);
+    ASSERT_EQ(legacy_size, layout.total_size);
+
+    uint8_t* planned_data = NULL;
+    size_t planned_size = 0;
+    ASSERT_EQ(NMO_OK, nmo_header1_write_planned(&header, &layout, arena, &planned_data, &planned_size));
+    ASSERT_EQ(legacy_size, planned_size);
+    ASSERT_MEM_EQ(legacy_data, planned_data, legacy_size);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(header1, included_metadata_only) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 1024);
     ASSERT_NOT_NULL(arena);
@@ -151,6 +205,7 @@ TEST(header1, size_overflow) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(header1, serialization);
     REGISTER_TEST(header1, round_trip);
+    REGISTER_TEST(header1, planned_write_matches_serialize);
     REGISTER_TEST(header1, included_metadata_only);
     REGISTER_TEST(header1, size_overflow);
 TEST_MAIN_END()
