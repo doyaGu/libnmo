@@ -715,20 +715,23 @@ static bool build_graph_side(const diff_side_t *src, nmo_allocator_t *allocator,
     dst->side = *src;
     dst->allocator = allocator;
 
-    size_t n = 0;
-    nmo_object_t **objs = nmo_object_repository_get_all(src->repo, &n);
-    if (!n || !objs) return true;
+    size_t n = nmo_object_repository_get_count(src->repo);
+    if (!n) return true;
 
     dst->nodes = (diff_node_t *)diff_alloc_array(
         allocator, n, sizeof(diff_node_t), _Alignof(diff_node_t), true);
     if (!dst->nodes) return false;
     dst->count = n;
     for (size_t i = 0; i < n; i++) {
-        dst->nodes[i].obj = objs[i];
-        dst->nodes[i].id = nmo_object_get_id(objs[i]);
-        dst->nodes[i].cid = nmo_object_get_class_id(objs[i]);
-        dst->nodes[i].name = nmo_object_get_name(objs[i]);
-        dst->nodes[i].sig = compute_signature(objs[i], src->registry);
+        nmo_object_t *obj = nmo_object_repository_get_by_index(src->repo, i);
+        if (obj == NULL) {
+            continue;
+        }
+        dst->nodes[i].obj = obj;
+        dst->nodes[i].id = nmo_object_get_id(obj);
+        dst->nodes[i].cid = nmo_object_get_class_id(obj);
+        dst->nodes[i].name = nmo_object_get_name(obj);
+        dst->nodes[i].sig = compute_signature(obj, src->registry);
     }
 
     if (!src->registry) return true;

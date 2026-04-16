@@ -26,13 +26,16 @@ static void collect_object_stats(
 ) {
     memset(&stats->objects, 0, sizeof(stats->objects));
     
-    size_t count = 0;
-    nmo_object_t **objects = nmo_object_repository_get_all(repo, &count);
+    size_t count = nmo_object_repository_get_count(repo);
     
     stats->objects.total_count = count;
     
     for (size_t i = 0; i < count; i++) {
-        nmo_class_id_t class_id = objects[i]->class_id;
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        if (object == NULL) {
+            continue;
+        }
+        nmo_class_id_t class_id = object->class_id;
         
         if (class_id < 256) {
             stats->objects.by_class[class_id]++;
@@ -61,8 +64,7 @@ static void collect_memory_stats(
     memset(&stats->memory, 0, sizeof(stats->memory));
     memset(&stats->chunks, 0, sizeof(stats->chunks));
     
-    size_t count = 0;
-    nmo_object_t **objects = nmo_object_repository_get_all(repo, &count);
+    size_t count = nmo_object_repository_get_count(repo);
     
     size_t total_chunk_data = 0;
     size_t total_chunk_overhead = 0;
@@ -71,7 +73,11 @@ static void collect_memory_stats(
     size_t total_chunks = 0;
     
     for (size_t i = 0; i < count; i++) {
-        nmo_chunk_t *chunk = nmo_object_get_chunk(objects[i]);
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        if (object == NULL) {
+            continue;
+        }
+        nmo_chunk_t *chunk = nmo_object_get_chunk(object);
         if (chunk == NULL) {
             continue;
         }
