@@ -438,6 +438,22 @@ static bool query_candidate_covers_query(const nmo_object_query_t *query)
     return query->name_mode == NMO_OBJECT_QUERY_NAME_EXACT;
 }
 
+static bool query_candidate_covers_indexed_filters(const nmo_object_query_t *query)
+{
+    if (query == NULL) {
+        return false;
+    }
+    if (query->object_id != 0) {
+        return query->class_id == 0 &&
+               query->name_mode == NMO_OBJECT_QUERY_NAME_NONE;
+    }
+    if (query->class_id != 0) {
+        return !query->include_derived_classes &&
+               query->name_mode == NMO_OBJECT_QUERY_NAME_NONE;
+    }
+    return query->name_mode == NMO_OBJECT_QUERY_NAME_EXACT;
+}
+
 static nmo_status_t query_iterate_candidate(
     const nmo_object_query_context_t *ctx,
     const nmo_object_query_t *query,
@@ -506,6 +522,77 @@ static nmo_status_t query_iterate_candidate(
     return NMO_OK;
 }
 
+static nmo_status_t query_collect_candidate(
+    const nmo_object_query_context_t *ctx,
+    const nmo_object_query_t *query,
+    const query_candidate_t *candidate,
+    nmo_object_t **objects,
+    size_t object_capacity,
+    size_t *out_count,
+    nmo_object_query_result_t *result)
+{
+    nmo_object_query_index_t *index = ctx->index;
+    size_t total = nmo_object_repository_get_count(ctx->repository);
+    result->total = total;
+    *out_count = 0;
+
+    if (candidate->kind == QUERY_CANDIDATE_NONE) {
+        return NMO_OK;
+    }
+    if (candidate->kind == QUERY_CANDIDATE_ALL || index == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    bool assume_indexed_filters = query_candidate_covers_indexed_filters(query);
+    if (candidate->may_contain_duplicates) {
+        query_index_next_generation(index);
+    }
+
+    for (size_t i = 0; i < candidate->count; i++) {
+        size_t meta_index = candidate->single_meta_index;
+        if (candidate->kind == QUERY_CANDIDATE_ID_ENTRIES) {
+            meta_index = candidate->id_entries[i].meta_index;
+        } else if (candidate->kind == QUERY_CANDIDATE_NAME_ENTRIES) {
+            meta_index = candidate->name_entries[i].meta_index;
+        }
+        if (meta_index >= index->meta_count) {
+            continue;
+        }
+        if (candidate->may_contain_duplicates &&
+            !query_index_mark_meta(index, meta_index)) {
+            continue;
+        }
+
+        query_meta_t *meta = &index->metas[meta_index];
+        nmo_object_t *object = meta->object;
+        if (object == NULL) {
+            continue;
+        }
+        if (!assume_indexed_filters) {
+            bool matches = false;
+            nmo_status_t status =
+                nmo_object_query_matches(object, query, ctx->registry, &matches);
+            if (status != NMO_OK) {
+                return status;
+            }
+            if (!matches) {
+                continue;
+            }
+        } else if (query != NULL && query->predicate != NULL &&
+                   !query->predicate(object, query->predicate_user_data)) {
+            continue;
+        }
+        if (*out_count >= object_capacity) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+        objects[(*out_count)++] = object;
+        result->matched++;
+        result->visited++;
+    }
+
+    return NMO_OK;
+}
+
 nmo_status_t nmo_object_query_iterate(
     const nmo_object_query_context_t *ctx,
     const nmo_object_query_t *query,
@@ -554,6 +641,55 @@ nmo_status_t nmo_object_query_collect(
 
     *out_objects = NULL;
     *out_count = 0;
+
+    query_candidate_t candidate = query_all_candidate();
+    if (ctx->index != NULL) {
+        nmo_status_t plan_status = query_plan_candidate(
+            ctx->index, ctx->registry, query, &candidate);
+        if (plan_status != NMO_OK) {
+            if (out_result != NULL) {
+                *out_result = (nmo_object_query_result_t){0};
+            }
+            return plan_status;
+        }
+
+        if (candidate.kind != QUERY_CANDIDATE_ALL) {
+            size_t total = nmo_object_repository_get_count(ctx->repository);
+            size_t upper_bound = query_candidate_upper_bound(&candidate, total);
+            nmo_object_query_result_t collect_result = {0};
+            if (upper_bound == 0) {
+                nmo_status_t status = query_iterate_candidate(
+                    ctx, query, &candidate, NULL, NULL, &collect_result);
+                if (out_result != NULL) {
+                    *out_result = collect_result;
+                }
+                return status;
+            }
+
+            nmo_object_t **objects = (nmo_object_t **)nmo_arena_alloc(
+                arena,
+                upper_bound * sizeof(*objects),
+                _Alignof(nmo_object_t *));
+            if (objects == NULL) {
+                return NMO_ERR_NOMEM;
+            }
+
+            size_t collect_count = 0;
+            nmo_status_t status = query_collect_candidate(
+                ctx, query, &candidate, objects, upper_bound,
+                &collect_count, &collect_result);
+            if (status != NMO_OK) {
+                return status;
+            }
+
+            *out_objects = collect_count > 0 ? objects : NULL;
+            *out_count = collect_count;
+            if (out_result != NULL) {
+                *out_result = collect_result;
+            }
+            return NMO_OK;
+        }
+    }
 
     nmo_object_query_result_t count_result = {0};
     nmo_status_t status =

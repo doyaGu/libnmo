@@ -140,6 +140,13 @@ static bool count_visit(size_t object_index, nmo_object_t *object, void *user_da
     return true;
 }
 
+static bool collect_accept_all(const nmo_object_t *object, void *user_data)
+{
+    (void)object;
+    (void)user_data;
+    return true;
+}
+
 static double benchmark_iterate_with_visitor(
     const nmo_object_query_context_t *ctx,
     const nmo_object_query_t *query,
@@ -164,6 +171,30 @@ static double benchmark_iterate_with_visitor(
     double elapsed = test_get_time_ms() - start;
     *out_matches = matches;
     *out_visits = visits;
+    return elapsed;
+}
+
+static double benchmark_collect_query(
+    const nmo_object_query_context_t *ctx,
+    const nmo_object_query_t *query,
+    nmo_arena_t *arena,
+    size_t iterations,
+    size_t *out_count)
+{
+    size_t total = 0;
+    double start = test_get_time_ms();
+    for (size_t i = 0; i < iterations; i++) {
+        nmo_arena_reset(arena);
+        nmo_object_t **objects = NULL;
+        size_t count = 0;
+        if (nmo_object_query_collect(ctx, query, arena, &objects, &count, NULL) != NMO_OK) {
+            *out_count = SIZE_MAX;
+            return 0.0;
+        }
+        total += count;
+    }
+    double elapsed = test_get_time_ms() - start;
+    *out_count = total;
     return elapsed;
 }
 
@@ -250,6 +281,62 @@ TEST(object_query_perf, session_index_accelerates_repeated_queries)
     ASSERT_EQ(linear_matches, indexed_matches);
     assert_speedup("wildcard literal", linear_ms, indexed_ms, 3.0);
 
+    nmo_object_query_index_destroy(index);
+    nmo_object_repository_destroy(repo);
+    nmo_context_release(ctx);
+}
+
+TEST(object_query_perf, indexed_collect_predicate_uses_single_candidate_pass)
+{
+    const size_t object_count = 50000;
+    const size_t class_bucket_count = 32;
+    const size_t iterations = 300;
+
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+
+    nmo_object_repository_t *repo = nmo_object_repository_create(&allocator);
+    ASSERT_NOT_NULL(repo);
+    populate_perf_repo(repo, &allocator, object_count, class_bucket_count);
+
+    nmo_object_query_index_t *index =
+        nmo_object_query_index_create(repo, registry, &allocator);
+    ASSERT_NOT_NULL(index);
+    ASSERT_EQ(NMO_OK, nmo_object_query_index_rebuild(index));
+
+    nmo_arena_t *linear_arena = nmo_arena_create(NULL, 1024 * 1024);
+    nmo_arena_t *indexed_arena = nmo_arena_create(NULL, 1024 * 1024);
+    ASSERT_NOT_NULL(linear_arena);
+    ASSERT_NOT_NULL(indexed_arena);
+
+    nmo_object_query_context_t linear_ctx = {
+        .repository = repo,
+        .index = NULL,
+        .registry = registry
+    };
+    nmo_object_query_context_t indexed_ctx = {
+        .repository = repo,
+        .index = index,
+        .registry = registry
+    };
+    nmo_object_query_t query = {
+        .class_id = 17,
+        .predicate = collect_accept_all
+    };
+
+    size_t linear_count = 0;
+    size_t indexed_count = 0;
+    double linear_ms = benchmark_collect_query(
+        &linear_ctx, &query, linear_arena, iterations, &linear_count);
+    double indexed_ms = benchmark_collect_query(
+        &indexed_ctx, &query, indexed_arena, iterations, &indexed_count);
+    ASSERT_EQ(linear_count, indexed_count);
+    assert_speedup("collect class predicate", linear_ms, indexed_ms, 100.0);
+
+    nmo_arena_destroy(indexed_arena);
+    nmo_arena_destroy(linear_arena);
     nmo_object_query_index_destroy(index);
     nmo_object_repository_destroy(repo);
     nmo_context_release(ctx);
@@ -485,6 +572,7 @@ TEST(object_query_perf, text_reducer_intersects_common_trigrams)
 
 TEST_MAIN_BEGIN()
     REGISTER_TEST_CATEGORIZED(object_query_perf, session_index_accelerates_repeated_queries, TEST_CATEGORY_PERFORMANCE);
+    REGISTER_TEST_CATEGORIZED(object_query_perf, indexed_collect_predicate_uses_single_candidate_pass, TEST_CATEGORY_PERFORMANCE);
     REGISTER_TEST_CATEGORIZED(object_query_perf, indexed_visitor_class_query_avoids_repository_lookup, TEST_CATEGORY_PERFORMANCE);
     REGISTER_TEST_CATEGORIZED(object_query_perf, eager_rebuild_uses_batched_name_storage, TEST_CATEGORY_PERFORMANCE);
     REGISTER_TEST_CATEGORIZED(object_query_perf, text_index_build_reserves_trigram_storage, TEST_CATEGORY_PERFORMANCE);

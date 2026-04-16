@@ -136,6 +136,27 @@ static inline query_candidate_t query_single_candidate(size_t meta_index)
     };
 }
 
+static inline size_t query_candidate_upper_bound(
+    const query_candidate_t *candidate,
+    size_t total)
+{
+    if (candidate == NULL) {
+        return total;
+    }
+    switch (candidate->kind) {
+    case QUERY_CANDIDATE_ALL:
+        return total;
+    case QUERY_CANDIDATE_NONE:
+        return 0;
+    case QUERY_CANDIDATE_SINGLE:
+    case QUERY_CANDIDATE_ID_ENTRIES:
+    case QUERY_CANDIDATE_NAME_ENTRIES:
+        return candidate->count;
+    default:
+        return total;
+    }
+}
+
 nmo_status_t query_plan_candidate(
     nmo_object_query_index_t *index,
     const nmo_type_registry_t *registry,
