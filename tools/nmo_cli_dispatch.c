@@ -377,12 +377,16 @@ static void resource_info_usage(FILE *out) {
 static void behavior_list_usage(FILE *out) {
     fprintf(out, "Usage: nmo behavior list <file>\n\n");
     fprintf(out, "List behavior objects in the file (CKBehavior-derived).\n");
+    fprintf(out, "\nOutput:\n");
+    fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n");
 }
 
 static void behavior_show_usage(FILE *out) {
     fprintf(out, "Usage: nmo behavior show [options] <id> <file>\n\n");
     fprintf(out, "Show behavior signature: IO ports, parameters with types,\n");
     fprintf(out, "sub-behaviors, and links.\n\n");
+    fprintf(out, "Output:\n");
+    fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  --raw    Show raw reflection output (like object show)\n");
 }
@@ -390,11 +394,16 @@ static void behavior_show_usage(FILE *out) {
 static void behavior_stats_usage(FILE *out) {
     fprintf(out, "Usage: nmo behavior stats <file>\n\n");
     fprintf(out, "Show behavior counts and distribution by class.\n");
+    fprintf(out, "\nOutput:\n");
+    fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n");
 }
 
 static void behavior_graph_usage(FILE *out) {
     fprintf(out, "Usage: nmo behavior graph [options] <id> <file>\n\n");
     fprintf(out, "Export a behavior graph with parameter and operation links.\n\n");
+    fprintf(out, "Output:\n");
+    fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n");
+    fprintf(out, "  --dot emits Graphviz DOT and is text format only.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  --dot               Include DOT graph output (text format only)\n");
     fprintf(out, "  --max-nodes <n>      Limit node output (0 = no limit)\n");
@@ -404,6 +413,8 @@ static void behavior_graph_usage(FILE *out) {
 static void behavior_dump_usage(FILE *out) {
     fprintf(out, "Usage: nmo behavior dump [options] <id> <file>\n\n");
     fprintf(out, "Dump behavior tree with decoded parameter values.\n\n");
+    fprintf(out, "Output:\n");
+    fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  --level <n>     Dump depth level (0-3, default: 2)\n");
 }
@@ -411,6 +422,8 @@ static void behavior_dump_usage(FILE *out) {
 static void behavior_find_usage(FILE *out) {
     fprintf(out, "Usage: nmo behavior find [options] <file>\n\n");
     fprintf(out, "Search behaviors by name, GUID, or type.\n\n");
+    fprintf(out, "Output:\n");
+    fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  --name <pattern>  Name wildcard pattern\n");
     fprintf(out, "  --guid <guid>     Building block GUID\n");
@@ -420,9 +433,26 @@ static void behavior_find_usage(FILE *out) {
 static void behavior_trace_usage(FILE *out) {
     fprintf(out, "Usage: nmo behavior trace [options] <id> <file>\n\n");
     fprintf(out, "Trace execution path from a behavior IO port.\n\n");
+    fprintf(out, "Output:\n");
+    fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  --from <io_id>   Starting IO port\n");
     fprintf(out, "  --max-depth <n>  Maximum trace depth\n");
+}
+
+static void behavior_interface_usage(FILE *out) {
+    fprintf(out, "Usage: nmo behavior interface <command> [options] [file]\n\n");
+    fprintf(out, "Show or edit behavior interface layout data.\n\n");
+    fprintf(out, "Output:\n");
+    fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n\n");
+    fprintf(out, "Commands:\n");
+    fprintf(out, "  show                    Show interface layout data (default)\n");
+    fprintf(out, "  set-pos                 Move behavior position\n");
+    fprintf(out, "  fold                    Fold behavior\n");
+    fprintf(out, "  unfold                  Unfold behavior\n");
+    fprintf(out, "  set-color               Set script color\n");
+    fprintf(out, "  add-comment             Add layout comment\n");
+    fprintf(out, "  remove-comment          Remove layout comment\n");
 }
 
 static void behavior_add_link_usage(FILE *out) {
@@ -912,7 +942,7 @@ static const nmo_cli_action_t behavior_actions[] = {
     {"trace", "tr", "Trace execution path from IO", nmo_cmd_behavior_trace, behavior_trace_usage, NULL, 0, NULL},
     {"add-link", NULL, "Add behavior graph link", nmo_cmd_behavior_add_link, behavior_add_link_usage, NULL, 0, NULL},
     {"remove-link", NULL, "Remove behavior graph link", nmo_cmd_behavior_remove_link, behavior_remove_link_usage, NULL, 0, NULL},
-    {"interface", "iface", "Interface layout commands", NULL, NULL,
+    {"interface", "iface", "Interface layout commands", NULL, behavior_interface_usage,
         nmo_behavior_interface_sub_actions, NMO_BEHAVIOR_INTERFACE_SUB_ACTION_COUNT, "show"},
 };
 
@@ -1213,6 +1243,10 @@ static void nmo_cli_print_sub_action_help(
     fprintf(out, "Usage: nmo %s %s <command> [options] [file]\n\n",
             group->name, parent->name);
     fprintf(out, "%s\n\n", parent->brief);
+    if (parent->print_usage) {
+        parent->print_usage(out);
+        return;
+    }
     fprintf(out, "Commands:\n");
     for (size_t i = 0; i < parent->sub_action_count; ++i) {
         const nmo_cli_action_t *a = &parent->sub_actions[i];

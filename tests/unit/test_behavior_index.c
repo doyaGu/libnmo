@@ -238,8 +238,15 @@ TEST(beh_idx, ensure_reports_interface_parse_failure)
     state->interface_chunk = interface_chunk;
     ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &behavior));
 
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+    ASSERT_EQ(NMO_OK,
               nmo_session_ensure_behavior_acceleration(session));
+    nmo_session_behavior_interface_diagnostics_t diag;
+    nmo_session_get_behavior_interface_diagnostics(session, &diag);
+    ASSERT_TRUE(diag.attempted);
+    ASSERT_FALSE(diag.available);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, diag.status);
+    ASSERT_EQ((uint64_t)1, (uint64_t)diag.failed_count);
+    ASSERT_EQ((uint64_t)100, (uint64_t)diag.first_error_object_id);
     size_t arena_used_after_first_failure =
         nmo_arena_bytes_used(nmo_session_get_arena(session));
     ASSERT_NOT_NULL(nmo_session_get_behavior_index(session));

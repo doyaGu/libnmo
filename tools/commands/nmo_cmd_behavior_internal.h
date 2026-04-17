@@ -74,6 +74,15 @@ const nmo_interface_link_t *find_interface_link(
  */
 const char *interface_color_to_hex(uint32_t color, char *buf, size_t size);
 
+void nmo_cmd_behavior_add_interface_diagnostics_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *data,
+    nmo_session_t *session);
+
+void nmo_cmd_behavior_print_interface_diagnostics(
+    FILE *out,
+    nmo_session_t *session);
+
 #ifdef __cplusplus
 }
 #endif

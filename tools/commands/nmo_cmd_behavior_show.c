@@ -121,6 +121,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
         yyjson_mut_obj_add_int(doc, data, "priority", bs->priority);
         yyjson_mut_obj_add_int(doc, data, "compatible_class_id",
                                bs->compatible_class_id);
+        nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, c.session);
 
         if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
             char guid_buf[24];
@@ -374,7 +375,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 const nmo_interface_comment_t *cm = &ibody->comments[ci];
                 yyjson_mut_val *cobj = yyjson_mut_obj(doc);
                 yyjson_mut_obj_add_uint(doc, cobj, "index", ci);
-                if (cm->text) yyjson_mut_obj_add_str(doc, cobj, "text", cm->text);
+                if (cm->text) nmo_cli_json_add_str_safe(doc, cobj, "text", cm->text);
                 yyjson_mut_obj_add_real(doc, cobj, "left", (double)cm->left);
                 yyjson_mut_obj_add_real(doc, cobj, "top", (double)cm->top);
                 yyjson_mut_obj_add_real(doc, cobj, "right", (double)cm->right);
@@ -402,6 +403,9 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     fprintf(c.out, "  Type: %s\n", is_script ? "Script" : is_bb ? "Building Block" : "Graph");
     if (bs->interface_data && (bs->interface_data->script.flags & NMO_INTERFACE_FLAG_FOLDED))
         fprintf(c.out, "  Layout: Folded\n");
+    if (!bs->interface_data) {
+        nmo_cmd_behavior_print_interface_diagnostics(c.out, c.session);
+    }
     if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
 
         const char *proto_name = nmo_bb_registry_get_name(nmo_context_get_bb_registry(c.ctx),bs->block_guid);

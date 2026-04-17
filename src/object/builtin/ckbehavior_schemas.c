@@ -1483,10 +1483,34 @@ static bool interface_script_id_matches_object(
     return data->script.behavior_id == obj->id;
 }
 
-nmo_status_t nmo_behavior_parse_all_interfaces(
-    nmo_object_repository_t *repo,
-    nmo_logger_t *logger)
+static void behavior_interface_stats_set_first_error(
+    nmo_behavior_interface_parse_stats_t *stats,
+    const nmo_object_t *obj,
+    const nmo_chunk_t *chunk,
+    nmo_status_t status)
 {
+    if (!stats || stats->first_error != NMO_OK) {
+        return;
+    }
+
+    stats->first_error = status;
+    stats->first_error_object_id = obj ? obj->id : 0;
+    stats->first_error_file_id = obj ? obj->file_id : 0;
+    stats->first_error_chunk_version = chunk ? chunk->chunk_version : 0;
+    stats->first_error_data_version = chunk ? chunk->data_version : 0;
+    stats->first_error_reader_offset = chunk ? nmo_chunk_get_position(chunk) : 0;
+    stats->first_error_chunk_dwords = chunk ? chunk->data.count : 0;
+}
+
+nmo_status_t nmo_behavior_parse_all_interfaces_ex(
+    nmo_object_repository_t *repo,
+    nmo_logger_t *logger,
+    nmo_behavior_interface_parse_stats_t *out_stats)
+{
+    if (out_stats) {
+        memset(out_stats, 0, sizeof(*out_stats));
+    }
+
     if (!repo) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1521,8 +1545,18 @@ nmo_status_t nmo_behavior_parse_all_interfaces(
         /* Skip chunks with no data -- nothing to parse */
         if (state->interface_chunk->data.count == 0) continue;
 
+        if (out_stats) {
+            out_stats->attempted_count++;
+        }
+
         nmo_arena_t *arena = nmo_object_get_storage_arena(obj);
         if (!arena) {
+            if (out_stats) {
+                out_stats->failed_count++;
+                out_stats->skipped_no_arena_count++;
+                behavior_interface_stats_set_first_error(
+                    out_stats, obj, state->interface_chunk, NMO_ERR_INVALID_ARGUMENT);
+            }
             if (first_error == NMO_OK) {
                 first_error = NMO_ERR_INVALID_ARGUMENT;
             }
@@ -1537,6 +1571,12 @@ nmo_status_t nmo_behavior_parse_all_interfaces(
         nmo_interface_data_t *idata = (nmo_interface_data_t *)nmo_arena_alloc(
             arena, sizeof(nmo_interface_data_t), alignof(nmo_interface_data_t));
         if (!idata) {
+            if (out_stats) {
+                out_stats->failed_count++;
+                out_stats->allocation_failure_count++;
+                behavior_interface_stats_set_first_error(
+                    out_stats, obj, state->interface_chunk, NMO_ERR_NOMEM);
+            }
             if (first_error == NMO_OK) {
                 first_error = NMO_ERR_NOMEM;
             }
@@ -1577,10 +1617,18 @@ nmo_status_t nmo_behavior_parse_all_interfaces(
         if (st == NMO_OK) {
             state->interface_data = idata;
             state->interface_ids_are_runtime = lookup_ctx.prefer_runtime_ids;
+            if (out_stats) {
+                out_stats->parsed_count++;
+            }
             /* Keep the raw chunk for byte-level save round-trip. */
         } else {
             state->interface_data = NULL;
             state->interface_ids_are_runtime = false;
+            if (out_stats) {
+                out_stats->failed_count++;
+                behavior_interface_stats_set_first_error(
+                    out_stats, obj, state->interface_chunk, st);
+            }
             if (first_error == NMO_OK) {
                 first_error = st;
             }
@@ -1594,6 +1642,13 @@ nmo_status_t nmo_behavior_parse_all_interfaces(
     }
 
     return first_error;
+}
+
+nmo_status_t nmo_behavior_parse_all_interfaces(
+    nmo_object_repository_t *repo,
+    nmo_logger_t *logger)
+{
+    return nmo_behavior_parse_all_interfaces_ex(repo, logger, NULL);
 }
 
 /* ============================================================================

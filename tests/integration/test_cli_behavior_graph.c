@@ -5,12 +5,20 @@
 
 #include "test_framework.h"
 
+#include "../../tools/nmo_cli_common.h"
+#include "app/nmo_save.h"
+#include "object/nmo_class_ids.h"
+#include "session/nmo_context.h"
+#include "session/nmo_session.h"
 #include "yyjson.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#if !defined(_WIN32)
+#include <sys/wait.h>
+#endif
 
 #if defined(__MINGW32__) || defined(__MINGW64__)
 #define NMO_POPEN popen
@@ -26,6 +34,79 @@
 #ifndef NMO_CLI_PATH
 #define NMO_CLI_PATH "nmo"
 #endif
+
+#define NMO_INTERFACE_EDIT_FIXTURE NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo")
+#define NMO_INTERFACE_EDIT_TARGET_ID 253u
+#define NMO_INTERFACE_EDIT_SCRIPT_BEHAVIOR_ID 250u
+#define NMO_INTERFACE_EDIT_LINK_ID 107u
+#define NMO_INTERFACE_EDIT_LINK_WITH_POINT_ID 247u
+#define NMO_INTERFACE_EDIT_SUB_BEHAVIOR_ID 86u
+#define NMO_INTERFACE_EDIT_MISSING_OP_ID 999u
+
+typedef struct cli_run_result {
+    char *output;
+    int exit_code;
+} cli_run_result_t;
+
+static int normalize_cli_exit_code(int status) {
+    if (status < 0) {
+        return status;
+    }
+#if !defined(_WIN32)
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+#endif
+    return status;
+}
+
+static cli_run_result_t run_cli_capture(const char *args) {
+    cli_run_result_t result;
+    result.output = NULL;
+    result.exit_code = -1;
+
+    char cmd[2048];
+    snprintf(cmd, sizeof(cmd), "%s %s 2>&1", NMO_CLI_PATH, args);
+
+    FILE *pipe = NMO_POPEN(cmd, "r");
+    if (!pipe) {
+        return result;
+    }
+
+    size_t cap = 4096;
+    size_t len = 0;
+    char *buffer = (char *)malloc(cap);
+    if (!buffer) {
+        result.exit_code = normalize_cli_exit_code(NMO_PCLOSE(pipe));
+        return result;
+    }
+
+    char chunk[1024];
+    while (fgets(chunk, sizeof(chunk), pipe)) {
+        size_t chunk_len = strlen(chunk);
+        if (len + chunk_len + 1 > cap) {
+            size_t new_cap = cap * 2;
+            while (new_cap < len + chunk_len + 1) {
+                new_cap *= 2;
+            }
+            char *new_buf = (char *)realloc(buffer, new_cap);
+            if (!new_buf) {
+                free(buffer);
+                result.exit_code = normalize_cli_exit_code(NMO_PCLOSE(pipe));
+                return result;
+            }
+            buffer = new_buf;
+            cap = new_cap;
+        }
+        memcpy(buffer + len, chunk, chunk_len);
+        len += chunk_len;
+    }
+
+    buffer[len] = '\0';
+    result.exit_code = normalize_cli_exit_code(NMO_PCLOSE(pipe));
+    result.output = buffer;
+    return result;
+}
 
 static char *read_command_output(const char *command) {
     if (!command) {
@@ -71,6 +152,83 @@ static char *read_command_output(const char *command) {
     return buffer;
 }
 
+static int file_exists(const char *path) {
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        return 0;
+    }
+    fclose(fp);
+    return 1;
+}
+
+static bool create_behavior_link_fixture(
+    const char *path,
+    nmo_object_id_t *out_behavior_id,
+    nmo_object_id_t *out_from_id,
+    nmo_object_id_t *out_to_id)
+{
+    if (out_behavior_id == NULL || out_from_id == NULL || out_to_id == NULL) {
+        return false;
+    }
+    *out_behavior_id = 0;
+    *out_from_id = 0;
+    *out_to_id = 0;
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = "data" });
+    if (ctx == NULL) {
+        return false;
+    }
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    if (session == NULL) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    nmo_runtime_report_t report = {0};
+    nmo_object_id_t behavior_id = 0;
+    nmo_object_id_t from_id = 0;
+    nmo_object_id_t to_id = 0;
+    bool ok =
+        nmo_session_create_object(session, NMO_CID_BEHAVIOR, "Graph",
+                                  (nmo_guid_t){0, 0}, &behavior_id, &report) == NMO_OK &&
+        nmo_session_create_object(session, NMO_CID_BEHAVIORIO, "Out",
+                                  (nmo_guid_t){0, 0}, &from_id, &report) == NMO_OK &&
+        nmo_session_create_object(session, NMO_CID_BEHAVIORIO, "In",
+                                  (nmo_guid_t){0, 0}, &to_id, &report) == NMO_OK;
+
+    if (ok) {
+        nmo_save_options_t save_opts = nmo_save_options_default();
+        ok = nmo_save_file(session, path, &save_opts) == NMO_OK;
+    }
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+    if (ok) {
+        *out_behavior_id = behavior_id;
+        *out_from_id = from_id;
+        *out_to_id = to_id;
+    }
+    return ok;
+}
+
+static bool create_interface_comment_fixture(const char *path) {
+    remove(path);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface add-comment %u --text \"Debt note\" --rect 1,2,3,4 \"%s\" -o \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_FIXTURE,
+             path);
+    cli_run_result_t result = run_cli_capture(args);
+    bool ok = result.output != NULL &&
+              result.exit_code == NMO_CLI_EXIT_SUCCESS &&
+              file_exists(path);
+    free(result.output);
+    return ok;
+}
+
 static const char *get_string_field(yyjson_val *obj, const char *key) {
     yyjson_val *val = yyjson_obj_get(obj, key);
     return yyjson_get_str(val);
@@ -84,6 +242,26 @@ static yyjson_val *get_object_field(yyjson_val *obj, const char *key) {
 static yyjson_val *get_array_field(yyjson_val *obj, const char *key) {
     yyjson_val *val = yyjson_obj_get(obj, key);
     return (val && yyjson_is_arr(val)) ? val : NULL;
+}
+
+static void run_json_command(const char *args, const char *expected_command, yyjson_doc **out_doc) {
+    ASSERT_NOT_NULL(out_doc);
+    *out_doc = NULL;
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    yyjson_doc *doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    const char *command = get_string_field(root, "command");
+    ASSERT_TRUE(command && strcmp(command, expected_command) == 0);
+    ASSERT_NOT_NULL(get_object_field(root, "data"));
+    *out_doc = doc;
 }
 
 TEST(cli, behavior_graph_json) {
@@ -166,6 +344,124 @@ TEST(cli, behavior_graph_json) {
     yyjson_doc_free(graph_doc);
 }
 
+TEST(cli, behavior_stats_json_survives_interface_parse_failures) {
+    char args[1024];
+
+    snprintf(args, sizeof(args),
+             "-f json behavior stats \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Balls.nmo"));
+    yyjson_doc *balls_doc = NULL;
+    run_json_command(args, "behavior.stats", &balls_doc);
+    ASSERT_NOT_NULL(balls_doc);
+    yyjson_doc_free(balls_doc);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior stats \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Menu.nmo"));
+    yyjson_doc *menu_doc = NULL;
+    run_json_command(args, "behavior.stats", &menu_doc);
+    ASSERT_NOT_NULL(menu_doc);
+    yyjson_doc_free(menu_doc);
+}
+
+TEST(cli, behavior_show_json_survives_interface_parse_failures) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json behavior show 11 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Balls.nmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.show", &doc);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    yyjson_val *id = yyjson_obj_get(data, "id");
+    ASSERT_TRUE(id && yyjson_is_uint(id));
+    ASSERT_EQ((uint64_t)11, yyjson_get_uint(id));
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_list_json_sanitizes_gameplay_names) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json behavior list \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.list", &doc);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    yyjson_val *objects = get_array_field(data, "objects");
+    ASSERT_NOT_NULL(objects);
+    ASSERT_TRUE(yyjson_arr_size(objects) > 0);
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_json_smoke_real_samples) {
+    char args[1024];
+
+    snprintf(args, sizeof(args),
+             "-f json behavior show 49 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/2D Text.nmo"));
+    yyjson_doc *show_doc = NULL;
+    run_json_command(args, "behavior.show", &show_doc);
+    ASSERT_NOT_NULL(show_doc);
+    yyjson_doc_free(show_doc);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior find --name Op \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"));
+    yyjson_doc *find_doc = NULL;
+    run_json_command(args, "behavior.find", &find_doc);
+    ASSERT_NOT_NULL(find_doc);
+    yyjson_doc_free(find_doc);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior trace 49 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/2D Text.nmo"));
+    yyjson_doc *trace_doc = NULL;
+    run_json_command(args, "behavior.trace", &trace_doc);
+    ASSERT_NOT_NULL(trace_doc);
+    yyjson_doc_free(trace_doc);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior dump 49 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/2D Text.nmo"));
+    yyjson_doc *dump_doc = NULL;
+    run_json_command(args, "behavior.dump", &dump_doc);
+    ASSERT_NOT_NULL(dump_doc);
+    yyjson_doc_free(dump_doc);
+}
+
+TEST(cli, behavior_help_mentions_json_output) {
+    static const char *commands[] = {
+        "behavior list --help",
+        "behavior stats --help",
+        "behavior show --help",
+        "behavior graph --help",
+        "behavior find --help",
+        "behavior trace --help",
+        "behavior dump --help",
+        "behavior interface --help",
+    };
+    for (size_t i = 0; i < sizeof(commands) / sizeof(commands[0]); i++) {
+        cli_run_result_t result = run_cli_capture(commands[i]);
+        ASSERT_NOT_NULL(result.output);
+        ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+        ASSERT_STR_CONTAINS(result.output, "-f json");
+        free(result.output);
+    }
+
+    cli_run_result_t graph = run_cli_capture("behavior graph --help");
+    ASSERT_NOT_NULL(graph.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, graph.exit_code);
+    ASSERT_STR_CONTAINS(graph.output, "--dot");
+    free(graph.output);
+}
+
 TEST(cli, behavior_graph_dot) {
     const char *file_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
 
@@ -207,7 +503,676 @@ TEST(cli, behavior_graph_dot) {
     free(dot_output);
 }
 
+TEST(cli, behavior_add_link_requires_output_unless_dry_run) {
+    const char *fixture = "test_behavior_add_link_missing_output.nmo";
+    remove(fixture);
+
+    nmo_object_id_t behavior_id = 0;
+    nmo_object_id_t from_id = 0;
+    nmo_object_id_t to_id = 0;
+    ASSERT_TRUE(create_behavior_link_fixture(fixture, &behavior_id, &from_id, &to_id));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior add-link --parent %u --from %u --to %u \"%s\"",
+             (unsigned)behavior_id, (unsigned)from_id, (unsigned)to_id, fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "output");
+    free(result.output);
+
+    remove(fixture);
+}
+
+TEST(cli, behavior_add_link_dry_run_does_not_write_output) {
+    const char *fixture = "test_behavior_add_link_dry_fixture.nmo";
+    const char *output = "test_behavior_add_link_dry_output.nmo";
+    remove(fixture);
+    remove(output);
+
+    nmo_object_id_t behavior_id = 0;
+    nmo_object_id_t from_id = 0;
+    nmo_object_id_t to_id = 0;
+    ASSERT_TRUE(create_behavior_link_fixture(fixture, &behavior_id, &from_id, &to_id));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior add-link --dry-run --parent %u --from %u --to %u -o \"%s\" \"%s\"",
+             (unsigned)behavior_id, (unsigned)from_id, (unsigned)to_id, output, fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(fixture);
+    remove(output);
+}
+
+TEST(cli, behavior_add_link_saves_output) {
+    const char *fixture = "test_behavior_add_link_save_fixture.nmo";
+    const char *output = "test_behavior_add_link_save_output.nmo";
+    remove(fixture);
+    remove(output);
+
+    nmo_object_id_t behavior_id = 0;
+    nmo_object_id_t from_id = 0;
+    nmo_object_id_t to_id = 0;
+    ASSERT_TRUE(create_behavior_link_fixture(fixture, &behavior_id, &from_id, &to_id));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior add-link --parent %u --from %u --to %u -o \"%s\" \"%s\"",
+             (unsigned)behavior_id, (unsigned)from_id, (unsigned)to_id, output, fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Saved to");
+    ASSERT_TRUE(file_exists(output));
+    free(result.output);
+
+    remove(fixture);
+    remove(output);
+}
+
+TEST(cli, behavior_add_link_json_dry_run) {
+    const char *fixture = "test_behavior_add_link_json_dry_fixture.nmo";
+    const char *output = "test_behavior_add_link_json_dry_output.nmo";
+    remove(fixture);
+    remove(output);
+
+    nmo_object_id_t behavior_id = 0;
+    nmo_object_id_t from_id = 0;
+    nmo_object_id_t to_id = 0;
+    ASSERT_TRUE(create_behavior_link_fixture(fixture, &behavior_id, &from_id, &to_id));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json behavior add-link --dry-run --parent %u --from %u --to %u -o \"%s\" \"%s\"",
+             (unsigned)behavior_id, (unsigned)from_id, (unsigned)to_id, output, fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_FALSE(file_exists(output));
+
+    yyjson_doc *doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    ASSERT_STR_EQ(get_string_field(root, "command"), "behavior.add-link");
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    yyjson_val *dry_run = yyjson_obj_get(data, "dry_run");
+    ASSERT_TRUE(dry_run && yyjson_is_bool(dry_run));
+    ASSERT_TRUE(yyjson_get_bool(dry_run));
+    yyjson_doc_free(doc);
+
+    remove(fixture);
+    remove(output);
+}
+
+TEST(cli, behavior_interface_set_pos_requires_output_unless_dry_run) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface set-pos %u %u 11 22 \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_SCRIPT_BEHAVIOR_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "output");
+    free(result.output);
+}
+
+TEST(cli, behavior_interface_set_pos_dry_run_does_not_write_output) {
+    const char *output = "test_behavior_interface_set_pos_dry_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface set-pos --dry-run %u %u 11 22 \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_SCRIPT_BEHAVIOR_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_set_pos_saves_output) {
+    const char *output = "test_behavior_interface_set_pos_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface set-pos %u %u 11 22 \"%s\" -o \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_SCRIPT_BEHAVIOR_ID,
+             NMO_INTERFACE_EDIT_FIXTURE,
+             output);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Saved to");
+    ASSERT_TRUE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_set_pos_json_dry_run) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json behavior interface set-pos --dry-run %u %u 11 22 \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_SCRIPT_BEHAVIOR_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    yyjson_doc *doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    ASSERT_STR_EQ(get_string_field(root, "command"), "behavior.interface.set-pos");
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    yyjson_val *dry_run = yyjson_obj_get(data, "dry_run");
+    ASSERT_TRUE(dry_run && yyjson_is_bool(dry_run));
+    ASSERT_TRUE(yyjson_get_bool(dry_run));
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_interface_fold_dry_run_does_not_write_output) {
+    const char *output = "test_behavior_interface_fold_dry_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface fold --dry-run %u %u \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_SCRIPT_BEHAVIOR_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_unfold_saves_output) {
+    const char *output = "test_behavior_interface_unfold_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface unfold %u %u \"%s\" -o \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_SCRIPT_BEHAVIOR_ID,
+             NMO_INTERFACE_EDIT_FIXTURE,
+             output);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Saved to");
+    ASSERT_TRUE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_set_color_dry_run_does_not_write_output) {
+    const char *output = "test_behavior_interface_set_color_dry_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface set-color --dry-run %u FF00AA \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_set_color_saves_output) {
+    const char *output = "test_behavior_interface_set_color_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface set-color %u FF00AA \"%s\" -o \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_FIXTURE,
+             output);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Saved to");
+    ASSERT_TRUE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_add_comment_dry_run_does_not_write_output) {
+    const char *output = "test_behavior_interface_add_comment_dry_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface add-comment --dry-run %u --text \"Debt note\" --rect 1,2,3,4 \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_remove_comment_dry_run_does_not_write_output) {
+    const char *fixture = "test_behavior_interface_remove_comment_fixture.cmo";
+    const char *output = "test_behavior_interface_remove_comment_dry_output.cmo";
+    remove(output);
+    ASSERT_TRUE(create_interface_comment_fixture(fixture));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface remove-comment --dry-run %u 0 \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(fixture);
+    remove(output);
+}
+
+TEST(cli, behavior_interface_set_comment_text_dry_run_does_not_write_output) {
+    const char *fixture = "test_behavior_interface_set_comment_text_fixture.cmo";
+    const char *output = "test_behavior_interface_set_comment_text_dry_output.cmo";
+    remove(output);
+    ASSERT_TRUE(create_interface_comment_fixture(fixture));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface set-comment-text --dry-run %u 0 --text \"Changed\" \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(fixture);
+    remove(output);
+}
+
+TEST(cli, behavior_interface_move_comment_dry_run_does_not_write_output) {
+    const char *fixture = "test_behavior_interface_move_comment_fixture.cmo";
+    const char *output = "test_behavior_interface_move_comment_dry_output.cmo";
+    remove(output);
+    ASSERT_TRUE(create_interface_comment_fixture(fixture));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface move-comment --dry-run %u 0 --rect 5,6,7,8 \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(fixture);
+    remove(output);
+}
+
+TEST(cli, behavior_interface_set_comment_style_dry_run_does_not_write_output) {
+    const char *fixture = "test_behavior_interface_set_comment_style_fixture.cmo";
+    const char *output = "test_behavior_interface_set_comment_style_dry_output.cmo";
+    remove(output);
+    ASSERT_TRUE(create_interface_comment_fixture(fixture));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface set-comment-style --dry-run %u 0 --style 3 \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(fixture);
+    remove(output);
+}
+
+TEST(cli, behavior_interface_add_point_dry_run_does_not_write_output) {
+    const char *output = "test_behavior_interface_add_point_dry_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface add-point --dry-run %u %u 1 2 \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_LINK_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_clear_points_dry_run_does_not_write_output) {
+    const char *output = "test_behavior_interface_clear_points_dry_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface clear-points --dry-run %u %u \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_LINK_WITH_POINT_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_remove_point_dry_run_does_not_write_output) {
+    const char *output = "test_behavior_interface_remove_point_dry_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface remove-point --dry-run %u %u 0 \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_LINK_WITH_POINT_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_move_point_dry_run_does_not_write_output) {
+    const char *output = "test_behavior_interface_move_point_dry_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface move-point --dry-run %u %u 0 5 6 \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_LINK_WITH_POINT_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_set_link_highlight_dry_run_does_not_write_output) {
+    const char *output = "test_behavior_interface_set_link_highlight_dry_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface set-link-highlight --dry-run %u %u on \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_LINK_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_move_op_dry_run_reaches_operation_validation) {
+    const char *output = "test_behavior_interface_move_op_dry_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface move-op --dry-run %u %u 12 34 \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_MISSING_OP_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Operation 999 not found");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_move_param_dry_run_does_not_write_output) {
+    const char *output = "test_behavior_interface_move_param_dry_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface move-param --dry-run %u 5 6 \"%s\" --param-index 0",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_set_param_style_dry_run_does_not_write_output) {
+    const char *output = "test_behavior_interface_set_param_style_dry_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface set-param-style --dry-run %u \"%s\" --param-index 0 --style 1",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_resize_dry_run_does_not_write_output) {
+    const char *output = "test_behavior_interface_resize_dry_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface resize --dry-run %u %u 10 20 \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_SUB_BEHAVIOR_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_set_expand_dry_run_does_not_write_output) {
+    const char *output = "test_behavior_interface_set_expand_dry_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface set-expand --dry-run %u %u 10 20 \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_SUB_BEHAVIOR_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_set_viewport_dry_run_does_not_write_output) {
+    const char *output = "test_behavior_interface_set_viewport_dry_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface set-viewport --dry-run %u 1 2 3 \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_translate_dry_run_does_not_write_output) {
+    const char *output = "test_behavior_interface_translate_dry_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface translate --dry-run %u 1 2 \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_set_graph_io_dry_run_does_not_write_output) {
+    const char *output = "test_behavior_interface_set_graph_io_dry_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface set-graph-io --dry-run %u --body %u --in-in 1,2 --out-out 3 \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_SUB_BEHAVIOR_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[dry-run]");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(output);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_graph_json);
+    REGISTER_TEST(cli, behavior_stats_json_survives_interface_parse_failures);
+    REGISTER_TEST(cli, behavior_show_json_survives_interface_parse_failures);
+    REGISTER_TEST(cli, behavior_list_json_sanitizes_gameplay_names);
+    REGISTER_TEST(cli, behavior_json_smoke_real_samples);
+    REGISTER_TEST(cli, behavior_help_mentions_json_output);
     REGISTER_TEST(cli, behavior_graph_dot);
+    REGISTER_TEST(cli, behavior_add_link_requires_output_unless_dry_run);
+    REGISTER_TEST(cli, behavior_add_link_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_add_link_saves_output);
+    REGISTER_TEST(cli, behavior_add_link_json_dry_run);
+    REGISTER_TEST(cli, behavior_interface_set_pos_requires_output_unless_dry_run);
+    REGISTER_TEST(cli, behavior_interface_set_pos_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_set_pos_saves_output);
+    REGISTER_TEST(cli, behavior_interface_set_pos_json_dry_run);
+    REGISTER_TEST(cli, behavior_interface_fold_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_unfold_saves_output);
+    REGISTER_TEST(cli, behavior_interface_set_color_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_set_color_saves_output);
+    REGISTER_TEST(cli, behavior_interface_add_comment_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_remove_comment_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_set_comment_text_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_move_comment_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_set_comment_style_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_add_point_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_clear_points_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_remove_point_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_move_point_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_set_link_highlight_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_move_op_dry_run_reaches_operation_validation);
+    REGISTER_TEST(cli, behavior_interface_move_param_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_set_param_style_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_resize_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_set_expand_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_set_viewport_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_translate_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_set_graph_io_dry_run_does_not_write_output);
 TEST_MAIN_END()

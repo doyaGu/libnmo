@@ -36,6 +36,21 @@ typedef struct nmo_logger nmo_logger_t;
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 typedef struct nmo_object_repository nmo_object_repository_t;
 
+typedef struct nmo_behavior_interface_parse_stats {
+    size_t attempted_count;
+    size_t parsed_count;
+    size_t failed_count;
+    size_t skipped_no_arena_count;
+    size_t allocation_failure_count;
+    nmo_status_t first_error;
+    nmo_object_id_t first_error_object_id;
+    uint32_t first_error_file_id;
+    uint32_t first_error_chunk_version;
+    uint32_t first_error_data_version;
+    size_t first_error_reader_offset;
+    size_t first_error_chunk_dwords;
+} nmo_behavior_interface_parse_stats_t;
+
 /* =============================================================================
  * CKBehavior STATE STRUCTURES
  * ============================================================================= */
@@ -162,6 +177,11 @@ NMO_API nmo_status_t nmo_behavior_remap_dependencies(
 NMO_API nmo_status_t nmo_behavior_parse_all_interfaces(
     nmo_object_repository_t *repo,
     nmo_logger_t *logger);
+
+NMO_API nmo_status_t nmo_behavior_parse_all_interfaces_ex(
+    nmo_object_repository_t *repo,
+    nmo_logger_t *logger,
+    nmo_behavior_interface_parse_stats_t *out_stats);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_behavior_vtable, nmo_register_behavior_type)
 

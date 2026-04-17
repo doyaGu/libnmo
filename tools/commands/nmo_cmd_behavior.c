@@ -151,6 +151,88 @@ const char *interface_color_to_hex(uint32_t color, char *buf, size_t size) {
     return buf;
 }
 
+void nmo_cmd_behavior_add_interface_diagnostics_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *data,
+    nmo_session_t *session)
+{
+    if (!doc || !data || !session) {
+        return;
+    }
+
+    nmo_session_behavior_interface_diagnostics_t diag;
+    nmo_session_get_behavior_interface_diagnostics(session, &diag);
+
+    yyjson_mut_obj_add_bool(doc, data, "interface_available",
+                            diag.attempted ? diag.available : false);
+
+    yyjson_mut_val *obj = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_bool(doc, obj, "attempted", diag.attempted != 0);
+    yyjson_mut_obj_add_bool(doc, obj, "available", diag.available != 0);
+    yyjson_mut_obj_add_int(doc, obj, "status", diag.status);
+    nmo_cli_json_add_str_safe(doc, obj, "status_name",
+                              nmo_error_string(diag.status));
+    yyjson_mut_obj_add_uint(doc, obj, "attempted_count",
+                            (uint64_t)diag.attempted_count);
+    yyjson_mut_obj_add_uint(doc, obj, "parsed_count",
+                            (uint64_t)diag.parsed_count);
+    yyjson_mut_obj_add_uint(doc, obj, "failed_count",
+                            (uint64_t)diag.failed_count);
+    yyjson_mut_obj_add_uint(doc, obj, "skipped_no_arena_count",
+                            (uint64_t)diag.skipped_no_arena_count);
+    yyjson_mut_obj_add_uint(doc, obj, "allocation_failure_count",
+                            (uint64_t)diag.allocation_failure_count);
+    if (diag.status != NMO_OK) {
+        yyjson_mut_obj_add_uint(doc, obj, "first_error_object_id",
+                                diag.first_error_object_id);
+        yyjson_mut_obj_add_uint(doc, obj, "first_error_file_id",
+                                diag.first_error_file_id);
+        yyjson_mut_obj_add_uint(doc, obj, "first_error_chunk_version",
+                                diag.first_error_chunk_version);
+        yyjson_mut_obj_add_uint(doc, obj, "first_error_data_version",
+                                diag.first_error_data_version);
+        yyjson_mut_obj_add_uint(doc, obj, "first_error_reader_offset",
+                                (uint64_t)diag.first_error_reader_offset);
+        yyjson_mut_obj_add_uint(doc, obj, "first_error_chunk_dwords",
+                                (uint64_t)diag.first_error_chunk_dwords);
+    }
+    yyjson_mut_obj_add_val(doc, data, "interface_parse", obj);
+}
+
+void nmo_cmd_behavior_print_interface_diagnostics(
+    FILE *out,
+    nmo_session_t *session)
+{
+    if (!out || !session) {
+        return;
+    }
+
+    nmo_session_behavior_interface_diagnostics_t diag;
+    nmo_session_get_behavior_interface_diagnostics(session, &diag);
+    if (!diag.attempted || diag.status == NMO_OK) {
+        return;
+    }
+
+    fprintf(out,
+            "Interface parse diagnostics: status=%s(%d), parsed=%zu/%zu, failed=%zu",
+            nmo_error_string(diag.status),
+            diag.status,
+            diag.parsed_count,
+            diag.attempted_count,
+            diag.failed_count);
+    if (diag.first_error_object_id != 0 || diag.first_error_file_id != 0) {
+        fprintf(out,
+                ", first_error_object=%u, file_id=%u, chunk_version=%u, data_version=%u, offset=%zu/%zu dwords",
+                diag.first_error_object_id,
+                diag.first_error_file_id,
+                diag.first_error_chunk_version,
+                diag.first_error_data_version,
+                diag.first_error_reader_offset,
+                diag.first_error_chunk_dwords);
+    }
+    fputc('\n', out);
+}
+
 /* ============================================================================
  * behavior list
  * ============================================================================ */
@@ -340,7 +422,7 @@ int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        behavior_list_data_t ld = { .doc = doc, .arr = arr };
+        behavior_list_data_t ld = { .ctx = c.ctx, .doc = doc, .arr = arr };
         rc = nmo_core_object_query_run(&c, &query,
                                        behavior_list_core_visitor, &ld, NULL);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
@@ -679,6 +761,7 @@ static int behavior_stats_single(const char *file_path,
         yyjson_mut_obj_add_uint(doc, data, "total_links", (uint64_t)n_links);
         yyjson_mut_obj_add_uint(doc, data, "total_operations", (uint64_t)n_operations);
         yyjson_mut_obj_add_uint(doc, data, "max_tree_depth", (uint64_t)max_depth);
+        nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, session);
 
         if (n_with_interface > 0) {
             yyjson_mut_val *iface = yyjson_mut_obj(doc);
@@ -880,6 +963,7 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
                                 (uint64_t)n_operations);
         yyjson_mut_obj_add_uint(doc, data, "max_tree_depth",
                                 (uint64_t)max_depth);
+        nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, c.session);
 
         if (n_with_interface > 0) {
             yyjson_mut_val *iface = yyjson_mut_obj(doc);

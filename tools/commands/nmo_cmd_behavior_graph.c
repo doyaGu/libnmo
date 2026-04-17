@@ -155,6 +155,12 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
+    if (nmo_session_ensure_behavior_acceleration(c.session) != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build behavior acceleration\n");
+        exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
+        goto cleanup;
+    }
+
     if (!nmo_behavior_graph_build(c.ctx, c.session, behavior_id, depth, &graph)) {
         char detail[256];
         size_t detail_len = nmo_last_error_message_copy(detail, sizeof(detail));
@@ -293,6 +299,7 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_obj_add_uint(doc, data, "behavior_id", behavior_id);
+        nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, c.session);
 
         const char *behavior_name = graph.behavior_name;
         if (behavior_name && behavior_name[0]) {
@@ -304,7 +311,7 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
             yyjson_mut_obj_add_uint(doc, data, "behavior_class_id", (uint64_t)behavior_class_id);
         }
         if (behavior_class) {
-            yyjson_mut_obj_add_str(doc, data, "behavior_class", behavior_class);
+            nmo_cli_json_add_str_safe(doc, data, "behavior_class", behavior_class);
         }
 
         yyjson_mut_val *counts = yyjson_mut_obj(doc);
@@ -344,7 +351,7 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
             yyjson_mut_val *node = yyjson_mut_obj(doc);
             yyjson_mut_obj_add_uint(doc, node, "id", nodes[i].id);
             if (nodes[i].kind) {
-                yyjson_mut_obj_add_str(doc, node, "kind", nodes[i].kind);
+                nmo_cli_json_add_str_safe(doc, node, "kind", nodes[i].kind);
             }
             if (nodes[i].name && nodes[i].name[0]) {
                 nmo_cli_json_add_str_safe(doc, node, "name", nodes[i].name);
@@ -353,7 +360,7 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
                 yyjson_mut_obj_add_uint(doc, node, "class_id", (uint64_t)nodes[i].class_id);
             }
             if (nodes[i].class_name && nodes[i].class_name[0]) {
-                yyjson_mut_obj_add_str(doc, node, "class_name", nodes[i].class_name);
+                nmo_cli_json_add_str_safe(doc, node, "class_name", nodes[i].class_name);
             }
             yyjson_mut_obj_add_uint(doc, node, "depth", (uint64_t)nodes[i].depth);
             if (nodes[i].parent_id != 0) {
@@ -369,10 +376,10 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
             yyjson_mut_obj_add_uint(doc, edge, "from", edge_ref.from_id);
             yyjson_mut_obj_add_uint(doc, edge, "to", edge_ref.to_id);
             if (edge_ref.kind) {
-                yyjson_mut_obj_add_str(doc, edge, "kind", edge_ref.kind);
+                nmo_cli_json_add_str_safe(doc, edge, "kind", edge_ref.kind);
             }
             if (edge_ref.field_path) {
-                yyjson_mut_obj_add_str(doc, edge, "field_path", edge_ref.field_path);
+                nmo_cli_json_add_str_safe(doc, edge, "field_path", edge_ref.field_path);
             }
             if (edge_ref.link_id != 0) {
                 yyjson_mut_obj_add_uint(doc, edge, "link_id", edge_ref.link_id);
