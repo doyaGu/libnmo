@@ -126,7 +126,6 @@
 #include "app/nmo_load.h"
 #include "session/nmo_builder.h"
 #include "session/nmo_object_system.h"
-#include "session/nmo_runtime_graph.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session_edit.h"
 
