@@ -384,22 +384,6 @@ static bool nmo_summary_read_u64_field(
     return true;
 }
 
-static bool nmo_summary_str_ends_with(const char *str, const char *suffix) {
-    if (!str || !suffix) {
-        return false;
-    }
-    const size_t slen = strlen(str);
-    const size_t tlen = strlen(suffix);
-    if (tlen > slen) {
-        return false;
-    }
-    return memcmp(str + (slen - tlen), suffix, tlen) == 0;
-}
-
-static bool nmo_summary_is_count_field_name(const char *name) {
-    return name && nmo_summary_str_ends_with(name, "_count");
-}
-
 static uint64_t nmo_summary_guess_array_count(
     const nmo_type_descriptor_t *owner_type,
     const void *owner_instance,
@@ -423,6 +407,30 @@ static uint64_t nmo_summary_guess_array_count(
     }
 
     return 0;
+}
+
+static bool nmo_summary_is_metadata_count_field(
+    const nmo_type_descriptor_t *owner_type,
+    const nmo_type_field_t *field)
+{
+    if (!owner_type || !owner_type->fields || !field) {
+        return false;
+    }
+
+    for (size_t i = 0; i < owner_type->field_count; ++i) {
+        const nmo_type_field_t *array_field = &owner_type->fields[i];
+        if ((array_field->flags & NMO_FIELD_REPEATED) == 0) {
+            continue;
+        }
+
+        const nmo_type_field_t *count_field =
+            nmo_field_resolve_count_field(owner_type, array_field);
+        if (count_field == field) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /* ============================================================================
@@ -1519,7 +1527,7 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
 
     /* Handle scalar fields */
     char value_buf[NMO_SUMMARY_VALUE_BUFFER_SIZE];
-    bool is_count = nmo_summary_is_count_field_name(field->name);
+    bool is_count = nmo_summary_is_metadata_count_field(ctx->owner_type, field);
     uint64_t count_value = 0;
     if (is_count && field_ptr && nmo_summary_read_u64_field(ctx->owner_instance, field, &count_value)) {
         (void)snprintf(value_buf, sizeof(value_buf), "%llu", (unsigned long long)count_value);
