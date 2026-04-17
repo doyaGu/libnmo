@@ -140,6 +140,49 @@ static void assert_file_has_no_substring(const char *relative_path, const char *
     fclose(fp);
 }
 
+static bool line_has_public_int_declaration(const char *line) {
+    return strstr(line, "NMO_API int") != NULL ||
+           strstr(line, "typedef int (*nmo_") != NULL;
+}
+
+static bool line_matches_any_substring(
+    const char *line,
+    const char *const *allowed_substrings,
+    size_t allowed_count)
+{
+    for (size_t i = 0; i < allowed_count; i++) {
+        if (strstr(line, allowed_substrings[i]) != NULL) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void assert_public_int_declarations_are_allowlisted(
+    const char *relative_path,
+    const char *const *allowed_substrings,
+    size_t allowed_count)
+{
+    char full_path[512];
+    FILE *fp = NULL;
+    for (size_t i = 0; i < sizeof(k_probe_prefixes) / sizeof(k_probe_prefixes[0]); i++) {
+        snprintf(full_path, sizeof(full_path), "%s%s", k_probe_prefixes[i], relative_path);
+        fp = fopen(full_path, "rb");
+        if (fp != NULL) {
+            break;
+        }
+    }
+
+    ASSERT_NOT_NULL(fp);
+    char line[1024];
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        if (line_has_public_int_declaration(line)) {
+            ASSERT_TRUE(line_matches_any_substring(line, allowed_substrings, allowed_count));
+        }
+    }
+    fclose(fp);
+}
+
 static void assert_function_has_no_substring(
     const char *relative_path,
     const char *function_name,
@@ -188,6 +231,59 @@ static void assert_function_has_no_substring(
     ASSERT_TRUE(saw_function);
 }
 
+static void assert_function_has_substring(
+    const char *relative_path,
+    const char *function_name,
+    const char *needle)
+{
+    char full_path[512];
+    FILE *fp = NULL;
+    for (size_t i = 0; i < sizeof(k_probe_prefixes) / sizeof(k_probe_prefixes[0]); i++) {
+        snprintf(full_path, sizeof(full_path), "%s%s", k_probe_prefixes[i], relative_path);
+        fp = fopen(full_path, "rb");
+        if (fp != NULL) {
+            break;
+        }
+    }
+
+    ASSERT_NOT_NULL(fp);
+    char line[1024];
+    bool in_function = false;
+    bool saw_function = false;
+    bool saw_needle = false;
+    int brace_depth = 0;
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        if (!in_function && strstr(line, function_name) != NULL) {
+            in_function = true;
+            saw_function = true;
+        }
+
+        if (!in_function) {
+            continue;
+        }
+
+        if (strstr(line, needle) != NULL) {
+            saw_needle = true;
+        }
+        for (const char *p = line; *p != '\0'; p++) {
+            if (*p == '{') {
+                brace_depth++;
+            } else if (*p == '}') {
+                brace_depth--;
+                if (brace_depth == 0) {
+                    fclose(fp);
+                    ASSERT_TRUE(saw_function);
+                    ASSERT_TRUE(saw_needle);
+                    return;
+                }
+            }
+        }
+    }
+    fclose(fp);
+    ASSERT_TRUE(saw_function);
+    ASSERT_TRUE(saw_needle);
+}
+
 static void assert_file_not_found(const char *relative_path) {
     char full_path[512];
     for (size_t i = 0; i < sizeof(k_probe_prefixes) / sizeof(k_probe_prefixes[0]); i++) {
@@ -214,8 +310,13 @@ TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_point
     }
 }
 
-TEST(no_legacy_runtime_api_exports, runtime_graph_uses_current_ref_graph_names) {
-    assert_file_has_no_substring("src/session/runtime_graph.c", "legacy");
+TEST(no_legacy_runtime_api_exports, runtime_graph_compatibility_api_is_removed) {
+    assert_file_not_found("include/session/nmo_runtime_graph.h");
+    assert_file_not_found("src/session/runtime_graph.c");
+    assert_file_not_found("tests/unit/test_runtime_graph.c");
+    assert_file_has_no_substring("include/nmo.h", "session/nmo_runtime_graph.h");
+    assert_file_has_no_substring("CMakeLists.txt", "src/session/runtime_graph.c");
+    assert_file_has_no_substring("tests/unit/CMakeLists.txt", "test_runtime_graph");
 }
 
 TEST(no_legacy_runtime_api_exports, type_guid_compat_aliases_are_removed) {
@@ -240,6 +341,315 @@ TEST(no_legacy_runtime_api_exports, partial_load_state_setter_is_not_public) {
 
 TEST(no_legacy_runtime_api_exports, object_query_context_is_not_public_api) {
     assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_get_object_query_context");
+}
+
+TEST(no_legacy_runtime_api_exports, object_mutators_use_status_return_type) {
+    assert_file_has_no_substring("include/format/nmo_object.h", "NMO_API int nmo_object_set_name");
+    assert_file_has_no_substring("include/format/nmo_object.h", "NMO_API int nmo_object_add_child");
+    assert_file_has_no_substring("include/format/nmo_object.h", "NMO_API int nmo_object_remove_child");
+    assert_file_has_no_substring("include/format/nmo_object.h", "NMO_API int nmo_object_set_chunk");
+    assert_file_has_no_substring("include/format/nmo_object.h", "NMO_API int nmo_object_set_file_index");
+    assert_file_has_no_substring("include/format/nmo_object.h", "NMO_API int nmo_object_set_type_guid");
+}
+
+TEST(no_legacy_runtime_api_exports, object_repository_mutators_use_status_return_type) {
+    assert_file_has_no_substring(
+        "include/object/nmo_object_repository.h", "NMO_API int nmo_object_repository_add_mutation_observer");
+    assert_file_has_no_substring("include/object/nmo_object_repository.h", "NMO_API int nmo_object_repository_add");
+    assert_file_has_no_substring("include/object/nmo_object_repository.h", "NMO_API int nmo_object_repository_remove");
+    assert_file_has_no_substring("include/object/nmo_object_repository.h", "NMO_API int nmo_object_repository_take");
+    assert_file_has_no_substring("include/object/nmo_object_repository.h", "NMO_API int nmo_object_repository_rename");
+    assert_file_has_no_substring(
+        "include/object/nmo_object_repository.h", "NMO_API int nmo_object_repository_set_type_guid");
+    assert_file_has_no_substring("include/object/nmo_object_repository.h", "NMO_API int nmo_object_repository_clear");
+}
+
+TEST(no_legacy_runtime_api_exports, manager_status_apis_use_status_return_type) {
+    assert_file_has_no_substring("include/format/nmo_manager.h", "typedef int (*nmo_manager_on_event_fn)");
+    assert_file_has_no_substring("include/format/nmo_manager.h", "NMO_API int nmo_manager_set_user_data");
+    assert_file_has_no_substring("include/format/nmo_manager.h", "NMO_API int nmo_manager_set_on_event_hook");
+    assert_file_has_no_substring("include/format/nmo_manager.h", "NMO_API int nmo_manager_invoke_event");
+}
+
+TEST(no_legacy_runtime_api_exports, app_load_save_apis_use_status_return_type) {
+    assert_file_has_no_substring("include/app/nmo_load.h", "NMO_API int nmo_load_file");
+    assert_file_has_no_substring("include/app/nmo_save.h", "NMO_API int nmo_save_file");
+}
+
+TEST(no_legacy_runtime_api_exports, io_status_apis_use_status_return_type) {
+    assert_file_has_no_substring("include/io/nmo_io.h", "typedef int (*nmo_io_read_fn)");
+    assert_file_has_no_substring("include/io/nmo_io.h", "typedef int (*nmo_io_write_fn)");
+    assert_file_has_no_substring("include/io/nmo_io.h", "typedef int (*nmo_io_seek_fn)");
+    assert_file_has_no_substring("include/io/nmo_io.h", "typedef int (*nmo_io_flush_fn)");
+    assert_file_has_no_substring("include/io/nmo_io.h", "typedef int (*nmo_io_close_fn)");
+    assert_file_has_no_substring("include/io/nmo_io.h", "NMO_API int nmo_io_read");
+    assert_file_has_no_substring("include/io/nmo_io.h", "NMO_API int nmo_io_write");
+    assert_file_has_no_substring("include/io/nmo_io.h", "NMO_API int nmo_io_seek");
+    assert_file_has_no_substring("include/io/nmo_io.h", "NMO_API int nmo_io_flush");
+    assert_file_has_no_substring("include/io/nmo_io.h", "NMO_API int nmo_io_close");
+    assert_file_has_no_substring("include/io/nmo_io.h", "NMO_API int nmo_io_read_exact");
+    assert_file_has_no_substring("include/io/nmo_io.h", "NMO_API int nmo_io_read_u8");
+    assert_file_has_no_substring("include/io/nmo_io.h", "NMO_API int nmo_io_read_u16");
+    assert_file_has_no_substring("include/io/nmo_io.h", "NMO_API int nmo_io_read_u32");
+    assert_file_has_no_substring("include/io/nmo_io.h", "NMO_API int nmo_io_read_u64");
+    assert_file_has_no_substring("include/io/nmo_io.h", "NMO_API int nmo_io_write_u8");
+    assert_file_has_no_substring("include/io/nmo_io.h", "NMO_API int nmo_io_write_u16");
+    assert_file_has_no_substring("include/io/nmo_io.h", "NMO_API int nmo_io_write_u32");
+    assert_file_has_no_substring("include/io/nmo_io.h", "NMO_API int nmo_io_write_u64");
+}
+
+TEST(no_legacy_runtime_api_exports, object_index_status_apis_use_status_return_type) {
+    assert_file_has_no_substring("include/object/nmo_object_index.h", "NMO_API int nmo_object_index_build");
+    assert_file_has_no_substring("include/object/nmo_object_index.h", "NMO_API int nmo_object_index_rebuild");
+    assert_file_has_no_substring("include/object/nmo_object_index.h", "NMO_API int nmo_object_index_add_object");
+    assert_file_has_no_substring("include/object/nmo_object_index.h", "NMO_API int nmo_object_index_remove_object");
+    assert_file_has_no_substring("include/object/nmo_object_index.h", "NMO_API int nmo_object_index_clear");
+    assert_file_has_no_substring("include/object/nmo_object_index.h", "NMO_API int nmo_object_index_get_stats");
+}
+
+TEST(no_legacy_runtime_api_exports, id_mapping_status_apis_use_status_return_type) {
+    assert_file_has_no_substring("include/session/nmo_id_mapping.h", "NMO_API int nmo_id_mapping_register");
+    assert_file_has_no_substring("include/session/nmo_id_mapping.h", "NMO_API int nmo_id_mapping_end");
+    assert_file_has_no_substring("include/session/nmo_id_mapping.h", "NMO_API int nmo_id_mapping_get_runtime_id");
+    assert_file_has_no_substring("include/session/nmo_id_mapping.h", "NMO_API int nmo_id_mapping_get_all");
+    assert_file_has_no_substring("include/session/nmo_id_sanitizer.h", "NMO_API int nmo_id_sanitizer_register");
+    assert_file_has_no_substring("include/session/nmo_id_sanitizer.h", "NMO_API int nmo_id_sanitizer_reseed");
+}
+
+TEST(no_legacy_runtime_api_exports, runtime_status_apis_use_status_return_type) {
+    assert_file_has_no_substring("include/session/nmo_runtime_kernel.h", "int (*load_file)");
+    assert_file_has_no_substring("include/session/nmo_runtime_kernel.h", "int (*save_file)");
+    assert_file_has_no_substring("include/session/nmo_runtime_kernel.h", "int status;");
+    assert_file_has_no_substring("include/session/nmo_runtime_kernel.h", "NMO_API int nmo_runtime_kernel_execute");
+    assert_file_has_no_substring("include/session/nmo_runtime_kernel.h", "NMO_API int nmo_runtime_kernel_finalize_load");
+    assert_file_has_no_substring("include/session/nmo_runtime_ref_remap.h", "NMO_API int nmo_runtime_remap_copy_refs");
+    assert_file_has_no_substring("include/session/nmo_runtime_ref_remap.h", "NMO_API int nmo_runtime_remap_all_refs");
+    assert_file_has_no_substring("include/session/nmo_runtime_delete.h", "NMO_API int nmo_runtime_execute_delete");
+    assert_file_has_no_substring("include/session/nmo_runtime_delete.h", "NMO_API int nmo_runtime_preview_delete");
+}
+
+TEST(no_legacy_runtime_api_exports, session_status_apis_use_status_return_type) {
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_ensure_behavior_acceleration");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_execute");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_load_file");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_save_file");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_create_object");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_copy_objects");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_destroy_objects");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_preview_destroy");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_set_file_info");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_set_plugin_dependencies");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_refresh_plugin_diagnostics");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_save(");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_get_objects");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_rebuild_indexes");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_get_object_index_stats");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_add_included_file");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_add_included_file_ex");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_add_included_file_borrowed");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_add_included_file_borrowed_ex");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_set_included_file_owners");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_replace_included_file");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_remove_included_file");
+    assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_get_runtime_load_stats");
+}
+
+TEST(no_legacy_runtime_api_exports, remaining_public_status_apis_use_status_return_type) {
+    assert_file_has_no_substring("include/session/nmo_object_system.h", "typedef int (*nmo_id_register_fn)");
+    assert_file_has_no_substring("include/session/nmo_object_system.h", "typedef int (*nmo_id_lookup_fn)");
+    assert_file_has_no_substring("include/session/nmo_reference_resolver.h", "NMO_API int nmo_reference_resolver_register_strategy");
+    assert_file_has_no_substring("include/session/nmo_reference_resolver.h", "NMO_API int nmo_reference_resolver_resolve_all");
+    assert_file_has_no_substring("include/session/nmo_reference_resolver.h", "NMO_API int nmo_reference_resolver_get_stats");
+    assert_file_has_no_substring("include/session/nmo_reference_resolver.h", "NMO_API int nmo_reference_resolver_get_unresolved");
+    assert_file_has_no_substring("include/object/nmo_shadow_storage.h", "NMO_API int nmo_shadow_capture_included_files");
+    assert_file_has_no_substring("include/object/nmo_shadow_storage.h", "NMO_API int nmo_shadow_capture_chunk_tail");
+
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_push_context");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_pop_context");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_byte");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_word");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_dword");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_int");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_float");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_guid");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_bytes");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_string");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_buffer");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_buffer_nosize");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_buffer_nosize_lendian16");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_dword_as_words");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_array_dword_as_words");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_object_id");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_start_object_sequence");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_start_manager_sequence");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_manager_int");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_array_lendian");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_array_lendian16");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_buffer_lendian16");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_start_subchunk_sequence");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_subchunk");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_vector2");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_vector");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_vector4");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_matrix");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_quaternion");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_color");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_identifier");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_patch_u32");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_patch_u64");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_write_object_id_audited");
+    assert_file_has_no_substring("include/format/nmo_chunk_writer.h", "NMO_API int nmo_chunk_writer_end_intlist");
+}
+
+TEST(no_legacy_runtime_api_exports, remaining_public_int_apis_are_non_status_allowlist) {
+    static const char *const headers_with_public_ints[] = {
+        "include/app/nmo_comparison.h",
+        "include/behavior/nmo_bb_registry.h",
+        "include/core/nmo_arena_array.h",
+        "include/core/nmo_array.h",
+        "include/core/nmo_bit_array.h",
+        "include/core/nmo_error.h",
+        "include/core/nmo_guid.h",
+        "include/core/nmo_hash_common.h",
+        "include/core/nmo_hash_set.h",
+        "include/core/nmo_hash_table.h",
+        "include/core/nmo_indexed_map.h",
+        "include/core/nmo_string.h",
+        "include/extension/nmo_extension_diagnostics.h",
+        "include/format/nmo_chunk_api.h",
+        "include/format/nmo_chunk_parser.h",
+        "include/format/nmo_chunk_pool.h",
+        "include/format/nmo_chunk_writer.h",
+        "include/format/nmo_image.h",
+        "include/format/nmo_manager_registry.h",
+        "include/io/nmo_io.h",
+        "include/io/nmo_io_file.h",
+        "include/io/nmo_io_memory.h",
+        "include/io/nmo_io_mmap.h",
+        "include/object/nmo_object_index.h",
+        "include/object/nmo_object_types.h",
+        "include/session/nmo_builder.h",
+        "include/session/nmo_context.h",
+        "include/session/nmo_id_sanitizer.h",
+        "include/session/nmo_reference_resolver.h",
+        "include/session/nmo_session.h",
+    };
+    static const char *const non_status_int_declarations[] = {
+        "NMO_API int nmo_extension_check_dependency",
+        "NMO_API int64_t nmo_io_tell",
+        "NMO_API int nmo_chunk_is_compressed",
+        "NMO_API int nmo_chunk_parser_at_end",
+        "NMO_API int nmo_builder_is_complete",
+        "NMO_API int nmo_chunk_writer_depth",
+        "NMO_API int nmo_chunk_writer_intlist_audit_active",
+        "NMO_API int64_t nmo_io_file_seek",
+        "NMO_API int64_t nmo_io_file_tell",
+        "NMO_API int nmo_chunk_pool_validate",
+        "NMO_API int nmo_reference_resolver_has_unresolved",
+        "typedef int (*nmo_bb_registry_visitor_fn)",
+        "NMO_API int nmo_context_get_refcount",
+        "NMO_API int nmo_arena_array_is_empty",
+        "NMO_API int nmo_arena_array_find",
+        "NMO_API int nmo_arena_array_contains",
+        "NMO_API int32_t nmo_image_calc_bytes_per_line",
+        "NMO_API int nmo_array_is_empty",
+        "NMO_API int nmo_array_find",
+        "NMO_API int nmo_array_contains",
+        "NMO_API int nmo_session_is_partial_load",
+        "NMO_API int nmo_session_has_materialized_load_state",
+        "NMO_API int nmo_bit_array_test",
+        "NMO_API int64_t nmo_io_mmap_seek",
+        "NMO_API int64_t nmo_io_mmap_tell",
+        "NMO_API int nmo_io_mmap_supported",
+        "NMO_API int32_t nmo_id_register_external",
+        "NMO_API int32_t nmo_id_original_external",
+        "NMO_API int nmo_manager_registry_contains",
+        "NMO_API int64_t nmo_io_memory_seek",
+        "NMO_API int64_t nmo_io_memory_tell",
+        "NMO_API int nmo_last_error_line",
+        "NMO_API int nmo_guid_equals",
+        "NMO_API int nmo_guid_compare",
+        "NMO_API int nmo_guid_is_null",
+        "NMO_API int nmo_guid_format",
+        "typedef int (*nmo_key_compare_func_t)",
+        "typedef int (*nmo_hash_set_iterator_func_t)",
+        "NMO_API int nmo_is_object_type",
+        "NMO_API int nmo_object_index_has_class_index",
+        "NMO_API int nmo_object_index_has_name_index",
+        "NMO_API int nmo_object_index_has_guid_index",
+        "typedef int (*nmo_hash_table_iterator_func_t)",
+        "NMO_API int nmo_session_compare_file_info",
+        "NMO_API int nmo_session_compare_objects",
+        "typedef int (*nmo_map_compare_func_t)",
+        "typedef int (*nmo_indexed_map_iterator_func_t)",
+        "NMO_API int nmo_string_empty",
+        "NMO_API int nmo_string_contains",
+        "NMO_API int nmo_string_starts_with",
+        "NMO_API int nmo_string_istarts_with",
+        "NMO_API int nmo_string_ends_with",
+        "NMO_API int nmo_string_iends_with",
+        "NMO_API int nmo_string_compare",
+        "NMO_API int nmo_string_compare_view",
+        "NMO_API int nmo_string_icompare_view",
+        "NMO_API int nmo_string_equals",
+        "NMO_API int nmo_string_equals_view",
+        "NMO_API int nmo_string_iequals_view",
+        "NMO_API int nmo_string_slice_view",
+        "NMO_API int nmo_string_to_int",
+        "NMO_API int nmo_string_to_uint32",
+        "NMO_API int nmo_string_to_float",
+        "NMO_API int nmo_string_to_double",
+    };
+
+    for (size_t i = 0; i < sizeof(headers_with_public_ints) / sizeof(headers_with_public_ints[0]); i++) {
+        assert_public_int_declarations_are_allowlisted(
+            headers_with_public_ints[i],
+            non_status_int_declarations,
+            sizeof(non_status_int_declarations) / sizeof(non_status_int_declarations[0]));
+    }
+}
+
+TEST(no_legacy_runtime_api_exports, cli_repl_parse_sites_use_shared_parse_helpers) {
+    assert_file_has_no_substring("tools/nmo_repl_commands.c", "atoi(");
+    assert_file_has_no_substring("tools/nmo_repl_repl.c", "atoi(");
+    assert_file_has_no_substring("tools/nmo_opt.c", "strtol(");
+    assert_file_has_no_substring("tools/nmo_opt.c", "strtof(");
+    assert_file_has_no_substring("tools/nmo_tool_common.c", "strtoul(");
+    assert_file_has_no_substring("tools/nmo_tool_common.c", "strtoull(");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_convert.c", "strtol(");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_entity.c", "strtod(");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_object_refs.c", "strtoul(");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_query.c", "strtol(");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_animation.c", "strtoul(");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_animation.c", "sscanf(");
+    assert_file_has_no_substring("tools/commands/nmo_cmd_object_write.c", "sscanf(");
+}
+
+TEST(no_legacy_runtime_api_exports, session_edit_parse_sites_use_shared_parse_helpers) {
+    assert_file_has_no_substring("src/session/session_edit.c", "strtol(");
+    assert_file_has_no_substring("src/session/session_edit.c", "strtod(");
+    assert_file_has_no_substring("src/session/session_edit.c", "strtoul(");
+}
+
+TEST(no_legacy_runtime_api_exports, type_string_parse_sites_use_shared_parse_helpers) {
+    assert_file_has_no_substring("src/type/type_string_converters.c", "strtof(");
+    assert_file_has_no_substring("src/type/type_string_converters.c", "strtod(");
+    assert_file_has_no_substring("src/type/type_string_converters.c", "strtol(");
+    assert_file_has_no_substring("src/type/type_string_converters.c", "strtoll(");
+    assert_file_has_no_substring("src/type/type_string_converters.c", "strtoul(");
+    assert_file_has_no_substring("src/type/type_string_converters.c", "strtoull(");
+}
+
+TEST(no_legacy_runtime_api_exports, core_string_parse_sites_use_shared_parse_helpers) {
+    assert_file_has_no_substring("src/core/string.c", "strtoll(");
+    assert_file_has_no_substring("src/core/string.c", "strtoull(");
+    assert_file_has_no_substring("src/core/string.c", "strtod(");
+}
+
+TEST(no_legacy_runtime_api_exports, grammar_parse_sites_use_shared_parse_helpers) {
+    assert_file_has_no_substring("src/format/obj_parser.c", "strtof(");
+    assert_file_has_no_substring("src/dsl/nmo_dsl_lex.c", "strtoll(");
+    assert_file_has_no_substring("src/dsl/nmo_dsl_lex.c", "strtod(");
 }
 
 TEST(no_legacy_runtime_api_exports, legacy_session_query_api_is_removed) {
@@ -292,32 +702,228 @@ TEST(no_legacy_runtime_api_exports, entity_list_uses_shared_object_query_runner)
     assert_file_has_no_substring("tools/commands/nmo_cmd_entity.c", "nmo_core_query_matches_object");
 }
 
+TEST(no_legacy_runtime_api_exports, entity_set_parent_uses_shared_write_runner) {
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_entity.c",
+        "nmo_cmd_entity_set_parent",
+        "nmo_cmd_ctx_init_with_file");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_entity.c",
+        "nmo_cmd_entity_set_parent",
+        "nmo_save_file(");
+}
+
+TEST(no_legacy_runtime_api_exports, entity_set_camera_and_light_use_shared_write_runner) {
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_entity.c",
+        "nmo_cmd_entity_set_camera",
+        "nmo_cmd_ctx_init_with_file");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_entity.c",
+        "nmo_cmd_entity_set_camera",
+        "nmo_save_file(");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_entity.c",
+        "nmo_cmd_entity_set_light",
+        "nmo_cmd_ctx_init_with_file");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_entity.c",
+        "nmo_cmd_entity_set_light",
+        "nmo_save_file(");
+}
+
+TEST(no_legacy_runtime_api_exports, entity_set_position_uses_shared_write_runner_and_edit) {
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_entity.c",
+        "nmo_cmd_entity_set_position",
+        "nmo_cmd_ctx_init_with_file");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_entity.c",
+        "nmo_cmd_entity_set_position",
+        "nmo_save_file(");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_entity.c",
+        "nmo_cmd_entity_set_position",
+        "nmo_3dentity_set_position(");
+}
+
 TEST(no_legacy_runtime_api_exports, material_list_uses_shared_object_query_runner) {
     assert_file_has_no_substring("tools/commands/nmo_cmd_material.c", "nmo_session_get_objects");
+}
+
+TEST(no_legacy_runtime_api_exports, material_set_uses_shared_write_runner) {
+    assert_file_has_no_substring("tools/commands/nmo_cmd_material.c", "nmo_save_file(");
 }
 
 TEST(no_legacy_runtime_api_exports, data_list_uses_shared_object_query_runner) {
     assert_file_has_no_substring("tools/commands/nmo_cmd_data.c", "nmo_session_get_objects");
 }
 
+TEST(no_legacy_runtime_api_exports, data_set_cell_uses_shared_write_runner) {
+    assert_file_has_no_substring("tools/commands/nmo_cmd_data.c", "nmo_save_file(");
+}
+
 TEST(no_legacy_runtime_api_exports, scene_list_uses_shared_object_query_runner) {
     assert_file_has_no_substring("tools/commands/nmo_cmd_scene.c", "nmo_session_get_objects");
+}
+
+TEST(no_legacy_runtime_api_exports, scene_set_uses_shared_write_runner) {
+    assert_file_has_no_substring("tools/commands/nmo_cmd_scene.c", "nmo_save_file(");
 }
 
 TEST(no_legacy_runtime_api_exports, mesh_commands_use_shared_object_query_runner) {
     assert_file_has_no_substring("tools/commands/nmo_cmd_mesh.c", "nmo_session_get_objects");
 }
 
+TEST(no_legacy_runtime_api_exports, mesh_import_uses_shared_write_runner) {
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_mesh.c",
+        "nmo_cmd_mesh_import",
+        "nmo_cmd_ctx_init_with_file");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_mesh.c",
+        "nmo_cmd_mesh_import",
+        "nmo_save_file(");
+}
+
+TEST(no_legacy_runtime_api_exports, mesh_import_uses_session_edit_transaction) {
+    assert_function_has_substring(
+        "tools/commands/nmo_cmd_mesh.c",
+        "nmo_cmd_mesh_import",
+        "nmo_session_edit_begin");
+    assert_function_has_substring(
+        "tools/commands/nmo_cmd_mesh.c",
+        "nmo_cmd_mesh_import",
+        "nmo_session_edit_snapshot_bytes");
+    assert_function_has_substring(
+        "tools/commands/nmo_cmd_mesh.c",
+        "nmo_cmd_mesh_import",
+        "nmo_session_edit_track_created_object");
+    assert_function_has_substring(
+        "tools/commands/nmo_cmd_mesh.c",
+        "nmo_cmd_mesh_import",
+        "nmo_session_edit_snapshot_object_chunk");
+    assert_function_has_substring(
+        "tools/commands/nmo_cmd_mesh.c",
+        "nmo_cmd_mesh_import",
+        "nmo_session_edit_commit");
+}
+
 TEST(no_legacy_runtime_api_exports, animation_commands_use_shared_object_query_runner) {
     assert_file_has_no_substring("tools/commands/nmo_cmd_animation.c", "nmo_session_get_objects");
+}
+
+TEST(no_legacy_runtime_api_exports, animation_import_uses_shared_write_runner) {
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_animation.c",
+        "nmo_cmd_animation_import",
+        "nmo_cmd_ctx_init_with_file");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_animation.c",
+        "nmo_cmd_animation_import",
+        "nmo_save_file(");
+}
+
+TEST(no_legacy_runtime_api_exports, animation_import_uses_session_edit_transaction) {
+    assert_function_has_substring(
+        "tools/commands/nmo_cmd_animation.c",
+        "nmo_cmd_animation_import",
+        "nmo_session_edit_begin");
+    assert_function_has_substring(
+        "tools/commands/nmo_cmd_animation.c",
+        "nmo_cmd_animation_import",
+        "nmo_session_edit_snapshot_bytes");
+    assert_function_has_substring(
+        "tools/commands/nmo_cmd_animation.c",
+        "nmo_cmd_animation_import",
+        "nmo_session_edit_track_created_object");
+    assert_function_has_substring(
+        "tools/commands/nmo_cmd_animation.c",
+        "nmo_cmd_animation_import",
+        "nmo_session_edit_commit");
+}
+
+TEST(no_legacy_runtime_api_exports, texture_replace_uses_shared_write_runner) {
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_texture.c",
+        "nmo_cmd_texture_replace",
+        "nmo_cmd_ctx_init_with_file");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_texture.c",
+        "nmo_cmd_texture_replace",
+        "nmo_save_file(");
+}
+
+TEST(no_legacy_runtime_api_exports, texture_replace_uses_session_edit_transaction) {
+    assert_function_has_substring(
+        "tools/commands/nmo_cmd_texture.c",
+        "nmo_cmd_texture_replace",
+        "nmo_session_edit_begin");
+    assert_function_has_substring(
+        "tools/commands/nmo_cmd_texture.c",
+        "nmo_cmd_texture_replace",
+        "nmo_session_edit_snapshot_bytes");
+    assert_function_has_substring(
+        "tools/commands/nmo_cmd_texture.c",
+        "nmo_cmd_texture_replace",
+        "nmo_session_edit_commit");
+}
+
+TEST(no_legacy_runtime_api_exports, validate_commands_use_shared_save_helper) {
+    assert_file_has_no_substring("tools/commands/nmo_cmd_validate.c", "nmo_save_file(");
+}
+
+TEST(no_legacy_runtime_api_exports, convert_commands_use_shared_save_helper) {
+    assert_file_has_no_substring("tools/commands/nmo_cmd_convert.c", "nmo_save_file(");
+}
+
+TEST(no_legacy_runtime_api_exports, repl_save_uses_shared_save_helper) {
+    assert_file_has_no_substring("tools/nmo_repl_commands.c", "nmo_save_file(");
 }
 
 TEST(no_legacy_runtime_api_exports, resource_commands_use_core_object_lookup) {
     assert_file_has_no_substring("tools/commands/nmo_cmd_resource.c", "nmo_session_get_objects");
 }
 
+TEST(no_legacy_runtime_api_exports, resource_import_uses_shared_write_runner) {
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_resource.c",
+        "nmo_cmd_resource_import",
+        "nmo_cmd_ctx_init_with_file");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_resource.c",
+        "nmo_cmd_resource_import",
+        "nmo_save_file(");
+}
+
+TEST(no_legacy_runtime_api_exports, resource_replace_uses_shared_write_runner) {
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_resource.c",
+        "nmo_cmd_resource_replace",
+        "nmo_cmd_ctx_init_with_file");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_resource.c",
+        "nmo_cmd_resource_replace",
+        "nmo_save_file(");
+}
+
+TEST(no_legacy_runtime_api_exports, resource_remove_uses_shared_write_runner) {
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_resource.c",
+        "nmo_cmd_resource_remove",
+        "nmo_cmd_ctx_init_with_file");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_resource.c",
+        "nmo_cmd_resource_remove",
+        "nmo_save_file(");
+}
+
 TEST(no_legacy_runtime_api_exports, parameter_commands_use_object_query_api) {
     assert_file_has_no_substring("tools/commands/nmo_cmd_parameter.c", "nmo_session_get_objects");
+}
+
+TEST(no_legacy_runtime_api_exports, parameter_set_uses_shared_write_runner) {
+    assert_file_has_no_substring("tools/commands/nmo_cmd_parameter.c", "nmo_save_file(");
 }
 
 TEST(no_legacy_runtime_api_exports, behavior_commands_use_object_query_api) {
@@ -326,6 +932,113 @@ TEST(no_legacy_runtime_api_exports, behavior_commands_use_object_query_api) {
 
 TEST(no_legacy_runtime_api_exports, object_commands_use_object_query_api) {
     assert_file_has_no_substring("tools/commands/nmo_cmd_object.c", "nmo_session_get_objects");
+}
+
+TEST(no_legacy_runtime_api_exports, object_create_uses_shared_write_runner) {
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_object_write.c",
+        "nmo_cmd_object_create",
+        "nmo_cmd_ctx_init_with_file");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_object_write.c",
+        "nmo_cmd_object_create",
+        "nmo_save_file(");
+}
+
+TEST(no_legacy_runtime_api_exports, object_rename_single_uses_shared_write_runner) {
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_object_write.c",
+        "int nmo_cmd_object_rename(",
+        "nmo_cmd_ctx_init_with_file");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_object_write.c",
+        "int nmo_cmd_object_rename(",
+        "nmo_save_file(");
+}
+
+TEST(no_legacy_runtime_api_exports, object_rename_batch_uses_shared_write_runner) {
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_object_write.c",
+        "nmo_cmd_object_rename_batch",
+        "nmo_cmd_ctx_init_with_file");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_object_write.c",
+        "nmo_cmd_object_rename_batch",
+        "nmo_save_file(");
+}
+
+TEST(no_legacy_runtime_api_exports, object_import_json_uses_shared_write_runner) {
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_object_write.c",
+        "nmo_cmd_object_import_json",
+        "nmo_cmd_ctx_init_with_file");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_object_write.c",
+        "nmo_cmd_object_import_json",
+        "nmo_save_file(");
+}
+
+TEST(no_legacy_runtime_api_exports, object_import_json_api_uses_session_edit_transaction) {
+    assert_function_has_substring(
+        "src/app/object_import.c",
+        "nmo_object_import_json",
+        "nmo_session_edit_begin");
+    assert_function_has_substring(
+        "src/app/object_import.c",
+        "nmo_object_import_json",
+        "nmo_session_edit_snapshot_bytes");
+    assert_function_has_substring(
+        "src/app/object_import.c",
+        "nmo_object_import_json",
+        "nmo_session_edit_track_created_object");
+    assert_function_has_substring(
+        "src/app/object_import.c",
+        "nmo_object_import_json",
+        "nmo_session_edit_commit");
+}
+
+TEST(no_legacy_runtime_api_exports, object_delete_uses_shared_write_runner) {
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_object_write.c",
+        "nmo_cmd_object_delete",
+        "nmo_cmd_ctx_init_with_file");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_object_write.c",
+        "nmo_cmd_object_delete",
+        "nmo_save_file(");
+}
+
+TEST(no_legacy_runtime_api_exports, object_copy_uses_shared_write_runner) {
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_object_write.c",
+        "nmo_cmd_object_copy",
+        "nmo_cmd_ctx_init_with_file");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_object_write.c",
+        "nmo_cmd_object_copy",
+        "nmo_save_file(");
+}
+
+TEST(no_legacy_runtime_api_exports, object_delete_batch_uses_shared_write_runner) {
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_object_write.c",
+        "delete_batch_handler",
+        "nmo_cmd_ctx_init_with_file");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_object_write.c",
+        "delete_batch_handler",
+        "nmo_save_file(");
+}
+
+TEST(no_legacy_runtime_api_exports, object_set_field_uses_shared_write_runner) {
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_object_write.c",
+        "nmo_cmd_object_set_field",
+        "nmo_cmd_ctx_init_with_file");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_object_write.c",
+        "nmo_cmd_object_set_field",
+        "nmo_save_file(");
 }
 
 TEST(no_legacy_runtime_api_exports, remaining_cli_commands_use_object_query_api) {
@@ -396,29 +1109,78 @@ TEST(no_legacy_runtime_api_exports, app_stats_and_object_diff_do_not_use_reposit
     assert_file_has_no_substring("src/app/object_diff.c", "nmo_object_repository_get_all");
 }
 
+TEST(no_legacy_runtime_api_exports, object_summary_uses_reflection_count_metadata) {
+    assert_file_has_no_substring("src/app/object_summary.c", "nmo_summary_str_ends_with");
+    assert_file_has_no_substring("src/app/object_summary.c", "nmo_summary_is_count_field_name");
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_exports);
 REGISTER_TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_pointer_state);
-REGISTER_TEST(no_legacy_runtime_api_exports, runtime_graph_uses_current_ref_graph_names);
+REGISTER_TEST(no_legacy_runtime_api_exports, runtime_graph_compatibility_api_is_removed);
 REGISTER_TEST(no_legacy_runtime_api_exports, type_guid_compat_aliases_are_removed);
 REGISTER_TEST(no_legacy_runtime_api_exports, session_id_remap_compat_layer_is_removed);
 REGISTER_TEST(no_legacy_runtime_api_exports, partial_load_state_setter_is_not_public);
 REGISTER_TEST(no_legacy_runtime_api_exports, object_query_context_is_not_public_api);
+REGISTER_TEST(no_legacy_runtime_api_exports, object_mutators_use_status_return_type);
+REGISTER_TEST(no_legacy_runtime_api_exports, object_repository_mutators_use_status_return_type);
+REGISTER_TEST(no_legacy_runtime_api_exports, manager_status_apis_use_status_return_type);
+REGISTER_TEST(no_legacy_runtime_api_exports, app_load_save_apis_use_status_return_type);
+REGISTER_TEST(no_legacy_runtime_api_exports, io_status_apis_use_status_return_type);
+REGISTER_TEST(no_legacy_runtime_api_exports, object_index_status_apis_use_status_return_type);
+REGISTER_TEST(no_legacy_runtime_api_exports, id_mapping_status_apis_use_status_return_type);
+REGISTER_TEST(no_legacy_runtime_api_exports, runtime_status_apis_use_status_return_type);
+REGISTER_TEST(no_legacy_runtime_api_exports, session_status_apis_use_status_return_type);
+REGISTER_TEST(no_legacy_runtime_api_exports, remaining_public_status_apis_use_status_return_type);
+REGISTER_TEST(no_legacy_runtime_api_exports, remaining_public_int_apis_are_non_status_allowlist);
+REGISTER_TEST(no_legacy_runtime_api_exports, cli_repl_parse_sites_use_shared_parse_helpers);
+REGISTER_TEST(no_legacy_runtime_api_exports, session_edit_parse_sites_use_shared_parse_helpers);
+REGISTER_TEST(no_legacy_runtime_api_exports, type_string_parse_sites_use_shared_parse_helpers);
+REGISTER_TEST(no_legacy_runtime_api_exports, core_string_parse_sites_use_shared_parse_helpers);
+REGISTER_TEST(no_legacy_runtime_api_exports, grammar_parse_sites_use_shared_parse_helpers);
 REGISTER_TEST(no_legacy_runtime_api_exports, legacy_session_query_api_is_removed);
 REGISTER_TEST(no_legacy_runtime_api_exports, session_object_count_does_not_scan_via_query_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, app_layer_does_not_include_session_internal_header);
 REGISTER_TEST(no_legacy_runtime_api_exports, cli_uses_shared_library_object_query_bridge);
 REGISTER_TEST(no_legacy_runtime_api_exports, cli_object_query_bridge_is_shared);
 REGISTER_TEST(no_legacy_runtime_api_exports, entity_list_uses_shared_object_query_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, entity_set_parent_uses_shared_write_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, entity_set_camera_and_light_use_shared_write_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, entity_set_position_uses_shared_write_runner_and_edit);
 REGISTER_TEST(no_legacy_runtime_api_exports, material_list_uses_shared_object_query_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, material_set_uses_shared_write_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, data_list_uses_shared_object_query_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, data_set_cell_uses_shared_write_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, scene_list_uses_shared_object_query_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, scene_set_uses_shared_write_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, mesh_commands_use_shared_object_query_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, mesh_import_uses_shared_write_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, mesh_import_uses_session_edit_transaction);
 REGISTER_TEST(no_legacy_runtime_api_exports, animation_commands_use_shared_object_query_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, animation_import_uses_shared_write_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, animation_import_uses_session_edit_transaction);
+REGISTER_TEST(no_legacy_runtime_api_exports, texture_replace_uses_shared_write_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, texture_replace_uses_session_edit_transaction);
+REGISTER_TEST(no_legacy_runtime_api_exports, validate_commands_use_shared_save_helper);
+REGISTER_TEST(no_legacy_runtime_api_exports, convert_commands_use_shared_save_helper);
+REGISTER_TEST(no_legacy_runtime_api_exports, repl_save_uses_shared_save_helper);
 REGISTER_TEST(no_legacy_runtime_api_exports, resource_commands_use_core_object_lookup);
+REGISTER_TEST(no_legacy_runtime_api_exports, resource_import_uses_shared_write_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, resource_replace_uses_shared_write_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, resource_remove_uses_shared_write_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, parameter_commands_use_object_query_api);
+REGISTER_TEST(no_legacy_runtime_api_exports, parameter_set_uses_shared_write_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, behavior_commands_use_object_query_api);
 REGISTER_TEST(no_legacy_runtime_api_exports, object_commands_use_object_query_api);
+REGISTER_TEST(no_legacy_runtime_api_exports, object_create_uses_shared_write_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, object_rename_single_uses_shared_write_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, object_rename_batch_uses_shared_write_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, object_import_json_uses_shared_write_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, object_import_json_api_uses_session_edit_transaction);
+REGISTER_TEST(no_legacy_runtime_api_exports, object_delete_uses_shared_write_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, object_copy_uses_shared_write_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, object_delete_batch_uses_shared_write_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, object_set_field_uses_shared_write_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, remaining_cli_commands_use_object_query_api);
 REGISTER_TEST(no_legacy_runtime_api_exports, cli_commands_do_not_bypass_shared_object_query_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, tools_do_not_bypass_shared_query_matching);
@@ -429,4 +1191,5 @@ REGISTER_TEST(no_legacy_runtime_api_exports, session_internals_do_not_use_reposi
 REGISTER_TEST(no_legacy_runtime_api_exports, object_index_and_system_do_not_use_repository_get_all_snapshots);
 REGISTER_TEST(no_legacy_runtime_api_exports, ref_graph_and_behavior_schemas_do_not_use_repository_get_all_snapshots);
 REGISTER_TEST(no_legacy_runtime_api_exports, app_stats_and_object_diff_do_not_use_repository_get_all_snapshots);
+REGISTER_TEST(no_legacy_runtime_api_exports, object_summary_uses_reflection_count_metadata);
 TEST_MAIN_END()
