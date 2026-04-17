@@ -440,7 +440,7 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
 
         /* Stats by kind */
         yyjson_mut_val *by_kind = yyjson_mut_obj(doc);
-        for (int i = 0; i < NMO_REF_MAX; ++i) {
+        for (int i = 0; i < NMO_REF_KIND_MAX; ++i) {
             if (stats.edge_counts[i] > 0) {
                 yyjson_mut_obj_add_uint(doc, by_kind, nmo_ref_kind_name((nmo_ref_kind_t)i),
                                         (uint64_t)stats.edge_counts[i]);

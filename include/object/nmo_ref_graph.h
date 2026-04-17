@@ -55,25 +55,6 @@ typedef enum nmo_ref_kind {
     NMO_REF_KIND_MAX
 } nmo_ref_kind_t;
 
-/* Legacy short names for compatibility */
-#define NMO_REF_UNKNOWN        NMO_REF_KIND_UNKNOWN
-#define NMO_REF_HIERARCHY      NMO_REF_KIND_HIERARCHY
-#define NMO_REF_MESH           NMO_REF_KIND_MESH
-#define NMO_REF_MATERIAL       NMO_REF_KIND_MATERIAL
-#define NMO_REF_TEXTURE        NMO_REF_KIND_TEXTURE
-#define NMO_REF_OWNER          NMO_REF_KIND_OWNER
-#define NMO_REF_BEHAVIOR_LINK  NMO_REF_KIND_BEHAVIOR_LINK
-#define NMO_REF_PARAMETER      NMO_REF_KIND_PARAMETER
-#define NMO_REF_TARGET         NMO_REF_KIND_TARGET
-#define NMO_REF_GROUP_MEMBER   NMO_REF_KIND_GROUP_MEMBER
-#define NMO_REF_SCENE          NMO_REF_KIND_SCENE
-#define NMO_REF_ANIMATION      NMO_REF_KIND_ANIMATION
-#define NMO_REF_PLACE          NMO_REF_KIND_PLACE
-#define NMO_REF_SKIN_BONE      NMO_REF_KIND_SKIN_BONE
-#define NMO_REF_DATA_ARRAY     NMO_REF_KIND_DATA_ARRAY
-#define NMO_REF_SCRIPT         NMO_REF_KIND_SCRIPT
-#define NMO_REF_MAX            NMO_REF_KIND_MAX
-
 /**
  * @brief Reference direction
  */
@@ -100,7 +81,7 @@ typedef struct nmo_ref_edge {
  */
 typedef struct nmo_ref_graph_stats {
     size_t total_edges;          /**< Total reference edges */
-    size_t edge_counts[NMO_REF_MAX]; /**< Count by reference kind */
+    size_t edge_counts[NMO_REF_KIND_MAX]; /**< Count by reference kind */
     size_t broken_refs;          /**< References to non-existent objects */
     size_t self_refs;            /**< Self-references */
 } nmo_ref_graph_stats_t;

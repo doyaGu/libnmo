@@ -319,6 +319,41 @@ TEST(no_legacy_runtime_api_exports, runtime_graph_compatibility_api_is_removed) 
     assert_file_has_no_substring("tests/unit/CMakeLists.txt", "test_runtime_graph");
 }
 
+TEST(no_legacy_runtime_api_exports, ref_graph_legacy_short_names_are_removed) {
+    static const char *const legacy_ref_tokens[] = {
+        "NMO_REF_UNKNOWN",
+        "NMO_REF_HIERARCHY",
+        "NMO_REF_MESH",
+        "NMO_REF_MATERIAL",
+        "NMO_REF_TEXTURE",
+        "NMO_REF_OWNER",
+        "NMO_REF_BEHAVIOR_LINK",
+        "NMO_REF_PARAMETER",
+        "NMO_REF_TARGET",
+        "NMO_REF_GROUP_MEMBER",
+        "NMO_REF_SCENE",
+        "NMO_REF_ANIMATION",
+        "NMO_REF_PLACE",
+        "NMO_REF_SKIN_BONE",
+        "NMO_REF_DATA_ARRAY",
+        "NMO_REF_SCRIPT",
+        "NMO_REF_MAX"
+    };
+
+    static const char *const checked_files[] = {
+        "include/object/nmo_ref_graph.h",
+        "src/object/nmo_ref_graph.c",
+        "src/object/nmo_ref_enumerate.c",
+        "tools/commands/nmo_cmd_validate.c"
+    };
+
+    for (size_t file_i = 0; file_i < sizeof(checked_files) / sizeof(checked_files[0]); file_i++) {
+        for (size_t token_i = 0; token_i < sizeof(legacy_ref_tokens) / sizeof(legacy_ref_tokens[0]); token_i++) {
+            assert_file_has_no_substring(checked_files[file_i], legacy_ref_tokens[token_i]);
+        }
+    }
+}
+
 TEST(no_legacy_runtime_api_exports, type_guid_compat_aliases_are_removed) {
     assert_file_has_no_substring("include/type/nmo_type_guids.h", "nmo_type_guid_compat.h");
     assert_file_not_found("include/type/nmo_type_guid_compat.h");
@@ -1118,6 +1153,7 @@ TEST_MAIN_BEGIN()
 REGISTER_TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_exports);
 REGISTER_TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_pointer_state);
 REGISTER_TEST(no_legacy_runtime_api_exports, runtime_graph_compatibility_api_is_removed);
+REGISTER_TEST(no_legacy_runtime_api_exports, ref_graph_legacy_short_names_are_removed);
 REGISTER_TEST(no_legacy_runtime_api_exports, type_guid_compat_aliases_are_removed);
 REGISTER_TEST(no_legacy_runtime_api_exports, session_id_remap_compat_layer_is_removed);
 REGISTER_TEST(no_legacy_runtime_api_exports, partial_load_state_setter_is_not_public);

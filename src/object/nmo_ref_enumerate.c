@@ -34,58 +34,58 @@ static bool nmo_ref_name_has(const char *name, const char *token) {
 
 static nmo_ref_kind_t nmo_ref_kind_from_field(const nmo_type_field_t *field) {
     if (!field || !field->name) {
-        return NMO_REF_UNKNOWN;
+        return NMO_REF_KIND_UNKNOWN;
     }
 
     const char *name = field->name;
 
     if (nmo_ref_name_has(name, "parent")) {
-        return NMO_REF_HIERARCHY;
+        return NMO_REF_KIND_HIERARCHY;
     }
     if (nmo_ref_name_has(name, "mesh")) {
-        return NMO_REF_MESH;
+        return NMO_REF_KIND_MESH;
     }
     if (nmo_ref_name_has(name, "material")) {
-        return NMO_REF_MATERIAL;
+        return NMO_REF_KIND_MATERIAL;
     }
     if (nmo_ref_name_has(name, "texture")) {
-        return NMO_REF_TEXTURE;
+        return NMO_REF_KIND_TEXTURE;
     }
     if (nmo_ref_name_has(name, "owner")) {
-        return NMO_REF_OWNER;
+        return NMO_REF_KIND_OWNER;
     }
     if (nmo_ref_name_has(name, "link")) {
-        return NMO_REF_BEHAVIOR_LINK;
+        return NMO_REF_KIND_BEHAVIOR_LINK;
     }
     if (nmo_ref_name_has(name, "parameter")) {
-        return NMO_REF_PARAMETER;
+        return NMO_REF_KIND_PARAMETER;
     }
     if (nmo_ref_name_has(name, "target")) {
-        return NMO_REF_TARGET;
+        return NMO_REF_KIND_TARGET;
     }
     if (nmo_ref_name_has(name, "group")) {
-        return NMO_REF_GROUP_MEMBER;
+        return NMO_REF_KIND_GROUP_MEMBER;
     }
     if (nmo_ref_name_has(name, "scene") || nmo_ref_name_has(name, "level")) {
-        return NMO_REF_SCENE;
+        return NMO_REF_KIND_SCENE;
     }
     if (nmo_ref_name_has(name, "animation") || nmo_ref_name_has(name, "anim")) {
-        return NMO_REF_ANIMATION;
+        return NMO_REF_KIND_ANIMATION;
     }
     if (nmo_ref_name_has(name, "place")) {
-        return NMO_REF_PLACE;
+        return NMO_REF_KIND_PLACE;
     }
     if (nmo_ref_name_has(name, "bone") || nmo_ref_name_has(name, "body_part")) {
-        return NMO_REF_SKIN_BONE;
+        return NMO_REF_KIND_SKIN_BONE;
     }
     if (nmo_ref_name_has(name, "dataarray") || nmo_ref_name_has(name, "data_array")) {
-        return NMO_REF_DATA_ARRAY;
+        return NMO_REF_KIND_DATA_ARRAY;
     }
     if (nmo_ref_name_has(name, "script")) {
-        return NMO_REF_SCRIPT;
+        return NMO_REF_KIND_SCRIPT;
     }
 
-    return NMO_REF_UNKNOWN;
+    return NMO_REF_KIND_UNKNOWN;
 }
 
 static bool nmo_ref_field_visitor(

@@ -18,22 +18,22 @@
 
 /* Reference kind names */
 static const char *ref_kind_names[] = {
-    [NMO_REF_UNKNOWN] = "unknown",
-    [NMO_REF_HIERARCHY] = "hierarchy",
-    [NMO_REF_MESH] = "mesh",
-    [NMO_REF_MATERIAL] = "material",
-    [NMO_REF_TEXTURE] = "texture",
-    [NMO_REF_OWNER] = "owner",
-    [NMO_REF_BEHAVIOR_LINK] = "behavior_link",
-    [NMO_REF_PARAMETER] = "parameter",
-    [NMO_REF_TARGET] = "target",
-    [NMO_REF_GROUP_MEMBER] = "group_member",
-    [NMO_REF_SCENE] = "scene",
-    [NMO_REF_ANIMATION] = "animation",
-    [NMO_REF_PLACE] = "place",
-    [NMO_REF_SKIN_BONE] = "skin_bone",
-    [NMO_REF_DATA_ARRAY] = "data_array",
-    [NMO_REF_SCRIPT] = "script"
+    [NMO_REF_KIND_UNKNOWN] = "unknown",
+    [NMO_REF_KIND_HIERARCHY] = "hierarchy",
+    [NMO_REF_KIND_MESH] = "mesh",
+    [NMO_REF_KIND_MATERIAL] = "material",
+    [NMO_REF_KIND_TEXTURE] = "texture",
+    [NMO_REF_KIND_OWNER] = "owner",
+    [NMO_REF_KIND_BEHAVIOR_LINK] = "behavior_link",
+    [NMO_REF_KIND_PARAMETER] = "parameter",
+    [NMO_REF_KIND_TARGET] = "target",
+    [NMO_REF_KIND_GROUP_MEMBER] = "group_member",
+    [NMO_REF_KIND_SCENE] = "scene",
+    [NMO_REF_KIND_ANIMATION] = "animation",
+    [NMO_REF_KIND_PLACE] = "place",
+    [NMO_REF_KIND_SKIN_BONE] = "skin_bone",
+    [NMO_REF_KIND_DATA_ARRAY] = "data_array",
+    [NMO_REF_KIND_SCRIPT] = "script"
 };
 
 /**
@@ -112,7 +112,7 @@ static bool add_edge(nmo_ref_graph_t *graph, nmo_object_id_t from,
     edge->index = index;
     
     graph->stats.total_edges++;
-    if (kind < NMO_REF_MAX) {
+    if (kind < NMO_REF_KIND_MAX) {
         graph->stats.edge_counts[kind]++;
     }
     
@@ -469,7 +469,7 @@ nmo_status_t nmo_ref_graph_mark_reachable(
 }
 
 const char *nmo_ref_kind_name(nmo_ref_kind_t kind) {
-    if (kind >= NMO_REF_MAX) {
+    if (kind >= NMO_REF_KIND_MAX) {
         return "unknown";
     }
     return ref_kind_names[kind];
