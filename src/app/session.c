@@ -91,6 +91,8 @@ typedef struct nmo_session {
     int behavior_accel_dirty;
     int behavior_accel_built;
     int behavior_interface_dirty;
+    int behavior_interface_parse_attempted;
+    nmo_behavior_interface_parse_stats_t behavior_interface_parse_stats;
 
     /* Partial loads contain only metadata/header state and cannot be mutated. */
     int partial_load;
@@ -337,6 +339,9 @@ void nmo_session_invalidate_behavior_index(nmo_session_t *session) {
         session->behavior_accel_dirty = 1;
         session->behavior_interface_dirty = 1;
         session->behavior_accel_built = 0;
+        session->behavior_interface_parse_attempted = 0;
+        memset(&session->behavior_interface_parse_stats, 0,
+               sizeof(session->behavior_interface_parse_stats));
     }
 }
 
@@ -427,7 +432,7 @@ static int nmo_session_ensure_behavior_index(nmo_session_t *session) {
     return NMO_OK;
 }
 
-int nmo_session_ensure_behavior_acceleration(nmo_session_t *session) {
+nmo_status_t nmo_session_ensure_behavior_acceleration(nmo_session_t *session) {
     if (session == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -448,17 +453,22 @@ int nmo_session_ensure_behavior_acceleration(nmo_session_t *session) {
         nmo_logger_t *logger = session->context
             ? nmo_context_get_logger(session->context)
             : NULL;
-        nmo_status_t parse_result = nmo_behavior_parse_all_interfaces(
-            session->repository, logger);
+        nmo_behavior_interface_parse_stats_t stats;
+        memset(&stats, 0, sizeof(stats));
+        nmo_status_t parse_result = nmo_behavior_parse_all_interfaces_ex(
+            session->repository, logger, &stats);
+        session->behavior_interface_parse_stats = stats;
+        session->behavior_interface_parse_attempted = 1;
         if (parse_result != NMO_OK) {
             if (logger) {
                 nmo_log(logger, NMO_LOG_WARN,
-                        "Behavior interface parsing reported errors; first status=%d",
-                        parse_result);
+                        "Behavior interface parsing reported errors; first status=%d object=%u file_id=%u offset=%zu/%zu",
+                        parse_result,
+                        stats.first_error_object_id,
+                        stats.first_error_file_id,
+                        stats.first_error_reader_offset,
+                        stats.first_error_chunk_dwords);
             }
-            session->behavior_accel_built = 0;
-            session->behavior_interface_dirty = 1;
-            return parse_result;
         }
         session->behavior_interface_dirty = 0;
     }
@@ -468,11 +478,46 @@ int nmo_session_ensure_behavior_acceleration(nmo_session_t *session) {
     return NMO_OK;
 }
 
+void nmo_session_get_behavior_interface_diagnostics(
+    const nmo_session_t *session,
+    nmo_session_behavior_interface_diagnostics_t *out_diag)
+{
+    if (!out_diag) {
+        return;
+    }
+    memset(out_diag, 0, sizeof(*out_diag));
+    if (!session) {
+        out_diag->status = NMO_ERR_INVALID_ARGUMENT;
+        return;
+    }
+
+    const nmo_behavior_interface_parse_stats_t *stats =
+        &session->behavior_interface_parse_stats;
+    out_diag->attempted = session->behavior_interface_parse_attempted;
+    out_diag->status = stats->first_error;
+    out_diag->available = session->behavior_interface_parse_attempted &&
+                          stats->first_error == NMO_OK;
+    out_diag->attempted_count = stats->attempted_count;
+    out_diag->parsed_count = stats->parsed_count;
+    out_diag->failed_count = stats->failed_count;
+    out_diag->skipped_no_arena_count = stats->skipped_no_arena_count;
+    out_diag->allocation_failure_count = stats->allocation_failure_count;
+    out_diag->first_error_object_id = stats->first_error_object_id;
+    out_diag->first_error_file_id = stats->first_error_file_id;
+    out_diag->first_error_chunk_version = stats->first_error_chunk_version;
+    out_diag->first_error_data_version = stats->first_error_data_version;
+    out_diag->first_error_reader_offset = stats->first_error_reader_offset;
+    out_diag->first_error_chunk_dwords = stats->first_error_chunk_dwords;
+}
+
 static void nmo_session_post_load(nmo_session_t *session) {
     if (session != NULL) {
         session->behavior_accel_built = 0;
         session->behavior_accel_dirty = 1;
         session->behavior_interface_dirty = 1;
+        session->behavior_interface_parse_attempted = 0;
+        memset(&session->behavior_interface_parse_stats, 0,
+               sizeof(session->behavior_interface_parse_stats));
     }
 }
 
@@ -525,7 +570,7 @@ nmo_file_info_t nmo_session_get_file_info(const nmo_session_t *session) {
     return empty;
 }
 
-int nmo_session_set_file_info(nmo_session_t *session, const nmo_file_info_t *info) {
+nmo_status_t nmo_session_set_file_info(nmo_session_t *session, const nmo_file_info_t *info) {
     if (session == NULL || info == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -547,7 +592,7 @@ void nmo_session_set_manager_data(nmo_session_t *session, nmo_manager_data_t *da
 /**
  * Set plugin dependencies
  */
-int nmo_session_set_plugin_dependencies(
+nmo_status_t nmo_session_set_plugin_dependencies(
     nmo_session_t *session,
     nmo_plugin_dep_t *deps,
     uint32_t count
@@ -573,7 +618,7 @@ int nmo_session_set_plugin_dependencies(
     return nmo_session_refresh_plugin_diagnostics(session);
 }
 
-static int nmo_session_copy_owner_ids(
+static nmo_status_t nmo_session_copy_owner_ids(
     nmo_session_t *session,
     nmo_included_file_t *entry,
     const nmo_object_id_t *owner_ids,
@@ -595,7 +640,7 @@ static int nmo_session_copy_owner_ids(
     return NMO_OK;
 }
 
-static int nmo_session_store_included_file(
+static nmo_status_t nmo_session_store_included_file(
     nmo_session_t *session,
     const char *name,
     const void *data,
@@ -658,7 +703,7 @@ static int nmo_session_store_included_file(
     entry->attributes = entry_attributes;
 
     if (meta != NULL) {
-        int owner_result = nmo_session_copy_owner_ids(
+        nmo_status_t owner_result = nmo_session_copy_owner_ids(
             session,
             entry,
             meta->owner_ids,
@@ -672,7 +717,7 @@ static int nmo_session_store_included_file(
     return NMO_OK;
 }
 
-int nmo_session_add_included_file(
+nmo_status_t nmo_session_add_included_file(
     nmo_session_t *session,
     const char *name,
     const void *data,
@@ -681,7 +726,7 @@ int nmo_session_add_included_file(
     return nmo_session_store_included_file(session, name, data, size, 1, NULL);
 }
 
-int nmo_session_add_included_file_ex(
+nmo_status_t nmo_session_add_included_file_ex(
     nmo_session_t *session,
     const char *name,
     const void *data,
@@ -691,7 +736,7 @@ int nmo_session_add_included_file_ex(
     return nmo_session_store_included_file(session, name, data, size, 1, meta);
 }
 
-int nmo_session_add_included_file_borrowed(
+nmo_status_t nmo_session_add_included_file_borrowed(
     nmo_session_t *session,
     const char *name,
     const void *data,
@@ -700,7 +745,7 @@ int nmo_session_add_included_file_borrowed(
     return nmo_session_store_included_file(session, name, data, size, 0, NULL);
 }
 
-int nmo_session_add_included_file_borrowed_ex(
+nmo_status_t nmo_session_add_included_file_borrowed_ex(
     nmo_session_t *session,
     const char *name,
     const void *data,
@@ -710,7 +755,7 @@ int nmo_session_add_included_file_borrowed_ex(
     return nmo_session_store_included_file(session, name, data, size, 0, meta);
 }
 
-int nmo_session_set_included_file_owners(
+nmo_status_t nmo_session_set_included_file_owners(
     nmo_session_t *session,
     uint32_t index,
     const nmo_object_id_t *owner_ids,
@@ -751,7 +796,7 @@ nmo_included_file_t *nmo_session_get_included_files(
     return (nmo_included_file_t *) session->included_files.data;
 }
 
-int nmo_session_replace_included_file(
+nmo_status_t nmo_session_replace_included_file(
     nmo_session_t *session,
     uint32_t index,
     const void *new_data,
@@ -787,7 +832,7 @@ int nmo_session_replace_included_file(
     return NMO_OK;
 }
 
-int nmo_session_remove_included_file(
+nmo_status_t nmo_session_remove_included_file(
     nmo_session_t *session,
     uint32_t index
 ) {
@@ -827,7 +872,7 @@ nmo_session_t *nmo_session_load(nmo_context_t *ctx, const char *filename) {
     }
 
     /* Load file using high-level API */
-    int result = nmo_session_load_file(session, filename, NULL, NULL);
+    nmo_status_t result = nmo_session_load_file(session, filename, NULL, NULL);
     if (result != NMO_OK) {
         nmo_session_destroy(session);
         return NULL;
@@ -839,7 +884,7 @@ nmo_session_t *nmo_session_load(nmo_context_t *ctx, const char *filename) {
 /**
  * Save session to NMO file
  */
-int nmo_session_save(nmo_session_t *session, const char *filename) {
+nmo_status_t nmo_session_save(nmo_session_t *session, const char *filename) {
     if (session == NULL || filename == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -847,7 +892,7 @@ int nmo_session_save(nmo_session_t *session, const char *filename) {
     return nmo_session_save_file(session, filename, NULL, NULL);
 }
 
-int nmo_session_execute(
+nmo_status_t nmo_session_execute(
     nmo_session_t *session,
     const nmo_runtime_request_t *request,
     nmo_runtime_report_t *out_report
@@ -865,7 +910,7 @@ int nmo_session_execute(
     return nmo_runtime_kernel_execute(session, request, out_report);
 }
 
-int nmo_session_load_file(
+nmo_status_t nmo_session_load_file(
     nmo_session_t *session,
     const char *filename,
     const nmo_load_options_t *options,
@@ -884,7 +929,7 @@ int nmo_session_load_file(
     return nmo_session_execute(session, &request, out_report);
 }
 
-int nmo_session_save_file(
+nmo_status_t nmo_session_save_file(
     nmo_session_t *session,
     const char *filename,
     const nmo_save_options_t *options,
@@ -903,7 +948,7 @@ int nmo_session_save_file(
     return nmo_session_execute(session, &request, out_report);
 }
 
-int nmo_session_create_object(
+nmo_status_t nmo_session_create_object(
     nmo_session_t *session,
     nmo_class_id_t class_id,
     const char *name,
@@ -926,7 +971,7 @@ int nmo_session_create_object(
     return nmo_session_execute(session, &request, out_report);
 }
 
-int nmo_session_copy_objects(
+nmo_status_t nmo_session_copy_objects(
     nmo_session_t *session,
     const nmo_object_id_t *object_ids,
     size_t object_count,
@@ -946,7 +991,7 @@ int nmo_session_copy_objects(
     return nmo_session_execute(session, &request, out_report);
 }
 
-int nmo_session_destroy_objects(
+nmo_status_t nmo_session_destroy_objects(
     nmo_session_t *session,
     const nmo_object_id_t *object_ids,
     size_t object_count,
@@ -966,7 +1011,7 @@ int nmo_session_destroy_objects(
     return nmo_session_execute(session, &request, out_report);
 }
 
-int nmo_session_preview_destroy(
+nmo_status_t nmo_session_preview_destroy(
     nmo_session_t *session,
     const nmo_object_id_t *object_ids,
     size_t object_count,
@@ -1008,7 +1053,7 @@ int nmo_session_preview_destroy(
 /**
  * Get all objects from session
  */
-int nmo_session_get_objects(
+nmo_status_t nmo_session_get_objects(
     nmo_session_t *session,
     nmo_object_t ***out_objects,
     size_t *out_count
@@ -1051,7 +1096,7 @@ nmo_object_index_t *nmo_session_get_object_index(const nmo_session_t *session) {
 /**
  * Rebuild object indexes
  */
-int nmo_session_rebuild_indexes(nmo_session_t *session, uint32_t flags) {
+nmo_status_t nmo_session_rebuild_indexes(nmo_session_t *session, uint32_t flags) {
     if (session == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1073,7 +1118,7 @@ int nmo_session_rebuild_indexes(nmo_session_t *session, uint32_t flags) {
     }
     
     /* Rebuild object index */
-    int result = nmo_object_index_rebuild(session->object_index, flags);
+    nmo_status_t result = nmo_object_index_rebuild(session->object_index, flags);
     if (result != NMO_OK) {
         return result;
     }
@@ -1086,7 +1131,7 @@ int nmo_session_rebuild_indexes(nmo_session_t *session, uint32_t flags) {
     return NMO_OK;
 }
 
-int nmo_session_get_object_index_stats(
+nmo_status_t nmo_session_get_object_index_stats(
     const nmo_session_t *session,
     nmo_index_stats_t *stats
 ) {
@@ -1278,7 +1323,7 @@ nmo_status_t nmo_session_find_object_by_name(
     return nmo_session_query_first(session, &query, out_object, NULL);
 }
 
-int nmo_session_get_runtime_load_stats(
+nmo_status_t nmo_session_get_runtime_load_stats(
     const nmo_session_t *session,
     nmo_runtime_load_stats_t *out_stats
 ) {
@@ -1427,7 +1472,7 @@ static int nmo_session_build_plugin_diagnostics(
     return NMO_OK;
 }
 
-int nmo_session_refresh_plugin_diagnostics(nmo_session_t *session) {
+nmo_status_t nmo_session_refresh_plugin_diagnostics(nmo_session_t *session) {
     if (session == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }

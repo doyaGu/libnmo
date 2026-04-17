@@ -28,9 +28,9 @@ typedef struct nmo_session nmo_session_t;
  * @param opts    Save options (NULL for round-trip-safe defaults)
  * @return NMO_OK on success
  */
-NMO_API int nmo_save_file(nmo_session_t *session,
-                          const char *path,
-                          const nmo_save_options_t *opts);
+NMO_API nmo_status_t nmo_save_file(nmo_session_t *session,
+                                   const char *path,
+                                   const nmo_save_options_t *opts);
 
 #ifdef __cplusplus
 }

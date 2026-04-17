@@ -27,7 +27,7 @@ typedef struct nmo_object_repository nmo_object_repository_t;
  * @param remap    ID remap table (old -> new)
  * @return NMO_OK on success
  */
-NMO_API int nmo_runtime_remap_copy_refs(
+NMO_API nmo_status_t nmo_runtime_remap_copy_refs(
     const nmo_type_runtime_t *type_rt,
     const nmo_type_descriptor_t *type,
     void *instance,
@@ -45,7 +45,7 @@ NMO_API int nmo_runtime_remap_copy_refs(
  * @param request_flags Runtime request flags (STRICT controls error behavior)
  * @return NMO_OK on success
  */
-NMO_API int nmo_runtime_remap_all_refs(
+NMO_API nmo_status_t nmo_runtime_remap_all_refs(
     nmo_object_repository_t *repo,
     const nmo_type_runtime_t *type_rt,
     uint32_t request_flags);

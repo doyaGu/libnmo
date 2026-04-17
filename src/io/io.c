@@ -8,7 +8,7 @@
 #include "core/nmo_utils.h"
 #include <string.h>
 
-int nmo_io_read(nmo_io_interface_t *io, void *buffer, size_t size, size_t *bytes_read) {
+nmo_status_t nmo_io_read(nmo_io_interface_t *io, void *buffer, size_t size, size_t *bytes_read) {
     if (io == NULL || buffer == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -20,7 +20,7 @@ int nmo_io_read(nmo_io_interface_t *io, void *buffer, size_t size, size_t *bytes
     return io->read(io->handle, buffer, size, bytes_read);
 }
 
-int nmo_io_write(nmo_io_interface_t *io, const void *buffer, size_t size) {
+nmo_status_t nmo_io_write(nmo_io_interface_t *io, const void *buffer, size_t size) {
     if (io == NULL || buffer == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -32,7 +32,7 @@ int nmo_io_write(nmo_io_interface_t *io, const void *buffer, size_t size) {
     return io->write(io->handle, buffer, size);
 }
 
-int nmo_io_seek(nmo_io_interface_t *io, int64_t offset, nmo_seek_origin_t origin) {
+nmo_status_t nmo_io_seek(nmo_io_interface_t *io, int64_t offset, nmo_seek_origin_t origin) {
     if (io == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -56,7 +56,7 @@ int64_t nmo_io_tell(nmo_io_interface_t *io) {
     return io->tell(io->handle);
 }
 
-int nmo_io_flush(nmo_io_interface_t *io) {
+nmo_status_t nmo_io_flush(nmo_io_interface_t *io) {
     if (io == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -68,7 +68,7 @@ int nmo_io_flush(nmo_io_interface_t *io) {
     return io->flush(io->handle);
 }
 
-int nmo_io_close(nmo_io_interface_t *io) {
+nmo_status_t nmo_io_close(nmo_io_interface_t *io) {
     if (io == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -85,9 +85,9 @@ int nmo_io_close(nmo_io_interface_t *io) {
     return result;
 }
 
-int nmo_io_read_exact(nmo_io_interface_t *io, void *buffer, size_t size) {
+nmo_status_t nmo_io_read_exact(nmo_io_interface_t *io, void *buffer, size_t size) {
     size_t bytes_read = 0;
-    int result = nmo_io_read(io, buffer, size, &bytes_read);
+    nmo_status_t result = nmo_io_read(io, buffer, size, &bytes_read);
 
     if (result != NMO_OK) {
         return result;
@@ -100,7 +100,7 @@ int nmo_io_read_exact(nmo_io_interface_t *io, void *buffer, size_t size) {
     return NMO_OK;
 }
 
-int nmo_io_read_u8(nmo_io_interface_t *io, uint8_t *out) {
+nmo_status_t nmo_io_read_u8(nmo_io_interface_t *io, uint8_t *out) {
     if (out == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -108,13 +108,13 @@ int nmo_io_read_u8(nmo_io_interface_t *io, uint8_t *out) {
     return nmo_io_read_exact(io, out, sizeof(uint8_t));
 }
 
-int nmo_io_read_u16(nmo_io_interface_t *io, uint16_t *out) {
+nmo_status_t nmo_io_read_u16(nmo_io_interface_t *io, uint16_t *out) {
     if (out == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     uint16_t value;
-    int result = nmo_io_read_exact(io, &value, sizeof(uint16_t));
+    nmo_status_t result = nmo_io_read_exact(io, &value, sizeof(uint16_t));
 
     if (result != NMO_OK) {
         return result;
@@ -124,13 +124,13 @@ int nmo_io_read_u16(nmo_io_interface_t *io, uint16_t *out) {
     return NMO_OK;
 }
 
-int nmo_io_read_u32(nmo_io_interface_t *io, uint32_t *out) {
+nmo_status_t nmo_io_read_u32(nmo_io_interface_t *io, uint32_t *out) {
     if (out == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     uint32_t value;
-    int result = nmo_io_read_exact(io, &value, sizeof(uint32_t));
+    nmo_status_t result = nmo_io_read_exact(io, &value, sizeof(uint32_t));
 
     if (result != NMO_OK) {
         return result;
@@ -140,13 +140,13 @@ int nmo_io_read_u32(nmo_io_interface_t *io, uint32_t *out) {
     return NMO_OK;
 }
 
-int nmo_io_read_u64(nmo_io_interface_t *io, uint64_t *out) {
+nmo_status_t nmo_io_read_u64(nmo_io_interface_t *io, uint64_t *out) {
     if (out == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     uint64_t value;
-    int result = nmo_io_read_exact(io, &value, sizeof(uint64_t));
+    nmo_status_t result = nmo_io_read_exact(io, &value, sizeof(uint64_t));
 
     if (result != NMO_OK) {
         return result;
@@ -156,21 +156,21 @@ int nmo_io_read_u64(nmo_io_interface_t *io, uint64_t *out) {
     return NMO_OK;
 }
 
-int nmo_io_write_u8(nmo_io_interface_t *io, uint8_t value) {
+nmo_status_t nmo_io_write_u8(nmo_io_interface_t *io, uint8_t value) {
     return nmo_io_write(io, &value, sizeof(uint8_t));
 }
 
-int nmo_io_write_u16(nmo_io_interface_t *io, uint16_t value) {
+nmo_status_t nmo_io_write_u16(nmo_io_interface_t *io, uint16_t value) {
     uint16_t le_value = nmo_htole16(value);
     return nmo_io_write(io, &le_value, sizeof(uint16_t));
 }
 
-int nmo_io_write_u32(nmo_io_interface_t *io, uint32_t value) {
+nmo_status_t nmo_io_write_u32(nmo_io_interface_t *io, uint32_t value) {
     uint32_t le_value = nmo_htole32(value);
     return nmo_io_write(io, &le_value, sizeof(uint32_t));
 }
 
-int nmo_io_write_u64(nmo_io_interface_t *io, uint64_t value) {
+nmo_status_t nmo_io_write_u64(nmo_io_interface_t *io, uint64_t value) {
     uint64_t le_value = nmo_htole64(value);
     return nmo_io_write(io, &le_value, sizeof(uint64_t));
 }

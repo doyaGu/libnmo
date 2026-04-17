@@ -64,7 +64,7 @@ void nmo_object_destroy(nmo_object_t *object) {
     nmo_free(&object->allocator, object);
 }
 
-int nmo_object_set_name(nmo_object_t *object, const char *name) {
+nmo_status_t nmo_object_set_name(nmo_object_t *object, const char *name) {
     if (object == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -96,7 +96,7 @@ const char *nmo_object_get_name(const nmo_object_t *object) {
     return object->name;
 }
 
-int nmo_object_add_child(nmo_object_t *parent, nmo_object_t *child) {
+nmo_status_t nmo_object_add_child(nmo_object_t *parent, nmo_object_t *child) {
     if (parent == NULL || child == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -135,7 +135,7 @@ nmo_arena_t *nmo_object_get_storage_arena(const nmo_object_t *object) {
     return object ? object->storage_arena : NULL;
 }
 
-int nmo_object_remove_child(nmo_object_t *parent, nmo_object_t *child) {
+nmo_status_t nmo_object_remove_child(nmo_object_t *parent, nmo_object_t *child) {
     if (parent == NULL || child == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -170,7 +170,7 @@ size_t nmo_object_get_child_count(const nmo_object_t *object) {
     return object->child_count;
 }
 
-int nmo_object_set_chunk(nmo_object_t *object, nmo_chunk_t *chunk) {
+nmo_status_t nmo_object_set_chunk(nmo_object_t *object, nmo_chunk_t *chunk) {
     if (object == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -202,7 +202,7 @@ nmo_object_t *nmo_object_get_parent(const nmo_object_t *object) {
     return object ? object->parent : NULL;
 }
 
-int nmo_object_set_file_index(nmo_object_t *object, nmo_object_id_t file_index) {
+nmo_status_t nmo_object_set_file_index(nmo_object_t *object, nmo_object_id_t file_index) {
     if (object == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -226,11 +226,11 @@ nmo_guid_t nmo_object_get_type_guid(const nmo_object_t *object) {
     return object->type_guid;
 }
 
-int nmo_object_set_type_guid(nmo_object_t *object, nmo_guid_t guid) {
+nmo_status_t nmo_object_set_type_guid(nmo_object_t *object, nmo_guid_t guid) {
     if (object == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    
+
     object->type_guid = guid;
     return NMO_OK;
 }
@@ -243,7 +243,7 @@ nmo_status_t nmo_object_alloc_state(nmo_object_t *object, uint32_t size) {
     if (object == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    
+
     if (size == 0) {
         if (object->state != NULL) {
             nmo_free(&object->allocator, object->state);
@@ -252,7 +252,7 @@ nmo_status_t nmo_object_alloc_state(nmo_object_t *object, uint32_t size) {
         object->state_size = 0;
         return NMO_OK;
     }
-    
+
     /* Allocate with 8-byte alignment for any state structure */
     void *state = nmo_alloc(&object->allocator, size, 8);
     if (state == NULL) {
@@ -262,11 +262,11 @@ nmo_status_t nmo_object_alloc_state(nmo_object_t *object, uint32_t size) {
     if (object->state != NULL) {
         nmo_free(&object->allocator, object->state);
     }
-    
+
     memset(state, 0, size);
     object->state = state;
     object->state_size = size;
-    
+
     return NMO_OK;
 }
 

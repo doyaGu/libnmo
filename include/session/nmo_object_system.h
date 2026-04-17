@@ -35,16 +35,16 @@ typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
 /**
  * @brief Callback to register a file_index → runtime_id mapping
  */
-typedef int (*nmo_id_register_fn)(void *user_data,
-                                  nmo_object_t *obj,
-                                  nmo_object_id_t file_index);
+typedef nmo_status_t (*nmo_id_register_fn)(void *user_data,
+                                           nmo_object_t *obj,
+                                           nmo_object_id_t file_index);
 
 /**
  * @brief Callback to look up runtime_id by file_index
  */
-typedef int (*nmo_id_lookup_fn)(void *user_data,
-                                nmo_object_id_t file_index,
-                                nmo_object_id_t *out_runtime_id);
+typedef nmo_status_t (*nmo_id_lookup_fn)(void *user_data,
+                                         nmo_object_id_t file_index,
+                                         nmo_object_id_t *out_runtime_id);
 typedef struct nmo_reference_resolver nmo_reference_resolver_t;
 
 typedef struct nmo_object_desc nmo_object_desc_t;

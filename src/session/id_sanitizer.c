@@ -89,9 +89,9 @@ uint32_t nmo_id_sanitize(uint32_t raw_id) {
     return raw_id & ~NMO_ID_REF_MASK;
 }
 
-int nmo_id_sanitizer_register(nmo_id_sanitizer_t *sanitizer,
-                              uint32_t file_id,
-                              uint32_t runtime_id) {
+nmo_status_t nmo_id_sanitizer_register(nmo_id_sanitizer_t *sanitizer,
+                                       uint32_t file_id,
+                                       uint32_t runtime_id) {
     if (sanitizer == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -137,10 +137,10 @@ int32_t nmo_id_register_external(nmo_id_sanitizer_t *sanitizer, int32_t negative
     return (int32_t) runtime_id;
 }
 
-int nmo_id_sanitizer_reseed(nmo_id_sanitizer_t *sanitizer,
-                            const uint32_t *file_ids,
-                            const uint32_t *runtime_ids,
-                            size_t count) {
+nmo_status_t nmo_id_sanitizer_reseed(nmo_id_sanitizer_t *sanitizer,
+                                     const uint32_t *file_ids,
+                                     const uint32_t *runtime_ids,
+                                     size_t count) {
     if (sanitizer == NULL || (count > 0 && (file_ids == NULL || runtime_ids == NULL))) {
         return NMO_ERR_INVALID_ARGUMENT;
     }

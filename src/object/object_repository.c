@@ -315,7 +315,7 @@ void nmo_object_repository_set_index(
     repo->attached_index = index;
 }
 
-int nmo_object_repository_add_mutation_observer(
+nmo_status_t nmo_object_repository_add_mutation_observer(
     nmo_object_repository_t *repo,
     nmo_object_repository_mutation_fn observer,
     void *user_data
@@ -390,7 +390,7 @@ static void nmo_object_repository_notify_mutation(
 /**
  * Add object
  */
-int nmo_object_repository_add(nmo_object_repository_t *repo, nmo_object_t **obj_ref) {
+nmo_status_t nmo_object_repository_add(nmo_object_repository_t *repo, nmo_object_t **obj_ref) {
     if (repo == NULL || obj_ref == NULL || *obj_ref == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -507,7 +507,7 @@ nmo_object_t *nmo_object_repository_find_by_file_id(const nmo_object_repository_
 /**
  * Remove object
  */
-int nmo_object_repository_take(
+nmo_status_t nmo_object_repository_take(
     nmo_object_repository_t *repo,
     nmo_object_id_t id,
     nmo_object_t **out_object
@@ -547,9 +547,9 @@ int nmo_object_repository_take(
     return NMO_OK;
 }
 
-int nmo_object_repository_remove(nmo_object_repository_t *repo, nmo_object_id_t id) {
+nmo_status_t nmo_object_repository_remove(nmo_object_repository_t *repo, nmo_object_id_t id) {
     nmo_object_t *obj = NULL;
-    int result = nmo_object_repository_take(repo, id, &obj);
+    nmo_status_t result = nmo_object_repository_take(repo, id, &obj);
     if (result != NMO_OK) {
         return result;
     }
@@ -566,9 +566,9 @@ int nmo_object_repository_remove(nmo_object_repository_t *repo, nmo_object_id_t 
  * with the new name.  This avoids the use-after-free that would occur if
  * nmo_object_set_name() were called directly on a repository-owned object.
  */
-int nmo_object_repository_rename(nmo_object_repository_t *repo,
-                                 nmo_object_id_t id,
-                                 const char *new_name) {
+nmo_status_t nmo_object_repository_rename(nmo_object_repository_t *repo,
+                                          nmo_object_id_t id,
+                                          const char *new_name) {
     if (repo == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -617,9 +617,9 @@ int nmo_object_repository_rename(nmo_object_repository_t *repo,
     return NMO_OK;
 }
 
-int nmo_object_repository_set_type_guid(nmo_object_repository_t *repo,
-                                        nmo_object_id_t id,
-                                        nmo_guid_t type_guid) {
+nmo_status_t nmo_object_repository_set_type_guid(nmo_object_repository_t *repo,
+                                                 nmo_object_id_t id,
+                                                 nmo_guid_t type_guid) {
     if (repo == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -784,7 +784,7 @@ static nmo_object_id_t nmo_object_repository_allocate_id(nmo_object_repository_t
 /**
  * Clear repository
  */
-int nmo_object_repository_clear(nmo_object_repository_t *repo) {
+nmo_status_t nmo_object_repository_clear(nmo_object_repository_t *repo) {
     if (repo == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }

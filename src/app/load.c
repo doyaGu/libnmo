@@ -92,9 +92,9 @@ static int nmo_detect_file_compression(const char *path) {
  * Detects compression and uses mmap for uncompressed files when
  * supported, falling back to standard file IO otherwise.
  */
-int nmo_load_file(nmo_session_t *session,
-                  const char *path,
-                  const nmo_load_options_t *opts) {
+nmo_status_t nmo_load_file(nmo_session_t *session,
+                           const char *path,
+                           const nmo_load_options_t *opts) {
     if (session == NULL || path == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }

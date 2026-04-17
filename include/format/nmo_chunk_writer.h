@@ -75,7 +75,7 @@ NMO_API void nmo_chunk_writer_set_file_context(nmo_chunk_writer_t* w,
  * @param version Chunk version for the new context
  * @return NMO_OK on success, NMO_ERR_BUFFER_OVERRUN if stack is full
  */
-NMO_API int nmo_chunk_writer_push_context(nmo_chunk_writer_t* w, uint32_t version);
+NMO_API nmo_status_t nmo_chunk_writer_push_context(nmo_chunk_writer_t* w, uint32_t version);
 
 /**
  * @brief Pop the current version context from the stack (Phase 1.3).
@@ -86,7 +86,7 @@ NMO_API int nmo_chunk_writer_push_context(nmo_chunk_writer_t* w, uint32_t versio
  * @param w Writer
  * @return NMO_OK on success, NMO_ERR_INVALID_STATE if stack is empty
  */
-NMO_API int nmo_chunk_writer_pop_context(nmo_chunk_writer_t* w);
+NMO_API nmo_status_t nmo_chunk_writer_pop_context(nmo_chunk_writer_t* w);
 
 /**
  * @brief Get the parent chunk's version number (Phase 1.3).
@@ -134,7 +134,7 @@ NMO_API void nmo_chunk_writer_start(nmo_chunk_writer_t* w, nmo_class_id_t class_
  * @param value Value to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_byte(nmo_chunk_writer_t* w, uint8_t value);
+NMO_API nmo_status_t nmo_chunk_writer_write_byte(nmo_chunk_writer_t* w, uint8_t value);
 
 /**
  * @brief Write uint16_t (padded to DWORD)
@@ -143,7 +143,7 @@ NMO_API int nmo_chunk_writer_write_byte(nmo_chunk_writer_t* w, uint8_t value);
  * @param value Value to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_word(nmo_chunk_writer_t* w, uint16_t value);
+NMO_API nmo_status_t nmo_chunk_writer_write_word(nmo_chunk_writer_t* w, uint16_t value);
 
 /**
  * @brief Write uint32_t (exactly one DWORD)
@@ -152,7 +152,7 @@ NMO_API int nmo_chunk_writer_write_word(nmo_chunk_writer_t* w, uint16_t value);
  * @param value Value to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_dword(nmo_chunk_writer_t* w, uint32_t value);
+NMO_API nmo_status_t nmo_chunk_writer_write_dword(nmo_chunk_writer_t* w, uint32_t value);
 
 /**
  * @brief Write int32_t (exactly one DWORD)
@@ -161,7 +161,7 @@ NMO_API int nmo_chunk_writer_write_dword(nmo_chunk_writer_t* w, uint32_t value);
  * @param value Value to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_int(nmo_chunk_writer_t* w, int32_t value);
+NMO_API nmo_status_t nmo_chunk_writer_write_int(nmo_chunk_writer_t* w, int32_t value);
 
 /**
  * @brief Write float (exactly one DWORD)
@@ -170,7 +170,7 @@ NMO_API int nmo_chunk_writer_write_int(nmo_chunk_writer_t* w, int32_t value);
  * @param value Value to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_float(nmo_chunk_writer_t* w, float value);
+NMO_API nmo_status_t nmo_chunk_writer_write_float(nmo_chunk_writer_t* w, float value);
 
 /**
  * @brief Write GUID (two DWORDs)
@@ -179,7 +179,7 @@ NMO_API int nmo_chunk_writer_write_float(nmo_chunk_writer_t* w, float value);
  * @param guid GUID to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_guid(nmo_chunk_writer_t* w, nmo_guid_t guid);
+NMO_API nmo_status_t nmo_chunk_writer_write_guid(nmo_chunk_writer_t* w, nmo_guid_t guid);
 
 /**
  * @brief Write raw bytes (DWORD-aligned)
@@ -191,7 +191,7 @@ NMO_API int nmo_chunk_writer_write_guid(nmo_chunk_writer_t* w, nmo_guid_t guid);
  * @param bytes Number of bytes to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_bytes(nmo_chunk_writer_t* w, const void* data, size_t bytes);
+NMO_API nmo_status_t nmo_chunk_writer_write_bytes(nmo_chunk_writer_t* w, const void* data, size_t bytes);
 
 /**
  * @brief Write null-terminated string
@@ -202,7 +202,7 @@ NMO_API int nmo_chunk_writer_write_bytes(nmo_chunk_writer_t* w, const void* data
  * @param str String to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_string(nmo_chunk_writer_t* w, const char* str);
+NMO_API nmo_status_t nmo_chunk_writer_write_string(nmo_chunk_writer_t* w, const char* str);
 
 /**
  * @brief Write binary buffer
@@ -214,7 +214,7 @@ NMO_API int nmo_chunk_writer_write_string(nmo_chunk_writer_t* w, const char* str
  * @param size Buffer size in bytes
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_buffer(nmo_chunk_writer_t* w, const void* data, size_t size);
+NMO_API nmo_status_t nmo_chunk_writer_write_buffer(nmo_chunk_writer_t* w, const void* data, size_t size);
 
 /**
  * @brief Write buffer without size prefix
@@ -227,7 +227,7 @@ NMO_API int nmo_chunk_writer_write_buffer(nmo_chunk_writer_t* w, const void* dat
  * @param data Source data
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_buffer_nosize(nmo_chunk_writer_t* w, size_t bytes, const void* data);
+NMO_API nmo_status_t nmo_chunk_writer_write_buffer_nosize(nmo_chunk_writer_t* w, size_t bytes, const void* data);
 
 /**
  * @brief Write buffer without size prefix with 16-bit endian conversion
@@ -241,7 +241,7 @@ NMO_API int nmo_chunk_writer_write_buffer_nosize(nmo_chunk_writer_t* w, size_t b
  * @param data Source data (must contain value_count * 2 bytes)
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_buffer_nosize_lendian16(nmo_chunk_writer_t* w, size_t value_count, const void* data);
+NMO_API nmo_status_t nmo_chunk_writer_write_buffer_nosize_lendian16(nmo_chunk_writer_t* w, size_t value_count, const void* data);
 
 /**
  * @brief Write a 32-bit value as two 16-bit words
@@ -253,7 +253,7 @@ NMO_API int nmo_chunk_writer_write_buffer_nosize_lendian16(nmo_chunk_writer_t* w
  * @param value Value to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_dword_as_words(nmo_chunk_writer_t* w, uint32_t value);
+NMO_API nmo_status_t nmo_chunk_writer_write_dword_as_words(nmo_chunk_writer_t* w, uint32_t value);
 
 /**
  * @brief Write an array of 32-bit values as 16-bit word pairs
@@ -263,7 +263,7 @@ NMO_API int nmo_chunk_writer_write_dword_as_words(nmo_chunk_writer_t* w, uint32_
  * @param count Number of values
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_array_dword_as_words(nmo_chunk_writer_t* w,
+NMO_API nmo_status_t nmo_chunk_writer_write_array_dword_as_words(nmo_chunk_writer_t* w,
                                                        const uint32_t* values,
                                                        size_t count);
 
@@ -289,7 +289,7 @@ NMO_API uint32_t* nmo_chunk_writer_lock_write_buffer(nmo_chunk_writer_t* w, size
  * @param id Object ID
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_object_id(nmo_chunk_writer_t* w, nmo_object_id_t id);
+NMO_API nmo_status_t nmo_chunk_writer_write_object_id(nmo_chunk_writer_t* w, nmo_object_id_t id);
 
 /**
  * @brief Start object sequence
@@ -300,7 +300,7 @@ NMO_API int nmo_chunk_writer_write_object_id(nmo_chunk_writer_t* w, nmo_object_i
  * @param count Number of objects in sequence
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_start_object_sequence(nmo_chunk_writer_t* w, size_t count);
+NMO_API nmo_status_t nmo_chunk_writer_start_object_sequence(nmo_chunk_writer_t* w, size_t count);
 
 /**
  * @brief Start manager sequence
@@ -312,7 +312,7 @@ NMO_API int nmo_chunk_writer_start_object_sequence(nmo_chunk_writer_t* w, size_t
  * @param count Number of entries in the sequence
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_start_manager_sequence(nmo_chunk_writer_t* w,
+NMO_API nmo_status_t nmo_chunk_writer_start_manager_sequence(nmo_chunk_writer_t* w,
 													nmo_guid_t manager,
 													size_t count);
 
@@ -327,7 +327,7 @@ NMO_API int nmo_chunk_writer_start_manager_sequence(nmo_chunk_writer_t* w,
  * @param value Value to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_manager_int(nmo_chunk_writer_t* w, nmo_guid_t manager, int32_t value);
+NMO_API nmo_status_t nmo_chunk_writer_write_manager_int(nmo_chunk_writer_t* w, nmo_guid_t manager, int32_t value);
 
 /**
  * @brief Write array with little-endian byte order
@@ -341,7 +341,7 @@ NMO_API int nmo_chunk_writer_write_manager_int(nmo_chunk_writer_t* w, nmo_guid_t
  * @param src_data Source data pointer (can be NULL for empty array)
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_array_lendian(nmo_chunk_writer_t* w, int element_count, int element_size, const void* src_data);
+NMO_API nmo_status_t nmo_chunk_writer_write_array_lendian(nmo_chunk_writer_t* w, int element_count, int element_size, const void* src_data);
 
 /**
  * @brief Write array with 16-bit little-endian byte order
@@ -356,7 +356,7 @@ NMO_API int nmo_chunk_writer_write_array_lendian(nmo_chunk_writer_t* w, int elem
  * @param src_data Source data pointer (can be NULL for empty array)
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_array_lendian16(nmo_chunk_writer_t* w, int element_count, int element_size, const void* src_data);
+NMO_API nmo_status_t nmo_chunk_writer_write_array_lendian16(nmo_chunk_writer_t* w, int element_count, int element_size, const void* src_data);
 
 /**
  * @brief Write buffer with 16-bit little-endian conversion
@@ -368,7 +368,7 @@ NMO_API int nmo_chunk_writer_write_array_lendian16(nmo_chunk_writer_t* w, int el
  * @param data Source data pointer
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_buffer_lendian16(nmo_chunk_writer_t* w, size_t bytes, const void* data);
+NMO_API nmo_status_t nmo_chunk_writer_write_buffer_lendian16(nmo_chunk_writer_t* w, size_t bytes, const void* data);
 
 /**
  * @brief Start sub-chunk sequence
@@ -380,7 +380,7 @@ NMO_API int nmo_chunk_writer_write_buffer_lendian16(nmo_chunk_writer_t* w, size_
  * @param count Number of sub-chunks in sequence
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_start_subchunk_sequence(nmo_chunk_writer_t* w, size_t count);
+NMO_API nmo_status_t nmo_chunk_writer_start_subchunk_sequence(nmo_chunk_writer_t* w, size_t count);
 
 /**
  * @brief Write sub-chunk to parent chunk
@@ -392,7 +392,7 @@ NMO_API int nmo_chunk_writer_start_subchunk_sequence(nmo_chunk_writer_t* w, size
  * @param sub Sub-chunk to write (can be NULL for empty slot)
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t* w, const nmo_chunk_t* sub);
+NMO_API nmo_status_t nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t* w, const nmo_chunk_t* sub);
 
 /**
  * @brief Write 2D vector (2 floats = 2 DWORDs)
@@ -401,7 +401,7 @@ NMO_API int nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t* w, const nmo_chu
  * @param v Vector to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_vector2(nmo_chunk_writer_t* w, const nmo_vector2_t* v);
+NMO_API nmo_status_t nmo_chunk_writer_write_vector2(nmo_chunk_writer_t* w, const nmo_vector2_t* v);
 
 /**
  * @brief Write 3D vector (3 floats = 3 DWORDs)
@@ -410,7 +410,7 @@ NMO_API int nmo_chunk_writer_write_vector2(nmo_chunk_writer_t* w, const nmo_vect
  * @param v Vector to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_vector(nmo_chunk_writer_t* w, const nmo_vector_t* v);
+NMO_API nmo_status_t nmo_chunk_writer_write_vector(nmo_chunk_writer_t* w, const nmo_vector_t* v);
 
 /**
  * @brief Write 4D vector (4 floats = 4 DWORDs)
@@ -419,7 +419,7 @@ NMO_API int nmo_chunk_writer_write_vector(nmo_chunk_writer_t* w, const nmo_vecto
  * @param v Vector to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_vector4(nmo_chunk_writer_t* w, const nmo_vector4_t* v);
+NMO_API nmo_status_t nmo_chunk_writer_write_vector4(nmo_chunk_writer_t* w, const nmo_vector4_t* v);
 
 /**
  * @brief Write 4x4 matrix (16 floats = 16 DWORDs)
@@ -428,7 +428,7 @@ NMO_API int nmo_chunk_writer_write_vector4(nmo_chunk_writer_t* w, const nmo_vect
  * @param m Matrix to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_matrix(nmo_chunk_writer_t* w, const nmo_matrix_t* m);
+NMO_API nmo_status_t nmo_chunk_writer_write_matrix(nmo_chunk_writer_t* w, const nmo_matrix_t* m);
 
 /**
  * @brief Write quaternion (4 floats = 4 DWORDs)
@@ -437,7 +437,7 @@ NMO_API int nmo_chunk_writer_write_matrix(nmo_chunk_writer_t* w, const nmo_matri
  * @param q Quaternion to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_quaternion(nmo_chunk_writer_t* w, const nmo_quaternion_t* q);
+NMO_API nmo_status_t nmo_chunk_writer_write_quaternion(nmo_chunk_writer_t* w, const nmo_quaternion_t* q);
 
 /**
  * @brief Write RGBA color (4 floats = 4 DWORDs)
@@ -446,7 +446,7 @@ NMO_API int nmo_chunk_writer_write_quaternion(nmo_chunk_writer_t* w, const nmo_q
  * @param c Color to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_color(nmo_chunk_writer_t* w, const nmo_color_t* c);
+NMO_API nmo_status_t nmo_chunk_writer_write_color(nmo_chunk_writer_t* w, const nmo_color_t* c);
 
 /**
  * @brief Write identifier
@@ -455,7 +455,7 @@ NMO_API int nmo_chunk_writer_write_color(nmo_chunk_writer_t* w, const nmo_color_
  * @param identifier Identifier to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_identifier(nmo_chunk_writer_t* w, uint32_t identifier);
+NMO_API nmo_status_t nmo_chunk_writer_write_identifier(nmo_chunk_writer_t* w, uint32_t identifier);
 
 /* ============================================================================
  * Reserve-and-Patch API (Phase 2.2)
@@ -530,7 +530,7 @@ NMO_API nmo_patch_token_t nmo_chunk_writer_reserve_dwords(nmo_chunk_writer_t* w,
  * @param value Value to write
  * @return NMO_OK on success, NMO_ERR_INVALID_ARGUMENT if token is invalid
  */
-NMO_API int nmo_chunk_writer_patch_u32(nmo_chunk_writer_t* w, nmo_patch_token_t token, uint32_t value);
+NMO_API nmo_status_t nmo_chunk_writer_patch_u32(nmo_chunk_writer_t* w, nmo_patch_token_t token, uint32_t value);
 
 /**
  * @brief Patch a reserved uint64_t position
@@ -543,7 +543,7 @@ NMO_API int nmo_chunk_writer_patch_u32(nmo_chunk_writer_t* w, nmo_patch_token_t 
  * @param value Value to write
  * @return NMO_OK on success, NMO_ERR_INVALID_ARGUMENT if token is invalid
  */
-NMO_API int nmo_chunk_writer_patch_u64(nmo_chunk_writer_t* w, nmo_patch_token_t token, uint64_t value);
+NMO_API nmo_status_t nmo_chunk_writer_patch_u64(nmo_chunk_writer_t* w, nmo_patch_token_t token, uint64_t value);
 
 /**
  * @brief Get current write position in DWORDs
@@ -635,7 +635,7 @@ NMO_API void nmo_chunk_writer_begin_intlist(nmo_chunk_writer_t* w,
  * @param id Object ID to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_object_id_audited(nmo_chunk_writer_t* w, nmo_object_id_t id);
+NMO_API nmo_status_t nmo_chunk_writer_write_object_id_audited(nmo_chunk_writer_t* w, nmo_object_id_t id);
 
 /**
  * @brief End IntList audit and validate count (DEBUG mode only)
@@ -649,7 +649,7 @@ NMO_API int nmo_chunk_writer_write_object_id_audited(nmo_chunk_writer_t* w, nmo_
  *         NMO_ERR_INVALID_STATE if no audit was active,
  *         NMO_ERR_DATA_CORRUPT if counts don't match (DEBUG only returns this instead of asserting if NMO_INTLIST_AUDIT_SOFT is defined)
  */
-NMO_API int nmo_chunk_writer_end_intlist(nmo_chunk_writer_t* w);
+NMO_API nmo_status_t nmo_chunk_writer_end_intlist(nmo_chunk_writer_t* w);
 
 /**
  * @brief Check if IntList audit is currently active

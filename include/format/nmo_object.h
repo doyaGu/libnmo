@@ -91,7 +91,7 @@ NMO_API void nmo_object_destroy(nmo_object_t *object);
  * @param name Name string (will be copied, can be NULL)
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_set_name(nmo_object_t *object, const char *name);
+NMO_API nmo_status_t nmo_object_set_name(nmo_object_t *object, const char *name);
 
 /**
  * @brief Get object name
@@ -146,7 +146,7 @@ NMO_API nmo_object_t *nmo_object_get_parent(const nmo_object_t *object);
  * @param child Child object (required)
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_add_child(nmo_object_t *parent, nmo_object_t *child);
+NMO_API nmo_status_t nmo_object_add_child(nmo_object_t *parent, nmo_object_t *child);
 
 /**
  * @brief Get per-object storage arena
@@ -163,7 +163,7 @@ NMO_API nmo_arena_t *nmo_object_get_storage_arena(const nmo_object_t *object);
  * @param child Child object (required)
  * @return NMO_OK on success, NMO_ERR_INVALID_ARGUMENT if not found
  */
-NMO_API int nmo_object_remove_child(nmo_object_t *parent, nmo_object_t *child);
+NMO_API nmo_status_t nmo_object_remove_child(nmo_object_t *parent, nmo_object_t *child);
 
 /**
  * @brief Get child by index
@@ -194,7 +194,7 @@ NMO_API size_t nmo_object_get_child_count(const nmo_object_t *object);
  * @param chunk Chunk data (can be NULL)
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_set_chunk(nmo_object_t *object, nmo_chunk_t *chunk);
+NMO_API nmo_status_t nmo_object_set_chunk(nmo_object_t *object, nmo_chunk_t *chunk);
 
 /**
  * @brief Get object chunk data
@@ -215,7 +215,9 @@ NMO_API nmo_chunk_t *nmo_object_get_chunk(const nmo_object_t *object);
  * @param file_index FileIndex offset in uncompressed file buffer
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_set_file_index(nmo_object_t *object, nmo_object_id_t file_index);
+NMO_API nmo_status_t nmo_object_set_file_index(
+    nmo_object_t *object,
+    nmo_object_id_t file_index);
 
 /**
  * @brief Get FileIndex offset (Header1)
@@ -247,7 +249,7 @@ NMO_API nmo_guid_t nmo_object_get_type_guid(const nmo_object_t *object);
  * @param guid Type GUID
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_set_type_guid(nmo_object_t *object, nmo_guid_t guid);
+NMO_API nmo_status_t nmo_object_set_type_guid(nmo_object_t *object, nmo_guid_t guid);
 
 /* ============================================================================
  * State Access (ECS-style combined state)

@@ -36,21 +36,21 @@ NMO_API nmo_id_mapping_t *nmo_id_mapping_create(
 /**
  * @brief Register a file_index → runtime_id mapping
  */
-NMO_API int nmo_id_mapping_register(nmo_id_mapping_t *mapping,
-                                    nmo_object_t *obj,
-                                    nmo_object_id_t file_index);
+NMO_API nmo_status_t nmo_id_mapping_register(nmo_id_mapping_t *mapping,
+                                             nmo_object_t *obj,
+                                             nmo_object_id_t file_index);
 
 /**
  * @brief Mark the mapping session as complete
  */
-NMO_API int nmo_id_mapping_end(nmo_id_mapping_t *mapping);
+NMO_API nmo_status_t nmo_id_mapping_end(nmo_id_mapping_t *mapping);
 
 /**
  * @brief Look up runtime_id by file_index
  */
-NMO_API int nmo_id_mapping_get_runtime_id(const nmo_id_mapping_t *mapping,
-                                          nmo_object_id_t file_index,
-                                          nmo_object_id_t *out_runtime_id);
+NMO_API nmo_status_t nmo_id_mapping_get_runtime_id(const nmo_id_mapping_t *mapping,
+                                                   nmo_object_id_t file_index,
+                                                   nmo_object_id_t *out_runtime_id);
 
 /**
  * @brief Get the ID base (first allocated runtime ID)
@@ -73,10 +73,10 @@ NMO_API nmo_object_id_t nmo_id_mapping_get_max_saved_id(
  * @param count Output number of mappings
  * @return NMO_OK on success
  */
-NMO_API int nmo_id_mapping_get_all(const nmo_id_mapping_t *mapping,
-                                   nmo_object_id_t **file_ids,
-                                   nmo_object_id_t **runtime_ids,
-                                   size_t *count);
+NMO_API nmo_status_t nmo_id_mapping_get_all(const nmo_id_mapping_t *mapping,
+                                            nmo_object_id_t **file_ids,
+                                            nmo_object_id_t **runtime_ids,
+                                            size_t *count);
 
 /**
  * @brief Destroy the ID mapping

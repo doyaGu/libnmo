@@ -76,7 +76,7 @@ NMO_API void nmo_object_repository_set_index(
  *       callback.
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_repository_add_mutation_observer(
+NMO_API nmo_status_t nmo_object_repository_add_mutation_observer(
     nmo_object_repository_t *repository,
     nmo_object_repository_mutation_fn observer,
     void *user_data);
@@ -100,7 +100,7 @@ NMO_API void nmo_object_repository_remove_mutation_observer(
  *       On failure, *object is unchanged and caller retains ownership.
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_repository_add(nmo_object_repository_t *repository, nmo_object_t **object);
+NMO_API nmo_status_t nmo_object_repository_add(nmo_object_repository_t *repository, nmo_object_t **object);
 
 /**
  * @brief Find object by ID
@@ -184,7 +184,7 @@ NMO_API nmo_object_t *nmo_object_repository_get_by_index(const nmo_object_reposi
  * @note Removed object is destroyed by the repository.
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_repository_remove(nmo_object_repository_t *repository, nmo_object_id_t id);
+NMO_API nmo_status_t nmo_object_repository_remove(nmo_object_repository_t *repository, nmo_object_id_t id);
 
 /**
  * @brief Remove object from repository without destroying it
@@ -195,9 +195,9 @@ NMO_API int nmo_object_repository_remove(nmo_object_repository_t *repository, nm
  *       ownership transfers to caller. Caller must eventually destroy it.
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_repository_take(nmo_object_repository_t *repository,
-                                       nmo_object_id_t id,
-                                       nmo_object_t **out_object);
+NMO_API nmo_status_t nmo_object_repository_take(nmo_object_repository_t *repository,
+                                                nmo_object_id_t id,
+                                                nmo_object_t **out_object);
 
 /**
  * @brief Rename an object that is already in the repository
@@ -214,9 +214,9 @@ NMO_API int nmo_object_repository_take(nmo_object_repository_t *repository,
  * @param new_name   New name (NULL to clear name; empty string removes from table)
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_repository_rename(nmo_object_repository_t *repository,
-                                         nmo_object_id_t id,
-                                         const char *new_name);
+NMO_API nmo_status_t nmo_object_repository_rename(nmo_object_repository_t *repository,
+                                                  nmo_object_id_t id,
+                                                  const char *new_name);
 
 /**
  * @brief Set the type GUID of an object already in the repository
@@ -229,9 +229,9 @@ NMO_API int nmo_object_repository_rename(nmo_object_repository_t *repository,
  * @param type_guid  New type GUID
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_repository_set_type_guid(nmo_object_repository_t *repository,
-                                               nmo_object_id_t id,
-                                               nmo_guid_t type_guid);
+NMO_API nmo_status_t nmo_object_repository_set_type_guid(nmo_object_repository_t *repository,
+                                                        nmo_object_id_t id,
+                                                        nmo_guid_t type_guid);
 
 /**
  * @brief Clear all objects
@@ -239,7 +239,7 @@ NMO_API int nmo_object_repository_set_type_guid(nmo_object_repository_t *reposit
  * @note All contained objects are destroyed.
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_repository_clear(nmo_object_repository_t *repository);
+NMO_API nmo_status_t nmo_object_repository_clear(nmo_object_repository_t *repository);
 
 #ifdef __cplusplus
 }

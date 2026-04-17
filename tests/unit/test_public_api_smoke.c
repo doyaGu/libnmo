@@ -5,6 +5,8 @@
 
 #include "test_framework.h"
 #include "nmo.h"
+#include "object/nmo_object_query.h"
+#include "session/nmo_session_edit.h"
 
 TEST(public_api_smoke, version) {
     const char *ver = nmo_version();
@@ -23,7 +25,17 @@ TEST(public_api_smoke, context_create_release) {
     nmo_context_release(ctx);
 }
 
+TEST(public_api_smoke, preferred_edit_and_query_headers_are_directly_usable) {
+    nmo_session_edit_t *edit = NULL;
+    nmo_object_query_t query = {0};
+    query.name_mode = NMO_OBJECT_QUERY_NAME_EXACT;
+
+    ASSERT_NULL(edit);
+    ASSERT_EQ(NMO_OBJECT_QUERY_NAME_EXACT, query.name_mode);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(public_api_smoke, version);
     REGISTER_TEST(public_api_smoke, context_create_release);
+    REGISTER_TEST(public_api_smoke, preferred_edit_and_query_headers_are_directly_usable);
 TEST_MAIN_END()

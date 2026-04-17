@@ -279,10 +279,18 @@ bool nmo_json_add_str_safe(yyjson_mut_doc *doc, yyjson_mut_val *obj,
             snprintf(len_key, sizeof(len_key), "%s_raw_len", key) > 0) {
             char *hex = nmo_hex_bytes_to_string(s, slen, true);
             if (hex) {
-                yyjson_mut_obj_add_strcpy(doc, obj, hex_key, hex);
+                yyjson_mut_val *hex_key_val = yyjson_mut_strcpy(doc, hex_key);
+                yyjson_mut_val *hex_val = yyjson_mut_strcpy(doc, hex);
+                if (hex_key_val && hex_val) {
+                    yyjson_mut_obj_add(obj, hex_key_val, hex_val);
+                }
                 free(hex);
             }
-            yyjson_mut_obj_add_uint(doc, obj, len_key, (uint64_t)slen);
+            yyjson_mut_val *len_key_val = yyjson_mut_strcpy(doc, len_key);
+            yyjson_mut_val *len_val = yyjson_mut_uint(doc, (uint64_t)slen);
+            if (len_key_val && len_val) {
+                yyjson_mut_obj_add(obj, len_key_val, len_val);
+            }
         }
     }
 

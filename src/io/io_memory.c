@@ -44,7 +44,7 @@ typedef struct nmo_memory_write_handle {
 /**
  * @brief Read function for read-only memory IO
  */
-static int memory_read_io_read(void *handle, void *buffer, size_t size, size_t *bytes_read) {
+static nmo_status_t memory_read_io_read(void *handle, void *buffer, size_t size, size_t *bytes_read) {
     if (handle == NULL || buffer == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -70,7 +70,7 @@ static int memory_read_io_read(void *handle, void *buffer, size_t size, size_t *
 /**
  * @brief Write function for read-only memory IO (not supported)
  */
-static int memory_read_io_write(void *handle, const void *buffer, size_t size) {
+static nmo_status_t memory_read_io_write(void *handle, const void *buffer, size_t size) {
     (void) handle;
     (void) buffer;
     (void) size;
@@ -80,7 +80,7 @@ static int memory_read_io_write(void *handle, const void *buffer, size_t size) {
 /**
  * @brief Seek function for read-only memory IO
  */
-static int memory_read_io_seek(void *handle, int64_t offset, nmo_seek_origin_t origin) {
+static nmo_status_t memory_read_io_seek(void *handle, int64_t offset, nmo_seek_origin_t origin) {
     if (handle == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -125,7 +125,7 @@ static int64_t memory_read_io_tell(void *handle) {
 /**
  * @brief Close function for read-only memory IO
  */
-static int memory_read_io_close(void *handle) {
+static nmo_status_t memory_read_io_close(void *handle) {
     if (handle == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -139,7 +139,7 @@ static int memory_read_io_close(void *handle) {
 /**
  * @brief Read function for write memory IO
  */
-static int memory_write_io_read(void *handle, void *buffer, size_t size, size_t *bytes_read) {
+static nmo_status_t memory_write_io_read(void *handle, void *buffer, size_t size, size_t *bytes_read) {
     if (handle == NULL || buffer == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -165,7 +165,7 @@ static int memory_write_io_read(void *handle, void *buffer, size_t size, size_t 
 /**
  * @brief Write function for write memory IO (with dynamic growth)
  */
-static int memory_write_io_write(void *handle, const void *buffer, size_t size) {
+static nmo_status_t memory_write_io_write(void *handle, const void *buffer, size_t size) {
     if (handle == NULL || buffer == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -240,7 +240,7 @@ static int memory_write_io_write(void *handle, const void *buffer, size_t size) 
 /**
  * @brief Seek function for write memory IO
  */
-static int memory_write_io_seek(void *handle, int64_t offset, nmo_seek_origin_t origin) {
+static nmo_status_t memory_write_io_seek(void *handle, int64_t offset, nmo_seek_origin_t origin) {
     if (handle == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -289,7 +289,7 @@ static int64_t memory_write_io_tell(void *handle) {
 /**
  * @brief Close function for write memory IO
  */
-static int memory_write_io_close(void *handle) {
+static nmo_status_t memory_write_io_close(void *handle) {
     if (handle == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }

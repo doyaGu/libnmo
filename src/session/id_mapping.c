@@ -63,9 +63,9 @@ nmo_id_mapping_t *nmo_id_mapping_create(
     return m;
 }
 
-int nmo_id_mapping_register(nmo_id_mapping_t *mapping,
-                            nmo_object_t *obj,
-                            nmo_object_id_t file_index)
+nmo_status_t nmo_id_mapping_register(nmo_id_mapping_t *mapping,
+                                     nmo_object_t *obj,
+                                     nmo_object_id_t file_index)
 {
     if (mapping == NULL || obj == NULL || !mapping->active)
         return NMO_ERR_INVALID_ARGUMENT;
@@ -74,15 +74,15 @@ int nmo_id_mapping_register(nmo_id_mapping_t *mapping,
     return nmo_hash_table_insert(mapping->id_mappings, &file_index, &obj->id);
 }
 
-int nmo_id_mapping_end(nmo_id_mapping_t *mapping) {
+nmo_status_t nmo_id_mapping_end(nmo_id_mapping_t *mapping) {
     if (mapping == NULL) return NMO_ERR_INVALID_ARGUMENT;
     mapping->active = 0;
     return NMO_OK;
 }
 
-int nmo_id_mapping_get_runtime_id(const nmo_id_mapping_t *mapping,
-                                  nmo_object_id_t file_index,
-                                  nmo_object_id_t *out_runtime_id)
+nmo_status_t nmo_id_mapping_get_runtime_id(const nmo_id_mapping_t *mapping,
+                                           nmo_object_id_t file_index,
+                                           nmo_object_id_t *out_runtime_id)
 {
     if (mapping == NULL || out_runtime_id == NULL)
         return NMO_ERR_INVALID_ARGUMENT;
@@ -115,10 +115,10 @@ static int collect_mapping(const void *key, void *value, void *user_data) {
     return 1;
 }
 
-int nmo_id_mapping_get_all(const nmo_id_mapping_t *mapping,
-                           nmo_object_id_t **file_ids,
-                           nmo_object_id_t **runtime_ids,
-                           size_t *count)
+nmo_status_t nmo_id_mapping_get_all(const nmo_id_mapping_t *mapping,
+                                    nmo_object_id_t **file_ids,
+                                    nmo_object_id_t **runtime_ids,
+                                    size_t *count)
 {
     if (mapping == NULL || file_ids == NULL || runtime_ids == NULL || count == NULL)
         return NMO_ERR_INVALID_ARGUMENT;

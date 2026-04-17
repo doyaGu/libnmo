@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file shadow_storage.c
  * @brief Shadow blob preservation implementation (Phase 1.2)
  */
@@ -164,7 +164,7 @@ void nmo_shadow_storage_reset(nmo_shadow_storage_t *storage) {
     }
 }
 
-int nmo_shadow_capture_included_files(nmo_shadow_storage_t *storage,
+nmo_status_t nmo_shadow_capture_included_files(nmo_shadow_storage_t *storage,
                                        const void *data, size_t size) {
     if (storage == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -201,7 +201,7 @@ int nmo_shadow_capture_included_files(nmo_shadow_storage_t *storage,
     return NMO_OK;
 }
 
-int nmo_shadow_capture_chunk_tail(nmo_shadow_storage_t *storage,
+nmo_status_t nmo_shadow_capture_chunk_tail(nmo_shadow_storage_t *storage,
                                    uint32_t chunk_id,
                                    const void *tail, size_t tail_size) {
     if (storage == NULL) {

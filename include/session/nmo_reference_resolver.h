@@ -38,7 +38,7 @@ typedef struct nmo_object_ref {
     char *name;                   /**< Object name for matching */
     nmo_guid_t type_guid;         /**< Type GUID (for typed objects like parameters) */
     uint32_t flags;               /**< Additional flags */
-    
+
     /* Internal fields */
     nmo_object_t *resolved_object; /**< Resolved object pointer (NULL if unresolved) */
     int32_t file_index;           /**< File object index (SaveFindObjectIndex, 0-based) */
@@ -48,7 +48,7 @@ typedef struct nmo_object_ref {
  * @brief Reference resolution strategy
  *
  * Custom resolution function for specific object types.
- * 
+ *
  * @param context User context passed during registration
  * @param ref Reference descriptor to resolve
  * @param repo Object repository to search in
@@ -101,7 +101,7 @@ NMO_API nmo_reference_resolver_t *nmo_reference_resolver_create(
  * @param context User context passed to strategy function
  * @return NMO_OK on success, error code on failure
  */
-NMO_API int nmo_reference_resolver_register_strategy(
+NMO_API nmo_status_t nmo_reference_resolver_register_strategy(
     nmo_reference_resolver_t *resolver,
     nmo_class_id_t class_id,
     nmo_resolve_strategy_fn strategy,
@@ -156,7 +156,7 @@ NMO_API nmo_object_t *nmo_reference_resolver_resolve(
  * @param resolver Resolver instance (required)
  * @return NMO_OK. Use nmo_reference_resolver_has_unresolved() / get_unresolved() for diagnostics.
  */
-NMO_API int nmo_reference_resolver_resolve_all(
+NMO_API nmo_status_t nmo_reference_resolver_resolve_all(
     nmo_reference_resolver_t *resolver
 );
 
@@ -167,7 +167,7 @@ NMO_API int nmo_reference_resolver_resolve_all(
  * @param out_stats Output statistics structure (required)
  * @return NMO_OK on success
  */
-NMO_API int nmo_reference_resolver_get_stats(
+NMO_API nmo_status_t nmo_reference_resolver_get_stats(
     const nmo_reference_resolver_t *resolver,
     nmo_reference_stats_t *out_stats
 );
@@ -195,7 +195,7 @@ NMO_API int nmo_reference_resolver_has_unresolved(
  * @return NMO_OK on success
  * @note Returned array is resolver-owned; do not free.
  */
-NMO_API int nmo_reference_resolver_get_unresolved(
+NMO_API nmo_status_t nmo_reference_resolver_get_unresolved(
     const nmo_reference_resolver_t *resolver,
     nmo_object_ref_t ***out_refs,
     size_t *out_count

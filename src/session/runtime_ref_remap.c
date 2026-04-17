@@ -127,7 +127,7 @@ static const void *runtime_get_base_instance(
 
 /* ── Public API ────────────────────────────────────────────────── */
 
-int nmo_runtime_remap_copy_refs(
+nmo_status_t nmo_runtime_remap_copy_refs(
     const nmo_type_runtime_t *type_rt,
     const nmo_type_descriptor_t *type,
     void *instance,
@@ -153,7 +153,7 @@ int nmo_runtime_remap_copy_refs(
             .instance = current_instance
         };
 
-        int remap_result = nmo_type_foreach_ref_field(
+        nmo_status_t remap_result = nmo_type_foreach_ref_field(
             current,
             current_instance,
             runtime_remap_ref_field,
@@ -185,7 +185,7 @@ int nmo_runtime_remap_copy_refs(
     return NMO_OK;
 }
 
-int nmo_runtime_remap_all_refs(
+nmo_status_t nmo_runtime_remap_all_refs(
     nmo_object_repository_t *repo,
     const nmo_type_runtime_t *type_rt,
     uint32_t request_flags)
@@ -206,7 +206,7 @@ int nmo_runtime_remap_all_refs(
             continue;
         }
 
-        int hook_result = type->vtable->remap_dependencies(obj->state, type, repo);
+        nmo_status_t hook_result = type->vtable->remap_dependencies(obj->state, type, repo);
         if (hook_result != NMO_OK && (request_flags & NMO_RUNTIME_REQUEST_STRICT)) {
             return hook_result;
         }

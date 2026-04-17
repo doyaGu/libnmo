@@ -236,7 +236,7 @@ static int runtime_validate_safe_detach(
 
 /* ── Public API ────────────────────────────────────────────────── */
 
-int nmo_runtime_preview_delete(
+nmo_status_t nmo_runtime_preview_delete(
     nmo_object_repository_t *repo,
     const nmo_type_runtime_t *type_rt,
     nmo_arena_t *arena,
@@ -263,7 +263,7 @@ int nmo_runtime_preview_delete(
 
     runtime_id_set_t delete_set;
     memset(&delete_set, 0, sizeof(delete_set));
-    int result = runtime_collect_delete_set(repo, type_rt, arena, &request, &delete_set);
+    nmo_status_t result = runtime_collect_delete_set(repo, type_rt, arena, &request, &delete_set);
     if (result != NMO_OK) {
         nmo_bit_array_dispose(&delete_set.bits);
         return result;
@@ -275,7 +275,7 @@ int nmo_runtime_preview_delete(
     return NMO_OK;
 }
 
-int nmo_runtime_execute_delete(
+nmo_status_t nmo_runtime_execute_delete(
     nmo_session_t *session,
     const nmo_runtime_request_t *request,
     nmo_runtime_report_t *report)
@@ -299,7 +299,7 @@ int nmo_runtime_execute_delete(
 
     runtime_id_set_t delete_set;
     memset(&delete_set, 0, sizeof(delete_set));
-    int collect_result = runtime_collect_delete_set(repo, type_rt, arena, request, &delete_set);
+    nmo_status_t collect_result = runtime_collect_delete_set(repo, type_rt, arena, request, &delete_set);
     if (collect_result != NMO_OK) {
         nmo_bit_array_dispose(&delete_set.bits);
         return collect_result;
@@ -308,7 +308,7 @@ int nmo_runtime_execute_delete(
     /* Pre-validate safe-detach: ensure all surviving referrers can remap */
     if (request->flags & NMO_RUNTIME_REQUEST_SAFE_DETACH) {
         nmo_ref_graph_t *graph = nmo_session_get_ref_graph(session);
-        int validate_result = runtime_validate_safe_detach(
+        nmo_status_t validate_result = runtime_validate_safe_detach(
             repo, type_rt, graph, &delete_set, request->flags, logger);
         if (validate_result != NMO_OK) {
             nmo_bit_array_dispose(&delete_set.bits);
@@ -336,7 +336,7 @@ int nmo_runtime_execute_delete(
             type->vtable != NULL &&
             type->vtable->pre_delete != NULL &&
             obj->state != NULL) {
-            int hook_result = type->vtable->pre_delete(obj->state, type, repo);
+            nmo_status_t hook_result = type->vtable->pre_delete(obj->state, type, repo);
             if (hook_result != NMO_OK && (request->flags & NMO_RUNTIME_REQUEST_STRICT)) {
                 nmo_bit_array_dispose(&delete_set.bits);
                 return hook_result;
@@ -357,7 +357,7 @@ int nmo_runtime_execute_delete(
     for (size_t i = 0; i < ID_SET_COUNT(&delete_set); i++) {
         nmo_object_id_t object_id = ID_SET_AT(&delete_set, i);
         nmo_object_t *detached = NULL;
-        int remove_result = nmo_object_repository_take(repo, object_id, &detached);
+        nmo_status_t remove_result = nmo_object_repository_take(repo, object_id, &detached);
         /* All IDs were validated in Phase 1a and runtime_collect_delete_set.
          * A take failure here indicates an internal consistency error. */
         if (remove_result != NMO_OK || detached == NULL) {
@@ -396,7 +396,7 @@ int nmo_runtime_execute_delete(
 
     if (request->flags & NMO_RUNTIME_REQUEST_SAFE_DETACH) {
         if (type_rt != NULL && type_rt->types != NULL) {
-            int detach_result = nmo_runtime_remap_all_refs(repo, type_rt, request->flags);
+            nmo_status_t detach_result = nmo_runtime_remap_all_refs(repo, type_rt, request->flags);
             if (detach_result != NMO_OK) {
                 return detach_result;
             }

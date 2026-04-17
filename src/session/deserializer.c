@@ -90,11 +90,11 @@ typedef struct nmo_deserializer {
  * Callback wrappers for object_system decoupling
  * ============================================================================ */
 
-static int cb_id_register(void *ctx, nmo_object_t *obj, nmo_object_id_t file_index) {
+static nmo_status_t cb_id_register(void *ctx, nmo_object_t *obj, nmo_object_id_t file_index) {
     return nmo_id_mapping_register((nmo_id_mapping_t *)ctx, obj, file_index);
 }
 
-static int cb_id_lookup(void *ctx, nmo_object_id_t file_index, nmo_object_id_t *out_id) {
+static nmo_status_t cb_id_lookup(void *ctx, nmo_object_id_t file_index, nmo_object_id_t *out_id) {
     return nmo_id_mapping_get_runtime_id((const nmo_id_mapping_t *)ctx, file_index, out_id);
 }
 

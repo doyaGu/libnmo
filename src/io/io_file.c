@@ -39,7 +39,7 @@ static int nmo_seek_to_stdio(nmo_seek_origin_t origin) {
     }
 }
 
-static int nmo_file_seek64(FILE *fp, int64_t offset, int whence) {
+static nmo_status_t nmo_file_seek64(FILE *fp, int64_t offset, int whence) {
     if (fp == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -87,7 +87,7 @@ static int64_t nmo_file_tell64(FILE *fp) {
 /**
  * @brief Read function for nmo_io_interface
  */
-static int file_io_read(void *handle, void *buffer, size_t size, size_t *bytes_read) {
+static nmo_status_t file_io_read(void *handle, void *buffer, size_t size, size_t *bytes_read) {
     if (handle == NULL || buffer == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -119,7 +119,7 @@ static int file_io_read(void *handle, void *buffer, size_t size, size_t *bytes_r
 /**
  * @brief Write function for nmo_io_interface
  */
-static int file_io_write(void *handle, const void *buffer, size_t size) {
+static nmo_status_t file_io_write(void *handle, const void *buffer, size_t size) {
     if (handle == NULL || buffer == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -142,7 +142,7 @@ static int file_io_write(void *handle, const void *buffer, size_t size) {
 /**
  * @brief Seek function for nmo_io_interface
  */
-static int file_io_seek(void *handle, int64_t offset, nmo_seek_origin_t origin) {
+static nmo_status_t file_io_seek(void *handle, int64_t offset, nmo_seek_origin_t origin) {
     if (handle == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -178,7 +178,7 @@ static int64_t file_io_tell(void *handle) {
 /**
  * @brief Flush function for nmo_io_interface
  */
-static int file_io_flush(void *handle) {
+static nmo_status_t file_io_flush(void *handle) {
     if (handle == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -199,7 +199,7 @@ static int file_io_flush(void *handle) {
 /**
  * @brief Close function for nmo_io_interface
  */
-static int file_io_close(void *handle) {
+static nmo_status_t file_io_close(void *handle) {
     if (handle == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }

@@ -512,7 +512,7 @@ static int runtime_execute_copy(
 
 /* ── Finalize load ─────────────────────────────────────────────── */
 
-int nmo_runtime_kernel_finalize_load(
+nmo_status_t nmo_runtime_kernel_finalize_load(
     nmo_session_t *session,
     const nmo_runtime_request_t *request,
     nmo_runtime_report_t *out_report)
@@ -598,7 +598,7 @@ int nmo_runtime_kernel_finalize_load(
                 continue;
             }
 
-            int hook_result = NMO_OK;
+            nmo_status_t hook_result = NMO_OK;
             if (type->vtable != NULL && type->vtable->prepare_dependencies != NULL) {
                 hook_result = type->vtable->prepare_dependencies(obj->state, type, repo);
                 if (hook_result != NMO_OK) {
@@ -661,7 +661,7 @@ int nmo_runtime_kernel_finalize_load(
     }
 
     uint64_t index_start = runtime_load_perf_begin(perf_stats);
-    int index_result = nmo_session_rebuild_indexes(session, NMO_INDEX_BUILD_ALL);
+    nmo_status_t index_result = nmo_session_rebuild_indexes(session, NMO_INDEX_BUILD_ALL);
     runtime_load_perf_end(perf_stats, NMO_LOAD_PERF_INDEX_REBUILD, index_start);
     if (index_result != NMO_OK && logger != NULL) {
         nmo_log(logger, NMO_LOG_WARN,
@@ -679,7 +679,7 @@ int nmo_runtime_kernel_finalize_load(
 
 /* ── Kernel dispatcher ─────────────────────────────────────────── */
 
-int nmo_runtime_kernel_execute(
+nmo_status_t nmo_runtime_kernel_execute(
     nmo_session_t *session,
     const nmo_runtime_request_t *request,
     nmo_runtime_report_t *out_report)
@@ -690,7 +690,7 @@ int nmo_runtime_kernel_execute(
 
     runtime_init_report(out_report);
 
-    int result = NMO_OK;
+    nmo_status_t result = NMO_OK;
     switch (request->kind) {
         case NMO_RUNTIME_OP_LOAD: {
             const nmo_runtime_ops_t *ops = nmo_session_get_runtime_ops(session);

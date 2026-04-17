@@ -50,7 +50,7 @@ static void update_checksum(nmo_checksummed_io_handle_t *ctx, const void *data, 
 /**
  * @brief Read function for checksummed IO
  */
-static int checksummed_io_read(void *handle, void *buffer, size_t size, size_t *bytes_read) {
+static nmo_status_t checksummed_io_read(void *handle, void *buffer, size_t size, size_t *bytes_read) {
     if (handle == NULL || buffer == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -80,7 +80,7 @@ static int checksummed_io_read(void *handle, void *buffer, size_t size, size_t *
 /**
  * @brief Write function for checksummed IO
  */
-static int checksummed_io_write(void *handle, const void *buffer, size_t size) {
+static nmo_status_t checksummed_io_write(void *handle, const void *buffer, size_t size) {
     if (handle == NULL || buffer == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -101,7 +101,7 @@ static int checksummed_io_write(void *handle, const void *buffer, size_t size) {
 /**
  * @brief Seek function for checksummed IO (pass-through)
  */
-static int checksummed_io_seek(void *handle, int64_t offset, nmo_seek_origin_t origin) {
+static nmo_status_t checksummed_io_seek(void *handle, int64_t offset, nmo_seek_origin_t origin) {
     if (handle == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -135,7 +135,7 @@ static int64_t checksummed_io_tell(void *handle) {
 /**
  * @brief Close function for checksummed IO
  */
-static int checksummed_io_close(void *handle) {
+static nmo_status_t checksummed_io_close(void *handle) {
     if (handle == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }

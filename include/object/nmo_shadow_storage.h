@@ -80,7 +80,7 @@ NMO_API void nmo_shadow_storage_reset(nmo_shadow_storage_t *storage);
  * @param size    Size of data in bytes
  * @return NMO_OK on success, error code otherwise
  */
-NMO_API int nmo_shadow_capture_included_files(nmo_shadow_storage_t *storage,
+NMO_API nmo_status_t nmo_shadow_capture_included_files(nmo_shadow_storage_t *storage,
                                                const void *data, size_t size);
 
 /**
@@ -99,7 +99,7 @@ NMO_API int nmo_shadow_capture_included_files(nmo_shadow_storage_t *storage,
  * @param tail_size Size of tail in bytes
  * @return NMO_OK on success, error code otherwise
  */
-NMO_API int nmo_shadow_capture_chunk_tail(nmo_shadow_storage_t *storage,
+NMO_API nmo_status_t nmo_shadow_capture_chunk_tail(nmo_shadow_storage_t *storage,
                                            uint32_t chunk_id,
                                            const void *tail, size_t tail_size);
 

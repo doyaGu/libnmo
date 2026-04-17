@@ -6,6 +6,7 @@
 #ifndef NMO_LOAD_H
 #define NMO_LOAD_H
 
+#include "core/nmo_error.h"
 #include "session/nmo_deserializer.h"
 
 #ifdef __cplusplus
@@ -26,9 +27,9 @@ typedef struct nmo_session nmo_session_t;
  * @param opts    Load options (NULL for defaults)
  * @return NMO_OK on success
  */
-NMO_API int nmo_load_file(nmo_session_t *session,
-                          const char *path,
-                          const nmo_load_options_t *opts);
+NMO_API nmo_status_t nmo_load_file(nmo_session_t *session,
+                                   const char *path,
+                                   const nmo_load_options_t *opts);
 
 #ifdef __cplusplus
 }

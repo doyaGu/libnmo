@@ -20,10 +20,10 @@ typedef struct nmo_save_options nmo_save_options_t;
  * app-layer load/save functions and behavior-layer index building.
  */
 typedef struct nmo_runtime_ops {
-    int (*load_file)(nmo_session_t *session, const char *path,
-                     const nmo_load_options_t *opts);
-    int (*save_file)(nmo_session_t *session, const char *path,
-                     const nmo_save_options_t *opts);
+    nmo_status_t (*load_file)(nmo_session_t *session, const char *path,
+                              const nmo_load_options_t *opts);
+    nmo_status_t (*save_file)(nmo_session_t *session, const char *path,
+                              const nmo_save_options_t *opts);
     void (*post_load)(nmo_session_t *session); /**< Called after remap (e.g., build behavior index) */
 } nmo_runtime_ops_t;
 
@@ -72,7 +72,7 @@ typedef struct nmo_runtime_request {
 } nmo_runtime_request_t;
 
 typedef struct nmo_runtime_report {
-    int status;
+    nmo_status_t status;
     size_t affected_objects;
     size_t created_objects;
     size_t copied_objects;
@@ -81,13 +81,13 @@ typedef struct nmo_runtime_report {
     uint32_t object_hook_errors;
 } nmo_runtime_report_t;
 
-NMO_API int nmo_runtime_kernel_execute(
+NMO_API nmo_status_t nmo_runtime_kernel_execute(
     nmo_session_t *session,
     const nmo_runtime_request_t *request,
     nmo_runtime_report_t *out_report);
 
 /* Load-specific finalization used by parser once deserialize is complete. */
-NMO_API int nmo_runtime_kernel_finalize_load(
+NMO_API nmo_status_t nmo_runtime_kernel_finalize_load(
     nmo_session_t *session,
     const nmo_runtime_request_t *request,
     nmo_runtime_report_t *out_report);

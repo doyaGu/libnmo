@@ -27,7 +27,7 @@ typedef struct nmo_arena nmo_arena_t;
  * @param report   Optional report (may be NULL)
  * @return NMO_OK on success
  */
-NMO_API int nmo_runtime_execute_delete(
+NMO_API nmo_status_t nmo_runtime_execute_delete(
     nmo_session_t *session,
     const nmo_runtime_request_t *request,
     nmo_runtime_report_t *report);
@@ -48,7 +48,7 @@ NMO_API int nmo_runtime_execute_delete(
  * @param out_count    Output: number of expanded IDs
  * @return NMO_OK on success
  */
-NMO_API int nmo_runtime_preview_delete(
+NMO_API nmo_status_t nmo_runtime_preview_delete(
     nmo_object_repository_t *repo,
     const nmo_type_runtime_t *type_rt,
     nmo_arena_t *arena,

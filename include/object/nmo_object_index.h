@@ -1,7 +1,7 @@
 /**
  * @file nmo_object_index.h
  * @brief Object indexing system for fast lookups (Phase 5)
- * 
+ *
  * Provides efficient indexing of objects by class ID, name, and GUID.
  * Based on CKFile::m_IndexByClassId and related indexing structures.
  */
@@ -56,7 +56,7 @@ typedef struct nmo_index_stats {
 
 /**
  * Create object index
- * 
+ *
  * @param repo Object repository to index
  * @param arena Arena for memory allocation
  * @param allocator Allocator for dynamic internal arrays (NULL = default)
@@ -74,7 +74,7 @@ NMO_API nmo_object_index_t *nmo_object_index_create(
 
 /**
  * Destroy object index
- * 
+ *
  * @param index Index to destroy
  */
 NMO_API void nmo_object_index_destroy(nmo_object_index_t *index);
@@ -83,40 +83,40 @@ NMO_API void nmo_object_index_destroy(nmo_object_index_t *index);
 
 /**
  * Build indexes for all objects in repository
- * 
+ *
  * @param index Object index
  * @param flags Index types to build (combination of nmo_index_build_flags_t)
  * @return NMO_OK on success
- * 
+ *
  * Reference: CKFile::SaveObjectAsReference builds m_IndexByClassId
  * (reference/src/CKFile.cpp:828)
  */
-NMO_API int nmo_object_index_build(
+NMO_API nmo_status_t nmo_object_index_build(
     nmo_object_index_t *index,
     uint32_t flags
 );
 
 /**
  * Rebuild all indexes (clear and rebuild)
- * 
+ *
  * @param index Object index
  * @param flags Index types to rebuild
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_index_rebuild(
+NMO_API nmo_status_t nmo_object_index_rebuild(
     nmo_object_index_t *index,
     uint32_t flags
 );
 
 /**
  * Add single object to indexes (incremental update)
- * 
+ *
  * @param index Object index
  * @param object Object to add
  * @param flags Index types to update
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_index_add_object(
+NMO_API nmo_status_t nmo_object_index_add_object(
     nmo_object_index_t *index,
     nmo_object_t *object,
     uint32_t flags
@@ -124,13 +124,13 @@ NMO_API int nmo_object_index_add_object(
 
 /**
  * Remove object from indexes
- * 
+ *
  * @param index Object index
  * @param object_id Object ID to remove
  * @param flags Index types to update
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_index_remove_object(
+NMO_API nmo_status_t nmo_object_index_remove_object(
     nmo_object_index_t *index,
     nmo_object_id_t object_id,
     uint32_t flags
@@ -138,12 +138,12 @@ NMO_API int nmo_object_index_remove_object(
 
 /**
  * Clear all indexes
- * 
+ *
  * @param index Object index
  * @param flags Index types to clear
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_index_clear(
+NMO_API nmo_status_t nmo_object_index_clear(
     nmo_object_index_t *index,
     uint32_t flags
 );
@@ -160,7 +160,7 @@ NMO_API uint32_t nmo_object_index_get_active_flags(const nmo_object_index_t *ind
 
 /**
  * Get all objects of a specific class
- * 
+ *
  * @param index Object index
  * @param class_id Class ID to search for
  * @param out_count Output: number of objects found
@@ -180,7 +180,7 @@ NMO_API nmo_object_t **nmo_object_index_get_by_class(
 
 /**
  * Count objects of a specific class
- * 
+ *
  * @param index Object index
  * @param class_id Class ID
  * @return Number of objects with this class ID
@@ -194,7 +194,7 @@ NMO_API size_t nmo_object_index_count_by_class(
 
 /**
  * Find object by name (exact match)
- * 
+ *
  * @param index Object index
  * @param name Object name
  * @param class_id Optional class filter (0 = any class)
@@ -214,7 +214,7 @@ NMO_API nmo_object_t *nmo_object_index_find_by_name(
 
 /**
  * Get all objects with a specific name
- * 
+ *
  * @param index Object index
  * @param name Object name
  * @param class_id Optional class filter (0 = any class)
@@ -236,7 +236,7 @@ NMO_API nmo_object_t **nmo_object_index_get_by_name_all(
 
 /**
  * Find object by name (case-insensitive)
- * 
+ *
  * @param index Object index
  * @param name Object name
  * @param class_id Optional class filter (0 = any class)
@@ -255,7 +255,7 @@ NMO_API nmo_object_t *nmo_object_index_find_by_name_fuzzy(
 
 /**
  * Find object by type GUID
- * 
+ *
  * @param index Object index
  * @param guid Type GUID to search for
  * @return Object with matching GUID, or NULL if not found
@@ -270,7 +270,7 @@ NMO_API nmo_object_t *nmo_object_index_find_by_guid(
 
 /**
  * Get all objects with a specific type GUID
- * 
+ *
  * @param index Object index
  * @param guid Type GUID
  * @param out_count Output: number of objects found
@@ -288,19 +288,19 @@ NMO_API nmo_object_t **nmo_object_index_get_by_guid_all(
 
 /**
  * Get index statistics
- * 
+ *
  * @param index Object index
  * @param stats Output: statistics structure
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_index_get_stats(
+NMO_API nmo_status_t nmo_object_index_get_stats(
     const nmo_object_index_t *index,
     nmo_index_stats_t *stats
 );
 
 /**
  * Check if class index is built
- * 
+ *
  * @param index Object index
  * @return 1 if built, 0 otherwise
  */
@@ -308,7 +308,7 @@ NMO_API int nmo_object_index_has_class_index(const nmo_object_index_t *index);
 
 /**
  * Check if name index is built
- * 
+ *
  * @param index Object index
  * @return 1 if built, 0 otherwise
  */
@@ -316,7 +316,7 @@ NMO_API int nmo_object_index_has_name_index(const nmo_object_index_t *index);
 
 /**
  * Check if GUID index is built
- * 
+ *
  * @param index Object index
  * @return 1 if built, 0 otherwise
  */

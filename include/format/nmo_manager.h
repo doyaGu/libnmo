@@ -35,7 +35,7 @@ typedef enum nmo_runtime_event_kind {
 /**
  * @brief Manager event callback.
  */
-typedef int (*nmo_manager_on_event_fn)(
+typedef nmo_status_t (*nmo_manager_on_event_fn)(
     void *session,
     const nmo_runtime_event_ctx_t *ctx,
     void *user_data);
@@ -98,7 +98,7 @@ NMO_API void nmo_manager_destroy(nmo_manager_t *manager);
  * @param user_data User data pointer
  * @return NMO_OK on success
  */
-NMO_API int nmo_manager_set_user_data(nmo_manager_t *manager, void *user_data);
+NMO_API nmo_status_t nmo_manager_set_user_data(nmo_manager_t *manager, void *user_data);
 
 /**
  * @brief Set unified event callback.
@@ -106,7 +106,7 @@ NMO_API int nmo_manager_set_user_data(nmo_manager_t *manager, void *user_data);
  * @param hook Callback function
  * @return NMO_OK on success
  */
-NMO_API int nmo_manager_set_on_event_hook(nmo_manager_t *manager, nmo_manager_on_event_fn hook);
+NMO_API nmo_status_t nmo_manager_set_on_event_hook(nmo_manager_t *manager, nmo_manager_on_event_fn hook);
 
 /**
  * @brief Dispatch runtime event to manager.
@@ -115,7 +115,7 @@ NMO_API int nmo_manager_set_on_event_hook(nmo_manager_t *manager, nmo_manager_on
  * @param ctx Event payload (required)
  * @return NMO_OK on success, or error if hook fails
  */
-NMO_API int nmo_manager_invoke_event(
+NMO_API nmo_status_t nmo_manager_invoke_event(
     nmo_manager_t *manager,
     void *session,
     const nmo_runtime_event_ctx_t *ctx);

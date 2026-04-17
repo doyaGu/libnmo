@@ -58,9 +58,9 @@ NMO_API uint32_t nmo_id_sanitize(uint32_t raw_id);
 /**
  * @brief Register a File ID -> Runtime ID mapping.
  */
-NMO_API int nmo_id_sanitizer_register(nmo_id_sanitizer_t *sanitizer,
-                                      uint32_t file_id,
-                                      uint32_t runtime_id);
+NMO_API nmo_status_t nmo_id_sanitizer_register(nmo_id_sanitizer_t *sanitizer,
+                                               uint32_t file_id,
+                                               uint32_t runtime_id);
 
 /**
  * @brief Register a negative external reference ID.
@@ -76,10 +76,10 @@ NMO_API int32_t nmo_id_register_external(nmo_id_sanitizer_t *sanitizer,
  *
  * Clears existing tables and registers a set of file_id -> runtime_id pairs.
  */
-NMO_API int nmo_id_sanitizer_reseed(nmo_id_sanitizer_t *sanitizer,
-                                    const uint32_t *file_ids,
-                                    const uint32_t *runtime_ids,
-                                    size_t count);
+NMO_API nmo_status_t nmo_id_sanitizer_reseed(nmo_id_sanitizer_t *sanitizer,
+                                             const uint32_t *file_ids,
+                                             const uint32_t *runtime_ids,
+                                             size_t count);
 
 /**
  * @brief Lookup runtime ID from a file ID.

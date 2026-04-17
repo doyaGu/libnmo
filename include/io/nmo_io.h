@@ -54,7 +54,7 @@ typedef struct nmo_allocator nmo_allocator_t;
  * @param bytes_read Number of bytes actually read (output)
  * @return NMO_OK on success, error code otherwise
  */
-typedef int (*nmo_io_read_fn)(void *handle, void *buffer, size_t size, size_t *bytes_read);
+typedef nmo_status_t (*nmo_io_read_fn)(void *handle, void *buffer, size_t size, size_t *bytes_read);
 
 /**
  * @brief Write function type
@@ -64,7 +64,7 @@ typedef int (*nmo_io_read_fn)(void *handle, void *buffer, size_t size, size_t *b
  * @param size Number of bytes to write
  * @return NMO_OK on success, error code otherwise
  */
-typedef int (*nmo_io_write_fn)(void *handle, const void *buffer, size_t size);
+typedef nmo_status_t (*nmo_io_write_fn)(void *handle, const void *buffer, size_t size);
 
 /**
  * @brief Seek function type
@@ -74,7 +74,7 @@ typedef int (*nmo_io_write_fn)(void *handle, const void *buffer, size_t size);
  * @param origin Seek origin (SET/CUR/END)
  * @return NMO_OK on success, error code otherwise
  */
-typedef int (*nmo_io_seek_fn)(void *handle, int64_t offset, nmo_seek_origin_t origin);
+typedef nmo_status_t (*nmo_io_seek_fn)(void *handle, int64_t offset, nmo_seek_origin_t origin);
 
 /**
  * @brief Tell function type
@@ -95,7 +95,7 @@ typedef int64_t (*nmo_io_tell_fn)(void *handle);
  * @param handle IO handle
  * @return NMO_OK on success, error code otherwise
  */
-typedef int (*nmo_io_flush_fn)(void *handle);
+typedef nmo_status_t (*nmo_io_flush_fn)(void *handle);
 
 /**
  * @brief Close function type
@@ -103,7 +103,7 @@ typedef int (*nmo_io_flush_fn)(void *handle);
  * @param handle IO handle
  * @return NMO_OK on success, error code otherwise
  */
-typedef int (*nmo_io_close_fn)(void *handle);
+typedef nmo_status_t (*nmo_io_close_fn)(void *handle);
 
 /**
  * @brief IO interface structure
@@ -129,7 +129,7 @@ typedef struct nmo_io_interface {
  * @param bytes_read Number of bytes actually read (output, can be NULL)
  * @return NMO_OK on success, error code otherwise
  */
-NMO_API int nmo_io_read(nmo_io_interface_t *io, void *buffer, size_t size, size_t *bytes_read);
+NMO_API nmo_status_t nmo_io_read(nmo_io_interface_t *io, void *buffer, size_t size, size_t *bytes_read);
 
 /**
  * @brief Write to IO interface
@@ -139,7 +139,7 @@ NMO_API int nmo_io_read(nmo_io_interface_t *io, void *buffer, size_t size, size_
  * @param size Number of bytes to write
  * @return NMO_OK on success, error code otherwise
  */
-NMO_API int nmo_io_write(nmo_io_interface_t *io, const void *buffer, size_t size);
+NMO_API nmo_status_t nmo_io_write(nmo_io_interface_t *io, const void *buffer, size_t size);
 
 /**
  * @brief Seek in IO interface
@@ -149,7 +149,7 @@ NMO_API int nmo_io_write(nmo_io_interface_t *io, const void *buffer, size_t size
  * @param origin Seek origin (SET/CUR/END)
  * @return NMO_OK on success, error code otherwise
  */
-NMO_API int nmo_io_seek(nmo_io_interface_t *io, int64_t offset, nmo_seek_origin_t origin);
+NMO_API nmo_status_t nmo_io_seek(nmo_io_interface_t *io, int64_t offset, nmo_seek_origin_t origin);
 
 /**
  * @brief Get current position in IO interface
@@ -174,7 +174,7 @@ NMO_API int64_t nmo_io_tell(nmo_io_interface_t *io);
  * @param io IO interface
  * @return NMO_OK on success, NMO_ERR_NOT_SUPPORTED if flush not supported, error code otherwise
  */
-NMO_API int nmo_io_flush(nmo_io_interface_t *io);
+NMO_API nmo_status_t nmo_io_flush(nmo_io_interface_t *io);
 
 /**
  * @brief Close IO interface
@@ -182,7 +182,7 @@ NMO_API int nmo_io_flush(nmo_io_interface_t *io);
  * @param io IO interface
  * @return NMO_OK on success, error code otherwise
  */
-NMO_API int nmo_io_close(nmo_io_interface_t *io);
+NMO_API nmo_status_t nmo_io_close(nmo_io_interface_t *io);
 
 /**
  * @brief Read exact number of bytes (fail if can't read all)
@@ -192,7 +192,7 @@ NMO_API int nmo_io_close(nmo_io_interface_t *io);
  * @param size Number of bytes to read
  * @return NMO_OK on success, NMO_ERR_EOF if can't read all bytes
  */
-NMO_API int nmo_io_read_exact(nmo_io_interface_t *io, void *buffer, size_t size);
+NMO_API nmo_status_t nmo_io_read_exact(nmo_io_interface_t *io, void *buffer, size_t size);
 
 /**
  * @brief Read uint8_t
@@ -201,7 +201,7 @@ NMO_API int nmo_io_read_exact(nmo_io_interface_t *io, void *buffer, size_t size)
  * @param out Output value
  * @return NMO_OK on success
  */
-NMO_API int nmo_io_read_u8(nmo_io_interface_t *io, uint8_t *out);
+NMO_API nmo_status_t nmo_io_read_u8(nmo_io_interface_t *io, uint8_t *out);
 
 /**
  * @brief Read uint16_t (little-endian)
@@ -210,7 +210,7 @@ NMO_API int nmo_io_read_u8(nmo_io_interface_t *io, uint8_t *out);
  * @param out Output value
  * @return NMO_OK on success
  */
-NMO_API int nmo_io_read_u16(nmo_io_interface_t *io, uint16_t *out);
+NMO_API nmo_status_t nmo_io_read_u16(nmo_io_interface_t *io, uint16_t *out);
 
 /**
  * @brief Read uint32_t (little-endian)
@@ -219,7 +219,7 @@ NMO_API int nmo_io_read_u16(nmo_io_interface_t *io, uint16_t *out);
  * @param out Output value
  * @return NMO_OK on success
  */
-NMO_API int nmo_io_read_u32(nmo_io_interface_t *io, uint32_t *out);
+NMO_API nmo_status_t nmo_io_read_u32(nmo_io_interface_t *io, uint32_t *out);
 
 /**
  * @brief Read uint64_t (little-endian)
@@ -228,7 +228,7 @@ NMO_API int nmo_io_read_u32(nmo_io_interface_t *io, uint32_t *out);
  * @param out Output value
  * @return NMO_OK on success
  */
-NMO_API int nmo_io_read_u64(nmo_io_interface_t *io, uint64_t *out);
+NMO_API nmo_status_t nmo_io_read_u64(nmo_io_interface_t *io, uint64_t *out);
 
 /**
  * @brief Write uint8_t
@@ -237,7 +237,7 @@ NMO_API int nmo_io_read_u64(nmo_io_interface_t *io, uint64_t *out);
  * @param value Value to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_io_write_u8(nmo_io_interface_t *io, uint8_t value);
+NMO_API nmo_status_t nmo_io_write_u8(nmo_io_interface_t *io, uint8_t value);
 
 /**
  * @brief Write uint16_t (little-endian)
@@ -246,7 +246,7 @@ NMO_API int nmo_io_write_u8(nmo_io_interface_t *io, uint8_t value);
  * @param value Value to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_io_write_u16(nmo_io_interface_t *io, uint16_t value);
+NMO_API nmo_status_t nmo_io_write_u16(nmo_io_interface_t *io, uint16_t value);
 
 /**
  * @brief Write uint32_t (little-endian)
@@ -255,7 +255,7 @@ NMO_API int nmo_io_write_u16(nmo_io_interface_t *io, uint16_t value);
  * @param value Value to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_io_write_u32(nmo_io_interface_t *io, uint32_t value);
+NMO_API nmo_status_t nmo_io_write_u32(nmo_io_interface_t *io, uint32_t value);
 
 /**
  * @brief Write uint64_t (little-endian)
@@ -264,7 +264,7 @@ NMO_API int nmo_io_write_u32(nmo_io_interface_t *io, uint32_t value);
  * @param value Value to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_io_write_u64(nmo_io_interface_t *io, uint64_t value);
+NMO_API nmo_status_t nmo_io_write_u64(nmo_io_interface_t *io, uint64_t value);
 
 #ifdef __cplusplus
 }

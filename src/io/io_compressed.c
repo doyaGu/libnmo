@@ -30,7 +30,7 @@ typedef struct nmo_compressed_io_handle {
 /**
  * @brief Read function for compressed IO
  */
-static int compressed_io_read(void *handle, void *buffer, size_t size, size_t *bytes_read) {
+static nmo_status_t compressed_io_read(void *handle, void *buffer, size_t size, size_t *bytes_read) {
     if (handle == NULL || buffer == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -102,7 +102,7 @@ static int compressed_io_read(void *handle, void *buffer, size_t size, size_t *b
 /**
  * @brief Write function for compressed IO
  */
-static int compressed_io_write(void *handle, const void *buffer, size_t size) {
+static nmo_status_t compressed_io_write(void *handle, const void *buffer, size_t size) {
     if (handle == NULL || buffer == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -140,7 +140,7 @@ static int compressed_io_write(void *handle, const void *buffer, size_t size) {
     return NMO_OK;
 }
 
-static int compressed_io_reset_inflate_state(nmo_compressed_io_handle_t *ctx) {
+static nmo_status_t compressed_io_reset_inflate_state(nmo_compressed_io_handle_t *ctx) {
     if (ctx == NULL || !ctx->initialized || ctx->is_write) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -160,7 +160,7 @@ static int compressed_io_reset_inflate_state(nmo_compressed_io_handle_t *ctx) {
 /**
  * @brief Seek function for compressed IO
  */
-static int compressed_io_seek(void *handle, int64_t offset, nmo_seek_origin_t origin) {
+static nmo_status_t compressed_io_seek(void *handle, int64_t offset, nmo_seek_origin_t origin) {
     if (handle == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -202,12 +202,12 @@ static int64_t compressed_io_tell(void *handle) {
 
 /**
  * @brief Flush function for compressed IO
- * 
+ *
  * Finalizes compression stream without closing the inner IO.
  * Only meaningful for write (deflate) mode.
  * For read (inflate) mode, this is a no-op.
  */
-static int compressed_io_flush(void *handle) {
+static nmo_status_t compressed_io_flush(void *handle) {
     if (handle == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -255,10 +255,10 @@ static int compressed_io_flush(void *handle) {
 
 /**
  * @brief Close function for compressed IO
- * 
+ *
  * Flushes remaining data, closes inner IO, and frees resources.
  */
-static int compressed_io_close(void *handle) {
+static nmo_status_t compressed_io_close(void *handle) {
     if (handle == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -269,7 +269,7 @@ static int compressed_io_close(void *handle) {
     // Flush any remaining data
     if (ctx->initialized) {
         if (ctx->is_write) {
-            int flush_result = compressed_io_flush(handle);
+            nmo_status_t flush_result = compressed_io_flush(handle);
             if (flush_result != NMO_OK && result == NMO_OK) {
                 result = flush_result;
             }
@@ -281,7 +281,7 @@ static int compressed_io_close(void *handle) {
 
     // Close inner IO (this frees both handle and interface)
     if (ctx->inner != NULL) {
-        int ret = nmo_io_close(ctx->inner);
+        nmo_status_t ret = nmo_io_close(ctx->inner);
         if (ret != NMO_OK && result == NMO_OK) {
             result = ret;
         }

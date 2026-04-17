@@ -73,6 +73,23 @@ typedef struct nmo_file_state {
     uint32_t plugin_dep_count;              /**< Number of plugin dependencies */
 } nmo_file_state_t;
 
+typedef struct nmo_session_behavior_interface_diagnostics {
+    int attempted;
+    int available;
+    nmo_status_t status;
+    size_t attempted_count;
+    size_t parsed_count;
+    size_t failed_count;
+    size_t skipped_no_arena_count;
+    size_t allocation_failure_count;
+    nmo_object_id_t first_error_object_id;
+    uint32_t first_error_file_id;
+    uint32_t first_error_chunk_version;
+    uint32_t first_error_data_version;
+    size_t first_error_reader_offset;
+    size_t first_error_chunk_dwords;
+} nmo_session_behavior_interface_diagnostics_t;
+
 /**
  * @brief Create session
  *
@@ -141,7 +158,11 @@ NMO_API nmo_behavior_index_t *nmo_session_get_behavior_index(nmo_session_t *sess
  * @param session Session
  * @return NMO_OK on success, otherwise an NMO_ERR_* code
  */
-NMO_API int nmo_session_ensure_behavior_acceleration(nmo_session_t *session);
+NMO_API nmo_status_t nmo_session_ensure_behavior_acceleration(nmo_session_t *session);
+
+NMO_API void nmo_session_get_behavior_interface_diagnostics(
+    const nmo_session_t *session,
+    nmo_session_behavior_interface_diagnostics_t *out_diag);
 
 /**
  * @brief Get or lazily build the reference graph for this session.
@@ -220,7 +241,7 @@ NMO_API int nmo_session_has_materialized_load_state(const nmo_session_t *session
 /**
  * @brief Execute unified runtime operation.
  */
-NMO_API int nmo_session_execute(
+NMO_API nmo_status_t nmo_session_execute(
     nmo_session_t *session,
     const nmo_runtime_request_t *request,
     nmo_runtime_report_t *out_report);
@@ -228,7 +249,7 @@ NMO_API int nmo_session_execute(
 /**
  * @brief Load file into an existing session via runtime execute.
  */
-NMO_API int nmo_session_load_file(
+NMO_API nmo_status_t nmo_session_load_file(
     nmo_session_t *session,
     const char *filename,
     const nmo_load_options_t *options,
@@ -237,7 +258,7 @@ NMO_API int nmo_session_load_file(
 /**
  * @brief Save session to file via runtime execute.
  */
-NMO_API int nmo_session_save_file(
+NMO_API nmo_status_t nmo_session_save_file(
     nmo_session_t *session,
     const char *filename,
     const nmo_save_options_t *options,
@@ -246,7 +267,7 @@ NMO_API int nmo_session_save_file(
 /**
  * @brief Create object via runtime execute.
  */
-NMO_API int nmo_session_create_object(
+NMO_API nmo_status_t nmo_session_create_object(
     nmo_session_t *session,
     nmo_class_id_t class_id,
     const char *name,
@@ -257,7 +278,7 @@ NMO_API int nmo_session_create_object(
 /**
  * @brief Copy objects via runtime execute.
  */
-NMO_API int nmo_session_copy_objects(
+NMO_API nmo_status_t nmo_session_copy_objects(
     nmo_session_t *session,
     const nmo_object_id_t *object_ids,
     size_t object_count,
@@ -267,7 +288,7 @@ NMO_API int nmo_session_copy_objects(
 /**
  * @brief Destroy objects via runtime execute.
  */
-NMO_API int nmo_session_destroy_objects(
+NMO_API nmo_status_t nmo_session_destroy_objects(
     nmo_session_t *session,
     const nmo_object_id_t *object_ids,
     size_t object_count,
@@ -289,7 +310,7 @@ NMO_API int nmo_session_destroy_objects(
  * @param out_expanded_count Output: number of expanded IDs
  * @return NMO_OK on success
  */
-NMO_API int nmo_session_preview_destroy(
+NMO_API nmo_status_t nmo_session_preview_destroy(
     nmo_session_t *session,
     const nmo_object_id_t *object_ids,
     size_t object_count,
@@ -367,7 +388,7 @@ NMO_API nmo_file_info_t nmo_session_get_file_info(const nmo_session_t *session);
  * @param info File information to set
  * @return NMO_OK on success
  */
-NMO_API int nmo_session_set_file_info(nmo_session_t *session, const nmo_file_info_t *info);
+NMO_API nmo_status_t nmo_session_set_file_info(nmo_session_t *session, const nmo_file_info_t *info);
 
 /**
  * @brief Set manager data (borrowed pointers, arena-allocated)
@@ -380,12 +401,12 @@ NMO_API void nmo_session_set_manager_data(nmo_session_t *session, nmo_manager_da
  * Also triggers plugin dependency diagnostics refresh.
  * @return NMO_OK on success
  */
-NMO_API int nmo_session_set_plugin_dependencies(nmo_session_t *session, nmo_plugin_dep_t *deps, uint32_t count);
+NMO_API nmo_status_t nmo_session_set_plugin_dependencies(nmo_session_t *session, nmo_plugin_dep_t *deps, uint32_t count);
 
 /**
  * @brief Rebuild plugin dependency diagnostics based on current file state.
  */
-NMO_API int nmo_session_refresh_plugin_diagnostics(nmo_session_t *session);
+NMO_API nmo_status_t nmo_session_refresh_plugin_diagnostics(nmo_session_t *session);
 
 /* High-level convenience API */
 
@@ -411,7 +432,7 @@ NMO_API nmo_session_t *nmo_session_load(nmo_context_t *ctx, const char *filename
  * @param filename Output file path
  * @return NMO_OK on success, otherwise an NMO_ERR_* code
  */
-NMO_API int nmo_session_save(nmo_session_t *session, const char *filename);
+NMO_API nmo_status_t nmo_session_save(nmo_session_t *session, const char *filename);
 
 /* Forward declaration */
 typedef struct nmo_object nmo_object_t;
@@ -429,7 +450,7 @@ typedef struct nmo_index_stats nmo_index_stats_t;
  * @param out_count Output object count
  * @return NMO_OK on success, otherwise an NMO_ERR_* code
  */
-NMO_API int nmo_session_get_objects(
+NMO_API nmo_status_t nmo_session_get_objects(
     nmo_session_t *session,
     nmo_object_t ***out_objects,
     size_t *out_count
@@ -479,7 +500,7 @@ NMO_API nmo_object_index_t *nmo_session_get_object_index(const nmo_session_t *se
  * @param flags Index types to rebuild (NMO_INDEX_BUILD_*)
  * @return NMO_OK on success, otherwise an NMO_ERR_* code
  */
-NMO_API int nmo_session_rebuild_indexes(nmo_session_t *session, uint32_t flags);
+NMO_API nmo_status_t nmo_session_rebuild_indexes(nmo_session_t *session, uint32_t flags);
 
 /**
  * @brief Retrieve index statistics when available
@@ -488,7 +509,7 @@ NMO_API int nmo_session_rebuild_indexes(nmo_session_t *session, uint32_t flags);
  * @param stats Output statistics buffer
  * @return NMO_OK on success, NMO_ERR_NOT_FOUND if indexes not built yet
  */
-NMO_API int nmo_session_get_object_index_stats(
+NMO_API nmo_status_t nmo_session_get_object_index_stats(
     const nmo_session_t *session,
     nmo_index_stats_t *stats);
 
@@ -569,13 +590,13 @@ typedef struct nmo_included_file_metadata {
     uint32_t attributes; /**< Use NMO_INCLUDED_FILE_ATTR_* */
 } nmo_included_file_metadata_t;
 
-NMO_API int nmo_session_add_included_file(
+NMO_API nmo_status_t nmo_session_add_included_file(
     nmo_session_t *session,
     const char *name,
     const void *data,
     uint32_t size);
 
-NMO_API int nmo_session_add_included_file_ex(
+NMO_API nmo_status_t nmo_session_add_included_file_ex(
     nmo_session_t *session,
     const char *name,
     const void *data,
@@ -588,7 +609,7 @@ NMO_API int nmo_session_add_included_file_ex(
  * The payload pointer is borrowed (caller owns the memory). Use this for
  * metadata-only entries or when data is already lifetime-managed elsewhere.
  */
-NMO_API int nmo_session_add_included_file_borrowed(
+NMO_API nmo_status_t nmo_session_add_included_file_borrowed(
     nmo_session_t *session,
     const char *name,
     const void *data,
@@ -597,14 +618,14 @@ NMO_API int nmo_session_add_included_file_borrowed(
 /**
  * @brief Add an included file without copying payload data, with metadata.
  */
-NMO_API int nmo_session_add_included_file_borrowed_ex(
+NMO_API nmo_status_t nmo_session_add_included_file_borrowed_ex(
     nmo_session_t *session,
     const char *name,
     const void *data,
     uint32_t size,
     const nmo_included_file_metadata_t *meta);
 
-NMO_API int nmo_session_set_included_file_owners(
+NMO_API nmo_status_t nmo_session_set_included_file_owners(
     nmo_session_t *session,
     uint32_t index,
     const nmo_object_id_t *owner_ids,
@@ -622,7 +643,7 @@ NMO_API nmo_included_file_t *nmo_session_get_included_files(
  * Old data leaks into arena (freed on session destroy).
  * Clears BORROWED flag so save pipeline serializes individually.
  */
-NMO_API int nmo_session_replace_included_file(
+NMO_API nmo_status_t nmo_session_replace_included_file(
     nmo_session_t *session,
     uint32_t index,
     const void *new_data,
@@ -634,7 +655,7 @@ NMO_API int nmo_session_replace_included_file(
  * Shifts subsequent entries down. Invalidates the shadow included-files
  * blob so the save pipeline serializes entries individually.
  */
-NMO_API int nmo_session_remove_included_file(
+NMO_API nmo_status_t nmo_session_remove_included_file(
     nmo_session_t *session,
     uint32_t index);
 
@@ -672,7 +693,7 @@ NMO_API void nmo_session_set_runtime_load_stats(
     nmo_session_t *session,
     const nmo_runtime_load_stats_t *stats);
 
-NMO_API int nmo_session_get_runtime_load_stats(
+NMO_API nmo_status_t nmo_session_get_runtime_load_stats(
     const nmo_session_t *session,
     nmo_runtime_load_stats_t *out_stats);
 

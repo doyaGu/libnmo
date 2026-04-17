@@ -99,7 +99,9 @@ bool nmo_cli_json_write(yyjson_mut_doc *doc, FILE *out, bool pretty) {
         return false;
     }
 
-    yyjson_write_flag flags = pretty ? YYJSON_WRITE_PRETTY : 0;
+    yyjson_write_flag flags = (pretty ? YYJSON_WRITE_PRETTY : 0) |
+                              YYJSON_WRITE_ESCAPE_UNICODE |
+                              YYJSON_WRITE_ALLOW_INVALID_UNICODE;
     size_t len = 0;
     yyjson_write_err err;
     char *json = yyjson_mut_write_opts(doc, flags, NULL, &len, &err);
@@ -123,7 +125,9 @@ char *nmo_cli_json_write_string(yyjson_mut_doc *doc, bool pretty, size_t *out_le
         return NULL;
     }
 
-    yyjson_write_flag flags = pretty ? YYJSON_WRITE_PRETTY : 0;
+    yyjson_write_flag flags = (pretty ? YYJSON_WRITE_PRETTY : 0) |
+                              YYJSON_WRITE_ESCAPE_UNICODE |
+                              YYJSON_WRITE_ALLOW_INVALID_UNICODE;
     return yyjson_mut_write(doc, flags, out_len);
 }
 

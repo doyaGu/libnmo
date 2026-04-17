@@ -49,18 +49,18 @@ nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
     if (path == NULL) {
         return NULL;
     }
-    
+
     nmo_allocator_t alloc = nmo_allocator_default();
     nmo_io_mmap_t *mmap_ctx = (nmo_io_mmap_t *)nmo_alloc(&alloc, sizeof(nmo_io_mmap_t), _Alignof(nmo_io_mmap_t));
     if (mmap_ctx == NULL) {
         return NULL;
     }
     memset(mmap_ctx, 0, sizeof(nmo_io_mmap_t));
-    
+
     mmap_ctx->file_handle = INVALID_HANDLE_VALUE;
     mmap_ctx->mapping_handle = NULL;
     mmap_ctx->data = NULL;
-    
+
     /* Open file for reading */
     mmap_ctx->file_handle = CreateFileA(
         path,
@@ -71,12 +71,12 @@ nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
         FILE_ATTRIBUTE_NORMAL,
         NULL
     );
-    
+
     if (mmap_ctx->file_handle == INVALID_HANDLE_VALUE) {
         nmo_free(&alloc, mmap_ctx);
         return NULL;
     }
-    
+
     /* Get file size */
     LARGE_INTEGER file_size;
     if (!GetFileSizeEx(mmap_ctx->file_handle, &file_size)) {
@@ -84,16 +84,16 @@ nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
         nmo_free(&alloc, mmap_ctx);
         return NULL;
     }
-    
+
     mmap_ctx->size = (size_t)file_size.QuadPart;
-    
+
     /* Handle empty files */
     if (mmap_ctx->size == 0) {
         mmap_ctx->data = NULL;
         mmap_ctx->position = 0;
         return mmap_ctx;
     }
-    
+
     /* Create file mapping */
     mmap_ctx->mapping_handle = CreateFileMappingA(
         mmap_ctx->file_handle,
@@ -103,13 +103,13 @@ nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
         0,
         NULL
     );
-    
+
     if (mmap_ctx->mapping_handle == NULL) {
         CloseHandle(mmap_ctx->file_handle);
         nmo_free(&alloc, mmap_ctx);
         return NULL;
     }
-    
+
     /* Map view of file */
     mmap_ctx->data = MapViewOfFile(
         mmap_ctx->mapping_handle,
@@ -118,14 +118,14 @@ nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
         0,
         0
     );
-    
+
     if (mmap_ctx->data == NULL) {
         CloseHandle(mmap_ctx->mapping_handle);
         CloseHandle(mmap_ctx->file_handle);
         nmo_free(&alloc, mmap_ctx);
         return NULL;
     }
-    
+
     mmap_ctx->position = 0;
     return mmap_ctx;
 }
@@ -134,15 +134,15 @@ void nmo_io_mmap_close(nmo_io_mmap_t *mmap_ctx) {
     if (mmap_ctx == NULL) {
         return;
     }
-    
+
     if (mmap_ctx->data != NULL) {
         UnmapViewOfFile(mmap_ctx->data);
     }
-    
+
     if (mmap_ctx->mapping_handle != NULL) {
         CloseHandle(mmap_ctx->mapping_handle);
     }
-    
+
     if (mmap_ctx->file_handle != INVALID_HANDLE_VALUE) {
         CloseHandle(mmap_ctx->file_handle);
     }
@@ -161,24 +161,24 @@ nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
     if (path == NULL) {
         return NULL;
     }
-    
+
     nmo_allocator_t alloc = nmo_allocator_default();
     nmo_io_mmap_t *mmap_ctx = (nmo_io_mmap_t *)nmo_alloc(&alloc, sizeof(nmo_io_mmap_t), _Alignof(nmo_io_mmap_t));
     if (mmap_ctx == NULL) {
         return NULL;
     }
     memset(mmap_ctx, 0, sizeof(nmo_io_mmap_t));
-    
+
     mmap_ctx->fd = -1;
     mmap_ctx->data = MAP_FAILED;
-    
+
     /* Open file for reading */
     mmap_ctx->fd = open(path, O_RDONLY);
     if (mmap_ctx->fd < 0) {
         nmo_free(&alloc, mmap_ctx);
         return NULL;
     }
-    
+
     /* Get file size */
     struct stat st;
     if (fstat(mmap_ctx->fd, &st) != 0) {
@@ -186,16 +186,16 @@ nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
         nmo_free(&alloc, mmap_ctx);
         return NULL;
     }
-    
+
     mmap_ctx->size = (size_t)st.st_size;
-    
+
     /* Handle empty files */
     if (mmap_ctx->size == 0) {
         mmap_ctx->data = NULL;
         mmap_ctx->position = 0;
         return mmap_ctx;
     }
-    
+
     /* Memory map the file */
     mmap_ctx->data = mmap(NULL, mmap_ctx->size, PROT_READ, MAP_PRIVATE, mmap_ctx->fd, 0);
     if (mmap_ctx->data == MAP_FAILED) {
@@ -203,7 +203,7 @@ nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
         nmo_free(&alloc, mmap_ctx);
         return NULL;
     }
-    
+
     mmap_ctx->position = 0;
     return mmap_ctx;
 }
@@ -212,11 +212,11 @@ void nmo_io_mmap_close(nmo_io_mmap_t *mmap_ctx) {
     if (mmap_ctx == NULL) {
         return;
     }
-    
+
     if (mmap_ctx->data != NULL && mmap_ctx->data != MAP_FAILED && mmap_ctx->size > 0) {
         munmap(mmap_ctx->data, mmap_ctx->size);
     }
-    
+
     if (mmap_ctx->fd >= 0) {
         close(mmap_ctx->fd);
     }
@@ -253,16 +253,16 @@ size_t nmo_io_mmap_read(nmo_io_mmap_t *mmap_ctx, void *buffer, size_t size) {
     if (mmap_ctx == NULL || buffer == NULL || mmap_ctx->data == NULL) {
         return 0;
     }
-    
+
     /* Calculate available bytes */
     size_t available = mmap_ctx->size - mmap_ctx->position;
     size_t to_read = (size < available) ? size : available;
-    
+
     if (to_read > 0) {
         memcpy(buffer, (const char *)mmap_ctx->data + mmap_ctx->position, to_read);
         mmap_ctx->position += to_read;
     }
-    
+
     return to_read;
 }
 
@@ -270,9 +270,9 @@ int64_t nmo_io_mmap_seek(nmo_io_mmap_t *mmap_ctx, int64_t offset, int whence) {
     if (mmap_ctx == NULL) {
         return -1;
     }
-    
+
     int64_t new_pos;
-    
+
     switch (whence) {
         case SEEK_SET:
             new_pos = offset;
@@ -286,12 +286,12 @@ int64_t nmo_io_mmap_seek(nmo_io_mmap_t *mmap_ctx, int64_t offset, int whence) {
         default:
             return -1;
     }
-    
+
     /* Bounds check */
     if (new_pos < 0 || (size_t)new_pos > mmap_ctx->size) {
         return -1;
     }
-    
+
     mmap_ctx->position = (size_t)new_pos;
     return new_pos;
 }
@@ -307,12 +307,12 @@ const void *nmo_io_mmap_ptr_at(const nmo_io_mmap_t *mmap_ctx, size_t offset, siz
     if (mmap_ctx == NULL || mmap_ctx->data == NULL) {
         return NULL;
     }
-    
+
     /* Overflow-safe bounds check: ensure offset <= total AND size <= total - offset */
     if (offset > mmap_ctx->size || size > mmap_ctx->size - offset) {
         return NULL;
     }
-    
+
     return (const char *)mmap_ctx->data + offset;
 }
 
@@ -327,22 +327,22 @@ typedef struct mmap_io_handle {
     nmo_io_mmap_t *mmap;
 } mmap_io_handle_t;
 
-static int mmap_io_read(void *handle, void *buffer, size_t size, size_t *bytes_read) {
+static nmo_status_t mmap_io_read(void *handle, void *buffer, size_t size, size_t *bytes_read) {
     if (handle == NULL || buffer == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    
+
     mmap_io_handle_t *h = (mmap_io_handle_t *)handle;
     size_t nread = nmo_io_mmap_read(h->mmap, buffer, size);
-    
+
     if (bytes_read != NULL) {
         *bytes_read = nread;
     }
-    
+
     return NMO_OK;
 }
 
-static int mmap_io_write(void *handle, const void *buffer, size_t size) {
+static nmo_status_t mmap_io_write(void *handle, const void *buffer, size_t size) {
     (void)handle;
     (void)buffer;
     (void)size;
@@ -350,13 +350,13 @@ static int mmap_io_write(void *handle, const void *buffer, size_t size) {
     return NMO_ERR_CANT_WRITE_FILE;
 }
 
-static int mmap_io_seek(void *handle, int64_t offset, nmo_seek_origin_t origin) {
+static nmo_status_t mmap_io_seek(void *handle, int64_t offset, nmo_seek_origin_t origin) {
     if (handle == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    
+
     mmap_io_handle_t *h = (mmap_io_handle_t *)handle;
-    
+
     int whence;
     switch (origin) {
         case NMO_SEEK_SET: whence = SEEK_SET; break;
@@ -364,12 +364,12 @@ static int mmap_io_seek(void *handle, int64_t offset, nmo_seek_origin_t origin) 
         case NMO_SEEK_END: whence = SEEK_END; break;
         default: return NMO_ERR_INVALID_ARGUMENT;
     }
-    
+
     int64_t result = nmo_io_mmap_seek(h->mmap, offset, whence);
     if (result < 0) {
         return NMO_ERR_INVALID_OFFSET;
     }
-    
+
     return NMO_OK;
 }
 
@@ -377,27 +377,27 @@ static int64_t mmap_io_tell(void *handle) {
     if (handle == NULL) {
         return -1;
     }
-    
+
     mmap_io_handle_t *h = (mmap_io_handle_t *)handle;
     return nmo_io_mmap_tell(h->mmap);
 }
 
-static int mmap_io_flush(void *handle) {
+static nmo_status_t mmap_io_flush(void *handle) {
     (void)handle;
     return NMO_OK;  /* No-op for read-only mmap */
 }
 
-static int mmap_io_close(void *handle) {
+static nmo_status_t mmap_io_close(void *handle) {
     if (handle == NULL) {
         return NMO_OK;
     }
-    
+
     mmap_io_handle_t *h = (mmap_io_handle_t *)handle;
     nmo_io_mmap_close(h->mmap);
-    
+
     nmo_allocator_t alloc = nmo_allocator_default();
     nmo_free(&alloc, h);
-    
+
     return NMO_OK;
 }
 
@@ -405,13 +405,13 @@ nmo_io_interface_t *nmo_mmap_io_open(const char *path) {
     if (path == NULL) {
         return NULL;
     }
-    
+
     /* Open memory-mapped file */
     nmo_io_mmap_t *mmap_ctx = nmo_io_mmap_open(path);
     if (mmap_ctx == NULL) {
         return NULL;
     }
-    
+
     /* Create handle */
     nmo_allocator_t alloc = nmo_allocator_default();
     mmap_io_handle_t *handle = (mmap_io_handle_t *)nmo_alloc(&alloc, sizeof(mmap_io_handle_t), sizeof(void *));
@@ -420,7 +420,7 @@ nmo_io_interface_t *nmo_mmap_io_open(const char *path) {
         return NULL;
     }
     handle->mmap = mmap_ctx;
-    
+
     /* Allocate IO interface */
     nmo_io_interface_t *io = (nmo_io_interface_t *)nmo_alloc(&alloc, sizeof(nmo_io_interface_t), sizeof(void *));
     if (io == NULL) {
@@ -428,7 +428,7 @@ nmo_io_interface_t *nmo_mmap_io_open(const char *path) {
         nmo_free(&alloc, handle);
         return NULL;
     }
-    
+
     io->read = mmap_io_read;
     io->write = mmap_io_write;
     io->seek = mmap_io_seek;
@@ -436,6 +436,6 @@ nmo_io_interface_t *nmo_mmap_io_open(const char *path) {
     io->flush = mmap_io_flush;
     io->close = mmap_io_close;
     io->handle = handle;
-    
+
     return io;
 }

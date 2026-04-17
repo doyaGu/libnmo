@@ -1,4 +1,4 @@
-﻿#include "format/nmo_chunk_writer.h"
+#include "format/nmo_chunk_writer.h"
 #include "format/nmo_id_remap.h"
 #include "core/nmo_utils.h"
 #include "core/nmo_allocator.h"
@@ -365,7 +365,7 @@ void nmo_chunk_writer_start(nmo_chunk_writer_t *w, nmo_class_id_t class_id, uint
     w->finalized = 0;
 }
 
-int nmo_chunk_writer_write_byte(nmo_chunk_writer_t *w, uint8_t value) {
+nmo_status_t nmo_chunk_writer_write_byte(nmo_chunk_writer_t *w, uint8_t value) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -380,7 +380,7 @@ int nmo_chunk_writer_write_byte(nmo_chunk_writer_t *w, uint8_t value) {
     return NMO_OK;
 }
 
-int nmo_chunk_writer_write_word(nmo_chunk_writer_t *w, uint16_t value) {
+nmo_status_t nmo_chunk_writer_write_word(nmo_chunk_writer_t *w, uint16_t value) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -395,7 +395,7 @@ int nmo_chunk_writer_write_word(nmo_chunk_writer_t *w, uint16_t value) {
     return NMO_OK;
 }
 
-int nmo_chunk_writer_write_dword(nmo_chunk_writer_t *w, uint32_t value) {
+nmo_status_t nmo_chunk_writer_write_dword(nmo_chunk_writer_t *w, uint32_t value) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -409,7 +409,7 @@ int nmo_chunk_writer_write_dword(nmo_chunk_writer_t *w, uint32_t value) {
     return NMO_OK;
 }
 
-int nmo_chunk_writer_write_int(nmo_chunk_writer_t *w, int32_t value) {
+nmo_status_t nmo_chunk_writer_write_int(nmo_chunk_writer_t *w, int32_t value) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -426,7 +426,7 @@ int nmo_chunk_writer_write_int(nmo_chunk_writer_t *w, int32_t value) {
     return NMO_OK;
 }
 
-int nmo_chunk_writer_write_float(nmo_chunk_writer_t *w, float value) {
+nmo_status_t nmo_chunk_writer_write_float(nmo_chunk_writer_t *w, float value) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -443,7 +443,7 @@ int nmo_chunk_writer_write_float(nmo_chunk_writer_t *w, float value) {
     return NMO_OK;
 }
 
-int nmo_chunk_writer_write_guid(nmo_chunk_writer_t *w, nmo_guid_t guid) {
+nmo_status_t nmo_chunk_writer_write_guid(nmo_chunk_writer_t *w, nmo_guid_t guid) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -458,7 +458,7 @@ int nmo_chunk_writer_write_guid(nmo_chunk_writer_t *w, nmo_guid_t guid) {
     return NMO_OK;
 }
 
-int nmo_chunk_writer_write_bytes(nmo_chunk_writer_t *w, const void *data, size_t bytes) {
+nmo_status_t nmo_chunk_writer_write_bytes(nmo_chunk_writer_t *w, const void *data, size_t bytes) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -501,7 +501,7 @@ int nmo_chunk_writer_write_bytes(nmo_chunk_writer_t *w, const void *data, size_t
  * @param data Source data
  * @return NMO_OK on success, error code on failure
  */
-int nmo_chunk_writer_write_buffer_nosize(nmo_chunk_writer_t *w, size_t bytes, const void *data) {
+nmo_status_t nmo_chunk_writer_write_buffer_nosize(nmo_chunk_writer_t *w, size_t bytes, const void *data) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -529,7 +529,7 @@ int nmo_chunk_writer_write_buffer_nosize(nmo_chunk_writer_t *w, size_t bytes, co
     return NMO_OK;
 }
 
-int nmo_chunk_writer_write_buffer_nosize_lendian16(nmo_chunk_writer_t *w, size_t value_count, const void *data) {
+nmo_status_t nmo_chunk_writer_write_buffer_nosize_lendian16(nmo_chunk_writer_t *w, size_t value_count, const void *data) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -586,7 +586,7 @@ uint32_t *nmo_chunk_writer_lock_write_buffer(nmo_chunk_writer_t *w, size_t dword
     return ptr;
 }
 
-int nmo_chunk_writer_write_string(nmo_chunk_writer_t *w, const char *str) {
+nmo_status_t nmo_chunk_writer_write_string(nmo_chunk_writer_t *w, const char *str) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -618,7 +618,7 @@ int nmo_chunk_writer_write_string(nmo_chunk_writer_t *w, const char *str) {
     return NMO_OK;
 }
 
-int nmo_chunk_writer_write_buffer(nmo_chunk_writer_t *w, const void *data, size_t size) {
+nmo_status_t nmo_chunk_writer_write_buffer(nmo_chunk_writer_t *w, const void *data, size_t size) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -655,7 +655,7 @@ int nmo_chunk_writer_write_buffer(nmo_chunk_writer_t *w, const void *data, size_
  * @param id Object ID to write
  * @return NMO_OK on success, error code on failure
  */
-int nmo_chunk_writer_write_object_id(nmo_chunk_writer_t *w, nmo_object_id_t id) {
+nmo_status_t nmo_chunk_writer_write_object_id(nmo_chunk_writer_t *w, nmo_object_id_t id) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -705,7 +705,7 @@ int nmo_chunk_writer_write_object_id(nmo_chunk_writer_t *w, nmo_object_id_t id) 
     return NMO_OK;
 }
 
-int nmo_chunk_writer_start_object_sequence(nmo_chunk_writer_t *w, size_t count) {
+nmo_status_t nmo_chunk_writer_start_object_sequence(nmo_chunk_writer_t *w, size_t count) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -736,7 +736,7 @@ int nmo_chunk_writer_start_object_sequence(nmo_chunk_writer_t *w, size_t count) 
     return NMO_OK;
 }
 
-int nmo_chunk_writer_start_manager_sequence(nmo_chunk_writer_t *w,
+nmo_status_t nmo_chunk_writer_start_manager_sequence(nmo_chunk_writer_t *w,
                                             nmo_guid_t manager,
                                             size_t count) {
     if (w == NULL || w->finalized) {
@@ -775,7 +775,7 @@ int nmo_chunk_writer_start_manager_sequence(nmo_chunk_writer_t *w,
  * @param count Number of sub-chunks in sequence
  * @return NMO_OK on success, error code on failure
  */
-int nmo_chunk_writer_start_subchunk_sequence(nmo_chunk_writer_t *w, size_t count) {
+nmo_status_t nmo_chunk_writer_start_subchunk_sequence(nmo_chunk_writer_t *w, size_t count) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -827,7 +827,7 @@ int nmo_chunk_writer_start_subchunk_sequence(nmo_chunk_writer_t *w, size_t count
  * @param sub Sub-chunk to write (can be NULL for empty slot)
  * @return NMO_OK on success, error code on failure
  */
-int nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_chunk_t *sub) {
+nmo_status_t nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_chunk_t *sub) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -996,7 +996,7 @@ int nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_chunk_t *su
  * @param value Value to write
  * @return NMO_OK on success, error code on failure
  */
-int nmo_chunk_writer_write_manager_int(nmo_chunk_writer_t *w, nmo_guid_t manager, int32_t value) {
+nmo_status_t nmo_chunk_writer_write_manager_int(nmo_chunk_writer_t *w, nmo_guid_t manager, int32_t value) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1041,7 +1041,7 @@ int nmo_chunk_writer_write_manager_int(nmo_chunk_writer_t *w, nmo_guid_t manager
  * @param src_data Source data pointer (can be NULL for empty array)
  * @return NMO_OK on success, error code on failure
  */
-int nmo_chunk_writer_write_array_lendian(nmo_chunk_writer_t *w, int element_count, int element_size,
+nmo_status_t nmo_chunk_writer_write_array_lendian(nmo_chunk_writer_t *w, int element_count, int element_size,
                                          const void *src_data) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -1104,7 +1104,7 @@ int nmo_chunk_writer_write_array_lendian(nmo_chunk_writer_t *w, int element_coun
     return NMO_OK;
 }
 
-int nmo_chunk_writer_write_array_lendian16(nmo_chunk_writer_t *w, int element_count, int element_size,
+nmo_status_t nmo_chunk_writer_write_array_lendian16(nmo_chunk_writer_t *w, int element_count, int element_size,
                                            const void *src_data) {
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     if (w == NULL || w->finalized) {
@@ -1135,7 +1135,7 @@ int nmo_chunk_writer_write_array_lendian16(nmo_chunk_writer_t *w, int element_co
 #endif
 }
 
-int nmo_chunk_writer_write_dword_as_words(nmo_chunk_writer_t *w, uint32_t value) {
+nmo_status_t nmo_chunk_writer_write_dword_as_words(nmo_chunk_writer_t *w, uint32_t value) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1157,7 +1157,7 @@ int nmo_chunk_writer_write_dword_as_words(nmo_chunk_writer_t *w, uint32_t value)
     return NMO_OK;
 }
 
-int nmo_chunk_writer_write_array_dword_as_words(nmo_chunk_writer_t *w,
+nmo_status_t nmo_chunk_writer_write_array_dword_as_words(nmo_chunk_writer_t *w,
                                                 const uint32_t *values,
                                                 size_t count) {
     if (w == NULL || w->finalized) {
@@ -1182,7 +1182,7 @@ int nmo_chunk_writer_write_array_dword_as_words(nmo_chunk_writer_t *w,
     return NMO_OK;
 }
 
-int nmo_chunk_writer_write_buffer_lendian16(nmo_chunk_writer_t *w, size_t bytes, const void *data) {
+nmo_status_t nmo_chunk_writer_write_buffer_lendian16(nmo_chunk_writer_t *w, size_t bytes, const void *data) {
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     if (w == NULL || w->finalized || data == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -1223,7 +1223,7 @@ int nmo_chunk_writer_write_buffer_lendian16(nmo_chunk_writer_t *w, size_t bytes,
  * @param identifier Identifier value to write
  * @return NMO_OK on success, error code otherwise
  */
-int nmo_chunk_writer_write_identifier(nmo_chunk_writer_t *w, uint32_t identifier) {
+nmo_status_t nmo_chunk_writer_write_identifier(nmo_chunk_writer_t *w, uint32_t identifier) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1324,7 +1324,7 @@ nmo_patch_token_t nmo_chunk_writer_reserve_dwords(nmo_chunk_writer_t *w, size_t 
     return token;
 }
 
-int nmo_chunk_writer_patch_u32(nmo_chunk_writer_t *w, nmo_patch_token_t token, uint32_t value) {
+nmo_status_t nmo_chunk_writer_patch_u32(nmo_chunk_writer_t *w, nmo_patch_token_t token, uint32_t value) {
     if (w == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1345,7 +1345,7 @@ int nmo_chunk_writer_patch_u32(nmo_chunk_writer_t *w, nmo_patch_token_t token, u
     return NMO_OK;
 }
 
-int nmo_chunk_writer_patch_u64(nmo_chunk_writer_t *w, nmo_patch_token_t token, uint64_t value) {
+nmo_status_t nmo_chunk_writer_patch_u64(nmo_chunk_writer_t *w, nmo_patch_token_t token, uint64_t value) {
     if (w == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1430,7 +1430,7 @@ void nmo_chunk_writer_destroy(nmo_chunk_writer_t *w) {
 
 // Math type write functions
 
-int nmo_chunk_writer_write_vector2(nmo_chunk_writer_t *w, const nmo_vector2_t *v) {
+nmo_status_t nmo_chunk_writer_write_vector2(nmo_chunk_writer_t *w, const nmo_vector2_t *v) {
     if (w == NULL || v == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1449,7 +1449,7 @@ int nmo_chunk_writer_write_vector2(nmo_chunk_writer_t *w, const nmo_vector2_t *v
     return NMO_OK;
 }
 
-int nmo_chunk_writer_write_vector(nmo_chunk_writer_t *w, const nmo_vector_t *v) {
+nmo_status_t nmo_chunk_writer_write_vector(nmo_chunk_writer_t *w, const nmo_vector_t *v) {
     if (w == NULL || v == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1469,7 +1469,7 @@ int nmo_chunk_writer_write_vector(nmo_chunk_writer_t *w, const nmo_vector_t *v) 
     return NMO_OK;
 }
 
-int nmo_chunk_writer_write_vector4(nmo_chunk_writer_t *w, const nmo_vector4_t *v) {
+nmo_status_t nmo_chunk_writer_write_vector4(nmo_chunk_writer_t *w, const nmo_vector4_t *v) {
     if (w == NULL || v == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1490,7 +1490,7 @@ int nmo_chunk_writer_write_vector4(nmo_chunk_writer_t *w, const nmo_vector4_t *v
     return NMO_OK;
 }
 
-int nmo_chunk_writer_write_matrix(nmo_chunk_writer_t *w, const nmo_matrix_t *m) {
+nmo_status_t nmo_chunk_writer_write_matrix(nmo_chunk_writer_t *w, const nmo_matrix_t *m) {
     if (w == NULL || m == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1507,7 +1507,7 @@ int nmo_chunk_writer_write_matrix(nmo_chunk_writer_t *w, const nmo_matrix_t *m) 
     return NMO_OK;
 }
 
-int nmo_chunk_writer_write_quaternion(nmo_chunk_writer_t *w, const nmo_quaternion_t *q) {
+nmo_status_t nmo_chunk_writer_write_quaternion(nmo_chunk_writer_t *w, const nmo_quaternion_t *q) {
     if (w == NULL || q == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1528,7 +1528,7 @@ int nmo_chunk_writer_write_quaternion(nmo_chunk_writer_t *w, const nmo_quaternio
     return NMO_OK;
 }
 
-int nmo_chunk_writer_write_color(nmo_chunk_writer_t *w, const nmo_color_t *c) {
+nmo_status_t nmo_chunk_writer_write_color(nmo_chunk_writer_t *w, const nmo_color_t *c) {
     if (w == NULL || c == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1553,7 +1553,7 @@ int nmo_chunk_writer_write_color(nmo_chunk_writer_t *w, const nmo_color_t *c) {
  * Version Context Stack Implementation
  * ======================================================================== */
 
-int nmo_chunk_writer_push_context(nmo_chunk_writer_t *w, uint32_t version) {
+nmo_status_t nmo_chunk_writer_push_context(nmo_chunk_writer_t *w, uint32_t version) {
     if (w == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1574,7 +1574,7 @@ int nmo_chunk_writer_push_context(nmo_chunk_writer_t *w, uint32_t version) {
     return NMO_OK;
 }
 
-int nmo_chunk_writer_pop_context(nmo_chunk_writer_t *w) {
+nmo_status_t nmo_chunk_writer_pop_context(nmo_chunk_writer_t *w) {
     if (w == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1662,7 +1662,7 @@ void nmo_chunk_writer_begin_intlist(nmo_chunk_writer_t *w,
 #endif
 }
 
-int nmo_chunk_writer_write_object_id_audited(nmo_chunk_writer_t *w, nmo_object_id_t id) {
+nmo_status_t nmo_chunk_writer_write_object_id_audited(nmo_chunk_writer_t *w, nmo_object_id_t id) {
     if (w == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1671,7 +1671,7 @@ int nmo_chunk_writer_write_object_id_audited(nmo_chunk_writer_t *w, nmo_object_i
     return nmo_chunk_writer_write_object_id(w, id);
 }
 
-int nmo_chunk_writer_end_intlist(nmo_chunk_writer_t *w) {
+nmo_status_t nmo_chunk_writer_end_intlist(nmo_chunk_writer_t *w) {
 #ifndef NDEBUG
     if (w == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;

@@ -269,7 +269,7 @@ static nmo_status_t nmo_ref_enumerate_struct_arrays(
                 if (st != NMO_OK) return st;
             }
         }
-        /* T* pointer array with companion _count field */
+        /* T* pointer array with metadata-declared count field */
         else if (field->size == sizeof(void *)) {
             const void *ptr = *(const void *const *)field_ptr;
             if (!ptr) continue;

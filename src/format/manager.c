@@ -13,7 +13,7 @@
  */
 nmo_manager_t *nmo_manager_create(nmo_guid_t guid, const char *name, nmo_plugin_category_t category) {
     nmo_allocator_t alloc = nmo_allocator_default();
-    
+
     nmo_manager_t *manager = (nmo_manager_t *) nmo_alloc(&alloc, sizeof(nmo_manager_t), _Alignof(nmo_manager_t));
     if (manager == NULL) {
         return NULL;
@@ -54,7 +54,7 @@ void nmo_manager_destroy(nmo_manager_t *manager) {
 /**
  * Set manager user data
  */
-int nmo_manager_set_user_data(nmo_manager_t *manager, void *user_data) {
+nmo_status_t nmo_manager_set_user_data(nmo_manager_t *manager, void *user_data) {
     if (manager == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -66,7 +66,7 @@ int nmo_manager_set_user_data(nmo_manager_t *manager, void *user_data) {
 /**
  * Set event hook
  */
-int nmo_manager_set_on_event_hook(nmo_manager_t *manager, nmo_manager_on_event_fn hook) {
+nmo_status_t nmo_manager_set_on_event_hook(nmo_manager_t *manager, nmo_manager_on_event_fn hook) {
     if (manager == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -78,7 +78,7 @@ int nmo_manager_set_on_event_hook(nmo_manager_t *manager, nmo_manager_on_event_f
 /**
  * Dispatch event
  */
-int nmo_manager_invoke_event(
+nmo_status_t nmo_manager_invoke_event(
     nmo_manager_t *manager,
     void *session,
     const nmo_runtime_event_ctx_t *ctx) {
