@@ -262,13 +262,6 @@ NMO_API nmo_status_t nmo_arena_array_clone(const nmo_arena_array_t *src,
  */
 NMO_API void nmo_arena_array_reset(nmo_arena_array_t *array);
 
-/**
- * @brief Release bookkeeping and reset the array (deprecated name).
- *
- * Use nmo_arena_array_reset() for clearer semantics.
- */
-NMO_API void nmo_arena_array_dispose(nmo_arena_array_t *array);
-
 /* Accessor functions to avoid direct struct access */
 
 /**

@@ -1161,16 +1161,6 @@ NMO_API nmo_status_t nmo_chunk_compress_if_beneficial(nmo_chunk_t *chunk,
  */
 NMO_API nmo_status_t nmo_chunk_decompress(nmo_chunk_t *chunk);
 
-/**
- * @brief Legacy helper that forwards to nmo_chunk_compress().
- */
-NMO_API nmo_status_t nmo_chunk_pack(nmo_chunk_t *chunk, int compression_level);
-
-/**
- * @brief Legacy helper that forwards to nmo_chunk_decompress().
- */
-NMO_API nmo_status_t nmo_chunk_unpack(nmo_chunk_t *chunk);
-
 // =============================================================================
 // ID REMAPPING
 // =============================================================================

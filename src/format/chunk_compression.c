@@ -233,11 +233,3 @@ nmo_status_t nmo_chunk_decompress(nmo_chunk_t *chunk) {
 
     NMO_RETURN_OK();
 }
-
-nmo_status_t nmo_chunk_pack(nmo_chunk_t *chunk, int compression_level) {
-    return nmo_chunk_compress(chunk, compression_level);
-}
-
-nmo_status_t nmo_chunk_unpack(nmo_chunk_t *chunk) {
-    return nmo_chunk_decompress(chunk);
-}

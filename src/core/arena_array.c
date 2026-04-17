@@ -561,10 +561,6 @@ void nmo_arena_array_reset(nmo_arena_array_t *array) {
     array->capacity = 0;
 }
 
-void nmo_arena_array_dispose(nmo_arena_array_t *array) {
-    nmo_arena_array_reset(array);
-}
-
 /* Accessor functions */
 
 size_t nmo_arena_array_size(const nmo_arena_array_t *array) {

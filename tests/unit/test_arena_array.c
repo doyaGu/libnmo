@@ -606,7 +606,7 @@ TEST(buffer, lifecycle_dispose_callbacks) {
     ASSERT_EQ(NMO_OK, nmo_arena_array_pop(&buffer, NULL));
     ASSERT_EQ(18u, disposed_total);
 
-    nmo_arena_array_dispose(&buffer);
+    nmo_arena_array_reset(&buffer);
     nmo_arena_destroy(arena);
 }
 
@@ -1407,4 +1407,3 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(buffer, stress_append_many_elements);
     REGISTER_TEST(buffer, stress_multiple_buffers);
 TEST_MAIN_END()
-

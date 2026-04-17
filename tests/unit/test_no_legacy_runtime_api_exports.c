@@ -354,6 +354,19 @@ TEST(no_legacy_runtime_api_exports, ref_graph_legacy_short_names_are_removed) {
     }
 }
 
+TEST(no_legacy_runtime_api_exports, deprecated_public_helper_aliases_are_removed) {
+    assert_file_has_no_substring("include/core/nmo_arena_array.h", "nmo_arena_array_dispose(");
+    assert_file_has_no_substring("src/core/arena_array.c", "nmo_arena_array_dispose(");
+    assert_file_has_no_substring("tests/unit/test_arena_array.c", "nmo_arena_array_dispose(");
+
+    assert_file_has_no_substring("include/format/nmo_chunk_api.h", "nmo_chunk_pack(");
+    assert_file_has_no_substring("include/format/nmo_chunk_api.h", "nmo_chunk_unpack(");
+    assert_file_has_no_substring("src/format/chunk_compression.c", "nmo_chunk_pack(");
+    assert_file_has_no_substring("src/format/chunk_compression.c", "nmo_chunk_unpack(");
+    assert_file_has_no_substring("tests/unit/test_chunk_api.c", "nmo_chunk_pack(");
+    assert_file_has_no_substring("tests/unit/test_chunk_api.c", "nmo_chunk_unpack(");
+}
+
 TEST(no_legacy_runtime_api_exports, type_guid_compat_aliases_are_removed) {
     assert_file_has_no_substring("include/type/nmo_type_guids.h", "nmo_type_guid_compat.h");
     assert_file_not_found("include/type/nmo_type_guid_compat.h");
@@ -1154,6 +1167,7 @@ REGISTER_TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runt
 REGISTER_TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_pointer_state);
 REGISTER_TEST(no_legacy_runtime_api_exports, runtime_graph_compatibility_api_is_removed);
 REGISTER_TEST(no_legacy_runtime_api_exports, ref_graph_legacy_short_names_are_removed);
+REGISTER_TEST(no_legacy_runtime_api_exports, deprecated_public_helper_aliases_are_removed);
 REGISTER_TEST(no_legacy_runtime_api_exports, type_guid_compat_aliases_are_removed);
 REGISTER_TEST(no_legacy_runtime_api_exports, session_id_remap_compat_layer_is_removed);
 REGISTER_TEST(no_legacy_runtime_api_exports, partial_load_state_setter_is_not_public);

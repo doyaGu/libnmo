@@ -932,16 +932,16 @@ TEST(chunk_api, compression) {
     
     size_t original_size = nmo_chunk_get_data_size(chunk) / 4; // Convert bytes to DWORDs
     
-    // Pack
-    result = nmo_chunk_pack(chunk, 6);
+    // Compress
+    result = nmo_chunk_compress(chunk, 6);
     ASSERT_EQ(result, NMO_OK);
     // Note: Can't directly access chunk_options or unpack_size
     // Verify compression worked by checking that data size changed
     size_t packed_size = nmo_chunk_get_data_size(chunk) / 4; // Convert bytes to DWORDs
     ASSERT_LT(packed_size, original_size); // Should compress
     
-    // Unpack
-    result = nmo_chunk_unpack(chunk);
+    // Decompress
+    result = nmo_chunk_decompress(chunk);
     ASSERT_EQ(result, NMO_OK);
     // Note: Can't directly access chunk_options
     // Verify unpack worked by checking data size is restored
