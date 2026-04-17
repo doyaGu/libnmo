@@ -5,11 +5,10 @@
 
 #include "nmo_opt.h"
 #include "nmo_tool_common.h"
+#include "core/nmo_parse.h"
 
-#include <errno.h>
 #include <limits.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 /**
@@ -131,16 +130,13 @@ int nmo_opt_parse(int argc, char **argv,
             } else {
                 val_str = argv[++i];
             }
-            char *end = NULL;
-            errno = 0;
-            long lv = strtol(val_str, &end, 0);
-            if (end == val_str || *end != '\0' || errno == ERANGE ||
-                lv < INT32_MIN || lv > INT32_MAX) {
+            int32_t parsed = 0;
+            if (nmo_parse_i32_range_base(val_str, 0, INT32_MIN, INT32_MAX, &parsed) != NMO_OK) {
                 fprintf(stderr, "Error: Invalid value for %s: '%s'\n",
                         defs[idx].long_name, val_str);
                 return -1;
             }
-            result->vals[idx].val.i = (int32_t)lv;
+            result->vals[idx].val.i = parsed;
             break;
         }
 
@@ -154,15 +150,13 @@ int nmo_opt_parse(int argc, char **argv,
             } else {
                 val_str = argv[++i];
             }
-            char *end = NULL;
-            errno = 0;
-            float fv = strtof(val_str, &end);
-            if (end == val_str || *end != '\0' || errno == ERANGE) {
+            float parsed = 0.0f;
+            if (nmo_parse_f32(val_str, &parsed) != NMO_OK) {
                 fprintf(stderr, "Error: Invalid value for %s: '%s'\n",
                         defs[idx].long_name, val_str);
                 return -1;
             }
-            result->vals[idx].val.f = fv;
+            result->vals[idx].val.f = parsed;
             break;
         }
         }

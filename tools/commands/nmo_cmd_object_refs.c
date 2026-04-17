@@ -16,6 +16,7 @@
 #include "session/nmo_session.h"
 #include "session/nmo_runtime_delete.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_parse.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
@@ -135,10 +136,9 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
     /* Find the object ID among positional args (first numeric value) */
     nmo_object_id_t object_id = 0;
     for (size_t i = 0; i < r.pos_count; ++i) {
-        char *endptr = NULL;
-        unsigned long id = strtoul(r.pos_args[i], &endptr, 10);
-        if (endptr && *endptr == '\0' && id > 0 && id <= UINT32_MAX) {
-            object_id = (nmo_object_id_t)id;
+        nmo_object_id_t id = 0;
+        if (nmo_parse_object_id(r.pos_args[i], &id) == NMO_OK && id > 0) {
+            object_id = id;
             break;
         }
     }
@@ -269,10 +269,9 @@ int nmo_cmd_object_impact(int argc, char **argv, const nmo_cli_global_opts_t *gl
     /* Find the object ID among positional args */
     nmo_object_id_t object_id = 0;
     for (size_t i = 0; i < r.pos_count; ++i) {
-        char *endptr = NULL;
-        unsigned long id = strtoul(r.pos_args[i], &endptr, 10);
-        if (endptr && *endptr == '\0' && id > 0 && id <= UINT32_MAX) {
-            object_id = (nmo_object_id_t)id;
+        nmo_object_id_t id = 0;
+        if (nmo_parse_object_id(r.pos_args[i], &id) == NMO_OK && id > 0) {
+            object_id = id;
             break;
         }
     }

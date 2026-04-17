@@ -1,8 +1,8 @@
 #include "dsl/nmo_dsl_lex.h"
+#include "core/nmo_parse.h"
 
 #include <ctype.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 static bool is_ident_start(char c) {
@@ -257,10 +257,18 @@ void nmo_dsl_lexer_next(nmo_dsl_lexer_t *lx) {
             }
             memcpy(tmp, s, n);
             tmp[n] = '\0';
+            int64_t parsed = 0;
+            if (nmo_parse_i64_range_base(tmp, 16, INT64_MIN, INT64_MAX, &parsed) != NMO_OK) {
+                (void)snprintf(lx->err, sizeof(lx->err), "invalid hex integer");
+                lx->tok.kind = NMO_DSL_TOK_ERROR;
+                lx->tok.start = s; lx->tok.len = 0;
+                lx->tok.line = tok_line; lx->tok.col = tok_col; lx->tok.offset = tok_offset;
+                return;
+            }
             lx->tok.kind = NMO_DSL_TOK_HEX_INT;
             lx->tok.start = s;
             lx->tok.len = n;
-            lx->tok.val.i64 = strtoll(tmp, NULL, 16);
+            lx->tok.val.i64 = parsed;
             lx->tok.line = tok_line; lx->tok.col = tok_col; lx->tok.offset = tok_offset;
             lx->cur = p;
             lx->col += (uint32_t)n;
@@ -298,11 +306,23 @@ void nmo_dsl_lexer_next(nmo_dsl_lexer_t *lx) {
         lx->tok.col = tok_col;
         lx->tok.offset = tok_offset;
         if (is_real) {
+            double parsed = 0.0;
+            if (nmo_parse_f64(tmp, &parsed) != NMO_OK) {
+                (void)snprintf(lx->err, sizeof(lx->err), "invalid real number");
+                lx->tok.kind = NMO_DSL_TOK_ERROR;
+                return;
+            }
             lx->tok.kind = NMO_DSL_TOK_REAL;
-            lx->tok.val.r64 = strtod(tmp, NULL);
+            lx->tok.val.r64 = parsed;
         } else {
+            int64_t parsed = 0;
+            if (nmo_parse_i64_range_base(tmp, 10, INT64_MIN, INT64_MAX, &parsed) != NMO_OK) {
+                (void)snprintf(lx->err, sizeof(lx->err), "invalid integer");
+                lx->tok.kind = NMO_DSL_TOK_ERROR;
+                return;
+            }
             lx->tok.kind = NMO_DSL_TOK_INT;
-            lx->tok.val.i64 = strtoll(tmp, NULL, 10);
+            lx->tok.val.i64 = parsed;
         }
         lx->cur = p;
         lx->col += (uint32_t)n;

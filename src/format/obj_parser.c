@@ -5,6 +5,7 @@
 
 #include "format/nmo_obj_parser.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_parse.h"
 
 #include <ctype.h>
 #include <math.h>
@@ -224,9 +225,8 @@ static bool parse_float_token(obj_parse_ctx_t *ctx, const char **pp,
     memcpy(buf, p, len);
     buf[len] = '\0';
 
-    char *ep = NULL;
-    float v = strtof(buf, &ep);
-    if (ep == buf || *ep != '\0') {
+    float v = 0.0f;
+    if (nmo_parse_f32(buf, &v) != NMO_OK) {
         free(buf);
         ctx_set_error(ctx, NMO_ERR_INVALID_FORMAT, "malformed float token");
         return false;
@@ -251,9 +251,8 @@ static bool parse_optional_float_token(const char **pp, const char *end,
     }
     memcpy(buf, p, len);
     buf[len] = '\0';
-    char *ep = NULL;
-    float v = strtof(buf, &ep);
-    bool ok = (ep != buf && *ep == '\0');
+    float v = 0.0f;
+    bool ok = nmo_parse_f32(buf, &v) == NMO_OK;
     if (ok) {
         *out = v;
         *pp = tok_end;

@@ -4,10 +4,10 @@
  */
 
 #include "core/nmo_string.h"
+#include "core/nmo_parse.h"
 #include "core/nmo_utils.h"
 
 #include <ctype.h>
-#include <errno.h>
 #include <limits.h>
 #include <stdalign.h>
 #include <stdio.h>
@@ -892,22 +892,14 @@ static int nmo_string_parse_signed(const nmo_string_t *string,
         return 0;
     }
 
-    errno = 0;
-    char *end = NULL;
-    long long value = strtoll(string->data, &end, 10);
-    if (errno != 0 || end == string->data) {
+    int64_t value = 0;
+    if (nmo_parse_i64_range_base(string->data, 10,
+                                 (int64_t)min_value,
+                                 (int64_t)max_value,
+                                 &value) != NMO_OK) {
         return 0;
     }
-    while (*end != '\0') {
-        if (!nmo_string_is_whitespace(*end)) {
-            return 0;
-        }
-        ++end;
-    }
-    if (value < min_value || value > max_value) {
-        return 0;
-    }
-    *out_value = value;
+    *out_value = (long long)value;
     return 1;
 }
 
@@ -918,22 +910,14 @@ static int nmo_string_parse_unsigned(const nmo_string_t *string,
         return 0;
     }
 
-    errno = 0;
-    char *end = NULL;
-    unsigned long long value = strtoull(string->data, &end, 10);
-    if (errno != 0 || end == string->data) {
+    uint64_t value = 0;
+    if (nmo_parse_u64_range_base(string->data, 10,
+                                 0,
+                                 (uint64_t)max_value,
+                                 &value) != NMO_OK) {
         return 0;
     }
-    while (*end != '\0') {
-        if (!nmo_string_is_whitespace(*end)) {
-            return 0;
-        }
-        ++end;
-    }
-    if (value > max_value) {
-        return 0;
-    }
-    *out_value = value;
+    *out_value = (unsigned long long)value;
     return 1;
 }
 
@@ -943,17 +927,9 @@ static int nmo_string_parse_float(const nmo_string_t *string,
         return 0;
     }
 
-    errno = 0;
-    char *end = NULL;
-    double value = strtod(string->data, &end);
-    if (errno != 0 || end == string->data) {
+    double value = 0.0;
+    if (nmo_parse_f64(string->data, &value) != NMO_OK) {
         return 0;
-    }
-    while (*end != '\0') {
-        if (!nmo_string_is_whitespace(*end)) {
-            return 0;
-        }
-        ++end;
     }
     *out_value = value;
     return 1;

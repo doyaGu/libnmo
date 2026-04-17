@@ -3,13 +3,12 @@
 #include "nmo_cli_json.h"
 #include "nmo_cli_output.h"
 #include "core/nmo_allocator.h"
+#include "core/nmo_parse.h"
 #include "yyjson.h"
 
 #include <ctype.h>
-#include <errno.h>
 #include <limits.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 int nmo_tool_stricmp(const char *a, const char *b) {
@@ -255,60 +254,19 @@ char *nmo_tool_strdup(const char *src) {
 }
 
 bool nmo_tool_parse_u32_dec(const char *text, uint32_t *out) {
-    if (!text || !out) {
-        return false;
-    }
-    char *end = NULL;
-    unsigned long value = strtoul(text, &end, 10);
-    if (end == text || *end != '\0' || value > 0xFFFFFFFFu) {
-        return false;
-    }
-    *out = (uint32_t)value;
-    return true;
+    return nmo_parse_u32_range(text, 0, UINT32_MAX, out) == NMO_OK;
 }
 
 bool nmo_tool_parse_u32(const char *text, uint32_t *out) {
-    if (!text || !out) {
-        return false;
-    }
-    errno = 0;
-    char *end = NULL;
-    unsigned long value = strtoul(text, &end, 0);
-    if (errno != 0 || end == text || *end != '\0' || value > 0xFFFFFFFFu) {
-        return false;
-    }
-    *out = (uint32_t)value;
-    return true;
+    return nmo_parse_u32_range_base(text, 0, 0, UINT32_MAX, out) == NMO_OK;
 }
 
 bool nmo_tool_parse_size_dec(const char *text, size_t *out) {
-    if (!text || !out) {
-        return false;
-    }
-    char *end = NULL;
-    unsigned long long value = strtoull(text, &end, 10);
-    if (end == text || *end != '\0') {
-        return false;
-    }
-    *out = (size_t)value;
-    return true;
+    return nmo_parse_size_range_base(text, 10, 0, SIZE_MAX, out) == NMO_OK;
 }
 
 bool nmo_tool_parse_size(const char *text, size_t *out) {
-    if (!text || !out) {
-        return false;
-    }
-    errno = 0;
-    char *end = NULL;
-    unsigned long long value = strtoull(text, &end, 0);
-    if (errno != 0 || end == text || *end != '\0') {
-        return false;
-    }
-    if (value > (unsigned long long)SIZE_MAX) {
-        return false;
-    }
-    *out = (size_t)value;
-    return true;
+    return nmo_parse_size_range_base(text, 0, 0, SIZE_MAX, out) == NMO_OK;
 }
 
 /* ============================================================================

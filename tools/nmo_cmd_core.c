@@ -12,6 +12,7 @@
 #include "type/nmo_type_string.h"
 #include "object/nmo_object_repository.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_parse.h"
 #include "type/nmo_type_guids.h"
 #include "type/nmo_reflection.h"
 
@@ -646,17 +647,18 @@ void nmo_core_dsl_print_error(FILE *stream, const char *source,
     const char *err_msg = NULL;
 
     if (detail_len > 0) {
-        char *p = detail;
-        char *end = NULL;
-        unsigned long l = strtoul(p, &end, 10);
-        if (end && end != p && *end == ':') {
-            p = end + 1;
-            unsigned long c = strtoul(p, &end, 10);
-            if (end && end != p && *end == ':') {
-                err_line = (uint32_t)l;
-                err_col = (uint32_t)c;
-                /* Skip ": " */
-                err_msg = end + 1;
+        char *first_colon = strchr(detail, ':');
+        char *second_colon = first_colon ? strchr(first_colon + 1, ':') : NULL;
+        if (first_colon && second_colon) {
+            *first_colon = '\0';
+            *second_colon = '\0';
+            uint32_t line = 0;
+            uint32_t col = 0;
+            if (nmo_parse_u32_range(detail, 1, UINT32_MAX, &line) == NMO_OK &&
+                nmo_parse_u32_range(first_colon + 1, 1, UINT32_MAX, &col) == NMO_OK) {
+                err_line = line;
+                err_col = col;
+                err_msg = second_colon + 1;
                 while (*err_msg == ' ') err_msg++;
             }
         }

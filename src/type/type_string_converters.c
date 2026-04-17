@@ -18,12 +18,12 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_hash.h"
+#include "core/nmo_parse.h"
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <errno.h>
 #include <math.h>
 
 #ifndef M_PI
@@ -80,11 +80,8 @@ nmo_status_t nmo_float_from_string(
         NMO_RETURN_OK();
     }
 
-    char *endptr;
-    errno = 0;
-    float result = strtof(string, &endptr);
-
-    if (errno != 0 || endptr == string || (*endptr != '\0' && !isspace(*endptr))) {
+    float result = 0.0f;
+    if (nmo_parse_f32(string, &result) != NMO_OK) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid float format");
     }
 
@@ -125,18 +122,12 @@ nmo_status_t nmo_int_from_string(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for int_from_string");
     }
 
-    char *endptr;
-    errno = 0;
-    
-    // Detect base (hex if starts with 0x/0X, else decimal)
-    int base = 0;  // auto-detect
-    long result = strtol(string, &endptr, base);
-
-    if (errno != 0 || endptr == string || (*endptr != '\0' && !isspace(*endptr))) {
+    int32_t result = 0;
+    if (nmo_parse_i32_range_base(string, 0, INT32_MIN, INT32_MAX, &result) != NMO_OK) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid int format");
     }
 
-    *(int32_t*)value = (int32_t)result;
+    *(int32_t*)value = result;
     NMO_RETURN_OK();
 }
 
@@ -197,44 +188,11 @@ static nmo_status_t parse_float_tuple(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for parse_float_tuple");
     }
 
-    // Skip whitespace and opening parenthesis
-    while (*string && isspace((unsigned char)*string)) string++;
-    if (*string != '(') {
+    nmo_status_t st = nmo_parse_f32_parenthesized_tuple(
+        string, ",;", out, (size_t)count);
+    if (st != NMO_OK) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                "%s must start with '('", kind);
-    }
-    string++;
-
-    // Parse N float values separated by ',' (and optionally ';' for readability)
-    char *endptr;
-    for (int i = 0; i < count; i++) {
-        while (*string && isspace((unsigned char)*string)) string++;
-
-        errno = 0;
-        out[i] = strtof(string, &endptr);
-
-        if (errno != 0 || endptr == string) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                    "Invalid %s component", kind);
-        }
-
-        string = endptr;
-        while (*string && isspace((unsigned char)*string)) string++;
-
-        if (i < (count - 1)) {
-            if (*string != ',' && *string != ';') {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                        "%s components must be separated by ','", kind);
-            }
-            string++;
-        }
-    }
-
-    // Expect closing parenthesis
-    while (*string && isspace((unsigned char)*string)) string++;
-    if (*string != ')') {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                "%s must end with ')'", kind);
+                         "Invalid %s tuple", kind);
     }
 
     NMO_RETURN_OK();
@@ -290,44 +248,7 @@ nmo_status_t nmo_vector_from_string(
     }
 
     float *v = (float*)value;
-    
-    // Skip whitespace and opening parenthesis
-    while (*string && isspace(*string)) string++;
-    if (*string != '(') {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Vector must start with '('");
-    }
-    string++;
-
-    // Parse three float values separated by commas
-    char *endptr;
-    for (int i = 0; i < 3; i++) {
-        while (*string && isspace(*string)) string++;
-        
-        errno = 0;
-        v[i] = strtof(string, &endptr);
-        
-        if (errno != 0 || endptr == string) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid vector component");
-        }
-        
-        string = endptr;
-        while (*string && isspace(*string)) string++;
-        
-        if (i < 2) {
-            if (*string != ',') {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Vector components must be separated by ','");
-            }
-            string++;
-        }
-    }
-
-    // Expect closing parenthesis
-    while (*string && isspace(*string)) string++;
-    if (*string != ')') {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Vector must end with ')'");
-    }
-
-    NMO_RETURN_OK();
+    return parse_float_tuple("Vector", string, v, 3);
 }
 
 nmo_status_t nmo_vector4_to_string(
@@ -385,44 +306,7 @@ nmo_status_t nmo_quaternion_from_string(
     }
 
     float *q = (float*)value;
-    
-    // Skip whitespace and opening parenthesis
-    while (*string && isspace(*string)) string++;
-    if (*string != '(') {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Quaternion must start with '('");
-    }
-    string++;
-
-    // Parse four float values separated by commas
-    char *endptr;
-    for (int i = 0; i < 4; i++) {
-        while (*string && isspace(*string)) string++;
-        
-        errno = 0;
-        q[i] = strtof(string, &endptr);
-        
-        if (errno != 0 || endptr == string) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid quaternion component");
-        }
-        
-        string = endptr;
-        while (*string && isspace(*string)) string++;
-        
-        if (i < 3) {
-            if (*string != ',') {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Quaternion components must be separated by ','");
-            }
-            string++;
-        }
-    }
-
-    // Expect closing parenthesis
-    while (*string && isspace(*string)) string++;
-    if (*string != ')') {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Quaternion must end with ')'");
-    }
-
-    NMO_RETURN_OK();
+    return parse_float_tuple("Quaternion", string, q, 4);
 }
 
 /* ============================================================================
@@ -595,15 +479,12 @@ nmo_status_t nmo_enum_from_string(
     }
 
     // Try to parse as integer
-    char *endptr;
-    errno = 0;
-    long result = strtol(string, &endptr, 0);
-
-    if (errno != 0 || endptr == string || (*endptr != '\0' && !isspace(*endptr))) {
+    int32_t result = 0;
+    if (nmo_parse_i32_range_base(string, 0, INT32_MIN, INT32_MAX, &result) != NMO_OK) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid enum value");
     }
 
-    *(int32_t*)value = (int32_t)result;
+    *(int32_t*)value = result;
     NMO_RETURN_OK();
 }
 
@@ -703,22 +584,10 @@ nmo_status_t nmo_flags_from_string(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Type is not flags");
     }
 
-    // Try hex format first
-    if (strncmp(string, "0x", 2) == 0 || strncmp(string, "0X", 2) == 0) {
-        char *endptr;
-        unsigned long result = strtoul(string, &endptr, 16);
-        if (errno == 0 && *endptr == '\0') {
-            *(uint32_t*)value = (uint32_t)result;
-            NMO_RETURN_OK();
-        }
-    }
-
     // Try numeric format
-    char *endptr;
-    errno = 0;
-    unsigned long result = strtoul(string, &endptr, 0);
-    if (errno == 0 && *endptr == '\0') {
-        *(uint32_t*)value = (uint32_t)result;
+    uint32_t result = 0;
+    if (nmo_parse_u32_range_base(string, 0, 0, UINT32_MAX, &result) == NMO_OK) {
+        *(uint32_t*)value = result;
         NMO_RETURN_OK();
     }
 
@@ -817,6 +686,14 @@ size_t nmo_string_escape(
     return offset;
 }
 
+static int nmo_hex_digit_value(char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
 size_t nmo_string_unescape(
     const char *src,
     char *dst,
@@ -843,8 +720,9 @@ size_t nmo_string_unescape(
                 case 't':  dst[offset++] = '\t'; break;
                 case 'x':  // Hex escape \xHH
                     if (isxdigit(*(p + 1)) && isxdigit(*(p + 2))) {
-                        char hex[3] = {*(p + 1), *(p + 2), '\0'};
-                        dst[offset++] = (char)strtol(hex, NULL, 16);
+                        int hi = nmo_hex_digit_value(*(p + 1));
+                        int lo = nmo_hex_digit_value(*(p + 2));
+                        dst[offset++] = (char)((hi << 4) | lo);
                         p += 2;
                     }
                     break;
@@ -996,11 +874,9 @@ nmo_status_t nmo_object_id_from_string(
 
     // Parse #id format
     if (*string == '#') {
-        string++;
-        char *endptr;
-        unsigned long id = strtoul(string, &endptr, 10);
-        if (errno == 0 && *endptr == '\0') {
-            *(nmo_object_id_t*)value = (nmo_object_id_t)id;
+        nmo_object_id_t id = 0;
+        if (nmo_parse_object_id(string, &id) == NMO_OK) {
+            *(nmo_object_id_t*)value = id;
             NMO_RETURN_OK();
         }
     }
@@ -1426,14 +1302,14 @@ static nmo_status_t parse_i64(const char *string, int64_t *out_value)
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid integer parse args");
     }
 
-    char *endptr = NULL;
-    errno = 0;
-    long long parsed = strtoll(string, &endptr, 0);
-    if (errno != 0 || endptr == string || (*endptr != '\0' && !isspace((unsigned char)*endptr))) {
+    int64_t parsed = 0;
+    nmo_status_t st = nmo_parse_i64_range_base(
+        string, 0, INT64_MIN, INT64_MAX, &parsed);
+    if (st != NMO_OK) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid integer format");
     }
 
-    *out_value = (int64_t)parsed;
+    *out_value = parsed;
     NMO_RETURN_OK();
 }
 
@@ -1443,20 +1319,14 @@ static nmo_status_t parse_u64(const char *string, uint64_t *out_value)
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid unsigned parse args");
     }
 
-    const char *p = string;
-    while (*p && isspace((unsigned char)*p)) p++;
-    if (*p == '-') {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Unsigned value cannot be negative");
-    }
-
-    char *endptr = NULL;
-    errno = 0;
-    unsigned long long parsed = strtoull(string, &endptr, 0);
-    if (errno != 0 || endptr == string || (*endptr != '\0' && !isspace((unsigned char)*endptr))) {
+    uint64_t parsed = 0;
+    nmo_status_t st = nmo_parse_u64_range_base(
+        string, 0, 0, UINT64_MAX, &parsed);
+    if (st != NMO_OK) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid unsigned integer format");
     }
 
-    *out_value = (uint64_t)parsed;
+    *out_value = parsed;
     NMO_RETURN_OK();
 }
 
@@ -1479,10 +1349,8 @@ static nmo_status_t parse_f64(const char *string, double *out_value)
         NMO_RETURN_OK();
     }
 
-    char *endptr = NULL;
-    errno = 0;
-    double parsed = strtod(string, &endptr);
-    if (errno != 0 || endptr == string || (*endptr != '\0' && !isspace((unsigned char)*endptr))) {
+    double parsed = 0.0;
+    if (nmo_parse_f64(string, &parsed) != NMO_OK) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid floating-point format");
     }
 
@@ -1743,15 +1611,14 @@ static nmo_status_t nmo_parse_pointer(
         NMO_RETURN_OK();
     }
 
-    char *endptr = NULL;
-    errno = 0;
-    unsigned long long parsed = strtoull(string, &endptr, 0);
-    if (errno != 0 || endptr == string) {
+    uint64_t parsed = 0;
+    nmo_status_t st = nmo_parse_u64_range_base(
+        string, 0, 0, UINT64_MAX, &parsed);
+    if (st != NMO_OK) {
         /* Try hex without 0x (common %p style) */
-        errno = 0;
-        parsed = strtoull(string, &endptr, 16);
+        st = nmo_parse_u64_range_base(string, 16, 0, UINT64_MAX, &parsed);
     }
-    if (errno != 0 || endptr == string || (*endptr != '\0' && !isspace((unsigned char)*endptr))) {
+    if (st != NMO_OK) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid pointer format");
     }
 
@@ -1759,7 +1626,7 @@ static nmo_status_t nmo_parse_pointer(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_parse_object_id(
+static nmo_status_t nmo_parse_object_id_value(
     void *value,
     const nmo_type_registry_t *registry,
     const char *string)
@@ -1801,6 +1668,52 @@ static nmo_status_t nmo_parse_rect(
     NMO_RETURN_OK();
 }
 
+static const char *find_matching_paren_end(const char *text)
+{
+    int depth = 0;
+    for (const char *p = text; *p != '\0'; ++p) {
+        if (*p == '(') {
+            depth++;
+        } else if (*p == ')') {
+            depth--;
+            if (depth == 0) {
+                return p + 1;
+            }
+        }
+    }
+    return NULL;
+}
+
+static nmo_status_t parse_vector_segment(
+    const char *start,
+    const char *end,
+    nmo_vector_t *out_value)
+{
+    if (!start || !end || end <= start || !out_value) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid vector segment");
+    }
+
+    size_t len = (size_t)(end - start);
+    char stack_buf[128];
+    char *buf = stack_buf;
+    if (len + 1u > sizeof(stack_buf)) {
+        buf = (char *)malloc(len + 1u);
+        if (!buf) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "Failed to allocate vector segment");
+        }
+    }
+
+    memcpy(buf, start, len);
+    buf[len] = '\0';
+    nmo_status_t st = nmo_vector_from_string(out_value, buf);
+    if (buf != stack_buf) {
+        free(buf);
+    }
+    return st;
+}
+
 static nmo_status_t nmo_parse_box(
     void *value,
     const nmo_type_registry_t *registry,
@@ -1824,24 +1737,11 @@ static nmo_status_t nmo_parse_box(
 
     /* Parse first vector3 */
     nmo_vector_t minv = {0};
-    NMO_RETURN_IF_ERROR(nmo_vector_from_string(&minv, string));
-
-    /* Advance past the first '(...)' */
-    int paren = 0;
-    const char *p = string;
-    for (; *p; ++p) {
-        if (*p == '(') paren++;
-        else if (*p == ')') {
-            paren--;
-            if (paren == 0) {
-                p++;
-                break;
-            }
-        }
-    }
-    if (paren != 0) {
+    const char *p = find_matching_paren_end(string);
+    if (!p) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Unclosed min vector");
     }
+    NMO_RETURN_IF_ERROR(parse_vector_segment(string, p, &minv));
 
     while (*p && isspace((unsigned char)*p)) p++;
     if (*p != ',') {
@@ -1854,24 +1754,12 @@ static nmo_status_t nmo_parse_box(
     }
 
     nmo_vector_t maxv = {0};
-    NMO_RETURN_IF_ERROR(nmo_vector_from_string(&maxv, p));
-
-    /* Advance past second '(...)' */
-    paren = 0;
-    const char *q = p;
-    for (; *q; ++q) {
-        if (*q == '(') paren++;
-        else if (*q == ')') {
-            paren--;
-            if (paren == 0) {
-                q++;
-                break;
-            }
-        }
-    }
-    if (paren != 0) {
+    const char *q = find_matching_paren_end(p);
+    if (!q) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Unclosed max vector");
     }
+    NMO_RETURN_IF_ERROR(parse_vector_segment(p, q, &maxv));
+
     while (*q && isspace((unsigned char)*q)) q++;
     if (*q != ')') {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Box must end with ')'");
@@ -2436,7 +2324,7 @@ nmo_status_t nmo_vt_to_string_object_id(
     (void)type; (void)registry; (void)depth;
     return nmo_object_id_to_string(value, buffer, buffer_size, NULL);
 }
-NMO_DEFINE_VT_FROM_STRING(object_id, nmo_parse_object_id)
+NMO_DEFINE_VT_FROM_STRING(object_id, nmo_parse_object_id_value)
 
 NMO_DEFINE_VT_TO_STRING(vector2, nmo_vector2_to_string)
 NMO_DEFINE_VT_FROM_STRING(vector2, nmo_parse_vector2)

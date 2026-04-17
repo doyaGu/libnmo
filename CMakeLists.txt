@@ -158,6 +158,7 @@ set(NMO_CORE_SOURCES
     src/core/indexed_map.c
     src/core/list.c
     src/core/hex.c
+    src/core/parse.c
     src/core/utils.c
     src/core/path.c
     src/core/pool.c
@@ -331,7 +332,6 @@ set(NMO_SESSION_SOURCES
     src/session/id_sanitizer.c
     src/session/reference_resolver.c
     src/session/session_edit.c
-    src/session/runtime_graph.c
     src/session/runtime_kernel.c
     src/session/runtime_ref_remap.c
     src/session/runtime_delete.c

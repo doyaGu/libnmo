@@ -127,7 +127,12 @@ void nmo_repl_loop(nmo_repl_context_t *repl) {
                 }
             } else if (isdigit((unsigned char)p[1])) {
                 /* Recall by number: !N */
-                size_t n = (size_t)atoi(p + 1);
+                size_t n = 0;
+                if (!nmo_tool_parse_size_dec(p + 1, &n)) {
+                    fprintf(stderr, "Invalid history index.\n");
+                    nmo_repl_free_line(line);
+                    continue;
+                }
                 if (n > 0 && n <= repl->history_count) {
                     size_t idx = (repl->history_start + n - 1) % NMO_REPL_HISTORY_SIZE;
                     nmo_repl_free_line(line);

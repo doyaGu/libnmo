@@ -19,6 +19,7 @@
 #include "type/nmo_type_system.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_parse.h"
 #include "app/nmo_dsl_json.h"
 #include <stdio.h>
 #include <string.h>
@@ -180,12 +181,11 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
     nmo_object_t *target_obj = NULL;
     if (obj_opt) {
         /* Numeric selectors are IDs; non-numeric selectors are names. */
-        char *end = NULL;
-        long id = strtol(obj_opt, &end, 10);
-        bool numeric_selector = end && end != obj_opt && *end == '\0';
+        nmo_object_id_t id = 0;
+        bool numeric_selector = nmo_parse_object_id(obj_opt, &id) == NMO_OK;
         if (numeric_selector) {
             if (id > 0) {
-                target_obj = nmo_core_find_by_id(&c, (nmo_object_id_t)id);
+                target_obj = nmo_core_find_by_id(&c, id);
             }
         } else {
             int lookup_rc = nmo_core_find_by_name(&c, obj_opt, &target_obj);
