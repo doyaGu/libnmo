@@ -6,6 +6,7 @@
 #include "nmo_cmd_convert.h"
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
+#include "../nmo_cli_write.h"
 #include "../nmo_cli_output.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
@@ -14,6 +15,7 @@
 #include "app/nmo_save.h"
 #include "session/nmo_context.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_parse.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
 #include "format/nmo_object.h"
@@ -134,9 +136,8 @@ static bool parse_compression_level(const char *str, int *out_level)
         return false;
     }
 
-    char *endptr = NULL;
-    long val = strtol(str, &endptr, 10);
-    if (*endptr != '\0' || val < 0 || val > 9) {
+    int32_t val = 0;
+    if (nmo_parse_i32_range(str, 0, 9, &val) != NMO_OK) {
         return false;
     }
 
@@ -283,10 +284,9 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
     }
 
     /* Save file */
-    int result = nmo_save_file(c.session, output_path, &save_opts);
-    if (result != NMO_OK) {
-        fprintf(stderr, "Error saving file: %s\n", nmo_error_string(result));
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+    int result = nmo_cli_save_session(c.session, output_path, &save_opts);
+    if (result != NMO_CLI_EXIT_SUCCESS) {
+        return nmo_cmd_ctx_done(&c, result);
     }
 
     /* Output results */
@@ -377,10 +377,9 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
     if (fast_save) {
         save_opts.durability = NMO_SAVE_DURABILITY_FAST;
     }
-    int result = nmo_save_file(c.session, output_path, &save_opts);
-    if (result != NMO_OK) {
-        fprintf(stderr, "Error saving file: %s\n", nmo_error_string(result));
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+    int result = nmo_cli_save_session(c.session, output_path, &save_opts);
+    if (result != NMO_CLI_EXIT_SUCCESS) {
+        return nmo_cmd_ctx_done(&c, result);
     }
 
     if (c.is_json) {
@@ -720,10 +719,9 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
     if (fast_save) {
         save_opts.durability = NMO_SAVE_DURABILITY_FAST;
     }
-    int result = nmo_save_file(c.session, output_path, &save_opts);
-    if (result != NMO_OK) {
-        fprintf(stderr, "Error saving file: %s\n", nmo_error_string(result));
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+    int result = nmo_cli_save_session(c.session, output_path, &save_opts);
+    if (result != NMO_CLI_EXIT_SUCCESS) {
+        return nmo_cmd_ctx_done(&c, result);
     }
 
     /* Output results */
@@ -847,12 +845,11 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
     if (fast_save) {
         save_opts.durability = NMO_SAVE_DURABILITY_FAST;
     }
-    int result = nmo_save_file(tgt_session, output_path, &save_opts);
-    if (result != NMO_OK) {
-        fprintf(stderr, "Error saving file: %s\n", nmo_error_string(result));
+    int result = nmo_cli_save_session(tgt_session, output_path, &save_opts);
+    if (result != NMO_CLI_EXIT_SUCCESS) {
         nmo_tool_close_session(src_ctx, src_session);
         nmo_tool_close_session(tgt_ctx, tgt_session);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+        return nmo_cmd_ctx_done(&c, result);
     }
 
     /* Output results */
@@ -1182,14 +1179,13 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         save_opts.flags |= NMO_SAVE_COMPRESSED;
     }
 
-    int save_result = nmo_save_file(c.session, output_path, &save_opts);
-    if (save_result != NMO_OK) {
-        fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_result));
+    int save_result = nmo_cli_save_session(c.session, output_path, &save_opts);
+    if (save_result != NMO_CLI_EXIT_SUCCESS) {
         free(include_ids);
         free(final_objects);
         free(col.objects);
         nmo_core_query_dsl_destroy(&query_dsl);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+        return nmo_cmd_ctx_done(&c, save_result);
     }
 
     /* Output results */

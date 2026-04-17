@@ -8,15 +8,17 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_write.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
-#include "app/nmo_save.h"
+#include "core/nmo_parse.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_light_schemas.h"
+#include "session/nmo_session_edit.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -563,8 +565,122 @@ int nmo_cmd_entity_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
 }
 
 /* ============================================================================
- * entity set-position - Directly modify world_matrix translation
+ * entity set-position - Set world_matrix translation through session edit
  * ============================================================================ */
+
+typedef struct entity_set_position_args {
+    uint32_t object_id;
+    float new_x;
+    float new_y;
+    float new_z;
+    float old_x;
+    float old_y;
+    float old_z;
+    char matrix_value[512];
+} entity_set_position_args_t;
+
+static int entity_set_position_mutate(
+    nmo_cmd_ctx_t *c,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    (void)output_path;
+    entity_set_position_args_t *args = (entity_set_position_args_t *)user_data;
+    if (c == NULL || args == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_object_t *obj = nmo_core_find_by_id(c, args->object_id);
+    if (!obj) {
+        fprintf(stderr, "Error: Object #%u not found\n", args->object_id);
+        return NMO_CLI_EXIT_NOT_FOUND;
+    }
+
+    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+    if (!nmo_core_class_derives(c, class_id, NMO_CID_3DENTITY)) {
+        fprintf(stderr, "Error: Object #%u is not a CK3dEntity\n", args->object_id);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_3dentity_state_t *estate =
+        (nmo_3dentity_state_t *)nmo_object_get_state(obj);
+    if (!estate) {
+        fprintf(stderr, "Error: Object #%u has no deserialized state\n", args->object_id);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_3dentity_get_position(estate, &args->old_x, &args->old_y, &args->old_z);
+
+    float matrix[16];
+    memcpy(matrix, estate->world_matrix, sizeof(matrix));
+    matrix[12] = args->new_x;
+    matrix[13] = args->new_y;
+    matrix[14] = args->new_z;
+    int wrote = snprintf(
+        args->matrix_value,
+        sizeof(args->matrix_value),
+        "(%.9g, %.9g, %.9g, %.9g; %.9g, %.9g, %.9g, %.9g; %.9g, %.9g, %.9g, %.9g; %.9g, %.9g, %.9g, %.9g)",
+        matrix[0], matrix[1], matrix[2], matrix[3],
+        matrix[4], matrix[5], matrix[6], matrix[7],
+        matrix[8], matrix[9], matrix[10], matrix[11],
+        matrix[12], matrix[13], matrix[14], matrix[15]);
+    if (wrote < 0 || (size_t)wrote >= sizeof(args->matrix_value)) {
+        fprintf(stderr, "Error: Position matrix string overflow\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_session_edit_t *edit = NULL;
+    nmo_status_t rc = nmo_session_edit_begin(c->session, "entity set-position", &edit);
+    if (rc == NMO_OK) {
+        nmo_session_field_edit_t field = {
+            .field_name = "world_matrix",
+            .value_str = args->matrix_value,
+        };
+        rc = nmo_session_edit_set_object_fields(edit, args->object_id, &field, 1, NULL);
+    }
+    if (rc != NMO_OK) {
+        if (edit) {
+            nmo_session_edit_rollback(edit);
+        }
+        fprintf(stderr, "Error: Failed to set position: %s\n", nmo_error_string(rc));
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    if (dry_run) {
+        nmo_session_edit_rollback(edit);
+    } else {
+        rc = nmo_session_edit_commit(edit);
+        if (rc != NMO_OK) {
+            fprintf(stderr, "Error: Failed to commit edit: %s\n", nmo_error_string(rc));
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+    }
+
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int entity_set_position_report(
+    nmo_cmd_ctx_t *c,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    entity_set_position_args_t *args = (entity_set_position_args_t *)user_data;
+    if (c == NULL || args == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    fprintf(c->out, "Entity #%u:\n", args->object_id);
+    fprintf(c->out, "  position: (%.4f, %.4f, %.4f) -> (%.4f, %.4f, %.4f)%s\n",
+            (double)args->old_x, (double)args->old_y, (double)args->old_z,
+            (double)args->new_x, (double)args->new_y, (double)args->new_z,
+            dry_run ? " (dry-run)" : "");
+    if (!dry_run && output_path) {
+        fprintf(c->out, "Saved to: %s\n", output_path);
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
 
 int nmo_cmd_entity_set_position(int argc, char **argv,
                                 const nmo_cli_global_opts_t *global)
@@ -584,11 +700,6 @@ int nmo_cmd_entity_set_position(int argc, char **argv,
     const char *output = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
 
-    if (!dry_run && !output) {
-        fprintf(stderr, "Error: -o required (or use --dry-run)\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
     /* Need: <id> <x> <y> <z> <file> */
     if (r.pos_count < 5) {
         fprintf(stderr, "Usage: nmo entity set-position <id> <x> <y> <z> <file> -o <output>\n");
@@ -601,65 +712,104 @@ int nmo_cmd_entity_set_position(int argc, char **argv,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    float new_x = (float)strtod(r.pos_args[1], NULL);
-    float new_y = (float)strtod(r.pos_args[2], NULL);
-    float new_z = (float)strtod(r.pos_args[3], NULL);
+    float new_x = 0.0f;
+    float new_y = 0.0f;
+    float new_z = 0.0f;
+    if (nmo_parse_f32(r.pos_args[1], &new_x) != NMO_OK ||
+        nmo_parse_f32(r.pos_args[2], &new_y) != NMO_OK ||
+        nmo_parse_f32(r.pos_args[3], &new_z) != NMO_OK) {
+        fprintf(stderr, "Error: Invalid position coordinates\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
     const char *file_path = r.pos_args[r.pos_count - 1];
-
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
-    if (rc) return rc;
-
-    nmo_object_t *obj = nmo_core_find_by_id(&c, object_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object #%u not found\n", object_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
-    }
-
-    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-    if (!nmo_core_class_derives(&c, class_id, NMO_CID_3DENTITY)) {
-        fprintf(stderr, "Error: Object #%u is not a CK3dEntity\n", object_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
-
-    nmo_3dentity_state_t *estate =
-        (nmo_3dentity_state_t *)nmo_object_get_state(obj);
-    if (!estate) {
-        fprintf(stderr, "Error: Object #%u has no deserialized state\n", object_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    float old_x, old_y, old_z;
-    nmo_3dentity_get_position(estate, &old_x, &old_y, &old_z);
-
-    fprintf(c.out, "Entity #%u:\n", object_id);
-    fprintf(c.out, "  position: (%.4f, %.4f, %.4f) -> (%.4f, %.4f, %.4f)%s\n",
-            (double)old_x, (double)old_y, (double)old_z,
-            (double)new_x, (double)new_y, (double)new_z,
-            dry_run ? " (dry-run)" : "");
-
-    if (!dry_run) {
-        nmo_3dentity_set_position(estate, new_x, new_y, new_z);
-
-        if (output) {
-            nmo_save_options_t save_opts = nmo_save_options_default();
-            int save_rc = nmo_save_file(c.session, output, &save_opts);
-            if (save_rc != NMO_OK) {
-                fprintf(stderr, "Error: Save failed: %s\n",
-                        nmo_error_string(save_rc));
-                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
-            }
-            fprintf(c.out, "Saved to: %s\n", output);
-        }
-    }
-
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    entity_set_position_args_t args = {
+        .object_id = object_id,
+        .new_x = new_x,
+        .new_y = new_y,
+        .new_z = new_z,
+    };
+    const nmo_cli_write_spec_t spec = {
+        .command_name = "entity.set-position",
+        .output_required_unless_dry_run = true,
+    };
+    return nmo_cli_run_write_command(
+        file_path,
+        output,
+        dry_run,
+        global,
+        &spec,
+        entity_set_position_mutate,
+        entity_set_position_report,
+        &args);
 }
 
 /* ============================================================================
  * entity set-parent - Set parent entity via generic field setter
  * ============================================================================ */
+
+typedef struct entity_set_parent_args {
+    uint32_t object_id;
+    uint32_t parent_id;
+    const char *parent_id_str;
+} entity_set_parent_args_t;
+
+static int entity_set_parent_mutate(
+    nmo_cmd_ctx_t *c,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    (void)output_path;
+    entity_set_parent_args_t *args = (entity_set_parent_args_t *)user_data;
+    if (c == NULL || args == NULL || args->parent_id_str == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_object_t *obj = nmo_core_find_by_id(c, args->object_id);
+    if (!obj) {
+        fprintf(stderr, "Error: Object #%u not found\n", args->object_id);
+        return NMO_CLI_EXIT_NOT_FOUND;
+    }
+    if (!nmo_core_class_derives(c, nmo_object_get_class_id(obj), NMO_CID_3DENTITY)) {
+        fprintf(stderr, "Error: Object #%u is not a CK3dEntity\n", args->object_id);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (args->parent_id != 0) {
+        if (args->parent_id == args->object_id) {
+            fprintf(stderr, "Error: Cannot parent entity to itself\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        nmo_object_t *parent = nmo_core_find_by_id(c, args->parent_id);
+        if (!parent) {
+            fprintf(stderr, "Error: Parent object #%u not found\n", args->parent_id);
+            return NMO_CLI_EXIT_NOT_FOUND;
+        }
+    }
+
+    fprintf(c->out, "Entity #%u:\n", args->object_id);
+
+    nmo_field_set_entry_t entry = { "parent_id", args->parent_id_str };
+    nmo_field_set_result_t result;
+    return nmo_core_set_fields(c, args->object_id, &entry, 1, dry_run, &result);
+}
+
+static int entity_set_parent_report(
+    nmo_cmd_ctx_t *c,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    (void)user_data;
+    if (c == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!dry_run && output_path) {
+        fprintf(c->out, "Saved to: %s\n", output_path);
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
 
 int nmo_cmd_entity_set_parent(int argc, char **argv,
                               const nmo_cli_global_opts_t *global)
@@ -678,11 +828,6 @@ int nmo_cmd_entity_set_parent(int argc, char **argv,
 
     const char *output = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-
-    if (!dry_run && !output) {
-        fprintf(stderr, "Error: -o required (or use --dry-run)\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
 
     /* Need: <id> <parent-id> <file> */
     if (r.pos_count < 3) {
@@ -705,58 +850,97 @@ int nmo_cmd_entity_set_parent(int argc, char **argv,
 
     const char *file_path = r.pos_args[r.pos_count - 1];
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
-    if (rc) return rc;
-
-    /* Validate object is a 3D entity */
-    nmo_object_t *obj = nmo_core_find_by_id(&c, object_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object #%u not found\n", object_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
-    }
-    if (!nmo_core_class_derives(&c, nmo_object_get_class_id(obj), NMO_CID_3DENTITY)) {
-        fprintf(stderr, "Error: Object #%u is not a CK3dEntity\n", object_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
-
-    /* Validate parent exists (unless 0 = unparent) */
-    if (parent_id != 0) {
-        if (parent_id == object_id) {
-            fprintf(stderr, "Error: Cannot parent entity to itself\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-        }
-        nmo_object_t *parent = nmo_core_find_by_id(&c, parent_id);
-        if (!parent) {
-            fprintf(stderr, "Error: Parent object #%u not found\n", parent_id);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
-        }
-    }
-
-    fprintf(c.out, "Entity #%u:\n", object_id);
-
-    nmo_field_set_entry_t entry = { "parent_id", parent_id_str };
-    nmo_field_set_result_t result;
-    int set_rc = nmo_core_set_fields(&c, object_id, &entry, 1, dry_run, &result);
-    if (set_rc != NMO_CLI_EXIT_SUCCESS)
-        return nmo_cmd_ctx_done(&c, set_rc);
-
-    if (!dry_run && output) {
-        nmo_save_options_t save_opts = nmo_save_options_default();
-        int save_rc = nmo_save_file(c.session, output, &save_opts);
-        if (save_rc != NMO_OK) {
-            fprintf(stderr, "Error: Save failed: %s\n", nmo_error_string(save_rc));
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
-        }
-        fprintf(c.out, "Saved to: %s\n", output);
-    }
-
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    entity_set_parent_args_t args = {
+        .object_id = object_id,
+        .parent_id = parent_id,
+        .parent_id_str = parent_id_str,
+    };
+    const nmo_cli_write_spec_t spec = {
+        .command_name = "entity.set-parent",
+        .output_required_unless_dry_run = true,
+    };
+    return nmo_cli_run_write_command(
+        file_path,
+        output,
+        dry_run,
+        global,
+        &spec,
+        entity_set_parent_mutate,
+        entity_set_parent_report,
+        &args);
 }
 
 /* ============================================================================
  * entity set-camera - Set camera fields (fov, near, far)
  * ============================================================================ */
+
+typedef enum entity_field_target {
+    ENTITY_FIELD_TARGET_CAMERA,
+    ENTITY_FIELD_TARGET_LIGHT,
+} entity_field_target_t;
+
+typedef struct entity_set_fields_args {
+    uint32_t object_id;
+    entity_field_target_t target;
+    nmo_field_set_entry_t entries[3];
+    size_t entry_count;
+} entity_set_fields_args_t;
+
+static int entity_set_fields_mutate(
+    nmo_cmd_ctx_t *c,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    (void)output_path;
+    entity_set_fields_args_t *args = (entity_set_fields_args_t *)user_data;
+    if (c == NULL || args == NULL || args->entry_count == 0) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_object_t *obj = nmo_core_find_by_id(c, args->object_id);
+    if (!obj) {
+        fprintf(stderr, "Error: Object #%u not found\n", args->object_id);
+        return NMO_CLI_EXIT_NOT_FOUND;
+    }
+
+    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+    if (args->target == ENTITY_FIELD_TARGET_CAMERA) {
+        if (class_id != NMO_CID_CAMERA && class_id != NMO_CID_TARGETCAMERA) {
+            fprintf(stderr, "Error: Object #%u is not a CKCamera or CKTargetCamera (class %u)\n",
+                    args->object_id, class_id);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        fprintf(c->out, "Camera #%u:\n", args->object_id);
+    } else {
+        if (class_id != NMO_CID_LIGHT && class_id != NMO_CID_TARGETLIGHT) {
+            fprintf(stderr, "Error: Object #%u is not a CKLight or CKTargetLight (class %u)\n",
+                    args->object_id, class_id);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        fprintf(c->out, "Light #%u:\n", args->object_id);
+    }
+
+    nmo_field_set_result_t result;
+    return nmo_core_set_fields(
+        c, args->object_id, args->entries, args->entry_count, dry_run, &result);
+}
+
+static int entity_set_fields_report(
+    nmo_cmd_ctx_t *c,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    (void)user_data;
+    if (c == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!dry_run && output_path) {
+        fprintf(c->out, "Saved to: %s\n", output_path);
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
 
 int nmo_cmd_entity_set_camera(int argc, char **argv,
                               const nmo_cli_global_opts_t *global)
@@ -779,11 +963,6 @@ int nmo_cmd_entity_set_camera(int argc, char **argv,
     const char *output = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
 
-    if (!dry_run && !output) {
-        fprintf(stderr, "Error: -o required (or use --dry-run)\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
     if (r.pos_count < 2) {
         fprintf(stderr, "Usage: nmo entity set-camera <id> [--fov <f>] [--near <f>] [--far <f>] <file> -o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -797,59 +976,40 @@ int nmo_cmd_entity_set_camera(int argc, char **argv,
 
     const char *file_path = r.pos_args[r.pos_count - 1];
 
-    /* Build field entries */
-    nmo_field_set_entry_t entries[3];
-    size_t entry_count = 0;
+    entity_set_fields_args_t args = {
+        .object_id = object_id,
+        .target = ENTITY_FIELD_TARGET_CAMERA,
+        .entry_count = 0,
+    };
 
     if (vals[OPT_FOV].present)
-        entries[entry_count++] = (nmo_field_set_entry_t){"fov", vals[OPT_FOV].val.str};
+        args.entries[args.entry_count++] =
+            (nmo_field_set_entry_t){"fov", vals[OPT_FOV].val.str};
     if (vals[OPT_NEAR].present)
-        entries[entry_count++] = (nmo_field_set_entry_t){"near_plane", vals[OPT_NEAR].val.str};
+        args.entries[args.entry_count++] =
+            (nmo_field_set_entry_t){"near_plane", vals[OPT_NEAR].val.str};
     if (vals[OPT_FAR].present)
-        entries[entry_count++] = (nmo_field_set_entry_t){"far_plane", vals[OPT_FAR].val.str};
+        args.entries[args.entry_count++] =
+            (nmo_field_set_entry_t){"far_plane", vals[OPT_FAR].val.str};
 
-    if (entry_count == 0) {
+    if (args.entry_count == 0) {
         fprintf(stderr, "Error: No camera properties specified. Use --fov, --near, or --far\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
-    if (rc) return rc;
-
-    /* Validate object is a camera */
-    nmo_object_t *obj = nmo_core_find_by_id(&c, object_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object #%u not found\n", object_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
-    }
-
-    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-    if (class_id != NMO_CID_CAMERA && class_id != NMO_CID_TARGETCAMERA) {
-        fprintf(stderr, "Error: Object #%u is not a CKCamera or CKTargetCamera (class %u)\n",
-                object_id, class_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
-
-    fprintf(c.out, "Camera #%u:\n", object_id);
-
-    nmo_field_set_result_t result;
-    int set_rc = nmo_core_set_fields(&c, object_id, entries, entry_count,
-                                     dry_run, &result);
-    if (set_rc != NMO_CLI_EXIT_SUCCESS)
-        return nmo_cmd_ctx_done(&c, set_rc);
-
-    if (!dry_run && output) {
-        nmo_save_options_t save_opts = nmo_save_options_default();
-        int save_rc = nmo_save_file(c.session, output, &save_opts);
-        if (save_rc != NMO_OK) {
-            fprintf(stderr, "Error: Save failed: %s\n", nmo_error_string(save_rc));
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
-        }
-        fprintf(c.out, "Saved to: %s\n", output);
-    }
-
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    const nmo_cli_write_spec_t spec = {
+        .command_name = "entity.set-camera",
+        .output_required_unless_dry_run = true,
+    };
+    return nmo_cli_run_write_command(
+        file_path,
+        output,
+        dry_run,
+        global,
+        &spec,
+        entity_set_fields_mutate,
+        entity_set_fields_report,
+        &args);
 }
 
 /* ============================================================================
@@ -876,11 +1036,6 @@ int nmo_cmd_entity_set_light(int argc, char **argv,
     const char *output = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
 
-    if (!dry_run && !output) {
-        fprintf(stderr, "Error: -o required (or use --dry-run)\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
     if (r.pos_count < 2) {
         fprintf(stderr, "Usage: nmo entity set-light <id> [--diffuse <color>] [--range <f>] <file> -o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -894,55 +1049,35 @@ int nmo_cmd_entity_set_light(int argc, char **argv,
 
     const char *file_path = r.pos_args[r.pos_count - 1];
 
-    /* Build field entries */
-    nmo_field_set_entry_t entries[2];
-    size_t entry_count = 0;
+    entity_set_fields_args_t args = {
+        .object_id = object_id,
+        .target = ENTITY_FIELD_TARGET_LIGHT,
+        .entry_count = 0,
+    };
 
     if (vals[OPT_DIFFUSE].present)
-        entries[entry_count++] = (nmo_field_set_entry_t){"diffuse_color", vals[OPT_DIFFUSE].val.str};
+        args.entries[args.entry_count++] =
+            (nmo_field_set_entry_t){"diffuse_color", vals[OPT_DIFFUSE].val.str};
     if (vals[OPT_RANGE].present)
-        entries[entry_count++] = (nmo_field_set_entry_t){"range", vals[OPT_RANGE].val.str};
+        args.entries[args.entry_count++] =
+            (nmo_field_set_entry_t){"range", vals[OPT_RANGE].val.str};
 
-    if (entry_count == 0) {
+    if (args.entry_count == 0) {
         fprintf(stderr, "Error: No light properties specified. Use --diffuse or --range\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
-    if (rc) return rc;
-
-    /* Validate object is a light */
-    nmo_object_t *obj = nmo_core_find_by_id(&c, object_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object #%u not found\n", object_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
-    }
-
-    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-    if (class_id != NMO_CID_LIGHT && class_id != NMO_CID_TARGETLIGHT) {
-        fprintf(stderr, "Error: Object #%u is not a CKLight or CKTargetLight (class %u)\n",
-                object_id, class_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
-
-    fprintf(c.out, "Light #%u:\n", object_id);
-
-    nmo_field_set_result_t result;
-    int set_rc = nmo_core_set_fields(&c, object_id, entries, entry_count,
-                                     dry_run, &result);
-    if (set_rc != NMO_CLI_EXIT_SUCCESS)
-        return nmo_cmd_ctx_done(&c, set_rc);
-
-    if (!dry_run && output) {
-        nmo_save_options_t save_opts = nmo_save_options_default();
-        int save_rc = nmo_save_file(c.session, output, &save_opts);
-        if (save_rc != NMO_OK) {
-            fprintf(stderr, "Error: Save failed: %s\n", nmo_error_string(save_rc));
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
-        }
-        fprintf(c.out, "Saved to: %s\n", output);
-    }
-
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    const nmo_cli_write_spec_t spec = {
+        .command_name = "entity.set-light",
+        .output_required_unless_dry_run = true,
+    };
+    return nmo_cli_run_write_command(
+        file_path,
+        output,
+        dry_run,
+        global,
+        &spec,
+        entity_set_fields_mutate,
+        entity_set_fields_report,
+        &args);
 }

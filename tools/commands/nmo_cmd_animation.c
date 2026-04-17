@@ -7,6 +7,7 @@
 
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
+#include "../nmo_cli_write.h"
 #include "../nmo_cli_output.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
@@ -19,6 +20,8 @@
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_animation_schemas.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_parse.h"
+#include "session/nmo_session_edit.h"
 
 #include <errno.h>
 #include <math.h>
@@ -978,33 +981,16 @@ int nmo_cmd_animation_export(int argc, char **argv, const nmo_cli_global_opts_t 
 
 /** Parse a hex string like "0x637c4301" to uint32_t */
 static bool parse_hex_u32(const char *str, uint32_t *out) {
-    if (!str) return false;
-    char *end = NULL;
-    unsigned long val = strtoul(str, &end, 16);
-    if (end == str || *end != '\0') {
-        /* Try with 0x prefix stripped */
-        if (str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
-            val = strtoul(str + 2, &end, 16);
-            if (end == str + 2 || *end != '\0') return false;
-        } else {
-            return false;
-        }
-    }
-    *out = (uint32_t)val;
-    return true;
+    return nmo_parse_u32_range_base(str, 16, 0, UINT32_MAX, out) == NMO_OK;
 }
 
 /** Decode hex string to bytes. Returns number of bytes decoded. */
 static size_t hex_decode(const char *hex, uint8_t *out, size_t out_size) {
-    size_t len = strlen(hex);
-    size_t bytes = len / 2;
-    if (bytes > out_size) bytes = out_size;
-    for (size_t i = 0; i < bytes; ++i) {
-        unsigned int b;
-        if (sscanf(hex + i * 2, "%2x", &b) != 1) return i;
-        out[i] = (uint8_t)b;
+    size_t count = 0;
+    if (nmo_parse_hex_bytes(hex, out, out_size, &count) != NMO_OK) {
+        return count;
     }
-    return bytes;
+    return count;
 }
 
 int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -1082,7 +1068,7 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
 
     /* Open NMO session */
     nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_with_file(&c, nmo_path, global);
+    int rc = nmo_cli_write_init_ctx(&c, nmo_path, global);
     if (rc) {
         yyjson_doc_free(jdoc);
         return rc;
@@ -1210,6 +1196,7 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
 
     /* Find or create the target object */
     nmo_object_t *target = NULL;
+    nmo_object_id_t created_target_id = 0;
     if (do_replace) {
         target = nmo_core_find_by_id(&c, replace_id);
         if (!target) {
@@ -1238,7 +1225,25 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
             fprintf(stderr, "Error: Created object %u not found\n", new_id);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
+        created_target_id = new_id;
         fprintf(stderr, "Created CKObjectAnimation #%u\n", new_id);
+    }
+
+    nmo_session_edit_t *edit = NULL;
+    nmo_status_t edit_rc = nmo_session_edit_begin(c.session, "animation.import", &edit);
+    if (edit_rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to begin animation edit: %s\n",
+                nmo_error_string(edit_rc));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+    if (created_target_id != 0) {
+        edit_rc = nmo_session_edit_track_created_object(edit, created_target_id);
+        if (edit_rc != NMO_OK) {
+            nmo_session_edit_rollback(edit);
+            fprintf(stderr, "Error: Failed to track created animation object: %s\n",
+                    nmo_error_string(edit_rc));
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
     }
 
     /* Update state */
@@ -1248,15 +1253,25 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
         nmo_status_t alloc_rc =
             nmo_object_alloc_state(target, sizeof(nmo_objectanimation_state_t));
         if (alloc_rc != NMO_OK) {
+            nmo_session_edit_rollback(edit);
             fprintf(stderr, "Error: Failed to allocate animation state\n");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
         st = (nmo_objectanimation_state_t *)nmo_object_get_state(target);
         if (!st) {
+            nmo_session_edit_rollback(edit);
             fprintf(stderr, "Error: Animation state allocation failed\n");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
         memset(st, 0, sizeof(*st));
+    }
+
+    edit_rc = nmo_session_edit_snapshot_bytes(edit, st, sizeof(*st));
+    if (edit_rc != NMO_OK) {
+        nmo_session_edit_rollback(edit);
+        fprintf(stderr, "Error: Failed to snapshot animation state: %s\n",
+                nmo_error_string(edit_rc));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     st->format = format;
@@ -1266,12 +1281,19 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
     st->length = (float)length_val;
     st->controller_count = ctrl_count;
     st->controllers = controllers;
+    nmo_session_edit_mark(
+        edit, NMO_SESSION_EDIT_OBJECT_STATE | NMO_SESSION_EDIT_REFERENCES);
+    edit_rc = nmo_session_edit_commit(edit);
+    if (edit_rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to commit animation edit: %s\n",
+                nmo_error_string(edit_rc));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
 
     /* Save */
-    int save_rc = nmo_save_file(c.session, output_path, NULL);
-    if (save_rc != 0) {
-        fprintf(stderr, "Error: Failed to save '%s': %d\n", output_path, save_rc);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    int save_rc = nmo_cli_save_session(c.session, output_path, NULL);
+    if (save_rc != NMO_CLI_EXIT_SUCCESS) {
+        return nmo_cmd_ctx_done(&c, save_rc);
     }
 
     fprintf(stderr, "Saved: %s\n", output_path);

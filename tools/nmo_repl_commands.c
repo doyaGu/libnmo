@@ -2,6 +2,7 @@
 
 #include "nmo_cmd_core.h"
 #include "nmo_cmd_ctx.h"
+#include "nmo_cli_write.h"
 #include "nmo_repl_input.h"
 #include "nmo_repl_util.h"
 
@@ -13,6 +14,7 @@
 #include "behavior/nmo_param_value.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_parse.h"
 #include "dsl/nmo_dsl.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_parameter_schemas.h"
@@ -402,7 +404,12 @@ static int repl_query_set_exact_class(
     }
 
     if (isdigit((unsigned char)class_token[0]) || class_token[0] == '-') {
-        query->class_id = (nmo_class_id_t)atoi(class_token);
+        uint32_t class_id = 0;
+        if (nmo_parse_u32_range(class_token, 0, UINT32_MAX, &class_id) != NMO_OK) {
+            fprintf(stderr, "Invalid class ID: %s\n", class_token);
+            return -1;
+        }
+        query->class_id = (nmo_class_id_t)class_id;
     } else if (nmo_core_query_set_class_name(
                    c, query, class_token, false) != NMO_OK) {
         fprintf(stderr, "Unknown class: %s\n", class_token);
@@ -535,13 +542,12 @@ static int cmd_dump(nmo_repl_context_t *repl, int argc, char **argv) {
 
     int level = (int)repl->dump_level;
     if (argc > 2) {
-        level = atoi(argv[2]);
-        if (level < 0) {
-            level = 0;
+        int32_t parsed = 0;
+        if (nmo_parse_i32_range(argv[2], 0, 3, &parsed) != NMO_OK) {
+            fprintf(stderr, "Usage: dump [index] [level 0-3]\n");
+            return -1;
         }
-        if (level > 3) {
-            level = 3;
-        }
+        level = parsed;
     }
 
     size_t object_count = nmo_repl_object_count(repl);
@@ -1015,10 +1021,8 @@ static int cmd_save(nmo_repl_context_t *repl, int argc, char **argv) {
         }
     }
 
-    int rc = nmo_save_file(repl->session, output_path, &opts);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to save to '%s': %s\n",
-                output_path, nmo_error_string(rc));
+    int rc = nmo_cli_save_session(repl->session, output_path, &opts);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
         return -1;
     }
 
@@ -1256,8 +1260,8 @@ static int cmd_set(nmo_repl_context_t *repl, int argc, char **argv) {
     }
 
     if (strcmp(argv[1], "level") == 0) {
-        int level = atoi(argv[2]);
-        if (level < 0 || level > 3) {
+        int32_t level = 0;
+        if (nmo_parse_i32_range(argv[2], 0, 3, &level) != NMO_OK) {
             fprintf(stderr, "Usage: set level 0-3\n");
             return -1;
         }

@@ -9,6 +9,7 @@
 
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
+#include "../nmo_cli_write.h"
 #include "../nmo_cli_output.h"
 #include "../nmo_cli_json.h"
 #include "../nmo_opt.h"
@@ -1066,11 +1067,9 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
             free(orphan_ids);
 
             nmo_save_options_t save_opts = nmo_save_options_default();
-            int save_rc = nmo_save_file(c.session, output_path, &save_opts);
-            if (save_rc != NMO_OK) {
-                fprintf(stderr, "Error saving stripped file: %s\n",
-                        nmo_error_string(save_rc));
-                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+            int save_rc = nmo_cli_save_session(c.session, output_path, &save_opts);
+            if (save_rc != NMO_CLI_EXIT_SUCCESS) {
+                return nmo_cmd_ctx_done(&c, save_rc);
             }
 
             if (!c.is_json) {

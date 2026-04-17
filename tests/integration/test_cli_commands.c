@@ -16,9 +16,11 @@
 #include "app/nmo_save.h"
 #include "core/nmo_array.h"
 #include "object/builtin/nmo_group_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
+#include "type/nmo_type_guids.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1363,6 +1365,62 @@ static bool create_rename_test_fixture(const char *path) {
     return rc == NMO_OK;
 }
 
+static bool create_parameter_hex_fixture(const char *path, nmo_object_id_t *out_param_id) {
+    if (out_param_id == NULL) {
+        return false;
+    }
+    *out_param_id = 0;
+
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    if (!ctx) return false;
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    if (!session) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    nmo_runtime_report_t report = {0};
+    nmo_object_id_t param_id = 0;
+    bool ok = nmo_session_create_object(
+        session,
+        NMO_CID_PARAMETER,
+        "HexParam",
+        (nmo_guid_t){0, 0},
+        &param_id,
+        &report) == NMO_OK;
+
+    if (ok) {
+        nmo_object_repository_t *repo = nmo_session_get_repository(session);
+        nmo_object_t *param = repo ? nmo_object_repository_find_by_id(repo, param_id) : NULL;
+        nmo_parameter_state_t *state = param ? nmo_parameter_get_mutable_state(param) : NULL;
+        ok = state != NULL;
+        if (ok) {
+            state->type_guid = CKPGUID_INT;
+            state->mode = CKPARAM_MODE_BUFFER;
+            state->has_state = true;
+            ok = nmo_array_alloc(&state->buffer_data, sizeof(uint8_t), 4, NULL) == NMO_OK;
+        }
+        if (ok) {
+            uint8_t initial[4] = {0xAA, 0xBB, 0xCC, 0xDD};
+            memcpy(state->buffer_data.data, initial, sizeof(initial));
+        }
+    }
+
+    if (ok) {
+        nmo_save_options_t save_opts = nmo_save_options_default();
+        ok = nmo_save_file(session, path, &save_opts) == NMO_OK;
+    }
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+    if (ok) {
+        *out_param_id = param_id;
+    }
+    return ok;
+}
+
 TEST(cli, object_rename_json) {
     const char *fixture = "test_rename_fixture.nmo";
     const char *output = "test_rename_output.nmo";
@@ -1616,6 +1674,54 @@ TEST(cli, object_delete_rejects_empty_dsl_filter) {
     remove(fixture);
 }
 
+TEST(cli, parameter_set_hex_dry_run_does_not_write_output) {
+    const char *fixture = "test_parameter_hex_dry_fixture.nmo";
+    const char *output = "test_parameter_hex_dry_output.nmo";
+    remove(fixture);
+    remove(output);
+
+    nmo_object_id_t param_id = 0;
+    ASSERT_TRUE(create_parameter_hex_fixture(fixture, &param_id));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "parameter set --hex --dry-run -o \"%s\" %u 0102 \"%s\"",
+             output, (unsigned)param_id, fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "dry run");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+
+    remove(fixture);
+    remove(output);
+}
+
+TEST(cli, parameter_set_hex_saves_output) {
+    const char *fixture = "test_parameter_hex_save_fixture.nmo";
+    const char *output = "test_parameter_hex_save_output.nmo";
+    remove(fixture);
+    remove(output);
+
+    nmo_object_id_t param_id = 0;
+    ASSERT_TRUE(create_parameter_hex_fixture(fixture, &param_id));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "parameter set --hex -o \"%s\" %u 0102 \"%s\"",
+             output, (unsigned)param_id, fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Saved to");
+    ASSERT_TRUE(file_exists(output));
+    free(result.output);
+
+    remove(fixture);
+    remove(output);
+}
+
 /* ============================================================================
  * convert strip --dry-run
  * ============================================================================ */
@@ -1812,6 +1918,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, object_rename_missing_output);
     REGISTER_TEST(cli, object_delete_batch_name_filter_saves);
     REGISTER_TEST(cli, object_delete_rejects_empty_dsl_filter);
+    REGISTER_TEST(cli, parameter_set_hex_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, parameter_set_hex_saves_output);
 
     /* convert strip --dry-run */
     REGISTER_TEST(cli, convert_strip_dry_run_json);

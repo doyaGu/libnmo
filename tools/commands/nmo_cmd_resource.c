@@ -7,6 +7,7 @@
 
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
+#include "../nmo_cli_write.h"
 #include "../nmo_cli_output.h"
 #include "../nmo_tool_common.h"
 #include "../nmo_opt.h"
@@ -682,6 +683,89 @@ static int read_file_to_memory(const char *path, uint8_t **out_data, uint32_t *o
  * resource import
  * ============================================================================ */
 
+typedef struct resource_import_args {
+    const char *res_name;
+    const uint8_t *file_data;
+    uint32_t file_size;
+    nmo_object_id_t owner_ids[64];
+    uint32_t owner_count;
+    uint32_t new_index;
+} resource_import_args_t;
+
+static int resource_import_mutate(
+    nmo_cmd_ctx_t *c,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    (void)dry_run;
+    (void)output_path;
+    resource_import_args_t *args = (resource_import_args_t *)user_data;
+    if (args == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_included_file_metadata_t meta;
+    memset(&meta, 0, sizeof(meta));
+    meta.owner_ids = args->owner_ids;
+    meta.owner_count = args->owner_count;
+
+    int add_rc = nmo_session_add_included_file_ex(
+        c->session,
+        args->res_name,
+        args->file_data,
+        args->file_size,
+        &meta);
+    if (add_rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to add resource: %s\n", nmo_error_string(add_rc));
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    uint32_t count = 0;
+    (void)nmo_session_get_included_files(c->session, &count);
+    args->new_index = count > 0 ? count - 1 : 0;
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int resource_import_report(
+    nmo_cmd_ctx_t *c,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    (void)dry_run;
+    resource_import_args_t *args = (resource_import_args_t *)user_data;
+    if (args == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, data, "index", args->new_index);
+        nmo_cli_json_add_str_safe(doc, data, "name", args->res_name);
+        yyjson_mut_obj_add_uint(doc, data, "size", args->file_size);
+        yyjson_mut_obj_add_uint(doc, data, "owner_count", args->owner_count);
+        yyjson_mut_obj_add_str(doc, data, "output", output_path);
+        nmo_cmd_ctx_json_end(c, doc, data, "resource.import");
+    } else {
+        fprintf(c->out, "Imported resource:\n");
+        char idx_buf[32];
+        snprintf(idx_buf, sizeof(idx_buf), "%u", args->new_index);
+        nmo_cli_print_kv(c->out, "Index", idx_buf, 12, c->colorize);
+        nmo_cli_print_kv(c->out, "Name", args->res_name, 12, c->colorize);
+        char size_buf[32];
+        snprintf(size_buf, sizeof(size_buf), "%u", args->file_size);
+        nmo_cli_print_kv(c->out, "Size", size_buf, 12, c->colorize);
+        char own_buf[32];
+        snprintf(own_buf, sizeof(own_buf), "%u", args->owner_count);
+        nmo_cli_print_kv(c->out, "Owners", own_buf, 12, c->colorize);
+        fprintf(c->out, "\nSaved to: %s\n", output_path);
+    }
+
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 int nmo_cmd_resource_import(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--output", "-o", NMO_OPT_STRING, "Output file (required)"},
@@ -722,92 +806,157 @@ int nmo_cmd_resource_import(int argc, char **argv, const nmo_cli_global_opts_t *
     /* Resource name */
     const char *res_name = name_str ? name_str : path_basename(disk_file);
 
+    resource_import_args_t args = {
+        .res_name = res_name,
+        .file_data = file_data,
+        .file_size = file_size,
+    };
+
     /* Parse owner IDs */
-    nmo_object_id_t owner_ids[64];
-    uint32_t owner_count = 0;
     if (owner_str && *owner_str) {
         char buf[1024];
         snprintf(buf, sizeof(buf), "%s", owner_str);
         char *tok = strtok(buf, ",");
-        while (tok && owner_count < 64) {
+        while (tok && args.owner_count < 64) {
             uint32_t id;
             if (!nmo_tool_parse_u32_dec(tok, &id)) {
                 fprintf(stderr, "Error: Invalid owner ID '%s'\n", tok);
                 free(file_data);
                 return NMO_CLI_EXIT_ARG_ERROR;
             }
-            owner_ids[owner_count++] = id;
+            args.owner_ids[args.owner_count++] = id;
             tok = strtok(NULL, ",");
         }
     }
 
-    /* Open NMO session */
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_with_file(&c, nmo_file, global);
-    if (rc) {
-        free(file_data);
-        return rc;
-    }
-
-    /* Add included file */
-    nmo_included_file_metadata_t meta;
-    memset(&meta, 0, sizeof(meta));
-    meta.owner_ids = owner_ids;
-    meta.owner_count = owner_count;
-
-    int add_rc = nmo_session_add_included_file_ex(c.session, res_name, file_data, file_size, &meta);
-    if (add_rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to add resource: %s\n", nmo_error_string(add_rc));
-        free(file_data);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    /* Get the new index */
-    uint32_t count = 0;
-    (void)nmo_session_get_included_files(c.session, &count);
-    uint32_t new_index = count > 0 ? count - 1 : 0;
-
-    /* Save */
-    nmo_save_options_t save_opts = nmo_save_options_default();
-    int save_rc = nmo_save_file(c.session, output_path, &save_opts);
-    if (save_rc != NMO_OK) {
-        fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_rc));
-        free(file_data);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
-    }
-
-    /* Output */
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, data, "index", new_index);
-        nmo_cli_json_add_str_safe(doc, data, "name", res_name);
-        yyjson_mut_obj_add_uint(doc, data, "size", file_size);
-        yyjson_mut_obj_add_uint(doc, data, "owner_count", owner_count);
-        yyjson_mut_obj_add_str(doc, data, "output", output_path);
-        nmo_cmd_ctx_json_end(&c, doc, data, "resource.import");
-    } else {
-        fprintf(c.out, "Imported resource:\n");
-        char idx_buf[32];
-        snprintf(idx_buf, sizeof(idx_buf), "%u", new_index);
-        nmo_cli_print_kv(c.out, "Index", idx_buf, 12, c.colorize);
-        nmo_cli_print_kv(c.out, "Name", res_name, 12, c.colorize);
-        char size_buf[32];
-        snprintf(size_buf, sizeof(size_buf), "%u", file_size);
-        nmo_cli_print_kv(c.out, "Size", size_buf, 12, c.colorize);
-        char own_buf[32];
-        snprintf(own_buf, sizeof(own_buf), "%u", owner_count);
-        nmo_cli_print_kv(c.out, "Owners", own_buf, 12, c.colorize);
-        fprintf(c.out, "\nSaved to: %s\n", output_path);
-    }
-
+    const nmo_cli_write_spec_t spec = {
+        .command_name = "resource.import",
+        .output_required_unless_dry_run = true,
+    };
+    int rc = nmo_cli_run_write_command(
+        nmo_file,
+        output_path,
+        false,
+        global,
+        &spec,
+        resource_import_mutate,
+        resource_import_report,
+        &args);
     free(file_data);
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return rc;
 }
 
 /* ============================================================================
  * resource replace
  * ============================================================================ */
+
+typedef struct resource_replace_args {
+    const char *index_str;
+    const char *name_str;
+    const uint8_t *file_data;
+    uint32_t file_size;
+    uint32_t res_index;
+    char res_name[256];
+    uint32_t old_size;
+} resource_replace_args_t;
+
+static int resource_replace_mutate(
+    nmo_cmd_ctx_t *c,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    (void)dry_run;
+    (void)output_path;
+    resource_replace_args_t *args = (resource_replace_args_t *)user_data;
+    if (args == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    uint32_t count = 0;
+    nmo_included_file_t *files = nmo_session_get_included_files(c->session, &count);
+
+    uint32_t res_index = 0;
+    const nmo_included_file_t *res = NULL;
+
+    if (args->index_str != NULL) {
+        uint32_t idx;
+        if (!nmo_tool_parse_u32_dec(args->index_str, &idx)) {
+            fprintf(stderr, "Error: Invalid index '%s'\n", args->index_str);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        if (idx >= count) {
+            fprintf(stderr, "Error: Index %u out of range (count=%u)\n", idx, count);
+            return NMO_CLI_EXIT_NOT_FOUND;
+        }
+        res_index = idx;
+        res = &files[idx];
+    } else {
+        for (uint32_t i = 0; i < count; ++i) {
+            if (files[i].name && strcmp(files[i].name, args->name_str) == 0) {
+                res_index = i;
+                res = &files[i];
+                break;
+            }
+        }
+        if (res == NULL) {
+            fprintf(stderr, "Error: Resource '%s' not found\n", args->name_str);
+            return NMO_CLI_EXIT_NOT_FOUND;
+        }
+    }
+
+    args->res_index = res_index;
+    args->old_size = res->size;
+    snprintf(args->res_name, sizeof(args->res_name), "%s", res->name ? res->name : "");
+
+    int rep_rc = nmo_session_replace_included_file(
+        c->session,
+        res_index,
+        args->file_data,
+        args->file_size);
+    if (rep_rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to replace resource: %s\n", nmo_error_string(rep_rc));
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int resource_replace_report(
+    nmo_cmd_ctx_t *c,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    (void)dry_run;
+    resource_replace_args_t *args = (resource_replace_args_t *)user_data;
+    if (args == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, data, "index", args->res_index);
+        nmo_cli_json_add_str_safe(doc, data, "name", args->res_name);
+        yyjson_mut_obj_add_uint(doc, data, "old_size", args->old_size);
+        yyjson_mut_obj_add_uint(doc, data, "new_size", args->file_size);
+        yyjson_mut_obj_add_str(doc, data, "output", output_path);
+        nmo_cmd_ctx_json_end(c, doc, data, "resource.replace");
+    } else {
+        fprintf(c->out, "Replaced resource:\n");
+        char idx_buf[32];
+        snprintf(idx_buf, sizeof(idx_buf), "%u", args->res_index);
+        nmo_cli_print_kv(c->out, "Index", idx_buf, 12, c->colorize);
+        nmo_cli_print_kv(c->out, "Name", args->res_name[0] ? args->res_name : "-", 12, c->colorize);
+        char old_buf[32];
+        snprintf(old_buf, sizeof(old_buf), "%u -> %u", args->old_size, args->file_size);
+        nmo_cli_print_kv(c->out, "Size", old_buf, 12, c->colorize);
+        fprintf(c->out, "\nSaved to: %s\n", output_path);
+    }
+
+    return NMO_CLI_EXIT_SUCCESS;
+}
 
 int nmo_cmd_resource_replace(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
@@ -851,99 +1000,174 @@ int nmo_cmd_resource_replace(int argc, char **argv, const nmo_cli_global_opts_t 
         return NMO_CLI_EXIT_IO_ERROR;
     }
 
-    /* Open NMO session */
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_with_file(&c, nmo_file, global);
-    if (rc) {
-        free(file_data);
-        return rc;
-    }
-
-    /* Find resource */
-    uint32_t count = 0;
-    nmo_included_file_t *files = nmo_session_get_included_files(c.session, &count);
-
-    uint32_t res_index = 0;
-    const nmo_included_file_t *res = NULL;
-
-    if (index_str) {
-        uint32_t idx;
-        if (!nmo_tool_parse_u32_dec(index_str, &idx)) {
-            fprintf(stderr, "Error: Invalid index '%s'\n", index_str);
-            free(file_data);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-        }
-        if (idx >= count) {
-            fprintf(stderr, "Error: Index %u out of range (count=%u)\n", idx, count);
-            free(file_data);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
-        }
-        res_index = idx;
-        res = &files[idx];
-    } else {
-        for (uint32_t i = 0; i < count; ++i) {
-            if (files[i].name && strcmp(files[i].name, name_str) == 0) {
-                res_index = i;
-                res = &files[i];
-                break;
-            }
-        }
-        if (!res) {
-            fprintf(stderr, "Error: Resource '%s' not found\n", name_str);
-            free(file_data);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
-        }
-    }
-
-    uint32_t old_size = res->size;
-    const char *res_name = res->name ? res->name : "";
-
-    /* Replace payload */
-    int rep_rc = nmo_session_replace_included_file(c.session, res_index, file_data, file_size);
-    if (rep_rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to replace resource: %s\n", nmo_error_string(rep_rc));
-        free(file_data);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    /* Save */
-    nmo_save_options_t save_opts = nmo_save_options_default();
-    int save_rc = nmo_save_file(c.session, output_path, &save_opts);
-    if (save_rc != NMO_OK) {
-        fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_rc));
-        free(file_data);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
-    }
-
-    /* Output */
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, data, "index", res_index);
-        nmo_cli_json_add_str_safe(doc, data, "name", res_name);
-        yyjson_mut_obj_add_uint(doc, data, "old_size", old_size);
-        yyjson_mut_obj_add_uint(doc, data, "new_size", file_size);
-        yyjson_mut_obj_add_str(doc, data, "output", output_path);
-        nmo_cmd_ctx_json_end(&c, doc, data, "resource.replace");
-    } else {
-        fprintf(c.out, "Replaced resource:\n");
-        char idx_buf[32];
-        snprintf(idx_buf, sizeof(idx_buf), "%u", res_index);
-        nmo_cli_print_kv(c.out, "Index", idx_buf, 12, c.colorize);
-        nmo_cli_print_kv(c.out, "Name", *res_name ? res_name : "-", 12, c.colorize);
-        char old_buf[32];
-        snprintf(old_buf, sizeof(old_buf), "%u -> %u", old_size, file_size);
-        nmo_cli_print_kv(c.out, "Size", old_buf, 12, c.colorize);
-        fprintf(c.out, "\nSaved to: %s\n", output_path);
-    }
-
+    resource_replace_args_t args = {
+        .index_str = index_str,
+        .name_str = name_str,
+        .file_data = file_data,
+        .file_size = file_size,
+    };
+    const nmo_cli_write_spec_t spec = {
+        .command_name = "resource.replace",
+        .output_required_unless_dry_run = true,
+    };
+    int rc = nmo_cli_run_write_command(
+        nmo_file,
+        output_path,
+        false,
+        global,
+        &spec,
+        resource_replace_mutate,
+        resource_replace_report,
+        &args);
     free(file_data);
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return rc;
 }
 
 /* ============================================================================
  * resource remove
  * ============================================================================ */
+
+typedef struct resource_remove_args {
+    const char *index_str;
+    const char *name_str;
+    uint32_t res_index;
+    char res_name[256];
+    uint32_t res_size;
+    uint32_t res_owner_count;
+    uint32_t before_count;
+    uint32_t after_count;
+} resource_remove_args_t;
+
+static int resource_remove_mutate(
+    nmo_cmd_ctx_t *c,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    (void)output_path;
+    resource_remove_args_t *args = (resource_remove_args_t *)user_data;
+    if (args == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    uint32_t count = 0;
+    nmo_included_file_t *files = nmo_session_get_included_files(c->session, &count);
+
+    uint32_t res_index = 0;
+    const nmo_included_file_t *res = NULL;
+
+    if (args->index_str != NULL) {
+        uint32_t idx;
+        if (!nmo_tool_parse_u32_dec(args->index_str, &idx)) {
+            fprintf(stderr, "Error: Invalid index '%s'\n", args->index_str);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        if (idx >= count) {
+            fprintf(stderr, "Error: Index %u out of range (count=%u)\n", idx, count);
+            return NMO_CLI_EXIT_NOT_FOUND;
+        }
+        res_index = idx;
+        res = &files[idx];
+    } else {
+        for (uint32_t i = 0; i < count; ++i) {
+            if (files[i].name && strcmp(files[i].name, args->name_str) == 0) {
+                res_index = i;
+                res = &files[i];
+                break;
+            }
+        }
+        if (res == NULL) {
+            fprintf(stderr, "Error: Resource '%s' not found\n", args->name_str);
+            return NMO_CLI_EXIT_NOT_FOUND;
+        }
+    }
+
+    args->res_index = res_index;
+    snprintf(args->res_name, sizeof(args->res_name), "%s", res->name ? res->name : "");
+    args->res_size = res->size;
+    args->res_owner_count = (uint32_t)res->owner_ids.count;
+    args->before_count = count;
+    args->after_count = count;
+
+    if (dry_run) {
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+
+    int rm_rc = nmo_session_remove_included_file(c->session, res_index);
+    if (rm_rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to remove resource: %s\n", nmo_error_string(rm_rc));
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    uint32_t new_count = 0;
+    (void)nmo_session_get_included_files(c->session, &new_count);
+    args->after_count = new_count;
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int resource_remove_report(
+    nmo_cmd_ctx_t *c,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    resource_remove_args_t *args = (resource_remove_args_t *)user_data;
+    if (args == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (dry_run) {
+        if (c->is_json) {
+            yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
+            yyjson_mut_val *data = yyjson_mut_obj(doc);
+            yyjson_mut_obj_add_bool(doc, data, "dry_run", true);
+            yyjson_mut_obj_add_uint(doc, data, "index", args->res_index);
+            nmo_cli_json_add_str_safe(doc, data, "name", args->res_name);
+            yyjson_mut_obj_add_uint(doc, data, "size", args->res_size);
+            yyjson_mut_obj_add_uint(doc, data, "owner_count", args->res_owner_count);
+            yyjson_mut_obj_add_uint(doc, data, "total_count", args->before_count);
+            nmo_cmd_ctx_json_end(c, doc, data, "resource.remove");
+        } else {
+            fprintf(c->out, "Would remove resource:\n");
+            char idx_buf[32];
+            snprintf(idx_buf, sizeof(idx_buf), "%u", args->res_index);
+            nmo_cli_print_kv(c->out, "Index", idx_buf, 12, c->colorize);
+            nmo_cli_print_kv(c->out, "Name", args->res_name[0] ? args->res_name : "-", 12, c->colorize);
+            char size_buf[32];
+            snprintf(size_buf, sizeof(size_buf), "%u", args->res_size);
+            nmo_cli_print_kv(c->out, "Size", size_buf, 12, c->colorize);
+            char own_buf[32];
+            snprintf(own_buf, sizeof(own_buf), "%u", args->res_owner_count);
+            nmo_cli_print_kv(c->out, "Owners", own_buf, 12, c->colorize);
+            fprintf(c->out, "\n(dry run, no changes made)\n");
+        }
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, data, "index", args->res_index);
+        nmo_cli_json_add_str_safe(doc, data, "name", args->res_name);
+        yyjson_mut_obj_add_uint(doc, data, "size", args->res_size);
+        yyjson_mut_obj_add_uint(doc, data, "before_count", args->before_count);
+        yyjson_mut_obj_add_uint(doc, data, "after_count", args->after_count);
+        yyjson_mut_obj_add_str(doc, data, "output", output_path);
+        nmo_cmd_ctx_json_end(c, doc, data, "resource.remove");
+    } else {
+        fprintf(c->out, "Removed resource:\n");
+        char idx_buf[32];
+        snprintf(idx_buf, sizeof(idx_buf), "%u", args->res_index);
+        nmo_cli_print_kv(c->out, "Index", idx_buf, 12, c->colorize);
+        nmo_cli_print_kv(c->out, "Name", args->res_name[0] ? args->res_name : "-", 12, c->colorize);
+        char cnt_buf[32];
+        snprintf(cnt_buf, sizeof(cnt_buf), "%u -> %u", args->before_count, args->after_count);
+        nmo_cli_print_kv(c->out, "Count", cnt_buf, 12, c->colorize);
+        fprintf(c->out, "\nSaved to: %s\n", output_path);
+    }
+
+    return NMO_CLI_EXIT_SUCCESS;
+}
 
 int nmo_cmd_resource_remove(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
@@ -962,7 +1186,7 @@ int nmo_cmd_resource_remove(int argc, char **argv, const nmo_cli_global_opts_t *
     const char *name_str = vals[2].present ? vals[2].val.str : NULL;
     const bool dry_run = vals[3].val.flag;
 
-    if (!dry_run && (!output_path || !*output_path)) {
+    if (!dry_run && output_path != NULL && !*output_path) {
         fprintf(stderr, "Error: Missing --output (required unless --dry-run)\n");
         fprintf(stderr, "Usage: nmo resource remove -o <output> [--index <n> | --name <name>] [--dry-run] <nmo-file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -980,120 +1204,23 @@ int nmo_cmd_resource_remove(int argc, char **argv, const nmo_cli_global_opts_t *
 
     const char *nmo_file = r.pos_args[r.pos_count - 1];
 
-    /* Open NMO session (use init_with_file for both paths to ensure
-     * consistent file resolution between dry-run and actual mode) */
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_with_file(&c, nmo_file, global);
-    if (rc) return rc;
-
-    /* Find resource */
-    uint32_t count = 0;
-    nmo_included_file_t *files = nmo_session_get_included_files(c.session, &count);
-
-    uint32_t res_index = 0;
-    const nmo_included_file_t *res = NULL;
-
-    if (index_str) {
-        uint32_t idx;
-        if (!nmo_tool_parse_u32_dec(index_str, &idx)) {
-            fprintf(stderr, "Error: Invalid index '%s'\n", index_str);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-        }
-        if (idx >= count) {
-            fprintf(stderr, "Error: Index %u out of range (count=%u)\n", idx, count);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
-        }
-        res_index = idx;
-        res = &files[idx];
-    } else {
-        for (uint32_t i = 0; i < count; ++i) {
-            if (files[i].name && strcmp(files[i].name, name_str) == 0) {
-                res_index = i;
-                res = &files[i];
-                break;
-            }
-        }
-        if (!res) {
-            fprintf(stderr, "Error: Resource '%s' not found\n", name_str);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
-        }
-    }
-
-    const char *res_name = res->name ? res->name : "";
-    uint32_t res_size = res->size;
-    uint32_t res_owner_count = (uint32_t)res->owner_ids.count;
-
-    if (dry_run) {
-        if (c.is_json) {
-            yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-            yyjson_mut_val *data = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_bool(doc, data, "dry_run", true);
-            yyjson_mut_obj_add_uint(doc, data, "index", res_index);
-            nmo_cli_json_add_str_safe(doc, data, "name", res_name);
-            yyjson_mut_obj_add_uint(doc, data, "size", res_size);
-            yyjson_mut_obj_add_uint(doc, data, "owner_count", res_owner_count);
-            yyjson_mut_obj_add_uint(doc, data, "total_count", count);
-            nmo_cmd_ctx_json_end(&c, doc, data, "resource.remove");
-        } else {
-            fprintf(c.out, "Would remove resource:\n");
-            char idx_buf[32];
-            snprintf(idx_buf, sizeof(idx_buf), "%u", res_index);
-            nmo_cli_print_kv(c.out, "Index", idx_buf, 12, c.colorize);
-            nmo_cli_print_kv(c.out, "Name", *res_name ? res_name : "-", 12, c.colorize);
-            char size_buf[32];
-            snprintf(size_buf, sizeof(size_buf), "%u", res_size);
-            nmo_cli_print_kv(c.out, "Size", size_buf, 12, c.colorize);
-            char own_buf[32];
-            snprintf(own_buf, sizeof(own_buf), "%u", res_owner_count);
-            nmo_cli_print_kv(c.out, "Owners", own_buf, 12, c.colorize);
-            fprintf(c.out, "\n(dry run, no changes made)\n");
-        }
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
-    }
-
-    /* Remove */
-    int rm_rc = nmo_session_remove_included_file(c.session, res_index);
-    if (rm_rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to remove resource: %s\n", nmo_error_string(rm_rc));
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    /* Save */
-    nmo_save_options_t save_opts = nmo_save_options_default();
-    int save_rc = nmo_save_file(c.session, output_path, &save_opts);
-    if (save_rc != NMO_OK) {
-        fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_rc));
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
-    }
-
-    /* Get new count after removal */
-    uint32_t new_count = 0;
-    (void)nmo_session_get_included_files(c.session, &new_count);
-
-    /* Output */
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, data, "index", res_index);
-        nmo_cli_json_add_str_safe(doc, data, "name", res_name);
-        yyjson_mut_obj_add_uint(doc, data, "size", res_size);
-        yyjson_mut_obj_add_uint(doc, data, "before_count", count);
-        yyjson_mut_obj_add_uint(doc, data, "after_count", new_count);
-        yyjson_mut_obj_add_str(doc, data, "output", output_path);
-        nmo_cmd_ctx_json_end(&c, doc, data, "resource.remove");
-    } else {
-        fprintf(c.out, "Removed resource:\n");
-        char idx_buf[32];
-        snprintf(idx_buf, sizeof(idx_buf), "%u", res_index);
-        nmo_cli_print_kv(c.out, "Index", idx_buf, 12, c.colorize);
-        nmo_cli_print_kv(c.out, "Name", *res_name ? res_name : "-", 12, c.colorize);
-        char cnt_buf[32];
-        snprintf(cnt_buf, sizeof(cnt_buf), "%u -> %u", count, new_count);
-        nmo_cli_print_kv(c.out, "Count", cnt_buf, 12, c.colorize);
-        fprintf(c.out, "\nSaved to: %s\n", output_path);
-    }
-
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    resource_remove_args_t args = {
+        .index_str = index_str,
+        .name_str = name_str,
+    };
+    const nmo_cli_write_spec_t spec = {
+        .command_name = "resource.remove",
+        .output_required_unless_dry_run = true,
+    };
+    return nmo_cli_run_write_command(
+        nmo_file,
+        output_path,
+        dry_run,
+        global,
+        &spec,
+        resource_remove_mutate,
+        resource_remove_report,
+        &args);
 }
 
 /* ============================================================================

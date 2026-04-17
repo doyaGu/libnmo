@@ -7,6 +7,7 @@
 
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
+#include "../nmo_cli_write.h"
 #include "../nmo_cli_output.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
@@ -20,6 +21,7 @@
 #include "core/nmo_arena.h"
 #include "app/nmo_save.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_edit.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -1276,7 +1278,7 @@ int nmo_cmd_texture_replace(int argc, char **argv, const nmo_cli_global_opts_t *
     nmo_cmd_ctx_t c;
     int rc;
     if (file_path) {
-        rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
+        rc = nmo_cli_write_init_ctx(&c, file_path, global);
     } else {
         rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     }
@@ -1321,12 +1323,36 @@ int nmo_cmd_texture_replace(int argc, char **argv, const nmo_cli_global_opts_t *
     int32_t old_h = ts->reader_height;
     CKTEXTURE_BITMAP_KIND old_kind = ts->bitmap_kind;
 
+    nmo_session_edit_t *edit = NULL;
+    nmo_status_t edit_rc = nmo_session_edit_begin(c.session, "texture.replace", &edit);
+    if (edit_rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to begin texture edit: %s\n",
+                nmo_error_string(edit_rc));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+    edit_rc = nmo_session_edit_snapshot_bytes(edit, ts, sizeof(*ts));
+    if (edit_rc != NMO_OK) {
+        nmo_session_edit_rollback(edit);
+        fprintf(stderr, "Error: Failed to snapshot texture state: %s\n",
+                nmo_error_string(edit_rc));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
     /* Replace bitmap via library function */
     nmo_status_t replace_rc = nmo_texture_replace_bitmap(
         ts, arena, pixels, (uint32_t)img_w, (uint32_t)img_h);
     if (replace_rc != NMO_OK) {
+        nmo_session_edit_rollback(edit);
         fprintf(stderr, "Error: Failed to replace bitmap: %s\n",
                 nmo_error_string(replace_rc));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+    nmo_session_edit_mark(
+        edit, NMO_SESSION_EDIT_OBJECT_STATE | NMO_SESSION_EDIT_RESOURCES);
+    edit_rc = nmo_session_edit_commit(edit);
+    if (edit_rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to commit texture edit: %s\n",
+                nmo_error_string(edit_rc));
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
@@ -1387,10 +1413,9 @@ int nmo_cmd_texture_replace(int argc, char **argv, const nmo_cli_global_opts_t *
     /* Save */
     if (!dry_run && output_path) {
         nmo_save_options_t save_opts = nmo_save_options_default();
-        int save_rc = nmo_save_file(c.session, output_path, &save_opts);
-        if (save_rc != NMO_OK) {
-            fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_rc));
-            exit_code = NMO_CLI_EXIT_IO_ERROR;
+        int save_rc = nmo_cli_save_session(c.session, output_path, &save_opts);
+        if (save_rc != NMO_CLI_EXIT_SUCCESS) {
+            exit_code = save_rc;
         } else if (!c.is_json) {
             fprintf(c.out, "Saved to: %s\n", output_path);
         }

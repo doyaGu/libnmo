@@ -8,11 +8,11 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_write.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
-#include "app/nmo_save.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_material_schemas.h"
 
@@ -366,6 +366,62 @@ int nmo_cmd_material_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
  * material set
  * ============================================================================ */
 
+typedef struct material_set_args {
+    uint32_t object_id;
+    nmo_field_set_entry_t entries[5];
+    size_t entry_count;
+} material_set_args_t;
+
+static int material_set_mutate(
+    nmo_cmd_ctx_t *c,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    (void)output_path;
+    material_set_args_t *args = (material_set_args_t *)user_data;
+    if (c == NULL || args == NULL || args->entry_count == 0) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_object_t *obj = nmo_core_find_by_id(c, args->object_id);
+    if (!obj) {
+        fprintf(stderr, "Error: Object #%u not found\n", args->object_id);
+        return NMO_CLI_EXIT_NOT_FOUND;
+    }
+    if (nmo_object_get_class_id(obj) != NMO_CID_MATERIAL) {
+        fprintf(stderr, "Error: Object #%u is not a CKMaterial\n", args->object_id);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    fprintf(c->out, "Material #%u:\n", args->object_id);
+
+    nmo_field_set_result_t result;
+    return nmo_core_set_fields(
+        c,
+        args->object_id,
+        args->entries,
+        args->entry_count,
+        dry_run,
+        &result);
+}
+
+static int material_set_report(
+    nmo_cmd_ctx_t *c,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    (void)user_data;
+    if (c == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!dry_run && output_path != NULL) {
+        fprintf(c->out, "Saved to: %s\n", output_path);
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 int nmo_cmd_material_set(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--output",   "-o", NMO_OPT_STRING, "Output file"},
@@ -388,11 +444,6 @@ int nmo_cmd_material_set(int argc, char **argv, const nmo_cli_global_opts_t *glo
     const char *output = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
 
-    if (!dry_run && !output) {
-        fprintf(stderr, "Error: -o required (or use --dry-run)\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
     if (r.pos_count < 2) {
         fprintf(stderr, "Usage: nmo material set <id> [options] <file> -o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -407,57 +458,43 @@ int nmo_cmd_material_set(int argc, char **argv, const nmo_cli_global_opts_t *glo
     const char *file_path = r.pos_args[r.pos_count - 1];
 
     /* Build field entries from provided options */
-    nmo_field_set_entry_t entries[5];
-    size_t entry_count = 0;
+    material_set_args_t args = {
+        .object_id = object_id,
+        .entry_count = 0,
+    };
 
     if (vals[OPT_DIFFUSE].present)
-        entries[entry_count++] = (nmo_field_set_entry_t){"diffuse_color", vals[OPT_DIFFUSE].val.str};
+        args.entries[args.entry_count++] =
+            (nmo_field_set_entry_t){"diffuse_color", vals[OPT_DIFFUSE].val.str};
     if (vals[OPT_AMBIENT].present)
-        entries[entry_count++] = (nmo_field_set_entry_t){"ambient_color", vals[OPT_AMBIENT].val.str};
+        args.entries[args.entry_count++] =
+            (nmo_field_set_entry_t){"ambient_color", vals[OPT_AMBIENT].val.str};
     if (vals[OPT_SPECULAR].present)
-        entries[entry_count++] = (nmo_field_set_entry_t){"specular_color", vals[OPT_SPECULAR].val.str};
+        args.entries[args.entry_count++] =
+            (nmo_field_set_entry_t){"specular_color", vals[OPT_SPECULAR].val.str};
     if (vals[OPT_EMISSIVE].present)
-        entries[entry_count++] = (nmo_field_set_entry_t){"emissive_color", vals[OPT_EMISSIVE].val.str};
+        args.entries[args.entry_count++] =
+            (nmo_field_set_entry_t){"emissive_color", vals[OPT_EMISSIVE].val.str};
     if (vals[OPT_POWER].present)
-        entries[entry_count++] = (nmo_field_set_entry_t){"specular_power", vals[OPT_POWER].val.str};
+        args.entries[args.entry_count++] =
+            (nmo_field_set_entry_t){"specular_power", vals[OPT_POWER].val.str};
 
-    if (entry_count == 0) {
+    if (args.entry_count == 0) {
         fprintf(stderr, "Error: No properties specified. Use --diffuse, --ambient, --specular, --emissive, or --power\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
-    if (rc) return rc;
-
-    /* Validate class */
-    nmo_object_t *obj = nmo_core_find_by_id(&c, object_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object #%u not found\n", object_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
-    }
-    if (nmo_object_get_class_id(obj) != NMO_CID_MATERIAL) {
-        fprintf(stderr, "Error: Object #%u is not a CKMaterial\n", object_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
-
-    fprintf(c.out, "Material #%u:\n", object_id);
-
-    nmo_field_set_result_t result;
-    int set_rc = nmo_core_set_fields(&c, object_id, entries, entry_count,
-                                     dry_run, &result);
-    if (set_rc != NMO_CLI_EXIT_SUCCESS)
-        return nmo_cmd_ctx_done(&c, set_rc);
-
-    if (!dry_run && output) {
-        nmo_save_options_t save_opts = nmo_save_options_default();
-        int save_rc = nmo_save_file(c.session, output, &save_opts);
-        if (save_rc != NMO_OK) {
-            fprintf(stderr, "Error: Save failed: %s\n", nmo_error_string(save_rc));
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
-        }
-        fprintf(c.out, "Saved to: %s\n", output);
-    }
-
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    const nmo_cli_write_spec_t spec = {
+        .command_name = "material.set",
+        .output_required_unless_dry_run = true,
+    };
+    return nmo_cli_run_write_command(
+        file_path,
+        output,
+        dry_run,
+        global,
+        &spec,
+        material_set_mutate,
+        material_set_report,
+        &args);
 }
