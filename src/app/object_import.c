@@ -7,6 +7,7 @@
  */
 
 #include "app/nmo_object_import.h"
+#include "session/nmo_session_edit.h"
 
 #include "session/nmo_session.h"
 #include "session/nmo_context.h"
@@ -748,6 +749,7 @@ nmo_status_t nmo_object_import_json(
         if (!obj && obj_name) {
             obj = nmo_object_repository_find_by_name(repo, obj_name);
         }
+        nmo_object_id_t created_id = 0;
 
         /* Object not found -- create or skip */
         if (!obj) {
@@ -761,7 +763,6 @@ nmo_status_t nmo_object_import_json(
                     continue;
                 }
 
-                nmo_object_id_t created_id = 0;
                 nmo_guid_t null_guid;
                 memset(&null_guid, 0, sizeof(null_guid));
                 int rc = nmo_session_create_object(session, cid, obj_name, null_guid, &created_id, NULL);
@@ -798,8 +799,64 @@ nmo_status_t nmo_object_import_json(
             continue;
         }
 
+        nmo_session_edit_t *edit = NULL;
+        if ((flags & NMO_IMPORT_DRY_RUN) == 0u) {
+            nmo_status_t edit_st =
+                nmo_session_edit_begin(session, "object.import-json", &edit);
+            if (edit_st != NMO_OK) {
+                result->errors++;
+                if (bridge_flat_doc) {
+                    yyjson_doc_free(bridge_flat_doc);
+                }
+                continue;
+            }
+            if (created_id != 0) {
+                edit_st = nmo_session_edit_track_created_object(edit, created_id);
+                if (edit_st != NMO_OK) {
+                    nmo_session_edit_rollback(edit);
+                    result->errors++;
+                    if (bridge_flat_doc) {
+                        yyjson_doc_free(bridge_flat_doc);
+                    }
+                    continue;
+                }
+            }
+            if (type->size > 0u) {
+                edit_st = nmo_session_edit_snapshot_bytes(edit, state, type->size);
+                if (edit_st != NMO_OK) {
+                    nmo_session_edit_rollback(edit);
+                    result->errors++;
+                    if (bridge_flat_doc) {
+                        yyjson_doc_free(bridge_flat_doc);
+                    }
+                    continue;
+                }
+            }
+        }
+
+        size_t fields_before = result->fields_written;
+
         /* Import fields */
         import_object_fields(state, type, registry, arena, fields_val, result, flags);
+        if (edit != NULL) {
+            if (result->fields_written > fields_before) {
+                nmo_session_edit_mark(
+                    edit,
+                    NMO_SESSION_EDIT_OBJECT_STATE |
+                    NMO_SESSION_EDIT_REFERENCES |
+                    NMO_SESSION_EDIT_BEHAVIOR_GRAPH |
+                    NMO_SESSION_EDIT_NAMES |
+                    NMO_SESSION_EDIT_RESOURCES);
+            }
+            nmo_status_t edit_st = nmo_session_edit_commit(edit);
+            if (edit_st != NMO_OK) {
+                yyjson_doc_free(doc);
+                if (bridge_flat_doc) {
+                    yyjson_doc_free(bridge_flat_doc);
+                }
+                return edit_st;
+            }
+        }
         result->objects_updated++;
 
         /* Free bridge documents from export format conversion */

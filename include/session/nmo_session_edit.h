@@ -19,10 +19,15 @@ typedef struct nmo_session nmo_session_t;
 typedef struct nmo_session_edit nmo_session_edit_t;
 
 typedef enum nmo_session_edit_flags {
+    /** Object-local typed state changed. */
     NMO_SESSION_EDIT_OBJECT_STATE   = 1u << 0,
+    /** Object references changed; invalidates the cached reference graph. */
     NMO_SESSION_EDIT_REFERENCES     = 1u << 1,
+    /** Behavior graph membership changed; invalidates behavior index and reference graph. */
     NMO_SESSION_EDIT_BEHAVIOR_GRAPH = 1u << 2,
+    /** Object names changed; invalidates name query state and rebuilds object indexes. */
     NMO_SESSION_EDIT_NAMES          = 1u << 3,
+    /** Save-affecting resource state changed; no resource query cache exists yet. */
     NMO_SESSION_EDIT_RESOURCES      = 1u << 4
 } nmo_session_edit_flags_t;
 
@@ -44,6 +49,16 @@ NMO_API nmo_status_t nmo_session_edit_begin(
 NMO_API nmo_status_t nmo_session_edit_commit(nmo_session_edit_t *edit);
 NMO_API void nmo_session_edit_rollback(nmo_session_edit_t *edit);
 NMO_API void *nmo_session_edit_alloc(nmo_session_edit_t *edit, size_t size, size_t align);
+NMO_API nmo_status_t nmo_session_edit_snapshot_bytes(
+    nmo_session_edit_t *edit,
+    void *target,
+    size_t size);
+NMO_API nmo_status_t nmo_session_edit_track_created_object(
+    nmo_session_edit_t *edit,
+    nmo_object_id_t object_id);
+NMO_API nmo_status_t nmo_session_edit_snapshot_object_chunk(
+    nmo_session_edit_t *edit,
+    nmo_object_id_t object_id);
 NMO_API void nmo_session_edit_mark(nmo_session_edit_t *edit, uint32_t flags);
 
 NMO_API nmo_status_t nmo_session_apply_edit_flags(nmo_session_t *session, uint32_t flags);
@@ -65,6 +80,12 @@ NMO_API nmo_status_t nmo_session_edit_set_parameter_value(
     nmo_object_id_t parameter_id,
     const char *value_str);
 
+NMO_API nmo_status_t nmo_session_edit_set_parameter_bytes(
+    nmo_session_edit_t *edit,
+    nmo_object_id_t parameter_id,
+    const uint8_t *bytes,
+    size_t byte_count);
+
 NMO_API nmo_status_t nmo_session_edit_set_dataarray_cell(
     nmo_session_edit_t *edit,
     nmo_object_id_t dataarray_id,
@@ -84,6 +105,10 @@ NMO_API nmo_status_t nmo_session_edit_remove_behavior_link(
     nmo_session_edit_t *edit,
     nmo_object_id_t parent_behavior_id,
     nmo_object_id_t link_id);
+
+NMO_API nmo_status_t nmo_session_edit_mark_behavior_interface(
+    nmo_session_edit_t *edit,
+    nmo_object_id_t behavior_id);
 
 #ifdef __cplusplus
 }

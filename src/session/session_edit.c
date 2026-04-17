@@ -19,14 +19,17 @@
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
+#include "format/nmo_chunk.h"
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
+#include "core/nmo_parse.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_string.h"
 #include "type/nmo_type_system.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -77,6 +80,11 @@ typedef struct array_id_action {
 typedef struct object_id_action {
     nmo_object_id_t id;
 } object_id_action_t;
+
+typedef struct object_chunk_snapshot {
+    nmo_object_id_t id;
+    nmo_chunk_t *chunk;
+} object_chunk_snapshot_t;
 
 typedef struct rename_object_action {
     nmo_object_id_t id;
@@ -278,6 +286,23 @@ static nmo_status_t rollback_rename_object(nmo_session_t *session, void *payload
     return nmo_object_repository_rename(repo, action->id, action->name);
 }
 
+static nmo_status_t rollback_object_chunk(nmo_session_t *session, void *payload)
+{
+    object_chunk_snapshot_t *snapshot = (object_chunk_snapshot_t *)payload;
+    if (session == NULL || snapshot == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, snapshot->id);
+    if (object == NULL) {
+        return NMO_OK;
+    }
+    return nmo_object_set_chunk(object, snapshot->chunk);
+}
+
 static const nmo_type_registry_t *session_type_registry(nmo_session_t *session)
 {
     nmo_context_t *ctx = nmo_session_get_context(session);
@@ -321,21 +346,19 @@ static nmo_status_t parse_dataarray_cell(
 
     switch (col_type) {
     case CKARRAYTYPE_INT: {
-        char *end = NULL;
-        long value = strtol(value_str, &end, 0);
-        if (end == NULL || *end != '\0') {
+        int32_t value = 0;
+        if (nmo_parse_i32_range_base(value_str, 0, INT32_MIN, INT32_MAX, &value) != NMO_OK) {
             return NMO_ERR_INVALID_ARGUMENT;
         }
-        new_cell.int_value = (int32_t)value;
+        new_cell.int_value = value;
         break;
     }
     case CKARRAYTYPE_FLOAT: {
-        char *end = NULL;
-        double value = strtod(value_str, &end);
-        if (end == NULL || *end != '\0') {
+        float value = 0.0f;
+        if (nmo_parse_f32(value_str, &value) != NMO_OK) {
             return NMO_ERR_INVALID_ARGUMENT;
         }
-        new_cell.float_value = (float)value;
+        new_cell.float_value = value;
         break;
     }
     case CKARRAYTYPE_STRING: {
@@ -353,19 +376,14 @@ static nmo_status_t parse_dataarray_cell(
     }
     case CKARRAYTYPE_OBJECT:
     case CKARRAYTYPE_PARAMETER: {
-        const char *s = value_str;
-        if (*s == '#') {
-            s++;
-        }
-        char *end = NULL;
-        unsigned long value = strtoul(s, &end, 10);
-        if (end == NULL || *end != '\0') {
+        nmo_object_id_t value = 0;
+        if (nmo_parse_object_id(value_str, &value) != NMO_OK) {
             return NMO_ERR_INVALID_ARGUMENT;
         }
         if (col_type == CKARRAYTYPE_OBJECT) {
-            new_cell.object_id = (nmo_object_id_t)value;
+            new_cell.object_id = value;
         } else {
-            new_cell.parameter_id = (nmo_object_id_t)value;
+            new_cell.parameter_id = value;
         }
         *out_is_ref = true;
         break;
@@ -380,20 +398,7 @@ static nmo_status_t parse_dataarray_cell(
 
 static nmo_status_t parse_object_id_text(const char *value_str, nmo_object_id_t *out_id)
 {
-    if (value_str == NULL || out_id == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    const char *s = value_str;
-    if (*s == '#') {
-        s++;
-    }
-    char *end = NULL;
-    unsigned long value = strtoul(s, &end, 10);
-    if (end == NULL || *end != '\0') {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    *out_id = (nmo_object_id_t)value;
-    return NMO_OK;
+    return nmo_parse_object_id(value_str, out_id);
 }
 
 nmo_status_t nmo_session_edit_begin(
@@ -475,6 +480,113 @@ void *nmo_session_edit_alloc(nmo_session_edit_t *edit, size_t size, size_t align
     return nmo_arena_alloc(edit->arena, size, align);
 }
 
+nmo_status_t nmo_session_edit_snapshot_bytes(
+    nmo_session_edit_t *edit,
+    void *target,
+    size_t size)
+{
+    if (edit == NULL || edit->finished || target == NULL || size == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    field_bytes_snapshot_t *snapshot =
+        (field_bytes_snapshot_t *)nmo_session_edit_alloc(
+            edit, sizeof(*snapshot) + size, _Alignof(field_bytes_snapshot_t));
+    if (snapshot == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    snapshot->field_ptr = target;
+    snapshot->size = size;
+    memcpy(snapshot->bytes, target, size);
+
+    return session_edit_push_rollback(edit, rollback_field_bytes, snapshot);
+}
+
+nmo_status_t nmo_session_edit_track_created_object(
+    nmo_session_edit_t *edit,
+    nmo_object_id_t object_id)
+{
+    if (edit == NULL || edit->finished || object_id == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(edit->session);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    if (nmo_object_repository_find_by_id(repo, object_id) == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    object_id_action_t *rollback =
+        (object_id_action_t *)nmo_session_edit_alloc(
+            edit, sizeof(*rollback), _Alignof(object_id_action_t));
+    if (rollback == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    rollback->id = object_id;
+
+    nmo_status_t push_result =
+        session_edit_push_rollback(edit, action_remove_object, rollback);
+    if (push_result != NMO_OK) {
+        return push_result;
+    }
+    nmo_session_edit_mark(
+        edit,
+        NMO_SESSION_EDIT_OBJECT_STATE |
+        NMO_SESSION_EDIT_REFERENCES |
+        NMO_SESSION_EDIT_NAMES);
+    return NMO_OK;
+}
+
+nmo_status_t nmo_session_edit_snapshot_object_chunk(
+    nmo_session_edit_t *edit,
+    nmo_object_id_t object_id)
+{
+    if (edit == NULL || edit->finished || object_id == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(edit->session);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, object_id);
+    if (object == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    nmo_chunk_t *current = nmo_object_get_chunk(object);
+    nmo_chunk_t *snapshot_chunk = NULL;
+    if (current != NULL) {
+        snapshot_chunk = nmo_chunk_clone(current, nmo_session_get_arena(edit->session));
+        if (snapshot_chunk == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+    }
+
+    object_chunk_snapshot_t *snapshot =
+        (object_chunk_snapshot_t *)nmo_session_edit_alloc(
+            edit, sizeof(*snapshot), _Alignof(object_chunk_snapshot_t));
+    if (snapshot == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    snapshot->id = object_id;
+    snapshot->chunk = snapshot_chunk;
+
+    nmo_status_t push_result =
+        session_edit_push_rollback(edit, rollback_object_chunk, snapshot);
+    if (push_result != NMO_OK) {
+        return push_result;
+    }
+    nmo_session_edit_mark(
+        edit,
+        NMO_SESSION_EDIT_OBJECT_STATE |
+        NMO_SESSION_EDIT_REFERENCES |
+        NMO_SESSION_EDIT_RESOURCES);
+    return NMO_OK;
+}
+
 void nmo_session_edit_mark(nmo_session_edit_t *edit, uint32_t flags)
 {
     if (edit != NULL) {
@@ -484,7 +596,17 @@ void nmo_session_edit_mark(nmo_session_edit_t *edit, uint32_t flags)
 
 nmo_status_t nmo_session_apply_edit_flags(nmo_session_t *session, uint32_t flags)
 {
+    const uint32_t known_flags =
+        NMO_SESSION_EDIT_OBJECT_STATE |
+        NMO_SESSION_EDIT_REFERENCES |
+        NMO_SESSION_EDIT_BEHAVIOR_GRAPH |
+        NMO_SESSION_EDIT_NAMES |
+        NMO_SESSION_EDIT_RESOURCES;
+
     if (session == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if ((flags & ~known_flags) != 0u) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     if (nmo_session_is_partial_load(session)) {
@@ -504,6 +626,9 @@ nmo_status_t nmo_session_apply_edit_flags(nmo_session_t *session, uint32_t flags
         nmo_session_invalidate_object_query(
             session,
             NMO_OBJECT_QUERY_INDEX_MEMBERSHIP);
+    }
+    if ((flags & NMO_SESSION_EDIT_RESOURCES) != 0u) {
+        /* Resource edits affect save output. No resource-derived query cache exists yet. */
     }
     return NMO_OK;
 }
@@ -795,6 +920,68 @@ nmo_status_t nmo_session_edit_set_parameter_value(
     return NMO_OK;
 }
 
+nmo_status_t nmo_session_edit_set_parameter_bytes(
+    nmo_session_edit_t *edit,
+    nmo_object_id_t parameter_id,
+    const uint8_t *bytes,
+    size_t byte_count)
+{
+    if (edit == NULL || edit->finished || (bytes == NULL && byte_count > 0)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t checkpoint = edit->rollback_count;
+    nmo_object_repository_t *repo = nmo_session_get_repository(edit->session);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, parameter_id);
+    if (object == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    nmo_parameter_state_t *state = nmo_parameter_get_mutable_state(object);
+    if (state == NULL || state->mode != CKPARAM_MODE_BUFFER) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    if (state->buffer_data.data == NULL || state->buffer_data.count == 0) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    if (byte_count > state->buffer_data.count) {
+        return NMO_ERR_OUT_OF_BOUNDS;
+    }
+
+    parameter_buffer_snapshot_t *snapshot =
+        (parameter_buffer_snapshot_t *)nmo_session_edit_alloc(
+            edit,
+            sizeof(*snapshot) + state->buffer_data.count,
+            _Alignof(parameter_buffer_snapshot_t));
+    if (snapshot == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    snapshot->state = state;
+    snapshot->count = state->buffer_data.count;
+    memcpy(snapshot->bytes, state->buffer_data.data, state->buffer_data.count);
+
+    nmo_status_t push_result =
+        session_edit_push_rollback(edit, rollback_parameter_buffer, snapshot);
+    if (push_result != NMO_OK) {
+        session_edit_rollback_to(edit, checkpoint);
+        return push_result;
+    }
+
+    if (byte_count > 0) {
+        memcpy(state->buffer_data.data, bytes, byte_count);
+    }
+    if (byte_count < state->buffer_data.count) {
+        memset((uint8_t *)state->buffer_data.data + byte_count, 0,
+               state->buffer_data.count - byte_count);
+    }
+
+    nmo_session_edit_mark(edit, NMO_SESSION_EDIT_OBJECT_STATE | NMO_SESSION_EDIT_REFERENCES);
+    return NMO_OK;
+}
+
 nmo_status_t nmo_session_edit_set_dataarray_cell(
     nmo_session_edit_t *edit,
     nmo_object_id_t dataarray_id,
@@ -1052,5 +1239,41 @@ nmo_status_t nmo_session_edit_remove_behavior_link(
     }
 
     nmo_session_edit_mark(edit, NMO_SESSION_EDIT_BEHAVIOR_GRAPH | NMO_SESSION_EDIT_REFERENCES);
+    return NMO_OK;
+}
+
+nmo_status_t nmo_session_edit_mark_behavior_interface(
+    nmo_session_edit_t *edit,
+    nmo_object_id_t behavior_id)
+{
+    if (edit == NULL || edit->finished) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(edit->session);
+    const nmo_type_registry_t *registry = session_type_registry(edit->session);
+    if (repo == NULL || registry == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_object_t *behavior_obj = nmo_object_repository_find_by_id(repo, behavior_id);
+    if (behavior_obj == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (!session_class_derives(registry, nmo_object_get_class_id(behavior_obj), NMO_CID_BEHAVIOR)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    const nmo_behavior_state_t *state =
+        (const nmo_behavior_state_t *)nmo_object_get_state(behavior_obj);
+    if (state == NULL || state->interface_data == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_session_edit_mark(
+        edit,
+        NMO_SESSION_EDIT_OBJECT_STATE |
+        NMO_SESSION_EDIT_BEHAVIOR_GRAPH |
+        NMO_SESSION_EDIT_REFERENCES);
     return NMO_OK;
 }

@@ -3,6 +3,7 @@
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_edit.h"
+#include "behavior/nmo_behavior_index.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_repository.h"
@@ -10,9 +11,13 @@
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
+#include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
+#include "format/nmo_interface_chunk.h"
+#include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
@@ -346,6 +351,45 @@ TEST(session_edit, remove_behavior_link_commit_runs_delete_hooks) {
     nmo_context_release(ctx);
 }
 
+TEST(session_edit, mark_behavior_interface_requires_interface_data) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_object_id_t behavior_id = 0;
+    create_object_or_fail(session, NMO_CID_BEHAVIOR, "interface-owner", &behavior_id);
+    nmo_object_t *behavior_obj = nmo_object_repository_find_by_id(repo, behavior_id);
+    ASSERT_NOT_NULL(behavior_obj);
+    nmo_behavior_state_t *state =
+        (nmo_behavior_state_t *)nmo_object_get_state(behavior_obj);
+    ASSERT_NOT_NULL(state);
+
+    nmo_session_edit_t *missing_edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_edit_begin(session, "missing interface", &missing_edit));
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+              nmo_session_edit_mark_behavior_interface(missing_edit, behavior_id));
+    nmo_session_edit_rollback(missing_edit);
+
+    state->interface_data = (nmo_interface_data_t *)nmo_arena_alloc(
+        arena, sizeof(nmo_interface_data_t), _Alignof(nmo_interface_data_t));
+    ASSERT_NOT_NULL(state->interface_data);
+    memset(state->interface_data, 0, sizeof(nmo_interface_data_t));
+    state->interface_data->script.behavior_id = behavior_id;
+
+    nmo_session_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_edit_begin(session, "mark interface", &edit));
+    ASSERT_EQ(NMO_OK, nmo_session_edit_mark_behavior_interface(edit, behavior_id));
+    ASSERT_EQ(NMO_OK, nmo_session_edit_commit(edit));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(session_edit, rename_object_commit_rebuilds_name_index) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
@@ -432,6 +476,59 @@ TEST(session_edit, parameter_edit_rollback_restores_buffer) {
     nmo_context_release(ctx);
 }
 
+TEST(session_edit, parameter_bytes_commit_zero_fills_and_rollback_restores) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t param_id = 0;
+    create_object_or_fail(session, NMO_CID_PARAMETER, "param-bytes", &param_id);
+    nmo_object_t *param_obj = nmo_object_repository_find_by_id(repo, param_id);
+    ASSERT_NOT_NULL(param_obj);
+    nmo_parameter_state_t *state = nmo_parameter_get_mutable_state(param_obj);
+    ASSERT_NOT_NULL(state);
+    state->type_guid = CKPGUID_INT;
+    state->mode = CKPARAM_MODE_BUFFER;
+    state->has_state = true;
+    ASSERT_EQ(NMO_OK, nmo_array_alloc(&state->buffer_data, sizeof(uint8_t), 4, NULL));
+    uint8_t initial[4] = {0xAA, 0xBB, 0xCC, 0xDD};
+    memcpy(state->buffer_data.data, initial, sizeof(initial));
+
+    uint8_t first_write[2] = {0x01, 0x02};
+    nmo_session_edit_t *commit_edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_edit_begin(session, "parameter bytes commit", &commit_edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_session_edit_set_parameter_bytes(
+                  commit_edit, param_id, first_write, sizeof(first_write)));
+    ASSERT_EQ(NMO_OK, nmo_session_edit_commit(commit_edit));
+    uint8_t expected_commit[4] = {0x01, 0x02, 0x00, 0x00};
+    ASSERT_EQ(0, memcmp(state->buffer_data.data, expected_commit, sizeof(expected_commit)));
+
+    uint8_t rollback_write[4] = {0x10, 0x20, 0x30, 0x40};
+    nmo_session_edit_t *rollback_edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_edit_begin(session, "parameter bytes rollback", &rollback_edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_session_edit_set_parameter_bytes(
+                  rollback_edit, param_id, rollback_write, sizeof(rollback_write)));
+    nmo_session_edit_rollback(rollback_edit);
+    ASSERT_EQ(0, memcmp(state->buffer_data.data, expected_commit, sizeof(expected_commit)));
+
+    uint8_t oversize_write[5] = {0, 1, 2, 3, 4};
+    nmo_session_edit_t *oversize_edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_edit_begin(session, "parameter bytes oversize", &oversize_edit));
+    ASSERT_EQ(NMO_ERR_OUT_OF_BOUNDS,
+              nmo_session_edit_set_parameter_bytes(
+                  oversize_edit, param_id, oversize_write, sizeof(oversize_write)));
+    nmo_session_edit_rollback(oversize_edit);
+    ASSERT_EQ(0, memcmp(state->buffer_data.data, expected_commit, sizeof(expected_commit)));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(session_edit, parameterout_object_mode_commit_sets_reference) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
@@ -452,6 +549,8 @@ TEST(session_edit, parameterout_object_mode_commit_sets_reference) {
     state->mode = CKPARAM_MODE_OBJECT;
     state->object_id = 0;
 
+    int before_edges = ref_graph_edge_count(session);
+
     char target_text[32];
     snprintf(target_text, sizeof(target_text), "#%u", target_id);
     nmo_session_edit_t *edit = NULL;
@@ -460,6 +559,7 @@ TEST(session_edit, parameterout_object_mode_commit_sets_reference) {
               nmo_session_edit_set_parameter_value(edit, param_id, target_text));
     ASSERT_EQ(NMO_OK, nmo_session_edit_commit(edit));
     ASSERT_EQ(target_id, state->object_id);
+    ASSERT_TRUE(ref_graph_edge_count(session) > before_edges);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -549,6 +649,216 @@ TEST(session_edit, dataarray_object_cell_commit_and_rollback) {
     nmo_context_release(ctx);
 }
 
+TEST(session_edit, behavior_graph_flag_rebuilds_behavior_index) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t owner_id = 0;
+    nmo_object_id_t parent_id = 0;
+    nmo_object_id_t child_id = 0;
+    create_object_or_fail(session, NMO_CID_BEOBJECT, "script-owner", &owner_id);
+    create_object_or_fail(session, NMO_CID_BEHAVIOR, "parent-behavior", &parent_id);
+    create_object_or_fail(session, NMO_CID_BEHAVIOR, "child-behavior", &child_id);
+
+    nmo_object_t *owner_obj = nmo_object_repository_find_by_id(repo, owner_id);
+    ASSERT_NOT_NULL(owner_obj);
+    nmo_beobject_state_t *owner_state =
+        (nmo_beobject_state_t *)nmo_object_get_state(owner_obj);
+    ASSERT_NOT_NULL(owner_state);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &parent_id));
+
+    nmo_behavior_index_t *before_index = nmo_session_get_behavior_index(session);
+    ASSERT_NOT_NULL(before_index);
+    size_t before_count = nmo_behavior_index_count(before_index);
+
+    nmo_object_t *parent_obj = nmo_object_repository_find_by_id(repo, parent_id);
+    ASSERT_NOT_NULL(parent_obj);
+    nmo_behavior_state_t *parent_state =
+        (nmo_behavior_state_t *)nmo_object_get_state(parent_obj);
+    ASSERT_NOT_NULL(parent_state);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&parent_state->sub_behaviors, &child_id));
+
+    ASSERT_EQ(before_count, nmo_behavior_index_count(nmo_session_get_behavior_index(session)));
+    ASSERT_EQ(NMO_OK,
+              nmo_session_apply_edit_flags(session, NMO_SESSION_EDIT_BEHAVIOR_GRAPH));
+    nmo_behavior_index_t *after_index = nmo_session_get_behavior_index(session);
+    ASSERT_NOT_NULL(after_index);
+    ASSERT_TRUE(nmo_behavior_index_count(after_index) > before_count);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(session_edit, apply_edit_flags_accepts_known_flags_and_rejects_unknown) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_ref_graph_t *initial_graph = nmo_session_get_ref_graph(session);
+    ASSERT_NOT_NULL(initial_graph);
+    ASSERT_EQ(NMO_OK,
+              nmo_session_apply_edit_flags(session, NMO_SESSION_EDIT_REFERENCES));
+    nmo_ref_graph_t *after_reference_graph = nmo_session_get_ref_graph(session);
+    ASSERT_NOT_NULL(after_reference_graph);
+
+    ASSERT_EQ(NMO_OK,
+              nmo_session_apply_edit_flags(session, NMO_SESSION_EDIT_BEHAVIOR_GRAPH));
+    ASSERT_NOT_NULL(nmo_session_get_ref_graph(session));
+
+    ASSERT_EQ(NMO_OK,
+              nmo_session_apply_edit_flags(session, NMO_SESSION_EDIT_NAMES));
+    ASSERT_EQ(NMO_OK,
+              nmo_session_apply_edit_flags(session, NMO_SESSION_EDIT_RESOURCES));
+
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_session_apply_edit_flags(session, 1u << 31));
+    ASSERT_NOT_NULL(after_reference_graph);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(session_edit, snapshot_bytes_rollback_restores_direct_state) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    uint32_t direct_state[3] = {0x11111111u, 0x22222222u, 0x33333333u};
+    nmo_session_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_edit_begin(session, "direct snapshot", &edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_session_edit_snapshot_bytes(edit, direct_state, sizeof(direct_state)));
+
+    direct_state[0] = 0xaaaaaaaau;
+    direct_state[1] = 0xbbbbbbbbu;
+    direct_state[2] = 0xccccccccu;
+    nmo_session_edit_rollback(edit);
+
+    ASSERT_EQ(0x11111111u, direct_state[0]);
+    ASSERT_EQ(0x22222222u, direct_state[1]);
+    ASSERT_EQ(0x33333333u, direct_state[2]);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(session_edit, track_created_object_rollback_removes_and_commit_keeps) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_session_edit_t *rollback_edit = NULL;
+    nmo_object_id_t rollback_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_edit_begin(session, "created rollback", &rollback_edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_session_create_object(
+                  session, NMO_CID_3DENTITY, "created-rollback",
+                  (nmo_guid_t){0, 0}, &rollback_id, NULL));
+    ASSERT_TRUE(rollback_id != 0);
+    ASSERT_EQ(NMO_OK, nmo_session_edit_track_created_object(rollback_edit, rollback_id));
+    ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, rollback_id));
+    nmo_session_edit_rollback(rollback_edit);
+    ASSERT_NULL(nmo_object_repository_find_by_id(repo, rollback_id));
+
+    nmo_session_edit_t *commit_edit = NULL;
+    nmo_object_id_t commit_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_edit_begin(session, "created commit", &commit_edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_session_create_object(
+                  session, NMO_CID_3DENTITY, "created-commit",
+                  (nmo_guid_t){0, 0}, &commit_id, NULL));
+    ASSERT_TRUE(commit_id != 0);
+    ASSERT_EQ(NMO_OK, nmo_session_edit_track_created_object(commit_edit, commit_id));
+    ASSERT_EQ(NMO_OK, nmo_session_edit_commit(commit_edit));
+    ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, commit_id));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(session_edit, snapshot_object_chunk_rollback_restores_previous_chunk) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t object_id = 0;
+    create_object_or_fail(session, NMO_CID_MESH, "mesh", &object_id);
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, object_id);
+    ASSERT_NOT_NULL(object);
+
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    nmo_chunk_t *old_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(old_chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(old_chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(old_chunk, 0x11111111u));
+    nmo_chunk_close(old_chunk);
+    ASSERT_EQ(NMO_OK, nmo_object_set_chunk(object, old_chunk));
+
+    nmo_session_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_edit_begin(session, "chunk rollback", &edit));
+    ASSERT_EQ(NMO_OK, nmo_session_edit_snapshot_object_chunk(edit, object_id));
+
+    nmo_chunk_t *new_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(new_chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(new_chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(new_chunk, 0x22222222u));
+    nmo_chunk_close(new_chunk);
+    ASSERT_EQ(NMO_OK, nmo_object_set_chunk(object, new_chunk));
+    nmo_session_edit_rollback(edit);
+
+    nmo_chunk_t *restored = nmo_object_get_chunk(object);
+    ASSERT_NOT_NULL(restored);
+    size_t data_size = 0;
+    const uint32_t *data = (const uint32_t *)nmo_chunk_get_data(restored, &data_size);
+    ASSERT_NOT_NULL(data);
+    ASSERT_EQ(sizeof(uint32_t), data_size);
+    ASSERT_EQ(0x11111111u, data[0]);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(session_edit, snapshot_object_chunk_rollback_restores_null_chunk) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t object_id = 0;
+    create_object_or_fail(session, NMO_CID_MESH, "mesh", &object_id);
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, object_id);
+    ASSERT_NOT_NULL(object);
+    ASSERT_NULL(nmo_object_get_chunk(object));
+
+    nmo_session_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_edit_begin(session, "chunk null rollback", &edit));
+    ASSERT_EQ(NMO_OK, nmo_session_edit_snapshot_object_chunk(edit, object_id));
+
+    nmo_chunk_t *new_chunk = nmo_chunk_create(nmo_session_get_arena(session));
+    ASSERT_NOT_NULL(new_chunk);
+    ASSERT_EQ(NMO_OK, nmo_object_set_chunk(object, new_chunk));
+    nmo_session_edit_rollback(edit);
+
+    ASSERT_NULL(nmo_object_get_chunk(object));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(session_edit, set_reference_field_commit_invalidates_ref_graph);
 REGISTER_TEST(session_edit, set_reference_field_rollback_restores_without_invalidating_cache);
@@ -557,10 +867,18 @@ REGISTER_TEST(session_edit, add_behavior_link_commit_invalidates_ref_graph);
 REGISTER_TEST(session_edit, remove_behavior_link_rollback_restores_parent_array);
 REGISTER_TEST(session_edit, remove_behavior_link_commit_destroys_link);
 REGISTER_TEST(session_edit, remove_behavior_link_commit_runs_delete_hooks);
+REGISTER_TEST(session_edit, mark_behavior_interface_requires_interface_data);
 REGISTER_TEST(session_edit, rename_object_commit_rebuilds_name_index);
 REGISTER_TEST(session_edit, rename_object_rollback_restores_name_without_rebuilding_index);
 REGISTER_TEST(session_edit, parameter_edit_rollback_restores_buffer);
+REGISTER_TEST(session_edit, parameter_bytes_commit_zero_fills_and_rollback_restores);
 REGISTER_TEST(session_edit, parameterout_object_mode_commit_sets_reference);
 REGISTER_TEST(session_edit, dataarray_object_cell_commit_and_rollback);
 REGISTER_TEST(session_edit, dataarray_ref_graph_handles_missing_row_metadata);
+REGISTER_TEST(session_edit, behavior_graph_flag_rebuilds_behavior_index);
+REGISTER_TEST(session_edit, apply_edit_flags_accepts_known_flags_and_rejects_unknown);
+REGISTER_TEST(session_edit, snapshot_bytes_rollback_restores_direct_state);
+REGISTER_TEST(session_edit, track_created_object_rollback_removes_and_commit_keeps);
+REGISTER_TEST(session_edit, snapshot_object_chunk_rollback_restores_previous_chunk);
+REGISTER_TEST(session_edit, snapshot_object_chunk_rollback_restores_null_chunk);
 TEST_MAIN_END()
