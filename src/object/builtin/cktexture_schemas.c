@@ -47,7 +47,7 @@ static const nmo_type_field_t nmo_texture_fields[] = {
     /* Slot info */
     NMO_FIELD(nmo_texture_state_t, has_slot_filenames, CKPGUID_BOOL),
     NMO_FIELD(nmo_texture_state_t, slot_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_texture_state_t, slot_filenames, CKPGUID_STRING),
+    NMO_FIELD_ARRAY_COUNTED(nmo_texture_state_t, slot_filenames, slot_count, 1, CKPGUID_STRING),
     /* Reader dimensions */
     NMO_FIELD(nmo_texture_state_t, reader_width, CKPGUID_INT),
     NMO_FIELD(nmo_texture_state_t, reader_height, CKPGUID_INT),

@@ -37,8 +37,8 @@ static const nmo_type_field_t nmo_parameterout_fields[] = {
                     sizeof(nmo_parameter_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_REF(nmo_parameterout_state_t, owner_id),
-    NMO_FIELD_REF_ARRAY(nmo_parameterout_state_t, destination_ids),
-    NMO_FIELD(nmo_parameterout_state_t, destination_count, CKPGUID_UINT32)
+    NMO_FIELD(nmo_parameterout_state_t, destination_count, CKPGUID_UINT32),
+    NMO_FIELD_REF_ARRAY_COUNTED(nmo_parameterout_state_t, destination_ids, destination_count)
 };
 
 static bool nmo_parameterout_is_valid_target(
@@ -393,7 +393,6 @@ NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
     nmo_parameterout_state_t,
     &nmo_parameterout_vtable,
     nmo_parameterout_fields)
-
 
 
 

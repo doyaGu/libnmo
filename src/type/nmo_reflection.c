@@ -61,6 +61,38 @@ NMO_API const nmo_type_field_t *nmo_field_resolve_count_field(
     return nmo_field_get_count_field(type, array_field);
 }
 
+static bool nmo_field_read_count_u64(
+    const void *instance,
+    const nmo_type_field_t *count_field,
+    uint64_t *out_count)
+{
+    if (!instance || !count_field || !out_count) {
+        return false;
+    }
+
+    const void *ptr = nmo_field_get_ptr_const(instance, count_field);
+    if (!ptr) {
+        return false;
+    }
+
+    switch (count_field->size) {
+    case 1:
+        *out_count = *(const uint8_t *)ptr;
+        return true;
+    case 2:
+        *out_count = *(const uint16_t *)ptr;
+        return true;
+    case 4:
+        *out_count = *(const uint32_t *)ptr;
+        return true;
+    case 8:
+        *out_count = *(const uint64_t *)ptr;
+        return true;
+    default:
+        return false;
+    }
+}
+
 NMO_API nmo_status_t nmo_field_resolve_count(
     const nmo_type_descriptor_t *type,
     const nmo_type_field_t *array_field,
@@ -80,7 +112,12 @@ NMO_API nmo_status_t nmo_field_resolve_count(
         return NMO_ERR_NOT_FOUND;
     }
 
-    uint64_t count = (uint64_t)nmo_field_get_uint32(instance, count_field) *
+    uint64_t stored_count = 0;
+    if (!nmo_field_read_count_u64(instance, count_field, &stored_count)) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+
+    uint64_t count = stored_count *
                      (uint64_t)nmo_field_get_count_multiplier(array_field);
     if (count > UINT32_MAX) {
         return NMO_ERR_INVALID_FORMAT;

@@ -436,6 +436,8 @@ nmo_status_t nmo_type_registry_register_struct(
         type_fields[i].semantic = NMO_SEMANTIC_NONE;
         type_fields[i].units = NMO_UNITS_NONE;
         type_fields[i].default_value = field_def->default_value;
+        type_fields[i].count_field_name = field_def->count_field_name;
+        type_fields[i].count_multiplier = field_def->count_multiplier;
 
         offset += total_field_size;
     }
@@ -911,6 +913,8 @@ nmo_status_t nmo_type_registry_finalize_struct(
         type_fields[i].removed_version = 0;
         type_fields[i].semantic = NMO_SEMANTIC_NONE;
         type_fields[i].units = NMO_UNITS_NONE;
+        type_fields[i].count_field_name = field_def->count_field_name;
+        type_fields[i].count_multiplier = field_def->count_multiplier;
         if (field_def->default_value && total_field_size > 0) {
             void *default_copy = nmo_alloc(
                 &type_registry->type_allocator,

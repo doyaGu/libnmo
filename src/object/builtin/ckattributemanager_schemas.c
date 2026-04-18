@@ -42,9 +42,9 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(attributemanager, nmo_attributemanager_state_
 
 static const nmo_type_field_t nmo_attributemanager_fields[] = {
     NMO_FIELD(nmo_attributemanager_state_t, category_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_attributemanager_state_t, categories, NMO_GUID_STRUCT_CKATTRIBUTECATEGORY),
+    NMO_FIELD_ARRAY_COUNTED(nmo_attributemanager_state_t, categories, category_count, 1, NMO_GUID_STRUCT_CKATTRIBUTECATEGORY),
     NMO_FIELD(nmo_attributemanager_state_t, attribute_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_attributemanager_state_t, attributes, NMO_GUID_STRUCT_CKATTRIBUTEDESCRIPTOR)
+    NMO_FIELD_ARRAY_COUNTED(nmo_attributemanager_state_t, attributes, attribute_count, 1, NMO_GUID_STRUCT_CKATTRIBUTEDESCRIPTOR)
 };
 
 /* =============================================================================
@@ -409,7 +409,6 @@ NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
     nmo_attributemanager_state_t,
     &nmo_attributemanager_vtable,
     nmo_attributemanager_fields)
-
 
 
 

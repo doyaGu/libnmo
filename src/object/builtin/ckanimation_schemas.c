@@ -84,12 +84,12 @@ static const nmo_type_field_t nmo_keyedanimation_fields[] = {
                     sizeof(nmo_animation_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_keyedanimation_state_t, animation_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_keyedanimation_state_t, animation_ids),
+    NMO_FIELD_REF_ARRAY_COUNTED(nmo_keyedanimation_state_t, animation_ids, animation_count),
     NMO_FIELD(nmo_keyedanimation_state_t, has_merge, CKPGUID_UINT8),
     NMO_FIELD(nmo_keyedanimation_state_t, merged, CKPGUID_INT),
     NMO_FIELD(nmo_keyedanimation_state_t, merge_factor, CKPGUID_FLOAT),
     NMO_FIELD(nmo_keyedanimation_state_t, subanim_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_keyedanimation_state_t, subanims, NMO_GUID_STRUCT_CKKEYEDANIMATIONSUBANIM)
+    NMO_FIELD_ARRAY_COUNTED(nmo_keyedanimation_state_t, subanims, subanim_count, 1, NMO_GUID_STRUCT_CKKEYEDANIMATIONSUBANIM)
 };
 
 static const nmo_type_field_t nmo_objectanimation_fields[] = {
@@ -120,8 +120,8 @@ static const nmo_type_field_t nmo_objectanimation_fields[] = {
     NMO_FIELD(nmo_objectanimation_state_t, morph_normals_count, CKPGUID_UINT32),
     NMO_FIELD_OPT(nmo_objectanimation_state_t, morph_normals_sizes, CKPGUID_POINTER),
     NMO_FIELD_OPT(nmo_objectanimation_state_t, morph_normals_data, CKPGUID_POINTER),
-    NMO_FIELD_ARRAY_NAMED("raw_tail", offsetof(nmo_objectanimation_state_t, raw_tail),
-                          sizeof(void *), CKPGUID_UINT8, NMO_FIELD_OPTIONAL, 0),
+    NMO_FIELD_ARRAY_COUNTED_FLAGS(nmo_objectanimation_state_t, raw_tail, raw_tail_size, 1,
+                                  CKPGUID_UINT8, NMO_FIELD_OPTIONAL, 0),
     NMO_FIELD(nmo_objectanimation_state_t, raw_tail_size, CKPGUID_UINT64)
 };
 

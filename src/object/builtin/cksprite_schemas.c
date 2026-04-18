@@ -57,8 +57,8 @@ static const nmo_type_field_t nmo_sprite_fields[] = {
     NMO_FIELD(nmo_sprite_state_t, current_slot, CKPGUID_UINT32),
     NMO_FIELD(nmo_sprite_state_t, has_save_options, CKPGUID_BOOL),
     NMO_FIELD(nmo_sprite_state_t, save_options, NMO_GUID_ENUM_CK_TEXTURE_SAVEOPTIONS),
-    NMO_FIELD_ARRAY(nmo_sprite_state_t, bitmap_properties, CKPGUID_UINT8),
-    NMO_FIELD(nmo_sprite_state_t, bitmap_properties_size, CKPGUID_UINT64)
+    NMO_FIELD(nmo_sprite_state_t, bitmap_properties_size, CKPGUID_UINT64),
+    NMO_FIELD_ARRAY_COUNTED(nmo_sprite_state_t, bitmap_properties, bitmap_properties_size, 1, CKPGUID_UINT8)
 };
 
 /* =============================================================================
@@ -672,7 +672,6 @@ NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
     nmo_sprite_state_t,
     &nmo_sprite_vtable,
     nmo_sprite_fields)
-
 
 
 

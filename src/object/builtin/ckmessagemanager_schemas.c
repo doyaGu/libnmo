@@ -40,7 +40,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(messagemanager, nmo_messagemanager_state_t)
 
 static const nmo_type_field_t nmo_messagemanager_fields[] = {
     NMO_FIELD(nmo_messagemanager_state_t, message_type_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_messagemanager_state_t, message_type_names, CKPGUID_STRING)
+    NMO_FIELD_ARRAY_COUNTED(nmo_messagemanager_state_t, message_type_names, message_type_count, 1, CKPGUID_STRING)
 };
 
 /* =============================================================================
@@ -285,7 +285,6 @@ NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
     nmo_messagemanager_state_t,
     &nmo_messagemanager_vtable,
     nmo_messagemanager_fields)
-
 
 
 

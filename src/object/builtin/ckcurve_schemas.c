@@ -120,12 +120,12 @@ static const nmo_type_field_t nmo_curve_fields[] = {
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_curve_state_t, has_curve_data, CKPGUID_UINT8),
     NMO_FIELD(nmo_curve_state_t, control_point_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_curve_state_t, control_point_ids),
+    NMO_FIELD_REF_ARRAY_COUNTED(nmo_curve_state_t, control_point_ids, control_point_count),
     NMO_FIELD(nmo_curve_state_t, fitting_coeff, CKPGUID_FLOAT),
     NMO_FIELD(nmo_curve_state_t, step_count, CKPGUID_UINT32),
     NMO_FIELD(nmo_curve_state_t, opened, CKPGUID_UINT32),
     NMO_FIELD(nmo_curve_state_t, sub_point_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_curve_state_t, sub_points, NMO_GUID_STRUCT_CKCURVEPOINTSUBCHUNK)
+    NMO_FIELD_ARRAY_COUNTED(nmo_curve_state_t, sub_points, sub_point_count, 1, NMO_GUID_STRUCT_CKCURVEPOINTSUBCHUNK)
 };
 
 static const nmo_type_field_t nmo_curvepoint_fields[] = {

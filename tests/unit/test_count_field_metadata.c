@@ -5,6 +5,7 @@
 #include "core/nmo_guid.h"
 #include "core/nmo_arena.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_animation_schemas.h"
 #include "object/nmo_class_ids.h"
 
 #include <stdalign.h>
@@ -216,6 +217,37 @@ TEST(count_field_meta, ckmesh_raw_pointer_arrays_declare_count_metadata) {
     nmo_arena_destroy(arena);
 }
 
+TEST(count_field_meta, keyedanimation_raw_pointer_arrays_declare_count_metadata) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+    ASSERT_NOT_NULL(registry);
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+    ASSERT_EQ(NMO_OK, nmo_register_animation_type(registry));
+    ASSERT_EQ(NMO_OK, nmo_register_keyedanimation_type(registry));
+
+    const nmo_type_descriptor_t *keyed =
+        nmo_type_registry_find_by_class_id(registry, NMO_CID_KEYEDANIMATION);
+    ASSERT_NOT_NULL(keyed);
+
+    const nmo_type_field_t *animation_ids =
+        nmo_type_get_field_by_name(keyed, "animation_ids");
+    ASSERT_NOT_NULL(animation_ids);
+    ASSERT_NOT_NULL(animation_ids->count_field_name);
+    ASSERT_EQ(0, strcmp(animation_ids->count_field_name, "animation_count"));
+    ASSERT_EQ(1u, animation_ids->count_multiplier);
+
+    const nmo_type_field_t *subanims =
+        nmo_type_get_field_by_name(keyed, "subanims");
+    ASSERT_NOT_NULL(subanims);
+    ASSERT_NOT_NULL(subanims->count_field_name);
+    ASSERT_EQ(0, strcmp(subanims->count_field_name, "subanim_count"));
+    ASSERT_EQ(1u, subanims->count_multiplier);
+
+    nmo_type_registry_destroy(registry);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(count_field_meta, ptr_array_has_count_field_name);
     REGISTER_TEST(count_field_meta, non_ptr_array_has_null_count);
@@ -227,4 +259,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(count_field_meta, resolve_count_reports_missing_count_field);
     REGISTER_TEST(count_field_meta, registry_rejects_raw_pointer_array_without_count_metadata);
     REGISTER_TEST(count_field_meta, ckmesh_raw_pointer_arrays_declare_count_metadata);
+    REGISTER_TEST(count_field_meta, keyedanimation_raw_pointer_arrays_declare_count_metadata);
 TEST_MAIN_END()

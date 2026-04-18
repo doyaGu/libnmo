@@ -168,13 +168,13 @@ static void setup(void) {
     static const nmo_type_field_t root_fields[] = {
         NMO_FIELD(query_root_t, x, CKPGUID_INT),
         NMO_FIELD(query_root_t, y, CKPGUID_FLOAT),
-        NMO_FIELD_ARRAY(query_root_t, arr, CKPGUID_INT),
+        NMO_FIELD_ARRAY_COUNTED(query_root_t, arr, arr_count, 1, CKPGUID_INT),
         NMO_FIELD(query_root_t, arr_count, CKPGUID_UINT32),
 
-        NMO_FIELD_ARRAY(query_root_t, bools, CKPGUID_BOOL),
+        NMO_FIELD_ARRAY_COUNTED(query_root_t, bools, bools_count, 1, CKPGUID_BOOL),
         NMO_FIELD(query_root_t, bools_count, CKPGUID_UINT32),
 
-        NMO_FIELD_ARRAY(query_root_t, elems, QUERY_ELEM_GUID),
+        NMO_FIELD_ARRAY_COUNTED(query_root_t, elems, elems_count, 1, QUERY_ELEM_GUID),
         NMO_FIELD(query_root_t, elems_count, CKPGUID_UINT32),
     };
 
@@ -1161,4 +1161,3 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(dsl, comment_handling);
     REGISTER_TEST(dsl, hex_int_literal);
 TEST_MAIN_END()
-

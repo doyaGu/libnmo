@@ -134,7 +134,7 @@ static void setup(void) {
     ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
 
     static const nmo_type_field_t child_fields[] = {
-        NMO_FIELD_ARRAY(script_child_t, arr, CKPGUID_INT),
+        NMO_FIELD_ARRAY_COUNTED(script_child_t, arr, arr_count, 1, CKPGUID_INT),
         NMO_FIELD(script_child_t, arr_count, CKPGUID_UINT32),
     };
 
@@ -161,7 +161,7 @@ static void setup(void) {
         NMO_FIELD(script_root_t, y, CKPGUID_FLOAT),
         NMO_FIELD(script_root_t, name, CKPGUID_STRING),
         NMO_FIELD_FULL(script_root_t, inline_arr, CKPGUID_INT, NMO_FIELD_REPEATED, NMO_SEMANTIC_NONE),
-        NMO_FIELD_ARRAY(script_root_t, arr, CKPGUID_INT),
+        NMO_FIELD_ARRAY_COUNTED(script_root_t, arr, arr_count, 1, CKPGUID_INT),
         NMO_FIELD(script_root_t, arr_count, CKPGUID_UINT32),
         NMO_FIELD(script_root_t, child, SCRIPT_CHILD_GUID),
     };
@@ -486,4 +486,3 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(dsl_script, invalid_index_lvalue_rejected);
     REGISTER_TEST(dsl_script, nested_index_lvalue_rejected);
 TEST_MAIN_END()
-

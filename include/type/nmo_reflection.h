@@ -110,6 +110,23 @@ extern "C" {
         .count_multiplier = (uint32_t)(_count_multiplier) \
     }
 
+#define NMO_FIELD_ARRAY_COUNTED_FLAGS(_struct, _ptr_field, _count_field, _count_multiplier, _elem_type_guid, _flags, _semantic) \
+    { \
+        .name = #_ptr_field, \
+        .description = NULL, \
+        .type_guid = _elem_type_guid##_INIT, \
+        .offset = (uint32_t)offsetof(_struct, _ptr_field), \
+        .size = (uint32_t)sizeof(((_struct*)0)->_ptr_field), \
+        .flags = (_flags) | NMO_FIELD_REPEATED, \
+        .added_version = 0, \
+        .removed_version = 0, \
+        .semantic = (_semantic), \
+        .units = NMO_UNITS_NONE, \
+        .default_value = NULL, \
+        .count_field_name = #_count_field, \
+        .count_multiplier = (uint32_t)(_count_multiplier) \
+    }
+
 /**
  * @brief Define an array field with explicit name (no struct lookup for offset)
  */
@@ -162,6 +179,23 @@ extern "C" {
         .semantic = NMO_SEMANTIC_OBJECT_REF, \
         .units = NMO_UNITS_NONE, \
         .default_value = NULL \
+    }
+
+#define NMO_FIELD_REF_ARRAY_COUNTED(_struct, _ptr_field, _count_field) \
+    { \
+        .name = #_ptr_field, \
+        .description = NULL, \
+        .type_guid = CKPGUID_ID_INIT, \
+        .offset = (uint32_t)offsetof(_struct, _ptr_field), \
+        .size = (uint32_t)sizeof(((_struct*)0)->_ptr_field), \
+        .flags = NMO_FIELD_REPEATED | NMO_FIELD_REFERENCE, \
+        .added_version = 0, \
+        .removed_version = 0, \
+        .semantic = NMO_SEMANTIC_OBJECT_REF, \
+        .units = NMO_UNITS_NONE, \
+        .default_value = NULL, \
+        .count_field_name = #_count_field, \
+        .count_multiplier = 1u \
     }
 
 /**
@@ -371,6 +405,16 @@ static inline bool nmo_field_is_ref(const nmo_type_field_t *field) {
  */
 static inline bool nmo_field_is_array(const nmo_type_field_t *field) {
     return field && (field->flags & NMO_FIELD_REPEATED);
+}
+
+static inline bool nmo_field_uses_pointer_array_storage(const nmo_type_field_t *field) {
+    return field && (field->flags & NMO_FIELD_REPEATED) && field->size == sizeof(void *);
+}
+
+static inline bool nmo_field_is_counted_pointer_array(const nmo_type_field_t *field) {
+    return nmo_field_uses_pointer_array_storage(field) &&
+           field->count_field_name != NULL &&
+           field->count_field_name[0] != '\0';
 }
 
 /**

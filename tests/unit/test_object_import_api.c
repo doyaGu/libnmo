@@ -17,6 +17,8 @@
 #define IMPORT_RAW_ARRAY_CLASS_ID  0x51A4E002u
 #define IMPORT_INLINE_ARRAY_GUID_INIT NMO_GUID_INIT(0x51A4E003u, 0x00000001u)
 #define IMPORT_INLINE_ARRAY_CLASS_ID  0x51A4E003u
+#define IMPORT_COUNTED_ARRAY_GUID_INIT NMO_GUID_INIT(0x51A4E004u, 0x00000001u)
+#define IMPORT_COUNTED_ARRAY_CLASS_ID  0x51A4E004u
 
 typedef struct import_raw_array_state {
     uint32_t item_count;
@@ -27,6 +29,11 @@ typedef struct import_inline_array_state {
     nmo_array_t values;
 } import_inline_array_state_t;
 
+typedef struct import_counted_array_state {
+    uint32_t face_count;
+    uint16_t *indices;
+} import_counted_array_state_t;
+
 static const nmo_type_field_t import_raw_array_fields[] = {
     NMO_FIELD(import_raw_array_state_t, item_count, CKPGUID_UINT32),
     NMO_FIELD_PTR_ARRAY(import_raw_array_state_t, items, item_count, CKPGUID_UINT32),
@@ -34,6 +41,11 @@ static const nmo_type_field_t import_raw_array_fields[] = {
 
 static const nmo_type_field_t import_inline_array_fields[] = {
     NMO_FIELD_ARRAY(import_inline_array_state_t, values, CKPGUID_UINT32),
+};
+
+static const nmo_type_field_t import_counted_array_fields[] = {
+    NMO_FIELD(import_counted_array_state_t, face_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY_COUNTED(import_counted_array_state_t, indices, face_count, 3, CKPGUID_UINT16),
 };
 
 static nmo_status_t dummy_serialize(
@@ -141,6 +153,28 @@ static nmo_object_t *create_import_inline_array_object(nmo_session_t *session)
     return nmo_object_repository_find_by_id(nmo_session_get_repository(session), 9101u);
 }
 
+static nmo_object_t *create_import_counted_array_object(nmo_session_t *session)
+{
+    nmo_object_t *obj = nmo_object_create(NULL, 9201u, IMPORT_COUNTED_ARRAY_CLASS_ID);
+    if (!obj) {
+        return NULL;
+    }
+    if (nmo_object_alloc_state(obj, sizeof(import_counted_array_state_t)) != NMO_OK) {
+        nmo_object_destroy(obj);
+        return NULL;
+    }
+    nmo_object_t *owned = obj;
+    if (nmo_object_repository_add(nmo_session_get_repository(session), &owned) != NMO_OK) {
+        nmo_object_destroy(obj);
+        return NULL;
+    }
+    if (owned != NULL) {
+        nmo_object_destroy(owned);
+        return NULL;
+    }
+    return nmo_object_repository_find_by_id(nmo_session_get_repository(session), 9201u);
+}
+
 static bool register_import_raw_array_type(nmo_type_registry_t *registry)
 {
     nmo_type_descriptor_t desc = {
@@ -186,6 +220,35 @@ static bool register_import_inline_array_type(nmo_type_registry_t *registry)
         .alignment = (uint32_t)alignof(import_inline_array_state_t),
         .fields = import_inline_array_fields,
         .field_count = sizeof(import_inline_array_fields) / sizeof(import_inline_array_fields[0]),
+        .vtable = &import_raw_array_vtable,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL,
+    };
+    nmo_status_t status = nmo_type_registry_register(registry, &desc);
+    return status == NMO_OK;
+}
+
+static bool register_import_counted_array_type(nmo_type_registry_t *registry)
+{
+    nmo_type_descriptor_t desc = {
+        .guid = IMPORT_COUNTED_ARRAY_GUID_INIT,
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = IMPORT_COUNTED_ARRAY_CLASS_ID,
+        .category = NMO_TYPE_CATEGORY_STRUCT,
+        .flags = 0,
+        .name = "ImportCountedArrayState",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(import_counted_array_state_t),
+        .alignment = (uint32_t)alignof(import_counted_array_state_t),
+        .fields = import_counted_array_fields,
+        .field_count = sizeof(import_counted_array_fields) / sizeof(import_counted_array_fields[0]),
         .vtable = &import_raw_array_vtable,
         .creator_plugin_guid = NMO_NULL_GUID,
         .saver_manager = 0,
@@ -353,6 +416,56 @@ TEST(object_import_api, snapshot_raw_pointer_array_imports_all_items) {
     nmo_context_release(ctx);
 }
 
+TEST(object_import_api, counted_raw_pointer_array_imports_items_over_raw_hex) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(registry);
+    nmo_status_t status = nmo_type_registry_begin_update(registry);
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_TRUE(register_import_counted_array_type(registry));
+
+    nmo_object_t *obj = create_import_counted_array_object(session);
+    ASSERT_NOT_NULL(obj);
+    import_counted_array_state_t *state =
+        (import_counted_array_state_t *)nmo_object_get_state(obj);
+    ASSERT_NOT_NULL(state);
+
+    const char json[] =
+        "{\"objects\":[{\"id\":9201,\"fields\":["
+        "{\"name\":\"indices\",\"kind\":\"array\",\"type_guid\":\"{0000000C-00000000}\","
+        "\"count\":6,\"value\":null,\"items\":[1,2,3,4,5,6],"
+        "\"raw_hex\":\"090009000900090009000900\"}]}]}";
+    nmo_import_result_t result;
+    status = nmo_object_import_json(
+        session,
+        registry,
+        nmo_session_get_arena(session),
+        json,
+        0,
+        0,
+        &result);
+
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_EQ(1u, result.objects_updated);
+    ASSERT_EQ(1u, result.fields_written);
+    ASSERT_EQ(0u, result.errors);
+    ASSERT_EQ(2u, state->face_count);
+    ASSERT_NOT_NULL(state->indices);
+    ASSERT_EQ(1u, state->indices[0]);
+    ASSERT_EQ(2u, state->indices[1]);
+    ASSERT_EQ(3u, state->indices[2]);
+    ASSERT_EQ(4u, state->indices[3]);
+    ASSERT_EQ(5u, state->indices[4]);
+    ASSERT_EQ(6u, state->indices[5]);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(object_import_api, raw_pointer_array_parse_failure_does_not_mutate) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -502,6 +615,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_import_api, old_flat_map_schema_is_rejected);
     REGISTER_TEST(object_import_api, old_value_str_bridge_schema_is_rejected);
     REGISTER_TEST(object_import_api, snapshot_raw_pointer_array_imports_all_items);
+    REGISTER_TEST(object_import_api, counted_raw_pointer_array_imports_items_over_raw_hex);
     REGISTER_TEST(object_import_api, raw_pointer_array_parse_failure_does_not_mutate);
     REGISTER_TEST(object_import_api, inline_array_parse_failure_does_not_mutate);
     REGISTER_TEST(object_import_api, snapshot_inline_array_imports_all_items);

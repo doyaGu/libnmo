@@ -42,6 +42,14 @@ typedef struct {
     void *state;
 } import_hierarchy_level_t;
 
+static nmo_status_t import_snapshot_fields(void *state,
+                                           const nmo_type_descriptor_t *type,
+                                           const nmo_type_registry_t *registry,
+                                           nmo_arena_t *arena,
+                                           yyjson_val *fields_arr,
+                                           nmo_import_result_t *result,
+                                           uint32_t flags);
+
 /**
  * @brief Check if a field is a base-class embedding that should be skipped.
  *
@@ -276,6 +284,74 @@ static nmo_status_t import_scalar_value(void *fptr,
     return nmo_type_value_from_string(fptr, field_type, registry, str);
 }
 
+static nmo_status_t import_array_element_value(
+    void *dest,
+    const nmo_type_field_t *array_field,
+    const nmo_type_descriptor_t *field_type,
+    const nmo_type_registry_t *registry,
+    nmo_arena_t *arena,
+    yyjson_val *elem,
+    size_t elem_size,
+    uint32_t flags)
+{
+    if (!dest || !array_field || !elem || elem_size == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    bool dry_run = (flags & NMO_IMPORT_DRY_RUN) != 0;
+    if (yyjson_is_obj(elem)) {
+        const char *kind = yyjson_get_str(yyjson_obj_get(elem, "kind"));
+        if (kind && strcmp(kind, "struct") == 0) {
+            yyjson_val *fields = yyjson_obj_get(elem, "fields");
+            if (!field_type || !nmo_type_has_reflection(field_type) ||
+                !fields || !yyjson_is_arr(fields)) {
+                return NMO_ERR_INVALID_FORMAT;
+            }
+            nmo_import_result_t nested_result = {0};
+            return import_snapshot_fields(
+                dest, field_type, registry, arena, fields, &nested_result, flags);
+        }
+        if (kind && strcmp(kind, "scalar") == 0) {
+            yyjson_val *value = yyjson_obj_get(elem, "value");
+            if (!value) {
+                return NMO_ERR_INVALID_FORMAT;
+            }
+            nmo_type_field_t scalar_field = *array_field;
+            scalar_field.offset = 0;
+            scalar_field.size = (uint32_t)elem_size;
+            scalar_field.flags &= (NMO_FIELD_REFERENCE | NMO_FIELD_ID);
+            scalar_field.count_field_name = NULL;
+            scalar_field.count_multiplier = 0;
+            return import_scalar_value(dest, &scalar_field, registry, value, dry_run);
+        }
+    }
+
+    nmo_type_field_t scalar_field = *array_field;
+    scalar_field.offset = 0;
+    scalar_field.size = (uint32_t)elem_size;
+    scalar_field.flags &= (NMO_FIELD_REFERENCE | NMO_FIELD_ID);
+    scalar_field.count_field_name = NULL;
+    scalar_field.count_multiplier = 0;
+    return import_scalar_value(dest, &scalar_field, registry, elem, dry_run);
+}
+
+static bool array_items_have_semantic_values(yyjson_val *items)
+{
+    if (!items || !yyjson_is_arr(items)) {
+        return false;
+    }
+
+    yyjson_val *elem;
+    yyjson_arr_iter iter;
+    yyjson_arr_iter_init(items, &iter);
+    while ((elem = yyjson_arr_iter_next(&iter)) != NULL) {
+        if (yyjson_is_null(elem)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /**
  * @brief Import a field value from JSON, dispatching by field flags.
  */
@@ -302,11 +378,15 @@ static nmo_status_t import_field_value(void *state,
     const nmo_type_descriptor_t *field_type =
         nmo_type_registry_find_by_guid(registry, field->type_guid);
 
-    /* ---- REPEATED + POINTER: raw pointer array (e.g. vertices, faces) ---- */
-    if ((field->flags & NMO_FIELD_REPEATED) && (field->flags & NMO_FIELD_POINTER)) {
+    /* ---- pointer-sized repeated storage (raw counted pointer arrays) ---- */
+    if (nmo_field_uses_pointer_array_storage(field)) {
         if (!yyjson_is_arr(json_val)) {
             result->fields_skipped++;
             return NMO_OK;
+        }
+        if (!nmo_field_is_counted_pointer_array(field)) {
+            result->errors++;
+            return NMO_ERR_INVALID_ARGUMENT;
         }
 
         size_t elem_size = import_element_size_for_field(field, field_type);
@@ -343,14 +423,13 @@ static nmo_status_t import_field_value(void *state,
         yyjson_arr_iter iter;
         yyjson_arr_iter_init(json_val, &iter);
         while ((elem = yyjson_arr_iter_next(&iter)) != NULL) {
-            char conv_buf[IMPORT_VALUE_BUF_SIZE];
-            const char *str = json_val_to_str(elem, conv_buf, sizeof(conv_buf));
-            if (!str || !field_type) {
+            if (!field_type) {
                 result->errors++;
                 return NMO_ERR_INVALID_ARGUMENT;
             }
             void *dest = (uint8_t *)buf + idx * elem_size;
-            nmo_status_t st = nmo_type_value_from_string(dest, field_type, registry, str);
+            nmo_status_t st = import_array_element_value(
+                dest, field, field_type, registry, arena, elem, elem_size, flags);
             if (st != NMO_OK) {
                 result->errors++;
                 return st;
@@ -421,14 +500,8 @@ static nmo_status_t import_field_value(void *state,
         yyjson_arr_iter_init(json_val, &iter);
         while ((elem = yyjson_arr_iter_next(&iter)) != NULL) {
             memset(elem_buf, 0, elem_size);
-            char conv_buf[IMPORT_VALUE_BUF_SIZE];
-            const char *str = json_val_to_str(elem, conv_buf, sizeof(conv_buf));
-            if (!str) {
-                nmo_array_dispose(&temp);
-                result->errors++;
-                return NMO_ERR_INVALID_ARGUMENT;
-            }
-            st = nmo_type_value_from_string(elem_buf, field_type, registry, str);
+            st = import_array_element_value(
+                elem_buf, field, field_type, registry, arena, elem, elem_size, flags);
             if (st != NMO_OK) {
                 nmo_array_dispose(&temp);
                 result->errors++;
@@ -730,12 +803,16 @@ static nmo_status_t import_snapshot_field_value(
             result->errors++;
             return NMO_ERR_INVALID_FORMAT;
         }
+        if (array_items_have_semantic_values(items)) {
+            return import_field_value(
+                state, owner_type, field, registry, arena, items, result, flags);
+        }
         if ((raw_hex && yyjson_is_str(raw_hex)) || count == 0) {
             return import_array_raw_hex(
                 state, owner_type, field, field_type, arena, raw_hex, count, dry_run, result);
         }
-        return import_field_value(
-            state, owner_type, field, registry, arena, items, result, flags);
+        result->errors++;
+        return NMO_ERR_INVALID_FORMAT;
     }
 
     if (raw_hex && yyjson_is_str(raw_hex) &&

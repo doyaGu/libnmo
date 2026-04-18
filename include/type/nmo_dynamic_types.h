@@ -216,6 +216,8 @@ typedef struct nmo_struct_field_def_t {
     const char *description;            /**< Optional description */
     uint32_t flags;                     /**< Field flags (NMO_FIELD_*) */
     const void *default_value;          /**< Optional default value */
+    const char *count_field_name;       /**< Optional count field for repeated pointer storage */
+    uint32_t count_multiplier;          /**< Element count multiplier (0 means 1) */
 } nmo_struct_field_def_t;
 
 /**

@@ -63,10 +63,10 @@ static const nmo_type_field_t nmo_3dentity_fields[] = {
     /* Meshes */
     NMO_FIELD_REF(nmo_3dentity_state_t, current_mesh_id),
     NMO_FIELD(nmo_3dentity_state_t, mesh_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_3dentity_state_t, mesh_ids),
+    NMO_FIELD_REF_ARRAY_COUNTED(nmo_3dentity_state_t, mesh_ids, mesh_count),
     /* Animations */
     NMO_FIELD(nmo_3dentity_state_t, animation_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_3dentity_state_t, animation_ids),
+    NMO_FIELD_REF_ARRAY_COUNTED(nmo_3dentity_state_t, animation_ids, animation_count),
     /* Skin (optional) */
     NMO_FIELD_OPT(nmo_3dentity_state_t, skin, CKPGUID_POINTER)
 };

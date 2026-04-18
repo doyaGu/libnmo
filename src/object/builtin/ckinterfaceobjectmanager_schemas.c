@@ -40,7 +40,7 @@ static const nmo_type_field_t nmo_interfaceobjectmanager_fields[] = {
                     sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_interfaceobjectmanager_state_t, chunk_count, CKPGUID_INT),
-    NMO_FIELD_ARRAY(nmo_interfaceobjectmanager_state_t, chunks, CKPGUID_STATECHUNK),
+    NMO_FIELD_ARRAY_COUNTED(nmo_interfaceobjectmanager_state_t, chunks, chunk_count, 1, CKPGUID_STATECHUNK),
     NMO_FIELD(nmo_interfaceobjectmanager_state_t, guid, CKPGUID_GUID)
 };
 

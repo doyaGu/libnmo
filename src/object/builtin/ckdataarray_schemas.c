@@ -49,9 +49,9 @@ static const nmo_type_field_t nmo_dataarray_fields[] = {
                          sizeof(nmo_beobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_dataarray_state_t, column_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_dataarray_state_t, column_formats, NMO_GUID_STRUCT_CKDATAARRAYCOLUMNFORMAT),
+    NMO_FIELD_ARRAY_COUNTED(nmo_dataarray_state_t, column_formats, column_count, 1, NMO_GUID_STRUCT_CKDATAARRAYCOLUMNFORMAT),
     NMO_FIELD(nmo_dataarray_state_t, row_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_dataarray_state_t, rows, NMO_GUID_STRUCT_CKDATAARRAYROW),
+    NMO_FIELD_ARRAY_COUNTED(nmo_dataarray_state_t, rows, row_count, 1, NMO_GUID_STRUCT_CKDATAARRAYROW),
     NMO_FIELD(nmo_dataarray_state_t, order, CKPGUID_INT),
     NMO_FIELD(nmo_dataarray_state_t, column_index, CKPGUID_UINT32),
     NMO_FIELD(nmo_dataarray_state_t, key_column, CKPGUID_INT)

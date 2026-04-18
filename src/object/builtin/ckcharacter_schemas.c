@@ -72,15 +72,15 @@ static const nmo_type_field_t nmo_character_fields[] = {
                     sizeof(nmo_3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_character_state_t, body_part_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_character_state_t, body_part_ids),
+    NMO_FIELD_REF_ARRAY_COUNTED(nmo_character_state_t, body_part_ids, body_part_count),
     NMO_FIELD(nmo_character_state_t, animation_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_character_state_t, animation_ids),
+    NMO_FIELD_REF_ARRAY_COUNTED(nmo_character_state_t, animation_ids, animation_count),
     NMO_FIELD_REF(nmo_character_state_t, active_animation_id),
     NMO_FIELD_REF(nmo_character_state_t, anim_dest_id),
     NMO_FIELD_REF(nmo_character_state_t, root_body_part_id),
     NMO_FIELD_REF(nmo_character_state_t, floor_ref_id),
     NMO_FIELD(nmo_character_state_t, subpart_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_character_state_t, subparts, NMO_GUID_STRUCT_CKCHARACTERSUBPART)
+    NMO_FIELD_ARRAY_COUNTED(nmo_character_state_t, subparts, subpart_count, 1, NMO_GUID_STRUCT_CKCHARACTERSUBPART)
 };
 
 static const nmo_type_field_t nmo_bodypart_fields[] = {
