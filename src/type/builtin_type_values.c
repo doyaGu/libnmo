@@ -4,13 +4,21 @@
  */
 
 #include "type/nmo_type_system.h"
+#include "type/nmo_type_string.h"
+#include "type/nmo_type_guids.h"
 #include "type_value_internal.h"
 #include "core/nmo_array.h"
+#include "core/nmo_arena.h"
+#include "core/nmo_color.h"
 #include "core/nmo_error.h"
 #include "core/nmo_hash.h"
+#include "core/nmo_parse.h"
+#include <ctype.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -628,36 +636,8 @@ const nmo_type_vtable_t nmo_builtin_vtable_array = {
 
 
 /* ============================================================================
- * Builtin and reflected type value handlers
+ * Builtin type value handlers
  * ============================================================================ */
-
-/**
- * @brief Implementation of type value string handlers
- *
- * Provides concrete implementations for all built-in type string converters.
- *
- * Reference: CKParameterManager.cpp:1345-1435
- */
-
-#include "type/nmo_type_string.h"
-#include "type/nmo_type_system.h"
-#include "type/nmo_reflection.h"
-#include "type/nmo_operations.h"
-#include "type/nmo_type_guids.h"
-#include "type_value_internal.h"
-#include "object/nmo_param_guids.h"
-#include "core/nmo_array.h"
-#include "core/nmo_color.h"
-#include "core/nmo_error.h"
-#include "core/nmo_arena.h"
-#include "core/nmo_hash.h"
-#include "core/nmo_parse.h"
-#include <stdio.h>
-#include <stdarg.h>
-#include <stdlib.h>
-#include <string.h>
-#include <ctype.h>
-#include <math.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

@@ -475,11 +475,22 @@ typedef struct nmo_saver_manager {
  * Extended with annotation support per design.md Section 5.4
  * ============================================================================ */
 
+typedef enum nmo_type_vtable_source {
+    NMO_TYPE_VTABLE_SOURCE_NONE = 0,
+    NMO_TYPE_VTABLE_SOURCE_EXPLICIT,
+    NMO_TYPE_VTABLE_SOURCE_BASE_DEFAULT,
+    NMO_TYPE_VTABLE_SOURCE_CATEGORY_DEFAULT,
+    NMO_TYPE_VTABLE_SOURCE_METADATA_DEFAULT,
+    NMO_TYPE_VTABLE_SOURCE_MERGED_DEFAULT
+} nmo_type_vtable_source_t;
+
 typedef struct nmo_type_descriptor_ext {
     nmo_compatibility_mask_t compat_mask;      /* Cached derivation mask */
     const struct nmo_type_descriptor **hierarchy; /* Array of ancestor types (root first, self last) */
     uint32_t *state_offsets;                   /* Byte offset of each ancestor's state */
     nmo_type_vtable_t *owned_vtable;           /* Registry-owned merged vtable, if any */
+    uint32_t vtable_default_slots;             /* Slots populated from registry defaults */
+    nmo_type_vtable_source_t vtable_source;    /* How type->vtable was selected */
     uint16_t hierarchy_depth;                  /* Number of types in hierarchy (including self) */
     uint16_t _padding;                         /* Alignment padding */
     uint32_t total_state_size;                 /* Sum of all ancestor state sizes */

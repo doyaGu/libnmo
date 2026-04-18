@@ -48,6 +48,145 @@ static size_t compat_mask_growth_bits(size_t required_bits) {
     return ((required_bits + chunk - 1u) / chunk) * chunk;
 }
 
+static const nmo_type_vtable_t *nmo_type_metadata_default_vtable(
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry)
+{
+    if (!type || !registry || type->id == NMO_TYPE_ID_INVALID) {
+        return NULL;
+    }
+
+    const nmo_specialized_metadata_t *metadata =
+        nmo_type_registry_get_metadata(registry, type->id);
+    if (!metadata) {
+        return NULL;
+    }
+
+    switch (metadata->metadata_type) {
+        case NMO_METADATA_TYPE_ENUM:
+            return (type->category & NMO_TYPE_CATEGORY_ENUM)
+                ? &nmo_type_vtable_enum
+                : NULL;
+        case NMO_METADATA_TYPE_FLAGS:
+            return (type->category & NMO_TYPE_CATEGORY_FLAGS)
+                ? &nmo_type_vtable_flags
+                : NULL;
+        case NMO_METADATA_TYPE_STRUCT:
+            return (type->category & NMO_TYPE_CATEGORY_STRUCT)
+                ? &nmo_type_vtable_reflected_struct
+                : NULL;
+        case NMO_METADATA_TYPE_UNION:
+            return (type->category & NMO_TYPE_CATEGORY_UNION)
+                ? &nmo_type_vtable_reflected_struct
+                : NULL;
+        default:
+            return NULL;
+    }
+}
+
+static const nmo_type_vtable_t *nmo_type_category_default_vtable(
+    const nmo_type_descriptor_t *type)
+{
+    if (!type) {
+        return NULL;
+    }
+
+    if (type->category & NMO_TYPE_CATEGORY_ENUM) {
+        return &nmo_type_vtable_enum;
+    }
+    if (type->category & NMO_TYPE_CATEGORY_FLAGS) {
+        return &nmo_type_vtable_flags;
+    }
+    if (type->category & NMO_TYPE_CATEGORY_OBJECT_REF) {
+        return &nmo_type_vtable_object_ref;
+    }
+    if (type->category & (NMO_TYPE_CATEGORY_STRUCT | NMO_TYPE_CATEGORY_UNION)) {
+        return &nmo_type_vtable_reflected_struct;
+    }
+    return NULL;
+}
+
+static const nmo_type_vtable_t *nmo_type_base_default_vtable(
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry)
+{
+    if (!type || !registry || nmo_guid_is_null(type->base_type)) {
+        return NULL;
+    }
+
+    const nmo_type_descriptor_t *base =
+        nmo_type_registry_find_by_guid(registry, type->base_type);
+    if (!base || !base->vtable || base->size != type->size) {
+        return NULL;
+    }
+
+    return base->vtable;
+}
+
+static const nmo_type_vtable_t *nmo_type_select_default_vtable(
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    nmo_type_vtable_source_t *out_source)
+{
+    const nmo_type_vtable_t *metadata_vtable =
+        nmo_type_metadata_default_vtable(type, registry);
+    if (metadata_vtable) {
+        if (out_source) {
+            *out_source = NMO_TYPE_VTABLE_SOURCE_METADATA_DEFAULT;
+        }
+        return metadata_vtable;
+    }
+
+    const nmo_type_vtable_t *base_vtable =
+        nmo_type_base_default_vtable(type, registry);
+    if (base_vtable) {
+        if (out_source) {
+            *out_source = NMO_TYPE_VTABLE_SOURCE_BASE_DEFAULT;
+        }
+        return base_vtable;
+    }
+
+    const nmo_type_vtable_t *category_vtable =
+        nmo_type_category_default_vtable(type);
+    if (category_vtable) {
+        if (out_source) {
+            *out_source = NMO_TYPE_VTABLE_SOURCE_CATEGORY_DEFAULT;
+        }
+        return category_vtable;
+    }
+
+    if (out_source) {
+        *out_source = NMO_TYPE_VTABLE_SOURCE_NONE;
+    }
+    return NULL;
+}
+
+static void nmo_type_set_vtable_source(
+    nmo_type_descriptor_t *type,
+    nmo_type_vtable_source_t source)
+{
+    if (type && type->ext) {
+        type->ext->vtable_source = source;
+    }
+}
+
+#define NMO_VTABLE_SLOT_CREATE               (1u << 0)
+#define NMO_VTABLE_SLOT_DESTROY              (1u << 1)
+#define NMO_VTABLE_SLOT_COPY                 (1u << 2)
+#define NMO_VTABLE_SLOT_SERIALIZE            (1u << 3)
+#define NMO_VTABLE_SLOT_DESERIALIZE          (1u << 4)
+#define NMO_VTABLE_SLOT_PREPARE_DEPENDENCIES (1u << 5)
+#define NMO_VTABLE_SLOT_REMAP_DEPENDENCIES   (1u << 6)
+#define NMO_VTABLE_SLOT_PRE_DELETE           (1u << 7)
+#define NMO_VTABLE_SLOT_POST_DELETE          (1u << 8)
+#define NMO_VTABLE_SLOT_VALIDATE             (1u << 9)
+#define NMO_VTABLE_SLOT_EQUALS               (1u << 10)
+#define NMO_VTABLE_SLOT_HASH                 (1u << 11)
+#define NMO_VTABLE_SLOT_TO_STRING            (1u << 12)
+#define NMO_VTABLE_SLOT_FROM_STRING          (1u << 13)
+#define NMO_VTABLE_SLOT_ENUMERATE_REFS       (1u << 14)
+#define NMO_VTABLE_SLOT_ALL                  ((1u << 15) - 1u)
+
 void nmo_type_assign_default_vtable(
     nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry)
@@ -56,66 +195,77 @@ void nmo_type_assign_default_vtable(
         return;
     }
 
-    const nmo_type_vtable_t *base_vtable = NULL;
-    if (registry && !nmo_guid_is_null(type->base_type)) {
-        const nmo_type_descriptor_t *base =
-            nmo_type_registry_find_by_guid(registry, type->base_type);
-        if (base && base->vtable && base->size == type->size) {
-            base_vtable = base->vtable;
-        }
-    }
-
-    const nmo_type_vtable_t *category_vtable = NULL;
-    if (type->category & NMO_TYPE_CATEGORY_ENUM) {
-        category_vtable = &nmo_type_vtable_enum;
-    } else if (type->category & NMO_TYPE_CATEGORY_FLAGS) {
-        category_vtable = &nmo_type_vtable_flags;
-    } else if (type->category & NMO_TYPE_CATEGORY_OBJECT_REF) {
-        category_vtable = &nmo_type_vtable_object_ref;
-    } else if (type->category & (NMO_TYPE_CATEGORY_STRUCT | NMO_TYPE_CATEGORY_UNION)) {
-        category_vtable = &nmo_type_vtable_reflected_struct;
-    }
-
+    nmo_type_vtable_source_t default_source = NMO_TYPE_VTABLE_SOURCE_NONE;
     const nmo_type_vtable_t *default_vtable =
-        base_vtable ? base_vtable : category_vtable;
+        nmo_type_select_default_vtable(type, registry, &default_source);
     if (!default_vtable) {
         return;
     }
 
     if (!type->vtable) {
         type->vtable = default_vtable;
+        nmo_type_set_vtable_source(type, default_source);
+        if (type->ext) {
+            type->ext->vtable_default_slots = NMO_VTABLE_SLOT_ALL;
+        }
+        return;
+    }
+
+    nmo_type_vtable_source_t current_source =
+        type->ext ? type->ext->vtable_source : NMO_TYPE_VTABLE_SOURCE_EXPLICIT;
+    if (current_source == NMO_TYPE_VTABLE_SOURCE_BASE_DEFAULT ||
+        current_source == NMO_TYPE_VTABLE_SOURCE_CATEGORY_DEFAULT ||
+        current_source == NMO_TYPE_VTABLE_SOURCE_METADATA_DEFAULT) {
+        type->vtable = default_vtable;
+        nmo_type_set_vtable_source(type, default_source);
+        if (type->ext) {
+            type->ext->vtable_default_slots = NMO_VTABLE_SLOT_ALL;
+        }
         return;
     }
 
     nmo_type_vtable_t merged = *type->vtable;
     bool changed = false;
-#define NMO_FILL_VTABLE_SLOT(slot) \
+    uint32_t default_slots = type->ext ? type->ext->vtable_default_slots : 0u;
+#define NMO_FILL_VTABLE_SLOT(slot, bit) \
     do { \
-        if (!merged.slot && default_vtable->slot) { \
+        if (default_vtable->slot && \
+            (!merged.slot || ((default_slots & (bit)) != 0u))) { \
+            if (merged.slot != default_vtable->slot) { \
+                changed = true; \
+            } \
             merged.slot = default_vtable->slot; \
-            changed = true; \
+            default_slots |= (bit); \
         } \
     } while (0)
 
-    NMO_FILL_VTABLE_SLOT(create);
-    NMO_FILL_VTABLE_SLOT(destroy);
-    NMO_FILL_VTABLE_SLOT(copy);
-    NMO_FILL_VTABLE_SLOT(serialize);
-    NMO_FILL_VTABLE_SLOT(deserialize);
-    NMO_FILL_VTABLE_SLOT(prepare_dependencies);
-    NMO_FILL_VTABLE_SLOT(remap_dependencies);
-    NMO_FILL_VTABLE_SLOT(pre_delete);
-    NMO_FILL_VTABLE_SLOT(post_delete);
-    NMO_FILL_VTABLE_SLOT(validate);
-    NMO_FILL_VTABLE_SLOT(equals);
-    NMO_FILL_VTABLE_SLOT(hash);
-    NMO_FILL_VTABLE_SLOT(to_string);
-    NMO_FILL_VTABLE_SLOT(from_string);
-    NMO_FILL_VTABLE_SLOT(enumerate_refs);
+    NMO_FILL_VTABLE_SLOT(create, NMO_VTABLE_SLOT_CREATE);
+    NMO_FILL_VTABLE_SLOT(destroy, NMO_VTABLE_SLOT_DESTROY);
+    NMO_FILL_VTABLE_SLOT(copy, NMO_VTABLE_SLOT_COPY);
+    NMO_FILL_VTABLE_SLOT(serialize, NMO_VTABLE_SLOT_SERIALIZE);
+    NMO_FILL_VTABLE_SLOT(deserialize, NMO_VTABLE_SLOT_DESERIALIZE);
+    NMO_FILL_VTABLE_SLOT(prepare_dependencies, NMO_VTABLE_SLOT_PREPARE_DEPENDENCIES);
+    NMO_FILL_VTABLE_SLOT(remap_dependencies, NMO_VTABLE_SLOT_REMAP_DEPENDENCIES);
+    NMO_FILL_VTABLE_SLOT(pre_delete, NMO_VTABLE_SLOT_PRE_DELETE);
+    NMO_FILL_VTABLE_SLOT(post_delete, NMO_VTABLE_SLOT_POST_DELETE);
+    NMO_FILL_VTABLE_SLOT(validate, NMO_VTABLE_SLOT_VALIDATE);
+    NMO_FILL_VTABLE_SLOT(equals, NMO_VTABLE_SLOT_EQUALS);
+    NMO_FILL_VTABLE_SLOT(hash, NMO_VTABLE_SLOT_HASH);
+    NMO_FILL_VTABLE_SLOT(to_string, NMO_VTABLE_SLOT_TO_STRING);
+    NMO_FILL_VTABLE_SLOT(from_string, NMO_VTABLE_SLOT_FROM_STRING);
+    NMO_FILL_VTABLE_SLOT(enumerate_refs, NMO_VTABLE_SLOT_ENUMERATE_REFS);
 
 #undef NMO_FILL_VTABLE_SLOT
 
     if (!changed || !registry) {
+        return;
+    }
+
+    if (type->ext && type->ext->owned_vtable &&
+        type->vtable == (const nmo_type_vtable_t *)type->ext->owned_vtable) {
+        *type->ext->owned_vtable = merged;
+        type->ext->vtable_source = NMO_TYPE_VTABLE_SOURCE_MERGED_DEFAULT;
+        type->ext->vtable_default_slots = default_slots;
         return;
     }
 
@@ -132,6 +282,8 @@ void nmo_type_assign_default_vtable(
     type->vtable = owned_vtable;
     if (type->ext) {
         type->ext->owned_vtable = owned_vtable;
+        type->ext->vtable_source = NMO_TYPE_VTABLE_SOURCE_MERGED_DEFAULT;
+        type->ext->vtable_default_slots = default_slots;
     }
 }
 
@@ -1032,6 +1184,9 @@ nmo_status_t nmo_type_registry_register(
                              "Failed to allocate type extension");
         }
         memset(type->ext, 0, sizeof(*type->ext));
+    }
+    if (type->vtable) {
+        type->ext->vtable_source = NMO_TYPE_VTABLE_SOURCE_EXPLICIT;
     }
 
     // Registry owns specialized metadata index; default to invalid until set.
