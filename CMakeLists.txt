@@ -292,6 +292,7 @@ set(NMO_TYPE_SOURCES
     src/type/type_registry_enum.c
     src/type/type_registry_struct.c
     src/type/type_string_converters.c
+    src/type/builtin_type_values.c
     src/type/builtin_types.c
     src/type/builtin_operations.c
     src/type/builtin_arithmetic.c
