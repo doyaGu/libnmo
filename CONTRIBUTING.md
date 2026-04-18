@@ -41,6 +41,32 @@ cmake --build cmake-build-debug
 ctest --test-dir cmake-build-debug -j4 --output-on-failure
 ```
 
+### Refreshing Virtools Data
+
+The checked-in Virtools JSON data is generated from the Ballance Virtools
+runtime with `VirtoolsDataExporter.exe`.  Use the repository wrapper so manager
+DLLs, BuildingBlock DLLs, plugin-level GUID metadata, JSON encoding, and stale
+data checks stay consistent:
+
+```powershell
+$env:VIRTOOLS_DATA_EXPORTER = "path\to\VirtoolsDataExporter.exe"
+$env:VIRTOOLS_GAME_ROOT = "path\to\Ballance"
+powershell -ExecutionPolicy Bypass -File tools\scripts\export_virtools_data.ps1 `
+  -ExtraPluginDirs "path\to\extra\BuildingBlocks"
+python tools/scripts/gen_virtools_data.py
+```
+
+The exporter must support `-g plugins.json`; older exporter builds only produce
+parameter, operation, and BuildingBlock JSON and are rejected.  Before
+committing a data refresh, verify the generated files are current:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\scripts\export_virtools_data.ps1 `
+  -ExtraPluginDirs "path\to\extra\BuildingBlocks" `
+  -Check
+python tools/scripts/gen_virtools_data.py
+```
+
 ## Coding Standards
 
 ### Style
@@ -95,7 +121,8 @@ Lower layers NEVER include headers from higher layers.
 1. No circular dependencies: always depend downward in the layer hierarchy
 2. Both `serialize` AND `deserialize` vtable methods are required for every new object type
 3. Explicit ownership: use arena allocation, reference counting, or clear ownership transfer
-4. Error handling: return `nmo_result_t`; check `.code != NMO_OK`; propagate `.error`
+4. Error handling: return `nmo_status_t`; check every non-`NMO_OK` result; use
+    `nmo_last_error_*()` for detailed diagnostics when the API documents it
 5. Memory safety: bounds-check all array and buffer accesses
 6. Platform independence: use portable types (`uint32_t`, not `unsigned int`), portable abstractions
 
@@ -147,6 +174,8 @@ TEST(arena, basic_allocation) {
 - Test complete workflows
 - Test with real files from `data/` (use the `NMO_TEST_DATA_DIR` macro to locate them)
 - All 23 core CK classes and 2 manager schemas must survive a round-trip test
+- CLI write commands must save to a temporary copy, reload the saved file, and
+  run `nmo validate all` before the test passes.
 
 ### Fuzz Tests
 
@@ -179,9 +208,25 @@ significant internal change.
 
 1. Before submitting:
    - All tests must pass (`ctest --output-on-failure`)
+   - Shell completions must be current (`python tools/scripts/gen_completions.py --check`)
+   - Virtools exported JSON must be current when `data/virtools_*.json` changes
    - Run static analysis: cppcheck, clang-tidy
    - Check for memory leaks: valgrind (Linux) or DrMemory (Windows)
    - Update `CHANGELOG.md` under `[Unreleased]`
+
+## Release Packaging
+
+Windows MinGW release packages are produced with:
+
+```powershell
+pwsh tools/scripts/package_release.ps1 -Version 1.0.0 -BuildDir build_package_release_static -DistDir dist
+```
+
+The script configures a static-runtime Release build, runs CTest, installs into
+a staging tree, copies documentation and third-party licenses, verifies
+`nmo completion <shell>` against installed completion files, rejects packaged or
+import-table `libwinpthread` dependencies, runs an external static-link smoke
+test, and creates the final zip in `dist/`.
 
 2. PR description should include:
    - What changed and why
