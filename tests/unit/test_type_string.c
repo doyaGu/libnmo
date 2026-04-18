@@ -678,6 +678,11 @@ TEST(type_string, enum_roundtrip) {
     
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, enum_guid);
     ASSERT_NE(NULL, type);
+    ASSERT_NE(NULL, type->vtable);
+    ASSERT_NE(NULL, type->vtable->to_string);
+    ASSERT_NE(NULL, type->vtable->from_string);
+    ASSERT_NE(NULL, type->vtable->equals);
+    ASSERT_NE(NULL, type->vtable->hash);
     
     int32_t original = 1;  // RED
     char buffer[64];
@@ -790,6 +795,11 @@ TEST(type_string, flags_roundtrip) {
     
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, flags_guid);
     ASSERT_NE(NULL, type);
+    ASSERT_NE(NULL, type->vtable);
+    ASSERT_NE(NULL, type->vtable->to_string);
+    ASSERT_NE(NULL, type->vtable->from_string);
+    ASSERT_NE(NULL, type->vtable->equals);
+    ASSERT_NE(NULL, type->vtable->hash);
     
     uint32_t original = 6;  // WRITE | EXECUTE
     char buffer[128];
@@ -1060,6 +1070,9 @@ TEST(type_string, type_value_from_string_struct_with_reflected_fields) {
 
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, desc.guid);
     ASSERT_NE(NULL, type);
+    ASSERT_NE(NULL, type->vtable);
+    ASSERT_NE(NULL, type->vtable->to_string);
+    ASSERT_NE(NULL, type->vtable->from_string);
 
     test_struct_parse_t value = {0};
     ASSERT_EQ(NMO_OK, nmo_type_value_from_string(
@@ -1113,6 +1126,9 @@ TEST(type_string, type_value_to_string_object_ref_with_fields) {
 
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, desc.guid);
     ASSERT_NE(NULL, type);
+    ASSERT_NE(NULL, type->vtable);
+    ASSERT_NE(NULL, type->vtable->to_string);
+    ASSERT_NE(NULL, type->vtable->from_string);
 
     test_objref_t value = { .material_id = 7 };
     char buffer[128];
@@ -1495,6 +1511,47 @@ TEST(type_string, type_value_from_string_uint8_overflow) {
     teardown();
 }
 
+TEST(type_string, type_value_from_string_rejects_scalar_without_vtable) {
+    setup();
+
+    nmo_type_descriptor_t desc = {
+        .guid = NMO_GUID(0xDEADBEEFu, 0x00000011u),
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_SCALAR,
+        .flags = 0,
+        .name = "UnhandledScalar",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(int32_t),
+        .alignment = (uint32_t)alignof(int32_t),
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = NULL,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &desc));
+
+    const nmo_type_descriptor_t *type =
+        nmo_type_registry_find_by_guid(registry, desc.guid);
+    ASSERT_NE(NULL, type);
+    ASSERT_EQ(NULL, type->vtable);
+
+    int32_t value = 0;
+    ASSERT_EQ(NMO_ERR_NOT_IMPLEMENTED,
+              nmo_type_value_from_string(&value, type, registry, "42"));
+
+    teardown();
+}
+
 typedef struct test_object_name_session {
     int unused;
 } test_object_name_session_t;
@@ -1711,6 +1768,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, type_value_from_string_string);
     REGISTER_TEST(type_string, type_value_from_string_none_and_voidbuf_placeholders);
     REGISTER_TEST(type_string, type_value_from_string_uint8_overflow);
+    REGISTER_TEST(type_string, type_value_from_string_rejects_scalar_without_vtable);
     REGISTER_TEST(type_string, type_value_from_string_guid);
     REGISTER_TEST(type_string, type_value_from_string_angle_fallback);
     REGISTER_TEST(type_string, type_value_roundtrip_rect);
