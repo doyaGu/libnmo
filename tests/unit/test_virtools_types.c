@@ -342,6 +342,24 @@ TEST(vt, unbased_json_u32_primitives_parse_from_string) {
     nmo_context_release(ctx);
 }
 
+TEST(vt, script_param_type_loads_as_object_ref_alias) {
+    nmo_context_t *ctx = create_ctx_with_data();
+    ASSERT_TRUE(ctx != NULL);
+    nmo_type_registry_t *reg = nmo_context_get_type_registry(ctx);
+
+    nmo_guid_t script_guid = nmo_guid_create(0x7EA4176Du, 0x1B405D30u);
+    const nmo_type_descriptor_t *type =
+        nmo_type_registry_find_by_guid(reg, script_guid);
+    ASSERT_TRUE(type != NULL);
+    ASSERT_TRUE((type->category & NMO_TYPE_CATEGORY_OBJECT_REF) != 0);
+
+    nmo_object_id_t id = 0;
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&id, type, reg, "#987"));
+    ASSERT_EQ(987u, id);
+
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(vt, operation_addition);
     REGISTER_TEST(vt, operation_equal);
@@ -358,4 +376,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(vt, object_like_primitive_classes_parse_object_ids_from_string);
     REGISTER_TEST(vt, raw_json_loader_marks_object_refs_and_parses_ids);
     REGISTER_TEST(vt, unbased_json_u32_primitives_parse_from_string);
+    REGISTER_TEST(vt, script_param_type_loads_as_object_ref_alias);
 TEST_MAIN_END()

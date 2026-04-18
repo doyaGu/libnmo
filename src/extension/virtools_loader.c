@@ -188,6 +188,13 @@ nmo_status_t nmo_virtools_load_param_types(nmo_type_registry_t *registry, const 
         desc.base_type = get_guid(item, "derived_from");
         desc.valid = true;
 
+        if (desc.category == NMO_TYPE_CATEGORY_SCALAR &&
+            desc.class_id != 0 &&
+            desc.size == sizeof(nmo_object_id_t)) {
+            desc.category = NMO_TYPE_CATEGORY_OBJECT_REF;
+            desc.class_id = 0;
+        }
+
         if (nmo_type_registry_register(registry, &desc) == NMO_OK) {
             registered++;
 
