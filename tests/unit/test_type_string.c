@@ -1351,6 +1351,29 @@ TEST(type_string, type_value_from_string_string) {
     teardown();
 }
 
+TEST(type_string, type_value_from_string_none_and_voidbuf_placeholders) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    const nmo_type_descriptor_t *none_type =
+        nmo_type_registry_find_by_guid(registry, CKPGUID_NONE);
+    ASSERT_NE(NULL, none_type);
+
+    uint8_t placeholder = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_type_value_from_string(&placeholder, none_type, registry, "(none)"));
+
+    const nmo_type_descriptor_t *voidbuf_type =
+        nmo_type_registry_find_by_guid(registry, CKPGUID_VOIDBUF);
+    ASSERT_NE(NULL, voidbuf_type);
+
+    ASSERT_EQ(NMO_OK,
+              nmo_type_value_from_string(&placeholder, voidbuf_type, registry, "<voidbuf>"));
+
+    teardown();
+}
+
 TEST(type_string, type_value_from_string_uint8_overflow) {
     setup();
 
@@ -1578,6 +1601,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, type_value_from_string_uint64);
     REGISTER_TEST(type_string, type_value_from_string_double);
     REGISTER_TEST(type_string, type_value_from_string_string);
+    REGISTER_TEST(type_string, type_value_from_string_none_and_voidbuf_placeholders);
     REGISTER_TEST(type_string, type_value_from_string_uint8_overflow);
     REGISTER_TEST(type_string, type_value_from_string_guid);
     REGISTER_TEST(type_string, type_value_from_string_angle_fallback);

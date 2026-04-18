@@ -998,6 +998,18 @@ nmo_status_t nmo_vt_to_string_none(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_vt_from_string_none(
+    void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry, const char *string)
+{
+    (void)value; (void)type; (void)registry;
+    if (string && strcmp(string, "(none)") == 0) {
+        NMO_RETURN_OK();
+    }
+    NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                     "Invalid none placeholder");
+}
+
 nmo_status_t nmo_vt_to_string_voidbuf(
     const void *value, const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -1006,6 +1018,18 @@ nmo_status_t nmo_vt_to_string_voidbuf(
     (void)value; (void)type; (void)registry; (void)depth;
     snprintf(buffer, buffer_size, "<voidbuf>");
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_vt_from_string_voidbuf(
+    void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry, const char *string)
+{
+    (void)value; (void)type; (void)registry;
+    if (string && strcmp(string, "<voidbuf>") == 0) {
+        NMO_RETURN_OK();
+    }
+    NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                     "Invalid voidbuf placeholder");
 }
 
 enum { NMO_MAX_TO_STRING_DEPTH = 6 };

@@ -150,10 +150,16 @@ nmo_status_t nmo_vt_to_string_none(
     const void *value, const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
     char *buffer, size_t buffer_size, int depth);
+nmo_status_t nmo_vt_from_string_none(
+    void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry, const char *string);
 nmo_status_t nmo_vt_to_string_voidbuf(
     const void *value, const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
     char *buffer, size_t buffer_size, int depth);
+nmo_status_t nmo_vt_from_string_voidbuf(
+    void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry, const char *string);
 
 const nmo_type_vtable_t nmo_builtin_vtable_int = {
     .create = nmo_builtin_create_zero,
@@ -447,10 +453,12 @@ const nmo_type_vtable_t nmo_builtin_vtable_time = {
 
 const nmo_type_vtable_t nmo_builtin_vtable_none = {
     .to_string = nmo_vt_to_string_none,
+    .from_string = nmo_vt_from_string_none,
 };
 
 const nmo_type_vtable_t nmo_builtin_vtable_voidbuf = {
     .to_string = nmo_vt_to_string_voidbuf,
+    .from_string = nmo_vt_from_string_voidbuf,
 };
 
 static nmo_status_t nmo_builtin_create_array(void *instance, const nmo_type_descriptor_t *type, void *context) {
