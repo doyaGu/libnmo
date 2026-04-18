@@ -252,6 +252,7 @@ typedef struct nmo_type_field {
     nmo_field_units_t units;            /* Unit of measurement */
     const void *default_value;          /* Registry-owned default (type_allocator) */
     const char *count_field_name;       /* For POINTER|REPEATED: name of the count field */
+    uint32_t count_multiplier;          /* Element count = count field * multiplier (0 means 1) */
 } nmo_type_field_t;
 
 /* ============================================================================

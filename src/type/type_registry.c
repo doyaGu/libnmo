@@ -580,11 +580,12 @@ static nmo_status_t validate_type_descriptor(
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                  "Field '%s' exceeds type size", field->name);
             }
-            if ((field->flags & (NMO_FIELD_POINTER | NMO_FIELD_REPEATED)) ==
-                (NMO_FIELD_POINTER | NMO_FIELD_REPEATED)) {
-                if (field->count_field_name == NULL || field->count_field_name[0] == '\0') {
+            if ((field->flags & NMO_FIELD_REPEATED) != 0u &&
+                field->count_field_name != NULL &&
+                field->count_field_name[0] != '\0') {
+                if (field->count_multiplier == 0u) {
                     NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                     "Pointer array field '%s' must declare count_field_name",
+                                     "Array field '%s' must declare a non-zero count_multiplier",
                                      field->name);
                 }
                 bool found_count_field = false;
@@ -598,9 +599,17 @@ static nmo_status_t validate_type_descriptor(
                 }
                 if (!found_count_field) {
                     NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                     "Pointer array field '%s' references missing count field '%s'",
+                                     "Array field '%s' references missing count field '%s'",
                                      field->name,
                                      field->count_field_name);
+                }
+            }
+            if ((field->flags & (NMO_FIELD_POINTER | NMO_FIELD_REPEATED)) ==
+                (NMO_FIELD_POINTER | NMO_FIELD_REPEATED)) {
+                if (field->count_field_name == NULL || field->count_field_name[0] == '\0') {
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                     "Pointer array field '%s' must declare count_field_name",
+                                     field->name);
                 }
             }
 

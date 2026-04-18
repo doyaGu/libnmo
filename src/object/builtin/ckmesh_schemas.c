@@ -111,23 +111,23 @@ static const nmo_type_field_t nmo_mesh_fields[] = {
                     NMO_FIELD_REQUIRED, 0),
     /* Faces */
     NMO_FIELD(nmo_mesh_state_t, face_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_mesh_state_t, faces, NMO_GUID_STRUCT_CKFACE),
-    NMO_FIELD_ARRAY(nmo_mesh_state_t, face_vertex_indices, CKPGUID_UINT16),
+    NMO_FIELD_ARRAY_COUNTED(nmo_mesh_state_t, faces, face_count, 1, NMO_GUID_STRUCT_CKFACE),
+    NMO_FIELD_ARRAY_COUNTED(nmo_mesh_state_t, face_vertex_indices, face_count, 3, CKPGUID_UINT16),
     /* Lines */
     NMO_FIELD(nmo_mesh_state_t, line_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_mesh_state_t, line_indices, CKPGUID_UINT16),
+    NMO_FIELD_ARRAY_COUNTED(nmo_mesh_state_t, line_indices, line_count, 2, CKPGUID_UINT16),
     /* Vertices */
     NMO_FIELD(nmo_mesh_state_t, vertex_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_mesh_state_t, vertices, NMO_GUID_STRUCT_VXVERTEX),
-    NMO_FIELD_ARRAY(nmo_mesh_state_t, vertex_colors, CKPGUID_COLOR),
-    NMO_FIELD_ARRAY(nmo_mesh_state_t, vertex_specular, CKPGUID_COLOR),
-    NMO_FIELD_ARRAY(nmo_mesh_state_t, vertex_weights, CKPGUID_FLOAT),
+    NMO_FIELD_ARRAY_COUNTED(nmo_mesh_state_t, vertices, vertex_count, 1, NMO_GUID_STRUCT_VXVERTEX),
+    NMO_FIELD_ARRAY_COUNTED(nmo_mesh_state_t, vertex_colors, vertex_count, 1, CKPGUID_COLOR),
+    NMO_FIELD_ARRAY_COUNTED(nmo_mesh_state_t, vertex_specular, vertex_count, 1, CKPGUID_COLOR),
+    NMO_FIELD_ARRAY_COUNTED(nmo_mesh_state_t, vertex_weights, vertex_weight_count, 1, CKPGUID_FLOAT),
     NMO_FIELD(nmo_mesh_state_t, vertex_weight_count, CKPGUID_UINT32),
     /* Materials */
     NMO_FIELD(nmo_mesh_state_t, material_group_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_mesh_state_t, material_groups, NMO_GUID_STRUCT_CKMATERIALGROUP),
+    NMO_FIELD_ARRAY_COUNTED(nmo_mesh_state_t, material_groups, material_group_count, 1, NMO_GUID_STRUCT_CKMATERIALGROUP),
     NMO_FIELD(nmo_mesh_state_t, material_channel_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_mesh_state_t, material_channels, NMO_GUID_STRUCT_CKMATERIALCHANNEL)
+    NMO_FIELD_ARRAY_COUNTED(nmo_mesh_state_t, material_channels, material_channel_count, 1, NMO_GUID_STRUCT_CKMATERIALCHANNEL)
 };
 
 /* =============================================================================

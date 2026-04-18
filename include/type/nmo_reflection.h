@@ -86,6 +86,31 @@ extern "C" {
     }
 
 /**
+ * @brief Define a raw pointer array with explicit count metadata.
+ *
+ * The runtime element count is `_count_field * _count_multiplier`.
+ * Use multiplier 1 for ordinary pointer arrays, 3 for triangle index arrays,
+ * etc. This macro intentionally keeps only NMO_FIELD_REPEATED: the field is
+ * a pointer to contiguous elements, not a pointer-valued scalar.
+ */
+#define NMO_FIELD_ARRAY_COUNTED(_struct, _ptr_field, _count_field, _count_multiplier, _elem_type_guid) \
+    { \
+        .name = #_ptr_field, \
+        .description = NULL, \
+        .type_guid = _elem_type_guid##_INIT, \
+        .offset = (uint32_t)offsetof(_struct, _ptr_field), \
+        .size = (uint32_t)sizeof(((_struct*)0)->_ptr_field), \
+        .flags = NMO_FIELD_REPEATED, \
+        .added_version = 0, \
+        .removed_version = 0, \
+        .semantic = NMO_SEMANTIC_NONE, \
+        .units = NMO_UNITS_NONE, \
+        .default_value = NULL, \
+        .count_field_name = #_count_field, \
+        .count_multiplier = (uint32_t)(_count_multiplier) \
+    }
+
+/**
  * @brief Define an array field with explicit name (no struct lookup for offset)
  */
 #define NMO_FIELD_ARRAY_NAMED(_name, _offset, _size, _elem_type_guid, _flags, _semantic) \
@@ -178,7 +203,8 @@ extern "C" {
         .semantic = NMO_SEMANTIC_NONE, \
         .units = NMO_UNITS_NONE, \
         .default_value = NULL, \
-        .count_field_name = #_count_field \
+        .count_field_name = #_count_field, \
+        .count_multiplier = 1u \
     }
 
 /**
@@ -370,10 +396,17 @@ static inline const nmo_type_field_t *nmo_field_get_count_field(
     return nmo_type_get_field_by_name(type, field->count_field_name);
 }
 
+static inline uint32_t nmo_field_get_count_multiplier(
+    const nmo_type_field_t *field)
+{
+    return field && field->count_multiplier != 0u ? field->count_multiplier : 1u;
+}
+
 /**
  * @brief Resolve the companion count field for an array field.
  *
- * Uses explicit count_field_name metadata only.
+ * Uses explicit count_field_name metadata only. If count_multiplier is set,
+ * the returned value is the count field multiplied by that factor.
  *
  * @param type Type descriptor that owns array_field
  * @param array_field Array field descriptor

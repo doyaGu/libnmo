@@ -7,6 +7,7 @@
 #include "core/nmo_error.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdint.h>
 
 /* ============================================================================
  * Field Access API
@@ -79,7 +80,13 @@ NMO_API nmo_status_t nmo_field_resolve_count(
         return NMO_ERR_NOT_FOUND;
     }
 
-    *out_count = nmo_field_get_uint32(instance, count_field);
+    uint64_t count = (uint64_t)nmo_field_get_uint32(instance, count_field) *
+                     (uint64_t)nmo_field_get_count_multiplier(array_field);
+    if (count > UINT32_MAX) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+
+    *out_count = (uint32_t)count;
     return NMO_OK;
 }
 

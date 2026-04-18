@@ -398,87 +398,6 @@ static bool nmo_summary_read_u64_field(
     return true;
 }
 
-static bool nmo_summary_read_count_field_named(
-    const nmo_type_descriptor_t *owner_type,
-    const void *owner_instance,
-    const char *field_name,
-    uint64_t *out_count)
-{
-    if (!owner_type || !owner_instance || !field_name || !out_count) {
-        return false;
-    }
-    const nmo_type_field_t *count_field =
-        nmo_type_get_field_by_name(owner_type, field_name);
-    return nmo_summary_read_u64_field(owner_instance, count_field, out_count);
-}
-
-static bool nmo_summary_guess_named_array_count(
-    const nmo_type_descriptor_t *owner_type,
-    const void *owner_instance,
-    const nmo_type_field_t *field,
-    uint64_t *out_count)
-{
-    if (!owner_type || !owner_instance || !field || !field->name || !out_count) {
-        return false;
-    }
-
-    const char *name = field->name;
-    if (strcmp(name, "face_vertex_indices") == 0) {
-        uint64_t face_count = 0;
-        if (nmo_summary_read_count_field_named(owner_type, owner_instance,
-                                               "face_count", &face_count)) {
-            *out_count = face_count * 3u;
-            return true;
-        }
-    }
-    if (strcmp(name, "line_indices") == 0) {
-        uint64_t line_count = 0;
-        if (nmo_summary_read_count_field_named(owner_type, owner_instance,
-                                               "line_count", &line_count)) {
-            *out_count = line_count * 2u;
-            return true;
-        }
-    }
-    if (strcmp(name, "vertices") == 0 ||
-        strcmp(name, "vertex_colors") == 0 ||
-        strcmp(name, "vertex_specular") == 0) {
-        return nmo_summary_read_count_field_named(
-            owner_type, owner_instance, "vertex_count", out_count);
-    }
-    if (strcmp(name, "vertex_weights") == 0) {
-        return nmo_summary_read_count_field_named(
-            owner_type, owner_instance, "vertex_weight_count", out_count);
-    }
-    if (strcmp(name, "faces") == 0) {
-        return nmo_summary_read_count_field_named(
-            owner_type, owner_instance, "face_count", out_count);
-    }
-
-    char candidate[128];
-    size_t len = strlen(name);
-    if (len > 1 && name[len - 1] == 's') {
-        size_t stem_len = len - 1;
-        if (stem_len + strlen("_count") < sizeof(candidate)) {
-            memcpy(candidate, name, stem_len);
-            memcpy(candidate + stem_len, "_count", strlen("_count") + 1u);
-            if (nmo_summary_read_count_field_named(
-                    owner_type, owner_instance, candidate, out_count)) {
-                return true;
-            }
-        }
-    }
-
-    if (len + strlen("_count") < sizeof(candidate)) {
-        snprintf(candidate, sizeof(candidate), "%s_count", name);
-        if (nmo_summary_read_count_field_named(
-                owner_type, owner_instance, candidate, out_count)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 static uint64_t nmo_summary_guess_array_count(
     const nmo_type_descriptor_t *owner_type,
     const void *owner_instance,
@@ -499,12 +418,6 @@ static uint64_t nmo_summary_guess_array_count(
     uint32_t count = 0;
     if (nmo_field_resolve_count(owner_type, field, owner_instance, &count) == NMO_OK) {
         return (uint64_t)count;
-    }
-
-    uint64_t inferred_count = 0;
-    if (nmo_summary_guess_named_array_count(
-            owner_type, owner_instance, field, &inferred_count)) {
-        return inferred_count;
     }
 
     return 0;

@@ -179,6 +179,26 @@ static void write_count_field(void *state, const nmo_type_field_t *count_field, 
     }
 }
 
+static nmo_status_t write_array_count_field(
+    void *state,
+    const nmo_type_field_t *array_field,
+    const nmo_type_field_t *count_field,
+    uint64_t element_count)
+{
+    if (!count_field) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    uint32_t multiplier = nmo_field_get_count_multiplier(array_field);
+    if (multiplier == 0u) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+    if (element_count % (uint64_t)multiplier != 0u) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+    write_count_field(state, count_field, element_count / (uint64_t)multiplier);
+    return NMO_OK;
+}
+
 /**
  * @brief Determine element size for a field type GUID (same heuristic as summary).
  */
@@ -301,7 +321,11 @@ static nmo_status_t import_field_value(void *state,
         if (arr_count == 0) {
             if (!dry_run) {
                 *(void **)fptr = NULL;
-                write_count_field(state, count_field, 0);
+                nmo_status_t st = write_array_count_field(state, field, count_field, 0);
+                if (st != NMO_OK) {
+                    result->errors++;
+                    return st;
+                }
             }
             result->fields_written++;
             return NMO_OK;
@@ -336,7 +360,11 @@ static nmo_status_t import_field_value(void *state,
 
         if (!dry_run) {
             *(void **)fptr = buf;
-            write_count_field(state, count_field, arr_count);
+            nmo_status_t st = write_array_count_field(state, field, count_field, arr_count);
+            if (st != NMO_OK) {
+                result->errors++;
+                return st;
+            }
         }
         result->fields_written++;
         return NMO_OK;
@@ -603,7 +631,11 @@ static nmo_status_t import_array_raw_hex(
         if (!dry_run) {
             *(void **)fptr = buf;
             if (count_field) {
-                write_count_field(state, count_field, count);
+                nmo_status_t st = write_array_count_field(state, field, count_field, count);
+                if (st != NMO_OK) {
+                    result->errors++;
+                    return st;
+                }
             }
         }
         result->fields_written++;

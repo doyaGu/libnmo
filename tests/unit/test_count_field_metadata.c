@@ -4,6 +4,8 @@
 #include "type/nmo_operations.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_arena.h"
+#include "object/builtin/nmo_mesh_schemas.h"
+#include "object/nmo_class_ids.h"
 
 #include <stdalign.h>
 #include <string.h>
@@ -21,9 +23,19 @@ typedef struct raw_pointer_array_struct {
     uint32_t *items;
 } raw_pointer_array_struct_t;
 
+typedef struct multiplied_array_struct {
+    uint32_t face_count;
+    uint16_t *indices;
+} multiplied_array_struct_t;
+
 static const nmo_type_field_t test_fields[] = {
     NMO_FIELD(test_ptr_array_struct_t, item_count, CKPGUID_UINT32),
     NMO_FIELD_PTR_ARRAY(test_ptr_array_struct_t, items, item_count, TEST_GUID_ELEM),
+};
+
+static const nmo_type_field_t multiplied_fields[] = {
+    NMO_FIELD(multiplied_array_struct_t, face_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY_COUNTED(multiplied_array_struct_t, indices, face_count, 3, CKPGUID_UINT16),
 };
 
 TEST(count_field_meta, ptr_array_has_count_field_name) {
@@ -69,6 +81,18 @@ TEST(count_field_meta, resolve_count_uses_metadata_value) {
     ASSERT_EQ(NMO_OK, nmo_field_resolve_count(
                           &type, &test_fields[1], &instance, &count));
     ASSERT_EQ(7u, count);
+}
+
+TEST(count_field_meta, resolve_count_applies_multiplier) {
+    nmo_type_descriptor_t type = make_test_type(multiplied_fields, 2);
+    multiplied_array_struct_t instance;
+    memset(&instance, 0, sizeof(instance));
+    instance.face_count = 7;
+
+    uint32_t count = 0;
+    ASSERT_EQ(NMO_OK, nmo_field_resolve_count(
+                          &type, &multiplied_fields[1], &instance, &count));
+    ASSERT_EQ(21u, count);
 }
 
 TEST(count_field_meta, resolve_count_field_returns_metadata_field) {
@@ -146,13 +170,61 @@ TEST(count_field_meta, registry_rejects_raw_pointer_array_without_count_metadata
     nmo_arena_destroy(arena);
 }
 
+TEST(count_field_meta, ckmesh_raw_pointer_arrays_declare_count_metadata) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+    ASSERT_NOT_NULL(registry);
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+    ASSERT_EQ(NMO_OK, nmo_register_mesh_type(registry));
+
+    const nmo_type_descriptor_t *mesh =
+        nmo_type_registry_find_by_class_id(registry, NMO_CID_MESH);
+    ASSERT_NOT_NULL(mesh);
+
+    const nmo_type_field_t *faces = nmo_type_get_field_by_name(mesh, "faces");
+    ASSERT_NOT_NULL(faces);
+    ASSERT_NOT_NULL(faces->count_field_name);
+    ASSERT_EQ(0, strcmp(faces->count_field_name, "face_count"));
+    ASSERT_EQ(1u, faces->count_multiplier);
+
+    const nmo_type_field_t *indices = nmo_type_get_field_by_name(mesh, "face_vertex_indices");
+    ASSERT_NOT_NULL(indices);
+    ASSERT_NOT_NULL(indices->count_field_name);
+    ASSERT_EQ(0, strcmp(indices->count_field_name, "face_count"));
+    ASSERT_EQ(3u, indices->count_multiplier);
+
+    const nmo_type_field_t *lines = nmo_type_get_field_by_name(mesh, "line_indices");
+    ASSERT_NOT_NULL(lines);
+    ASSERT_NOT_NULL(lines->count_field_name);
+    ASSERT_EQ(0, strcmp(lines->count_field_name, "line_count"));
+    ASSERT_EQ(2u, lines->count_multiplier);
+
+    const nmo_type_field_t *vertices = nmo_type_get_field_by_name(mesh, "vertices");
+    ASSERT_NOT_NULL(vertices);
+    ASSERT_NOT_NULL(vertices->count_field_name);
+    ASSERT_EQ(0, strcmp(vertices->count_field_name, "vertex_count"));
+    ASSERT_EQ(1u, vertices->count_multiplier);
+
+    const nmo_type_field_t *groups = nmo_type_get_field_by_name(mesh, "material_groups");
+    ASSERT_NOT_NULL(groups);
+    ASSERT_NOT_NULL(groups->count_field_name);
+    ASSERT_EQ(0, strcmp(groups->count_field_name, "material_group_count"));
+    ASSERT_EQ(1u, groups->count_multiplier);
+
+    nmo_type_registry_destroy(registry);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(count_field_meta, ptr_array_has_count_field_name);
     REGISTER_TEST(count_field_meta, non_ptr_array_has_null_count);
     REGISTER_TEST(count_field_meta, get_count_field_resolves_metadata);
     REGISTER_TEST(count_field_meta, get_count_field_null_for_null_type);
     REGISTER_TEST(count_field_meta, resolve_count_uses_metadata_value);
+    REGISTER_TEST(count_field_meta, resolve_count_applies_multiplier);
     REGISTER_TEST(count_field_meta, resolve_count_field_returns_metadata_field);
     REGISTER_TEST(count_field_meta, resolve_count_reports_missing_count_field);
     REGISTER_TEST(count_field_meta, registry_rejects_raw_pointer_array_without_count_metadata);
+    REGISTER_TEST(count_field_meta, ckmesh_raw_pointer_arrays_declare_count_metadata);
 TEST_MAIN_END()
