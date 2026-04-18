@@ -1080,6 +1080,10 @@ TEST(type_string, type_value_to_string_object_ref_with_fields) {
     ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("{material_id=#7}", buffer);
 
+    test_objref_t parsed = {0};
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&parsed, type, registry, buffer));
+    ASSERT_EQ(7u, parsed.material_id);
+
     teardown();
 }
 

@@ -2170,6 +2170,10 @@ nmo_status_t nmo_type_value_from_string(
         return nmo_flags_from_string(value, type, registry, string);
     }
     if (type->category & NMO_TYPE_CATEGORY_OBJECT_REF) {
+        const char *p = nmo_parse_skip_ws(string);
+        if (*p == '{') {
+            return nmo_struct_like_from_string(value, type, registry, string);
+        }
         return nmo_parse_object_id_value(value, registry, string);
     }
     if (type->category & (NMO_TYPE_CATEGORY_STRUCT | NMO_TYPE_CATEGORY_UNION)) {
