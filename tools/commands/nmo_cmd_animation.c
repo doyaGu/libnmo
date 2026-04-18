@@ -995,24 +995,26 @@ static size_t hex_decode(const char *hex, uint8_t *out, size_t out_size) {
 
 int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output",  "-o", NMO_OPT_STRING, "Output file (required)"},
+        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
         {"--replace", NULL, NMO_OPT_STRING, "Replace existing animation by ID"},
+        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
     };
-    nmo_opt_val_t vals[2];
+    nmo_opt_val_t vals[3];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output_path = vals[0].present ? vals[0].val.str : NULL;
     const char *replace_str = vals[1].present ? vals[1].val.str : NULL;
+    bool dry_run = vals[2].present && vals[2].val.flag;
 
-    if (!output_path) {
-        fprintf(stderr, "Error: --output/-o is required\n");
-        fprintf(stderr, "Usage: nmo animation import <json-file> <nmo-file> -o <output>\n");
+    if (!dry_run && !output_path) {
+        fprintf(stderr, "Error: --output/-o is required (or use --dry-run)\n");
+        fprintf(stderr, "Usage: nmo animation import <json-file> <nmo-file> -o <output> [--dry-run]\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (r.pos_count < 2) {
-        fprintf(stderr, "Usage: nmo animation import <json-file> <nmo-file> -o <output>\n");
+        fprintf(stderr, "Usage: nmo animation import <json-file> <nmo-file> -o <output> [--dry-run]\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -1290,12 +1292,17 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    /* Save */
-    int save_rc = nmo_cli_save_session(c.session, output_path, NULL);
-    if (save_rc != NMO_CLI_EXIT_SUCCESS) {
-        return nmo_cmd_ctx_done(&c, save_rc);
+    if (!dry_run) {
+        int save_rc = nmo_cli_save_session(c.session, output_path, NULL);
+        if (save_rc != NMO_CLI_EXIT_SUCCESS) {
+            return nmo_cmd_ctx_done(&c, save_rc);
+        }
     }
 
-    fprintf(stderr, "Saved: %s\n", output_path);
+    if (dry_run) {
+        fprintf(c.out, "[dry-run] Imported animation data; no output written\n");
+    } else {
+        fprintf(stderr, "Saved: %s\n", output_path);
+    }
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }

@@ -930,18 +930,20 @@ static int mesh_import_get_or_add_vertex(
 
 int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output",  "-o", NMO_OPT_STRING, "Output NMO file (required)"},
+        {"--output",  "-o", NMO_OPT_STRING, "Output NMO file (required unless --dry-run)"},
         {"--replace", NULL,  NMO_OPT_STRING, "Replace existing mesh by ID"},
         {"--name",    "-n", NMO_OPT_STRING, "Mesh name (default: filename)"},
+        {"--dry-run", NULL,  NMO_OPT_FLAG,   "Preview without saving"},
     };
-    nmo_opt_val_t vals[3];
+    nmo_opt_val_t vals[4];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, 4, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output_path  = vals[0].present ? vals[0].val.str : NULL;
     const char *replace_str  = vals[1].present ? vals[1].val.str : NULL;
     const char *mesh_name    = vals[2].present ? vals[2].val.str : NULL;
+    bool dry_run = vals[3].present && vals[3].val.flag;
 
     /* Positional: <obj-file> <nmo-file> */
     const char *obj_file_path = NULL;
@@ -956,17 +958,17 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
     if (!obj_file_path) {
         fprintf(stderr, "Error: Missing OBJ file path\n");
-        fprintf(stderr, "Usage: nmo mesh import <obj-file> <nmo-file> -o <output>\n");
+        fprintf(stderr, "Usage: nmo mesh import <obj-file> <nmo-file> -o <output> [--dry-run]\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (!nmo_file_path) {
         fprintf(stderr, "Error: Missing NMO file path\n");
-        fprintf(stderr, "Usage: nmo mesh import <obj-file> <nmo-file> -o <output>\n");
+        fprintf(stderr, "Usage: nmo mesh import <obj-file> <nmo-file> -o <output> [--dry-run]\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (!output_path || !*output_path) {
+    if (!dry_run && (!output_path || !*output_path)) {
         fprintf(stderr, "Error: Missing --output/-o\n");
-        fprintf(stderr, "Usage: nmo mesh import <obj-file> <nmo-file> -o <output>\n");
+        fprintf(stderr, "Usage: nmo mesh import <obj-file> <nmo-file> -o <output> [--dry-run]\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -1387,25 +1389,36 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    /* Save */
-    int save_rc = nmo_cli_save_session(c.session, output_path, NULL);
-    if (save_rc != NMO_CLI_EXIT_SUCCESS) {
-        return nmo_cmd_ctx_done(&c, save_rc);
+    if (!dry_run) {
+        int save_rc = nmo_cli_save_session(c.session, output_path, NULL);
+        if (save_rc != NMO_CLI_EXIT_SUCCESS) {
+            return nmo_cmd_ctx_done(&c, save_rc);
+        }
     }
 
     if (c.is_json) {
         yyjson_mut_doc *jdoc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *jdata = yyjson_mut_obj(jdoc);
-        yyjson_mut_obj_add_str(jdoc, jdata, "output", output_path);
+        nmo_cli_json_add_bool_safe(jdoc, jdata, "dry_run", dry_run);
+        if (output_path) {
+            yyjson_mut_obj_add_str(jdoc, jdata, "output", output_path);
+        }
         yyjson_mut_obj_add_uint(jdoc, jdata, "vertex_count", (uint64_t)total_verts);
         yyjson_mut_obj_add_uint(jdoc, jdata, "face_count",
                                 (uint64_t)obj_data.face_count);
         yyjson_mut_obj_add_str(jdoc, jdata, "status", "ok");
         nmo_cmd_ctx_json_end(&c, jdoc, jdata, "mesh.import");
     } else {
+        if (dry_run) {
+            fprintf(c.out, "[dry-run] ");
+        }
         fprintf(c.out, "Imported %zu vertices, %zu faces from '%s'\n",
                 total_verts, obj_data.face_count, obj_file_path);
-        fprintf(c.out, "Saved to '%s'\n", output_path);
+        if (dry_run) {
+            fprintf(c.out, "No output written\n");
+        } else {
+            fprintf(c.out, "Saved to '%s'\n", output_path);
+        }
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
