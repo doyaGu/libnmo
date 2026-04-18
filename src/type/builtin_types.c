@@ -12,6 +12,7 @@
 #include "core/nmo_hash.h"
 #include "core/nmo_error.h"
 #include "type/nmo_type_guids.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_param_guids.h"
 #include <stdint.h>
 #include <stdbool.h>
@@ -608,6 +609,20 @@ const nmo_type_vtable_t nmo_builtin_vtable_array = {
     .to_string = nmo_builtin_to_string_array,
     .from_string = nmo_builtin_from_string_array,
 };
+
+static void nmo_patch_uint32_alias_vtable(
+    nmo_type_registry_t *registry,
+    nmo_guid_t guid)
+{
+    nmo_type_descriptor_t *type =
+        (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(registry, guid);
+    if (!type || type->vtable || type->size != sizeof(uint32_t)) {
+        return;
+    }
+
+    type->alignment = alignof(uint32_t);
+    type->vtable = &nmo_builtin_vtable_uint32;
+}
 
 /* ============================================================================
  * Type Registration
@@ -1381,6 +1396,15 @@ nmo_status_t nmo_builtin_types_patch_vtables(nmo_type_registry_t *registry)
         type->alignment = base->alignment;
         type->vtable = base->vtable;
     }
+
+    nmo_patch_uint32_alias_vtable(registry, CKPGUID_COPYDEPENDENCIES);
+    nmo_patch_uint32_alias_vtable(registry, CKPGUID_DELETEDEPENDENCIES);
+    nmo_patch_uint32_alias_vtable(registry, CKPGUID_REPLACEDEPENDENCIES);
+    nmo_patch_uint32_alias_vtable(registry, CKPGUID_SAVEDEPENDENCIES);
+    nmo_patch_uint32_alias_vtable(registry, CKPGUID_MESSAGE);
+    nmo_patch_uint32_alias_vtable(registry, CKPGUID_ATTRIBUTE);
+    nmo_patch_uint32_alias_vtable(registry, CKPGUID_OBJECTARRAY);
+    nmo_patch_uint32_alias_vtable(registry, CKPGUID_2DCURVE);
 
     NMO_RETURN_OK();
 }

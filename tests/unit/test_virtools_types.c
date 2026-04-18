@@ -240,6 +240,41 @@ TEST(vt, object_ref_types_parse_object_ids_from_string) {
     nmo_context_release(ctx);
 }
 
+TEST(vt, object_like_primitive_classes_parse_object_ids_from_string) {
+    nmo_context_t *ctx = create_ctx_with_data();
+    ASSERT_TRUE(ctx != NULL);
+    nmo_type_registry_t *reg = nmo_context_get_type_registry(ctx);
+
+    static const nmo_guid_t object_like_guids[] = {
+        CKPGUID_OBJECT_INIT,
+        CKPGUID_SCENEOBJECT_INIT,
+        CKPGUID_BEOBJECT_INIT,
+        CKPGUID_BEHAVIOR_INIT,
+        CKPGUID_SCENE_INIT,
+        CKPGUID_LEVEL_INIT,
+        CKPGUID_GROUP_INIT,
+        CKPGUID_SOUND_INIT,
+        CKPGUID_WAVESOUND_INIT,
+        CKPGUID_MIDISOUND_INIT,
+        CKPGUID_STATE_INIT,
+        CKPGUID_CRITICALSECTION_INIT,
+        CKPGUID_DATAARRAY_INIT,
+    };
+
+    for (size_t i = 0; i < sizeof(object_like_guids) / sizeof(object_like_guids[0]); ++i) {
+        const nmo_type_descriptor_t *type =
+            nmo_type_registry_find_by_guid(reg, object_like_guids[i]);
+        ASSERT_TRUE(type != NULL);
+        ASSERT_TRUE((type->category & NMO_TYPE_CATEGORY_OBJECT_REF) != 0);
+
+        nmo_object_id_t id = 0;
+        ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&id, type, reg, "#789"));
+        ASSERT_EQ(789u, id);
+    }
+
+    nmo_context_release(ctx);
+}
+
 TEST(vt, raw_json_loader_marks_object_refs_and_parses_ids) {
     const char *path = "test_object_ref_param_type_tmp.json";
     FILE *file = fopen(path, "wb");
@@ -277,6 +312,36 @@ TEST(vt, raw_json_loader_marks_object_refs_and_parses_ids) {
     nmo_arena_destroy(arena);
 }
 
+TEST(vt, unbased_json_u32_primitives_parse_from_string) {
+    nmo_context_t *ctx = create_ctx_with_data();
+    ASSERT_TRUE(ctx != NULL);
+    nmo_type_registry_t *reg = nmo_context_get_type_registry(ctx);
+
+    static const nmo_guid_t u32_guids[] = {
+        CKPGUID_COPYDEPENDENCIES_INIT,
+        CKPGUID_DELETEDEPENDENCIES_INIT,
+        CKPGUID_REPLACEDEPENDENCIES_INIT,
+        CKPGUID_SAVEDEPENDENCIES_INIT,
+        CKPGUID_MESSAGE_INIT,
+        CKPGUID_ATTRIBUTE_INIT,
+        CKPGUID_OBJECTARRAY_INIT,
+        CKPGUID_2DCURVE_INIT,
+    };
+
+    for (size_t i = 0; i < sizeof(u32_guids) / sizeof(u32_guids[0]); ++i) {
+        const nmo_type_descriptor_t *type =
+            nmo_type_registry_find_by_guid(reg, u32_guids[i]);
+        ASSERT_TRUE(type != NULL);
+        ASSERT_TRUE((type->category & NMO_TYPE_CATEGORY_SCALAR) != 0);
+
+        uint32_t value = 0;
+        ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&value, type, reg, "42"));
+        ASSERT_EQ(42u, value);
+    }
+
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(vt, operation_addition);
     REGISTER_TEST(vt, operation_equal);
@@ -290,5 +355,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(vt, builtin_overrides_json_signature);
     REGISTER_TEST(vt, derived_json_primitive_types_parse_from_string);
     REGISTER_TEST(vt, object_ref_types_parse_object_ids_from_string);
+    REGISTER_TEST(vt, object_like_primitive_classes_parse_object_ids_from_string);
     REGISTER_TEST(vt, raw_json_loader_marks_object_refs_and_parses_ids);
+    REGISTER_TEST(vt, unbased_json_u32_primitives_parse_from_string);
 TEST_MAIN_END()
