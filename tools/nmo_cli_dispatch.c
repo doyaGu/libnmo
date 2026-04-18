@@ -412,11 +412,13 @@ static void behavior_graph_usage(FILE *out) {
 
 static void behavior_dump_usage(FILE *out) {
     fprintf(out, "Usage: nmo behavior dump [options] <id> <file>\n\n");
-    fprintf(out, "Dump behavior tree with decoded parameter values.\n\n");
+    fprintf(out, "Dump a compact behavior tree overview.\n\n");
     fprintf(out, "Output:\n");
     fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n\n");
     fprintf(out, "Options:\n");
-    fprintf(out, "  --level <n>     Dump depth level (0-3, default: 2)\n");
+    fprintf(out, "  --all             Dump all script behavior trees\n");
+    fprintf(out, "  --flows           Include execution/data flow summaries for one behavior\n");
+    fprintf(out, "  --values          Include decoded local/output parameter values\n");
 }
 
 static void behavior_find_usage(FILE *out) {
@@ -927,7 +929,7 @@ static const nmo_cli_action_t behavior_actions[] = {
     {"stats", "st", "Show behavior statistics", nmo_cmd_behavior_stats, behavior_stats_usage, NULL, 0, NULL},
     {"show", "s", "Show behavior signature", nmo_cmd_behavior_show, behavior_show_usage, NULL, 0, NULL},
     {"graph", "g", "Export behavior graph", nmo_cmd_behavior_graph, behavior_graph_usage, NULL, 0, NULL},
-    {"dump", "d", "Dump behavior tree with decoded values", nmo_cmd_behavior_dump, behavior_dump_usage, NULL, 0, NULL},
+    {"dump", "d", "Dump compact behavior tree overview", nmo_cmd_behavior_dump, behavior_dump_usage, NULL, 0, NULL},
     {"find", "f", "Search behaviors by name/GUID/type", nmo_cmd_behavior_find, behavior_find_usage, NULL, 0, NULL},
     {"trace", "tr", "Trace execution path from IO", nmo_cmd_behavior_trace, behavior_trace_usage, NULL, 0, NULL},
     {"add-link", NULL, "Add behavior graph link", nmo_cmd_behavior_add_link, behavior_add_link_usage, NULL, 0, NULL},
