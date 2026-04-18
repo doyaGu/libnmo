@@ -22,6 +22,7 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_parse.h"
 
 #include "yyjson.h"
 
@@ -192,6 +193,18 @@ static size_t guess_element_size(nmo_guid_t field_guid,
     return sizeof(uint32_t);
 }
 
+static size_t import_element_size_for_field(
+    const nmo_type_field_t *field,
+    const nmo_type_descriptor_t *field_type)
+{
+    if (field && field->name &&
+        (strcmp(field->name, "vertex_colors") == 0 ||
+         strcmp(field->name, "vertex_specular") == 0)) {
+        return sizeof(uint32_t);
+    }
+    return guess_element_size(field ? field->type_guid : (nmo_guid_t){0}, field_type);
+}
+
 /* ============================================================================
  * Field Import
  * ============================================================================ */
@@ -276,7 +289,7 @@ static nmo_status_t import_field_value(void *state,
             return NMO_OK;
         }
 
-        size_t elem_size = guess_element_size(field->type_guid, field_type);
+        size_t elem_size = import_element_size_for_field(field, field_type);
         size_t arr_count = yyjson_arr_size(json_val);
         const nmo_type_field_t *count_field =
             nmo_field_resolve_count_field(owner_type, field);
@@ -336,7 +349,7 @@ static nmo_status_t import_field_value(void *state,
             return NMO_OK;
         }
 
-        size_t elem_size = guess_element_size(field->type_guid, field_type);
+        size_t elem_size = import_element_size_for_field(field, field_type);
         size_t arr_count = yyjson_arr_size(json_val);
 
         /* Only operate on nmo_array_t sized fields */
@@ -532,70 +545,299 @@ static nmo_status_t import_field_value(void *state,
     return NMO_OK;
 }
 
-/**
- * @brief Import fields from a JSON "fields" object into an object's state.
- *
- * Walks the class hierarchy (base to derived) and for each level, matches
- * JSON keys to field descriptors.
- */
-static void import_object_fields(void *state,
-                                 const nmo_type_descriptor_t *type,
-                                 const nmo_type_registry_t *registry,
-                                 nmo_arena_t *arena,
-                                 yyjson_val *fields_obj,
-                                 nmo_import_result_t *result,
-                                 uint32_t flags)
+/* ============================================================================
+ * Snapshot Schema Import
+ * ============================================================================ */
+
+static nmo_status_t decode_raw_hex_exact(yyjson_val *raw_val,
+                                         void *out,
+                                         size_t expected_size)
 {
-    if (!state || !type || !fields_obj || !yyjson_is_obj(fields_obj)) {
-        return;
+    if (!raw_val || !yyjson_is_str(raw_val) || (!out && expected_size > 0)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    size_t decoded = 0;
+    nmo_status_t st = nmo_parse_hex_bytes(
+        yyjson_get_str(raw_val), (uint8_t *)out, expected_size, &decoded);
+    if (st != NMO_OK) {
+        return st;
+    }
+    return decoded == expected_size ? NMO_OK : NMO_ERR_INVALID_FORMAT;
+}
+
+static nmo_status_t import_array_raw_hex(
+    void *state,
+    const nmo_type_descriptor_t *owner_type,
+    const nmo_type_field_t *field,
+    const nmo_type_descriptor_t *field_type,
+    nmo_arena_t *arena,
+    yyjson_val *raw_hex,
+    uint64_t count,
+    bool dry_run,
+    nmo_import_result_t *result)
+{
+    size_t elem_size = import_element_size_for_field(field, field_type);
+    size_t expected_size = (size_t)count * elem_size;
+    void *fptr = nmo_field_get_ptr(state, field);
+    if (!fptr) {
+        result->errors++;
+        return NMO_ERR_INVALID_STATE;
     }
 
-    /* Build the flattened class hierarchy */
+    if (field->size != sizeof(nmo_array_t)) {
+        const nmo_type_field_t *count_field =
+            nmo_field_resolve_count_field(owner_type, field);
+        void *buf = NULL;
+        if (expected_size > 0) {
+            buf = nmo_arena_alloc(arena, expected_size, 8);
+            if (!buf) {
+                result->errors++;
+                return NMO_ERR_NOMEM;
+            }
+            nmo_status_t st = decode_raw_hex_exact(raw_hex, buf, expected_size);
+            if (st != NMO_OK) {
+                result->errors++;
+                return st;
+            }
+        }
+        if (!dry_run) {
+            *(void **)fptr = buf;
+            if (count_field) {
+                write_count_field(state, count_field, count);
+            }
+        }
+        result->fields_written++;
+        return NMO_OK;
+    }
+
+    if (field->size != sizeof(nmo_array_t)) {
+        result->fields_skipped++;
+        return NMO_OK;
+    }
+
+    nmo_array_t *arr = (nmo_array_t *)fptr;
+    const nmo_allocator_t *array_allocator =
+        (arr->element_size != 0 && arr->allocator.alloc && arr->allocator.free)
+            ? &arr->allocator
+            : NULL;
+    nmo_array_t temp;
+    nmo_status_t st = nmo_array_init(&temp, elem_size, (size_t)count, array_allocator);
+    if (st != NMO_OK) {
+        result->errors++;
+        return st;
+    }
+    if (arr->element_size != 0) {
+        nmo_array_set_lifecycle(&temp, &arr->lifecycle);
+    }
+    if (expected_size > 0) {
+        void *data = NULL;
+        st = nmo_array_extend(&temp, (size_t)count, &data);
+        if (st == NMO_OK) {
+            st = decode_raw_hex_exact(raw_hex, data, expected_size);
+        }
+        if (st != NMO_OK) {
+            nmo_array_dispose(&temp);
+            result->errors++;
+            return st;
+        }
+    }
+    if (!dry_run) {
+        if (arr->element_size == 0) {
+            *arr = temp;
+            memset(&temp, 0, sizeof(temp));
+        } else {
+            st = nmo_array_swap(arr, &temp);
+            if (st != NMO_OK) {
+                nmo_array_dispose(&temp);
+                result->errors++;
+                return st;
+            }
+        }
+    }
+    nmo_array_dispose(&temp);
+    result->fields_written++;
+    return NMO_OK;
+}
+
+static nmo_status_t import_snapshot_field_value(
+    void *state,
+    const nmo_type_descriptor_t *owner_type,
+    const nmo_type_field_t *field,
+    const nmo_type_registry_t *registry,
+    nmo_arena_t *arena,
+    yyjson_val *field_item,
+    nmo_import_result_t *result,
+    uint32_t flags)
+{
+    const char *kind = yyjson_get_str(yyjson_obj_get(field_item, "kind"));
+    yyjson_val *value = yyjson_obj_get(field_item, "value");
+    yyjson_val *raw_hex = yyjson_obj_get(field_item, "raw_hex");
+    if (!kind || !value) {
+        result->errors++;
+        return NMO_ERR_INVALID_FORMAT;
+    }
+
+    bool dry_run = (flags & NMO_IMPORT_DRY_RUN) != 0u;
+    void *fptr = nmo_field_get_ptr(state, field);
+    if (!fptr) {
+        result->errors++;
+        return NMO_ERR_INVALID_STATE;
+    }
+    const nmo_type_descriptor_t *field_type =
+        nmo_type_registry_find_by_guid(registry, field->type_guid);
+
+    if (strcmp(kind, "array") == 0) {
+        yyjson_val *items = yyjson_obj_get(field_item, "items");
+        yyjson_val *count_val = yyjson_obj_get(field_item, "count");
+        if (!items || !yyjson_is_arr(items) || !count_val || !yyjson_is_uint(count_val)) {
+            result->errors++;
+            return NMO_ERR_INVALID_FORMAT;
+        }
+        uint64_t count = yyjson_get_uint(count_val);
+        if (yyjson_arr_size(items) != count) {
+            result->errors++;
+            return NMO_ERR_INVALID_FORMAT;
+        }
+        if ((raw_hex && yyjson_is_str(raw_hex)) || count == 0) {
+            return import_array_raw_hex(
+                state, owner_type, field, field_type, arena, raw_hex, count, dry_run, result);
+        }
+        return import_field_value(
+            state, owner_type, field, registry, arena, items, result, flags);
+    }
+
+    if (raw_hex && yyjson_is_str(raw_hex) &&
+        strcmp(kind, "scalar") == 0 && field->size > 0) {
+        if (!dry_run) {
+            nmo_status_t st = decode_raw_hex_exact(raw_hex, fptr, field->size);
+            if (st != NMO_OK) {
+                result->errors++;
+                return st;
+            }
+        } else {
+            uint8_t tmp[512];
+            void *buf = tmp;
+            if (field->size > sizeof(tmp)) {
+                buf = malloc(field->size);
+                if (!buf) {
+                    result->errors++;
+                    return NMO_ERR_NOMEM;
+                }
+            }
+            nmo_status_t st = decode_raw_hex_exact(raw_hex, buf, field->size);
+            if (buf != tmp) free(buf);
+            if (st != NMO_OK) {
+                result->errors++;
+                return st;
+            }
+        }
+        result->fields_written++;
+        return NMO_OK;
+    }
+
+    if (strcmp(kind, "struct") == 0 && raw_hex && yyjson_is_str(raw_hex) && field->size > 0) {
+        if (!dry_run) {
+            nmo_status_t st = decode_raw_hex_exact(raw_hex, fptr, field->size);
+            if (st != NMO_OK) {
+                result->errors++;
+                return st;
+            }
+        }
+        result->fields_written++;
+        return NMO_OK;
+    }
+
+    if (strcmp(kind, "pointer") == 0) {
+        if (yyjson_is_null(value)) {
+            if (!dry_run) {
+                *(void **)fptr = NULL;
+            }
+            result->fields_written++;
+            return NMO_OK;
+        }
+        if (!field_type || field_type->size == 0 || !raw_hex || !yyjson_is_str(raw_hex)) {
+            result->errors++;
+            return NMO_ERR_INVALID_FORMAT;
+        }
+        void *pointee = nmo_arena_alloc(
+            arena, field_type->size, field_type->alignment > 0 ? field_type->alignment : 8);
+        if (!pointee) {
+            result->errors++;
+            return NMO_ERR_NOMEM;
+        }
+        nmo_status_t st = decode_raw_hex_exact(raw_hex, pointee, field_type->size);
+        if (st != NMO_OK) {
+            result->errors++;
+            return st;
+        }
+        if (!dry_run) {
+            *(void **)fptr = pointee;
+        }
+        result->fields_written++;
+        return NMO_OK;
+    }
+
+    return import_field_value(
+        state, owner_type, field, registry, arena, value, result, flags);
+}
+
+static nmo_status_t import_snapshot_fields(void *state,
+                                           const nmo_type_descriptor_t *type,
+                                           const nmo_type_registry_t *registry,
+                                           nmo_arena_t *arena,
+                                           yyjson_val *fields_arr,
+                                           nmo_import_result_t *result,
+                                           uint32_t flags)
+{
+    if (!state || !type || !yyjson_is_arr(fields_arr)) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+
     import_hierarchy_level_t levels[IMPORT_MAX_HIERARCHY_DEPTH];
     size_t level_count = build_hierarchy(registry, type, state, levels, IMPORT_MAX_HIERARCHY_DEPTH);
     if (level_count == 0) {
-        return;
+        return NMO_ERR_INVALID_STATE;
     }
 
-    /* For each JSON key, search across all hierarchy levels for a matching field.
-     * Process base levels first so that if a key matches at multiple levels,
-     * the first matching level wins (field names are unique per level). */
-    yyjson_obj_iter json_iter;
-    yyjson_obj_iter_init(fields_obj, &json_iter);
-    yyjson_val *key;
-    while ((key = yyjson_obj_iter_next(&json_iter)) != NULL) {
-        yyjson_val *val = yyjson_obj_iter_get_val(key);
-        const char *key_str = yyjson_get_str(key);
-        if (!key_str || !val) continue;
+    yyjson_arr_iter iter;
+    yyjson_arr_iter_init(fields_arr, &iter);
+    yyjson_val *item;
+    while ((item = yyjson_arr_iter_next(&iter)) != NULL) {
+        if (!yyjson_is_obj(item)) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
+        const char *name = yyjson_get_str(yyjson_obj_get(item, "name"));
+        const char *kind = yyjson_get_str(yyjson_obj_get(item, "kind"));
+        const char *type_guid = yyjson_get_str(yyjson_obj_get(item, "type_guid"));
+        if (!name || !kind || !type_guid || !yyjson_obj_get(item, "value")) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
 
-        /* Search hierarchy levels from base to derived */
         bool found = false;
         for (size_t lvl = 0; lvl < level_count; ++lvl) {
             const nmo_type_descriptor_t *lvl_type = levels[lvl].type;
             void *lvl_state = levels[lvl].state;
-
-            const nmo_type_field_t *field = nmo_type_get_field_by_name(lvl_type, key_str);
-            if (!field) continue;
-
-            /* Skip base embeddings */
-            if (is_base_embedding(lvl_type, field)) continue;
-
-            /* Skip non-writable fields */
+            const nmo_type_field_t *field = nmo_type_get_field_by_name(lvl_type, name);
+            if (!field || is_base_embedding(lvl_type, field)) {
+                continue;
+            }
+            found = true;
             if (field->flags & (NMO_FIELD_DEPRECATED | NMO_FIELD_RUNTIME_ONLY | NMO_FIELD_ID)) {
                 result->fields_skipped++;
-                found = true;
                 break;
             }
-
-            import_field_value(lvl_state, lvl_type, field, registry, arena, val, result, flags);
-            found = true;
-            break; /* First match wins */
+            nmo_status_t st = import_snapshot_field_value(
+                lvl_state, lvl_type, field, registry, arena, item, result, flags);
+            if (st != NMO_OK && st != NMO_ERR_INVALID_ARGUMENT) {
+                return st;
+            }
+            break;
         }
-
         if (!found) {
             result->fields_skipped++;
         }
     }
+    return NMO_OK;
 }
 
 /* ============================================================================
@@ -681,49 +923,10 @@ nmo_status_t nmo_object_import_json(
         yyjson_val *name_val = yyjson_obj_get(entry, "name");
         yyjson_val *fields_val = yyjson_obj_get(entry, "fields");
 
-        if (!fields_val || !yyjson_is_obj(fields_val)) {
-            result->errors++;
-            continue;
-        }
-
-        /* Bridge: handle export format where fields contains a "fields" array
-         * of {name, value_str} objects. Convert to mutable flat map. */
-        yyjson_mut_doc *bridge_mut_doc = NULL;
-        yyjson_doc *bridge_flat_doc = NULL;
-        yyjson_val *inner_fields = yyjson_obj_get(fields_val, "fields");
-        if (inner_fields && yyjson_is_arr(inner_fields)) {
-            bridge_mut_doc = yyjson_mut_doc_new(NULL);
-            if (bridge_mut_doc) {
-                yyjson_mut_val *flat = yyjson_mut_obj(bridge_mut_doc);
-                yyjson_arr_iter fi;
-                yyjson_arr_iter_init(inner_fields, &fi);
-                yyjson_val *fe;
-                while ((fe = yyjson_arr_iter_next(&fi)) != NULL) {
-                    yyjson_val *fn = yyjson_obj_get(fe, "name");
-                    yyjson_val *fv = yyjson_obj_get(fe, "value_str");
-                    if (!fv) fv = yyjson_obj_get(fe, "value");
-                    if (fn && yyjson_is_str(fn) && fv) {
-                        const char *fns = yyjson_get_str(fn);
-                        if (yyjson_is_str(fv)) {
-                            yyjson_mut_obj_add_strcpy(bridge_mut_doc, flat, fns, yyjson_get_str(fv));
-                        } else if (yyjson_is_num(fv)) {
-                            char nbuf[64];
-                            snprintf(nbuf, sizeof(nbuf), "%g", yyjson_get_num(fv));
-                            yyjson_mut_obj_add_strcpy(bridge_mut_doc, flat, fns, nbuf);
-                        } else if (yyjson_is_bool(fv)) {
-                            yyjson_mut_obj_add_strcpy(bridge_mut_doc, flat, fns,
-                                                      yyjson_get_bool(fv) ? "true" : "false");
-                        }
-                    }
-                }
-                yyjson_mut_doc_set_root(bridge_mut_doc, flat);
-                bridge_flat_doc = yyjson_mut_doc_imut_copy(bridge_mut_doc, NULL);
-                if (bridge_flat_doc) {
-                    fields_val = yyjson_doc_get_root(bridge_flat_doc);
-                }
-                yyjson_mut_doc_free(bridge_mut_doc);
-                bridge_mut_doc = NULL;
-            }
+        if (!fields_val || !yyjson_is_arr(fields_val)) {
+            yyjson_doc_free(doc);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "object import snapshot requires fields array");
         }
 
         nmo_object_id_t obj_id = 0;
@@ -802,12 +1005,9 @@ nmo_status_t nmo_object_import_json(
         nmo_session_edit_t *edit = NULL;
         if ((flags & NMO_IMPORT_DRY_RUN) == 0u) {
             nmo_status_t edit_st =
-                nmo_session_edit_begin(session, "object.import-json", &edit);
+                nmo_session_edit_begin(session, "object.import", &edit);
             if (edit_st != NMO_OK) {
                 result->errors++;
-                if (bridge_flat_doc) {
-                    yyjson_doc_free(bridge_flat_doc);
-                }
                 continue;
             }
             if (created_id != 0) {
@@ -815,9 +1015,6 @@ nmo_status_t nmo_object_import_json(
                 if (edit_st != NMO_OK) {
                     nmo_session_edit_rollback(edit);
                     result->errors++;
-                    if (bridge_flat_doc) {
-                        yyjson_doc_free(bridge_flat_doc);
-                    }
                     continue;
                 }
             }
@@ -826,9 +1023,6 @@ nmo_status_t nmo_object_import_json(
                 if (edit_st != NMO_OK) {
                     nmo_session_edit_rollback(edit);
                     result->errors++;
-                    if (bridge_flat_doc) {
-                        yyjson_doc_free(bridge_flat_doc);
-                    }
                     continue;
                 }
             }
@@ -836,8 +1030,16 @@ nmo_status_t nmo_object_import_json(
 
         size_t fields_before = result->fields_written;
 
-        /* Import fields */
-        import_object_fields(state, type, registry, arena, fields_val, result, flags);
+        /* Import snapshot fields */
+        nmo_status_t import_st =
+            import_snapshot_fields(state, type, registry, arena, fields_val, result, flags);
+        if (import_st != NMO_OK) {
+            if (edit != NULL) {
+                nmo_session_edit_rollback(edit);
+            }
+            yyjson_doc_free(doc);
+            return import_st;
+        }
         if (edit != NULL) {
             if (result->fields_written > fields_before) {
                 nmo_session_edit_mark(
@@ -851,18 +1053,10 @@ nmo_status_t nmo_object_import_json(
             nmo_status_t edit_st = nmo_session_edit_commit(edit);
             if (edit_st != NMO_OK) {
                 yyjson_doc_free(doc);
-                if (bridge_flat_doc) {
-                    yyjson_doc_free(bridge_flat_doc);
-                }
                 return edit_st;
             }
         }
         result->objects_updated++;
-
-        /* Free bridge documents from export format conversion */
-        if (bridge_flat_doc) {
-            yyjson_doc_free(bridge_flat_doc);
-        }
     }
 
     yyjson_doc_free(doc);

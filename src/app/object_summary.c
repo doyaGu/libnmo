@@ -29,6 +29,7 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_guids.h"
 #include "core/nmo_array.h"
+#include "core/nmo_hex.h"
 
 #include "dsl/nmo_dsl.h"
 
@@ -357,6 +358,19 @@ static size_t nmo_summary_guess_element_size(nmo_guid_t field_guid, const nmo_ty
     return sizeof(uint32_t);
 }
 
+static size_t nmo_snapshot_element_size_for_field(
+    const nmo_type_field_t *field,
+    const nmo_type_descriptor_t *field_type)
+{
+    if (field && field->name &&
+        (strcmp(field->name, "vertex_colors") == 0 ||
+         strcmp(field->name, "vertex_specular") == 0)) {
+        return sizeof(uint32_t);
+    }
+    return nmo_summary_guess_element_size(
+        field ? field->type_guid : (nmo_guid_t){0}, field_type);
+}
+
 static bool nmo_summary_read_u64_field(
     const void *owner_instance,
     const nmo_type_field_t *field,
@@ -384,6 +398,87 @@ static bool nmo_summary_read_u64_field(
     return true;
 }
 
+static bool nmo_summary_read_count_field_named(
+    const nmo_type_descriptor_t *owner_type,
+    const void *owner_instance,
+    const char *field_name,
+    uint64_t *out_count)
+{
+    if (!owner_type || !owner_instance || !field_name || !out_count) {
+        return false;
+    }
+    const nmo_type_field_t *count_field =
+        nmo_type_get_field_by_name(owner_type, field_name);
+    return nmo_summary_read_u64_field(owner_instance, count_field, out_count);
+}
+
+static bool nmo_summary_guess_named_array_count(
+    const nmo_type_descriptor_t *owner_type,
+    const void *owner_instance,
+    const nmo_type_field_t *field,
+    uint64_t *out_count)
+{
+    if (!owner_type || !owner_instance || !field || !field->name || !out_count) {
+        return false;
+    }
+
+    const char *name = field->name;
+    if (strcmp(name, "face_vertex_indices") == 0) {
+        uint64_t face_count = 0;
+        if (nmo_summary_read_count_field_named(owner_type, owner_instance,
+                                               "face_count", &face_count)) {
+            *out_count = face_count * 3u;
+            return true;
+        }
+    }
+    if (strcmp(name, "line_indices") == 0) {
+        uint64_t line_count = 0;
+        if (nmo_summary_read_count_field_named(owner_type, owner_instance,
+                                               "line_count", &line_count)) {
+            *out_count = line_count * 2u;
+            return true;
+        }
+    }
+    if (strcmp(name, "vertices") == 0 ||
+        strcmp(name, "vertex_colors") == 0 ||
+        strcmp(name, "vertex_specular") == 0) {
+        return nmo_summary_read_count_field_named(
+            owner_type, owner_instance, "vertex_count", out_count);
+    }
+    if (strcmp(name, "vertex_weights") == 0) {
+        return nmo_summary_read_count_field_named(
+            owner_type, owner_instance, "vertex_weight_count", out_count);
+    }
+    if (strcmp(name, "faces") == 0) {
+        return nmo_summary_read_count_field_named(
+            owner_type, owner_instance, "face_count", out_count);
+    }
+
+    char candidate[128];
+    size_t len = strlen(name);
+    if (len > 1 && name[len - 1] == 's') {
+        size_t stem_len = len - 1;
+        if (stem_len + strlen("_count") < sizeof(candidate)) {
+            memcpy(candidate, name, stem_len);
+            memcpy(candidate + stem_len, "_count", strlen("_count") + 1u);
+            if (nmo_summary_read_count_field_named(
+                    owner_type, owner_instance, candidate, out_count)) {
+                return true;
+            }
+        }
+    }
+
+    if (len + strlen("_count") < sizeof(candidate)) {
+        snprintf(candidate, sizeof(candidate), "%s_count", name);
+        if (nmo_summary_read_count_field_named(
+                owner_type, owner_instance, candidate, out_count)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static uint64_t nmo_summary_guess_array_count(
     const nmo_type_descriptor_t *owner_type,
     const void *owner_instance,
@@ -404,6 +499,12 @@ static uint64_t nmo_summary_guess_array_count(
     uint32_t count = 0;
     if (nmo_field_resolve_count(owner_type, field, owner_instance, &count) == NMO_OK) {
         return (uint64_t)count;
+    }
+
+    uint64_t inferred_count = 0;
+    if (nmo_summary_guess_named_array_count(
+            owner_type, owner_instance, field, &inferred_count)) {
+        return inferred_count;
     }
 
     return 0;
@@ -1697,6 +1798,304 @@ static size_t nmo_summary_build_hierarchy(
 }
 
 /* ============================================================================
+ * JSON Snapshot Emission
+ * ============================================================================ */
+
+static void nmo_snapshot_add_guid(yyjson_mut_doc *doc, yyjson_mut_val *obj,
+                                  const char *key, nmo_guid_t guid)
+{
+    char buf[40];
+    if (nmo_guid_format(guid, buf, sizeof(buf)) >= 0) {
+        nmo_cli_json_add_str_safe(doc, obj, key, buf);
+    }
+}
+
+static void nmo_snapshot_add_raw_hex(yyjson_mut_doc *doc, yyjson_mut_val *obj,
+                                     const void *data, size_t size)
+{
+    if (!doc || !obj || !data || size == 0) {
+        return;
+    }
+    char *hex = nmo_hex_bytes_to_string(data, size, true);
+    if (!hex) {
+        return;
+    }
+    nmo_cli_json_add_str_safe(doc, obj, "raw_hex", hex);
+    free(hex);
+}
+
+static yyjson_mut_val *nmo_snapshot_scalar_value(
+    nmo_summary_output_t *out,
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *field_type,
+    nmo_guid_t field_guid,
+    const void *value_ptr,
+    size_t value_size)
+{
+    if (!out || !out->json_doc || !value_ptr) {
+        return yyjson_mut_null(out ? out->json_doc : NULL);
+    }
+
+    if (nmo_guid_equals(field_guid, CKPGUID_BOOL) && value_size >= 1) {
+        return yyjson_mut_bool(out->json_doc, (*(const uint8_t *)value_ptr) != 0);
+    }
+    if (nmo_guid_equals(field_guid, CKPGUID_INT8) && value_size >= 1) {
+        return yyjson_mut_sint(out->json_doc, *(const int8_t *)value_ptr);
+    }
+    if (nmo_guid_equals(field_guid, CKPGUID_UINT8) && value_size >= 1) {
+        return yyjson_mut_uint(out->json_doc, *(const uint8_t *)value_ptr);
+    }
+    if (nmo_guid_equals(field_guid, CKPGUID_INT16) && value_size >= 2) {
+        return yyjson_mut_sint(out->json_doc, *(const int16_t *)value_ptr);
+    }
+    if (nmo_guid_equals(field_guid, CKPGUID_UINT16) && value_size >= 2) {
+        return yyjson_mut_uint(out->json_doc, *(const uint16_t *)value_ptr);
+    }
+    if ((nmo_guid_equals(field_guid, CKPGUID_INT) ||
+         nmo_guid_equals(field_guid, CKPGUID_ID)) && value_size >= 4) {
+        return yyjson_mut_sint(out->json_doc, *(const int32_t *)value_ptr);
+    }
+    if (nmo_guid_equals(field_guid, CKPGUID_UINT32) && value_size >= 4) {
+        return yyjson_mut_uint(out->json_doc, *(const uint32_t *)value_ptr);
+    }
+    if (nmo_guid_equals(field_guid, CKPGUID_INT64) && value_size >= 8) {
+        return yyjson_mut_sint(out->json_doc, *(const int64_t *)value_ptr);
+    }
+    if (nmo_guid_equals(field_guid, CKPGUID_UINT64) && value_size >= 8) {
+        return yyjson_mut_uint(out->json_doc, *(const uint64_t *)value_ptr);
+    }
+    if (nmo_guid_equals(field_guid, CKPGUID_FLOAT) && value_size >= 4) {
+        return yyjson_mut_real(out->json_doc, (double)*(const float *)value_ptr);
+    }
+    if (nmo_guid_equals(field_guid, CKPGUID_DOUBLE) && value_size >= 8) {
+        return yyjson_mut_real(out->json_doc, *(const double *)value_ptr);
+    }
+
+    yyjson_mut_val *json_val = NULL;
+    if (nmo_summary_format_value_to_json(out, registry, field_type, field_guid,
+                                         value_ptr, value_size, &json_val)) {
+        return json_val ? json_val : yyjson_mut_null(out->json_doc);
+    }
+    return yyjson_mut_null(out->json_doc);
+}
+
+static yyjson_mut_val *nmo_snapshot_build_fields(
+    nmo_summary_output_t *out,
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *owner_type,
+    const void *owner_instance,
+    const nmo_summary_config_t *config);
+
+static yyjson_mut_val *nmo_snapshot_value(
+    nmo_summary_output_t *out,
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *field_type,
+    nmo_guid_t field_guid,
+    const void *value_ptr,
+    size_t value_size,
+    const nmo_summary_config_t *config)
+{
+    if (!value_ptr) {
+        return yyjson_mut_null(out->json_doc);
+    }
+    if (field_type && nmo_type_has_reflection(field_type)) {
+        yyjson_mut_val *obj = yyjson_mut_obj(out->json_doc);
+        yyjson_mut_obj_add_str(out->json_doc, obj, "kind", "struct");
+        yyjson_mut_obj_add_val(
+            out->json_doc, obj, "fields",
+            nmo_snapshot_build_fields(out, registry, field_type, value_ptr, config));
+        nmo_snapshot_add_raw_hex(out->json_doc, obj, value_ptr, value_size);
+        return obj;
+    }
+    return nmo_snapshot_scalar_value(out, registry, field_type, field_guid,
+                                     value_ptr, value_size);
+}
+
+static yyjson_mut_val *nmo_snapshot_array_items(
+    nmo_summary_output_t *out,
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *field_type,
+    nmo_guid_t field_guid,
+    const void *array_ptr,
+    uint64_t count,
+    size_t elem_size,
+    const nmo_summary_config_t *config)
+{
+    yyjson_mut_val *items = yyjson_mut_arr(out->json_doc);
+    if (!array_ptr || count == 0 || elem_size == 0) {
+        return items;
+    }
+    for (uint64_t i = 0; i < count; ++i) {
+        const uint8_t *elem_ptr = (const uint8_t *)array_ptr + (size_t)i * elem_size;
+        yyjson_mut_arr_add_val(
+            items,
+            nmo_snapshot_value(out, registry, field_type, field_guid,
+                               elem_ptr, elem_size, config));
+    }
+    return items;
+}
+
+static yyjson_mut_val *nmo_snapshot_field(
+    nmo_summary_output_t *out,
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *owner_type,
+    const void *owner_instance,
+    const nmo_type_field_t *field,
+    const void *field_ptr,
+    const nmo_summary_config_t *config)
+{
+    if (!out || !out->json_doc || !field || !field->name) {
+        return NULL;
+    }
+
+    const nmo_type_descriptor_t *field_type =
+        registry ? nmo_type_registry_find_by_guid(registry, field->type_guid) : NULL;
+
+    yyjson_mut_val *item = yyjson_mut_obj(out->json_doc);
+    nmo_cli_json_add_str_safe(out->json_doc, item, "name", field->name);
+    nmo_snapshot_add_guid(out->json_doc, item, "type_guid", field->type_guid);
+
+    if ((field->flags & NMO_FIELD_REPEATED) && (field->flags & NMO_FIELD_POINTER)) {
+        const void *array_ptr = field_ptr ? *(const void *const *)field_ptr : NULL;
+        uint64_t count = nmo_summary_guess_array_count(owner_type, owner_instance, field);
+        size_t elem_size = nmo_snapshot_element_size_for_field(field, field_type);
+        yyjson_mut_obj_add_str(out->json_doc, item, "kind", "array");
+        yyjson_mut_obj_add_uint(out->json_doc, item, "count", count);
+        yyjson_mut_val *items = nmo_snapshot_array_items(
+            out, registry, field_type, field->type_guid, array_ptr, count, elem_size, config);
+        yyjson_mut_obj_add_null(out->json_doc, item, "value");
+        yyjson_mut_obj_add_val(out->json_doc, item, "items", items);
+        if (array_ptr && count > 0 && elem_size > 0) {
+            nmo_snapshot_add_raw_hex(out->json_doc, item, array_ptr, (size_t)count * elem_size);
+        }
+        return item;
+    }
+
+    if (field->flags & NMO_FIELD_REPEATED) {
+        const void *array_ptr = NULL;
+        uint64_t count = 0;
+        size_t elem_size = nmo_snapshot_element_size_for_field(field, field_type);
+        if (field->size == sizeof(nmo_array_t)) {
+            const nmo_array_t *arr = (const nmo_array_t *)field_ptr;
+            array_ptr = arr ? nmo_array_data(arr) : NULL;
+            count = arr ? (uint64_t)nmo_array_size(arr) : 0;
+            if (arr && nmo_array_element_size(arr) != 0) {
+                elem_size = nmo_array_element_size(arr);
+            }
+        } else {
+            array_ptr = field_ptr ? *(const void *const *)field_ptr : NULL;
+            count = nmo_summary_guess_array_count(owner_type, owner_instance, field);
+        }
+        yyjson_mut_obj_add_str(out->json_doc, item, "kind", "array");
+        yyjson_mut_obj_add_uint(out->json_doc, item, "count", count);
+        yyjson_mut_val *items = nmo_snapshot_array_items(
+            out, registry, field_type, field->type_guid, array_ptr, count, elem_size, config);
+        yyjson_mut_obj_add_null(out->json_doc, item, "value");
+        yyjson_mut_obj_add_val(out->json_doc, item, "items", items);
+        if (array_ptr && count > 0 && elem_size > 0) {
+            nmo_snapshot_add_raw_hex(out->json_doc, item, array_ptr, (size_t)count * elem_size);
+        }
+        return item;
+    }
+
+    if (field->flags & NMO_FIELD_POINTER) {
+        yyjson_mut_obj_add_str(out->json_doc, item, "kind", "pointer");
+        const void *pointed = field_ptr ? *(const void *const *)field_ptr : NULL;
+        if (!pointed) {
+            yyjson_mut_obj_add_null(out->json_doc, item, "value");
+        } else {
+            size_t pointee_size = field_type ? field_type->size : sizeof(void *);
+            yyjson_mut_obj_add_val(
+                out->json_doc, item, "value",
+                nmo_snapshot_value(out, registry, field_type, field->type_guid,
+                                   pointed, pointee_size, config));
+            nmo_snapshot_add_raw_hex(out->json_doc, item, pointed, pointee_size);
+        }
+        return item;
+    }
+
+    if (field_type && nmo_type_has_reflection(field_type)) {
+        yyjson_mut_obj_add_str(out->json_doc, item, "kind", "struct");
+        yyjson_mut_obj_add_val(
+            out->json_doc, item, "value",
+            nmo_snapshot_build_fields(out, registry, field_type, field_ptr, config));
+        nmo_snapshot_add_raw_hex(out->json_doc, item, field_ptr, field->size);
+        return item;
+    }
+
+    yyjson_mut_obj_add_str(out->json_doc, item, "kind", "scalar");
+    yyjson_mut_obj_add_val(
+        out->json_doc, item, "value",
+        nmo_snapshot_scalar_value(out, registry, field_type, field->type_guid,
+                                  field_ptr, field->size));
+    nmo_snapshot_add_raw_hex(out->json_doc, item, field_ptr, field->size);
+    return item;
+}
+
+static yyjson_mut_val *nmo_snapshot_build_fields(
+    nmo_summary_output_t *out,
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *owner_type,
+    const void *owner_instance,
+    const nmo_summary_config_t *config)
+{
+    yyjson_mut_val *fields = yyjson_mut_arr(out->json_doc);
+    if (!out || !out->json_doc || !registry || !owner_type || !owner_instance) {
+        return fields;
+    }
+
+    for (size_t i = 0; i < owner_type->field_count; ++i) {
+        const nmo_type_field_t *field = &owner_type->fields[i];
+        if (!field || !field->name) {
+            continue;
+        }
+        if (nmo_summary_is_base_embedding(owner_type, field)) {
+            continue;
+        }
+        if (field->flags & (NMO_FIELD_DEPRECATED | NMO_FIELD_RUNTIME_ONLY | NMO_FIELD_ID)) {
+            continue;
+        }
+        const void *field_ptr = nmo_field_get_ptr_const(owner_instance, field);
+        yyjson_mut_val *item = nmo_snapshot_field(
+            out, registry, owner_type, owner_instance, field, field_ptr, config);
+        if (item) {
+            yyjson_mut_arr_add_val(fields, item);
+        }
+    }
+    return fields;
+}
+
+static bool nmo_summary_emit_snapshot_fields(
+    nmo_object_t *obj,
+    nmo_summary_output_t *out,
+    const nmo_summary_config_t *config)
+{
+    const nmo_type_registry_t *registry = nmo_summary_get_registry(out);
+    const nmo_type_descriptor_t *type = nmo_summary_get_type_for_object(registry, obj);
+    const void *state = obj ? nmo_object_get_state(obj) : NULL;
+    if (!registry || !type || !nmo_type_has_reflection(type) || !state) {
+        return false;
+    }
+
+    nmo_hierarchy_level_t levels[NMO_MAX_HIERARCHY_DEPTH];
+    size_t level_count = nmo_summary_build_hierarchy(
+        registry, type, state, levels, NMO_MAX_HIERARCHY_DEPTH);
+    yyjson_mut_val *fields = yyjson_mut_arr(out->json_doc);
+    for (size_t lvl = 0; lvl < level_count; ++lvl) {
+        yyjson_mut_val *level_fields = nmo_snapshot_build_fields(
+            out, registry, levels[lvl].type, levels[lvl].state, config);
+        yyjson_mut_arr_iter iter;
+        yyjson_mut_arr_iter_init(level_fields, &iter);
+        yyjson_mut_val *field = NULL;
+        while ((field = yyjson_mut_arr_iter_next(&iter)) != NULL) {
+            yyjson_mut_arr_add_val(fields, yyjson_mut_val_mut_copy(out->json_doc, field));
+        }
+    }
+    yyjson_mut_obj_add_val(out->json_doc, out->json_data, "fields", fields);
+    return true;
+}
+
+/* ============================================================================
  * Visible Field Counter (for empty section suppression)
  * ============================================================================ */
 
@@ -1746,6 +2145,10 @@ static bool nmo_summary_emit_reflection_fields(
 {
     if (!obj || !out) {
         return false;
+    }
+
+    if (out->is_json) {
+        return nmo_summary_emit_snapshot_fields(obj, out, config);
     }
 
     const nmo_type_registry_t *registry = nmo_summary_get_registry(out);

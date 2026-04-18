@@ -21,7 +21,7 @@ typedef struct summary_raw_array_state {
 
 static const nmo_type_field_t summary_raw_array_fields[] = {
     NMO_FIELD(summary_raw_array_state_t, item_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(summary_raw_array_state_t, items, CKPGUID_UINT32),
+    NMO_FIELD_PTR_ARRAY(summary_raw_array_state_t, items, item_count, CKPGUID_UINT32),
 };
 
 static const nmo_guid_t summary_raw_array_guid = NMO_GUID_INIT(0x51A4E001u, 0x00000001u);
@@ -107,7 +107,7 @@ TEST(object_summary_api, summarize_to_text_and_json) {
     nmo_session_close_with_context(ctx, session);
 }
 
-TEST(object_summary_api, raw_array_without_metadata_does_not_guess_count) {
+TEST(object_summary_api, snapshot_raw_pointer_array_emits_full_items) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
 
@@ -170,11 +170,24 @@ TEST(object_summary_api, raw_array_without_metadata_does_not_guess_count) {
 
     yyjson_mut_val *fields = yyjson_mut_obj_get(data, "fields");
     ASSERT_NOT_NULL(fields);
+    ASSERT_TRUE(yyjson_mut_is_arr(fields));
     yyjson_mut_val *items = find_summary_field(fields, "items");
     ASSERT_NOT_NULL(items);
+    yyjson_mut_val *kind = yyjson_mut_obj_get(items, "kind");
+    ASSERT_NOT_NULL(kind);
+    ASSERT_STR_EQ("array", yyjson_mut_get_str(kind));
     yyjson_mut_val *count = yyjson_mut_obj_get(items, "count");
     ASSERT_NOT_NULL(count);
-    ASSERT_EQ(0u, yyjson_mut_get_uint(count));
+    ASSERT_EQ(2u, yyjson_mut_get_uint(count));
+    yyjson_mut_val *values = yyjson_mut_obj_get(items, "items");
+    ASSERT_NOT_NULL(values);
+    ASSERT_TRUE(yyjson_mut_is_arr(values));
+    ASSERT_EQ(2u, yyjson_mut_arr_size(values));
+    ASSERT_EQ(10u, yyjson_mut_get_uint(yyjson_mut_arr_get(values, 0)));
+    ASSERT_EQ(20u, yyjson_mut_get_uint(yyjson_mut_arr_get(values, 1)));
+    ASSERT_NULL(yyjson_mut_obj_get(items, "preview"));
+    ASSERT_NULL(yyjson_mut_obj_get(items, "is_array"));
+    ASSERT_NULL(yyjson_mut_obj_get(items, "value_str"));
 
     yyjson_mut_doc_free(doc);
     nmo_object_destroy(obj);
@@ -183,5 +196,5 @@ TEST(object_summary_api, raw_array_without_metadata_does_not_guess_count) {
 
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_summary_api, summarize_to_text_and_json);
-    REGISTER_TEST(object_summary_api, raw_array_without_metadata_does_not_guess_count);
+    REGISTER_TEST(object_summary_api, snapshot_raw_pointer_array_emits_full_items);
 TEST_MAIN_END()

@@ -2,9 +2,8 @@
  * @file nmo_object_import.h
  * @brief JSON-to-object import via the reflection system
  *
- * Inverse of the nmo_object_summary JSON export. Reads field values from
- * a JSON document and writes them into live objects using the type system's
- * from_string converters.
+ * Inverse of the nmo_object_summary JSON snapshot export. Reads semantic
+ * field snapshots and writes them into live objects through reflection.
  */
 
 #ifndef NMO_OBJECT_IMPORT_H
@@ -40,7 +39,8 @@ typedef struct nmo_import_result {
 /**
  * @brief Import object field values from a JSON document.
  *
- * The JSON must follow the same schema produced by the summary JSON export:
+ * The JSON must follow the semantic snapshot schema produced by
+ * `nmo object export -f json`:
  * @code
  * {
  *   "objects": [
@@ -48,14 +48,34 @@ typedef struct nmo_import_result {
  *       "id": 42,
  *       "class_name": "CK3dObject",
  *       "name": "Ball_01",
- *       "fields": {
- *         "position": "(1.0, 2.0, 3.0)",
- *         ...
- *       }
+ *       "fields": [
+ *         {
+ *           "name": "position",
+ *           "kind": "struct",
+ *           "type_guid": "{...}",
+ *           "value": {
+ *             "fields": [
+ *               { "name": "x", "kind": "scalar", "type_guid": "{...}", "value": 1.0 }
+ *             ]
+ *           }
+ *         },
+ *         {
+ *           "name": "vertices",
+ *           "kind": "array",
+ *           "type_guid": "{...}",
+ *           "value": null,
+ *           "count": 3,
+ *           "items": [ ... ],
+ *           "raw_hex": "..."
+ *         }
+ *       ]
  *     }
  *   ]
  * }
  * @endcode
+ *
+ * Legacy flat field maps and preview-only `{name,value_str}` export bridges
+ * are invalid input.
  *
  * @param session    Active session containing objects
  * @param registry   Type registry for field resolution

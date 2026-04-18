@@ -221,7 +221,9 @@ TEST(object_import_api, raw_pointer_array_missing_count_metadata_does_not_mutate
     ASSERT_NULL(state->items);
 
     const char json[] =
-        "{\"objects\":[{\"id\":9001,\"fields\":{\"items\":[1,2]}}]}";
+        "{\"objects\":[{\"id\":9001,\"fields\":["
+        "{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
+        "\"count\":2,\"value\":[1,2],\"items\":[1,2]}]}]}";
     nmo_import_result_t result;
     status = nmo_object_import_json(
         session,
@@ -238,6 +240,114 @@ TEST(object_import_api, raw_pointer_array_missing_count_metadata_does_not_mutate
     ASSERT_EQ(1u, result.errors);
     ASSERT_EQ(0u, state->item_count);
     ASSERT_NULL(state->items);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(object_import_api, old_flat_map_schema_is_rejected) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(registry);
+    nmo_status_t status = nmo_type_registry_begin_update(registry);
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_TRUE(register_import_raw_array_type(registry));
+    ASSERT_NOT_NULL(create_import_test_object(session));
+
+    const char json[] =
+        "{\"objects\":[{\"id\":9001,\"fields\":{\"items\":[1,2]}}]}";
+    nmo_import_result_t result;
+    status = nmo_object_import_json(
+        session,
+        registry,
+        nmo_session_get_arena(session),
+        json,
+        0,
+        0,
+        &result);
+
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, status);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(object_import_api, old_value_str_bridge_schema_is_rejected) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(registry);
+    nmo_status_t status = nmo_type_registry_begin_update(registry);
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_TRUE(register_import_raw_array_type(registry));
+    ASSERT_NOT_NULL(create_import_test_object(session));
+
+    const char json[] =
+        "{\"objects\":[{\"id\":9001,\"fields\":{\"fields\":["
+        "{\"name\":\"item_count\",\"value_str\":\"2\"}]}}]}";
+    nmo_import_result_t result;
+    status = nmo_object_import_json(
+        session,
+        registry,
+        nmo_session_get_arena(session),
+        json,
+        0,
+        0,
+        &result);
+
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, status);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(object_import_api, snapshot_raw_pointer_array_imports_all_items) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(registry);
+    nmo_status_t status = nmo_type_registry_begin_update(registry);
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_TRUE(register_import_raw_array_type(registry));
+
+    nmo_object_t *obj = create_import_test_object(session);
+    ASSERT_NOT_NULL(obj);
+    import_raw_array_state_t *state = (import_raw_array_state_t *)nmo_object_get_state(obj);
+    ASSERT_NOT_NULL(state);
+
+    const char json[] =
+        "{\"objects\":[{\"id\":9001,\"fields\":["
+        "{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
+        "\"count\":3,\"value\":[11,22,33],\"items\":[11,22,33]}]}]}";
+    nmo_import_result_t result;
+    status = nmo_object_import_json(
+        session,
+        registry,
+        nmo_session_get_arena(session),
+        json,
+        0,
+        0,
+        &result);
+
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_EQ(1u, result.objects_updated);
+    ASSERT_EQ(1u, result.fields_written);
+    ASSERT_EQ(0u, result.errors);
+    ASSERT_EQ(3u, state->item_count);
+    ASSERT_NOT_NULL(state->items);
+    ASSERT_EQ(11u, state->items[0]);
+    ASSERT_EQ(22u, state->items[1]);
+    ASSERT_EQ(33u, state->items[2]);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -263,7 +373,9 @@ TEST(object_import_api, raw_pointer_array_parse_failure_does_not_mutate) {
     ASSERT_NULL(state->items);
 
     const char json[] =
-        "{\"objects\":[{\"id\":9001,\"fields\":{\"items\":[1,\"bad\"]}}]}";
+        "{\"objects\":[{\"id\":9001,\"fields\":["
+        "{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
+        "\"count\":2,\"value\":[1,\"bad\"],\"items\":[1,\"bad\"]}]}]}";
     nmo_import_result_t result;
     status = nmo_object_import_json(
         session,
@@ -274,8 +386,8 @@ TEST(object_import_api, raw_pointer_array_parse_failure_does_not_mutate) {
         0,
         &result);
 
-    ASSERT_EQ(NMO_OK, status);
-    ASSERT_EQ(1u, result.objects_updated);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, status);
+    ASSERT_EQ(0u, result.objects_updated);
     ASSERT_EQ(0u, result.fields_written);
     ASSERT_EQ(1u, result.errors);
     ASSERT_EQ(0u, state->item_count);
@@ -307,7 +419,9 @@ TEST(object_import_api, inline_array_parse_failure_does_not_mutate) {
     ASSERT_EQ(7u, *existing);
 
     const char json[] =
-        "{\"objects\":[{\"id\":9101,\"fields\":{\"values\":[1,\"bad\"]}}]}";
+        "{\"objects\":[{\"id\":9101,\"fields\":["
+        "{\"name\":\"values\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
+        "\"count\":2,\"value\":[1,\"bad\"],\"items\":[1,\"bad\"]}]}]}";
     nmo_import_result_t result;
     status = nmo_object_import_json(
         session,
@@ -318,8 +432,8 @@ TEST(object_import_api, inline_array_parse_failure_does_not_mutate) {
         0,
         &result);
 
-    ASSERT_EQ(NMO_OK, status);
-    ASSERT_EQ(1u, result.objects_updated);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, status);
+    ASSERT_EQ(0u, result.objects_updated);
     ASSERT_EQ(0u, result.fields_written);
     ASSERT_EQ(1u, result.errors);
     ASSERT_EQ(1u, nmo_array_size(&state->values));
@@ -332,8 +446,63 @@ TEST(object_import_api, inline_array_parse_failure_does_not_mutate) {
     nmo_context_release(ctx);
 }
 
+TEST(object_import_api, snapshot_inline_array_imports_all_items) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(registry);
+    nmo_status_t status = nmo_type_registry_begin_update(registry);
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_TRUE(register_import_inline_array_type(registry));
+
+    nmo_object_t *obj = create_import_inline_array_object(session);
+    ASSERT_NOT_NULL(obj);
+    import_inline_array_state_t *state = (import_inline_array_state_t *)nmo_object_get_state(obj);
+    ASSERT_NOT_NULL(state);
+
+    const char json[] =
+        "{\"objects\":[{\"id\":9101,\"fields\":["
+        "{\"name\":\"values\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
+        "\"count\":3,\"value\":[3,4,5],\"items\":[3,4,5]}]}]}";
+    nmo_import_result_t result;
+    status = nmo_object_import_json(
+        session,
+        registry,
+        nmo_session_get_arena(session),
+        json,
+        0,
+        0,
+        &result);
+
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_EQ(1u, result.objects_updated);
+    ASSERT_EQ(1u, result.fields_written);
+    ASSERT_EQ(0u, result.errors);
+    ASSERT_EQ(3u, nmo_array_size(&state->values));
+    uint32_t *v0 = (uint32_t *)nmo_array_get(&state->values, 0);
+    uint32_t *v1 = (uint32_t *)nmo_array_get(&state->values, 1);
+    uint32_t *v2 = (uint32_t *)nmo_array_get(&state->values, 2);
+    ASSERT_NOT_NULL(v0);
+    ASSERT_NOT_NULL(v1);
+    ASSERT_NOT_NULL(v2);
+    ASSERT_EQ(3u, *v0);
+    ASSERT_EQ(4u, *v1);
+    ASSERT_EQ(5u, *v2);
+
+    nmo_array_dispose(&state->values);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_import_api, raw_pointer_array_missing_count_metadata_does_not_mutate);
+    REGISTER_TEST(object_import_api, old_flat_map_schema_is_rejected);
+    REGISTER_TEST(object_import_api, old_value_str_bridge_schema_is_rejected);
+    REGISTER_TEST(object_import_api, snapshot_raw_pointer_array_imports_all_items);
     REGISTER_TEST(object_import_api, raw_pointer_array_parse_failure_does_not_mutate);
     REGISTER_TEST(object_import_api, inline_array_parse_failure_does_not_mutate);
+    REGISTER_TEST(object_import_api, snapshot_inline_array_imports_all_items);
 TEST_MAIN_END()

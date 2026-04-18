@@ -1070,7 +1070,7 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
 }
 
 /* ============================================================================
- * object export - Semantic JSON export
+ * object export - Importable semantic snapshot export
  * ============================================================================ */
 
 int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -1079,7 +1079,7 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
         {"--name",   "-n", NMO_OPT_STRING, "Filter by name pattern"},
         {"--filter", "-f", NMO_OPT_STRING, "Filter by DSL expression"},
         {"--depth",  "-d", NMO_OPT_UINT,   "Recursion depth (default: 4)"},
-        {"--full",   NULL, NMO_OPT_FLAG,   "Full detail mode (depth 8, more array elements)"},
+        {"--full",   NULL, NMO_OPT_FLAG,   "Full detail mode for text output (depth 8)"},
         {"--id",     NULL, NMO_OPT_UINT,   "Export specific object by ID"},
     };
     enum { OPT_CLASS, OPT_NAME, OPT_FILTER, OPT_DEPTH, OPT_FULL, OPT_ID, OPT_COUNT };
@@ -1159,18 +1159,20 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
             if (oname && oname[0]) nmo_cli_json_add_str_safe(doc, obj_json, "name", oname);
 
             /* Semantic summary via reflection */
-            yyjson_mut_val *fields = yyjson_mut_obj(doc);
+            yyjson_mut_val *fields_holder = yyjson_mut_obj(doc);
             nmo_summary_output_t sum_out = {
                 .stream = c.out,
                 .json_doc = doc,
-                .json_data = fields,
+                .json_data = fields_holder,
                 .is_json = true,
                 .colorize = false,
                 .ctx = c.ctx,
                 .session = c.session,
             };
             if (nmo_object_summary_with_config(obj, &sum_out, &cfg)) {
-                yyjson_mut_obj_add_val(doc, obj_json, "fields", fields);
+                yyjson_mut_val *fields = yyjson_mut_obj_get(fields_holder, "fields");
+                yyjson_mut_obj_add_val(doc, obj_json, "fields",
+                                       fields ? fields : yyjson_mut_arr(doc));
             }
 
             yyjson_mut_arr_add_val(objects_arr, obj_json);
