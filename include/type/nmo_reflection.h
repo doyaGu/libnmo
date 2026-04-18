@@ -68,7 +68,12 @@ extern "C" {
     }
 
 /**
- * @brief Define an array field (pointer field, stores array of elements)
+ * @brief Define a repeated field without companion count metadata.
+ *
+ * Use this for inline/fixed-size repeated storage only. A repeated field whose
+ * storage is a raw pointer must use NMO_FIELD_ARRAY_COUNTED,
+ * NMO_FIELD_REF_ARRAY_COUNTED, or NMO_FIELD_PTR_ARRAY so exporters/importers
+ * can resolve its runtime element count without naming heuristics.
  */
 #define NMO_FIELD_ARRAY(_struct, _ptr_field, _elem_type_guid) \
     { \
@@ -90,8 +95,9 @@ extern "C" {
  *
  * The runtime element count is `_count_field * _count_multiplier`.
  * Use multiplier 1 for ordinary pointer arrays, 3 for triangle index arrays,
- * etc. This macro intentionally keeps only NMO_FIELD_REPEATED: the field is
- * a pointer to contiguous elements, not a pointer-valued scalar.
+ * byte-size fields for byte buffers, etc. This macro intentionally keeps only
+ * NMO_FIELD_REPEATED: the field stores a pointer to contiguous elements, not a
+ * pointer-valued scalar.
  */
 #define NMO_FIELD_ARRAY_COUNTED(_struct, _ptr_field, _count_field, _count_multiplier, _elem_type_guid) \
     { \
@@ -181,6 +187,9 @@ extern "C" {
         .default_value = NULL \
     }
 
+/**
+ * @brief Define a raw pointer array of object references with count metadata.
+ */
 #define NMO_FIELD_REF_ARRAY_COUNTED(_struct, _ptr_field, _count_field) \
     { \
         .name = #_ptr_field, \
@@ -407,10 +416,16 @@ static inline bool nmo_field_is_array(const nmo_type_field_t *field) {
     return field && (field->flags & NMO_FIELD_REPEATED);
 }
 
+/**
+ * @brief Check whether a repeated field is stored as a raw pointer.
+ */
 static inline bool nmo_field_uses_pointer_array_storage(const nmo_type_field_t *field) {
     return field && (field->flags & NMO_FIELD_REPEATED) && field->size == sizeof(void *);
 }
 
+/**
+ * @brief Check whether a raw pointer array has explicit count metadata.
+ */
 static inline bool nmo_field_is_counted_pointer_array(const nmo_type_field_t *field) {
     return nmo_field_uses_pointer_array_storage(field) &&
            field->count_field_name != NULL &&

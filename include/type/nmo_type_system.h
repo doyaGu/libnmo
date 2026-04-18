@@ -251,7 +251,7 @@ typedef struct nmo_type_field {
     nmo_field_semantic_t semantic;      /* Semantic hint */
     nmo_field_units_t units;            /* Unit of measurement */
     const void *default_value;          /* Registry-owned default (type_allocator) */
-    const char *count_field_name;       /* For repeated pointer storage: name of the count field */
+    const char *count_field_name;       /* Required for repeated pointer storage: count field name */
     uint32_t count_multiplier;          /* Element count = count field * multiplier (0 means 1) */
 } nmo_type_field_t;
 

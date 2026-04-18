@@ -4,6 +4,8 @@
  *
  * Inverse of the nmo_object_summary JSON snapshot export. Reads semantic
  * field snapshots and writes them into live objects through reflection.
+ * This importer accepts the snapshot protocol produced by `object export`;
+ * legacy hand-written flat maps and preview-only summaries are rejected.
  */
 
 #ifndef NMO_OBJECT_IMPORT_H
@@ -65,7 +67,10 @@ typedef struct nmo_import_result {
  *           "type_guid": "{...}",
  *           "value": null,
  *           "count": 3,
- *           "items": [ ... ],
+ *           "items": [
+ *             { "kind": "struct", "fields": [ ... ] },
+ *             { "kind": "struct", "fields": [ ... ] }
+ *           ],
  *           "raw_hex": "..."
  *         }
  *       ]
@@ -73,6 +78,10 @@ typedef struct nmo_import_result {
  *   ]
  * }
  * @endcode
+ *
+ * Array `items` are complete semantic import data. `raw_hex` is used only for
+ * fixed-size data that cannot be represented reliably through typed JSON; when
+ * semantic `items` are present they take precedence over `raw_hex`.
  *
  * Legacy flat field maps and preview-only `{name,value_str}` export bridges
  * are invalid input.

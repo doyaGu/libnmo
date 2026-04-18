@@ -130,6 +130,10 @@ nmo object list --class CK3dEntity composition.nmo
 nmo object show 42 composition.nmo
 nmo object find --name "Player*" composition.nmo
 
+# Importable object snapshots
+nmo -f json object export --id 42 composition.nmo > object-42.json
+nmo object import -f json object-42.json composition.nmo -o edited.nmo
+
 # Chunk inspection
 nmo chunk list composition.nmo
 nmo chunk show 7 composition.nmo
@@ -378,9 +382,16 @@ nmo validate references <file>  # Check reference integrity
 ```
 nmo object rename <id> --name "NewName" <file>
 nmo object delete <id> <file>
+nmo -f json object export --id <id> <file>              # Importable semantic snapshot
+nmo object import -f json <snapshot.json> <file> -o <out> # Import object snapshot JSON
 nmo texture extract <id> <file>
 nmo convert <input> <output>    # Format conversion (.nmo/.cmo/.vmo)
 ```
+
+`object export` JSON is a semantic snapshot protocol intended for round-trip
+with `object import -f json`. Snapshot fields use `name`, `kind`, `type_guid`,
+and `value`; arrays carry full `items` and `count` data. Legacy flat field maps
+and preview-only `{name,value_str}` exports are not accepted by import.
 
 ### Debugging and REPL
 
@@ -469,9 +480,14 @@ All chunk positions and sizes are in DWORDs (4 bytes), not bytes.
 | `nmo_type_registry_lookup_by_guid()`      | O(1) type lookup by GUID             | `include/type/nmo_type_system.h`    |
 | `nmo_type_registry_register_enum()`       | Register enum type                   | `include/type/nmo_dynamic_types.h`  |
 | `nmo_type_registry_register_flags()`      | Register bitfield flags type         | `include/type/nmo_dynamic_types.h`  |
+| `nmo_field_resolve_count()`               | Resolve reflected pointer-array count | `include/type/nmo_reflection.h`     |
 | `nmo_operation_registry_dispatch()`       | Dispatch typed operation             | `include/type/nmo_operations.h`     |
 | `nmo_type_to_string()`                    | Convert typed value to string        | `include/type/nmo_type_string.h`    |
 | `nmo_type_from_string()`                  | Parse string to typed value          | `include/type/nmo_type_string.h`    |
+
+Repeated fields stored as raw pointers must declare explicit count metadata
+(`count_field_name` plus optional `count_multiplier`) through the reflection
+schema. Consumers do not infer count fields from naming conventions.
 
 ### Object System
 
@@ -483,6 +499,7 @@ All chunk positions and sizes are in DWORDs (4 bytes), not bytes.
 | `nmo_object_index_find_by_class()`      | O(1) lookup by class ID                | `include/object/nmo_object_index.h`  |
 | `nmo_object_index_find_by_name()`       | O(1) lookup by name                    | `include/object/nmo_object_index.h`  |
 | `nmo_object_index_find_by_guid()`       | O(1) lookup by GUID                    | `include/object/nmo_object_index.h`  |
+| `nmo_object_import_json()`              | Import object export snapshot JSON     | `include/app/nmo_object_import.h`    |
 
 ### Behavior Layer
 

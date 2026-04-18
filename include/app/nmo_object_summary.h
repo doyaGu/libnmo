@@ -3,7 +3,9 @@
  * @brief Object semantic summary system for CLI (Reflection-first design)
  *
  * This module provides automatic semantic summaries for ALL Virtools object types
- * using the type system's reflection capabilities. Key design principles:
+ * using the type system's reflection capabilities. JSON object export uses a
+ * separate semantic snapshot emitter whose default output is importable by
+ * `object import -f json`. Key design principles:
  *
  * 1. REFLECTION-FIRST: Field traversal is the primary mechanism, not type-specific
  *    hardcoded handlers. All types with reflection get automatic summaries.
@@ -70,7 +72,7 @@ typedef struct nmo_summary_output {
  * @brief Summary configuration options
  */
 typedef struct nmo_summary_config {
-    uint32_t array_preview_max;         ///< Max elements to show for arrays (default: 16)
+    uint32_t array_preview_max;         ///< Max elements to show for text array previews (default: 16)
     uint32_t text_preview_max;          ///< Max elements for text output (default: 8)
     uint32_t max_depth;                 ///< Max recursion depth for nested types (default: 2)
     bool show_field_metadata;           ///< Include field flags/semantic in output
@@ -131,8 +133,9 @@ NMO_API bool nmo_object_summary_with_config(
  *   - "faces[3].material_group_idx"
  *   - "beobject.base.base.name"
  *
- * If a selected path refers to a repeated field without an index, the output
- * includes an array preview (consistent with the normal Fields section).
+ * If a selected path refers to a repeated field without an index, text output
+ * includes an array preview (consistent with the normal Fields section). JSON
+ * object export emits complete array snapshot items for importable output.
  *
  * @param obj Object to summarize
  * @param out Output context
@@ -244,4 +247,3 @@ NMO_API void nmo_summary_add_guid(nmo_summary_output_t *out, const char *key,
 #endif
 
 #endif /* NMO_OBJECT_SUMMARY_H */
-
