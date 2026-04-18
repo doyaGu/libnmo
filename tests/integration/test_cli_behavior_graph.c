@@ -7,7 +7,11 @@
 
 #include "../../tools/nmo_cli_common.h"
 #include "app/nmo_save.h"
+#include "format/nmo_interface_chunk.h"
+#include "format/nmo_object.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_repository.h"
+#include "object/builtin/nmo_behavior_schemas.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 #include "yyjson.h"
@@ -227,6 +231,51 @@ static bool create_interface_comment_fixture(const char *path) {
               file_exists(path);
     free(result.output);
     return ok;
+}
+
+static bool create_sectioned_graph_interface_fixture(const char *path) {
+    remove(path);
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = "data" });
+    if (ctx == NULL) {
+        return false;
+    }
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    if (session == NULL) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    bool ok = nmo_session_load_file(session, NMO_INTERFACE_EDIT_FIXTURE,
+                                    NULL, NULL) == NMO_OK;
+    if (ok) {
+        ok = nmo_session_ensure_behavior_acceleration(session) == NMO_OK;
+    }
+    if (ok) {
+        nmo_object_repository_t *repo = nmo_session_get_repository(session);
+        nmo_object_t *obj = repo
+            ? nmo_object_repository_find_by_id(repo, NMO_INTERFACE_EDIT_TARGET_ID)
+            : NULL;
+        nmo_behavior_state_t *state = obj
+            ? (nmo_behavior_state_t *)nmo_object_get_state(obj)
+            : NULL;
+        if (!state || !state->interface_data) {
+            ok = false;
+        } else {
+            state->interface_data->format_flags |=
+                NMO_INTERFACE_FORMAT_SECTIONED |
+                NMO_INTERFACE_FORMAT_ROOT_GRAPH;
+        }
+    }
+    if (ok) {
+        nmo_save_options_t save_opts = nmo_save_options_default();
+        ok = nmo_save_file(session, path, &save_opts) == NMO_OK;
+    }
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+    return ok && file_exists(path);
 }
 
 static const char *get_string_field(yyjson_val *obj, const char *key) {
@@ -1261,6 +1310,156 @@ TEST(cli, behavior_interface_set_pos_json_dry_run) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, behavior_interface_show_json_reports_format_root) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json behavior interface show %u \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.interface", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+
+    yyjson_val *root_kind = yyjson_obj_get(data, "root_kind");
+    ASSERT_TRUE(root_kind && yyjson_is_str(root_kind));
+    ASSERT_STR_EQ("script", yyjson_get_str(root_kind));
+
+    yyjson_val *is_graph = yyjson_obj_get(data, "sectioned_root_is_graph");
+    ASSERT_TRUE(is_graph && yyjson_is_bool(is_graph));
+    ASSERT_FALSE(yyjson_get_bool(is_graph));
+
+    yyjson_val *script = get_object_field(data, "script");
+    ASSERT_NOT_NULL(script);
+    yyjson_val *color_defaulted = yyjson_obj_get(script, "color_defaulted");
+    ASSERT_TRUE(color_defaulted && yyjson_is_bool(color_defaulted));
+    ASSERT_FALSE(yyjson_get_bool(color_defaulted));
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_interface_show_brief_reports_root_kind) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface show --brief %u \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Root kind");
+    ASSERT_STR_CONTAINS(result.output, "script");
+    free(result.output);
+}
+
+TEST(cli, behavior_interface_show_json_reports_sectioned_graph_root) {
+    const char *fixture = "test_behavior_interface_sectioned_graph_fixture.cmo";
+    remove(fixture);
+    ASSERT_TRUE(create_sectioned_graph_interface_fixture(fixture));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json behavior interface show %u \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             fixture);
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.interface", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+
+    yyjson_val *sectioned = yyjson_obj_get(data, "sectioned_layout");
+    ASSERT_TRUE(sectioned && yyjson_is_bool(sectioned));
+    ASSERT_TRUE(yyjson_get_bool(sectioned));
+
+    yyjson_val *is_graph = yyjson_obj_get(data, "sectioned_root_is_graph");
+    ASSERT_TRUE(is_graph && yyjson_is_bool(is_graph));
+    ASSERT_TRUE(yyjson_get_bool(is_graph));
+
+    yyjson_val *root_kind = yyjson_obj_get(data, "root_kind");
+    ASSERT_TRUE(root_kind && yyjson_is_str(root_kind));
+    ASSERT_STR_EQ("graph", yyjson_get_str(root_kind));
+
+    yyjson_val *script = get_object_field(data, "script");
+    ASSERT_NOT_NULL(script);
+    yyjson_val *color_defaulted = yyjson_obj_get(script, "color_defaulted");
+    ASSERT_TRUE(color_defaulted && yyjson_is_bool(color_defaulted));
+    ASSERT_FALSE(yyjson_get_bool(color_defaulted));
+
+    yyjson_doc_free(doc);
+    remove(fixture);
+}
+
+TEST(cli, behavior_interface_set_color_json_persists_sectioned_color) {
+    const char *fixture = "test_behavior_interface_set_color_sectioned_fixture.cmo";
+    const char *output = "test_behavior_interface_set_color_sectioned_output.cmo";
+    remove(fixture);
+    remove(output);
+    ASSERT_TRUE(create_sectioned_graph_interface_fixture(fixture));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json behavior interface set-color %u FF00AA \"%s\" -o \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             fixture,
+             output);
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.interface.set-color", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+
+    yyjson_val *persisted = yyjson_obj_get(data, "color_persisted");
+    ASSERT_TRUE(persisted && yyjson_is_bool(persisted));
+    ASSERT_TRUE(yyjson_get_bool(persisted));
+
+    yyjson_val *warning = yyjson_obj_get(data, "warning");
+    ASSERT_NULL(warning);
+    ASSERT_TRUE(file_exists(output));
+
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior interface show %u \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             output);
+    doc = NULL;
+    run_json_command(args, "behavior.interface", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    yyjson_val *script = get_object_field(data, "script");
+    ASSERT_NOT_NULL(script);
+
+    yyjson_val *color = yyjson_obj_get(script, "color");
+    ASSERT_TRUE(color && yyjson_is_uint(color));
+    ASSERT_EQ(0x00FF00AAu, (unsigned)yyjson_get_uint(color));
+
+    yyjson_val *color_defaulted = yyjson_obj_get(script, "color_defaulted");
+    ASSERT_TRUE(color_defaulted && yyjson_is_bool(color_defaulted));
+    ASSERT_FALSE(yyjson_get_bool(color_defaulted));
+
+    yyjson_doc_free(doc);
+    remove(fixture);
+    remove(output);
+}
+
 TEST(cli, behavior_interface_fold_dry_run_does_not_write_output) {
     const char *output = "test_behavior_interface_fold_dry_output.cmo";
     remove(output);
@@ -1737,6 +1936,10 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_interface_set_pos_dry_run_does_not_write_output);
     REGISTER_TEST(cli, behavior_interface_set_pos_saves_output);
     REGISTER_TEST(cli, behavior_interface_set_pos_json_dry_run);
+    REGISTER_TEST(cli, behavior_interface_show_json_reports_format_root);
+    REGISTER_TEST(cli, behavior_interface_show_brief_reports_root_kind);
+    REGISTER_TEST(cli, behavior_interface_show_json_reports_sectioned_graph_root);
+    REGISTER_TEST(cli, behavior_interface_set_color_json_persists_sectioned_color);
     REGISTER_TEST(cli, behavior_interface_fold_dry_run_does_not_write_output);
     REGISTER_TEST(cli, behavior_interface_unfold_saves_output);
     REGISTER_TEST(cli, behavior_interface_set_color_dry_run_does_not_write_output);

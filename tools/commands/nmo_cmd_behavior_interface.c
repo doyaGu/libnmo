@@ -50,6 +50,22 @@ static const char *iface_endpoint_type_name(uint32_t type) {
     }
 }
 
+static const char *iface_root_kind_name(const nmo_interface_data_t *idata) {
+    return (idata &&
+            (idata->format_flags & NMO_INTERFACE_FORMAT_SECTIONED) &&
+            (idata->format_flags & NMO_INTERFACE_FORMAT_ROOT_GRAPH))
+        ? "graph"
+        : "script";
+}
+
+static bool iface_is_sectioned(const nmo_interface_data_t *idata) {
+    return idata && (idata->format_flags & NMO_INTERFACE_FORMAT_SECTIONED);
+}
+
+static bool iface_color_is_present(const nmo_interface_data_t *idata) {
+    return idata && (idata->format_flags & NMO_INTERFACE_FORMAT_COLOR_PRESENT);
+}
+
 static void iface_print_body_links(FILE *out, const nmo_interface_body_t *body) {
     for (size_t li = 0; li < body->link_count; li++) {
         const nmo_interface_link_t *lk = &body->links[li];
@@ -422,6 +438,8 @@ typedef struct iface_fold_args {
 typedef struct iface_set_color_args {
     uint32_t target_id;
     uint32_t color;
+    bool color_persisted;
+    const char *warning;
 } iface_set_color_args_t;
 
 typedef enum iface_comment_op {
@@ -737,12 +755,14 @@ static int iface_set_color_mutate(
     }
 
     idata->script.color = args->color;
+    args->color_persisted = (idata->version >= 0x14);
+    if (args->color_persisted) {
+        idata->format_flags |= NMO_INTERFACE_FORMAT_COLOR_PRESENT;
+    }
+    args->warning = NULL;
 
-    if (idata->version < 0x14 || idata->sectioned_layout) {
-        fprintf(stderr, "Warning: color will not be written "
-                "(version 0x%02X%s)\n",
-                idata->version,
-                idata->sectioned_layout ? ", sectioned layout" : " < 0x14");
+    if (!args->color_persisted) {
+        args->warning = "color will not be written for interface versions below 0x14";
     }
 
     if (dry_run) {
@@ -771,6 +791,11 @@ static int iface_set_color_report(
         nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
         nmo_cli_json_add_uint_safe(doc, data, "target_id", (uint64_t)args->target_id);
         nmo_cli_json_add_uint_safe(doc, data, "color", (uint64_t)args->color);
+        nmo_cli_json_add_bool_safe(doc, data, "color_persisted",
+                                   args->color_persisted);
+        if (args->warning != NULL) {
+            nmo_cli_json_add_str_safe(doc, data, "warning", args->warning);
+        }
         if (!dry_run && output_path != NULL) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -780,6 +805,9 @@ static int iface_set_color_report(
             fprintf(c->out, "[dry-run] ");
         }
         fprintf(c->out, "Set script color to #%06X\n", (unsigned)args->color);
+        if (args->warning != NULL) {
+            fprintf(c->out, "Warning: %s\n", args->warning);
+        }
         if (!dry_run && output_path != NULL) {
             fprintf(c->out, "Saved to: %s\n", output_path);
         }
@@ -3138,7 +3166,15 @@ int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts
         nmo_cli_json_add_str_safe(doc, data, "name",
                                   (name && name[0]) ? name : "");
         yyjson_mut_obj_add_uint(doc, data, "version", idata->version);
-        yyjson_mut_obj_add_bool(doc, data, "sectioned_layout", idata->sectioned_layout);
+        yyjson_mut_obj_add_uint(doc, data, "format_flags", idata->format_flags);
+        yyjson_mut_obj_add_bool(doc, data, "sectioned_layout",
+                                iface_is_sectioned(idata));
+        yyjson_mut_obj_add_bool(doc, data, "sectioned_root_is_graph",
+                                iface_is_sectioned(idata) &&
+                                (idata->format_flags &
+                                 NMO_INTERFACE_FORMAT_ROOT_GRAPH) != 0u);
+        nmo_cli_json_add_str_safe(doc, data, "root_kind",
+                                  iface_root_kind_name(idata));
         yyjson_mut_obj_add_uint(doc, data, "sub_count", (uint64_t)idata->sub_count);
         nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, c.session);
 
@@ -3155,6 +3191,9 @@ int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts
             yyjson_mut_obj_add_real(doc, so, "v_start_pos", (double)sh->v_start_pos);
             yyjson_mut_obj_add_real(doc, so, "v_size", (double)sh->v_size);
             yyjson_mut_obj_add_uint(doc, so, "color", sh->color);
+            yyjson_mut_obj_add_bool(doc, so, "color_defaulted",
+                                    iface_is_sectioned(idata) &&
+                                    !iface_color_is_present(idata));
             yyjson_mut_obj_add_bool(doc, so, "has_snapshot", sh->has_snapshot);
             if (sh->has_snapshot) {
                 yyjson_mut_val *snap = yyjson_mut_obj(doc);
@@ -3244,7 +3283,10 @@ int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts
         nmo_cli_print_kv(c.out, "Version", buf, 22, c.colorize);
 
         nmo_cli_print_kv(c.out, "Layout",
-                         idata->sectioned_layout ? "sectioned" : "inline",
+                         iface_is_sectioned(idata) ? "sectioned" : "inline",
+                         22, c.colorize);
+
+        nmo_cli_print_kv(c.out, "Root kind", iface_root_kind_name(idata),
                          22, c.colorize);
 
         if (idata->script.color) {
@@ -3335,9 +3377,10 @@ int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts
     }
 
     /* Header */
-    fprintf(c.out, "  version: 0x%02X  layout: %s\n",
+    fprintf(c.out, "  version: 0x%02X  layout: %s  root: %s\n",
             idata->version,
-            idata->sectioned_layout ? "sectioned" : "inline");
+            iface_is_sectioned(idata) ? "sectioned" : "inline",
+            iface_root_kind_name(idata));
 
     /* Script header */
     {
@@ -3409,7 +3452,7 @@ int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts
     }
 
     /* Section presence (only relevant for sectioned layout) */
-    if (idata->sectioned_layout) {
+    if (iface_is_sectioned(idata)) {
         nmo_cli_print_heading(c.out, "Section Presence", c.colorize);
         const nmo_interface_body_t *sb = &idata->script.body;
         fprintf(c.out, "  Script: links=%s ops=%s comments=%s unknown_flag=%s\n",

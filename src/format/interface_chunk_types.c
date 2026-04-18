@@ -470,7 +470,7 @@ static const nmo_type_field_t fields_behavior[] = {
 
 static const nmo_type_field_t fields_data[] = {
     NMO_FIELD(nmo_interface_data_t, version,          CKPGUID_UINT32),
-    NMO_FIELD(nmo_interface_data_t, sectioned_layout,  CKPGUID_BOOL),
+    NMO_FIELD(nmo_interface_data_t, format_flags,     CKPGUID_UINT32),
     NMO_FIELD(nmo_interface_data_t, sub_count,        CKPGUID_UINT32),
     NMO_FIELD_NAMED("script",
         offsetof(nmo_interface_data_t, script),

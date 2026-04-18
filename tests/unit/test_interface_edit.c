@@ -24,7 +24,6 @@ static void build_test_data(nmo_arena_t *arena, nmo_interface_data_t *out,
                             size_t sub_count) {
     memset(out, 0, sizeof(*out));
     out->version = 0x15;
-    out->sectioned_layout = false;
 
     out->script.behavior_id = 100;
     out->script.flags = 0;
@@ -331,7 +330,7 @@ TEST(interface_edit, add_comment_sets_section_flag) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 0);
     nmo_interface_data_t data;
     build_test_data(arena, &data, 0);
-    data.sectioned_layout = true;
+    data.format_flags |= NMO_INTERFACE_FORMAT_SECTIONED;
     data.script.body.has_comments_section = false;
 
     nmo_interface_body_add_comment(

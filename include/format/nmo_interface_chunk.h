@@ -58,6 +58,14 @@ typedef struct nmo_chunk nmo_chunk_t;
 #define NMO_INTERFACE_FLAG_FOLDED             0x200u
 #define NMO_INTERFACE_FLAG_HEADER_ONLY        0x8000u
 
+/* Editor default used when sectioned headers omit the inline color field. */
+#define NMO_INTERFACE_DEFAULT_HEADER_COLOR    0x00C8C8C8u
+
+/* Interface format metadata flags (nmo_interface_data_t::format_flags). */
+#define NMO_INTERFACE_FORMAT_SECTIONED        0x00000001u
+#define NMO_INTERFACE_FORMAT_ROOT_GRAPH       0x00000002u
+#define NMO_INTERFACE_FORMAT_COLOR_PRESENT    0x00000004u
+
 /* Extra data identifiers (searched in order: v3, v2, v1) */
 #define NMO_INTERFACE_EXTRA_ID_V1             0xA12312F5u
 #define NMO_INTERFACE_EXTRA_ID_V2             0xA12312F6u
@@ -254,7 +262,7 @@ typedef struct nmo_interface_extra {
 
 typedef struct nmo_interface_data {
     uint32_t version;                       /* 0x12-0x16 */
-    bool sectioned_layout;                  /* true = Dev.exe sectioned, false = inline */
+    uint32_t format_flags;                  /* NMO_INTERFACE_FORMAT_* */
     nmo_interface_script_header_t script;   /* root behavior (entry 0) */
     size_t sub_count;                       /* total_count - 1 */
     nmo_interface_behavior_t *subs;         /* [sub_count] */

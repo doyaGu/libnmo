@@ -26,8 +26,18 @@
 #define DEV_SECTION_SCRIPT_HEADER    0xB0070000u
 #define DEV_SECTION_COMMENTS         0xB0080000u
 #define DEV_SECTION_UNKNOWN_FLAG     0xB00A0000u
+#define DEV_SECTION_TOP_MARKER       0xB0000001u
 #define DEV_SECTION_SCRIPT_MARKER    0xB0000002u
 #define DEV_SECTION_GRAPH_MARKER     0xB0000000u
+#define DEV_LEGACY_TOP_MARKER        1u
+#define DEV_LEGACY_SCRIPT_MARKER     2u
+#define DEV_LEGACY_GRAPH_MARKER      3u
+#define DEV_UNKNOWN_FLAG_VALUE       0
+
+#define interface_is_sectioned(data) \
+    (((data)->format_flags & NMO_INTERFACE_FORMAT_SECTIONED) != 0u)
+#define interface_root_is_graph(data) \
+    (((data)->format_flags & NMO_INTERFACE_FORMAT_ROOT_GRAPH) != 0u)
 
 /* ================================================================
  * Internal helpers
@@ -38,7 +48,8 @@ static nmo_status_t parse_script_header(
     nmo_arena_t *arena,
     uint32_t version,
     bool use_sectioned,
-    nmo_interface_script_header_t *out);
+    nmo_interface_script_header_t *out,
+    uint32_t *format_flags);
 
 static nmo_status_t parse_sub_behavior(
     nmo_chunk_t *chunk,
@@ -128,6 +139,12 @@ static nmo_status_t optional_seek_identifier(
     return st;
 }
 
+static bool interface_version_is_supported(uint32_t version)
+{
+    return version >= NMO_INTERFACE_VERSION_MIN &&
+           version <= NMO_INTERFACE_VERSION_MAX;
+}
+
 static uint32_t behavior_section_id(size_t behavior_index, uint32_t base)
 {
     return (uint32_t)behavior_index + base;
@@ -153,20 +170,32 @@ nmo_status_t nmo_interface_chunk_parse(
     nmo_status_t st = nmo_chunk_start_read(chunk);
     NMO_RETURN_IF_ERROR(st);
 
-    /* Read version: the interface sub-chunk's data area contains an
-     * inline identifier chain. Match reference: SeekIdentifier(0xB0000001),
-     * then SeekIdentifier(1). Both are tried; last successful one wins. */
+    /* Read version: prefer VSD's canonical sectioned marker, while keeping
+     * compatibility with legacy inline samples that use identifier 1. */
     uint32_t version = 0;
-    if (nmo_chunk_seek_identifier(chunk, 0xB0000001u) == NMO_OK) {
-        st = nmo_chunk_read_dword(chunk, &version);
+    uint32_t candidate_version = 0;
+    bool found = false;
+    st = optional_seek_identifier(chunk, DEV_SECTION_TOP_MARKER, &found);
+    NMO_RETURN_IF_ERROR(st);
+    if (found) {
+        st = nmo_chunk_read_dword(chunk, &candidate_version);
         NMO_RETURN_IF_ERROR(st);
-    }
-    if (nmo_chunk_seek_identifier(chunk, 1u) == NMO_OK) {
-        st = nmo_chunk_read_dword(chunk, &version);
-        NMO_RETURN_IF_ERROR(st);
+        if (interface_version_is_supported(candidate_version)) {
+            version = candidate_version;
+        }
     }
 
-    if (version < NMO_INTERFACE_VERSION_MIN || version > NMO_INTERFACE_VERSION_MAX) {
+    if (version == 0) {
+        st = optional_seek_identifier(chunk, DEV_LEGACY_TOP_MARKER, &found);
+        NMO_RETURN_IF_ERROR(st);
+        if (found) {
+            st = nmo_chunk_read_dword(chunk, &candidate_version);
+            NMO_RETURN_IF_ERROR(st);
+            version = candidate_version;
+        }
+    }
+
+    if (!interface_version_is_supported(version)) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "interface chunk version 0x%08X out of range "
                          "[0x%02X, 0x%02X]",
@@ -181,23 +210,27 @@ nmo_status_t nmo_interface_chunk_parse(
      * The reference Save path writes DEV_SECTION_SCRIPT_MARKER (0xB0000002)
      * and DEV_SECTION_GRAPH_MARKER (0xB0000000), while its Load path seeks
      * plain 2/3.  We probe both sets for maximum compatibility. */
-    bool use_sectioned = false;
-    bool found = false;
+    uint32_t format_flags = 0;
     st = optional_seek_identifier(chunk, DEV_SECTION_SCRIPT_MARKER, &found);
     NMO_RETURN_IF_ERROR(st);
     if (!found) {
-        st = optional_seek_identifier(chunk, 2u, &found);
+        st = optional_seek_identifier(chunk, DEV_LEGACY_SCRIPT_MARKER, &found);
         NMO_RETURN_IF_ERROR(st);
     }
-    if (!found) {
+    if (found) {
+        format_flags |= NMO_INTERFACE_FORMAT_SECTIONED;
+    } else {
         st = optional_seek_identifier(chunk, DEV_SECTION_GRAPH_MARKER, &found);
         NMO_RETURN_IF_ERROR(st);
+        if (!found) {
+            st = optional_seek_identifier(chunk, DEV_LEGACY_GRAPH_MARKER, &found);
+            NMO_RETURN_IF_ERROR(st);
+        }
+        if (found) {
+            format_flags |= NMO_INTERFACE_FORMAT_SECTIONED |
+                            NMO_INTERFACE_FORMAT_ROOT_GRAPH;
+        }
     }
-    if (!found) {
-        st = optional_seek_identifier(chunk, 3u, &found);
-        NMO_RETURN_IF_ERROR(st);
-    }
-    use_sectioned = found;
 
     /* Read total behavior count */
     int32_t total_count = 0;
@@ -211,18 +244,22 @@ nmo_status_t nmo_interface_chunk_parse(
     }
 
     out->version = version;
-    out->sectioned_layout = use_sectioned;
+    out->format_flags = format_flags;
     out->sub_count = (total_count > 1) ? (size_t)(total_count - 1) : 0;
 
     /* Seek to script header section (sectioned layout only).
      * For inline layout the header follows sequentially. */
+    bool use_sectioned = (format_flags & NMO_INTERFACE_FORMAT_SECTIONED) != 0u;
     if (use_sectioned) {
         st = optional_seek_identifier(chunk,
-            DEV_SECTION_SCRIPT_HEADER, &found);
+            (format_flags & NMO_INTERFACE_FORMAT_ROOT_GRAPH)
+                ? DEV_SECTION_HEADER
+                : DEV_SECTION_SCRIPT_HEADER,
+            &found);
         NMO_RETURN_IF_ERROR(st);
     }
     st = parse_script_header(chunk, arena, version, use_sectioned,
-                             &out->script);
+                             &out->script, &out->format_flags);
     NMO_RETURN_IF_ERROR(st);
 
     /* Script body */
@@ -283,7 +320,8 @@ static nmo_status_t parse_script_header(
     nmo_arena_t *arena,
     uint32_t version,
     bool use_sectioned,
-    nmo_interface_script_header_t *out)
+    nmo_interface_script_header_t *out,
+    uint32_t *format_flags)
 {
     (void)arena;
     nmo_status_t st;
@@ -344,13 +382,39 @@ static nmo_status_t parse_script_header(
         out->has_snapshot = false;
     }
 
+    if (format_flags) {
+        *format_flags &= ~NMO_INTERFACE_FORMAT_COLOR_PRESENT;
+    }
     if (version >= 0x14 && !use_sectioned) {
         st = nmo_chunk_read_dword(chunk, &out->color);
         NMO_RETURN_IF_ERROR(st);
+        if (format_flags) {
+            *format_flags |= NMO_INTERFACE_FORMAT_COLOR_PRESENT;
+        }
+    } else if (version >= 0x14 && use_sectioned) {
+        size_t pos = nmo_chunk_get_position(chunk);
+        uint32_t maybe_color = 0;
+        if (pos != (size_t)-1 &&
+            nmo_chunk_has_read_capacity(chunk, 1) &&
+            nmo_chunk_read_dword(chunk, &maybe_color) == NMO_OK) {
+            if (maybe_color <= 0x00FFFFFFu) {
+                out->color = maybe_color;
+                if (format_flags) {
+                    *format_flags |= NMO_INTERFACE_FORMAT_COLOR_PRESENT;
+                }
+            } else {
+                (void)nmo_chunk_goto(chunk, pos);
+                out->color = NMO_INTERFACE_DEFAULT_HEADER_COLOR;
+            }
+        } else {
+            if (pos != (size_t)-1) {
+                (void)nmo_chunk_goto(chunk, pos);
+            }
+            out->color = NMO_INTERFACE_DEFAULT_HEADER_COLOR;
+        }
+    } else if (use_sectioned) {
+        out->color = NMO_INTERFACE_DEFAULT_HEADER_COLOR;
     } else {
-        /* Dev.exe 2.5 LoadInterfaceData does not consume a color dword on this
-         * v0x12+ path after CKStateChunk::ReadBitmap. The UI header color is
-         * initialized from editor defaults instead. */
         out->color = 0;
     }
 
@@ -1462,8 +1526,8 @@ static nmo_status_t write_script_header(
         NMO_RETURN_IF_ERROR(st);
     }
 
-    /* Color (inline layout, v >= 0x14 only) */
-    if (data->version >= 0x14 && !data->sectioned_layout) {
+    /* Color (v >= 0x14). Sectioned readers also accept older omitted fields. */
+    if (data->version >= 0x14) {
         st = nmo_chunk_write_dword(chunk, hdr->color);
         NMO_RETURN_IF_ERROR(st);
     }
@@ -1520,39 +1584,31 @@ static nmo_status_t write_body(
     nmo_status_t st;
     uint32_t version = data->version;
 
-    if (data->sectioned_layout) {
+    if (interface_is_sectioned(data)) {
         /* ---- Sectioned layout (Dev.exe files) ---- */
-        if (body->has_links_section) {
-            st = nmo_chunk_write_identifier(chunk,
-                behavior_section_id(behavior_index, DEV_SECTION_LINKS));
-            NMO_RETURN_IF_ERROR(st);
-            st = write_links(chunk, body, true);
-            NMO_RETURN_IF_ERROR(st);
-        }
+        st = nmo_chunk_write_identifier(chunk,
+            behavior_section_id(behavior_index, DEV_SECTION_LINKS));
+        NMO_RETURN_IF_ERROR(st);
+        st = write_links(chunk, body, true);
+        NMO_RETURN_IF_ERROR(st);
 
-        if (body->has_operations_section) {
-            st = nmo_chunk_write_identifier(chunk,
-                behavior_section_id(behavior_index, DEV_SECTION_OPERATIONS));
-            NMO_RETURN_IF_ERROR(st);
-            st = write_operations(chunk, body);
-            NMO_RETURN_IF_ERROR(st);
-        }
+        st = nmo_chunk_write_identifier(chunk,
+            behavior_section_id(behavior_index, DEV_SECTION_OPERATIONS));
+        NMO_RETURN_IF_ERROR(st);
+        st = write_operations(chunk, body);
+        NMO_RETURN_IF_ERROR(st);
 
-        if (body->has_comments_section) {
-            st = nmo_chunk_write_identifier(chunk,
-                behavior_section_id(behavior_index, DEV_SECTION_COMMENTS));
-            NMO_RETURN_IF_ERROR(st);
-            st = write_comments(chunk, version, body);
-            NMO_RETURN_IF_ERROR(st);
-        }
+        st = nmo_chunk_write_identifier(chunk,
+            behavior_section_id(behavior_index, DEV_SECTION_COMMENTS));
+        NMO_RETURN_IF_ERROR(st);
+        st = write_comments(chunk, version, body);
+        NMO_RETURN_IF_ERROR(st);
 
-        if (body->has_unknown_flag_section) {
-            st = nmo_chunk_write_identifier(chunk,
-                behavior_section_id(behavior_index, DEV_SECTION_UNKNOWN_FLAG));
-            NMO_RETURN_IF_ERROR(st);
-            st = nmo_chunk_write_int(chunk, body->unknown_flag);
-            NMO_RETURN_IF_ERROR(st);
-        }
+        st = nmo_chunk_write_identifier(chunk,
+            behavior_section_id(behavior_index, DEV_SECTION_UNKNOWN_FLAG));
+        NMO_RETURN_IF_ERROR(st);
+        st = nmo_chunk_write_int(chunk, DEV_UNKNOWN_FLAG_VALUE);
+        NMO_RETURN_IF_ERROR(st);
 
         return NMO_OK;
     }
@@ -1694,14 +1750,18 @@ nmo_status_t nmo_interface_chunk_write(
     NMO_RETURN_IF_ERROR(st);
 
     /* Version identifier */
-    st = nmo_chunk_write_identifier(chunk, 1u);
+    st = nmo_chunk_write_identifier(chunk,
+        interface_is_sectioned(data) ? DEV_SECTION_TOP_MARKER : DEV_LEGACY_TOP_MARKER);
     NMO_RETURN_IF_ERROR(st);
     st = nmo_chunk_write_dword(chunk, data->version);
     NMO_RETURN_IF_ERROR(st);
 
     /* Script marker for sectioned layout */
-    if (data->sectioned_layout) {
-        st = nmo_chunk_write_identifier(chunk, DEV_SECTION_SCRIPT_MARKER);
+    if (interface_is_sectioned(data)) {
+        st = nmo_chunk_write_identifier(chunk,
+            interface_root_is_graph(data)
+                ? DEV_SECTION_GRAPH_MARKER
+                : DEV_SECTION_SCRIPT_MARKER);
         NMO_RETURN_IF_ERROR(st);
     }
 
@@ -1711,8 +1771,11 @@ nmo_status_t nmo_interface_chunk_write(
     NMO_RETURN_IF_ERROR(st);
 
     /* Script header section identifier (sectioned only) */
-    if (data->sectioned_layout) {
-        st = nmo_chunk_write_identifier(chunk, DEV_SECTION_SCRIPT_HEADER);
+    if (interface_is_sectioned(data)) {
+        st = nmo_chunk_write_identifier(chunk,
+            interface_root_is_graph(data)
+                ? DEV_SECTION_HEADER
+                : DEV_SECTION_SCRIPT_HEADER);
         NMO_RETURN_IF_ERROR(st);
     }
 
@@ -1731,7 +1794,7 @@ nmo_status_t nmo_interface_chunk_write(
     for (size_t i = 0; i < data->sub_count; i++) {
         uint32_t layout_index = (uint32_t)(i + 1);
 
-        if (data->sectioned_layout) {
+        if (interface_is_sectioned(data)) {
             st = nmo_chunk_write_identifier(chunk,
                 DEV_SECTION_HEADER + layout_index);
             NMO_RETURN_IF_ERROR(st);
