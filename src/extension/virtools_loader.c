@@ -62,6 +62,7 @@ static uint16_t category_from_str(const char *cat) {
     if (strcmp(cat, "enum") == 0) return NMO_TYPE_CATEGORY_ENUM;
     if (strcmp(cat, "flags") == 0) return NMO_TYPE_CATEGORY_FLAGS;
     if (strcmp(cat, "struct") == 0) return NMO_TYPE_CATEGORY_STRUCT;
+    if (strcmp(cat, "object_ref") == 0) return NMO_TYPE_CATEGORY_OBJECT_REF;
     return NMO_TYPE_CATEGORY_SCALAR;
 }
 

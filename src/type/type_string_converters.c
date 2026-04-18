@@ -1849,10 +1849,12 @@ nmo_status_t nmo_type_value_from_string(
     if (type->category & NMO_TYPE_CATEGORY_FLAGS) {
         return nmo_flags_from_string(value, type, registry, string);
     }
+    if (type->category & NMO_TYPE_CATEGORY_OBJECT_REF) {
+        return nmo_parse_object_id_value(value, registry, string);
+    }
 
     /* Level 3: scalar size fallback for derived types */
-    if (type->category & (NMO_TYPE_CATEGORY_SCALAR | NMO_TYPE_CATEGORY_POINTER
-                          | NMO_TYPE_CATEGORY_OBJECT_REF)) {
+    if (type->category & (NMO_TYPE_CATEGORY_SCALAR | NMO_TYPE_CATEGORY_POINTER)) {
         return nmo_scalar_from_string_by_size(value, type, registry, string);
     }
 

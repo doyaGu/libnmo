@@ -4,13 +4,18 @@
  */
 
 #include "../test_framework.h"
+#include "extension/nmo_virtools_loader.h"
 #include "session/nmo_context.h"
+#include "type/nmo_operations.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_string.h"
 #include "type/nmo_operation_system.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_param_guids.h"
+#include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
 
+#include <stdio.h>
 #include <string.h>
 
 static nmo_context_t *create_ctx_with_data(void) {
@@ -205,6 +210,73 @@ TEST(vt, derived_json_primitive_types_parse_from_string) {
     nmo_context_release(ctx);
 }
 
+TEST(vt, object_ref_types_parse_object_ids_from_string) {
+    nmo_context_t *ctx = create_ctx_with_data();
+    ASSERT_TRUE(ctx != NULL);
+    nmo_type_registry_t *reg = nmo_context_get_type_registry(ctx);
+
+    static const nmo_guid_t object_ref_guids[] = {
+        CKPGUID_MESH_INIT,
+        CKPGUID_MATERIAL_INIT,
+        CKPGUID_TEXTURE_INIT,
+        CKPGUID_3DENTITY_INIT,
+    };
+
+    for (size_t i = 0; i < sizeof(object_ref_guids) / sizeof(object_ref_guids[0]); ++i) {
+        const nmo_type_descriptor_t *type =
+            nmo_type_registry_find_by_guid(reg, object_ref_guids[i]);
+        ASSERT_TRUE(type != NULL);
+        ASSERT_TRUE((type->category & NMO_TYPE_CATEGORY_OBJECT_REF) != 0);
+
+        nmo_object_id_t id = 0;
+        ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&id, type, reg, "#123"));
+        ASSERT_EQ(123u, id);
+
+        id = 0;
+        ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&id, type, reg, "456"));
+        ASSERT_EQ(456u, id);
+    }
+
+    nmo_context_release(ctx);
+}
+
+TEST(vt, raw_json_loader_marks_object_refs_and_parses_ids) {
+    const char *path = "test_object_ref_param_type_tmp.json";
+    FILE *file = fopen(path, "wb");
+    ASSERT_TRUE(file != NULL);
+    ASSERT_TRUE(fputs(
+        "[{\"name\":\"Test Object Ref\","
+        "\"guid\":[3735879681,3735879682],"
+        "\"size\":4,"
+        "\"class_id\":0,"
+        "\"derived_from\":[0,0],"
+        "\"category\":\"object_ref\"}]",
+        file) >= 0);
+    ASSERT_EQ(0, fclose(file));
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_TRUE(arena != NULL);
+    nmo_type_registry_t *reg = nmo_type_registry_create(arena);
+    ASSERT_TRUE(reg != NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(reg));
+    ASSERT_EQ(NMO_OK, nmo_virtools_load_param_types(reg, path));
+    remove(path);
+
+    nmo_guid_t test_guid = nmo_guid_create(0xDEAD0001u, 0xDEAD0002u);
+    const nmo_type_descriptor_t *ref_type =
+        nmo_type_registry_find_by_guid(reg, test_guid);
+    ASSERT_TRUE(ref_type != NULL);
+    ASSERT_TRUE((ref_type->category & NMO_TYPE_CATEGORY_OBJECT_REF) != 0);
+
+    nmo_object_id_t id = 0;
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&id, ref_type, reg, "#321"));
+    ASSERT_EQ(321u, id);
+
+    nmo_type_registry_destroy(reg);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(vt, operation_addition);
     REGISTER_TEST(vt, operation_equal);
@@ -217,4 +289,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(vt, signature_only_not_executable);
     REGISTER_TEST(vt, builtin_overrides_json_signature);
     REGISTER_TEST(vt, derived_json_primitive_types_parse_from_string);
+    REGISTER_TEST(vt, object_ref_types_parse_object_ids_from_string);
+    REGISTER_TEST(vt, raw_json_loader_marks_object_refs_and_parses_ids);
 TEST_MAIN_END()
