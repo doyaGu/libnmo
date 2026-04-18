@@ -1298,6 +1298,14 @@ static nmo_status_t nmo_type_value_to_string_depth(
         NMO_RETURN_OK();
     }
 
+    /* Metadata categories must win over inherited scalar vtables. */
+    if (type->category & NMO_TYPE_CATEGORY_ENUM) {
+        return nmo_enum_to_string(value, type, registry, buffer, buffer_size, true);
+    }
+    if (type->category & NMO_TYPE_CATEGORY_FLAGS) {
+        return nmo_flags_to_string(value, type, registry, buffer, buffer_size, true);
+    }
+
     /* Level 1: custom vtable handler */
     if (type->vtable && type->vtable->to_string) {
         return type->vtable->to_string(value, type, registry,
@@ -2157,18 +2165,20 @@ nmo_status_t nmo_type_value_from_string(
                          "Invalid arguments for type_value_from_string");
     }
 
-    /* Level 1: custom vtable handler */
-    if (type->vtable && type->vtable->from_string) {
-        return type->vtable->from_string(value, type, registry, string);
-    }
-
-    /* Level 2: category fallback */
+    /* Metadata categories must win over inherited scalar vtables. */
     if (type->category & NMO_TYPE_CATEGORY_ENUM) {
         return nmo_enum_from_string(value, type, registry, string);
     }
     if (type->category & NMO_TYPE_CATEGORY_FLAGS) {
         return nmo_flags_from_string(value, type, registry, string);
     }
+
+    /* Level 1: custom vtable handler */
+    if (type->vtable && type->vtable->from_string) {
+        return type->vtable->from_string(value, type, registry, string);
+    }
+
+    /* Level 2: category fallback */
     if (type->category & NMO_TYPE_CATEGORY_OBJECT_REF) {
         const char *p = nmo_parse_skip_ws(string);
         if (*p == '{') {

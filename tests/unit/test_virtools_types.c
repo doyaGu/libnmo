@@ -360,6 +360,34 @@ TEST(vt, script_param_type_loads_as_object_ref_alias) {
     nmo_context_release(ctx);
 }
 
+TEST(vt, json_struct_param_types_parse_fields_with_offsets) {
+    nmo_context_t *ctx = create_ctx_with_data();
+    ASSERT_TRUE(ctx != NULL);
+    nmo_type_registry_t *reg = nmo_context_get_type_registry(ctx);
+
+    const nmo_type_descriptor_t *type =
+        nmo_type_registry_find_by_guid(reg, nmo_guid_create(0x023756E7u, 0x01DA06EAu));
+    ASSERT_TRUE(type != NULL);
+    ASSERT_TRUE((type->category & NMO_TYPE_CATEGORY_STRUCT) != 0);
+
+    typedef struct targa_options_t {
+        uint32_t bit_depth;
+        uint32_t run_length_encoding;
+    } targa_options_t;
+
+    targa_options_t value = {0};
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(
+        &value, type, reg, "{Bit Depth=24 bit, Run Length Encoding=true}"));
+    ASSERT_EQ(24u, value.bit_depth);
+    ASSERT_EQ(1u, value.run_length_encoding);
+
+    char buffer[128];
+    ASSERT_EQ(NMO_OK, nmo_type_value_to_string(&value, type, reg, buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("{Bit Depth=24 bit, Run Length Encoding=true}", buffer);
+
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(vt, operation_addition);
     REGISTER_TEST(vt, operation_equal);
@@ -377,4 +405,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(vt, raw_json_loader_marks_object_refs_and_parses_ids);
     REGISTER_TEST(vt, unbased_json_u32_primitives_parse_from_string);
     REGISTER_TEST(vt, script_param_type_loads_as_object_ref_alias);
+    REGISTER_TEST(vt, json_struct_param_types_parse_fields_with_offsets);
 TEST_MAIN_END()

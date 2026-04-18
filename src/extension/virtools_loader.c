@@ -13,6 +13,7 @@
 #include "extension/nmo_extension_abi.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_error.h"
+#include "core/nmo_utils.h"
 
 #include "yyjson.h"
 
@@ -132,12 +133,22 @@ static void register_struct_metadata(nmo_type_registry_t *registry, nmo_type_id_
     if (!descs) return;
 
     size_t idx = 0;
+    uint32_t offset = 0;
     yyjson_val *item;
     yyjson_arr_iter iter;
     yyjson_arr_iter_init(members, &iter);
     while ((item = yyjson_arr_iter_next(&iter)) != NULL) {
         descs[idx].name = get_str(item, "name");
         descs[idx].type_guid = get_guid(item, "type_guid");
+        const nmo_type_descriptor_t *field_type =
+            nmo_type_registry_find_by_guid(registry, descs[idx].type_guid);
+        if (field_type) {
+            uint32_t align = field_type->alignment > 0 ? field_type->alignment : 1u;
+            offset = (uint32_t)nmo_align((size_t)offset, (size_t)align);
+            descs[idx].offset = offset;
+            descs[idx].size = field_type->size;
+            offset += field_type->size;
+        }
         idx++;
     }
 
