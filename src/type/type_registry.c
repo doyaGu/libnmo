@@ -52,34 +52,79 @@ void nmo_type_assign_default_vtable(
     nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry)
 {
-    if (!type || type->vtable) {
+    if (!type) {
         return;
     }
 
+    const nmo_type_vtable_t *default_vtable = NULL;
     if (type->category & NMO_TYPE_CATEGORY_ENUM) {
-        type->vtable = &nmo_type_vtable_enum;
-        return;
-    }
-    if (type->category & NMO_TYPE_CATEGORY_FLAGS) {
-        type->vtable = &nmo_type_vtable_flags;
-        return;
-    }
-    if (type->category & NMO_TYPE_CATEGORY_OBJECT_REF) {
-        type->vtable = &nmo_type_vtable_object_ref;
-        return;
-    }
-    if (type->category & (NMO_TYPE_CATEGORY_STRUCT | NMO_TYPE_CATEGORY_UNION)) {
-        type->vtable = &nmo_type_vtable_reflected_struct;
-        return;
-    }
-
-    if (registry && !nmo_guid_is_null(type->base_type)) {
+        default_vtable = &nmo_type_vtable_enum;
+    } else if (type->category & NMO_TYPE_CATEGORY_FLAGS) {
+        default_vtable = &nmo_type_vtable_flags;
+    } else if (type->category & NMO_TYPE_CATEGORY_OBJECT_REF) {
+        default_vtable = &nmo_type_vtable_object_ref;
+    } else if (type->category & (NMO_TYPE_CATEGORY_STRUCT | NMO_TYPE_CATEGORY_UNION)) {
+        default_vtable = &nmo_type_vtable_reflected_struct;
+    } else if (registry && !nmo_guid_is_null(type->base_type)) {
         const nmo_type_descriptor_t *base =
             nmo_type_registry_find_by_guid(registry, type->base_type);
         if (base && base->vtable) {
-            type->vtable = base->vtable;
+            default_vtable = base->vtable;
         }
     }
+
+    if (!default_vtable) {
+        return;
+    }
+
+    if (!type->vtable) {
+        type->vtable = default_vtable;
+        return;
+    }
+
+    nmo_type_vtable_t merged = *type->vtable;
+    bool changed = false;
+#define NMO_FILL_VTABLE_SLOT(slot) \
+    do { \
+        if (!merged.slot && default_vtable->slot) { \
+            merged.slot = default_vtable->slot; \
+            changed = true; \
+        } \
+    } while (0)
+
+    NMO_FILL_VTABLE_SLOT(create);
+    NMO_FILL_VTABLE_SLOT(destroy);
+    NMO_FILL_VTABLE_SLOT(copy);
+    NMO_FILL_VTABLE_SLOT(serialize);
+    NMO_FILL_VTABLE_SLOT(deserialize);
+    NMO_FILL_VTABLE_SLOT(prepare_dependencies);
+    NMO_FILL_VTABLE_SLOT(remap_dependencies);
+    NMO_FILL_VTABLE_SLOT(pre_delete);
+    NMO_FILL_VTABLE_SLOT(post_delete);
+    NMO_FILL_VTABLE_SLOT(validate);
+    NMO_FILL_VTABLE_SLOT(equals);
+    NMO_FILL_VTABLE_SLOT(hash);
+    NMO_FILL_VTABLE_SLOT(to_string);
+    NMO_FILL_VTABLE_SLOT(from_string);
+    NMO_FILL_VTABLE_SLOT(enumerate_refs);
+
+#undef NMO_FILL_VTABLE_SLOT
+
+    if (!changed || !registry) {
+        return;
+    }
+
+    nmo_type_registry_t *mutable_registry = (nmo_type_registry_t *)registry;
+    nmo_type_vtable_t *owned_vtable = (nmo_type_vtable_t *)nmo_alloc(
+        &mutable_registry->type_allocator,
+        sizeof(nmo_type_vtable_t),
+        _Alignof(nmo_type_vtable_t));
+    if (!owned_vtable) {
+        return;
+    }
+
+    *owned_vtable = merged;
+    type->vtable = owned_vtable;
 }
 
 static nmo_status_t ensure_compat_mask_capacity(nmo_type_registry_t *registry, nmo_type_descriptor_t *type) {

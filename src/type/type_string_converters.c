@@ -12,6 +12,7 @@
 #include "type/nmo_reflection.h"
 #include "type/nmo_operations.h"
 #include "type/nmo_type_guids.h"
+#include "type_value_internal.h"
 #include "object/nmo_param_guids.h"
 #include "core/nmo_array.h"
 #include "core/nmo_color.h"
@@ -829,15 +830,6 @@ nmo_status_t nmo_vt_from_string_voidbuf(
 
 enum { NMO_MAX_TO_STRING_DEPTH = 6 };
 
-static nmo_status_t nmo_type_value_to_string_depth(
-    const void *value,
-    const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry,
-    char *buffer,
-    size_t buffer_size,
-    int depth
-);
-
 static nmo_status_t nmo_struct_like_to_string(
     const void *value,
     const nmo_type_descriptor_t *type,
@@ -917,7 +909,7 @@ static nmo_status_t nmo_struct_like_to_string(
                     size_t avail = sb.cap > sb.len ? sb.cap - sb.len : 0;
                     if (avail == 0) break;
                     char *slot = sb.buf + sb.len;
-                    nmo_status_t r = nmo_type_value_to_string_depth(
+                    nmo_status_t r = nmo_type_value_to_string_depth_internal(
                         fptr, ft, registry, slot, avail, depth + 1);
                     if (r == NMO_OK) {
                         sb.len += strlen(slot);
@@ -999,7 +991,7 @@ static nmo_status_t nmo_struct_like_to_string(
         size_t avail = sb.cap > sb.len ? sb.cap - sb.len : 0;
         if (avail == 0) break;
         char *slot = sb.buf + sb.len;
-        nmo_status_t r = nmo_type_value_to_string_depth(
+        nmo_status_t r = nmo_type_value_to_string_depth_internal(
             field_ptr, field_type, registry, slot, avail, depth + 1);
         if (r == NMO_OK) {
             sb.len += strlen(slot);
@@ -1011,116 +1003,6 @@ static nmo_status_t nmo_struct_like_to_string(
 
     NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "}"));
     NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_hex_fallback_to_string(
-    const void *value,
-    const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry,
-    char *buffer,
-    size_t buffer_size,
-    int depth)
-{
-    (void)registry;
-    (void)depth;
-
-    if (type->size <= 4) {
-        uint32_t v = 0;
-        memcpy(&v, value, type->size);
-        snprintf(buffer, buffer_size, "0x%0*X (%u bytes)",
-                 (int)type->size * 2, v, type->size);
-    } else if (type->size <= 16) {
-        size_t pos = 0;
-        for (size_t i = 0; i < type->size && pos + 3 < buffer_size; i++) {
-            pos += (size_t)snprintf(buffer + pos, buffer_size - pos, "%s%02X",
-                                    i > 0 ? " " : "",
-                                    ((const uint8_t *)value)[i]);
-        }
-    } else {
-        size_t pos = (size_t)snprintf(buffer, buffer_size, "<%u bytes: ",
-                                      type->size);
-        for (size_t i = 0; i < 8 && i < type->size && pos + 3 < buffer_size; i++) {
-            pos += (size_t)snprintf(buffer + pos, buffer_size - pos, "%02X ",
-                                    ((const uint8_t *)value)[i]);
-        }
-        if (pos + 4 < buffer_size) {
-            snprintf(buffer + pos, buffer_size - pos, "...>");
-        }
-    }
-    NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_type_default_to_string(
-    const void *value,
-    const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry,
-    char *buffer,
-    size_t buffer_size,
-    int depth)
-{
-    if (type->category & NMO_TYPE_CATEGORY_ENUM) {
-        return nmo_enum_to_string(value, type, registry, buffer, buffer_size, true);
-    }
-    if (type->category & NMO_TYPE_CATEGORY_FLAGS) {
-        return nmo_flags_to_string(value, type, registry, buffer, buffer_size, true);
-    }
-    if ((type->category & (NMO_TYPE_CATEGORY_STRUCT | NMO_TYPE_CATEGORY_UNION))
-        || (type->fields && type->field_count > 0)) {
-        return nmo_struct_like_to_string(value, type, registry, buffer, buffer_size, depth);
-    }
-    return nmo_hex_fallback_to_string(value, type, registry, buffer, buffer_size, depth);
-}
-
-static nmo_status_t nmo_type_value_to_string_depth(
-    const void *value,
-    const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry,
-    char *buffer,
-    size_t buffer_size,
-    int depth)
-{
-    if (!value || !type || !buffer) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments for type_value_to_string");
-    }
-
-    if (depth > NMO_MAX_TO_STRING_DEPTH) {
-        if (type->name) {
-            snprintf(buffer, buffer_size, "<%s ...>", type->name);
-        } else {
-            snprintf(buffer, buffer_size, "<type %u bytes>", type->size);
-        }
-        NMO_RETURN_OK();
-    }
-
-    /* Metadata categories must win over inherited scalar vtables. */
-    if (type->category & NMO_TYPE_CATEGORY_ENUM) {
-        return nmo_enum_to_string(value, type, registry, buffer, buffer_size, true);
-    }
-    if (type->category & NMO_TYPE_CATEGORY_FLAGS) {
-        return nmo_flags_to_string(value, type, registry, buffer, buffer_size, true);
-    }
-
-    /* Level 1: custom vtable handler */
-    if (type->vtable && type->vtable->to_string) {
-        return type->vtable->to_string(value, type, registry,
-                                       buffer, buffer_size, depth);
-    }
-
-    /* Level 2: generic formatting by category */
-    return nmo_type_default_to_string(value, type, registry,
-                                      buffer, buffer_size, depth);
-}
-
-nmo_status_t nmo_type_value_to_string(
-    const void *value,
-    const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry,
-    char *buffer,
-    size_t buffer_size)
-{
-    return nmo_type_value_to_string_depth(value, type, registry,
-                                          buffer, buffer_size, 0);
 }
 
 static nmo_status_t parse_i64(const char *string, int64_t *out_value)
@@ -1959,85 +1841,6 @@ static nmo_status_t nmo_parse_eulerangles(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_scalar_from_string_by_size(
-    void *value,
-    const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry,
-    const char *string)
-{
-    if (type->size == sizeof(float) && type->alignment == _Alignof(float)) {
-        return nmo_float_from_string(value, string);
-    }
-    if (type->size == sizeof(double) && type->alignment == _Alignof(double)) {
-        double parsed = 0.0;
-        NMO_RETURN_IF_ERROR(parse_f64(string, &parsed));
-        *(double *)value = parsed;
-        NMO_RETURN_OK();
-    }
-    if (type->size == sizeof(int32_t) && type->alignment == _Alignof(int32_t)) {
-        return nmo_int_from_string(value, string);
-    }
-    if (type->size == sizeof(uint32_t) && type->alignment == _Alignof(uint32_t)) {
-        return nmo_parse_uint32(value, registry, string);
-    }
-    if (type->size == sizeof(bool) && type->alignment == _Alignof(bool)) {
-        return nmo_bool_from_string(value, string);
-    }
-    if (type->size == sizeof(nmo_guid_t) && type->alignment == _Alignof(nmo_guid_t)) {
-        return nmo_parse_guid(value, registry, string);
-    }
-    if (type->size == sizeof(void *) && type->alignment == _Alignof(void *)) {
-        return nmo_parse_pointer(value, registry, string);
-    }
-    NMO_RETURN_ERROR(NMO_ERR_NOT_IMPLEMENTED, NMO_SEVERITY_ERROR,
-                     "Type-from-string not implemented for this type");
-}
-
-nmo_status_t nmo_type_value_from_string(
-    void *value,
-    const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry,
-    const char *string)
-{
-    if (!value || !type || !string) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments for type_value_from_string");
-    }
-
-    /* Metadata categories must win over inherited scalar vtables. */
-    if (type->category & NMO_TYPE_CATEGORY_ENUM) {
-        return nmo_enum_from_string(value, type, registry, string);
-    }
-    if (type->category & NMO_TYPE_CATEGORY_FLAGS) {
-        return nmo_flags_from_string(value, type, registry, string);
-    }
-
-    /* Level 1: custom vtable handler */
-    if (type->vtable && type->vtable->from_string) {
-        return type->vtable->from_string(value, type, registry, string);
-    }
-
-    /* Level 2: category fallback */
-    if (type->category & NMO_TYPE_CATEGORY_OBJECT_REF) {
-        const char *p = nmo_parse_skip_ws(string);
-        if (*p == '{') {
-            return nmo_struct_like_from_string(value, type, registry, string);
-        }
-        return nmo_parse_object_id_value(value, registry, string);
-    }
-    if (type->category & (NMO_TYPE_CATEGORY_STRUCT | NMO_TYPE_CATEGORY_UNION)) {
-        return nmo_struct_like_from_string(value, type, registry, string);
-    }
-
-    /* Level 3: scalar size fallback for derived types */
-    if (type->category & (NMO_TYPE_CATEGORY_SCALAR | NMO_TYPE_CATEGORY_POINTER)) {
-        return nmo_scalar_from_string_by_size(value, type, registry, string);
-    }
-
-    NMO_RETURN_ERROR(NMO_ERR_NOT_IMPLEMENTED, NMO_SEVERITY_ERROR,
-                     "Type-from-string not implemented for this type");
-}
-
 /* ============================================================================
  * Builtin Type VTable Helpers
  *
@@ -2603,56 +2406,3 @@ nmo_status_t nmo_vt_to_string_box(
     NMO_RETURN_OK();
 }
 NMO_DEFINE_VT_FROM_STRING(box, nmo_parse_box)
-
-/* ============================================================================
- * Field-Level String Conversion
- * ============================================================================ */
-
-nmo_status_t nmo_type_set_field(
-    void *state,
-    const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry,
-    const char *field_name,
-    const char *value_str)
-{
-    if (!state || !type || !registry || !field_name || !value_str)
-        return NMO_ERR_INVALID_ARGUMENT;
-
-    const nmo_type_field_t *field = nmo_type_get_field_by_name(type, field_name);
-    if (!field) return NMO_ERR_NOT_FOUND;
-
-    const nmo_type_descriptor_t *field_type =
-        nmo_type_registry_find_by_guid(registry, field->type_guid);
-    if (!field_type) return NMO_ERR_NOT_FOUND;
-
-    void *field_ptr = nmo_field_get_ptr(state, field);
-    if (!field_ptr) return NMO_ERR_INVALID_STATE;
-
-    return nmo_type_value_from_string(field_ptr, field_type, registry, value_str);
-}
-
-nmo_status_t nmo_type_get_field(
-    const void *state,
-    const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry,
-    const char *field_name,
-    char *out_buf,
-    size_t buf_size)
-{
-    if (!state || !type || !registry || !field_name || !out_buf || buf_size == 0)
-        return NMO_ERR_INVALID_ARGUMENT;
-
-    out_buf[0] = '\0';
-
-    const nmo_type_field_t *field = nmo_type_get_field_by_name(type, field_name);
-    if (!field) return NMO_ERR_NOT_FOUND;
-
-    const nmo_type_descriptor_t *field_type =
-        nmo_type_registry_find_by_guid(registry, field->type_guid);
-    if (!field_type) return NMO_ERR_NOT_FOUND;
-
-    const void *field_ptr = nmo_field_get_ptr_const(state, field);
-    if (!field_ptr) return NMO_ERR_INVALID_STATE;
-
-    return nmo_type_value_to_string(field_ptr, field_type, registry, out_buf, buf_size);
-}
