@@ -95,10 +95,10 @@ TEST(integration, type_system_complete_workflow) {
     nmo_type_registry_register(type_reg, &float_desc);
 
     nmo_struct_field_def_t fields[] = {
-        {"r", NULL, guid_float, NULL, 0, NULL},
-        {"g", NULL, guid_float, NULL, 0, NULL},
-        {"b", NULL, guid_float, NULL, 0, NULL},
-        {"type", NULL, GUID_ENUM_COLOR, NULL, 0, NULL}
+        {.name = "r", .type_guid = guid_float},
+        {.name = "g", .type_guid = guid_float},
+        {.name = "b", .type_guid = guid_float},
+        {.name = "type", .type_guid = GUID_ENUM_COLOR}
     };
 
     nmo_struct_type_def_t struct_def = {

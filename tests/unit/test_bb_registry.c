@@ -61,7 +61,7 @@ TEST(bb_reg, loads_extended_utf8_data_file) {
         reg,
         nmo_guid_create(0x50EB3A17, 0x015C5BF9));
     ASSERT_TRUE(p != NULL);
-    ASSERT_STR_EQ(p->description, "Gibt CurvePoint zur\303\274ck");
+    ASSERT_STR_EQ(p->description, "Get Curve Point");
 
     nmo_context_release(ctx);
 }

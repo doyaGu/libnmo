@@ -286,29 +286,14 @@ TEST(dsl_schema, struct_inheritance) {
     teardown();
 }
 
-TEST(dsl_schema, struct_repeated_field_pointer_backed) {
+TEST(dsl_schema, struct_repeated_field_pointer_backed_requires_count_metadata) {
     setup();
 
     const char *src =
         "schema { struct Bag { int nums[]; } }";
-    assert_ok(apply_schema(registry, src), "repeated field pointer-backed");
-
-    const nmo_type_descriptor_t *t = nmo_type_registry_find_by_name(registry, "Bag");
-    ASSERT_NE(NULL, t);
-    ASSERT_EQ(1u, t->field_count);
-
-    const nmo_type_field_t *f = nmo_type_get_field_by_name(t, "nums");
-    ASSERT_NE(NULL, f);
-    ASSERT_TRUE((f->flags & NMO_FIELD_REPEATED) != 0);
-    ASSERT_TRUE(nmo_guid_equals(f->type_guid, CKPGUID_POINTER));
-    ASSERT_EQ((uint32_t)sizeof(void *), f->size);
-
-    const nmo_struct_descriptor_t *sf = nmo_type_get_struct_field_by_name(registry, t, "nums");
-    ASSERT_NE(NULL, sf);
-    ASSERT_TRUE(nmo_guid_equals(sf->type_guid, CKPGUID_POINTER));
-    ASSERT_TRUE(nmo_guid_equals(sf->pointee_guid, CKPGUID_INT));
-    ASSERT_EQ(1u, sf->pointer_depth);
-    ASSERT_EQ(0u, sf->array_count);
+    nmo_status_t st = apply_schema(registry, src);
+    ASSERT_NE(NMO_OK, st);
+    ASSERT_EQ(NULL, nmo_type_registry_find_by_name(registry, "Bag"));
 
     teardown();
 }
@@ -781,7 +766,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(dsl_schema, struct_basic);
     REGISTER_TEST(dsl_schema, struct_packed);
     REGISTER_TEST(dsl_schema, struct_inheritance);
-    REGISTER_TEST(dsl_schema, struct_repeated_field_pointer_backed);
+    REGISTER_TEST(dsl_schema, struct_repeated_field_pointer_backed_requires_count_metadata);
     REGISTER_TEST(dsl_schema, alias_basic);
     REGISTER_TEST(dsl_schema, alias_enum_preserves_metadata);
     REGISTER_TEST(dsl_schema, alias_struct_preserves_metadata);

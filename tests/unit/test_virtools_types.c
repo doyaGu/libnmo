@@ -6,7 +6,9 @@
 #include "../test_framework.h"
 #include "session/nmo_context.h"
 #include "type/nmo_type_system.h"
+#include "type/nmo_type_string.h"
 #include "type/nmo_operation_system.h"
+#include "object/nmo_param_guids.h"
 #include "core/nmo_guid.h"
 
 #include <string.h>
@@ -177,6 +179,32 @@ TEST(vt, builtin_overrides_json_signature) {
     nmo_context_release(ctx);
 }
 
+TEST(vt, derived_json_primitive_types_parse_from_string) {
+    nmo_context_t *ctx = create_ctx_with_data();
+    ASSERT_TRUE(ctx != NULL);
+    nmo_type_registry_t *reg = nmo_context_get_type_registry(ctx);
+
+    const nmo_type_descriptor_t *time_type =
+        nmo_type_registry_find_by_guid(reg, CKPGUID_TIME);
+    ASSERT_TRUE(time_type != NULL);
+
+    float time_value = 0.0f;
+    ASSERT_EQ(NMO_OK,
+              nmo_type_value_from_string(&time_value, time_type, reg, "2.5"));
+    ASSERT_FLOAT_EQ(2.5f, time_value, 0.001f);
+
+    const nmo_type_descriptor_t *key_type =
+        nmo_type_registry_find_by_guid(reg, CKPGUID_KEY);
+    ASSERT_TRUE(key_type != NULL);
+
+    int32_t key_value = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_type_value_from_string(&key_value, key_type, reg, "65"));
+    ASSERT_EQ(65, key_value);
+
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(vt, operation_addition);
     REGISTER_TEST(vt, operation_equal);
@@ -188,4 +216,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(vt, operation_signature_lookup);
     REGISTER_TEST(vt, signature_only_not_executable);
     REGISTER_TEST(vt, builtin_overrides_json_signature);
+    REGISTER_TEST(vt, derived_json_primitive_types_parse_from_string);
 TEST_MAIN_END()

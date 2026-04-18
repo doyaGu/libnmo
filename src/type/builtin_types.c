@@ -1350,6 +1350,11 @@ nmo_status_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
 
 nmo_status_t nmo_builtin_types_patch_vtables(nmo_type_registry_t *registry)
 {
+    if (!registry) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "NULL type_registry");
+    }
+
     /* Attach vtable to JSON-loaded Time type */
     nmo_type_descriptor_t *time_type =
         (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(
@@ -1357,5 +1362,25 @@ nmo_status_t nmo_builtin_types_patch_vtables(nmo_type_registry_t *registry)
     if (time_type && !time_type->vtable) {
         time_type->vtable = &nmo_builtin_vtable_time;
     }
+
+    size_t type_count = nmo_type_registry_get_type_count(registry);
+    for (nmo_type_id_t id = 0; id < (nmo_type_id_t)type_count; ++id) {
+        nmo_type_descriptor_t *type =
+            (nmo_type_descriptor_t *)nmo_type_registry_get_by_id(registry, id);
+        if (!type || !type->valid || type->vtable ||
+            nmo_guid_is_null(type->base_type)) {
+            continue;
+        }
+
+        const nmo_type_descriptor_t *base =
+            nmo_type_registry_find_by_guid(registry, type->base_type);
+        if (!base || !base->vtable || type->size != base->size) {
+            continue;
+        }
+
+        type->alignment = base->alignment;
+        type->vtable = base->vtable;
+    }
+
     NMO_RETURN_OK();
 }
