@@ -143,18 +143,11 @@ NMO_API nmo_status_t nmo_type_value_from_string(
 /* ============================================================================
  * Type-Specific String Converters
  *
- * NOTE: These are convenience wrappers around the general-purpose API
- * (nmo_type_value_to_string/from_string). The general API uses vtable
- * callbacks for extensibility - custom types can register their own
- * converters via nmo_type_vtable_t::to_string/from_string.
- *
- * The type-specific functions here are provided for:
- * 1. Performance - avoid vtable indirect call for common types
- * 2. Convenience - direct API without type descriptor lookup
- * 3. Documentation - explicit type signatures for compile-time checking
- *
- * For new custom types, prefer registering vtable callbacks rather than
- * adding new type-specific functions here.
+ * NOTE: These are compatibility helpers. The type system's authoritative
+ * value behavior is the descriptor vtable
+ * (nmo_type_vtable_t::to_string/from_string). New type behavior should be
+ * registered through the type descriptor vtable, not by adding dispatcher
+ * branches.
  * ============================================================================ */
 
 /**

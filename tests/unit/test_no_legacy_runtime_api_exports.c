@@ -679,13 +679,13 @@ TEST(no_legacy_runtime_api_exports, session_edit_parse_sites_use_shared_parse_he
     assert_file_has_no_substring("src/session/session_edit.c", "strtoul(");
 }
 
-TEST(no_legacy_runtime_api_exports, type_string_parse_sites_use_shared_parse_helpers) {
-    assert_file_has_no_substring("src/type/type_string_converters.c", "strtof(");
-    assert_file_has_no_substring("src/type/type_string_converters.c", "strtod(");
-    assert_file_has_no_substring("src/type/type_string_converters.c", "strtol(");
-    assert_file_has_no_substring("src/type/type_string_converters.c", "strtoll(");
-    assert_file_has_no_substring("src/type/type_string_converters.c", "strtoul(");
-    assert_file_has_no_substring("src/type/type_string_converters.c", "strtoull(");
+TEST(no_legacy_runtime_api_exports, type_value_parse_sites_use_shared_parse_helpers) {
+    assert_file_has_no_substring("src/type/builtin_type_values.c", "strtof(");
+    assert_file_has_no_substring("src/type/builtin_type_values.c", "strtod(");
+    assert_file_has_no_substring("src/type/builtin_type_values.c", "strtol(");
+    assert_file_has_no_substring("src/type/builtin_type_values.c", "strtoll(");
+    assert_file_has_no_substring("src/type/builtin_type_values.c", "strtoul(");
+    assert_file_has_no_substring("src/type/builtin_type_values.c", "strtoull(");
 }
 
 TEST(no_legacy_runtime_api_exports, core_string_parse_sites_use_shared_parse_helpers) {
@@ -1185,7 +1185,7 @@ REGISTER_TEST(no_legacy_runtime_api_exports, remaining_public_status_apis_use_st
 REGISTER_TEST(no_legacy_runtime_api_exports, remaining_public_int_apis_are_non_status_allowlist);
 REGISTER_TEST(no_legacy_runtime_api_exports, cli_repl_parse_sites_use_shared_parse_helpers);
 REGISTER_TEST(no_legacy_runtime_api_exports, session_edit_parse_sites_use_shared_parse_helpers);
-REGISTER_TEST(no_legacy_runtime_api_exports, type_string_parse_sites_use_shared_parse_helpers);
+REGISTER_TEST(no_legacy_runtime_api_exports, type_value_parse_sites_use_shared_parse_helpers);
 REGISTER_TEST(no_legacy_runtime_api_exports, core_string_parse_sites_use_shared_parse_helpers);
 REGISTER_TEST(no_legacy_runtime_api_exports, grammar_parse_sites_use_shared_parse_helpers);
 REGISTER_TEST(no_legacy_runtime_api_exports, legacy_session_query_api_is_removed);
