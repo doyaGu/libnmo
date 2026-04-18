@@ -63,10 +63,6 @@ static bool parse_format(const char *str, nmo_cli_format_t *out) {
         *out = NMO_CLI_FORMAT_JSON_PRETTY;
         return true;
     }
-    if (nmo_tool_streq_ci(str, "yaml")) {
-        *out = NMO_CLI_FORMAT_YAML;
-        return true;
-    }
     return false;
 }
 

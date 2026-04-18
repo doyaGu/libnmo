@@ -60,9 +60,14 @@ add_executable(nmo_cli
     commands/nmo_cmd_material.c
     commands/nmo_cmd_mesh.c
     commands/nmo_cmd_animation.c
+    commands/nmo_cmd_completion.c
 )
 set_target_properties(nmo_cli PROPERTIES OUTPUT_NAME nmo)
 target_link_libraries(nmo_cli PRIVATE nmo yyjson)
+
+if(MINGW AND NMO_MINGW_STATIC_RUNTIME)
+    target_link_options(nmo_cli PRIVATE -static)
+endif()
 
 # Include commands subdirectory
 target_include_directories(nmo_cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -84,4 +89,8 @@ endif()
 # Installation
 install(TARGETS nmo_cli
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/completions/
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/completions
 )

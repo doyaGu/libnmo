@@ -29,6 +29,7 @@
 #include "commands/nmo_cmd_material.h"
 #include "commands/nmo_cmd_animation.h"
 #include "commands/nmo_cmd_mesh.h"
+#include "commands/nmo_cmd_completion.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -880,6 +881,11 @@ static void animation_import_usage(FILE *out) {
     fprintf(out, "  --replace <id>         Replace existing animation by ID\n");
 }
 
+static void completion_usage(FILE *out) {
+    fprintf(out, "Usage: nmo completion <bash|fish|zsh|powershell|ps1>\n\n");
+    fprintf(out, "Print the shell completion script for the selected shell to stdout.\n");
+}
+
 /* ============================================================================
  * Action definitions for each group
  * ============================================================================ */
@@ -1063,6 +1069,14 @@ static const nmo_cli_action_t animation_actions[] = {
     {"import", "imp", "Import animation from JSON", nmo_cmd_animation_import, animation_import_usage, NULL, 0, NULL},
 };
 
+/* completion group actions */
+static const nmo_cli_action_t completion_actions[] = {
+    {"bash", NULL, "Print Bash completion", nmo_cmd_completion_print, completion_usage, NULL, 0, NULL},
+    {"fish", NULL, "Print Fish completion", nmo_cmd_completion_print, completion_usage, NULL, 0, NULL},
+    {"zsh", NULL, "Print Zsh completion", nmo_cmd_completion_print, completion_usage, NULL, 0, NULL},
+    {"powershell", "ps1", "Print PowerShell completion", nmo_cmd_completion_print, completion_usage, NULL, 0, NULL},
+};
+
 /* debug group actions */
 static const nmo_cli_action_t debug_actions[] = {
     {"load-phases", "lp", "Show load pipeline phases", nmo_cmd_debug_load_phases, debug_load_phases_usage, NULL, 0, NULL},
@@ -1102,6 +1116,7 @@ static const nmo_cli_group_t groups[] = {
     {"diff", "d", "File comparison", diff_actions, ARRAY_SIZE(diff_actions)},
     {"query", "q", "DSL query engine", query_actions, ARRAY_SIZE(query_actions)},
     {"extension", "ext", "Extension management", extension_actions, ARRAY_SIZE(extension_actions)},
+    {"completion", "comp", "Shell completion scripts", completion_actions, ARRAY_SIZE(completion_actions)},
     {"debug", "dbg", "Debugging tools", debug_actions, ARRAY_SIZE(debug_actions)},
     {"repl", NULL, "Interactive debugger", repl_actions, ARRAY_SIZE(repl_actions)},
 };
@@ -1160,7 +1175,7 @@ void nmo_cli_print_usage(FILE *out) {
     fprintf(out, "Global Options:\n");
     fprintf(out, "  -h, --help              Show help\n");
     fprintf(out, "  -V, --version           Show version\n");
-    fprintf(out, "  -f, --format <fmt>      Output format: text, json, json-pretty, yaml\n");
+    fprintf(out, "  -f, --format <fmt>      Output format: text, json, json-pretty\n");
     fprintf(out, "  --color <mode>          Color mode: auto, always, never\n");
     fprintf(out, "  -o, --output <path>     Write output to file\n");
     fprintf(out, "  -v, --verbose           Increase verbosity (can repeat)\n");

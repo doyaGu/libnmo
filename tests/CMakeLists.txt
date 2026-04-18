@@ -3,6 +3,19 @@ add_library(test_framework STATIC test_framework.c)
 target_include_directories(test_framework PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(test_framework PUBLIC NMO_TEST_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
 
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(
+        NAME test_completions_manifest
+        COMMAND ${Python3_EXECUTABLE}
+                ${PROJECT_SOURCE_DIR}/tools/scripts/gen_completions.py
+                --check
+    )
+    set_tests_properties(test_completions_manifest PROPERTIES
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+    )
+endif()
+
 # Unit tests
 add_subdirectory(unit)
 
