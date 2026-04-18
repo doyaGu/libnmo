@@ -170,8 +170,8 @@ nmo_status_t nmo_interface_chunk_parse(
     nmo_status_t st = nmo_chunk_start_read(chunk);
     NMO_RETURN_IF_ERROR(st);
 
-    /* Read version: prefer VSD's canonical sectioned marker, while keeping
-     * compatibility with legacy inline samples that use identifier 1. */
+    /* Read version: prefer the sectioned marker, while keeping compatibility
+     * with legacy inline samples that use identifier 1. */
     uint32_t version = 0;
     uint32_t candidate_version = 0;
     bool found = false;
@@ -385,35 +385,14 @@ static nmo_status_t parse_script_header(
     if (format_flags) {
         *format_flags &= ~NMO_INTERFACE_FORMAT_COLOR_PRESENT;
     }
-    if (version >= 0x14 && !use_sectioned) {
+    if (use_sectioned) {
+        out->color = NMO_INTERFACE_DEFAULT_HEADER_COLOR;
+    } else if (version >= 0x14) {
         st = nmo_chunk_read_dword(chunk, &out->color);
         NMO_RETURN_IF_ERROR(st);
         if (format_flags) {
             *format_flags |= NMO_INTERFACE_FORMAT_COLOR_PRESENT;
         }
-    } else if (version >= 0x14 && use_sectioned) {
-        size_t pos = nmo_chunk_get_position(chunk);
-        uint32_t maybe_color = 0;
-        if (pos != (size_t)-1 &&
-            nmo_chunk_has_read_capacity(chunk, 1) &&
-            nmo_chunk_read_dword(chunk, &maybe_color) == NMO_OK) {
-            if (maybe_color <= 0x00FFFFFFu) {
-                out->color = maybe_color;
-                if (format_flags) {
-                    *format_flags |= NMO_INTERFACE_FORMAT_COLOR_PRESENT;
-                }
-            } else {
-                (void)nmo_chunk_goto(chunk, pos);
-                out->color = NMO_INTERFACE_DEFAULT_HEADER_COLOR;
-            }
-        } else {
-            if (pos != (size_t)-1) {
-                (void)nmo_chunk_goto(chunk, pos);
-            }
-            out->color = NMO_INTERFACE_DEFAULT_HEADER_COLOR;
-        }
-    } else if (use_sectioned) {
-        out->color = NMO_INTERFACE_DEFAULT_HEADER_COLOR;
     } else {
         out->color = 0;
     }
@@ -1526,8 +1505,8 @@ static nmo_status_t write_script_header(
         NMO_RETURN_IF_ERROR(st);
     }
 
-    /* Color (v >= 0x14). Sectioned readers also accept older omitted fields. */
-    if (data->version >= 0x14) {
+    /* Dev 2.5 sectioned headers omit color and use the editor default. */
+    if (data->version >= 0x14 && !interface_is_sectioned(data)) {
         st = nmo_chunk_write_dword(chunk, hdr->color);
         NMO_RETURN_IF_ERROR(st);
     }

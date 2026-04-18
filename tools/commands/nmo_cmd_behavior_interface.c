@@ -755,14 +755,18 @@ static int iface_set_color_mutate(
     }
 
     idata->script.color = args->color;
-    args->color_persisted = (idata->version >= 0x14);
+    args->color_persisted = (idata->version >= 0x14 && !iface_is_sectioned(idata));
     if (args->color_persisted) {
         idata->format_flags |= NMO_INTERFACE_FORMAT_COLOR_PRESENT;
+    } else {
+        idata->format_flags &= ~NMO_INTERFACE_FORMAT_COLOR_PRESENT;
     }
     args->warning = NULL;
 
     if (!args->color_persisted) {
-        args->warning = "color will not be written for interface versions below 0x14";
+        args->warning = iface_is_sectioned(idata)
+            ? "color will not be written for sectioned interface layout"
+            : "color will not be written for interface versions below 0x14";
     }
 
     if (dry_run) {

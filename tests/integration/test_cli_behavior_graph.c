@@ -1393,13 +1393,13 @@ TEST(cli, behavior_interface_show_json_reports_sectioned_graph_root) {
     ASSERT_NOT_NULL(script);
     yyjson_val *color_defaulted = yyjson_obj_get(script, "color_defaulted");
     ASSERT_TRUE(color_defaulted && yyjson_is_bool(color_defaulted));
-    ASSERT_FALSE(yyjson_get_bool(color_defaulted));
+    ASSERT_TRUE(yyjson_get_bool(color_defaulted));
 
     yyjson_doc_free(doc);
     remove(fixture);
 }
 
-TEST(cli, behavior_interface_set_color_json_persists_sectioned_color) {
+TEST(cli, behavior_interface_set_color_json_does_not_persist_sectioned_color) {
     const char *fixture = "test_behavior_interface_set_color_sectioned_fixture.cmo";
     const char *output = "test_behavior_interface_set_color_sectioned_output.cmo";
     remove(fixture);
@@ -1424,10 +1424,10 @@ TEST(cli, behavior_interface_set_color_json_persists_sectioned_color) {
 
     yyjson_val *persisted = yyjson_obj_get(data, "color_persisted");
     ASSERT_TRUE(persisted && yyjson_is_bool(persisted));
-    ASSERT_TRUE(yyjson_get_bool(persisted));
+    ASSERT_FALSE(yyjson_get_bool(persisted));
 
     yyjson_val *warning = yyjson_obj_get(data, "warning");
-    ASSERT_NULL(warning);
+    ASSERT_TRUE(warning && yyjson_is_str(warning));
     ASSERT_TRUE(file_exists(output));
 
     yyjson_doc_free(doc);
@@ -1449,11 +1449,11 @@ TEST(cli, behavior_interface_set_color_json_persists_sectioned_color) {
 
     yyjson_val *color = yyjson_obj_get(script, "color");
     ASSERT_TRUE(color && yyjson_is_uint(color));
-    ASSERT_EQ(0x00FF00AAu, (unsigned)yyjson_get_uint(color));
+    ASSERT_EQ(NMO_INTERFACE_DEFAULT_HEADER_COLOR, (unsigned)yyjson_get_uint(color));
 
     yyjson_val *color_defaulted = yyjson_obj_get(script, "color_defaulted");
     ASSERT_TRUE(color_defaulted && yyjson_is_bool(color_defaulted));
-    ASSERT_FALSE(yyjson_get_bool(color_defaulted));
+    ASSERT_TRUE(yyjson_get_bool(color_defaulted));
 
     yyjson_doc_free(doc);
     remove(fixture);
@@ -1939,7 +1939,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_interface_show_json_reports_format_root);
     REGISTER_TEST(cli, behavior_interface_show_brief_reports_root_kind);
     REGISTER_TEST(cli, behavior_interface_show_json_reports_sectioned_graph_root);
-    REGISTER_TEST(cli, behavior_interface_set_color_json_persists_sectioned_color);
+    REGISTER_TEST(cli, behavior_interface_set_color_json_does_not_persist_sectioned_color);
     REGISTER_TEST(cli, behavior_interface_fold_dry_run_does_not_write_output);
     REGISTER_TEST(cli, behavior_interface_unfold_saves_output);
     REGISTER_TEST(cli, behavior_interface_set_color_dry_run_does_not_write_output);

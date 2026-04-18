@@ -140,6 +140,17 @@ static bool chunk_has_identifier(nmo_chunk_t *chunk, uint32_t id) {
     return nmo_chunk_seek_identifier(chunk, id) == NMO_OK;
 }
 
+static bool chunk_contains_dword(nmo_chunk_t *chunk, uint32_t value) {
+    if (!chunk) return false;
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    for (size_t i = 0; i < chunk->data.count; i++) {
+        if (data[i] == value) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool chunk_read_dword_after_identifier(nmo_chunk_t *chunk,
                                               uint32_t id,
                                               uint32_t *out) {
@@ -2059,7 +2070,7 @@ TEST(interface_chunk, write_sectioned_comments_byte_round_trip) {
     nmo_arena_destroy(arena);
 }
 
-TEST(interface_chunk, write_sectioned_script_root_uses_vsd_markers) {
+TEST(interface_chunk, write_sectioned_script_root_uses_dev25_markers_without_color) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
     ASSERT_NOT_NULL(arena);
 
@@ -2083,12 +2094,13 @@ TEST(interface_chunk, write_sectioned_script_root_uses_vsd_markers) {
     ASSERT_FALSE(chunk_has_identifier(dst, 0xB0000000u));
     ASSERT_TRUE(chunk_has_identifier(dst, 0xB0070000u));
     ASSERT_FALSE(chunk_has_identifier(dst, 0xB0010000u));
+    ASSERT_FALSE(chunk_contains_dword(dst, 0x00FF00AAu));
 
     nmo_interface_data_t parsed;
     memset(&parsed, 0, sizeof(parsed));
     ASSERT_EQ(NMO_OK, nmo_interface_chunk_parse(dst, arena, NULL, &parsed));
-    ASSERT_EQ(0x00FF00AAu, parsed.script.color);
-    ASSERT_TRUE(parsed.format_flags & NMO_INTERFACE_FORMAT_COLOR_PRESENT);
+    ASSERT_EQ((int)NMO_INTERFACE_DEFAULT_HEADER_COLOR, (int)parsed.script.color);
+    ASSERT_FALSE(parsed.format_flags & NMO_INTERFACE_FORMAT_COLOR_PRESENT);
 
     nmo_arena_destroy(arena);
 }
@@ -2598,7 +2610,7 @@ TEST_MAIN_BEGIN()
     /* Task 7: Sectioned writer round-trip */
     REGISTER_TEST(interface_chunk, write_sectioned_links_byte_round_trip);
     REGISTER_TEST(interface_chunk, write_sectioned_comments_byte_round_trip);
-    REGISTER_TEST(interface_chunk, write_sectioned_script_root_uses_vsd_markers);
+    REGISTER_TEST(interface_chunk, write_sectioned_script_root_uses_dev25_markers_without_color);
     REGISTER_TEST(interface_chunk, write_sectioned_graph_root_uses_vsd_markers);
     REGISTER_TEST(interface_chunk, write_sectioned_sparse_body_emits_vsd_sections);
     /* Task 9: Real-sample byte-level oracle */
