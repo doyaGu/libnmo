@@ -21,6 +21,8 @@
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
+#include "object/builtin/nmo_parameteroperation_schemas.h"
+#include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_repository.h"
@@ -474,6 +476,19 @@ typedef struct {
     size_t count;
 } nmo_cli_bb_proto_count_t;
 
+typedef struct {
+    nmo_guid_t guid;
+    const char *name; /* Borrowed from registry */
+    size_t count;
+} nmo_cli_guid_count_t;
+
+typedef struct {
+    size_t count;
+    uint32_t max;
+    uint32_t p95;
+    double avg;
+} nmo_cli_u32_distribution_t;
+
 static int bb_proto_count_cmp_desc(const void *a, const void *b) {
     const nmo_cli_bb_proto_count_t *aa = (const nmo_cli_bb_proto_count_t *)a;
     const nmo_cli_bb_proto_count_t *bb = (const nmo_cli_bb_proto_count_t *)b;
@@ -483,9 +498,64 @@ static int bb_proto_count_cmp_desc(const void *a, const void *b) {
     return 0;
 }
 
+static int guid_count_cmp_desc(const void *a, const void *b) {
+    const nmo_cli_guid_count_t *aa = (const nmo_cli_guid_count_t *)a;
+    const nmo_cli_guid_count_t *bb = (const nmo_cli_guid_count_t *)b;
+    if (aa->count != bb->count) {
+        return (aa->count < bb->count) ? 1 : -1;
+    }
+    return 0;
+}
+
+static int uint32_cmp_asc(const void *a, const void *b) {
+    uint32_t aa = *(const uint32_t *)a;
+    uint32_t bb = *(const uint32_t *)b;
+    if (aa < bb) return -1;
+    if (aa > bb) return 1;
+    return 0;
+}
+
+static void behavior_guid_to_string(nmo_guid_t guid, char *buf, size_t size) {
+    if (!buf || size == 0) {
+        return;
+    }
+    snprintf(buf, size, "%08X-%08X", guid.d1, guid.d2);
+}
+
+static nmo_cli_u32_distribution_t compute_u32_distribution(uint32_t *values,
+                                                           size_t count)
+{
+    nmo_cli_u32_distribution_t dist = {0};
+    dist.count = count;
+    if (!values || count == 0) {
+        return dist;
+    }
+
+    uint64_t sum = 0;
+    for (size_t i = 0; i < count; i++) {
+        sum += values[i];
+    }
+    qsort(values, count, sizeof(*values), uint32_cmp_asc);
+
+    size_t p95_index = (count * 95 + 99) / 100;
+    if (p95_index == 0) {
+        p95_index = 1;
+    }
+    p95_index--;
+    if (p95_index >= count) {
+        p95_index = count - 1;
+    }
+
+    dist.max = values[count - 1];
+    dist.p95 = values[p95_index];
+    dist.avg = (double)sum / (double)count;
+    return dist;
+}
+
 typedef struct behavior_stats_data {
     const nmo_type_registry_t *registry;
     const nmo_bb_registry_t *bb_reg;
+    nmo_object_repository_t *repo;
     size_t total_behaviors;
     size_t n_scripts;
     size_t n_graphs;
@@ -501,9 +571,23 @@ typedef struct behavior_stats_data {
     nmo_cli_bb_proto_count_t *protos;
     size_t proto_count;
     size_t proto_cap;
+    nmo_cli_guid_count_t *parameter_types;
+    size_t parameter_type_count;
+    size_t parameter_type_cap;
+    nmo_cli_guid_count_t *operation_types;
+    size_t operation_type_count;
+    size_t operation_type_cap;
     nmo_object_id_t *script_ids;
     size_t script_id_count;
     size_t script_id_cap;
+    uint32_t *script_sub_counts;
+    size_t script_sub_count;
+    size_t script_sub_cap;
+    size_t link_delay_zero;
+    size_t link_delay_next_frame;
+    size_t link_delay_multi_frame;
+    size_t broken_behavior_links;
+    size_t broken_sub_behaviors;
     bool oom;
 } behavior_stats_data_t;
 
@@ -522,6 +606,23 @@ static void behavior_stats_add_script_id(behavior_stats_data_t *stats,
         stats->script_id_cap = new_cap;
     }
     stats->script_ids[stats->script_id_count++] = id;
+}
+
+static void behavior_stats_add_script_sub_count(behavior_stats_data_t *stats,
+                                                uint32_t value)
+{
+    if (stats->script_sub_count == stats->script_sub_cap) {
+        size_t new_cap = (stats->script_sub_cap == 0) ? 16 : (stats->script_sub_cap * 2);
+        uint32_t *na = (uint32_t *)realloc(
+            stats->script_sub_counts, new_cap * sizeof(*stats->script_sub_counts));
+        if (!na) {
+            stats->oom = true;
+            return;
+        }
+        stats->script_sub_counts = na;
+        stats->script_sub_cap = new_cap;
+    }
+    stats->script_sub_counts[stats->script_sub_count++] = value;
 }
 
 static void behavior_stats_add_proto(behavior_stats_data_t *stats,
@@ -556,6 +657,146 @@ static void behavior_stats_add_proto(behavior_stats_data_t *stats,
     stats->proto_count++;
 }
 
+static void behavior_stats_add_guid_count(nmo_cli_guid_count_t **items,
+                                          size_t *count,
+                                          size_t *cap,
+                                          nmo_guid_t guid,
+                                          const char *name,
+                                          bool *oom)
+{
+    if (nmo_guid_is_null(guid)) {
+        return;
+    }
+    for (size_t i = 0; i < *count; i++) {
+        if ((*items)[i].guid.d1 == guid.d1 &&
+            (*items)[i].guid.d2 == guid.d2) {
+            (*items)[i].count++;
+            return;
+        }
+    }
+
+    if (*count == *cap) {
+        size_t new_cap = (*cap == 0) ? 64 : (*cap * 2);
+        nmo_cli_guid_count_t *na =
+            (nmo_cli_guid_count_t *)realloc(
+                *items, new_cap * sizeof(**items));
+        if (!na) {
+            *oom = true;
+            return;
+        }
+        *items = na;
+        *cap = new_cap;
+    }
+
+    (*items)[*count] = (nmo_cli_guid_count_t){
+        .guid = guid,
+        .name = name,
+        .count = 1,
+    };
+    (*count)++;
+}
+
+static void behavior_stats_count_link_delay(behavior_stats_data_t *stats,
+                                            const nmo_behaviorlink_state_t *link)
+{
+    int32_t delay = 0;
+    if (link) {
+        delay = link->initial_activation_delay != 0
+            ? link->initial_activation_delay
+            : link->activation_delay;
+    }
+
+    if (delay == 0) {
+        stats->link_delay_zero++;
+    } else if (delay == 1) {
+        stats->link_delay_next_frame++;
+    } else {
+        stats->link_delay_multi_frame++;
+    }
+}
+
+static void behavior_stats_add_guid_count_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *data,
+    const char *array_name,
+    const char *name_key,
+    const char *guid_key,
+    const nmo_cli_guid_count_t *items,
+    size_t count)
+{
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    size_t top_n = count < 10 ? count : 10;
+    for (size_t i = 0; i < top_n; i++) {
+        yyjson_mut_val *item = yyjson_mut_obj(doc);
+        char guid_buf[24];
+        behavior_guid_to_string(items[i].guid, guid_buf, sizeof(guid_buf));
+        if (items[i].name && items[i].name[0]) {
+            nmo_cli_json_add_str_safe(doc, item, name_key, items[i].name);
+        } else {
+            nmo_cli_json_add_str_safe(doc, item, name_key, guid_buf);
+        }
+        nmo_cli_json_add_str_safe(doc, item, guid_key, guid_buf);
+        yyjson_mut_obj_add_uint(doc, item, "count", (uint64_t)items[i].count);
+        yyjson_mut_arr_add_val(arr, item);
+    }
+    yyjson_mut_obj_add_val(doc, data, array_name, arr);
+}
+
+static void behavior_stats_add_distribution_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *data,
+    const char *key,
+    nmo_cli_u32_distribution_t dist)
+{
+    yyjson_mut_val *obj = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_uint(doc, obj, "count", (uint64_t)dist.count);
+    yyjson_mut_obj_add_uint(doc, obj, "max", (uint64_t)dist.max);
+    yyjson_mut_obj_add_real(doc, obj, "avg", dist.avg);
+    yyjson_mut_obj_add_uint(doc, obj, "p95", (uint64_t)dist.p95);
+    yyjson_mut_obj_add_val(doc, data, key, obj);
+}
+
+static void behavior_stats_print_guid_count_table(FILE *out,
+                                                  bool colorize,
+                                                  const char *heading,
+                                                  const char *name_header,
+                                                  const nmo_cli_guid_count_t *items,
+                                                  size_t count)
+{
+    if (!out || !items || count == 0) {
+        return;
+    }
+
+    fprintf(out, "\n");
+    nmo_cli_print_heading(out, heading, colorize);
+    fprintf(out, "\n");
+
+    nmo_cli_table_col_t columns[] = {
+        {name_header, NMO_CLI_ALIGN_LEFT, 28, 50},
+        {"Count", NMO_CLI_ALIGN_RIGHT, 6, 0},
+    };
+    nmo_cli_table_t table;
+    nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+
+    size_t top_n = count < 10 ? count : 10;
+    for (size_t i = 0; i < top_n; i++) {
+        char name_buf[80];
+        char count_buf[16];
+        if (items[i].name && items[i].name[0]) {
+            snprintf(name_buf, sizeof(name_buf), "%s", items[i].name);
+        } else {
+            snprintf(name_buf, sizeof(name_buf), "{%08X-%08X}",
+                     items[i].guid.d1, items[i].guid.d2);
+        }
+        snprintf(count_buf, sizeof(count_buf), "%zu", items[i].count);
+        const char *cells[] = { name_buf, count_buf };
+        nmo_cli_table_add_row(&table, cells, 2);
+    }
+
+    nmo_cli_table_print(&table, out, colorize);
+    nmo_cli_table_free(&table);
+}
+
 static void behavior_stats_consume_object(behavior_stats_data_t *stats,
                                           nmo_object_t *obj)
 {
@@ -564,14 +805,36 @@ static void behavior_stats_consume_object(behavior_stats_data_t *stats,
     if (cid == NMO_CID_PARAMETERIN || cid == NMO_CID_PARAMETEROUT ||
         cid == NMO_CID_PARAMETERLOCAL || cid == NMO_CID_PARAMETER) {
         stats->n_parameters++;
+        nmo_guid_t type_guid = get_param_type_guid(obj);
+        behavior_stats_add_guid_count(
+            &stats->parameter_types,
+            &stats->parameter_type_count,
+            &stats->parameter_type_cap,
+            type_guid,
+            resolve_type(stats->registry, type_guid),
+            &stats->oom);
         return;
     }
     if (cid == NMO_CID_BEHAVIORLINK) {
         stats->n_links++;
+        const nmo_behaviorlink_state_t *link =
+            (const nmo_behaviorlink_state_t *)nmo_object_get_state(obj);
+        behavior_stats_count_link_delay(stats, link);
         return;
     }
     if (cid == NMO_CID_PARAMETEROPERATION) {
         stats->n_operations++;
+        const nmo_parameteroperation_state_t *op =
+            (const nmo_parameteroperation_state_t *)nmo_object_get_state(obj);
+        if (op) {
+            behavior_stats_add_guid_count(
+                &stats->operation_types,
+                &stats->operation_type_count,
+                &stats->operation_type_cap,
+                op->operation_guid,
+                nmo_type_registry_guid_to_name(stats->registry, op->operation_guid),
+                &stats->oom);
+        }
         return;
     }
     if (!is_behavior_class(stats->registry, cid)) {
@@ -602,6 +865,8 @@ static void behavior_stats_consume_object(behavior_stats_data_t *stats,
     if (bs->flags & CKBEHAVIOR_SCRIPT) {
         stats->n_scripts++;
         behavior_stats_add_script_id(stats, nmo_object_get_id(obj));
+        behavior_stats_add_script_sub_count(stats,
+                                            (uint32_t)bs->sub_behaviors.count);
     } else if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) {
         stats->n_bbs++;
         if (!nmo_guid_is_null(bs->block_guid)) {
@@ -609,6 +874,27 @@ static void behavior_stats_consume_object(behavior_stats_data_t *stats,
         }
     } else {
         stats->n_graphs++;
+    }
+
+    if (stats->repo && bs->sub_behavior_links.data) {
+        const nmo_object_id_t *links =
+            (const nmo_object_id_t *)bs->sub_behavior_links.data;
+        for (size_t i = 0; i < bs->sub_behavior_links.count; i++) {
+            if (links[i] == 0 ||
+                nmo_object_repository_find_by_id(stats->repo, links[i]) == NULL) {
+                stats->broken_behavior_links++;
+            }
+        }
+    }
+    if (stats->repo && bs->sub_behaviors.data) {
+        const nmo_object_id_t *subs =
+            (const nmo_object_id_t *)bs->sub_behaviors.data;
+        for (size_t i = 0; i < bs->sub_behaviors.count; i++) {
+            if (subs[i] == 0 ||
+                nmo_object_repository_find_by_id(stats->repo, subs[i]) == NULL) {
+                stats->broken_sub_behaviors++;
+            }
+        }
     }
 }
 
@@ -696,6 +982,7 @@ static int behavior_stats_single(const char *file_path,
     behavior_stats_data_t stats = {
         .registry = registry,
         .bb_reg = bb_reg,
+        .repo = repo,
     };
     nmo_cmd_ctx_t cmd;
     nmo_cmd_ctx_init_from_repl(&cmd, ctx, session, false);
@@ -705,7 +992,10 @@ static int behavior_stats_single(const char *file_path,
         stats.oom) {
         fprintf(stderr, "Error: Failed to query objects\n");
         free(stats.protos);
+        free(stats.parameter_types);
+        free(stats.operation_types);
         free(stats.script_ids);
+        free(stats.script_sub_counts);
         nmo_tool_close_session(ctx, session);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
@@ -724,17 +1014,44 @@ static int behavior_stats_single(const char *file_path,
     size_t n_with_snapshot = stats.n_with_snapshot;
     nmo_cli_bb_proto_count_t *protos = stats.protos;
     size_t proto_count = stats.proto_count;
+    nmo_cli_guid_count_t *parameter_types = stats.parameter_types;
+    size_t parameter_type_count = stats.parameter_type_count;
+    nmo_cli_guid_count_t *operation_types = stats.operation_types;
+    size_t operation_type_count = stats.operation_type_count;
     nmo_object_id_t *script_ids = stats.script_ids;
     size_t script_id_count = stats.script_id_count;
 
     if (proto_count > 1)
         qsort(protos, proto_count, sizeof(*protos), bb_proto_count_cmp_desc);
+    if (parameter_type_count > 1)
+        qsort(parameter_types, parameter_type_count, sizeof(*parameter_types),
+              guid_count_cmp_desc);
+    if (operation_type_count > 1)
+        qsort(operation_types, operation_type_count, sizeof(*operation_types),
+              guid_count_cmp_desc);
 
-    uint32_t max_depth = 0;
-    for (size_t i = 0; i < script_id_count; i++) {
-        uint32_t d = compute_tree_depth(repo, registry, script_ids[i], 0);
-        if (d > max_depth) max_depth = d;
+    uint32_t *tree_depths = NULL;
+    if (script_id_count > 0) {
+        tree_depths = (uint32_t *)malloc(script_id_count * sizeof(*tree_depths));
+        if (!tree_depths) {
+            fprintf(stderr, "Error: Out of memory\n");
+            free(stats.protos);
+            free(stats.parameter_types);
+            free(stats.operation_types);
+            free(stats.script_ids);
+            free(stats.script_sub_counts);
+            nmo_tool_close_session(ctx, session);
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
     }
+    for (size_t i = 0; i < script_id_count; i++) {
+        tree_depths[i] = compute_tree_depth(repo, registry, script_ids[i], 0);
+    }
+    nmo_cli_u32_distribution_t tree_depth_dist =
+        compute_u32_distribution(tree_depths, script_id_count);
+    nmo_cli_u32_distribution_t script_sub_dist =
+        compute_u32_distribution(stats.script_sub_counts, stats.script_sub_count);
+    uint32_t max_depth = tree_depth_dist.max;
 
     if (doc && data) {
         yyjson_mut_obj_add_uint(doc, data, "total", (uint64_t)total_behaviors);
@@ -756,11 +1073,37 @@ static int behavior_stats_single(const char *file_path,
             yyjson_mut_arr_add_val(proto_arr, item);
         }
         yyjson_mut_obj_add_val(doc, data, "top_bb_prototypes", proto_arr);
+        behavior_stats_add_guid_count_json(
+            doc, data, "parameter_types_top", "type_name", "type_guid",
+            parameter_types, parameter_type_count);
+        behavior_stats_add_guid_count_json(
+            doc, data, "operation_types_top", "operation_name", "operation_guid",
+            operation_types, operation_type_count);
 
         yyjson_mut_obj_add_uint(doc, data, "total_parameters", (uint64_t)n_parameters);
         yyjson_mut_obj_add_uint(doc, data, "total_links", (uint64_t)n_links);
         yyjson_mut_obj_add_uint(doc, data, "total_operations", (uint64_t)n_operations);
         yyjson_mut_obj_add_uint(doc, data, "max_tree_depth", (uint64_t)max_depth);
+        behavior_stats_add_distribution_json(doc, data, "tree_depth",
+                                             tree_depth_dist);
+        behavior_stats_add_distribution_json(doc, data,
+                                             "script_sub_behavior_counts",
+                                             script_sub_dist);
+        yyjson_mut_val *link_delays = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, link_delays, "zero_delay",
+                                (uint64_t)stats.link_delay_zero);
+        yyjson_mut_obj_add_uint(doc, link_delays, "next_frame",
+                                (uint64_t)stats.link_delay_next_frame);
+        yyjson_mut_obj_add_uint(doc, link_delays, "multi_frame",
+                                (uint64_t)stats.link_delay_multi_frame);
+        yyjson_mut_obj_add_val(doc, data, "link_delay_distribution",
+                               link_delays);
+        yyjson_mut_val *broken = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, broken, "behavior_links",
+                                (uint64_t)stats.broken_behavior_links);
+        yyjson_mut_obj_add_uint(doc, broken, "sub_behaviors",
+                                (uint64_t)stats.broken_sub_behaviors);
+        yyjson_mut_obj_add_val(doc, data, "broken_references", broken);
         nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, session);
 
         if (n_with_interface > 0) {
@@ -818,6 +1161,14 @@ static int behavior_stats_single(const char *file_path,
             nmo_cli_table_print(&table, out, colorize);
             nmo_cli_table_free(&table);
         }
+        behavior_stats_print_guid_count_table(out, colorize,
+                                              "Top Parameter Types",
+                                              "Type", parameter_types,
+                                              parameter_type_count);
+        behavior_stats_print_guid_count_table(out, colorize,
+                                              "Top Operation Types",
+                                              "Operation", operation_types,
+                                              operation_type_count);
 
         fprintf(out, "\n");
         snprintf(buf, sizeof(buf), "%zu", n_parameters);
@@ -828,6 +1179,30 @@ static int behavior_stats_single(const char *file_path,
         nmo_cli_print_kv(out, "Operations", buf, 22, colorize);
         snprintf(buf, sizeof(buf), "%u", max_depth);
         nmo_cli_print_kv(out, "Max tree depth", buf, 22, colorize);
+        snprintf(buf, sizeof(buf), "%.2f / %u",
+                 tree_depth_dist.avg, tree_depth_dist.p95);
+        nmo_cli_print_kv(out, "Tree depth avg/p95", buf, 22, colorize);
+        snprintf(buf, sizeof(buf), "%.2f / %u",
+                 script_sub_dist.avg, script_sub_dist.p95);
+        nmo_cli_print_kv(out, "Script sub avg/p95", buf, 22, colorize);
+
+        fprintf(out, "\n");
+        nmo_cli_print_heading(out, "Link Delay Distribution", colorize);
+        fprintf(out, "\n");
+        snprintf(buf, sizeof(buf), "%zu", stats.link_delay_zero);
+        nmo_cli_print_kv(out, "Zero delay", buf, 22, colorize);
+        snprintf(buf, sizeof(buf), "%zu", stats.link_delay_next_frame);
+        nmo_cli_print_kv(out, "Next frame", buf, 22, colorize);
+        snprintf(buf, sizeof(buf), "%zu", stats.link_delay_multi_frame);
+        nmo_cli_print_kv(out, "Multi frame", buf, 22, colorize);
+
+        fprintf(out, "\n");
+        nmo_cli_print_heading(out, "Broken References", colorize);
+        fprintf(out, "\n");
+        snprintf(buf, sizeof(buf), "%zu", stats.broken_behavior_links);
+        nmo_cli_print_kv(out, "Behavior links", buf, 22, colorize);
+        snprintf(buf, sizeof(buf), "%zu", stats.broken_sub_behaviors);
+        nmo_cli_print_kv(out, "Sub behaviors", buf, 22, colorize);
 
         if (n_with_interface > 0) {
             fprintf(out, "\n");
@@ -847,8 +1222,12 @@ static int behavior_stats_single(const char *file_path,
     }
 
     (void)global;
+    free(tree_depths);
     free(protos);
+    free(parameter_types);
+    free(operation_types);
     free(script_ids);
+    free(stats.script_sub_counts);
     nmo_tool_close_session(ctx, session);
     return NMO_CLI_EXIT_SUCCESS;
 }
@@ -891,12 +1270,16 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
     behavior_stats_data_t stats = {
         .registry = c.registry,
         .bb_reg = bb_reg,
+        .repo = repo,
     };
     rc = nmo_core_object_query_run(&c, NULL,
                                    behavior_stats_core_visitor, &stats, NULL);
     if (rc != NMO_CLI_EXIT_SUCCESS || stats.oom) {
         free(stats.protos);
+        free(stats.parameter_types);
+        free(stats.operation_types);
         free(stats.script_ids);
+        free(stats.script_sub_counts);
         fprintf(stderr, "Error: Failed to query objects\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
@@ -915,6 +1298,10 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
     size_t n_with_snapshot = stats.n_with_snapshot;
     nmo_cli_bb_proto_count_t *protos = stats.protos;
     size_t proto_count = stats.proto_count;
+    nmo_cli_guid_count_t *parameter_types = stats.parameter_types;
+    size_t parameter_type_count = stats.parameter_type_count;
+    nmo_cli_guid_count_t *operation_types = stats.operation_types;
+    size_t operation_type_count = stats.operation_type_count;
     nmo_object_id_t *script_ids = stats.script_ids;
     size_t script_id_count = stats.script_id_count;
 
@@ -922,13 +1309,37 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
     if (proto_count > 1) {
         qsort(protos, proto_count, sizeof(*protos), bb_proto_count_cmp_desc);
     }
+    if (parameter_type_count > 1) {
+        qsort(parameter_types, parameter_type_count, sizeof(*parameter_types),
+              guid_count_cmp_desc);
+    }
+    if (operation_type_count > 1) {
+        qsort(operation_types, operation_type_count, sizeof(*operation_types),
+              guid_count_cmp_desc);
+    }
 
     /* Compute max tree depth across all scripts */
-    uint32_t max_depth = 0;
-    for (size_t i = 0; i < script_id_count; i++) {
-        uint32_t d = compute_tree_depth(repo, c.registry, script_ids[i], 0);
-        if (d > max_depth) max_depth = d;
+    uint32_t *tree_depths = NULL;
+    if (script_id_count > 0) {
+        tree_depths = (uint32_t *)malloc(script_id_count * sizeof(*tree_depths));
+        if (!tree_depths) {
+            free(stats.protos);
+            free(stats.parameter_types);
+            free(stats.operation_types);
+            free(stats.script_ids);
+            free(stats.script_sub_counts);
+            fprintf(stderr, "Error: Out of memory\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
     }
+    for (size_t i = 0; i < script_id_count; i++) {
+        tree_depths[i] = compute_tree_depth(repo, c.registry, script_ids[i], 0);
+    }
+    nmo_cli_u32_distribution_t tree_depth_dist =
+        compute_u32_distribution(tree_depths, script_id_count);
+    nmo_cli_u32_distribution_t script_sub_dist =
+        compute_u32_distribution(stats.script_sub_counts, stats.script_sub_count);
+    uint32_t max_depth = tree_depth_dist.max;
 
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
@@ -955,6 +1366,12 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
             yyjson_mut_arr_add_val(proto_arr, item);
         }
         yyjson_mut_obj_add_val(doc, data, "top_bb_prototypes", proto_arr);
+        behavior_stats_add_guid_count_json(
+            doc, data, "parameter_types_top", "type_name", "type_guid",
+            parameter_types, parameter_type_count);
+        behavior_stats_add_guid_count_json(
+            doc, data, "operation_types_top", "operation_name", "operation_guid",
+            operation_types, operation_type_count);
 
         yyjson_mut_obj_add_uint(doc, data, "total_parameters",
                                 (uint64_t)n_parameters);
@@ -963,6 +1380,26 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
                                 (uint64_t)n_operations);
         yyjson_mut_obj_add_uint(doc, data, "max_tree_depth",
                                 (uint64_t)max_depth);
+        behavior_stats_add_distribution_json(doc, data, "tree_depth",
+                                             tree_depth_dist);
+        behavior_stats_add_distribution_json(doc, data,
+                                             "script_sub_behavior_counts",
+                                             script_sub_dist);
+        yyjson_mut_val *link_delays = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, link_delays, "zero_delay",
+                                (uint64_t)stats.link_delay_zero);
+        yyjson_mut_obj_add_uint(doc, link_delays, "next_frame",
+                                (uint64_t)stats.link_delay_next_frame);
+        yyjson_mut_obj_add_uint(doc, link_delays, "multi_frame",
+                                (uint64_t)stats.link_delay_multi_frame);
+        yyjson_mut_obj_add_val(doc, data, "link_delay_distribution",
+                               link_delays);
+        yyjson_mut_val *broken = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, broken, "behavior_links",
+                                (uint64_t)stats.broken_behavior_links);
+        yyjson_mut_obj_add_uint(doc, broken, "sub_behaviors",
+                                (uint64_t)stats.broken_sub_behaviors);
+        yyjson_mut_obj_add_val(doc, data, "broken_references", broken);
         nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, c.session);
 
         if (n_with_interface > 0) {
@@ -1022,6 +1459,14 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
             nmo_cli_table_print(&table, c.out, c.colorize);
             nmo_cli_table_free(&table);
         }
+        behavior_stats_print_guid_count_table(c.out, c.colorize,
+                                              "Top Parameter Types",
+                                              "Type", parameter_types,
+                                              parameter_type_count);
+        behavior_stats_print_guid_count_table(c.out, c.colorize,
+                                              "Top Operation Types",
+                                              "Operation", operation_types,
+                                              operation_type_count);
 
         fprintf(c.out, "\n");
         snprintf(buf, sizeof(buf), "%zu", n_parameters);
@@ -1032,6 +1477,30 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
         nmo_cli_print_kv(c.out, "Operations", buf, 22, c.colorize);
         snprintf(buf, sizeof(buf), "%u", max_depth);
         nmo_cli_print_kv(c.out, "Max tree depth", buf, 22, c.colorize);
+        snprintf(buf, sizeof(buf), "%.2f / %u",
+                 tree_depth_dist.avg, tree_depth_dist.p95);
+        nmo_cli_print_kv(c.out, "Tree depth avg/p95", buf, 22, c.colorize);
+        snprintf(buf, sizeof(buf), "%.2f / %u",
+                 script_sub_dist.avg, script_sub_dist.p95);
+        nmo_cli_print_kv(c.out, "Script sub avg/p95", buf, 22, c.colorize);
+
+        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c.out, "Link Delay Distribution", c.colorize);
+        fprintf(c.out, "\n");
+        snprintf(buf, sizeof(buf), "%zu", stats.link_delay_zero);
+        nmo_cli_print_kv(c.out, "Zero delay", buf, 22, c.colorize);
+        snprintf(buf, sizeof(buf), "%zu", stats.link_delay_next_frame);
+        nmo_cli_print_kv(c.out, "Next frame", buf, 22, c.colorize);
+        snprintf(buf, sizeof(buf), "%zu", stats.link_delay_multi_frame);
+        nmo_cli_print_kv(c.out, "Multi frame", buf, 22, c.colorize);
+
+        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c.out, "Broken References", c.colorize);
+        fprintf(c.out, "\n");
+        snprintf(buf, sizeof(buf), "%zu", stats.broken_behavior_links);
+        nmo_cli_print_kv(c.out, "Behavior links", buf, 22, c.colorize);
+        snprintf(buf, sizeof(buf), "%zu", stats.broken_sub_behaviors);
+        nmo_cli_print_kv(c.out, "Sub behaviors", buf, 22, c.colorize);
 
         if (n_with_interface > 0) {
             fprintf(c.out, "\n");
@@ -1050,7 +1519,11 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
     }
 
+    free(tree_depths);
     free(protos);
+    free(parameter_types);
+    free(operation_types);
     free(script_ids);
+    free(stats.script_sub_counts);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }

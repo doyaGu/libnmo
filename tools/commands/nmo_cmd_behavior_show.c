@@ -33,13 +33,336 @@
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_repository.h"
 #include "type/nmo_type_system.h"
+#include "type/nmo_operations.h"
 #include "behavior/nmo_bb_registry.h"
 #include "behavior/nmo_param_value.h"
+#include "behavior/nmo_script_walker.h"
 
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static void behavior_show_guid_to_string(nmo_guid_t guid, char *buf, size_t size) {
+    if (!buf || size == 0) {
+        return;
+    }
+    snprintf(buf, size, "%08X-%08X", guid.d1, guid.d2);
+}
+
+static void behavior_show_add_decoded_value_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *item,
+    const nmo_parameter_state_t *param,
+    const nmo_type_registry_t *registry,
+    nmo_session_t *session)
+{
+    if (!doc || !item || !param || !param->has_state) {
+        return;
+    }
+
+    char value_buf[256];
+    if (nmo_param_value_to_string(param, registry, session,
+                                  value_buf, sizeof(value_buf)) == NMO_OK &&
+        value_buf[0] != '\0') {
+        nmo_cli_json_add_str_safe(doc, item, "decoded_value", value_buf);
+    }
+}
+
+static void behavior_show_add_source_chain_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *item,
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const nmo_type_registry_t *registry,
+    nmo_object_repository_t *repo,
+    nmo_object_id_t param_id)
+{
+    if (!doc || !item || !ctx || !session || !repo || param_id == 0) {
+        return;
+    }
+
+    nmo_array_t chain;
+    if (nmo_array_init(&chain, sizeof(nmo_param_chain_step_t), 8, NULL) != NMO_OK) {
+        return;
+    }
+
+    if (nmo_script_walker_trace_param_chain(ctx, session, param_id,
+                                            &chain, 32) == NMO_OK &&
+        chain.count > 0) {
+        yyjson_mut_val *arr = yyjson_mut_arr(doc);
+        const nmo_param_chain_step_t *steps =
+            (const nmo_param_chain_step_t *)chain.data;
+        for (size_t i = 0; i < chain.count; i++) {
+            yyjson_mut_val *step = yyjson_mut_obj(doc);
+            yyjson_mut_obj_add_uint(doc, step, "id", steps[i].id);
+            nmo_cli_json_add_str_safe(doc, step, "name",
+                                      resolve_name(repo, steps[i].id));
+            nmo_object_t *obj =
+                nmo_object_repository_find_by_id(repo, steps[i].id);
+            nmo_guid_t type_guid = get_param_type_guid(obj);
+            char guid_buf[24];
+            behavior_show_guid_to_string(type_guid, guid_buf, sizeof(guid_buf));
+            nmo_cli_json_add_str_safe(doc, step, "type_guid", guid_buf);
+            nmo_cli_json_add_str_safe(doc, step, "type_name",
+                                      resolve_type(registry, type_guid));
+            bool is_shared = false;
+            if (obj && nmo_object_get_class_id(obj) == NMO_CID_PARAMETERIN) {
+                const nmo_parameterin_state_t *pin =
+                    (const nmo_parameterin_state_t *)nmo_object_get_state(obj);
+                is_shared = pin && pin->is_shared;
+            }
+            yyjson_mut_obj_add_bool(doc, step, "is_shared", is_shared);
+            yyjson_mut_obj_add_uint(doc, step, "owner_id", steps[i].owner_id);
+            nmo_cli_json_add_str_safe(doc, step, "owner_name",
+                                      resolve_name(repo, steps[i].owner_id));
+            yyjson_mut_arr_add_val(arr, step);
+        }
+        yyjson_mut_obj_add_val(doc, item, "source_chain", arr);
+    }
+
+    nmo_array_dispose(&chain);
+}
+
+static const char *behavior_show_operation_token(const char *op_name) {
+    return (op_name && op_name[0]) ? op_name : "OP";
+}
+
+static const char *behavior_show_operation_name(
+    const nmo_type_registry_t *registry,
+    nmo_guid_t operation_guid)
+{
+    const char *name = nmo_type_registry_guid_to_name(registry, operation_guid);
+    if (name && name[0]) {
+        return name;
+    }
+    if (nmo_guid_equals(operation_guid, NMO_OP_GUID_ADD)) {
+        return "Addition";
+    }
+    if (operation_guid.d1 == 0x556A69AFu &&
+        operation_guid.d2 == 0x076E3F09u) {
+        return "Get Length";
+    }
+    return "Unknown Operation";
+}
+
+static bool behavior_show_operation_is_copy_like(const char *op_name) {
+    return op_name &&
+        (strcmp(op_name, "Copy") == 0 ||
+         strcmp(op_name, "Identity") == 0 ||
+         strcmp(op_name, "Set") == 0);
+}
+
+static void behavior_show_format_operation(
+    char *buf,
+    size_t size,
+    const char *op_name,
+    const char *in1_name,
+    bool has_in1,
+    const char *in2_name,
+    bool has_in2,
+    const char *out_name,
+    bool has_out,
+    const char *out_type)
+{
+    if (!buf || size == 0) {
+        return;
+    }
+
+    const char *op_token = behavior_show_operation_token(op_name);
+    const char *in1 = (in1_name && in1_name[0]) ? in1_name : "[missing in1]";
+    const char *in2 = (in2_name && in2_name[0]) ? in2_name : "[missing in2]";
+    const char *out = (out_name && out_name[0]) ? out_name : "[missing out]";
+    const char *otype = (out_type && out_type[0]) ? out_type : "?";
+
+    if (behavior_show_operation_is_copy_like(op_name)) {
+        snprintf(buf, size, "[%s] %s -> %s [COPY]  [%s]",
+                 op_token, has_in1 ? in1 : "[missing in1]",
+                 has_out ? out : "[missing out]", otype);
+    } else if (has_in1 && !has_in2) {
+        snprintf(buf, size, "[%s] %s %s -> %s  [%s]",
+                 op_token, op_token, in1,
+                 has_out ? out : "[missing out]", otype);
+    } else {
+        snprintf(buf, size, "[%s] %s %s %s -> %s  [%s]",
+                 op_token,
+                 has_in1 ? in1 : "[missing in1]",
+                 op_token,
+                 has_in2 ? in2 : "[missing in2]",
+                 has_out ? out : "[missing out]",
+                 otype);
+    }
+}
+
+static void behavior_show_add_operation_param_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *item,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *registry,
+    const char *prefix,
+    nmo_object_id_t param_id)
+{
+    if (!doc || !item || !repo || !prefix || param_id == 0) {
+        return;
+    }
+
+    const char *id_key = NULL;
+    const char *name_key = NULL;
+    const char *guid_key = NULL;
+    const char *type_key = NULL;
+    if (strcmp(prefix, "in1") == 0) {
+        id_key = "in1_id";
+        name_key = "in1_name";
+        guid_key = "in1_type_guid";
+        type_key = "in1_type_name";
+    } else if (strcmp(prefix, "in2") == 0) {
+        id_key = "in2_id";
+        name_key = "in2_name";
+        guid_key = "in2_type_guid";
+        type_key = "in2_type_name";
+    } else if (strcmp(prefix, "out") == 0) {
+        id_key = "out_id";
+        name_key = "out_name";
+        guid_key = "out_type_guid";
+        type_key = "out_type_name";
+    } else {
+        return;
+    }
+
+    yyjson_mut_obj_add_uint(doc, item, id_key, param_id);
+    nmo_cli_json_add_str_safe(doc, item, name_key, resolve_name(repo, param_id));
+
+    nmo_object_t *param_obj = nmo_object_repository_find_by_id(repo, param_id);
+    nmo_guid_t type_guid = get_param_type_guid(param_obj);
+    char guid_buf[24];
+    behavior_show_guid_to_string(type_guid, guid_buf, sizeof(guid_buf));
+
+    nmo_cli_json_add_str_safe(doc, item, guid_key, guid_buf);
+    nmo_cli_json_add_str_safe(doc, item, type_key,
+                              resolve_type(registry, type_guid));
+}
+
+typedef struct behavior_show_flow_source {
+    nmo_object_id_t param_id;
+    nmo_object_id_t owner_id;
+    const char *owner_name;
+    const char *param_name;
+} behavior_show_flow_source_t;
+
+static void behavior_show_add_data_flow_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *data,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *registry,
+    const nmo_behavior_state_t *bs,
+    nmo_object_id_t behavior_id,
+    const char *behavior_name)
+{
+    if (!doc || !data || !repo || !bs) {
+        return;
+    }
+
+    behavior_show_flow_source_t sources[512];
+    size_t source_count = 0;
+
+    if (bs->local_parameters.data) {
+        const nmo_object_id_t *ids =
+            (const nmo_object_id_t *)bs->local_parameters.data;
+        for (size_t i = 0; i < bs->local_parameters.count && source_count < 512; i++) {
+            sources[source_count].param_id = ids[i];
+            sources[source_count].owner_id = behavior_id;
+            sources[source_count].owner_name =
+                (behavior_name && behavior_name[0]) ? behavior_name : "(root)";
+            sources[source_count].param_name = resolve_name(repo, ids[i]);
+            source_count++;
+        }
+    }
+
+    if (bs->sub_behaviors.data) {
+        const nmo_object_id_t *sub_ids =
+            (const nmo_object_id_t *)bs->sub_behaviors.data;
+        for (size_t si = 0; si < bs->sub_behaviors.count; si++) {
+            nmo_object_t *sub = nmo_object_repository_find_by_id(repo, sub_ids[si]);
+            if (!sub || !sub->state) continue;
+            const nmo_behavior_state_t *sub_bs =
+                (const nmo_behavior_state_t *)sub->state;
+            const char *sub_name = nmo_object_get_name(sub);
+            if (!sub_name || !sub_name[0]) sub_name = "(unnamed)";
+            const nmo_object_id_t *pids =
+                (const nmo_object_id_t *)sub_bs->out_parameters.data;
+            for (size_t pi = 0; pi < sub_bs->out_parameters.count && source_count < 512; pi++) {
+                sources[source_count].param_id = pids[pi];
+                sources[source_count].owner_id = sub_ids[si];
+                sources[source_count].owner_name = sub_name;
+                sources[source_count].param_name = resolve_name(repo, pids[pi]);
+                source_count++;
+            }
+        }
+    }
+
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    if (bs->sub_behaviors.data) {
+        const nmo_object_id_t *sub_ids =
+            (const nmo_object_id_t *)bs->sub_behaviors.data;
+        for (size_t si = 0; si < bs->sub_behaviors.count; si++) {
+            nmo_object_t *sub = nmo_object_repository_find_by_id(repo, sub_ids[si]);
+            if (!sub || !sub->state) continue;
+            const nmo_behavior_state_t *sub_bs =
+                (const nmo_behavior_state_t *)sub->state;
+            const char *sub_name = nmo_object_get_name(sub);
+            if (!sub_name || !sub_name[0]) sub_name = "(unnamed)";
+            const nmo_object_id_t *pids =
+                (const nmo_object_id_t *)sub_bs->in_parameters.data;
+            for (size_t pi = 0; pi < sub_bs->in_parameters.count; pi++) {
+                nmo_object_t *pin_obj = nmo_object_repository_find_by_id(repo, pids[pi]);
+                if (!pin_obj || !pin_obj->state) continue;
+                const nmo_parameterin_state_t *pin =
+                    (const nmo_parameterin_state_t *)pin_obj->state;
+                if (!pin || pin->source_id == 0) continue;
+
+                const behavior_show_flow_source_t *src = NULL;
+                for (size_t s = 0; s < source_count; s++) {
+                    if (sources[s].param_id == pin->source_id) {
+                        src = &sources[s];
+                        break;
+                    }
+                }
+
+                nmo_object_t *src_obj =
+                    nmo_object_repository_find_by_id(repo, pin->source_id);
+                const char *src_name = src ? src->param_name : resolve_name(repo, pin->source_id);
+                const char *src_owner_name = src ? src->owner_name : "(external)";
+                nmo_object_id_t src_owner_id = src ? src->owner_id : 0;
+                nmo_guid_t type_guid = get_param_type_guid(pin_obj);
+                char guid_buf[24];
+                behavior_show_guid_to_string(type_guid, guid_buf, sizeof(guid_buf));
+
+                yyjson_mut_val *flow = yyjson_mut_obj(doc);
+                yyjson_mut_obj_add_uint(doc, flow, "source_id", pin->source_id);
+                nmo_cli_json_add_str_safe(doc, flow, "source_name",
+                                          src_name ? src_name : "");
+                yyjson_mut_obj_add_uint(doc, flow, "source_owner_id", src_owner_id);
+                nmo_cli_json_add_str_safe(doc, flow, "source_owner_name",
+                                          src_owner_name ? src_owner_name : "");
+                yyjson_mut_obj_add_uint(doc, flow, "target_id", pids[pi]);
+                nmo_cli_json_add_str_safe(doc, flow, "target_name",
+                                          resolve_name(repo, pids[pi]));
+                yyjson_mut_obj_add_uint(doc, flow, "target_owner_id", sub_ids[si]);
+                nmo_cli_json_add_str_safe(doc, flow, "target_owner_name", sub_name);
+                nmo_cli_json_add_str_safe(doc, flow, "type_guid", guid_buf);
+                nmo_cli_json_add_str_safe(doc, flow, "type_name",
+                                          resolve_type(registry, type_guid));
+                yyjson_mut_obj_add_bool(doc, flow, "is_shared", pin->is_shared != 0);
+                if (src_obj && nmo_object_get_class_id(src_obj) == NMO_CID_PARAMETERIN) {
+                    yyjson_mut_obj_add_bool(doc, flow, "source_is_parameter_in", true);
+                }
+                yyjson_mut_arr_add_val(arr, flow);
+            }
+        }
+    }
+
+    yyjson_mut_obj_add_val(doc, data, "data_flow", arr);
+}
 
 int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
@@ -205,6 +528,9 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                         }
                     }
                 }
+                behavior_show_add_source_chain_json(doc, item, c.ctx,
+                                                    c.session, c.registry,
+                                                    repo, ids[i]);
                 yyjson_mut_arr_add_val(arr, item);
             }
             yyjson_mut_obj_add_val(doc, data, "input_parameters", arr);
@@ -227,6 +553,13 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 nmo_guid_t tg = get_param_type_guid(p);
                 nmo_cli_json_add_str_safe(doc, item, "type",
                                           resolve_type(c.registry, tg));
+                if (p && (nmo_object_get_class_id(p) == NMO_CID_PARAMETEROUT ||
+                          nmo_object_get_class_id(p) == NMO_CID_PARAMETER)) {
+                    behavior_show_add_decoded_value_json(
+                        doc, item,
+                        (const nmo_parameter_state_t *)nmo_object_get_state(p),
+                        c.registry, c.session);
+                }
                 yyjson_mut_arr_add_val(arr, item);
             }
             yyjson_mut_obj_add_val(doc, data, "output_parameters", arr);
@@ -249,6 +582,13 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 nmo_guid_t tg = get_param_type_guid(p);
                 nmo_cli_json_add_str_safe(doc, item, "type",
                                           resolve_type(c.registry, tg));
+                if (p && (nmo_object_get_class_id(p) == NMO_CID_PARAMETERLOCAL ||
+                          nmo_object_get_class_id(p) == NMO_CID_PARAMETER)) {
+                    behavior_show_add_decoded_value_json(
+                        doc, item,
+                        (const nmo_parameter_state_t *)nmo_object_get_state(p),
+                        c.registry, c.session);
+                }
                 yyjson_mut_arr_add_val(arr, item);
             }
             yyjson_mut_obj_add_val(doc, data, "local_parameters", arr);
@@ -268,23 +608,33 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 if (op_obj && op_obj->state) {
                     const nmo_parameteroperation_state_t *op_state =
                         (const nmo_parameteroperation_state_t *)op_obj->state;
-                    const char *op_name = nmo_type_registry_guid_to_name(
+                    const char *op_name = behavior_show_operation_name(
                         c.registry, op_state->operation_guid);
+                    char guid_buf[24];
+                    behavior_show_guid_to_string(op_state->operation_guid,
+                                                 guid_buf, sizeof(guid_buf));
+                    nmo_cli_json_add_str_safe(doc, item, "operation_guid",
+                                              guid_buf);
                     if (op_name) {
                         nmo_cli_json_add_str_safe(doc, item, "operation",
                                                   op_name);
+                        nmo_cli_json_add_str_safe(doc, item, "operation_name",
+                                                  op_name);
                     }
                     if (op_state->has_in1) {
-                        yyjson_mut_obj_add_uint(doc, item, "in1_id",
-                                                op_state->in1_id);
+                        behavior_show_add_operation_param_json(
+                            doc, item, repo, c.registry, "in1",
+                            op_state->in1_id);
                     }
                     if (op_state->has_in2) {
-                        yyjson_mut_obj_add_uint(doc, item, "in2_id",
-                                                op_state->in2_id);
+                        behavior_show_add_operation_param_json(
+                            doc, item, repo, c.registry, "in2",
+                            op_state->in2_id);
                     }
                     if (op_state->has_out) {
-                        yyjson_mut_obj_add_uint(doc, item, "out_id",
-                                                op_state->out_id);
+                        behavior_show_add_operation_param_json(
+                            doc, item, repo, c.registry, "out",
+                            op_state->out_id);
                     }
                 }
                 yyjson_mut_arr_add_val(arr, item);
@@ -367,6 +717,9 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             }
             yyjson_mut_obj_add_val(doc, data, "behavior_links", arr);
         }
+
+        behavior_show_add_data_flow_json(doc, data, repo, c.registry, bs,
+                                         target_id, name);
 
         if (bs->interface_data) {
             const nmo_interface_body_t *ibody = &bs->interface_data->script.body;
@@ -581,7 +934,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             }
             const nmo_parameteroperation_state_t *op_state =
                 (const nmo_parameteroperation_state_t *)op_obj->state;
-            const char *op_name = nmo_type_registry_guid_to_name(
+            const char *op_name = behavior_show_operation_name(
                 c.registry, op_state->operation_guid);
             /* Resolve in1, in2, out names and types */
             const char *n1 = op_state->has_in1 ? resolve_name(repo, op_state->in1_id) : NULL;
@@ -594,13 +947,12 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 nmo_guid_t otg = get_param_type_guid(out_p);
                 out_type = resolve_type(c.registry, otg);
             }
-            /* Display as: [OP] in1 + in2 -> out [Type] */
-            fprintf(c.out, "  [%s] ", op_name ? op_name : "?");
-            if (n1) fprintf(c.out, "%s", n1);
-            if (n1 && n2) fprintf(c.out, " + ");
-            if (n2) fprintf(c.out, "%s", n2);
-            if (no) fprintf(c.out, " -> %s", no);
-            fprintf(c.out, "  [%s]\n", out_type);
+            char op_buf[512];
+            behavior_show_format_operation(
+                op_buf, sizeof(op_buf), op_name,
+                n1, op_state->has_in1, n2, op_state->has_in2,
+                no, op_state->has_out, out_type);
+            fprintf(c.out, "  %s\n", op_buf);
         }
     }
 

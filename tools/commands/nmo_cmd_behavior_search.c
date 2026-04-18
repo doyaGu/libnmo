@@ -361,6 +361,63 @@ static bool collect_links_recursive(
     return true;
 }
 
+static const char *trace_behavior_type_name(const nmo_behavior_state_t *bs) {
+    if (!bs) {
+        return "Unknown";
+    }
+    if (bs->flags & CKBEHAVIOR_SCRIPT) {
+        return "Script";
+    }
+    if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) {
+        return "BB";
+    }
+    return "Graph";
+}
+
+static const nmo_behavior_state_t *trace_owner_state(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t owner_id)
+{
+    if (!repo || owner_id == 0) {
+        return NULL;
+    }
+    nmo_object_t *obj = nmo_object_repository_find_by_id(repo, owner_id);
+    return (obj && obj->state) ? (const nmo_behavior_state_t *)obj->state : NULL;
+}
+
+static const char *trace_bb_proto_name(
+    nmo_context_t *ctx,
+    const nmo_behavior_state_t *bs)
+{
+    if (!ctx || !bs ||
+        !(bs->flags & CKBEHAVIOR_BUILDINGBLOCK) ||
+        nmo_guid_is_null(bs->block_guid)) {
+        return NULL;
+    }
+    return nmo_bb_registry_get_name(nmo_context_get_bb_registry(ctx),
+                                    bs->block_guid);
+}
+
+static const char *trace_transition_name(
+    nmo_object_id_t root_behavior_id,
+    nmo_object_id_t source_owner,
+    nmo_object_id_t target_owner,
+    const nmo_behavior_state_t *target_bs)
+{
+    if (source_owner == 0 || target_owner == 0) {
+        return "unknown";
+    }
+    if (target_owner == root_behavior_id && source_owner != root_behavior_id) {
+        return "exit_to_parent";
+    }
+    if (target_owner != source_owner &&
+        target_bs &&
+        !(target_bs->flags & CKBEHAVIOR_BUILDINGBLOCK)) {
+        return "enter_subgraph";
+    }
+    return "same_graph";
+}
+
 int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--from",  NULL, NMO_OPT_STRING, "Start IO name (default: first bIn)"},
@@ -523,6 +580,9 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
         fprintf(c.out, "Execution Trace: %s %s [#%u]\n",
                 (beh_name && beh_name[0]) ? beh_name : "(unnamed)",
                 root_label, beh_id);
+        fprintf(c.out, "Current graph: %s [#%u]\n",
+                (beh_name && beh_name[0]) ? beh_name : "(unnamed)",
+                beh_id);
         fprintf(c.out, "Entry points: %zu, Links: %zu\n\n",
                 entry_count, link_count);
     }
@@ -575,6 +635,18 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
 
                 nmo_object_id_t tgt = links[li].target_io;
 
+                nmo_object_id_t src_owner = 0;
+                const char *sname = "?";
+                if (beh_index) {
+                    const nmo_port_owner_t *spo =
+                        nmo_behavior_index_find(beh_index, cur.io);
+                    if (spo) {
+                        src_owner = spo->owner_id;
+                        const char *n = resolve_name(repo, src_owner);
+                        if (n && n[0]) sname = n;
+                    }
+                }
+
                 /* Resolve target owner via behavior_index */
                 const char *tname = "?";
                 nmo_object_id_t tgt_owner = 0;
@@ -587,12 +659,72 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
                     }
                 }
                 const char *tio = resolve_name(repo, tgt);
+                const nmo_behavior_state_t *tgt_bs =
+                    trace_owner_state(repo, tgt_owner);
+                const char *target_type =
+                    trace_behavior_type_name(tgt_bs);
+                const char *target_proto =
+                    trace_bb_proto_name(c.ctx, tgt_bs);
+                if (!target_proto &&
+                    tgt_bs &&
+                    (tgt_bs->flags & CKBEHAVIOR_BUILDINGBLOCK) &&
+                    tname && tname[0] && strcmp(tname, "?") != 0) {
+                    target_proto = tname;
+                }
+                const char *transition =
+                    trace_transition_name(beh_id, src_owner, tgt_owner,
+                                          tgt_bs);
+                const char *truncated_reason = NULL;
+                nmo_object_id_t loop_io = 0;
+                bool loop_detected = false;
+                bool has_unseen_continuation = false;
+                if (tgt_owner != 0) {
+                    nmo_object_t *to =
+                        nmo_object_repository_find_by_id(repo, tgt_owner);
+                    if (to && to->state) {
+                        const nmo_behavior_state_t *tbs =
+                            (const nmo_behavior_state_t *)to->state;
+                        if (tbs->outputs.data) {
+                            const nmo_object_id_t *oids =
+                                (const nmo_object_id_t *)tbs->outputs.data;
+                            for (size_t oi = 0; oi < tbs->outputs.count; oi++) {
+                                bool seen = false;
+                                for (size_t v = 0; v < vis_count; v++) {
+                                    if (visited[v] == oids[oi]) {
+                                        seen = true;
+                                        break;
+                                    }
+                                }
+                                if (seen) {
+                                    loop_detected = true;
+                                    if (loop_io == 0) {
+                                        loop_io = oids[oi];
+                                    }
+                                } else {
+                                    has_unseen_continuation = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (cur.depth >= max_trace_depth && has_unseen_continuation) {
+                    truncated_reason = "max_depth";
+                } else if (loop_detected && !has_unseen_continuation) {
+                    truncated_reason = "loop";
+                }
 
                 if (c.is_json) {
                     yyjson_mut_val *step = yyjson_mut_obj(doc);
                     yyjson_mut_obj_add_uint(doc, step, "depth", cur.depth);
                     yyjson_mut_obj_add_uint(doc, step, "source_io_id",
                                             cur.io);
+                    if (src_owner != 0) {
+                        yyjson_mut_obj_add_uint(doc, step,
+                                                "source_owner_id",
+                                                src_owner);
+                        nmo_cli_json_add_str_safe(doc, step,
+                            "source_owner_name", sname);
+                    }
                     yyjson_mut_obj_add_uint(doc, step, "target_io_id", tgt);
                     nmo_cli_json_add_str_safe(doc, step, "target_io_name",
                         tio ? tio : "");
@@ -603,9 +735,37 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
                         nmo_cli_json_add_str_safe(doc, step,
                             "target_owner_name", tname);
                     }
+                    nmo_cli_json_add_str_safe(doc, step,
+                                              "target_behavior_type",
+                                              target_type);
+                    if (target_proto) {
+                        nmo_cli_json_add_str_safe(doc, step,
+                                                  "target_bb_proto_name",
+                                                  target_proto);
+                    }
+                    nmo_cli_json_add_str_safe(doc, step, "transition",
+                                              transition);
                     if (links[li].delay != 0) {
                         yyjson_mut_obj_add_int(doc, step, "delay",
                                                links[li].delay);
+                    }
+                    if (truncated_reason) {
+                        nmo_cli_json_add_str_safe(doc, step,
+                                                  "truncated_reason",
+                                                  truncated_reason);
+                    }
+                    if (loop_detected) {
+                        yyjson_mut_obj_add_bool(doc, step, "loop_detected",
+                                                true);
+                        yyjson_mut_val *loop_path = yyjson_mut_arr(doc);
+                        yyjson_mut_arr_add_uint(doc, loop_path, cur.io);
+                        yyjson_mut_arr_add_uint(doc, loop_path, tgt);
+                        if (loop_io != 0) {
+                            yyjson_mut_arr_add_uint(doc, loop_path, loop_io);
+                        }
+                        yyjson_mut_obj_add_val(doc, step,
+                                               "loop_path_io_ids",
+                                               loop_path);
                     }
                     yyjson_mut_arr_add_val(json_steps, step);
                 } else {
@@ -629,6 +789,9 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
                                         nmo_context_get_bb_registry(c.ctx),
                                         tgt_bs->block_guid);
                                 }
+                                if (!proto_name) {
+                                    proto_name = target_proto;
+                                }
                             } else {
                                 type_label = " [Graph]";
                                 entering_subgraph = true;
@@ -643,13 +806,23 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
                     if (proto_name)
                         fprintf(c.out, " [%s]", proto_name);
                     fprintf(c.out, ".%s%s", tio ? tio : "?", type_label);
+                    fprintf(c.out, "  (transition: %s)", transition);
                     if (links[li].delay != 0)
                         fprintf(c.out, "  (delay: %d)", links[li].delay);
+                    if (truncated_reason)
+                        fprintf(c.out, "  (truncated: %s)", truncated_reason);
+                    if (loop_detected)
+                        fprintf(c.out, "  (loop path: #%u -> #%u",
+                                cur.io, tgt);
+                    if (loop_detected && loop_io != 0)
+                        fprintf(c.out, " -> #%u", loop_io);
+                    if (loop_detected)
+                        fprintf(c.out, ")");
                     fprintf(c.out, "\n");
                 }
 
                 /* Continue through: add target owner's outputs to stack */
-                if (tgt_owner != 0) {
+                if (tgt_owner != 0 && cur.depth < max_trace_depth) {
                     nmo_object_t *to = nmo_object_repository_find_by_id(repo, tgt_owner);
                     if (to && to->state) {
                         const nmo_behavior_state_t *tbs = (const nmo_behavior_state_t *)to->state;
