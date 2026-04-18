@@ -193,6 +193,12 @@ nmo_status_t nmo_virtools_load_param_types(nmo_type_registry_t *registry, const 
         memset(&desc, 0, sizeof(desc));
         desc.guid = guid;
         desc.name = get_str(item, "name");
+        char generated_name[64];
+        if (!desc.name || desc.name[0] == '\0') {
+            snprintf(generated_name, sizeof(generated_name),
+                     "Virtools Type 0x%08X-0x%08X", guid.d1, guid.d2);
+            desc.name = generated_name;
+        }
         desc.size = get_uint(item, "size");
         desc.category = category_from_str(get_str(item, "category"));
         desc.class_id = get_uint(item, "class_id");

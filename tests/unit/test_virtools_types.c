@@ -16,6 +16,7 @@
 #include "core/nmo_guid.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static nmo_context_t *create_ctx_with_data(void) {
@@ -388,6 +389,65 @@ TEST(vt, json_struct_param_types_parse_fields_with_offsets) {
     nmo_context_release(ctx);
 }
 
+TEST(vt, json_struct_param_types_roundtrip_zero_values) {
+    nmo_context_t *ctx = create_ctx_with_data();
+    ASSERT_TRUE(ctx != NULL);
+    nmo_type_registry_t *reg = nmo_context_get_type_registry(ctx);
+
+    static const nmo_guid_t struct_guids[] = {
+        {0x173402ADu, 0x76BD708Au},
+        {0x023756E7u, 0x01DA06EAu},
+        {0x36D34BD0u, 0x24DA4D96u},
+        {0x25433584u, 0x425C41E2u},
+        {0x0E7B7108u, 0x5E95096Fu},
+        {0x724B7421u, 0x07213ADDu},
+        {0x154264EAu, 0x1EB15971u},
+        {0x235E15CCu, 0x65903824u},
+        {0x36DA22D9u, 0x4AC44B4Cu},
+        {0x01238843u, 0xFF881C6Eu},
+        {0x7B447672u, 0x5798572Au},
+        {0x638737D6u, 0x0F783EAEu},
+        {0x468B2BECu, 0x739211CEu},
+        {0x479C2CEBu, 0x729312EDu},
+        {0x57DE0FD9u, 0x758A71D6u},
+        {0x778D5BD9u, 0x5DA52335u},
+        {0x1C0138D7u, 0x1A1609EFu},
+        {0x7E3745C9u, 0x79A84E4Au},
+    };
+
+    for (size_t i = 0; i < sizeof(struct_guids) / sizeof(struct_guids[0]); ++i) {
+        const nmo_type_descriptor_t *type =
+            nmo_type_registry_find_by_guid(reg, struct_guids[i]);
+        if (!type) {
+            fprintf(stderr, "Missing struct GUID 0x%08X-0x%08X\n",
+                    struct_guids[i].d1, struct_guids[i].d2);
+        }
+        ASSERT_TRUE(type != NULL);
+        ASSERT_TRUE((type->category & NMO_TYPE_CATEGORY_STRUCT) != 0);
+        ASSERT_TRUE(type->size > 0);
+
+        void *original = calloc(1, type->size);
+        void *parsed = calloc(1, type->size);
+        ASSERT_TRUE(original != NULL);
+        ASSERT_TRUE(parsed != NULL);
+
+        char buffer[512];
+        ASSERT_EQ(NMO_OK, nmo_type_value_to_string(original, type, reg, buffer, sizeof(buffer)));
+        nmo_status_t parse_status = nmo_type_value_from_string(parsed, type, reg, buffer);
+        if (parse_status != NMO_OK) {
+            fprintf(stderr, "Failed struct roundtrip for %s: %s\n",
+                    type->name ? type->name : "<unnamed>", buffer);
+        }
+        ASSERT_EQ(NMO_OK, parse_status);
+        ASSERT_EQ(0, memcmp(original, parsed, type->size));
+
+        free(parsed);
+        free(original);
+    }
+
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(vt, operation_addition);
     REGISTER_TEST(vt, operation_equal);
@@ -406,4 +466,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(vt, unbased_json_u32_primitives_parse_from_string);
     REGISTER_TEST(vt, script_param_type_loads_as_object_ref_alias);
     REGISTER_TEST(vt, json_struct_param_types_parse_fields_with_offsets);
+    REGISTER_TEST(vt, json_struct_param_types_roundtrip_zero_values);
 TEST_MAIN_END()

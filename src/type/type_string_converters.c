@@ -478,6 +478,38 @@ nmo_status_t nmo_enum_from_string(
         }
     }
 
+    if (type->name) {
+        size_t name_len = strlen(type->name);
+        size_t string_len = strlen(string);
+        if (string_len > name_len + 2u &&
+            strncmp(string, type->name, name_len) == 0 &&
+            string[name_len] == '(' &&
+            string[string_len - 1u] == ')') {
+            size_t inner_len = string_len - name_len - 2u;
+            char stack_buf[64];
+            char *inner = stack_buf;
+            if (inner_len + 1u > sizeof(stack_buf)) {
+                inner = (char *)malloc(inner_len + 1u);
+                if (!inner) {
+                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                     "Failed to allocate enum fallback value");
+                }
+            }
+            memcpy(inner, string + name_len + 1u, inner_len);
+            inner[inner_len] = '\0';
+            int32_t result = 0;
+            nmo_status_t parse_status =
+                nmo_parse_i32_range_base(inner, 0, INT32_MIN, INT32_MAX, &result);
+            if (inner != stack_buf) {
+                free(inner);
+            }
+            if (parse_status == NMO_OK) {
+                *(int32_t*)value = result;
+                NMO_RETURN_OK();
+            }
+        }
+    }
+
     // Try to parse as integer
     int32_t result = 0;
     if (nmo_parse_i32_range_base(string, 0, INT32_MIN, INT32_MAX, &result) != NMO_OK) {
@@ -589,6 +621,37 @@ nmo_status_t nmo_flags_from_string(
     if (nmo_parse_u32_range_base(string, 0, 0, UINT32_MAX, &result) == NMO_OK) {
         *(uint32_t*)value = result;
         NMO_RETURN_OK();
+    }
+
+    if (type->name) {
+        size_t name_len = strlen(type->name);
+        size_t string_len = strlen(string);
+        if (string_len > name_len + 2u &&
+            strncmp(string, type->name, name_len) == 0 &&
+            string[name_len] == '(' &&
+            string[string_len - 1u] == ')') {
+            size_t inner_len = string_len - name_len - 2u;
+            char stack_buf[64];
+            char *inner = stack_buf;
+            if (inner_len + 1u > sizeof(stack_buf)) {
+                inner = (char *)malloc(inner_len + 1u);
+                if (!inner) {
+                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                     "Failed to allocate flags fallback value");
+                }
+            }
+            memcpy(inner, string + name_len + 1u, inner_len);
+            inner[inner_len] = '\0';
+            nmo_status_t parse_status =
+                nmo_parse_u32_range_base(inner, 0, 0, UINT32_MAX, &result);
+            if (inner != stack_buf) {
+                free(inner);
+            }
+            if (parse_status == NMO_OK) {
+                *(uint32_t*)value = result;
+                NMO_RETURN_OK();
+            }
+        }
     }
 
     // Parse name1|name2 format from metadata
@@ -964,6 +1027,56 @@ nmo_status_t nmo_vt_to_string_percentage(
     float f = *(const float *)value;
     snprintf(buffer, buffer_size, "%.6g%%", (double)f * 100.0);
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_vt_from_string_percentage(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)type;
+    (void)registry;
+    if (!value || !string) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments for percentage from_string");
+    }
+
+    size_t len = strlen(string);
+    while (len > 0 && isspace((unsigned char)string[len - 1u])) {
+        len--;
+    }
+    if (len > 0 && string[len - 1u] == '%') {
+        len--;
+        while (len > 0 && isspace((unsigned char)string[len - 1u])) {
+            len--;
+        }
+
+        char stack_buf[64];
+        char *number = stack_buf;
+        if (len + 1u > sizeof(stack_buf)) {
+            number = (char *)malloc(len + 1u);
+            if (!number) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "Failed to allocate percentage value");
+            }
+        }
+
+        memcpy(number, string, len);
+        number[len] = '\0';
+        float parsed = 0.0f;
+        nmo_status_t st = nmo_float_from_string(&parsed, number);
+        if (number != stack_buf) {
+            free(number);
+        }
+        if (st != NMO_OK) {
+            return st;
+        }
+        *(float *)value = parsed / 100.0f;
+        NMO_RETURN_OK();
+    }
+
+    return nmo_float_from_string(value, string);
 }
 
 nmo_status_t nmo_vt_to_string_time(

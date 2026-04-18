@@ -138,6 +138,10 @@ nmo_status_t nmo_vt_to_string_percentage(
     const void *value, const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
     char *buffer, size_t buffer_size, int depth);
+nmo_status_t nmo_vt_from_string_percentage(
+    void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string);
 nmo_status_t nmo_vt_to_string_time(
     const void *value, const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -198,7 +202,7 @@ const nmo_type_vtable_t nmo_builtin_vtable_percentage = {
     .equals = nmo_equals_float_bits,
     .hash = nmo_hash_float_bits,
     .to_string = nmo_vt_to_string_percentage,
-    .from_string = nmo_vt_from_string_float,
+    .from_string = nmo_vt_from_string_percentage,
 };
 
 const nmo_type_vtable_t nmo_builtin_vtable_bool = {
