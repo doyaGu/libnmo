@@ -1407,6 +1407,7 @@ static int nmo_session_build_plugin_diagnostics(
 
     size_t missing = 0;
     size_t outdated = 0;
+    size_t entry_count = 0;
     nmo_session_plugin_dependency_status_t *entries = NULL;
 
     nmo_arena_array_clear(&session->plugin_diag_entries);
@@ -1421,7 +1422,12 @@ static int nmo_session_build_plugin_diagnostics(
     if (deps != NULL && dep_count > 0) {
         for (size_t i = 0; i < dep_count; i++) {
             const nmo_plugin_dep_t *dep = &deps[i];
-            nmo_session_plugin_dependency_status_t *entry = entries ? &entries[i] : NULL;
+            if (nmo_guid_is_null(dep->guid)) {
+                continue;
+            }
+
+            nmo_session_plugin_dependency_status_t *entry = entries ? &entries[entry_count] : NULL;
+            entry_count++;
 
             if (entry != NULL) {
                 entry->guid = dep->guid;
@@ -1473,7 +1479,7 @@ static int nmo_session_build_plugin_diagnostics(
     nmo_session_set_plugin_diagnostics(
         session,
         entries,
-        dep_count,
+        entry_count,
         missing,
         outdated,
         ext_registry != NULL ? 1 : 0);

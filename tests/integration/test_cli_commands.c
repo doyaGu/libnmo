@@ -555,6 +555,41 @@ TEST(cli, file_plugins_resolves_exported_plugin_dependencies) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, file_plugins_resolves_bbsample_plugin_dependencies) {
+    char args[512];
+    snprintf(args, sizeof(args), "file plugins \"%s\"",
+             NMO_TEST_DATA_FILE("BBSamples/3D Transformations/Activate Link.cmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(data, "missing_count")));
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, file_plugins_ignores_null_guid_placeholder_dependencies) {
+    char args[512];
+    snprintf(args, sizeof(args), "file plugins \"%s\"", NMO_TEST_DATA_FILE("Ballance/Balls.nmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    yyjson_val *entries = yyjson_obj_get(data, "entries");
+    ASSERT_NOT_NULL(entries);
+
+    size_t idx, max;
+    yyjson_val *entry;
+    yyjson_arr_foreach(entries, idx, max, entry) {
+        const char *guid = yyjson_get_str(yyjson_obj_get(entry, "guid"));
+        ASSERT_TRUE(guid == NULL || strcmp(guid, "{00000000-00000000}") != 0);
+    }
+
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, object_list_fields_json_outputs_envelope) {
     char args[512];
     snprintf(args, sizeof(args), "object list-fields 1 \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
@@ -2144,6 +2179,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, file_plugins_resolves_known_behavior_dependencies);
     REGISTER_TEST(cli, file_plugins_resolves_known_manager_dependencies);
     REGISTER_TEST(cli, file_plugins_resolves_exported_plugin_dependencies);
+    REGISTER_TEST(cli, file_plugins_resolves_bbsample_plugin_dependencies);
+    REGISTER_TEST(cli, file_plugins_ignores_null_guid_placeholder_dependencies);
     REGISTER_TEST(cli, file_classes_has_size_json);
     REGISTER_TEST(cli, file_classes_sort_by_size);
 

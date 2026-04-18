@@ -64,7 +64,121 @@ function Write-NormalizedJson {
     param([string]$Path)
 
     $value = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    Normalize-LocalPathStrings -Value $value
     $json = $value | ConvertTo-Json -Depth 100
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, $json + "`n", $utf8NoBom)
+}
+
+function Get-PortablePathLeaf {
+    param([string]$Value)
+
+    if (-not $Value) {
+        return $Value
+    }
+
+    $isLocalAbsolute =
+        $Value -match '^[A-Za-z]:[\\/]' -or
+        $Value -match '^/Users/' -or
+        $Value -match '^/home/'
+    if (-not $isLocalAbsolute) {
+        return $Value
+    }
+
+    $trimmed = $Value.TrimEnd('\', '/')
+    $leaf = Split-Path -Leaf $trimmed
+    if ($leaf) {
+        return $leaf
+    }
+    return $Value
+}
+
+function Normalize-LocalPathStrings {
+    param($Value)
+
+    if ($null -eq $Value) {
+        return
+    }
+
+    if ($Value -is [string]) {
+        return
+    }
+
+    if ($Value -is [System.Array]) {
+        for ($i = 0; $i -lt $Value.Count; $i++) {
+            if ($Value[$i] -is [string]) {
+                $Value[$i] = Get-PortablePathLeaf -Value $Value[$i]
+            } else {
+                Normalize-LocalPathStrings -Value $Value[$i]
+            }
+        }
+        return
+    }
+
+    if ($Value -isnot [pscustomobject]) {
+        return
+    }
+
+    foreach ($property in $Value.PSObject.Properties) {
+        if ($property.Value -is [string]) {
+            $property.Value = Get-PortablePathLeaf -Value $property.Value
+        } else {
+            Normalize-LocalPathStrings -Value $property.Value
+        }
+    }
+}
+
+function Get-JsonGuidKey {
+    param($Entry)
+
+    if ($Entry.guid_hex) {
+        return $Entry.guid_hex
+    }
+    if ($Entry.guid -and $Entry.guid.Count -ge 2) {
+        return Format-GuidHex $Entry.guid
+    }
+    return $null
+}
+
+function Merge-ExistingArrayEntriesByGuid {
+    param([string]$Path, [string]$ExistingPath)
+
+    if (-not (Test-Path -LiteralPath $ExistingPath)) {
+        return
+    }
+
+    if (Test-Path -LiteralPath $Path) {
+        $current = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($null -eq $current) {
+            $current = @()
+        }
+    } else {
+        $current = @()
+    }
+    $existing = Get-Content -LiteralPath $ExistingPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($null -eq $existing) {
+        return
+    }
+
+    $seen = @{}
+    foreach ($entry in @($current)) {
+        $key = Get-JsonGuidKey $entry
+        if ($key) {
+            $seen[$key] = $true
+        }
+    }
+
+    $merged = @($current)
+    foreach ($entry in @($existing)) {
+        $key = Get-JsonGuidKey $entry
+        if ($key -and -not $seen.ContainsKey($key)) {
+            $merged += $entry
+            $seen[$key] = $true
+        }
+    }
+
+    Normalize-LocalPathStrings -Value $merged
+    $json = $merged | ConvertTo-Json -Depth 100
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($Path, $json + "`n", $utf8NoBom)
 }
@@ -221,6 +335,7 @@ try {
     $paramJson = Join-Path $tempRoot "virtools_parameter_types.json"
     $opsJson = Join-Path $tempRoot "virtools_operation_types.json"
     $bbsJson = Join-Path $tempRoot "virtools_building_blocks.json"
+    $bbsExtJson = Join-Path $tempRoot "virtools_building_blocks_ext.json"
     $pluginsJson = Join-Path $tempRoot "virtools_plugins.json"
 
     $args = @("-p", $paramJson, "-o", $opsJson, "-b", $bbsJson, "-g", $pluginsJson)
@@ -241,12 +356,17 @@ try {
     }
 
     $paramDest = Join-Path $OutputDir "virtools_parameter_types.json"
+    $bbsExtDest = Join-Path $OutputDir "virtools_building_blocks_ext.json"
+    $pluginsDest = Join-Path $OutputDir "virtools_plugins.json"
     Stabilize-ParameterGuids -Path $paramJson -ExistingPath $paramDest
+    Merge-ExistingArrayEntriesByGuid -Path $bbsExtJson -ExistingPath $bbsExtDest
+    Merge-ExistingArrayEntriesByGuid -Path $pluginsJson -ExistingPath $pluginsDest
 
     Copy-Or-Check -Source $paramJson -Destination $paramDest -CheckOnly:$Check
     Copy-Or-Check -Source $opsJson -Destination (Join-Path $OutputDir "virtools_operation_types.json") -CheckOnly:$Check
     Copy-Or-Check -Source $bbsJson -Destination (Join-Path $OutputDir "virtools_building_blocks.json") -CheckOnly:$Check
-    Copy-Or-Check -Source $pluginsJson -Destination (Join-Path $OutputDir "virtools_plugins.json") -CheckOnly:$Check
+    Copy-Or-Check -Source $bbsExtJson -Destination $bbsExtDest -CheckOnly:$Check
+    Copy-Or-Check -Source $pluginsJson -Destination $pluginsDest -CheckOnly:$Check
 
     $mode = if ($Check) { "checked" } else { "updated" }
     Write-Host "Virtools data $mode in $OutputDir"

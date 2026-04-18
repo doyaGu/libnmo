@@ -187,6 +187,9 @@ set_tests_properties(test_bb_registry PROPERTIES WORKING_DIRECTORY "${CMAKE_SOUR
 # Virtools data loading (param types + operations from JSON)
 add_unit_test(test_virtools_types)
 set_tests_properties(test_virtools_types PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+add_unit_test(test_virtools_data_files)
+target_link_libraries(test_virtools_data_files PRIVATE yyjson)
+set_tests_properties(test_virtools_data_files PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 # Behavior ownership index
 add_unit_test(test_behavior_index)
