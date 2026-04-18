@@ -733,7 +733,6 @@ static int resource_import_report(
     const char *output_path,
     void *user_data)
 {
-    (void)dry_run;
     resource_import_args_t *args = (resource_import_args_t *)user_data;
     if (args == NULL) {
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -743,13 +742,16 @@ static int resource_import_report(
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         yyjson_mut_obj_add_uint(doc, data, "index", args->new_index);
+        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
         nmo_cli_json_add_str_safe(doc, data, "name", args->res_name);
         yyjson_mut_obj_add_uint(doc, data, "size", args->file_size);
         yyjson_mut_obj_add_uint(doc, data, "owner_count", args->owner_count);
-        yyjson_mut_obj_add_str(doc, data, "output", output_path);
+        if (!dry_run && output_path) {
+            yyjson_mut_obj_add_str(doc, data, "output", output_path);
+        }
         nmo_cmd_ctx_json_end(c, doc, data, "resource.import");
     } else {
-        fprintf(c->out, "Imported resource:\n");
+        fprintf(c->out, "%sImported resource:\n", dry_run ? "Dry run: " : "");
         char idx_buf[32];
         snprintf(idx_buf, sizeof(idx_buf), "%u", args->new_index);
         nmo_cli_print_kv(c->out, "Index", idx_buf, 12, c->colorize);
@@ -760,7 +762,11 @@ static int resource_import_report(
         char own_buf[32];
         snprintf(own_buf, sizeof(own_buf), "%u", args->owner_count);
         nmo_cli_print_kv(c->out, "Owners", own_buf, 12, c->colorize);
-        fprintf(c->out, "\nSaved to: %s\n", output_path);
+        if (dry_run) {
+            fprintf(c->out, "\n(dry run, no changes saved)\n");
+        } else {
+            fprintf(c->out, "\nSaved to: %s\n", output_path);
+        }
     }
 
     return NMO_CLI_EXIT_SUCCESS;
@@ -771,16 +777,18 @@ int nmo_cmd_resource_import(int argc, char **argv, const nmo_cli_global_opts_t *
         {"--output", "-o", NMO_OPT_STRING, "Output file (required)"},
         {"--name",   "-n", NMO_OPT_STRING, "Resource name (default: basename of disk file)"},
         {"--owner",  NULL, NMO_OPT_STRING, "Owner object IDs (comma-separated)"},
+        {"--dry-run", NULL, NMO_OPT_FLAG,  "Preview only, do not save"},
     };
-    nmo_opt_val_t vals[3];
+    nmo_opt_val_t vals[4];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, 4, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output_path = vals[0].present ? vals[0].val.str : NULL;
-    if (!output_path || !*output_path) {
+    bool dry_run = vals[3].present && vals[3].val.flag;
+    if (!dry_run && (!output_path || !*output_path)) {
         fprintf(stderr, "Error: Missing --output\n");
-        fprintf(stderr, "Usage: nmo resource import -o <output> [--name <name>] [--owner <ids>] <disk-file> <nmo-file>\n");
+        fprintf(stderr, "Usage: nmo resource import [-o <output>] [--dry-run] [--name <name>] [--owner <ids>] <disk-file> <nmo-file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -836,7 +844,7 @@ int nmo_cmd_resource_import(int argc, char **argv, const nmo_cli_global_opts_t *
     int rc = nmo_cli_run_write_command(
         nmo_file,
         output_path,
-        false,
+        dry_run,
         global,
         &spec,
         resource_import_mutate,
@@ -937,14 +945,17 @@ static int resource_replace_report(
     if (c->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
         yyjson_mut_obj_add_uint(doc, data, "index", args->res_index);
         nmo_cli_json_add_str_safe(doc, data, "name", args->res_name);
         yyjson_mut_obj_add_uint(doc, data, "old_size", args->old_size);
         yyjson_mut_obj_add_uint(doc, data, "new_size", args->file_size);
-        yyjson_mut_obj_add_str(doc, data, "output", output_path);
+        if (!dry_run && output_path) {
+            yyjson_mut_obj_add_str(doc, data, "output", output_path);
+        }
         nmo_cmd_ctx_json_end(c, doc, data, "resource.replace");
     } else {
-        fprintf(c->out, "Replaced resource:\n");
+        fprintf(c->out, "%sReplaced resource:\n", dry_run ? "Dry run: " : "");
         char idx_buf[32];
         snprintf(idx_buf, sizeof(idx_buf), "%u", args->res_index);
         nmo_cli_print_kv(c->out, "Index", idx_buf, 12, c->colorize);
@@ -952,7 +963,11 @@ static int resource_replace_report(
         char old_buf[32];
         snprintf(old_buf, sizeof(old_buf), "%u -> %u", args->old_size, args->file_size);
         nmo_cli_print_kv(c->out, "Size", old_buf, 12, c->colorize);
-        fprintf(c->out, "\nSaved to: %s\n", output_path);
+        if (dry_run) {
+            fprintf(c->out, "\n(dry run, no changes saved)\n");
+        } else {
+            fprintf(c->out, "\nSaved to: %s\n", output_path);
+        }
     }
 
     return NMO_CLI_EXIT_SUCCESS;
@@ -963,16 +978,18 @@ int nmo_cmd_resource_replace(int argc, char **argv, const nmo_cli_global_opts_t 
         {"--output", "-o", NMO_OPT_STRING, "Output file (required)"},
         {"--index",  "-i", NMO_OPT_STRING, "Resource index"},
         {"--name",   "-n", NMO_OPT_STRING, "Resource name"},
+        {"--dry-run", NULL, NMO_OPT_FLAG,  "Preview only, do not save"},
     };
-    nmo_opt_val_t vals[3];
+    nmo_opt_val_t vals[4];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, 4, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output_path = vals[0].present ? vals[0].val.str : NULL;
-    if (!output_path || !*output_path) {
+    bool dry_run = vals[3].present && vals[3].val.flag;
+    if (!dry_run && (!output_path || !*output_path)) {
         fprintf(stderr, "Error: Missing --output\n");
-        fprintf(stderr, "Usage: nmo resource replace -o <output> [--index <n> | --name <name>] <disk-file> <nmo-file>\n");
+        fprintf(stderr, "Usage: nmo resource replace [-o <output>] [--dry-run] [--index <n> | --name <name>] <disk-file> <nmo-file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -1013,7 +1030,7 @@ int nmo_cmd_resource_replace(int argc, char **argv, const nmo_cli_global_opts_t 
     int rc = nmo_cli_run_write_command(
         nmo_file,
         output_path,
-        false,
+        dry_run,
         global,
         &spec,
         resource_replace_mutate,

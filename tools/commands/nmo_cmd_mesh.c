@@ -18,6 +18,7 @@
 #include "app/nmo_save.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
+#include "object/nmo_serialize_context.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/nmo_object_struct_defs.h"
@@ -1344,16 +1345,32 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
     if (!chunk) {
         chunk = nmo_chunk_create(arena);
         if (chunk) {
+            chunk->class_id = NMO_CID_MESH;
+            chunk->chunk_version = 7;
+            chunk->data_version = 7;
+            chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
             nmo_object_set_chunk(mesh_obj, chunk);
         }
     }
     if (chunk) {
+        st = nmo_chunk_start_write(chunk);
+        if (st != NMO_OK) {
+            nmo_session_edit_rollback(edit);
+            fprintf(stderr, "Error: Failed to prepare mesh chunk: %s\n",
+                    nmo_error_string(st));
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
         const nmo_type_descriptor_t *type_desc = NULL;
         if (c.registry) {
             type_desc = nmo_type_registry_find_by_class_id(c.registry, NMO_CID_MESH);
         }
         if (type_desc) {
-            st = nmo_mesh_serialize(ms, chunk, type_desc, c.session);
+            nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+                arena,
+                nmo_session_get_repository(c.session),
+                NMO_SERIALIZE_FLAG_FILE_MODE,
+                0);
+            st = nmo_mesh_serialize(ms, chunk, type_desc, &ser_ctx);
             if (st != NMO_OK) {
                 nmo_session_edit_rollback(edit);
                 fprintf(stderr, "Error: Mesh serialization returned %s\n",

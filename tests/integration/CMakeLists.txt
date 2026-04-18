@@ -63,14 +63,26 @@ if(TARGET nmo_cli)
     add_executable(test_cli_commands test_cli_commands.c)
     target_link_libraries(test_cli_commands PRIVATE nmo test_framework yyjson)
     add_dependencies(test_cli_commands nmo_cli)
-    target_compile_definitions(test_cli_commands PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
+    target_compile_definitions(test_cli_commands PRIVATE
+        NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>"
+        NMO_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+    )
     add_test(NAME test_cli_commands COMMAND test_cli_commands)
+    set_tests_properties(test_cli_commands PROPERTIES
+        ENVIRONMENT "NMO_DATA_DIR=${PROJECT_SOURCE_DIR}/data"
+    )
 
     add_executable(test_cli_diff_objects test_cli_diff_objects.c)
     target_link_libraries(test_cli_diff_objects PRIVATE nmo test_framework yyjson)
     add_dependencies(test_cli_diff_objects nmo_cli)
     target_compile_definitions(test_cli_diff_objects PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_cli_diff_objects COMMAND test_cli_diff_objects)
+
+    add_executable(test_cli_write_commands test_cli_write_commands.c)
+    target_link_libraries(test_cli_write_commands PRIVATE nmo test_framework)
+    add_dependencies(test_cli_write_commands nmo_cli)
+    target_compile_definitions(test_cli_write_commands PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
+    add_test(NAME test_cli_write_commands COMMAND test_cli_write_commands)
 endif()
 
 # Temporarily disabled - test_phase6_integration uses deprecated API

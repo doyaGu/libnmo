@@ -752,8 +752,9 @@ static void object_delete_args_cleanup(object_delete_args_t *args)
     args->target_count = 0;
 
     if (args->preview_entries != NULL) {
+        nmo_allocator_t alloc = nmo_allocator_default();
         for (size_t i = 0; i < args->expanded_count; i++) {
-            free(args->preview_entries[i].name);
+            nmo_free(&alloc, args->preview_entries[i].name);
         }
         free(args->preview_entries);
         args->preview_entries = NULL;
