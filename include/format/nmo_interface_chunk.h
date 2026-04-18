@@ -58,7 +58,7 @@ typedef struct nmo_chunk nmo_chunk_t;
 #define NMO_INTERFACE_FLAG_FOLDED             0x200u
 #define NMO_INTERFACE_FLAG_HEADER_ONLY        0x8000u
 
-/* Editor default used when sectioned headers omit the inline color field. */
+/* Editor default used when sectioned headers omit a stored color field. */
 #define NMO_INTERFACE_DEFAULT_HEADER_COLOR    0x00C8C8C8u
 
 /* Interface format metadata flags (nmo_interface_data_t::format_flags). */

@@ -543,6 +543,38 @@ TEST(interface_chunk, dev_layout_omits_color_and_inline_body) {
     nmo_arena_destroy(arena);
 }
 
+TEST(interface_chunk, sectioned_v12_uses_default_without_color_field) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_chunk_start_write(chunk);
+    nmo_chunk_write_identifier(chunk, 1);
+    nmo_chunk_write_dword(chunk, 0x12);
+    nmo_chunk_write_identifier(chunk, 0xB0000002u);
+    nmo_chunk_write_int(chunk, 1);
+
+    nmo_chunk_write_identifier(chunk, 0xB0070000u);
+    write_script_header_fields(chunk, 100, 0, 0, 0.0f, 0.0f);
+    nmo_chunk_write_float(chunk, 10.0f);
+    nmo_chunk_write_float(chunk, 20.0f);
+    nmo_chunk_write_float(chunk, 50.0f);
+    nmo_chunk_write_int(chunk, 0);
+    nmo_chunk_write_int(chunk, 0);
+    nmo_chunk_close(chunk);
+
+    nmo_interface_data_t data;
+    memset(&data, 0, sizeof(data));
+    nmo_status_t st = nmo_interface_chunk_parse(chunk, arena, NULL, &data);
+    ASSERT_EQ(NMO_OK, st);
+    ASSERT_EQ((int)NMO_INTERFACE_DEFAULT_HEADER_COLOR, (int)data.script.color);
+    ASSERT_FALSE(data.format_flags & NMO_INTERFACE_FORMAT_COLOR_PRESENT);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(interface_chunk, dev_layout_parse_sectioned_links) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
     ASSERT_NOT_NULL(arena);
@@ -2535,6 +2567,7 @@ TEST_MAIN_BEGIN()
     /* Task 4: Links */
     REGISTER_TEST(interface_chunk, parse_links);
     REGISTER_TEST(interface_chunk, dev_layout_omits_color_and_inline_body);
+    REGISTER_TEST(interface_chunk, sectioned_v12_uses_default_without_color_field);
     REGISTER_TEST(interface_chunk, dev_layout_parse_sectioned_links);
     REGISTER_TEST(interface_chunk, dev_layout_rejects_truncated_comment_string);
     /* Task 5: Operations, comments, parameters */
