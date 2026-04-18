@@ -1670,6 +1670,302 @@ static nmo_status_t nmo_parse_object_id_value(
     return nmo_parse_uint32(value, registry, string);
 }
 
+static const char *nmo_parse_skip_ws(const char *p)
+{
+    while (p && *p && isspace((unsigned char)*p)) {
+        p++;
+    }
+    return p;
+}
+
+static const char *nmo_parse_trim_end(const char *start, const char *end)
+{
+    while (end > start && isspace((unsigned char)end[-1])) {
+        end--;
+    }
+    return end;
+}
+
+static const char *nmo_find_struct_field_end(const char *p)
+{
+    int paren_depth = 0;
+    int brace_depth = 0;
+    int bracket_depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+
+    for (; *p; ++p) {
+        char ch = *p;
+        if (in_string) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if (ch == '"') {
+            in_string = true;
+            continue;
+        }
+        if (ch == '(') paren_depth++;
+        else if (ch == ')' && paren_depth > 0) paren_depth--;
+        else if (ch == '{') brace_depth++;
+        else if (ch == '}' && brace_depth > 0) brace_depth--;
+        else if (ch == '[') bracket_depth++;
+        else if (ch == ']' && bracket_depth > 0) bracket_depth--;
+        else if ((ch == ',' || ch == '}') &&
+                 paren_depth == 0 && brace_depth == 0 && bracket_depth == 0) {
+            return p;
+        }
+    }
+
+    return p;
+}
+
+static bool nmo_field_name_matches(
+    const char *expected,
+    const char *start,
+    const char *end)
+{
+    if (!expected) {
+        return false;
+    }
+
+    start = nmo_parse_skip_ws(start);
+    end = nmo_parse_trim_end(start, end);
+    size_t len = (size_t)(end - start);
+    return strlen(expected) == len && strncmp(expected, start, len) == 0;
+}
+
+static nmo_status_t nmo_copy_trimmed_segment(
+    const char *start,
+    const char *end,
+    char **out_string)
+{
+    if (!start || !end || end < start || !out_string) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid string segment");
+    }
+
+    start = nmo_parse_skip_ws(start);
+    end = nmo_parse_trim_end(start, end);
+    size_t len = (size_t)(end - start);
+    char *copy = (char *)malloc(len + 1u);
+    if (!copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate string segment");
+    }
+
+    memcpy(copy, start, len);
+    copy[len] = '\0';
+    *out_string = copy;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_parse_reflected_struct_field(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *name_start,
+    const char *name_end,
+    const char *value_start,
+    const char *value_end)
+{
+    for (size_t i = 0; i < type->field_count; i++) {
+        const nmo_type_field_t *field = &type->fields[i];
+        if (!nmo_field_name_matches(field->name, name_start, name_end)) {
+            continue;
+        }
+        if ((uint64_t)field->offset + field->size > type->size) {
+            NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR,
+                             "Struct field extends beyond value size");
+        }
+        if (field->flags & (NMO_FIELD_POINTER | NMO_FIELD_REPEATED)) {
+            NMO_RETURN_ERROR(NMO_ERR_NOT_IMPLEMENTED, NMO_SEVERITY_ERROR,
+                             "Struct array/pointer field parsing is not implemented");
+        }
+
+        const nmo_type_descriptor_t *field_type =
+            nmo_to_string_resolve_type(registry, field->type_guid);
+        if (!field_type) {
+            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                             "Struct field type not found");
+        }
+
+        char *field_string = NULL;
+        NMO_RETURN_IF_ERROR(nmo_copy_trimmed_segment(value_start, value_end, &field_string));
+        nmo_status_t st = nmo_type_value_from_string(
+            (uint8_t *)value + field->offset, field_type, registry, field_string);
+        free(field_string);
+        return st;
+    }
+
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "Unknown struct field");
+}
+
+static nmo_status_t nmo_parse_specialized_struct_field(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const nmo_struct_descriptor_t *fields,
+    size_t field_count,
+    const char *name_start,
+    const char *name_end,
+    const char *value_start,
+    const char *value_end)
+{
+    for (size_t i = 0; i < field_count; i++) {
+        const nmo_struct_descriptor_t *field = &fields[i];
+        if (!nmo_field_name_matches(field->name, name_start, name_end)) {
+            continue;
+        }
+        if ((uint64_t)field->offset + field->size > type->size) {
+            NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR,
+                             "Struct metadata field extends beyond value size");
+        }
+        if (field->array_count > 0 || field->pointer_depth > 0) {
+            NMO_RETURN_ERROR(NMO_ERR_NOT_IMPLEMENTED, NMO_SEVERITY_ERROR,
+                             "Struct array/pointer field parsing is not implemented");
+        }
+
+        const nmo_type_descriptor_t *field_type =
+            nmo_to_string_resolve_type(registry, field->type_guid);
+        if (!field_type) {
+            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                             "Struct metadata field type not found");
+        }
+
+        char *field_string = NULL;
+        NMO_RETURN_IF_ERROR(nmo_copy_trimmed_segment(value_start, value_end, &field_string));
+        nmo_status_t st = nmo_type_value_from_string(
+            (uint8_t *)value + field->offset, field_type, registry, field_string);
+        free(field_string);
+        return st;
+    }
+
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "Unknown struct metadata field");
+}
+
+static nmo_status_t nmo_parse_struct_fields(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const nmo_struct_descriptor_t *specialized_fields,
+    size_t specialized_field_count,
+    const char *string)
+{
+    const char *p = nmo_parse_skip_ws(string);
+    if (*p != '{') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Struct value must start with '{'");
+    }
+    p++;
+
+    memset(value, 0, type->size);
+
+    for (;;) {
+        p = nmo_parse_skip_ws(p);
+        if (*p == '}') {
+            p++;
+            p = nmo_parse_skip_ws(p);
+            if (*p != '\0') {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "Unexpected trailing characters after struct");
+            }
+            NMO_RETURN_OK();
+        }
+        if (*p == '\0') {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Unclosed struct value");
+        }
+
+        const char *name_start = p;
+        while (*p && *p != '=' && *p != '}') {
+            p++;
+        }
+        if (*p != '=') {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Struct field must use name=value");
+        }
+        const char *name_end = p;
+        p++;
+
+        const char *value_start = p;
+        const char *value_end = nmo_find_struct_field_end(p);
+        if (value_end == value_start) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Struct field value is empty");
+        }
+
+        if (specialized_fields && specialized_field_count > 0) {
+            NMO_RETURN_IF_ERROR(nmo_parse_specialized_struct_field(
+                value, type, registry, specialized_fields, specialized_field_count,
+                name_start, name_end, value_start, value_end));
+        } else {
+            NMO_RETURN_IF_ERROR(nmo_parse_reflected_struct_field(
+                value, type, registry, name_start, name_end, value_start, value_end));
+        }
+
+        p = value_end;
+        p = nmo_parse_skip_ws(p);
+        if (*p == ',') {
+            p++;
+            continue;
+        }
+        if (*p == '}') {
+            continue;
+        }
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Struct fields must be separated by ','");
+    }
+}
+
+static nmo_status_t nmo_struct_like_from_string(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    if (!value || !type || !string) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments for struct_from_string");
+    }
+
+    if (type->fields && type->field_count > 0) {
+        return nmo_parse_struct_fields(value, type, registry, NULL, 0, string);
+    }
+
+    if (registry) {
+        const nmo_specialized_metadata_t *meta =
+            nmo_type_registry_get_metadata(registry, type->id);
+        if (meta &&
+            (meta->metadata_type == NMO_METADATA_TYPE_STRUCT ||
+             meta->metadata_type == NMO_METADATA_TYPE_UNION)) {
+            const nmo_struct_descriptor_t *fields =
+                meta->metadata_type == NMO_METADATA_TYPE_STRUCT
+                    ? meta->struct_meta.fields
+                    : meta->union_meta.fields;
+            size_t field_count =
+                meta->metadata_type == NMO_METADATA_TYPE_STRUCT
+                    ? meta->struct_meta.field_count
+                    : meta->union_meta.field_count;
+            if (fields && field_count > 0) {
+                return nmo_parse_struct_fields(
+                    value, type, registry, fields, field_count, string);
+            }
+        }
+    }
+
+    NMO_RETURN_ERROR(NMO_ERR_NOT_IMPLEMENTED, NMO_SEVERITY_ERROR,
+                     "Struct-from-string requires field metadata");
+}
+
 static nmo_status_t nmo_parse_rect(
     void *value,
     const nmo_type_registry_t *registry,
@@ -1875,6 +2171,9 @@ nmo_status_t nmo_type_value_from_string(
     }
     if (type->category & NMO_TYPE_CATEGORY_OBJECT_REF) {
         return nmo_parse_object_id_value(value, registry, string);
+    }
+    if (type->category & (NMO_TYPE_CATEGORY_STRUCT | NMO_TYPE_CATEGORY_UNION)) {
+        return nmo_struct_like_from_string(value, type, registry, string);
     }
 
     /* Level 3: scalar size fallback for derived types */

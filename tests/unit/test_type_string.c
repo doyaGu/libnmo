@@ -968,6 +968,67 @@ TEST(type_string, type_value_to_string_struct_with_object_id_field) {
     ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("{material_id=#7}", buffer);
 
+    test_material_group_t parsed = {0};
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&parsed, type, registry, buffer));
+    ASSERT_EQ(7u, parsed.material_id);
+
+    teardown();
+}
+
+TEST(type_string, type_value_from_string_struct_with_reflected_fields) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    typedef struct test_struct_parse_t {
+        uint32_t count;
+        bool enabled;
+        nmo_object_id_t target;
+    } test_struct_parse_t;
+
+    static const nmo_type_field_t fields[] = {
+        NMO_FIELD(test_struct_parse_t, count, CKPGUID_UINT32),
+        NMO_FIELD(test_struct_parse_t, enabled, CKPGUID_BOOL),
+        NMO_FIELD(test_struct_parse_t, target, CKPGUID_ID),
+    };
+
+    nmo_type_descriptor_t desc = {
+        .guid = NMO_GUID(0xDEADBEEFu, 0x00000004u),
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_STRUCT,
+        .flags = 0,
+        .name = "TestStructParse",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(test_struct_parse_t),
+        .alignment = (uint32_t)alignof(test_struct_parse_t),
+        .fields = fields,
+        .field_count = sizeof(fields) / sizeof(fields[0]),
+        .vtable = NULL,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &desc));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, desc.guid);
+    ASSERT_NE(NULL, type);
+
+    test_struct_parse_t value = {0};
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(
+        &value, type, registry, "{count=42, enabled=true, target=#7}"));
+
+    ASSERT_EQ(42u, value.count);
+    ASSERT_TRUE(value.enabled);
+    ASSERT_EQ(7u, value.target);
+
     teardown();
 }
 
@@ -1590,6 +1651,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, object_id_roundtrip);
     REGISTER_TEST(type_string, type_value_to_string_object_id);
     REGISTER_TEST(type_string, type_value_to_string_struct_with_object_id_field);
+    REGISTER_TEST(type_string, type_value_from_string_struct_with_reflected_fields);
     REGISTER_TEST(type_string, type_value_to_string_object_ref_with_fields);
     REGISTER_TEST(type_string, type_value_to_string_pointer_array_uses_metadata_count);
     REGISTER_TEST(type_string, type_value_to_string_nmo_array_uses_array_count);
