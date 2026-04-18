@@ -441,18 +441,8 @@ static void behavior_trace_usage(FILE *out) {
 }
 
 static void behavior_interface_usage(FILE *out) {
-    fprintf(out, "Usage: nmo behavior interface <command> [options] [file]\n\n");
-    fprintf(out, "Show or edit behavior interface layout data.\n\n");
     fprintf(out, "Output:\n");
     fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n\n");
-    fprintf(out, "Commands:\n");
-    fprintf(out, "  show                    Show interface layout data (default)\n");
-    fprintf(out, "  set-pos                 Move behavior position\n");
-    fprintf(out, "  fold                    Fold behavior\n");
-    fprintf(out, "  unfold                  Unfold behavior\n");
-    fprintf(out, "  set-color               Set script color\n");
-    fprintf(out, "  add-comment             Add layout comment\n");
-    fprintf(out, "  remove-comment          Remove layout comment\n");
 }
 
 static void behavior_add_link_usage(FILE *out) {
@@ -1245,7 +1235,6 @@ static void nmo_cli_print_sub_action_help(
     fprintf(out, "%s\n\n", parent->brief);
     if (parent->print_usage) {
         parent->print_usage(out);
-        return;
     }
     fprintf(out, "Commands:\n");
     for (size_t i = 0; i < parent->sub_action_count; ++i) {
