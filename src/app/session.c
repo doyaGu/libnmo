@@ -22,8 +22,10 @@
 #include "format/nmo_data.h"
 #include "format/nmo_chunk_pool.h"
 #include "format/nmo_header1.h"
+#include "behavior/nmo_bb_registry.h"
 #include "behavior/nmo_behavior_index.h"
 #include "object/nmo_ref_graph.h"
+#include "object/nmo_manager_guids.h"
 #include "type/nmo_type_runtime.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include <stddef.h>
@@ -1399,6 +1401,9 @@ static int nmo_session_build_plugin_diagnostics(
     nmo_extension_registry_t *ext_registry = ctx != NULL
         ? nmo_context_get_extension_registry(ctx)
         : NULL;
+    nmo_bb_registry_t *bb_registry = ctx != NULL
+        ? nmo_context_get_bb_registry(ctx)
+        : NULL;
 
     size_t missing = 0;
     size_t outdated = 0;
@@ -1427,8 +1432,11 @@ static int nmo_session_build_plugin_diagnostics(
             const nmo_extension_plugin_info_t *registered = ext_registry
                 ? nmo_extension_registry_find(ext_registry, dep->guid)
                 : NULL;
+            const nmo_bb_proto_t *bb_proto = bb_registry
+                ? nmo_bb_registry_find(bb_registry, dep->guid)
+                : NULL;
 
-            if (registered == NULL) {
+            if (registered == NULL && bb_proto == NULL) {
                 missing++;
                 if (entry != NULL) {
                     entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_MISSING;
@@ -1440,13 +1448,20 @@ static int nmo_session_build_plugin_diagnostics(
             }
 
             if (entry != NULL) {
-                entry->resolved_version = registered->version;
-                if (registered->name != NULL) {
+                entry->resolved_version = registered != NULL
+                    ? registered->version
+                    : (bb_proto != NULL ? bb_proto->version : dep->version);
+                if (registered != NULL && registered->name != NULL) {
                     entry->resolved_name = (char *)nmo_arena_strdup(arena, registered->name);
+                } else if (bb_proto != NULL && bb_proto->name != NULL) {
+                    entry->resolved_name = (char *)nmo_arena_strdup(arena, bb_proto->name);
                 }
             }
 
-            if (registered->version < dep->version) {
+            uint32_t resolved_version = registered != NULL
+                ? registered->version
+                : (bb_proto != NULL ? bb_proto->version : dep->version);
+            if (resolved_version < dep->version) {
                 outdated++;
                 if (entry != NULL) {
                     entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_VERSION_TOO_OLD;

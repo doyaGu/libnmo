@@ -38,6 +38,7 @@ option(NMO_BUILD_TOOLS "Build CLI tools" ON)
 option(NMO_BUILD_EXAMPLES "Build examples" OFF)
 option(NMO_ENABLE_SIMD "Enable SIMD optimizations" OFF)
 option(NMO_BUILD_SHARED "Build shared library" OFF)
+option(NMO_MINGW_STATIC_RUNTIME "Link MinGW CLI executables with the static runtime" OFF)
 
 # Sanitizers are great for catching memory issues, but aren't available on all
 # toolchains (notably some MinGW distributions on Windows). Keep them opt-in on
@@ -439,6 +440,15 @@ install(DIRECTORY include/
     PATTERN "session/nmo_ref_enumerate.h" EXCLUDE
 )
 
+install(FILES
+    data/virtools_building_blocks.json
+    data/virtools_building_blocks_ext.json
+    data/virtools_operation_types.json
+    data/virtools_parameter_types.json
+    data/virtools_plugins.json
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/libnmo/data
+)
+
 # Build tools (before tests so CLI tests can depend on nmo_cli target)
 if(NMO_BUILD_TOOLS)
     add_subdirectory(tools)
@@ -467,6 +477,7 @@ message(STATUS "  Build tools:   ${NMO_BUILD_TOOLS}")
 message(STATUS "  Build examples: ${NMO_BUILD_EXAMPLES}")
 message(STATUS "  Enable SIMD:   ${NMO_ENABLE_SIMD}")
 message(STATUS "  Build shared:  ${NMO_BUILD_SHARED}")
+message(STATUS "  MinGW static runtime: ${NMO_MINGW_STATIC_RUNTIME}")
 message(STATUS "  ZLIB found:    ${ZLIB_FOUND}")
 message(STATUS "  yyjson found:  ${YYJSON_FOUND}")
 message(STATUS "")

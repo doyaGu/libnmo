@@ -24,6 +24,7 @@ extern "C" {
 typedef struct nmo_type_registry nmo_type_registry_t;
 typedef struct nmo_operation_registry nmo_operation_registry_t;
 typedef struct nmo_bb_registry nmo_bb_registry_t;
+typedef struct nmo_extension_registry nmo_extension_registry_t;
 
 /**
  * @brief Load parameter types from JSON file.
@@ -68,6 +69,20 @@ NMO_API nmo_status_t nmo_virtools_load_operations(
  */
 NMO_API nmo_status_t nmo_virtools_load_building_blocks(
     nmo_bb_registry_t *bb_registry, const char *path);
+
+/**
+ * @brief Load Virtools plugin metadata from JSON file.
+ *
+ * Reads virtools_plugins.json and registers plugin-level metadata into the
+ * extension registry. These entries are metadata-only: they have no init()
+ * callback and do not load external DLL code.
+ *
+ * @param ext_registry  Extension registry
+ * @param path          JSON file path
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_virtools_load_plugins(
+    nmo_extension_registry_t *ext_registry, const char *path);
 
 /**
  * @brief Load all Virtools data from a directory.

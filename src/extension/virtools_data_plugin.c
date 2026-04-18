@@ -15,6 +15,9 @@
 #include "core/nmo_guid.h"
 #include "extension_registry_internal.h"
 
+#include <stdio.h>
+#include <string.h>
+
 static nmo_status_t virtools_data_init(
     const nmo_extension_host_t *host,
     void *host_user)
@@ -34,7 +37,19 @@ static nmo_status_t virtools_data_init(
     nmo_bb_registry_t *bb_reg =
         nmo_extension_registry_get_bb_registry(ctx->registry);
 
-    return nmo_virtools_load_data_dir(type_reg, op_reg, bb_reg, data_dir);
+    nmo_status_t status = nmo_virtools_load_data_dir(type_reg, op_reg, bb_reg, data_dir);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    size_t plugin_path_len = strlen(data_dir) + sizeof("/virtools_plugins.json");
+    char *plugin_path = (char *)nmo_arena_alloc(ctx->plugin_arena, plugin_path_len, 1);
+    if (plugin_path != NULL) {
+        snprintf(plugin_path, plugin_path_len, "%s/virtools_plugins.json", data_dir);
+        (void)nmo_virtools_load_plugins(ctx->registry, plugin_path);
+    }
+
+    return NMO_OK;
 }
 
 static const nmo_extension_plugin_t g_virtools_data_plugin = {

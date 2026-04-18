@@ -9,6 +9,8 @@
 #include "behavior/nmo_bb_registry.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_operation_system.h"
+#include "extension/nmo_extension_registry.h"
+#include "extension/nmo_extension_abi.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_error.h"
 
@@ -20,6 +22,9 @@
 /* ============================================================================
  * Helpers
  * ============================================================================ */
+
+static const yyjson_read_flag NMO_VIRTOOLS_JSON_READ_FLAGS =
+    YYJSON_READ_ALLOW_BOM;
 
 static nmo_guid_t read_guid(yyjson_val *arr) {
     if (!arr || !yyjson_is_arr(arr) || yyjson_arr_size(arr) != 2)
@@ -150,7 +155,7 @@ nmo_status_t nmo_virtools_load_param_types(nmo_type_registry_t *registry, const 
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null arg");
 
     yyjson_read_err err;
-    yyjson_doc *doc = yyjson_read_file(path, 0, NULL, &err);
+    yyjson_doc *doc = yyjson_read_file(path, NMO_VIRTOOLS_JSON_READ_FLAGS, NULL, &err);
     if (!doc)
         NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR, "JSON parse error: %s", err.msg);
 
@@ -216,7 +221,7 @@ nmo_status_t nmo_virtools_load_operations(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null arg");
 
     yyjson_read_err err;
-    yyjson_doc *doc = yyjson_read_file(path, 0, NULL, &err);
+    yyjson_doc *doc = yyjson_read_file(path, NMO_VIRTOOLS_JSON_READ_FLAGS, NULL, &err);
     if (!doc)
         NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR, "JSON parse error: %s", err.msg);
 
@@ -321,7 +326,7 @@ nmo_status_t nmo_virtools_load_building_blocks(nmo_bb_registry_t *bb_registry, c
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null arg");
 
     yyjson_read_err err;
-    yyjson_doc *doc = yyjson_read_file(path, 0, NULL, &err);
+    yyjson_doc *doc = yyjson_read_file(path, NMO_VIRTOOLS_JSON_READ_FLAGS, NULL, &err);
     if (!doc)
         NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR, "JSON parse error: %s at %zu", err.msg, err.pos);
 
@@ -382,6 +387,67 @@ nmo_status_t nmo_virtools_load_building_blocks(nmo_bb_registry_t *bb_registry, c
         free(op);
         free(lp);
         free(st);
+    }
+
+    yyjson_doc_free(doc);
+    return NMO_OK;
+}
+
+/* ============================================================================
+ * Plugin metadata
+ * ============================================================================ */
+
+nmo_status_t nmo_virtools_load_plugins(nmo_extension_registry_t *ext_registry, const char *path) {
+    if (!ext_registry || !path)
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null arg");
+
+    yyjson_read_err err;
+    yyjson_doc *doc = yyjson_read_file(path, NMO_VIRTOOLS_JSON_READ_FLAGS, NULL, &err);
+    if (!doc)
+        NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR, "JSON parse error: %s at %zu", err.msg, err.pos);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    if (!yyjson_is_arr(root)) {
+        yyjson_doc_free(doc);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "expected JSON array");
+    }
+
+    yyjson_val *item;
+    yyjson_arr_iter iter;
+    yyjson_arr_iter_init(root, &iter);
+    while ((item = yyjson_arr_iter_next(&iter)) != NULL) {
+        nmo_guid_t guid = get_guid(item, "guid");
+        if (nmo_guid_is_null(guid)) continue;
+
+        if (nmo_extension_registry_find(ext_registry, guid) != NULL) {
+            continue;
+        }
+
+        const char *name = get_str(item, "name");
+        if (name == NULL || name[0] == '\0') {
+            name = get_str(item, "description");
+        }
+        if (name == NULL || name[0] == '\0') {
+            name = get_str(item, "dll");
+        }
+
+        nmo_extension_plugin_t plugin;
+        memset(&plugin, 0, sizeof(plugin));
+        plugin.abi_version = NMO_EXTENSION_ABI_VERSION;
+        plugin.struct_size = sizeof(plugin);
+        plugin.guid = guid;
+        plugin.version = get_uint(item, "version");
+        plugin.category = (nmo_plugin_category_t)get_uint(item, "category");
+        plugin.name = name;
+        plugin.init = NULL;
+        plugin.shutdown = NULL;
+
+        nmo_status_t status =
+            nmo_extension_registry_register_static(ext_registry, &plugin, 1);
+        if (status != NMO_OK) {
+            yyjson_doc_free(doc);
+            return status;
+        }
     }
 
     yyjson_doc_free(doc);

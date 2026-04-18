@@ -18,12 +18,14 @@
 /* Helper: Convert plugin category enum to string */
 static const char *plugin_category_to_string(nmo_plugin_category_t category) {
     switch (category) {
+        case NMO_PLUGIN_BITMAP_READER:     return "BitmapReader";
+        case NMO_PLUGIN_SOUND_READER:      return "SoundReader";
+        case NMO_PLUGIN_MODEL_READER:      return "ModelReader";
         case NMO_PLUGIN_MANAGER_DLL:       return "Manager";
         case NMO_PLUGIN_BEHAVIOR_DLL:      return "Behavior";
         case NMO_PLUGIN_RENDER_DLL:        return "Render";
-        case NMO_PLUGIN_SOUND_DLL:         return "Sound";
-        case NMO_PLUGIN_INPUT_DLL:         return "Input";
-        case NMO_PLUGIN_OBJECT_READER_DLL: return "ObjectReader";
+        case NMO_PLUGIN_MOVIE_READER:      return "MovieReader";
+        case NMO_PLUGIN_EXTENSION_DLL:     return "Extension";
         case NMO_PLUGIN_CUSTOM_DLL:        return "Custom";
         default:                           return "Unknown";
     }
@@ -555,4 +557,3 @@ int nmo_cmd_extension_check(int argc, char **argv, const nmo_cli_global_opts_t *
 
     return nmo_cmd_ctx_done(&c, exit_code);
 }
-

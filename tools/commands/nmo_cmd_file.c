@@ -593,6 +593,21 @@ int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *glo
  * file plugins
  * ============================================================================ */
 
+static const char *file_plugin_category_name(nmo_plugin_category_t category) {
+    switch (category) {
+        case NMO_PLUGIN_BITMAP_READER:     return "bitmap_reader";
+        case NMO_PLUGIN_SOUND_READER:      return "sound_reader";
+        case NMO_PLUGIN_MODEL_READER:      return "model_reader";
+        case NMO_PLUGIN_MANAGER_DLL:       return "manager";
+        case NMO_PLUGIN_BEHAVIOR_DLL:      return "behavior";
+        case NMO_PLUGIN_RENDER_DLL:        return "render";
+        case NMO_PLUGIN_MOVIE_READER:      return "movie_reader";
+        case NMO_PLUGIN_EXTENSION_DLL:     return "extension";
+        case NMO_PLUGIN_CUSTOM_DLL:        return "custom";
+        default:                           return "unknown";
+    }
+}
+
 int nmo_cmd_file_plugins(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_load_options_t opts = nmo_load_options_default();
     opts.profile = NMO_LOAD_PROFILE_METADATA;
@@ -624,6 +639,11 @@ int nmo_cmd_file_plugins(int argc, char **argv, const nmo_cli_global_opts_t *glo
                 char guid_buf[64];
                 nmo_guid_format(e->guid, guid_buf, sizeof(guid_buf));
                 yyjson_mut_obj_add_strcpy(doc, entry, "guid", guid_buf);
+                yyjson_mut_obj_add_uint(doc, entry, "category", (uint32_t)e->category);
+                yyjson_mut_obj_add_str(doc, entry, "category_name",
+                                       file_plugin_category_name(e->category));
+                yyjson_mut_obj_add_uint(doc, entry, "required_version", e->required_version);
+                yyjson_mut_obj_add_uint(doc, entry, "resolved_version", e->resolved_version);
                 if (e->resolved_name) {
                     yyjson_mut_obj_add_str(doc, entry, "name", e->resolved_name);
                 }
@@ -657,7 +677,11 @@ int nmo_cmd_file_plugins(int argc, char **argv, const nmo_cli_global_opts_t *glo
                     const nmo_session_plugin_dependency_status_t *e = &diag->entries[i];
                     char guid_buf[64];
                     nmo_guid_format(e->guid, guid_buf, sizeof(guid_buf));
-                    fprintf(c.out, "  %s", guid_buf);
+                    fprintf(c.out, "  %s [%s req=%u resolved=%u]",
+                            guid_buf,
+                            file_plugin_category_name(e->category),
+                            e->required_version,
+                            e->resolved_version);
                     if (e->resolved_name) {
                         fprintf(c.out, " (%s)", e->resolved_name);
                     }
@@ -708,8 +732,31 @@ typedef struct file_space_collect {
     uint64_t total_data;
     uint64_t total_pack;
     uint64_t compressed_count;
+    uint64_t pack_scale_num;
+    uint64_t pack_scale_den;
+    bool global_data_compressed;
     bool oom;
 } file_space_collect_t;
+
+static uint64_t file_space_estimate_packed_size(uint64_t data_size,
+                                                const file_space_collect_t *collect)
+{
+    if (data_size == 0) {
+        return 0;
+    }
+    if (collect == NULL ||
+        collect->pack_scale_num == 0 ||
+        collect->pack_scale_den == 0 ||
+        collect->pack_scale_num >= collect->pack_scale_den) {
+        return data_size;
+    }
+
+    long double scaled = (long double)data_size *
+                         (long double)collect->pack_scale_num /
+                         (long double)collect->pack_scale_den;
+    uint64_t packed = (uint64_t)(scaled + 0.5L);
+    return packed > 0 ? packed : 1;
+}
 
 static int file_space_object(size_t index,
                              nmo_object_t *obj,
@@ -724,9 +771,17 @@ static int file_space_object(size_t index,
     }
 
     nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-    uint64_t data_sz = chunk ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0;
-    uint64_t pack_sz = chunk ? (uint64_t)chunk->compressed_size : 0;
-    if (chunk && chunk->is_compressed) {
+    uint64_t data_sz = 0;
+    uint64_t pack_sz = 0;
+    if (chunk) {
+        data_sz = chunk->uncompressed_size > 0
+            ? (uint64_t)chunk->uncompressed_size
+            : (uint64_t)nmo_chunk_get_data_size(chunk);
+        pack_sz = chunk->compressed_size > 0
+            ? (uint64_t)chunk->compressed_size
+            : file_space_estimate_packed_size(data_sz, collect);
+    }
+    if (chunk && (chunk->is_compressed || collect->global_data_compressed)) {
         collect->compressed_count++;
     }
 
@@ -788,6 +843,12 @@ int nmo_cmd_file_space(int argc, char **argv, const nmo_cli_global_opts_t *globa
     nmo_file_info_t info = nmo_session_get_file_info(c.session);
 
     file_space_collect_t collect = {0};
+    const nmo_file_header_t *header = (const nmo_file_header_t *)nmo_session_get_header(c.session);
+    if (header != NULL && header->data_pack_size > 0 && header->data_unpack_size > 0) {
+        collect.pack_scale_num = header->data_pack_size;
+        collect.pack_scale_den = header->data_unpack_size;
+        collect.global_data_compressed = header->data_pack_size < header->data_unpack_size;
+    }
     rc = nmo_core_object_query_run(&c, NULL, file_space_object,
                                    &collect, NULL);
     if (rc != NMO_CLI_EXIT_SUCCESS || collect.oom) {

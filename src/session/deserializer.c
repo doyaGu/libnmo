@@ -553,7 +553,9 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
     file_info.ck_version = ds->header.ck_version;
     file_info.product_version = ds->header.product_version;
     file_info.product_build = ds->header.product_build;
-    file_info.file_size = 0;
+    file_info.file_size = (size_t)((ds->header.file_version >= 5u) ? 64u : 32u) +
+                          (size_t)ds->header.hdr1_pack_size +
+                          (size_t)ds->header.data_pack_size;
     file_info.object_count = ds->header.object_count;
     file_info.manager_count = ds->header.manager_count;
     file_info.write_mode = ds->header.file_write_mode;

@@ -43,6 +43,29 @@ TEST(bb_reg, loaded_from_data_dir) {
     nmo_context_release(ctx);
 }
 
+TEST(bb_reg, loads_extended_utf8_data_file) {
+    nmo_context_desc_t desc;
+    memset(&desc, 0, sizeof(desc));
+    desc.data_dir = "data";
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    nmo_bb_registry_t *reg = nmo_context_get_bb_registry(ctx);
+
+    const nmo_bb_proto_t *p = nmo_bb_registry_find(
+        reg,
+        nmo_guid_create(0x506B40F7, 0x30852E46));
+    ASSERT_TRUE(p != NULL);
+    ASSERT_STR_EQ(p->name, "Point Particle System");
+    ASSERT_STR_EQ(p->dll, "TT_ParticleSystems_RT.dll");
+
+    p = nmo_bb_registry_find(
+        reg,
+        nmo_guid_create(0x50EB3A17, 0x015C5BF9));
+    ASSERT_TRUE(p != NULL);
+    ASSERT_STR_EQ(p->description, "Gibt CurvePoint zur\303\274ck");
+
+    nmo_context_release(ctx);
+}
+
 /* === Dynamic add/find/remove === */
 
 TEST(bb_reg, add_and_find) {
@@ -116,6 +139,7 @@ TEST(bb_reg, remove_entry) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(bb_reg, empty_without_data);
     REGISTER_TEST(bb_reg, loaded_from_data_dir);
+    REGISTER_TEST(bb_reg, loads_extended_utf8_data_file);
     REGISTER_TEST(bb_reg, add_and_find);
     REGISTER_TEST(bb_reg, rejects_nonzero_count_with_null_array);
     REGISTER_TEST(bb_reg, remove_entry);

@@ -100,6 +100,7 @@ static nmo_status_t parse_manager_data(
                                     (unsigned)mgr->data_size);
 
             mgr->chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+            mgr->chunk->uncompressed_size = mgr->data_size;
 
             *pos += mgr->data_size;
         } else {
@@ -187,6 +188,7 @@ static nmo_status_t parse_object_data(
                                     (unsigned)obj->data_size);
 
             obj->chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+            obj->chunk->uncompressed_size = obj->data_size;
 
             *pos += obj->data_size;
         } else {

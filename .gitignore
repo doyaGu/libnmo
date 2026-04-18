@@ -71,4 +71,9 @@ docs/man/
 
 archived/
 reference/
-data/
+data/*
+!data/virtools_building_blocks.json
+!data/virtools_building_blocks_ext.json
+!data/virtools_operation_types.json
+!data/virtools_parameter_types.json
+!data/virtools_plugins.json

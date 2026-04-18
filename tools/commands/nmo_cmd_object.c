@@ -1264,6 +1264,48 @@ int nmo_cmd_object_list_fields(int argc, char **argv,
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, data, "id", object_id);
+        yyjson_mut_obj_add_uint(doc, data, "class_id", nmo_object_get_class_id(obj));
+        nmo_cli_json_add_str_safe(doc, data, "class_name",
+                                  type->name ? type->name : "<unnamed>");
+        yyjson_mut_obj_add_uint(doc, data, "field_count", type->field_count);
+
+        yyjson_mut_val *fields = yyjson_mut_arr(doc);
+        for (size_t i = 0; i < type->field_count; i++) {
+            const nmo_type_field_t *field = &type->fields[i];
+            const nmo_type_descriptor_t *ftype =
+                nmo_type_registry_find_by_guid(
+                    (nmo_type_registry_t *)c.registry, field->type_guid);
+
+            char val_buf[256];
+            val_buf[0] = '\0';
+            if (state && ftype) {
+                const void *fptr = nmo_field_get_ptr_const(state, field);
+                if (fptr) {
+                    nmo_type_value_to_string(fptr, ftype,
+                        (nmo_type_registry_t *)c.registry, val_buf, sizeof(val_buf));
+                }
+            }
+
+            yyjson_mut_val *item = yyjson_mut_obj(doc);
+            yyjson_mut_obj_add_uint(doc, item, "index", i);
+            nmo_cli_json_add_str_safe(doc, item, "name",
+                                      field->name ? field->name : "<unnamed>");
+            nmo_cli_json_add_str_safe(doc, item, "type",
+                                      ftype && ftype->name ? ftype->name : "???");
+            nmo_cli_json_add_str_safe(doc, item, "value",
+                                      val_buf[0] ? val_buf : "(empty)");
+            yyjson_mut_arr_add_val(fields, item);
+        }
+        yyjson_mut_obj_add_val(doc, data, "fields", fields);
+
+        int done = nmo_cmd_ctx_json_end(&c, doc, data, "object.list-fields");
+        return nmo_cmd_ctx_done(&c, done);
+    }
+
     fprintf(c.out, "Object #%u (%s) -- %zu fields:\n",
             object_id, type->name ? type->name : "<unnamed>",
             type->field_count);

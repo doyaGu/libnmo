@@ -66,14 +66,16 @@ typedef enum nmo_compression_level {
     NMO_COMPRESS_BEST    = 9,
 } nmo_compression_level_t;
 
-// Plugin categories (mirrors CKPluginManager ordering for compatibility)
+// Plugin categories mirror Virtools CK_PLUGIN_TYPE ordering.
 typedef enum nmo_plugin_category {
-    NMO_PLUGIN_MANAGER_DLL        = 0,
-    NMO_PLUGIN_BEHAVIOR_DLL       = 1,
-    NMO_PLUGIN_RENDER_DLL         = 2,
-    NMO_PLUGIN_SOUND_DLL          = 3,
-    NMO_PLUGIN_INPUT_DLL          = 4,
-    NMO_PLUGIN_OBJECT_READER_DLL  = 5,
+    NMO_PLUGIN_BITMAP_READER      = 0,
+    NMO_PLUGIN_SOUND_READER       = 1,
+    NMO_PLUGIN_MODEL_READER       = 2,
+    NMO_PLUGIN_MANAGER_DLL        = 3,
+    NMO_PLUGIN_BEHAVIOR_DLL       = 4,
+    NMO_PLUGIN_RENDER_DLL         = 5,
+    NMO_PLUGIN_MOVIE_READER       = 6,
+    NMO_PLUGIN_EXTENSION_DLL      = 7,
     NMO_PLUGIN_CUSTOM_DLL         = 255
 } nmo_plugin_category_t;
 

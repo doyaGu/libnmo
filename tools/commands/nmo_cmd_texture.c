@@ -148,6 +148,36 @@ static void sanitize_tex_filename(char *dst, size_t dst_size,
     }
 }
 
+static void texture_display_dimensions(const nmo_texture_state_t *ts,
+                                       int32_t *out_width,
+                                       int32_t *out_height) {
+    int32_t width = 0;
+    int32_t height = 0;
+    if (ts != NULL) {
+        width = ts->reader_width;
+        height = ts->reader_height;
+        if ((width <= 0 || height <= 0) &&
+            ts->bitmap_kind == CKTEXTURE_BITMAP_RAW &&
+            ts->raw_slots != NULL &&
+            ts->slot_count > 0) {
+            width = ts->raw_slots[0].width;
+            height = ts->raw_slots[0].height;
+        }
+        if ((width <= 0 || height <= 0) &&
+            ts->user_mipmaps != NULL &&
+            ts->user_mipmap_count > 0) {
+            width = ts->user_mipmaps[0].width;
+            height = ts->user_mipmaps[0].height;
+        }
+    }
+    if (out_width != NULL) {
+        *out_width = width;
+    }
+    if (out_height != NULL) {
+        *out_height = height;
+    }
+}
+
 static nmo_bitmap_format_t parse_format_name(const char *name) {
     if (!name) return NMO_BITMAP_FORMAT_PNG;
     if (nmo_tool_streq_ci(name, "png"))  return NMO_BITMAP_FORMAT_PNG;
@@ -291,8 +321,11 @@ int nmo_cmd_texture_list(int argc, char **argv, const nmo_cli_global_opts_t *glo
             const nmo_texture_state_t *ts =
                 (const nmo_texture_state_t *)nmo_object_get_state(obj);
             if (ts) {
-                yyjson_mut_obj_add_int(doc, item, "width", ts->reader_width);
-                yyjson_mut_obj_add_int(doc, item, "height", ts->reader_height);
+                int32_t width = 0;
+                int32_t height = 0;
+                texture_display_dimensions(ts, &width, &height);
+                yyjson_mut_obj_add_int(doc, item, "width", width);
+                yyjson_mut_obj_add_int(doc, item, "height", height);
                 yyjson_mut_obj_add_str(doc, item, "bitmap_kind", bitmap_kind_str(ts->bitmap_kind));
                 yyjson_mut_obj_add_uint(doc, item, "slot_count", ts->slot_count);
                 yyjson_mut_obj_add_bool(doc, item, "is_external", is_external_texture(ts));
@@ -335,7 +368,10 @@ int nmo_cmd_texture_list(int argc, char **argv, const nmo_cli_global_opts_t *glo
             const nmo_texture_state_t *ts =
                 (const nmo_texture_state_t *)nmo_object_get_state(obj);
             if (ts) {
-                format_dims(dims_buf, sizeof(dims_buf), ts->reader_width, ts->reader_height);
+                int32_t width = 0;
+                int32_t height = 0;
+                texture_display_dimensions(ts, &width, &height);
+                format_dims(dims_buf, sizeof(dims_buf), width, height);
                 snprintf(slots_buf, sizeof(slots_buf), "%u", ts->slot_count);
                 fmt_label = format_label(ts);
             } else {

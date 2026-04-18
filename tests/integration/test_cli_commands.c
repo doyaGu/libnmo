@@ -48,6 +48,10 @@
 #define NMO_CLI_PATH "nmo"
 #endif
 
+#ifndef NMO_SOURCE_DIR
+#define NMO_SOURCE_DIR "."
+#endif
+
 /* ============================================================================
  * Helpers
  * ============================================================================ */
@@ -154,6 +158,20 @@ static char *read_file_text(const char *path) {
     return buf;
 }
 
+static uint64_t file_size_bytes(const char *path) {
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        return 0;
+    }
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        return 0;
+    }
+    long size = ftell(fp);
+    fclose(fp);
+    return size > 0 ? (uint64_t)size : 0;
+}
+
 static yyjson_doc *run_cli_json(const char *args) {
     char full_args[2048];
     snprintf(full_args, sizeof(full_args), "-f json %s", args);
@@ -184,6 +202,40 @@ static const char *json_envelope_command(yyjson_doc *doc) {
     if (!root) return NULL;
     yyjson_val *cmd = yyjson_obj_get(root, "command");
     return yyjson_get_str(cmd);
+}
+
+/* ============================================================================
+ * completion
+ * ============================================================================ */
+
+TEST(cli, completion_bash_matches_generated_file) {
+    cli_run_result_t result = run_cli_capture("completion bash");
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_NOT_NULL(result.output);
+
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/completions/nmo.bash", NMO_SOURCE_DIR);
+    char *expected = read_file_text(path);
+    ASSERT_NOT_NULL(expected);
+    ASSERT_STR_EQ(expected, result.output);
+
+    free(expected);
+    free(result.output);
+}
+
+TEST(cli, completion_powershell_alias_matches_generated_file) {
+    cli_run_result_t result = run_cli_capture("completion ps1");
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_NOT_NULL(result.output);
+
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/completions/nmo.ps1", NMO_SOURCE_DIR);
+    char *expected = read_file_text(path);
+    ASSERT_NOT_NULL(expected);
+    ASSERT_STR_EQ(expected, result.output);
+
+    free(expected);
+    free(result.output);
 }
 
 /* ============================================================================
@@ -320,6 +372,208 @@ TEST(cli, file_stats_json) {
     ASSERT_NOT_NULL(yyjson_obj_get(mem, "total_size"));
     ASSERT_NOT_NULL(yyjson_obj_get(mem, "header_size"));
     ASSERT_NOT_NULL(yyjson_obj_get(mem, "compression_ratio"));
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, global_yaml_format_is_rejected) {
+    char args[512];
+    snprintf(args, sizeof(args), "-f yaml file info \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Invalid format 'yaml'");
+    free(result.output);
+}
+
+TEST(cli, file_space_reports_file_and_packed_sizes) {
+    const char *path = NMO_TEST_DATA_FILE("Nop.cmo");
+    char args[512];
+    snprintf(args, sizeof(args), "file space \"%s\"", path);
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+
+    uint64_t expected_size = file_size_bytes(path);
+    ASSERT_TRUE(expected_size > 0);
+    ASSERT_EQ(expected_size, yyjson_get_uint(yyjson_obj_get(data, "file_size")));
+    ASSERT_TRUE(yyjson_get_uint(yyjson_obj_get(data, "total_data_size")) > 0);
+    ASSERT_TRUE(yyjson_get_uint(yyjson_obj_get(data, "total_pack_size")) > 0);
+
+    yyjson_val *classes = yyjson_obj_get(data, "classes");
+    ASSERT_NOT_NULL(classes);
+    ASSERT_TRUE(yyjson_arr_size(classes) > 0);
+    yyjson_val *first_class = yyjson_arr_get_first(classes);
+    ASSERT_TRUE(yyjson_get_uint(yyjson_obj_get(first_class, "pack_size")) > 0);
+
+    yyjson_val *top_objects = yyjson_obj_get(data, "top_objects");
+    ASSERT_NOT_NULL(top_objects);
+    ASSERT_TRUE(yyjson_arr_size(top_objects) > 0);
+    yyjson_val *first_object = yyjson_arr_get_first(top_objects);
+    ASSERT_TRUE(yyjson_get_uint(yyjson_obj_get(first_object, "pack_size")) > 0);
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, file_plugins_resolves_known_behavior_dependencies) {
+    char args[512];
+    snprintf(args, sizeof(args), "file plugins \"%s\"", NMO_TEST_DATA_FILE("Nop.cmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+
+    uint64_t entry_count = yyjson_get_uint(yyjson_obj_get(data, "entry_count"));
+    uint64_t missing_count = yyjson_get_uint(yyjson_obj_get(data, "missing_count"));
+    ASSERT_TRUE(entry_count >= 2);
+    ASSERT_TRUE(missing_count < entry_count);
+
+    yyjson_val *entries = yyjson_obj_get(data, "entries");
+    ASSERT_NOT_NULL(entries);
+
+    int found_nop = 0;
+    size_t idx, max;
+    yyjson_val *entry;
+    yyjson_arr_foreach(entries, idx, max, entry) {
+        const char *guid = yyjson_get_str(yyjson_obj_get(entry, "guid"));
+        if (guid != NULL && strcmp(guid, "{302561C4-0D282980}") == 0) {
+            const char *name = yyjson_get_str(yyjson_obj_get(entry, "name"));
+            ASSERT_NOT_NULL(name);
+            ASSERT_STR_EQ("Nop", name);
+            ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(entry, "status_flags")));
+            found_nop = 1;
+            break;
+        }
+    }
+    ASSERT_TRUE(found_nop);
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, file_plugins_resolves_known_manager_dependencies) {
+    char args[512];
+    snprintf(args, sizeof(args), "file plugins \"%s\"", NMO_TEST_DATA_FILE("Demo/Tunnel.cmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    yyjson_val *entries = yyjson_obj_get(data, "entries");
+    ASSERT_NOT_NULL(entries);
+
+    int found_input = 0;
+    int found_collision = 0;
+    size_t idx, max;
+    yyjson_val *entry;
+    yyjson_arr_foreach(entries, idx, max, entry) {
+        const char *guid = yyjson_get_str(yyjson_obj_get(entry, "guid"));
+        if (guid == NULL) {
+            continue;
+        }
+
+        if (strcmp(guid, "{F787C904-00000000}") == 0 ||
+            strcmp(guid, "{38244712-00000000}") == 0) {
+            const char *name = yyjson_get_str(yyjson_obj_get(entry, "name"));
+            const char *category_name = yyjson_get_str(yyjson_obj_get(entry, "category_name"));
+            ASSERT_NOT_NULL(name);
+            ASSERT_NOT_NULL(category_name);
+            ASSERT_NOT_NULL(yyjson_obj_get(entry, "category"));
+            ASSERT_NOT_NULL(yyjson_obj_get(entry, "required_version"));
+            ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(entry, "status_flags")));
+
+            if (strcmp(guid, "{F787C904-00000000}") == 0) {
+                ASSERT_STR_EQ("DirectX Keyboard/Mouse/Joystick Manager", name);
+                ASSERT_STR_EQ("manager", category_name);
+                found_input = 1;
+            } else {
+                ASSERT_STR_EQ("Collision Manager", name);
+                ASSERT_STR_EQ("manager", category_name);
+                found_collision = 1;
+            }
+        }
+    }
+    ASSERT_TRUE(found_input);
+    ASSERT_TRUE(found_collision);
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, file_plugins_resolves_exported_plugin_dependencies) {
+    char args[512];
+    snprintf(args, sizeof(args), "file plugins \"%s\"", NMO_TEST_DATA_FILE("Demo/Tunnel.cmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(data, "missing_count")));
+
+    yyjson_val *entries = yyjson_obj_get(data, "entries");
+    ASSERT_NOT_NULL(entries);
+
+    int found_wav_reader = 0;
+    int found_lod_manager = 0;
+    int found_mesh_modifiers = 0;
+    int found_lod_options = 0;
+    size_t idx, max;
+    yyjson_val *entry;
+    yyjson_arr_foreach(entries, idx, max, entry) {
+        const char *guid = yyjson_get_str(yyjson_obj_get(entry, "guid"));
+        if (guid == NULL) {
+            continue;
+        }
+        const char *category_name = yyjson_get_str(yyjson_obj_get(entry, "category_name"));
+        const char *name = yyjson_get_str(yyjson_obj_get(entry, "name"));
+
+        if (strcmp(guid, "{61ABC44F-E1233343}") == 0) {
+            ASSERT_STR_EQ("sound_reader", category_name);
+            ASSERT_STR_EQ("Wav Sound Files", name);
+            found_wav_reader = 1;
+        } else if (strcmp(guid, "{314F3F83-006F0E30}") == 0) {
+            ASSERT_STR_EQ("manager", category_name);
+            ASSERT_STR_EQ("Level Of Detail Manager", name);
+            found_lod_manager = 1;
+        } else if (strcmp(guid, "{68CA037D-6BEF5E1A}") == 0) {
+            ASSERT_STR_EQ("behavior", category_name);
+            ASSERT_STR_EQ("Mesh Modification building blocks", name);
+            found_mesh_modifiers = 1;
+        } else if (strcmp(guid, "{2B557187-02027BAF}") == 0) {
+            ASSERT_STR_EQ("behavior", category_name);
+            ASSERT_STR_EQ("LOD Manager Options", name);
+            found_lod_options = 1;
+        }
+    }
+
+    ASSERT_TRUE(found_wav_reader);
+    ASSERT_TRUE(found_lod_manager);
+    ASSERT_TRUE(found_mesh_modifiers);
+    ASSERT_TRUE(found_lod_options);
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, object_list_fields_json_outputs_envelope) {
+    char args[512];
+    snprintf(args, sizeof(args), "object list-fields 1 \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    ASSERT_STR_EQ(json_envelope_command(doc), "object.list-fields");
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_EQ(1, yyjson_get_uint(yyjson_obj_get(data, "id")));
+    ASSERT_NOT_NULL(yyjson_get_str(yyjson_obj_get(data, "class_name")));
+    yyjson_val *fields = yyjson_obj_get(data, "fields");
+    ASSERT_NOT_NULL(fields);
+    ASSERT_TRUE(yyjson_arr_size(fields) > 0);
+
+    yyjson_val *field = yyjson_arr_get_first(fields);
+    ASSERT_NOT_NULL(yyjson_get_str(yyjson_obj_get(field, "name")));
+    ASSERT_NOT_NULL(yyjson_get_str(yyjson_obj_get(field, "type")));
+    ASSERT_NOT_NULL(yyjson_obj_get(field, "value"));
 
     yyjson_doc_free(doc);
 }
@@ -1278,6 +1532,32 @@ TEST(cli, resource_list_sort_by_size) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, texture_list_uses_slot_dimensions_when_reader_dimensions_missing) {
+    char args[512];
+    snprintf(args, sizeof(args), "texture list \"%s\"", NMO_TEST_DATA_FILE("Demo/Tunnel.cmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    yyjson_val *textures = yyjson_obj_get(data, "textures");
+    ASSERT_NOT_NULL(textures);
+
+    int found = 0;
+    size_t idx, max;
+    yyjson_val *tex;
+    yyjson_arr_foreach(textures, idx, max, tex) {
+        if (yyjson_get_uint(yyjson_obj_get(tex, "id")) == 783) {
+            ASSERT_EQ(256, yyjson_get_uint(yyjson_obj_get(tex, "width")));
+            ASSERT_EQ(256, yyjson_get_uint(yyjson_obj_get(tex, "height")));
+            found = 1;
+            break;
+        }
+    }
+    ASSERT_TRUE(found);
+    yyjson_doc_free(doc);
+}
+
 /* ============================================================================
  * chunk list --top
  * ============================================================================ */
@@ -1847,14 +2127,23 @@ TEST(cli, unknown_command_error) {
  * ============================================================================ */
 
 TEST_MAIN_BEGIN()
+    /* completion */
+    REGISTER_TEST(cli, completion_bash_matches_generated_file);
+    REGISTER_TEST(cli, completion_powershell_alias_matches_generated_file);
+
     /* file commands */
     REGISTER_TEST(cli, file_info_text);
     REGISTER_TEST(cli, file_info_json);
+    REGISTER_TEST(cli, global_yaml_format_is_rejected);
     REGISTER_TEST(cli, file_info_output_file_text);
     REGISTER_TEST(cli, file_info_output_file_json);
     REGISTER_TEST(cli, file_stats_text);
     REGISTER_TEST(cli, file_stats_verbose);
     REGISTER_TEST(cli, file_stats_json);
+    REGISTER_TEST(cli, file_space_reports_file_and_packed_sizes);
+    REGISTER_TEST(cli, file_plugins_resolves_known_behavior_dependencies);
+    REGISTER_TEST(cli, file_plugins_resolves_known_manager_dependencies);
+    REGISTER_TEST(cli, file_plugins_resolves_exported_plugin_dependencies);
     REGISTER_TEST(cli, file_classes_has_size_json);
     REGISTER_TEST(cli, file_classes_sort_by_size);
 
@@ -1867,6 +2156,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, object_list_sort_by_size_json);
     REGISTER_TEST(cli, object_list_top_limits_output);
     REGISTER_TEST(cli, object_list_sort_and_top_combined);
+    REGISTER_TEST(cli, object_list_fields_json_outputs_envelope);
     REGISTER_TEST(cli, query_eval_object_id_uses_object_query_lookup);
     REGISTER_TEST(cli, query_eval_numeric_object_selector_does_not_fall_back_to_name);
     REGISTER_TEST(cli, query_eval_missing_object_name_returns_not_found);
@@ -1930,6 +2220,7 @@ TEST_MAIN_BEGIN()
 
     /* resource list --sort */
     REGISTER_TEST(cli, resource_list_sort_by_size);
+    REGISTER_TEST(cli, texture_list_uses_slot_dimensions_when_reader_dimensions_missing);
 
     /* chunk list --top */
     REGISTER_TEST(cli, chunk_list_top_limits_output);
