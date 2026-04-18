@@ -76,12 +76,8 @@ void nmo_type_assign_default_vtable(
         category_vtable = &nmo_type_vtable_reflected_struct;
     }
 
-    bool category_requires_own_value_semantics =
-        (type->category & (NMO_TYPE_CATEGORY_ENUM | NMO_TYPE_CATEGORY_FLAGS)) != 0u;
     const nmo_type_vtable_t *default_vtable =
-        category_requires_own_value_semantics
-            ? category_vtable
-            : (base_vtable ? base_vtable : category_vtable);
+        base_vtable ? base_vtable : category_vtable;
     if (!default_vtable) {
         return;
     }

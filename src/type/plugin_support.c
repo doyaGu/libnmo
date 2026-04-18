@@ -8,6 +8,7 @@
  */
 
 #include "type/nmo_type_system.h"
+#include "type_value_internal.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_error.h"
@@ -609,6 +610,64 @@ nmo_status_t nmo_type_registry_invalidate(
  * Specialized Metadata Management
  * ============================================================================ */
 
+static bool nmo_type_uses_base_vtable(
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *type)
+{
+    if (!registry || !type || !type->vtable || nmo_guid_is_null(type->base_type)) {
+        return false;
+    }
+
+    const nmo_type_descriptor_t *base =
+        nmo_type_registry_find_by_guid(registry, type->base_type);
+    return base && base->vtable && base->size == type->size &&
+           type->vtable == base->vtable;
+}
+
+static void nmo_type_bind_metadata_vtable(
+    nmo_type_registry_t *registry,
+    nmo_type_descriptor_t *type,
+    const nmo_specialized_metadata_t *metadata)
+{
+    if (!registry || !type || !metadata) {
+        return;
+    }
+
+    const nmo_type_vtable_t *metadata_vtable = NULL;
+    switch (metadata->metadata_type) {
+        case NMO_METADATA_TYPE_ENUM:
+            if (type->category & NMO_TYPE_CATEGORY_ENUM) {
+                metadata_vtable = &nmo_type_vtable_enum;
+            }
+            break;
+        case NMO_METADATA_TYPE_FLAGS:
+            if (type->category & NMO_TYPE_CATEGORY_FLAGS) {
+                metadata_vtable = &nmo_type_vtable_flags;
+            }
+            break;
+        case NMO_METADATA_TYPE_STRUCT:
+            if ((type->category & NMO_TYPE_CATEGORY_STRUCT) && !type->vtable) {
+                metadata_vtable = &nmo_type_vtable_reflected_struct;
+            }
+            break;
+        case NMO_METADATA_TYPE_UNION:
+            if ((type->category & NMO_TYPE_CATEGORY_UNION) && !type->vtable) {
+                metadata_vtable = &nmo_type_vtable_reflected_struct;
+            }
+            break;
+        default:
+            break;
+    }
+
+    if (!metadata_vtable) {
+        return;
+    }
+
+    if (!type->vtable || nmo_type_uses_base_vtable(registry, type)) {
+        type->vtable = metadata_vtable;
+    }
+}
+
 nmo_status_t nmo_type_registry_register_metadata(
     nmo_type_registry_t *registry,
     const nmo_specialized_metadata_t *metadata) 
@@ -652,6 +711,7 @@ nmo_status_t nmo_type_registry_register_metadata(
 
     // Update type descriptor's specialized_index (0-based index, invalid sentinel if none)
     type->specialized_index = (uint32_t)index;
+    nmo_type_bind_metadata_vtable(registry, type, meta_copy);
 
     NMO_RETURN_OK();
 }

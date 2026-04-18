@@ -1624,6 +1624,135 @@ TEST(type_string, registered_same_size_derived_type_inherits_base_vtable_before_
     teardown();
 }
 
+TEST(type_string, registered_enum_alias_without_explicit_vtable_inherits_base_vtable) {
+    setup();
+
+    static const nmo_type_vtable_t base_vtable = {
+        .to_string = test_base_alias_to_string,
+        .from_string = test_base_alias_from_string,
+    };
+
+    nmo_guid_t base_guid = NMO_GUID(0xDEADBEEFu, 0x00000024u);
+    nmo_type_descriptor_t base_desc = {
+        .guid = base_guid,
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_SCALAR,
+        .flags = 0,
+        .name = "BaseStringScalar",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(uint32_t),
+        .alignment = (uint32_t)alignof(uint32_t),
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = &base_vtable,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &base_desc));
+
+    nmo_type_descriptor_t alias_desc = base_desc;
+    alias_desc.guid = NMO_GUID(0xDEADBEEFu, 0x00000025u);
+    alias_desc.name = "EnumAliasWithBaseValueSemantics";
+    alias_desc.category = NMO_TYPE_CATEGORY_ENUM;
+    alias_desc.base_type = base_guid;
+    alias_desc.vtable = NULL;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &alias_desc));
+
+    const nmo_type_descriptor_t *base =
+        nmo_type_registry_find_by_guid(registry, base_desc.guid);
+    const nmo_type_descriptor_t *alias =
+        nmo_type_registry_find_by_guid(registry, alias_desc.guid);
+    ASSERT_NE(NULL, base);
+    ASSERT_NE(NULL, alias);
+    ASSERT_EQ(base->vtable, alias->vtable);
+
+    uint32_t value = 0u;
+    char buffer[64];
+    ASSERT_EQ(NMO_OK, nmo_type_value_to_string(
+        &value, alias, registry, buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("base-vtable", buffer);
+
+    teardown();
+}
+
+TEST(type_string, enum_metadata_registration_binds_enum_vtable_over_base_default) {
+    setup();
+
+    static const nmo_type_vtable_t base_vtable = {
+        .to_string = test_base_alias_to_string,
+        .from_string = test_base_alias_from_string,
+    };
+
+    nmo_guid_t base_guid = NMO_GUID(0xDEADBEEFu, 0x00000026u);
+    nmo_type_descriptor_t base_desc = {
+        .guid = base_guid,
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_SCALAR,
+        .flags = 0,
+        .name = "BaseEnumStorage",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(int32_t),
+        .alignment = (uint32_t)alignof(int32_t),
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = &base_vtable,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &base_desc));
+
+    nmo_type_descriptor_t enum_desc = base_desc;
+    enum_desc.guid = NMO_GUID(0xDEADBEEFu, 0x00000027u);
+    enum_desc.name = "MetadataEnum";
+    enum_desc.category = NMO_TYPE_CATEGORY_ENUM;
+    enum_desc.base_type = base_guid;
+    enum_desc.vtable = NULL;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &enum_desc));
+
+    const nmo_type_descriptor_t *registered =
+        nmo_type_registry_find_by_guid(registry, enum_desc.guid);
+    ASSERT_NE(NULL, registered);
+    ASSERT_NE(NULL, registered->vtable);
+
+    nmo_enum_descriptor_t values[] = {
+        { .name = "Named", .value = 7, .description = NULL, .flags = 0 },
+    };
+    nmo_specialized_metadata_t metadata;
+    memset(&metadata, 0, sizeof(metadata));
+    metadata.type_id = registered->id;
+    metadata.metadata_type = NMO_METADATA_TYPE_ENUM;
+    metadata.enum_meta.values = values;
+    metadata.enum_meta.value_count = 1;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register_metadata(registry, &metadata));
+
+    registered = nmo_type_registry_find_by_guid(registry, enum_desc.guid);
+    ASSERT_NE(NULL, registered);
+    ASSERT_NE(NULL, registered->vtable);
+    ASSERT_NE(base_vtable.from_string, registered->vtable->from_string);
+
+    int32_t value = 0;
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&value, registered, registry, "Named"));
+    ASSERT_EQ(7, value);
+
+    teardown();
+}
+
 TEST(type_string, merged_default_vtable_is_released_with_registry) {
     nmo_allocator_stats_t stats = {0};
     nmo_allocator_tracking_t tracking;
@@ -1936,6 +2065,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, type_value_from_string_none_and_voidbuf_placeholders);
     REGISTER_TEST(type_string, type_value_from_string_uint8_overflow);
     REGISTER_TEST(type_string, registered_same_size_derived_type_inherits_base_vtable_before_category_default);
+    REGISTER_TEST(type_string, registered_enum_alias_without_explicit_vtable_inherits_base_vtable);
+    REGISTER_TEST(type_string, enum_metadata_registration_binds_enum_vtable_over_base_default);
     REGISTER_TEST(type_string, merged_default_vtable_is_released_with_registry);
     REGISTER_TEST(type_string, type_value_from_string_rejects_scalar_without_vtable);
     REGISTER_TEST(type_string, type_value_from_string_guid);
