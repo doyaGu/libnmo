@@ -1769,6 +1769,50 @@ static nmo_status_t nmo_struct_like_from_string(
                      "Struct-from-string requires field metadata");
 }
 
+nmo_status_t nmo_reflected_struct_vt_to_string(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    int depth)
+{
+    return nmo_struct_like_to_string(value, type, registry, buffer, buffer_size, depth);
+}
+
+nmo_status_t nmo_reflected_struct_vt_from_string(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    return nmo_struct_like_from_string(value, type, registry, string);
+}
+
+nmo_status_t nmo_object_ref_vt_to_string(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    int depth)
+{
+    return nmo_struct_like_to_string(value, type, registry, buffer, buffer_size, depth);
+}
+
+nmo_status_t nmo_object_ref_vt_from_string(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    const char *p = nmo_parse_skip_ws(string);
+    if (*p == '{') {
+        return nmo_struct_like_from_string(value, type, registry, string);
+    }
+    return nmo_parse_object_id_value(value, registry, string);
+}
+
 static nmo_status_t nmo_parse_rect(
     void *value,
     const nmo_type_registry_t *registry,

@@ -11,6 +11,7 @@
 
 #include "type/nmo_type_system.h"
 #include "type/nmo_reflection.h"
+#include "type_value_internal.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_error.h"
@@ -45,6 +46,40 @@ static size_t compat_mask_growth_bits(size_t required_bits) {
         chunk = 256;
     }
     return ((required_bits + chunk - 1u) / chunk) * chunk;
+}
+
+void nmo_type_assign_default_vtable(
+    nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry)
+{
+    if (!type || type->vtable) {
+        return;
+    }
+
+    if (type->category & NMO_TYPE_CATEGORY_ENUM) {
+        type->vtable = &nmo_type_vtable_enum;
+        return;
+    }
+    if (type->category & NMO_TYPE_CATEGORY_FLAGS) {
+        type->vtable = &nmo_type_vtable_flags;
+        return;
+    }
+    if (type->category & NMO_TYPE_CATEGORY_OBJECT_REF) {
+        type->vtable = &nmo_type_vtable_object_ref;
+        return;
+    }
+    if (type->category & (NMO_TYPE_CATEGORY_STRUCT | NMO_TYPE_CATEGORY_UNION)) {
+        type->vtable = &nmo_type_vtable_reflected_struct;
+        return;
+    }
+
+    if (registry && !nmo_guid_is_null(type->base_type)) {
+        const nmo_type_descriptor_t *base =
+            nmo_type_registry_find_by_guid(registry, type->base_type);
+        if (base && base->vtable) {
+            type->vtable = base->vtable;
+        }
+    }
 }
 
 static nmo_status_t ensure_compat_mask_capacity(nmo_type_registry_t *registry, nmo_type_descriptor_t *type) {
@@ -1011,6 +1046,8 @@ nmo_status_t nmo_type_registry_register(
         type->fields = fields_copy;
         type->field_count = source_field_count;
     }
+
+    nmo_type_assign_default_vtable(type, registry);
     
     // Assign ID and store descriptor
     nmo_type_id_t type_id = (nmo_type_id_t)slot;

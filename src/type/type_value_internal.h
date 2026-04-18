@@ -42,6 +42,31 @@ extern const nmo_type_vtable_t nmo_type_vtable_flags;
 extern const nmo_type_vtable_t nmo_type_vtable_reflected_struct;
 extern const nmo_type_vtable_t nmo_type_vtable_object_ref;
 
+nmo_status_t nmo_reflected_struct_vt_to_string(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    int depth);
+nmo_status_t nmo_reflected_struct_vt_from_string(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string);
+nmo_status_t nmo_object_ref_vt_to_string(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    int depth);
+nmo_status_t nmo_object_ref_vt_from_string(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string);
+
 nmo_status_t nmo_builtin_create_zero(
     void *instance,
     const nmo_type_descriptor_t *type,

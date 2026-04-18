@@ -15,6 +15,7 @@
 #include "type/nmo_dynamic_types.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_guids.h"
+#include "type_value_internal.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_debug.h"
@@ -26,6 +27,22 @@
 #include <stdio.h>
 #include <stdalign.h>
 #include <stddef.h>
+
+const nmo_type_vtable_t nmo_type_vtable_reflected_struct = {
+    .create = nmo_builtin_create_zero,
+    .destroy = nmo_builtin_destroy_noop,
+    .copy = nmo_builtin_copy_memcpy,
+    .to_string = nmo_reflected_struct_vt_to_string,
+    .from_string = nmo_reflected_struct_vt_from_string,
+};
+
+const nmo_type_vtable_t nmo_type_vtable_object_ref = {
+    .create = nmo_builtin_create_zero,
+    .destroy = nmo_builtin_destroy_noop,
+    .copy = nmo_builtin_copy_memcpy,
+    .to_string = nmo_object_ref_vt_to_string,
+    .from_string = nmo_object_ref_vt_from_string,
+};
 
 /* ============================================================================
  * Helper Functions
