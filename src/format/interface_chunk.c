@@ -170,8 +170,8 @@ nmo_status_t nmo_interface_chunk_parse(
     nmo_status_t st = nmo_chunk_start_read(chunk);
     NMO_RETURN_IF_ERROR(st);
 
-    /* Read version: prefer the sectioned marker, while keeping compatibility
-     * with legacy inline samples that use identifier 1. */
+    /* Read version: Dev.exe probes the sectioned marker first, then the
+     * legacy marker used by non-sectioned/inline interface chunks. */
     uint32_t version = 0;
     uint32_t candidate_version = 0;
     bool found = false;

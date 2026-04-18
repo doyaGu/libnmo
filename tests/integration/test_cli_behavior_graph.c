@@ -1075,6 +1075,7 @@ TEST(cli, behavior_help_mentions_json_output) {
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, iface.exit_code);
     ASSERT_STR_CONTAINS(iface.output, "set-viewport");
     ASSERT_STR_CONTAINS(iface.output, "translate");
+    ASSERT_STR_CONTAINS(iface.output, "canonicalize");
     free(iface.output);
 }
 
@@ -1397,6 +1398,57 @@ TEST(cli, behavior_interface_show_json_reports_sectioned_graph_root) {
 
     yyjson_doc_free(doc);
     remove(fixture);
+}
+
+TEST(cli, behavior_interface_canonicalize_json_saves_output) {
+    const char *output = "test_behavior_interface_canonicalize_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json behavior interface canonicalize %u \"%s\" -o \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_FIXTURE,
+             output);
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.interface.canonicalize", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+
+    yyjson_val *target_id = yyjson_obj_get(data, "target_id");
+    ASSERT_TRUE(target_id && yyjson_is_uint(target_id));
+    ASSERT_EQ((uint64_t)NMO_INTERFACE_EDIT_TARGET_ID, yyjson_get_uint(target_id));
+
+    yyjson_val *canonicalized = yyjson_obj_get(data, "canonicalized");
+    ASSERT_TRUE(canonicalized && yyjson_is_bool(canonicalized));
+    ASSERT_TRUE(yyjson_get_bool(canonicalized));
+
+    yyjson_val *sectioned = yyjson_obj_get(data, "sectioned_layout");
+    ASSERT_TRUE(sectioned && yyjson_is_bool(sectioned));
+    ASSERT_FALSE(yyjson_get_bool(sectioned));
+
+    yyjson_val *root_kind = yyjson_obj_get(data, "root_kind");
+    ASSERT_TRUE(root_kind && yyjson_is_str(root_kind));
+    ASSERT_STR_EQ("script", yyjson_get_str(root_kind));
+
+    ASSERT_TRUE(file_exists(output));
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior interface show %u \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             output);
+    yyjson_doc *show_doc = NULL;
+    run_json_command(args, "behavior.interface", &show_doc);
+    ASSERT_NOT_NULL(show_doc);
+    yyjson_doc_free(show_doc);
+
+    remove(output);
 }
 
 TEST(cli, behavior_interface_set_color_json_does_not_persist_sectioned_color) {
@@ -1939,6 +1991,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_interface_show_json_reports_format_root);
     REGISTER_TEST(cli, behavior_interface_show_brief_reports_root_kind);
     REGISTER_TEST(cli, behavior_interface_show_json_reports_sectioned_graph_root);
+    REGISTER_TEST(cli, behavior_interface_canonicalize_json_saves_output);
     REGISTER_TEST(cli, behavior_interface_set_color_json_does_not_persist_sectioned_color);
     REGISTER_TEST(cli, behavior_interface_fold_dry_run_does_not_write_output);
     REGISTER_TEST(cli, behavior_interface_unfold_saves_output);

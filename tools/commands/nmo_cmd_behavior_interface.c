@@ -442,6 +442,14 @@ typedef struct iface_set_color_args {
     const char *warning;
 } iface_set_color_args_t;
 
+typedef struct iface_canonicalize_args {
+    uint32_t target_id;
+    bool sectioned_layout;
+    bool sectioned_root_is_graph;
+    bool color_persisted;
+    const char *root_kind;
+} iface_canonicalize_args_t;
+
 typedef enum iface_comment_op {
     IFACE_COMMENT_ADD,
     IFACE_COMMENT_REMOVE,
@@ -812,6 +820,84 @@ static int iface_set_color_report(
         if (args->warning != NULL) {
             fprintf(c->out, "Warning: %s\n", args->warning);
         }
+        if (!dry_run && output_path != NULL) {
+            fprintf(c->out, "Saved to: %s\n", output_path);
+        }
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int iface_canonicalize_mutate(
+    nmo_cmd_ctx_t *c,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    (void)output_path;
+    iface_canonicalize_args_t *args = (iface_canonicalize_args_t *)user_data;
+    if (args == NULL) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_interface_data_t *idata = iface_edit_get_data(c, args->target_id, NULL);
+    if (idata == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    args->sectioned_layout = iface_is_sectioned(idata);
+    args->sectioned_root_is_graph =
+        args->sectioned_layout &&
+        (idata->format_flags & NMO_INTERFACE_FORMAT_ROOT_GRAPH) != 0u;
+    args->color_persisted = iface_color_is_present(idata);
+    args->root_kind = iface_root_kind_name(idata);
+
+    if (dry_run) {
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+    return iface_mark_changed(c, args->target_id);
+}
+
+static int iface_canonicalize_report(
+    nmo_cmd_ctx_t *c,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    iface_canonicalize_args_t *args = (iface_canonicalize_args_t *)user_data;
+    if (args == NULL) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
+        if (doc == NULL) {
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
+        nmo_cli_json_add_uint_safe(doc, data, "target_id", (uint64_t)args->target_id);
+        nmo_cli_json_add_bool_safe(doc, data, "canonicalized", true);
+        nmo_cli_json_add_bool_safe(doc, data, "sectioned_layout",
+                                   args->sectioned_layout);
+        nmo_cli_json_add_bool_safe(doc, data, "sectioned_root_is_graph",
+                                   args->sectioned_root_is_graph);
+        nmo_cli_json_add_str_safe(doc, data, "root_kind",
+                                  args->root_kind ? args->root_kind : "script");
+        nmo_cli_json_add_bool_safe(doc, data, "color_persisted",
+                                   args->color_persisted);
+        if (!dry_run && output_path != NULL) {
+            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+        }
+        nmo_cmd_ctx_json_end(c, doc, data, "behavior.interface.canonicalize");
+    } else {
+        if (dry_run) {
+            fprintf(c->out, "[dry-run] ");
+        }
+        fprintf(c->out, "Canonicalized interface chunk for behavior %u\n",
+                args->target_id);
+        fprintf(c->out, "Layout: %s  Root: %s\n",
+                args->sectioned_layout ? "sectioned" : "inline",
+                args->root_kind ? args->root_kind : "script");
         if (!dry_run && output_path != NULL) {
             fprintf(c->out, "Saved to: %s\n", output_path);
         }
@@ -1818,6 +1904,50 @@ int nmo_cmd_behavior_iface_set_color(int argc, char **argv, const nmo_cli_global
         &spec,
         iface_set_color_mutate,
         iface_set_color_report,
+        &args);
+}
+
+int nmo_cmd_behavior_iface_canonicalize(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--output", "-o", NMO_OPT_STRING, "Output file path"},
+        {"--dry-run", NULL, NMO_OPT_FLAG, "Preview without saving"},
+    };
+    enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[4];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 4 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    if (r.pos_count < 2) {
+        fprintf(stderr, "Usage: nmo behavior interface canonicalize <id> <file> -o <out>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    uint32_t target_id;
+    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
+        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *file_path = r.pos_args[r.pos_count - 1];
+
+    iface_canonicalize_args_t args = {
+        .target_id = target_id,
+    };
+    const nmo_cli_write_spec_t spec = {
+        .command_name = "behavior.interface.canonicalize",
+        .output_required_unless_dry_run = true,
+    };
+    return nmo_cli_run_write_command(
+        file_path,
+        output_path,
+        dry_run,
+        global,
+        &spec,
+        iface_canonicalize_mutate,
+        iface_canonicalize_report,
         &args);
 }
 
@@ -3488,6 +3618,7 @@ const nmo_cli_action_t nmo_behavior_interface_sub_actions[] = {
     {"fold",           NULL, "Fold behavior",               nmo_cmd_behavior_iface_fold,           NULL, NULL, 0, NULL},
     {"unfold",         NULL, "Unfold behavior",             nmo_cmd_behavior_iface_unfold,         NULL, NULL, 0, NULL},
     {"set-color",      NULL, "Set script color",            nmo_cmd_behavior_iface_set_color,      NULL, NULL, 0, NULL},
+    {"canonicalize",   NULL, "Rewrite interface chunk canonically", nmo_cmd_behavior_iface_canonicalize, NULL, NULL, 0, NULL},
     {"add-comment",    NULL, "Add layout comment",          nmo_cmd_behavior_iface_add_comment,    NULL, NULL, 0, NULL},
     {"remove-comment",    NULL, "Remove layout comment",       nmo_cmd_behavior_iface_remove_comment,    NULL, NULL, 0, NULL},
     /* comment edits */
