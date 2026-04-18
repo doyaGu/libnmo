@@ -479,6 +479,7 @@ typedef struct nmo_type_descriptor_ext {
     nmo_compatibility_mask_t compat_mask;      /* Cached derivation mask */
     const struct nmo_type_descriptor **hierarchy; /* Array of ancestor types (root first, self last) */
     uint32_t *state_offsets;                   /* Byte offset of each ancestor's state */
+    nmo_type_vtable_t *owned_vtable;           /* Registry-owned merged vtable, if any */
     uint16_t hierarchy_depth;                  /* Number of types in hierarchy (including self) */
     uint16_t _padding;                         /* Alignment padding */
     uint32_t total_state_size;                 /* Sum of all ancestor state sizes */

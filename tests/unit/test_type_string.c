@@ -24,7 +24,9 @@
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_allocator.h"
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 /* ============================================================================
@@ -100,6 +102,51 @@ static nmo_status_t register_test_inline_array_type(const nmo_type_descriptor_t 
     }
 
     *out_type = type;
+    return NMO_OK;
+}
+
+static nmo_status_t test_base_alias_to_string(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *reg,
+    char *buffer,
+    size_t buffer_size,
+    int depth)
+{
+    (void)value;
+    (void)type;
+    (void)reg;
+    (void)depth;
+    int written = snprintf(buffer, buffer_size, "base-vtable");
+    if (written < 0 || (size_t)written >= buffer_size) {
+        return NMO_ERR_BUFFER_OVERRUN;
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t test_base_alias_from_string(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *reg,
+    const char *string)
+{
+    (void)type;
+    (void)reg;
+    if (strcmp(string, "base-vtable") != 0) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+    *(uint32_t *)value = 99u;
+    return NMO_OK;
+}
+
+static nmo_status_t test_partial_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
     return NMO_OK;
 }
 
@@ -688,10 +735,12 @@ TEST(type_string, enum_roundtrip) {
     char buffer[64];
     int32_t parsed = 0;
     
-    nmo_status_t r1 = nmo_enum_to_string(&original, type, registry, buffer, sizeof(buffer), true);
+    nmo_status_t r1 = nmo_type_value_to_string(
+        &original, type, registry, buffer, sizeof(buffer));
     ASSERT_EQ(NMO_OK, r1);
     
-    nmo_status_t r2 = nmo_enum_from_string(&parsed, type, registry, buffer);
+    nmo_status_t r2 = nmo_type_value_from_string(
+        &parsed, type, registry, buffer);
     ASSERT_EQ(NMO_OK, r2);
     
     ASSERT_EQ(original, parsed);
@@ -805,10 +854,12 @@ TEST(type_string, flags_roundtrip) {
     char buffer[128];
     uint32_t parsed = 0;
     
-    nmo_status_t r1 = nmo_flags_to_string(&original, type, registry, buffer, sizeof(buffer), true);
+    nmo_status_t r1 = nmo_type_value_to_string(
+        &original, type, registry, buffer, sizeof(buffer));
     ASSERT_EQ(NMO_OK, r1);
     
-    nmo_status_t r2 = nmo_flags_from_string(&parsed, type, registry, buffer);
+    nmo_status_t r2 = nmo_type_value_from_string(
+        &parsed, type, registry, buffer);
     ASSERT_EQ(NMO_OK, r2);
     
     ASSERT_EQ(original, parsed);
@@ -1511,6 +1562,122 @@ TEST(type_string, type_value_from_string_uint8_overflow) {
     teardown();
 }
 
+TEST(type_string, registered_same_size_derived_type_inherits_base_vtable_before_category_default) {
+    setup();
+
+    static const nmo_type_vtable_t base_vtable = {
+        .to_string = test_base_alias_to_string,
+        .from_string = test_base_alias_from_string,
+    };
+
+    nmo_guid_t base_guid = NMO_GUID(0xDEADBEEFu, 0x00000021u);
+    nmo_type_descriptor_t base_desc = {
+        .guid = base_guid,
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_STRUCT,
+        .flags = 0,
+        .name = "BaseStringStruct",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(uint32_t),
+        .alignment = (uint32_t)alignof(uint32_t),
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = &base_vtable,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &base_desc));
+    const nmo_type_descriptor_t *base =
+        nmo_type_registry_find_by_guid(registry, base_desc.guid);
+    ASSERT_NE(NULL, base);
+    ASSERT_NE(NULL, base->vtable);
+
+    nmo_type_descriptor_t derived_desc = base_desc;
+    derived_desc.guid = NMO_GUID(0xDEADBEEFu, 0x00000022u);
+    derived_desc.name = "DerivedStringStruct";
+    derived_desc.base_type = base_guid;
+    derived_desc.vtable = NULL;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &derived_desc));
+
+    const nmo_type_descriptor_t *derived =
+        nmo_type_registry_find_by_guid(registry, derived_desc.guid);
+    ASSERT_NE(NULL, derived);
+    ASSERT_EQ(base->vtable, derived->vtable);
+
+    uint32_t value = 0u;
+    char buffer[64];
+    ASSERT_EQ(NMO_OK, nmo_type_value_to_string(
+        &value, derived, registry, buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("base-vtable", buffer);
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(
+        &value, derived, registry, "base-vtable"));
+    ASSERT_EQ(99u, value);
+
+    teardown();
+}
+
+TEST(type_string, merged_default_vtable_is_released_with_registry) {
+    nmo_allocator_stats_t stats = {0};
+    nmo_allocator_tracking_t tracking;
+    nmo_allocator_t tracking_allocator =
+        nmo_allocator_tracking_init(&tracking, nmo_allocator_default(), &stats);
+
+    nmo_arena_t *tracked_arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NE(NULL, tracked_arena);
+    nmo_type_registry_t *tracked_registry =
+        nmo_type_registry_create_ex(tracked_arena, tracking_allocator);
+    ASSERT_NE(NULL, tracked_registry);
+
+    static const nmo_type_vtable_t partial_vtable = {
+        .validate = test_partial_validate,
+    };
+    nmo_type_descriptor_t desc = {
+        .guid = NMO_GUID(0xDEADBEEFu, 0x00000023u),
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_OBJECT_REF,
+        .flags = 0,
+        .name = "PartialObjRef",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(uint32_t),
+        .alignment = (uint32_t)alignof(uint32_t),
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = &partial_vtable,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(tracked_registry, &desc));
+
+    const nmo_type_descriptor_t *registered =
+        nmo_type_registry_find_by_guid(tracked_registry, desc.guid);
+    ASSERT_NE(NULL, registered);
+    ASSERT_NE(&partial_vtable, registered->vtable);
+    ASSERT_NE(NULL, registered->vtable);
+    ASSERT_EQ(test_partial_validate, registered->vtable->validate);
+    ASSERT_NE(NULL, registered->vtable->from_string);
+
+    nmo_type_registry_destroy(tracked_registry);
+    nmo_arena_destroy(tracked_arena);
+    ASSERT_EQ((size_t)0, stats.current_bytes);
+    ASSERT_EQ(stats.total_allocations, stats.total_frees);
+}
+
 TEST(type_string, type_value_from_string_rejects_scalar_without_vtable) {
     setup();
 
@@ -1768,6 +1935,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, type_value_from_string_string);
     REGISTER_TEST(type_string, type_value_from_string_none_and_voidbuf_placeholders);
     REGISTER_TEST(type_string, type_value_from_string_uint8_overflow);
+    REGISTER_TEST(type_string, registered_same_size_derived_type_inherits_base_vtable_before_category_default);
+    REGISTER_TEST(type_string, merged_default_vtable_is_released_with_registry);
     REGISTER_TEST(type_string, type_value_from_string_rejects_scalar_without_vtable);
     REGISTER_TEST(type_string, type_value_from_string_guid);
     REGISTER_TEST(type_string, type_value_from_string_angle_fallback);

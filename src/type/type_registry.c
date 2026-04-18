@@ -56,23 +56,32 @@ void nmo_type_assign_default_vtable(
         return;
     }
 
-    const nmo_type_vtable_t *default_vtable = NULL;
-    if (type->category & NMO_TYPE_CATEGORY_ENUM) {
-        default_vtable = &nmo_type_vtable_enum;
-    } else if (type->category & NMO_TYPE_CATEGORY_FLAGS) {
-        default_vtable = &nmo_type_vtable_flags;
-    } else if (type->category & NMO_TYPE_CATEGORY_OBJECT_REF) {
-        default_vtable = &nmo_type_vtable_object_ref;
-    } else if (type->category & (NMO_TYPE_CATEGORY_STRUCT | NMO_TYPE_CATEGORY_UNION)) {
-        default_vtable = &nmo_type_vtable_reflected_struct;
-    } else if (registry && !nmo_guid_is_null(type->base_type)) {
+    const nmo_type_vtable_t *base_vtable = NULL;
+    if (registry && !nmo_guid_is_null(type->base_type)) {
         const nmo_type_descriptor_t *base =
             nmo_type_registry_find_by_guid(registry, type->base_type);
-        if (base && base->vtable) {
-            default_vtable = base->vtable;
+        if (base && base->vtable && base->size == type->size) {
+            base_vtable = base->vtable;
         }
     }
 
+    const nmo_type_vtable_t *category_vtable = NULL;
+    if (type->category & NMO_TYPE_CATEGORY_ENUM) {
+        category_vtable = &nmo_type_vtable_enum;
+    } else if (type->category & NMO_TYPE_CATEGORY_FLAGS) {
+        category_vtable = &nmo_type_vtable_flags;
+    } else if (type->category & NMO_TYPE_CATEGORY_OBJECT_REF) {
+        category_vtable = &nmo_type_vtable_object_ref;
+    } else if (type->category & (NMO_TYPE_CATEGORY_STRUCT | NMO_TYPE_CATEGORY_UNION)) {
+        category_vtable = &nmo_type_vtable_reflected_struct;
+    }
+
+    bool category_requires_own_value_semantics =
+        (type->category & (NMO_TYPE_CATEGORY_ENUM | NMO_TYPE_CATEGORY_FLAGS)) != 0u;
+    const nmo_type_vtable_t *default_vtable =
+        category_requires_own_value_semantics
+            ? category_vtable
+            : (base_vtable ? base_vtable : category_vtable);
     if (!default_vtable) {
         return;
     }
@@ -125,6 +134,9 @@ void nmo_type_assign_default_vtable(
 
     *owned_vtable = merged;
     type->vtable = owned_vtable;
+    if (type->ext) {
+        type->ext->owned_vtable = owned_vtable;
+    }
 }
 
 static nmo_status_t ensure_compat_mask_capacity(nmo_type_registry_t *registry, nmo_type_descriptor_t *type) {
@@ -435,6 +447,14 @@ static void free_type_storage(
     }
 
     if (type->ext) {
+        if (type->ext->owned_vtable) {
+            nmo_type_vtable_t *owned_vtable = type->ext->owned_vtable;
+            if (type->vtable == (const nmo_type_vtable_t *)owned_vtable) {
+                type->vtable = NULL;
+            }
+            nmo_free(&registry->type_allocator, owned_vtable);
+            type->ext->owned_vtable = NULL;
+        }
         if (type->ext->hierarchy) {
             nmo_free(&registry->type_allocator, (void *)type->ext->hierarchy);
             type->ext->hierarchy = NULL;
