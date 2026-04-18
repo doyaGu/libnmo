@@ -13,13 +13,18 @@
 
 #include "type/nmo_dynamic_types.h"
 #include "type/nmo_type_system.h"
+#include "type_value_internal.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_debug.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_hash_table.h"
+#include "core/nmo_parse.h"
 #include "core/nmo_utils.h"
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdalign.h>
 #include <stdint.h>
@@ -35,6 +40,387 @@
  * @brief Validate enum value definitions
  * @return NMO_OK if valid, error code otherwise
  */
+
+/* ============================================================================
+ * Enum/Flags Converters (require type metadata)
+ * ============================================================================ */
+
+nmo_status_t nmo_enum_to_string(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    bool use_name)
+{
+    if (!value || !type || !buffer || buffer_size < 16) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for enum_to_string");
+    }
+
+    if (!(type->category & NMO_TYPE_CATEGORY_ENUM)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Type is not an enum");
+    }
+
+    int32_t enum_value = *(const int32_t*)value;
+
+    /* If name not requested or no registry, output numeric value with type context */
+    if (!use_name || !registry || type->specialized_index == NMO_SPECIALIZED_INDEX_INVALID) {
+        if (type->name) {
+            snprintf(buffer, buffer_size, "%s(%d)", type->name, enum_value);
+        } else {
+            snprintf(buffer, buffer_size, "enum(%d)", enum_value);
+        }
+        NMO_RETURN_OK();
+    }
+
+    /* Access enum metadata from registry */
+    if (type->specialized_index >= registry->metadata.count) {
+        if (type->name) {
+            snprintf(buffer, buffer_size, "%s(%d)", type->name, enum_value);
+        } else {
+            snprintf(buffer, buffer_size, "enum(%d)", enum_value);
+        }
+        NMO_RETURN_OK();
+    }
+
+    const nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t**)nmo_arena_array_get((nmo_arena_array_t*)&registry->metadata, type->specialized_index);
+    if (!metadata || metadata->metadata_type != NMO_METADATA_TYPE_ENUM) {
+        if (type->name) {
+            snprintf(buffer, buffer_size, "%s(%d)", type->name, enum_value);
+        } else {
+            snprintf(buffer, buffer_size, "enum(%d)", enum_value);
+        }
+        NMO_RETURN_OK();
+    }
+
+    /* Search for matching enum value */
+    for (size_t i = 0; i < metadata->enum_meta.value_count; i++) {
+        if (metadata->enum_meta.values[i].value == enum_value) {
+            snprintf(buffer, buffer_size, "%s", metadata->enum_meta.values[i].name);
+            NMO_RETURN_OK();
+        }
+    }
+
+    /* No name found, output numeric value with type context */
+    if (type->name) {
+        snprintf(buffer, buffer_size, "%s(%d)", type->name, enum_value);
+    } else {
+        snprintf(buffer, buffer_size, "enum(%d)", enum_value);
+    }
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_enum_from_string(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    if (!value || !type || !string) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for enum_from_string");
+    }
+
+    if (!(type->category & NMO_TYPE_CATEGORY_ENUM)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Type is not an enum");
+    }
+
+    // Try to match name in enum metadata
+    if (registry && type->specialized_index != NMO_SPECIALIZED_INDEX_INVALID &&
+        type->specialized_index < registry->metadata.count) {
+        const nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t**)nmo_arena_array_get((nmo_arena_array_t*)&registry->metadata, type->specialized_index);
+        if (metadata && metadata->metadata_type == NMO_METADATA_TYPE_ENUM) {
+            for (size_t i = 0; i < metadata->enum_meta.value_count; i++) {
+                if (strcmp(metadata->enum_meta.values[i].name, string) == 0) {
+                    *(int32_t*)value = (int32_t)metadata->enum_meta.values[i].value;
+                    NMO_RETURN_OK();
+                }
+            }
+        }
+    }
+
+    if (type->name) {
+        size_t name_len = strlen(type->name);
+        size_t string_len = strlen(string);
+        if (string_len > name_len + 2u &&
+            strncmp(string, type->name, name_len) == 0 &&
+            string[name_len] == '(' &&
+            string[string_len - 1u] == ')') {
+            size_t inner_len = string_len - name_len - 2u;
+            char stack_buf[64];
+            char *inner = stack_buf;
+            if (inner_len + 1u > sizeof(stack_buf)) {
+                inner = (char *)malloc(inner_len + 1u);
+                if (!inner) {
+                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                     "Failed to allocate enum fallback value");
+                }
+            }
+            memcpy(inner, string + name_len + 1u, inner_len);
+            inner[inner_len] = '\0';
+            int32_t result = 0;
+            nmo_status_t parse_status =
+                nmo_parse_i32_range_base(inner, 0, INT32_MIN, INT32_MAX, &result);
+            if (inner != stack_buf) {
+                free(inner);
+            }
+            if (parse_status == NMO_OK) {
+                *(int32_t*)value = result;
+                NMO_RETURN_OK();
+            }
+        }
+    }
+
+    // Try to parse as integer
+    int32_t result = 0;
+    if (nmo_parse_i32_range_base(string, 0, INT32_MIN, INT32_MAX, &result) != NMO_OK) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid enum value");
+    }
+
+    *(int32_t*)value = result;
+    NMO_RETURN_OK();
+}
+
+/* ============================================================================
+ * Flags Converters
+ * ============================================================================ */
+
+nmo_status_t nmo_flags_to_string(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    bool use_names)
+{
+    if (!value || !type || !buffer || buffer_size < 16) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for flags_to_string");
+    }
+
+    if (!(type->category & NMO_TYPE_CATEGORY_FLAGS)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Type is not flags");
+    }
+
+    uint32_t flags_value = *(const uint32_t*)value;
+
+    /* If names not requested or no registry, output hex with type context */
+    if (!use_names || !registry || type->specialized_index == NMO_SPECIALIZED_INDEX_INVALID) {
+        if (type->name) {
+            snprintf(buffer, buffer_size, "%s(0x%X)", type->name, flags_value);
+        } else {
+            snprintf(buffer, buffer_size, "flags(0x%X)", flags_value);
+        }
+        NMO_RETURN_OK();
+    }
+
+    /* Access flags metadata from registry */
+    if (type->specialized_index >= registry->metadata.count) {
+        if (type->name) {
+            snprintf(buffer, buffer_size, "%s(0x%X)", type->name, flags_value);
+        } else {
+            snprintf(buffer, buffer_size, "flags(0x%X)", flags_value);
+        }
+        NMO_RETURN_OK();
+    }
+
+    const nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t**)nmo_arena_array_get((nmo_arena_array_t*)&registry->metadata, type->specialized_index);
+    if (!metadata || metadata->metadata_type != NMO_METADATA_TYPE_FLAGS) {
+        if (type->name) {
+            snprintf(buffer, buffer_size, "%s(0x%X)", type->name, flags_value);
+        } else {
+            snprintf(buffer, buffer_size, "flags(0x%X)", flags_value);
+        }
+        NMO_RETURN_OK();
+    }
+
+    /* Build name1|name2 format */
+    size_t offset = 0;
+    bool first = true;
+    for (size_t i = 0; i < metadata->flags_meta.bit_count; i++) {
+        if ((flags_value & metadata->flags_meta.bits[i].mask) == metadata->flags_meta.bits[i].mask) {
+            if (!first && offset < buffer_size) {
+                buffer[offset++] = '|';
+            }
+            first = false;
+            const char *name = metadata->flags_meta.bits[i].name;
+            while (*name && offset < buffer_size - 1) {
+                buffer[offset++] = *name++;
+            }
+        }
+    }
+
+    /* If no flags matched, output hex with type context */
+    if (first) {
+        if (type->name) {
+            snprintf(buffer, buffer_size, "%s(0x%X)", type->name, flags_value);
+        } else {
+            snprintf(buffer, buffer_size, "flags(0x%X)", flags_value);
+        }
+    } else {
+        buffer[offset] = '\0';
+    }
+
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_flags_from_string(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    if (!value || !type || !string) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for flags_from_string");
+    }
+
+    if (!(type->category & NMO_TYPE_CATEGORY_FLAGS)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Type is not flags");
+    }
+
+    // Try numeric format
+    uint32_t result = 0;
+    if (nmo_parse_u32_range_base(string, 0, 0, UINT32_MAX, &result) == NMO_OK) {
+        *(uint32_t*)value = result;
+        NMO_RETURN_OK();
+    }
+
+    if (type->name) {
+        size_t name_len = strlen(type->name);
+        size_t string_len = strlen(string);
+        if (string_len > name_len + 2u &&
+            strncmp(string, type->name, name_len) == 0 &&
+            string[name_len] == '(' &&
+            string[string_len - 1u] == ')') {
+            size_t inner_len = string_len - name_len - 2u;
+            char stack_buf[64];
+            char *inner = stack_buf;
+            if (inner_len + 1u > sizeof(stack_buf)) {
+                inner = (char *)malloc(inner_len + 1u);
+                if (!inner) {
+                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                     "Failed to allocate flags fallback value");
+                }
+            }
+            memcpy(inner, string + name_len + 1u, inner_len);
+            inner[inner_len] = '\0';
+            nmo_status_t parse_status =
+                nmo_parse_u32_range_base(inner, 0, 0, UINT32_MAX, &result);
+            if (inner != stack_buf) {
+                free(inner);
+            }
+            if (parse_status == NMO_OK) {
+                *(uint32_t*)value = result;
+                NMO_RETURN_OK();
+            }
+        }
+    }
+
+    // Parse name1|name2 format from metadata
+    if (registry && type->specialized_index != NMO_SPECIALIZED_INDEX_INVALID &&
+        type->specialized_index < registry->metadata.count) {
+        const nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t**)nmo_arena_array_get((nmo_arena_array_t*)&registry->metadata, type->specialized_index);
+        if (metadata && metadata->metadata_type == NMO_METADATA_TYPE_FLAGS) {
+            uint32_t flags_result = 0;
+            const char *start = string;
+            
+            while (*start) {
+                // Skip whitespace
+                while (*start && isspace(*start)) start++;
+                if (!*start) break;
+                
+                // Find end of name (| or end of string)
+                const char *end = start;
+                while (*end && *end != '|') end++;
+                
+                // Match name
+                size_t name_len = end - start;
+                bool found = false;
+                for (size_t i = 0; i < metadata->flags_meta.bit_count; i++) {
+                    const char *bit_name = metadata->flags_meta.bits[i].name;
+                    if (strncmp(bit_name, start, name_len) == 0 && bit_name[name_len] == '\0') {
+                        flags_result |= (uint32_t)metadata->flags_meta.bits[i].mask;
+                        found = true;
+                        break;
+                    }
+                }
+                
+                if (!found) {
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Unknown flag name");
+                }
+                
+                // Move to next
+                start = (*end == '|') ? end + 1 : end;
+            }
+            
+            *(uint32_t*)value = flags_result;
+            NMO_RETURN_OK();
+        }
+    }
+
+    NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid flags format");
+}
+
+static nmo_status_t nmo_enum_vt_to_string(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    int depth)
+{
+    (void)depth;
+    return nmo_enum_to_string(value, type, registry, buffer, buffer_size, true);
+}
+
+static nmo_status_t nmo_enum_vt_from_string(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    return nmo_enum_from_string(value, type, registry, string);
+}
+
+static nmo_status_t nmo_flags_vt_to_string(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    int depth)
+{
+    (void)depth;
+    return nmo_flags_to_string(value, type, registry, buffer, buffer_size, true);
+}
+
+static nmo_status_t nmo_flags_vt_from_string(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    return nmo_flags_from_string(value, type, registry, string);
+}
+
+const nmo_type_vtable_t nmo_type_vtable_enum = {
+    .create = nmo_builtin_create_zero,
+    .destroy = nmo_builtin_destroy_noop,
+    .copy = nmo_builtin_copy_memcpy,
+    .equals = nmo_vt_equals_int32,
+    .hash = nmo_vt_hash_int32,
+    .to_string = nmo_enum_vt_to_string,
+    .from_string = nmo_enum_vt_from_string,
+};
+
+const nmo_type_vtable_t nmo_type_vtable_flags = {
+    .create = nmo_builtin_create_zero,
+    .destroy = nmo_builtin_destroy_noop,
+    .copy = nmo_builtin_copy_memcpy,
+    .equals = nmo_vt_equals_uint32,
+    .hash = nmo_vt_hash_uint32,
+    .to_string = nmo_flags_vt_to_string,
+    .from_string = nmo_flags_vt_from_string,
+};
+
 static nmo_status_t validate_enum_values(
     const nmo_enum_value_def_t *values,
     size_t value_count
@@ -183,7 +569,10 @@ static nmo_status_t register_enum_type(nmo_type_registry_t *reg,
     type_desc->flags       = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_COPYABLE | NMO_TYPE_FLAG_POD;
     type_desc->fields      = NULL;
     type_desc->field_count = 0;
-    type_desc->vtable      = NULL;
+    type_desc->vtable =
+        (p->category & NMO_TYPE_CATEGORY_FLAGS)
+            ? &nmo_type_vtable_flags
+            : &nmo_type_vtable_enum;
     type_desc->description = p->description ? nmo_arena_strdup(arena, p->description) : NULL;
     type_desc->valid       = true;
 
