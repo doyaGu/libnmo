@@ -496,7 +496,8 @@ void nmo_session_get_behavior_interface_diagnostics(
     out_diag->attempted = session->behavior_interface_parse_attempted;
     out_diag->status = stats->first_error;
     out_diag->available = session->behavior_interface_parse_attempted &&
-                          stats->first_error == NMO_OK;
+                          stats->first_error == NMO_OK &&
+                          stats->parsed_count > 0;
     out_diag->attempted_count = stats->attempted_count;
     out_diag->parsed_count = stats->parsed_count;
     out_diag->failed_count = stats->failed_count;
