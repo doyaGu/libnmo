@@ -43,7 +43,7 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
 int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
 /**
- * @brief nmo object export - Export objects as semantic JSON
+ * @brief nmo object export - Export importable object snapshots
  */
 int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
@@ -63,9 +63,9 @@ int nmo_cmd_object_create(int argc, char **argv, const nmo_cli_global_opts_t *gl
 int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
 /**
- * @brief nmo object import-json - Import objects from JSON
+ * @brief nmo object import - Import object export snapshot JSON
  */
-int nmo_cmd_object_import_json(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_object_import(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
 /**
  * @brief nmo object impact - Show deletion impact analysis

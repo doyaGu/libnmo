@@ -5,7 +5,7 @@
 $_nmo_groups = @{
     'file' = @('info', 'i', 'header', 'hdr', 'stats', 'st', 'classes', 'cls', 'plugins', 'pl', 'space', 'sp')
     'chunk' = @('list', 'ls', 'tree', 't', 'show', 's', 'find', 'f')
-    'object' = @('list', 'ls', 'tree', 't', 'show', 's', 'find', 'f', 'refs', 'r', 'rename', 'ren', 'export', 'x', 'impact', 'imp', 'orphans', 'orp', 'cycles', 'cyc', 'delete', 'del', 'create', 'copy', 'cp', 'import-json', 'graph', 'gr', 'set-field', 'sf', 'list-fields', 'lf')
+    'object' = @('list', 'ls', 'tree', 't', 'show', 's', 'find', 'f', 'refs', 'r', 'rename', 'ren', 'export', 'x', 'impact', 'imp', 'orphans', 'orp', 'cycles', 'cyc', 'delete', 'del', 'create', 'copy', 'cp', 'import', 'graph', 'gr', 'set-field', 'sf', 'list-fields', 'lf')
     'behavior' = @('list', 'ls', 'stats', 'st', 'show', 's', 'graph', 'g', 'dump', 'd', 'find', 'f', 'trace', 'tr', 'add-link', 'remove-link', 'interface', 'iface')
     'parameter' = @('list', 'ls', 'show', 's', 'dump', 'd', 'set')
     'resource' = @('list', 'ls', 'show', 's', 'extract', 'x', 'import', 'imp', 'replace', 'rep', 'remove', 'rm', 'info')

@@ -1643,17 +1643,17 @@ int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *glob
 }
 
 /* ============================================================================
- * object import-json - Import objects from JSON (round-trip with object export)
+ * object import - Import object export snapshot JSON
  * ============================================================================ */
 
-typedef struct object_import_json_args {
+typedef struct object_import_args {
     const char *json_data;
     size_t json_size;
     uint32_t import_flags;
     nmo_import_result_t result;
-} object_import_json_args_t;
+} object_import_args_t;
 
-static int object_import_json_mutate(
+static int object_import_mutate(
     nmo_cmd_ctx_t *c,
     bool dry_run,
     const char *output_path,
@@ -1661,7 +1661,7 @@ static int object_import_json_mutate(
 {
     (void)dry_run;
     (void)output_path;
-    object_import_json_args_t *args = (object_import_json_args_t *)user_data;
+    object_import_args_t *args = (object_import_args_t *)user_data;
     if (args == NULL) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -1691,13 +1691,13 @@ static int object_import_json_mutate(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int object_import_json_report(
+static int object_import_report(
     nmo_cmd_ctx_t *c,
     bool dry_run,
     const char *output_path,
     void *user_data)
 {
-    object_import_json_args_t *args = (object_import_json_args_t *)user_data;
+    object_import_args_t *args = (object_import_args_t *)user_data;
     if (args == NULL) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -1722,7 +1722,7 @@ static int object_import_json_report(
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
-        nmo_cmd_ctx_json_end(c, doc, data, "object.import-json");
+        nmo_cmd_ctx_json_end(c, doc, data, "object.import");
     } else {
         if (dry_run) {
             fprintf(c->out, "=== Dry Run: Import JSON ===\n");
@@ -1742,14 +1742,15 @@ static int object_import_json_report(
         : NMO_CLI_EXIT_SUCCESS;
 }
 
-int nmo_cmd_object_import_json(int argc, char **argv, const nmo_cli_global_opts_t *global)
+int nmo_cmd_object_import(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
     static const nmo_opt_def_t opts[] = {
+        {"--format",  "-f", NMO_OPT_STRING, "Input format (json)"},
         {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
         {"--create",  NULL, NMO_OPT_FLAG,   "Create objects not found by ID"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview changes without saving"},
     };
-    enum { OPT_OUTPUT, OPT_CREATE, OPT_DRYRUN, OPT_COUNT };
+    enum { OPT_FORMAT, OPT_OUTPUT, OPT_CREATE, OPT_DRYRUN, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
@@ -1758,15 +1759,22 @@ int nmo_cmd_object_import_json(int argc, char **argv, const nmo_cli_global_opts_
         return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    const char *input_format = vals[OPT_FORMAT].present ? vals[OPT_FORMAT].val.str : NULL;
     bool create  = vals[OPT_CREATE].present && vals[OPT_CREATE].val.flag;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
 
+    if (!input_format ||
+        (!nmo_tool_streq_ci(input_format, "json") &&
+         !nmo_tool_streq_ci(input_format, "json-pretty"))) {
+        fprintf(stderr, "Error: object import requires -f json\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
     if (!dry_run && !output_path) {
         fprintf(stderr, "Error: -o/--output required (or use --dry-run)\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (r.pos_count < 2) {
-        fprintf(stderr, "Usage: nmo object import-json <json-file> <nmo-file> -o <output>\n");
+        fprintf(stderr, "Usage: nmo object import -f json <json-file> <nmo-file> -o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -1801,13 +1809,13 @@ int nmo_cmd_object_import_json(int argc, char **argv, const nmo_cli_global_opts_
     if (create) flags |= NMO_IMPORT_CREATE_MISSING;
     if (dry_run) flags |= NMO_IMPORT_DRY_RUN;
 
-    object_import_json_args_t args = {
+    object_import_args_t args = {
         .json_data = json_data,
         .json_size = json_size,
         .import_flags = flags,
     };
     const nmo_cli_write_spec_t spec = {
-        .command_name = "object.import-json",
+        .command_name = "object.import",
         .output_required_unless_dry_run = true,
     };
     int rc = nmo_cli_run_write_command(
@@ -1816,8 +1824,8 @@ int nmo_cmd_object_import_json(int argc, char **argv, const nmo_cli_global_opts_
         dry_run,
         global,
         &spec,
-        object_import_json_mutate,
-        object_import_json_report,
+        object_import_mutate,
+        object_import_report,
         &args);
     free(json_data);
     return rc;

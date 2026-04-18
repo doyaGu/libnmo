@@ -56,7 +56,7 @@ _nmo() {
         case "$1" in
             file) echo 'info i header hdr stats st classes cls plugins pl space sp' ;;
             chunk) echo 'list ls tree t show s find f' ;;
-            object) echo 'list ls tree t show s find f refs r rename ren export x impact imp orphans orp cycles cyc delete del create copy cp import-json graph gr set-field sf list-fields lf' ;;
+            object) echo 'list ls tree t show s find f refs r rename ren export x impact imp orphans orp cycles cyc delete del create copy cp import graph gr set-field sf list-fields lf' ;;
             behavior) echo 'list ls stats st show s graph g dump d find f trace tr add-link remove-link interface iface' ;;
             parameter) echo 'list ls show s dump d set' ;;
             resource) echo 'list ls show s extract x import imp replace rep remove rm info' ;;

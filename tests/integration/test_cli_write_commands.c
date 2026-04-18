@@ -129,6 +129,33 @@ static int write_text_file(const char *path, const char *text) {
     return ok;
 }
 
+static char *read_text_file_alloc(const char *path) {
+    FILE *fp = fopen(path, "rb");
+    if (!fp) return NULL;
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        return NULL;
+    }
+    long size = ftell(fp);
+    if (size < 0) {
+        fclose(fp);
+        return NULL;
+    }
+    if (fseek(fp, 0, SEEK_SET) != 0) {
+        fclose(fp);
+        return NULL;
+    }
+    char *buf = (char *)malloc((size_t)size + 1u);
+    if (!buf) {
+        fclose(fp);
+        return NULL;
+    }
+    size_t n = fread(buf, 1, (size_t)size, fp);
+    fclose(fp);
+    buf[n] = '\0';
+    return buf;
+}
+
 static void assert_cli_success(const char *args, const char *contains) {
     cli_run_result_t result = run_cli_capture(args);
     if (result.exit_code != NMO_CLI_EXIT_SUCCESS ||
@@ -137,6 +164,21 @@ static void assert_cli_success(const char *args, const char *contains) {
                 args, result.exit_code, result.output ? result.output : "(null)");
     }
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_NOT_NULL(result.output);
+    if (contains) {
+        ASSERT_STR_CONTAINS(result.output, contains);
+    }
+    free(result.output);
+}
+
+static void assert_cli_failure(const char *args, const char *contains) {
+    cli_run_result_t result = run_cli_capture(args);
+    if (result.exit_code == NMO_CLI_EXIT_SUCCESS ||
+        (contains && (!result.output || !strstr(result.output, contains)))) {
+        fprintf(stderr, "\nCommand: %s\nExit: %d\nOutput:\n%s\n",
+                args, result.exit_code, result.output ? result.output : "(null)");
+    }
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
     ASSERT_NOT_NULL(result.output);
     if (contains) {
         ASSERT_STR_CONTAINS(result.output, contains);
@@ -200,6 +242,48 @@ TEST(cli_write, resource_import_replace_remove_save_and_validate) {
     assert_validate_ok("test_cli_write_tmp/resource_remove.cmo");
 }
 
+TEST(cli_write, mesh_animation_import_dry_run_does_not_write_output) {
+    make_dir("test_cli_write_tmp");
+    make_dir("test_cli_write_tmp/mesh_dry_export");
+    make_dir("test_cli_write_tmp/anim_dry_export");
+
+    assert_cli_success(
+        "mesh export --id 3 --out-dir \"test_cli_write_tmp/mesh_dry_export\" "
+        "\"" NMO_TEST_DATA_FILE("Ballance/P_Box.nmo") "\"",
+        "Exported");
+    remove("test_cli_write_tmp/mesh_dry_out.nmo");
+    assert_cli_success(
+        "mesh import --dry-run "
+        "\"test_cli_write_tmp/mesh_dry_export/P_Box_Mesh_3.obj\" "
+        "\"" NMO_TEST_DATA_FILE("Ballance/P_Box.nmo") "\"",
+        "[dry-run]");
+    assert_cli_success(
+        "mesh import --dry-run "
+        "\"test_cli_write_tmp/mesh_dry_export/P_Box_Mesh_3.obj\" "
+        "\"" NMO_TEST_DATA_FILE("Ballance/P_Box.nmo") "\" "
+        "-o \"test_cli_write_tmp/mesh_dry_out.nmo\"",
+        "[dry-run]");
+    ASSERT_FALSE(file_exists("test_cli_write_tmp/mesh_dry_out.nmo"));
+
+    assert_cli_success(
+        "animation export --id 519 --out-dir \"test_cli_write_tmp/anim_dry_export\" "
+        "\"" NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo") "\"",
+        NULL);
+    remove("test_cli_write_tmp/animation_dry_out.nmo");
+    assert_cli_success(
+        "animation import --dry-run "
+        "\"test_cli_write_tmp/anim_dry_export/Kamera02_519.anim.json\" "
+        "\"" NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo") "\"",
+        "[dry-run]");
+    assert_cli_success(
+        "animation import --dry-run "
+        "\"test_cli_write_tmp/anim_dry_export/Kamera02_519.anim.json\" "
+        "\"" NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo") "\" "
+        "-o \"test_cli_write_tmp/animation_dry_out.nmo\"",
+        "[dry-run]");
+    ASSERT_FALSE(file_exists("test_cli_write_tmp/animation_dry_out.nmo"));
+}
+
 TEST(cli_write, object_create_copy_import_delete_save_and_validate) {
     make_dir("test_cli_write_tmp");
     ASSERT_TRUE(copy_file_binary(
@@ -221,9 +305,12 @@ TEST(cli_write, object_create_copy_import_delete_save_and_validate) {
 
     ASSERT_TRUE(write_text_file(
         "test_cli_write_tmp/object_import.json",
-        "{\"objects\":[{\"id\":1,\"fields\":{\"z_order\":7}}]}\n"));
+        "{\"objects\":[{\"id\":1,\"fields\":["
+        "{\"name\":\"z_order\",\"kind\":\"scalar\","
+        "\"type_guid\":\"{5A5716FD-44E276D7}\",\"value\":7}"
+        "]}]}\n"));
     assert_cli_success(
-        "object import-json \"test_cli_write_tmp/object_import.json\" "
+        "object import -f json \"test_cli_write_tmp/object_import.json\" "
         "\"test_cli_write_tmp/object_input.nmo\" -o \"test_cli_write_tmp/object_import.nmo\"",
         "Fields written");
     assert_validate_ok("test_cli_write_tmp/object_import.nmo");
@@ -234,6 +321,54 @@ TEST(cli_write, object_create_copy_import_delete_save_and_validate) {
         "-o \"test_cli_write_tmp/object_delete.nmo\"",
         "Deleted");
     assert_validate_ok("test_cli_write_tmp/object_delete.nmo");
+}
+
+TEST(cli_write, object_export_import_snapshot_round_trips_mesh_and_matrix) {
+    make_dir("test_cli_write_tmp");
+
+    assert_cli_success(
+        "-f json object export --id 3 "
+        "\"" NMO_TEST_DATA_FILE("Ballance/P_Box.nmo") "\" "
+        "> \"test_cli_write_tmp/object_mesh_snapshot.json\"",
+        NULL);
+    ASSERT_TRUE(file_exists("test_cli_write_tmp/object_mesh_snapshot.json"));
+    char *mesh_snapshot = read_text_file_alloc("test_cli_write_tmp/object_mesh_snapshot.json");
+    ASSERT_NOT_NULL(mesh_snapshot);
+    ASSERT_STR_CONTAINS(mesh_snapshot, "\"name\":\"faces\",\"type_guid\":\"{F5E61C19-3DBB4E19}\",\"kind\":\"array\",\"count\":12");
+    ASSERT_STR_CONTAINS(mesh_snapshot, "\"name\":\"face_vertex_indices\",\"type_guid\":\"{4E4D4F03-00100000}\",\"kind\":\"array\",\"count\":36");
+    ASSERT_STR_CONTAINS(mesh_snapshot, "\"name\":\"vertices\",\"type_guid\":\"{8A1FD901-61A8F154}\",\"kind\":\"array\",\"count\":24");
+    ASSERT_STR_CONTAINS(mesh_snapshot, "\"raw_hex\"");
+    free(mesh_snapshot);
+    assert_cli_success(
+        "object import -f json \"test_cli_write_tmp/object_mesh_snapshot.json\" "
+        "\"" NMO_TEST_DATA_FILE("Ballance/P_Box.nmo") "\" "
+        "-o \"test_cli_write_tmp/object_mesh_roundtrip.nmo\"",
+        "Fields written");
+    assert_validate_ok("test_cli_write_tmp/object_mesh_roundtrip.nmo");
+    assert_cli_success(
+        "-f json object export --id 3 \"test_cli_write_tmp/object_mesh_roundtrip.nmo\"",
+        "\"items\"");
+
+    assert_cli_success(
+        "-f json object export --id 2 "
+        "\"" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "\" "
+        "> \"test_cli_write_tmp/object_entity_snapshot.json\"",
+        NULL);
+    ASSERT_TRUE(file_exists("test_cli_write_tmp/object_entity_snapshot.json"));
+    assert_cli_success(
+        "object import -f json \"test_cli_write_tmp/object_entity_snapshot.json\" "
+        "\"" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "\" "
+        "-o \"test_cli_write_tmp/object_entity_roundtrip.nmo\"",
+        "Fields written");
+    assert_validate_ok("test_cli_write_tmp/object_entity_roundtrip.nmo");
+    assert_cli_success(
+        "-f json object export --id 2 \"test_cli_write_tmp/object_entity_roundtrip.nmo\"",
+        "\"world_matrix\"");
+
+    assert_cli_failure(
+        "object import-json \"test_cli_write_tmp/object_mesh_snapshot.json\" "
+        "\"" NMO_TEST_DATA_FILE("Ballance/P_Box.nmo") "\" --dry-run",
+        "Unknown action");
 }
 
 TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
@@ -302,6 +437,8 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli_write, resource_import_replace_dry_run_does_not_write_output);
     REGISTER_TEST(cli_write, resource_import_replace_remove_save_and_validate);
+    REGISTER_TEST(cli_write, mesh_animation_import_dry_run_does_not_write_output);
     REGISTER_TEST(cli_write, object_create_copy_import_delete_save_and_validate);
+    REGISTER_TEST(cli_write, object_export_import_snapshot_round_trips_mesh_and_matrix);
     REGISTER_TEST(cli_write, data_entity_material_texture_animation_save_and_validate);
 TEST_MAIN_END()

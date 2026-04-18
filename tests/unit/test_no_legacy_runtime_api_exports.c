@@ -1015,14 +1015,14 @@ TEST(no_legacy_runtime_api_exports, object_rename_batch_uses_shared_write_runner
         "nmo_save_file(");
 }
 
-TEST(no_legacy_runtime_api_exports, object_import_json_uses_shared_write_runner) {
+TEST(no_legacy_runtime_api_exports, object_import_uses_shared_write_runner) {
     assert_function_has_no_substring(
         "tools/commands/nmo_cmd_object_write.c",
-        "nmo_cmd_object_import_json",
+        "nmo_cmd_object_import",
         "nmo_cmd_ctx_init_with_file");
     assert_function_has_no_substring(
         "tools/commands/nmo_cmd_object_write.c",
-        "nmo_cmd_object_import_json",
+        "nmo_cmd_object_import",
         "nmo_save_file(");
 }
 
@@ -1225,7 +1225,7 @@ REGISTER_TEST(no_legacy_runtime_api_exports, object_commands_use_object_query_ap
 REGISTER_TEST(no_legacy_runtime_api_exports, object_create_uses_shared_write_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, object_rename_single_uses_shared_write_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, object_rename_batch_uses_shared_write_runner);
-REGISTER_TEST(no_legacy_runtime_api_exports, object_import_json_uses_shared_write_runner);
+REGISTER_TEST(no_legacy_runtime_api_exports, object_import_uses_shared_write_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, object_import_json_api_uses_session_edit_transaction);
 REGISTER_TEST(no_legacy_runtime_api_exports, object_delete_uses_shared_write_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, object_copy_uses_shared_write_runner);

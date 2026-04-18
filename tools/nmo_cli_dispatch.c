@@ -138,13 +138,13 @@ static void object_rename_usage(FILE *out) {
 
 static void object_export_usage(FILE *out) {
     fprintf(out, "Usage: nmo object export [options] <file>\n\n");
-    fprintf(out, "Export object data using reflection (text or JSON).\n\n");
+    fprintf(out, "Export object data. JSON output is an importable semantic snapshot.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  --class, -c <name>   Filter by class (includes derived classes)\n");
     fprintf(out, "  --name, -n <pat>     Filter by name pattern\n");
     fprintf(out, "  --filter, -f <expr>  Filter by DSL expression\n");
     fprintf(out, "  --depth, -d <n>      Recursion depth (default: 4)\n");
-    fprintf(out, "  --full               Full detail mode (depth 8)\n");
+    fprintf(out, "  --full               Full detail mode for text output (depth 8)\n");
     fprintf(out, "  --id <n>             Export specific object by ID\n");
 }
 
@@ -212,10 +212,11 @@ static void object_copy_usage(FILE *out) {
     fprintf(out, "  --dry-run            Preview without saving\n");
 }
 
-static void object_import_json_usage(FILE *out) {
-    fprintf(out, "Usage: nmo object import-json <json-file> <nmo-file> -o <output>\n\n");
-    fprintf(out, "Import objects from JSON (round-trip with object export).\n\n");
+static void object_import_usage(FILE *out) {
+    fprintf(out, "Usage: nmo object import -f json <json-file> <nmo-file> -o <output>\n\n");
+    fprintf(out, "Import object export snapshot JSON.\n\n");
     fprintf(out, "Options:\n");
+    fprintf(out, "  -f, --format json    Input format (required)\n");
     fprintf(out, "  -o, --output <file>  Output file (required unless --dry-run)\n");
     fprintf(out, "  --create             Create objects not found by ID\n");
     fprintf(out, "  --dry-run            Preview changes without saving\n");
@@ -839,12 +840,13 @@ static void mesh_export_usage(FILE *out) {
 }
 
 static void mesh_import_usage(FILE *out) {
-    fprintf(out, "Usage: nmo mesh import <obj-file> <nmo-file> -o <output>\n\n");
+    fprintf(out, "Usage: nmo mesh import <obj-file> <nmo-file> -o <output> [--dry-run]\n\n");
     fprintf(out, "Import a Wavefront OBJ file into an NMO mesh.\n\n");
     fprintf(out, "Options:\n");
-    fprintf(out, "  -o, --output <path>    Output file (required)\n");
+    fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
     fprintf(out, "  --replace <id>         Replace existing mesh by ID\n");
     fprintf(out, "  --name, -n <name>      Mesh name\n");
+    fprintf(out, "  --dry-run              Preview without saving\n");
 }
 
 /* Animation command usage */
@@ -874,11 +876,12 @@ static void animation_export_usage(FILE *out) {
 }
 
 static void animation_import_usage(FILE *out) {
-    fprintf(out, "Usage: nmo animation import <json-file> <nmo-file> -o <output>\n\n");
+    fprintf(out, "Usage: nmo animation import <json-file> <nmo-file> -o <output> [--dry-run]\n\n");
     fprintf(out, "Import animation data from JSON into an NMO file.\n\n");
     fprintf(out, "Options:\n");
-    fprintf(out, "  -o, --output <path>    Output file (required)\n");
+    fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
     fprintf(out, "  --replace <id>         Replace existing animation by ID\n");
+    fprintf(out, "  --dry-run              Preview without saving\n");
 }
 
 static void completion_usage(FILE *out) {
@@ -916,14 +919,14 @@ static const nmo_cli_action_t object_actions[] = {
     {"find", "f", "Find objects by query", nmo_cmd_object_find, object_find_usage, NULL, 0, NULL},
     {"refs", "r", "Show object references", nmo_cmd_object_refs, object_refs_usage, NULL, 0, NULL},
     {"rename", "ren", "Rename an object", nmo_cmd_object_rename, object_rename_usage, NULL, 0, NULL},
-    {"export", "x", "Export objects as semantic JSON", nmo_cmd_object_export, object_export_usage, NULL, 0, NULL},
+    {"export", "x", "Export importable object snapshot", nmo_cmd_object_export, object_export_usage, NULL, 0, NULL},
     {"impact", "imp", "Show deletion impact", nmo_cmd_object_impact, object_impact_usage, NULL, 0, NULL},
     {"orphans", "orp", "Find unreachable objects", nmo_cmd_object_orphans, object_orphans_usage, NULL, 0, NULL},
     {"cycles", "cyc", "Detect circular references", nmo_cmd_object_cycles, object_cycles_usage, NULL, 0, NULL},
     {"delete", "del", "Delete objects", nmo_cmd_object_delete, object_delete_usage, NULL, 0, NULL},
     {"create", NULL, "Create new object", nmo_cmd_object_create, object_create_usage, NULL, 0, NULL},
     {"copy", "cp", "Copy objects", nmo_cmd_object_copy, object_copy_usage, NULL, 0, NULL},
-    {"import-json", NULL, "Import objects from JSON", nmo_cmd_object_import_json, object_import_json_usage, NULL, 0, NULL},
+    {"import", NULL, "Import object export snapshot", nmo_cmd_object_import, object_import_usage, NULL, 0, NULL},
     {"graph", "gr", "Export reference graph", nmo_cmd_object_graph, object_graph_usage, NULL, 0, NULL},
     {"set-field", "sf", "Set typed field value", nmo_cmd_object_set_field, object_set_field_usage, NULL, 0, NULL},
     {"list-fields", "lf", "List object fields and values", nmo_cmd_object_list_fields, object_list_fields_usage, NULL, 0, NULL},
