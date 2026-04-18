@@ -2479,6 +2479,16 @@ uint32_t nmo_hash_bool(const void *instance)
     return nmo_hash_int32(*(const bool *)instance ? 1u : 0u);
 }
 
+bool nmo_equals_bool32(const void *a, const void *b)
+{
+    return (*(const uint32_t *)a != 0u) == (*(const uint32_t *)b != 0u);
+}
+
+uint32_t nmo_hash_bool32(const void *instance)
+{
+    return nmo_hash_int32(*(const uint32_t *)instance != 0u ? 1u : 0u);
+}
+
 bool nmo_equals_pointer(const void *a, const void *b)
 {
     return *(const void *const *)a == *(const void *const *)b;
@@ -2733,6 +2743,39 @@ NMO_DEFINE_VT_FROM_STRING(double, nmo_parse_double)
 
 NMO_DEFINE_VT_TO_STRING(bool, nmo_bool_to_string)
 NMO_DEFINE_VT_FROM_STRING(bool, nmo_parse_bool)
+
+nmo_status_t nmo_vt_to_string_bool32(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
+    if (!value || !buffer || buffer_size < 6) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for bool_to_string");
+    }
+
+    snprintf(buffer, buffer_size, *(const uint32_t *)value != 0u ? "true" : "false");
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_vt_from_string_bool32(
+    void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry, const char *string)
+{
+    (void)type; (void)registry;
+    if (!value || !string) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for bool_from_string");
+    }
+
+    bool parsed = false;
+    nmo_status_t status = nmo_bool_from_string(&parsed, string);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    *(uint32_t *)value = parsed ? 1u : 0u;
+    NMO_RETURN_OK();
+}
 
 NMO_DEFINE_VT_TO_STRING(string, nmo_string_to_string)
 NMO_DEFINE_VT_FROM_STRING(string, nmo_parse_string)

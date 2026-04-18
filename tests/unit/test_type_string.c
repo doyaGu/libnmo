@@ -424,6 +424,46 @@ TEST(type_string, bool_roundtrip) {
     teardown();
 }
 
+TEST(type_string, type_value_from_string_bool_writes_int_sized_value) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, CKPGUID_BOOL);
+    ASSERT_NE(NULL, type);
+    ASSERT_EQ(sizeof(uint32_t), type->size);
+
+    uint32_t value = 0xFFFFFFFFu;
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&value, type, registry, "false"));
+    ASSERT_EQ(0u, value);
+
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&value, type, registry, "true"));
+    ASSERT_EQ(1u, value);
+
+    teardown();
+}
+
+TEST(type_string, type_value_bool_uses_full_int_sized_value) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, CKPGUID_BOOL);
+    ASSERT_NE(NULL, type);
+    ASSERT_NE(NULL, type->vtable);
+    ASSERT_NE(NULL, type->vtable->equals);
+
+    uint32_t false_value = 0u;
+    uint32_t high_byte_true = 0x00000100u;
+    char buffer[64];
+
+    ASSERT_EQ(NMO_OK, nmo_type_value_to_string(&high_byte_true, type, registry, buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("true", buffer);
+    ASSERT_FALSE(type->vtable->equals(&false_value, &high_byte_true));
+
+    teardown();
+}
+
 /* ============================================================================
  * Vector Conversion Tests
  * ============================================================================ */
@@ -1614,6 +1654,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, bool_from_string_one);
     REGISTER_TEST(type_string, bool_from_string_zero);
     REGISTER_TEST(type_string, bool_roundtrip);
+    REGISTER_TEST(type_string, type_value_from_string_bool_writes_int_sized_value);
+    REGISTER_TEST(type_string, type_value_bool_uses_full_int_sized_value);
     
     // Vector tests
     REGISTER_TEST(type_string, vector_to_string);

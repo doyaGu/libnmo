@@ -66,6 +66,8 @@ uint32_t nmo_vt_hash_uint64(const void *instance);
 
 bool nmo_equals_bool(const void *a, const void *b);
 uint32_t nmo_hash_bool(const void *instance);
+bool nmo_equals_bool32(const void *a, const void *b);
+uint32_t nmo_hash_bool32(const void *instance);
 bool nmo_equals_pointer(const void *a, const void *b);
 uint32_t nmo_hash_pointer(const void *instance);
 bool nmo_equals_guid(const void *a, const void *b);
@@ -142,6 +144,14 @@ nmo_status_t nmo_vt_from_string_percentage(
     void *value, const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
     const char *string);
+nmo_status_t nmo_vt_to_string_bool32(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth);
+nmo_status_t nmo_vt_from_string_bool32(
+    void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string);
 nmo_status_t nmo_vt_to_string_time(
     const void *value, const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -209,10 +219,10 @@ const nmo_type_vtable_t nmo_builtin_vtable_bool = {
     .create = nmo_builtin_create_zero,
     .destroy = nmo_builtin_destroy_noop,
     .copy = nmo_builtin_copy_memcpy,
-    .equals = nmo_equals_bool,
-    .hash = nmo_hash_bool,
-    .to_string = nmo_vt_to_string_bool,
-    .from_string = nmo_vt_from_string_bool,
+    .equals = nmo_equals_bool32,
+    .hash = nmo_hash_bool32,
+    .to_string = nmo_vt_to_string_bool32,
+    .from_string = nmo_vt_from_string_bool32,
 };
 
 const nmo_type_vtable_t nmo_builtin_vtable_double = {
