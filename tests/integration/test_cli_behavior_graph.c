@@ -244,6 +244,31 @@ static yyjson_val *get_array_field(yyjson_val *obj, const char *key) {
     return (val && yyjson_is_arr(val)) ? val : NULL;
 }
 
+static bool json_has_nonempty_string(yyjson_val *obj, const char *key) {
+    yyjson_val *val = yyjson_obj_get(obj, key);
+    const char *str = yyjson_get_str(val);
+    return str && str[0] != '\0';
+}
+
+static yyjson_val *find_array_object_by_string(yyjson_val *arr,
+                                               const char *key,
+                                               const char *value) {
+    if (!arr || !key || !value) {
+        return NULL;
+    }
+
+    size_t idx, max;
+    yyjson_val *item;
+    yyjson_arr_foreach(arr, idx, max, item) {
+        yyjson_val *field = yyjson_obj_get(item, key);
+        const char *str = yyjson_get_str(field);
+        if (str && strcmp(str, value) == 0) {
+            return item;
+        }
+    }
+    return NULL;
+}
+
 static void run_json_command(const char *args, const char *expected_command, yyjson_doc **out_doc) {
     ASSERT_NOT_NULL(out_doc);
     *out_doc = NULL;
@@ -344,6 +369,187 @@ TEST(cli, behavior_graph_json) {
     yyjson_doc_free(graph_doc);
 }
 
+TEST(cli, behavior_graph_json_parity_metadata) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json behavior graph --max-nodes 500 --max-edges 800 237 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.graph", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    yyjson_val *graph = get_object_field(data, "graph");
+    ASSERT_NOT_NULL(graph);
+    yyjson_val *nodes = get_array_field(graph, "nodes");
+    yyjson_val *edges = get_array_field(graph, "edges");
+    ASSERT_NOT_NULL(nodes);
+    ASSERT_NOT_NULL(edges);
+
+    yyjson_val *behavior_node = find_array_object_by_string(nodes, "kind", "behavior");
+    ASSERT_NOT_NULL(behavior_node);
+    ASSERT_TRUE(json_has_nonempty_string(behavior_node, "display_name"));
+    ASSERT_TRUE(json_has_nonempty_string(behavior_node, "behavior_type"));
+
+    yyjson_val *operation_node = find_array_object_by_string(nodes, "kind", "operation");
+    ASSERT_NOT_NULL(operation_node);
+    ASSERT_TRUE(json_has_nonempty_string(operation_node, "display_name"));
+    ASSERT_TRUE(json_has_nonempty_string(operation_node, "operation_name"));
+    ASSERT_TRUE(json_has_nonempty_string(operation_node, "operation_guid"));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(operation_node, "in1_id")));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(operation_node, "in2_id")));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(operation_node, "out_id")));
+
+    yyjson_val *behavior_link = find_array_object_by_string(edges, "kind", "behavior_link");
+    ASSERT_NOT_NULL(behavior_link);
+    ASSERT_TRUE(json_has_nonempty_string(behavior_link, "from_name"));
+    ASSERT_TRUE(json_has_nonempty_string(behavior_link, "to_name"));
+    ASSERT_TRUE(json_has_nonempty_string(behavior_link, "source_io_name"));
+    ASSERT_TRUE(json_has_nonempty_string(behavior_link, "target_io_name"));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(behavior_link, "source_owner_id")));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(behavior_link, "target_owner_id")));
+    ASSERT_TRUE(json_has_nonempty_string(behavior_link, "source_owner_name"));
+    ASSERT_TRUE(json_has_nonempty_string(behavior_link, "target_owner_name"));
+
+    yyjson_val *parameter_edge = find_array_object_by_string(edges, "kind", "param_source");
+    if (!parameter_edge) {
+        parameter_edge = find_array_object_by_string(edges, "kind", "param_local");
+    }
+    ASSERT_NOT_NULL(parameter_edge);
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(parameter_edge, "parameter_id")));
+    ASSERT_TRUE(json_has_nonempty_string(parameter_edge, "parameter_name"));
+    ASSERT_TRUE(json_has_nonempty_string(parameter_edge, "type_name"));
+    ASSERT_TRUE(json_has_nonempty_string(parameter_edge, "type_guid"));
+
+    yyjson_val *param_in_edge = find_array_object_by_string(edges, "kind", "param_in");
+    ASSERT_NOT_NULL(param_in_edge);
+    yyjson_val *param_in_id = yyjson_obj_get(param_in_edge, "parameter_id");
+    yyjson_val *param_in_to = yyjson_obj_get(param_in_edge, "to");
+    ASSERT_TRUE(yyjson_is_uint(param_in_id));
+    ASSERT_TRUE(yyjson_is_uint(param_in_to));
+    ASSERT_EQ(yyjson_get_uint(param_in_to), yyjson_get_uint(param_in_id));
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_graph_json_truncation_counts) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json behavior graph --max-nodes 5 --max-edges 5 237 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.graph", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    yyjson_val *graph = get_object_field(data, "graph");
+    ASSERT_NOT_NULL(graph);
+    yyjson_val *truncated = get_object_field(graph, "truncated");
+    ASSERT_NOT_NULL(truncated);
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(truncated, "nodes_emitted")));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(truncated, "edges_emitted")));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(truncated, "nodes_dropped")));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(truncated, "edges_dropped")));
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_graph_dot_labels_behavior_delay) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior graph --dot 237 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "delay=");
+    free(result.output);
+}
+
+TEST(cli, behavior_stats_json_distributions) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json behavior stats \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.stats", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+
+    yyjson_val *param_types = get_array_field(data, "parameter_types_top");
+    ASSERT_NOT_NULL(param_types);
+    ASSERT_TRUE(yyjson_arr_size(param_types) > 0);
+    yyjson_val *param_type = yyjson_arr_get(param_types, 0);
+    ASSERT_TRUE(json_has_nonempty_string(param_type, "type_name"));
+    ASSERT_TRUE(json_has_nonempty_string(param_type, "type_guid"));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(param_type, "count")));
+
+    yyjson_val *op_types = get_array_field(data, "operation_types_top");
+    ASSERT_NOT_NULL(op_types);
+    ASSERT_TRUE(yyjson_arr_size(op_types) > 0);
+    yyjson_val *op_type = yyjson_arr_get(op_types, 0);
+    ASSERT_TRUE(json_has_nonempty_string(op_type, "operation_name"));
+    ASSERT_TRUE(json_has_nonempty_string(op_type, "operation_guid"));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(op_type, "count")));
+
+    yyjson_val *tree_depth = get_object_field(data, "tree_depth");
+    ASSERT_NOT_NULL(tree_depth);
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(tree_depth, "max")));
+    ASSERT_TRUE(yyjson_is_real(yyjson_obj_get(tree_depth, "avg")));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(tree_depth, "p95")));
+
+    yyjson_val *script_sub_counts = get_object_field(data, "script_sub_behavior_counts");
+    ASSERT_NOT_NULL(script_sub_counts);
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(script_sub_counts, "max")));
+    ASSERT_TRUE(yyjson_is_real(yyjson_obj_get(script_sub_counts, "avg")));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(script_sub_counts, "p95")));
+
+    yyjson_val *link_delays = get_object_field(data, "link_delay_distribution");
+    ASSERT_NOT_NULL(link_delays);
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(link_delays, "zero_delay")));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(link_delays, "next_frame")));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(link_delays, "multi_frame")));
+
+    yyjson_val *broken_refs = get_object_field(data, "broken_references");
+    ASSERT_NOT_NULL(broken_refs);
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(broken_refs, "behavior_links")));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(broken_refs, "sub_behaviors")));
+
+    yyjson_val *interface_parse = get_object_field(data, "interface_parse");
+    ASSERT_NOT_NULL(interface_parse);
+
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior stats \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Menu.nmo"));
+    yyjson_doc *menu_doc = NULL;
+    run_json_command(args, "behavior.stats", &menu_doc);
+    ASSERT_NOT_NULL(menu_doc);
+    yyjson_val *menu_root = yyjson_doc_get_root(menu_doc);
+    ASSERT_NOT_NULL(menu_root);
+    yyjson_val *menu_data = get_object_field(menu_root, "data");
+    ASSERT_NOT_NULL(menu_data);
+    ASSERT_NOT_NULL(get_array_field(menu_data, "parameter_types_top"));
+    ASSERT_NOT_NULL(get_array_field(menu_data, "operation_types_top"));
+    ASSERT_NOT_NULL(get_object_field(menu_data, "tree_depth"));
+    yyjson_doc_free(menu_doc);
+}
+
 TEST(cli, behavior_stats_json_survives_interface_parse_failures) {
     char args[1024];
 
@@ -364,6 +570,34 @@ TEST(cli, behavior_stats_json_survives_interface_parse_failures) {
     yyjson_doc_free(menu_doc);
 }
 
+TEST(cli, behavior_stats_json_marks_interface_unavailable_without_data) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json behavior stats \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.stats", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+
+    yyjson_val *interface_available = yyjson_obj_get(data, "interface_available");
+    ASSERT_TRUE(interface_available && yyjson_is_bool(interface_available));
+    ASSERT_FALSE(yyjson_get_bool(interface_available));
+
+    yyjson_val *interface_parse = get_object_field(data, "interface_parse");
+    ASSERT_NOT_NULL(interface_parse);
+    yyjson_val *parsed_count = yyjson_obj_get(interface_parse, "parsed_count");
+    ASSERT_TRUE(parsed_count && yyjson_is_uint(parsed_count));
+    ASSERT_EQ((uint64_t)0, yyjson_get_uint(parsed_count));
+
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, behavior_show_json_survives_interface_parse_failures) {
     char args[1024];
     snprintf(args, sizeof(args),
@@ -379,6 +613,332 @@ TEST(cli, behavior_show_json_survives_interface_parse_failures) {
     yyjson_val *id = yyjson_obj_get(data, "id");
     ASSERT_TRUE(id && yyjson_is_uint(id));
     ASSERT_EQ((uint64_t)11, yyjson_get_uint(id));
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_show_json_p2_parity) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json behavior show 237 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.show", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+
+    yyjson_val *inputs = get_array_field(data, "input_parameters");
+    ASSERT_NOT_NULL(inputs);
+    ASSERT_TRUE(yyjson_arr_size(inputs) > 0);
+    yyjson_val *first_input = yyjson_arr_get(inputs, 0);
+    ASSERT_NOT_NULL(first_input);
+    yyjson_val *source_chain = get_array_field(first_input, "source_chain");
+    ASSERT_NOT_NULL(source_chain);
+    ASSERT_TRUE(yyjson_arr_size(source_chain) >= 2);
+    yyjson_val *chain_step = yyjson_arr_get(source_chain, 0);
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(chain_step, "id")));
+    ASSERT_TRUE(json_has_nonempty_string(chain_step, "name"));
+    ASSERT_TRUE(json_has_nonempty_string(chain_step, "type_name"));
+    ASSERT_TRUE(yyjson_is_bool(yyjson_obj_get(chain_step, "is_shared")));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(chain_step, "owner_id")));
+    ASSERT_TRUE(json_has_nonempty_string(chain_step, "owner_name"));
+
+    yyjson_val *locals = get_array_field(data, "local_parameters");
+    ASSERT_NOT_NULL(locals);
+    bool saw_decoded = false;
+    size_t idx, max;
+    yyjson_val *item;
+    yyjson_arr_foreach(locals, idx, max, item) {
+        if (json_has_nonempty_string(item, "decoded_value")) {
+            saw_decoded = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(saw_decoded);
+
+    yyjson_val *ops = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(ops);
+    ASSERT_TRUE(yyjson_arr_size(ops) > 0);
+    yyjson_val *op = yyjson_arr_get(ops, 0);
+    ASSERT_TRUE(json_has_nonempty_string(op, "operation_guid"));
+    ASSERT_TRUE(json_has_nonempty_string(op, "operation_name"));
+    ASSERT_TRUE(json_has_nonempty_string(op, "in1_name"));
+    ASSERT_TRUE(json_has_nonempty_string(op, "in1_type_name"));
+    ASSERT_TRUE(json_has_nonempty_string(op, "out_name"));
+    ASSERT_TRUE(json_has_nonempty_string(op, "out_type_name"));
+
+    yyjson_val *data_flow = get_array_field(data, "data_flow");
+    ASSERT_NOT_NULL(data_flow);
+    ASSERT_TRUE(yyjson_arr_size(data_flow) > 0);
+    yyjson_val *flow = yyjson_arr_get(data_flow, 0);
+    ASSERT_TRUE(json_has_nonempty_string(flow, "source_owner_name"));
+    ASSERT_TRUE(json_has_nonempty_string(flow, "source_name"));
+    ASSERT_TRUE(json_has_nonempty_string(flow, "target_owner_name"));
+    ASSERT_TRUE(json_has_nonempty_string(flow, "target_name"));
+    ASSERT_TRUE(json_has_nonempty_string(flow, "type_name"));
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_show_text_formats_non_add_operations) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior show 237 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_FALSE(strstr(result.output, "[Get Length] Pin 0 + Pin 1") != NULL);
+    ASSERT_STR_CONTAINS(result.output, "[Get Length]");
+    free(result.output);
+}
+
+TEST(cli, behavior_trace_json_p2_semantics) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json behavior trace 237 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.trace", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    yyjson_val *entries = get_array_field(data, "entries");
+    ASSERT_NOT_NULL(entries);
+    ASSERT_TRUE(yyjson_arr_size(entries) > 0);
+    yyjson_val *entry = yyjson_arr_get(entries, 0);
+    ASSERT_NOT_NULL(entry);
+    yyjson_val *steps = get_array_field(entry, "steps");
+    ASSERT_NOT_NULL(steps);
+    ASSERT_TRUE(yyjson_arr_size(steps) > 0);
+
+    bool saw_bb_proto = false;
+    bool saw_exit = false;
+    size_t idx, max;
+    yyjson_val *step;
+    yyjson_arr_foreach(steps, idx, max, step) {
+        ASSERT_TRUE(json_has_nonempty_string(step, "target_behavior_type"));
+        ASSERT_TRUE(json_has_nonempty_string(step, "transition"));
+        const char *transition = get_string_field(step, "transition");
+        if (transition && strcmp(transition, "exit_to_parent") == 0) {
+            saw_exit = true;
+        }
+        if (json_has_nonempty_string(step, "target_bb_proto_name")) {
+            saw_bb_proto = true;
+        }
+    }
+    ASSERT_TRUE(saw_bb_proto);
+    ASSERT_TRUE(saw_exit);
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_trace_json_reports_depth_truncation) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json behavior trace --depth 0 237 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.trace", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    yyjson_val *entries = get_array_field(data, "entries");
+    ASSERT_NOT_NULL(entries);
+    ASSERT_TRUE(yyjson_arr_size(entries) > 0);
+    yyjson_val *entry = yyjson_arr_get(entries, 0);
+    ASSERT_NOT_NULL(entry);
+    yyjson_val *steps = get_array_field(entry, "steps");
+    ASSERT_NOT_NULL(steps);
+
+    bool saw_max_depth = false;
+    size_t idx, max;
+    yyjson_val *step;
+    yyjson_arr_foreach(steps, idx, max, step) {
+        const char *reason = get_string_field(step, "truncated_reason");
+        if (reason && strcmp(reason, "max_depth") == 0) {
+            saw_max_depth = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(saw_max_depth);
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_trace_text_mentions_current_graph) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior trace 237 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Current graph:");
+    ASSERT_STR_CONTAINS(result.output, "transition:");
+    free(result.output);
+}
+
+TEST(cli, behavior_dump_help_describes_tree_overview_options) {
+    cli_run_result_t result = run_cli_capture("behavior dump --help");
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "tree overview");
+    ASSERT_STR_CONTAINS(result.output, "--flows");
+    ASSERT_STR_CONTAINS(result.output, "--values");
+    free(result.output);
+}
+
+TEST(cli, behavior_dump_text_flows_show_owner_endpoints) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior dump --flows 237 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Execution Flow");
+    ASSERT_STR_CONTAINS(result.output, "Data Flow");
+    ASSERT_STR_CONTAINS(result.output, "Register & Activate Init_Script.In 0 -> Op.In");
+    free(result.output);
+}
+
+TEST(cli, behavior_dump_all_rejects_flows) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior dump --all --flows \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "--flows cannot be used with --all");
+    free(result.output);
+}
+
+TEST(cli, behavior_dump_text_flows_show_empty_execution_section) {
+    const char *fixture = "test_behavior_dump_empty_flows.nmo";
+    remove(fixture);
+
+    nmo_object_id_t behavior_id = 0;
+    nmo_object_id_t from_id = 0;
+    nmo_object_id_t to_id = 0;
+    ASSERT_TRUE(create_behavior_link_fixture(fixture, &behavior_id, &from_id, &to_id));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior dump --flows %u \"%s\"",
+             (unsigned)behavior_id, fixture);
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Execution Flow");
+    ASSERT_STR_CONTAINS(result.output, "(no execution links)");
+    free(result.output);
+
+    remove(fixture);
+}
+
+TEST(cli, behavior_dump_text_values_show_decoded_values) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior dump --values 237 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Decoded Values");
+    ASSERT_STR_CONTAINS(result.output, "Start [int] = 0");
+    free(result.output);
+}
+
+TEST(cli, behavior_dump_json_flows_include_owner_names) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json behavior dump --flows 237 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.dump", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    yyjson_val *execution_flow = get_array_field(data, "execution_flow");
+    ASSERT_NOT_NULL(execution_flow);
+    ASSERT_TRUE(yyjson_arr_size(execution_flow) > 0);
+    yyjson_val *exec = yyjson_arr_get(execution_flow, 0);
+    ASSERT_TRUE(json_has_nonempty_string(exec, "source_owner_name"));
+    ASSERT_TRUE(json_has_nonempty_string(exec, "source_io_name"));
+    ASSERT_TRUE(json_has_nonempty_string(exec, "target_owner_name"));
+    ASSERT_TRUE(json_has_nonempty_string(exec, "target_io_name"));
+
+    yyjson_val *data_flow = get_array_field(data, "data_flow");
+    ASSERT_NOT_NULL(data_flow);
+    ASSERT_TRUE(yyjson_arr_size(data_flow) > 0);
+    yyjson_val *flow = yyjson_arr_get(data_flow, 0);
+    ASSERT_TRUE(json_has_nonempty_string(flow, "source_owner_name"));
+    ASSERT_TRUE(json_has_nonempty_string(flow, "source_name"));
+    ASSERT_TRUE(json_has_nonempty_string(flow, "target_owner_name"));
+    ASSERT_TRUE(json_has_nonempty_string(flow, "target_name"));
+    ASSERT_TRUE(json_has_nonempty_string(flow, "type_name"));
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_dump_json_values_include_decoded_values) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json behavior dump --values 237 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.dump", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    yyjson_val *tree = get_array_field(data, "tree");
+    ASSERT_NOT_NULL(tree);
+    ASSERT_TRUE(yyjson_arr_size(tree) > 0);
+    yyjson_val *root_node = yyjson_arr_get(tree, 0);
+    ASSERT_NOT_NULL(root_node);
+    yyjson_val *decoded = get_array_field(root_node, "decoded_values");
+    ASSERT_NOT_NULL(decoded);
+    ASSERT_TRUE(yyjson_arr_size(decoded) > 0);
+
+    bool saw_decoded = false;
+    size_t idx, max;
+    yyjson_val *item;
+    yyjson_arr_foreach(decoded, idx, max, item) {
+        if (json_has_nonempty_string(item, "decoded_value")) {
+            saw_decoded = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(saw_decoded);
+
     yyjson_doc_free(doc);
 }
 
@@ -460,6 +1020,13 @@ TEST(cli, behavior_help_mentions_json_output) {
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, graph.exit_code);
     ASSERT_STR_CONTAINS(graph.output, "--dot");
     free(graph.output);
+
+    cli_run_result_t iface = run_cli_capture("behavior interface --help");
+    ASSERT_NOT_NULL(iface.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, iface.exit_code);
+    ASSERT_STR_CONTAINS(iface.output, "set-viewport");
+    ASSERT_STR_CONTAINS(iface.output, "translate");
+    free(iface.output);
 }
 
 TEST(cli, behavior_graph_dot) {
@@ -1139,8 +1706,25 @@ TEST(cli, behavior_interface_set_graph_io_dry_run_does_not_write_output) {
 
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_graph_json);
+    REGISTER_TEST(cli, behavior_graph_json_parity_metadata);
+    REGISTER_TEST(cli, behavior_graph_json_truncation_counts);
+    REGISTER_TEST(cli, behavior_graph_dot_labels_behavior_delay);
+    REGISTER_TEST(cli, behavior_stats_json_distributions);
     REGISTER_TEST(cli, behavior_stats_json_survives_interface_parse_failures);
+    REGISTER_TEST(cli, behavior_stats_json_marks_interface_unavailable_without_data);
     REGISTER_TEST(cli, behavior_show_json_survives_interface_parse_failures);
+    REGISTER_TEST(cli, behavior_show_json_p2_parity);
+    REGISTER_TEST(cli, behavior_show_text_formats_non_add_operations);
+    REGISTER_TEST(cli, behavior_trace_json_p2_semantics);
+    REGISTER_TEST(cli, behavior_trace_json_reports_depth_truncation);
+    REGISTER_TEST(cli, behavior_trace_text_mentions_current_graph);
+    REGISTER_TEST(cli, behavior_dump_help_describes_tree_overview_options);
+    REGISTER_TEST(cli, behavior_dump_text_flows_show_owner_endpoints);
+    REGISTER_TEST(cli, behavior_dump_all_rejects_flows);
+    REGISTER_TEST(cli, behavior_dump_text_flows_show_empty_execution_section);
+    REGISTER_TEST(cli, behavior_dump_text_values_show_decoded_values);
+    REGISTER_TEST(cli, behavior_dump_json_flows_include_owner_names);
+    REGISTER_TEST(cli, behavior_dump_json_values_include_decoded_values);
     REGISTER_TEST(cli, behavior_list_json_sanitizes_gameplay_names);
     REGISTER_TEST(cli, behavior_json_smoke_real_samples);
     REGISTER_TEST(cli, behavior_help_mentions_json_output);
