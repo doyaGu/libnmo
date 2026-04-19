@@ -20,6 +20,7 @@
 #include "format/nmo_object.h"
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_color.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_parse.h"
@@ -266,6 +267,18 @@ static nmo_status_t import_scalar_value(void *fptr,
         nmo_type_registry_find_by_guid(registry, field->type_guid);
     if (!field_type) {
         return NMO_ERR_NOT_FOUND;
+    }
+
+    if (nmo_guid_equals(field->type_guid, CKPGUID_COLOR) &&
+        field->size == sizeof(uint32_t) &&
+        field_type->size == sizeof(nmo_color_t)) {
+        nmo_color_t parsed;
+        nmo_status_t st = nmo_color_from_string(&parsed, str);
+        if (st != NMO_OK) return st;
+        if (!dry_run) {
+            *(uint32_t *)fptr = nmo_color_to_argb32(&parsed);
+        }
+        return NMO_OK;
     }
 
     if (dry_run) {
