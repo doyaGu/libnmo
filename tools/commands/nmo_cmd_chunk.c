@@ -301,20 +301,9 @@ static int chunk_find_object(size_t index, nmo_object_t *obj,
  * chunk list - List all chunks by iterating over objects
  * ============================================================================ */
 
-int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    static const nmo_opt_def_t opts[] = {
-        {"--top", NULL, NMO_OPT_UINT, "Limit output to first N entries"},
-    };
-    nmo_opt_val_t vals[1];
-    const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
-
-    uint32_t top_n = vals[0].present ? vals[0].val.u : 0;
-
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+static int chunk_list_run(nmo_cmd_ctx_t *ctx, uint32_t top_n)
+{
+    nmo_cmd_ctx_t c = *ctx;
 
     /* Collect all chunks (including sub-chunks) */
     nmo_cli_chunk_entry_t *entries = NULL;
@@ -322,7 +311,7 @@ int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
     size_t object_count = 0;
     if (!collect_all_chunk_entries(c.session, &entries, &entry_count, &object_count)) {
         fprintf(stderr, "Error: Failed to collect chunks\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Determine how many entries to emit */
@@ -447,23 +436,41 @@ int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
 
     nmo_chunk_index_free_entries(entries);
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--top", NULL, NMO_OPT_UINT, "Limit output to first N entries"},
+    };
+    nmo_opt_val_t vals[1];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    uint32_t top_n = vals[0].present ? vals[0].val.u : 0;
+
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    rc = chunk_list_run(&c, top_n);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
  * chunk tree - Chunks don't have hierarchy (use object tree instead)
  * ============================================================================ */
 
-int nmo_cmd_chunk_tree(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+static int chunk_tree_run(nmo_cmd_ctx_t *ctx)
+{
+    nmo_cmd_ctx_t c = *ctx;
 
     nmo_object_t **objects = NULL;
     size_t object_count = 0;
     if (!chunk_collect_objects(&c, &objects, &object_count)) {
         fprintf(stderr, "Error: Failed to get objects\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Pre-collect flat index map to attach stable indices in JSON */
@@ -547,7 +554,16 @@ int nmo_cmd_chunk_tree(int argc, char **argv, const nmo_cli_global_opts_t *globa
     nmo_chunk_index_free_entries(flat_entries);
     free(objects);
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_chunk_tree(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    rc = chunk_tree_run(&c);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
@@ -851,31 +867,15 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
  * chunk find - Find chunks by class
  * ============================================================================ */
 
-int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    static const nmo_opt_def_t opts[] = {
-        {"--class", "-c", NMO_OPT_STRING, "Class name filter"},
-    };
-    nmo_opt_val_t vals[1];
-    const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
-
-    const char *class_filter = vals[0].present ? vals[0].val.str : NULL;
-    if (!class_filter) {
-        fprintf(stderr, "Error: --class filter required\n");
-        fprintf(stderr, "Usage: nmo chunk find --class <name> <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+static int chunk_find_run(nmo_cmd_ctx_t *ctx, const char *class_filter)
+{
+    nmo_cmd_ctx_t c = *ctx;
 
     /* Resolve class filter */
     nmo_class_id_t filter_class_id = nmo_cli_class_id_from_name(c.ctx, class_filter);
     if (!filter_class_id) {
         fprintf(stderr, "Error: Unknown class '%s'\n", class_filter);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     if (c.is_json) {
@@ -890,12 +890,12 @@ int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *globa
             .doc = doc,
             .matches = matches,
         };
-        rc = nmo_core_object_query_run(&c, NULL, chunk_find_object,
-                                       &find_data, NULL);
+        int rc = nmo_core_object_query_run(&c, NULL, chunk_find_object,
+                                           &find_data, NULL);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
             yyjson_mut_doc_free(doc);
             fprintf(stderr, "Error: Failed to query objects\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
 
         yyjson_mut_obj_add_uint(doc, data, "match_count",
@@ -919,12 +919,12 @@ int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *globa
             .filter_class_id = filter_class_id,
             .table = &table,
         };
-        rc = nmo_core_object_query_run(&c, NULL, chunk_find_object,
-                                       &find_data, NULL);
+        int rc = nmo_core_object_query_run(&c, NULL, chunk_find_object,
+                                           &find_data, NULL);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
             nmo_cli_table_free(&table);
             fprintf(stderr, "Error: Failed to query objects\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
 
         fprintf(c.out, "Found: %zu chunks (class: %s)\n\n",
@@ -933,7 +933,31 @@ int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *globa
         nmo_cli_table_free(&table);
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--class", "-c", NMO_OPT_STRING, "Class name filter"},
+    };
+    nmo_opt_val_t vals[1];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *class_filter = vals[0].present ? vals[0].val.str : NULL;
+    if (!class_filter) {
+        fprintf(stderr, "Error: --class filter required\n");
+        fprintf(stderr, "Usage: nmo chunk find --class <name> <file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    rc = chunk_find_run(&c, class_filter);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 int nmo_cmd_chunk_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
@@ -943,19 +967,59 @@ int nmo_cmd_chunk_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_public_handler_t handler = NULL;
     if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
-        handler = nmo_cmd_chunk_list;
-    } else if (strcmp(argv[0], "tree") == 0 || strcmp(argv[0], "t") == 0) {
-        handler = nmo_cmd_chunk_tree;
-    } else if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
-        handler = nmo_cmd_chunk_show;
-    } else if (strcmp(argv[0], "find") == 0 || strcmp(argv[0], "f") == 0) {
-        handler = nmo_cmd_chunk_find;
-    } else {
-        fprintf(stderr, "Unsupported chunk read action in session: %s\n", argv[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+        static const nmo_opt_def_t opts[] = {
+            {"--top", NULL, NMO_OPT_UINT, "Limit output to first N entries"},
+        };
+        nmo_opt_val_t vals[1];
+        const char *pos[16];
+        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) {
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        uint32_t top_n = vals[0].present ? vals[0].val.u : 0;
+        return chunk_list_run(ctx, top_n);
+    }
+    if (strcmp(argv[0], "tree") == 0 || strcmp(argv[0], "t") == 0) {
+        return chunk_tree_run(ctx);
+    }
+    if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
+        nmo_cmd_public_handler_t handler = nmo_cmd_chunk_show;
+        nmo_cmd_invocation_t invocation;
+        if (ctx->global) {
+            invocation.global = *ctx->global;
+        } else {
+            nmo_cli_global_opts_init(&invocation.global);
+        }
+        nmo_cmd_source_t source = {
+            .kind = NMO_CMD_SOURCE_SESSION,
+            .ctx = ctx->ctx,
+            .session = ctx->session,
+            .source_label = ctx->file_path,
+        };
+        invocation.global.struct_size = sizeof(invocation);
+        invocation.source = &source;
+        return handler(argc, argv, &invocation.global);
+    }
+    if (strcmp(argv[0], "find") == 0 || strcmp(argv[0], "f") == 0) {
+        static const nmo_opt_def_t opts[] = {
+            {"--class", "-c", NMO_OPT_STRING, "Class name filter"},
+        };
+        nmo_opt_val_t vals[1];
+        const char *pos[16];
+        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) {
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        const char *class_filter = vals[0].present ? vals[0].val.str : NULL;
+        if (!class_filter) {
+            fprintf(stderr, "Error: --class filter required\n");
+            fprintf(stderr, "Usage: chunk find --class <name>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        return chunk_find_run(ctx, class_filter);
     }
 
-    return nmo_cmd_ctx_dispatch_from_source(ctx, argc, argv, handler);
+    fprintf(stderr, "Unsupported chunk read action in session: %s\n", argv[0]);
+    return NMO_CLI_EXIT_ARG_ERROR;
 }

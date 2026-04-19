@@ -565,6 +565,11 @@ TEST(repl_read, command_source_is_not_a_global_cli_option) {
     assert_source_not_contains("tools/commands/nmo_cmd_object_refs.c", "global->command_source");
 }
 
+TEST(repl_read, chunk_session_dispatch_does_not_use_ctx_dispatch_helper) {
+    assert_source_not_contains("tools/commands/nmo_cmd_chunk.c",
+                               "nmo_cmd_ctx_dispatch_from_source");
+}
+
 TEST(repl_read, explicit_session_source_initializes_command_context) {
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
@@ -684,6 +689,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, no_borrowed_session_adapter_symbols_remain);
     REGISTER_TEST(repl_read, no_active_session_adapter_symbols_remain);
     REGISTER_TEST(repl_read, command_source_is_not_a_global_cli_option);
+    REGISTER_TEST(repl_read, chunk_session_dispatch_does_not_use_ctx_dispatch_helper);
     REGISTER_TEST(repl_read, explicit_session_source_initializes_command_context);
     REGISTER_TEST(repl_read, registry_dispatches_session_reads);
     REGISTER_TEST(repl_read, command_registry_is_shared_repl_policy_source);
