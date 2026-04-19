@@ -557,6 +557,7 @@ nmo_status_t nmo_type_registry_register_struct(
 
     /* Update specialized_index (0-based) */
     registered->specialized_index = (uint32_t)metadata_index;
+    nmo_type_refresh_default_vtable_subtree(type_registry, registered->id);
     
     /* Return GUID */
     if (out_guid) {
@@ -989,6 +990,7 @@ nmo_status_t nmo_type_registry_finalize_struct(
     type_desc->valid = true;  /* Mark as complete */
     
     incomplete->finalized = true;
+    nmo_type_refresh_default_vtable_subtree(type_registry, type_desc->id);
     
     NMO_RETURN_OK();
 }
@@ -1381,6 +1383,7 @@ nmo_status_t nmo_type_registry_register_union(
     }
 
     registered->specialized_index = (uint32_t)metadata_index;
+    nmo_type_refresh_default_vtable_subtree(type_registry, registered->id);
 
     if (out_guid) {
         *out_guid = type_guid;

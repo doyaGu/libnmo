@@ -569,10 +569,7 @@ static nmo_status_t register_enum_type(nmo_type_registry_t *reg,
     type_desc->flags       = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_COPYABLE | NMO_TYPE_FLAG_POD;
     type_desc->fields      = NULL;
     type_desc->field_count = 0;
-    type_desc->vtable =
-        (p->category & NMO_TYPE_CATEGORY_FLAGS)
-            ? &nmo_type_vtable_flags
-            : &nmo_type_vtable_enum;
+    type_desc->vtable      = NULL;
     type_desc->description = p->description ? nmo_arena_strdup(arena, p->description) : NULL;
     type_desc->valid       = true;
 
@@ -608,6 +605,7 @@ static nmo_status_t register_enum_type(nmo_type_registry_t *reg,
     }
 
     registered->specialized_index = (uint32_t)metadata_index;
+    nmo_type_refresh_default_vtable_subtree(reg, registered->id);
 
     if (out_guid) {
         *out_guid = p->guid;

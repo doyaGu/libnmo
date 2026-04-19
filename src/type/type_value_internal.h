@@ -95,6 +95,10 @@ void nmo_type_assign_default_vtable(
     nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry);
 
+void nmo_type_refresh_default_vtable_subtree(
+    nmo_type_registry_t *registry,
+    nmo_type_id_t root_type_id);
+
 nmo_status_t nmo_type_value_to_string_depth_internal(
     const void *value,
     const nmo_type_descriptor_t *type,

@@ -653,7 +653,7 @@ nmo_status_t nmo_type_registry_register_metadata(
 
     // Update type descriptor's specialized_index (0-based index, invalid sentinel if none)
     type->specialized_index = (uint32_t)index;
-    nmo_type_assign_default_vtable(type, registry);
+    nmo_type_refresh_default_vtable_subtree(registry, type->id);
 
     NMO_RETURN_OK();
 }
@@ -703,6 +703,7 @@ void nmo_type_registry_unregister_metadata(
         nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get(&registry->types, type_id);
         if (type && type->valid) {
             type->specialized_index = NMO_SPECIALIZED_INDEX_INVALID;
+            nmo_type_refresh_default_vtable_subtree(registry, type->id);
         }
     }
 }
