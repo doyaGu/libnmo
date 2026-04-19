@@ -20,6 +20,26 @@
 #include <stdio.h>
 #include <string.h>
 
+int nmo_cmd_scene_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    if (!ctx || argc < 1 || !argv || !argv[0]) {
+        fprintf(stderr, "Usage: scene list|show ...\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_cmd_public_handler_t handler = NULL;
+    if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
+        handler = nmo_cmd_scene_list;
+    } else if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
+        handler = nmo_cmd_scene_show;
+    } else {
+        fprintf(stderr, "Unsupported scene read action in session: %s\n", argv[0]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    return nmo_cmd_ctx_dispatch_with_session(ctx, argc, argv, handler);
+}
+
 /* ============================================================================
  * Helpers
  * ============================================================================ */

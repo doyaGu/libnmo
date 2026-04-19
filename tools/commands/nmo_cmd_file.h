@@ -13,6 +13,8 @@
 extern "C" {
 #endif
 
+int nmo_cmd_file_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
+
 /**
  * @brief nmo file info - Show file summary
  */

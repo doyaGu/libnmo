@@ -12,6 +12,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+static nmo_cmd_ctx_t *g_active_session_ctx = NULL;
+
 int nmo_cmd_ctx_init(nmo_cmd_ctx_t *c, int argc, char **argv,
                      const nmo_cli_global_opts_t *global)
 {
@@ -27,13 +29,13 @@ int nmo_cmd_ctx_init_with_load_options(nmo_cmd_ctx_t *c, int argc, char **argv,
     c->is_json = (global->format == NMO_CLI_FORMAT_JSON ||
                   global->format == NMO_CLI_FORMAT_JSON_PRETTY);
 
-    if (global->borrowed_session) {
-        const char *label = global->borrowed_source_label;
+    if (g_active_session_ctx) {
+        const char *label = nmo_tool_find_file_arg_last(argc, argv);
         if (!label) {
-            label = nmo_tool_find_file_arg_last(argc, argv);
+            label = g_active_session_ctx->file_path;
         }
-        return nmo_cmd_ctx_init_with_session(c, global->borrowed_ctx,
-                                             global->borrowed_session,
+        return nmo_cmd_ctx_init_with_session(c, g_active_session_ctx->ctx,
+                                             g_active_session_ctx->session,
                                              label, global);
     }
 
@@ -86,12 +88,10 @@ int nmo_cmd_ctx_init_with_file(nmo_cmd_ctx_t *c, const char *file_path,
     c->is_json = (global->format == NMO_CLI_FORMAT_JSON ||
                   global->format == NMO_CLI_FORMAT_JSON_PRETTY);
 
-    if (global->borrowed_session) {
-        const char *label = global->borrowed_source_label
-            ? global->borrowed_source_label
-            : file_path;
-        return nmo_cmd_ctx_init_with_session(c, global->borrowed_ctx,
-                                             global->borrowed_session,
+    if (g_active_session_ctx) {
+        const char *label = file_path ? file_path : g_active_session_ctx->file_path;
+        return nmo_cmd_ctx_init_with_session(c, g_active_session_ctx->ctx,
+                                             g_active_session_ctx->session,
                                              label, global);
     }
 
@@ -222,56 +222,14 @@ int nmo_cmd_ctx_done(nmo_cmd_ctx_t *c, int exit_code)
     return exit_code;
 }
 
-static bool nmo_cmd_token_has_suffix_ci(const char *token, const char *suffix)
-{
-    if (!token || !suffix) {
-        return false;
-    }
-    size_t token_len = strlen(token);
-    size_t suffix_len = strlen(suffix);
-    if (suffix_len > token_len) {
-        return false;
-    }
-
-    const char *tail = token + token_len - suffix_len;
-    for (size_t i = 0; i < suffix_len; i++) {
-        char a = tail[i];
-        char b = suffix[i];
-        if (a >= 'A' && a <= 'Z') {
-            a = (char)(a - 'A' + 'a');
-        }
-        if (b >= 'A' && b <= 'Z') {
-            b = (char)(b - 'A' + 'a');
-        }
-        if (a != b) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static bool nmo_cmd_token_looks_like_session_file(const char *token)
-{
-    return nmo_cmd_token_has_suffix_ci(token, ".nmo") ||
-           nmo_cmd_token_has_suffix_ci(token, ".cmo") ||
-           nmo_cmd_token_has_suffix_ci(token, ".vmo");
-}
-
-int nmo_cmd_in_session_dispatch_with_source(nmo_cmd_ctx_t *ctx,
-                                            int argc,
-                                            char **argv,
-                                            nmo_cmd_public_handler_t handler)
+int nmo_cmd_ctx_dispatch_with_session(nmo_cmd_ctx_t *ctx,
+                                      int argc,
+                                      char **argv,
+                                      nmo_cmd_public_handler_t handler)
 {
     if (!ctx || !ctx->session || !handler) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    for (int i = 1; i < argc; i++) {
-        if (nmo_cmd_token_looks_like_session_file(argv[i])) {
-            fprintf(stderr, "Error: File operands are not accepted in in-session read mode\n");
-            return NMO_CLI_EXIT_ARG_ERROR;
-        }
-    }
-
     char **cmd_argv = (char **)calloc((size_t)argc + 2u, sizeof(char *));
     if (!cmd_argv) {
         fprintf(stderr, "Error: Out of memory\n");
@@ -289,13 +247,37 @@ int nmo_cmd_in_session_dispatch_with_source(nmo_cmd_ctx_t *ctx,
     } else {
         nmo_cli_global_opts_init(&global);
     }
-    global.borrowed_ctx = ctx->ctx;
-    global.borrowed_session = ctx->session;
-    global.borrowed_source_label = ctx->file_path;
 
+    nmo_cmd_ctx_t *prev_active = g_active_session_ctx;
+    g_active_session_ctx = ctx;
     int rc = handler(argc + 1, cmd_argv, &global);
+    g_active_session_ctx = prev_active;
     free(cmd_argv);
     return rc;
+}
+
+bool nmo_cmd_ctx_resolve_active_session(const char *source_label,
+                                        nmo_context_t **ctx,
+                                        nmo_session_t **session,
+                                        const char **resolved_label)
+{
+    if (!g_active_session_ctx || !g_active_session_ctx->session) {
+        return false;
+    }
+    const char *active_label = g_active_session_ctx->file_path;
+    if (source_label && active_label && strcmp(source_label, active_label) != 0) {
+        return false;
+    }
+    if (ctx) {
+        *ctx = g_active_session_ctx->ctx;
+    }
+    if (session) {
+        *session = g_active_session_ctx->session;
+    }
+    if (resolved_label) {
+        *resolved_label = active_label ? active_label : "(current session)";
+    }
+    return true;
 }
 
 yyjson_mut_doc *nmo_cmd_ctx_json_begin(nmo_cmd_ctx_t *c)

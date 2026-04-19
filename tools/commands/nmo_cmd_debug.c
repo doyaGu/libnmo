@@ -107,6 +107,26 @@ static const char *debug_load_profile_name(nmo_load_profile_t profile) {
     }
 }
 
+static int debug_parse_load_profile(int argc, char **argv,
+                                    nmo_load_profile_t *profile)
+{
+    *profile = NMO_LOAD_PROFILE_FULL;
+    for (int i = 0; i < argc; i++) {
+        const char *value = NULL;
+        if (strncmp(argv[i], "--profile=", 10) == 0) {
+            value = argv[i] + 10;
+        } else if (strncmp(argv[i], "--load-profile=", 15) == 0) {
+            value = argv[i] + 15;
+        }
+
+        if (value != NULL && !debug_load_profile_from_arg(value, profile)) {
+            fprintf(stderr, "Error: Invalid load profile '%s'\n", value);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static int debug_chunks_object(size_t index, nmo_object_t *obj,
                                const nmo_cmd_ctx_t *c, void *user)
 {
@@ -302,55 +322,14 @@ static int debug_export_object(size_t index, nmo_object_t *obj,
  * debug load-phases
  * ============================================================================ */
 
-int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init_no_file(&c, global);
-    if (rc) return rc;
-
-    nmo_load_profile_t profile = NMO_LOAD_PROFILE_FULL;
-    for (int i = 0; i < argc; i++) {
-        const char *value = NULL;
-        if (strncmp(argv[i], "--profile=", 10) == 0) {
-            value = argv[i] + 10;
-        } else if (strncmp(argv[i], "--load-profile=", 15) == 0) {
-            value = argv[i] + 15;
-        }
-
-        if (value != NULL && !debug_load_profile_from_arg(value, &profile)) {
-            fprintf(stderr, "Error: Invalid load profile '%s'\n", value);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-        }
-    }
-
-    c.file_path = nmo_tool_find_file_arg_last(argc, argv);
-    if (!c.file_path) {
-        fprintf(stderr, "Error: No file specified\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
-
-    nmo_load_perf_stats_t phase_stats;
-    nmo_load_perf_stats_reset(&phase_stats);
-
-    if (global->borrowed_session) {
-        c.ctx = global->borrowed_ctx;
-        c.session = global->borrowed_session;
-        c.registry = c.ctx ? nmo_context_get_type_registry(c.ctx) : NULL;
-        c.owns_session = false;
-    } else {
-        nmo_load_options_t load_opts = nmo_load_options_default();
-        load_opts.profile = profile;
-        load_opts.collect_perf_stats = true;
-        load_opts.perf_stats = &phase_stats;
-
-        char errbuf[256];
-        if (!nmo_tool_open_session_opts(c.file_path, &load_opts,
-                                        &c.ctx, &c.session,
-                                        errbuf, sizeof(errbuf))) {
-            fprintf(stderr, "Error: %s\n", errbuf);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
-        }
-        c.owns_session = true;
-        c.registry = nmo_context_get_type_registry(c.ctx);
+static int debug_load_phases_run_in_ctx(nmo_cmd_ctx_t c,
+                                        nmo_load_profile_t profile,
+                                        const nmo_load_perf_stats_t *phase_stats)
+{
+    nmo_load_perf_stats_t empty_phase_stats;
+    if (!phase_stats) {
+        nmo_load_perf_stats_reset(&empty_phase_stats);
+        phase_stats = &empty_phase_stats;
     }
 
     /* Get finish loading stats */
@@ -384,7 +363,7 @@ int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t
 
             yyjson_mut_obj_add_uint(doc, data, "manager_errors", stats.manager_errors);
         }
-        debug_add_load_phase_stats_json(doc, data, &phase_stats);
+        debug_add_load_phase_stats_json(doc, data, phase_stats);
 
         nmo_cmd_ctx_json_end(&c, doc, data, "debug.load-phases");
     } else {
@@ -425,21 +404,69 @@ int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t
             snprintf(buf, sizeof(buf), "%u", stats.manager_errors);
             nmo_cli_print_kv(c.out, "Manager Errors", buf, 16, c.colorize);
         }
-        debug_print_load_phase_stats(c.out, &phase_stats);
+        debug_print_load_phase_stats(c.out, phase_stats);
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init_no_file(&c, global);
+    if (rc) return rc;
+
+    nmo_load_profile_t profile;
+    rc = debug_parse_load_profile(argc, argv, &profile);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return nmo_cmd_ctx_done(&c, rc);
+    }
+
+    c.file_path = nmo_tool_find_file_arg_last(argc, argv);
+    if (!c.file_path) {
+        fprintf(stderr, "Error: No file specified\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    nmo_load_perf_stats_t phase_stats;
+    nmo_load_perf_stats_reset(&phase_stats);
+
+    nmo_load_options_t load_opts = nmo_load_options_default();
+    load_opts.profile = profile;
+    load_opts.collect_perf_stats = true;
+    load_opts.perf_stats = &phase_stats;
+
+    char errbuf[256];
+    if (!nmo_tool_open_session_opts(c.file_path, &load_opts,
+                                    &c.ctx, &c.session,
+                                    errbuf, sizeof(errbuf))) {
+        fprintf(stderr, "Error: %s\n", errbuf);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+    }
+    c.owns_session = true;
+    c.registry = nmo_context_get_type_registry(c.ctx);
+    return debug_load_phases_run_in_ctx(c, profile, &phase_stats);
+}
+
+int nmo_cmd_debug_load_phases_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    if (!ctx) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    nmo_load_profile_t profile;
+    int rc = debug_parse_load_profile(argc, argv, &profile);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+    return debug_load_phases_run_in_ctx(*ctx, profile, NULL);
 }
 
 /* ============================================================================
  * debug chunks - Iterate objects to list chunk debug info
  * ============================================================================ */
 
-int nmo_cmd_debug_chunks(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
+static int debug_chunks_run_in_ctx(nmo_cmd_ctx_t c)
+{
+    int rc = NMO_CLI_EXIT_SUCCESS;
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
@@ -499,15 +526,30 @@ int nmo_cmd_debug_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glo
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
+int nmo_cmd_debug_chunks(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+    return debug_chunks_run_in_ctx(c);
+}
+
+int nmo_cmd_debug_chunks_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    if (!ctx) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    return debug_chunks_run_in_ctx(*ctx);
+}
+
 /* ============================================================================
  * debug objects
  * ============================================================================ */
 
-int nmo_cmd_debug_objects(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
+static int debug_objects_run_in_ctx(nmo_cmd_ctx_t c)
+{
+    int rc = NMO_CLI_EXIT_SUCCESS;
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
@@ -564,11 +606,31 @@ int nmo_cmd_debug_objects(int argc, char **argv, const nmo_cli_global_opts_t *gl
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
+int nmo_cmd_debug_objects(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+    return debug_objects_run_in_ctx(c);
+}
+
+int nmo_cmd_debug_objects_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    if (!ctx) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    return debug_objects_run_in_ctx(*ctx);
+}
+
 /* ============================================================================
  * debug export
  * ============================================================================ */
 
-int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+static int debug_export_parse(int argc, char **argv,
+                              bool *include_data,
+                              size_t *max_bytes)
+{
     static const nmo_opt_def_t opts[] = {
         {"--data",      "--include-data", NMO_OPT_FLAG, "Include chunk data"},
         {"--max-bytes", NULL,             NMO_OPT_UINT, "Max bytes for data dump (default: 4096)"},
@@ -578,13 +640,15 @@ int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    bool include_data = vals[0].val.flag;
-    size_t max_bytes = vals[1].present ? (size_t)vals[1].val.u : 4096;
+    *include_data = vals[0].val.flag;
+    *max_bytes = vals[1].present ? (size_t)vals[1].val.u : 4096;
+    return NMO_CLI_EXIT_SUCCESS;
+}
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
+static int debug_export_run_in_ctx(nmo_cmd_ctx_t c,
+                                   bool include_data,
+                                   size_t max_bytes)
+{
     yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
     yyjson_mut_val *data = yyjson_mut_obj(doc);
     yyjson_mut_obj_add_str(doc, data, "file", c.file_path);
@@ -599,8 +663,8 @@ int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *glo
         .max_bytes = max_bytes,
     };
     nmo_core_iter_result_t result = {0};
-    rc = nmo_core_object_query_run(&c, NULL, debug_export_object,
-                                   &export_data, &result);
+    int rc = nmo_core_object_query_run(&c, NULL, debug_export_object,
+                                       &export_data, &result);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         yyjson_mut_doc_free(doc);
         fprintf(stderr, "Error: Failed to query objects\n");
@@ -611,9 +675,61 @@ int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *glo
     yyjson_mut_obj_add_val(doc, data, "objects", objs);
     nmo_cmd_ctx_json_end(&c, doc, data, "debug.export");
 
-    if (!c.is_json && global->output_path) {
-        fprintf(stdout, "Exported %zu objects to %s\n", result.matched, global->output_path);
+    if (!c.is_json && c.global && c.global->output_path) {
+        fprintf(stdout, "Exported %zu objects to %s\n", result.matched, c.global->output_path);
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    bool include_data = false;
+    size_t max_bytes = 4096;
+    int rc = debug_export_parse(argc, argv, &include_data, &max_bytes);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    nmo_cmd_ctx_t c;
+    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+    return debug_export_run_in_ctx(c, include_data, max_bytes);
+}
+
+int nmo_cmd_debug_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    if (!ctx) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    bool include_data = false;
+    size_t max_bytes = 4096;
+    int rc = debug_export_parse(argc, argv, &include_data, &max_bytes);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+    return debug_export_run_in_ctx(*ctx, include_data, max_bytes);
+}
+
+int nmo_cmd_debug_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    if (!ctx || argc < 1 || !argv || !argv[0]) {
+        fprintf(stderr, "Usage: debug load-phases|chunks|objects|export ...\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (strcmp(argv[0], "load-phases") == 0 || strcmp(argv[0], "lp") == 0) {
+        return nmo_cmd_debug_load_phases_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "chunks") == 0 || strcmp(argv[0], "ch") == 0) {
+        return nmo_cmd_debug_chunks_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "objects") == 0 || strcmp(argv[0], "obj") == 0) {
+        return nmo_cmd_debug_objects_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "export") == 0 || strcmp(argv[0], "x") == 0) {
+        return nmo_cmd_debug_export_in_session(ctx, argc, argv);
+    }
+
+    fprintf(stderr, "Unsupported debug read action in session: %s\n", argv[0]);
+    return NMO_CLI_EXIT_ARG_ERROR;
 }

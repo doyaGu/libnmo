@@ -13,6 +13,8 @@
 extern "C" {
 #endif
 
+int nmo_cmd_validate_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
+
 /**
  * @brief nmo validate all - Run all validation checks
  */

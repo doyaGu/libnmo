@@ -8,6 +8,8 @@
 
 #include "../nmo_cli_common.h"
 
+typedef struct nmo_cmd_ctx nmo_cmd_ctx_t;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -31,6 +33,7 @@ int nmo_cmd_extension_info(int argc, char **argv, const nmo_cli_global_opts_t *g
  * @brief nmo extension check - Check plugin dependencies for a file
  */
 int nmo_cmd_extension_check(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_extension_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
 #ifdef __cplusplus
 }

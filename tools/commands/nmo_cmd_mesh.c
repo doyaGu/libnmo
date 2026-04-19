@@ -42,6 +42,28 @@
 #define NMO_MESH_PATH_SEP '/'
 #endif
 
+int nmo_cmd_mesh_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    if (!ctx || argc < 1 || !argv || !argv[0]) {
+        fprintf(stderr, "Usage: mesh list|show|export ...\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_cmd_public_handler_t handler = NULL;
+    if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
+        handler = nmo_cmd_mesh_list;
+    } else if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
+        handler = nmo_cmd_mesh_show;
+    } else if (strcmp(argv[0], "export") == 0 || strcmp(argv[0], "x") == 0) {
+        handler = nmo_cmd_mesh_export;
+    } else {
+        fprintf(stderr, "Unsupported mesh read action in session: %s\n", argv[0]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    return nmo_cmd_ctx_dispatch_with_session(ctx, argc, argv, handler);
+}
+
 /* ============================================================================
  * Helpers
  * ============================================================================ */

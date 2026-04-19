@@ -1094,27 +1094,27 @@ static const nmo_cli_action_t repl_actions[] = {
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 static const nmo_cli_group_t groups[] = {
-    {"file", "f", "File information and statistics", file_actions, ARRAY_SIZE(file_actions), NULL},
+    {"file", "f", "File information and statistics", file_actions, ARRAY_SIZE(file_actions), nmo_cmd_file_in_session},
     {"chunk", "ch", "Chunk inspection", chunk_actions, ARRAY_SIZE(chunk_actions), nmo_cmd_chunk_in_session},
     {"object", "obj", "Object inspection", object_actions, ARRAY_SIZE(object_actions), nmo_cmd_object_in_session},
-    {"behavior", "beh", "Behavior inspection", behavior_actions, ARRAY_SIZE(behavior_actions), NULL},
+    {"behavior", "beh", "Behavior inspection", behavior_actions, ARRAY_SIZE(behavior_actions), nmo_cmd_behavior_in_session},
     {"parameter", "param", "Parameter inspection", parameter_actions, ARRAY_SIZE(parameter_actions), nmo_cmd_parameter_in_session},
-    {"resource", "res", "Resource management", resource_actions, ARRAY_SIZE(resource_actions), NULL},
-    {"texture", "tex", "Texture management", texture_actions, ARRAY_SIZE(texture_actions), NULL},
-    {"data", "da", "Data array inspection", data_actions, ARRAY_SIZE(data_actions), NULL},
-    {"scene", "sc", "Scene/level inspection", scene_actions, ARRAY_SIZE(scene_actions), NULL},
-    {"entity", "ent", "3D entity inspection", entity_actions, ARRAY_SIZE(entity_actions), NULL},
-    {"material", "mat", "Material inspection", material_actions, ARRAY_SIZE(material_actions), NULL},
-    {"mesh", "m", "Mesh inspection and export", mesh_actions, ARRAY_SIZE(mesh_actions), NULL},
-    {"animation", "anim", "Animation inspection and export", animation_actions, ARRAY_SIZE(animation_actions), NULL},
+    {"resource", "res", "Resource management", resource_actions, ARRAY_SIZE(resource_actions), nmo_cmd_resource_in_session},
+    {"texture", "tex", "Texture management", texture_actions, ARRAY_SIZE(texture_actions), nmo_cmd_texture_in_session},
+    {"data", "da", "Data array inspection", data_actions, ARRAY_SIZE(data_actions), nmo_cmd_data_in_session},
+    {"scene", "sc", "Scene/level inspection", scene_actions, ARRAY_SIZE(scene_actions), nmo_cmd_scene_in_session},
+    {"entity", "ent", "3D entity inspection", entity_actions, ARRAY_SIZE(entity_actions), nmo_cmd_entity_in_session},
+    {"material", "mat", "Material inspection", material_actions, ARRAY_SIZE(material_actions), nmo_cmd_material_in_session},
+    {"mesh", "m", "Mesh inspection and export", mesh_actions, ARRAY_SIZE(mesh_actions), nmo_cmd_mesh_in_session},
+    {"animation", "anim", "Animation inspection and export", animation_actions, ARRAY_SIZE(animation_actions), nmo_cmd_animation_in_session},
     {"type", "t", "Type system information", type_actions, ARRAY_SIZE(type_actions), NULL},
-    {"validate", "val", "File validation", validate_actions, ARRAY_SIZE(validate_actions), NULL},
+    {"validate", "val", "File validation", validate_actions, ARRAY_SIZE(validate_actions), nmo_cmd_validate_in_session},
     {"convert", "conv", "Format conversion", convert_actions, ARRAY_SIZE(convert_actions), NULL},
     {"diff", "d", "File comparison", diff_actions, ARRAY_SIZE(diff_actions), nmo_cmd_diff_in_session},
-    {"query", "q", "DSL query engine", query_actions, ARRAY_SIZE(query_actions), NULL},
-    {"extension", "ext", "Extension management", extension_actions, ARRAY_SIZE(extension_actions), NULL},
+    {"query", "q", "DSL query engine", query_actions, ARRAY_SIZE(query_actions), nmo_cmd_query_in_session},
+    {"extension", "ext", "Extension management", extension_actions, ARRAY_SIZE(extension_actions), nmo_cmd_extension_in_session},
     {"completion", "comp", "Shell completion scripts", completion_actions, ARRAY_SIZE(completion_actions), NULL},
-    {"debug", "dbg", "Debugging tools", debug_actions, ARRAY_SIZE(debug_actions), NULL},
+    {"debug", "dbg", "Debugging tools", debug_actions, ARRAY_SIZE(debug_actions), nmo_cmd_debug_in_session},
     {"repl", NULL, "Interactive debugger", repl_actions, ARRAY_SIZE(repl_actions), NULL},
 };
 
@@ -1185,24 +1185,11 @@ int nmo_command_registry_dispatch_read_in_session(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    if (group->repl_session_handler) {
-        return group->repl_session_handler(ctx, argc, argv);
+    if (!group->repl_session_handler) {
+        fprintf(stderr, "Internal error: no in-session dispatcher for %s\n",
+                group->name ? group->name : "(unknown)");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    if (nmo_tool_streq_ci(group->name, "behavior") &&
-        nmo_tool_streq_ci(action->name, "interface") &&
-        argc >= 2 &&
-        (nmo_tool_streq_ci(argv[1], "show") || nmo_tool_streq_ci(argv[1], "s"))) {
-        char *iface_argv[64];
-        int iface_argc = 0;
-        iface_argv[iface_argc++] = argv[0];
-        for (int i = 2; i < argc && iface_argc < 64; i++) {
-            iface_argv[iface_argc++] = argv[i];
-        }
-        return nmo_cmd_in_session_dispatch_with_source(
-            ctx, iface_argc, iface_argv, action->handler);
-    }
-
-    return nmo_cmd_in_session_dispatch_with_source(
-        ctx, argc, argv, action->handler);
+    return group->repl_session_handler(ctx, argc, argv);
 }

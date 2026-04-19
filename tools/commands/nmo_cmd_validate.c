@@ -31,6 +31,33 @@
 #include <stdlib.h>
 #include <string.h>
 
+int nmo_cmd_validate_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    if (!ctx || argc < 1 || !argv || !argv[0]) {
+        fprintf(stderr, "Usage: validate all|structure|references|resources|orphans ...\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (strcmp(argv[0], "all") == 0 || strcmp(argv[0], "a") == 0) {
+        return nmo_cmd_validate_all_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "structure") == 0 || strcmp(argv[0], "st") == 0) {
+        return nmo_cmd_validate_structure_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "references") == 0 || strcmp(argv[0], "ref") == 0) {
+        return nmo_cmd_validate_references_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "resources") == 0 || strcmp(argv[0], "res") == 0) {
+        return nmo_cmd_validate_resources_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "orphans") == 0 || strcmp(argv[0], "orp") == 0) {
+        return nmo_cmd_validate_orphans_in_session(ctx, argc, argv);
+    }
+
+    fprintf(stderr, "Unsupported validate read action in session: %s\n", argv[0]);
+    return NMO_CLI_EXIT_ARG_ERROR;
+}
+
 /**
  * Check if --fix or --suggest-fixes flag is present.
  */
@@ -328,38 +355,6 @@ int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *glo
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo validate all <file>\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
-
-    if (global->borrowed_session) {
-        nmo_cmd_ctx_t session_cmd;
-        nmo_cmd_ctx_init_from_repl(&session_cmd, global->borrowed_ctx,
-                                   global->borrowed_session, c.colorize);
-        session_cmd.file_path = file_path;
-        session_cmd.out = c.out;
-        session_cmd.global = global;
-        session_cmd.is_json = c.is_json;
-
-        if (c.is_json) {
-            yyjson_mut_doc *doc = NULL;
-            yyjson_mut_val *data = NULL;
-            if (!nmo_cli_json_create_data_doc(&doc, &data)) {
-                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-            }
-
-            rc = validate_all_run(&session_cmd, global, doc, data);
-
-            yyjson_mut_obj_add_str(doc, data, "file", file_path);
-            nmo_cli_json_write_enveloped_and_free(doc, data, "validate.all", file_path,
-                                                  c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-            return nmo_cmd_ctx_done(&c, rc);
-        }
-
-        nmo_cli_print_heading(c.out, "Validation Results", c.colorize);
-        nmo_cli_print_kv(c.out, "File", file_path, 12, c.colorize);
-        fprintf(c.out, "\n");
-
-        rc = validate_all_run(&session_cmd, global, NULL, NULL);
-        return nmo_cmd_ctx_done(&c, rc);
     }
 
     if (c.is_json) {
@@ -884,7 +879,12 @@ static int validate_orphan_object(size_t index, nmo_object_t *obj,
     return 0;
 }
 
-int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t c,
+                                       int argc,
+                                       char **argv,
+                                       const nmo_cli_global_opts_t *global,
+                                       bool allow_strip)
+{
     static const nmo_opt_def_t opts[] = {
         {"--class",   "-c", NMO_OPT_STRING, "Filter by class name"},
         {"--strict",  NULL,  NMO_OPT_FLAG,   "Exit code 3 if orphans found"},
@@ -896,29 +896,32 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
     nmo_opt_val_t vals[5];
     const char *pos_arr[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 5, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, 5, &r) < 0) {
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
 
     const char *class_filter_str = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL;
-    bool strict = vals[OPT_STRICT].present || global->strict_mode;
+    bool strict = vals[OPT_STRICT].present || (global && global->strict_mode);
     bool summary_only = vals[OPT_SUMMARY].present && vals[OPT_SUMMARY].val.flag;
     bool do_strip = vals[OPT_STRIP].present && vals[OPT_STRIP].val.flag;
     const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
 
-    if (do_strip && !output_path) {
-        fprintf(stderr, "Error: --strip requires -o/--output\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
+    if (!allow_strip && (do_strip || vals[OPT_OUTPUT].present)) {
+        fprintf(stderr, "Validation write/fix options are not supported in in-session read mode.\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    if (do_strip && !output_path) {
+        fprintf(stderr, "Error: --strip requires -o/--output\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
 
     nmo_object_query_t class_query = {0};
     nmo_core_query_build_options_t query_opts = {
         .class_name = class_filter_str,
         .include_derived_classes = true,
     };
-    rc = nmo_core_query_build(&c, &class_query, NULL, &query_opts);
+    int rc = nmo_core_query_build(&c, &class_query, NULL, &query_opts);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return nmo_cmd_ctx_done(&c, rc);
     }
@@ -1176,17 +1179,23 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
     return nmo_cmd_ctx_done(&c, exit_code);
 }
 
+int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+    return validate_orphans_run_in_ctx(c, argc, argv, global, true);
+}
+
 int nmo_cmd_validate_orphans_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--strip") == 0 ||
-            strcmp(argv[i], "-o") == 0 ||
-            strcmp(argv[i], "--output") == 0 ||
-            strncmp(argv[i], "--output=", 9) == 0) {
-            fprintf(stderr, "Validation write/fix options are not supported in in-session read mode.\n");
-            return NMO_CLI_EXIT_ARG_ERROR;
-        }
+    if (!ctx) {
+        return NMO_CLI_EXIT_ARG_ERROR;
     }
-    return nmo_cmd_in_session_dispatch_with_source(ctx, argc, argv,
-                                                  nmo_cmd_validate_orphans);
+    nmo_cli_global_opts_t global;
+    if (ctx && ctx->global) {
+        global = *ctx->global;
+    } else {
+        nmo_cli_global_opts_init(&global);
+    }
+    return validate_orphans_run_in_ctx(*ctx, argc, argv, &global, false);
 }

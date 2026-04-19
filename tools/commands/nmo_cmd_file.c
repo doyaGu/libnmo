@@ -21,6 +21,36 @@
 #include <string.h>
 #include <stdlib.h>
 
+int nmo_cmd_file_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    if (!ctx || argc < 1 || !argv || !argv[0]) {
+        fprintf(stderr, "Usage: file info|header|stats|classes|plugins|space ...\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (strcmp(argv[0], "info") == 0 || strcmp(argv[0], "i") == 0) {
+        return nmo_cmd_file_info_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "header") == 0 || strcmp(argv[0], "hdr") == 0) {
+        return nmo_cmd_file_header_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "stats") == 0 || strcmp(argv[0], "st") == 0) {
+        return nmo_cmd_file_stats_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "classes") == 0 || strcmp(argv[0], "cls") == 0) {
+        return nmo_cmd_file_classes_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "plugins") == 0 || strcmp(argv[0], "pl") == 0) {
+        return nmo_cmd_file_plugins_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "space") == 0 || strcmp(argv[0], "sp") == 0) {
+        return nmo_cmd_file_space_in_session(ctx, argc, argv);
+    }
+
+    fprintf(stderr, "Unsupported file read action in session: %s\n", argv[0]);
+    return NMO_CLI_EXIT_ARG_ERROR;
+}
+
 /* ============================================================================
  * file info (single-file core + batch support)
  * ============================================================================ */

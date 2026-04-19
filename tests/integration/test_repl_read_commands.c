@@ -37,6 +37,10 @@
 #define NMO_TEST_FILENO fileno
 #endif
 
+#ifndef NMO_SOURCE_DIR
+#define NMO_SOURCE_DIR "."
+#endif
+
 static int run_repl_command(nmo_repl_context_t *repl, const char *line) {
     char copy[NMO_REPL_MAX_CMD_LEN];
     char *argv[NMO_REPL_MAX_ARGS];
@@ -111,6 +115,22 @@ static char *read_text_file(const char *path) {
     }
     buf[size] = '\0';
     return buf;
+}
+
+static char *read_source_text(const char *relative_path)
+{
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/%s", NMO_SOURCE_DIR, relative_path);
+    return read_text_file(path);
+}
+
+static void assert_source_not_contains(const char *relative_path,
+                                       const char *needle)
+{
+    char *source = read_source_text(relative_path);
+    ASSERT_NOT_NULL(source);
+    ASSERT_FALSE(strstr(source, needle) != NULL);
+    free(source);
 }
 
 static void close_repl(nmo_repl_context_t *repl) {
@@ -494,6 +514,36 @@ TEST(repl_read, cli_read_table_has_no_session_public_fallbacks) {
     ASSERT_EQ(0u, nmo_repl_cli_read_generic_session_count_for_group("parameter"));
 }
 
+TEST(repl_read, all_read_session_groups_have_family_dispatchers) {
+    size_t group_count = 0;
+    const nmo_cli_group_t *groups =
+        nmo_command_registry_get_groups(&group_count);
+    ASSERT_NOT_NULL(groups);
+
+    for (size_t i = 0; i < group_count; i++) {
+        const nmo_cli_group_t *group = &groups[i];
+        bool has_session_read = false;
+        for (size_t j = 0; j < group->action_count; j++) {
+            if (group->actions[j].repl_policy == NMO_REPL_ACTION_READ_SESSION) {
+                has_session_read = true;
+                break;
+            }
+        }
+        if (has_session_read) {
+            ASSERT_NOT_NULL(group->repl_session_handler);
+        }
+    }
+}
+
+TEST(repl_read, no_borrowed_session_adapter_symbols_remain) {
+    assert_source_not_contains("tools/nmo_cli_common.h", "borrowed_session");
+    assert_source_not_contains("tools/nmo_cmd_ctx.h",
+                               "nmo_cmd_in_session_dispatch_with_source");
+    assert_source_not_contains("tools/nmo_cmd_ctx.c", "borrowed_session");
+    assert_source_not_contains("tools/nmo_command_registry.c",
+                               "nmo_cmd_in_session_dispatch_with_source");
+}
+
 TEST(repl_read, registry_dispatches_session_reads) {
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
@@ -584,6 +634,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, cli_batch_mode_is_rejected);
     REGISTER_TEST(repl_read, specialized_repl_read_cores_are_directly_callable);
     REGISTER_TEST(repl_read, cli_read_table_has_no_session_public_fallbacks);
+    REGISTER_TEST(repl_read, all_read_session_groups_have_family_dispatchers);
+    REGISTER_TEST(repl_read, no_borrowed_session_adapter_symbols_remain);
     REGISTER_TEST(repl_read, registry_dispatches_session_reads);
     REGISTER_TEST(repl_read, command_registry_is_shared_repl_policy_source);
     REGISTER_TEST(repl_read, completion_group_does_not_require_session);

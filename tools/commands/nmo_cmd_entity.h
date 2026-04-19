@@ -18,6 +18,7 @@ int nmo_cmd_entity_set_position(int argc, char **argv, const nmo_cli_global_opts
 int nmo_cmd_entity_set_parent(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_entity_set_camera(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_entity_set_light(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_entity_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
 #ifdef __cplusplus
 }

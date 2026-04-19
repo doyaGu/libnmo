@@ -33,6 +33,30 @@
 #include <direct.h>
 #endif
 
+int nmo_cmd_animation_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    if (!ctx || argc < 1 || !argv || !argv[0]) {
+        fprintf(stderr, "Usage: animation list|show|keys|export ...\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_cmd_public_handler_t handler = NULL;
+    if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
+        handler = nmo_cmd_animation_list;
+    } else if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
+        handler = nmo_cmd_animation_show;
+    } else if (strcmp(argv[0], "keys") == 0 || strcmp(argv[0], "k") == 0) {
+        handler = nmo_cmd_animation_keys;
+    } else if (strcmp(argv[0], "export") == 0 || strcmp(argv[0], "x") == 0) {
+        handler = nmo_cmd_animation_export;
+    } else {
+        fprintf(stderr, "Unsupported animation read action in session: %s\n", argv[0]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    return nmo_cmd_ctx_dispatch_with_session(ctx, argc, argv, handler);
+}
+
 /* ============================================================================
  * Helpers
  * ============================================================================ */

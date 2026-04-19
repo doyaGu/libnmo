@@ -15,6 +15,7 @@ extern "C" {
 int nmo_cmd_material_list(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_material_show(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_material_set(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_material_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
 #ifdef __cplusplus
 }

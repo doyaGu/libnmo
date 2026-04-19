@@ -123,15 +123,12 @@ static int open_two_sessions(const char *path1, const char *path2,
                              bool *owns2)
 {
     char errbuf[256];
+    (void)global;
 
     *owns1 = true;
     *owns2 = true;
 
-    if (global && global->borrowed_session &&
-        (!global->borrowed_source_label ||
-         strcmp(path1, global->borrowed_source_label) == 0)) {
-        *ctx1 = global->borrowed_ctx;
-        *ses1 = global->borrowed_session;
+    if (nmo_cmd_ctx_resolve_active_session(path1, ctx1, ses1, NULL)) {
         *owns1 = false;
     } else {
         /* Open first file */
@@ -172,17 +169,7 @@ static int diff_dispatch_current_session_left(nmo_cmd_ctx_t *left,
                                               char **argv,
                                               diff_public_handler_t handler)
 {
-    nmo_cli_global_opts_t global;
-    if (left->global) {
-        global = *left->global;
-    } else {
-        nmo_cli_global_opts_init(&global);
-    }
-    global.borrowed_ctx = left->ctx;
-    global.borrowed_session = left->session;
-    global.borrowed_source_label = left->file_path;
-
-    return handler(argc, argv, &global);
+    return nmo_cmd_ctx_dispatch_with_session(left, argc, argv, handler);
 }
 
 /**
@@ -230,7 +217,9 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    bool left_is_current_session = global && global->borrowed_session;
+    const char *current_label = NULL;
+    bool left_is_current_session =
+        nmo_cmd_ctx_resolve_active_session(NULL, NULL, NULL, &current_label);
     if ((!left_is_current_session && r.pos_count < 2) ||
         (left_is_current_session && r.pos_count < 1)) {
         fprintf(stderr, "Error: Need two files to compare\n");
@@ -240,7 +229,7 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
     const char *paths[2] = {
         left_is_current_session
-            ? (global->borrowed_source_label ? global->borrowed_source_label : "(current session)")
+            ? (current_label ? current_label : "(current session)")
             : r.pos_args[0],
         left_is_current_session ? r.pos_args[0] : r.pos_args[1]
     };
@@ -464,7 +453,9 @@ int nmo_cmd_diff_objects(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    bool left_is_current_session = global && global->borrowed_session;
+    const char *current_label = NULL;
+    bool left_is_current_session =
+        nmo_cmd_ctx_resolve_active_session(NULL, NULL, NULL, &current_label);
     if ((!left_is_current_session && r.pos_count < 2) ||
         (left_is_current_session && r.pos_count < 1)) {
         fprintf(stderr, "Error: Need two files to compare\n");
@@ -474,7 +465,7 @@ int nmo_cmd_diff_objects(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
     const char *paths[2] = {
         left_is_current_session
-            ? (global->borrowed_source_label ? global->borrowed_source_label : "(current session)")
+            ? (current_label ? current_label : "(current session)")
             : r.pos_args[0],
         left_is_current_session ? r.pos_args[0] : r.pos_args[1]
     };
@@ -743,7 +734,9 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
     if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    bool left_is_current_session = global && global->borrowed_session;
+    const char *current_label = NULL;
+    bool left_is_current_session =
+        nmo_cmd_ctx_resolve_active_session(NULL, NULL, NULL, &current_label);
     if ((!left_is_current_session && r.pos_count < 2) ||
         (left_is_current_session && r.pos_count < 1)) {
         fprintf(stderr, "Error: Need two files to compare\n");
@@ -753,7 +746,7 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
     const char *paths[2] = {
         left_is_current_session
-            ? (global->borrowed_source_label ? global->borrowed_source_label : "(current session)")
+            ? (current_label ? current_label : "(current session)")
             : r.pos_args[0],
         left_is_current_session ? r.pos_args[0] : r.pos_args[1]
     };
@@ -913,7 +906,9 @@ int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
     if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    bool left_is_current_session = global && global->borrowed_session;
+    const char *current_label = NULL;
+    bool left_is_current_session =
+        nmo_cmd_ctx_resolve_active_session(NULL, NULL, NULL, &current_label);
     if ((!left_is_current_session && r.pos_count < 2) ||
         (left_is_current_session && r.pos_count < 1)) {
         fprintf(stderr, "Error: Need two files to compare\n");
@@ -923,7 +918,7 @@ int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global
 
     const char *paths[2] = {
         left_is_current_session
-            ? (global->borrowed_source_label ? global->borrowed_source_label : "(current session)")
+            ? (current_label ? current_label : "(current session)")
             : r.pos_args[0],
         left_is_current_session ? r.pos_args[0] : r.pos_args[1]
     };

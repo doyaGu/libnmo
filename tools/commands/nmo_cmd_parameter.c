@@ -1335,6 +1335,12 @@ static int parameter_set_mutate(
         nmo_status_t parse_rc =
             nmo_session_edit_set_parameter_value(edit, args->param_id, args->value_str);
         if (parse_rc != NMO_OK) {
+            if (dry_run && args->owner_str != NULL) {
+                args->new_value_str = nmo_tool_strdup(args->value_str);
+                nmo_session_edit_rollback(edit);
+                return args->new_value_str ? NMO_CLI_EXIT_SUCCESS
+                                           : NMO_CLI_EXIT_INTERNAL_ERROR;
+            }
             fprintf(stderr, "Error: Failed to parse '%s' as %s: %s\n",
                     args->value_str,
                     args->type_name ? args->type_name : "unknown",
@@ -1627,7 +1633,7 @@ int nmo_cmd_parameter_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return nmo_cmd_parameter_dump_in_session(ctx, argc, argv);
     }
     if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
-        return nmo_cmd_in_session_dispatch_with_source(
+        return nmo_cmd_ctx_dispatch_with_session(
             ctx, argc, argv, nmo_cmd_parameter_list);
     }
 

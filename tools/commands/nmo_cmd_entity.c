@@ -28,6 +28,26 @@
 #include <string.h>
 #include <math.h>
 
+int nmo_cmd_entity_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    if (!ctx || argc < 1 || !argv || !argv[0]) {
+        fprintf(stderr, "Usage: entity list|show ...\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_cmd_public_handler_t handler = NULL;
+    if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
+        handler = nmo_cmd_entity_list;
+    } else if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
+        handler = nmo_cmd_entity_show;
+    } else {
+        fprintf(stderr, "Unsupported entity read action in session: %s\n", argv[0]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    return nmo_cmd_ctx_dispatch_with_session(ctx, argc, argv, handler);
+}
+
 /* ============================================================================
  * Helpers
  * ============================================================================ */

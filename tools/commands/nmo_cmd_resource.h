@@ -19,6 +19,7 @@ int nmo_cmd_resource_import(int argc, char **argv, const nmo_cli_global_opts_t *
 int nmo_cmd_resource_replace(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_resource_remove(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_resource_info(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_resource_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
 #ifdef __cplusplus
 }

@@ -25,6 +25,21 @@
 #include <string.h>
 #include <stdlib.h>
 
+int nmo_cmd_query_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    if (!ctx || argc < 1 || !argv || !argv[0]) {
+        fprintf(stderr, "Usage: query eval ...\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (strcmp(argv[0], "eval") == 0 || strcmp(argv[0], "e") == 0) {
+        return nmo_cmd_query_eval_in_session(ctx, argc, argv);
+    }
+
+    fprintf(stderr, "Unsupported query read action in session: %s\n", argv[0]);
+    return NMO_CLI_EXIT_ARG_ERROR;
+}
+
 /* DSL value to JSON serialization is provided by nmo_dsl_value_to_json(). */
 
 /**

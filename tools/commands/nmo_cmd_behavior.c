@@ -35,6 +35,51 @@
 #include <stdlib.h>
 #include <string.h>
 
+int nmo_cmd_behavior_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    if (!ctx || argc < 1 || !argv || !argv[0]) {
+        fprintf(stderr, "Usage: behavior list|stats|show|graph|dump|find|trace|interface show ...\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_cmd_public_handler_t handler = NULL;
+    int handler_argc = argc;
+    char **handler_argv = argv;
+
+    if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
+        handler = nmo_cmd_behavior_list;
+    } else if (strcmp(argv[0], "stats") == 0 || strcmp(argv[0], "st") == 0) {
+        handler = nmo_cmd_behavior_stats;
+    } else if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
+        handler = nmo_cmd_behavior_show;
+    } else if (strcmp(argv[0], "graph") == 0 || strcmp(argv[0], "g") == 0) {
+        handler = nmo_cmd_behavior_graph;
+    } else if (strcmp(argv[0], "dump") == 0 || strcmp(argv[0], "d") == 0) {
+        handler = nmo_cmd_behavior_dump;
+    } else if (strcmp(argv[0], "find") == 0 || strcmp(argv[0], "f") == 0) {
+        handler = nmo_cmd_behavior_find;
+    } else if (strcmp(argv[0], "trace") == 0 || strcmp(argv[0], "tr") == 0) {
+        handler = nmo_cmd_behavior_trace;
+    } else if (strcmp(argv[0], "interface") == 0 || strcmp(argv[0], "iface") == 0) {
+        if (argc >= 2 && (strcmp(argv[1], "show") == 0 || strcmp(argv[1], "s") == 0)) {
+            handler = nmo_cmd_behavior_iface_show;
+            handler_argc = argc - 1;
+            handler_argv = argv + 1;
+        } else if (argc == 1 || argv[1][0] == '-' ||
+                   (argv[1][0] >= '0' && argv[1][0] <= '9')) {
+            handler = nmo_cmd_behavior_iface_show;
+        } else {
+            fprintf(stderr, "Unsupported behavior interface read action in session: %s\n", argv[1]);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    } else {
+        fprintf(stderr, "Unsupported behavior read action in session: %s\n", argv[0]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    return nmo_cmd_ctx_dispatch_with_session(ctx, handler_argc, handler_argv, handler);
+}
+
 /* ============================================================================
  * Shared helpers (declared in nmo_cmd_behavior_internal.h)
  * ============================================================================ */

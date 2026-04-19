@@ -151,6 +151,9 @@ if(TARGET nmo_cli)
         ${REPL_COMMAND_MIRROR_SOURCES}
     )
     target_include_directories(test_repl_read_commands PRIVATE ${PROJECT_SOURCE_DIR}/tools)
+    target_compile_definitions(test_repl_read_commands PRIVATE
+        NMO_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+    )
     target_link_libraries(test_repl_read_commands PRIVATE nmo test_framework yyjson)
     add_test(NAME test_repl_read_commands COMMAND test_repl_read_commands)
     set_tests_properties(test_repl_read_commands PROPERTIES
