@@ -78,6 +78,16 @@ typedef struct nmo_cmd_source {
     const nmo_load_options_t *load_options;
 } nmo_cmd_source_t;
 
+typedef struct nmo_cmd_invocation {
+    nmo_cli_global_opts_t global;
+    const nmo_cmd_source_t *source;
+} nmo_cmd_invocation_t;
+
+const nmo_cmd_source_t *nmo_cmd_global_source(
+    const nmo_cli_global_opts_t *global);
+bool nmo_cmd_global_uses_session_source(
+    const nmo_cli_global_opts_t *global);
+
 /**
  * @brief Initialize command context: find file arg, open session, open output.
  *

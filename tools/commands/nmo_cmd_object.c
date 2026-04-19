@@ -1314,8 +1314,7 @@ int nmo_cmd_object_list_fields(int argc, char **argv,
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
-    bool in_session = global && global->command_source &&
-                      global->command_source->kind == NMO_CMD_SOURCE_SESSION;
+    bool in_session = nmo_cmd_global_uses_session_source(global);
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id = NULL;
     if (!has_selector_opt) {

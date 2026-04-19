@@ -127,12 +127,12 @@ static int open_two_sessions(const char *path1, const char *path2,
     *owns1 = true;
     *owns2 = true;
 
-    if (global && global->command_source &&
-        global->command_source->kind == NMO_CMD_SOURCE_SESSION &&
-        path1 && global->command_source->source_label &&
-        strcmp(path1, global->command_source->source_label) == 0) {
-        *ctx1 = global->command_source->ctx;
-        *ses1 = global->command_source->session;
+    const nmo_cmd_source_t *source = nmo_cmd_global_source(global);
+    if (source && source->kind == NMO_CMD_SOURCE_SESSION &&
+        path1 && source->source_label &&
+        strcmp(path1, source->source_label) == 0) {
+        *ctx1 = source->ctx;
+        *ses1 = source->session;
         *owns1 = false;
     } else {
         /* Open first file */
@@ -221,11 +221,10 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *current_label = global && global->command_source
-        ? global->command_source->source_label
-        : NULL;
-    bool left_is_current_session = global && global->command_source &&
-        global->command_source->kind == NMO_CMD_SOURCE_SESSION;
+    const nmo_cmd_source_t *source = nmo_cmd_global_source(global);
+    const char *current_label = source ? source->source_label : NULL;
+    bool left_is_current_session =
+        source && source->kind == NMO_CMD_SOURCE_SESSION;
     if ((!left_is_current_session && r.pos_count < 2) ||
         (left_is_current_session && r.pos_count < 1)) {
         fprintf(stderr, "Error: Need two files to compare\n");
@@ -459,11 +458,10 @@ int nmo_cmd_diff_objects(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *current_label = global && global->command_source
-        ? global->command_source->source_label
-        : NULL;
-    bool left_is_current_session = global && global->command_source &&
-        global->command_source->kind == NMO_CMD_SOURCE_SESSION;
+    const nmo_cmd_source_t *source = nmo_cmd_global_source(global);
+    const char *current_label = source ? source->source_label : NULL;
+    bool left_is_current_session =
+        source && source->kind == NMO_CMD_SOURCE_SESSION;
     if ((!left_is_current_session && r.pos_count < 2) ||
         (left_is_current_session && r.pos_count < 1)) {
         fprintf(stderr, "Error: Need two files to compare\n");
@@ -742,11 +740,10 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
     if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *current_label = global && global->command_source
-        ? global->command_source->source_label
-        : NULL;
-    bool left_is_current_session = global && global->command_source &&
-        global->command_source->kind == NMO_CMD_SOURCE_SESSION;
+    const nmo_cmd_source_t *source = nmo_cmd_global_source(global);
+    const char *current_label = source ? source->source_label : NULL;
+    bool left_is_current_session =
+        source && source->kind == NMO_CMD_SOURCE_SESSION;
     if ((!left_is_current_session && r.pos_count < 2) ||
         (left_is_current_session && r.pos_count < 1)) {
         fprintf(stderr, "Error: Need two files to compare\n");
@@ -916,11 +913,10 @@ int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
     if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *current_label = global && global->command_source
-        ? global->command_source->source_label
-        : NULL;
-    bool left_is_current_session = global && global->command_source &&
-        global->command_source->kind == NMO_CMD_SOURCE_SESSION;
+    const nmo_cmd_source_t *source = nmo_cmd_global_source(global);
+    const char *current_label = source ? source->source_label : NULL;
+    bool left_is_current_session =
+        source && source->kind == NMO_CMD_SOURCE_SESSION;
     if ((!left_is_current_session && r.pos_count < 2) ||
         (left_is_current_session && r.pos_count < 1)) {
         fprintf(stderr, "Error: Need two files to compare\n");

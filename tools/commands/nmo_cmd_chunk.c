@@ -573,8 +573,7 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
     bool include_hexdump = vals[1].val.flag;
     size_t max_bytes = vals[2].present ? (size_t)vals[2].val.u : 256;
 
-    bool in_session = global && global->command_source &&
-                      global->command_source->kind == NMO_CMD_SOURCE_SESSION;
+    bool in_session = nmo_cmd_global_uses_session_source(global);
     /* Positional args:
        CLI: [object-id] <file>; in-session: [object-id]. */
     const char *obj_id_str = NULL;

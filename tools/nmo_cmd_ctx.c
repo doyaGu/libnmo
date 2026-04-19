@@ -12,6 +12,25 @@
 #include <stdlib.h>
 #include <string.h>
 
+const nmo_cmd_source_t *nmo_cmd_global_source(
+    const nmo_cli_global_opts_t *global)
+{
+    if (!global || global->struct_size < sizeof(nmo_cmd_invocation_t)) {
+        return NULL;
+    }
+
+    const nmo_cmd_invocation_t *invocation =
+        (const nmo_cmd_invocation_t *)global;
+    return invocation->source;
+}
+
+bool nmo_cmd_global_uses_session_source(
+    const nmo_cli_global_opts_t *global)
+{
+    const nmo_cmd_source_t *source = nmo_cmd_global_source(global);
+    return source && source->kind == NMO_CMD_SOURCE_SESSION;
+}
+
 int nmo_cmd_ctx_init(nmo_cmd_ctx_t *c, int argc, char **argv,
                      const nmo_cli_global_opts_t *global)
 {
@@ -22,9 +41,10 @@ int nmo_cmd_ctx_init_with_load_options(nmo_cmd_ctx_t *c, int argc, char **argv,
                                        const nmo_cli_global_opts_t *global,
                                        const nmo_load_options_t *options)
 {
-    if (global && global->command_source) {
+    const nmo_cmd_source_t *bound_source = nmo_cmd_global_source(global);
+    if (bound_source) {
         return nmo_cmd_ctx_init_from_source(c, argc, argv, global,
-                                            global->command_source);
+                                            bound_source);
     }
 
     nmo_cmd_source_t source = {
@@ -213,11 +233,11 @@ int nmo_cmd_ctx_dispatch_from_source(nmo_cmd_ctx_t *ctx,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cli_global_opts_t global;
+    nmo_cmd_invocation_t invocation;
     if (ctx->global) {
-        global = *ctx->global;
+        invocation.global = *ctx->global;
     } else {
-        nmo_cli_global_opts_init(&global);
+        nmo_cli_global_opts_init(&invocation.global);
     }
     nmo_cmd_source_t source = {
         .kind = NMO_CMD_SOURCE_SESSION,
@@ -225,9 +245,10 @@ int nmo_cmd_ctx_dispatch_from_source(nmo_cmd_ctx_t *ctx,
         .session = ctx->session,
         .source_label = ctx->file_path,
     };
-    global.command_source = &source;
+    invocation.global.struct_size = sizeof(invocation);
+    invocation.source = &source;
 
-    return handler(argc, argv, &global);
+    return handler(argc, argv, &invocation.global);
 }
 
 yyjson_mut_doc *nmo_cmd_ctx_json_begin(nmo_cmd_ctx_t *c)

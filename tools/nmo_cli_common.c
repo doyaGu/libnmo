@@ -39,6 +39,7 @@ void nmo_cli_global_opts_init(nmo_cli_global_opts_t *opts) {
         return;
     }
     memset(opts, 0, sizeof(*opts));
+    opts->struct_size = sizeof(*opts);
     opts->format = NMO_CLI_FORMAT_TEXT;
     opts->color_mode = NMO_CLI_COLOR_AUTO;
     opts->verbosity = 0;

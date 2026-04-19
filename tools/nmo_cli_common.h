@@ -18,7 +18,6 @@ extern "C" {
 
 /* Forward declarations */
 typedef struct nmo_type_registry nmo_type_registry_t;
-typedef struct nmo_cmd_source nmo_cmd_source_t;
 
 /* Exit codes */
 #define NMO_CLI_EXIT_SUCCESS         0  /**< Success */
@@ -52,6 +51,7 @@ typedef enum {
  * @brief Global CLI options (parsed before group/action dispatch)
  */
 typedef struct nmo_cli_global_opts {
+    size_t struct_size;               /**< Size of this options structure */
     nmo_cli_format_t format;          /**< Output format */
     nmo_cli_color_mode_t color_mode;  /**< Color mode */
     const char *output_path;          /**< Output file path (NULL = stdout) */
@@ -74,9 +74,6 @@ typedef struct nmo_cli_global_opts {
 
     /* Batch processing */
     bool batch_mode;                  /**< --batch: process multiple files */
-
-    /* Command frontend source override (CLI normally leaves this NULL). */
-    const nmo_cmd_source_t *command_source;
 
 } nmo_cli_global_opts_t;
 
