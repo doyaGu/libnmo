@@ -54,7 +54,7 @@ add_integration_test(test_manager_lane_runtime_events)
 
 # CLI tests
 if(TARGET nmo_cli)
-    add_executable(test_cli_behavior_graph test_cli_behavior_graph.c)
+    add_executable(test_cli_behavior_graph test_cli_behavior_graph.c write_semantic_probe.c)
     target_link_libraries(test_cli_behavior_graph PRIVATE nmo test_framework yyjson)
     add_dependencies(test_cli_behavior_graph nmo_cli)
     target_compile_definitions(test_cli_behavior_graph PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
@@ -78,7 +78,7 @@ if(TARGET nmo_cli)
     target_compile_definitions(test_cli_diff_objects PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_cli_diff_objects COMMAND test_cli_diff_objects)
 
-    add_executable(test_cli_write_commands test_cli_write_commands.c)
+    add_executable(test_cli_write_commands test_cli_write_commands.c write_semantic_probe.c)
     target_link_libraries(test_cli_write_commands PRIVATE nmo test_framework)
     add_dependencies(test_cli_write_commands nmo_cli)
     target_compile_definitions(test_cli_write_commands PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
