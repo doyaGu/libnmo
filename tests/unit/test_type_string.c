@@ -150,6 +150,15 @@ static nmo_status_t test_partial_validate(
     return NMO_OK;
 }
 
+TEST(type_string, vtable_source_public_values_are_stable) {
+    ASSERT_EQ(0, NMO_TYPE_VTABLE_SOURCE_NONE);
+    ASSERT_EQ(1, NMO_TYPE_VTABLE_SOURCE_EXPLICIT);
+    ASSERT_EQ(2, NMO_TYPE_VTABLE_SOURCE_BASE_DEFAULT);
+    ASSERT_EQ(3, NMO_TYPE_VTABLE_SOURCE_CATEGORY_DEFAULT);
+    ASSERT_EQ(4, NMO_TYPE_VTABLE_SOURCE_METADATA_DEFAULT);
+    ASSERT_EQ(5, NMO_TYPE_VTABLE_SOURCE_MERGED_DEFAULT);
+}
+
 /* ============================================================================
  * Float Conversion Tests
  * ============================================================================ */
@@ -1683,6 +1692,159 @@ TEST(type_string, registered_enum_alias_without_explicit_vtable_inherits_base_vt
     teardown();
 }
 
+TEST(type_string, child_registered_before_base_inherits_base_vtable_after_base_registration) {
+    setup();
+
+    static const nmo_type_vtable_t base_vtable = {
+        .to_string = test_base_alias_to_string,
+        .from_string = test_base_alias_from_string,
+    };
+
+    nmo_guid_t base_guid = NMO_GUID(0xDEADBEEFu, 0x00000031u);
+    nmo_guid_t child_guid = NMO_GUID(0xDEADBEEFu, 0x00000032u);
+
+    nmo_type_descriptor_t child_desc = {
+        .guid = child_guid,
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_SCALAR,
+        .flags = 0,
+        .name = "LateValueAlias",
+        .description = NULL,
+        .base_type = base_guid,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(uint32_t),
+        .alignment = (uint32_t)alignof(uint32_t),
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = NULL,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &child_desc));
+
+    const nmo_type_descriptor_t *child =
+        nmo_type_registry_find_by_guid(registry, child_guid);
+    ASSERT_NE(NULL, child);
+    ASSERT_EQ(NULL, child->vtable);
+
+    nmo_type_descriptor_t base_desc = child_desc;
+    base_desc.guid = base_guid;
+    base_desc.name = "LateValueBase";
+    base_desc.base_type = NMO_NULL_GUID;
+    base_desc.vtable = &base_vtable;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &base_desc));
+
+    const nmo_type_descriptor_t *base =
+        nmo_type_registry_find_by_guid(registry, base_guid);
+    child = nmo_type_registry_find_by_guid(registry, child_guid);
+    ASSERT_NE(NULL, base);
+    ASSERT_NE(NULL, child);
+    ASSERT_EQ(base->vtable, child->vtable);
+
+    uint32_t value = 0u;
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(
+        &value, child, registry, "base-vtable"));
+    ASSERT_EQ(99u, value);
+
+    teardown();
+}
+
+TEST(type_string, default_refresh_preserves_explicit_child_vtable) {
+    setup();
+
+    static const nmo_type_vtable_t base_vtable = {
+        .to_string = test_base_alias_to_string,
+        .from_string = test_base_alias_from_string,
+    };
+    static const nmo_type_vtable_t explicit_vtable = {
+        .validate = test_partial_validate,
+    };
+
+    nmo_guid_t base_guid = NMO_GUID(0xDEADBEEFu, 0x00000033u);
+    nmo_guid_t child_guid = NMO_GUID(0xDEADBEEFu, 0x00000034u);
+
+    nmo_type_descriptor_t child_desc = {
+        .guid = child_guid,
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_SCALAR,
+        .flags = 0,
+        .name = "ExplicitLateAlias",
+        .description = NULL,
+        .base_type = base_guid,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(uint32_t),
+        .alignment = (uint32_t)alignof(uint32_t),
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = &explicit_vtable,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &child_desc));
+
+    nmo_type_descriptor_t base_desc = child_desc;
+    base_desc.guid = base_guid;
+    base_desc.name = "ExplicitLateBase";
+    base_desc.base_type = NMO_NULL_GUID;
+    base_desc.vtable = &base_vtable;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &base_desc));
+
+    const nmo_type_descriptor_t *child =
+        nmo_type_registry_find_by_guid(registry, child_guid);
+    ASSERT_NE(NULL, child);
+    ASSERT_NE(NULL, child->vtable);
+    ASSERT_EQ(test_partial_validate, child->vtable->validate);
+    ASSERT_EQ(test_base_alias_from_string, child->vtable->from_string);
+    ASSERT_NE(NULL, child->ext);
+    ASSERT_EQ(NMO_TYPE_VTABLE_SOURCE_MERGED_DEFAULT, child->ext->vtable_source);
+
+    teardown();
+}
+
+TEST(type_string, direct_enum_registration_uses_metadata_default_vtable_source) {
+    setup();
+
+    nmo_enum_value_def_t values[] = {
+        { .name = "Named", .value = 11, .description = NULL },
+    };
+    nmo_enum_type_def_t enum_def = {
+        .name = "DirectMetadataEnum",
+        .description = NULL,
+        .guid = NMO_GUID(0xDEADBEEFu, 0x00000035u),
+        .values = values,
+        .value_count = 1,
+        .default_value = 0,
+    };
+    nmo_guid_t guid = NMO_NULL_GUID;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register_enum(registry, &enum_def, &guid));
+
+    const nmo_type_descriptor_t *type =
+        nmo_type_registry_find_by_guid(registry, guid);
+    ASSERT_NE(NULL, type);
+    ASSERT_NE(NULL, type->vtable);
+    ASSERT_NE(NULL, type->vtable->from_string);
+    ASSERT_NE(NULL, type->ext);
+    ASSERT_EQ(NMO_TYPE_VTABLE_SOURCE_METADATA_DEFAULT, type->ext->vtable_source);
+
+    int32_t value = 0;
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&value, type, registry, "Named"));
+    ASSERT_EQ(11, value);
+
+    teardown();
+}
+
 TEST(type_string, enum_metadata_registration_binds_enum_vtable_over_base_default) {
     setup();
 
@@ -1896,6 +2058,229 @@ TEST(type_string, enum_metadata_registration_replaces_previous_default_filled_sl
     int32_t value = 0;
     ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&value, registered, registry, "Named"));
     ASSERT_EQ(7, value);
+
+    teardown();
+}
+
+TEST(type_string, metadata_unregister_recomputes_to_base_default) {
+    setup();
+
+    static const nmo_type_vtable_t base_vtable = {
+        .to_string = test_base_alias_to_string,
+        .from_string = test_base_alias_from_string,
+    };
+
+    nmo_guid_t base_guid = NMO_GUID(0xDEADBEEFu, 0x00000036u);
+    nmo_type_descriptor_t base_desc = {
+        .guid = base_guid,
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_SCALAR,
+        .flags = 0,
+        .name = "MetadataRemovalBase",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(int32_t),
+        .alignment = (uint32_t)alignof(int32_t),
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = &base_vtable,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &base_desc));
+
+    nmo_type_descriptor_t enum_desc = base_desc;
+    enum_desc.guid = NMO_GUID(0xDEADBEEFu, 0x00000037u);
+    enum_desc.name = "MetadataRemovalEnum";
+    enum_desc.category = NMO_TYPE_CATEGORY_ENUM;
+    enum_desc.base_type = base_guid;
+    enum_desc.vtable = NULL;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &enum_desc));
+
+    const nmo_type_descriptor_t *registered =
+        nmo_type_registry_find_by_guid(registry, enum_desc.guid);
+    ASSERT_NE(NULL, registered);
+
+    nmo_enum_descriptor_t values[] = {
+        { .name = "Named", .value = 7, .description = NULL, .flags = 0 },
+    };
+    nmo_specialized_metadata_t metadata;
+    memset(&metadata, 0, sizeof(metadata));
+    metadata.type_id = registered->id;
+    metadata.metadata_type = NMO_METADATA_TYPE_ENUM;
+    metadata.enum_meta.values = values;
+    metadata.enum_meta.value_count = 1;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register_metadata(registry, &metadata));
+
+    int32_t value = 0;
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&value, registered, registry, "Named"));
+    ASSERT_EQ(7, value);
+
+    nmo_type_registry_unregister_metadata(registry, registered->id);
+
+    registered = nmo_type_registry_find_by_guid(registry, enum_desc.guid);
+    ASSERT_NE(NULL, registered);
+    ASSERT_NE(NULL, registered->vtable);
+    ASSERT_EQ(test_base_alias_from_string, registered->vtable->from_string);
+    ASSERT_NE(NULL, registered->ext);
+    ASSERT_EQ(NMO_TYPE_VTABLE_SOURCE_BASE_DEFAULT, registered->ext->vtable_source);
+
+    uint32_t base_value = 0u;
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(
+        &base_value, registered, registry, "base-vtable"));
+    ASSERT_EQ(99u, base_value);
+
+    teardown();
+}
+
+TEST(type_string, metadata_unregister_recomputes_merged_default_slots) {
+    setup();
+
+    static const nmo_type_vtable_t base_vtable = {
+        .to_string = test_base_alias_to_string,
+        .from_string = test_base_alias_from_string,
+    };
+    static const nmo_type_vtable_t partial_vtable = {
+        .validate = test_partial_validate,
+    };
+
+    nmo_guid_t base_guid = NMO_GUID(0xDEADBEEFu, 0x00000038u);
+    nmo_type_descriptor_t base_desc = {
+        .guid = base_guid,
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_SCALAR,
+        .flags = 0,
+        .name = "MergedRemovalBase",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(uint32_t),
+        .alignment = (uint32_t)alignof(uint32_t),
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = &base_vtable,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &base_desc));
+
+    nmo_type_descriptor_t enum_desc = base_desc;
+    enum_desc.guid = NMO_GUID(0xDEADBEEFu, 0x00000039u);
+    enum_desc.name = "MergedRemovalEnum";
+    enum_desc.category = NMO_TYPE_CATEGORY_ENUM;
+    enum_desc.base_type = base_guid;
+    enum_desc.vtable = &partial_vtable;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &enum_desc));
+
+    const nmo_type_descriptor_t *registered =
+        nmo_type_registry_find_by_guid(registry, enum_desc.guid);
+    ASSERT_NE(NULL, registered);
+    ASSERT_NE(NULL, registered->vtable);
+    ASSERT_EQ(test_base_alias_from_string, registered->vtable->from_string);
+
+    nmo_enum_descriptor_t values[] = {
+        { .name = "Named", .value = 7, .description = NULL, .flags = 0 },
+    };
+    nmo_specialized_metadata_t metadata;
+    memset(&metadata, 0, sizeof(metadata));
+    metadata.type_id = registered->id;
+    metadata.metadata_type = NMO_METADATA_TYPE_ENUM;
+    metadata.enum_meta.values = values;
+    metadata.enum_meta.value_count = 1;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register_metadata(registry, &metadata));
+
+    int32_t enum_value = 0;
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(
+        &enum_value, registered, registry, "Named"));
+    ASSERT_EQ(7, enum_value);
+
+    nmo_type_registry_unregister_metadata(registry, registered->id);
+
+    registered = nmo_type_registry_find_by_guid(registry, enum_desc.guid);
+    ASSERT_NE(NULL, registered);
+    ASSERT_NE(NULL, registered->vtable);
+    ASSERT_EQ(test_partial_validate, registered->vtable->validate);
+    ASSERT_EQ(test_base_alias_from_string, registered->vtable->from_string);
+    ASSERT_NE(NULL, registered->ext);
+    ASSERT_EQ(NMO_TYPE_VTABLE_SOURCE_MERGED_DEFAULT, registered->ext->vtable_source);
+
+    uint32_t base_value = 0u;
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(
+        &base_value, registered, registry, "base-vtable"));
+    ASSERT_EQ(99u, base_value);
+
+    teardown();
+}
+
+TEST(type_string, base_unregister_clears_inherited_default_vtable) {
+    setup();
+
+    static const nmo_type_vtable_t base_vtable = {
+        .to_string = test_base_alias_to_string,
+        .from_string = test_base_alias_from_string,
+    };
+
+    nmo_guid_t base_guid = NMO_GUID(0xDEADBEEFu, 0x0000003Au);
+    nmo_guid_t child_guid = NMO_GUID(0xDEADBEEFu, 0x0000003Bu);
+    nmo_type_descriptor_t base_desc = {
+        .guid = base_guid,
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_SCALAR,
+        .flags = 0,
+        .name = "RemovedBase",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(uint32_t),
+        .alignment = (uint32_t)alignof(uint32_t),
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = &base_vtable,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &base_desc));
+
+    nmo_type_descriptor_t child_desc = base_desc;
+    child_desc.guid = child_guid;
+    child_desc.name = "ChildLosesRemovedBase";
+    child_desc.base_type = base_guid;
+    child_desc.vtable = NULL;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &child_desc));
+
+    const nmo_type_descriptor_t *child =
+        nmo_type_registry_find_by_guid(registry, child_guid);
+    ASSERT_NE(NULL, child);
+    ASSERT_EQ(test_base_alias_from_string, child->vtable->from_string);
+
+    ASSERT_EQ(NMO_OK, nmo_type_registry_unregister(registry, base_guid));
+
+    child = nmo_type_registry_find_by_guid(registry, child_guid);
+    ASSERT_NE(NULL, child);
+    ASSERT_EQ(NULL, child->vtable);
+
+    uint32_t value = 0u;
+    ASSERT_EQ(NMO_ERR_NOT_IMPLEMENTED, nmo_type_value_from_string(
+        &value, child, registry, "base-vtable"));
 
     teardown();
 }
@@ -2127,6 +2512,7 @@ TEST(type_string, object_id_from_string_name_not_found) {
 
 TEST_MAIN_BEGIN()
     // Float tests
+    REGISTER_TEST(type_string, vtable_source_public_values_are_stable);
     REGISTER_TEST(type_string, float_to_string_normal);
     REGISTER_TEST(type_string, float_to_string_negative);
     REGISTER_TEST(type_string, float_to_string_nan);
@@ -2213,9 +2599,15 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, type_value_from_string_uint8_overflow);
     REGISTER_TEST(type_string, registered_same_size_derived_type_inherits_base_vtable_before_category_default);
     REGISTER_TEST(type_string, registered_enum_alias_without_explicit_vtable_inherits_base_vtable);
+    REGISTER_TEST(type_string, child_registered_before_base_inherits_base_vtable_after_base_registration);
+    REGISTER_TEST(type_string, default_refresh_preserves_explicit_child_vtable);
+    REGISTER_TEST(type_string, direct_enum_registration_uses_metadata_default_vtable_source);
     REGISTER_TEST(type_string, enum_metadata_registration_binds_enum_vtable_over_base_default);
     REGISTER_TEST(type_string, enum_metadata_registration_preserves_explicit_vtable_matching_base);
     REGISTER_TEST(type_string, enum_metadata_registration_replaces_previous_default_filled_slots);
+    REGISTER_TEST(type_string, metadata_unregister_recomputes_to_base_default);
+    REGISTER_TEST(type_string, metadata_unregister_recomputes_merged_default_slots);
+    REGISTER_TEST(type_string, base_unregister_clears_inherited_default_vtable);
     REGISTER_TEST(type_string, merged_default_vtable_is_released_with_registry);
     REGISTER_TEST(type_string, type_value_from_string_rejects_scalar_without_vtable);
     REGISTER_TEST(type_string, type_value_from_string_guid);
