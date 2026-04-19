@@ -862,6 +862,54 @@ TEST(cli, behavior_trace_text_mentions_current_graph) {
     free(result.output);
 }
 
+TEST(cli, behavior_read_commands_accept_exact_name_selectors) {
+    char args[1024];
+
+    snprintf(args, sizeof(args),
+             "-f json behavior show --name \"Register & Activate Init_Script\" \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    yyjson_doc *show_doc = NULL;
+    run_json_command(args, "behavior.show", &show_doc);
+    ASSERT_NOT_NULL(show_doc);
+    yyjson_val *show_data = get_object_field(yyjson_doc_get_root(show_doc), "data");
+    ASSERT_NOT_NULL(show_data);
+    ASSERT_EQ(237, yyjson_get_uint(yyjson_obj_get(show_data, "id")));
+    yyjson_doc_free(show_doc);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior graph --max-nodes 5 --max-edges 5 "
+             "--name \"Register & Activate Init_Script\" \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    yyjson_doc *graph_doc = NULL;
+    run_json_command(args, "behavior.graph", &graph_doc);
+    ASSERT_NOT_NULL(graph_doc);
+    yyjson_doc_free(graph_doc);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior trace --name \"Register & Activate Init_Script\" \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    yyjson_doc *trace_doc = NULL;
+    run_json_command(args, "behavior.trace", &trace_doc);
+    ASSERT_NOT_NULL(trace_doc);
+    yyjson_doc_free(trace_doc);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior dump --name \"Register & Activate Init_Script\" \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    yyjson_doc *dump_doc = NULL;
+    run_json_command(args, "behavior.dump", &dump_doc);
+    ASSERT_NOT_NULL(dump_doc);
+    yyjson_doc_free(dump_doc);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior interface show --name \"Topic - Prevent Collision\" \"%s\"",
+             NMO_INTERFACE_EDIT_FIXTURE);
+    yyjson_doc *iface_doc = NULL;
+    run_json_command(args, "behavior.interface", &iface_doc);
+    ASSERT_NOT_NULL(iface_doc);
+    yyjson_doc_free(iface_doc);
+}
+
 TEST(cli, behavior_dump_help_describes_tree_overview_options) {
     cli_run_result_t result = run_cli_capture("behavior dump --help");
     ASSERT_NOT_NULL(result.output);
@@ -1399,6 +1447,83 @@ TEST(cli, behavior_interface_set_pos_json_dry_run) {
     ASSERT_TRUE(dry_run && yyjson_is_bool(dry_run));
     ASSERT_TRUE(yyjson_get_bool(dry_run));
     yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_interface_edit_commands_accept_exact_name_target_selector) {
+    char args[1024];
+
+    snprintf(args, sizeof(args),
+             "behavior interface set-pos --dry-run --name \"Topic - Prevent Collision\" "
+             "%u 11 22 \"%s\"",
+             NMO_INTERFACE_EDIT_SCRIPT_BEHAVIOR_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t set_pos = run_cli_capture(args);
+    ASSERT_NOT_NULL(set_pos.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, set_pos.exit_code);
+    ASSERT_STR_CONTAINS(set_pos.output, "[dry-run]");
+    free(set_pos.output);
+
+    snprintf(args, sizeof(args),
+             "behavior interface canonicalize --dry-run --name \"Topic - Prevent Collision\" "
+             "\"%s\"",
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t canonicalize = run_cli_capture(args);
+    ASSERT_NOT_NULL(canonicalize.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, canonicalize.exit_code);
+    ASSERT_STR_CONTAINS(canonicalize.output, "[dry-run]");
+    free(canonicalize.output);
+
+    snprintf(args, sizeof(args),
+             "behavior interface add-comment --dry-run --name \"Topic - Prevent Collision\" "
+             "--text \"Selector note\" --rect 1,2,3,4 \"%s\"",
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t add_comment = run_cli_capture(args);
+    ASSERT_NOT_NULL(add_comment.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, add_comment.exit_code);
+    ASSERT_STR_CONTAINS(add_comment.output, "[dry-run]");
+    free(add_comment.output);
+
+    snprintf(args, sizeof(args),
+             "behavior interface add-comment --dry-run --name \"Topic - Prevent Collision\" "
+             "--text \"--name\" --rect 1,2,3,4 \"%s\"",
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t selector_like_text = run_cli_capture(args);
+    ASSERT_NOT_NULL(selector_like_text.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, selector_like_text.exit_code);
+    ASSERT_STR_CONTAINS(selector_like_text.output, "[dry-run]");
+    free(selector_like_text.output);
+
+    snprintf(args, sizeof(args),
+             "behavior interface add-point --dry-run --name \"Topic - Prevent Collision\" "
+             "%u 1 2 \"%s\"",
+             NMO_INTERFACE_EDIT_LINK_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t add_point = run_cli_capture(args);
+    ASSERT_NOT_NULL(add_point.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, add_point.exit_code);
+    ASSERT_STR_CONTAINS(add_point.output, "[dry-run]");
+    free(add_point.output);
+
+    snprintf(args, sizeof(args),
+             "behavior interface move-param --dry-run --name \"Topic - Prevent Collision\" "
+             "5 6 \"%s\" --param-index 0",
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t move_param = run_cli_capture(args);
+    ASSERT_NOT_NULL(move_param.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, move_param.exit_code);
+    ASSERT_STR_CONTAINS(move_param.output, "[dry-run]");
+    free(move_param.output);
+
+    snprintf(args, sizeof(args),
+             "behavior interface set-graph-io --dry-run --name \"Topic - Prevent Collision\" "
+             "--body %u --in-in 1,2 \"%s\"",
+             NMO_INTERFACE_EDIT_SUB_BEHAVIOR_ID,
+             NMO_INTERFACE_EDIT_FIXTURE);
+    cli_run_result_t graph_io = run_cli_capture(args);
+    ASSERT_NOT_NULL(graph_io.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, graph_io.exit_code);
+    ASSERT_STR_CONTAINS(graph_io.output, "[dry-run]");
+    free(graph_io.output);
 }
 
 TEST(cli, behavior_interface_show_json_reports_format_root) {
@@ -2120,6 +2245,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_trace_json_p2_semantics);
     REGISTER_TEST(cli, behavior_trace_json_reports_depth_truncation);
     REGISTER_TEST(cli, behavior_trace_text_mentions_current_graph);
+    REGISTER_TEST(cli, behavior_read_commands_accept_exact_name_selectors);
     REGISTER_TEST(cli, behavior_dump_help_describes_tree_overview_options);
     REGISTER_TEST(cli, behavior_dump_text_flows_show_owner_endpoints);
     REGISTER_TEST(cli, behavior_dump_all_rejects_flows);
@@ -2139,6 +2265,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_interface_set_pos_dry_run_does_not_write_output);
     REGISTER_TEST(cli, behavior_interface_set_pos_saves_output);
     REGISTER_TEST(cli, behavior_interface_set_pos_json_dry_run);
+    REGISTER_TEST(cli, behavior_interface_edit_commands_accept_exact_name_target_selector);
     REGISTER_TEST(cli, behavior_interface_show_json_reports_format_root);
     REGISTER_TEST(cli, behavior_interface_show_brief_reports_root_kind);
     REGISTER_TEST(cli, behavior_interface_show_json_reports_sectioned_graph_root);

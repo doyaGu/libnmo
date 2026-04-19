@@ -423,8 +423,10 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
         {"--from",  NULL, NMO_OPT_STRING, "Start IO name (default: first bIn)"},
         {"--depth", "-d", NMO_OPT_UINT,   "Max trace depth (default: unlimited)"},
         {"--json",  "-j", NMO_OPT_FLAG,   "JSON output"},
+        {"--id",    "-i", NMO_OPT_UINT,   "Behavior object ID"},
+        {"--name",  "-n", NMO_OPT_STRING, "Behavior object name"},
     };
-    enum { OPT_FROM, OPT_DEPTH, OPT_JSON, OPT_COUNT };
+    enum { OPT_FROM, OPT_DEPTH, OPT_JSON, OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
@@ -433,14 +435,10 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
     const char *from_name = vals[OPT_FROM].present ? vals[OPT_FROM].val.str : NULL;
     uint32_t max_trace_depth = vals[OPT_DEPTH].present ? vals[OPT_DEPTH].val.u : 64;
 
-    if (r.pos_count < 2) {
-        fprintf(stderr, "Usage: nmo behavior trace [--from <io>] [--depth N] <id> <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    uint32_t beh_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &beh_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = has_selector_opt ? NULL : (r.pos_count >= 2 ? r.pos_args[0] : NULL);
+    if ((has_selector_opt && r.pos_count < 1) || (!has_selector_opt && positional_id == NULL)) {
+        fprintf(stderr, "Usage: nmo behavior trace [--from <io>] [--depth N] [--id <id> | --name <name> | <id>] <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -449,9 +447,24 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
     if (rc) return rc;
 
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    nmo_object_t *beh = nmo_object_repository_find_by_id(repo, beh_id);
-    if (!beh || !beh->state) {
-        fprintf(stderr, "Error: Behavior %u not found\n", beh_id);
+    nmo_core_object_selector_t selector = {
+        .has_id = vals[OPT_ID].present,
+        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .positional_id = positional_id,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .required_base_class = NMO_CID_BEHAVIOR,
+        .selector_label = "Behavior",
+        .type_label = "CKBehavior",
+    };
+    nmo_object_t *beh = NULL;
+    nmo_object_id_t beh_id = 0;
+    rc = nmo_core_resolve_one_object(&c, &selector, &beh, &beh_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo behavior trace [--from <io>] [--depth N] [--id <id> | --name <name> | <id>] <file>\n");
+        return nmo_cmd_ctx_done(&c, rc);
+    }
+    if (!beh->state) {
+        fprintf(stderr, "Error: Behavior %u has no state\n", beh_id);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
     }
 

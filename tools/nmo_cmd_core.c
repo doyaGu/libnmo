@@ -77,6 +77,124 @@ int nmo_core_find_by_name(const nmo_cmd_ctx_t *c,
     return status == NMO_OK ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_INTERNAL_ERROR;
 }
 
+static bool nmo_core_selector_class_allowed(
+    const nmo_core_object_selector_t *selector,
+    nmo_class_id_t class_id)
+{
+    if (selector == NULL || selector->allowed_class_count == 0) {
+        return true;
+    }
+    for (size_t i = 0; i < selector->allowed_class_count; ++i) {
+        if (selector->allowed_class_ids[i] == class_id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool nmo_core_selector_allowed_class_predicate(
+    const nmo_object_t *object,
+    void *user_data)
+{
+    const nmo_core_object_selector_t *selector =
+        (const nmo_core_object_selector_t *)user_data;
+    return object != NULL &&
+           nmo_core_selector_class_allowed(selector, nmo_object_get_class_id(object));
+}
+
+int nmo_core_resolve_one_object(
+    const nmo_cmd_ctx_t *c,
+    const nmo_core_object_selector_t *selector,
+    nmo_object_t **out_object,
+    nmo_object_id_t *out_id)
+{
+    if (c == NULL || selector == NULL || out_object == NULL) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    *out_object = NULL;
+    if (out_id != NULL) {
+        *out_id = 0;
+    }
+
+    const char *label = selector->selector_label != NULL
+        ? selector->selector_label
+        : "Object";
+    const char *type_label = selector->type_label != NULL
+        ? selector->type_label
+        : label;
+
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t id = 0;
+    bool selected_by_id = false;
+    if (selector->has_id) {
+        id = selector->id;
+        selected_by_id = true;
+    } else if (selector->positional_id != NULL) {
+        uint32_t parsed_id = 0;
+        if (!nmo_tool_parse_u32(selector->positional_id, &parsed_id) || parsed_id == 0) {
+            fprintf(stderr, "Error: Invalid %s ID '%s'\n", label, selector->positional_id);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        id = (nmo_object_id_t)parsed_id;
+        selected_by_id = true;
+    }
+
+    if (selected_by_id) {
+        obj = nmo_core_find_by_id(c, id);
+        if (obj == NULL) {
+            fprintf(stderr, "Error: Object %u not found\n", id);
+            return NMO_CLI_EXIT_NOT_FOUND;
+        }
+    } else if (selector->name != NULL && selector->name[0] != '\0') {
+        nmo_object_query_t query = {
+            .class_id = selector->required_base_class,
+            .include_derived_classes = selector->required_base_class != 0,
+            .name = selector->name,
+            .name_mode = NMO_OBJECT_QUERY_NAME_EXACT,
+            .name_case_insensitive = false,
+            .predicate = selector->allowed_class_count > 0
+                ? nmo_core_selector_allowed_class_predicate
+                : NULL,
+            .predicate_user_data = selector->allowed_class_count > 0
+                ? (void *)selector
+                : NULL,
+        };
+        int lookup_rc = nmo_core_object_query_first(c, &query, &obj, NULL);
+        if (lookup_rc == NMO_CLI_EXIT_NOT_FOUND) {
+            fprintf(stderr, "Error: %s '%s' not found\n", label, selector->name);
+            return NMO_CLI_EXIT_NOT_FOUND;
+        }
+        if (lookup_rc != NMO_CLI_EXIT_SUCCESS) {
+            return lookup_rc;
+        }
+        id = nmo_object_get_id(obj);
+    } else {
+        fprintf(stderr, "Error: No %s selector specified\n", label);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (selector->required_base_class != 0) {
+        nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+        if (!nmo_core_class_derives(c, class_id, selector->required_base_class)) {
+            fprintf(stderr, "Error: Object %u is not a %s (class %u)\n",
+                    id, type_label, class_id);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    }
+    if (!nmo_core_selector_class_allowed(selector, nmo_object_get_class_id(obj))) {
+        fprintf(stderr, "Error: Object %u is not a %s (class %u)\n",
+                id, type_label, nmo_object_get_class_id(obj));
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    *out_object = obj;
+    if (out_id != NULL) {
+        *out_id = id;
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 /* ============================================================================
  * 3. Object iteration
  * ============================================================================ */

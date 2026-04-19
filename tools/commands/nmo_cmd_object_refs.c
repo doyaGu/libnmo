@@ -127,24 +127,21 @@ static int cli_refs_text_visitor(const nmo_core_ref_info_t *info,
 }
 
 int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    nmo_opt_val_t vals[1]; /* no named options currently */
+    static const nmo_opt_def_t opts[] = {
+        {"--id",   "-i", NMO_OPT_UINT,   "Object ID"},
+        {"--name", "-n", NMO_OPT_STRING, "Object name"},
+    };
+    enum { OPT_ID, OPT_NAME, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    /* Parse with empty option table to collect positional args */
-    if (nmo_opt_parse(argc, argv, NULL, 0, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    /* Find the object ID among positional args (first numeric value) */
-    nmo_object_id_t object_id = 0;
-    for (size_t i = 0; i < r.pos_count; ++i) {
-        nmo_object_id_t id = 0;
-        if (nmo_parse_object_id(r.pos_args[i], &id) == NMO_OK && id > 0) {
-            object_id = id;
-            break;
-        }
-    }
-    if (object_id == 0) {
-        fprintf(stderr, "Error: No valid object ID specified\n");
-        fprintf(stderr, "Usage: nmo object refs <id> <file>\n");
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
+    if (!has_selector_opt && positional_id == NULL) {
+        fprintf(stderr, "Error: No object selector specified\n");
+        fprintf(stderr, "Usage: nmo object refs [--id <id> | --name <name> | <id>] <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -152,11 +149,20 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    /* Find the object */
-    nmo_object_t *obj = nmo_core_find_by_id(&c, object_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object %u not found\n", object_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    nmo_core_object_selector_t selector = {
+        .has_id = vals[OPT_ID].present,
+        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .positional_id = positional_id,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .selector_label = "Object",
+        .type_label = "object",
+    };
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t object_id = 0;
+    rc = nmo_core_resolve_one_object(&c, &selector, &obj, &object_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo object refs [--id <id> | --name <name> | <id>] <file>\n");
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     if (c.is_json) {
@@ -196,7 +202,7 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
         /* Text output */
         const char *obj_name = nmo_object_get_name(obj);
         const char *obj_class = nmo_core_class_name(&c, nmo_object_get_class_id(obj));
-        fprintf(c.out, "References for object %u: %s [%s]\n\n",
+        fprintf(c.out, "References for object #%u: %s [%s]\n\n",
                 object_id,
                 (obj_name && obj_name[0]) ? obj_name : "(unnamed)",
                 obj_class ? obj_class : "?");
@@ -261,23 +267,21 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
  * ============================================================================ */
 
 int nmo_cmd_object_impact(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    nmo_opt_val_t vals[1];
+    static const nmo_opt_def_t opts[] = {
+        {"--id",   "-i", NMO_OPT_UINT,   "Object ID"},
+        {"--name", "-n", NMO_OPT_STRING, "Object name"},
+    };
+    enum { OPT_ID, OPT_NAME, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, NULL, 0, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    /* Find the object ID among positional args */
-    nmo_object_id_t object_id = 0;
-    for (size_t i = 0; i < r.pos_count; ++i) {
-        nmo_object_id_t id = 0;
-        if (nmo_parse_object_id(r.pos_args[i], &id) == NMO_OK && id > 0) {
-            object_id = id;
-            break;
-        }
-    }
-    if (object_id == 0) {
-        fprintf(stderr, "Error: No valid object ID specified\n");
-        fprintf(stderr, "Usage: nmo object impact <id> <file>\n");
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
+    if (!has_selector_opt && positional_id == NULL) {
+        fprintf(stderr, "Error: No object selector specified\n");
+        fprintf(stderr, "Usage: nmo object impact [--id <id> | --name <name> | <id>] <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -285,11 +289,20 @@ int nmo_cmd_object_impact(int argc, char **argv, const nmo_cli_global_opts_t *gl
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    /* Find the target object */
-    nmo_object_t *obj = nmo_core_find_by_id(&c, object_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object %u not found\n", object_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    nmo_core_object_selector_t selector = {
+        .has_id = vals[OPT_ID].present,
+        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .positional_id = positional_id,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .selector_label = "Object",
+        .type_label = "object",
+    };
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t object_id = 0;
+    rc = nmo_core_resolve_one_object(&c, &selector, &obj, &object_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo object impact [--id <id> | --name <name> | <id>] <file>\n");
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     const char *obj_name = nmo_object_get_name(obj);

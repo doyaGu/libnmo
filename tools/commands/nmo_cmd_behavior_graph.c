@@ -43,7 +43,7 @@ typedef nmo_behavior_graph_node_t nmo_cli_graph_node_t;
 typedef nmo_behavior_graph_edge_t nmo_cli_graph_edge_t;
 
 static bool parse_behavior_graph_args(int argc, char **argv,
-                                      nmo_object_id_t *out_id,
+                                      nmo_core_object_selector_t *out_selector,
                                       const char **out_file,
                                       bool *out_dot,
                                       size_t *out_max_nodes,
@@ -56,24 +56,34 @@ static bool parse_behavior_graph_args(int argc, char **argv,
         {"--max-edges", NULL, NMO_OPT_UINT, "Max edges to display"},
         {"--depth",     "-d", NMO_OPT_UINT, "Recursion depth (default: unlimited)"},
         {"--json",      "-j", NMO_OPT_FLAG, "JSON output"},
+        {"--id",        "-i", NMO_OPT_UINT, "Behavior object ID"},
+        {"--name",      "-n", NMO_OPT_STRING, "Behavior object name"},
     };
-    enum { OPT_DOT, OPT_MAX_NODES, OPT_MAX_EDGES, OPT_DEPTH, OPT_JSON, OPT_COUNT };
+    enum { OPT_DOT, OPT_MAX_NODES, OPT_MAX_EDGES, OPT_DEPTH, OPT_JSON,
+           OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return false;
 
-    if (r.pos_count < 2) return false;
-
-    const char *id_str = r.pos_args[0];
-    const char *file_path = r.pos_args[1];
-
-    uint32_t id = 0;
-    if (!nmo_tool_parse_u32(id_str, &id) || id == 0) {
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    if ((has_selector_opt && r.pos_count < 1) || (!has_selector_opt && r.pos_count < 2)) {
         return false;
     }
+    const char *positional_id = has_selector_opt ? NULL : r.pos_args[0];
+    const char *file_path = r.pos_args[r.pos_count - 1];
 
-    if (out_id) *out_id = (nmo_object_id_t)id;
+    if (out_selector) {
+        *out_selector = (nmo_core_object_selector_t){
+            .has_id = vals[OPT_ID].present,
+            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .positional_id = positional_id,
+            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .required_base_class = NMO_CID_BEHAVIOR,
+            .selector_label = "Behavior",
+            .type_label = "CKBehavior",
+        };
+    }
     if (out_file) *out_file = file_path;
     if (out_dot) *out_dot = vals[OPT_DOT].val.flag;
     if (out_max_nodes) *out_max_nodes = vals[OPT_MAX_NODES].present ? (size_t)vals[OPT_MAX_NODES].val.u : 0;
@@ -252,6 +262,7 @@ static nmo_object_id_t graph_edge_parameter_id(const nmo_cli_graph_edge_t *edge)
 }
 
 int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    nmo_core_object_selector_t selector = {0};
     nmo_object_id_t behavior_id = 0;
     const char *file_path = NULL;
     bool emit_dot = false;
@@ -265,10 +276,10 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
     nmo_object_id_t *emit_node_ids = NULL;
     size_t *emit_edge_indices = NULL;
 
-    if (!parse_behavior_graph_args(argc, argv, &behavior_id, &file_path,
+    if (!parse_behavior_graph_args(argc, argv, &selector, &file_path,
                                    &emit_dot, &max_nodes, &max_edges, &depth)) {
         fprintf(stderr, "Error: Missing or invalid arguments\n");
-        fprintf(stderr, "Usage: nmo behavior graph [--depth N] [--dot] <id> <file>\n");
+        fprintf(stderr, "Usage: nmo behavior graph [--depth N] [--dot] [--id <id> | --name <name> | <id>] <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -279,6 +290,14 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
     if (nmo_session_ensure_behavior_acceleration(c.session) != NMO_OK) {
         fprintf(stderr, "Error: Failed to build behavior acceleration\n");
         exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
+        goto cleanup;
+    }
+
+    nmo_object_t *behavior = NULL;
+    rc = nmo_core_resolve_one_object(&c, &selector, &behavior, &behavior_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo behavior graph [--depth N] [--dot] [--id <id> | --name <name> | <id>] <file>\n");
+        exit_code = rc;
         goto cleanup;
     }
 
@@ -1717,8 +1736,10 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
         {"--flows",  NULL, NMO_OPT_FLAG, "Include execution/data flow summaries for one behavior"},
         {"--values", NULL, NMO_OPT_FLAG, "Include decoded local/output values"},
         {"--json",   "-j", NMO_OPT_FLAG, "JSON output"},
+        {"--id",     "-i", NMO_OPT_UINT, "Behavior object ID"},
+        {"--name",   "-n", NMO_OPT_STRING, "Behavior object name"},
     };
-    enum { OPT_ALL, OPT_FLOWS, OPT_VALUES, OPT_JSON, OPT_COUNT };
+    enum { OPT_ALL, OPT_FLOWS, OPT_VALUES, OPT_JSON, OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
@@ -1733,13 +1754,22 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *id_str = NULL;
+    nmo_core_object_selector_t selector = {0};
     if (!dump_all) {
-        if (r.pos_count < 2) {
-            fprintf(stderr, "Usage: nmo behavior dump [--all] [<id>] <file>\n");
+        bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+        if ((has_selector_opt && r.pos_count < 1) || (!has_selector_opt && r.pos_count < 2)) {
+            fprintf(stderr, "Usage: nmo behavior dump [--all | --id <id> | --name <name> | <id>] <file>\n");
             return NMO_CLI_EXIT_ARG_ERROR;
         }
-        id_str = r.pos_args[0];
+        selector = (nmo_core_object_selector_t){
+            .has_id = vals[OPT_ID].present,
+            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .positional_id = has_selector_opt ? NULL : r.pos_args[0],
+            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .required_base_class = NMO_CID_BEHAVIOR,
+            .selector_label = "Behavior",
+            .type_label = "CKBehavior",
+        };
     }
 
     nmo_cmd_ctx_t c;
@@ -1780,11 +1810,13 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
             }
         } else {
-            uint32_t object_id;
-            if (!nmo_tool_parse_u32(id_str, &object_id)) {
-                fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
+            nmo_object_t *selected = NULL;
+            nmo_object_id_t object_id = 0;
+            rc = nmo_core_resolve_one_object(&c, &selector, &selected, &object_id);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                fprintf(stderr, "Usage: nmo behavior dump [--all | --id <id> | --name <name> | <id>] <file>\n");
                 yyjson_mut_doc_free(doc);
-                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+                return nmo_cmd_ctx_done(&c, rc);
             }
             dump_behavior_tree_json(doc, tree, repo, c.registry, bb_reg,
                                     c.session, object_id, 0, include_values);
@@ -1820,10 +1852,12 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
             fprintf(c.out, "No script behaviors found.\n");
         }
     } else {
-        uint32_t object_id;
-        if (!nmo_tool_parse_u32(id_str, &object_id)) {
-            fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        nmo_object_t *selected = NULL;
+        nmo_object_id_t object_id = 0;
+        rc = nmo_core_resolve_one_object(&c, &selector, &selected, &object_id);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            fprintf(stderr, "Usage: nmo behavior dump [--all | --id <id> | --name <name> | <id>] <file>\n");
+            return nmo_cmd_ctx_done(&c, rc);
         }
 
         dump_behavior_tree(c.out, repo, c.registry, c.session,

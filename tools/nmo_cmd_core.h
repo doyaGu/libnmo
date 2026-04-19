@@ -71,6 +71,27 @@ int nmo_core_find_by_name(const nmo_cmd_ctx_t *c,
                           const char *name,
                           nmo_object_t **out_object);
 
+typedef struct nmo_core_object_selector {
+    bool has_id;
+    nmo_object_id_t id;
+    const char *positional_id;
+    const char *name;
+    nmo_class_id_t required_base_class;
+    const nmo_class_id_t *allowed_class_ids;
+    size_t allowed_class_count;
+    const char *selector_label;
+    const char *type_label;
+} nmo_core_object_selector_t;
+
+/**
+ * @brief Resolve one object from shared CLI selector inputs.
+ */
+int nmo_core_resolve_one_object(
+    const nmo_cmd_ctx_t *c,
+    const nmo_core_object_selector_t *selector,
+    nmo_object_t **out_object,
+    nmo_object_id_t *out_id);
+
 /* ============================================================================
  * 3. Object iteration with visitor pattern
  * ============================================================================ */

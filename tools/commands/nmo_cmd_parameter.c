@@ -1357,8 +1357,10 @@ int nmo_cmd_parameter_set(int argc, char **argv, const nmo_cli_global_opts_t *gl
         {"--index",   "-i", NMO_OPT_UINT,   "Parameter index within owner"},
         {"--hex",     NULL, NMO_OPT_FLAG,   "Value is raw hex bytes"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Show old/new without saving"},
+        {"--id",      NULL, NMO_OPT_UINT,   "Parameter object ID"},
     };
-    enum { OPT_OUTPUT, OPT_OWNER, OPT_NAME, OPT_INDEX, OPT_HEX, OPT_DRYRUN, OPT_COUNT };
+    enum { OPT_OUTPUT, OPT_OWNER, OPT_NAME, OPT_INDEX, OPT_HEX, OPT_DRYRUN,
+           OPT_ID, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
@@ -1373,6 +1375,11 @@ int nmo_cmd_parameter_set(int argc, char **argv, const nmo_cli_global_opts_t *gl
     uint32_t param_index    = has_index ? vals[OPT_INDEX].val.u : 0;
     bool hex_mode           = vals[OPT_HEX].present && vals[OPT_HEX].val.flag;
     bool dry_run            = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    bool has_direct_id      = vals[OPT_ID].present;
+    char direct_id_buf[32];
+    if (has_direct_id) {
+        snprintf(direct_id_buf, sizeof(direct_id_buf), "%u", vals[OPT_ID].val.u);
+    }
 
     /* Determine positional args layout */
     bool owner_mode = (owner_str != NULL);
@@ -1390,13 +1397,13 @@ int nmo_cmd_parameter_set(int argc, char **argv, const nmo_cli_global_opts_t *gl
         value_str = r.pos_args[0];
         file_path = r.pos_args[r.pos_count - 1];
     } else {
-        /* <param-id> <value> <file> */
-        if (r.pos_count < 3) {
-            fprintf(stderr, "Usage: nmo parameter set <param-id> <value> <file> -o <output>\n");
+        /* [--id <param-id> | <param-id>] <value> <file> */
+        if ((has_direct_id && r.pos_count < 2) || (!has_direct_id && r.pos_count < 3)) {
+            fprintf(stderr, "Usage: nmo parameter set [--id <param-id> | <param-id>] <value> <file> -o <output>\n");
             return NMO_CLI_EXIT_ARG_ERROR;
         }
-        id_str    = r.pos_args[0];
-        value_str = r.pos_args[1];
+        id_str    = has_direct_id ? direct_id_buf : r.pos_args[0];
+        value_str = has_direct_id ? r.pos_args[0] : r.pos_args[1];
         file_path = r.pos_args[r.pos_count - 1];
     }
 

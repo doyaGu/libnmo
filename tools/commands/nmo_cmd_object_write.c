@@ -1839,6 +1839,7 @@ int nmo_cmd_object_import(int argc, char **argv, const nmo_cli_global_opts_t *gl
  * ============================================================================ */
 
 typedef struct object_set_field_args {
+    nmo_core_object_selector_t selector;
     uint32_t object_id;
     const char *field_name;
     const char *value_str;
@@ -1856,6 +1857,15 @@ static int object_set_field_mutate(
     if (args == NULL) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
+
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t object_id = 0;
+    int resolve_rc = nmo_core_resolve_one_object(c, &args->selector, &obj, &object_id);
+    if (resolve_rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo object set-field [--id <id> | --name <name> | <id>] <field> <value> <file> [-o output]\n");
+        return resolve_rc;
+    }
+    args->object_id = object_id;
 
     fprintf(c->out, "Object #%u:\n", args->object_id);
 
@@ -1886,8 +1896,10 @@ int nmo_cmd_object_set_field(int argc, char **argv,
     static const nmo_opt_def_t opts[] = {
         {"--output",  "-o", NMO_OPT_STRING, "Output file"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        {"--id",      "-i", NMO_OPT_UINT,   "Object ID"},
+        {"--name",    "-n", NMO_OPT_STRING, "Object name"},
     };
-    enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    enum { OPT_OUTPUT, OPT_DRYRUN, OPT_ID, OPT_NAME, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
@@ -1902,23 +1914,36 @@ int nmo_cmd_object_set_field(int argc, char **argv,
         fprintf(stderr, "Error: -o required (or use --dry-run)\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (r.pos_count < 4) {
-        fprintf(stderr, "Usage: nmo object set-field <id> <field> <value> <file> [-o output]\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = NULL;
+    int field_index = 0;
+    if (has_selector_opt) {
+        if (r.pos_count < 3) {
+            fprintf(stderr, "Usage: nmo object set-field [--id <id> | --name <name> | <id>] <field> <value> <file> [-o output]\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    } else {
+        if (r.pos_count < 4) {
+            fprintf(stderr, "Usage: nmo object set-field [--id <id> | --name <name> | <id>] <field> <value> <file> [-o output]\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        positional_id = r.pos_args[0];
+        field_index = 1;
     }
 
-    uint32_t object_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &object_id)) {
-        fprintf(stderr, "Error: Invalid object ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    const char *field_name = r.pos_args[1];
-    const char *value_str  = r.pos_args[2];
+    const char *field_name = r.pos_args[field_index];
+    const char *value_str  = r.pos_args[field_index + 1];
     const char *file_path  = r.pos_args[r.pos_count - 1];
 
     object_set_field_args_t args = {
-        .object_id = object_id,
+        .selector = {
+            .has_id = vals[OPT_ID].present,
+            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .positional_id = positional_id,
+            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .selector_label = "Object",
+            .type_label = "object",
+        },
         .field_name = field_name,
         .value_str = value_str,
     };

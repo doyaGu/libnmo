@@ -106,7 +106,7 @@ static void object_list_usage(FILE *out) {
 }
 
 static void object_show_usage(FILE *out) {
-    fprintf(out, "Usage: nmo object show <id> <file>\n\n");
+    fprintf(out, "Usage: nmo object show [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Show detailed information about a specific object.\n");
 }
 
@@ -125,7 +125,7 @@ static void object_find_usage(FILE *out) {
 }
 
 static void object_refs_usage(FILE *out) {
-    fprintf(out, "Usage: nmo object refs <id> <file>\n\n");
+    fprintf(out, "Usage: nmo object refs [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Show incoming and outgoing references for a specific object.\n");
 }
 
@@ -149,7 +149,7 @@ static void object_export_usage(FILE *out) {
 }
 
 static void object_impact_usage(FILE *out) {
-    fprintf(out, "Usage: nmo object impact <id> <file>\n\n");
+    fprintf(out, "Usage: nmo object impact [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Show what would be affected if the specified object were deleted.\n");
     fprintf(out, "Reports direct dependents (incoming references) and the full\n");
     fprintf(out, "cascade deletion set.\n");
@@ -223,7 +223,7 @@ static void object_import_usage(FILE *out) {
 }
 
 static void object_set_field_usage(FILE *out) {
-    fprintf(out, "Usage: nmo object set-field <id> <field> <value> <file> -o <output>\n\n");
+    fprintf(out, "Usage: nmo object set-field [--id <id> | --name <name> | <id>] <field> <value> <file> -o <output>\n\n");
     fprintf(out, "Set an object's typed field and save. Use 'object list-fields' to see field names.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  -o, --output <path>  Output file (required unless --dry-run)\n");
@@ -231,7 +231,7 @@ static void object_set_field_usage(FILE *out) {
 }
 
 static void object_list_fields_usage(FILE *out) {
-    fprintf(out, "Usage: nmo object list-fields <id> <file>\n\n");
+    fprintf(out, "Usage: nmo object list-fields [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "List all typed fields of an object with current values.\n");
 }
 
@@ -348,12 +348,14 @@ static void resource_import_usage(FILE *out) {
 }
 
 static void resource_replace_usage(FILE *out) {
-    fprintf(out, "Usage: nmo resource replace -o <output> [--index <n> | --name <name>] <disk-file> <nmo-file>\n\n");
-    fprintf(out, "Replace the payload of an existing included resource.\n\n");
+    fprintf(out, "Usage: nmo resource replace -o <output> [--dry-run] [--index <n> | --name <name>] <disk-file> <nmo-file>\n\n");
+    fprintf(out, "Replace an included resource payload, such as an embedded file entry.\n");
+    fprintf(out, "This does not update CKTexture bitmap data; use `texture replace` for texture objects.\n\n");
     fprintf(out, "Options:\n");
-    fprintf(out, "  -o, --output <path>    Output file (required)\n");
+    fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
     fprintf(out, "  -i, --index <n>        Resource index\n");
     fprintf(out, "  -n, --name <name>      Resource name\n");
+    fprintf(out, "  --dry-run              Preview only, do not save\n");
 }
 
 static void resource_remove_usage(FILE *out) {
@@ -384,7 +386,7 @@ static void behavior_list_usage(FILE *out) {
 }
 
 static void behavior_show_usage(FILE *out) {
-    fprintf(out, "Usage: nmo behavior show [options] <id> <file>\n\n");
+    fprintf(out, "Usage: nmo behavior show [options] [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Show behavior signature: IO ports, parameters with types,\n");
     fprintf(out, "sub-behaviors, and links.\n\n");
     fprintf(out, "Output:\n");
@@ -401,7 +403,7 @@ static void behavior_stats_usage(FILE *out) {
 }
 
 static void behavior_graph_usage(FILE *out) {
-    fprintf(out, "Usage: nmo behavior graph [options] <id> <file>\n\n");
+    fprintf(out, "Usage: nmo behavior graph [options] [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Export a behavior graph with parameter and operation links.\n\n");
     fprintf(out, "Output:\n");
     fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n");
@@ -413,7 +415,7 @@ static void behavior_graph_usage(FILE *out) {
 }
 
 static void behavior_dump_usage(FILE *out) {
-    fprintf(out, "Usage: nmo behavior dump [options] <id> <file>\n\n");
+    fprintf(out, "Usage: nmo behavior dump [options] [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Dump a compact behavior tree overview.\n\n");
     fprintf(out, "Output:\n");
     fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n\n");
@@ -435,7 +437,7 @@ static void behavior_find_usage(FILE *out) {
 }
 
 static void behavior_trace_usage(FILE *out) {
-    fprintf(out, "Usage: nmo behavior trace [options] <id> <file>\n\n");
+    fprintf(out, "Usage: nmo behavior trace [options] [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Trace execution path from a behavior IO port.\n\n");
     fprintf(out, "Output:\n");
     fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n\n");
@@ -494,7 +496,7 @@ static void parameter_dump_usage(FILE *out) {
 }
 
 static void parameter_set_usage(FILE *out) {
-    fprintf(out, "Usage: nmo parameter set <param-id> <value> <file> -o <output>\n");
+    fprintf(out, "Usage: nmo parameter set [--id <param-id> | <param-id>] <value> <file> -o <output>\n");
     fprintf(out, "       nmo parameter set --owner <beh-id> --name <name> <value> <file> -o <output>\n");
     fprintf(out, "       nmo parameter set --owner <beh-id> --index <n> <value> <file> -o <output>\n");
     fprintf(out, "       nmo parameter set --hex <param-id> <hex-value> <file> -o <output>\n");
@@ -654,10 +656,11 @@ static void texture_list_usage(FILE *out) {
 }
 
 static void texture_show_usage(FILE *out) {
-    fprintf(out, "Usage: nmo texture show <id> <file>\n\n");
+    fprintf(out, "Usage: nmo texture show [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Show detailed texture metadata and per-slot information.\n\n");
     fprintf(out, "Options:\n");
-    fprintf(out, "  --id <n>             Texture object ID (alternative to positional)\n");
+    fprintf(out, "  --id <id>            Texture object ID (alternative to positional)\n");
+    fprintf(out, "  --name, -n <name>    Exact texture object name\n");
 }
 
 static void texture_extract_usage(FILE *out) {
@@ -673,11 +676,13 @@ static void texture_extract_usage(FILE *out) {
 }
 
 static void texture_replace_usage(FILE *out) {
-    fprintf(out, "Usage: nmo texture replace <id> --file <image> <nmo-file> -o <output> [--dry-run]\n\n");
+    fprintf(out, "Usage: nmo texture replace [--id <id> | --name <name> | <id>] --file <image> <nmo-file> -o <output> [--dry-run]\n\n");
     fprintf(out, "Replace texture bitmap data with image from disk.\n\n");
     fprintf(out, "Loads the image, decodes to RGBA, re-encodes as PNG into the\n");
     fprintf(out, "texture's reader slot, and updates dimensions.\n\n");
     fprintf(out, "Options:\n");
+    fprintf(out, "  --id <id>            Texture object ID (alternative to positional)\n");
+    fprintf(out, "  --name, -n <name>    Exact texture object name\n");
     fprintf(out, "  -f, --file <path>    Image file to load (required)\n");
     fprintf(out, "  -o, --output <path>  Output file (required unless --dry-run)\n");
     fprintf(out, "  --dry-run            Preview without saving\n");
@@ -690,19 +695,19 @@ static void data_list_usage(FILE *out) {
 }
 
 static void data_show_usage(FILE *out) {
-    fprintf(out, "Usage: nmo data show <id> <file>\n\n");
+    fprintf(out, "Usage: nmo data show [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Show data array metadata and column schema.\n");
 }
 
 static void data_dump_usage(FILE *out) {
-    fprintf(out, "Usage: nmo data dump [options] <id> <file>\n\n");
+    fprintf(out, "Usage: nmo data dump [options] [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Dump data array contents as a table.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  --row, -r <n>   Dump a single row by index (key-value format)\n");
 }
 
 static void data_set_cell_usage(FILE *out) {
-    fprintf(out, "Usage: nmo data set-cell <id> --row <r> --col <c> --value <val> <file> -o <output>\n\n");
+    fprintf(out, "Usage: nmo data set-cell [--id <id> | --name <name> | <id>] --row <r> --col <c> --value <val> <file> -o <output>\n\n");
     fprintf(out, "Modify a single cell in a CKDataArray.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  -r, --row <n>        Row index (0-based, required)\n");
@@ -725,16 +730,18 @@ static void scene_list_usage(FILE *out) {
 }
 
 static void scene_show_usage(FILE *out) {
-    fprintf(out, "Usage: nmo scene show <id> <file>\n\n");
+    fprintf(out, "Usage: nmo scene show [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Show scene or level details.\n\n");
     fprintf(out, "For CKScene: background, ambient, fog, camera, environment.\n");
     fprintf(out, "For CKLevel: scene list, current scene, level scene.\n");
 }
 
 static void scene_set_usage(FILE *out) {
-    fprintf(out, "Usage: nmo scene set <id> [options] <file> -o <output>\n\n");
+    fprintf(out, "Usage: nmo scene set [--id <id> | --name <name> | <id>] [options] <file> -o <output>\n\n");
     fprintf(out, "Set scene properties.\n\n");
     fprintf(out, "Options:\n");
+    fprintf(out, "  --id <id>             Scene object ID (alternative to positional)\n");
+    fprintf(out, "  --name, -n <name>     Exact scene object name\n");
     fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
     fprintf(out, "  --bg-color <color>     Background color (ARGB hex, e.g. 0xFF000000)\n");
     fprintf(out, "  --ambient <color>      Ambient light color (ARGB hex)\n");
@@ -752,14 +759,14 @@ static void entity_list_usage(FILE *out) {
 }
 
 static void entity_show_usage(FILE *out) {
-    fprintf(out, "Usage: nmo entity show <id> <file>\n\n");
+    fprintf(out, "Usage: nmo entity show [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Show 3D entity details including transform, mesh, and animations.\n");
     fprintf(out, "For CKCamera: also shows projection, FOV, near/far planes.\n");
     fprintf(out, "For CKLight: also shows light type, color, range, attenuation.\n");
 }
 
 static void entity_set_position_usage(FILE *out) {
-    fprintf(out, "Usage: nmo entity set-position <id> <x> <y> <z> <file> -o <output>\n\n");
+    fprintf(out, "Usage: nmo entity set-position [--id <id> | --name <name> | <id>] <x> <y> <z> <file> -o <output>\n\n");
     fprintf(out, "Set the world position (translation) of a 3D entity.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
@@ -767,7 +774,7 @@ static void entity_set_position_usage(FILE *out) {
 }
 
 static void entity_set_parent_usage(FILE *out) {
-    fprintf(out, "Usage: nmo entity set-parent <id> <parent-id> <file> -o <output>\n\n");
+    fprintf(out, "Usage: nmo entity set-parent [--id <id> | --name <name> | <id>] <parent-id> <file> -o <output>\n\n");
     fprintf(out, "Set the parent of a 3D entity. Use 0 to unparent.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
@@ -775,7 +782,7 @@ static void entity_set_parent_usage(FILE *out) {
 }
 
 static void entity_set_camera_usage(FILE *out) {
-    fprintf(out, "Usage: nmo entity set-camera <id> [options] <file> -o <output>\n\n");
+    fprintf(out, "Usage: nmo entity set-camera [--id <id> | --name <name> | <id>] [options] <file> -o <output>\n\n");
     fprintf(out, "Set camera properties on a CKCamera or CKTargetCamera.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
@@ -786,7 +793,7 @@ static void entity_set_camera_usage(FILE *out) {
 }
 
 static void entity_set_light_usage(FILE *out) {
-    fprintf(out, "Usage: nmo entity set-light <id> [options] <file> -o <output>\n\n");
+    fprintf(out, "Usage: nmo entity set-light [--id <id> | --name <name> | <id>] [options] <file> -o <output>\n\n");
     fprintf(out, "Set light properties on a CKLight or CKTargetLight.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
@@ -802,14 +809,16 @@ static void material_list_usage(FILE *out) {
 }
 
 static void material_show_usage(FILE *out) {
-    fprintf(out, "Usage: nmo material show <id> <file>\n\n");
+    fprintf(out, "Usage: nmo material show [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Show material details: colors, specular power, textures, blend modes.\n");
 }
 
 static void material_set_usage(FILE *out) {
-    fprintf(out, "Usage: nmo material set <id> [options] <file> -o <output>\n\n");
+    fprintf(out, "Usage: nmo material set [--id <id> | --name <name> | <id>] [options] <file> -o <output>\n\n");
     fprintf(out, "Set material properties.\n\n");
     fprintf(out, "Options:\n");
+    fprintf(out, "  --id <id>             Material object ID (alternative to positional)\n");
+    fprintf(out, "  --name, -n <name>     Exact material object name\n");
     fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
     fprintf(out, "  --diffuse <color>      Diffuse color (ARGB hex, e.g. 0xFFFF0000)\n");
     fprintf(out, "  --ambient <color>      Ambient color (ARGB hex)\n");
@@ -826,12 +835,12 @@ static void mesh_list_usage(FILE *out) {
 }
 
 static void mesh_show_usage(FILE *out) {
-    fprintf(out, "Usage: nmo mesh show <id> <file>\n\n");
+    fprintf(out, "Usage: nmo mesh show [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Show mesh details: geometry, bounds, material groups.\n");
 }
 
 static void mesh_export_usage(FILE *out) {
-    fprintf(out, "Usage: nmo mesh export --out-dir <dir> [--id <n> | --all] <file>\n\n");
+    fprintf(out, "Usage: nmo mesh export --out-dir <dir> [--all | --id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Export mesh as Wavefront OBJ + MTL files.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  --out-dir, -d <dir>  Output directory (required)\n");
@@ -840,7 +849,7 @@ static void mesh_export_usage(FILE *out) {
 }
 
 static void mesh_import_usage(FILE *out) {
-    fprintf(out, "Usage: nmo mesh import <obj-file> <nmo-file> -o <output> [--dry-run]\n\n");
+    fprintf(out, "Usage: nmo mesh import <obj-file> <nmo-file> -o <output> [--replace <id> | --replace-name <name>] [--dry-run]\n\n");
     fprintf(out, "Import a Wavefront OBJ file into an NMO mesh.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
@@ -856,18 +865,18 @@ static void animation_list_usage(FILE *out) {
 }
 
 static void animation_show_usage(FILE *out) {
-    fprintf(out, "Usage: nmo animation show <id> <file>\n\n");
+    fprintf(out, "Usage: nmo animation show [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Show animation details based on class type.\n");
 }
 
 static void animation_keys_usage(FILE *out) {
-    fprintf(out, "Usage: nmo animation keys <id> <file>\n\n");
+    fprintf(out, "Usage: nmo animation keys [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Show decoded key data for a CKObjectAnimation.\n");
     fprintf(out, "Decodes position, rotation, and other controller keys.\n");
 }
 
 static void animation_export_usage(FILE *out) {
-    fprintf(out, "Usage: nmo animation export [--all | <id>] --out-dir <dir> <file>\n\n");
+    fprintf(out, "Usage: nmo animation export [--all | --id <id> | --name <name> | <id>] --out-dir <dir> <file>\n\n");
     fprintf(out, "Export CKObjectAnimation data as JSON.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  --out-dir, -d <dir>  Output directory (required)\n");
@@ -876,7 +885,7 @@ static void animation_export_usage(FILE *out) {
 }
 
 static void animation_import_usage(FILE *out) {
-    fprintf(out, "Usage: nmo animation import <json-file> <nmo-file> -o <output> [--dry-run]\n\n");
+    fprintf(out, "Usage: nmo animation import <json-file> <nmo-file> -o <output> [--replace <id> | --replace-name <name>] [--dry-run]\n\n");
     fprintf(out, "Import animation data from JSON into an NMO file.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");

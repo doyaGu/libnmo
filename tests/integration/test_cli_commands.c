@@ -1593,6 +1593,189 @@ TEST(cli, texture_list_uses_slot_dimensions_when_reader_dimensions_missing) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, texture_show_accepts_exact_name_selector) {
+    char args[512];
+    snprintf(args, sizeof(args),
+             "texture show --name BallWood.bmp \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Balls.nmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_EQ(2030, yyjson_get_uint(yyjson_obj_get(data, "id")));
+    ASSERT_STR_EQ("BallWood.bmp", yyjson_get_str(yyjson_obj_get(data, "name")));
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, texture_show_name_selector_reports_missing_texture) {
+    char args[512];
+    snprintf(args, sizeof(args),
+             "texture show --name DefinitelyMissingTexture \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Balls.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Texture 'DefinitelyMissingTexture' not found");
+    free(result.output);
+}
+
+TEST(cli, specialized_read_commands_accept_exact_name_selectors) {
+    char args[512];
+
+    snprintf(args, sizeof(args),
+             "material show --name Interface_Life \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    yyjson_doc *material_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(material_doc);
+    yyjson_val *material_data = json_envelope_data(material_doc);
+    ASSERT_NOT_NULL(material_data);
+    ASSERT_EQ(8, yyjson_get_uint(yyjson_obj_get(material_data, "id")));
+    yyjson_doc_free(material_doc);
+
+    snprintf(args, sizeof(args),
+             "scene show --name \"Scene 1\" \"%s\"",
+             NMO_TEST_DATA_FILE("BBSamples/Narratives/Add To Scene-Remove From Scene.cmo"));
+    yyjson_doc *scene_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(scene_doc);
+    yyjson_val *scene_data = json_envelope_data(scene_doc);
+    ASSERT_NOT_NULL(scene_data);
+    ASSERT_EQ(32, yyjson_get_uint(yyjson_obj_get(scene_data, "id")));
+    yyjson_doc_free(scene_doc);
+
+    snprintf(args, sizeof(args),
+             "data show --name Physicalize_GameBall \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Balls.nmo"));
+    yyjson_doc *data_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(data_doc);
+    yyjson_val *data_data = json_envelope_data(data_doc);
+    ASSERT_NOT_NULL(data_data);
+    ASSERT_EQ(2261, yyjson_get_uint(yyjson_obj_get(data_data, "id")));
+    yyjson_doc_free(data_doc);
+
+    snprintf(args, sizeof(args),
+             "data dump --name Physicalize_GameBall --row 0 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Balls.nmo"));
+    cli_run_result_t data_dump = run_cli_capture(args);
+    ASSERT_NOT_NULL(data_dump.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, data_dump.exit_code);
+    ASSERT_STR_CONTAINS(data_dump.output, "Physicalize_GameBall");
+    free(data_dump.output);
+
+    snprintf(args, sizeof(args),
+             "mesh show --name P_Box_Mesh \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/P_Box.nmo"));
+    yyjson_doc *mesh_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(mesh_doc);
+    yyjson_val *mesh_data = json_envelope_data(mesh_doc);
+    ASSERT_NOT_NULL(mesh_data);
+    ASSERT_EQ(3, yyjson_get_uint(yyjson_obj_get(mesh_data, "id")));
+    yyjson_doc_free(mesh_doc);
+
+    snprintf(args, sizeof(args),
+             "animation show --name Kamera02 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+    yyjson_doc *anim_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(anim_doc);
+    yyjson_val *anim_data = json_envelope_data(anim_doc);
+    ASSERT_NOT_NULL(anim_data);
+    ASSERT_EQ(519, yyjson_get_uint(yyjson_obj_get(anim_data, "id")));
+    yyjson_doc_free(anim_doc);
+
+    snprintf(args, sizeof(args),
+             "animation keys --name Kamera02 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+    cli_run_result_t keys = run_cli_capture(args);
+    ASSERT_NOT_NULL(keys.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, keys.exit_code);
+    ASSERT_STR_CONTAINS(keys.output, "Kamera02");
+    free(keys.output);
+
+    snprintf(args, sizeof(args),
+             "entity show --name Cam_Pos \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    yyjson_doc *entity_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(entity_doc);
+    yyjson_val *entity_data = json_envelope_data(entity_doc);
+    ASSERT_NOT_NULL(entity_data);
+    ASSERT_EQ(2, yyjson_get_uint(yyjson_obj_get(entity_data, "id")));
+    yyjson_doc_free(entity_doc);
+}
+
+TEST(cli, object_read_commands_accept_exact_name_selectors) {
+    char args[512];
+
+    snprintf(args, sizeof(args),
+             "object show --name InGameCam \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    yyjson_doc *show_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(show_doc);
+    yyjson_val *show_data = json_envelope_data(show_doc);
+    ASSERT_NOT_NULL(show_data);
+    ASSERT_EQ(5, yyjson_get_uint(yyjson_obj_get(show_data, "id")));
+    yyjson_doc_free(show_doc);
+
+    snprintf(args, sizeof(args),
+             "object list-fields --name InGameCam \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    yyjson_doc *fields_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(fields_doc);
+    yyjson_val *fields_data = json_envelope_data(fields_doc);
+    ASSERT_NOT_NULL(fields_data);
+    ASSERT_EQ(5, yyjson_get_uint(yyjson_obj_get(fields_data, "id")));
+    yyjson_doc_free(fields_doc);
+
+    snprintf(args, sizeof(args),
+             "object refs --name InGameCam \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    cli_run_result_t refs = run_cli_capture(args);
+    ASSERT_NOT_NULL(refs.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, refs.exit_code);
+    ASSERT_STR_CONTAINS(refs.output, "References for object #5");
+    free(refs.output);
+
+    snprintf(args, sizeof(args),
+             "object impact --name InGameCam \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    cli_run_result_t impact = run_cli_capture(args);
+    ASSERT_NOT_NULL(impact.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, impact.exit_code);
+    ASSERT_STR_CONTAINS(impact.output, "Impact Analysis");
+    free(impact.output);
+}
+
+TEST(cli, name_selectors_report_family_specific_missing_errors) {
+    char args[512];
+
+    snprintf(args, sizeof(args),
+             "material show --name DefinitelyMissingMaterial \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    cli_run_result_t material = run_cli_capture(args);
+    ASSERT_NOT_NULL(material.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, material.exit_code);
+    ASSERT_STR_CONTAINS(material.output, "Material 'DefinitelyMissingMaterial' not found");
+    free(material.output);
+
+    snprintf(args, sizeof(args),
+             "scene show --name DefinitelyMissingScene \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    cli_run_result_t scene = run_cli_capture(args);
+    ASSERT_NOT_NULL(scene.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, scene.exit_code);
+    ASSERT_STR_CONTAINS(scene.output, "Scene 'DefinitelyMissingScene' not found");
+    free(scene.output);
+
+    snprintf(args, sizeof(args),
+             "object show --name DefinitelyMissingObject \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    cli_run_result_t object = run_cli_capture(args);
+    ASSERT_NOT_NULL(object.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, object.exit_code);
+    ASSERT_STR_CONTAINS(object.output, "Object 'DefinitelyMissingObject' not found");
+    free(object.output);
+}
+
 /* ============================================================================
  * chunk list --top
  * ============================================================================ */
@@ -2149,6 +2332,15 @@ TEST(cli, help_shows_groups) {
     free(output);
 }
 
+TEST(cli, resource_replace_help_distinguishes_payload_from_texture_bitmap) {
+    char *output = run_cli("resource replace --help");
+    ASSERT_NOT_NULL(output);
+    ASSERT_STR_CONTAINS(output, "included resource payload");
+    ASSERT_STR_CONTAINS(output, "does not update CKTexture bitmap data");
+    ASSERT_STR_CONTAINS(output, "texture replace");
+    free(output);
+}
+
 TEST(cli, unknown_command_error) {
     char *output = run_cli("nonexistent foobar");
     ASSERT_NOT_NULL(output);
@@ -2258,6 +2450,11 @@ TEST_MAIN_BEGIN()
     /* resource list --sort */
     REGISTER_TEST(cli, resource_list_sort_by_size);
     REGISTER_TEST(cli, texture_list_uses_slot_dimensions_when_reader_dimensions_missing);
+    REGISTER_TEST(cli, texture_show_accepts_exact_name_selector);
+    REGISTER_TEST(cli, texture_show_name_selector_reports_missing_texture);
+    REGISTER_TEST(cli, specialized_read_commands_accept_exact_name_selectors);
+    REGISTER_TEST(cli, object_read_commands_accept_exact_name_selectors);
+    REGISTER_TEST(cli, name_selectors_report_family_specific_missing_errors);
 
     /* chunk list --top */
     REGISTER_TEST(cli, chunk_list_top_limits_output);
@@ -2267,5 +2464,6 @@ TEST_MAIN_BEGIN()
 
     /* help/usage */
     REGISTER_TEST(cli, help_shows_groups);
+    REGISTER_TEST(cli, resource_replace_help_distinguishes_payload_from_texture_bitmap);
     REGISTER_TEST(cli, unknown_command_error);
 TEST_MAIN_END()

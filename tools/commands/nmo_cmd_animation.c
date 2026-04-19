@@ -245,37 +245,37 @@ int nmo_cmd_animation_list(int argc, char **argv, const nmo_cli_global_opts_t *g
 
 int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--id", "-i", NMO_OPT_STRING, "Object ID"},
+        {"--id",   "-i", NMO_OPT_UINT,   "Animation object ID"},
+        {"--name", "-n", NMO_OPT_STRING, "Animation object name"},
     };
-    nmo_opt_val_t vals[1];
+    enum { OPT_ID, OPT_NAME, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *id_str = vals[0].present ? vals[0].val.str : NULL;
-    if (!id_str && r.pos_count >= 2)
-        id_str = r.pos_args[0];
-
-    if (!id_str) {
-        fprintf(stderr, "Error: No object ID specified\n");
-        fprintf(stderr, "Usage: nmo animation show <id> <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    uint32_t obj_id;
-    if (!nmo_tool_parse_u32_dec(id_str, &obj_id)) {
-        fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_t *obj = nmo_core_find_by_id(&c, obj_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object %u not found\n", obj_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+    nmo_core_object_selector_t selector = {
+        .has_id = vals[OPT_ID].present,
+        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .positional_id = positional_id,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .required_base_class = NMO_CID_ANIMATION,
+        .selector_label = "Animation",
+        .type_label = "animation class",
+    };
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t obj_id = 0;
+    rc = nmo_core_resolve_one_object(&c, &selector, &obj, &obj_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo animation show [--id <id> | --name <name> | <id>] <file>\n");
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     nmo_class_id_t cid = nmo_object_get_class_id(obj);
@@ -633,41 +633,37 @@ static void add_keys_json(yyjson_mut_doc *doc, yyjson_mut_val *keys_arr,
 
 int nmo_cmd_animation_keys(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--id", "-i", NMO_OPT_STRING, "Object ID"},
+        {"--id",   "-i", NMO_OPT_UINT,   "Object animation ID"},
+        {"--name", "-n", NMO_OPT_STRING, "Object animation name"},
     };
-    nmo_opt_val_t vals[1];
+    enum { OPT_ID, OPT_NAME, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *id_str = vals[0].present ? vals[0].val.str : NULL;
-    if (!id_str && r.pos_count >= 2)
-        id_str = r.pos_args[0];
-
-    if (!id_str) {
-        fprintf(stderr, "Error: No object ID specified\n");
-        fprintf(stderr, "Usage: nmo animation keys <id> <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    uint32_t obj_id;
-    if (!nmo_tool_parse_u32_dec(id_str, &obj_id)) {
-        fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_t *obj = nmo_core_find_by_id(&c, obj_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object %u not found\n", obj_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
-    }
-    if (nmo_object_get_class_id(obj) != NMO_CID_OBJECTANIMATION) {
-        fprintf(stderr, "Error: Object %u is not a CKObjectAnimation (class 15 required)\n", obj_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    nmo_core_object_selector_t selector = {
+        .has_id = vals[OPT_ID].present,
+        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .positional_id = positional_id,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .required_base_class = NMO_CID_OBJECTANIMATION,
+        .selector_label = "Animation",
+        .type_label = "CKObjectAnimation",
+    };
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t obj_id = 0;
+    rc = nmo_core_resolve_one_object(&c, &selector, &obj, &obj_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo animation keys [--id <id> | --name <name> | <id>] <file>\n");
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     nmo_objectanimation_state_t *st =
@@ -894,31 +890,34 @@ static int anim_ensure_dir(const char *dir_path) {
 
 int nmo_cmd_animation_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--id",      "-i", NMO_OPT_STRING, "Object ID"},
+        {"--id",      "-i", NMO_OPT_UINT,   "Object animation ID"},
+        {"--name",    "-n", NMO_OPT_STRING, "Object animation name"},
         {"--out-dir", "-d", NMO_OPT_STRING, "Output directory (required)"},
         {"--all",     NULL, NMO_OPT_FLAG,   "Export all CKObjectAnimation objects"},
     };
-    nmo_opt_val_t vals[3];
+    enum { OPT_ID, OPT_NAME, OPT_OUT_DIR, OPT_ALL, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *id_str = vals[0].present ? vals[0].val.str : NULL;
-    const char *out_dir = vals[1].present ? vals[1].val.str : NULL;
-    bool export_all = vals[2].present && vals[2].val.flag;
+    const char *out_dir = vals[OPT_OUT_DIR].present ? vals[OPT_OUT_DIR].val.str : NULL;
+    bool export_all = vals[OPT_ALL].present && vals[OPT_ALL].val.flag;
 
     /* Positional: <id> <file> or just <file> with --all */
-    if (!id_str && !export_all && r.pos_count >= 2)
-        id_str = r.pos_args[0];
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = (!has_selector_opt && !export_all && r.pos_count >= 2)
+        ? r.pos_args[0]
+        : NULL;
 
     if (!out_dir) {
         fprintf(stderr, "Error: --out-dir is required\n");
-        fprintf(stderr, "Usage: nmo animation export [--all | <id>] --out-dir <dir> <file>\n");
+        fprintf(stderr, "Usage: nmo animation export [--all | --id <id> | --name <name> | <id>] --out-dir <dir> <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (!id_str && !export_all) {
-        fprintf(stderr, "Error: Specify --id <n> or --all\n");
-        fprintf(stderr, "Usage: nmo animation export [--all | <id>] --out-dir <dir> <file>\n");
+    if (!vals[OPT_ID].present && !vals[OPT_NAME].present && !positional_id && !export_all) {
+        fprintf(stderr, "Error: Specify --id <id>, --name <name>, <id>, or --all\n");
+        fprintf(stderr, "Usage: nmo animation export [--all | --id <id> | --name <name> | <id>] --out-dir <dir> <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -945,20 +944,21 @@ int nmo_cmd_animation_export(int argc, char **argv, const nmo_cli_global_opts_t 
         fprintf(c.out, "Exported %u animations to %s\n",
                 export_data.exported, out_dir);
     } else {
-        uint32_t obj_id;
-        if (!nmo_tool_parse_u32_dec(id_str, &obj_id)) {
-            fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-        }
-
-        nmo_object_t *obj = nmo_core_find_by_id(&c, obj_id);
-        if (!obj) {
-            fprintf(stderr, "Error: Object %u not found\n", obj_id);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
-        }
-        if (nmo_object_get_class_id(obj) != NMO_CID_OBJECTANIMATION) {
-            fprintf(stderr, "Error: Object %u is not a CKObjectAnimation\n", obj_id);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        nmo_core_object_selector_t selector = {
+            .has_id = vals[OPT_ID].present,
+            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .positional_id = positional_id,
+            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .required_base_class = NMO_CID_OBJECTANIMATION,
+            .selector_label = "Animation",
+            .type_label = "CKObjectAnimation",
+        };
+        nmo_object_t *obj = NULL;
+        nmo_object_id_t obj_id = 0;
+        rc = nmo_core_resolve_one_object(&c, &selector, &obj, &obj_id);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            fprintf(stderr, "Usage: nmo animation export [--all | --id <id> | --name <name> | <id>] --out-dir <dir> <file>\n");
+            return nmo_cmd_ctx_done(&c, rc);
         }
 
         nmo_objectanimation_state_t *st =
@@ -997,16 +997,19 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
     static const nmo_opt_def_t opts[] = {
         {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
         {"--replace", NULL, NMO_OPT_STRING, "Replace existing animation by ID"},
+        {"--replace-name", NULL, NMO_OPT_STRING, "Replace existing animation by exact name"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
     };
-    nmo_opt_val_t vals[3];
+    enum { OPT_OUTPUT, OPT_REPLACE, OPT_REPLACE_NAME, OPT_DRYRUN, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[0].present ? vals[0].val.str : NULL;
-    const char *replace_str = vals[1].present ? vals[1].val.str : NULL;
-    bool dry_run = vals[2].present && vals[2].val.flag;
+    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    const char *replace_str = vals[OPT_REPLACE].present ? vals[OPT_REPLACE].val.str : NULL;
+    const char *replace_name = vals[OPT_REPLACE_NAME].present ? vals[OPT_REPLACE_NAME].val.str : NULL;
+    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
 
     if (!dry_run && !output_path) {
         fprintf(stderr, "Error: --output/-o is required (or use --dry-run)\n");
@@ -1022,13 +1025,8 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
     const char *nmo_path = r.pos_args[1];
 
     /* Parse replace ID if given */
-    uint32_t replace_id = 0;
     bool do_replace = false;
-    if (replace_str) {
-        if (!nmo_tool_parse_u32_dec(replace_str, &replace_id)) {
-            fprintf(stderr, "Error: Invalid replace ID '%s'\n", replace_str);
-            return NMO_CLI_EXIT_ARG_ERROR;
-        }
+    if (replace_str || replace_name) {
         do_replace = true;
     }
 
@@ -1200,14 +1198,18 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
     nmo_object_t *target = NULL;
     nmo_object_id_t created_target_id = 0;
     if (do_replace) {
-        target = nmo_core_find_by_id(&c, replace_id);
-        if (!target) {
-            fprintf(stderr, "Error: Object %u not found for replace\n", replace_id);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
-        }
-        if (nmo_object_get_class_id(target) != NMO_CID_OBJECTANIMATION) {
-            fprintf(stderr, "Error: Object %u is not a CKObjectAnimation\n", replace_id);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        nmo_core_object_selector_t selector = {
+            .positional_id = replace_str,
+            .name = replace_name,
+            .required_base_class = NMO_CID_OBJECTANIMATION,
+            .selector_label = "Animation",
+            .type_label = "CKObjectAnimation",
+        };
+        nmo_object_id_t replace_id = 0;
+        int resolve_rc = nmo_core_resolve_one_object(&c, &selector, &target, &replace_id);
+        if (resolve_rc != NMO_CLI_EXIT_SUCCESS) {
+            fprintf(stderr, "Usage: nmo animation import <json-file> <nmo-file> -o <output> [--replace <id> | --replace-name <name>] [--dry-run]\n");
+            return nmo_cmd_ctx_done(&c, resolve_rc);
         }
     } else {
         nmo_object_id_t new_id = 0;

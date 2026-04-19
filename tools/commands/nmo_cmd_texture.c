@@ -407,45 +407,38 @@ int nmo_cmd_texture_list(int argc, char **argv, const nmo_cli_global_opts_t *glo
 int nmo_cmd_texture_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--id", NULL, NMO_OPT_UINT, "Texture object ID"},
+        {"--name", "-n", NMO_OPT_STRING, "Texture object name"},
     };
-    nmo_opt_val_t vals[1];
+    enum { OPT_ID, OPT_NAME, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
-
-    /* Get ID from --id or first positional arg */
-    uint32_t object_id = 0;
-    if (vals[0].present) {
-        object_id = vals[0].val.u;
-    } else if (r.pos_count >= 1) {
-        if (!nmo_tool_parse_u32(r.pos_args[0], &object_id)) {
-            fprintf(stderr, "Error: Invalid object ID '%s'\n", r.pos_args[0]);
-            return NMO_CLI_EXIT_ARG_ERROR;
-        }
-    }
-    if (object_id == 0) {
-        fprintf(stderr, "Error: No texture ID specified\n");
-        fprintf(stderr, "Usage: nmo texture show <id> <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_t *obj = nmo_core_find_by_id(&c, object_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object %u not found\n", object_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t object_id = 0;
+    nmo_core_object_selector_t selector = {
+        .has_id = vals[OPT_ID].present,
+        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .positional_id = (!vals[OPT_ID].present && !vals[OPT_NAME].present && r.pos_count >= 1)
+            ? r.pos_args[0]
+            : NULL,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .required_base_class = NMO_CID_TEXTURE,
+        .selector_label = "Texture",
+        .type_label = "CKTexture",
+    };
+    rc = nmo_core_resolve_one_object(&c, &selector, &obj, &object_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo texture show [--id <id> | --name <name> | <id>] <file>\n");
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-    if (!nmo_core_class_derives(&c, class_id, NMO_CID_TEXTURE)) {
-        fprintf(stderr, "Error: Object %u is not a CKTexture (class %u)\n",
-                object_id, class_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
-
     const char *name = nmo_object_get_name(obj);
     const nmo_texture_state_t *ts =
         (const nmo_texture_state_t *)nmo_object_get_state(obj);
@@ -1236,8 +1229,10 @@ int nmo_cmd_texture_replace(int argc, char **argv, const nmo_cli_global_opts_t *
         {"--file",    "-f", NMO_OPT_STRING, "Image file to load"},
         {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
         {"--dry-run", NULL,  NMO_OPT_FLAG,   "Preview without saving"},
+        {"--id",      NULL,  NMO_OPT_UINT,   "Texture object ID"},
+        {"--name",    "-n", NMO_OPT_STRING, "Texture object name"},
     };
-    enum { OPT_FILE, OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    enum { OPT_FILE, OPT_OUTPUT, OPT_DRYRUN, OPT_ID, OPT_NAME, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
@@ -1249,34 +1244,31 @@ int nmo_cmd_texture_replace(int argc, char **argv, const nmo_cli_global_opts_t *
     const char *output_path = vals[OPT_OUTPUT].present  ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run            = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
 
-    /* Positional: <id> <nmo-file> */
-    const char *id_str = NULL;
+    /* Positional: <id> <nmo-file>, or just <nmo-file> with --id/--name. */
+    const char *positional_id = NULL;
     const char *file_path = NULL;
-    if (r.pos_count >= 2) {
-        id_str = r.pos_args[0];
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    if (has_selector_opt) {
+        if (r.pos_count >= 1) {
+            file_path = r.pos_args[r.pos_count - 1];
+        }
+    } else if (r.pos_count >= 2) {
+        positional_id = r.pos_args[0];
         file_path = r.pos_args[r.pos_count - 1];
-    } else if (r.pos_count == 1) {
-        id_str = r.pos_args[0];
     }
 
-    if (!id_str) {
-        fprintf(stderr, "Error: No texture ID specified\n");
-        fprintf(stderr, "Usage: nmo texture replace <id> --file <image> <nmo-file> -o <output>\n");
+    if (!file_path) {
+        fprintf(stderr, "Error: Expected <nmo-file>\n");
+        fprintf(stderr, "Usage: nmo texture replace [--id <id> | --name <name> | <id>] --file <image> <nmo-file> -o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (!image_path) {
         fprintf(stderr, "Error: --file is required\n");
-        fprintf(stderr, "Usage: nmo texture replace <id> --file <image> <nmo-file> -o <output>\n");
+        fprintf(stderr, "Usage: nmo texture replace [--id <id> | --name <name> | <id>] --file <image> <nmo-file> -o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (!dry_run && !output_path) {
         fprintf(stderr, "Error: -o/--output is required (or use --dry-run)\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    uint32_t object_id;
-    if (!nmo_tool_parse_u32(id_str, &object_id)) {
-        fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -1333,18 +1325,21 @@ int nmo_cmd_texture_replace(int argc, char **argv, const nmo_cli_global_opts_t *
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
     }
 
-    /* Find texture object */
-    nmo_object_t *obj = nmo_core_find_by_id(&c, object_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object %u not found\n", object_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
-    }
-
-    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-    if (!nmo_core_class_derives(&c, class_id, NMO_CID_TEXTURE)) {
-        fprintf(stderr, "Error: Object %u is not a CKTexture (class %u)\n",
-                object_id, class_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t object_id = 0;
+    nmo_core_object_selector_t selector = {
+        .has_id = vals[OPT_ID].present,
+        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .positional_id = positional_id,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .required_base_class = NMO_CID_TEXTURE,
+        .selector_label = "Texture",
+        .type_label = "CKTexture",
+    };
+    rc = nmo_core_resolve_one_object(&c, &selector, &obj, &object_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo texture replace [--id <id> | --name <name> | <id>] --file <image> <nmo-file> -o <output>\n");
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     nmo_texture_state_t *ts =

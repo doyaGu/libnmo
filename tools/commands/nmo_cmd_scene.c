@@ -238,37 +238,42 @@ int nmo_cmd_scene_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
 
 int nmo_cmd_scene_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--id", "-i", NMO_OPT_STRING, "Object ID"},
+        {"--id",   "-i", NMO_OPT_UINT,   "Scene object ID"},
+        {"--name", "-n", NMO_OPT_STRING, "Scene object name"},
     };
-    nmo_opt_val_t vals[1];
+    enum { OPT_ID, OPT_NAME, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *id_str = vals[0].present ? vals[0].val.str : NULL;
-    if (!id_str && r.pos_count >= 2) {
-        id_str = r.pos_args[0];
-    }
-    if (!id_str) {
-        fprintf(stderr, "Error: No object ID specified\n");
-        fprintf(stderr, "Usage: nmo scene show <id> <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    uint32_t obj_id;
-    if (!nmo_tool_parse_u32_dec(id_str, &obj_id)) {
-        fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_t *obj = nmo_core_find_by_id(&c, obj_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object %u not found\n", obj_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+    static const nmo_class_id_t scene_classes[] = {
+        NMO_CID_SCENE,
+        NMO_CID_LEVEL,
+    };
+    nmo_core_object_selector_t selector = {
+        .has_id = vals[OPT_ID].present,
+        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .positional_id = positional_id,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .allowed_class_ids = scene_classes,
+        .allowed_class_count = sizeof(scene_classes) / sizeof(scene_classes[0]),
+        .selector_label = "Scene",
+        .type_label = "CKScene or CKLevel",
+    };
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t obj_id = 0;
+    rc = nmo_core_resolve_one_object(&c, &selector, &obj, &obj_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo scene show [--id <id> | --name <name> | <id>] <file>\n");
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     nmo_class_id_t class_id = nmo_object_get_class_id(obj);
@@ -496,7 +501,8 @@ int nmo_cmd_scene_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
  * ============================================================================ */
 
 typedef struct scene_set_args {
-    uint32_t object_id;
+    nmo_core_object_selector_t selector;
+    nmo_object_id_t object_id;
     nmo_field_set_entry_t entries[4];
     size_t entry_count;
 } scene_set_args_t;
@@ -513,15 +519,14 @@ static int scene_set_mutate(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_object_t *obj = nmo_core_find_by_id(c, args->object_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object #%u not found\n", args->object_id);
-        return NMO_CLI_EXIT_NOT_FOUND;
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t object_id = 0;
+    int rc = nmo_core_resolve_one_object(c, &args->selector, &obj, &object_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo scene set [--id <id> | --name <name> | <id>] [options] <file> -o <output>\n");
+        return rc;
     }
-    if (nmo_object_get_class_id(obj) != NMO_CID_SCENE) {
-        fprintf(stderr, "Error: Object #%u is not a CKScene\n", args->object_id);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    args->object_id = object_id;
 
     fprintf(c->out, "Scene #%u:\n", args->object_id);
 
@@ -559,9 +564,11 @@ int nmo_cmd_scene_set(int argc, char **argv, const nmo_cli_global_opts_t *global
         {"--fog-color", NULL, NMO_OPT_STRING, "Fog color (ARGB hex)"},
         {"--camera",    NULL, NMO_OPT_STRING, "Starting camera ID"},
         {"--dry-run",   NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        {"--id",        NULL, NMO_OPT_UINT,   "Scene object ID"},
+        {"--name",      "-n", NMO_OPT_STRING, "Scene object name"},
     };
     enum { OPT_OUTPUT, OPT_BG, OPT_AMBIENT, OPT_FOG, OPT_CAMERA,
-           OPT_DRYRUN, OPT_COUNT };
+           OPT_DRYRUN, OPT_ID, OPT_NAME, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
@@ -572,22 +579,33 @@ int nmo_cmd_scene_set(int argc, char **argv, const nmo_cli_global_opts_t *global
     const char *output = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
 
-    if (r.pos_count < 2) {
-        fprintf(stderr, "Usage: nmo scene set <id> [options] <file> -o <output>\n");
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = NULL;
+    const char *file_path = NULL;
+    if (has_selector_opt) {
+        if (r.pos_count >= 1) {
+            file_path = r.pos_args[r.pos_count - 1];
+        }
+    } else if (r.pos_count >= 2) {
+        positional_id = r.pos_args[0];
+        file_path = r.pos_args[r.pos_count - 1];
+    }
+    if (file_path == NULL) {
+        fprintf(stderr, "Usage: nmo scene set [--id <id> | --name <name> | <id>] [options] <file> -o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-
-    uint32_t object_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &object_id)) {
-        fprintf(stderr, "Error: Invalid object ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    const char *file_path = r.pos_args[r.pos_count - 1];
 
     /* Build field entries */
     scene_set_args_t args = {
-        .object_id = object_id,
+        .selector = {
+            .has_id = vals[OPT_ID].present,
+            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .positional_id = positional_id,
+            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .required_base_class = NMO_CID_SCENE,
+            .selector_label = "Scene",
+            .type_label = "CKScene",
+        },
         .entry_count = 0,
     };
 

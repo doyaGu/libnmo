@@ -232,41 +232,37 @@ int nmo_cmd_mesh_list(int argc, char **argv, const nmo_cli_global_opts_t *global
 
 int nmo_cmd_mesh_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--id", "-i", NMO_OPT_STRING, "Object ID"},
+        {"--id",   "-i", NMO_OPT_UINT,   "Mesh object ID"},
+        {"--name", "-n", NMO_OPT_STRING, "Mesh object name"},
     };
-    nmo_opt_val_t vals[1];
+    enum { OPT_ID, OPT_NAME, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *id_str = vals[0].present ? vals[0].val.str : NULL;
-    if (!id_str && r.pos_count >= 2) {
-        id_str = r.pos_args[0];
-    }
-    if (!id_str) {
-        fprintf(stderr, "Error: No mesh ID specified\n");
-        fprintf(stderr, "Usage: nmo mesh show <id> <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    uint32_t obj_id;
-    if (!nmo_tool_parse_u32_dec(id_str, &obj_id)) {
-        fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_t *obj = nmo_core_find_by_id(&c, obj_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object %u not found\n", obj_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
-    }
-    if (nmo_object_get_class_id(obj) != NMO_CID_MESH) {
-        fprintf(stderr, "Error: Object %u is not a CKMesh\n", obj_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    nmo_core_object_selector_t selector = {
+        .has_id = vals[OPT_ID].present,
+        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .positional_id = positional_id,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .required_base_class = NMO_CID_MESH,
+        .selector_label = "Mesh",
+        .type_label = "CKMesh",
+    };
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t obj_id = 0;
+    rc = nmo_core_resolve_one_object(&c, &selector, &obj, &obj_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo mesh show [--id <id> | --name <name> | <id>] <file>\n");
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     const char *name = nmo_object_get_name(obj);
@@ -667,33 +663,33 @@ int nmo_cmd_mesh_export(int argc, char **argv, const nmo_cli_global_opts_t *glob
     static const nmo_opt_def_t opts[] = {
         {"--out-dir", "-d", NMO_OPT_STRING, "Output directory (required)"},
         {"--id",      NULL,  NMO_OPT_UINT,   "Export single mesh by ID"},
+        {"--name",    "-n",  NMO_OPT_STRING, "Export single mesh by name"},
         {"--all",     "-a", NMO_OPT_FLAG,   "Export all meshes"},
     };
-    nmo_opt_val_t vals[3];
+    enum { OPT_OUT_DIR, OPT_ID, OPT_NAME, OPT_ALL, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *out_dir = vals[0].present ? vals[0].val.str : NULL;
-    uint32_t filter_id  = vals[1].present ? vals[1].val.u   : 0;
-    bool export_all     = vals[2].val.flag;
+    const char *out_dir = vals[OPT_OUT_DIR].present ? vals[OPT_OUT_DIR].val.str : NULL;
+    uint32_t filter_id  = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0;
+    bool export_all     = vals[OPT_ALL].val.flag;
 
     /* Also accept positional: <id> <file> */
-    if (!filter_id && !export_all && r.pos_count >= 2) {
-        uint32_t pid;
-        if (nmo_tool_parse_u32(r.pos_args[0], &pid)) {
-            filter_id = pid;
-        }
-    }
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = (!has_selector_opt && !export_all && r.pos_count >= 2)
+        ? r.pos_args[0]
+        : NULL;
 
     if (!out_dir || !*out_dir) {
         fprintf(stderr, "Error: Missing --out-dir\n");
-        fprintf(stderr, "Usage: nmo mesh export --out-dir <dir> [--id <n> | --all] <file>\n");
+        fprintf(stderr, "Usage: nmo mesh export --out-dir <dir> [--all | --id <id> | --name <name> | <id>] <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (!filter_id && !export_all) {
-        fprintf(stderr, "Error: Specify --id <n> or --all\n");
-        fprintf(stderr, "Usage: nmo mesh export --out-dir <dir> [--id <n> | --all] <file>\n");
+    if (!filter_id && !vals[OPT_NAME].present && !positional_id && !export_all) {
+        fprintf(stderr, "Error: Specify --id <id>, --name <name>, <id>, or --all\n");
+        fprintf(stderr, "Usage: nmo mesh export --out-dir <dir> [--all | --id <id> | --name <name> | <id>] <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -725,8 +721,24 @@ int nmo_cmd_mesh_export(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
     nmo_object_query_t query = {0};
     nmo_core_query_set_class_id(&query, NMO_CID_MESH, false);
-    if (filter_id) {
-        query.object_id = filter_id;
+    if (!export_all) {
+        nmo_core_object_selector_t selector = {
+            .has_id = vals[OPT_ID].present,
+            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .positional_id = positional_id,
+            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .required_base_class = NMO_CID_MESH,
+            .selector_label = "Mesh",
+            .type_label = "CKMesh",
+        };
+        nmo_object_t *selected = NULL;
+        nmo_object_id_t selected_id = 0;
+        rc = nmo_core_resolve_one_object(&c, &selector, &selected, &selected_id);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            fprintf(stderr, "Usage: nmo mesh export --out-dir <dir> [--all | --id <id> | --name <name> | <id>] <file>\n");
+            return nmo_cmd_ctx_done(&c, rc);
+        }
+        query.object_id = selected_id;
     }
 
     mesh_export_data_t export_data = {
@@ -932,18 +944,21 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
     static const nmo_opt_def_t opts[] = {
         {"--output",  "-o", NMO_OPT_STRING, "Output NMO file (required unless --dry-run)"},
         {"--replace", NULL,  NMO_OPT_STRING, "Replace existing mesh by ID"},
+        {"--replace-name", NULL, NMO_OPT_STRING, "Replace existing mesh by exact name"},
         {"--name",    "-n", NMO_OPT_STRING, "Mesh name (default: filename)"},
         {"--dry-run", NULL,  NMO_OPT_FLAG,   "Preview without saving"},
     };
-    nmo_opt_val_t vals[4];
+    enum { OPT_OUTPUT, OPT_REPLACE, OPT_REPLACE_NAME, OPT_NAME, OPT_DRYRUN, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 4, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path  = vals[0].present ? vals[0].val.str : NULL;
-    const char *replace_str  = vals[1].present ? vals[1].val.str : NULL;
-    const char *mesh_name    = vals[2].present ? vals[2].val.str : NULL;
-    bool dry_run = vals[3].present && vals[3].val.flag;
+    const char *output_path  = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    const char *replace_str  = vals[OPT_REPLACE].present ? vals[OPT_REPLACE].val.str : NULL;
+    const char *replace_name = vals[OPT_REPLACE_NAME].present ? vals[OPT_REPLACE_NAME].val.str : NULL;
+    const char *mesh_name    = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
+    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
 
     /* Positional: <obj-file> <nmo-file> */
     const char *obj_file_path = NULL;
@@ -1190,22 +1205,21 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
     /* Find or create mesh object */
     nmo_object_t *mesh_obj = NULL;
-    uint32_t replace_id = 0;
     nmo_object_id_t created_mesh_id = 0;
 
-    if (replace_str) {
-        if (!nmo_tool_parse_u32_dec(replace_str, &replace_id)) {
-            fprintf(stderr, "Error: Invalid --replace ID '%s'\n", replace_str);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-        }
-        mesh_obj = nmo_core_find_by_id(&c, replace_id);
-        if (!mesh_obj) {
-            fprintf(stderr, "Error: Mesh object %u not found\n", replace_id);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
-        }
-        if (nmo_object_get_class_id(mesh_obj) != NMO_CID_MESH) {
-            fprintf(stderr, "Error: Object %u is not a CKMesh\n", replace_id);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    if (replace_str || replace_name) {
+        nmo_core_object_selector_t selector = {
+            .positional_id = replace_str,
+            .name = replace_name,
+            .required_base_class = NMO_CID_MESH,
+            .selector_label = "Mesh",
+            .type_label = "CKMesh",
+        };
+        nmo_object_id_t selected_id = 0;
+        int resolve_rc = nmo_core_resolve_one_object(&c, &selector, &mesh_obj, &selected_id);
+        if (resolve_rc != NMO_CLI_EXIT_SUCCESS) {
+            fprintf(stderr, "Usage: nmo mesh import <obj-file> <nmo-file> -o <output> [--replace <id> | --replace-name <name>] [--dry-run]\n");
+            return nmo_cmd_ctx_done(&c, resolve_rc);
         }
     }
 

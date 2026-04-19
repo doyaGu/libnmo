@@ -16,14 +16,17 @@
 #include "session/nmo_session.h"
 #include "app/nmo_save.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_arena_array.h"
 #include "core/nmo_error.h"
 #include "format/nmo_stb_adapter.h"
+#include "object/nmo_class_ids.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <errno.h>
+#include <stdbool.h>
 
 #ifdef _WIN32
 #include <direct.h>
@@ -80,6 +83,72 @@ static char *join_path(const char *dir, const char *file) {
     memcpy(out + pos, file, file_len);
     out[pos + file_len] = '\0';
     return out;
+}
+
+static int ascii_lower(int ch) {
+    return (ch >= 'A' && ch <= 'Z') ? ch + ('a' - 'A') : ch;
+}
+
+static bool str_ends_with_ci(const char *text, const char *suffix) {
+    if (text == NULL || suffix == NULL) {
+        return false;
+    }
+    size_t text_len = strlen(text);
+    size_t suffix_len = strlen(suffix);
+    if (suffix_len > text_len) {
+        return false;
+    }
+    const char *tail = text + text_len - suffix_len;
+    for (size_t i = 0; i < suffix_len; ++i) {
+        if (ascii_lower((unsigned char)tail[i]) != ascii_lower((unsigned char)suffix[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool resource_name_is_image_like(const char *name) {
+    return str_ends_with_ci(name, ".bmp") ||
+           str_ends_with_ci(name, ".png") ||
+           str_ends_with_ci(name, ".jpg") ||
+           str_ends_with_ci(name, ".jpeg") ||
+           str_ends_with_ci(name, ".tga") ||
+           str_ends_with_ci(name, ".pcx") ||
+           str_ends_with_ci(name, ".dds");
+}
+
+static bool resource_has_texture_owner(const nmo_cmd_ctx_t *c, const nmo_included_file_t *res) {
+    if (c == NULL || res == NULL || nmo_arena_array_is_empty(&res->owner_ids)) {
+        return false;
+    }
+
+    const size_t owner_count = nmo_arena_array_size(&res->owner_ids);
+    for (size_t i = 0; i < owner_count; ++i) {
+        const nmo_object_id_t *owner_id =
+            (const nmo_object_id_t *)nmo_arena_array_get(&res->owner_ids, i);
+        if (owner_id == NULL || *owner_id == 0) {
+            continue;
+        }
+        nmo_object_t *owner = nmo_core_find_by_id(c, *owner_id);
+        if (owner != NULL &&
+            nmo_core_class_derives(c, nmo_object_get_class_id(owner), NMO_CID_TEXTURE)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool resource_name_matches_texture_object(const nmo_cmd_ctx_t *c, const char *name) {
+    if (c == NULL || name == NULL || *name == '\0') {
+        return false;
+    }
+
+    nmo_object_t *obj = NULL;
+    if (nmo_core_find_by_name(c, name, &obj) != NMO_CLI_EXIT_SUCCESS || obj == NULL) {
+        return false;
+    }
+
+    return nmo_core_class_derives(c, nmo_object_get_class_id(obj), NMO_CID_TEXTURE);
 }
 
 static bool file_exists(const char *path) {
@@ -866,6 +935,7 @@ typedef struct resource_replace_args {
     uint32_t res_index;
     char res_name[256];
     uint32_t old_size;
+    bool warn_texture_bitmap;
 } resource_replace_args_t;
 
 static int resource_replace_mutate(
@@ -916,6 +986,10 @@ static int resource_replace_mutate(
     args->res_index = res_index;
     args->old_size = res->size;
     snprintf(args->res_name, sizeof(args->res_name), "%s", res->name ? res->name : "");
+    args->warn_texture_bitmap =
+        resource_name_is_image_like(args->res_name) &&
+        (resource_has_texture_owner(c, res) ||
+         resource_name_matches_texture_object(c, args->res_name));
 
     int rep_rc = nmo_session_replace_included_file(
         c->session,
@@ -950,6 +1024,13 @@ static int resource_replace_report(
         nmo_cli_json_add_str_safe(doc, data, "name", args->res_name);
         yyjson_mut_obj_add_uint(doc, data, "old_size", args->old_size);
         yyjson_mut_obj_add_uint(doc, data, "new_size", args->file_size);
+        if (args->warn_texture_bitmap) {
+            yyjson_mut_obj_add_str(
+                doc,
+                data,
+                "warning",
+                "resource replace updated the included resource payload, not CKTexture bitmap data; use texture replace for texture objects");
+        }
         if (!dry_run && output_path) {
             yyjson_mut_obj_add_str(doc, data, "output", output_path);
         }
@@ -963,6 +1044,11 @@ static int resource_replace_report(
         char old_buf[32];
         snprintf(old_buf, sizeof(old_buf), "%u -> %u", args->old_size, args->file_size);
         nmo_cli_print_kv(c->out, "Size", old_buf, 12, c->colorize);
+        if (args->warn_texture_bitmap) {
+            fprintf(c->out,
+                    "\nWarning: resource replace updated the included resource payload, "
+                    "not CKTexture bitmap data. Use `texture replace` for texture objects.\n");
+        }
         if (dry_run) {
             fprintf(c->out, "\n(dry run, no changes saved)\n");
         } else {
@@ -1003,7 +1089,7 @@ int nmo_cmd_resource_replace(int argc, char **argv, const nmo_cli_global_opts_t 
 
     if (r.pos_count < 2) {
         fprintf(stderr, "Error: Expected <disk-file> <nmo-file>\n");
-        fprintf(stderr, "Usage: nmo resource replace -o <output> [--index <n> | --name <name>] <disk-file> <nmo-file>\n");
+        fprintf(stderr, "Usage: nmo resource replace -o <output> [--dry-run] [--index <n> | --name <name>] <disk-file> <nmo-file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 

@@ -1736,12 +1736,246 @@ static int iface_graph_io_report(
  * Interface edit: verb handlers (now public sub-action handlers)
  * ================================================================ */
 
+enum { IFACE_SELECTOR_ARGV_CAP = 64 };
+
+static bool iface_option_consumes_next_arg(const char *arg)
+{
+    if (arg == NULL || arg[0] != '-') {
+        return false;
+    }
+    if (strchr(arg, '=') != NULL) {
+        return false;
+    }
+    return strcmp(arg, "--output") == 0 ||
+           strcmp(arg, "-o") == 0 ||
+           strcmp(arg, "--body") == 0 ||
+           strcmp(arg, "--text") == 0 ||
+           strcmp(arg, "-t") == 0 ||
+           strcmp(arg, "--rect") == 0 ||
+           strcmp(arg, "-r") == 0 ||
+           strcmp(arg, "--style") == 0 ||
+           strcmp(arg, "-s") == 0 ||
+           strcmp(arg, "--param-index") == 0 ||
+           strcmp(arg, "--in-in") == 0 ||
+           strcmp(arg, "--in-out") == 0 ||
+           strcmp(arg, "--out-in") == 0 ||
+           strcmp(arg, "--out-out") == 0;
+}
+
+static int iface_strip_target_selector_args(
+    int argc,
+    char **argv,
+    int *out_argc,
+    char **out_argv,
+    size_t out_capacity,
+    nmo_core_object_selector_t *out_selector)
+{
+    if (argv == NULL || out_argc == NULL || out_argv == NULL ||
+        out_selector == NULL || (size_t)argc > out_capacity) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    *out_argc = 0;
+    *out_selector = (nmo_core_object_selector_t){
+        .required_base_class = NMO_CID_BEHAVIOR,
+        .selector_label = "Behavior",
+        .type_label = "CKBehavior",
+    };
+
+    for (int i = 0; i < argc; ++i) {
+        const char *arg = argv[i];
+        const char *id_value = NULL;
+        const char *name_value = NULL;
+
+        if (iface_option_consumes_next_arg(arg)) {
+            if (i + 1 >= argc) {
+                out_argv[(*out_argc)++] = argv[i];
+                continue;
+            }
+            if ((size_t)(*out_argc + 2) > out_capacity) {
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            out_argv[(*out_argc)++] = argv[i];
+            out_argv[(*out_argc)++] = argv[++i];
+            continue;
+        }
+
+        if (strcmp(arg, "--id") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Error: --id requires a value\n");
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            id_value = argv[++i];
+        } else if (strncmp(arg, "--id=", 5) == 0) {
+            id_value = arg + 5;
+        } else if (strcmp(arg, "--name") == 0 || strcmp(arg, "-n") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Error: --name requires a value\n");
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            name_value = argv[++i];
+        } else if (strncmp(arg, "--name=", 7) == 0) {
+            name_value = arg + 7;
+        } else {
+            out_argv[(*out_argc)++] = argv[i];
+            continue;
+        }
+
+        if (out_selector->has_id || out_selector->name != NULL) {
+            fprintf(stderr, "Error: Use only one behavior selector\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        if (id_value != NULL) {
+            uint32_t parsed_id = 0;
+            if (!nmo_tool_parse_u32(id_value, &parsed_id)) {
+                fprintf(stderr, "Error: Invalid Behavior ID '%s'\n", id_value);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            out_selector->has_id = true;
+            out_selector->id = parsed_id;
+        } else {
+            out_selector->name = name_value;
+        }
+    }
+
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int iface_prepare_target_selector(
+    const nmo_core_object_selector_t *option_selector,
+    const nmo_opt_result_t *parse_result,
+    int positional_tail_count,
+    const char *usage,
+    nmo_core_object_selector_t *out_selector,
+    int *out_value_offset,
+    const char **out_file_path)
+{
+    if (option_selector == NULL || parse_result == NULL || usage == NULL ||
+        out_selector == NULL || out_value_offset == NULL || out_file_path == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    bool has_selector_opt =
+        option_selector->has_id ||
+        (option_selector->name != NULL && option_selector->name[0] != '\0');
+    size_t required_pos_count =
+        (size_t)positional_tail_count + 1u + (has_selector_opt ? 0u : 1u);
+    if (parse_result->pos_count < required_pos_count) {
+        fprintf(stderr, "%s\n", usage);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    *out_selector = *option_selector;
+    *out_value_offset = 0;
+    if (!has_selector_opt) {
+        out_selector->positional_id = parse_result->pos_args[0];
+        *out_value_offset = 1;
+    }
+    *out_file_path = parse_result->pos_args[parse_result->pos_count - 1];
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+typedef struct iface_resolving_write_args {
+    const nmo_core_object_selector_t *selector;
+    uint32_t *target_id;
+    void *payload;
+    nmo_cli_write_mutate_fn mutate;
+    nmo_cli_write_report_fn report;
+    const char *usage;
+} iface_resolving_write_args_t;
+
+static int iface_resolve_then_mutate(
+    nmo_cmd_ctx_t *c,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    iface_resolving_write_args_t *args =
+        (iface_resolving_write_args_t *)user_data;
+    if (args == NULL || args->selector == NULL || args->target_id == NULL ||
+        args->mutate == NULL) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_object_t *target = NULL;
+    nmo_object_id_t target_id = 0;
+    int rc = nmo_core_resolve_one_object(c, args->selector, &target, &target_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        if (args->usage != NULL) {
+            fprintf(stderr, "%s\n", args->usage);
+        }
+        return rc;
+    }
+
+    (void)target;
+    *args->target_id = (uint32_t)target_id;
+    return args->mutate(c, dry_run, output_path, args->payload);
+}
+
+static int iface_resolved_report(
+    nmo_cmd_ctx_t *c,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    iface_resolving_write_args_t *args =
+        (iface_resolving_write_args_t *)user_data;
+    if (args == NULL || args->report == NULL) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    return args->report(c, dry_run, output_path, args->payload);
+}
+
+static int iface_run_resolved_write_command(
+    const char *file_path,
+    const char *output_path,
+    bool dry_run,
+    const nmo_cli_global_opts_t *global,
+    const nmo_cli_write_spec_t *spec,
+    const nmo_core_object_selector_t *selector,
+    uint32_t *target_id,
+    void *payload,
+    nmo_cli_write_mutate_fn mutate,
+    nmo_cli_write_report_fn report,
+    const char *usage)
+{
+    iface_resolving_write_args_t resolving_args = {
+        .selector = selector,
+        .target_id = target_id,
+        .payload = payload,
+        .mutate = mutate,
+        .report = report,
+        .usage = usage,
+    };
+    return nmo_cli_run_write_command(
+        file_path,
+        output_path,
+        dry_run,
+        global,
+        spec,
+        iface_resolve_then_mutate,
+        report != NULL ? iface_resolved_report : NULL,
+        &resolving_args);
+}
+
+#define IFACE_STRIP_TARGET_SELECTOR_ARGS()                                      \
+    char *parse_argv[IFACE_SELECTOR_ARGV_CAP];                                  \
+    int parse_argc = 0;                                                         \
+    nmo_core_object_selector_t option_selector = {0};                           \
+    int selector_rc = iface_strip_target_selector_args(                         \
+        argc, argv, &parse_argc, parse_argv, IFACE_SELECTOR_ARGV_CAP,           \
+        &option_selector);                                                      \
+    if (selector_rc != NMO_CLI_EXIT_SUCCESS) return selector_rc;                \
+    argc = parse_argc;                                                          \
+    argv = parse_argv
+
 int nmo_cmd_behavior_iface_set_pos(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--output", "-o", NMO_OPT_STRING, "Output file path"},
         {"--dry-run", NULL, NMO_OPT_FLAG, "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
@@ -1749,34 +1983,33 @@ int nmo_cmd_behavior_iface_set_pos(int argc, char **argv, const nmo_cli_global_o
 
     const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    if (r.pos_count < 5) {
-        fprintf(stderr, "Usage: nmo behavior interface set-pos <id> <beh_id> <h> <v> <file> -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
+    const char *usage = "Usage: nmo behavior interface set-pos [--id <id> | --name <name> | <id>] <beh_id> <h> <v> <file> -o <out>";
+
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 3, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
 
-    uint32_t target_id, beh_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-    if (!nmo_tool_parse_u32(r.pos_args[1], &beh_id)) {
-        fprintf(stderr, "Error: Invalid behavior ID '%s'\n", r.pos_args[1]);
+    uint32_t beh_id;
+    if (!nmo_tool_parse_u32(r.pos_args[value_offset], &beh_id)) {
+        fprintf(stderr, "Error: Invalid behavior ID '%s'\n", r.pos_args[value_offset]);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     float h = 0.0f;
-    if (!iface_parse_f32_arg(r.pos_args[2], &h)) {
+    if (!iface_parse_f32_arg(r.pos_args[value_offset + 1], &h)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     float v = 0.0f;
-    if (!iface_parse_f32_arg(r.pos_args[3], &v)) {
+    if (!iface_parse_f32_arg(r.pos_args[value_offset + 2], &v)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
-
     iface_set_pos_args_t args = {
-        .target_id = target_id,
         .beh_id = beh_id,
         .h = h,
         .v = v,
@@ -1785,15 +2018,18 @@ int nmo_cmd_behavior_iface_set_pos(int argc, char **argv, const nmo_cli_global_o
         .command_name = "behavior.interface.set-pos",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_set_pos_mutate,
         iface_set_pos_report,
-        &args);
+        usage);
 }
 
 static int iface_cmd_fold_impl(int argc, char **argv, const nmo_cli_global_opts_t *global, bool fold) {
@@ -1802,6 +2038,7 @@ static int iface_cmd_fold_impl(int argc, char **argv, const nmo_cli_global_opts_
         {"--dry-run", NULL, NMO_OPT_FLAG, "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
@@ -1809,26 +2046,26 @@ static int iface_cmd_fold_impl(int argc, char **argv, const nmo_cli_global_opts_
 
     const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    if (r.pos_count < 3) {
-        fprintf(stderr, "Usage: nmo behavior interface %s <id> <beh_id> <file> -o <out>\n",
-                fold ? "fold" : "unfold");
-        return NMO_CLI_EXIT_ARG_ERROR;
+    const char *usage = fold
+        ? "Usage: nmo behavior interface fold [--id <id> | --name <name> | <id>] <beh_id> <file> -o <out>"
+        : "Usage: nmo behavior interface unfold [--id <id> | --name <name> | <id>] <beh_id> <file> -o <out>";
+
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 1, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
 
-    uint32_t target_id, beh_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
+    uint32_t beh_id;
+    if (!nmo_tool_parse_u32(r.pos_args[value_offset], &beh_id)) {
+        fprintf(stderr, "Error: Invalid behavior ID '%s'\n", r.pos_args[value_offset]);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (!nmo_tool_parse_u32(r.pos_args[1], &beh_id)) {
-        fprintf(stderr, "Error: Invalid behavior ID '%s'\n", r.pos_args[1]);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    const char *file_path = r.pos_args[r.pos_count - 1];
 
     iface_fold_args_t args = {
-        .target_id = target_id,
         .beh_id = beh_id,
         .fold = fold,
     };
@@ -1836,15 +2073,18 @@ static int iface_cmd_fold_impl(int argc, char **argv, const nmo_cli_global_opts_
         .command_name = fold ? "behavior.interface.fold" : "behavior.interface.unfold",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_fold_mutate,
         iface_fold_report,
-        &args);
+        usage);
 }
 
 int nmo_cmd_behavior_iface_fold(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -1861,6 +2101,7 @@ int nmo_cmd_behavior_iface_set_color(int argc, char **argv, const nmo_cli_global
         {"--dry-run", NULL, NMO_OPT_FLAG, "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
@@ -1868,43 +2109,43 @@ int nmo_cmd_behavior_iface_set_color(int argc, char **argv, const nmo_cli_global
 
     const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    if (r.pos_count < 3) {
-        fprintf(stderr, "Usage: nmo behavior interface set-color <id> <color> <file> -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
+    const char *usage = "Usage: nmo behavior interface set-color [--id <id> | --name <name> | <id>] <color> <file> -o <out>";
+
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 1, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    const char *color_str = r.pos_args[1];
+    const char *color_str = r.pos_args[value_offset];
     uint32_t color_val = 0;
     if (nmo_parse_hex_color(color_str, &color_val) != NMO_OK || color_val > 0xFFFFFFu) {
         fprintf(stderr, "Error: Invalid color '%s' (expected RRGGBB or 0xRRGGBB)\n", color_str);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
-
     iface_set_color_args_t args = {
-        .target_id = target_id,
         .color = color_val,
     };
     const nmo_cli_write_spec_t spec = {
         .command_name = "behavior.interface.set-color",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_set_color_mutate,
         iface_set_color_report,
-        &args);
+        usage);
 }
 
 int nmo_cmd_behavior_iface_canonicalize(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -1913,6 +2154,7 @@ int nmo_cmd_behavior_iface_canonicalize(int argc, char **argv, const nmo_cli_glo
         {"--dry-run", NULL, NMO_OPT_FLAG, "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[4];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 4 };
@@ -1920,35 +2162,37 @@ int nmo_cmd_behavior_iface_canonicalize(int argc, char **argv, const nmo_cli_glo
 
     const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    if (r.pos_count < 2) {
-        fprintf(stderr, "Usage: nmo behavior interface canonicalize <id> <file> -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage = "Usage: nmo behavior interface canonicalize [--id <id> | --name <name> | <id>] <file> -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 0, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
-
-    const char *file_path = r.pos_args[r.pos_count - 1];
+    (void)value_offset;
 
     iface_canonicalize_args_t args = {
-        .target_id = target_id,
+        .target_id = 0,
     };
     const nmo_cli_write_spec_t spec = {
         .command_name = "behavior.interface.canonicalize",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_canonicalize_mutate,
         iface_canonicalize_report,
-        &args);
+        usage);
 }
 
 int nmo_cmd_behavior_iface_add_comment(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -1960,6 +2204,7 @@ int nmo_cmd_behavior_iface_add_comment(int argc, char **argv, const nmo_cli_glob
         {"--dry-run", NULL,    NMO_OPT_FLAG,   "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_BODY, OPT_TEXT, OPT_RECT, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
@@ -1975,21 +2220,21 @@ int nmo_cmd_behavior_iface_add_comment(int argc, char **argv, const nmo_cli_glob
         fprintf(stderr, "Error: --rect required (L,T,R,B)\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (r.pos_count < 2) {
-        fprintf(stderr, "Usage: nmo behavior interface add-comment <id> [--body <beh_id>] "
-                "--text \"...\" --rect L,T,R,B <file> -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage =
+        "Usage: nmo behavior interface add-comment [--id <id> | --name <name> | <id>] [--body <beh_id>] --text \"...\" --rect L,T,R,B <file> -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 0, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
+    (void)value_offset;
 
     iface_comment_args_t args = {
         .op = IFACE_COMMENT_ADD,
-        .target_id = target_id,
         .text = vals[OPT_TEXT].val.str,
     };
     if (vals[OPT_BODY].present) {
@@ -2009,20 +2254,22 @@ int nmo_cmd_behavior_iface_add_comment(int argc, char **argv, const nmo_cli_glob
     args.right = right;
     args.bottom = bottom;
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
     const nmo_cli_write_spec_t spec = {
         .command_name = "behavior.interface.add-comment",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_comment_mutate,
         iface_comment_report,
-        &args);
+        usage);
 }
 
 int nmo_cmd_behavior_iface_remove_comment(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -2032,6 +2279,7 @@ int nmo_cmd_behavior_iface_remove_comment(int argc, char **argv, const nmo_cli_g
         {"--dry-run", NULL,    NMO_OPT_FLAG,   "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_BODY, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
@@ -2039,28 +2287,26 @@ int nmo_cmd_behavior_iface_remove_comment(int argc, char **argv, const nmo_cli_g
 
     const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    if (r.pos_count < 3) {
-        fprintf(stderr, "Usage: nmo behavior interface remove-comment <id> <index> "
-                "[--body <beh_id>] <file> -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage =
+        "Usage: nmo behavior interface remove-comment [--id <id> | --name <name> | <id>] <index> [--body <beh_id>] <file> -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 1, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
 
     uint32_t index_val;
-    if (!nmo_tool_parse_u32(r.pos_args[1], &index_val)) {
-        fprintf(stderr, "Error: Invalid index '%s'\n", r.pos_args[1]);
+    if (!nmo_tool_parse_u32(r.pos_args[value_offset], &index_val)) {
+        fprintf(stderr, "Error: Invalid index '%s'\n", r.pos_args[value_offset]);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
     iface_comment_args_t args = {
         .op = IFACE_COMMENT_REMOVE,
-        .target_id = target_id,
         .index = index_val,
     };
     if (vals[OPT_BODY].present) {
@@ -2074,15 +2320,18 @@ int nmo_cmd_behavior_iface_remove_comment(int argc, char **argv, const nmo_cli_g
         .command_name = "behavior.interface.remove-comment",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_comment_mutate,
         iface_comment_report,
-        &args);
+        usage);
 }
 
 /* ================================================================
@@ -2097,6 +2346,7 @@ int nmo_cmd_behavior_iface_set_comment_text(int argc, char **argv, const nmo_cli
         {"--dry-run", NULL,  NMO_OPT_FLAG,   "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_BODY, OPT_TEXT, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
@@ -2108,27 +2358,25 @@ int nmo_cmd_behavior_iface_set_comment_text(int argc, char **argv, const nmo_cli
         fprintf(stderr, "Error: --text required\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (r.pos_count < 3) {
-        fprintf(stderr, "Usage: nmo behavior interface set-comment-text <id> <index> "
-                "[--body <beh_id>] --text \"...\" <file> -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage =
+        "Usage: nmo behavior interface set-comment-text [--id <id> | --name <name> | <id>] <index> [--body <beh_id>] --text \"...\" <file> -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 1, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
     uint32_t index_val;
-    if (!nmo_tool_parse_u32(r.pos_args[1], &index_val)) {
-        fprintf(stderr, "Error: Invalid index '%s'\n", r.pos_args[1]);
+    if (!nmo_tool_parse_u32(r.pos_args[value_offset], &index_val)) {
+        fprintf(stderr, "Error: Invalid index '%s'\n", r.pos_args[value_offset]);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
     iface_comment_args_t args = {
         .op = IFACE_COMMENT_SET_TEXT,
-        .target_id = target_id,
         .index = index_val,
         .text = vals[OPT_TEXT].val.str,
     };
@@ -2143,15 +2391,18 @@ int nmo_cmd_behavior_iface_set_comment_text(int argc, char **argv, const nmo_cli
         .command_name = "behavior.interface.set-comment-text",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_comment_mutate,
         iface_comment_report,
-        &args);
+        usage);
 }
 
 int nmo_cmd_behavior_iface_move_comment(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -2162,6 +2413,7 @@ int nmo_cmd_behavior_iface_move_comment(int argc, char **argv, const nmo_cli_glo
         {"--dry-run", NULL,  NMO_OPT_FLAG,   "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_BODY, OPT_RECT, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
@@ -2173,20 +2425,20 @@ int nmo_cmd_behavior_iface_move_comment(int argc, char **argv, const nmo_cli_glo
         fprintf(stderr, "Error: --rect required (L,T,R,B)\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (r.pos_count < 3) {
-        fprintf(stderr, "Usage: nmo behavior interface move-comment <id> <index> "
-                "[--body <beh_id>] --rect L,T,R,B <file> -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage =
+        "Usage: nmo behavior interface move-comment [--id <id> | --name <name> | <id>] <index> [--body <beh_id>] --rect L,T,R,B <file> -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 1, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
     uint32_t index_val;
-    if (!nmo_tool_parse_u32(r.pos_args[1], &index_val)) {
-        fprintf(stderr, "Error: Invalid index '%s'\n", r.pos_args[1]);
+    if (!nmo_tool_parse_u32(r.pos_args[value_offset], &index_val)) {
+        fprintf(stderr, "Error: Invalid index '%s'\n", r.pos_args[value_offset]);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -2195,10 +2447,8 @@ int nmo_cmd_behavior_iface_move_comment(int argc, char **argv, const nmo_cli_glo
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
     iface_comment_args_t args = {
         .op = IFACE_COMMENT_MOVE,
-        .target_id = target_id,
         .index = index_val,
         .left = left,
         .top = top,
@@ -2216,15 +2466,18 @@ int nmo_cmd_behavior_iface_move_comment(int argc, char **argv, const nmo_cli_glo
         .command_name = "behavior.interface.move-comment",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_comment_mutate,
         iface_comment_report,
-        &args);
+        usage);
 }
 
 int nmo_cmd_behavior_iface_set_comment_style(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -2235,6 +2488,7 @@ int nmo_cmd_behavior_iface_set_comment_style(int argc, char **argv, const nmo_cl
         {"--dry-run", NULL,    NMO_OPT_FLAG,   "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_BODY, OPT_STYLE, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
@@ -2246,20 +2500,20 @@ int nmo_cmd_behavior_iface_set_comment_style(int argc, char **argv, const nmo_cl
         fprintf(stderr, "Error: --style required\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (r.pos_count < 3) {
-        fprintf(stderr, "Usage: nmo behavior interface set-comment-style <id> <index> "
-                "[--body <beh_id>] --style <flags> <file> -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage =
+        "Usage: nmo behavior interface set-comment-style [--id <id> | --name <name> | <id>] <index> [--body <beh_id>] --style <flags> <file> -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 1, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
     uint32_t index_val;
-    if (!nmo_tool_parse_u32(r.pos_args[1], &index_val)) {
-        fprintf(stderr, "Error: Invalid index '%s'\n", r.pos_args[1]);
+    if (!nmo_tool_parse_u32(r.pos_args[value_offset], &index_val)) {
+        fprintf(stderr, "Error: Invalid index '%s'\n", r.pos_args[value_offset]);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     uint32_t style;
@@ -2268,10 +2522,8 @@ int nmo_cmd_behavior_iface_set_comment_style(int argc, char **argv, const nmo_cl
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
     iface_comment_args_t args = {
         .op = IFACE_COMMENT_SET_STYLE,
-        .target_id = target_id,
         .index = index_val,
         .style = style,
     };
@@ -2286,15 +2538,18 @@ int nmo_cmd_behavior_iface_set_comment_style(int argc, char **argv, const nmo_cl
         .command_name = "behavior.interface.set-comment-style",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_comment_mutate,
         iface_comment_report,
-        &args);
+        usage);
 }
 
 /* ================================================================
@@ -2307,6 +2562,7 @@ int nmo_cmd_behavior_iface_add_point(int argc, char **argv, const nmo_cli_global
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
@@ -2314,35 +2570,34 @@ int nmo_cmd_behavior_iface_add_point(int argc, char **argv, const nmo_cli_global
 
     const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    if (r.pos_count < 5) {
-        fprintf(stderr, "Usage: nmo behavior interface add-point <id> <link_id> <h> <v> <file> -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage =
+        "Usage: nmo behavior interface add-point [--id <id> | --name <name> | <id>] <link_id> <h> <v> <file> -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 3, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
     uint32_t link_id;
-    if (!nmo_tool_parse_u32(r.pos_args[1], &link_id)) {
-        fprintf(stderr, "Error: Invalid link ID '%s'\n", r.pos_args[1]);
+    if (!nmo_tool_parse_u32(r.pos_args[value_offset], &link_id)) {
+        fprintf(stderr, "Error: Invalid link ID '%s'\n", r.pos_args[value_offset]);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     float h = 0.0f;
-    if (!iface_parse_f32_arg(r.pos_args[2], &h)) {
+    if (!iface_parse_f32_arg(r.pos_args[value_offset + 1], &h)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     float v = 0.0f;
-    if (!iface_parse_f32_arg(r.pos_args[3], &v)) {
+    if (!iface_parse_f32_arg(r.pos_args[value_offset + 2], &v)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
     iface_link_args_t args = {
         .op = IFACE_LINK_ADD_POINT,
-        .target_id = target_id,
         .link_id = link_id,
         .h = h,
         .v = v,
@@ -2351,15 +2606,18 @@ int nmo_cmd_behavior_iface_add_point(int argc, char **argv, const nmo_cli_global
         .command_name = "behavior.interface.add-point",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_link_mutate,
         iface_link_report,
-        &args);
+        usage);
 }
 
 int nmo_cmd_behavior_iface_clear_points(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -2368,6 +2626,7 @@ int nmo_cmd_behavior_iface_clear_points(int argc, char **argv, const nmo_cli_glo
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
@@ -2375,41 +2634,43 @@ int nmo_cmd_behavior_iface_clear_points(int argc, char **argv, const nmo_cli_glo
 
     const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    if (r.pos_count < 3) {
-        fprintf(stderr, "Usage: nmo behavior interface clear-points <id> <link_id> <file> -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage =
+        "Usage: nmo behavior interface clear-points [--id <id> | --name <name> | <id>] <link_id> <file> -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 1, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
     uint32_t link_id;
-    if (!nmo_tool_parse_u32(r.pos_args[1], &link_id)) {
-        fprintf(stderr, "Error: Invalid link ID '%s'\n", r.pos_args[1]);
+    if (!nmo_tool_parse_u32(r.pos_args[value_offset], &link_id)) {
+        fprintf(stderr, "Error: Invalid link ID '%s'\n", r.pos_args[value_offset]);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
     iface_link_args_t args = {
         .op = IFACE_LINK_CLEAR_POINTS,
-        .target_id = target_id,
         .link_id = link_id,
     };
     const nmo_cli_write_spec_t spec = {
         .command_name = "behavior.interface.clear-points",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_link_mutate,
         iface_link_report,
-        &args);
+        usage);
 }
 
 int nmo_cmd_behavior_iface_remove_point(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -2418,6 +2679,7 @@ int nmo_cmd_behavior_iface_remove_point(int argc, char **argv, const nmo_cli_glo
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
@@ -2425,31 +2687,30 @@ int nmo_cmd_behavior_iface_remove_point(int argc, char **argv, const nmo_cli_glo
 
     const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    if (r.pos_count < 4) {
-        fprintf(stderr, "Usage: nmo behavior interface remove-point <id> <link_id> <point_index> <file> -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage =
+        "Usage: nmo behavior interface remove-point [--id <id> | --name <name> | <id>] <link_id> <point_index> <file> -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 2, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
     uint32_t link_id;
-    if (!nmo_tool_parse_u32(r.pos_args[1], &link_id)) {
-        fprintf(stderr, "Error: Invalid link ID '%s'\n", r.pos_args[1]);
+    if (!nmo_tool_parse_u32(r.pos_args[value_offset], &link_id)) {
+        fprintf(stderr, "Error: Invalid link ID '%s'\n", r.pos_args[value_offset]);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     uint32_t point_index;
-    if (!nmo_tool_parse_u32(r.pos_args[2], &point_index)) {
-        fprintf(stderr, "Error: Invalid point index '%s'\n", r.pos_args[2]);
+    if (!nmo_tool_parse_u32(r.pos_args[value_offset + 1], &point_index)) {
+        fprintf(stderr, "Error: Invalid point index '%s'\n", r.pos_args[value_offset + 1]);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
     iface_link_args_t args = {
         .op = IFACE_LINK_REMOVE_POINT,
-        .target_id = target_id,
         .link_id = link_id,
         .point_index = point_index,
     };
@@ -2457,15 +2718,18 @@ int nmo_cmd_behavior_iface_remove_point(int argc, char **argv, const nmo_cli_glo
         .command_name = "behavior.interface.remove-point",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_link_mutate,
         iface_link_report,
-        &args);
+        usage);
 }
 
 int nmo_cmd_behavior_iface_move_point(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -2474,6 +2738,7 @@ int nmo_cmd_behavior_iface_move_point(int argc, char **argv, const nmo_cli_globa
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
@@ -2481,40 +2746,39 @@ int nmo_cmd_behavior_iface_move_point(int argc, char **argv, const nmo_cli_globa
 
     const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    if (r.pos_count < 6) {
-        fprintf(stderr, "Usage: nmo behavior interface move-point <id> <link_id> <point_index> <h> <v> <file> -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage =
+        "Usage: nmo behavior interface move-point [--id <id> | --name <name> | <id>] <link_id> <point_index> <h> <v> <file> -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 4, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
     uint32_t link_id;
-    if (!nmo_tool_parse_u32(r.pos_args[1], &link_id)) {
-        fprintf(stderr, "Error: Invalid link ID '%s'\n", r.pos_args[1]);
+    if (!nmo_tool_parse_u32(r.pos_args[value_offset], &link_id)) {
+        fprintf(stderr, "Error: Invalid link ID '%s'\n", r.pos_args[value_offset]);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     uint32_t point_index;
-    if (!nmo_tool_parse_u32(r.pos_args[2], &point_index)) {
-        fprintf(stderr, "Error: Invalid point index '%s'\n", r.pos_args[2]);
+    if (!nmo_tool_parse_u32(r.pos_args[value_offset + 1], &point_index)) {
+        fprintf(stderr, "Error: Invalid point index '%s'\n", r.pos_args[value_offset + 1]);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     float h = 0.0f;
-    if (!iface_parse_f32_arg(r.pos_args[3], &h)) {
+    if (!iface_parse_f32_arg(r.pos_args[value_offset + 2], &h)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     float v = 0.0f;
-    if (!iface_parse_f32_arg(r.pos_args[4], &v)) {
+    if (!iface_parse_f32_arg(r.pos_args[value_offset + 3], &v)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
     iface_link_args_t args = {
         .op = IFACE_LINK_MOVE_POINT,
-        .target_id = target_id,
         .link_id = link_id,
         .point_index = point_index,
         .h = h,
@@ -2524,15 +2788,18 @@ int nmo_cmd_behavior_iface_move_point(int argc, char **argv, const nmo_cli_globa
         .command_name = "behavior.interface.move-point",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_link_mutate,
         iface_link_report,
-        &args);
+        usage);
 }
 
 int nmo_cmd_behavior_iface_set_link_highlight(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -2541,6 +2808,7 @@ int nmo_cmd_behavior_iface_set_link_highlight(int argc, char **argv, const nmo_c
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
@@ -2548,36 +2816,36 @@ int nmo_cmd_behavior_iface_set_link_highlight(int argc, char **argv, const nmo_c
 
     const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    if (r.pos_count < 4) {
-        fprintf(stderr, "Usage: nmo behavior interface set-link-highlight <id> <link_id> on|off <file> -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage =
+        "Usage: nmo behavior interface set-link-highlight [--id <id> | --name <name> | <id>] <link_id> on|off <file> -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 2, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
     uint32_t link_id;
-    if (!nmo_tool_parse_u32(r.pos_args[1], &link_id)) {
-        fprintf(stderr, "Error: Invalid link ID '%s'\n", r.pos_args[1]);
+    if (!nmo_tool_parse_u32(r.pos_args[value_offset], &link_id)) {
+        fprintf(stderr, "Error: Invalid link ID '%s'\n", r.pos_args[value_offset]);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     bool highlight;
-    if (strcmp(r.pos_args[2], "on") == 0) {
+    if (strcmp(r.pos_args[value_offset + 1], "on") == 0) {
         highlight = true;
-    } else if (strcmp(r.pos_args[2], "off") == 0) {
+    } else if (strcmp(r.pos_args[value_offset + 1], "off") == 0) {
         highlight = false;
     } else {
-        fprintf(stderr, "Error: Expected 'on' or 'off', got '%s'\n", r.pos_args[2]);
+        fprintf(stderr, "Error: Expected 'on' or 'off', got '%s'\n",
+                r.pos_args[value_offset + 1]);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
     iface_link_args_t args = {
         .op = IFACE_LINK_SET_HIGHLIGHT,
-        .target_id = target_id,
         .link_id = link_id,
         .highlight = highlight,
     };
@@ -2585,15 +2853,18 @@ int nmo_cmd_behavior_iface_set_link_highlight(int argc, char **argv, const nmo_c
         .command_name = "behavior.interface.set-link-highlight",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_link_mutate,
         iface_link_report,
-        &args);
+        usage);
 }
 
 /* ================================================================
@@ -2606,6 +2877,7 @@ int nmo_cmd_behavior_iface_move_op(int argc, char **argv, const nmo_cli_global_o
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
@@ -2613,34 +2885,33 @@ int nmo_cmd_behavior_iface_move_op(int argc, char **argv, const nmo_cli_global_o
 
     const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    if (r.pos_count < 5) {
-        fprintf(stderr, "Usage: nmo behavior interface move-op <id> <op_id> <h> <v> <file> -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage =
+        "Usage: nmo behavior interface move-op [--id <id> | --name <name> | <id>] <op_id> <h> <v> <file> -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 3, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
     uint32_t op_id;
-    if (!nmo_tool_parse_u32(r.pos_args[1], &op_id)) {
-        fprintf(stderr, "Error: Invalid operation ID '%s'\n", r.pos_args[1]);
+    if (!nmo_tool_parse_u32(r.pos_args[value_offset], &op_id)) {
+        fprintf(stderr, "Error: Invalid operation ID '%s'\n", r.pos_args[value_offset]);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     float h = 0.0f;
-    if (!iface_parse_f32_arg(r.pos_args[2], &h)) {
+    if (!iface_parse_f32_arg(r.pos_args[value_offset + 1], &h)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     float v = 0.0f;
-    if (!iface_parse_f32_arg(r.pos_args[3], &v)) {
+    if (!iface_parse_f32_arg(r.pos_args[value_offset + 2], &v)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
     iface_move_op_args_t args = {
-        .target_id = target_id,
         .op_id = op_id,
         .h = h,
         .v = v,
@@ -2649,15 +2920,18 @@ int nmo_cmd_behavior_iface_move_op(int argc, char **argv, const nmo_cli_global_o
         .command_name = "behavior.interface.move-op",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_move_op_mutate,
         iface_move_op_report,
-        &args);
+        usage);
 }
 
 /* ================================================================
@@ -2673,6 +2947,7 @@ int nmo_cmd_behavior_iface_move_param(int argc, char **argv, const nmo_cli_globa
         {"--dry-run",     NULL,  NMO_OPT_FLAG,   "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_BODY, OPT_PARAM_INDEX, OPT_SHARED, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
@@ -2684,34 +2959,32 @@ int nmo_cmd_behavior_iface_move_param(int argc, char **argv, const nmo_cli_globa
         fprintf(stderr, "Error: --param-index required\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (r.pos_count < 4) {
-        fprintf(stderr, "Usage: nmo behavior interface move-param <id> <h> <v> <file> "
-                "--param-index <N> [--shared] -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage =
+        "Usage: nmo behavior interface move-param [--id <id> | --name <name> | <id>] <h> <v> <file> --param-index <N> [--shared] -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 2, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
 
     int32_t h = 0;
-    if (!iface_parse_i32_arg(r.pos_args[1], &h)) {
+    if (!iface_parse_i32_arg(r.pos_args[value_offset], &h)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     int32_t v = 0;
-    if (!iface_parse_i32_arg(r.pos_args[2], &v)) {
+    if (!iface_parse_i32_arg(r.pos_args[value_offset + 1], &v)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     uint32_t param_index = vals[OPT_PARAM_INDEX].val.u;
     bool shared = vals[OPT_SHARED].present && vals[OPT_SHARED].val.flag;
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
     iface_param_args_t args = {
         .op = IFACE_PARAM_MOVE,
-        .target_id = target_id,
         .param_index = param_index,
         .shared = shared,
         .h = h,
@@ -2728,15 +3001,18 @@ int nmo_cmd_behavior_iface_move_param(int argc, char **argv, const nmo_cli_globa
         .command_name = "behavior.interface.move-param",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_param_mutate,
         iface_param_report,
-        &args);
+        usage);
 }
 
 int nmo_cmd_behavior_iface_set_param_style(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -2749,6 +3025,7 @@ int nmo_cmd_behavior_iface_set_param_style(int argc, char **argv, const nmo_cli_
         {"--dry-run",     NULL,  NMO_OPT_FLAG,   "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_BODY, OPT_PARAM_INDEX, OPT_SHARED, OPT_STYLE, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
@@ -2764,17 +3041,18 @@ int nmo_cmd_behavior_iface_set_param_style(int argc, char **argv, const nmo_cli_
         fprintf(stderr, "Error: --style required\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (r.pos_count < 2) {
-        fprintf(stderr, "Usage: nmo behavior interface set-param-style <id> <file> "
-                "--param-index <N> --style <val> [--shared] -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage =
+        "Usage: nmo behavior interface set-param-style [--id <id> | --name <name> | <id>] <file> --param-index <N> --style <val> [--shared] -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 0, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
+    (void)value_offset;
 
     uint32_t style;
     if (!nmo_tool_parse_u32(vals[OPT_STYLE].val.str, &style)) {
@@ -2785,10 +3063,8 @@ int nmo_cmd_behavior_iface_set_param_style(int argc, char **argv, const nmo_cli_
     uint32_t param_index = vals[OPT_PARAM_INDEX].val.u;
     bool shared = vals[OPT_SHARED].present && vals[OPT_SHARED].val.flag;
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
     iface_param_args_t args = {
         .op = IFACE_PARAM_SET_STYLE,
-        .target_id = target_id,
         .param_index = param_index,
         .shared = shared,
         .style = style,
@@ -2804,15 +3080,18 @@ int nmo_cmd_behavior_iface_set_param_style(int argc, char **argv, const nmo_cli_
         .command_name = "behavior.interface.set-param-style",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_param_mutate,
         iface_param_report,
-        &args);
+        usage);
 }
 
 /* ================================================================
@@ -2825,6 +3104,7 @@ int nmo_cmd_behavior_iface_resize(int argc, char **argv, const nmo_cli_global_op
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
@@ -2832,35 +3112,34 @@ int nmo_cmd_behavior_iface_resize(int argc, char **argv, const nmo_cli_global_op
 
     const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    if (r.pos_count < 5) {
-        fprintf(stderr, "Usage: nmo behavior interface resize <id> <beh_id> <w> <h> <file> -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage =
+        "Usage: nmo behavior interface resize [--id <id> | --name <name> | <id>] <beh_id> <w> <h> <file> -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 3, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
     uint32_t beh_id;
-    if (!nmo_tool_parse_u32(r.pos_args[1], &beh_id)) {
-        fprintf(stderr, "Error: Invalid behavior ID '%s'\n", r.pos_args[1]);
+    if (!nmo_tool_parse_u32(r.pos_args[value_offset], &beh_id)) {
+        fprintf(stderr, "Error: Invalid behavior ID '%s'\n", r.pos_args[value_offset]);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     float w = 0.0f;
-    if (!iface_parse_f32_arg(r.pos_args[2], &w)) {
+    if (!iface_parse_f32_arg(r.pos_args[value_offset + 1], &w)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     float h = 0.0f;
-    if (!iface_parse_f32_arg(r.pos_args[3], &h)) {
+    if (!iface_parse_f32_arg(r.pos_args[value_offset + 2], &h)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
     iface_sub_size_args_t args = {
         .op = IFACE_SUB_RESIZE,
-        .target_id = target_id,
         .beh_id = beh_id,
         .w = w,
         .h = h,
@@ -2869,15 +3148,18 @@ int nmo_cmd_behavior_iface_resize(int argc, char **argv, const nmo_cli_global_op
         .command_name = "behavior.interface.resize",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_sub_size_mutate,
         iface_sub_size_report,
-        &args);
+        usage);
 }
 
 int nmo_cmd_behavior_iface_set_expand(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -2886,6 +3168,7 @@ int nmo_cmd_behavior_iface_set_expand(int argc, char **argv, const nmo_cli_globa
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
@@ -2893,35 +3176,34 @@ int nmo_cmd_behavior_iface_set_expand(int argc, char **argv, const nmo_cli_globa
 
     const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    if (r.pos_count < 5) {
-        fprintf(stderr, "Usage: nmo behavior interface set-expand <id> <beh_id> <w> <h> <file> -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage =
+        "Usage: nmo behavior interface set-expand [--id <id> | --name <name> | <id>] <beh_id> <w> <h> <file> -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 3, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
     uint32_t beh_id;
-    if (!nmo_tool_parse_u32(r.pos_args[1], &beh_id)) {
-        fprintf(stderr, "Error: Invalid behavior ID '%s'\n", r.pos_args[1]);
+    if (!nmo_tool_parse_u32(r.pos_args[value_offset], &beh_id)) {
+        fprintf(stderr, "Error: Invalid behavior ID '%s'\n", r.pos_args[value_offset]);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     float w = 0.0f;
-    if (!iface_parse_f32_arg(r.pos_args[2], &w)) {
+    if (!iface_parse_f32_arg(r.pos_args[value_offset + 1], &w)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     float h = 0.0f;
-    if (!iface_parse_f32_arg(r.pos_args[3], &h)) {
+    if (!iface_parse_f32_arg(r.pos_args[value_offset + 2], &h)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
     iface_sub_size_args_t args = {
         .op = IFACE_SUB_SET_EXPAND,
-        .target_id = target_id,
         .beh_id = beh_id,
         .w = w,
         .h = h,
@@ -2930,15 +3212,18 @@ int nmo_cmd_behavior_iface_set_expand(int argc, char **argv, const nmo_cli_globa
         .command_name = "behavior.interface.set-expand",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_sub_size_mutate,
         iface_sub_size_report,
-        &args);
+        usage);
 }
 
 /* ================================================================
@@ -2951,6 +3236,7 @@ int nmo_cmd_behavior_iface_set_viewport(int argc, char **argv, const nmo_cli_glo
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
@@ -2958,34 +3244,33 @@ int nmo_cmd_behavior_iface_set_viewport(int argc, char **argv, const nmo_cli_glo
 
     const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    if (r.pos_count < 5) {
-        fprintf(stderr, "Usage: nmo behavior interface set-viewport <id> <h> <v> <height> <file> -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage =
+        "Usage: nmo behavior interface set-viewport [--id <id> | --name <name> | <id>] <h> <v> <height> <file> -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 3, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
 
     float h = 0.0f;
-    if (!iface_parse_f32_arg(r.pos_args[1], &h)) {
+    if (!iface_parse_f32_arg(r.pos_args[value_offset], &h)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     float v = 0.0f;
-    if (!iface_parse_f32_arg(r.pos_args[2], &v)) {
+    if (!iface_parse_f32_arg(r.pos_args[value_offset + 1], &v)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     float height = 0.0f;
-    if (!iface_parse_f32_arg(r.pos_args[3], &height)) {
+    if (!iface_parse_f32_arg(r.pos_args[value_offset + 2], &height)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
     iface_layout_args_t args = {
         .op = IFACE_LAYOUT_SET_VIEWPORT,
-        .target_id = target_id,
         .a = h,
         .b = v,
         .c = height,
@@ -2994,15 +3279,18 @@ int nmo_cmd_behavior_iface_set_viewport(int argc, char **argv, const nmo_cli_glo
         .command_name = "behavior.interface.set-viewport",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_layout_mutate,
         iface_layout_report,
-        &args);
+        usage);
 }
 
 /* ================================================================
@@ -3061,6 +3349,7 @@ int nmo_cmd_behavior_iface_set_graph_io(int argc, char **argv, const nmo_cli_glo
         {"--dry-run", NULL,  NMO_OPT_FLAG,   "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_BODY, OPT_IN_IN, OPT_IN_OUT, OPT_OUT_IN, OPT_OUT_OUT, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
@@ -3073,21 +3362,21 @@ int nmo_cmd_behavior_iface_set_graph_io(int argc, char **argv, const nmo_cli_glo
         fprintf(stderr, "Error: At least one of --in-in, --in-out, --out-in, --out-out required\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (r.pos_count < 2) {
-        fprintf(stderr, "Usage: nmo behavior interface set-graph-io <id> <file> "
-                "[--body <beh_id>] [--in-in ...] [--in-out ...] [--out-in ...] [--out-out ...] -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage =
+        "Usage: nmo behavior interface set-graph-io [--id <id> | --name <name> | <id>] <file> [--body <beh_id>] [--in-in ...] [--in-out ...] [--out-in ...] [--out-out ...] -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 0, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
+    (void)value_offset;
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
     iface_graph_io_args_t args = {
-        .target_id = target_id,
+        .target_id = 0,
     };
     if (vals[OPT_BODY].present) {
         if (!nmo_tool_parse_u32(vals[OPT_BODY].val.str, &args.body_id)) {
@@ -3134,15 +3423,18 @@ int nmo_cmd_behavior_iface_set_graph_io(int argc, char **argv, const nmo_cli_glo
         .command_name = "behavior.interface.set-graph-io",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_graph_io_mutate,
         iface_graph_io_report,
-        &args);
+        usage);
 }
 
 /* ================================================================
@@ -3177,6 +3469,7 @@ int nmo_cmd_behavior_iface_translate(int argc, char **argv, const nmo_cli_global
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
@@ -3184,30 +3477,29 @@ int nmo_cmd_behavior_iface_translate(int argc, char **argv, const nmo_cli_global
 
     const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    if (r.pos_count < 4) {
-        fprintf(stderr, "Usage: nmo behavior interface translate <id> <dx> <dy> <file> -o <out>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *usage =
+        "Usage: nmo behavior interface translate [--id <id> | --name <name> | <id>] <dx> <dy> <file> -o <out>";
 
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    nmo_core_object_selector_t target_selector = {0};
+    int value_offset = 0;
+    const char *file_path = NULL;
+    int target_rc = iface_prepare_target_selector(
+        &option_selector, &r, 2, usage, &target_selector, &value_offset, &file_path);
+    if (target_rc != NMO_CLI_EXIT_SUCCESS) {
+        return target_rc;
     }
 
     float dx = 0.0f;
-    if (!iface_parse_f32_arg(r.pos_args[1], &dx)) {
+    if (!iface_parse_f32_arg(r.pos_args[value_offset], &dx)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     float dy = 0.0f;
-    if (!iface_parse_f32_arg(r.pos_args[2], &dy)) {
+    if (!iface_parse_f32_arg(r.pos_args[value_offset + 1], &dy)) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *file_path = r.pos_args[r.pos_count - 1];
     iface_layout_args_t args = {
         .op = IFACE_LAYOUT_TRANSLATE,
-        .target_id = target_id,
         .a = dx,
         .b = dy,
     };
@@ -3215,15 +3507,18 @@ int nmo_cmd_behavior_iface_translate(int argc, char **argv, const nmo_cli_global
         .command_name = "behavior.interface.translate",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    return iface_run_resolved_write_command(
         file_path,
         output_path,
         dry_run,
         global,
         &spec,
+        &target_selector,
+        &args.target_id,
+        &args,
         iface_layout_mutate,
         iface_layout_report,
-        &args);
+        usage);
 }
 
 /* ================================================================
@@ -3234,8 +3529,10 @@ int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts
     static const nmo_opt_def_t opts[] = {
         {"--brief", "-b", NMO_OPT_FLAG, "Brief summary output"},
         {"--json",  "-j", NMO_OPT_FLAG, "JSON output"},
+        {"--id",    "-i", NMO_OPT_UINT, "Behavior object ID"},
+        {"--name",  "-n", NMO_OPT_STRING, "Behavior object name"},
     };
-    enum { OPT_BRIEF, OPT_JSON, OPT_COUNT };
+    enum { OPT_BRIEF, OPT_JSON, OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
@@ -3243,15 +3540,11 @@ int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts
 
     bool brief = vals[OPT_BRIEF].present && vals[OPT_BRIEF].val.flag;
 
-    if (r.pos_count < 2) {
-        fprintf(stderr, "Usage: nmo behavior interface [--brief] [--json] <id> <file>\n");
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = has_selector_opt ? NULL : (r.pos_count >= 2 ? r.pos_args[0] : NULL);
+    if ((has_selector_opt && r.pos_count < 1) || (!has_selector_opt && positional_id == NULL)) {
+        fprintf(stderr, "Usage: nmo behavior interface [--brief] [--json] [--id <id> | --name <name> | <id>] <file>\n");
         fprintf(stderr, "Output: use global -f json or command --json for machine-readable output.\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -3264,16 +3557,21 @@ int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    nmo_object_t *beh = nmo_object_repository_find_by_id(repo, target_id);
-    if (!beh) {
-        fprintf(stderr, "Error: Object %u not found\n", target_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
-
-    if (!is_behavior_class(c.registry, nmo_object_get_class_id(beh))) {
-        fprintf(stderr, "Error: Object %u is not a CKBehavior\n", target_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    nmo_core_object_selector_t selector = {
+        .has_id = vals[OPT_ID].present,
+        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .positional_id = positional_id,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .required_base_class = NMO_CID_BEHAVIOR,
+        .selector_label = "Behavior",
+        .type_label = "CKBehavior",
+    };
+    nmo_object_t *beh = NULL;
+    nmo_object_id_t target_id = 0;
+    rc = nmo_core_resolve_one_object(&c, &selector, &beh, &target_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo behavior interface [--brief] [--json] [--id <id> | --name <name> | <id>] <file>\n");
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     const nmo_behavior_state_t *bs = (const nmo_behavior_state_t *)nmo_object_get_state(beh);

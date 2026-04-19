@@ -261,45 +261,40 @@ int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
 int nmo_cmd_entity_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--id", "-i", NMO_OPT_STRING, "Object ID"},
+        {"--id",   "-i", NMO_OPT_UINT,   "Entity object ID"},
+        {"--name", "-n", NMO_OPT_STRING, "Entity object name"},
     };
-    nmo_opt_val_t vals[1];
+    enum { OPT_ID, OPT_NAME, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *id_str = vals[0].present ? vals[0].val.str : NULL;
-    if (!id_str && r.pos_count >= 2) {
-        id_str = r.pos_args[0];
-    }
-    if (!id_str) {
-        fprintf(stderr, "Error: No object ID specified\n");
-        fprintf(stderr, "Usage: nmo entity show <id> <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    uint32_t obj_id;
-    if (!nmo_tool_parse_u32_dec(id_str, &obj_id)) {
-        fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_t *obj = nmo_core_find_by_id(&c, obj_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object %u not found\n", obj_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+    nmo_core_object_selector_t selector = {
+        .has_id = vals[OPT_ID].present,
+        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .positional_id = positional_id,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .required_base_class = NMO_CID_3DENTITY,
+        .selector_label = "Entity",
+        .type_label = "CK3dEntity",
+    };
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t obj_id = 0;
+    rc = nmo_core_resolve_one_object(&c, &selector, &obj, &obj_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo entity show [--id <id> | --name <name> | <id>] <file>\n");
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-    if (!nmo_core_class_derives(&c, class_id, NMO_CID_3DENTITY)) {
-        fprintf(stderr, "Error: Object %u is not a CK3dEntity (class %u)\n",
-                obj_id, class_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
 
     const char *name = nmo_object_get_name(obj);
     const char *class_name = nmo_core_class_name(&c, class_id);
@@ -572,6 +567,7 @@ int nmo_cmd_entity_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
  * ============================================================================ */
 
 typedef struct entity_set_position_args {
+    nmo_core_object_selector_t selector;
     uint32_t object_id;
     float new_x;
     float new_y;
@@ -594,17 +590,14 @@ static int entity_set_position_mutate(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_object_t *obj = nmo_core_find_by_id(c, args->object_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object #%u not found\n", args->object_id);
-        return NMO_CLI_EXIT_NOT_FOUND;
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t object_id = 0;
+    int resolve_rc = nmo_core_resolve_one_object(c, &args->selector, &obj, &object_id);
+    if (resolve_rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo entity set-position [--id <id> | --name <name> | <id>] <x> <y> <z> <file> -o <output>\n");
+        return resolve_rc;
     }
-
-    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-    if (!nmo_core_class_derives(c, class_id, NMO_CID_3DENTITY)) {
-        fprintf(stderr, "Error: Object #%u is not a CK3dEntity\n", args->object_id);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    args->object_id = object_id;
 
     nmo_3dentity_state_t *estate =
         (nmo_3dentity_state_t *)nmo_object_get_state(obj);
@@ -691,8 +684,10 @@ int nmo_cmd_entity_set_position(int argc, char **argv,
     static const nmo_opt_def_t opts[] = {
         {"--output",  "-o", NMO_OPT_STRING, "Output file"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        {"--id",      NULL, NMO_OPT_UINT,   "Entity object ID"},
+        {"--name",    "-n", NMO_OPT_STRING, "Entity object name"},
     };
-    enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    enum { OPT_OUTPUT, OPT_DRYRUN, OPT_ID, OPT_NAME, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
@@ -703,31 +698,49 @@ int nmo_cmd_entity_set_position(int argc, char **argv,
     const char *output = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
 
-    /* Need: <id> <x> <y> <z> <file> */
-    if (r.pos_count < 5) {
-        fprintf(stderr, "Usage: nmo entity set-position <id> <x> <y> <z> <file> -o <output>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = NULL;
+    int value_offset = 0;
+    if (has_selector_opt) {
+        if (r.pos_count < 4) {
+            fprintf(stderr, "Usage: nmo entity set-position [--id <id> | --name <name> | <id>] <x> <y> <z> <file> -o <output>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    } else {
+        if (r.pos_count < 5) {
+            fprintf(stderr, "Usage: nmo entity set-position [--id <id> | --name <name> | <id>] <x> <y> <z> <file> -o <output>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        positional_id = r.pos_args[0];
+        value_offset = 1;
     }
 
-    uint32_t object_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &object_id)) {
-        fprintf(stderr, "Error: Invalid object ID '%s'\n", r.pos_args[0]);
+    if (!has_selector_opt && positional_id == NULL) {
+        fprintf(stderr, "Error: No entity selector specified\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     float new_x = 0.0f;
     float new_y = 0.0f;
     float new_z = 0.0f;
-    if (nmo_parse_f32(r.pos_args[1], &new_x) != NMO_OK ||
-        nmo_parse_f32(r.pos_args[2], &new_y) != NMO_OK ||
-        nmo_parse_f32(r.pos_args[3], &new_z) != NMO_OK) {
+    if (nmo_parse_f32(r.pos_args[value_offset], &new_x) != NMO_OK ||
+        nmo_parse_f32(r.pos_args[value_offset + 1], &new_y) != NMO_OK ||
+        nmo_parse_f32(r.pos_args[value_offset + 2], &new_z) != NMO_OK) {
         fprintf(stderr, "Error: Invalid position coordinates\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     const char *file_path = r.pos_args[r.pos_count - 1];
     entity_set_position_args_t args = {
-        .object_id = object_id,
+        .selector = {
+            .has_id = vals[OPT_ID].present,
+            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .positional_id = positional_id,
+            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .required_base_class = NMO_CID_3DENTITY,
+            .selector_label = "Entity",
+            .type_label = "CK3dEntity",
+        },
         .new_x = new_x,
         .new_y = new_y,
         .new_z = new_z,
@@ -752,6 +765,7 @@ int nmo_cmd_entity_set_position(int argc, char **argv,
  * ============================================================================ */
 
 typedef struct entity_set_parent_args {
+    nmo_core_object_selector_t selector;
     uint32_t object_id;
     uint32_t parent_id;
     const char *parent_id_str;
@@ -769,15 +783,14 @@ static int entity_set_parent_mutate(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_object_t *obj = nmo_core_find_by_id(c, args->object_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object #%u not found\n", args->object_id);
-        return NMO_CLI_EXIT_NOT_FOUND;
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t object_id = 0;
+    int resolve_rc = nmo_core_resolve_one_object(c, &args->selector, &obj, &object_id);
+    if (resolve_rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo entity set-parent [--id <id> | --name <name> | <id>] <parent-id> <file> -o <output>\n");
+        return resolve_rc;
     }
-    if (!nmo_core_class_derives(c, nmo_object_get_class_id(obj), NMO_CID_3DENTITY)) {
-        fprintf(stderr, "Error: Object #%u is not a CK3dEntity\n", args->object_id);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    args->object_id = object_id;
 
     if (args->parent_id != 0) {
         if (args->parent_id == args->object_id) {
@@ -820,8 +833,10 @@ int nmo_cmd_entity_set_parent(int argc, char **argv,
     static const nmo_opt_def_t opts[] = {
         {"--output",  "-o", NMO_OPT_STRING, "Output file"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        {"--id",      NULL, NMO_OPT_UINT,   "Entity object ID"},
+        {"--name",    "-n", NMO_OPT_STRING, "Entity object name"},
     };
-    enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
+    enum { OPT_OUTPUT, OPT_DRYRUN, OPT_ID, OPT_NAME, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
@@ -832,19 +847,24 @@ int nmo_cmd_entity_set_parent(int argc, char **argv,
     const char *output = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
 
-    /* Need: <id> <parent-id> <file> */
-    if (r.pos_count < 3) {
-        fprintf(stderr, "Usage: nmo entity set-parent <id> <parent-id> <file> -o <output>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = NULL;
+    int parent_index = 0;
+    if (has_selector_opt) {
+        if (r.pos_count < 2) {
+            fprintf(stderr, "Usage: nmo entity set-parent [--id <id> | --name <name> | <id>] <parent-id> <file> -o <output>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    } else {
+        if (r.pos_count < 3) {
+            fprintf(stderr, "Usage: nmo entity set-parent [--id <id> | --name <name> | <id>] <parent-id> <file> -o <output>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        positional_id = r.pos_args[0];
+        parent_index = 1;
     }
 
-    uint32_t object_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &object_id)) {
-        fprintf(stderr, "Error: Invalid object ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    const char *parent_id_str = r.pos_args[1];
+    const char *parent_id_str = r.pos_args[parent_index];
     uint32_t parent_id;
     if (!nmo_tool_parse_u32(parent_id_str, &parent_id)) {
         fprintf(stderr, "Error: Invalid parent ID '%s'\n", parent_id_str);
@@ -854,7 +874,15 @@ int nmo_cmd_entity_set_parent(int argc, char **argv,
     const char *file_path = r.pos_args[r.pos_count - 1];
 
     entity_set_parent_args_t args = {
-        .object_id = object_id,
+        .selector = {
+            .has_id = vals[OPT_ID].present,
+            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .positional_id = positional_id,
+            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .required_base_class = NMO_CID_3DENTITY,
+            .selector_label = "Entity",
+            .type_label = "CK3dEntity",
+        },
         .parent_id = parent_id,
         .parent_id_str = parent_id_str,
     };
@@ -883,6 +911,7 @@ typedef enum entity_field_target {
 } entity_field_target_t;
 
 typedef struct entity_set_fields_args {
+    nmo_core_object_selector_t selector;
     uint32_t object_id;
     entity_field_target_t target;
     nmo_field_set_entry_t entries[3];
@@ -901,11 +930,18 @@ static int entity_set_fields_mutate(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_object_t *obj = nmo_core_find_by_id(c, args->object_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object #%u not found\n", args->object_id);
-        return NMO_CLI_EXIT_NOT_FOUND;
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t object_id = 0;
+    int resolve_rc = nmo_core_resolve_one_object(c, &args->selector, &obj, &object_id);
+    if (resolve_rc != NMO_CLI_EXIT_SUCCESS) {
+        if (args->target == ENTITY_FIELD_TARGET_CAMERA) {
+            fprintf(stderr, "Usage: nmo entity set-camera [--id <id> | --name <name> | <id>] [--fov <f>] [--near <f>] [--far <f>] <file> -o <output>\n");
+        } else {
+            fprintf(stderr, "Usage: nmo entity set-light [--id <id> | --name <name> | <id>] [--diffuse <color>] [--range <f>] <file> -o <output>\n");
+        }
+        return resolve_rc;
     }
+    args->object_id = object_id;
 
     nmo_class_id_t class_id = nmo_object_get_class_id(obj);
     void *state = nmo_object_get_state(obj);
@@ -1024,8 +1060,11 @@ int nmo_cmd_entity_set_camera(int argc, char **argv,
         {"--near",    NULL, NMO_OPT_STRING, "Near clipping plane"},
         {"--far",     NULL, NMO_OPT_STRING, "Far clipping plane"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        {"--id",      NULL, NMO_OPT_UINT,   "Camera object ID"},
+        {"--name",    "-n", NMO_OPT_STRING, "Camera object name"},
     };
-    enum { OPT_OUTPUT, OPT_FOV, OPT_NEAR, OPT_FAR, OPT_DRYRUN, OPT_COUNT };
+    enum { OPT_OUTPUT, OPT_FOV, OPT_NEAR, OPT_FAR, OPT_DRYRUN,
+           OPT_ID, OPT_NAME, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
@@ -1036,21 +1075,33 @@ int nmo_cmd_entity_set_camera(int argc, char **argv,
     const char *output = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
 
-    if (r.pos_count < 2) {
-        fprintf(stderr, "Usage: nmo entity set-camera <id> [--fov <f>] [--near <f>] [--far <f>] <file> -o <output>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    uint32_t object_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &object_id)) {
-        fprintf(stderr, "Error: Invalid object ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = NULL;
+    if (has_selector_opt) {
+        if (r.pos_count < 1) {
+            fprintf(stderr, "Usage: nmo entity set-camera [--id <id> | --name <name> | <id>] [--fov <f>] [--near <f>] [--far <f>] <file> -o <output>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    } else {
+        if (r.pos_count < 2) {
+            fprintf(stderr, "Usage: nmo entity set-camera [--id <id> | --name <name> | <id>] [--fov <f>] [--near <f>] [--far <f>] <file> -o <output>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        positional_id = r.pos_args[0];
     }
 
     const char *file_path = r.pos_args[r.pos_count - 1];
 
     entity_set_fields_args_t args = {
-        .object_id = object_id,
+        .selector = {
+            .has_id = vals[OPT_ID].present,
+            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .positional_id = positional_id,
+            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .required_base_class = NMO_CID_CAMERA,
+            .selector_label = "Camera",
+            .type_label = "CKCamera",
+        },
         .target = ENTITY_FIELD_TARGET_CAMERA,
         .entry_count = 0,
     };
@@ -1097,8 +1148,11 @@ int nmo_cmd_entity_set_light(int argc, char **argv,
         {"--diffuse", NULL, NMO_OPT_STRING, "Diffuse color"},
         {"--range",   NULL, NMO_OPT_STRING, "Light range"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        {"--id",      NULL, NMO_OPT_UINT,   "Light object ID"},
+        {"--name",    "-n", NMO_OPT_STRING, "Light object name"},
     };
-    enum { OPT_OUTPUT, OPT_DIFFUSE, OPT_RANGE, OPT_DRYRUN, OPT_COUNT };
+    enum { OPT_OUTPUT, OPT_DIFFUSE, OPT_RANGE, OPT_DRYRUN,
+           OPT_ID, OPT_NAME, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
@@ -1109,21 +1163,33 @@ int nmo_cmd_entity_set_light(int argc, char **argv,
     const char *output = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
 
-    if (r.pos_count < 2) {
-        fprintf(stderr, "Usage: nmo entity set-light <id> [--diffuse <color>] [--range <f>] <file> -o <output>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    uint32_t object_id;
-    if (!nmo_tool_parse_u32(r.pos_args[0], &object_id)) {
-        fprintf(stderr, "Error: Invalid object ID '%s'\n", r.pos_args[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = NULL;
+    if (has_selector_opt) {
+        if (r.pos_count < 1) {
+            fprintf(stderr, "Usage: nmo entity set-light [--id <id> | --name <name> | <id>] [--diffuse <color>] [--range <f>] <file> -o <output>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    } else {
+        if (r.pos_count < 2) {
+            fprintf(stderr, "Usage: nmo entity set-light [--id <id> | --name <name> | <id>] [--diffuse <color>] [--range <f>] <file> -o <output>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        positional_id = r.pos_args[0];
     }
 
     const char *file_path = r.pos_args[r.pos_count - 1];
 
     entity_set_fields_args_t args = {
-        .object_id = object_id,
+        .selector = {
+            .has_id = vals[OPT_ID].present,
+            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .positional_id = positional_id,
+            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .required_base_class = NMO_CID_LIGHT,
+            .selector_label = "Light",
+            .type_label = "CKLight",
+        },
         .target = ENTITY_FIELD_TARGET_LIGHT,
         .entry_count = 0,
     };

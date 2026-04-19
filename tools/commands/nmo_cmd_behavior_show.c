@@ -368,8 +368,10 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     static const nmo_opt_def_t opts[] = {
         {"--raw",  NULL, NMO_OPT_FLAG, "Show raw reflection (like object show)"},
         {"--json", "-j", NMO_OPT_FLAG, "JSON output"},
+        {"--id",   "-i", NMO_OPT_UINT, "Behavior object ID"},
+        {"--name", "-n", NMO_OPT_STRING, "Behavior object name"},
     };
-    enum { OPT_RAW, OPT_JSON, OPT_COUNT };
+    enum { OPT_RAW, OPT_JSON, OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
@@ -380,14 +382,10 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
         return nmo_cmd_object_show(argc, argv, global);
     }
 
-    const char *id_str = r.pos_count > 0 ? r.pos_args[0] : NULL;
-    if (!id_str) {
-        fprintf(stderr, "Usage: nmo behavior show <id> <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-    uint32_t target_id;
-    if (!nmo_tool_parse_u32(id_str, &target_id)) {
-        fprintf(stderr, "Error: Invalid ID '%s'\n", id_str);
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
+    if (!has_selector_opt && positional_id == NULL) {
+        fprintf(stderr, "Usage: nmo behavior show [--id <id> | --name <name> | <id>] <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -401,15 +399,21 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     }
 
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    nmo_object_t *beh = nmo_object_repository_find_by_id(repo, target_id);
-    if (!beh) {
-        fprintf(stderr, "Error: Object %u not found\n", target_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-    }
-
-    if (!is_behavior_class(c.registry, nmo_object_get_class_id(beh))) {
-        fprintf(stderr, "Error: Object %u is not a CKBehavior\n", target_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    nmo_core_object_selector_t selector = {
+        .has_id = vals[OPT_ID].present,
+        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .positional_id = positional_id,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .required_base_class = NMO_CID_BEHAVIOR,
+        .selector_label = "Behavior",
+        .type_label = "CKBehavior",
+    };
+    nmo_object_t *beh = NULL;
+    nmo_object_id_t target_id = 0;
+    rc = nmo_core_resolve_one_object(&c, &selector, &beh, &target_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo behavior show [--id <id> | --name <name> | <id>] <file>\n");
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     const nmo_behavior_state_t *bs = (const nmo_behavior_state_t *)nmo_object_get_state(beh);

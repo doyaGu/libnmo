@@ -774,8 +774,10 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
     static const nmo_opt_def_t opts[] = {
         {"--depth", "-d", NMO_OPT_UINT, "Recursion depth (default: unlimited)"},
         {"--full",  NULL, NMO_OPT_FLAG, "Full detail mode"},
+        {"--id",    "-i", NMO_OPT_UINT, "Object ID"},
+        {"--name",  "-n", NMO_OPT_STRING, "Object name"},
     };
-    enum { OPT_DEPTH, OPT_FULL, OPT_COUNT };
+    enum { OPT_DEPTH, OPT_FULL, OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
@@ -788,16 +790,11 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
     int depth = vals[OPT_DEPTH].present ? (int)vals[OPT_DEPTH].val.u : -1;
     bool full_mode = vals[OPT_FULL].present && vals[OPT_FULL].val.flag;
 
-    const char *id_str = r.pos_count > 0 ? r.pos_args[0] : NULL;
-    if (!id_str) {
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = (!has_selector_opt && r.pos_count > 0) ? r.pos_args[0] : NULL;
+    if (!has_selector_opt && positional_id == NULL) {
         fprintf(stderr, "Error: Missing arguments\n");
-        fprintf(stderr, "Usage: nmo object show [--select <path>]... [--expr <expr>]... <id> <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    uint32_t object_id;
-    if (!nmo_tool_parse_u32(id_str, &object_id)) {
-        fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
+        fprintf(stderr, "Usage: nmo object show [--select <path>]... [--expr <expr>]... [--id <id> | --name <name> | <id>] <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -805,10 +802,20 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_t *target = nmo_core_find_by_id(&c, object_id);
-    if (!target) {
-        fprintf(stderr, "Error: Object %u not found\n", object_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    nmo_core_object_selector_t selector = {
+        .has_id = vals[OPT_ID].present,
+        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .positional_id = positional_id,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .selector_label = "Object",
+        .type_label = "object",
+    };
+    nmo_object_t *target = NULL;
+    nmo_object_id_t object_id = 0;
+    rc = nmo_core_resolve_one_object(&c, &selector, &target, &object_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo object show [--select <path>]... [--expr <expr>]... [--id <id> | --name <name> | <id>] <file>\n");
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     nmo_class_id_t class_id = nmo_object_get_class_id(target);
@@ -1234,26 +1241,38 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
 int nmo_cmd_object_list_fields(int argc, char **argv,
                                const nmo_cli_global_opts_t *global)
 {
-    if (argc < 3) {
-        fprintf(stderr, "Usage: nmo object list-fields <id> <file>\n");
+    static const nmo_opt_def_t opts[] = {
+        {"--id",   "-i", NMO_OPT_UINT,   "Object ID"},
+        {"--name", "-n", NMO_OPT_STRING, "Object name"},
+    };
+    enum { OPT_ID, OPT_NAME, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
-    }
 
-    uint32_t object_id;
-    if (!nmo_tool_parse_u32(argv[1], &object_id)) {
-        fprintf(stderr, "Error: Invalid object ID '%s'\n", argv[1]);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    nmo_object_t *obj = repo ? nmo_object_repository_find_by_id(repo, object_id) : NULL;
-    if (!obj) {
-        fprintf(stderr, "Error: Object #%u not found\n", object_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+    nmo_core_object_selector_t selector = {
+        .has_id = vals[OPT_ID].present,
+        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .positional_id = positional_id,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .selector_label = "Object",
+        .type_label = "object",
+    };
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t object_id = 0;
+    rc = nmo_core_resolve_one_object(&c, &selector, &obj, &object_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo object list-fields [--id <id> | --name <name> | <id>] <file>\n");
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     void *state = nmo_object_get_state(obj);

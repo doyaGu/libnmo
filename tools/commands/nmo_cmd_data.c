@@ -246,44 +246,37 @@ int nmo_cmd_data_list(int argc, char **argv, const nmo_cli_global_opts_t *global
 
 int nmo_cmd_data_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--id", "-i", NMO_OPT_STRING, "Object ID"},
+        {"--id",   "-i", NMO_OPT_UINT,   "Data array object ID"},
+        {"--name", "-n", NMO_OPT_STRING, "Data array object name"},
     };
-    nmo_opt_val_t vals[1];
+    enum { OPT_ID, OPT_NAME, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *id_str = vals[0].present ? vals[0].val.str : NULL;
-
-    /* Positional: <id> <file> */
-    if (!id_str && r.pos_count >= 2) {
-        id_str = r.pos_args[0];
-    }
-
-    if (!id_str) {
-        fprintf(stderr, "Error: No object ID specified\n");
-        fprintf(stderr, "Usage: nmo data show <id> <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    uint32_t obj_id;
-    if (!nmo_tool_parse_u32_dec(id_str, &obj_id)) {
-        fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_t *obj = nmo_core_find_by_id(&c, obj_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object %u not found\n", obj_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
-    }
-    if (nmo_object_get_class_id(obj) != NMO_CID_DATAARRAY) {
-        fprintf(stderr, "Error: Object %u is not a CKDataArray\n", obj_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    nmo_core_object_selector_t selector = {
+        .has_id = vals[OPT_ID].present,
+        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .positional_id = positional_id,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .required_base_class = NMO_CID_DATAARRAY,
+        .selector_label = "Data array",
+        .type_label = "CKDataArray",
+    };
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t obj_id = 0;
+    rc = nmo_core_resolve_one_object(&c, &selector, &obj, &obj_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo data show [--id <id> | --name <name> | <id>] <file>\n");
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     nmo_dataarray_state_t *state =
@@ -395,33 +388,19 @@ int nmo_cmd_data_show(int argc, char **argv, const nmo_cli_global_opts_t *global
 
 int nmo_cmd_data_dump(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--id",  "-i", NMO_OPT_STRING, "Object ID"},
-        {"--row", "-r", NMO_OPT_STRING, "Dump single row by index"},
+        {"--id",   "-i", NMO_OPT_UINT,   "Data array object ID"},
+        {"--name", "-n", NMO_OPT_STRING, "Data array object name"},
+        {"--row",  "-r", NMO_OPT_STRING, "Dump single row by index"},
     };
-    nmo_opt_val_t vals[2];
+    enum { OPT_ID, OPT_NAME, OPT_ROW, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *id_str = vals[0].present ? vals[0].val.str : NULL;
-    const char *row_str = vals[1].present ? vals[1].val.str : NULL;
-
-    /* Positional: <id> <file> */
-    if (!id_str && r.pos_count >= 2) {
-        id_str = r.pos_args[0];
-    }
-
-    if (!id_str) {
-        fprintf(stderr, "Error: No object ID specified\n");
-        fprintf(stderr, "Usage: nmo data dump <id> <file> [--row <n>]\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    uint32_t obj_id;
-    if (!nmo_tool_parse_u32_dec(id_str, &obj_id)) {
-        fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *row_str = vals[OPT_ROW].present ? vals[OPT_ROW].val.str : NULL;
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
 
     uint32_t single_row = 0;
     bool has_single_row = false;
@@ -437,14 +416,21 @@ int nmo_cmd_data_dump(int argc, char **argv, const nmo_cli_global_opts_t *global
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_t *obj = nmo_core_find_by_id(&c, obj_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object %u not found\n", obj_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
-    }
-    if (nmo_object_get_class_id(obj) != NMO_CID_DATAARRAY) {
-        fprintf(stderr, "Error: Object %u is not a CKDataArray\n", obj_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    nmo_core_object_selector_t selector = {
+        .has_id = vals[OPT_ID].present,
+        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .positional_id = positional_id,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .required_base_class = NMO_CID_DATAARRAY,
+        .selector_label = "Data array",
+        .type_label = "CKDataArray",
+    };
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t obj_id = 0;
+    rc = nmo_core_resolve_one_object(&c, &selector, &obj, &obj_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo data dump [--id <id> | --name <name> | <id>] <file> [--row <n>]\n");
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     nmo_dataarray_state_t *state =
@@ -493,6 +479,10 @@ int nmo_cmd_data_dump(int argc, char **argv, const nmo_cli_global_opts_t *global
     } else if (has_single_row) {
         /* Single row: key-value format */
         const nmo_dataarray_row_t *row = &state->rows[single_row];
+        const char *name = nmo_object_get_name(obj);
+        fprintf(c.out, "Data array #%u", obj_id);
+        if (name && name[0]) fprintf(c.out, " (%s)", name);
+        fprintf(c.out, "\n");
         fprintf(c.out, "Row %u:\n", single_row);
 
         for (uint32_t ci = 0; ci < state->column_count && ci < row->column_count; ++ci) {
@@ -596,6 +586,7 @@ int nmo_cmd_data_dump(int argc, char **argv, const nmo_cli_global_opts_t *global
  * ============================================================================ */
 
 typedef struct data_set_cell_args {
+    nmo_core_object_selector_t selector;
     uint32_t obj_id;
     uint32_t row;
     uint32_t col;
@@ -619,15 +610,14 @@ static int data_set_cell_mutate(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_object_t *obj = nmo_core_find_by_id(c, args->obj_id);
-    if (!obj) {
-        fprintf(stderr, "Error: Object %u not found\n", args->obj_id);
-        return NMO_CLI_EXIT_NOT_FOUND;
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t obj_id = 0;
+    int resolve_rc = nmo_core_resolve_one_object(c, &args->selector, &obj, &obj_id);
+    if (resolve_rc != NMO_CLI_EXIT_SUCCESS) {
+        fprintf(stderr, "Usage: nmo data set-cell [--id <id> | --name <name> | <id>] --row <r> --col <c> --value <val> <file> -o <output>\n");
+        return resolve_rc;
     }
-    if (nmo_object_get_class_id(obj) != NMO_CID_DATAARRAY) {
-        fprintf(stderr, "Error: Object %u is not a CKDataArray\n", args->obj_id);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    args->obj_id = obj_id;
 
     nmo_dataarray_state_t *state =
         (nmo_dataarray_state_t *)nmo_object_get_state(obj);
@@ -751,8 +741,11 @@ int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *gl
         {"--col",     "-c", NMO_OPT_UINT,   "Column index (0-based)"},
         {"--value",   "-v", NMO_OPT_STRING, "New cell value"},
         {"--dry-run", NULL,  NMO_OPT_FLAG,   "Preview without saving"},
+        {"--id",      NULL,  NMO_OPT_UINT,   "Data array object ID"},
+        {"--name",    "-n",  NMO_OPT_STRING, "Data array object name"},
     };
-    enum { OPT_OUTPUT, OPT_ROW, OPT_COL, OPT_VALUE, OPT_DRYRUN, OPT_COUNT };
+    enum { OPT_OUTPUT, OPT_ROW, OPT_COL, OPT_VALUE, OPT_DRYRUN,
+           OPT_ID, OPT_NAME, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
@@ -768,29 +761,26 @@ int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *gl
     const char *value_str = vals[OPT_VALUE].present ? vals[OPT_VALUE].val.str : NULL;
     bool dry_run   = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
 
-    /* Positional: <id> <file> */
-    const char *id_str = NULL;
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = NULL;
     const char *file_path = NULL;
-    if (r.pos_count >= 2) {
-        id_str = r.pos_args[0];
+    if (has_selector_opt) {
+        if (r.pos_count >= 1) {
+            file_path = r.pos_args[r.pos_count - 1];
+        }
+    } else if (r.pos_count >= 2) {
+        positional_id = r.pos_args[0];
         file_path = r.pos_args[r.pos_count - 1];
-    } else if (r.pos_count == 1) {
-        id_str = r.pos_args[0];
     }
 
-    if (!id_str) {
-        fprintf(stderr, "Error: No object ID specified\n");
-        fprintf(stderr, "Usage: nmo data set-cell <id> --row <r> --col <c> --value <val> <file> -o <output>\n");
+    if (!has_selector_opt && positional_id == NULL) {
+        fprintf(stderr, "Error: No data array selector specified\n");
+        fprintf(stderr, "Usage: nmo data set-cell [--id <id> | --name <name> | <id>] --row <r> --col <c> --value <val> <file> -o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (!has_row || !has_col || !value_str) {
         fprintf(stderr, "Error: --row, --col, and --value are required\n");
-        fprintf(stderr, "Usage: nmo data set-cell <id> --row <r> --col <c> --value <val> <file> -o <output>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-    uint32_t obj_id;
-    if (!nmo_tool_parse_u32_dec(id_str, &obj_id)) {
-        fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
+        fprintf(stderr, "Usage: nmo data set-cell [--id <id> | --name <name> | <id>] --row <r> --col <c> --value <val> <file> -o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (!file_path) {
@@ -799,7 +789,15 @@ int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *gl
     }
 
     data_set_cell_args_t args = {
-        .obj_id = obj_id,
+        .selector = {
+            .has_id = vals[OPT_ID].present,
+            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .positional_id = positional_id,
+            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .required_base_class = NMO_CID_DATAARRAY,
+            .selector_label = "Data array",
+            .type_label = "CKDataArray",
+        },
         .row = row,
         .col = col,
         .value_str = value_str,

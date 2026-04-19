@@ -20,6 +20,8 @@
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
+#include "session/nmo_context.h"
+#include "session/nmo_session.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -134,6 +136,36 @@ static int copy_file_binary(const char *src, const char *dst) {
     return 1;
 }
 
+static bool create_duplicate_camera_name_fixture(const char *path) {
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    if (!ctx) {
+        return false;
+    }
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    if (!session) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    nmo_object_id_t plain_id = 0;
+    nmo_object_id_t camera_id = 0;
+    bool ok =
+        nmo_session_create_object(session, NMO_CID_OBJECT,
+                                  "SharedTypedName", (nmo_guid_t){0, 0},
+                                  &plain_id, NULL) == NMO_OK &&
+        nmo_session_create_object(session, NMO_CID_CAMERA,
+                                  "SharedTypedName", (nmo_guid_t){0, 0},
+                                  &camera_id, NULL) == NMO_OK &&
+        plain_id != 0 && camera_id != 0 &&
+        nmo_session_save_file(session, path, NULL, NULL) == NMO_OK;
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+    return ok;
+}
+
 static int write_text_file(const char *path, const char *text) {
     FILE *fp = fopen(path, "wb");
     if (!fp) return 0;
@@ -215,6 +247,7 @@ TEST(cli_write, object_data_entity_material_texture_parameter_dry_run_preserves_
     remove("test_cli_write_tmp/object_create_dry.nmo");
     remove("test_cli_write_tmp/object_copy_dry.nmo");
     remove("test_cli_write_tmp/object_delete_dry.nmo");
+    remove("test_cli_write_tmp/object_set_field_dry.nmo");
     remove("test_cli_write_tmp/data_dry.nmo");
     remove("test_cli_write_tmp/entity_dry.nmo");
     remove("test_cli_write_tmp/material_dry.nmo");
@@ -263,23 +296,29 @@ TEST(cli_write, object_data_entity_material_texture_parameter_dry_run_preserves_
         "-o \"test_cli_write_tmp/object_delete_dry.nmo\"",
         "Dry Run");
     ASSERT_FALSE(file_exists("test_cli_write_tmp/object_delete_dry.nmo"));
+    assert_cli_success(
+        "object set-field --name Cam_Pos parent_id 3 --dry-run "
+        "\"" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "\" "
+        "-o \"test_cli_write_tmp/object_set_field_dry.nmo\"",
+        "parent_id:");
+    ASSERT_FALSE(file_exists("test_cli_write_tmp/object_set_field_dry.nmo"));
 
     assert_cli_success(
-        "entity set-position 2 9 8 7 --dry-run "
+        "entity set-position --name Cam_Pos 9 8 7 --dry-run "
         "\"" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "\" "
         "-o \"test_cli_write_tmp/entity_dry.nmo\"",
         "dry-run");
     ASSERT_FALSE(file_exists("test_cli_write_tmp/entity_dry.nmo"));
 
     assert_cli_success(
-        "material set 8 --diffuse \"(1,0,1,1)\" --dry-run "
+        "material set --name Interface_Life --diffuse \"(1,0,1,1)\" --dry-run "
         "\"" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "\" "
         "-o \"test_cli_write_tmp/material_dry.nmo\"",
         "dry-run");
     ASSERT_FALSE(file_exists("test_cli_write_tmp/material_dry.nmo"));
 
     assert_cli_success(
-        "texture replace 7 --file "
+        "texture replace --name Button01_special --file "
         "\"" NMO_TEST_DATA_FILE("BBSamples/Narratives/Open File Image.png") "\" --dry-run "
         "\"" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "\" "
         "-o \"test_cli_write_tmp/texture_dry.nmo\"",
@@ -333,14 +372,14 @@ TEST(cli_write, object_data_entity_material_texture_parameter_dry_run_preserves_
     write_probe_close(&param_before_probe);
 
     assert_cli_success(
-        "data set-cell 2261 --row 0 --col 1 --value 0.75 --dry-run "
+        "data set-cell --name Physicalize_GameBall --row 0 --col 1 --value 0.75 --dry-run "
         "\"" NMO_TEST_DATA_FILE("Ballance/Balls.nmo") "\" "
         "-o \"test_cli_write_tmp/data_dry.nmo\"",
         "dry run");
     ASSERT_FALSE(file_exists("test_cli_write_tmp/data_dry.nmo"));
 
     assert_cli_success(
-        "parameter set --dry-run 5 1.25 "
+        "parameter set --dry-run --id 5 1.25 "
         "\"" NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo") "\" "
         "-o \"test_cli_write_tmp/parameter_dry.nmo\"",
         "dry run");
@@ -449,6 +488,33 @@ TEST(cli_write, resource_import_replace_remove_save_and_validate) {
     write_probe_close(&removed);
 }
 
+TEST(cli_write, resource_replace_warns_for_texture_named_payload) {
+    make_dir("test_cli_write_tmp");
+    ASSERT_TRUE(copy_file_binary(
+        NMO_TEST_DATA_FILE("Ballance/Balls.nmo"),
+        "test_cli_write_tmp/texture_resource_input.nmo"));
+
+    assert_cli_success(
+        "resource import --name BallWood.bmp "
+        "\"" NMO_TEST_DATA_FILE("BBSamples/Narratives/Open File Image.png") "\" "
+        "\"test_cli_write_tmp/texture_resource_input.nmo\" "
+        "-o \"test_cli_write_tmp/texture_resource_import.nmo\"",
+        "Imported resource");
+
+    cli_run_result_t result = run_cli_capture(
+        "resource replace --index 0 "
+        "\"" NMO_TEST_DATA_FILE("BBSamples/Narratives/Open File Image.png") "\" "
+        "\"test_cli_write_tmp/texture_resource_import.nmo\" "
+        "-o \"test_cli_write_tmp/texture_resource_replace.nmo\"");
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_STR_CONTAINS(result.output, "Warning:");
+    ASSERT_STR_CONTAINS(result.output, "texture replace");
+    free(result.output);
+
+    assert_validate_ok("test_cli_write_tmp/texture_resource_replace.nmo");
+}
+
 TEST(cli_write, mesh_animation_import_dry_run_does_not_write_output) {
     make_dir("test_cli_write_tmp");
     make_dir("test_cli_write_tmp/mesh_dry_export");
@@ -465,7 +531,7 @@ TEST(cli_write, mesh_animation_import_dry_run_does_not_write_output) {
     write_probe_close(&mesh_before);
 
     assert_cli_success(
-        "mesh export --id 3 --out-dir \"test_cli_write_tmp/mesh_dry_export\" "
+        "mesh export --name P_Box_Mesh --out-dir \"test_cli_write_tmp/mesh_dry_export\" "
         "\"" NMO_TEST_DATA_FILE("Ballance/P_Box.nmo") "\"",
         "Exported");
     remove("test_cli_write_tmp/mesh_dry_out.nmo");
@@ -498,7 +564,7 @@ TEST(cli_write, mesh_animation_import_dry_run_does_not_write_output) {
     write_probe_close(&anim_before);
 
     assert_cli_success(
-        "animation export --id 519 --out-dir \"test_cli_write_tmp/anim_dry_export\" "
+        "animation export --name Kamera02 --out-dir \"test_cli_write_tmp/anim_dry_export\" "
         "\"" NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo") "\"",
         NULL);
     remove("test_cli_write_tmp/animation_dry_out.nmo");
@@ -513,6 +579,12 @@ TEST(cli_write, mesh_animation_import_dry_run_does_not_write_output) {
         "\"" NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo") "\" "
         "-o \"test_cli_write_tmp/animation_dry_out.nmo\"",
         "[dry-run]");
+    assert_cli_success(
+        "animation import --replace-name Kamera02 --dry-run "
+        "\"test_cli_write_tmp/anim_dry_export/Kamera02_519.anim.json\" "
+        "\"" NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo") "\" "
+        "-o \"test_cli_write_tmp/animation_dry_out.nmo\"",
+        "[dry-run]");
     ASSERT_FALSE(file_exists("test_cli_write_tmp/animation_dry_out.nmo"));
 
     write_semantic_probe_t anim_after;
@@ -520,6 +592,23 @@ TEST(cli_write, mesh_animation_import_dry_run_does_not_write_output) {
     ASSERT_EQ(anim_object_count, write_probe_object_count(&anim_after));
     ASSERT_NULL(write_probe_object_by_name(&anim_after, "imported_anim"));
     write_probe_close(&anim_after);
+}
+
+TEST(cli_write, type_specific_name_selector_skips_duplicate_wrong_class_name) {
+    make_dir("test_cli_write_tmp");
+    const char *fixture = "test_cli_write_tmp/duplicate_camera_name.nmo";
+    remove(fixture);
+    ASSERT_TRUE(create_duplicate_camera_name_fixture(fixture));
+
+    cli_run_result_t result = run_cli_capture(
+        "entity set-camera --name SharedTypedName --fov 0.75 --dry-run "
+        "\"test_cli_write_tmp/duplicate_camera_name.nmo\"");
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Camera #");
+    free(result.output);
+
+    remove(fixture);
 }
 
 TEST(cli_write, object_create_copy_import_delete_save_and_validate) {
@@ -656,7 +745,7 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     make_dir("test_cli_write_tmp");
 
     assert_cli_success(
-        "data set-cell 2261 --row 0 --col 1 --value 0.75 "
+        "data set-cell --name Physicalize_GameBall --row 0 --col 1 --value 0.75 "
         "\"" NMO_TEST_DATA_FILE("Ballance/Balls.nmo") "\" "
         "-o \"test_cli_write_tmp/data_out.nmo\"",
         "New:");
@@ -672,7 +761,7 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     write_probe_close(&data_probe);
 
     assert_cli_success(
-        "entity set-position 2 1 2 3 "
+        "entity set-position --name Cam_Pos 1 2 3 "
         "\"" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "\" "
         "-o \"test_cli_write_tmp/entity_out.nmo\"",
         "position:");
@@ -688,7 +777,7 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     write_probe_close(&entity_probe);
 
     assert_cli_success(
-        "entity set-parent 2 3 "
+        "entity set-parent --name Cam_Pos 3 "
         "\"" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "\" "
         "-o \"test_cli_write_tmp/entity_parent_out.nmo\"",
         "Saved to");
@@ -702,7 +791,7 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     write_probe_close(&parent_probe);
 
     assert_cli_success(
-        "entity set-camera 5 --fov 0.875 --near 2.5 --far 3333 "
+        "entity set-camera --name InGameCam --fov 0.875 --near 2.5 --far 3333 "
         "\"" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "\" "
         "-o \"test_cli_write_tmp/camera_out.nmo\"",
         "far_plane:");
@@ -735,7 +824,7 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     write_probe_close(&light_probe);
 
     assert_cli_success(
-        "scene set 32 --bg-color \"(0.1,0.2,0.3,1)\" "
+        "scene set --name \"Scene 1\" --bg-color \"(0.1,0.2,0.3,1)\" "
         "--ambient \"(0.4,0.5,0.6,1)\" --fog-color \"(0.7,0.8,0.9,1)\" "
         "\"" NMO_TEST_DATA_FILE("BBSamples/Narratives/Add To Scene-Remove From Scene.cmo") "\" "
         "-o \"test_cli_write_tmp/scene_out.cmo\"",
@@ -752,7 +841,7 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     write_probe_close(&scene_probe);
 
     assert_cli_success(
-        "material set 8 --diffuse \"(1,0,1,1)\" "
+        "material set --name Interface_Life --diffuse \"(1,0,1,1)\" "
         "\"" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "\" "
         "-o \"test_cli_write_tmp/material_out.nmo\"",
         "diffuse_color:");
@@ -772,7 +861,7 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     write_probe_close(&texture_baseline);
 
     assert_cli_success(
-        "texture replace 7 --file "
+        "texture replace --name Button01_special --file "
         "\"" NMO_TEST_DATA_FILE("BBSamples/Narratives/Open File Image.png") "\" "
         "\"" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "\" "
         "-o \"test_cli_write_tmp/texture_out.nmo\"",
@@ -798,7 +887,7 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
         write_probe_count_class_name(&mesh_baseline, NMO_CID_MESH, NULL);
     write_probe_close(&mesh_baseline);
     assert_cli_success(
-        "mesh export --id 3 --out-dir \"test_cli_write_tmp/mesh_export\" "
+        "mesh export --name P_Box_Mesh --out-dir \"test_cli_write_tmp/mesh_export\" "
         "\"" NMO_TEST_DATA_FILE("Ballance/P_Box.nmo") "\"",
         "Exported");
     assert_cli_success(
@@ -822,7 +911,7 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
         "v 0 1 0\n"
         "f 1 2 3\n"));
     assert_cli_success(
-        "mesh import --replace 3 --name TinyReplace "
+        "mesh import --replace-name P_Box_Mesh --name TinyReplace "
         "\"test_cli_write_tmp/tiny_replace.obj\" "
         "\"" NMO_TEST_DATA_FILE("Ballance/P_Box.nmo") "\" "
         "-o \"test_cli_write_tmp/mesh_replace_out.nmo\"",
@@ -894,7 +983,7 @@ TEST(cli_write, parameter_set_persists_typed_object_and_raw_values) {
     make_dir("test_cli_write_tmp");
 
     assert_cli_success(
-        "parameter set 5 1.25 "
+        "parameter set --id 5 1.25 "
         "\"" NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo") "\" "
         "-o \"test_cli_write_tmp/parameter_float.nmo\"",
         "Parameter #5");
@@ -946,7 +1035,9 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli_write, object_data_entity_material_texture_parameter_dry_run_preserves_inputs);
     REGISTER_TEST(cli_write, resource_import_replace_dry_run_does_not_write_output);
     REGISTER_TEST(cli_write, resource_import_replace_remove_save_and_validate);
+    REGISTER_TEST(cli_write, resource_replace_warns_for_texture_named_payload);
     REGISTER_TEST(cli_write, mesh_animation_import_dry_run_does_not_write_output);
+    REGISTER_TEST(cli_write, type_specific_name_selector_skips_duplicate_wrong_class_name);
     REGISTER_TEST(cli_write, object_create_copy_import_delete_save_and_validate);
     REGISTER_TEST(cli_write, object_export_import_snapshot_round_trips_mesh_and_matrix);
     REGISTER_TEST(cli_write, data_entity_material_texture_animation_save_and_validate);
