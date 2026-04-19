@@ -59,6 +59,9 @@ typedef struct nmo_cmd_in_session_result {
     bool dry_run;
 } nmo_cmd_in_session_result_t;
 
+typedef int (*nmo_cmd_public_handler_t)(int argc, char **argv,
+                                        const nmo_cli_global_opts_t *global);
+
 /**
  * @brief Initialize command context: find file arg, open session, open output.
  *
@@ -144,6 +147,19 @@ void nmo_cmd_ctx_init_from_repl(nmo_cmd_ctx_t *c,
  * @return exit_code (pass-through for convenient `return nmo_cmd_ctx_done(&c, 0)`)
  */
 int nmo_cmd_ctx_done(nmo_cmd_ctx_t *c, int exit_code);
+
+/**
+ * @brief Dispatch a file-oriented public read handler against an existing session.
+ *
+ * This is a compatibility helper for command modules while their parsing/report
+ * code is split into standalone cores. The REPL-facing API remains explicit:
+ * callers pass an initialized session context and command-local argv without a
+ * file operand.
+ */
+int nmo_cmd_in_session_dispatch_with_source(nmo_cmd_ctx_t *ctx,
+                                            int argc,
+                                            char **argv,
+                                            nmo_cmd_public_handler_t handler);
 
 /**
  * @brief Begin a JSON document for command output.

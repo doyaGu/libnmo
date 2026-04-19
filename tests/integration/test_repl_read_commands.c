@@ -11,6 +11,8 @@
 #include "../../tools/nmo_repl_util.h"
 #include "../../tools/commands/nmo_cmd_diff.h"
 #include "../../tools/commands/nmo_cmd_file.h"
+#include "../../tools/commands/nmo_cmd_object.h"
+#include "../../tools/commands/nmo_cmd_parameter.h"
 #include "../../tools/commands/nmo_cmd_query.h"
 #include "../../tools/commands/nmo_cmd_validate.h"
 #include "../../tools/nmo_tool_session.h"
@@ -126,7 +128,11 @@ static void open_repl(nmo_repl_context_t *repl, const char *path) {
 }
 
 static void assert_read_ok(nmo_repl_context_t *repl, const char *line) {
-    ASSERT_EQ(0, run_repl_command(repl, line));
+    int rc = run_repl_command(repl, line);
+    if (rc != 0) {
+        fprintf(stderr, "REPL read command failed: %s\n", line);
+    }
+    ASSERT_EQ(0, rc);
     ASSERT_FALSE(repl->dirty);
 }
 
@@ -342,9 +348,22 @@ TEST(repl_read, validate_all_reads_dirty_current_session) {
 
     ASSERT_EQ(0, run_repl_command(&repl, "object rename 2 ReplValidateAllName"));
     ASSERT_TRUE(repl.dirty);
+    char diff_cmd[512];
+    snprintf(diff_cmd, sizeof(diff_cmd), "diff summary %s", NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
     assert_read_ok_preserves_dirty(&repl, "validate all");
     assert_read_ok_preserves_dirty(&repl, "cli --strict validate all");
+    assert_read_ok_preserves_dirty(&repl, "validate orphans");
+    assert_read_ok_preserves_dirty(&repl, "chunk list --top 1");
+    assert_read_ok_preserves_dirty(&repl, diff_cmd);
+
+    remove("test_repl_dirty_debug_export.json");
+    ASSERT_EQ(0, run_repl_command(&repl, "cli -o test_repl_dirty_debug_export.json debug export"));
+    ASSERT_TRUE(repl.dirty);
+    FILE *f = fopen("test_repl_dirty_debug_export.json", "rb");
+    ASSERT_NOT_NULL(f);
+    fclose(f);
+    remove("test_repl_dirty_debug_export.json");
 
     close_repl(&repl);
 }
@@ -382,7 +401,7 @@ TEST(repl_read, cli_batch_mode_is_rejected) {
     close_repl(&repl);
 }
 
-TEST(repl_read, first_batch_read_core_exposes_explicit_in_session_handlers) {
+TEST(repl_read, specialized_repl_read_cores_are_directly_callable) {
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
@@ -402,6 +421,10 @@ TEST(repl_read, first_batch_read_core_exposes_explicit_in_session_handlers) {
     char *diff_objects[2] = {"objects", NMO_TEST_DATA_FILE("Ballance/Camera.nmo")};
     char *diff_chunks[2] = {"chunks", NMO_TEST_DATA_FILE("Ballance/Camera.nmo")};
     char *diff_full[2] = {"full", NMO_TEST_DATA_FILE("Ballance/Camera.nmo")};
+    char *object_show[] = {"show", "520"};
+    char *object_refs[] = {"refs", "520"};
+    char *parameter_show[] = {"show", "46"};
+    char *parameter_dump[] = {"dump", "46"};
 
     assert_in_session_ok(&repl, nmo_cmd_file_info_in_session, 1, file_info);
     assert_in_session_ok(&repl, nmo_cmd_file_header_in_session, 1, file_header);
@@ -419,8 +442,16 @@ TEST(repl_read, first_batch_read_core_exposes_explicit_in_session_handlers) {
     assert_in_session_ok(&repl, nmo_cmd_diff_objects_in_session, 2, diff_objects);
     assert_in_session_ok(&repl, nmo_cmd_diff_chunks_in_session, 2, diff_chunks);
     assert_in_session_ok(&repl, nmo_cmd_diff_full_in_session, 2, diff_full);
+    assert_in_session_ok(&repl, nmo_cmd_object_show_in_session, 2, object_show);
+    assert_in_session_ok(&repl, nmo_cmd_object_refs_in_session, 2, object_refs);
+    assert_in_session_ok(&repl, nmo_cmd_parameter_show_in_session, 2, parameter_show);
+    assert_in_session_ok(&repl, nmo_cmd_parameter_dump_in_session, 2, parameter_dump);
 
     close_repl(&repl);
+}
+
+TEST(repl_read, cli_read_table_has_no_session_public_fallbacks) {
+    ASSERT_EQ(0u, nmo_repl_cli_read_session_public_fallback_count());
 }
 
 TEST(repl_read, completion_group_does_not_require_session) {
@@ -454,7 +485,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, validate_all_reads_dirty_current_session);
     REGISTER_TEST(repl_read, mutating_cli_actions_are_rejected_by_read_mirror);
     REGISTER_TEST(repl_read, cli_batch_mode_is_rejected);
-    REGISTER_TEST(repl_read, first_batch_read_core_exposes_explicit_in_session_handlers);
+    REGISTER_TEST(repl_read, specialized_repl_read_cores_are_directly_callable);
+    REGISTER_TEST(repl_read, cli_read_table_has_no_session_public_fallbacks);
     REGISTER_TEST(repl_read, completion_group_does_not_require_session);
     REGISTER_TEST(repl_read, legacy_read_shortcuts_still_work);
 TEST_MAIN_END()

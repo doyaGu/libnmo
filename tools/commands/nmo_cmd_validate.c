@@ -51,40 +51,6 @@ typedef struct validate_all_data {
     size_t warning_count;
 } validate_all_data_t;
 
-typedef int (*validate_public_handler_t)(int argc, char **argv,
-                                         const nmo_cli_global_opts_t *global);
-
-static int validate_dispatch_with_session_operand(nmo_cmd_ctx_t *ctx,
-                                                  int argc,
-                                                  char **argv,
-                                                  validate_public_handler_t handler)
-{
-    char **cmd_argv = (char **)calloc((size_t)argc + 2u, sizeof(char *));
-    if (!cmd_argv) {
-        fprintf(stderr, "Error: Out of memory\n");
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    for (int i = 0; i < argc; i++) {
-        cmd_argv[i] = argv[i];
-    }
-    cmd_argv[argc] = (char *)ctx->file_path;
-
-    nmo_cli_global_opts_t global;
-    if (ctx->global) {
-        global = *ctx->global;
-    } else {
-        nmo_cli_global_opts_init(&global);
-    }
-    global.borrowed_ctx = ctx->ctx;
-    global.borrowed_session = ctx->session;
-    global.borrowed_source_label = ctx->file_path;
-
-    int rc = handler(argc + 1, cmd_argv, &global);
-    free(cmd_argv);
-    return rc;
-}
-
 static int validate_all_object(size_t index, nmo_object_t *obj,
                                const nmo_cmd_ctx_t *c, void *user)
 {
@@ -1221,6 +1187,6 @@ int nmo_cmd_validate_orphans_in_session(nmo_cmd_ctx_t *ctx, int argc, char **arg
             return NMO_CLI_EXIT_ARG_ERROR;
         }
     }
-    return validate_dispatch_with_session_operand(ctx, argc, argv,
+    return nmo_cmd_in_session_dispatch_with_source(ctx, argc, argv,
                                                   nmo_cmd_validate_orphans);
 }

@@ -1496,16 +1496,15 @@ typedef struct repl_cli_read_action {
     repl_cli_read_handler_t handler;
     repl_cli_read_session_handler_t session_handler;
     bool needs_session;
-    bool append_source;
-    bool diff_left_current;
+    bool generic_session;
 } repl_cli_read_action_t;
 
 #define REPL_CLI_READ_SESSION(group, action, alias, handler, session_handler) \
-    {group, action, alias, handler, session_handler, true, false, false}
-#define REPL_CLI_READ_SESSION_DIFF(group, action, alias, handler, session_handler) \
-    {group, action, alias, handler, session_handler, true, false, true}
-#define REPL_CLI_READ_PUBLIC(group, action, alias, handler, needs_session, append_source, diff_left_current) \
-    {group, action, alias, handler, NULL, needs_session, append_source, diff_left_current}
+    {group, action, alias, handler, session_handler, true, false}
+#define REPL_CLI_READ_SESSION_GENERIC(group, action, alias, handler) \
+    {group, action, alias, handler, NULL, true, true}
+#define REPL_CLI_READ_PUBLIC(group, action, alias, handler) \
+    {group, action, alias, handler, NULL, false, false}
 
 static const repl_cli_read_action_t repl_cli_read_actions[] = {
     REPL_CLI_READ_SESSION("file", "info", "i", nmo_cmd_file_info, nmo_cmd_file_info_in_session),
@@ -1514,83 +1513,83 @@ static const repl_cli_read_action_t repl_cli_read_actions[] = {
     REPL_CLI_READ_SESSION("file", "classes", "cls", nmo_cmd_file_classes, nmo_cmd_file_classes_in_session),
     REPL_CLI_READ_SESSION("file", "plugins", "pl", nmo_cmd_file_plugins, nmo_cmd_file_plugins_in_session),
     REPL_CLI_READ_SESSION("file", "space", "sp", nmo_cmd_file_space, nmo_cmd_file_space_in_session),
-    REPL_CLI_READ_PUBLIC("chunk", "list", "ls", nmo_cmd_chunk_list, true, true, false),
-    REPL_CLI_READ_PUBLIC("chunk", "tree", "t", nmo_cmd_chunk_tree, true, true, false),
-    REPL_CLI_READ_PUBLIC("chunk", "show", "s", nmo_cmd_chunk_show, true, true, false),
-    REPL_CLI_READ_PUBLIC("chunk", "find", "f", nmo_cmd_chunk_find, true, true, false),
-    REPL_CLI_READ_PUBLIC("object", "list", "ls", nmo_cmd_object_list, true, true, false),
-    REPL_CLI_READ_PUBLIC("object", "tree", "t", nmo_cmd_object_tree, true, true, false),
-    REPL_CLI_READ_PUBLIC("object", "show", "s", nmo_cmd_object_show, true, true, false),
-    REPL_CLI_READ_PUBLIC("object", "find", "f", nmo_cmd_object_find, true, true, false),
-    REPL_CLI_READ_PUBLIC("object", "refs", "r", nmo_cmd_object_refs, true, true, false),
-    REPL_CLI_READ_PUBLIC("object", "export", "x", nmo_cmd_object_export, true, true, false),
-    REPL_CLI_READ_PUBLIC("object", "impact", "imp", nmo_cmd_object_impact, true, true, false),
-    REPL_CLI_READ_PUBLIC("object", "orphans", "orp", nmo_cmd_object_orphans, true, true, false),
-    REPL_CLI_READ_PUBLIC("object", "cycles", "cyc", nmo_cmd_object_cycles, true, true, false),
-    REPL_CLI_READ_PUBLIC("object", "graph", "gr", nmo_cmd_object_graph, true, true, false),
-    REPL_CLI_READ_PUBLIC("object", "list-fields", "lf", nmo_cmd_object_list_fields, true, true, false),
-    REPL_CLI_READ_PUBLIC("parameter", "list", "ls", nmo_cmd_parameter_list, true, true, false),
-    REPL_CLI_READ_PUBLIC("parameter", "show", "s", nmo_cmd_parameter_show, true, true, false),
-    REPL_CLI_READ_PUBLIC("parameter", "dump", "d", nmo_cmd_parameter_dump, true, true, false),
-    REPL_CLI_READ_PUBLIC("behavior", "list", "ls", nmo_cmd_behavior_list, true, true, false),
-    REPL_CLI_READ_PUBLIC("behavior", "stats", "st", nmo_cmd_behavior_stats, true, true, false),
-    REPL_CLI_READ_PUBLIC("behavior", "show", "s", nmo_cmd_behavior_show, true, true, false),
-    REPL_CLI_READ_PUBLIC("behavior", "graph", "g", nmo_cmd_behavior_graph, true, true, false),
-    REPL_CLI_READ_PUBLIC("behavior", "dump", "d", nmo_cmd_behavior_dump, true, true, false),
-    REPL_CLI_READ_PUBLIC("behavior", "find", "f", nmo_cmd_behavior_find, true, true, false),
-    REPL_CLI_READ_PUBLIC("behavior", "trace", "tr", nmo_cmd_behavior_trace, true, true, false),
-    REPL_CLI_READ_PUBLIC("behavior", "interface", "iface", nmo_cmd_behavior_iface_show, true, true, false),
-    REPL_CLI_READ_PUBLIC("resource", "list", "ls", nmo_cmd_resource_list, true, true, false),
-    REPL_CLI_READ_PUBLIC("resource", "show", "s", nmo_cmd_resource_show, true, true, false),
-    REPL_CLI_READ_PUBLIC("resource", "extract", "x", nmo_cmd_resource_extract, true, true, false),
-    REPL_CLI_READ_PUBLIC("resource", "info", NULL, nmo_cmd_resource_info, true, true, false),
-    REPL_CLI_READ_PUBLIC("type", "list", "ls", nmo_cmd_type_list, false, false, false),
-    REPL_CLI_READ_PUBLIC("type", "show", "s", nmo_cmd_type_show, false, false, false),
-    REPL_CLI_READ_PUBLIC("type", "class-tree", "ct", nmo_cmd_type_class_tree, false, false, false),
+    REPL_CLI_READ_SESSION_GENERIC("chunk", "list", "ls", nmo_cmd_chunk_list),
+    REPL_CLI_READ_SESSION_GENERIC("chunk", "tree", "t", nmo_cmd_chunk_tree),
+    REPL_CLI_READ_SESSION_GENERIC("chunk", "show", "s", nmo_cmd_chunk_show),
+    REPL_CLI_READ_SESSION_GENERIC("chunk", "find", "f", nmo_cmd_chunk_find),
+    REPL_CLI_READ_SESSION_GENERIC("object", "list", "ls", nmo_cmd_object_list),
+    REPL_CLI_READ_SESSION_GENERIC("object", "tree", "t", nmo_cmd_object_tree),
+    REPL_CLI_READ_SESSION("object", "show", "s", nmo_cmd_object_show, nmo_cmd_object_show_in_session),
+    REPL_CLI_READ_SESSION_GENERIC("object", "find", "f", nmo_cmd_object_find),
+    REPL_CLI_READ_SESSION("object", "refs", "r", nmo_cmd_object_refs, nmo_cmd_object_refs_in_session),
+    REPL_CLI_READ_SESSION_GENERIC("object", "export", "x", nmo_cmd_object_export),
+    REPL_CLI_READ_SESSION_GENERIC("object", "impact", "imp", nmo_cmd_object_impact),
+    REPL_CLI_READ_SESSION_GENERIC("object", "orphans", "orp", nmo_cmd_object_orphans),
+    REPL_CLI_READ_SESSION_GENERIC("object", "cycles", "cyc", nmo_cmd_object_cycles),
+    REPL_CLI_READ_SESSION_GENERIC("object", "graph", "gr", nmo_cmd_object_graph),
+    REPL_CLI_READ_SESSION_GENERIC("object", "list-fields", "lf", nmo_cmd_object_list_fields),
+    REPL_CLI_READ_SESSION_GENERIC("parameter", "list", "ls", nmo_cmd_parameter_list),
+    REPL_CLI_READ_SESSION("parameter", "show", "s", nmo_cmd_parameter_show, nmo_cmd_parameter_show_in_session),
+    REPL_CLI_READ_SESSION("parameter", "dump", "d", nmo_cmd_parameter_dump, nmo_cmd_parameter_dump_in_session),
+    REPL_CLI_READ_SESSION_GENERIC("behavior", "list", "ls", nmo_cmd_behavior_list),
+    REPL_CLI_READ_SESSION_GENERIC("behavior", "stats", "st", nmo_cmd_behavior_stats),
+    REPL_CLI_READ_SESSION_GENERIC("behavior", "show", "s", nmo_cmd_behavior_show),
+    REPL_CLI_READ_SESSION_GENERIC("behavior", "graph", "g", nmo_cmd_behavior_graph),
+    REPL_CLI_READ_SESSION_GENERIC("behavior", "dump", "d", nmo_cmd_behavior_dump),
+    REPL_CLI_READ_SESSION_GENERIC("behavior", "find", "f", nmo_cmd_behavior_find),
+    REPL_CLI_READ_SESSION_GENERIC("behavior", "trace", "tr", nmo_cmd_behavior_trace),
+    REPL_CLI_READ_SESSION_GENERIC("behavior", "interface", "iface", nmo_cmd_behavior_iface_show),
+    REPL_CLI_READ_SESSION_GENERIC("resource", "list", "ls", nmo_cmd_resource_list),
+    REPL_CLI_READ_SESSION_GENERIC("resource", "show", "s", nmo_cmd_resource_show),
+    REPL_CLI_READ_SESSION_GENERIC("resource", "extract", "x", nmo_cmd_resource_extract),
+    REPL_CLI_READ_SESSION_GENERIC("resource", "info", NULL, nmo_cmd_resource_info),
+    REPL_CLI_READ_PUBLIC("type", "list", "ls", nmo_cmd_type_list),
+    REPL_CLI_READ_PUBLIC("type", "show", "s", nmo_cmd_type_show),
+    REPL_CLI_READ_PUBLIC("type", "class-tree", "ct", nmo_cmd_type_class_tree),
     REPL_CLI_READ_SESSION("validate", "all", "a", nmo_cmd_validate_all, nmo_cmd_validate_all_in_session),
     REPL_CLI_READ_SESSION("validate", "structure", "st", nmo_cmd_validate_structure, nmo_cmd_validate_structure_in_session),
     REPL_CLI_READ_SESSION("validate", "references", "ref", nmo_cmd_validate_references, nmo_cmd_validate_references_in_session),
     REPL_CLI_READ_SESSION("validate", "resources", "res", nmo_cmd_validate_resources, nmo_cmd_validate_resources_in_session),
     REPL_CLI_READ_SESSION("validate", "orphans", "orp", nmo_cmd_validate_orphans, nmo_cmd_validate_orphans_in_session),
-    REPL_CLI_READ_SESSION_DIFF("diff", "summary", "s", nmo_cmd_diff_summary, nmo_cmd_diff_summary_in_session),
-    REPL_CLI_READ_SESSION_DIFF("diff", "objects", "obj", nmo_cmd_diff_objects, nmo_cmd_diff_objects_in_session),
-    REPL_CLI_READ_SESSION_DIFF("diff", "chunks", "ch", nmo_cmd_diff_chunks, nmo_cmd_diff_chunks_in_session),
-    REPL_CLI_READ_SESSION_DIFF("diff", "full", "f", nmo_cmd_diff_full, nmo_cmd_diff_full_in_session),
+    REPL_CLI_READ_SESSION("diff", "summary", "s", nmo_cmd_diff_summary, nmo_cmd_diff_summary_in_session),
+    REPL_CLI_READ_SESSION("diff", "objects", "obj", nmo_cmd_diff_objects, nmo_cmd_diff_objects_in_session),
+    REPL_CLI_READ_SESSION("diff", "chunks", "ch", nmo_cmd_diff_chunks, nmo_cmd_diff_chunks_in_session),
+    REPL_CLI_READ_SESSION("diff", "full", "f", nmo_cmd_diff_full, nmo_cmd_diff_full_in_session),
     REPL_CLI_READ_SESSION("query", "eval", "e", nmo_cmd_query_eval, nmo_cmd_query_eval_in_session),
-    REPL_CLI_READ_PUBLIC("extension", "list", "ls", nmo_cmd_extension_list, false, false, false),
-    REPL_CLI_READ_PUBLIC("extension", "info", "i", nmo_cmd_extension_info, true, true, false),
-    REPL_CLI_READ_PUBLIC("extension", "check", "ch", nmo_cmd_extension_check, true, true, false),
-    REPL_CLI_READ_PUBLIC("texture", "list", "ls", nmo_cmd_texture_list, true, true, false),
-    REPL_CLI_READ_PUBLIC("texture", "show", "s", nmo_cmd_texture_show, true, true, false),
-    REPL_CLI_READ_PUBLIC("texture", "extract", "x", nmo_cmd_texture_extract, true, true, false),
-    REPL_CLI_READ_PUBLIC("data", "list", "ls", nmo_cmd_data_list, true, true, false),
-    REPL_CLI_READ_PUBLIC("data", "show", "s", nmo_cmd_data_show, true, true, false),
-    REPL_CLI_READ_PUBLIC("data", "dump", "d", nmo_cmd_data_dump, true, true, false),
-    REPL_CLI_READ_PUBLIC("scene", "list", "ls", nmo_cmd_scene_list, true, true, false),
-    REPL_CLI_READ_PUBLIC("scene", "show", "s", nmo_cmd_scene_show, true, true, false),
-    REPL_CLI_READ_PUBLIC("entity", "list", "ls", nmo_cmd_entity_list, true, true, false),
-    REPL_CLI_READ_PUBLIC("entity", "show", "s", nmo_cmd_entity_show, true, true, false),
-    REPL_CLI_READ_PUBLIC("material", "list", "ls", nmo_cmd_material_list, true, true, false),
-    REPL_CLI_READ_PUBLIC("material", "show", "s", nmo_cmd_material_show, true, true, false),
-    REPL_CLI_READ_PUBLIC("mesh", "list", "ls", nmo_cmd_mesh_list, true, true, false),
-    REPL_CLI_READ_PUBLIC("mesh", "show", "s", nmo_cmd_mesh_show, true, true, false),
-    REPL_CLI_READ_PUBLIC("mesh", "export", "x", nmo_cmd_mesh_export, true, true, false),
-    REPL_CLI_READ_PUBLIC("animation", "list", "ls", nmo_cmd_animation_list, true, true, false),
-    REPL_CLI_READ_PUBLIC("animation", "show", "s", nmo_cmd_animation_show, true, true, false),
-    REPL_CLI_READ_PUBLIC("animation", "keys", "k", nmo_cmd_animation_keys, true, true, false),
-    REPL_CLI_READ_PUBLIC("animation", "export", "x", nmo_cmd_animation_export, true, true, false),
-    REPL_CLI_READ_PUBLIC("debug", "load-phases", "lp", nmo_cmd_debug_load_phases, true, true, false),
-    REPL_CLI_READ_PUBLIC("debug", "chunks", "ch", nmo_cmd_debug_chunks, true, true, false),
-    REPL_CLI_READ_PUBLIC("debug", "objects", "obj", nmo_cmd_debug_objects, true, true, false),
-    REPL_CLI_READ_PUBLIC("debug", "export", "x", nmo_cmd_debug_export, true, true, false),
-    REPL_CLI_READ_PUBLIC("completion", "bash", NULL, nmo_cmd_completion_print, false, false, false),
-    REPL_CLI_READ_PUBLIC("completion", "fish", NULL, nmo_cmd_completion_print, false, false, false),
-    REPL_CLI_READ_PUBLIC("completion", "zsh", NULL, nmo_cmd_completion_print, false, false, false),
-    REPL_CLI_READ_PUBLIC("completion", "powershell", "ps1", nmo_cmd_completion_print, false, false, false),
+    REPL_CLI_READ_PUBLIC("extension", "list", "ls", nmo_cmd_extension_list),
+    REPL_CLI_READ_SESSION_GENERIC("extension", "info", "i", nmo_cmd_extension_info),
+    REPL_CLI_READ_SESSION_GENERIC("extension", "check", "ch", nmo_cmd_extension_check),
+    REPL_CLI_READ_SESSION_GENERIC("texture", "list", "ls", nmo_cmd_texture_list),
+    REPL_CLI_READ_SESSION_GENERIC("texture", "show", "s", nmo_cmd_texture_show),
+    REPL_CLI_READ_SESSION_GENERIC("texture", "extract", "x", nmo_cmd_texture_extract),
+    REPL_CLI_READ_SESSION_GENERIC("data", "list", "ls", nmo_cmd_data_list),
+    REPL_CLI_READ_SESSION_GENERIC("data", "show", "s", nmo_cmd_data_show),
+    REPL_CLI_READ_SESSION_GENERIC("data", "dump", "d", nmo_cmd_data_dump),
+    REPL_CLI_READ_SESSION_GENERIC("scene", "list", "ls", nmo_cmd_scene_list),
+    REPL_CLI_READ_SESSION_GENERIC("scene", "show", "s", nmo_cmd_scene_show),
+    REPL_CLI_READ_SESSION_GENERIC("entity", "list", "ls", nmo_cmd_entity_list),
+    REPL_CLI_READ_SESSION_GENERIC("entity", "show", "s", nmo_cmd_entity_show),
+    REPL_CLI_READ_SESSION_GENERIC("material", "list", "ls", nmo_cmd_material_list),
+    REPL_CLI_READ_SESSION_GENERIC("material", "show", "s", nmo_cmd_material_show),
+    REPL_CLI_READ_SESSION_GENERIC("mesh", "list", "ls", nmo_cmd_mesh_list),
+    REPL_CLI_READ_SESSION_GENERIC("mesh", "show", "s", nmo_cmd_mesh_show),
+    REPL_CLI_READ_SESSION_GENERIC("mesh", "export", "x", nmo_cmd_mesh_export),
+    REPL_CLI_READ_SESSION_GENERIC("animation", "list", "ls", nmo_cmd_animation_list),
+    REPL_CLI_READ_SESSION_GENERIC("animation", "show", "s", nmo_cmd_animation_show),
+    REPL_CLI_READ_SESSION_GENERIC("animation", "keys", "k", nmo_cmd_animation_keys),
+    REPL_CLI_READ_SESSION_GENERIC("animation", "export", "x", nmo_cmd_animation_export),
+    REPL_CLI_READ_SESSION_GENERIC("debug", "load-phases", "lp", nmo_cmd_debug_load_phases),
+    REPL_CLI_READ_SESSION_GENERIC("debug", "chunks", "ch", nmo_cmd_debug_chunks),
+    REPL_CLI_READ_SESSION_GENERIC("debug", "objects", "obj", nmo_cmd_debug_objects),
+    REPL_CLI_READ_SESSION_GENERIC("debug", "export", "x", nmo_cmd_debug_export),
+    REPL_CLI_READ_PUBLIC("completion", "bash", NULL, nmo_cmd_completion_print),
+    REPL_CLI_READ_PUBLIC("completion", "fish", NULL, nmo_cmd_completion_print),
+    REPL_CLI_READ_PUBLIC("completion", "zsh", NULL, nmo_cmd_completion_print),
+    REPL_CLI_READ_PUBLIC("completion", "powershell", "ps1", nmo_cmd_completion_print),
 };
 
 #undef REPL_CLI_READ_SESSION
-#undef REPL_CLI_READ_SESSION_DIFF
+#undef REPL_CLI_READ_SESSION_GENERIC
 #undef REPL_CLI_READ_PUBLIC
 
 static const repl_cli_read_action_t *repl_find_cli_read_action(const char *group,
@@ -1607,6 +1606,20 @@ static const repl_cli_read_action_t *repl_find_cli_read_action(const char *group
     }
     return NULL;
 }
+
+size_t nmo_repl_cli_read_session_public_fallback_count(void)
+{
+    size_t count = 0;
+    size_t action_count = sizeof(repl_cli_read_actions) / sizeof(repl_cli_read_actions[0]);
+    for (size_t i = 0; i < action_count; i++) {
+        const repl_cli_read_action_t *entry = &repl_cli_read_actions[i];
+        if (entry->needs_session && !entry->session_handler && !entry->generic_session) {
+            count++;
+        }
+    }
+    return count;
+}
+
 
 static bool repl_resource_info_has_selector(int argc, char **argv) {
     for (int i = 2; i < argc; i++) {
@@ -1625,51 +1638,6 @@ static const char *repl_cli_source_label(nmo_repl_context_t *repl) {
         return "(current session)";
     }
     return repl->filename;
-}
-
-static char **repl_build_cli_read_argv(const repl_cli_read_action_t *action,
-                                       int argc, char **argv,
-                                       const char *source_label,
-                                       int *out_argc)
-{
-    int base_argc = argc - 1;
-    int extra = action->append_source ? 1 : 0;
-    char **cmd_argv = (char **)calloc((size_t)base_argc + (size_t)extra + 1u,
-                                      sizeof(char *));
-    if (!cmd_argv) {
-        return NULL;
-    }
-
-    int out = 0;
-    if (action->diff_left_current) {
-        cmd_argv[out++] = argv[1];
-        cmd_argv[out++] = (char *)source_label;
-        for (int i = 2; i < argc; i++) {
-            cmd_argv[out++] = argv[i];
-        }
-    } else if (repl_streq(action->group, "behavior") &&
-               repl_streq(action->action, "interface")) {
-        int start = 1;
-        if (argc >= 3 && (repl_streq(argv[2], "show") || repl_streq(argv[2], "s"))) {
-            start = 2;
-        }
-        for (int i = start; i < argc; i++) {
-            cmd_argv[out++] = argv[i];
-        }
-        if (action->append_source) {
-            cmd_argv[out++] = (char *)source_label;
-        }
-    } else {
-        for (int i = 1; i < argc; i++) {
-            cmd_argv[out++] = argv[i];
-        }
-        if (action->append_source) {
-            cmd_argv[out++] = (char *)source_label;
-        }
-    }
-
-    *out_argc = out;
-    return cmd_argv;
 }
 
 static bool repl_cli_read_action_allowed(const char *group, int argc, char **argv) {
@@ -1715,7 +1683,7 @@ static int repl_dispatch_cli_read_group(nmo_repl_context_t *repl, int argc, char
         fprintf(stderr, "No session loaded.\n");
         return -1;
     }
-    if (!action->diff_left_current && action->needs_session &&
+    if (!repl_streq(group, "diff") && action->needs_session &&
         repl_has_explicit_session_file_operand(argc, argv)) {
         fprintf(stderr, "File operands are not accepted in REPL CLI read mirror; use the current session.\n");
         return -1;
@@ -1730,13 +1698,8 @@ static int repl_dispatch_cli_read_group(nmo_repl_context_t *repl, int argc, char
     }
 
     const char *source_label = repl_cli_source_label(repl);
-    if (action->needs_session) {
-        local_global.borrowed_ctx = repl->ctx;
-        local_global.borrowed_session = repl->session;
-        local_global.borrowed_source_label = source_label;
-    }
 
-    if (action->session_handler) {
+    if (action->needs_session) {
         nmo_cmd_ctx_t cmd;
         int init_rc = nmo_cmd_ctx_init_with_session(&cmd, repl->ctx,
                                                     repl->session,
@@ -1745,20 +1708,31 @@ static int repl_dispatch_cli_read_group(nmo_repl_context_t *repl, int argc, char
         if (init_rc != NMO_CLI_EXIT_SUCCESS) {
             return -1;
         }
-        int rc = action->session_handler(&cmd, argc - 1, &argv[1]);
+
+        int rc;
+        if (action->session_handler) {
+            rc = action->session_handler(&cmd, argc - 1, &argv[1]);
+        } else if (repl_streq(action->group, "behavior") &&
+                   repl_streq(action->action, "interface") &&
+                   argc >= 3 &&
+                   (repl_streq(argv[2], "show") || repl_streq(argv[2], "s"))) {
+            char *iface_argv[NMO_REPL_MAX_ARGS];
+            int iface_argc = 0;
+            iface_argv[iface_argc++] = argv[1];
+            for (int i = 3; i < argc && iface_argc < NMO_REPL_MAX_ARGS; i++) {
+                iface_argv[iface_argc++] = argv[i];
+            }
+            rc = nmo_cmd_in_session_dispatch_with_source(&cmd, iface_argc, iface_argv,
+                                                         action->handler);
+        } else {
+            rc = nmo_cmd_in_session_dispatch_with_source(&cmd, argc - 1, &argv[1],
+                                                         action->handler);
+        }
         rc = nmo_cmd_ctx_done(&cmd, rc);
         return rc == NMO_CLI_EXIT_SUCCESS ? 0 : -1;
     }
 
-    int cli_argc = 0;
-    char **cli_argv = repl_build_cli_read_argv(action, argc, argv, source_label, &cli_argc);
-    if (!cli_argv) {
-        fprintf(stderr, "Error: Out of memory\n");
-        return -1;
-    }
-
-    int rc = action->handler(cli_argc, cli_argv, &local_global);
-    free(cli_argv);
+    int rc = action->handler(argc - 1, &argv[1], &local_global);
 
     return rc == NMO_CLI_EXIT_SUCCESS ? 0 : -1;
 }
