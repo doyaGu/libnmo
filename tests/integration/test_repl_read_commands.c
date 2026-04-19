@@ -463,6 +463,8 @@ TEST(repl_read, specialized_repl_read_cores_are_directly_callable) {
 TEST(repl_read, cli_read_table_has_no_session_public_fallbacks) {
     ASSERT_EQ(0u, nmo_repl_cli_read_session_public_fallback_count());
     ASSERT_EQ(0u, nmo_repl_cli_read_generic_session_count_for_group("chunk"));
+    ASSERT_EQ(0u, nmo_repl_cli_read_generic_session_count_for_group("object"));
+    ASSERT_EQ(0u, nmo_repl_cli_read_generic_session_count_for_group("parameter"));
 }
 
 TEST(repl_read, command_registry_is_shared_repl_policy_source) {

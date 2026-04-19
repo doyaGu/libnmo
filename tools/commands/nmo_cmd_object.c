@@ -1417,3 +1417,44 @@ int nmo_cmd_object_list_fields(int argc, char **argv,
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
+
+int nmo_cmd_object_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    if (!ctx || argc < 1 || !argv || !argv[0]) {
+        fprintf(stderr, "Usage: object list|tree|show|find|refs|export|impact|orphans|cycles|graph|list-fields ...\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
+        return nmo_cmd_object_show_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "refs") == 0 || strcmp(argv[0], "r") == 0) {
+        return nmo_cmd_object_refs_in_session(ctx, argc, argv);
+    }
+
+    nmo_cmd_public_handler_t handler = NULL;
+    if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
+        handler = nmo_cmd_object_list;
+    } else if (strcmp(argv[0], "tree") == 0 || strcmp(argv[0], "t") == 0) {
+        handler = nmo_cmd_object_tree;
+    } else if (strcmp(argv[0], "find") == 0 || strcmp(argv[0], "f") == 0) {
+        handler = nmo_cmd_object_find;
+    } else if (strcmp(argv[0], "export") == 0 || strcmp(argv[0], "x") == 0) {
+        handler = nmo_cmd_object_export;
+    } else if (strcmp(argv[0], "impact") == 0 || strcmp(argv[0], "imp") == 0) {
+        handler = nmo_cmd_object_impact;
+    } else if (strcmp(argv[0], "orphans") == 0 || strcmp(argv[0], "orp") == 0) {
+        handler = nmo_cmd_object_orphans;
+    } else if (strcmp(argv[0], "cycles") == 0 || strcmp(argv[0], "cyc") == 0) {
+        handler = nmo_cmd_object_cycles;
+    } else if (strcmp(argv[0], "graph") == 0 || strcmp(argv[0], "gr") == 0) {
+        handler = nmo_cmd_object_graph;
+    } else if (strcmp(argv[0], "list-fields") == 0 || strcmp(argv[0], "lf") == 0) {
+        handler = nmo_cmd_object_list_fields;
+    } else {
+        fprintf(stderr, "Unsupported object read action in session: %s\n", argv[0]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    return nmo_cmd_in_session_dispatch_with_source(ctx, argc, argv, handler);
+}

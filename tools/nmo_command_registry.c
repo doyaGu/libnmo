@@ -1095,9 +1095,9 @@ static const nmo_cli_action_t repl_actions[] = {
 static const nmo_cli_group_t groups[] = {
     {"file", "f", "File information and statistics", file_actions, ARRAY_SIZE(file_actions), NULL},
     {"chunk", "ch", "Chunk inspection", chunk_actions, ARRAY_SIZE(chunk_actions), nmo_cmd_chunk_in_session},
-    {"object", "obj", "Object inspection", object_actions, ARRAY_SIZE(object_actions), NULL},
+    {"object", "obj", "Object inspection", object_actions, ARRAY_SIZE(object_actions), nmo_cmd_object_in_session},
     {"behavior", "beh", "Behavior inspection", behavior_actions, ARRAY_SIZE(behavior_actions), NULL},
-    {"parameter", "param", "Parameter inspection", parameter_actions, ARRAY_SIZE(parameter_actions), NULL},
+    {"parameter", "param", "Parameter inspection", parameter_actions, ARRAY_SIZE(parameter_actions), nmo_cmd_parameter_in_session},
     {"resource", "res", "Resource management", resource_actions, ARRAY_SIZE(resource_actions), NULL},
     {"texture", "tex", "Texture management", texture_actions, ARRAY_SIZE(texture_actions), NULL},
     {"data", "da", "Data array inspection", data_actions, ARRAY_SIZE(data_actions), NULL},

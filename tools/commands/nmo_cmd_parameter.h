@@ -13,6 +13,8 @@
 extern "C" {
 #endif
 
+int nmo_cmd_parameter_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
+
 int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_parameter_show(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_parameter_show_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);

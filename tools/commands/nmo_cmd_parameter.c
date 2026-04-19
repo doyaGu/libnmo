@@ -1613,3 +1613,25 @@ int nmo_cmd_parameter_set_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
     return rc;
 }
 
+int nmo_cmd_parameter_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    if (!ctx || argc < 1 || !argv || !argv[0]) {
+        fprintf(stderr, "Usage: parameter list|show|dump ...\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
+        return nmo_cmd_parameter_show_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "dump") == 0 || strcmp(argv[0], "d") == 0) {
+        return nmo_cmd_parameter_dump_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
+        return nmo_cmd_in_session_dispatch_with_source(
+            ctx, argc, argv, nmo_cmd_parameter_list);
+    }
+
+    fprintf(stderr, "Unsupported parameter read action in session: %s\n", argv[0]);
+    return NMO_CLI_EXIT_ARG_ERROR;
+}
+
