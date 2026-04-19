@@ -573,22 +573,38 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
     bool include_hexdump = vals[1].val.flag;
     size_t max_bytes = vals[2].present ? (size_t)vals[2].val.u : 256;
 
-    /* Positional args: [object-id] <file>
-       File is the last positional; object-id (if present) is the first. */
-    const char *file_path = NULL;
+    bool in_session = global && global->borrowed_session;
+    /* Positional args:
+       CLI: [object-id] <file>; in-session: [object-id]. */
     const char *obj_id_str = NULL;
-    if (r.pos_count >= 2) {
-        obj_id_str = r.pos_args[0];
-        file_path = r.pos_args[r.pos_count - 1];
-    } else if (r.pos_count == 1) {
-        file_path = r.pos_args[0];
-    }
+    if (in_session) {
+        if (index_str) {
+            if (r.pos_count != 0) {
+                fprintf(stderr, "Usage: chunk show --index <n>\n");
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+        } else if (r.pos_count == 1) {
+            obj_id_str = r.pos_args[0];
+        } else {
+            fprintf(stderr, "Error: Invalid object ID\n");
+            fprintf(stderr, "Usage: chunk show <object-id>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    } else {
+        const char *file_path = NULL;
+        if (r.pos_count >= 2) {
+            obj_id_str = r.pos_args[0];
+            file_path = r.pos_args[r.pos_count - 1];
+        } else if (r.pos_count == 1) {
+            file_path = r.pos_args[0];
+        }
 
-    if (!file_path) {
-        fprintf(stderr, "Error: No file specified\n");
-        fprintf(stderr, "Usage: nmo chunk show --index <n> <file>\n");
-        fprintf(stderr, "       nmo chunk show <object-id> <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
+        if (!file_path) {
+            fprintf(stderr, "Error: No file specified\n");
+            fprintf(stderr, "Usage: nmo chunk show --index <n> <file>\n");
+            fprintf(stderr, "       nmo chunk show <object-id> <file>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
     }
 
     uint32_t object_id = 0;
@@ -918,4 +934,38 @@ int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *globa
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+int nmo_cmd_chunk_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    if (!ctx || argc < 1 || !argv || !argv[0]) {
+        fprintf(stderr, "Usage: chunk list|tree|show|find ...\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_cmd_public_handler_t handler = NULL;
+    if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
+        handler = nmo_cmd_chunk_list;
+    } else if (strcmp(argv[0], "tree") == 0 || strcmp(argv[0], "t") == 0) {
+        handler = nmo_cmd_chunk_tree;
+    } else if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
+        handler = nmo_cmd_chunk_show;
+    } else if (strcmp(argv[0], "find") == 0 || strcmp(argv[0], "f") == 0) {
+        handler = nmo_cmd_chunk_find;
+    } else {
+        fprintf(stderr, "Unsupported chunk read action in session: %s\n", argv[0]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_cli_global_opts_t global;
+    if (ctx->global) {
+        global = *ctx->global;
+    } else {
+        nmo_cli_global_opts_init(&global);
+    }
+    global.borrowed_ctx = ctx->ctx;
+    global.borrowed_session = ctx->session;
+    global.borrowed_source_label = ctx->file_path;
+
+    return handler(argc, argv, &global);
 }

@@ -9,6 +9,7 @@
 #include "../../tools/nmo_repl_commands.h"
 #include "../../tools/nmo_repl_session.h"
 #include "../../tools/nmo_repl_util.h"
+#include "../../tools/commands/nmo_cmd_chunk.h"
 #include "../../tools/commands/nmo_cmd_diff.h"
 #include "../../tools/commands/nmo_cmd_file.h"
 #include "../../tools/commands/nmo_cmd_object.h"
@@ -421,6 +422,10 @@ TEST(repl_read, specialized_repl_read_cores_are_directly_callable) {
     char *diff_objects[2] = {"objects", NMO_TEST_DATA_FILE("Ballance/Camera.nmo")};
     char *diff_chunks[2] = {"chunks", NMO_TEST_DATA_FILE("Ballance/Camera.nmo")};
     char *diff_full[2] = {"full", NMO_TEST_DATA_FILE("Ballance/Camera.nmo")};
+    char *chunk_list[] = {"list", "--top", "3"};
+    char *chunk_tree[] = {"tree"};
+    char *chunk_show[] = {"show", "520"};
+    char *chunk_find[] = {"find", "--class", "CKGroup"};
     char *object_show[] = {"show", "520"};
     char *object_refs[] = {"refs", "520"};
     char *parameter_show[] = {"show", "46"};
@@ -442,6 +447,10 @@ TEST(repl_read, specialized_repl_read_cores_are_directly_callable) {
     assert_in_session_ok(&repl, nmo_cmd_diff_objects_in_session, 2, diff_objects);
     assert_in_session_ok(&repl, nmo_cmd_diff_chunks_in_session, 2, diff_chunks);
     assert_in_session_ok(&repl, nmo_cmd_diff_full_in_session, 2, diff_full);
+    assert_in_session_ok(&repl, nmo_cmd_chunk_in_session, 3, chunk_list);
+    assert_in_session_ok(&repl, nmo_cmd_chunk_in_session, 1, chunk_tree);
+    assert_in_session_ok(&repl, nmo_cmd_chunk_in_session, 2, chunk_show);
+    assert_in_session_ok(&repl, nmo_cmd_chunk_in_session, 3, chunk_find);
     assert_in_session_ok(&repl, nmo_cmd_object_show_in_session, 2, object_show);
     assert_in_session_ok(&repl, nmo_cmd_object_refs_in_session, 2, object_refs);
     assert_in_session_ok(&repl, nmo_cmd_parameter_show_in_session, 2, parameter_show);
@@ -452,6 +461,7 @@ TEST(repl_read, specialized_repl_read_cores_are_directly_callable) {
 
 TEST(repl_read, cli_read_table_has_no_session_public_fallbacks) {
     ASSERT_EQ(0u, nmo_repl_cli_read_session_public_fallback_count());
+    ASSERT_EQ(0u, nmo_repl_cli_read_generic_session_count_for_group("chunk"));
 }
 
 TEST(repl_read, completion_group_does_not_require_session) {

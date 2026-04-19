@@ -1513,10 +1513,10 @@ static const repl_cli_read_action_t repl_cli_read_actions[] = {
     REPL_CLI_READ_SESSION("file", "classes", "cls", nmo_cmd_file_classes, nmo_cmd_file_classes_in_session),
     REPL_CLI_READ_SESSION("file", "plugins", "pl", nmo_cmd_file_plugins, nmo_cmd_file_plugins_in_session),
     REPL_CLI_READ_SESSION("file", "space", "sp", nmo_cmd_file_space, nmo_cmd_file_space_in_session),
-    REPL_CLI_READ_SESSION_GENERIC("chunk", "list", "ls", nmo_cmd_chunk_list),
-    REPL_CLI_READ_SESSION_GENERIC("chunk", "tree", "t", nmo_cmd_chunk_tree),
-    REPL_CLI_READ_SESSION_GENERIC("chunk", "show", "s", nmo_cmd_chunk_show),
-    REPL_CLI_READ_SESSION_GENERIC("chunk", "find", "f", nmo_cmd_chunk_find),
+    REPL_CLI_READ_SESSION("chunk", "list", "ls", nmo_cmd_chunk_list, nmo_cmd_chunk_in_session),
+    REPL_CLI_READ_SESSION("chunk", "tree", "t", nmo_cmd_chunk_tree, nmo_cmd_chunk_in_session),
+    REPL_CLI_READ_SESSION("chunk", "show", "s", nmo_cmd_chunk_show, nmo_cmd_chunk_in_session),
+    REPL_CLI_READ_SESSION("chunk", "find", "f", nmo_cmd_chunk_find, nmo_cmd_chunk_in_session),
     REPL_CLI_READ_SESSION_GENERIC("object", "list", "ls", nmo_cmd_object_list),
     REPL_CLI_READ_SESSION_GENERIC("object", "tree", "t", nmo_cmd_object_tree),
     REPL_CLI_READ_SESSION("object", "show", "s", nmo_cmd_object_show, nmo_cmd_object_show_in_session),
@@ -1614,6 +1614,20 @@ size_t nmo_repl_cli_read_session_public_fallback_count(void)
     for (size_t i = 0; i < action_count; i++) {
         const repl_cli_read_action_t *entry = &repl_cli_read_actions[i];
         if (entry->needs_session && !entry->session_handler && !entry->generic_session) {
+            count++;
+        }
+    }
+    return count;
+}
+
+size_t nmo_repl_cli_read_generic_session_count_for_group(const char *group)
+{
+    size_t count = 0;
+    size_t action_count = sizeof(repl_cli_read_actions) / sizeof(repl_cli_read_actions[0]);
+    for (size_t i = 0; i < action_count; i++) {
+        const repl_cli_read_action_t *entry = &repl_cli_read_actions[i];
+        if (entry->needs_session && entry->generic_session &&
+            (!group || repl_streq(group, entry->group))) {
             count++;
         }
     }

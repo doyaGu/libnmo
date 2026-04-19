@@ -7,6 +7,7 @@
 #define NMO_CMD_CHUNK_H
 
 #include "../nmo_cli_common.h"
+#include "../nmo_cmd_ctx.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,6 +32,11 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
  * @brief nmo chunk find - Find chunks by class/name
  */
 int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *global);
+
+/**
+ * @brief Run chunk read actions against an existing session.
+ */
+int nmo_cmd_chunk_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
 #ifdef __cplusplus
 }
