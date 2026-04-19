@@ -83,6 +83,9 @@ if(TARGET nmo_cli)
     add_dependencies(test_cli_write_commands nmo_cli)
     target_compile_definitions(test_cli_write_commands PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_cli_write_commands COMMAND test_cli_write_commands)
+    set_tests_properties(test_cli_write_commands PROPERTIES
+        ENVIRONMENT "NMO_DATA_DIR=${PROJECT_SOURCE_DIR}/data"
+    )
 endif()
 
 # Temporarily disabled - test_phase6_integration uses deprecated API
