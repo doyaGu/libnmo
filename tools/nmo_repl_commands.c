@@ -94,11 +94,11 @@ static const nmo_repl_command_t commands[] = {
     {"quit", "q", "Exit REPL", "quit", cmd_quit},
     {"exit", "", "Exit REPL", "exit", cmd_quit},
     /* mutation commands */
-    {"rename", "ren", "Rename an object", "rename <selector> <new_name>", cmd_rename},
-    {"delete", "del", "Delete object(s)", "delete <selector> [--cascade]", cmd_delete},
+    {"rename", "ren", "Rename an object", "rename [--id <id> | --name <name> | <selector>] <new_name>", cmd_rename},
+    {"delete", "del", "Delete object(s)", "delete [--id <id> | --name <name> | <selector>] [--cascade]", cmd_delete},
     {"create", "", "Create new object", "create <class> [name]", cmd_create},
-    {"copy", "cp", "Copy object(s)", "copy <selector> [--cascade]", cmd_copy},
-    {"set-param", "sp", "Set parameter value", "set-param <selector> <value>", cmd_set_param},
+    {"copy", "cp", "Copy object(s)", "copy [--id <id> | --name <name> | <selector>] [--cascade]", cmd_copy},
+    {"set-param", "sp", "Set parameter value", "set-param [--id <id> | --name <name> | <selector>] <value>", cmd_set_param},
     {NULL, NULL, NULL, NULL, NULL}};
 
 static void suggest_commands(const char *name) {
@@ -1388,15 +1388,87 @@ static int cmd_quit(nmo_repl_context_t *repl, int argc, char **argv) {
  * Mutation commands
  * ============================================================================ */
 
+static int repl_resolve_mutation_selector(nmo_repl_context_t *repl,
+                                          int argc,
+                                          char **argv,
+                                          int selector_arg,
+                                          size_t *out_index,
+                                          int *out_next_arg) {
+    if (!repl || !argv || !out_index || !out_next_arg ||
+        selector_arg <= 0 || selector_arg >= argc) {
+        fprintf(stderr, "Error: No selector provided\n");
+        return -1;
+    }
+
+    if (strcmp(argv[selector_arg], "--id") == 0) {
+        if (selector_arg + 1 >= argc) {
+            fprintf(stderr, "Error: --id requires an object ID\n");
+            return -1;
+        }
+        uint32_t id = 0;
+        if (!nmo_repl_parse_u32(argv[selector_arg + 1], &id)) {
+            fprintf(stderr, "Error: Invalid object ID: %s\n", argv[selector_arg + 1]);
+            return -1;
+        }
+
+        nmo_cmd_ctx_t c;
+        nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
+        nmo_object_query_t query = {0};
+        nmo_core_query_set_object_id(&query, id);
+        nmo_object_t *match = NULL;
+        if (nmo_core_object_query_first(&c, &query, &match, out_index) !=
+            NMO_CLI_EXIT_SUCCESS) {
+            fprintf(stderr, "Error: No object with id %u\n", id);
+            return -1;
+        }
+        *out_next_arg = selector_arg + 2;
+        return 0;
+    }
+
+    if (strcmp(argv[selector_arg], "--name") == 0) {
+        if (selector_arg + 1 >= argc) {
+            fprintf(stderr, "Error: --name requires an object name\n");
+            return -1;
+        }
+
+        nmo_cmd_ctx_t c;
+        nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
+        nmo_object_query_t query = {
+            .name = argv[selector_arg + 1],
+            .name_mode = NMO_OBJECT_QUERY_NAME_EXACT,
+            .name_case_insensitive = false,
+        };
+        nmo_object_t *match = NULL;
+        if (nmo_core_object_query_first(&c, &query, &match, out_index) !=
+            NMO_CLI_EXIT_SUCCESS) {
+            fprintf(stderr, "Error: No object named '%s'\n", argv[selector_arg + 1]);
+            return -1;
+        }
+        *out_next_arg = selector_arg + 2;
+        return 0;
+    }
+
+    if (nmo_repl_resolve_object_index(repl, argv[selector_arg], out_index, false) != 0) {
+        return -1;
+    }
+    *out_next_arg = selector_arg + 1;
+    return 0;
+}
+
 static int cmd_rename(nmo_repl_context_t *repl, int argc, char **argv) {
     if (argc < 3) {
-        fprintf(stderr, "Usage: rename <selector> <new_name>\n");
+        fprintf(stderr, "Usage: rename [--id <id> | --name <name> | <selector>] <new_name>\n");
         return -1;
     }
     if (!repl->session) { fprintf(stderr, "No session loaded.\n"); return -1; }
 
     size_t index = 0;
-    if (nmo_repl_resolve_object_index(repl, argv[1], &index, false) != 0) return -1;
+    int name_arg = 0;
+    if (repl_resolve_mutation_selector(repl, argc, argv, 1, &index, &name_arg) != 0) return -1;
+    if (name_arg >= argc) {
+        fprintf(stderr, "Usage: rename [--id <id> | --name <name> | <selector>] <new_name>\n");
+        return -1;
+    }
 
     size_t object_count = nmo_repl_object_count(repl);
     nmo_object_t *obj = nmo_repl_object_at(repl, index);
@@ -1404,12 +1476,12 @@ static int cmd_rename(nmo_repl_context_t *repl, int argc, char **argv) {
 
     nmo_object_id_t id = nmo_object_get_id(obj);
     const char *old_name = nmo_object_get_name(obj);
-    printf("Renaming #%u '%s' -> '%s'\n", id, old_name ? old_name : "", argv[2]);
+    printf("Renaming #%u '%s' -> '%s'\n", id, old_name ? old_name : "", argv[name_arg]);
 
     nmo_session_edit_t *edit = NULL;
     nmo_status_t rc = nmo_session_edit_begin(repl->session, "repl rename", &edit);
     if (rc == NMO_OK) {
-        rc = nmo_session_edit_rename_object(edit, id, argv[2]);
+        rc = nmo_session_edit_rename_object(edit, id, argv[name_arg]);
         if (rc == NMO_OK) {
             rc = nmo_session_edit_commit(edit);
         } else {
@@ -1428,20 +1500,21 @@ static int cmd_rename(nmo_repl_context_t *repl, int argc, char **argv) {
 
 static int cmd_delete(nmo_repl_context_t *repl, int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: delete <selector> [--cascade]\n");
+        fprintf(stderr, "Usage: delete [--id <id> | --name <name> | <selector>] [--cascade]\n");
         return -1;
     }
     if (!repl->session) { fprintf(stderr, "No session loaded.\n"); return -1; }
 
     size_t index = 0;
-    if (nmo_repl_resolve_object_index(repl, argv[1], &index, false) != 0) return -1;
+    int next_arg = 0;
+    if (repl_resolve_mutation_selector(repl, argc, argv, 1, &index, &next_arg) != 0) return -1;
 
     size_t object_count = nmo_repl_object_count(repl);
     nmo_object_t *obj = nmo_repl_object_at(repl, index);
     if (index >= object_count || !obj) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
 
     bool cascade = false;
-    for (int i = 2; i < argc; i++) {
+    for (int i = next_arg; i < argc; i++) {
         if (strcmp(argv[i], "--cascade") == 0) cascade = true;
     }
 
@@ -1507,20 +1580,21 @@ static int cmd_create(nmo_repl_context_t *repl, int argc, char **argv) {
 
 static int cmd_copy(nmo_repl_context_t *repl, int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: copy <selector> [--cascade]\n");
+        fprintf(stderr, "Usage: copy [--id <id> | --name <name> | <selector>] [--cascade]\n");
         return -1;
     }
     if (!repl->session) { fprintf(stderr, "No session loaded.\n"); return -1; }
 
     size_t index = 0;
-    if (nmo_repl_resolve_object_index(repl, argv[1], &index, false) != 0) return -1;
+    int next_arg = 0;
+    if (repl_resolve_mutation_selector(repl, argc, argv, 1, &index, &next_arg) != 0) return -1;
 
     size_t object_count = nmo_repl_object_count(repl);
     nmo_object_t *obj = nmo_repl_object_at(repl, index);
     if (index >= object_count || !obj) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
 
     bool cascade = false;
-    for (int i = 2; i < argc; i++) {
+    for (int i = next_arg; i < argc; i++) {
         if (strcmp(argv[i], "--cascade") == 0) cascade = true;
     }
 
@@ -1544,13 +1618,18 @@ static int cmd_copy(nmo_repl_context_t *repl, int argc, char **argv) {
 
 static int cmd_set_param(nmo_repl_context_t *repl, int argc, char **argv) {
     if (argc < 3) {
-        fprintf(stderr, "Usage: set-param <selector> <value>\n");
+        fprintf(stderr, "Usage: set-param [--id <id> | --name <name> | <selector>] <value>\n");
         return -1;
     }
     if (!repl->session) { fprintf(stderr, "No session loaded.\n"); return -1; }
 
     size_t index = 0;
-    if (nmo_repl_resolve_object_index(repl, argv[1], &index, false) != 0) return -1;
+    int value_arg = 0;
+    if (repl_resolve_mutation_selector(repl, argc, argv, 1, &index, &value_arg) != 0) return -1;
+    if (value_arg >= argc) {
+        fprintf(stderr, "Usage: set-param [--id <id> | --name <name> | <selector>] <value>\n");
+        return -1;
+    }
 
     size_t object_count = nmo_repl_object_count(repl);
     nmo_object_t *obj = nmo_repl_object_at(repl, index);
@@ -1564,16 +1643,11 @@ static int cmd_set_param(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
-    if (pstate->mode != CKPARAM_MODE_BUFFER) {
-        fprintf(stderr, "Error: Only buffer-mode parameters can be set (mode=%d)\n", pstate->mode);
-        return -1;
-    }
-
     nmo_session_edit_t *edit = NULL;
     nmo_status_t st = nmo_session_edit_begin(repl->session, "repl set-param", &edit);
     if (st == NMO_OK) {
         st = nmo_session_edit_set_parameter_value(
-            edit, nmo_object_get_id(obj), argv[2]);
+            edit, nmo_object_get_id(obj), argv[value_arg]);
     }
     if (st == NMO_OK) {
         st = nmo_session_edit_commit(edit);
@@ -1582,13 +1656,13 @@ static int cmd_set_param(nmo_repl_context_t *repl, int argc, char **argv) {
     }
     if (st != NMO_OK) {
         fprintf(stderr, "Error: Cannot set value '%s': %s\n",
-                argv[2], nmo_error_string(st));
+                argv[value_arg], nmo_error_string(st));
         return -1;
     }
 
     const char *name = nmo_object_get_name(obj);
     printf("Set parameter #%u '%s' = %s\n",
-           nmo_object_get_id(obj), name ? name : "", argv[2]);
+           nmo_object_get_id(obj), name ? name : "", argv[value_arg]);
 
     repl->dirty = true;
     return 0;
