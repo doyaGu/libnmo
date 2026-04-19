@@ -88,9 +88,7 @@ if(TARGET nmo_cli)
         ENVIRONMENT "NMO_DATA_DIR=${PROJECT_SOURCE_DIR}/data"
     )
 
-    add_executable(test_repl_write_commands
-        test_repl_write_commands.c
-        write_semantic_probe.c
+    set(REPL_COMMAND_MIRROR_SOURCES
         ${PROJECT_SOURCE_DIR}/tools/nmo_repl_commands.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_repl_session.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_repl_util.c
@@ -105,10 +103,40 @@ if(TARGET nmo_cli)
         ${PROJECT_SOURCE_DIR}/tools/nmo_cli_write.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_tool_common.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_tool_session.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_file.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_chunk.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_object.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_object_refs.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_object_write.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_debug.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_type.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_validate.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_resource.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_show.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_graph.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_search.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_interface.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_link.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_parameter.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_convert.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_diff.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_query.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_extension.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_texture.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_data.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_scene.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_entity.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_material.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_mesh.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_animation.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_completion.c
+    )
+
+    add_executable(test_repl_write_commands
+        test_repl_write_commands.c
+        write_semantic_probe.c
+        ${REPL_COMMAND_MIRROR_SOURCES}
     )
     target_include_directories(test_repl_write_commands PRIVATE ${PROJECT_SOURCE_DIR}/tools)
     target_link_libraries(test_repl_write_commands PRIVATE nmo test_framework yyjson)
@@ -119,24 +147,7 @@ if(TARGET nmo_cli)
 
     add_executable(test_repl_read_commands
         test_repl_read_commands.c
-        ${PROJECT_SOURCE_DIR}/tools/nmo_repl_commands.c
-        ${PROJECT_SOURCE_DIR}/tools/nmo_repl_session.c
-        ${PROJECT_SOURCE_DIR}/tools/nmo_repl_util.c
-        ${PROJECT_SOURCE_DIR}/tools/nmo_repl_input.c
-        ${PROJECT_SOURCE_DIR}/tools/nmo_cmd_ctx.c
-        ${PROJECT_SOURCE_DIR}/tools/nmo_cmd_core.c
-        ${PROJECT_SOURCE_DIR}/tools/nmo_opt.c
-        ${PROJECT_SOURCE_DIR}/tools/nmo_cli_common.c
-        ${PROJECT_SOURCE_DIR}/tools/nmo_cli_json.c
-        ${PROJECT_SOURCE_DIR}/tools/nmo_cli_output.c
-        ${PROJECT_SOURCE_DIR}/tools/nmo_cli_sort.c
-        ${PROJECT_SOURCE_DIR}/tools/nmo_cli_write.c
-        ${PROJECT_SOURCE_DIR}/tools/nmo_tool_common.c
-        ${PROJECT_SOURCE_DIR}/tools/nmo_tool_session.c
-        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_object.c
-        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_object_refs.c
-        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_object_write.c
-        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_parameter.c
+        ${REPL_COMMAND_MIRROR_SOURCES}
     )
     target_include_directories(test_repl_read_commands PRIVATE ${PROJECT_SOURCE_DIR}/tools)
     target_link_libraries(test_repl_read_commands PRIVATE nmo test_framework yyjson)

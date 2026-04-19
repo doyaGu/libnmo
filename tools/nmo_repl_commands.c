@@ -2,14 +2,33 @@
 
 #include "nmo_cmd_core.h"
 #include "nmo_cmd_ctx.h"
+#include "nmo_cli_common.h"
 #include "nmo_cli_write.h"
 #include "nmo_repl_input.h"
 #include "nmo_repl_util.h"
 
 #include "nmo_repl_session.h"
 
+#include "commands/nmo_cmd_animation.h"
+#include "commands/nmo_cmd_behavior.h"
+#include "commands/nmo_cmd_chunk.h"
+#include "commands/nmo_cmd_completion.h"
+#include "commands/nmo_cmd_data.h"
+#include "commands/nmo_cmd_debug.h"
+#include "commands/nmo_cmd_diff.h"
+#include "commands/nmo_cmd_entity.h"
+#include "commands/nmo_cmd_extension.h"
+#include "commands/nmo_cmd_file.h"
+#include "commands/nmo_cmd_material.h"
+#include "commands/nmo_cmd_mesh.h"
 #include "commands/nmo_cmd_object.h"
 #include "commands/nmo_cmd_parameter.h"
+#include "commands/nmo_cmd_query.h"
+#include "commands/nmo_cmd_resource.h"
+#include "commands/nmo_cmd_scene.h"
+#include "commands/nmo_cmd_texture.h"
+#include "commands/nmo_cmd_type.h"
+#include "commands/nmo_cmd_validate.h"
 
 #include "app/nmo_inspector.h"
 #include "app/nmo_save.h"
@@ -65,8 +84,12 @@ static int cmd_reload(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_history(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_clear(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_quit(nmo_repl_context_t *repl, int argc, char **argv);
+static int cmd_cli_read(nmo_repl_context_t *repl, int argc, char **argv);
+static int cmd_cli(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_object(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_parameter(nmo_repl_context_t *repl, int argc, char **argv);
+static int repl_dispatch_cli_read_group(nmo_repl_context_t *repl, int argc, char **argv,
+                                        const nmo_cli_global_opts_t *global);
 
 static const nmo_repl_command_t commands[] = {
     {"help", "h", "Show help for commands", "help [command]", cmd_help},
@@ -93,9 +116,28 @@ static const nmo_repl_command_t commands[] = {
     {"clear", "cls", "Clear the screen", "clear", cmd_clear},
     {"quit", "q", "Exit REPL", "quit", cmd_quit},
     {"exit", "", "Exit REPL", "exit", cmd_quit},
+    {"cli", "", "Run CLI-shaped read command with global options", "cli [global-options] <group> <action> ...", cmd_cli},
+    {"file", "", "Run CLI file read commands", "file info|header|stats|classes|plugins|space ...", cmd_cli_read},
+    {"chunk", "", "Run CLI chunk read commands", "chunk list|tree|show|find ...", cmd_cli_read},
+    {"behavior", "", "Run CLI behavior read commands", "behavior list|stats|show|graph|dump|find|trace ...", cmd_cli_read},
+    {"resource", "", "Run CLI resource read commands", "resource list|show|extract|info ...", cmd_cli_read},
+    {"type", "", "Run CLI type read commands", "type list|show|class-tree ...", cmd_cli_read},
+    {"validate", "", "Run CLI validation read commands", "validate all|structure|references|resources|orphans ...", cmd_cli_read},
+    {"convert", "", "Reject CLI convert mutations in REPL", "convert ...", cmd_cli_read},
+    {"diff", "", "Run CLI diff read commands", "diff summary|objects|chunks|full <other-file> ...", cmd_cli_read},
+    {"extension", "", "Run CLI extension read commands", "extension list|info|check ...", cmd_cli_read},
+    {"texture", "", "Run CLI texture read commands", "texture list|show|extract ...", cmd_cli_read},
+    {"data", "", "Run CLI data read commands", "data list|show|dump ...", cmd_cli_read},
+    {"scene", "", "Run CLI scene read commands", "scene list|show ...", cmd_cli_read},
+    {"entity", "", "Run CLI entity read commands", "entity list|show ...", cmd_cli_read},
+    {"material", "", "Run CLI material read commands", "material list|show ...", cmd_cli_read},
+    {"mesh", "", "Run CLI mesh read commands", "mesh list|show|export ...", cmd_cli_read},
+    {"animation", "", "Run CLI animation read commands", "animation list|show|keys|export ...", cmd_cli_read},
+    {"debug", "", "Run CLI debug read commands", "debug load-phases|chunks|objects|export ...", cmd_cli_read},
+    {"completion", "", "Run CLI completion printers", "completion bash|fish|zsh|powershell", cmd_cli_read},
     /* mutation commands */
-    {"object", "", "Run grouped object commands", "object show|refs|rename|delete|create|copy ...", cmd_object},
-    {"parameter", "", "Run grouped parameter commands", "parameter show|dump|set ...", cmd_parameter},
+    {"object", "", "Run grouped object commands", "object <cli-read-action>|show|refs|rename|delete|create|copy ...", cmd_object},
+    {"parameter", "", "Run grouped parameter commands", "parameter list|show|dump|set ...", cmd_parameter},
     {NULL, NULL, NULL, NULL, NULL}};
 
 static void suggest_commands(const char *name) {
@@ -947,6 +989,13 @@ static int cmd_query(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
+    if (strcmp(argv[1], "eval") == 0 || strcmp(argv[1], "e") == 0 ||
+        strcmp(argv[1], "script") == 0 || strcmp(argv[1], "s") == 0 ||
+        strcmp(argv[1], "schema") == 0 || strcmp(argv[1], "sc") == 0 ||
+        strcmp(argv[1], "module") == 0 || strcmp(argv[1], "m") == 0) {
+        return repl_dispatch_cli_read_group(repl, argc, argv, NULL);
+    }
+
     /* Reconstruct expression */
     char expr_buf[NMO_REPL_MAX_CMD_LEN];
     size_t pos = 0;
@@ -1382,12 +1431,338 @@ static int cmd_quit(nmo_repl_context_t *repl, int argc, char **argv) {
 }
 
 /* ============================================================================
- * Mutation commands
+ * CLI read mirror and mutation commands
  * ============================================================================ */
+
+static bool repl_streq(const char *a, const char *b) {
+    return a && b && strcmp(a, b) == 0;
+}
+
+static bool repl_has_token(int argc, char **argv, const char *token) {
+    for (int i = 0; i < argc; i++) {
+        if (repl_streq(argv[i], token)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool repl_token_has_suffix_ci(const char *token, const char *suffix) {
+    if (!token || !suffix) {
+        return false;
+    }
+    size_t token_len = strlen(token);
+    size_t suffix_len = strlen(suffix);
+    if (suffix_len > token_len) {
+        return false;
+    }
+
+    const char *tail = token + token_len - suffix_len;
+    for (size_t i = 0; i < suffix_len; i++) {
+        unsigned char a = (unsigned char)tail[i];
+        unsigned char b = (unsigned char)suffix[i];
+        if ((char)tolower(a) != (char)tolower(b)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool repl_token_looks_like_session_file(const char *token) {
+    return repl_token_has_suffix_ci(token, ".nmo") ||
+           repl_token_has_suffix_ci(token, ".cmo") ||
+           repl_token_has_suffix_ci(token, ".vmo");
+}
+
+static bool repl_has_explicit_session_file_operand(int argc, char **argv) {
+    for (int i = 2; i < argc; i++) {
+        if (repl_token_looks_like_session_file(argv[i])) {
+            return true;
+        }
+    }
+    return false;
+}
+
+typedef int (*repl_cli_read_handler_t)(int argc, char **argv,
+                                       const nmo_cli_global_opts_t *global);
+
+typedef struct repl_cli_read_action {
+    const char *group;
+    const char *action;
+    const char *alias;
+    repl_cli_read_handler_t handler;
+    bool needs_session;
+    bool append_source;
+    bool diff_left_current;
+} repl_cli_read_action_t;
+
+static const repl_cli_read_action_t repl_cli_read_actions[] = {
+    {"file", "info", "i", nmo_cmd_file_info, true, true, false},
+    {"file", "header", "hdr", nmo_cmd_file_header, true, true, false},
+    {"file", "stats", "st", nmo_cmd_file_stats, true, true, false},
+    {"file", "classes", "cls", nmo_cmd_file_classes, true, true, false},
+    {"file", "plugins", "pl", nmo_cmd_file_plugins, true, true, false},
+    {"file", "space", "sp", nmo_cmd_file_space, true, true, false},
+    {"chunk", "list", "ls", nmo_cmd_chunk_list, true, true, false},
+    {"chunk", "tree", "t", nmo_cmd_chunk_tree, true, true, false},
+    {"chunk", "show", "s", nmo_cmd_chunk_show, true, true, false},
+    {"chunk", "find", "f", nmo_cmd_chunk_find, true, true, false},
+    {"object", "list", "ls", nmo_cmd_object_list, true, true, false},
+    {"object", "tree", "t", nmo_cmd_object_tree, true, true, false},
+    {"object", "show", "s", nmo_cmd_object_show, true, true, false},
+    {"object", "find", "f", nmo_cmd_object_find, true, true, false},
+    {"object", "refs", "r", nmo_cmd_object_refs, true, true, false},
+    {"object", "export", "x", nmo_cmd_object_export, true, true, false},
+    {"object", "impact", "imp", nmo_cmd_object_impact, true, true, false},
+    {"object", "orphans", "orp", nmo_cmd_object_orphans, true, true, false},
+    {"object", "cycles", "cyc", nmo_cmd_object_cycles, true, true, false},
+    {"object", "graph", "gr", nmo_cmd_object_graph, true, true, false},
+    {"object", "list-fields", "lf", nmo_cmd_object_list_fields, true, true, false},
+    {"parameter", "list", "ls", nmo_cmd_parameter_list, true, true, false},
+    {"parameter", "show", "s", nmo_cmd_parameter_show, true, true, false},
+    {"parameter", "dump", "d", nmo_cmd_parameter_dump, true, true, false},
+    {"behavior", "list", "ls", nmo_cmd_behavior_list, true, true, false},
+    {"behavior", "stats", "st", nmo_cmd_behavior_stats, true, true, false},
+    {"behavior", "show", "s", nmo_cmd_behavior_show, true, true, false},
+    {"behavior", "graph", "g", nmo_cmd_behavior_graph, true, true, false},
+    {"behavior", "dump", "d", nmo_cmd_behavior_dump, true, true, false},
+    {"behavior", "find", "f", nmo_cmd_behavior_find, true, true, false},
+    {"behavior", "trace", "tr", nmo_cmd_behavior_trace, true, true, false},
+    {"behavior", "interface", "iface", nmo_cmd_behavior_iface_show, true, true, false},
+    {"resource", "list", "ls", nmo_cmd_resource_list, true, true, false},
+    {"resource", "show", "s", nmo_cmd_resource_show, true, true, false},
+    {"resource", "extract", "x", nmo_cmd_resource_extract, true, true, false},
+    {"resource", "info", NULL, nmo_cmd_resource_info, true, true, false},
+    {"type", "list", "ls", nmo_cmd_type_list, false, false, false},
+    {"type", "show", "s", nmo_cmd_type_show, false, false, false},
+    {"type", "class-tree", "ct", nmo_cmd_type_class_tree, false, false, false},
+    {"validate", "all", "a", nmo_cmd_validate_all, true, true, false},
+    {"validate", "structure", "st", nmo_cmd_validate_structure, true, true, false},
+    {"validate", "references", "ref", nmo_cmd_validate_references, true, true, false},
+    {"validate", "resources", "res", nmo_cmd_validate_resources, true, true, false},
+    {"validate", "orphans", "orp", nmo_cmd_validate_orphans, true, true, false},
+    {"diff", "summary", "s", nmo_cmd_diff_summary, true, true, true},
+    {"diff", "objects", "obj", nmo_cmd_diff_objects, true, true, true},
+    {"diff", "chunks", "ch", nmo_cmd_diff_chunks, true, true, true},
+    {"diff", "full", "f", nmo_cmd_diff_full, true, true, true},
+    {"query", "eval", "e", nmo_cmd_query_eval, true, true, false},
+    {"extension", "list", "ls", nmo_cmd_extension_list, false, false, false},
+    {"extension", "info", "i", nmo_cmd_extension_info, true, true, false},
+    {"extension", "check", "ch", nmo_cmd_extension_check, true, true, false},
+    {"texture", "list", "ls", nmo_cmd_texture_list, true, true, false},
+    {"texture", "show", "s", nmo_cmd_texture_show, true, true, false},
+    {"texture", "extract", "x", nmo_cmd_texture_extract, true, true, false},
+    {"data", "list", "ls", nmo_cmd_data_list, true, true, false},
+    {"data", "show", "s", nmo_cmd_data_show, true, true, false},
+    {"data", "dump", "d", nmo_cmd_data_dump, true, true, false},
+    {"scene", "list", "ls", nmo_cmd_scene_list, true, true, false},
+    {"scene", "show", "s", nmo_cmd_scene_show, true, true, false},
+    {"entity", "list", "ls", nmo_cmd_entity_list, true, true, false},
+    {"entity", "show", "s", nmo_cmd_entity_show, true, true, false},
+    {"material", "list", "ls", nmo_cmd_material_list, true, true, false},
+    {"material", "show", "s", nmo_cmd_material_show, true, true, false},
+    {"mesh", "list", "ls", nmo_cmd_mesh_list, true, true, false},
+    {"mesh", "show", "s", nmo_cmd_mesh_show, true, true, false},
+    {"mesh", "export", "x", nmo_cmd_mesh_export, true, true, false},
+    {"animation", "list", "ls", nmo_cmd_animation_list, true, true, false},
+    {"animation", "show", "s", nmo_cmd_animation_show, true, true, false},
+    {"animation", "keys", "k", nmo_cmd_animation_keys, true, true, false},
+    {"animation", "export", "x", nmo_cmd_animation_export, true, true, false},
+    {"debug", "load-phases", "lp", nmo_cmd_debug_load_phases, true, true, false},
+    {"debug", "chunks", "ch", nmo_cmd_debug_chunks, true, true, false},
+    {"debug", "objects", "obj", nmo_cmd_debug_objects, true, true, false},
+    {"debug", "export", "x", nmo_cmd_debug_export, true, true, false},
+    {"completion", "bash", NULL, nmo_cmd_completion_print, false, false, false},
+    {"completion", "fish", NULL, nmo_cmd_completion_print, false, false, false},
+    {"completion", "zsh", NULL, nmo_cmd_completion_print, false, false, false},
+    {"completion", "powershell", "ps1", nmo_cmd_completion_print, false, false, false},
+};
+
+static const repl_cli_read_action_t *repl_find_cli_read_action(const char *group,
+                                                               const char *action)
+{
+    size_t count = sizeof(repl_cli_read_actions) / sizeof(repl_cli_read_actions[0]);
+    for (size_t i = 0; i < count; i++) {
+        const repl_cli_read_action_t *entry = &repl_cli_read_actions[i];
+        if (repl_streq(group, entry->group) &&
+            (repl_streq(action, entry->action) ||
+             (entry->alias && repl_streq(action, entry->alias)))) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+static bool repl_resource_info_has_selector(int argc, char **argv) {
+    for (int i = 2; i < argc; i++) {
+        if (repl_streq(argv[i], "--index") || repl_streq(argv[i], "-i") ||
+            repl_streq(argv[i], "--name") || repl_streq(argv[i], "-n") ||
+            strncmp(argv[i], "--index=", 8) == 0 ||
+            strncmp(argv[i], "--name=", 7) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static const char *repl_cli_source_label(nmo_repl_context_t *repl) {
+    if (!repl || repl->dirty || !repl->filename || !repl->filename[0]) {
+        return "(current session)";
+    }
+    return repl->filename;
+}
+
+static char **repl_build_cli_read_argv(const repl_cli_read_action_t *action,
+                                       int argc, char **argv,
+                                       const char *source_label,
+                                       int *out_argc)
+{
+    int base_argc = argc - 1;
+    int extra = action->append_source ? 1 : 0;
+    char **cmd_argv = (char **)calloc((size_t)base_argc + (size_t)extra + 1u,
+                                      sizeof(char *));
+    if (!cmd_argv) {
+        return NULL;
+    }
+
+    int out = 0;
+    if (action->diff_left_current) {
+        cmd_argv[out++] = argv[1];
+        cmd_argv[out++] = (char *)source_label;
+        for (int i = 2; i < argc; i++) {
+            cmd_argv[out++] = argv[i];
+        }
+    } else if (repl_streq(action->group, "behavior") &&
+               repl_streq(action->action, "interface")) {
+        int start = 1;
+        if (argc >= 3 && (repl_streq(argv[2], "show") || repl_streq(argv[2], "s"))) {
+            start = 2;
+        }
+        for (int i = start; i < argc; i++) {
+            cmd_argv[out++] = argv[i];
+        }
+        if (action->append_source) {
+            cmd_argv[out++] = (char *)source_label;
+        }
+    } else {
+        for (int i = 1; i < argc; i++) {
+            cmd_argv[out++] = argv[i];
+        }
+        if (action->append_source) {
+            cmd_argv[out++] = (char *)source_label;
+        }
+    }
+
+    *out_argc = out;
+    return cmd_argv;
+}
+
+static bool repl_cli_read_action_allowed(const char *group, int argc, char **argv) {
+    if (!group || argc < 2) {
+        return false;
+    }
+    return repl_find_cli_read_action(group, argv[1]) != NULL;
+}
+
+static int repl_dispatch_cli_read_group(nmo_repl_context_t *repl, int argc, char **argv,
+                                        const nmo_cli_global_opts_t *global) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <cli-read-action> ...\n", argc > 0 ? argv[0] : "(command)");
+        return -1;
+    }
+
+    const char *group = argv[0];
+    const repl_cli_read_action_t *action = repl_find_cli_read_action(group, argv[1]);
+    if (!action) {
+        fprintf(stderr, "Unsupported or mutating CLI action in REPL read mirror: %s %s\n",
+                group, argc > 1 ? argv[1] : "");
+        return -1;
+    }
+
+    if (repl_streq(group, "validate") &&
+        (repl_has_token(argc, argv, "--strip") || repl_has_token(argc, argv, "-o") ||
+         repl_has_token(argc, argv, "--output"))) {
+        fprintf(stderr, "Validation write/fix options are not supported in REPL read mirror.\n");
+        return -1;
+    }
+    if (repl_streq(group, "resource") && repl_streq(action->action, "info") &&
+        !repl_resource_info_has_selector(argc, argv)) {
+        fprintf(stderr, "resource info in REPL requires --index or --name; use the CLI for external-file sniffing.\n");
+        return -1;
+    }
+    if (repl_streq(group, "behavior") && repl_streq(action->action, "interface") &&
+        argc >= 3 && !repl_streq(argv[2], "show") && !repl_streq(argv[2], "s") &&
+        argv[2][0] != '-' && !(argv[2][0] >= '0' && argv[2][0] <= '9')) {
+        fprintf(stderr, "Unsupported or mutating CLI action in REPL read mirror: behavior interface %s\n", argv[2]);
+        return -1;
+    }
+    if (action->needs_session && (!repl || !repl->session)) {
+        fprintf(stderr, "No session loaded.\n");
+        return -1;
+    }
+    if (!action->diff_left_current && action->needs_session &&
+        repl_has_explicit_session_file_operand(argc, argv)) {
+        fprintf(stderr, "File operands are not accepted in REPL CLI read mirror; use the current session.\n");
+        return -1;
+    }
+
+    nmo_cli_global_opts_t local_global;
+    if (global) {
+        local_global = *global;
+    } else {
+        nmo_cli_global_opts_init(&local_global);
+        local_global.color_mode = repl && repl->colorize ? NMO_CLI_COLOR_ALWAYS : NMO_CLI_COLOR_NEVER;
+    }
+
+    const char *source_label = repl_cli_source_label(repl);
+    if (action->needs_session) {
+        local_global.borrowed_ctx = repl->ctx;
+        local_global.borrowed_session = repl->session;
+        local_global.borrowed_source_label = source_label;
+    }
+
+    int cli_argc = 0;
+    char **cli_argv = repl_build_cli_read_argv(action, argc, argv, source_label, &cli_argc);
+    if (!cli_argv) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return -1;
+    }
+
+    int rc = action->handler(cli_argc, cli_argv, &local_global);
+    free(cli_argv);
+
+    return rc == NMO_CLI_EXIT_SUCCESS ? 0 : -1;
+}
+
+static int cmd_cli_read(nmo_repl_context_t *repl, int argc, char **argv) {
+    return repl_dispatch_cli_read_group(repl, argc, argv, NULL);
+}
+
+static int cmd_cli(nmo_repl_context_t *repl, int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: cli [global-options] <group> <action> ...\n");
+        return -1;
+    }
+
+    nmo_cli_global_opts_t global;
+    int first = nmo_cli_parse_global_opts(argc, argv, &global);
+    if (first < 0) {
+        return -1;
+    }
+    if (global.color_mode == NMO_CLI_COLOR_AUTO) {
+        global.color_mode = repl && repl->colorize ? NMO_CLI_COLOR_ALWAYS : NMO_CLI_COLOR_NEVER;
+    }
+    if (first >= argc) {
+        fprintf(stderr, "Usage: cli [global-options] <group> <action> ...\n");
+        return -1;
+    }
+
+    return repl_dispatch_cli_read_group(repl, argc - first, argv + first, &global);
+}
 
 static int cmd_object(nmo_repl_context_t *repl, int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: object show|refs|rename|delete|create|copy ...\n");
+        fprintf(stderr, "Usage: object <cli-read-action>|rename|delete|create|copy ...\n");
         return -1;
     }
     if (!repl->session) {
@@ -1417,9 +1792,14 @@ static int cmd_object(nmo_repl_context_t *repl, int argc, char **argv) {
         rc = nmo_cmd_object_create_in_session(&c, sub_argc, sub_argv, &result);
     } else if (strcmp(argv[1], "copy") == 0) {
         rc = nmo_cmd_object_copy_in_session(&c, sub_argc, sub_argv, &result);
+    } else if (repl_cli_read_action_allowed("object", argc, argv)) {
+        return repl_dispatch_cli_read_group(repl, argc, argv, NULL);
+    } else if (strcmp(argv[1], "import") == 0 || strcmp(argv[1], "set-field") == 0 ||
+               strcmp(argv[1], "sf") == 0) {
+        fprintf(stderr, "Unsupported or mutating CLI action in REPL read mirror: object %s\n", argv[1]);
     } else {
         fprintf(stderr, "Unknown object command: %s\n", argv[1]);
-        fprintf(stderr, "Usage: object show|refs|rename|delete|create|copy ...\n");
+        fprintf(stderr, "Usage: object <cli-read-action>|rename|delete|create|copy ...\n");
     }
 
     if (rc == NMO_CLI_EXIT_SUCCESS && result.changed) {
@@ -1435,7 +1815,7 @@ static int cmd_object(nmo_repl_context_t *repl, int argc, char **argv) {
 
 static int cmd_parameter(nmo_repl_context_t *repl, int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: parameter show|dump|set ...\n");
+        fprintf(stderr, "Usage: parameter list|show|dump|set ...\n");
         return -1;
     }
     if (!repl->session) {
@@ -1457,9 +1837,11 @@ static int cmd_parameter(nmo_repl_context_t *repl, int argc, char **argv) {
         rc = nmo_cmd_parameter_dump_in_session(&c, sub_argc, sub_argv);
     } else if (strcmp(argv[1], "set") == 0) {
         rc = nmo_cmd_parameter_set_in_session(&c, sub_argc, sub_argv, &result);
+    } else if (repl_cli_read_action_allowed("parameter", argc, argv)) {
+        return repl_dispatch_cli_read_group(repl, argc, argv, NULL);
     } else {
         fprintf(stderr, "Unknown parameter command: %s\n", argv[1]);
-        fprintf(stderr, "Usage: parameter show|dump|set ...\n");
+        fprintf(stderr, "Usage: parameter list|show|dump|set ...\n");
     }
 
     if (rc == NMO_CLI_EXIT_SUCCESS && result.changed) {

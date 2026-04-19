@@ -73,6 +73,13 @@ typedef struct nmo_cli_global_opts {
 
     /* Batch processing */
     bool batch_mode;                  /**< --batch: process multiple files */
+
+    /* Borrowed in-memory session for REPL CLI mirrors. CLI commands still see
+     * the usual file operand shape, but command contexts read this session
+     * instead of opening the operand from disk. */
+    nmo_context_t *borrowed_ctx;       /**< Borrowed context (not owned) */
+    nmo_session_t *borrowed_session;   /**< Borrowed session (not owned) */
+    const char *borrowed_source_label; /**< Source label for reports/JSON */
 } nmo_cli_global_opts_t;
 
 /**

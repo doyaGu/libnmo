@@ -9,8 +9,24 @@
 #include "../../tools/nmo_repl_session.h"
 #include "../../tools/nmo_repl_util.h"
 #include "../../tools/nmo_tool_session.h"
+#include "session/nmo_session.h"
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#include <io.h>
+#define NMO_TEST_DUP _dup
+#define NMO_TEST_DUP2 _dup2
+#define NMO_TEST_CLOSE _close
+#define NMO_TEST_FILENO _fileno
+#else
+#include <unistd.h>
+#define NMO_TEST_DUP dup
+#define NMO_TEST_DUP2 dup2
+#define NMO_TEST_CLOSE close
+#define NMO_TEST_FILENO fileno
+#endif
 
 static int run_repl_command(nmo_repl_context_t *repl, const char *line) {
     char copy[NMO_REPL_MAX_CMD_LEN];
@@ -24,6 +40,68 @@ static int run_repl_command(nmo_repl_context_t *repl, const char *line) {
         return -1;
     }
     return nmo_repl_dispatch_command(repl, argc, argv);
+}
+
+static int run_repl_command_capture(nmo_repl_context_t *repl,
+                                    const char *line,
+                                    const char *path)
+{
+    fflush(stdout);
+    int saved_stdout = NMO_TEST_DUP(NMO_TEST_FILENO(stdout));
+    if (saved_stdout < 0) {
+        return -1;
+    }
+
+    FILE *capture = fopen(path, "wb");
+    if (!capture) {
+        NMO_TEST_CLOSE(saved_stdout);
+        return -1;
+    }
+    if (NMO_TEST_DUP2(NMO_TEST_FILENO(capture), NMO_TEST_FILENO(stdout)) != 0) {
+        NMO_TEST_CLOSE(saved_stdout);
+        fclose(capture);
+        return -1;
+    }
+
+    int rc = run_repl_command(repl, line);
+
+    fflush(stdout);
+    if (NMO_TEST_DUP2(saved_stdout, NMO_TEST_FILENO(stdout)) != 0) {
+        rc = -1;
+    }
+    NMO_TEST_CLOSE(saved_stdout);
+    fclose(capture);
+    return rc;
+}
+
+static char *read_text_file(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    long size = ftell(f);
+    if (size < 0 || fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return NULL;
+    }
+
+    char *buf = (char *)malloc((size_t)size + 1);
+    if (!buf) {
+        fclose(f);
+        return NULL;
+    }
+    size_t nread = fread(buf, 1, (size_t)size, f);
+    fclose(f);
+    if (nread != (size_t)size) {
+        free(buf);
+        return NULL;
+    }
+    buf[size] = '\0';
+    return buf;
 }
 
 static void close_repl(nmo_repl_context_t *repl) {
@@ -42,18 +120,39 @@ static void open_repl(nmo_repl_context_t *repl, const char *path) {
     ASSERT_FALSE(repl->dirty);
 }
 
+static void assert_read_ok(nmo_repl_context_t *repl, const char *line) {
+    ASSERT_EQ(0, run_repl_command(repl, line));
+    ASSERT_FALSE(repl->dirty);
+}
+
+static void assert_read_fails_clean(nmo_repl_context_t *repl, const char *line) {
+    ASSERT_NE(0, run_repl_command(repl, line));
+    ASSERT_FALSE(repl->dirty);
+}
+
+static void assert_captured_read_ok_not_contains(nmo_repl_context_t *repl,
+                                                 const char *line,
+                                                 const char *path,
+                                                 const char *forbidden)
+{
+    remove(path);
+    ASSERT_EQ(0, run_repl_command_capture(repl, line, path));
+    ASSERT_FALSE(repl->dirty);
+    char *output = read_text_file(path);
+    ASSERT_NOT_NULL(output);
+    ASSERT_FALSE(strstr(output, forbidden) != NULL);
+    free(output);
+    remove(path);
+}
+
 TEST(repl_read, object_grouped_read_commands_use_cli_shape) {
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
 
-    ASSERT_EQ(0, run_repl_command(&repl, "object show 2"));
-    ASSERT_FALSE(repl.dirty);
-    ASSERT_EQ(0, run_repl_command(&repl, "object show --id 2"));
-    ASSERT_FALSE(repl.dirty);
-    ASSERT_EQ(0, run_repl_command(&repl, "object show --name Cam_Pos"));
-    ASSERT_FALSE(repl.dirty);
-    ASSERT_EQ(0, run_repl_command(&repl, "object refs 2"));
-    ASSERT_FALSE(repl.dirty);
+    assert_read_ok(&repl, "object show 2");
+    assert_read_ok(&repl, "object show --id 2");
+    assert_read_ok(&repl, "object show --name Cam_Pos");
+    assert_read_ok(&repl, "object refs 2");
 
     close_repl(&repl);
 }
@@ -62,12 +161,9 @@ TEST(repl_read, parameter_grouped_read_commands_use_cli_shape) {
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
-    ASSERT_EQ(0, run_repl_command(&repl, "parameter show 46"));
-    ASSERT_FALSE(repl.dirty);
-    ASSERT_EQ(0, run_repl_command(&repl, "parameter dump 46"));
-    ASSERT_FALSE(repl.dirty);
-    ASSERT_EQ(0, run_repl_command(&repl, "parameter dump --all"));
-    ASSERT_FALSE(repl.dirty);
+    assert_read_ok(&repl, "parameter show 46");
+    assert_read_ok(&repl, "parameter dump 46");
+    assert_read_ok(&repl, "parameter dump --all");
 
     close_repl(&repl);
 }
@@ -76,30 +172,179 @@ TEST(repl_read, grouped_read_commands_reject_invalid_cli_shape) {
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
-    ASSERT_NE(0, run_repl_command(&repl, "object show id:2"));
-    ASSERT_FALSE(repl.dirty);
-    ASSERT_NE(0, run_repl_command(&repl, "object show"));
-    ASSERT_FALSE(repl.dirty);
-    ASSERT_NE(0, run_repl_command(&repl, "object refs --name MissingName"));
-    ASSERT_FALSE(repl.dirty);
-    ASSERT_NE(0, run_repl_command(&repl, "parameter show id:46"));
-    ASSERT_FALSE(repl.dirty);
-    ASSERT_NE(0, run_repl_command(&repl, "parameter dump --type bad-guid --all"));
-    ASSERT_FALSE(repl.dirty);
+    assert_read_fails_clean(&repl, "object show id:2");
+    assert_read_fails_clean(&repl, "object show");
+    assert_read_fails_clean(&repl, "object refs --name MissingName");
+    assert_read_fails_clean(&repl, "parameter show id:46");
+    assert_read_fails_clean(&repl, "parameter dump --type bad-guid --all");
+    assert_read_fails_clean(&repl, "file info ../data/Ballance/MenuLevel.nmo");
+    assert_read_fails_clean(&repl, "object list ../data/Ballance/MenuLevel.nmo");
+    assert_read_fails_clean(&repl, "query eval has_target ../data/Ballance/MenuLevel.nmo");
+    assert_read_fails_clean(&repl, "resource info");
+    assert_read_fails_clean(&repl, "query script script.nmodsl");
+    assert_read_fails_clean(&repl, "query module module.nmodsl");
+    assert_read_fails_clean(&repl, "query schema schema.nmodsl");
 
     close_repl(&repl);
+}
+
+TEST(repl_read, mirrored_cli_read_groups_are_available) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+    char diff_cmd[512];
+    snprintf(diff_cmd, sizeof(diff_cmd), "diff summary %s", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+
+    assert_read_ok(&repl, "file info");
+    assert_read_ok(&repl, "file header");
+    assert_read_ok(&repl, "chunk list --top 3");
+    assert_read_ok(&repl, "chunk tree");
+    assert_read_ok(&repl, "object list --top 3");
+    assert_read_ok(&repl, "object tree");
+    assert_read_ok(&repl, "object find --name Object");
+    assert_read_ok(&repl, "object impact 46");
+    assert_read_ok(&repl, "object orphans");
+    assert_read_ok(&repl, "object cycles");
+    assert_read_ok(&repl, "object graph");
+    assert_read_ok(&repl, "object list-fields 520");
+    assert_read_ok(&repl, "parameter list");
+    assert_read_ok(&repl, "behavior list");
+    assert_read_ok(&repl, "behavior stats");
+    assert_read_ok(&repl, "validate structure");
+    assert_read_ok(&repl, diff_cmd);
+    assert_read_ok(&repl, "query eval --object 520 has_target");
+    assert_read_ok(&repl, "type list");
+    assert_read_ok(&repl, "extension list");
+    assert_read_ok(&repl, "completion bash");
+
+    close_repl(&repl);
+}
+
+TEST(repl_read, cli_read_mirror_does_not_expose_snapshot_paths) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+
+    assert_captured_read_ok_not_contains(
+        &repl,
+        "file info",
+        "test_repl_file_info_capture.txt",
+        "nmo_repl_cli_read");
+    assert_captured_read_ok_not_contains(
+        &repl,
+        "debug load-phases",
+        "test_repl_debug_capture.txt",
+        "snapshot_");
+
+    close_repl(&repl);
+}
+
+TEST(repl_read, cli_wrapper_supports_global_options) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+
+    remove("test_repl_cli_json_capture.txt");
+    ASSERT_EQ(0, run_repl_command_capture(
+        &repl,
+        "cli -f json object list --top 3",
+        "test_repl_cli_json_capture.txt"));
+    ASSERT_FALSE(repl.dirty);
+    char *output = read_text_file("test_repl_cli_json_capture.txt");
+    ASSERT_NOT_NULL(output);
+    ASSERT_TRUE(strstr(output, "\"command\":\"object.list\"") != NULL);
+    free(output);
+    remove("test_repl_cli_json_capture.txt");
+
+    remove("test_repl_debug_export.json");
+    ASSERT_EQ(0, run_repl_command(&repl, "cli -o test_repl_debug_export.json debug export"));
+    ASSERT_FALSE(repl.dirty);
+    FILE *f = fopen("test_repl_debug_export.json", "rb");
+    ASSERT_NOT_NULL(f);
+    fclose(f);
+    remove("test_repl_debug_export.json");
+
+    close_repl(&repl);
+}
+
+TEST(repl_read, domain_cli_read_groups_are_available) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+
+    const char payload[] = "resource probe";
+    ASSERT_EQ(NMO_OK,
+              nmo_session_add_included_file(repl.session,
+                                            "repl_probe.bin",
+                                            payload,
+                                            (uint32_t)sizeof(payload)));
+    repl.dirty = false;
+
+    assert_read_ok(&repl, "resource list");
+    assert_read_ok(&repl, "resource info --index 0");
+    assert_read_ok(&repl, "texture list");
+    assert_read_ok(&repl, "data list");
+    assert_read_ok(&repl, "scene list");
+    assert_read_ok(&repl, "entity list");
+    assert_read_ok(&repl, "material list");
+    assert_read_ok(&repl, "mesh list");
+    assert_read_ok(&repl, "animation list");
+    assert_read_ok(&repl, "debug load-phases");
+    assert_read_ok(&repl, "debug chunks");
+    assert_read_ok(&repl, "debug objects");
+
+    close_repl(&repl);
+}
+
+TEST(repl_read, cli_read_mirror_uses_current_session_snapshot) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+
+    ASSERT_EQ(0, run_repl_command(&repl, "object rename 2 ReplSnapshotName"));
+    ASSERT_TRUE(repl.dirty);
+    repl.dirty = false;
+
+    assert_read_ok(&repl, "object show --name ReplSnapshotName");
+    assert_read_ok(&repl, "object find --name ReplSnapshotName");
+    assert_read_ok(&repl, "file info");
+    assert_read_ok(&repl, "validate structure");
+
+    close_repl(&repl);
+}
+
+TEST(repl_read, mutating_cli_actions_are_rejected_by_read_mirror) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+
+    assert_read_fails_clean(&repl, "object import -f json missing.json");
+    assert_read_fails_clean(&repl, "object set-field 1 name value");
+    assert_read_fails_clean(&repl, "resource import file.bin");
+    assert_read_fails_clean(&repl, "resource replace 1 file.bin");
+    assert_read_fails_clean(&repl, "texture replace 1 image.png");
+    assert_read_fails_clean(&repl, "data set-cell 1 0 0 value");
+    assert_read_fails_clean(&repl, "scene set 1 --active");
+    assert_read_fails_clean(&repl, "entity set-position 1 0 0 0");
+    assert_read_fails_clean(&repl, "material set 1 --diffuse 1,1,1");
+    assert_read_fails_clean(&repl, "mesh import model.obj");
+    assert_read_fails_clean(&repl, "animation import anim.json");
+    assert_read_fails_clean(&repl, "extension load plugin.dll");
+    assert_read_fails_clean(&repl, "convert copy -o out.nmo");
+    assert_read_fails_clean(&repl, "validate orphans --strip -o out.nmo");
+
+    close_repl(&repl);
+}
+
+TEST(repl_read, completion_group_does_not_require_session) {
+    nmo_repl_context_t repl;
+    memset(&repl, 0, sizeof(repl));
+
+    assert_read_ok(&repl, "completion bash");
 }
 
 TEST(repl_read, legacy_read_shortcuts_still_work) {
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
-    ASSERT_EQ(0, run_repl_command(&repl, "show 0"));
-    ASSERT_FALSE(repl.dirty);
-    ASSERT_EQ(0, run_repl_command(&repl, "refs 0"));
-    ASSERT_FALSE(repl.dirty);
-    ASSERT_EQ(0, run_repl_command(&repl, "param id:46"));
-    ASSERT_FALSE(repl.dirty);
+    assert_read_ok(&repl, "show 0");
+    assert_read_ok(&repl, "refs 0");
+    assert_read_ok(&repl, "param id:46");
+    assert_read_ok(&repl, "query id");
 
     close_repl(&repl);
 }
@@ -108,5 +353,12 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, object_grouped_read_commands_use_cli_shape);
     REGISTER_TEST(repl_read, parameter_grouped_read_commands_use_cli_shape);
     REGISTER_TEST(repl_read, grouped_read_commands_reject_invalid_cli_shape);
+    REGISTER_TEST(repl_read, mirrored_cli_read_groups_are_available);
+    REGISTER_TEST(repl_read, cli_read_mirror_does_not_expose_snapshot_paths);
+    REGISTER_TEST(repl_read, cli_wrapper_supports_global_options);
+    REGISTER_TEST(repl_read, domain_cli_read_groups_are_available);
+    REGISTER_TEST(repl_read, cli_read_mirror_uses_current_session_snapshot);
+    REGISTER_TEST(repl_read, mutating_cli_actions_are_rejected_by_read_mirror);
+    REGISTER_TEST(repl_read, completion_group_does_not_require_session);
     REGISTER_TEST(repl_read, legacy_read_shortcuts_still_work);
 TEST_MAIN_END()

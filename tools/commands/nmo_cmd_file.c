@@ -121,6 +121,35 @@ int nmo_cmd_file_info(int argc, char **argv, const nmo_cli_global_opts_t *global
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
     }
 
+    if (global->borrowed_session) {
+        nmo_file_info_t info = nmo_session_get_file_info(global->borrowed_session);
+        if (c.is_json) {
+            yyjson_mut_doc *doc = NULL;
+            yyjson_mut_val *data = NULL;
+            if (!nmo_cli_json_create_data_doc(&doc, &data)) {
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            }
+            yyjson_mut_obj_add_uint(doc, data, "object_count", info.object_count);
+            yyjson_mut_obj_add_uint(doc, data, "manager_count", info.manager_count);
+            yyjson_mut_obj_add_uint(doc, data, "ck_version", info.ck_version);
+            yyjson_mut_obj_add_str(doc, data, "file", file_path);
+            nmo_cli_json_write_enveloped_and_free(doc, data, "file.info", file_path,
+                                                  c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+        }
+
+        char buf[64];
+        nmo_cli_print_heading(c.out, "File Info", c.colorize);
+        nmo_cli_print_kv(c.out, "File", file_path, 14, c.colorize);
+        snprintf(buf, sizeof(buf), "%u", info.object_count);
+        nmo_cli_print_kv(c.out, "Objects", buf, 14, c.colorize);
+        snprintf(buf, sizeof(buf), "%u", info.manager_count);
+        nmo_cli_print_kv(c.out, "Managers", buf, 14, c.colorize);
+        snprintf(buf, sizeof(buf), "0x%08X", info.ck_version);
+        nmo_cli_print_kv(c.out, "CK Version", buf, 14, c.colorize);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    }
+
     if (c.is_json) {
         yyjson_mut_doc *doc = NULL;
         yyjson_mut_val *data = NULL;

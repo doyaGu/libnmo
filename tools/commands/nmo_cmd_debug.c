@@ -330,19 +330,28 @@ int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t
 
     nmo_load_perf_stats_t phase_stats;
     nmo_load_perf_stats_reset(&phase_stats);
-    nmo_load_options_t load_opts = nmo_load_options_default();
-    load_opts.profile = profile;
-    load_opts.collect_perf_stats = true;
-    load_opts.perf_stats = &phase_stats;
 
-    char errbuf[256];
-    if (!nmo_tool_open_session_opts(c.file_path, &load_opts,
-                                    &c.ctx, &c.session,
-                                    errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error: %s\n", errbuf);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+    if (global->borrowed_session) {
+        c.ctx = global->borrowed_ctx;
+        c.session = global->borrowed_session;
+        c.registry = c.ctx ? nmo_context_get_type_registry(c.ctx) : NULL;
+        c.owns_session = false;
+    } else {
+        nmo_load_options_t load_opts = nmo_load_options_default();
+        load_opts.profile = profile;
+        load_opts.collect_perf_stats = true;
+        load_opts.perf_stats = &phase_stats;
+
+        char errbuf[256];
+        if (!nmo_tool_open_session_opts(c.file_path, &load_opts,
+                                        &c.ctx, &c.session,
+                                        errbuf, sizeof(errbuf))) {
+            fprintf(stderr, "Error: %s\n", errbuf);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+        }
+        c.owns_session = true;
+        c.registry = nmo_context_get_type_registry(c.ctx);
     }
-    c.registry = nmo_context_get_type_registry(c.ctx);
 
     /* Get finish loading stats */
     nmo_runtime_load_stats_t stats;

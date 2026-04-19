@@ -26,6 +26,16 @@ int nmo_cmd_ctx_init_with_load_options(nmo_cmd_ctx_t *c, int argc, char **argv,
     c->is_json = (global->format == NMO_CLI_FORMAT_JSON ||
                   global->format == NMO_CLI_FORMAT_JSON_PRETTY);
 
+    if (global->borrowed_session) {
+        const char *label = global->borrowed_source_label;
+        if (!label) {
+            label = nmo_tool_find_file_arg_last(argc, argv);
+        }
+        return nmo_cmd_ctx_init_with_session(c, global->borrowed_ctx,
+                                             global->borrowed_session,
+                                             label, global);
+    }
+
     /* Find file argument */
     c->file_path = nmo_tool_find_file_arg_last(argc, argv);
     if (!c->file_path) {
@@ -45,6 +55,7 @@ int nmo_cmd_ctx_init_with_load_options(nmo_cmd_ctx_t *c, int argc, char **argv,
         fprintf(stderr, "Error: %s\n", errbuf);
         return NMO_CLI_EXIT_IO_ERROR;
     }
+    c->owns_session = true;
 
     /* Cache type registry */
     c->registry = nmo_context_get_type_registry(c->ctx);
@@ -56,9 +67,11 @@ int nmo_cmd_ctx_init_with_load_options(nmo_cmd_ctx_t *c, int argc, char **argv,
         nmo_tool_close_session(c->ctx, c->session);
         c->ctx = NULL;
         c->session = NULL;
+        c->owns_session = false;
         fprintf(stderr, "Error: %s\n", out_err);
         return NMO_CLI_EXIT_IO_ERROR;
     }
+    c->owns_output = true;
 
     c->colorize = nmo_cli_should_colorize(global, c->out);
     return NMO_CLI_EXIT_SUCCESS;
@@ -72,6 +85,15 @@ int nmo_cmd_ctx_init_with_file(nmo_cmd_ctx_t *c, const char *file_path,
     c->is_json = (global->format == NMO_CLI_FORMAT_JSON ||
                   global->format == NMO_CLI_FORMAT_JSON_PRETTY);
 
+    if (global->borrowed_session) {
+        const char *label = global->borrowed_source_label
+            ? global->borrowed_source_label
+            : file_path;
+        return nmo_cmd_ctx_init_with_session(c, global->borrowed_ctx,
+                                             global->borrowed_session,
+                                             label, global);
+    }
+
     c->file_path = file_path;
     if (!c->file_path) {
         fprintf(stderr, "Error: No file specified\n");
@@ -84,6 +106,7 @@ int nmo_cmd_ctx_init_with_file(nmo_cmd_ctx_t *c, const char *file_path,
         fprintf(stderr, "Error: %s\n", errbuf);
         return NMO_CLI_EXIT_IO_ERROR;
     }
+    c->owns_session = true;
 
     c->registry = nmo_context_get_type_registry(c->ctx);
 
@@ -93,11 +116,47 @@ int nmo_cmd_ctx_init_with_file(nmo_cmd_ctx_t *c, const char *file_path,
         nmo_tool_close_session(c->ctx, c->session);
         c->ctx = NULL;
         c->session = NULL;
+        c->owns_session = false;
         fprintf(stderr, "Error: %s\n", out_err);
         return NMO_CLI_EXIT_IO_ERROR;
     }
+    c->owns_output = true;
 
     c->colorize = nmo_cli_should_colorize(global, c->out);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_ctx_init_with_session(nmo_cmd_ctx_t *c,
+                                  nmo_context_t *ctx,
+                                  nmo_session_t *session,
+                                  const char *source_label,
+                                  const nmo_cli_global_opts_t *global)
+{
+    memset(c, 0, sizeof(*c));
+    c->global = global;
+    c->file_path = source_label ? source_label : "(current session)";
+    c->ctx = ctx;
+    c->session = session;
+    c->owns_session = false;
+    c->is_json = global && (global->format == NMO_CLI_FORMAT_JSON ||
+                            global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+    c->registry = ctx ? nmo_context_get_type_registry(ctx) : NULL;
+
+    if (global) {
+        char out_err[128];
+        c->out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
+        if (!c->out) {
+            fprintf(stderr, "Error: %s\n", out_err);
+            return NMO_CLI_EXIT_IO_ERROR;
+        }
+        c->owns_output = true;
+        c->colorize = nmo_cli_should_colorize(global, c->out);
+    } else {
+        c->out = stdout;
+        c->owns_output = false;
+        c->colorize = false;
+    }
+
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -122,6 +181,7 @@ int nmo_cmd_ctx_init_no_file(nmo_cmd_ctx_t *c,
         fprintf(stderr, "Error: %s\n", out_err);
         return NMO_CLI_EXIT_IO_ERROR;
     }
+    c->owns_output = true;
 
     c->colorize = nmo_cli_should_colorize(global, c->out);
     return NMO_CLI_EXIT_SUCCESS;
@@ -137,26 +197,26 @@ void nmo_cmd_ctx_init_from_repl(nmo_cmd_ctx_t *c,
     c->file_path = NULL;
     c->ctx = ctx;
     c->session = session;
+    c->owns_session = false;
     c->registry = ctx ? nmo_context_get_type_registry(ctx) : NULL;
     c->out = stdout;
+    c->owns_output = false;
     c->colorize = colorize;
     c->is_json = false;  /* REPL is always text mode */
 }
 
 int nmo_cmd_ctx_done(nmo_cmd_ctx_t *c, int exit_code)
 {
-    /* Close output and session only if we own them (CLI init paths).
-     * REPL contexts have global == NULL and don't own resources. */
-    if (c->global) {
-        if (c->out) {
-            nmo_cli_close_output_stream(c->global, c->out);
-            c->out = NULL;
-        }
-        if (c->session) {
-            nmo_tool_close_session(c->ctx, c->session);
-            c->ctx = NULL;
-            c->session = NULL;
-        }
+    if (c->owns_output && c->global && c->out) {
+        nmo_cli_close_output_stream(c->global, c->out);
+        c->out = NULL;
+        c->owns_output = false;
+    }
+    if (c->owns_session && c->session) {
+        nmo_tool_close_session(c->ctx, c->session);
+        c->ctx = NULL;
+        c->session = NULL;
+        c->owns_session = false;
     }
     return exit_code;
 }

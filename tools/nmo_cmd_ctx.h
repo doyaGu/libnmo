@@ -42,9 +42,11 @@ typedef struct nmo_cmd_ctx {
     /* Session (opened by init, closed by done) */
     nmo_context_t *ctx;
     nmo_session_t *session;
+    bool owns_session;
 
     /* Output (opened by init, closed by done) */
     FILE *out;
+    bool owns_output;
     bool colorize;
     bool is_json;
 
@@ -89,6 +91,18 @@ int nmo_cmd_ctx_init_with_load_options(nmo_cmd_ctx_t *c, int argc, char **argv,
  */
 int nmo_cmd_ctx_init_with_file(nmo_cmd_ctx_t *c, const char *file_path,
                                const nmo_cli_global_opts_t *global);
+
+/**
+ * @brief Initialize context from a borrowed, already-open session.
+ *
+ * Opens the output stream from global options, but does not own or close the
+ * supplied session/context. source_label is used in reports and JSON envelopes.
+ */
+int nmo_cmd_ctx_init_with_session(nmo_cmd_ctx_t *c,
+                                  nmo_context_t *ctx,
+                                  nmo_session_t *session,
+                                  const char *source_label,
+                                  const nmo_cli_global_opts_t *global);
 
 /**
  * @brief Initialize context for commands that don't need a file/session.
