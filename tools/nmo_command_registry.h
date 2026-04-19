@@ -60,6 +60,12 @@ const nmo_cli_action_t *nmo_command_registry_find_action(
     const char *name,
     bool allow_alias);
 const nmo_cli_group_t *nmo_command_registry_get_groups(size_t *count);
+int nmo_command_registry_dispatch_read_in_session(
+    const nmo_cli_group_t *group,
+    const nmo_cli_action_t *action,
+    nmo_cmd_ctx_t *ctx,
+    int argc,
+    char **argv);
 
 #ifdef __cplusplus
 }

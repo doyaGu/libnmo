@@ -1613,25 +1613,8 @@ static int repl_dispatch_cli_read_group(nmo_repl_context_t *repl, int argc, char
             return -1;
         }
 
-        int rc;
-        if (entry_group && entry_group->repl_session_handler) {
-            rc = entry_group->repl_session_handler(&cmd, argc - 1, &argv[1]);
-        } else if (repl_streq(group, "behavior") &&
-                   repl_streq(action->name, "interface") &&
-                   argc >= 3 &&
-                   (repl_streq(argv[2], "show") || repl_streq(argv[2], "s"))) {
-            char *iface_argv[NMO_REPL_MAX_ARGS];
-            int iface_argc = 0;
-            iface_argv[iface_argc++] = argv[1];
-            for (int i = 3; i < argc && iface_argc < NMO_REPL_MAX_ARGS; i++) {
-                iface_argv[iface_argc++] = argv[i];
-            }
-            rc = nmo_cmd_in_session_dispatch_with_source(&cmd, iface_argc, iface_argv,
-                                                         action->handler);
-        } else {
-            rc = nmo_cmd_in_session_dispatch_with_source(&cmd, argc - 1, &argv[1],
-                                                         action->handler);
-        }
+        int rc = nmo_command_registry_dispatch_read_in_session(
+            entry_group, action, &cmd, argc - 1, &argv[1]);
         rc = nmo_cmd_ctx_done(&cmd, rc);
         return rc == NMO_CLI_EXIT_SUCCESS ? 0 : -1;
     }

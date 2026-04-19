@@ -166,6 +166,33 @@ static void assert_in_session_ok(nmo_repl_context_t *repl,
     ASSERT_FALSE(repl->dirty);
 }
 
+static void assert_registry_in_session_ok(nmo_repl_context_t *repl,
+                                          const char *group_name,
+                                          int argc,
+                                          char **argv)
+{
+    const nmo_cli_group_t *group =
+        nmo_command_registry_find_group(group_name, false);
+    ASSERT_NOT_NULL(group);
+    ASSERT_TRUE(argc > 0);
+    const nmo_cli_action_t *action =
+        nmo_command_registry_find_action(group, argv[0], true);
+    ASSERT_NOT_NULL(action);
+
+    nmo_cli_global_opts_t global;
+    nmo_cli_global_opts_init(&global);
+
+    nmo_cmd_ctx_t cmd;
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS,
+              nmo_cmd_ctx_init_with_session(&cmd, repl->ctx, repl->session,
+                                            "(test session)", &global));
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS,
+              nmo_command_registry_dispatch_read_in_session(group, action,
+                                                            &cmd, argc, argv));
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, nmo_cmd_ctx_done(&cmd, NMO_CLI_EXIT_SUCCESS));
+    ASSERT_FALSE(repl->dirty);
+}
+
 static void assert_captured_read_ok_not_contains(nmo_repl_context_t *repl,
                                                  const char *line,
                                                  const char *path,
@@ -467,6 +494,21 @@ TEST(repl_read, cli_read_table_has_no_session_public_fallbacks) {
     ASSERT_EQ(0u, nmo_repl_cli_read_generic_session_count_for_group("parameter"));
 }
 
+TEST(repl_read, registry_dispatches_session_reads) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+
+    char *file_info[] = {"info"};
+    char *object_list[] = {"list", "--top", "3"};
+    char *parameter_show[] = {"show", "46"};
+
+    assert_registry_in_session_ok(&repl, "file", 1, file_info);
+    assert_registry_in_session_ok(&repl, "object", 3, object_list);
+    assert_registry_in_session_ok(&repl, "parameter", 2, parameter_show);
+
+    close_repl(&repl);
+}
+
 TEST(repl_read, command_registry_is_shared_repl_policy_source) {
     const nmo_cli_group_t *object =
         nmo_command_registry_find_group("object", false);
@@ -542,6 +584,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, cli_batch_mode_is_rejected);
     REGISTER_TEST(repl_read, specialized_repl_read_cores_are_directly_callable);
     REGISTER_TEST(repl_read, cli_read_table_has_no_session_public_fallbacks);
+    REGISTER_TEST(repl_read, registry_dispatches_session_reads);
     REGISTER_TEST(repl_read, command_registry_is_shared_repl_policy_source);
     REGISTER_TEST(repl_read, completion_group_does_not_require_session);
     REGISTER_TEST(repl_read, legacy_read_shortcuts_still_work);

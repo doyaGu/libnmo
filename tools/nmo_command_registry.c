@@ -5,6 +5,7 @@
 
 #include "nmo_command_registry.h"
 #include "nmo_cli_common.h"
+#include "nmo_cmd_ctx.h"
 #include "nmo_tool_common.h"
 
 #include "commands/nmo_cmd_file.h"
@@ -1166,3 +1167,42 @@ const nmo_cli_group_t *nmo_command_registry_get_groups(size_t *count) {
     return groups;
 }
 
+int nmo_command_registry_dispatch_read_in_session(
+    const nmo_cli_group_t *group,
+    const nmo_cli_action_t *action,
+    nmo_cmd_ctx_t *ctx,
+    int argc,
+    char **argv)
+{
+    if (!group || !ctx || argc < 1 || !argv || !argv[0]) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (!action) {
+        action = nmo_command_registry_find_action(group, argv[0], true);
+    }
+    if (!action || action->repl_policy != NMO_REPL_ACTION_READ_SESSION) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (group->repl_session_handler) {
+        return group->repl_session_handler(ctx, argc, argv);
+    }
+
+    if (nmo_tool_streq_ci(group->name, "behavior") &&
+        nmo_tool_streq_ci(action->name, "interface") &&
+        argc >= 2 &&
+        (nmo_tool_streq_ci(argv[1], "show") || nmo_tool_streq_ci(argv[1], "s"))) {
+        char *iface_argv[64];
+        int iface_argc = 0;
+        iface_argv[iface_argc++] = argv[0];
+        for (int i = 2; i < argc && iface_argc < 64; i++) {
+            iface_argv[iface_argc++] = argv[i];
+        }
+        return nmo_cmd_in_session_dispatch_with_source(
+            ctx, iface_argc, iface_argv, action->handler);
+    }
+
+    return nmo_cmd_in_session_dispatch_with_source(
+        ctx, argc, argv, action->handler);
+}
