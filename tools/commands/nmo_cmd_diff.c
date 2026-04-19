@@ -1060,3 +1060,25 @@ int nmo_cmd_diff_full_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     return diff_dispatch_current_session_left(ctx, argc, argv, nmo_cmd_diff_full);
 }
+
+int nmo_cmd_diff_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    if (!ctx || argc < 1 || !argv || !argv[0]) {
+        fprintf(stderr, "Usage: diff summary|objects|chunks|full <other-file> ...\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (strcmp(argv[0], "summary") == 0 || strcmp(argv[0], "s") == 0) {
+        return nmo_cmd_diff_summary_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "objects") == 0 || strcmp(argv[0], "obj") == 0) {
+        return nmo_cmd_diff_objects_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "chunks") == 0 || strcmp(argv[0], "ch") == 0) {
+        return nmo_cmd_diff_chunks_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "full") == 0 || strcmp(argv[0], "f") == 0) {
+        return nmo_cmd_diff_full_in_session(ctx, argc, argv);
+    }
+    fprintf(stderr, "Unsupported diff read action in session: %s\n", argv[0]);
+    return NMO_CLI_EXIT_ARG_ERROR;
+}

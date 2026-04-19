@@ -8,6 +8,7 @@ endif()
 add_executable(nmo_cli
     # Entry point
     nmo_cli_main.c
+    nmo_command_registry.c
     nmo_cli_dispatch.c
     nmo_cli_common.c
     nmo_cli_output.c

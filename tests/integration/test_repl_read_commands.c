@@ -6,6 +6,7 @@
 #include "test_framework.h"
 
 #include "../../tools/nmo_cmd_ctx.h"
+#include "../../tools/nmo_command_registry.h"
 #include "../../tools/nmo_repl_commands.h"
 #include "../../tools/nmo_repl_session.h"
 #include "../../tools/nmo_repl_util.h"
@@ -464,6 +465,48 @@ TEST(repl_read, cli_read_table_has_no_session_public_fallbacks) {
     ASSERT_EQ(0u, nmo_repl_cli_read_generic_session_count_for_group("chunk"));
 }
 
+TEST(repl_read, command_registry_is_shared_repl_policy_source) {
+    const nmo_cli_group_t *object =
+        nmo_command_registry_find_group("object", false);
+    ASSERT_NOT_NULL(object);
+    ASSERT_NULL(nmo_command_registry_find_group("obj", false));
+    ASSERT_NOT_NULL(nmo_command_registry_find_group("obj", true));
+
+    const nmo_cli_action_t *list =
+        nmo_command_registry_find_action(object, "list", true);
+    const nmo_cli_action_t *rename =
+        nmo_command_registry_find_action(object, "rename", true);
+    const nmo_cli_action_t *import =
+        nmo_command_registry_find_action(object, "import", true);
+    ASSERT_NOT_NULL(list);
+    ASSERT_NOT_NULL(rename);
+    ASSERT_NOT_NULL(import);
+    ASSERT_EQ(NMO_REPL_ACTION_READ_SESSION, list->repl_policy);
+    ASSERT_EQ(NMO_REPL_ACTION_MUTATE_SESSION_SUPPORTED, rename->repl_policy);
+    ASSERT_EQ(NMO_REPL_ACTION_MUTATE_FILE_ONLY, import->repl_policy);
+
+    const nmo_cli_group_t *query =
+        nmo_command_registry_find_group("query", false);
+    const nmo_cli_action_t *script =
+        nmo_command_registry_find_action(query, "script", true);
+    ASSERT_NOT_NULL(script);
+    ASSERT_EQ(NMO_REPL_ACTION_FORBIDDEN, script->repl_policy);
+
+    const nmo_cli_group_t *type =
+        nmo_command_registry_find_group("type", false);
+    const nmo_cli_action_t *type_list =
+        nmo_command_registry_find_action(type, "list", true);
+    ASSERT_NOT_NULL(type_list);
+    ASSERT_EQ(NMO_REPL_ACTION_READ_NO_SESSION, type_list->repl_policy);
+
+    const nmo_cli_group_t *completion =
+        nmo_command_registry_find_group("completion", false);
+    const nmo_cli_action_t *bash =
+        nmo_command_registry_find_action(completion, "bash", true);
+    ASSERT_NOT_NULL(bash);
+    ASSERT_EQ(NMO_REPL_ACTION_READ_NO_SESSION, bash->repl_policy);
+}
+
 TEST(repl_read, completion_group_does_not_require_session) {
     nmo_repl_context_t repl;
     memset(&repl, 0, sizeof(repl));
@@ -497,6 +540,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, cli_batch_mode_is_rejected);
     REGISTER_TEST(repl_read, specialized_repl_read_cores_are_directly_callable);
     REGISTER_TEST(repl_read, cli_read_table_has_no_session_public_fallbacks);
+    REGISTER_TEST(repl_read, command_registry_is_shared_repl_policy_source);
     REGISTER_TEST(repl_read, completion_group_does_not_require_session);
     REGISTER_TEST(repl_read, legacy_read_shortcuts_still_work);
 TEST_MAIN_END()

@@ -36,6 +36,7 @@ int nmo_cmd_diff_chunks_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
  */
 int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_diff_full_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
+int nmo_cmd_diff_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
 #ifdef __cplusplus
 }

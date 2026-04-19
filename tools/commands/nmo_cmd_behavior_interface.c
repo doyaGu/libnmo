@@ -3911,35 +3911,35 @@ int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts
  * ================================================================ */
 
 const nmo_cli_action_t nmo_behavior_interface_sub_actions[] = {
-    {"show",           NULL, "Show interface layout data",  nmo_cmd_behavior_iface_show,           NULL, NULL, 0, NULL},
-    {"set-pos",        NULL, "Move behavior position",      nmo_cmd_behavior_iface_set_pos,        NULL, NULL, 0, NULL},
-    {"fold",           NULL, "Fold behavior",               nmo_cmd_behavior_iface_fold,           NULL, NULL, 0, NULL},
-    {"unfold",         NULL, "Unfold behavior",             nmo_cmd_behavior_iface_unfold,         NULL, NULL, 0, NULL},
-    {"set-color",      NULL, "Set script color",            nmo_cmd_behavior_iface_set_color,      NULL, NULL, 0, NULL},
-    {"canonicalize",   NULL, "Rewrite interface chunk canonically", nmo_cmd_behavior_iface_canonicalize, NULL, NULL, 0, NULL},
-    {"add-comment",    NULL, "Add layout comment",          nmo_cmd_behavior_iface_add_comment,    NULL, NULL, 0, NULL},
-    {"remove-comment",    NULL, "Remove layout comment",       nmo_cmd_behavior_iface_remove_comment,    NULL, NULL, 0, NULL},
+    {"show",           NULL, "Show interface layout data",  nmo_cmd_behavior_iface_show,           NULL, NULL, 0, NULL, NMO_REPL_ACTION_READ_SESSION},
+    {"set-pos",        NULL, "Move behavior position",      nmo_cmd_behavior_iface_set_pos,        NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
+    {"fold",           NULL, "Fold behavior",               nmo_cmd_behavior_iface_fold,           NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
+    {"unfold",         NULL, "Unfold behavior",             nmo_cmd_behavior_iface_unfold,         NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
+    {"set-color",      NULL, "Set script color",            nmo_cmd_behavior_iface_set_color,      NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
+    {"canonicalize",   NULL, "Rewrite interface chunk canonically", nmo_cmd_behavior_iface_canonicalize, NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
+    {"add-comment",    NULL, "Add layout comment",          nmo_cmd_behavior_iface_add_comment,    NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
+    {"remove-comment",    NULL, "Remove layout comment",       nmo_cmd_behavior_iface_remove_comment,    NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
     /* comment edits */
-    {"set-comment-text",  NULL, "Set comment text",             nmo_cmd_behavior_iface_set_comment_text,  NULL, NULL, 0, NULL},
-    {"move-comment",      NULL, "Move/resize comment",          nmo_cmd_behavior_iface_move_comment,      NULL, NULL, 0, NULL},
-    {"set-comment-style", NULL, "Set comment style flags",      nmo_cmd_behavior_iface_set_comment_style, NULL, NULL, 0, NULL},
+    {"set-comment-text",  NULL, "Set comment text",             nmo_cmd_behavior_iface_set_comment_text,  NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
+    {"move-comment",      NULL, "Move/resize comment",          nmo_cmd_behavior_iface_move_comment,      NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
+    {"set-comment-style", NULL, "Set comment style flags",      nmo_cmd_behavior_iface_set_comment_style, NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
     /* link edits */
-    {"add-point",         NULL, "Add link routing point",       nmo_cmd_behavior_iface_add_point,         NULL, NULL, 0, NULL},
-    {"clear-points",      NULL, "Clear link routing points",    nmo_cmd_behavior_iface_clear_points,      NULL, NULL, 0, NULL},
-    {"remove-point",      NULL, "Remove link routing point",    nmo_cmd_behavior_iface_remove_point,      NULL, NULL, 0, NULL},
-    {"move-point",        NULL, "Move link routing point",      nmo_cmd_behavior_iface_move_point,        NULL, NULL, 0, NULL},
-    {"set-link-highlight",NULL, "Toggle link highlight",        nmo_cmd_behavior_iface_set_link_highlight,NULL, NULL, 0, NULL},
+    {"add-point",         NULL, "Add link routing point",       nmo_cmd_behavior_iface_add_point,         NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
+    {"clear-points",      NULL, "Clear link routing points",    nmo_cmd_behavior_iface_clear_points,      NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
+    {"remove-point",      NULL, "Remove link routing point",    nmo_cmd_behavior_iface_remove_point,      NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
+    {"move-point",        NULL, "Move link routing point",      nmo_cmd_behavior_iface_move_point,        NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
+    {"set-link-highlight",NULL, "Toggle link highlight",        nmo_cmd_behavior_iface_set_link_highlight,NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
     /* element edits */
-    {"move-op",           NULL, "Move operation position",      nmo_cmd_behavior_iface_move_op,           NULL, NULL, 0, NULL},
-    {"move-param",        NULL, "Move parameter grid position", nmo_cmd_behavior_iface_move_param,        NULL, NULL, 0, NULL},
-    {"set-param-style",   NULL, "Set parameter style",          nmo_cmd_behavior_iface_set_param_style,   NULL, NULL, 0, NULL},
+    {"move-op",           NULL, "Move operation position",      nmo_cmd_behavior_iface_move_op,           NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
+    {"move-param",        NULL, "Move parameter grid position", nmo_cmd_behavior_iface_move_param,        NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
+    {"set-param-style",   NULL, "Set parameter style",          nmo_cmd_behavior_iface_set_param_style,   NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
     /* structure edits */
-    {"resize",            NULL, "Resize sub-behavior",          nmo_cmd_behavior_iface_resize,            NULL, NULL, 0, NULL},
-    {"set-expand",        NULL, "Set expand size",              nmo_cmd_behavior_iface_set_expand,        NULL, NULL, 0, NULL},
-    {"set-viewport",      NULL, "Set editor viewport",          nmo_cmd_behavior_iface_set_viewport,      NULL, NULL, 0, NULL},
-    {"set-graph-io",      NULL, "Set graph IO port ordering",   nmo_cmd_behavior_iface_set_graph_io,      NULL, NULL, 0, NULL},
+    {"resize",            NULL, "Resize sub-behavior",          nmo_cmd_behavior_iface_resize,            NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
+    {"set-expand",        NULL, "Set expand size",              nmo_cmd_behavior_iface_set_expand,        NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
+    {"set-viewport",      NULL, "Set editor viewport",          nmo_cmd_behavior_iface_set_viewport,      NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
+    {"set-graph-io",      NULL, "Set graph IO port ordering",   nmo_cmd_behavior_iface_set_graph_io,      NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
     /* bulk */
-    {"translate",         NULL, "Translate all positions",       nmo_cmd_behavior_iface_translate,         NULL, NULL, 0, NULL},
+    {"translate",         NULL, "Translate all positions",       nmo_cmd_behavior_iface_translate,         NULL, NULL, 0, NULL, NMO_REPL_ACTION_MUTATE_FILE_ONLY},
 };
 
 _Static_assert(

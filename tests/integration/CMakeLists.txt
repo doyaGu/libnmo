@@ -93,6 +93,7 @@ if(TARGET nmo_cli)
         ${PROJECT_SOURCE_DIR}/tools/nmo_repl_session.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_repl_util.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_repl_input.c
+        ${PROJECT_SOURCE_DIR}/tools/nmo_command_registry.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_cmd_ctx.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_cmd_core.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_opt.c
