@@ -591,6 +591,21 @@ nmo_status_t nmo_3dentity_serialize(
         if (result != NMO_OK) return result;
 
         uint32_t flags = in_state->entity_flags;
+        if (in_state->place_id != 0) {
+            flags |= CK_3DENTITY_PLACEVALID;
+        } else {
+            flags &= ~CK_3DENTITY_PLACEVALID;
+        }
+        if (in_state->parent_id != 0) {
+            flags |= CK_3DENTITY_PARENTVALID;
+        } else {
+            flags &= ~CK_3DENTITY_PARENTVALID;
+        }
+        if (in_state->z_order != 0) {
+            flags |= CK_3DENTITY_ZORDERVALID;
+        } else {
+            flags &= ~CK_3DENTITY_ZORDERVALID;
+        }
 
         result = nmo_chunk_write_dword(out_chunk, flags);
         if (result != NMO_OK) return result;
