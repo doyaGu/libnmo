@@ -28,6 +28,7 @@
 #include "object/nmo_ref_graph.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /**
@@ -49,6 +50,40 @@ typedef struct validate_all_data {
     size_t error_count;
     size_t warning_count;
 } validate_all_data_t;
+
+typedef int (*validate_public_handler_t)(int argc, char **argv,
+                                         const nmo_cli_global_opts_t *global);
+
+static int validate_dispatch_with_session_operand(nmo_cmd_ctx_t *ctx,
+                                                  int argc,
+                                                  char **argv,
+                                                  validate_public_handler_t handler)
+{
+    char **cmd_argv = (char **)calloc((size_t)argc + 2u, sizeof(char *));
+    if (!cmd_argv) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    for (int i = 0; i < argc; i++) {
+        cmd_argv[i] = argv[i];
+    }
+    cmd_argv[argc] = (char *)ctx->file_path;
+
+    nmo_cli_global_opts_t global;
+    if (ctx->global) {
+        global = *ctx->global;
+    } else {
+        nmo_cli_global_opts_init(&global);
+    }
+    global.borrowed_ctx = ctx->ctx;
+    global.borrowed_session = ctx->session;
+    global.borrowed_source_label = ctx->file_path;
+
+    int rc = handler(argc + 1, cmd_argv, &global);
+    free(cmd_argv);
+    return rc;
+}
 
 static int validate_all_object(size_t index, nmo_object_t *obj,
                                const nmo_cmd_ctx_t *c, void *user)
@@ -188,10 +223,10 @@ static int validate_structure_object(size_t index, nmo_object_t *obj,
  * When doc/data are non-NULL (JSON batch mode), populates data.
  * When NULL (text mode), prints directly to stdout.
  */
-static int validate_all_in_session(nmo_cmd_ctx_t *cmd,
-                                   const nmo_cli_global_opts_t *global,
-                                   yyjson_mut_doc *doc,
-                                   yyjson_mut_val *data);
+static int validate_all_run(nmo_cmd_ctx_t *cmd,
+                            const nmo_cli_global_opts_t *global,
+                            yyjson_mut_doc *doc,
+                            yyjson_mut_val *data);
 
 static int validate_all_single(const char *file_path,
                                 const nmo_cli_global_opts_t *global,
@@ -218,15 +253,15 @@ static int validate_all_single(const char *file_path,
     nmo_cmd_ctx_init_from_repl(&cmd, ctx, session, colorize);
     cmd.out = out;
 
-    int rc = validate_all_in_session(&cmd, global, doc, data);
+    int rc = validate_all_run(&cmd, global, doc, data);
     nmo_tool_close_session(ctx, session);
     return rc;
 }
 
-static int validate_all_in_session(nmo_cmd_ctx_t *cmd,
-                                   const nmo_cli_global_opts_t *global,
-                                   yyjson_mut_doc *doc,
-                                   yyjson_mut_val *data)
+static int validate_all_run(nmo_cmd_ctx_t *cmd,
+                            const nmo_cli_global_opts_t *global,
+                            yyjson_mut_doc *doc,
+                            yyjson_mut_val *data)
 {
     validate_all_data_t validate_data = {
         .global = global,
@@ -274,6 +309,35 @@ static int validate_all_in_session(nmo_cmd_ctx_t *cmd,
     return exit_code;
 }
 
+int nmo_cmd_validate_all_in_session(nmo_cmd_ctx_t *cmd, int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+
+    const nmo_cli_global_opts_t *global = cmd->global;
+    if (cmd->is_json) {
+        yyjson_mut_doc *doc = NULL;
+        yyjson_mut_val *data = NULL;
+        if (!nmo_cli_json_create_data_doc(&doc, &data)) {
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+
+        int rc = validate_all_run(cmd, global, doc, data);
+
+        yyjson_mut_obj_add_str(doc, data, "file", cmd->file_path);
+        nmo_cli_json_write_enveloped_and_free(
+            doc, data, "validate.all", cmd->file_path, cmd->out,
+            global && global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        return rc;
+    }
+
+    nmo_cli_print_heading(cmd->out, "Validation Results", cmd->colorize);
+    nmo_cli_print_kv(cmd->out, "File", cmd->file_path, 12, cmd->colorize);
+    fprintf(cmd->out, "\n");
+
+    return validate_all_run(cmd, global, NULL, NULL);
+}
+
 int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     /* Batch mode: process multiple files */
     if (global->batch_mode) {
@@ -316,7 +380,7 @@ int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *glo
                 return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
             }
 
-            rc = validate_all_in_session(&session_cmd, global, doc, data);
+            rc = validate_all_run(&session_cmd, global, doc, data);
 
             yyjson_mut_obj_add_str(doc, data, "file", file_path);
             nmo_cli_json_write_enveloped_and_free(doc, data, "validate.all", file_path,
@@ -328,7 +392,7 @@ int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *glo
         nmo_cli_print_kv(c.out, "File", file_path, 12, c.colorize);
         fprintf(c.out, "\n");
 
-        rc = validate_all_in_session(&session_cmd, global, NULL, NULL);
+        rc = validate_all_run(&session_cmd, global, NULL, NULL);
         return nmo_cmd_ctx_done(&c, rc);
     }
 
@@ -366,54 +430,50 @@ int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *glo
  * validate structure
  * ============================================================================ */
 
-int nmo_cmd_validate_structure(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+int nmo_cmd_validate_structure_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
     bool suggest_fixes = parse_fix_flag(argc, argv);
-
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
 
     yyjson_mut_doc *doc = NULL;
     yyjson_mut_val *data = NULL;
     yyjson_mut_val *issues = NULL;
 
-    if (c.is_json) {
-        doc = nmo_cmd_ctx_json_begin(&c);
+    if (c->is_json) {
+        doc = nmo_cmd_ctx_json_begin(c);
         data = yyjson_mut_obj(doc);
         issues = yyjson_mut_arr(doc);
     } else {
-        nmo_cli_print_heading(c.out, "Structure Validation", c.colorize);
-        nmo_cli_print_kv(c.out, "File", c.file_path, 14, c.colorize);
-        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c->out, "Structure Validation", c->colorize);
+        nmo_cli_print_kv(c->out, "File", c->file_path, 14, c->colorize);
+        fprintf(c->out, "\n");
     }
 
     validate_structure_data_t structure_data = {
-        .global = global,
+        .global = c->global,
         .suggest_fixes = suggest_fixes,
         .doc = doc,
         .issues = issues,
     };
     nmo_core_iter_result_t query_result = {0};
-    rc = nmo_core_object_query_run(&c, NULL, validate_structure_object,
-                                   &structure_data, &query_result);
+    int rc = nmo_core_object_query_run(c, NULL, validate_structure_object,
+                                       &structure_data, &query_result);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         if (doc) {
             yyjson_mut_doc_free(doc);
         }
         fprintf(stderr, "Error: Failed to query objects\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     int exit_code = NMO_CLI_EXIT_SUCCESS;
-    if (structure_data.error_count > 0 && global->strict_mode) {
+    if (structure_data.error_count > 0 && c->global && c->global->strict_mode) {
         exit_code = NMO_CLI_EXIT_STRICT_FAILURE;
     }
-    if (structure_data.warning_count > 0 && global->fail_on_warning) {
+    if (structure_data.warning_count > 0 && c->global && c->global->fail_on_warning) {
         exit_code = NMO_CLI_EXIT_WARNING;
     }
 
-    if (c.is_json) {
-        yyjson_mut_obj_add_str(doc, data, "file", c.file_path);
+    if (c->is_json) {
+        yyjson_mut_obj_add_str(doc, data, "file", c->file_path);
         yyjson_mut_obj_add_bool(doc, data, "valid", structure_data.error_count == 0);
         yyjson_mut_obj_add_uint(doc, data, "object_count",
                                 (uint64_t)query_result.matched);
@@ -425,40 +485,44 @@ int nmo_cmd_validate_structure(int argc, char **argv, const nmo_cli_global_opts_
                                 (uint64_t)structure_data.warning_count);
         yyjson_mut_obj_add_val(doc, data, "issues", issues);
 
-        nmo_cmd_ctx_json_end(&c, doc, data, "validate.structure");
+        nmo_cmd_ctx_json_end(c, doc, data, "validate.structure");
     } else {
-        fprintf(c.out, "\nSummary:\n");
+        fprintf(c->out, "\nSummary:\n");
         char buf[32];
         snprintf(buf, sizeof(buf), "%zu", query_result.matched);
-        nmo_cli_print_kv(c.out, "Objects", buf, 14, c.colorize);
+        nmo_cli_print_kv(c->out, "Objects", buf, 14, c->colorize);
         snprintf(buf, sizeof(buf), "%zu", structure_data.checked_count);
-        nmo_cli_print_kv(c.out, "Chunks", buf, 14, c.colorize);
+        nmo_cli_print_kv(c->out, "Chunks", buf, 14, c->colorize);
         snprintf(buf, sizeof(buf), "%zu", structure_data.error_count);
-        nmo_cli_print_kv(c.out, "Errors", buf, 14, c.colorize);
+        nmo_cli_print_kv(c->out, "Errors", buf, 14, c->colorize);
         snprintf(buf, sizeof(buf), "%zu", structure_data.warning_count);
-        nmo_cli_print_kv(c.out, "Warnings", buf, 14, c.colorize);
+        nmo_cli_print_kv(c->out, "Warnings", buf, 14, c->colorize);
     }
 
-    return nmo_cmd_ctx_done(&c, exit_code);
+    return exit_code;
+}
+
+int nmo_cmd_validate_structure(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+    rc = nmo_cmd_validate_structure_in_session(&c, argc, argv);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
  * validate references
  * ============================================================================ */
 
-int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+int nmo_cmd_validate_references_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
     bool suggest_fixes = parse_fix_flag(argc, argv);
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
     /* Get reference graph from session cache */
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
+    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c->session);
     if (!graph) {
         fprintf(stderr, "Error: Failed to create reference graph\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Validate references */
@@ -471,12 +535,12 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
     nmo_ref_graph_get_stats(graph, &stats);
 
     int exit_code = NMO_CLI_EXIT_SUCCESS;
-    if (status != NMO_OK && global->strict_mode) {
+    if (status != NMO_OK && c->global && c->global->strict_mode) {
         exit_code = NMO_CLI_EXIT_STRICT_FAILURE;
     }
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         /* Summary stats */
@@ -512,7 +576,7 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
                 /* Add source object info */
                 nmo_object_t *source = nmo_object_repository_find_by_id(repo, broken_edges[i].from);
                 if (source) {
-                    const char *source_class = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(source));
+                    const char *source_class = nmo_cli_class_name_from_id(c->ctx, nmo_object_get_class_id(source));
                     if (source_class) {
                         yyjson_mut_obj_add_str(doc, edge, "source_class", source_class);
                     }
@@ -531,28 +595,28 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
             yyjson_mut_obj_add_val(doc, data, "broken_references", broken_arr);
         }
 
-        nmo_cmd_ctx_json_end(&c, doc, data, "validate.references");
+        nmo_cmd_ctx_json_end(c, doc, data, "validate.references");
     } else {
         /* Text output */
-        nmo_cli_print_heading(c.out, "Reference Validation", c.colorize);
-        nmo_cli_print_kv(c.out, "File", c.file_path, 16, c.colorize);
-        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c->out, "Reference Validation", c->colorize);
+        nmo_cli_print_kv(c->out, "File", c->file_path, 16, c->colorize);
+        fprintf(c->out, "\n");
 
         /* Summary */
         char buf[32];
         snprintf(buf, sizeof(buf), "%zu", stats.total_edges);
-        nmo_cli_print_kv(c.out, "Total references", buf, 16, c.colorize);
+        nmo_cli_print_kv(c->out, "Total references", buf, 16, c->colorize);
         snprintf(buf, sizeof(buf), "%zu", stats.self_refs);
-        nmo_cli_print_kv(c.out, "Self-references", buf, 16, c.colorize);
+        nmo_cli_print_kv(c->out, "Self-references", buf, 16, c->colorize);
         snprintf(buf, sizeof(buf), "%zu", broken_count);
-        nmo_cli_print_kv(c.out, "Broken references", buf, 16, c.colorize);
-        fprintf(c.out, "\n");
+        nmo_cli_print_kv(c->out, "Broken references", buf, 16, c->colorize);
+        fprintf(c->out, "\n");
 
         /* Status */
         if (status == NMO_OK) {
-            fprintf(c.out, "All references valid\n");
+            fprintf(c->out, "All references valid\n");
         } else {
-            fprintf(c.out, "Broken references found\n\n");
+            fprintf(c->out, "Broken references found\n\n");
 
             /* List broken references */
             static const nmo_cli_table_col_t cols[] = {
@@ -586,7 +650,7 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
                 const char *source_name = "-";
 
                 if (source) {
-                    const char *sc = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(source));
+                    const char *sc = nmo_cli_class_name_from_id(c->ctx, nmo_object_get_class_id(source));
                     if (sc) source_class = sc;
                     const char *sn = nmo_object_get_name(source);
                     if (sn && sn[0]) source_name = sn;
@@ -603,30 +667,37 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
                 nmo_cli_table_add_row(&table, cells, 6);
             }
 
-            nmo_cli_table_print(&table, c.out, c.colorize);
+            nmo_cli_table_print(&table, c->out, c->colorize);
             nmo_cli_table_free(&table);
 
             if (suggest_fixes) {
-                fprintf(c.out, "\nSuggested fixes:\n");
-                fprintf(c.out, "  - Re-save file with 'nmo convert' to strip dangling references\n");
-                fprintf(c.out, "  - Or null specific reference fields via DSL script mode\n");
+                fprintf(c->out, "\nSuggested fixes:\n");
+                fprintf(c->out, "  - Re-save file with 'nmo convert' to strip dangling references\n");
+                fprintf(c->out, "  - Or null specific reference fields via DSL script mode\n");
             }
         }
     }
 
-    return nmo_cmd_ctx_done(&c, exit_code);
+    return exit_code;
+}
+
+int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+    rc = nmo_cmd_validate_references_in_session(&c, argc, argv);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
  * validate resources
  * ============================================================================ */
 
-int nmo_cmd_validate_resources(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+int nmo_cmd_validate_resources_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
+    (void)argc;
+    (void)argv;
 
-    const nmo_session_plugin_diagnostics_t *diag = nmo_session_get_plugin_diagnostics(c.session);
+    const nmo_session_plugin_diagnostics_t *diag = nmo_session_get_plugin_diagnostics(c->session);
 
     size_t error_count = 0;
     size_t warning_count = 0;
@@ -640,18 +711,18 @@ int nmo_cmd_validate_resources(int argc, char **argv, const nmo_cli_global_opts_
     }
 
     int exit_code = NMO_CLI_EXIT_SUCCESS;
-    if (error_count > 0 && global->strict_mode) {
+    if (error_count > 0 && c->global && c->global->strict_mode) {
         exit_code = NMO_CLI_EXIT_STRICT_FAILURE;
     }
-    if (warning_count > 0 && global->fail_on_warning) {
+    if (warning_count > 0 && c->global && c->global->fail_on_warning) {
         exit_code = NMO_CLI_EXIT_WARNING;
     }
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
-        yyjson_mut_obj_add_str(doc, data, "file", c.file_path);
+        yyjson_mut_obj_add_str(doc, data, "file", c->file_path);
         yyjson_mut_obj_add_bool(doc, data, "registry_available", diag ? diag->extension_registry_available : false);
         yyjson_mut_obj_add_uint(doc, data, "missing_count", (uint64_t)(diag ? diag->missing_count : 0));
         yyjson_mut_obj_add_uint(doc, data, "outdated_count", (uint64_t)(diag ? diag->outdated_count : 0));
@@ -693,44 +764,53 @@ int nmo_cmd_validate_resources(int argc, char **argv, const nmo_cli_global_opts_
         }
         yyjson_mut_obj_add_val(doc, data, "entries", entries);
 
-        nmo_cmd_ctx_json_end(&c, doc, data, "validate.resources");
+        nmo_cmd_ctx_json_end(c, doc, data, "validate.resources");
     } else {
-        nmo_cli_print_heading(c.out, "Resource Validation", c.colorize);
-        nmo_cli_print_kv(c.out, "File", c.file_path, 18, c.colorize);
+        nmo_cli_print_heading(c->out, "Resource Validation", c->colorize);
+        nmo_cli_print_kv(c->out, "File", c->file_path, 18, c->colorize);
 
         if (!diag) {
-            fprintf(c.out, "\nPlugin diagnostics unavailable\n");
+            fprintf(c->out, "\nPlugin diagnostics unavailable\n");
         } else {
-            fprintf(c.out, "\n");
-            nmo_cli_print_kv(c.out, "Registry", diag->extension_registry_available ? "available" : "unavailable", 18, c.colorize);
+            fprintf(c->out, "\n");
+            nmo_cli_print_kv(c->out, "Registry", diag->extension_registry_available ? "available" : "unavailable", 18, c->colorize);
             char buf[32];
             snprintf(buf, sizeof(buf), "%zu", diag->entry_count);
-            nmo_cli_print_kv(c.out, "Entries", buf, 18, c.colorize);
+            nmo_cli_print_kv(c->out, "Entries", buf, 18, c->colorize);
             snprintf(buf, sizeof(buf), "%zu", diag->missing_count);
-            nmo_cli_print_kv(c.out, "Missing", buf, 18, c.colorize);
+            nmo_cli_print_kv(c->out, "Missing", buf, 18, c->colorize);
             snprintf(buf, sizeof(buf), "%zu", diag->outdated_count);
-            nmo_cli_print_kv(c.out, "Outdated", buf, 18, c.colorize);
+            nmo_cli_print_kv(c->out, "Outdated", buf, 18, c->colorize);
 
-            if (diag->entries && diag->entry_count > 0 && global->verbosity > 0) {
-                fprintf(c.out, "\nEntries:\n");
+            if (diag->entries && diag->entry_count > 0 &&
+                c->global && c->global->verbosity > 0) {
+                fprintf(c->out, "\nEntries:\n");
                 for (size_t i = 0; i < diag->entry_count; ++i) {
                     const nmo_session_plugin_dependency_status_t *e = &diag->entries[i];
                     char guid_buf[64];
                     nmo_guid_format(e->guid, guid_buf, sizeof(guid_buf));
-                    fprintf(c.out, "  %s", guid_buf);
+                    fprintf(c->out, "  %s", guid_buf);
                     if (e->resolved_name) {
-                        fprintf(c.out, " (%s)", e->resolved_name);
+                        fprintf(c->out, " (%s)", e->resolved_name);
                     }
                     if (e->status_flags) {
-                        fprintf(c.out, " [flags=0x%X]", e->status_flags);
+                        fprintf(c->out, " [flags=0x%X]", e->status_flags);
                     }
-                    fprintf(c.out, "\n");
+                    fprintf(c->out, "\n");
                 }
             }
         }
     }
 
-    return nmo_cmd_ctx_done(&c, exit_code);
+    return exit_code;
+}
+
+int nmo_cmd_validate_resources(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+    rc = nmo_cmd_validate_resources_in_session(&c, argc, argv);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
@@ -1130,3 +1210,17 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
     return nmo_cmd_ctx_done(&c, exit_code);
 }
 
+int nmo_cmd_validate_orphans_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--strip") == 0 ||
+            strcmp(argv[i], "-o") == 0 ||
+            strcmp(argv[i], "--output") == 0 ||
+            strncmp(argv[i], "--output=", 9) == 0) {
+            fprintf(stderr, "Validation write/fix options are not supported in in-session read mode.\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    }
+    return validate_dispatch_with_session_operand(ctx, argc, argv,
+                                                  nmo_cmd_validate_orphans);
+}

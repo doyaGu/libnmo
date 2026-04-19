@@ -154,7 +154,7 @@ static int open_two_sessions(const char *path1, const char *path2,
 }
 
 static void close_two_sessions(nmo_context_t *ctx1, nmo_session_t *ses1, bool owns1,
-                               nmo_context_t *ctx2, nmo_session_t *ses2, bool owns2)
+                                nmo_context_t *ctx2, nmo_session_t *ses2, bool owns2)
 {
     if (owns1) {
         nmo_tool_close_session(ctx1, ses1);
@@ -162,6 +162,41 @@ static void close_two_sessions(nmo_context_t *ctx1, nmo_session_t *ses1, bool ow
     if (owns2) {
         nmo_tool_close_session(ctx2, ses2);
     }
+}
+
+typedef int (*diff_public_handler_t)(int argc, char **argv,
+                                     const nmo_cli_global_opts_t *global);
+
+static int diff_dispatch_with_left_session(nmo_cmd_ctx_t *left,
+                                           int argc,
+                                           char **argv,
+                                           diff_public_handler_t handler)
+{
+    char **cmd_argv = (char **)calloc((size_t)argc + 2u, sizeof(char *));
+    if (!cmd_argv) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    cmd_argv[0] = argv[0];
+    cmd_argv[1] = (char *)left->file_path;
+    for (int i = 1; i < argc; i++) {
+        cmd_argv[i + 1] = argv[i];
+    }
+
+    nmo_cli_global_opts_t global;
+    if (left->global) {
+        global = *left->global;
+    } else {
+        nmo_cli_global_opts_init(&global);
+    }
+    global.borrowed_ctx = left->ctx;
+    global.borrowed_session = left->session;
+    global.borrowed_source_label = left->file_path;
+
+    int rc = handler(argc + 1, cmd_argv, &global);
+    free(cmd_argv);
+    return rc;
 }
 
 /**
@@ -410,6 +445,11 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+int nmo_cmd_diff_summary_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    return diff_dispatch_with_left_session(ctx, argc, argv, nmo_cmd_diff_summary);
 }
 
 /* ============================================================================
@@ -684,6 +724,11 @@ int nmo_cmd_diff_objects(int argc, char **argv, const nmo_cli_global_opts_t *glo
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
+int nmo_cmd_diff_objects_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    return diff_dispatch_with_left_session(ctx, argc, argv, nmo_cmd_diff_objects);
+}
+
 /* ============================================================================
  * diff chunks
  * ============================================================================ */
@@ -842,6 +887,11 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
+int nmo_cmd_diff_chunks_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    return diff_dispatch_with_left_session(ctx, argc, argv, nmo_cmd_diff_chunks);
+}
+
 /* ============================================================================
  * diff full
  * ============================================================================ */
@@ -990,4 +1040,9 @@ int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global
     close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+int nmo_cmd_diff_full_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    return diff_dispatch_with_left_session(ctx, argc, argv, nmo_cmd_diff_full);
 }

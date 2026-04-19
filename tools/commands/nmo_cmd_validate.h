@@ -6,6 +6,7 @@
 #ifndef NMO_CMD_VALIDATE_H
 #define NMO_CMD_VALIDATE_H
 
+#include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_common.h"
 
 #ifdef __cplusplus
@@ -16,26 +17,31 @@ extern "C" {
  * @brief nmo validate all - Run all validation checks
  */
 int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_validate_all_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
 /**
  * @brief nmo validate structure - Validate file structure
  */
 int nmo_cmd_validate_structure(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_validate_structure_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
 /**
  * @brief nmo validate references - Validate object references
  */
 int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_validate_references_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
 /**
  * @brief nmo validate resources - Validate embedded resources
  */
 int nmo_cmd_validate_resources(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_validate_resources_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
 /**
  * @brief nmo validate orphans - Find unreferenced objects
  */
 int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_validate_orphans_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
 #ifdef __cplusplus
 }

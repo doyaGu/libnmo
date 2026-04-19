@@ -262,6 +262,154 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
+int nmo_cmd_query_eval_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
+    static const nmo_opt_def_t opts[] = {
+        {"--stdin",  NULL, NMO_OPT_FLAG,   "Read expression from stdin"},
+        {"--expr",   "-e", NMO_OPT_STRING, "Expression to evaluate"},
+        {"--object", NULL, NMO_OPT_STRING, "Object ID or name for context"},
+        {"--format", "-f", NMO_OPT_STRING, "Output format"},
+    };
+    enum { OPT_STDIN, OPT_EXPR, OPT_OBJECT, OPT_FMT, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    bool use_stdin = vals[OPT_STDIN].present && vals[OPT_STDIN].val.flag;
+    const char *expr_str = vals[OPT_EXPR].present ? vals[OPT_EXPR].val.str : NULL;
+    if (!expr_str && !use_stdin && r.pos_count >= 1) {
+        expr_str = r.pos_args[0];
+    }
+    if (r.pos_count > (expr_str && !vals[OPT_EXPR].present ? 1 : 0)) {
+        fprintf(stderr, "Error: File operands are not accepted for in-session query eval\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    char *stdin_buffer = NULL;
+    if (use_stdin) {
+        size_t capacity = 4096;
+        size_t size = 0;
+        stdin_buffer = (char *)malloc(capacity);
+        if (!stdin_buffer) {
+            fprintf(stderr, "Error: Out of memory\n");
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+
+        int ch;
+        while ((ch = fgetc(stdin)) != EOF) {
+            if (size + 1 >= capacity) {
+                capacity *= 2;
+                char *new_buf = (char *)realloc(stdin_buffer, capacity);
+                if (!new_buf) {
+                    free(stdin_buffer);
+                    fprintf(stderr, "Error: Out of memory\n");
+                    return NMO_CLI_EXIT_INTERNAL_ERROR;
+                }
+                stdin_buffer = new_buf;
+            }
+            stdin_buffer[size++] = (char)ch;
+        }
+        stdin_buffer[size] = '\0';
+        expr_str = stdin_buffer;
+    }
+
+    if (!expr_str || expr_str[0] == '\0') {
+        free(stdin_buffer);
+        fprintf(stderr, "Error: No expression specified\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(c->ctx);
+    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
+
+    nmo_dsl_eval_context_t eval_ctx;
+    memset(&eval_ctx, 0, sizeof(eval_ctx));
+    eval_ctx.registry = registry;
+    eval_ctx.ops = NULL;
+
+    const char *obj_opt = vals[OPT_OBJECT].present ? vals[OPT_OBJECT].val.str : NULL;
+    nmo_object_t *target_obj = NULL;
+    if (obj_opt) {
+        nmo_object_id_t id = 0;
+        bool numeric_selector = nmo_parse_object_id(obj_opt, &id) == NMO_OK;
+        if (numeric_selector) {
+            if (id > 0) {
+                target_obj = nmo_core_find_by_id(c, id);
+            }
+        } else {
+            int lookup_rc = nmo_core_find_by_name(c, obj_opt, &target_obj);
+            if (lookup_rc == NMO_CLI_EXIT_NOT_FOUND) {
+                target_obj = NULL;
+            } else if (lookup_rc != NMO_CLI_EXIT_SUCCESS) {
+                free(stdin_buffer);
+                return lookup_rc;
+            }
+        }
+        if (!target_obj) {
+            free(stdin_buffer);
+            fprintf(stderr, "Error: Object not found: %s\n", obj_opt);
+            return NMO_CLI_EXIT_NOT_FOUND;
+        }
+
+        nmo_guid_t type_guid = nmo_object_get_type_guid(target_obj);
+        const nmo_type_descriptor_t *obj_type = NULL;
+        if (!nmo_guid_is_null(type_guid)) {
+            obj_type = nmo_type_registry_find_by_guid(registry, type_guid);
+        }
+        if (!obj_type) {
+            obj_type = nmo_type_registry_find_by_class_id_inherited(
+                registry, nmo_object_get_class_id(target_obj));
+        }
+
+        if (obj_type && nmo_type_has_reflection(obj_type)) {
+            const void *state = nmo_object_get_state(target_obj);
+            eval_ctx.root_type = obj_type;
+            eval_ctx.root_instance = (void *)state;
+            eval_ctx.current_type = obj_type;
+            eval_ctx.current_instance = state;
+        } else {
+            free(stdin_buffer);
+            fprintf(stderr, "Error: Object '%s' has no reflection data\n", obj_opt);
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+    } else {
+        eval_ctx.root_type = NULL;
+        eval_ctx.root_instance = NULL;
+        eval_ctx.current_type = NULL;
+        eval_ctx.current_instance = repo;
+    }
+
+    nmo_dsl_value_t result = {0};
+    nmo_status_t status = nmo_dsl_eval_one(registry, &eval_ctx, expr_str, &result);
+    if (status != NMO_OK) {
+        nmo_core_dsl_print_error(stderr, expr_str, "Error: DSL evaluation failed");
+        free(stdin_buffer);
+        if (!obj_opt) {
+            fprintf(stderr, "Hint: Use --object <id|name> to evaluate in the context of an object\n");
+        }
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+
+        nmo_dsl_value_to_json(&result, doc, data, "result");
+
+        nmo_cli_json_write_enveloped_and_free(
+            doc, data, "query.eval", c->file_path, c->out,
+            c->global && c->global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+    } else {
+        char value_buf[256];
+        nmo_core_dsl_format(&result, value_buf, sizeof(value_buf));
+        fprintf(c->out, "%s\n", value_buf);
+    }
+
+    free(stdin_buffer);
+    nmo_dsl_value_destroy(&result);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 /* ============================================================================
  * query script
  * ============================================================================ */

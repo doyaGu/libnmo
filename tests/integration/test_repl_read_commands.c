@@ -5,9 +5,14 @@
 
 #include "test_framework.h"
 
+#include "../../tools/nmo_cmd_ctx.h"
 #include "../../tools/nmo_repl_commands.h"
 #include "../../tools/nmo_repl_session.h"
 #include "../../tools/nmo_repl_util.h"
+#include "../../tools/commands/nmo_cmd_diff.h"
+#include "../../tools/commands/nmo_cmd_file.h"
+#include "../../tools/commands/nmo_cmd_query.h"
+#include "../../tools/commands/nmo_cmd_validate.h"
 #include "../../tools/nmo_tool_session.h"
 #include "session/nmo_session.h"
 
@@ -134,6 +139,23 @@ static void assert_read_ok_preserves_dirty(nmo_repl_context_t *repl, const char 
     bool was_dirty = repl->dirty;
     ASSERT_EQ(0, run_repl_command(repl, line));
     ASSERT_EQ(was_dirty, repl->dirty);
+}
+
+static void assert_in_session_ok(nmo_repl_context_t *repl,
+                                 int (*handler)(nmo_cmd_ctx_t *, int, char **),
+                                 int argc,
+                                 char **argv)
+{
+    nmo_cli_global_opts_t global;
+    nmo_cli_global_opts_init(&global);
+
+    nmo_cmd_ctx_t cmd;
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS,
+              nmo_cmd_ctx_init_with_session(&cmd, repl->ctx, repl->session,
+                                            "(test session)", &global));
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, handler(&cmd, argc, argv));
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, nmo_cmd_ctx_done(&cmd, NMO_CLI_EXIT_SUCCESS));
+    ASSERT_FALSE(repl->dirty);
 }
 
 static void assert_captured_read_ok_not_contains(nmo_repl_context_t *repl,
@@ -360,6 +382,47 @@ TEST(repl_read, cli_batch_mode_is_rejected) {
     close_repl(&repl);
 }
 
+TEST(repl_read, first_batch_read_core_exposes_explicit_in_session_handlers) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+
+    char *file_info[] = {"info"};
+    char *file_header[] = {"header"};
+    char *file_stats[] = {"stats"};
+    char *file_classes[] = {"classes"};
+    char *file_plugins[] = {"plugins"};
+    char *file_space[] = {"space"};
+    char *validate_all[] = {"all"};
+    char *validate_structure[] = {"structure"};
+    char *validate_references[] = {"references"};
+    char *validate_resources[] = {"resources"};
+    char *validate_orphans[] = {"orphans"};
+    char *query_eval[] = {"eval", "--object", "520", "has_target"};
+    char *diff_summary[2] = {"summary", NMO_TEST_DATA_FILE("Ballance/Camera.nmo")};
+    char *diff_objects[2] = {"objects", NMO_TEST_DATA_FILE("Ballance/Camera.nmo")};
+    char *diff_chunks[2] = {"chunks", NMO_TEST_DATA_FILE("Ballance/Camera.nmo")};
+    char *diff_full[2] = {"full", NMO_TEST_DATA_FILE("Ballance/Camera.nmo")};
+
+    assert_in_session_ok(&repl, nmo_cmd_file_info_in_session, 1, file_info);
+    assert_in_session_ok(&repl, nmo_cmd_file_header_in_session, 1, file_header);
+    assert_in_session_ok(&repl, nmo_cmd_file_stats_in_session, 1, file_stats);
+    assert_in_session_ok(&repl, nmo_cmd_file_classes_in_session, 1, file_classes);
+    assert_in_session_ok(&repl, nmo_cmd_file_plugins_in_session, 1, file_plugins);
+    assert_in_session_ok(&repl, nmo_cmd_file_space_in_session, 1, file_space);
+    assert_in_session_ok(&repl, nmo_cmd_validate_all_in_session, 1, validate_all);
+    assert_in_session_ok(&repl, nmo_cmd_validate_structure_in_session, 1, validate_structure);
+    assert_in_session_ok(&repl, nmo_cmd_validate_references_in_session, 1, validate_references);
+    assert_in_session_ok(&repl, nmo_cmd_validate_resources_in_session, 1, validate_resources);
+    assert_in_session_ok(&repl, nmo_cmd_validate_orphans_in_session, 1, validate_orphans);
+    assert_in_session_ok(&repl, nmo_cmd_query_eval_in_session, 4, query_eval);
+    assert_in_session_ok(&repl, nmo_cmd_diff_summary_in_session, 2, diff_summary);
+    assert_in_session_ok(&repl, nmo_cmd_diff_objects_in_session, 2, diff_objects);
+    assert_in_session_ok(&repl, nmo_cmd_diff_chunks_in_session, 2, diff_chunks);
+    assert_in_session_ok(&repl, nmo_cmd_diff_full_in_session, 2, diff_full);
+
+    close_repl(&repl);
+}
+
 TEST(repl_read, completion_group_does_not_require_session) {
     nmo_repl_context_t repl;
     memset(&repl, 0, sizeof(repl));
@@ -391,6 +454,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, validate_all_reads_dirty_current_session);
     REGISTER_TEST(repl_read, mutating_cli_actions_are_rejected_by_read_mirror);
     REGISTER_TEST(repl_read, cli_batch_mode_is_rejected);
+    REGISTER_TEST(repl_read, first_batch_read_core_exposes_explicit_in_session_handlers);
     REGISTER_TEST(repl_read, completion_group_does_not_require_session);
     REGISTER_TEST(repl_read, legacy_read_shortcuts_still_work);
 TEST_MAIN_END()
