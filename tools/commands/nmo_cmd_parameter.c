@@ -1633,7 +1633,7 @@ int nmo_cmd_parameter_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return nmo_cmd_parameter_dump_in_session(ctx, argc, argv);
     }
     if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
-        return nmo_cmd_ctx_dispatch_with_session(
+        return nmo_cmd_ctx_dispatch_from_source(
             ctx, argc, argv, nmo_cmd_parameter_list);
     }
 

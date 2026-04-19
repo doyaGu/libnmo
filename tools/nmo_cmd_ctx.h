@@ -62,6 +62,22 @@ typedef struct nmo_cmd_in_session_result {
 typedef int (*nmo_cmd_public_handler_t)(int argc, char **argv,
                                         const nmo_cli_global_opts_t *global);
 
+typedef enum nmo_cmd_source_kind {
+    NMO_CMD_SOURCE_FILE_OPERAND = 0,
+    NMO_CMD_SOURCE_EXPLICIT_FILE,
+    NMO_CMD_SOURCE_SESSION,
+    NMO_CMD_SOURCE_NO_SESSION
+} nmo_cmd_source_kind_t;
+
+typedef struct nmo_cmd_source {
+    nmo_cmd_source_kind_t kind;
+    const char *file_path;
+    nmo_context_t *ctx;
+    nmo_session_t *session;
+    const char *source_label;
+    const nmo_load_options_t *load_options;
+} nmo_cmd_source_t;
+
 /**
  * @brief Initialize command context: find file arg, open session, open output.
  *
@@ -77,6 +93,15 @@ typedef int (*nmo_cmd_public_handler_t)(int argc, char **argv,
  */
 int nmo_cmd_ctx_init(nmo_cmd_ctx_t *c, int argc, char **argv,
                      const nmo_cli_global_opts_t *global);
+
+/**
+ * @brief Initialize command context from an explicit frontend source.
+ */
+int nmo_cmd_ctx_init_from_source(nmo_cmd_ctx_t *c,
+                                 int argc,
+                                 char **argv,
+                                 const nmo_cli_global_opts_t *global,
+                                 const nmo_cmd_source_t *source);
 
 /**
  * @brief Initialize command context with explicit load options.
@@ -155,18 +180,10 @@ int nmo_cmd_ctx_done(nmo_cmd_ctx_t *c, int exit_code);
  * core while nmo_cmd_ctx_init() resolves the session from ctx rather than
  * opening a file. The caller passes command-local argv without a file operand.
  */
-int nmo_cmd_ctx_dispatch_with_session(nmo_cmd_ctx_t *ctx,
-                                      int argc,
-                                      char **argv,
-                                      nmo_cmd_public_handler_t handler);
-
-/**
- * @brief Resolve the current in-session dispatch context for a source label.
- */
-bool nmo_cmd_ctx_resolve_active_session(const char *source_label,
-                                        nmo_context_t **ctx,
-                                        nmo_session_t **session,
-                                        const char **resolved_label);
+int nmo_cmd_ctx_dispatch_from_source(nmo_cmd_ctx_t *ctx,
+                                     int argc,
+                                     char **argv,
+                                     nmo_cmd_public_handler_t handler);
 
 /**
  * @brief Begin a JSON document for command output.

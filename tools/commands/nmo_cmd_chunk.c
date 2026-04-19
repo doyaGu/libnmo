@@ -573,7 +573,8 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
     bool include_hexdump = vals[1].val.flag;
     size_t max_bytes = vals[2].present ? (size_t)vals[2].val.u : 256;
 
-    bool in_session = false;
+    bool in_session = global && global->command_source &&
+                      global->command_source->kind == NMO_CMD_SOURCE_SESSION;
     /* Positional args:
        CLI: [object-id] <file>; in-session: [object-id]. */
     const char *obj_id_str = NULL;
@@ -957,5 +958,5 @@ int nmo_cmd_chunk_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    return nmo_cmd_ctx_dispatch_with_session(ctx, argc, argv, handler);
+    return nmo_cmd_ctx_dispatch_from_source(ctx, argc, argv, handler);
 }

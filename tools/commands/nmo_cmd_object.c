@@ -1314,8 +1314,15 @@ int nmo_cmd_object_list_fields(int argc, char **argv,
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
+    bool in_session = global && global->command_source &&
+                      global->command_source->kind == NMO_CMD_SOURCE_SESSION;
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
-    const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
+    const char *positional_id = NULL;
+    if (!has_selector_opt) {
+        positional_id = in_session
+            ? (r.pos_count >= 1 ? r.pos_args[0] : NULL)
+            : (r.pos_count >= 2 ? r.pos_args[0] : NULL);
+    }
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
@@ -1456,5 +1463,5 @@ int nmo_cmd_object_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    return nmo_cmd_ctx_dispatch_with_session(ctx, argc, argv, handler);
+    return nmo_cmd_ctx_dispatch_from_source(ctx, argc, argv, handler);
 }

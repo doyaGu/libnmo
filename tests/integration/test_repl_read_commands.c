@@ -544,6 +544,43 @@ TEST(repl_read, no_borrowed_session_adapter_symbols_remain) {
                                "nmo_cmd_in_session_dispatch_with_source");
 }
 
+TEST(repl_read, no_active_session_adapter_symbols_remain) {
+    assert_source_not_contains("tools/nmo_cmd_ctx.c", "g_active_session_ctx");
+    assert_source_not_contains("tools/nmo_cmd_ctx.h",
+                               "nmo_cmd_ctx_dispatch_with_session");
+    assert_source_not_contains("tools/nmo_cmd_ctx.c",
+                               "nmo_cmd_ctx_dispatch_with_session");
+    assert_source_not_contains("tools/nmo_cmd_ctx.h",
+                               "nmo_cmd_ctx_resolve_active_session");
+    assert_source_not_contains("tools/nmo_cmd_ctx.c",
+                               "nmo_cmd_ctx_resolve_active_session");
+}
+
+TEST(repl_read, explicit_session_source_initializes_command_context) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+
+    nmo_cli_global_opts_t global;
+    nmo_cli_global_opts_init(&global);
+    nmo_cmd_source_t source = {
+        .kind = NMO_CMD_SOURCE_SESSION,
+        .ctx = repl.ctx,
+        .session = repl.session,
+        .source_label = "(test explicit session)",
+    };
+
+    nmo_cmd_ctx_t cmd;
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS,
+              nmo_cmd_ctx_init_from_source(&cmd, 0, NULL, &global, &source));
+    char *argv[] = {"info"};
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, nmo_cmd_file_in_session(&cmd, 1, argv));
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS,
+              nmo_cmd_ctx_done(&cmd, NMO_CLI_EXIT_SUCCESS));
+    ASSERT_FALSE(repl.dirty);
+
+    close_repl(&repl);
+}
+
 TEST(repl_read, registry_dispatches_session_reads) {
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
@@ -636,6 +673,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, cli_read_table_has_no_session_public_fallbacks);
     REGISTER_TEST(repl_read, all_read_session_groups_have_family_dispatchers);
     REGISTER_TEST(repl_read, no_borrowed_session_adapter_symbols_remain);
+    REGISTER_TEST(repl_read, no_active_session_adapter_symbols_remain);
+    REGISTER_TEST(repl_read, explicit_session_source_initializes_command_context);
     REGISTER_TEST(repl_read, registry_dispatches_session_reads);
     REGISTER_TEST(repl_read, command_registry_is_shared_repl_policy_source);
     REGISTER_TEST(repl_read, completion_group_does_not_require_session);

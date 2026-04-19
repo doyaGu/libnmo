@@ -336,8 +336,15 @@ int nmo_cmd_object_impact(int argc, char **argv, const nmo_cli_global_opts_t *gl
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
+    bool in_session = global && global->command_source &&
+                      global->command_source->kind == NMO_CMD_SOURCE_SESSION;
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
-    const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
+    const char *positional_id = NULL;
+    if (!has_selector_opt) {
+        positional_id = in_session
+            ? (r.pos_count >= 1 ? r.pos_args[0] : NULL)
+            : (r.pos_count >= 2 ? r.pos_args[0] : NULL);
+    }
     if (!has_selector_opt && positional_id == NULL) {
         fprintf(stderr, "Error: No object selector specified\n");
         fprintf(stderr, "Usage: nmo object impact [--id <id> | --name <name> | <id>] <file>\n");

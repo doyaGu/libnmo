@@ -18,6 +18,7 @@ extern "C" {
 
 /* Forward declarations */
 typedef struct nmo_type_registry nmo_type_registry_t;
+typedef struct nmo_cmd_source nmo_cmd_source_t;
 
 /* Exit codes */
 #define NMO_CLI_EXIT_SUCCESS         0  /**< Success */
@@ -73,6 +74,9 @@ typedef struct nmo_cli_global_opts {
 
     /* Batch processing */
     bool batch_mode;                  /**< --batch: process multiple files */
+
+    /* Command frontend source override (CLI normally leaves this NULL). */
+    const nmo_cmd_source_t *command_source;
 
 } nmo_cli_global_opts_t;
 

@@ -44,7 +44,7 @@ int nmo_cmd_data_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    return nmo_cmd_ctx_dispatch_with_session(ctx, argc, argv, handler);
+    return nmo_cmd_ctx_dispatch_from_source(ctx, argc, argv, handler);
 }
 
 /* ============================================================================
