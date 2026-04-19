@@ -94,8 +94,8 @@ static const nmo_repl_command_t commands[] = {
     {"quit", "q", "Exit REPL", "quit", cmd_quit},
     {"exit", "", "Exit REPL", "exit", cmd_quit},
     /* mutation commands */
-    {"object", "", "Run object mutation commands", "object rename|delete|create|copy ...", cmd_object},
-    {"parameter", "", "Run parameter mutation commands", "parameter set ...", cmd_parameter},
+    {"object", "", "Run grouped object commands", "object show|refs|rename|delete|create|copy ...", cmd_object},
+    {"parameter", "", "Run grouped parameter commands", "parameter show|dump|set ...", cmd_parameter},
     {NULL, NULL, NULL, NULL, NULL}};
 
 static void suggest_commands(const char *name) {
@@ -1387,7 +1387,7 @@ static int cmd_quit(nmo_repl_context_t *repl, int argc, char **argv) {
 
 static int cmd_object(nmo_repl_context_t *repl, int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: object rename|delete|create|copy ...\n");
+        fprintf(stderr, "Usage: object show|refs|rename|delete|create|copy ...\n");
         return -1;
     }
     if (!repl->session) {
@@ -1398,13 +1398,17 @@ static int cmd_object(nmo_repl_context_t *repl, int argc, char **argv) {
     nmo_cmd_ctx_t c;
     nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
 
-    nmo_cmd_in_session_result_t result = {0};
     int sub_argc = argc - 1;
     char **sub_argv = &argv[1];
     int rc = NMO_CLI_EXIT_ARG_ERROR;
+    nmo_cmd_in_session_result_t result = {0};
     bool delete_command = false;
 
-    if (strcmp(argv[1], "rename") == 0) {
+    if (strcmp(argv[1], "show") == 0) {
+        rc = nmo_cmd_object_show_in_session(&c, sub_argc, sub_argv);
+    } else if (strcmp(argv[1], "refs") == 0) {
+        rc = nmo_cmd_object_refs_in_session(&c, sub_argc, sub_argv);
+    } else if (strcmp(argv[1], "rename") == 0) {
         rc = nmo_cmd_object_rename_in_session(&c, sub_argc, sub_argv, &result);
     } else if (strcmp(argv[1], "delete") == 0) {
         delete_command = true;
@@ -1415,7 +1419,7 @@ static int cmd_object(nmo_repl_context_t *repl, int argc, char **argv) {
         rc = nmo_cmd_object_copy_in_session(&c, sub_argc, sub_argv, &result);
     } else {
         fprintf(stderr, "Unknown object command: %s\n", argv[1]);
-        fprintf(stderr, "Usage: object rename|delete|create|copy ...\n");
+        fprintf(stderr, "Usage: object show|refs|rename|delete|create|copy ...\n");
     }
 
     if (rc == NMO_CLI_EXIT_SUCCESS && result.changed) {
@@ -1431,7 +1435,7 @@ static int cmd_object(nmo_repl_context_t *repl, int argc, char **argv) {
 
 static int cmd_parameter(nmo_repl_context_t *repl, int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: parameter set ...\n");
+        fprintf(stderr, "Usage: parameter show|dump|set ...\n");
         return -1;
     }
     if (!repl->session) {
@@ -1447,11 +1451,15 @@ static int cmd_parameter(nmo_repl_context_t *repl, int argc, char **argv) {
     char **sub_argv = &argv[1];
     int rc = NMO_CLI_EXIT_ARG_ERROR;
 
-    if (strcmp(argv[1], "set") == 0) {
+    if (strcmp(argv[1], "show") == 0) {
+        rc = nmo_cmd_parameter_show_in_session(&c, sub_argc, sub_argv);
+    } else if (strcmp(argv[1], "dump") == 0) {
+        rc = nmo_cmd_parameter_dump_in_session(&c, sub_argc, sub_argv);
+    } else if (strcmp(argv[1], "set") == 0) {
         rc = nmo_cmd_parameter_set_in_session(&c, sub_argc, sub_argv, &result);
     } else {
         fprintf(stderr, "Unknown parameter command: %s\n", argv[1]);
-        fprintf(stderr, "Usage: parameter set ...\n");
+        fprintf(stderr, "Usage: parameter show|dump|set ...\n");
     }
 
     if (rc == NMO_CLI_EXIT_SUCCESS && result.changed) {

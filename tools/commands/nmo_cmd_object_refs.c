@@ -126,7 +126,18 @@ static int cli_refs_text_visitor(const nmo_core_ref_info_t *info,
     return 0;
 }
 
-int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+typedef struct object_refs_args {
+    bool has_id;
+    uint32_t id;
+    const char *positional_id;
+    const char *name;
+} object_refs_args_t;
+
+static int object_refs_parse(int argc, char **argv, bool expect_file_operand,
+                             object_refs_args_t *args, const char *usage)
+{
+    memset(args, 0, sizeof(*args));
+
     static const nmo_opt_def_t opts[] = {
         {"--id",   "-i", NMO_OPT_UINT,   "Object ID"},
         {"--name", "-n", NMO_OPT_STRING, "Object name"},
@@ -138,31 +149,53 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
-    const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
-    if (!has_selector_opt && positional_id == NULL) {
-        fprintf(stderr, "Error: No object selector specified\n");
-        fprintf(stderr, "Usage: nmo object refs [--id <id> | --name <name> | <id>] <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
+    if (expect_file_operand) {
+        args->positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
+        if (!has_selector_opt && args->positional_id == NULL) {
+            fprintf(stderr, "Error: No object selector specified\n");
+            fprintf(stderr, "Usage: %s\n", usage);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    } else if (has_selector_opt) {
+        if (r.pos_count != 0) {
+            fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[0]);
+            fprintf(stderr, "Usage: %s\n", usage);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    } else {
+        if (r.pos_count != 1) {
+            fprintf(stderr, "Error: No object selector specified\n");
+            fprintf(stderr, "Usage: %s\n", usage);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        args->positional_id = r.pos_args[0];
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    args->has_id = vals[OPT_ID].present;
+    args->id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0;
+    args->name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int object_refs_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
+                           bool close_ctx, const char *usage)
+{
+    nmo_cmd_ctx_t c = *ctx;
 
     nmo_core_object_selector_t selector = {
-        .has_id = vals[OPT_ID].present,
-        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
-        .positional_id = positional_id,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .has_id = args->has_id,
+        .id = args->id,
+        .positional_id = args->positional_id,
+        .name = args->name,
         .selector_label = "Object",
         .type_label = "object",
     };
     nmo_object_t *obj = NULL;
     nmo_object_id_t object_id = 0;
-    rc = nmo_core_resolve_one_object(&c, &selector, &obj, &object_id);
+    int rc = nmo_core_resolve_one_object(&c, &selector, &obj, &object_id);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
-        fprintf(stderr, "Usage: nmo object refs [--id <id> | --name <name> | <id>] <file>\n");
-        return nmo_cmd_ctx_done(&c, rc);
+        fprintf(stderr, "Usage: %s\n", usage);
+        return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
     }
 
     if (c.is_json) {
@@ -259,7 +292,33 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
         nmo_cli_table_free(&in_table);
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS) : NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    object_refs_args_t args;
+    const char *usage = "nmo object refs [--id <id> | --name <name> | <id>] <file>";
+    int rc = object_refs_parse(argc, argv, true, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    nmo_cmd_ctx_t c;
+    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    return object_refs_run(&c, &args, true, usage);
+}
+
+int nmo_cmd_object_refs_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
+    object_refs_args_t args;
+    const char *usage = "object refs [--id <id> | --name <name> | <id>]";
+    int rc = object_refs_parse(argc, argv, false, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    return object_refs_run(ctx, &args, false, usage);
 }
 
 /* ============================================================================

@@ -352,45 +352,27 @@ int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *g
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
-int nmo_cmd_parameter_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *id_str = NULL;
-    const char *file_path = NULL;
-
-    int non_opt = 0;
-    for (int i = 1; i < argc; ++i) {
-        if (argv[i][0] != '-') {
-            non_opt++;
-            if (non_opt == 1) id_str = argv[i];
-            else if (non_opt == 2) file_path = argv[i];
-        }
-    }
-    if (!id_str || !file_path) {
-        fprintf(stderr, "Usage: nmo parameter show <id> <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    uint32_t object_id;
-    if (!nmo_tool_parse_u32(id_str, &object_id)) {
-        fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
+static int parameter_show_run(nmo_cmd_ctx_t *ctx, uint32_t object_id,
+                              int argc, char **argv,
+                              const nmo_cli_global_opts_t *global,
+                              bool close_ctx)
+{
+    nmo_cmd_ctx_t c = *ctx;
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
     nmo_object_t *obj = repo ? nmo_object_repository_find_by_id(repo, object_id) : NULL;
     if (!obj) {
         fprintf(stderr, "Error: Object #%u not found\n", object_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR) : NMO_CLI_EXIT_ARG_ERROR;
     }
 
     nmo_class_id_t cid = nmo_object_get_class_id(obj);
     if (!is_parameter_class(c.registry, cid)) {
         /* Fall back to generic object show for non-parameter objects */
-        nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
-        return nmo_cmd_object_show(argc, argv, global);
+        if (close_ctx) {
+            nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+            return nmo_cmd_object_show(argc, argv, global);
+        }
+        return nmo_cmd_object_show_in_session(ctx, argc, argv);
     }
 
     const char *name = nmo_object_get_name(obj);
@@ -411,7 +393,8 @@ int nmo_cmd_parameter_show(int argc, char **argv, const nmo_cli_global_opts_t *g
     if (!summary_buf) {
         free(value_buf);
         fprintf(stderr, "Error: Memory allocation failed\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
     summary_buf[0] = '\0';
 
@@ -568,7 +551,58 @@ int nmo_cmd_parameter_show(int argc, char **argv, const nmo_cli_global_opts_t *g
     free(value_buf);
     free(summary_buf);
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS) : NMO_CLI_EXIT_SUCCESS;
+}
+
+static int parameter_show_parse_id(int argc, char **argv, bool expect_file_operand,
+                                   uint32_t *object_id, const char *usage)
+{
+    const char *id_str = NULL;
+    int non_opt = 0;
+    for (int i = 1; i < argc; ++i) {
+        if (argv[i][0] != '-') {
+            non_opt++;
+            if (non_opt == 1) {
+                id_str = argv[i];
+            }
+        }
+    }
+
+    if ((expect_file_operand && non_opt != 2) || (!expect_file_operand && non_opt != 1)) {
+        fprintf(stderr, "Usage: %s\n", usage);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!id_str || !nmo_tool_parse_u32(id_str, object_id)) {
+        fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str ? id_str : "(null)");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_parameter_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    const char *usage = "nmo parameter show <id> <file>";
+    uint32_t object_id = 0;
+    int rc = parameter_show_parse_id(argc, argv, true, &object_id, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    nmo_cmd_ctx_t c;
+    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    return parameter_show_run(&c, object_id, argc, argv, global, true);
+}
+
+int nmo_cmd_parameter_show_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
+    const char *usage = "parameter show <id>";
+    uint32_t object_id = 0;
+    int rc = parameter_show_parse_id(argc, argv, false, &object_id, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    return parameter_show_run(ctx, object_id, argc, argv, NULL, false);
 }
 
 /**
@@ -748,7 +782,19 @@ static int parameter_target_collect_visitor(size_t index,
     return 0;
 }
 
-int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+typedef struct parameter_dump_args {
+    bool dump_all;
+    bool has_filter;
+    nmo_guid_t filter_guid;
+    uint32_t object_id;
+} parameter_dump_args_t;
+
+static int parameter_dump_parse(int argc, char **argv, bool expect_file_operand,
+                                parameter_dump_args_t *args, const char *usage)
+{
+    memset(args, 0, sizeof(*args));
+    args->filter_guid = NMO_GUID_NULL;
+
     static const nmo_opt_def_t opts[] = {
         {"--all",  "-a", NMO_OPT_FLAG,   "Dump all parameters"},
         {"--type", NULL, NMO_OPT_STRING, "Filter by type GUID"},
@@ -759,20 +805,21 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    bool dump_all = vals[0].val.flag;
+    bool dump_all = vals[0].present && vals[0].val.flag;
     const char *type_guid_str = vals[1].present ? vals[1].val.str : NULL;
     const char *id_str = NULL;
+    args->dump_all = dump_all;
 
     if (dump_all) {
-        if (r.pos_count < 1) {
-            fprintf(stderr, "Usage: nmo parameter dump [--all] [--type <guid>] <id> <file>\n");
-            fprintf(stderr, "       nmo parameter dump --all [--type <guid>] <file>\n");
+        if ((expect_file_operand && r.pos_count != 1) ||
+            (!expect_file_operand && r.pos_count != 0)) {
+            fprintf(stderr, "Usage: %s\n", usage);
             return NMO_CLI_EXIT_ARG_ERROR;
         }
     } else {
-        if (r.pos_count < 2) {
-            fprintf(stderr, "Usage: nmo parameter dump [--all] [--type <guid>] <id> <file>\n");
-            fprintf(stderr, "       nmo parameter dump --all [--type <guid>] <file>\n");
+        if ((expect_file_operand && r.pos_count != 2) ||
+            (!expect_file_operand && r.pos_count != 1)) {
+            fprintf(stderr, "Usage: %s\n", usage);
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         id_str = r.pos_args[0];
@@ -784,6 +831,7 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
             fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str ? id_str : "(null)");
             return NMO_CLI_EXIT_ARG_ERROR;
         }
+        args->object_id = object_id;
     }
 
     nmo_guid_t filter_guid = NMO_GUID_NULL;
@@ -796,11 +844,20 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
         has_filter = true;
     }
+    args->filter_guid = filter_guid;
+    args->has_filter = has_filter;
+    return NMO_CLI_EXIT_SUCCESS;
+}
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
+static int parameter_dump_run(nmo_cmd_ctx_t *ctx, const parameter_dump_args_t *args,
+                              bool close_ctx)
+{
+    nmo_cmd_ctx_t c = *ctx;
+    bool dump_all = args->dump_all;
+    bool has_filter = args->has_filter;
+    nmo_guid_t filter_guid = args->filter_guid;
+    uint32_t object_id = args->object_id;
+    int rc = NMO_CLI_EXIT_SUCCESS;
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
 
     /* JSON setup */
@@ -831,7 +888,8 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
         if (rc != NMO_CLI_EXIT_SUCCESS || all_targets.oom) {
             free(all_targets.items);
             fprintf(stderr, "Error: Failed to collect parameters\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                             : NMO_CLI_EXIT_INTERNAL_ERROR;
         }
         targets = all_targets.items;
         target_count = all_targets.count;
@@ -839,13 +897,15 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
         single_target = repo ? nmo_object_repository_find_by_id(repo, object_id) : NULL;
         if (!single_target) {
             fprintf(stderr, "Error: Object #%u not found\n", object_id);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+            return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR)
+                             : NMO_CLI_EXIT_ARG_ERROR;
         }
 
         nmo_class_id_t cid = nmo_object_get_class_id(single_target);
         if (!is_parameter_class(c.registry, cid)) {
             fprintf(stderr, "Error: Object #%u is not a parameter (class %u)\n", object_id, cid);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+            return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR)
+                             : NMO_CLI_EXIT_ARG_ERROR;
         }
         targets = &single_target;
         target_count = 1;
@@ -876,7 +936,8 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
                 if (!dump_all) {
                     fprintf(stderr, "Error: Parameter #%u type does not match filter\n", object_id);
                     free(all_targets.items);
-                    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+                    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR)
+                                     : NMO_CLI_EXIT_ARG_ERROR;
                 }
                 continue;
             }
@@ -974,7 +1035,37 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
     }
 
     free(all_targets.items);
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS) : NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    const char *usage =
+        "nmo parameter dump [--all] [--type <guid>] <id> <file>\n"
+        "       nmo parameter dump --all [--type <guid>] <file>";
+    parameter_dump_args_t args;
+    int rc = parameter_dump_parse(argc, argv, true, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    nmo_cmd_ctx_t c;
+    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    return parameter_dump_run(&c, &args, true);
+}
+
+int nmo_cmd_parameter_dump_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
+    const char *usage =
+        "parameter dump [--all] [--type <guid>] [<id>]\n"
+        "       parameter dump --all [--type <guid>]";
+    parameter_dump_args_t args;
+    int rc = parameter_dump_parse(argc, argv, false, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    return parameter_dump_run(ctx, &args, false);
 }
 
 /* ============================================================================

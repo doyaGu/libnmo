@@ -15,7 +15,9 @@ extern "C" {
 
 int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_parameter_show(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_parameter_show_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_parameter_dump_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 int nmo_cmd_parameter_set(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_parameter_set_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
                                      nmo_cmd_in_session_result_t *result);

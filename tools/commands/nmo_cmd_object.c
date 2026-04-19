@@ -711,17 +711,24 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
  * object show
  * ============================================================================ */
 
-int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    /* Parse: nmo object show [--select <path>]... [--expr <expr>]... [--depth N] [--full] <id> <file>
-     *
-     * Two-pass approach: first collect repeatable --select/--expr and build
-     * a cleaned argv, then use nmo_opt for --depth and --full.
-     */
+typedef struct object_show_args {
     const char *select_paths[64];
-    size_t select_path_count = 0;
-
+    size_t select_path_count;
     const char *exprs[64];
-    size_t expr_count = 0;
+    size_t expr_count;
+    int depth;
+    bool full_mode;
+    bool has_id;
+    uint32_t id;
+    const char *positional_id;
+    const char *name;
+} object_show_args_t;
+
+static int object_show_parse(int argc, char **argv, bool expect_file_operand,
+                             object_show_args_t *args, const char *usage)
+{
+    memset(args, 0, sizeof(*args));
+    args->depth = -1;
 
     /* Pass 1: collect --select/--expr, build cleaned argv */
     char **clean_argv = (char **)malloc((size_t)argc * sizeof(char *));
@@ -736,13 +743,12 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
         if ((strcmp(argv[i], "--select") == 0 || strcmp(argv[i], "-s") == 0)) {
             if (i + 1 >= argc) {
                 fprintf(stderr, "Error: Missing argument for %s\n", argv[i]);
-                fprintf(stderr,
-                        "Usage: nmo object show [--select <path>]... [--expr <expr>]... <id> <file>\n");
+                fprintf(stderr, "Usage: %s\n", usage);
                 free(clean_argv);
                 return NMO_CLI_EXIT_ARG_ERROR;
             }
-            if (select_path_count < (sizeof(select_paths) / sizeof(select_paths[0]))) {
-                select_paths[select_path_count++] = argv[i + 1];
+            if (args->select_path_count < (sizeof(args->select_paths) / sizeof(args->select_paths[0]))) {
+                args->select_paths[args->select_path_count++] = argv[i + 1];
             } else {
                 fprintf(stderr, "Warning: --select limit reached (64 max), extra paths ignored\n");
             }
@@ -753,13 +759,12 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
         if ((strcmp(argv[i], "--expr") == 0 || strcmp(argv[i], "-e") == 0)) {
             if (i + 1 >= argc) {
                 fprintf(stderr, "Error: Missing argument for %s\n", argv[i]);
-                fprintf(stderr,
-                        "Usage: nmo object show [--select <path>]... [--expr <expr>]... <id> <file>\n");
+                fprintf(stderr, "Usage: %s\n", usage);
                 free(clean_argv);
                 return NMO_CLI_EXIT_ARG_ERROR;
             }
-            if (expr_count < (sizeof(exprs) / sizeof(exprs[0]))) {
-                exprs[expr_count++] = argv[i + 1];
+            if (args->expr_count < (sizeof(args->exprs) / sizeof(args->exprs[0]))) {
+                args->exprs[args->expr_count++] = argv[i + 1];
             } else {
                 fprintf(stderr, "Warning: --expr limit reached (64 max), extra expressions ignored\n");
             }
@@ -787,35 +792,56 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
     }
     free(clean_argv);
 
-    int depth = vals[OPT_DEPTH].present ? (int)vals[OPT_DEPTH].val.u : -1;
-    bool full_mode = vals[OPT_FULL].present && vals[OPT_FULL].val.flag;
-
+    args->depth = vals[OPT_DEPTH].present ? (int)vals[OPT_DEPTH].val.u : -1;
+    args->full_mode = vals[OPT_FULL].present && vals[OPT_FULL].val.flag;
+    args->has_id = vals[OPT_ID].present;
+    args->id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0;
+    args->name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
-    const char *positional_id = (!has_selector_opt && r.pos_count > 0) ? r.pos_args[0] : NULL;
-    if (!has_selector_opt && positional_id == NULL) {
-        fprintf(stderr, "Error: Missing arguments\n");
-        fprintf(stderr, "Usage: nmo object show [--select <path>]... [--expr <expr>]... [--id <id> | --name <name> | <id>] <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
+    if (expect_file_operand) {
+        args->positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
+        if (!has_selector_opt && args->positional_id == NULL) {
+            fprintf(stderr, "Error: Missing arguments\n");
+            fprintf(stderr, "Usage: %s\n", usage);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    } else if (has_selector_opt) {
+        if (r.pos_count != 0) {
+            fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[0]);
+            fprintf(stderr, "Usage: %s\n", usage);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    } else {
+        if (r.pos_count != 1) {
+            fprintf(stderr, "Error: Missing arguments\n");
+            fprintf(stderr, "Usage: %s\n", usage);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        args->positional_id = r.pos_args[0];
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int object_show_run(nmo_cmd_ctx_t *ctx, const object_show_args_t *args,
+                           bool close_ctx, const char *usage)
+{
+    nmo_cmd_ctx_t c = *ctx;
 
     nmo_core_object_selector_t selector = {
-        .has_id = vals[OPT_ID].present,
-        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
-        .positional_id = positional_id,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .has_id = args->has_id,
+        .id = args->id,
+        .positional_id = args->positional_id,
+        .name = args->name,
         .selector_label = "Object",
         .type_label = "object",
     };
     nmo_object_t *target = NULL;
     nmo_object_id_t object_id = 0;
-    rc = nmo_core_resolve_one_object(&c, &selector, &target, &object_id);
+    int rc = nmo_core_resolve_one_object(&c, &selector, &target, &object_id);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
-        fprintf(stderr, "Usage: nmo object show [--select <path>]... [--expr <expr>]... [--id <id> | --name <name> | <id>] <file>\n");
-        return nmo_cmd_ctx_done(&c, rc);
+        fprintf(stderr, "Usage: %s\n", usage);
+        return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
     }
 
     nmo_class_id_t class_id = nmo_object_get_class_id(target);
@@ -849,13 +875,13 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
         /* Semantic + reflection summary (JSON) */
         {
             nmo_summary_config_t cfg = nmo_summary_config_default();
-            if (full_mode) {
+            if (args->full_mode) {
                 cfg.max_depth = 8;
                 cfg.array_preview_max = 64;
                 cfg.text_preview_max = 64;
             }
-            if (depth >= 0) {
-                cfg.max_depth = (uint32_t)depth;
+            if (args->depth >= 0) {
+                cfg.max_depth = (uint32_t)args->depth;
             }
 
             yyjson_mut_val *summary = yyjson_mut_obj(doc);
@@ -869,13 +895,16 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
                 .session = c.session,
             };
             bool ok = false;
-            if (select_path_count > 0) {
-                ok |= nmo_object_summary_select_with_config(target, &sum_out, &cfg, select_paths, select_path_count);
+            if (args->select_path_count > 0) {
+                ok |= nmo_object_summary_select_with_config(target, &sum_out, &cfg,
+                                                            args->select_paths,
+                                                            args->select_path_count);
             }
-            if (expr_count > 0) {
-                ok |= nmo_object_summary_expr_with_config(target, &sum_out, &cfg, exprs, expr_count);
+            if (args->expr_count > 0) {
+                ok |= nmo_object_summary_expr_with_config(target, &sum_out, &cfg,
+                                                          args->exprs, args->expr_count);
             }
-            if (select_path_count == 0 && expr_count == 0) {
+            if (args->select_path_count == 0 && args->expr_count == 0) {
                 ok |= nmo_object_summary_with_config(target, &sum_out, &cfg);
             }
             if (ok) {
@@ -912,13 +941,13 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
         /* Semantic + reflection summary (text) */
         {
             nmo_summary_config_t cfg = nmo_summary_config_default();
-            if (full_mode) {
+            if (args->full_mode) {
                 cfg.max_depth = 8;
                 cfg.array_preview_max = 64;
                 cfg.text_preview_max = 32;
             }
-            if (depth >= 0) {
-                cfg.max_depth = (uint32_t)depth;
+            if (args->depth >= 0) {
+                cfg.max_depth = (uint32_t)args->depth;
             }
 
             nmo_summary_output_t sum_out = {
@@ -930,19 +959,52 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
                 .ctx = c.ctx,
                 .session = c.session,
             };
-            if (select_path_count > 0) {
-                (void)nmo_object_summary_select_with_config(target, &sum_out, &cfg, select_paths, select_path_count);
+            if (args->select_path_count > 0) {
+                (void)nmo_object_summary_select_with_config(target, &sum_out, &cfg,
+                                                            args->select_paths,
+                                                            args->select_path_count);
             }
-            if (expr_count > 0) {
-                (void)nmo_object_summary_expr_with_config(target, &sum_out, &cfg, exprs, expr_count);
+            if (args->expr_count > 0) {
+                (void)nmo_object_summary_expr_with_config(target, &sum_out, &cfg,
+                                                          args->exprs, args->expr_count);
             }
-            if (select_path_count == 0 && expr_count == 0) {
+            if (args->select_path_count == 0 && args->expr_count == 0) {
                 (void)nmo_object_summary_with_config(target, &sum_out, &cfg);
             }
         }
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS) : NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    object_show_args_t args;
+    const char *usage =
+        "nmo object show [--select <path>]... [--expr <expr>]... "
+        "[--id <id> | --name <name> | <id>] <file>";
+    int rc = object_show_parse(argc, argv, true, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    nmo_cmd_ctx_t c;
+    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    return object_show_run(&c, &args, true, usage);
+}
+
+int nmo_cmd_object_show_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
+    object_show_args_t args;
+    const char *usage =
+        "object show [--select <path>]... [--expr <expr>]... "
+        "[--id <id> | --name <name> | <id>]";
+    int rc = object_show_parse(argc, argv, false, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    return object_show_run(ctx, &args, false, usage);
 }
 
 /* ============================================================================

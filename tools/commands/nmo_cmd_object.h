@@ -27,6 +27,7 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
  * @brief nmo object show - Show object details
  */
 int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_object_show_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
 /**
  * @brief nmo object find - Find objects by query
@@ -37,6 +38,7 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
  * @brief nmo object refs - Show object references
  */
 int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_object_refs_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
 /**
  * @brief nmo object rename - Rename an object and save

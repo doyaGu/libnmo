@@ -106,6 +106,7 @@ if(TARGET nmo_cli)
         ${PROJECT_SOURCE_DIR}/tools/nmo_tool_common.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_tool_session.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_object.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_object_refs.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_object_write.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_parameter.c
     )
@@ -113,6 +114,34 @@ if(TARGET nmo_cli)
     target_link_libraries(test_repl_write_commands PRIVATE nmo test_framework yyjson)
     add_test(NAME test_repl_write_commands COMMAND test_repl_write_commands)
     set_tests_properties(test_repl_write_commands PROPERTIES
+        ENVIRONMENT "NMO_DATA_DIR=${PROJECT_SOURCE_DIR}/data"
+    )
+
+    add_executable(test_repl_read_commands
+        test_repl_read_commands.c
+        ${PROJECT_SOURCE_DIR}/tools/nmo_repl_commands.c
+        ${PROJECT_SOURCE_DIR}/tools/nmo_repl_session.c
+        ${PROJECT_SOURCE_DIR}/tools/nmo_repl_util.c
+        ${PROJECT_SOURCE_DIR}/tools/nmo_repl_input.c
+        ${PROJECT_SOURCE_DIR}/tools/nmo_cmd_ctx.c
+        ${PROJECT_SOURCE_DIR}/tools/nmo_cmd_core.c
+        ${PROJECT_SOURCE_DIR}/tools/nmo_opt.c
+        ${PROJECT_SOURCE_DIR}/tools/nmo_cli_common.c
+        ${PROJECT_SOURCE_DIR}/tools/nmo_cli_json.c
+        ${PROJECT_SOURCE_DIR}/tools/nmo_cli_output.c
+        ${PROJECT_SOURCE_DIR}/tools/nmo_cli_sort.c
+        ${PROJECT_SOURCE_DIR}/tools/nmo_cli_write.c
+        ${PROJECT_SOURCE_DIR}/tools/nmo_tool_common.c
+        ${PROJECT_SOURCE_DIR}/tools/nmo_tool_session.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_object.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_object_refs.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_object_write.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_parameter.c
+    )
+    target_include_directories(test_repl_read_commands PRIVATE ${PROJECT_SOURCE_DIR}/tools)
+    target_link_libraries(test_repl_read_commands PRIVATE nmo test_framework yyjson)
+    add_test(NAME test_repl_read_commands COMMAND test_repl_read_commands)
+    set_tests_properties(test_repl_read_commands PROPERTIES
         ENVIRONMENT "NMO_DATA_DIR=${PROJECT_SOURCE_DIR}/data"
     )
 endif()
