@@ -16,7 +16,7 @@ from typing import Iterable
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DISPATCH_C = ROOT / "tools" / "nmo_cli_dispatch.c"
+REGISTRY_C = ROOT / "tools" / "nmo_command_registry.c"
 BEHAVIOR_INTERFACE_C = ROOT / "tools" / "commands" / "nmo_cmd_behavior_interface.c"
 COMPLETIONS_DIR = ROOT / "completions"
 GENERATED_DIR = ROOT / "tools" / "generated"
@@ -148,6 +148,43 @@ def split_entries(body: str) -> list[str]:
     return entries
 
 
+def split_macro_entries(body: str) -> list[tuple[str, str]]:
+    entries: list[tuple[str, str]] = []
+    pos = 0
+    while True:
+        match = re.search(r"\b(ACTION(?:_SUB)?)\s*\(", body[pos:])
+        if not match:
+            return entries
+        macro = match.group(1)
+        open_paren = pos + match.end() - 1
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(open_paren, len(body)):
+            ch = body[i]
+            if in_string:
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+                continue
+            if ch == '"':
+                in_string = True
+                continue
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    entries.append((macro, body[open_paren + 1 : i].strip()))
+                    pos = i + 1
+                    break
+        else:
+            raise ValueError(f"Unterminated {macro} macro entry")
+
+
 def split_fields(entry: str) -> list[str]:
     fields: list[str] = []
     start = 0
@@ -189,7 +226,10 @@ def parse_c_string(value: str) -> str | None:
 def parse_action_array(source: str, symbol: str) -> list[Action]:
     body = find_initializer_body(source, symbol)
     actions: list[Action] = []
-    for entry in split_entries(body):
+    entries = [(None, entry) for entry in split_entries(body)]
+    if not entries:
+        entries = split_macro_entries(body)
+    for macro, entry in entries:
         fields = split_fields(entry)
         if len(fields) < 3:
             continue
@@ -200,7 +240,12 @@ def parse_action_array(source: str, symbol: str) -> list[Action]:
         brief = parse_c_string(fields[2]) or ""
         sub_symbol = None
         default_sub = None
-        if len(fields) >= 8:
+        if macro == "ACTION_SUB" and len(fields) >= 7:
+            sub_candidate = fields[4].strip()
+            if sub_candidate != "NULL":
+                sub_symbol = sub_candidate
+            default_sub = parse_c_string(fields[6])
+        elif macro is None and len(fields) >= 8:
             sub_candidate = fields[5].strip()
             if sub_candidate != "NULL":
                 sub_symbol = sub_candidate
@@ -214,7 +259,7 @@ def parse_action_array(source: str, symbol: str) -> list[Action]:
 
 
 def parse_groups() -> list[Group]:
-    source = strip_comments(DISPATCH_C.read_text(encoding="utf-8"))
+    source = strip_comments(REGISTRY_C.read_text(encoding="utf-8"))
     body = find_initializer_body(source, "groups")
     groups: list[Group] = []
     for entry in split_entries(body):
