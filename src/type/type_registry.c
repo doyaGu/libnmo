@@ -186,6 +186,7 @@ static void nmo_type_set_vtable_source(
 #define NMO_VTABLE_SLOT_FROM_STRING          (1u << 13)
 #define NMO_VTABLE_SLOT_ENUMERATE_REFS       (1u << 14)
 #define NMO_VTABLE_SLOT_ALL                  ((1u << 15) - 1u)
+#define NMO_VTABLE_SLOT_VALUE_STRING         (NMO_VTABLE_SLOT_TO_STRING | NMO_VTABLE_SLOT_FROM_STRING)
 
 static nmo_type_child_list_t *get_child_list(
     nmo_type_registry_t *registry,
@@ -269,7 +270,8 @@ static void nmo_type_vtable_clear_slots(
 
 static uint32_t nmo_type_vtable_fill_default_slots(
     nmo_type_vtable_t *target,
-    const nmo_type_vtable_t *defaults)
+    const nmo_type_vtable_t *defaults,
+    uint32_t allowed_slots)
 {
     if (!target || !defaults) {
         return 0u;
@@ -278,7 +280,7 @@ static uint32_t nmo_type_vtable_fill_default_slots(
     uint32_t filled = 0u;
 #define NMO_FILL_VTABLE_SLOT(slot, bit) \
     do { \
-        if (defaults->slot && !target->slot) { \
+        if (((allowed_slots) & (bit)) != 0u && defaults->slot && !target->slot) { \
             target->slot = defaults->slot; \
             filled |= (bit); \
         } \
@@ -345,6 +347,43 @@ static void nmo_type_set_direct_default_vtable(
     }
 }
 
+static void nmo_type_set_value_default_vtable(
+    nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const nmo_type_vtable_t *default_vtable,
+    nmo_type_vtable_source_t source)
+{
+    if (!type || !registry || !default_vtable) {
+        return;
+    }
+
+    nmo_type_registry_t *mutable_registry = (nmo_type_registry_t *)registry;
+    nmo_type_vtable_t *owned_vtable = (nmo_type_vtable_t *)nmo_alloc(
+        &mutable_registry->type_allocator,
+        sizeof(nmo_type_vtable_t),
+        _Alignof(nmo_type_vtable_t));
+    if (!owned_vtable) {
+        return;
+    }
+
+    memset(owned_vtable, 0, sizeof(*owned_vtable));
+    uint32_t default_slots = nmo_type_vtable_fill_default_slots(
+        owned_vtable,
+        default_vtable,
+        NMO_VTABLE_SLOT_VALUE_STRING);
+    if (default_slots == 0u) {
+        nmo_free(&mutable_registry->type_allocator, owned_vtable);
+        return;
+    }
+
+    type->vtable = owned_vtable;
+    if (type->ext) {
+        type->ext->owned_vtable = owned_vtable;
+        type->ext->vtable_source = source;
+        type->ext->vtable_default_slots = default_slots;
+    }
+}
+
 void nmo_type_assign_default_vtable(
     nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry)
@@ -364,7 +403,11 @@ void nmo_type_assign_default_vtable(
 
     if (!type->vtable) {
         if (default_vtable) {
-            nmo_type_set_direct_default_vtable(type, default_vtable, default_source);
+            if (default_source == NMO_TYPE_VTABLE_SOURCE_BASE_DEFAULT) {
+                nmo_type_set_value_default_vtable(type, registry, default_vtable, default_source);
+            } else {
+                nmo_type_set_direct_default_vtable(type, default_vtable, default_source);
+            }
         } else {
             nmo_type_set_vtable_source(type, NMO_TYPE_VTABLE_SOURCE_NONE);
             if (type->ext) {
@@ -377,8 +420,15 @@ void nmo_type_assign_default_vtable(
     if (current_source == NMO_TYPE_VTABLE_SOURCE_BASE_DEFAULT ||
         current_source == NMO_TYPE_VTABLE_SOURCE_CATEGORY_DEFAULT ||
         current_source == NMO_TYPE_VTABLE_SOURCE_METADATA_DEFAULT) {
+        if (nmo_type_current_vtable_is_owned(type)) {
+            nmo_type_release_owned_vtable(registry, type);
+        }
         if (default_vtable) {
-            nmo_type_set_direct_default_vtable(type, default_vtable, default_source);
+            if (default_source == NMO_TYPE_VTABLE_SOURCE_BASE_DEFAULT) {
+                nmo_type_set_value_default_vtable(type, registry, default_vtable, default_source);
+            } else {
+                nmo_type_set_direct_default_vtable(type, default_vtable, default_source);
+            }
         } else {
             type->vtable = NULL;
             nmo_type_set_vtable_source(type, NMO_TYPE_VTABLE_SOURCE_NONE);
@@ -395,7 +445,8 @@ void nmo_type_assign_default_vtable(
     }
 
     uint32_t default_slots = default_vtable
-        ? nmo_type_vtable_fill_default_slots(&merged, default_vtable)
+        ? nmo_type_vtable_fill_default_slots(
+            &merged, default_vtable, NMO_VTABLE_SLOT_VALUE_STRING)
         : 0u;
 
     if (default_slots == 0u) {

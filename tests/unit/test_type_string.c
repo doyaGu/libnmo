@@ -150,6 +150,23 @@ static nmo_status_t test_partial_validate(
     return NMO_OK;
 }
 
+static nmo_status_t test_default_create(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+    return NMO_OK;
+}
+
+static uint32_t test_default_hash(const void *instance)
+{
+    (void)instance;
+    return 0xA5A5A5A5u;
+}
+
 TEST(type_string, vtable_source_public_values_are_stable) {
     ASSERT_EQ(0, NMO_TYPE_VTABLE_SOURCE_NONE);
     ASSERT_EQ(1, NMO_TYPE_VTABLE_SOURCE_EXPLICIT);
@@ -1619,7 +1636,9 @@ TEST(type_string, registered_same_size_derived_type_inherits_base_vtable_before_
     const nmo_type_descriptor_t *derived =
         nmo_type_registry_find_by_guid(registry, derived_desc.guid);
     ASSERT_NE(NULL, derived);
-    ASSERT_EQ(base->vtable, derived->vtable);
+    ASSERT_NE(NULL, derived->vtable);
+    ASSERT_EQ(base->vtable->to_string, derived->vtable->to_string);
+    ASSERT_EQ(base->vtable->from_string, derived->vtable->from_string);
 
     uint32_t value = 0u;
     char buffer[64];
@@ -1681,7 +1700,9 @@ TEST(type_string, registered_enum_alias_without_explicit_vtable_inherits_base_vt
         nmo_type_registry_find_by_guid(registry, alias_desc.guid);
     ASSERT_NE(NULL, base);
     ASSERT_NE(NULL, alias);
-    ASSERT_EQ(base->vtable, alias->vtable);
+    ASSERT_NE(NULL, alias->vtable);
+    ASSERT_EQ(base->vtable->to_string, alias->vtable->to_string);
+    ASSERT_EQ(base->vtable->from_string, alias->vtable->from_string);
 
     uint32_t value = 0u;
     char buffer[64];
@@ -1745,7 +1766,9 @@ TEST(type_string, child_registered_before_base_inherits_base_vtable_after_base_r
     child = nmo_type_registry_find_by_guid(registry, child_guid);
     ASSERT_NE(NULL, base);
     ASSERT_NE(NULL, child);
-    ASSERT_EQ(base->vtable, child->vtable);
+    ASSERT_NE(NULL, child->vtable);
+    ASSERT_EQ(base->vtable->to_string, child->vtable->to_string);
+    ASSERT_EQ(base->vtable->from_string, child->vtable->from_string);
 
     uint32_t value = 0u;
     ASSERT_EQ(NMO_OK, nmo_type_value_from_string(
@@ -2339,6 +2362,218 @@ TEST(type_string, merged_default_vtable_is_released_with_registry) {
     ASSERT_EQ(stats.total_allocations, stats.total_frees);
 }
 
+TEST(type_string, metadata_register_rejects_finalized_registry) {
+    setup();
+
+    nmo_type_descriptor_t desc = {
+        .guid = NMO_GUID(0xDEADBEEFu, 0x0000003Cu),
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_ENUM,
+        .flags = 0,
+        .name = "FinalizedMetadataEnum",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(int32_t),
+        .alignment = (uint32_t)alignof(int32_t),
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = NULL,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &desc));
+
+    const nmo_type_descriptor_t *registered =
+        nmo_type_registry_find_by_guid(registry, desc.guid);
+    ASSERT_NE(NULL, registered);
+    ASSERT_EQ(NMO_SPECIALIZED_INDEX_INVALID, registered->specialized_index);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_finalize(registry));
+
+    nmo_enum_descriptor_t values[] = {
+        { .name = "Named", .value = 7, .description = NULL, .flags = 0 },
+    };
+    nmo_specialized_metadata_t metadata;
+    memset(&metadata, 0, sizeof(metadata));
+    metadata.type_id = registered->id;
+    metadata.metadata_type = NMO_METADATA_TYPE_ENUM;
+    metadata.enum_meta.values = values;
+    metadata.enum_meta.value_count = 1;
+
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+              nmo_type_registry_register_metadata(registry, &metadata));
+    ASSERT_EQ(NMO_SPECIALIZED_INDEX_INVALID, registered->specialized_index);
+    ASSERT_EQ(NULL, nmo_type_registry_get_metadata(registry, registered->id));
+
+    teardown();
+}
+
+TEST(type_string, metadata_unregister_is_noop_after_finalize) {
+    setup();
+
+    nmo_type_descriptor_t desc = {
+        .guid = NMO_GUID(0xDEADBEEFu, 0x0000003Du),
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_ENUM,
+        .flags = 0,
+        .name = "FinalizedMetadataRemovalEnum",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(int32_t),
+        .alignment = (uint32_t)alignof(int32_t),
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = NULL,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &desc));
+
+    const nmo_type_descriptor_t *registered =
+        nmo_type_registry_find_by_guid(registry, desc.guid);
+    ASSERT_NE(NULL, registered);
+
+    nmo_enum_descriptor_t values[] = {
+        { .name = "Named", .value = 7, .description = NULL, .flags = 0 },
+    };
+    nmo_specialized_metadata_t metadata;
+    memset(&metadata, 0, sizeof(metadata));
+    metadata.type_id = registered->id;
+    metadata.metadata_type = NMO_METADATA_TYPE_ENUM;
+    metadata.enum_meta.values = values;
+    metadata.enum_meta.value_count = 1;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register_metadata(registry, &metadata));
+    ASSERT_NE(NULL, nmo_type_registry_get_metadata(registry, registered->id));
+
+    ASSERT_EQ(NMO_OK, nmo_type_registry_finalize(registry));
+    nmo_type_registry_unregister_metadata(registry, registered->id);
+
+    ASSERT_NE(NULL, nmo_type_registry_get_metadata(registry, registered->id));
+    ASSERT_NE(NMO_SPECIALIZED_INDEX_INVALID, registered->specialized_index);
+
+    int32_t value = 0;
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(
+        &value, registered, registry, "Named"));
+    ASSERT_EQ(7, value);
+
+    teardown();
+}
+
+TEST(type_string, base_default_inheritance_only_fills_string_slots) {
+    setup();
+
+    static const nmo_type_vtable_t base_vtable = {
+        .create = test_default_create,
+        .hash = test_default_hash,
+        .to_string = test_base_alias_to_string,
+        .from_string = test_base_alias_from_string,
+    };
+
+    nmo_guid_t base_guid = NMO_GUID(0xDEADBEEFu, 0x0000003Eu);
+    nmo_guid_t child_guid = NMO_GUID(0xDEADBEEFu, 0x0000003Fu);
+    nmo_type_descriptor_t base_desc = {
+        .guid = base_guid,
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_SCALAR,
+        .flags = 0,
+        .name = "StringSlotBase",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(uint32_t),
+        .alignment = (uint32_t)alignof(uint32_t),
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = &base_vtable,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &base_desc));
+
+    nmo_type_descriptor_t child_desc = base_desc;
+    child_desc.guid = child_guid;
+    child_desc.name = "StringSlotChild";
+    child_desc.base_type = base_guid;
+    child_desc.vtable = NULL;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &child_desc));
+
+    const nmo_type_descriptor_t *child =
+        nmo_type_registry_find_by_guid(registry, child_guid);
+    ASSERT_NE(NULL, child);
+    ASSERT_NE(NULL, child->vtable);
+    ASSERT_EQ(test_base_alias_to_string, child->vtable->to_string);
+    ASSERT_EQ(test_base_alias_from_string, child->vtable->from_string);
+    ASSERT_EQ(NULL, child->vtable->create);
+    ASSERT_EQ(NULL, child->vtable->hash);
+
+    teardown();
+}
+
+TEST(type_string, merged_category_default_only_fills_string_slots) {
+    setup();
+
+    static const nmo_type_vtable_t partial_vtable = {
+        .validate = test_partial_validate,
+    };
+
+    nmo_type_descriptor_t desc = {
+        .guid = NMO_GUID(0xDEADBEEFu, 0x00000040u),
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_OBJECT_REF,
+        .flags = 0,
+        .name = "PartialObjectRef",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(uint32_t),
+        .alignment = (uint32_t)alignof(uint32_t),
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = &partial_vtable,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &desc));
+
+    const nmo_type_descriptor_t *registered =
+        nmo_type_registry_find_by_guid(registry, desc.guid);
+    ASSERT_NE(NULL, registered);
+    ASSERT_NE(NULL, registered->vtable);
+    ASSERT_EQ(test_partial_validate, registered->vtable->validate);
+    ASSERT_NE(NULL, registered->vtable->to_string);
+    ASSERT_NE(NULL, registered->vtable->from_string);
+    ASSERT_EQ(NULL, registered->vtable->create);
+    ASSERT_EQ(NULL, registered->vtable->destroy);
+    ASSERT_EQ(NULL, registered->vtable->copy);
+
+    teardown();
+}
+
 TEST(type_string, type_value_from_string_rejects_scalar_without_vtable) {
     setup();
 
@@ -2609,6 +2844,10 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, metadata_unregister_recomputes_merged_default_slots);
     REGISTER_TEST(type_string, base_unregister_clears_inherited_default_vtable);
     REGISTER_TEST(type_string, merged_default_vtable_is_released_with_registry);
+    REGISTER_TEST(type_string, metadata_register_rejects_finalized_registry);
+    REGISTER_TEST(type_string, metadata_unregister_is_noop_after_finalize);
+    REGISTER_TEST(type_string, base_default_inheritance_only_fills_string_slots);
+    REGISTER_TEST(type_string, merged_category_default_only_fills_string_slots);
     REGISTER_TEST(type_string, type_value_from_string_rejects_scalar_without_vtable);
     REGISTER_TEST(type_string, type_value_from_string_guid);
     REGISTER_TEST(type_string, type_value_from_string_angle_fallback);

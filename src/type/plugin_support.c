@@ -618,6 +618,11 @@ nmo_status_t nmo_type_registry_register_metadata(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid registry or metadata pointer");
     }
 
+    if (registry->finalized) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Type registry is finalized; cannot register metadata");
+    }
+
     if (metadata->type_id < 0 || (size_t)metadata->type_id >= registry->types.count) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid metadata type ID");
     }
@@ -679,6 +684,7 @@ void nmo_type_registry_unregister_metadata(
     nmo_type_id_t type_id) 
 {
     if (!registry) return;
+    if (registry->finalized) return;
 
     size_t index = 0;
     if (nmo_hash_table_get(registry->type_to_metadata, &type_id, &index) == NMO_OK) {
