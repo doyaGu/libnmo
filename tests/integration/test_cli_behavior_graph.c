@@ -4,14 +4,17 @@
  */
 
 #include "test_framework.h"
+#include "write_semantic_probe.h"
 
 #include "../../tools/nmo_cli_common.h"
 #include "app/nmo_save.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 #include "yyjson.h"
@@ -163,6 +166,23 @@ static int file_exists(const char *path) {
     }
     fclose(fp);
     return 1;
+}
+
+static void assert_probe_open(write_semantic_probe_t *probe, const char *path) {
+    nmo_status_t status = write_probe_open(probe, path);
+    if (status != NMO_OK) {
+        fprintf(stderr, "Failed to open semantic probe for %s: %d\n", path, status);
+    }
+    ASSERT_EQ(NMO_OK, status);
+}
+
+static const nmo_behavior_state_t *probe_behavior_state(
+    write_semantic_probe_t *probe,
+    const char *path,
+    nmo_object_id_t behavior_id) {
+    assert_probe_open(probe, path);
+    return (const nmo_behavior_state_t *)write_probe_state(
+        probe, behavior_id, CKPGUID_BEHAVIOR);
 }
 
 static bool create_behavior_link_fixture(
@@ -1153,6 +1173,15 @@ TEST(cli, behavior_add_link_dry_run_does_not_write_output) {
     nmo_object_id_t to_id = 0;
     ASSERT_TRUE(create_behavior_link_fixture(fixture, &behavior_id, &from_id, &to_id));
 
+    write_semantic_probe_t before;
+    assert_probe_open(&before, fixture);
+    const nmo_behavior_state_t *before_behavior =
+        (const nmo_behavior_state_t *)write_probe_state(&before, behavior_id, CKPGUID_BEHAVIOR);
+    ASSERT_NOT_NULL(before_behavior);
+    size_t before_links = before_behavior->sub_behavior_links.count;
+    size_t before_objects = write_probe_object_count(&before);
+    write_probe_close(&before);
+
     char args[1024];
     snprintf(args, sizeof(args),
              "behavior add-link --dry-run --parent %u --from %u --to %u -o \"%s\" \"%s\"",
@@ -1163,6 +1192,15 @@ TEST(cli, behavior_add_link_dry_run_does_not_write_output) {
     ASSERT_STR_CONTAINS(result.output, "[dry-run]");
     ASSERT_FALSE(file_exists(output));
     free(result.output);
+
+    write_semantic_probe_t after;
+    assert_probe_open(&after, fixture);
+    const nmo_behavior_state_t *after_behavior =
+        (const nmo_behavior_state_t *)write_probe_state(&after, behavior_id, CKPGUID_BEHAVIOR);
+    ASSERT_NOT_NULL(after_behavior);
+    ASSERT_EQ(before_links, after_behavior->sub_behavior_links.count);
+    ASSERT_EQ(before_objects, write_probe_object_count(&after));
+    write_probe_close(&after);
 
     remove(fixture);
     remove(output);
@@ -1189,6 +1227,25 @@ TEST(cli, behavior_add_link_saves_output) {
     ASSERT_STR_CONTAINS(result.output, "Saved to");
     ASSERT_TRUE(file_exists(output));
     free(result.output);
+
+    write_semantic_probe_t probe;
+    assert_probe_open(&probe, output);
+    const nmo_behavior_state_t *behavior =
+        (const nmo_behavior_state_t *)write_probe_state(&probe, behavior_id, CKPGUID_BEHAVIOR);
+    ASSERT_NOT_NULL(behavior);
+    ASSERT_EQ(1u, behavior->sub_behavior_links.count);
+    const nmo_object_id_t *link_ids =
+        (const nmo_object_id_t *)behavior->sub_behavior_links.data;
+    ASSERT_NOT_NULL(link_ids);
+    nmo_object_t *link_obj = write_probe_object_by_id(&probe, link_ids[0]);
+    ASSERT_NOT_NULL(link_obj);
+    ASSERT_EQ(NMO_CID_BEHAVIORLINK, link_obj->class_id);
+    const nmo_behaviorlink_state_t *link =
+        (const nmo_behaviorlink_state_t *)write_probe_state(&probe, link_ids[0], CKPGUID_BEHAVIORLINK);
+    ASSERT_NOT_NULL(link);
+    ASSERT_EQ(from_id, link->out_io_id);
+    ASSERT_EQ(to_id, link->in_io_id);
+    write_probe_close(&probe);
 
     remove(fixture);
     remove(output);
@@ -1249,6 +1306,17 @@ TEST(cli, behavior_interface_set_pos_dry_run_does_not_write_output) {
     const char *output = "test_behavior_interface_set_pos_dry_output.cmo";
     remove(output);
 
+    write_semantic_probe_t before;
+    assert_probe_open(&before, NMO_INTERFACE_EDIT_FIXTURE);
+    const nmo_behavior_state_t *before_behavior =
+        (const nmo_behavior_state_t *)write_probe_state(
+            &before, NMO_INTERFACE_EDIT_TARGET_ID, CKPGUID_BEHAVIOR);
+    ASSERT_NOT_NULL(before_behavior);
+    ASSERT_NOT_NULL(before_behavior->interface_data);
+    float before_h = before_behavior->interface_data->script.h_pos;
+    float before_v = before_behavior->interface_data->script.v_pos;
+    write_probe_close(&before);
+
     char args[1024];
     snprintf(args, sizeof(args),
              "behavior interface set-pos --dry-run %u %u 11 22 \"%s\"",
@@ -1261,6 +1329,17 @@ TEST(cli, behavior_interface_set_pos_dry_run_does_not_write_output) {
     ASSERT_STR_CONTAINS(result.output, "[dry-run]");
     ASSERT_FALSE(file_exists(output));
     free(result.output);
+
+    write_semantic_probe_t probe;
+    assert_probe_open(&probe, NMO_INTERFACE_EDIT_FIXTURE);
+    const nmo_behavior_state_t *behavior =
+        (const nmo_behavior_state_t *)write_probe_state(
+            &probe, NMO_INTERFACE_EDIT_TARGET_ID, CKPGUID_BEHAVIOR);
+    ASSERT_NOT_NULL(behavior);
+    ASSERT_NOT_NULL(behavior->interface_data);
+    ASSERT_FLOAT_EQ(before_h, behavior->interface_data->script.h_pos, 0.0001f);
+    ASSERT_FLOAT_EQ(before_v, behavior->interface_data->script.v_pos, 0.0001f);
+    write_probe_close(&probe);
 
     remove(output);
 }
@@ -1282,6 +1361,17 @@ TEST(cli, behavior_interface_set_pos_saves_output) {
     ASSERT_STR_CONTAINS(result.output, "Saved to");
     ASSERT_TRUE(file_exists(output));
     free(result.output);
+
+    write_semantic_probe_t probe;
+    assert_probe_open(&probe, output);
+    const nmo_behavior_state_t *behavior =
+        (const nmo_behavior_state_t *)write_probe_state(
+            &probe, NMO_INTERFACE_EDIT_TARGET_ID, CKPGUID_BEHAVIOR);
+    ASSERT_NOT_NULL(behavior);
+    ASSERT_NOT_NULL(behavior->interface_data);
+    ASSERT_FLOAT_EQ(11.0f, behavior->interface_data->script.h_pos, 0.0001f);
+    ASSERT_FLOAT_EQ(22.0f, behavior->interface_data->script.v_pos, 0.0001f);
+    write_probe_close(&probe);
 
     remove(output);
 }
@@ -1439,6 +1529,16 @@ TEST(cli, behavior_interface_canonicalize_json_saves_output) {
     ASSERT_TRUE(file_exists(output));
     yyjson_doc_free(doc);
 
+    write_semantic_probe_t probe;
+    const nmo_behavior_state_t *behavior =
+        probe_behavior_state(&probe, output, NMO_INTERFACE_EDIT_TARGET_ID);
+    ASSERT_NOT_NULL(behavior);
+    ASSERT_NOT_NULL(behavior->interface_data);
+    ASSERT_EQ(NMO_INTERFACE_EDIT_TARGET_ID,
+              behavior->interface_data->script.behavior_id);
+    ASSERT_TRUE(behavior->interface_data->script.body.has_body);
+    write_probe_close(&probe);
+
     snprintf(args, sizeof(args),
              "-f json behavior interface show %u \"%s\"",
              NMO_INTERFACE_EDIT_TARGET_ID,
@@ -1550,6 +1650,14 @@ TEST(cli, behavior_interface_unfold_saves_output) {
     ASSERT_TRUE(file_exists(output));
     free(result.output);
 
+    write_semantic_probe_t probe;
+    const nmo_behavior_state_t *behavior =
+        probe_behavior_state(&probe, output, NMO_INTERFACE_EDIT_TARGET_ID);
+    ASSERT_NOT_NULL(behavior);
+    ASSERT_NOT_NULL(behavior->interface_data);
+    ASSERT_EQ(0u, behavior->interface_data->script.flags & NMO_INTERFACE_FLAG_FOLDED);
+    write_probe_close(&probe);
+
     remove(output);
 }
 
@@ -1589,6 +1697,14 @@ TEST(cli, behavior_interface_set_color_saves_output) {
     ASSERT_TRUE(file_exists(output));
     free(result.output);
 
+    write_semantic_probe_t probe;
+    const nmo_behavior_state_t *behavior =
+        probe_behavior_state(&probe, output, NMO_INTERFACE_EDIT_TARGET_ID);
+    ASSERT_NOT_NULL(behavior);
+    ASSERT_NOT_NULL(behavior->interface_data);
+    ASSERT_EQ(0x00FF00AAu, behavior->interface_data->script.color);
+    write_probe_close(&probe);
+
     remove(output);
 }
 
@@ -1607,6 +1723,41 @@ TEST(cli, behavior_interface_add_comment_dry_run_does_not_write_output) {
     ASSERT_STR_CONTAINS(result.output, "[dry-run]");
     ASSERT_FALSE(file_exists(output));
     free(result.output);
+
+    remove(output);
+}
+
+TEST(cli, behavior_interface_add_comment_saves_comment_state) {
+    const char *output = "test_behavior_interface_add_comment_output.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "behavior interface add-comment %u --text \"Debt note\" --rect 1,2,3,4 \"%s\" -o \"%s\"",
+             NMO_INTERFACE_EDIT_TARGET_ID,
+             NMO_INTERFACE_EDIT_FIXTURE,
+             output);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Saved to");
+    ASSERT_TRUE(file_exists(output));
+    free(result.output);
+
+    write_semantic_probe_t probe;
+    const nmo_behavior_state_t *behavior =
+        probe_behavior_state(&probe, output, NMO_INTERFACE_EDIT_TARGET_ID);
+    ASSERT_NOT_NULL(behavior);
+    ASSERT_NOT_NULL(behavior->interface_data);
+    const nmo_interface_body_t *body = &behavior->interface_data->script.body;
+    ASSERT_TRUE(body->comment_count > 0u);
+    const nmo_interface_comment_t *comment = &body->comments[body->comment_count - 1u];
+    ASSERT_FLOAT_EQ(1.0f, comment->left, 0.0001f);
+    ASSERT_FLOAT_EQ(2.0f, comment->top, 0.0001f);
+    ASSERT_FLOAT_EQ(3.0f, comment->right, 0.0001f);
+    ASSERT_FLOAT_EQ(4.0f, comment->bottom, 0.0001f);
+    ASSERT_STR_EQ("Debt note", comment->text);
+    write_probe_close(&probe);
 
     remove(output);
 }
@@ -1998,6 +2149,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_interface_set_color_dry_run_does_not_write_output);
     REGISTER_TEST(cli, behavior_interface_set_color_saves_output);
     REGISTER_TEST(cli, behavior_interface_add_comment_dry_run_does_not_write_output);
+    REGISTER_TEST(cli, behavior_interface_add_comment_saves_comment_state);
     REGISTER_TEST(cli, behavior_interface_remove_comment_dry_run_does_not_write_output);
     REGISTER_TEST(cli, behavior_interface_set_comment_text_dry_run_does_not_write_output);
     REGISTER_TEST(cli, behavior_interface_move_comment_dry_run_does_not_write_output);
