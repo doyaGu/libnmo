@@ -133,6 +133,7 @@ TEST(repl_write, object_rename_uses_cli_shape) {
     ASSERT_FALSE(repl.dirty);
 
     ASSERT_EQ(0, run_repl_command(&repl, "object rename 2 ReplCamPos"));
+    ASSERT_EQ(0, run_repl_command(&repl, "object ren 2 ReplCamAlias"));
     ASSERT_TRUE(repl.dirty);
     ASSERT_EQ(0, run_repl_command(&repl, "save test_repl_write_tmp/rename_out.nmo"));
     close_repl(&repl);
@@ -141,7 +142,7 @@ TEST(repl_write, object_rename_uses_cli_shape) {
     assert_probe_open(&probe, "test_repl_write_tmp/rename_out.nmo");
     nmo_object_t *renamed = write_probe_object_by_id(&probe, 2);
     ASSERT_NOT_NULL(renamed);
-    ASSERT_STR_EQ("ReplCamPos", nmo_object_get_name(renamed));
+    ASSERT_STR_EQ("ReplCamAlias", nmo_object_get_name(renamed));
     ASSERT_NULL(write_probe_object_by_name(&probe, "Cam_Pos"));
     write_probe_close(&probe);
 }

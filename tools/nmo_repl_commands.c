@@ -1549,13 +1549,6 @@ static const char *repl_cli_source_label(nmo_repl_context_t *repl) {
     return repl->filename;
 }
 
-static bool repl_cli_read_action_allowed(const char *group, int argc, char **argv) {
-    if (!group || argc < 2) {
-        return false;
-    }
-    return repl_find_cli_read_action(group, argv[1]) != NULL;
-}
-
 static int repl_dispatch_cli_read_group(nmo_repl_context_t *repl, int argc, char **argv,
                                         const nmo_cli_global_opts_t *global) {
     if (argc < 2) {
@@ -1678,11 +1671,46 @@ static int cmd_cli(nmo_repl_context_t *repl, int argc, char **argv) {
     return repl_dispatch_cli_read_group(repl, argc - first, argv + first, &global);
 }
 
-static int cmd_object(nmo_repl_context_t *repl, int argc, char **argv) {
+typedef int (*repl_mutation_dispatcher_t)(nmo_cmd_ctx_t *ctx,
+                                          const nmo_cli_action_t *action,
+                                          int argc,
+                                          char **argv,
+                                          nmo_cmd_in_session_result_t *result,
+                                          bool *clear_selection,
+                                          bool *invalidate_name_cache);
+
+static int repl_dispatch_registry_grouped_command(nmo_repl_context_t *repl,
+                                                  const char *group_name,
+                                                  const char *usage,
+                                                  int argc,
+                                                  char **argv,
+                                                  repl_mutation_dispatcher_t mutate)
+{
     if (argc < 2) {
-        fprintf(stderr, "Usage: object <cli-read-action>|rename|delete|create|copy ...\n");
+        fprintf(stderr, "Usage: %s\n", usage);
         return -1;
     }
+
+    const nmo_cli_group_t *group = repl_find_cli_group(group_name);
+    const nmo_cli_action_t *action =
+        group ? nmo_command_registry_find_action(group, argv[1], true) : NULL;
+    if (!action) {
+        fprintf(stderr, "Unknown %s command: %s\n", group_name, argv[1]);
+        fprintf(stderr, "Usage: %s\n", usage);
+        return -1;
+    }
+
+    if (action->repl_policy == NMO_REPL_ACTION_READ_SESSION ||
+        action->repl_policy == NMO_REPL_ACTION_READ_NO_SESSION) {
+        return repl_dispatch_cli_read_group(repl, argc, argv, NULL);
+    }
+
+    if (action->repl_policy != NMO_REPL_ACTION_MUTATE_SESSION_SUPPORTED || !mutate) {
+        fprintf(stderr, "Unsupported or mutating CLI action in REPL read mirror: %s %s\n",
+                group_name, argv[1]);
+        return -1;
+    }
+
     if (!repl->session) {
         fprintf(stderr, "No session loaded.\n");
         return -1;
@@ -1691,80 +1719,83 @@ static int cmd_object(nmo_repl_context_t *repl, int argc, char **argv) {
     nmo_cmd_ctx_t c;
     nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
 
-    int sub_argc = argc - 1;
-    char **sub_argv = &argv[1];
-    int rc = NMO_CLI_EXIT_ARG_ERROR;
     nmo_cmd_in_session_result_t result = {0};
-    bool delete_command = false;
-
-    if (strcmp(argv[1], "show") == 0) {
-        rc = nmo_cmd_object_show_in_session(&c, sub_argc, sub_argv);
-    } else if (strcmp(argv[1], "refs") == 0) {
-        rc = nmo_cmd_object_refs_in_session(&c, sub_argc, sub_argv);
-    } else if (strcmp(argv[1], "rename") == 0) {
-        rc = nmo_cmd_object_rename_in_session(&c, sub_argc, sub_argv, &result);
-    } else if (strcmp(argv[1], "delete") == 0) {
-        delete_command = true;
-        rc = nmo_cmd_object_delete_in_session(&c, sub_argc, sub_argv, &result);
-    } else if (strcmp(argv[1], "create") == 0) {
-        rc = nmo_cmd_object_create_in_session(&c, sub_argc, sub_argv, &result);
-    } else if (strcmp(argv[1], "copy") == 0) {
-        rc = nmo_cmd_object_copy_in_session(&c, sub_argc, sub_argv, &result);
-    } else if (repl_cli_read_action_allowed("object", argc, argv)) {
-        return repl_dispatch_cli_read_group(repl, argc, argv, NULL);
-    } else if (strcmp(argv[1], "import") == 0 || strcmp(argv[1], "set-field") == 0 ||
-               strcmp(argv[1], "sf") == 0) {
-        fprintf(stderr, "Unsupported or mutating CLI action in REPL read mirror: object %s\n", argv[1]);
-    } else {
-        fprintf(stderr, "Unknown object command: %s\n", argv[1]);
-        fprintf(stderr, "Usage: object <cli-read-action>|rename|delete|create|copy ...\n");
-    }
+    bool clear_selection = false;
+    bool invalidate_name_cache = false;
+    int rc = mutate(&c, action, argc - 1, &argv[1], &result,
+                    &clear_selection, &invalidate_name_cache);
+    rc = nmo_cmd_ctx_done(&c, rc);
 
     if (rc == NMO_CLI_EXIT_SUCCESS && result.changed) {
         repl->dirty = true;
-        if (delete_command) {
+        if (clear_selection) {
             repl->has_selection = false;
         }
-        nmo_repl_input_invalidate_name_cache(repl);
+        if (invalidate_name_cache) {
+            nmo_repl_input_invalidate_name_cache(repl);
+        }
     }
 
     return rc == NMO_CLI_EXIT_SUCCESS ? 0 : -1;
 }
 
+static int repl_dispatch_object_mutation(nmo_cmd_ctx_t *ctx,
+                                         const nmo_cli_action_t *action,
+                                         int argc,
+                                         char **argv,
+                                         nmo_cmd_in_session_result_t *result,
+                                         bool *clear_selection,
+                                         bool *invalidate_name_cache)
+{
+    if (invalidate_name_cache) {
+        *invalidate_name_cache = true;
+    }
+    if (strcmp(action->name, "rename") == 0) {
+        return nmo_cmd_object_rename_in_session(ctx, argc, argv, result);
+    }
+    if (strcmp(action->name, "delete") == 0) {
+        if (clear_selection) {
+            *clear_selection = true;
+        }
+        return nmo_cmd_object_delete_in_session(ctx, argc, argv, result);
+    }
+    if (strcmp(action->name, "create") == 0) {
+        return nmo_cmd_object_create_in_session(ctx, argc, argv, result);
+    }
+    if (strcmp(action->name, "copy") == 0) {
+        return nmo_cmd_object_copy_in_session(ctx, argc, argv, result);
+    }
+
+    fprintf(stderr, "Unsupported object mutation in REPL: %s\n", action->name);
+    return NMO_CLI_EXIT_ARG_ERROR;
+}
+
+static int repl_dispatch_parameter_mutation(nmo_cmd_ctx_t *ctx,
+                                            const nmo_cli_action_t *action,
+                                            int argc,
+                                            char **argv,
+                                            nmo_cmd_in_session_result_t *result,
+                                            bool *clear_selection,
+                                            bool *invalidate_name_cache)
+{
+    (void)clear_selection;
+    (void)invalidate_name_cache;
+    if (strcmp(action->name, "set") == 0) {
+        return nmo_cmd_parameter_set_in_session(ctx, argc, argv, result);
+    }
+
+    fprintf(stderr, "Unsupported parameter mutation in REPL: %s\n", action->name);
+    return NMO_CLI_EXIT_ARG_ERROR;
+}
+
+static int cmd_object(nmo_repl_context_t *repl, int argc, char **argv) {
+    return repl_dispatch_registry_grouped_command(
+        repl, "object", "object <cli-read-action>|rename|delete|create|copy ...",
+        argc, argv, repl_dispatch_object_mutation);
+}
+
 static int cmd_parameter(nmo_repl_context_t *repl, int argc, char **argv) {
-    if (argc < 2) {
-        fprintf(stderr, "Usage: parameter list|show|dump|set ...\n");
-        return -1;
-    }
-    if (!repl->session) {
-        fprintf(stderr, "No session loaded.\n");
-        return -1;
-    }
-
-    nmo_cmd_ctx_t c;
-    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
-
-    nmo_cmd_in_session_result_t result = {0};
-    int sub_argc = argc - 1;
-    char **sub_argv = &argv[1];
-    int rc = NMO_CLI_EXIT_ARG_ERROR;
-
-    if (strcmp(argv[1], "show") == 0) {
-        rc = nmo_cmd_parameter_show_in_session(&c, sub_argc, sub_argv);
-    } else if (strcmp(argv[1], "dump") == 0) {
-        rc = nmo_cmd_parameter_dump_in_session(&c, sub_argc, sub_argv);
-    } else if (strcmp(argv[1], "set") == 0) {
-        rc = nmo_cmd_parameter_set_in_session(&c, sub_argc, sub_argv, &result);
-    } else if (repl_cli_read_action_allowed("parameter", argc, argv)) {
-        return repl_dispatch_cli_read_group(repl, argc, argv, NULL);
-    } else {
-        fprintf(stderr, "Unknown parameter command: %s\n", argv[1]);
-        fprintf(stderr, "Usage: parameter list|show|dump|set ...\n");
-    }
-
-    if (rc == NMO_CLI_EXIT_SUCCESS && result.changed) {
-        repl->dirty = true;
-    }
-
-    return rc == NMO_CLI_EXIT_SUCCESS ? 0 : -1;
+    return repl_dispatch_registry_grouped_command(
+        repl, "parameter", "parameter list|show|dump|set ...",
+        argc, argv, repl_dispatch_parameter_mutation);
 }
