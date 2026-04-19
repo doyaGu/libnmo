@@ -419,6 +419,31 @@ TEST(vt, time_is_builtin_and_json_loader_does_not_override_it) {
     nmo_arena_destroy(arena);
 }
 
+TEST(vt, json_loader_propagates_registration_failure) {
+    const char *path = "test_virtools_loader_failure.json";
+    FILE *fp = fopen(path, "wb");
+    ASSERT_TRUE(fp != NULL);
+    fputs("[{\"guid\":[3735928559,65],\"name\":\"Late Enum\","
+          "\"size\":4,\"category\":\"enum\","
+          "\"values\":[{\"name\":\"Named\",\"value\":1}]}]",
+          fp);
+    fclose(fp);
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_TRUE(arena != NULL);
+    nmo_type_registry_t *reg = nmo_type_registry_create(arena);
+    ASSERT_TRUE(reg != NULL);
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(reg));
+    ASSERT_EQ(NMO_OK, nmo_type_registry_finalize(reg));
+
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+              nmo_virtools_load_param_types(reg, path));
+
+    remove(path);
+    nmo_type_registry_destroy(reg);
+    nmo_arena_destroy(arena);
+}
+
 TEST(vt, script_param_type_loads_as_object_ref_alias) {
     nmo_context_t *ctx = create_ctx_with_data();
     ASSERT_TRUE(ctx != NULL);
@@ -542,6 +567,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(vt, unbased_json_u32_primitives_parse_from_string);
     REGISTER_TEST(vt, raw_json_loader_normalizes_unbased_u32_primitives_to_uint32_base);
     REGISTER_TEST(vt, time_is_builtin_and_json_loader_does_not_override_it);
+    REGISTER_TEST(vt, json_loader_propagates_registration_failure);
     REGISTER_TEST(vt, script_param_type_loads_as_object_ref_alias);
     REGISTER_TEST(vt, json_struct_param_types_parse_fields_with_offsets);
     REGISTER_TEST(vt, json_struct_param_types_roundtrip_zero_values);

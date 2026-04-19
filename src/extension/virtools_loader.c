@@ -81,14 +81,17 @@ static uint16_t category_from_str(const char *cat) {
     return NMO_TYPE_CATEGORY_SCALAR;
 }
 
-static void register_enum_metadata(nmo_type_registry_t *registry, nmo_type_id_t tid, yyjson_val *values) {
-    if (!values || !yyjson_is_arr(values)) return;
+static nmo_status_t register_enum_metadata(nmo_type_registry_t *registry, nmo_type_id_t tid, yyjson_val *values) {
+    if (!values || !yyjson_is_arr(values)) NMO_RETURN_OK();
     size_t count = yyjson_arr_size(values);
-    if (count == 0) return;
+    if (count == 0) NMO_RETURN_OK();
 
     /* Allocate descriptors on the stack for small enums, heap for large */
     nmo_enum_descriptor_t *descs = (nmo_enum_descriptor_t *)calloc(count, sizeof(*descs));
-    if (!descs) return;
+    if (!descs) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate enum metadata descriptors");
+    }
 
     size_t idx = 0;
     yyjson_val *item;
@@ -106,17 +109,21 @@ static void register_enum_metadata(nmo_type_registry_t *registry, nmo_type_id_t 
     meta.metadata_type = NMO_METADATA_TYPE_ENUM;
     meta.enum_meta.values = descs;
     meta.enum_meta.value_count = count;
-    nmo_type_registry_register_metadata(registry, &meta);
+    nmo_status_t status = nmo_type_registry_register_metadata(registry, &meta);
     free(descs);
+    return status;
 }
 
-static void register_flags_metadata(nmo_type_registry_t *registry, nmo_type_id_t tid, yyjson_val *values) {
-    if (!values || !yyjson_is_arr(values)) return;
+static nmo_status_t register_flags_metadata(nmo_type_registry_t *registry, nmo_type_id_t tid, yyjson_val *values) {
+    if (!values || !yyjson_is_arr(values)) NMO_RETURN_OK();
     size_t count = yyjson_arr_size(values);
-    if (count == 0) return;
+    if (count == 0) NMO_RETURN_OK();
 
     nmo_flags_descriptor_t *descs = (nmo_flags_descriptor_t *)calloc(count, sizeof(*descs));
-    if (!descs) return;
+    if (!descs) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate flags metadata descriptors");
+    }
 
     size_t idx = 0;
     yyjson_val *item;
@@ -134,17 +141,21 @@ static void register_flags_metadata(nmo_type_registry_t *registry, nmo_type_id_t
     meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
     meta.flags_meta.bits = descs;
     meta.flags_meta.bit_count = count;
-    nmo_type_registry_register_metadata(registry, &meta);
+    nmo_status_t status = nmo_type_registry_register_metadata(registry, &meta);
     free(descs);
+    return status;
 }
 
-static void register_struct_metadata(nmo_type_registry_t *registry, nmo_type_id_t tid, yyjson_val *members) {
-    if (!members || !yyjson_is_arr(members)) return;
+static nmo_status_t register_struct_metadata(nmo_type_registry_t *registry, nmo_type_id_t tid, yyjson_val *members) {
+    if (!members || !yyjson_is_arr(members)) NMO_RETURN_OK();
     size_t count = yyjson_arr_size(members);
-    if (count == 0) return;
+    if (count == 0) NMO_RETURN_OK();
 
     nmo_struct_descriptor_t *descs = (nmo_struct_descriptor_t *)calloc(count, sizeof(*descs));
-    if (!descs) return;
+    if (!descs) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate struct metadata descriptors");
+    }
 
     size_t idx = 0;
     uint32_t offset = 0;
@@ -172,8 +183,9 @@ static void register_struct_metadata(nmo_type_registry_t *registry, nmo_type_id_
     meta.metadata_type = NMO_METADATA_TYPE_STRUCT;
     meta.struct_meta.fields = descs;
     meta.struct_meta.field_count = count;
-    nmo_type_registry_register_metadata(registry, &meta);
+    nmo_status_t status = nmo_type_registry_register_metadata(registry, &meta);
     free(descs);
+    return status;
 }
 
 nmo_status_t nmo_virtools_load_param_types(nmo_type_registry_t *registry, const char *path) {
@@ -226,26 +238,46 @@ nmo_status_t nmo_virtools_load_param_types(nmo_type_registry_t *registry, const 
             desc.base_type = CKPGUID_UINT32;
         }
 
-        if (desc.category == NMO_TYPE_CATEGORY_SCALAR &&
-            desc.class_id != 0 &&
-            desc.size == sizeof(nmo_object_id_t)) {
+        if ((desc.category == NMO_TYPE_CATEGORY_OBJECT_REF) ||
+            (desc.category == NMO_TYPE_CATEGORY_SCALAR &&
+             desc.class_id != 0 &&
+             desc.size == sizeof(nmo_object_id_t))) {
             desc.category = NMO_TYPE_CATEGORY_OBJECT_REF;
             desc.class_id = 0;
         }
 
-        if (nmo_type_registry_register(registry, &desc) == NMO_OK) {
-            registered++;
+        nmo_status_t register_status = nmo_type_registry_register(registry, &desc);
+        if (register_status == NMO_ERR_ALREADY_EXISTS) {
+            continue;
+        }
+        if (register_status != NMO_OK) {
+            yyjson_doc_free(doc);
+            return register_status;
+        }
 
-            /* Register metadata for enum/flags/struct */
-            nmo_type_id_t tid = nmo_type_registry_guid_to_type_id(registry, guid);
-            if (tid != NMO_TYPE_ID_INVALID) {
-                const char *cat = get_str(item, "category");
-                if (cat && strcmp(cat, "enum") == 0)
-                    register_enum_metadata(registry, tid, yyjson_obj_get(item, "values"));
-                else if (cat && strcmp(cat, "flags") == 0)
-                    register_flags_metadata(registry, tid, yyjson_obj_get(item, "values"));
-                else if (cat && strcmp(cat, "struct") == 0)
-                    register_struct_metadata(registry, tid, yyjson_obj_get(item, "members"));
+        registered++;
+
+        /* Register metadata for enum/flags/struct */
+        nmo_type_id_t tid = nmo_type_registry_guid_to_type_id(registry, guid);
+        if (tid != NMO_TYPE_ID_INVALID) {
+            const char *cat = get_str(item, "category");
+            nmo_status_t metadata_status = NMO_OK;
+            if (cat && strcmp(cat, "enum") == 0) {
+                metadata_status = register_enum_metadata(
+                    registry, tid, yyjson_obj_get(item, "values"));
+            } else if (cat && strcmp(cat, "flags") == 0) {
+                metadata_status = register_flags_metadata(
+                    registry, tid, yyjson_obj_get(item, "values"));
+            } else if (cat && strcmp(cat, "struct") == 0) {
+                metadata_status = register_struct_metadata(
+                    registry, tid, yyjson_obj_get(item, "members"));
+            }
+            if (metadata_status == NMO_ERR_ALREADY_EXISTS) {
+                continue;
+            }
+            if (metadata_status != NMO_OK) {
+                yyjson_doc_free(doc);
+                return metadata_status;
             }
         }
     }
