@@ -188,6 +188,11 @@ static int validate_structure_object(size_t index, nmo_object_t *obj,
  * When doc/data are non-NULL (JSON batch mode), populates data.
  * When NULL (text mode), prints directly to stdout.
  */
+static int validate_all_in_session(nmo_cmd_ctx_t *cmd,
+                                   const nmo_cli_global_opts_t *global,
+                                   yyjson_mut_doc *doc,
+                                   yyjson_mut_val *data);
+
 static int validate_all_single(const char *file_path,
                                 const nmo_cli_global_opts_t *global,
                                 void *user_data,
@@ -209,18 +214,29 @@ static int validate_all_single(const char *file_path,
     FILE *out = (text_ctx && text_ctx->out) ? text_ctx->out : stdout;
     bool colorize = (text_ctx != NULL) ? text_ctx->colorize : nmo_cli_should_colorize(global, out);
 
-    validate_all_data_t validate_data = {
-        .global = global,
-        .out = out,
-        .doc = doc,
-    };
     nmo_cmd_ctx_t cmd;
     nmo_cmd_ctx_init_from_repl(&cmd, ctx, session, colorize);
+    cmd.out = out;
+
+    int rc = validate_all_in_session(&cmd, global, doc, data);
+    nmo_tool_close_session(ctx, session);
+    return rc;
+}
+
+static int validate_all_in_session(nmo_cmd_ctx_t *cmd,
+                                   const nmo_cli_global_opts_t *global,
+                                   yyjson_mut_doc *doc,
+                                   yyjson_mut_val *data)
+{
+    validate_all_data_t validate_data = {
+        .global = global,
+        .out = cmd->out,
+        .doc = doc,
+    };
     nmo_core_iter_result_t query_result = {0};
-    if (nmo_core_object_query_run(&cmd, NULL,
+    if (nmo_core_object_query_run(cmd, NULL,
                                   validate_all_object, &validate_data,
                                   &query_result) != NMO_CLI_EXIT_SUCCESS) {
-        nmo_tool_close_session(ctx, session);
         fprintf(stderr, "Error: Failed to query objects\n");
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
@@ -246,16 +262,15 @@ static int validate_all_single(const char *file_path,
         /* Text mode: output summary */
         char buf[32];
         snprintf(buf, sizeof(buf), "%zu", query_result.matched);
-        nmo_cli_print_kv(out, "Objects", buf, 12, colorize);
+        nmo_cli_print_kv(cmd->out, "Objects", buf, 12, cmd->colorize);
         snprintf(buf, sizeof(buf), "%zu", validate_data.error_count);
-        nmo_cli_print_kv(out, "Errors", buf, 12, colorize);
+        nmo_cli_print_kv(cmd->out, "Errors", buf, 12, cmd->colorize);
         snprintf(buf, sizeof(buf), "%zu", validate_data.warning_count);
-        nmo_cli_print_kv(out, "Warnings", buf, 12, colorize);
-        fprintf(out, "Result: %s\n",
+        nmo_cli_print_kv(cmd->out, "Warnings", buf, 12, cmd->colorize);
+        fprintf(cmd->out, "Result: %s\n",
                 validate_data.error_count == 0 ? "VALID" : "INVALID");
     }
 
-    nmo_tool_close_session(ctx, session);
     return exit_code;
 }
 
@@ -283,6 +298,38 @@ int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *glo
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo validate all <file>\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    if (global->borrowed_session) {
+        nmo_cmd_ctx_t session_cmd;
+        nmo_cmd_ctx_init_from_repl(&session_cmd, global->borrowed_ctx,
+                                   global->borrowed_session, c.colorize);
+        session_cmd.file_path = file_path;
+        session_cmd.out = c.out;
+        session_cmd.global = global;
+        session_cmd.is_json = c.is_json;
+
+        if (c.is_json) {
+            yyjson_mut_doc *doc = NULL;
+            yyjson_mut_val *data = NULL;
+            if (!nmo_cli_json_create_data_doc(&doc, &data)) {
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            }
+
+            rc = validate_all_in_session(&session_cmd, global, doc, data);
+
+            yyjson_mut_obj_add_str(doc, data, "file", file_path);
+            nmo_cli_json_write_enveloped_and_free(doc, data, "validate.all", file_path,
+                                                  c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+            return nmo_cmd_ctx_done(&c, rc);
+        }
+
+        nmo_cli_print_heading(c.out, "Validation Results", c.colorize);
+        nmo_cli_print_kv(c.out, "File", file_path, 12, c.colorize);
+        fprintf(c.out, "\n");
+
+        rc = validate_all_in_session(&session_cmd, global, NULL, NULL);
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     if (c.is_json) {

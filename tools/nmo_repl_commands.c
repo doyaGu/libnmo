@@ -1749,6 +1749,10 @@ static int cmd_cli(nmo_repl_context_t *repl, int argc, char **argv) {
     if (first < 0) {
         return -1;
     }
+    if (global.batch_mode) {
+        fprintf(stderr, "Batch mode is not supported in REPL CLI read mirror; use the current session commands without --batch.\n");
+        return -1;
+    }
     if (global.color_mode == NMO_CLI_COLOR_AUTO) {
         global.color_mode = repl && repl->colorize ? NMO_CLI_COLOR_ALWAYS : NMO_CLI_COLOR_NEVER;
     }

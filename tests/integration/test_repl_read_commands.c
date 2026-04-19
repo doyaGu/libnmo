@@ -130,6 +130,12 @@ static void assert_read_fails_clean(nmo_repl_context_t *repl, const char *line) 
     ASSERT_FALSE(repl->dirty);
 }
 
+static void assert_read_ok_preserves_dirty(nmo_repl_context_t *repl, const char *line) {
+    bool was_dirty = repl->dirty;
+    ASSERT_EQ(0, run_repl_command(repl, line));
+    ASSERT_EQ(was_dirty, repl->dirty);
+}
+
 static void assert_captured_read_ok_not_contains(nmo_repl_context_t *repl,
                                                  const char *line,
                                                  const char *path,
@@ -308,6 +314,19 @@ TEST(repl_read, cli_read_mirror_uses_current_session_snapshot) {
     close_repl(&repl);
 }
 
+TEST(repl_read, validate_all_reads_dirty_current_session) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+
+    ASSERT_EQ(0, run_repl_command(&repl, "object rename 2 ReplValidateAllName"));
+    ASSERT_TRUE(repl.dirty);
+
+    assert_read_ok_preserves_dirty(&repl, "validate all");
+    assert_read_ok_preserves_dirty(&repl, "cli --strict validate all");
+
+    close_repl(&repl);
+}
+
 TEST(repl_read, mutating_cli_actions_are_rejected_by_read_mirror) {
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
@@ -326,6 +345,17 @@ TEST(repl_read, mutating_cli_actions_are_rejected_by_read_mirror) {
     assert_read_fails_clean(&repl, "extension load plugin.dll");
     assert_read_fails_clean(&repl, "convert copy -o out.nmo");
     assert_read_fails_clean(&repl, "validate orphans --strip -o out.nmo");
+
+    close_repl(&repl);
+}
+
+TEST(repl_read, cli_batch_mode_is_rejected) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+
+    assert_read_fails_clean(&repl, "cli --batch object list");
+    assert_read_fails_clean(&repl, "cli --batch file info");
+    assert_read_fails_clean(&repl, "cli --batch validate all");
 
     close_repl(&repl);
 }
@@ -358,7 +388,9 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, cli_wrapper_supports_global_options);
     REGISTER_TEST(repl_read, domain_cli_read_groups_are_available);
     REGISTER_TEST(repl_read, cli_read_mirror_uses_current_session_snapshot);
+    REGISTER_TEST(repl_read, validate_all_reads_dirty_current_session);
     REGISTER_TEST(repl_read, mutating_cli_actions_are_rejected_by_read_mirror);
+    REGISTER_TEST(repl_read, cli_batch_mode_is_rejected);
     REGISTER_TEST(repl_read, completion_group_does_not_require_session);
     REGISTER_TEST(repl_read, legacy_read_shortcuts_still_work);
 TEST_MAIN_END()
