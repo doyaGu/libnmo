@@ -40,6 +40,7 @@ add_integration_test(test_type_system_complete)
 
 # Phase 3: Object type coverage verification
 add_integration_test(test_object_type_coverage)
+add_integration_test(test_plugin_dependency_corpus)
 
 # Object layer acceptance test - comprehensive round-trip validation
 add_integration_test(test_object_layer_acceptance)
