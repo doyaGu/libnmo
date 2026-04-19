@@ -1515,7 +1515,12 @@ static int cmd_delete(nmo_repl_context_t *repl, int argc, char **argv) {
 
     bool cascade = false;
     for (int i = next_arg; i < argc; i++) {
-        if (strcmp(argv[i], "--cascade") == 0) cascade = true;
+        if (strcmp(argv[i], "--cascade") == 0) {
+            cascade = true;
+        } else {
+            fprintf(stderr, "Error: Unknown option: %s\n", argv[i]);
+            return -1;
+        }
     }
 
     nmo_object_id_t id = nmo_object_get_id(obj);
@@ -1595,7 +1600,12 @@ static int cmd_copy(nmo_repl_context_t *repl, int argc, char **argv) {
 
     bool cascade = false;
     for (int i = next_arg; i < argc; i++) {
-        if (strcmp(argv[i], "--cascade") == 0) cascade = true;
+        if (strcmp(argv[i], "--cascade") == 0) {
+            cascade = true;
+        } else {
+            fprintf(stderr, "Error: Unknown option: %s\n", argv[i]);
+            return -1;
+        }
     }
 
     nmo_object_id_t id = nmo_object_get_id(obj);

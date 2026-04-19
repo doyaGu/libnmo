@@ -222,10 +222,50 @@ TEST(repl_write, create_and_delete_persist_name_selected_objects) {
     write_probe_close(&probe);
 }
 
+TEST(repl_write, delete_rejects_unknown_options_without_dirtying_session) {
+    make_dir("test_repl_write_tmp");
+    ASSERT_TRUE(copy_file_binary(
+        NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
+        "test_repl_write_tmp/delete_unknown_option_input.nmo"));
+
+    nmo_repl_context_t repl;
+    memset(&repl, 0, sizeof(repl));
+    char errbuf[256];
+    ASSERT_TRUE(nmo_repl_load_file(
+        &repl, "test_repl_write_tmp/delete_unknown_option_input.nmo",
+        errbuf, sizeof(errbuf)));
+
+    int rc = run_repl_command(&repl, "delete --id 2 --unknown");
+    ASSERT_NE(0, rc);
+    ASSERT_FALSE(repl.dirty);
+    close_repl(&repl);
+}
+
+TEST(repl_write, copy_rejects_unknown_options_without_dirtying_session) {
+    make_dir("test_repl_write_tmp");
+    ASSERT_TRUE(copy_file_binary(
+        NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
+        "test_repl_write_tmp/copy_unknown_option_input.nmo"));
+
+    nmo_repl_context_t repl;
+    memset(&repl, 0, sizeof(repl));
+    char errbuf[256];
+    ASSERT_TRUE(nmo_repl_load_file(
+        &repl, "test_repl_write_tmp/copy_unknown_option_input.nmo",
+        errbuf, sizeof(errbuf)));
+
+    int rc = run_repl_command(&repl, "copy --id 2 --unknown");
+    ASSERT_NE(0, rc);
+    ASSERT_FALSE(repl.dirty);
+    close_repl(&repl);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_write, set_param_persists_object_reference_values);
     REGISTER_TEST(repl_write, set_param_accepts_cli_style_id_selector);
     REGISTER_TEST(repl_write, rename_accepts_cli_style_exact_name_selector);
     REGISTER_TEST(repl_write, copy_accepts_cli_style_id_selector);
     REGISTER_TEST(repl_write, create_and_delete_persist_name_selected_objects);
+    REGISTER_TEST(repl_write, delete_rejects_unknown_options_without_dirtying_session);
+    REGISTER_TEST(repl_write, copy_rejects_unknown_options_without_dirtying_session);
 TEST_MAIN_END()
