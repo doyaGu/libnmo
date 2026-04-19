@@ -21,6 +21,7 @@
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_object.h"
+#include "object/nmo_statesave_ids.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
 #include "core/nmo_parse.h"
@@ -1118,8 +1119,8 @@ nmo_status_t nmo_session_edit_add_behavior_link(
         session_edit_rollback_to(edit, checkpoint);
         return NMO_ERR_INTERNAL;
     }
-    link_state->in_io_id = from_io_id;
-    link_state->out_io_id = to_io_id;
+    link_state->in_io_id = to_io_id;
+    link_state->out_io_id = from_io_id;
     link_state->activation_delay = activation_delay;
     link_state->initial_activation_delay = activation_delay;
     link_state->use_new_format = true;
@@ -1158,6 +1159,8 @@ nmo_status_t nmo_session_edit_add_behavior_link(
     if (out_link_id != NULL) {
         *out_link_id = link_id;
     }
+    parent_state->save_flags |= CK_STATESAVE_BEHAVIORSUBLINKS;
+    parent_state->has_save_flags = true;
     nmo_session_edit_mark(edit, NMO_SESSION_EDIT_BEHAVIOR_GRAPH | NMO_SESSION_EDIT_REFERENCES);
     return NMO_OK;
 }
@@ -1224,6 +1227,12 @@ nmo_status_t nmo_session_edit_remove_behavior_link(
     if (remove_result != NMO_OK) {
         return remove_result;
     }
+    if (parent_state->sub_behavior_links.count == 0) {
+        parent_state->save_flags &= ~CK_STATESAVE_BEHAVIORSUBLINKS;
+    } else {
+        parent_state->save_flags |= CK_STATESAVE_BEHAVIORSUBLINKS;
+    }
+    parent_state->has_save_flags = true;
 
     nmo_status_t rollback_result =
         session_edit_push_rollback(edit, rollback_insert_array_id, array_action);
