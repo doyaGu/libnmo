@@ -1069,6 +1069,15 @@ typedef struct parameter_set_args {
     char *new_value_str;
 } parameter_set_args_t;
 
+static int parameter_reject_in_session_output_option(bool present)
+{
+    if (present) {
+        fprintf(stderr, "Error: REPL mutations update the loaded session; use 'save <path>' to write a file\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static void parameter_set_args_cleanup(parameter_set_args_t *args)
 {
     if (args == NULL) {
@@ -1429,6 +1438,86 @@ int nmo_cmd_parameter_set(int argc, char **argv, const nmo_cli_global_opts_t *gl
         parameter_set_mutate,
         parameter_set_report,
         &args);
+    parameter_set_args_cleanup(&args);
+    return rc;
+}
+
+int nmo_cmd_parameter_set_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
+                                     nmo_cmd_in_session_result_t *result)
+{
+    static const nmo_opt_def_t opts[] = {
+        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        {"--owner",   "-b", NMO_OPT_STRING, "Owner behavior/object ID"},
+        {"--name",    "-n", NMO_OPT_STRING, "Parameter name within owner"},
+        {"--index",   "-i", NMO_OPT_UINT,   "Parameter index within owner"},
+        {"--hex",     NULL, NMO_OPT_FLAG,   "Value is raw hex bytes"},
+        {"--dry-run", NULL, NMO_OPT_FLAG,   "Show old/new without saving"},
+        {"--id",      NULL, NMO_OPT_UINT,   "Parameter object ID"},
+    };
+    enum { OPT_OUTPUT, OPT_OWNER, OPT_NAME, OPT_INDEX, OPT_HEX, OPT_DRYRUN,
+           OPT_ID, OPT_COUNT };
+
+    if (result != NULL) {
+        memset(result, 0, sizeof(*result));
+    }
+
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (parameter_reject_in_session_output_option(vals[OPT_OUTPUT].present) != NMO_CLI_EXIT_SUCCESS) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    if (result != NULL) {
+        result->dry_run = dry_run;
+    }
+
+    const char *owner_str = vals[OPT_OWNER].present ? vals[OPT_OWNER].val.str : NULL;
+    bool has_direct_id = vals[OPT_ID].present;
+    char direct_id_buf[32];
+    if (has_direct_id) {
+        snprintf(direct_id_buf, sizeof(direct_id_buf), "%u", vals[OPT_ID].val.u);
+    }
+
+    const char *id_str = NULL;
+    const char *value_str = NULL;
+    if (owner_str != NULL) {
+        if (r.pos_count != 1) {
+            fprintf(stderr, "Usage: parameter set --owner <object-id> "
+                    "[--name <name> | --index <n>] <value>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        value_str = r.pos_args[0];
+    } else {
+        if ((has_direct_id && r.pos_count != 1) ||
+            (!has_direct_id && r.pos_count != 2)) {
+            fprintf(stderr, "Usage: parameter set [--id <param-id> | <param-id>] <value>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        id_str = has_direct_id ? direct_id_buf : r.pos_args[0];
+        value_str = has_direct_id ? r.pos_args[0] : r.pos_args[1];
+    }
+
+    parameter_set_args_t args = {
+        .id_str = id_str,
+        .owner_str = owner_str,
+        .name_str = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .value_str = value_str,
+        .param_index = vals[OPT_INDEX].present ? vals[OPT_INDEX].val.u : 0,
+        .has_index = vals[OPT_INDEX].present,
+        .hex_mode = vals[OPT_HEX].present && vals[OPT_HEX].val.flag,
+    };
+    int rc = parameter_set_mutate(ctx, dry_run, NULL, &args);
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = parameter_set_report(ctx, dry_run, NULL, &args);
+    }
+    if (result != NULL && rc == NMO_CLI_EXIT_SUCCESS && !dry_run) {
+        result->changed = true;
+    }
     parameter_set_args_cleanup(&args);
     return rc;
 }

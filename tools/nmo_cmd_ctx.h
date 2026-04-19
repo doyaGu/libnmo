@@ -52,6 +52,11 @@ typedef struct nmo_cmd_ctx {
     const nmo_type_registry_t *registry;
 } nmo_cmd_ctx_t;
 
+typedef struct nmo_cmd_in_session_result {
+    bool changed;
+    bool dry_run;
+} nmo_cmd_in_session_result_t;
+
 /**
  * @brief Initialize command context: find file arg, open session, open output.
  *

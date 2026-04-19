@@ -29,6 +29,15 @@
 #include <string.h>
 #include <stdlib.h>
 
+static int reject_in_session_output_option(bool present)
+{
+    if (present) {
+        fprintf(stderr, "Error: REPL mutations update the loaded session; use 'save <path>' to write a file\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 /* ============================================================================
  * object rename - Rename an object and save to new file
  *
@@ -462,11 +471,13 @@ static int object_rename_single_mutate(
                 args->new_name, nmo_object_get_id(existing));
     }
 
-    int rename_rc = nmo_cmd_object_rename_with_edit(c, args->object_id, args->new_name);
-    if (rename_rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to rename object %u: %s\n",
-                args->object_id, nmo_error_string(rename_rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (!dry_run) {
+        int rename_rc = nmo_cmd_object_rename_with_edit(c, args->object_id, args->new_name);
+        if (rename_rc != NMO_OK) {
+            fprintf(stderr, "Error: Failed to rename object %u: %s\n",
+                    args->object_id, nmo_error_string(rename_rc));
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
     }
 
     return NMO_CLI_EXIT_SUCCESS;
@@ -478,7 +489,6 @@ static int object_rename_single_report(
     const char *output_path,
     void *user_data)
 {
-    (void)dry_run;
     object_rename_single_args_t *args = (object_rename_single_args_t *)user_data;
     if (args == NULL) {
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -495,16 +505,24 @@ static int object_rename_single_report(
         nmo_cli_json_add_str_safe(doc, data, "old_name",
                                   args->old_name[0] ? args->old_name : "");
         nmo_cli_json_add_str_safe(doc, data, "new_name", args->new_name);
-        nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
+        if (!dry_run && output_path != NULL) {
+            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+        }
         nmo_cli_json_add_bool_safe(doc, data, "name_collision", args->name_collision);
 
         nmo_cmd_ctx_json_end(c, doc, data, "object.rename");
     } else {
+        if (dry_run) {
+            fprintf(c->out, "[dry-run] ");
+        }
         fprintf(c->out, "Renamed: %s -> %s (ID %u)\n",
                 args->old_name[0] ? args->old_name : "(unnamed)",
                 args->new_name,
                 args->object_id);
-        fprintf(c->out, "Saved to: %s\n", output_path);
+        if (!dry_run && output_path != NULL) {
+            fprintf(c->out, "Saved to: %s\n", output_path);
+        }
         if (args->name_collision) {
             fprintf(c->out, "Warning: Name collision with existing object\n");
         }
@@ -589,6 +607,90 @@ int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *gl
         object_rename_single_mutate,
         object_rename_single_report,
         &args);
+}
+
+int nmo_cmd_object_rename_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
+                                     nmo_cmd_in_session_result_t *result)
+{
+    static const nmo_opt_def_t opts[] = {
+        {"--name",    "-n", NMO_OPT_STRING, "Glob/regex pattern to match object names (batch mode)"},
+        {"--to",      NULL, NMO_OPT_STRING, "Rename template with {0},{1}..{N} placeholders"},
+        {"--regex",   NULL, NMO_OPT_FLAG,   "Treat --name as POSIX regex instead of glob"},
+        {"--class",   "-c", NMO_OPT_STRING, "Restrict to objects of this class"},
+        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview renames without saving"},
+        {"--output",  "-o", NMO_OPT_STRING, "Output file path"},
+    };
+    enum { OPT_NAME, OPT_TO, OPT_REGEX, OPT_CLASS, OPT_DRY_RUN, OPT_OUTPUT, OPT_COUNT };
+
+    if (result != NULL) {
+        memset(result, 0, sizeof(*result));
+    }
+
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (reject_in_session_output_option(vals[OPT_OUTPUT].present) != NMO_CLI_EXIT_SUCCESS) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    bool dry_run = vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag;
+    if (result != NULL) {
+        result->dry_run = dry_run;
+    }
+
+    if (vals[OPT_NAME].present) {
+        if (r.pos_count != 0) {
+            fprintf(stderr, "Error: Unexpected positional argument for object rename batch mode\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        if (!vals[OPT_TO].present) {
+            fprintf(stderr, "Error: --to is required for batch rename\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+
+        object_rename_batch_args_t args = {
+            .name_pattern = vals[OPT_NAME].val.str,
+            .to_template = vals[OPT_TO].val.str,
+            .use_regex = vals[OPT_REGEX].present && vals[OPT_REGEX].val.flag,
+            .class_filter = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL,
+        };
+        int rc = object_rename_batch_mutate(ctx, dry_run, NULL, &args);
+        if (rc == NMO_CLI_EXIT_SUCCESS) {
+            rc = object_rename_batch_report(ctx, dry_run, NULL, &args);
+        }
+        if (result != NULL && rc == NMO_CLI_EXIT_SUCCESS && !dry_run) {
+            result->changed = args.entry_count > args.rename_errors;
+        }
+        free(args.entries);
+        return rc;
+    }
+
+    if (r.pos_count != 2) {
+        fprintf(stderr, "Usage: object rename <id> <new_name>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    uint32_t object_id = 0;
+    if (!nmo_tool_parse_u32(r.pos_args[0], &object_id)) {
+        fprintf(stderr, "Error: Invalid object ID '%s'\n", r.pos_args[0]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    object_rename_single_args_t args = {
+        .object_id = object_id,
+        .new_name = r.pos_args[1],
+    };
+    int rc = object_rename_single_mutate(ctx, dry_run, NULL, &args);
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = object_rename_single_report(ctx, dry_run, NULL, &args);
+    }
+    if (result != NULL && rc == NMO_CLI_EXIT_SUCCESS && !dry_run) {
+        result->changed = true;
+    }
+    return rc;
 }
 
 /* ============================================================================
@@ -1076,9 +1178,12 @@ static int object_delete_report(
         }
         fprintf(c->out, " (%zu bytes)\n", args->total_size);
 
-        if (!dry_run) {
+        if (!dry_run && output_path != NULL) {
             fprintf(c->out, "Deleted %zu object(s), saved to: %s\n",
                     args->report.deleted_objects, output_path);
+        } else if (!dry_run) {
+            fprintf(c->out, "Deleted %zu object(s)\n",
+                    args->report.deleted_objects);
         }
     }
 
@@ -1171,6 +1276,67 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
         object_delete_mutate,
         object_delete_report,
         &args);
+    object_delete_args_cleanup(&args);
+    return rc;
+}
+
+int nmo_cmd_object_delete_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
+                                     nmo_cmd_in_session_result_t *result)
+{
+    static const nmo_opt_def_t opts[] = {
+        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        {"--class",   "-c", NMO_OPT_STRING, "Filter by class (includes derived)"},
+        {"--name",    "-n", NMO_OPT_STRING, "Filter by name wildcard pattern"},
+        {"--filter",  "-f", NMO_OPT_STRING, "Filter by DSL expression"},
+        {"--cascade", NULL, NMO_OPT_FLAG,   "Delete dependents (default: safe-detach)"},
+        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview only, do not save"},
+        {"--strict",  NULL, NMO_OPT_FLAG,   "Fail if any ID not found"},
+    };
+    enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_FILTER, OPT_CASCADE,
+           OPT_DRYRUN, OPT_STRICT, OPT_COUNT };
+
+    if (result != NULL) {
+        memset(result, 0, sizeof(*result));
+    }
+
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (reject_in_session_output_option(vals[OPT_OUTPUT].present) != NMO_CLI_EXIT_SUCCESS) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present ||
+                      vals[OPT_FILTER].present;
+    if (!use_filter && r.pos_count == 0) {
+        fprintf(stderr, "Usage: object delete [options] <id>[,<id>,...]\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (result != NULL) {
+        result->dry_run = dry_run;
+    }
+
+    object_delete_args_t args = {
+        .class_name = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL,
+        .name_wildcard = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .filter_expr = vals[OPT_FILTER].present ? vals[OPT_FILTER].val.str : NULL,
+        .id_args = r.pos_args,
+        .id_arg_count = r.pos_count,
+        .use_filter = use_filter,
+        .cascade = vals[OPT_CASCADE].present && vals[OPT_CASCADE].val.flag,
+        .strict = vals[OPT_STRICT].present && vals[OPT_STRICT].val.flag,
+    };
+    int rc = object_delete_mutate(ctx, dry_run, NULL, &args);
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = object_delete_report(ctx, dry_run, NULL, &args);
+    }
+    if (result != NULL && rc == NMO_CLI_EXIT_SUCCESS && !dry_run) {
+        result->changed = args.report.deleted_objects > 0;
+    }
     object_delete_args_cleanup(&args);
     return rc;
 }
@@ -1273,6 +1439,46 @@ static int object_create_report(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+static int parse_object_type_guid_arg(const char *guid_str, nmo_guid_t *out_guid)
+{
+    if (out_guid == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    *out_guid = NMO_GUID_NULL;
+    if (guid_str == NULL) {
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+
+    const char *comma = strchr(guid_str, ',');
+    if (comma != NULL) {
+        char left[16];
+        char right[16];
+        size_t left_len = (size_t)(comma - guid_str);
+        size_t right_len = strlen(comma + 1);
+        if (left_len == 0 || left_len >= sizeof(left) ||
+            right_len == 0 || right_len >= sizeof(right)) {
+            fprintf(stderr, "Error: Invalid GUID '%s'\n", guid_str);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        memcpy(left, guid_str, left_len);
+        left[left_len] = '\0';
+        memcpy(right, comma + 1, right_len + 1);
+        if (nmo_parse_u32_range_base(left, 16, 0, UINT32_MAX, &out_guid->d1) != NMO_OK ||
+            nmo_parse_u32_range_base(right, 16, 0, UINT32_MAX, &out_guid->d2) != NMO_OK) {
+            fprintf(stderr, "Error: Invalid GUID '%s'\n", guid_str);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+
+    *out_guid = nmo_guid_parse(guid_str);
+    if (nmo_guid_is_null(*out_guid)) {
+        fprintf(stderr, "Error: Invalid GUID '%s'\n", guid_str);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 int nmo_cmd_object_create(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
     static const nmo_opt_def_t opts[] = {
@@ -1360,6 +1566,79 @@ int nmo_cmd_object_create(int argc, char **argv, const nmo_cli_global_opts_t *gl
         object_create_mutate,
         object_create_report,
         &args);
+}
+
+int nmo_cmd_object_create_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
+                                     nmo_cmd_in_session_result_t *result)
+{
+    static const nmo_opt_def_t opts[] = {
+        {"--output",    "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        {"--class",     "-c", NMO_OPT_STRING, "Class name (required)"},
+        {"--name",      "-n", NMO_OPT_STRING, "Object name"},
+        {"--type-guid", NULL, NMO_OPT_STRING, "Type GUID (d1,d2 format)"},
+        {"--dry-run",   NULL, NMO_OPT_FLAG,   "Preview without saving"},
+    };
+    enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_TYPE_GUID, OPT_DRYRUN, OPT_COUNT };
+
+    if (result != NULL) {
+        memset(result, 0, sizeof(*result));
+    }
+
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (reject_in_session_output_option(vals[OPT_OUTPUT].present) != NMO_CLI_EXIT_SUCCESS) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (r.pos_count != 0) {
+        fprintf(stderr, "Error: Unexpected positional argument for object create\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *class_str = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL;
+    if (class_str == NULL) {
+        fprintf(stderr, "Error: --class/-c is required\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_guid_t type_guid = NMO_GUID_NULL;
+    int guid_rc = parse_object_type_guid_arg(
+        vals[OPT_TYPE_GUID].present ? vals[OPT_TYPE_GUID].val.str : NULL,
+        &type_guid);
+    if (guid_rc != NMO_CLI_EXIT_SUCCESS) {
+        return guid_rc;
+    }
+
+    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    if (result != NULL) {
+        result->dry_run = dry_run;
+    }
+
+    object_create_args_t args = {
+        .class_str = class_str,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .type_guid = type_guid,
+    };
+    if (dry_run) {
+        args.class_id = nmo_core_class_id(ctx, args.class_str);
+        if (!args.class_id) {
+            fprintf(stderr, "Error: Unknown class '%s'\n", args.class_str);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        return object_create_report(ctx, true, NULL, &args);
+    }
+
+    int rc = object_create_mutate(ctx, false, NULL, &args);
+    if (rc == NMO_CLI_EXIT_SUCCESS) {
+        rc = object_create_report(ctx, false, NULL, &args);
+    }
+    if (result != NULL && rc == NMO_CLI_EXIT_SUCCESS) {
+        result->changed = true;
+    }
+    return rc;
 }
 
 /* ============================================================================
@@ -1638,6 +1917,77 @@ int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *glob
         object_copy_mutate,
         object_copy_report,
         &args);
+    object_copy_args_cleanup(&args);
+    return rc;
+}
+
+int nmo_cmd_object_copy_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
+                                   nmo_cmd_in_session_result_t *result)
+{
+    static const nmo_opt_def_t opts[] = {
+        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        {"--class",   "-c", NMO_OPT_STRING, "Filter by class (includes derived)"},
+        {"--name",    "-n", NMO_OPT_STRING, "Filter by name wildcard pattern"},
+        {"--filter",  "-f", NMO_OPT_STRING, "Filter by DSL expression"},
+        {"--cascade", NULL, NMO_OPT_FLAG,   "Copy dependents"},
+        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+    };
+    enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_FILTER, OPT_CASCADE, OPT_DRYRUN, OPT_COUNT };
+
+    if (result != NULL) {
+        memset(result, 0, sizeof(*result));
+    }
+
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (reject_in_session_output_option(vals[OPT_OUTPUT].present) != NMO_CLI_EXIT_SUCCESS) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present ||
+                      vals[OPT_FILTER].present;
+    if (!use_filter && r.pos_count == 0) {
+        fprintf(stderr, "Usage: object copy [options] <id>[,<id>,...]\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (result != NULL) {
+        result->dry_run = dry_run;
+    }
+
+    object_copy_args_t args = {
+        .class_name = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL,
+        .name_wildcard = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .filter_expr = vals[OPT_FILTER].present ? vals[OPT_FILTER].val.str : NULL,
+        .id_args = r.pos_args,
+        .id_arg_count = r.pos_count,
+        .use_filter = use_filter,
+        .cascade = vals[OPT_CASCADE].present && vals[OPT_CASCADE].val.flag,
+    };
+
+    int rc = NMO_CLI_EXIT_SUCCESS;
+    if (dry_run) {
+        rc = object_copy_collect_targets(ctx, &args);
+        if (rc == NMO_CLI_EXIT_SUCCESS) {
+            nmo_object_repository_t *repo = nmo_session_get_repository(ctx->session);
+            args.count_before = repo ? nmo_object_repository_get_count(repo) : 0;
+            args.count_after = args.count_before;
+            rc = object_copy_report(ctx, true, NULL, &args);
+        }
+    } else {
+        rc = object_copy_mutate(ctx, false, NULL, &args);
+        if (rc == NMO_CLI_EXIT_SUCCESS) {
+            rc = object_copy_report(ctx, false, NULL, &args);
+        }
+    }
+
+    if (result != NULL && rc == NMO_CLI_EXIT_SUCCESS && !dry_run) {
+        result->changed = args.report.copied_objects > 0;
+    }
     object_copy_args_cleanup(&args);
     return rc;
 }

@@ -97,6 +97,7 @@ if(TARGET nmo_cli)
         ${PROJECT_SOURCE_DIR}/tools/nmo_repl_input.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_cmd_ctx.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_cmd_core.c
+        ${PROJECT_SOURCE_DIR}/tools/nmo_opt.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_cli_common.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_cli_json.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_cli_output.c
@@ -104,6 +105,9 @@ if(TARGET nmo_cli)
         ${PROJECT_SOURCE_DIR}/tools/nmo_cli_write.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_tool_common.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_tool_session.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_object.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_object_write.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_parameter.c
     )
     target_include_directories(test_repl_write_commands PRIVATE ${PROJECT_SOURCE_DIR}/tools)
     target_link_libraries(test_repl_write_commands PRIVATE nmo test_framework yyjson)

@@ -12,6 +12,7 @@
 #include "../../tools/nmo_tool_session.h"
 
 #include "object/builtin/nmo_parameter_schemas.h"
+#include "object/nmo_object_repository.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -82,78 +83,62 @@ static void assert_probe_open(write_semantic_probe_t *probe, const char *path) {
     ASSERT_EQ(NMO_OK, status);
 }
 
-TEST(repl_write, set_param_persists_object_reference_values) {
-    make_dir("test_repl_write_tmp");
-    ASSERT_TRUE(copy_file_binary(
-        NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"),
-        "test_repl_write_tmp/parameter_input.nmo"));
-    remove("test_repl_write_tmp/parameter_object.nmo");
-
-    nmo_repl_context_t repl;
-    memset(&repl, 0, sizeof(repl));
-    char errbuf[256];
-    ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/parameter_input.nmo",
-                                   errbuf, sizeof(errbuf)));
-
-    ASSERT_EQ(0, run_repl_command(&repl, "set-param id:46 520"));
-    ASSERT_TRUE(repl.dirty);
-    ASSERT_EQ(0, run_repl_command(&repl, "save test_repl_write_tmp/parameter_object.nmo"));
-    close_repl(&repl);
-
-    write_semantic_probe_t probe;
-    assert_probe_open(&probe, "test_repl_write_tmp/parameter_object.nmo");
-    const nmo_parameter_state_t *state = write_probe_parameter_state(&probe, 46);
-    ASSERT_NOT_NULL(state);
-    ASSERT_EQ(520u, state->object_id);
-    write_probe_close(&probe);
+static void assert_bytes_eq(const void *actual, size_t actual_size,
+                            const void *expected, size_t expected_size) {
+    ASSERT_EQ(expected_size, actual_size);
+    ASSERT_TRUE(memcmp(actual, expected, expected_size) == 0);
 }
 
-TEST(repl_write, set_param_accepts_cli_style_id_selector) {
-    make_dir("test_repl_write_tmp");
-    ASSERT_TRUE(copy_file_binary(
-        NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"),
-        "test_repl_write_tmp/parameter_id_input.nmo"));
-    remove("test_repl_write_tmp/parameter_id_object.nmo");
-
-    nmo_repl_context_t repl;
-    memset(&repl, 0, sizeof(repl));
-    char errbuf[256];
-    ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/parameter_id_input.nmo",
-                                   errbuf, sizeof(errbuf)));
-
-    ASSERT_EQ(0, run_repl_command(&repl, "set-param --id 46 520"));
-    ASSERT_TRUE(repl.dirty);
-    ASSERT_EQ(0, run_repl_command(&repl, "save test_repl_write_tmp/parameter_id_object.nmo"));
-    close_repl(&repl);
-
-    write_semantic_probe_t probe;
-    assert_probe_open(&probe, "test_repl_write_tmp/parameter_id_object.nmo");
-    const nmo_parameter_state_t *state = write_probe_parameter_state(&probe, 46);
-    ASSERT_NOT_NULL(state);
-    ASSERT_EQ(520u, state->object_id);
-    write_probe_close(&probe);
+static const nmo_parameter_state_t *repl_parameter_state(
+    nmo_repl_context_t *repl,
+    nmo_object_id_t id)
+{
+    nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
+    nmo_object_t *obj = repo ? nmo_object_repository_find_by_id(repo, id) : NULL;
+    return obj ? nmo_parameter_get_state(obj) : NULL;
 }
 
-TEST(repl_write, rename_accepts_cli_style_exact_name_selector) {
+TEST(repl_write, legacy_mutation_commands_are_removed) {
     make_dir("test_repl_write_tmp");
     ASSERT_TRUE(copy_file_binary(
         NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
-        "test_repl_write_tmp/rename_name_input.nmo"));
-    remove("test_repl_write_tmp/rename_name_out.nmo");
+        "test_repl_write_tmp/legacy_removed_input.nmo"));
 
     nmo_repl_context_t repl;
     memset(&repl, 0, sizeof(repl));
     char errbuf[256];
-    ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/rename_name_input.nmo",
+    ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/legacy_removed_input.nmo",
                                    errbuf, sizeof(errbuf)));
 
-    ASSERT_EQ(0, run_repl_command(&repl, "rename --name Cam_Pos ReplCamPos"));
+    ASSERT_NE(0, run_repl_command(&repl, "rename 2 ReplCamPos"));
+    ASSERT_NE(0, run_repl_command(&repl, "set-param --id 46 520"));
+    ASSERT_FALSE(repl.dirty);
+    close_repl(&repl);
+}
+
+TEST(repl_write, object_rename_uses_cli_shape) {
+    make_dir("test_repl_write_tmp");
+    ASSERT_TRUE(copy_file_binary(
+        NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
+        "test_repl_write_tmp/rename_input.nmo"));
+    remove("test_repl_write_tmp/rename_out.nmo");
+
+    nmo_repl_context_t repl;
+    memset(&repl, 0, sizeof(repl));
+    char errbuf[256];
+    ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/rename_input.nmo",
+                                   errbuf, sizeof(errbuf)));
+
+    ASSERT_NE(0, run_repl_command(&repl, "object rename id:2 ReplCamPos"));
+    ASSERT_FALSE(repl.dirty);
+
+    ASSERT_EQ(0, run_repl_command(&repl, "object rename 2 ReplCamPos"));
     ASSERT_TRUE(repl.dirty);
-    ASSERT_EQ(0, run_repl_command(&repl, "save test_repl_write_tmp/rename_name_out.nmo"));
+    ASSERT_EQ(0, run_repl_command(&repl, "save test_repl_write_tmp/rename_out.nmo"));
     close_repl(&repl);
 
     write_semantic_probe_t probe;
-    assert_probe_open(&probe, "test_repl_write_tmp/rename_name_out.nmo");
+    assert_probe_open(&probe, "test_repl_write_tmp/rename_out.nmo");
     nmo_object_t *renamed = write_probe_object_by_id(&probe, 2);
     ASSERT_NOT_NULL(renamed);
     ASSERT_STR_EQ("ReplCamPos", nmo_object_get_name(renamed));
@@ -161,111 +146,135 @@ TEST(repl_write, rename_accepts_cli_style_exact_name_selector) {
     write_probe_close(&probe);
 }
 
-TEST(repl_write, copy_accepts_cli_style_id_selector) {
+TEST(repl_write, object_create_delete_and_copy_use_cli_filters) {
     make_dir("test_repl_write_tmp");
     ASSERT_TRUE(copy_file_binary(
         NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
-        "test_repl_write_tmp/copy_id_input.nmo"));
-    remove("test_repl_write_tmp/copy_id_out.nmo");
+        "test_repl_write_tmp/object_mutation_input.nmo"));
+    remove("test_repl_write_tmp/object_mutation_out.nmo");
 
     write_semantic_probe_t baseline;
-    assert_probe_open(&baseline, "test_repl_write_tmp/copy_id_input.nmo");
+    assert_probe_open(&baseline, "test_repl_write_tmp/object_mutation_input.nmo");
     size_t baseline_count = write_probe_object_count(&baseline);
     write_probe_close(&baseline);
 
     nmo_repl_context_t repl;
     memset(&repl, 0, sizeof(repl));
     char errbuf[256];
-    ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/copy_id_input.nmo",
+    ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/object_mutation_input.nmo",
                                    errbuf, sizeof(errbuf)));
 
-    ASSERT_EQ(0, run_repl_command(&repl, "copy --id 2"));
+    ASSERT_EQ(0, run_repl_command(&repl, "object create --class CKGroup --name ReplDeleteMe"));
+    ASSERT_EQ(0, run_repl_command(&repl, "object delete --name ReplDeleteMe"));
+    ASSERT_EQ(0, run_repl_command(&repl, "object copy 2"));
     ASSERT_TRUE(repl.dirty);
-    ASSERT_EQ(0, run_repl_command(&repl, "save test_repl_write_tmp/copy_id_out.nmo"));
+    ASSERT_EQ(0, run_repl_command(&repl, "save test_repl_write_tmp/object_mutation_out.nmo"));
     close_repl(&repl);
 
     write_semantic_probe_t probe;
-    assert_probe_open(&probe, "test_repl_write_tmp/copy_id_out.nmo");
+    assert_probe_open(&probe, "test_repl_write_tmp/object_mutation_out.nmo");
     ASSERT_EQ(baseline_count + 1u, write_probe_object_count(&probe));
+    ASSERT_NULL(write_probe_object_by_name(&probe, "ReplDeleteMe"));
     ASSERT_NOT_NULL(write_probe_object_by_id(&probe, 2));
     write_probe_close(&probe);
 }
 
-TEST(repl_write, create_and_delete_persist_name_selected_objects) {
+TEST(repl_write, parameter_set_uses_cli_shape) {
     make_dir("test_repl_write_tmp");
     ASSERT_TRUE(copy_file_binary(
-        NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
-        "test_repl_write_tmp/delete_name_input.nmo"));
-    remove("test_repl_write_tmp/delete_name_out.nmo");
-
-    write_semantic_probe_t baseline;
-    assert_probe_open(&baseline, "test_repl_write_tmp/delete_name_input.nmo");
-    size_t baseline_count = write_probe_object_count(&baseline);
-    write_probe_close(&baseline);
+        NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"),
+        "test_repl_write_tmp/parameter_input.nmo"));
+    remove("test_repl_write_tmp/parameter_out.nmo");
 
     nmo_repl_context_t repl;
     memset(&repl, 0, sizeof(repl));
     char errbuf[256];
-    ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/delete_name_input.nmo",
+    ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/parameter_input.nmo",
                                    errbuf, sizeof(errbuf)));
 
-    ASSERT_EQ(0, run_repl_command(&repl, "create CKGroup ReplDeleteMe"));
-    ASSERT_EQ(0, run_repl_command(&repl, "delete --name ReplDeleteMe"));
+    ASSERT_EQ(0, run_repl_command(&repl, "parameter set --id 46 520"));
+    ASSERT_EQ(0, run_repl_command(&repl, "parameter set --hex --id 64 2A000000"));
     ASSERT_TRUE(repl.dirty);
-    ASSERT_EQ(0, run_repl_command(&repl, "save test_repl_write_tmp/delete_name_out.nmo"));
+    ASSERT_EQ(0, run_repl_command(&repl, "save test_repl_write_tmp/parameter_out.nmo"));
     close_repl(&repl);
 
     write_semantic_probe_t probe;
-    assert_probe_open(&probe, "test_repl_write_tmp/delete_name_out.nmo");
-    ASSERT_EQ(baseline_count, write_probe_object_count(&probe));
-    ASSERT_NULL(write_probe_object_by_name(&probe, "ReplDeleteMe"));
+    assert_probe_open(&probe, "test_repl_write_tmp/parameter_out.nmo");
+    const nmo_parameter_state_t *object_state = write_probe_parameter_state(&probe, 46);
+    ASSERT_NOT_NULL(object_state);
+    ASSERT_EQ(520u, object_state->object_id);
+    const nmo_parameter_state_t *hex_state = write_probe_parameter_state(&probe, 64);
+    ASSERT_NOT_NULL(hex_state);
+    const unsigned char expected[] = {0x2A, 0x00, 0x00, 0x00};
+    assert_bytes_eq(hex_state->buffer_data.data, hex_state->buffer_data.count,
+                    expected, sizeof(expected));
     write_probe_close(&probe);
 }
 
-TEST(repl_write, delete_rejects_unknown_options_without_dirtying_session) {
+TEST(repl_write, mutation_options_reject_output_and_unknown_options) {
     make_dir("test_repl_write_tmp");
     ASSERT_TRUE(copy_file_binary(
         NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
-        "test_repl_write_tmp/delete_unknown_option_input.nmo"));
+        "test_repl_write_tmp/reject_options_input.nmo"));
 
     nmo_repl_context_t repl;
     memset(&repl, 0, sizeof(repl));
     char errbuf[256];
-    ASSERT_TRUE(nmo_repl_load_file(
-        &repl, "test_repl_write_tmp/delete_unknown_option_input.nmo",
-        errbuf, sizeof(errbuf)));
+    ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/reject_options_input.nmo",
+                                   errbuf, sizeof(errbuf)));
 
-    int rc = run_repl_command(&repl, "delete --id 2 --unknown");
-    ASSERT_NE(0, rc);
+    ASSERT_NE(0, run_repl_command(&repl, "object delete 1 --unknown"));
+    ASSERT_NE(0, run_repl_command(&repl, "object copy 2 -o test_repl_write_tmp/nope.nmo"));
+    ASSERT_NE(0, run_repl_command(&repl, "parameter set --id 46 520 --output test_repl_write_tmp/nope.nmo"));
     ASSERT_FALSE(repl.dirty);
     close_repl(&repl);
 }
 
-TEST(repl_write, copy_rejects_unknown_options_without_dirtying_session) {
+TEST(repl_write, dry_run_mutations_do_not_change_session_or_dirty_flag) {
     make_dir("test_repl_write_tmp");
     ASSERT_TRUE(copy_file_binary(
-        NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
-        "test_repl_write_tmp/copy_unknown_option_input.nmo"));
+        NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"),
+        "test_repl_write_tmp/dry_run_input.nmo"));
 
     nmo_repl_context_t repl;
     memset(&repl, 0, sizeof(repl));
     char errbuf[256];
-    ASSERT_TRUE(nmo_repl_load_file(
-        &repl, "test_repl_write_tmp/copy_unknown_option_input.nmo",
-        errbuf, sizeof(errbuf)));
+    ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/dry_run_input.nmo",
+                                   errbuf, sizeof(errbuf)));
 
-    int rc = run_repl_command(&repl, "copy --id 2 --unknown");
-    ASSERT_NE(0, rc);
+    size_t before_count = nmo_repl_object_count(&repl);
+    const nmo_parameter_state_t *before_param = repl_parameter_state(&repl, 46);
+    ASSERT_NOT_NULL(before_param);
+    ASSERT_NE(520u, before_param->object_id);
+
+    ASSERT_EQ(0, run_repl_command(&repl, "object create --dry-run --class CKGroup --name DryProbe"));
+    ASSERT_EQ(before_count, nmo_repl_object_count(&repl));
+    ASSERT_FALSE(repl.dirty);
+
+    ASSERT_EQ(0, run_repl_command(&repl, "object copy --dry-run 1"));
+    ASSERT_EQ(before_count, nmo_repl_object_count(&repl));
+    ASSERT_FALSE(repl.dirty);
+
+    ASSERT_EQ(0, run_repl_command(&repl, "object delete --dry-run 1"));
+    ASSERT_EQ(before_count, nmo_repl_object_count(&repl));
+    ASSERT_FALSE(repl.dirty);
+
+    ASSERT_EQ(0, run_repl_command(&repl, "parameter set --dry-run --id 46 520"));
+    const nmo_parameter_state_t *after_param = repl_parameter_state(&repl, 46);
+    ASSERT_NOT_NULL(after_param);
+    ASSERT_EQ(before_param->object_id, after_param->object_id);
+    ASSERT_FALSE(repl.dirty);
+
+    ASSERT_EQ(0, run_repl_command(&repl, "parameter set --dry-run --owner 1 --index 0 1"));
     ASSERT_FALSE(repl.dirty);
     close_repl(&repl);
 }
 
 TEST_MAIN_BEGIN()
-    REGISTER_TEST(repl_write, set_param_persists_object_reference_values);
-    REGISTER_TEST(repl_write, set_param_accepts_cli_style_id_selector);
-    REGISTER_TEST(repl_write, rename_accepts_cli_style_exact_name_selector);
-    REGISTER_TEST(repl_write, copy_accepts_cli_style_id_selector);
-    REGISTER_TEST(repl_write, create_and_delete_persist_name_selected_objects);
-    REGISTER_TEST(repl_write, delete_rejects_unknown_options_without_dirtying_session);
-    REGISTER_TEST(repl_write, copy_rejects_unknown_options_without_dirtying_session);
+    REGISTER_TEST(repl_write, legacy_mutation_commands_are_removed);
+    REGISTER_TEST(repl_write, object_rename_uses_cli_shape);
+    REGISTER_TEST(repl_write, object_create_delete_and_copy_use_cli_filters);
+    REGISTER_TEST(repl_write, parameter_set_uses_cli_shape);
+    REGISTER_TEST(repl_write, mutation_options_reject_output_and_unknown_options);
+    REGISTER_TEST(repl_write, dry_run_mutations_do_not_change_session_or_dirty_flag);
 TEST_MAIN_END()

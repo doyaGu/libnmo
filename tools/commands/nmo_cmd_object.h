@@ -7,6 +7,7 @@
 #define NMO_CMD_OBJECT_H
 
 #include "../nmo_cli_common.h"
+#include "../nmo_cmd_ctx.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -61,6 +62,15 @@ int nmo_cmd_object_create(int argc, char **argv, const nmo_cli_global_opts_t *gl
  * @brief nmo object copy - Copy objects
  */
 int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *global);
+
+int nmo_cmd_object_rename_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
+                                     nmo_cmd_in_session_result_t *result);
+int nmo_cmd_object_delete_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
+                                     nmo_cmd_in_session_result_t *result);
+int nmo_cmd_object_create_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
+                                     nmo_cmd_in_session_result_t *result);
+int nmo_cmd_object_copy_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
+                                   nmo_cmd_in_session_result_t *result);
 
 /**
  * @brief nmo object import - Import object export snapshot JSON

@@ -8,6 +8,9 @@
 
 #include "nmo_repl_session.h"
 
+#include "commands/nmo_cmd_object.h"
+#include "commands/nmo_cmd_parameter.h"
+
 #include "app/nmo_inspector.h"
 #include "app/nmo_save.h"
 #include "app/nmo_stats.h"
@@ -62,11 +65,8 @@ static int cmd_reload(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_history(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_clear(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_quit(nmo_repl_context_t *repl, int argc, char **argv);
-static int cmd_rename(nmo_repl_context_t *repl, int argc, char **argv);
-static int cmd_delete(nmo_repl_context_t *repl, int argc, char **argv);
-static int cmd_create(nmo_repl_context_t *repl, int argc, char **argv);
-static int cmd_copy(nmo_repl_context_t *repl, int argc, char **argv);
-static int cmd_set_param(nmo_repl_context_t *repl, int argc, char **argv);
+static int cmd_object(nmo_repl_context_t *repl, int argc, char **argv);
+static int cmd_parameter(nmo_repl_context_t *repl, int argc, char **argv);
 
 static const nmo_repl_command_t commands[] = {
     {"help", "h", "Show help for commands", "help [command]", cmd_help},
@@ -94,11 +94,8 @@ static const nmo_repl_command_t commands[] = {
     {"quit", "q", "Exit REPL", "quit", cmd_quit},
     {"exit", "", "Exit REPL", "exit", cmd_quit},
     /* mutation commands */
-    {"rename", "ren", "Rename an object", "rename [--id <id> | --name <name> | <selector>] <new_name>", cmd_rename},
-    {"delete", "del", "Delete object(s)", "delete [--id <id> | --name <name> | <selector>] [--cascade]", cmd_delete},
-    {"create", "", "Create new object", "create <class> [name]", cmd_create},
-    {"copy", "cp", "Copy object(s)", "copy [--id <id> | --name <name> | <selector>] [--cascade]", cmd_copy},
-    {"set-param", "sp", "Set parameter value", "set-param [--id <id> | --name <name> | <selector>] <value>", cmd_set_param},
+    {"object", "", "Run object mutation commands", "object rename|delete|create|copy ...", cmd_object},
+    {"parameter", "", "Run parameter mutation commands", "parameter set ...", cmd_parameter},
     {NULL, NULL, NULL, NULL, NULL}};
 
 static void suggest_commands(const char *name) {
@@ -1388,292 +1385,78 @@ static int cmd_quit(nmo_repl_context_t *repl, int argc, char **argv) {
  * Mutation commands
  * ============================================================================ */
 
-static int repl_resolve_mutation_selector(nmo_repl_context_t *repl,
-                                          int argc,
-                                          char **argv,
-                                          int selector_arg,
-                                          size_t *out_index,
-                                          int *out_next_arg) {
-    if (!repl || !argv || !out_index || !out_next_arg ||
-        selector_arg <= 0 || selector_arg >= argc) {
-        fprintf(stderr, "Error: No selector provided\n");
-        return -1;
-    }
-
-    if (strcmp(argv[selector_arg], "--id") == 0) {
-        if (selector_arg + 1 >= argc) {
-            fprintf(stderr, "Error: --id requires an object ID\n");
-            return -1;
-        }
-        uint32_t id = 0;
-        if (!nmo_repl_parse_u32(argv[selector_arg + 1], &id)) {
-            fprintf(stderr, "Error: Invalid object ID: %s\n", argv[selector_arg + 1]);
-            return -1;
-        }
-
-        nmo_cmd_ctx_t c;
-        nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
-        nmo_object_query_t query = {0};
-        nmo_core_query_set_object_id(&query, id);
-        nmo_object_t *match = NULL;
-        if (nmo_core_object_query_first(&c, &query, &match, out_index) !=
-            NMO_CLI_EXIT_SUCCESS) {
-            fprintf(stderr, "Error: No object with id %u\n", id);
-            return -1;
-        }
-        *out_next_arg = selector_arg + 2;
-        return 0;
-    }
-
-    if (strcmp(argv[selector_arg], "--name") == 0) {
-        if (selector_arg + 1 >= argc) {
-            fprintf(stderr, "Error: --name requires an object name\n");
-            return -1;
-        }
-
-        nmo_cmd_ctx_t c;
-        nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
-        nmo_object_query_t query = {
-            .name = argv[selector_arg + 1],
-            .name_mode = NMO_OBJECT_QUERY_NAME_EXACT,
-            .name_case_insensitive = false,
-        };
-        nmo_object_t *match = NULL;
-        if (nmo_core_object_query_first(&c, &query, &match, out_index) !=
-            NMO_CLI_EXIT_SUCCESS) {
-            fprintf(stderr, "Error: No object named '%s'\n", argv[selector_arg + 1]);
-            return -1;
-        }
-        *out_next_arg = selector_arg + 2;
-        return 0;
-    }
-
-    if (nmo_repl_resolve_object_index(repl, argv[selector_arg], out_index, false) != 0) {
-        return -1;
-    }
-    *out_next_arg = selector_arg + 1;
-    return 0;
-}
-
-static int cmd_rename(nmo_repl_context_t *repl, int argc, char **argv) {
-    if (argc < 3) {
-        fprintf(stderr, "Usage: rename [--id <id> | --name <name> | <selector>] <new_name>\n");
-        return -1;
-    }
-    if (!repl->session) { fprintf(stderr, "No session loaded.\n"); return -1; }
-
-    size_t index = 0;
-    int name_arg = 0;
-    if (repl_resolve_mutation_selector(repl, argc, argv, 1, &index, &name_arg) != 0) return -1;
-    if (name_arg >= argc) {
-        fprintf(stderr, "Usage: rename [--id <id> | --name <name> | <selector>] <new_name>\n");
-        return -1;
-    }
-
-    size_t object_count = nmo_repl_object_count(repl);
-    nmo_object_t *obj = nmo_repl_object_at(repl, index);
-    if (index >= object_count || !obj) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
-
-    nmo_object_id_t id = nmo_object_get_id(obj);
-    const char *old_name = nmo_object_get_name(obj);
-    printf("Renaming #%u '%s' -> '%s'\n", id, old_name ? old_name : "", argv[name_arg]);
-
-    nmo_session_edit_t *edit = NULL;
-    nmo_status_t rc = nmo_session_edit_begin(repl->session, "repl rename", &edit);
-    if (rc == NMO_OK) {
-        rc = nmo_session_edit_rename_object(edit, id, argv[name_arg]);
-        if (rc == NMO_OK) {
-            rc = nmo_session_edit_commit(edit);
-        } else {
-            nmo_session_edit_rollback(edit);
-        }
-    }
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: %s\n", nmo_error_string(rc));
-        return -1;
-    }
-
-    repl->dirty = true;
-    nmo_repl_input_invalidate_name_cache(repl);
-    return 0;
-}
-
-static int cmd_delete(nmo_repl_context_t *repl, int argc, char **argv) {
+static int cmd_object(nmo_repl_context_t *repl, int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: delete [--id <id> | --name <name> | <selector>] [--cascade]\n");
+        fprintf(stderr, "Usage: object rename|delete|create|copy ...\n");
         return -1;
     }
-    if (!repl->session) { fprintf(stderr, "No session loaded.\n"); return -1; }
+    if (!repl->session) {
+        fprintf(stderr, "No session loaded.\n");
+        return -1;
+    }
 
-    size_t index = 0;
-    int next_arg = 0;
-    if (repl_resolve_mutation_selector(repl, argc, argv, 1, &index, &next_arg) != 0) return -1;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
 
-    size_t object_count = nmo_repl_object_count(repl);
-    nmo_object_t *obj = nmo_repl_object_at(repl, index);
-    if (index >= object_count || !obj) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
+    nmo_cmd_in_session_result_t result = {0};
+    int sub_argc = argc - 1;
+    char **sub_argv = &argv[1];
+    int rc = NMO_CLI_EXIT_ARG_ERROR;
+    bool delete_command = false;
 
-    bool cascade = false;
-    for (int i = next_arg; i < argc; i++) {
-        if (strcmp(argv[i], "--cascade") == 0) {
-            cascade = true;
-        } else {
-            fprintf(stderr, "Error: Unknown option: %s\n", argv[i]);
-            return -1;
+    if (strcmp(argv[1], "rename") == 0) {
+        rc = nmo_cmd_object_rename_in_session(&c, sub_argc, sub_argv, &result);
+    } else if (strcmp(argv[1], "delete") == 0) {
+        delete_command = true;
+        rc = nmo_cmd_object_delete_in_session(&c, sub_argc, sub_argv, &result);
+    } else if (strcmp(argv[1], "create") == 0) {
+        rc = nmo_cmd_object_create_in_session(&c, sub_argc, sub_argv, &result);
+    } else if (strcmp(argv[1], "copy") == 0) {
+        rc = nmo_cmd_object_copy_in_session(&c, sub_argc, sub_argv, &result);
+    } else {
+        fprintf(stderr, "Unknown object command: %s\n", argv[1]);
+        fprintf(stderr, "Usage: object rename|delete|create|copy ...\n");
+    }
+
+    if (rc == NMO_CLI_EXIT_SUCCESS && result.changed) {
+        repl->dirty = true;
+        if (delete_command) {
+            repl->has_selection = false;
         }
+        nmo_repl_input_invalidate_name_cache(repl);
     }
 
-    nmo_object_id_t id = nmo_object_get_id(obj);
-    const char *name = nmo_object_get_name(obj);
-
-    uint32_t flags = cascade ? NMO_RUNTIME_REQUEST_CASCADE : NMO_RUNTIME_REQUEST_SAFE_DETACH;
-    nmo_runtime_report_t report;
-    memset(&report, 0, sizeof(report));
-    int rc = nmo_session_destroy_objects(repl->session, &id, 1, flags, &report);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: %s\n", nmo_error_string(rc));
-        return -1;
-    }
-
-    printf("Deleted #%u '%s' (%zu object(s) removed)\n",
-           id, name ? name : "", report.deleted_objects);
-
-    repl->dirty = true;
-    repl->has_selection = false;
-    nmo_repl_input_invalidate_name_cache(repl);
-    return 0;
+    return rc == NMO_CLI_EXIT_SUCCESS ? 0 : -1;
 }
 
-static int cmd_create(nmo_repl_context_t *repl, int argc, char **argv) {
+static int cmd_parameter(nmo_repl_context_t *repl, int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: create <class_name> [object_name]\n");
+        fprintf(stderr, "Usage: parameter set ...\n");
         return -1;
     }
-    if (!repl->session) { fprintf(stderr, "No session loaded.\n"); return -1; }
-
-    const nmo_type_registry_t *registry = nmo_context_get_type_registry(repl->ctx);
-    nmo_class_id_t class_id = 0;
-
-    /* Try class name lookup */
-    const nmo_type_descriptor_t *td = nmo_type_registry_find_by_name(registry, argv[1]);
-    if (td) {
-        class_id = (nmo_class_id_t)td->class_id;
-    }
-    if (!class_id) {
-        fprintf(stderr, "Error: Unknown class '%s'\n", argv[1]);
+    if (!repl->session) {
+        fprintf(stderr, "No session loaded.\n");
         return -1;
     }
 
-    const char *name = (argc >= 3) ? argv[2] : NULL;
-    nmo_guid_t type_guid = NMO_GUID_NULL;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
 
-    nmo_object_id_t new_id = 0;
-    nmo_runtime_report_t report;
-    memset(&report, 0, sizeof(report));
-    int rc = nmo_session_create_object(repl->session, class_id, name, type_guid, &new_id, &report);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: %s\n", nmo_error_string(rc));
-        return -1;
+    nmo_cmd_in_session_result_t result = {0};
+    int sub_argc = argc - 1;
+    char **sub_argv = &argv[1];
+    int rc = NMO_CLI_EXIT_ARG_ERROR;
+
+    if (strcmp(argv[1], "set") == 0) {
+        rc = nmo_cmd_parameter_set_in_session(&c, sub_argc, sub_argv, &result);
+    } else {
+        fprintf(stderr, "Unknown parameter command: %s\n", argv[1]);
+        fprintf(stderr, "Usage: parameter set ...\n");
     }
 
-    printf("Created #%u (%s) %s\n", new_id, argv[1], name ? name : "");
-
-    repl->dirty = true;
-    nmo_repl_input_invalidate_name_cache(repl);
-    return 0;
-}
-
-static int cmd_copy(nmo_repl_context_t *repl, int argc, char **argv) {
-    if (argc < 2) {
-        fprintf(stderr, "Usage: copy [--id <id> | --name <name> | <selector>] [--cascade]\n");
-        return -1;
-    }
-    if (!repl->session) { fprintf(stderr, "No session loaded.\n"); return -1; }
-
-    size_t index = 0;
-    int next_arg = 0;
-    if (repl_resolve_mutation_selector(repl, argc, argv, 1, &index, &next_arg) != 0) return -1;
-
-    size_t object_count = nmo_repl_object_count(repl);
-    nmo_object_t *obj = nmo_repl_object_at(repl, index);
-    if (index >= object_count || !obj) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
-
-    bool cascade = false;
-    for (int i = next_arg; i < argc; i++) {
-        if (strcmp(argv[i], "--cascade") == 0) {
-            cascade = true;
-        } else {
-            fprintf(stderr, "Error: Unknown option: %s\n", argv[i]);
-            return -1;
-        }
+    if (rc == NMO_CLI_EXIT_SUCCESS && result.changed) {
+        repl->dirty = true;
     }
 
-    nmo_object_id_t id = nmo_object_get_id(obj);
-    uint32_t flags = cascade ? NMO_RUNTIME_REQUEST_CASCADE : 0;
-
-    nmo_runtime_report_t report;
-    memset(&report, 0, sizeof(report));
-    int rc = nmo_session_copy_objects(repl->session, &id, 1, flags, &report);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: %s\n", nmo_error_string(rc));
-        return -1;
-    }
-
-    printf("Copied %zu object(s)\n", report.copied_objects);
-
-    repl->dirty = true;
-    nmo_repl_input_invalidate_name_cache(repl);
-    return 0;
-}
-
-static int cmd_set_param(nmo_repl_context_t *repl, int argc, char **argv) {
-    if (argc < 3) {
-        fprintf(stderr, "Usage: set-param [--id <id> | --name <name> | <selector>] <value>\n");
-        return -1;
-    }
-    if (!repl->session) { fprintf(stderr, "No session loaded.\n"); return -1; }
-
-    size_t index = 0;
-    int value_arg = 0;
-    if (repl_resolve_mutation_selector(repl, argc, argv, 1, &index, &value_arg) != 0) return -1;
-    if (value_arg >= argc) {
-        fprintf(stderr, "Usage: set-param [--id <id> | --name <name> | <selector>] <value>\n");
-        return -1;
-    }
-
-    size_t object_count = nmo_repl_object_count(repl);
-    nmo_object_t *obj = nmo_repl_object_at(repl, index);
-    if (index >= object_count || !obj) { fprintf(stderr, "Error: Index out of range\n"); return -1; }
-
-    /* Check that object has a settable parameter state */
-    const nmo_parameter_state_t *pstate = nmo_parameter_get_state(obj);
-    if (!pstate) {
-        fprintf(stderr, "Error: Object is not a parameter (class %u)\n",
-                nmo_object_get_class_id(obj));
-        return -1;
-    }
-
-    nmo_session_edit_t *edit = NULL;
-    nmo_status_t st = nmo_session_edit_begin(repl->session, "repl set-param", &edit);
-    if (st == NMO_OK) {
-        st = nmo_session_edit_set_parameter_value(
-            edit, nmo_object_get_id(obj), argv[value_arg]);
-    }
-    if (st == NMO_OK) {
-        st = nmo_session_edit_commit(edit);
-    } else if (edit != NULL) {
-        nmo_session_edit_rollback(edit);
-    }
-    if (st != NMO_OK) {
-        fprintf(stderr, "Error: Cannot set value '%s': %s\n",
-                argv[value_arg], nmo_error_string(st));
-        return -1;
-    }
-
-    const char *name = nmo_object_get_name(obj);
-    printf("Set parameter #%u '%s' = %s\n",
-           nmo_object_get_id(obj), name ? name : "", argv[value_arg]);
-
-    repl->dirty = true;
-    return 0;
+    return rc == NMO_CLI_EXIT_SUCCESS ? 0 : -1;
 }
