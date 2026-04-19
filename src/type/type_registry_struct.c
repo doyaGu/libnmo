@@ -537,27 +537,11 @@ nmo_status_t nmo_type_registry_register_struct(
     /* Update type_id in metadata */
     spec_meta->type_id = registered->id;
 
-    /* Add metadata to registry */
-    size_t metadata_index = type_registry->metadata.count;
-    nmo_status_t append_res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
-    if (append_res != NMO_OK) {
+    result = nmo_type_registry_register_metadata(type_registry, spec_meta);
+    if (result != NMO_OK) {
         (void)nmo_type_registry_unregister(type_registry, type_guid);
-        return append_res;
+        return result;
     }
-
-    /* Add to type_id -> metadata_index hash table */
-    nmo_status_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
-                                                    &registered->id,
-                                                    &metadata_index);
-    if (map_result != NMO_OK) {
-        nmo_arena_array_pop(&type_registry->metadata, NULL);
-        (void)nmo_type_registry_unregister(type_registry, type_guid);
-        return map_result;
-    }
-
-    /* Update specialized_index (0-based) */
-    registered->specialized_index = (uint32_t)metadata_index;
-    nmo_type_refresh_default_vtable_subtree(type_registry, registered->id);
     
     /* Return GUID */
     if (out_guid) {
@@ -963,34 +947,25 @@ nmo_status_t nmo_type_registry_finalize_struct(
     spec_meta->ownership = NMO_OWNERSHIP_ARENA; /* arena-owned; do not free via type_allocator */
     spec_meta->struct_meta.fields = struct_fields;
     spec_meta->struct_meta.field_count = incomplete->field_count;
-    
-    /* Add to registry metadata array */
-    size_t metadata_index = type_registry->metadata.count;
-    nmo_status_t res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
-    if (res != NMO_OK) return res;
 
-    /* Add to type_id -> metadata_index hash table */
-    nmo_status_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
-                                                    &struct_type_id,
-                                                    &metadata_index);
-    if (map_result != NMO_OK) {
-        nmo_arena_array_pop(&type_registry->metadata, NULL);
-        return map_result;
-    }
-    
     /* Update type descriptor to mark as valid */
     nmo_type_descriptor_t *type_desc = *(nmo_type_descriptor_t **)nmo_arena_array_get(&type_registry->types, struct_type_id);
     type_desc->size = total_size;
     type_desc->alignment = struct_alignment;
     type_desc->flags = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_COPYABLE;
-    type_desc->specialized_index = (uint32_t)metadata_index;
+    type_desc->specialized_index = NMO_SPECIALIZED_INDEX_INVALID;
     type_desc->fields = type_fields;
     type_desc->field_count = incomplete->field_count;
     type_desc->description = NULL;  /* Clear incomplete state pointer */
     type_desc->valid = true;  /* Mark as complete */
+
+    nmo_status_t res = nmo_type_registry_register_metadata(type_registry, spec_meta);
+    if (res != NMO_OK) {
+        type_desc->valid = false;
+        return res;
+    }
     
     incomplete->finalized = true;
-    nmo_type_refresh_default_vtable_subtree(type_registry, type_desc->id);
     
     NMO_RETURN_OK();
 }
@@ -1366,24 +1341,11 @@ nmo_status_t nmo_type_registry_register_union(
 
     spec_meta->type_id = registered->id;
 
-    size_t metadata_index = type_registry->metadata.count;
-    nmo_status_t append_res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
-    if (append_res != NMO_OK) {
+    result = nmo_type_registry_register_metadata(type_registry, spec_meta);
+    if (result != NMO_OK) {
         (void)nmo_type_registry_unregister(type_registry, type_guid);
-        return append_res;
+        return result;
     }
-
-    nmo_status_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
-                                                    &registered->id,
-                                                    &metadata_index);
-    if (map_result != NMO_OK) {
-        nmo_arena_array_pop(&type_registry->metadata, NULL);
-        (void)nmo_type_registry_unregister(type_registry, type_guid);
-        return map_result;
-    }
-
-    registered->specialized_index = (uint32_t)metadata_index;
-    nmo_type_refresh_default_vtable_subtree(type_registry, registered->id);
 
     if (out_guid) {
         *out_guid = type_guid;

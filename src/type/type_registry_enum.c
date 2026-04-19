@@ -587,25 +587,11 @@ static nmo_status_t register_enum_type(nmo_type_registry_t *reg,
 
     p->spec_meta->type_id = registered->id;
 
-    size_t metadata_index = reg->metadata.count;
-    nmo_specialized_metadata_t *meta = p->spec_meta;
-    nmo_status_t append_res = nmo_arena_array_append(&reg->metadata, &meta);
-    if (append_res != NMO_OK) {
+    result = nmo_type_registry_register_metadata(reg, p->spec_meta);
+    if (result != NMO_OK) {
         (void)nmo_type_registry_unregister(reg, p->guid);
-        return append_res;
+        return result;
     }
-
-    nmo_status_t map_result = nmo_hash_table_insert(reg->type_to_metadata,
-                                                    &registered->id,
-                                                    &metadata_index);
-    if (map_result != NMO_OK) {
-        nmo_arena_array_pop(&reg->metadata, NULL);
-        (void)nmo_type_registry_unregister(reg, p->guid);
-        return map_result;
-    }
-
-    registered->specialized_index = (uint32_t)metadata_index;
-    nmo_type_refresh_default_vtable_subtree(reg, registered->id);
 
     if (out_guid) {
         *out_guid = p->guid;
