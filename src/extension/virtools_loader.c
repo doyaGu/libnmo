@@ -8,9 +8,12 @@
 #include "extension/nmo_virtools_loader.h"
 #include "behavior/nmo_bb_registry.h"
 #include "type/nmo_type_system.h"
+#include "type/nmo_type_guids.h"
 #include "type/nmo_operation_system.h"
 #include "extension/nmo_extension_registry.h"
 #include "extension/nmo_extension_abi.h"
+#include "object/nmo_object_guids.h"
+#include "object/nmo_param_guids.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_error.h"
 #include "core/nmo_utils.h"
@@ -52,6 +55,17 @@ static uint32_t get_uint(yyjson_val *obj, const char *key) {
 
 static nmo_guid_t get_guid(yyjson_val *obj, const char *key) {
     return read_guid(yyjson_obj_get(obj, key));
+}
+
+static bool is_unbased_uint32_primitive_guid(nmo_guid_t guid) {
+    return nmo_guid_equals(guid, CKPGUID_COPYDEPENDENCIES) ||
+           nmo_guid_equals(guid, CKPGUID_DELETEDEPENDENCIES) ||
+           nmo_guid_equals(guid, CKPGUID_REPLACEDEPENDENCIES) ||
+           nmo_guid_equals(guid, CKPGUID_SAVEDEPENDENCIES) ||
+           nmo_guid_equals(guid, CKPGUID_MESSAGE) ||
+           nmo_guid_equals(guid, CKPGUID_ATTRIBUTE) ||
+           nmo_guid_equals(guid, CKPGUID_OBJECTARRAY) ||
+           nmo_guid_equals(guid, CKPGUID_2DCURVE);
 }
 
 /* ============================================================================
@@ -204,6 +218,13 @@ nmo_status_t nmo_virtools_load_param_types(nmo_type_registry_t *registry, const 
         desc.class_id = get_uint(item, "class_id");
         desc.base_type = get_guid(item, "derived_from");
         desc.valid = true;
+
+        if (nmo_guid_is_null(desc.base_type) &&
+            desc.category == NMO_TYPE_CATEGORY_SCALAR &&
+            desc.size == sizeof(uint32_t) &&
+            is_unbased_uint32_primitive_guid(desc.guid)) {
+            desc.base_type = CKPGUID_UINT32;
+        }
 
         if (desc.category == NMO_TYPE_CATEGORY_SCALAR &&
             desc.class_id != 0 &&

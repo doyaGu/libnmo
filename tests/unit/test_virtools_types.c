@@ -9,6 +9,7 @@
 #include "type/nmo_operations.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_string.h"
+#include "type/nmo_type_guids.h"
 #include "type/nmo_operation_system.h"
 #include "object/nmo_object_guids.h"
 #include "object/nmo_param_guids.h"
@@ -199,6 +200,12 @@ TEST(vt, derived_json_primitive_types_parse_from_string) {
               nmo_type_value_from_string(&time_value, time_type, reg, "2.5"));
     ASSERT_FLOAT_EQ(2.5f, time_value, 0.001f);
 
+    char time_buffer[64];
+    ASSERT_EQ(NMO_OK,
+              nmo_type_value_to_string(&time_value, time_type, reg,
+                                       time_buffer, sizeof(time_buffer)));
+    ASSERT_STR_EQ("2.5 ms", time_buffer);
+
     const nmo_type_descriptor_t *key_type =
         nmo_type_registry_find_by_guid(reg, CKPGUID_KEY);
     ASSERT_TRUE(key_type != NULL);
@@ -343,6 +350,75 @@ TEST(vt, unbased_json_u32_primitives_parse_from_string) {
     nmo_context_release(ctx);
 }
 
+TEST(vt, raw_json_loader_normalizes_unbased_u32_primitives_to_uint32_base) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_TRUE(arena != NULL);
+    nmo_type_registry_t *reg = nmo_type_registry_create(arena);
+    ASSERT_TRUE(reg != NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(reg));
+    ASSERT_EQ(NMO_OK, nmo_virtools_load_param_types(reg, "data/virtools_parameter_types.json"));
+
+    static const nmo_guid_t u32_guids[] = {
+        CKPGUID_COPYDEPENDENCIES_INIT,
+        CKPGUID_DELETEDEPENDENCIES_INIT,
+        CKPGUID_REPLACEDEPENDENCIES_INIT,
+        CKPGUID_SAVEDEPENDENCIES_INIT,
+        CKPGUID_MESSAGE_INIT,
+        CKPGUID_ATTRIBUTE_INIT,
+        CKPGUID_OBJECTARRAY_INIT,
+        CKPGUID_2DCURVE_INIT,
+    };
+
+    for (size_t i = 0; i < sizeof(u32_guids) / sizeof(u32_guids[0]); ++i) {
+        const nmo_type_descriptor_t *type =
+            nmo_type_registry_find_by_guid(reg, u32_guids[i]);
+        ASSERT_TRUE(type != NULL);
+        ASSERT_TRUE(nmo_guid_equals(type->base_type, CKPGUID_UINT32));
+
+        uint32_t value = 0;
+        ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&value, type, reg, "42"));
+        ASSERT_EQ(42u, value);
+    }
+
+    nmo_type_registry_destroy(reg);
+    nmo_arena_destroy(arena);
+}
+
+TEST(vt, time_is_builtin_and_json_loader_does_not_override_it) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_TRUE(arena != NULL);
+    nmo_type_registry_t *reg = nmo_type_registry_create(arena);
+    ASSERT_TRUE(reg != NULL);
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(reg));
+
+    const nmo_type_descriptor_t *time_type =
+        nmo_type_registry_find_by_guid(reg, CKPGUID_TIME);
+    ASSERT_TRUE(time_type != NULL);
+    ASSERT_TRUE(nmo_guid_equals(time_type->base_type, CKPGUID_FLOAT));
+    ASSERT_TRUE(time_type->vtable != NULL);
+
+    float time_value = 2.5f;
+    char buffer[64];
+    ASSERT_EQ(NMO_OK, nmo_type_value_to_string(
+        &time_value, time_type, reg, buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("2.5 ms", buffer);
+
+    ASSERT_EQ(NMO_OK, nmo_virtools_load_param_types(reg, "data/virtools_parameter_types.json"));
+
+    const nmo_type_descriptor_t *loaded_time_type =
+        nmo_type_registry_find_by_guid(reg, CKPGUID_TIME);
+    ASSERT_TRUE(loaded_time_type == time_type);
+    ASSERT_TRUE(nmo_guid_equals(loaded_time_type->base_type, CKPGUID_FLOAT));
+    ASSERT_EQ(NMO_OK, nmo_type_value_to_string(
+        &time_value, loaded_time_type, reg, buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("2.5 ms", buffer);
+
+    nmo_type_registry_destroy(reg);
+    nmo_arena_destroy(arena);
+}
+
 TEST(vt, script_param_type_loads_as_object_ref_alias) {
     nmo_context_t *ctx = create_ctx_with_data();
     ASSERT_TRUE(ctx != NULL);
@@ -464,6 +540,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(vt, object_like_primitive_classes_parse_object_ids_from_string);
     REGISTER_TEST(vt, raw_json_loader_marks_object_refs_and_parses_ids);
     REGISTER_TEST(vt, unbased_json_u32_primitives_parse_from_string);
+    REGISTER_TEST(vt, raw_json_loader_normalizes_unbased_u32_primitives_to_uint32_base);
+    REGISTER_TEST(vt, time_is_builtin_and_json_loader_does_not_override_it);
     REGISTER_TEST(vt, script_param_type_loads_as_object_ref_alias);
     REGISTER_TEST(vt, json_struct_param_types_parse_fields_with_offsets);
     REGISTER_TEST(vt, json_struct_param_types_roundtrip_zero_values);

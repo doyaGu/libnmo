@@ -255,9 +255,6 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
         }
     }
 
-    /* Patch vtables for JSON-loaded types (e.g. Time) */
-    nmo_builtin_types_patch_vtables(ctx->type_registry);
-
     /* Compute state layouts for all types (including those loaded by plugin) */
     nmo_type_registry_compute_state_layouts(ctx->type_registry);
 
