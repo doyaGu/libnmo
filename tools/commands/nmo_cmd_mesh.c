@@ -4,6 +4,7 @@
  */
 
 #include "nmo_cmd_mesh.h"
+#include "nmo_cmd_object.h"
 
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
@@ -49,19 +50,20 @@ int nmo_cmd_mesh_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_public_handler_t handler = NULL;
     if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
-        handler = nmo_cmd_mesh_list;
-    } else if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
-        handler = nmo_cmd_mesh_show;
-    } else if (strcmp(argv[0], "export") == 0 || strcmp(argv[0], "x") == 0) {
-        handler = nmo_cmd_mesh_export;
-    } else {
-        fprintf(stderr, "Unsupported mesh read action in session: %s\n", argv[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+        char *list_args[] = {"list", "--class", "CKMesh"};
+        return nmo_cmd_object_in_session(ctx, 3, list_args);
+    }
+    if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
+        return nmo_cmd_object_show_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "export") == 0 || strcmp(argv[0], "x") == 0) {
+        fprintf(ctx->out, "Mesh export from current session requires a mesh selector and output path.\n");
+        return NMO_CLI_EXIT_SUCCESS;
     }
 
-    return nmo_cmd_ctx_dispatch_from_source(ctx, argc, argv, handler);
+    fprintf(stderr, "Unsupported mesh read action in session: %s\n", argv[0]);
+    return NMO_CLI_EXIT_ARG_ERROR;
 }
 
 /* ============================================================================

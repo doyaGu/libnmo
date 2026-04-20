@@ -4,6 +4,7 @@
  */
 
 #include "nmo_cmd_animation.h"
+#include "nmo_cmd_object.h"
 
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
@@ -40,21 +41,21 @@ int nmo_cmd_animation_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_public_handler_t handler = NULL;
     if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
-        handler = nmo_cmd_animation_list;
-    } else if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
-        handler = nmo_cmd_animation_show;
-    } else if (strcmp(argv[0], "keys") == 0 || strcmp(argv[0], "k") == 0) {
-        handler = nmo_cmd_animation_keys;
-    } else if (strcmp(argv[0], "export") == 0 || strcmp(argv[0], "x") == 0) {
-        handler = nmo_cmd_animation_export;
-    } else {
-        fprintf(stderr, "Unsupported animation read action in session: %s\n", argv[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+        char *list_args[] = {"list", "--class", "CKObjectAnimation"};
+        return nmo_cmd_object_in_session(ctx, 3, list_args);
+    }
+    if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0 ||
+        strcmp(argv[0], "keys") == 0 || strcmp(argv[0], "k") == 0) {
+        return nmo_cmd_object_show_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "export") == 0 || strcmp(argv[0], "x") == 0) {
+        fprintf(ctx->out, "Animation export from current session requires an animation selector and output path.\n");
+        return NMO_CLI_EXIT_SUCCESS;
     }
 
-    return nmo_cmd_ctx_dispatch_from_source(ctx, argc, argv, handler);
+    fprintf(stderr, "Unsupported animation read action in session: %s\n", argv[0]);
+    return NMO_CLI_EXIT_ARG_ERROR;
 }
 
 /* ============================================================================

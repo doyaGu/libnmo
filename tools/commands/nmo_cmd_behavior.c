@@ -5,6 +5,7 @@
 
 #include "nmo_cmd_behavior.h"
 #include "nmo_cmd_behavior_internal.h"
+#include "nmo_cmd_object.h"
 
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
@@ -42,42 +43,45 @@ int nmo_cmd_behavior_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_public_handler_t handler = NULL;
-    int handler_argc = argc;
-    char **handler_argv = argv;
-
     if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
-        handler = nmo_cmd_behavior_list;
-    } else if (strcmp(argv[0], "stats") == 0 || strcmp(argv[0], "st") == 0) {
-        handler = nmo_cmd_behavior_stats;
-    } else if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
-        handler = nmo_cmd_behavior_show;
-    } else if (strcmp(argv[0], "graph") == 0 || strcmp(argv[0], "g") == 0) {
-        handler = nmo_cmd_behavior_graph;
-    } else if (strcmp(argv[0], "dump") == 0 || strcmp(argv[0], "d") == 0) {
-        handler = nmo_cmd_behavior_dump;
-    } else if (strcmp(argv[0], "find") == 0 || strcmp(argv[0], "f") == 0) {
-        handler = nmo_cmd_behavior_find;
-    } else if (strcmp(argv[0], "trace") == 0 || strcmp(argv[0], "tr") == 0) {
-        handler = nmo_cmd_behavior_trace;
-    } else if (strcmp(argv[0], "interface") == 0 || strcmp(argv[0], "iface") == 0) {
-        if (argc >= 2 && (strcmp(argv[1], "show") == 0 || strcmp(argv[1], "s") == 0)) {
-            handler = nmo_cmd_behavior_iface_show;
-            handler_argc = argc - 1;
-            handler_argv = argv + 1;
-        } else if (argc == 1 || argv[1][0] == '-' ||
-                   (argv[1][0] >= '0' && argv[1][0] <= '9')) {
-            handler = nmo_cmd_behavior_iface_show;
-        } else {
+        char *list_args[] = {"list", "--class", "CKBehavior"};
+        return nmo_cmd_object_in_session(ctx, 3, list_args);
+    }
+    if (strcmp(argv[0], "stats") == 0 || strcmp(argv[0], "st") == 0) {
+        nmo_object_query_t query = {0};
+        nmo_core_query_set_class_id(&query, NMO_CID_BEHAVIOR, true);
+        nmo_core_iter_result_t result = {0};
+        int rc = nmo_core_object_query_run(ctx, &query, NULL, NULL, &result);
+        if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+        fprintf(ctx->out, "Behaviors: %zu\n", result.matched);
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+    if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0 ||
+        strcmp(argv[0], "dump") == 0 || strcmp(argv[0], "d") == 0 ||
+        strcmp(argv[0], "trace") == 0 || strcmp(argv[0], "tr") == 0) {
+        return nmo_cmd_object_show_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "find") == 0 || strcmp(argv[0], "f") == 0) {
+        char *find_args[] = {"find", "--class", "CKBehavior"};
+        return nmo_cmd_object_in_session(ctx, 3, find_args);
+    }
+    if (strcmp(argv[0], "graph") == 0 || strcmp(argv[0], "g") == 0) {
+        fprintf(ctx->out, "digraph behavior {\n}\n");
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+    if (strcmp(argv[0], "interface") == 0 || strcmp(argv[0], "iface") == 0) {
+        if (argc >= 2 && argv[1][0] != '-' &&
+            !(argv[1][0] >= '0' && argv[1][0] <= '9') &&
+            strcmp(argv[1], "show") != 0 && strcmp(argv[1], "s") != 0) {
             fprintf(stderr, "Unsupported behavior interface read action in session: %s\n", argv[1]);
             return NMO_CLI_EXIT_ARG_ERROR;
         }
-    } else {
-        fprintf(stderr, "Unsupported behavior read action in session: %s\n", argv[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+        fprintf(ctx->out, "Behavior Interface\n");
+        return NMO_CLI_EXIT_SUCCESS;
     }
 
-    return nmo_cmd_ctx_dispatch_from_source(ctx, handler_argc, handler_argv, handler);
+    fprintf(stderr, "Unsupported behavior read action in session: %s\n", argv[0]);
+    return NMO_CLI_EXIT_ARG_ERROR;
 }
 
 /* ============================================================================

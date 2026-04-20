@@ -4,6 +4,7 @@
  */
 
 #include "nmo_cmd_entity.h"
+#include "nmo_cmd_object.h"
 
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
@@ -27,26 +28,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-
-int nmo_cmd_entity_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
-{
-    if (!ctx || argc < 1 || !argv || !argv[0]) {
-        fprintf(stderr, "Usage: entity list|show ...\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    nmo_cmd_public_handler_t handler = NULL;
-    if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
-        handler = nmo_cmd_entity_list;
-    } else if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
-        handler = nmo_cmd_entity_show;
-    } else {
-        fprintf(stderr, "Unsupported entity read action in session: %s\n", argv[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    return nmo_cmd_ctx_dispatch_from_source(ctx, argc, argv, handler);
-}
 
 /* ============================================================================
  * Helpers
@@ -198,7 +179,7 @@ static int entity_list_table_visitor(size_t index,
  * entity list
  * ============================================================================ */
 
-int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+static int entity_list_parse(int argc, char **argv, const char **class_filter) {
     static const nmo_opt_def_t opts[] = {
         {"--class", "-c", NMO_OPT_STRING, "Filter by class name (e.g. CKCamera, CKLight)"},
     };
@@ -207,12 +188,11 @@ int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *class_filter = vals[0].present ? vals[0].val.str : NULL;
+    *class_filter = vals[0].present ? vals[0].val.str : NULL;
+    return NMO_CLI_EXIT_SUCCESS;
+}
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
+static int entity_list_run(nmo_cmd_ctx_t *c, const char *class_filter) {
     nmo_object_query_t entity_query = {0};
     nmo_core_query_set_class_id(&entity_query, NMO_CID_3DENTITY, true);
 
@@ -222,30 +202,30 @@ int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
             .class_name = class_filter,
             .include_derived_classes = true,
         };
-        rc = nmo_core_query_build(&c, &entity_query, NULL, &query_opts);
+        int rc = nmo_core_query_build(c, &entity_query, NULL, &query_opts);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
-            return nmo_cmd_ctx_done(&c, rc);
+            return rc;
         }
         class_filter_is_entity =
-            nmo_core_class_derives(&c, entity_query.class_id, NMO_CID_3DENTITY);
+            nmo_core_class_derives(c, entity_query.class_id, NMO_CID_3DENTITY);
     }
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
         entity_list_json_data_t jd = { .doc = doc, .arr = arr };
         if (class_filter_is_entity) {
-            rc = nmo_core_object_query_run(&c, &entity_query,
-                                           entity_list_json_visitor, &jd, NULL);
+            int rc = nmo_core_object_query_run(c, &entity_query,
+                                               entity_list_json_visitor, &jd, NULL);
             if (rc != NMO_CLI_EXIT_SUCCESS) {
-                return nmo_cmd_ctx_done(&c, rc);
+                return rc;
             }
         }
 
         yyjson_mut_obj_add_uint(doc, data, "count", jd.found);
         yyjson_mut_obj_add_val(doc, data, "entities", arr);
-        nmo_cmd_ctx_json_end(&c, doc, data, "entity.list");
+        nmo_cmd_ctx_json_end(c, doc, data, "entity.list");
     } else {
         static const nmo_cli_table_col_t columns[] = {
             {"ID",       NMO_CLI_ALIGN_RIGHT, 6,  0},
@@ -259,20 +239,33 @@ int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
         entity_list_table_data_t td = { .table = &table };
         if (class_filter_is_entity) {
-            rc = nmo_core_object_query_run(&c, &entity_query,
-                                           entity_list_table_visitor, &td, NULL);
+            int rc = nmo_core_object_query_run(c, &entity_query,
+                                               entity_list_table_visitor, &td, NULL);
             if (rc != NMO_CLI_EXIT_SUCCESS) {
                 nmo_cli_table_free(&table);
-                return nmo_cmd_ctx_done(&c, rc);
+                return rc;
             }
         }
 
-        fprintf(c.out, "3D Entities: %u\n\n", td.found);
-        nmo_cli_table_print(&table, c.out, c.colorize);
+        fprintf(c->out, "3D Entities: %u\n\n", td.found);
+        nmo_cli_table_print(&table, c->out, c->colorize);
         nmo_cli_table_free(&table);
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    const char *class_filter = NULL;
+    int rc = entity_list_parse(argc, argv, &class_filter);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+
+    nmo_cmd_ctx_t c;
+    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    rc = entity_list_run(&c, class_filter);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
@@ -580,6 +573,62 @@ int nmo_cmd_entity_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+static int entity_validate_show_selector(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    static const nmo_opt_def_t opts[] = {
+        {"--id",   "-i", NMO_OPT_UINT,   "Entity object ID"},
+        {"--name", "-n", NMO_OPT_STRING, "Entity object name"},
+    };
+    enum { OPT_ID, OPT_NAME, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = (!has_selector_opt && r.pos_count == 1) ? r.pos_args[0] : NULL;
+    if (!has_selector_opt && positional_id == NULL) {
+        fprintf(stderr, "Usage: entity show [--id <id> | --name <name> | <id>]\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_core_object_selector_t selector = {
+        .has_id = vals[OPT_ID].present,
+        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .positional_id = positional_id,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .required_base_class = NMO_CID_3DENTITY,
+        .selector_label = "Entity",
+        .type_label = "CK3dEntity",
+    };
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t obj_id = 0;
+    return nmo_core_resolve_one_object(ctx, &selector, &obj, &obj_id);
+}
+
+int nmo_cmd_entity_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    if (!ctx || argc < 1 || !argv || !argv[0]) {
+        fprintf(stderr, "Usage: entity list|show ...\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
+        const char *class_filter = NULL;
+        int rc = entity_list_parse(argc, argv, &class_filter);
+        if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+        return entity_list_run(ctx, class_filter);
+    }
+    if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
+        int rc = entity_validate_show_selector(ctx, argc, argv);
+        if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+        return nmo_cmd_object_show_in_session(ctx, argc, argv);
+    }
+
+    fprintf(stderr, "Unsupported entity read action in session: %s\n", argv[0]);
+    return NMO_CLI_EXIT_ARG_ERROR;
 }
 
 /* ============================================================================

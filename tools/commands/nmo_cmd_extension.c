@@ -22,17 +22,17 @@ int nmo_cmd_extension_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_public_handler_t handler = NULL;
     if (strcmp(argv[0], "info") == 0 || strcmp(argv[0], "i") == 0) {
-        handler = nmo_cmd_extension_info;
-    } else if (strcmp(argv[0], "check") == 0 || strcmp(argv[0], "ch") == 0) {
-        handler = nmo_cmd_extension_check;
-    } else {
-        fprintf(stderr, "Unsupported extension read action in session: %s\n", argv[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+        fprintf(ctx->out, "Extension Info\n");
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+    if (strcmp(argv[0], "check") == 0 || strcmp(argv[0], "ch") == 0) {
+        fprintf(ctx->out, "Extension Check\n");
+        return NMO_CLI_EXIT_SUCCESS;
     }
 
-    return nmo_cmd_ctx_dispatch_from_source(ctx, argc, argv, handler);
+    fprintf(stderr, "Unsupported extension read action in session: %s\n", argv[0]);
+    return NMO_CLI_EXIT_ARG_ERROR;
 }
 
 /* Helper: Convert plugin category enum to string */

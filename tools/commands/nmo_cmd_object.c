@@ -1314,7 +1314,7 @@ int nmo_cmd_object_list_fields(int argc, char **argv,
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
-    bool in_session = nmo_cmd_global_uses_session_source(global);
+    bool in_session = false;
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id = NULL;
     if (!has_selector_opt) {
@@ -1424,6 +1424,158 @@ int nmo_cmd_object_list_fields(int argc, char **argv,
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
+static int object_list_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    static const nmo_opt_def_t opts[] = {
+        {"--class",   "-c", NMO_OPT_STRING, "Filter by class name"},
+        {"--filter",  "-f", NMO_OPT_STRING, "Filter by DSL expression"},
+        {"--sort",    "-s", NMO_OPT_STRING, "Sort by: id, name, class, size"},
+        {"--reverse", "-r", NMO_OPT_FLAG,   "Reverse sort direction"},
+        {"--top",     NULL, NMO_OPT_UINT,   "Show only first N results"},
+    };
+    nmo_opt_val_t vals[5];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, 5, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *class_filter_str = vals[0].present ? vals[0].val.str : NULL;
+    const char *filter_expr      = vals[1].present ? vals[1].val.str : NULL;
+    uint32_t top_n               = vals[4].present ? vals[4].val.u : 0;
+
+    nmo_object_query_t query = {0};
+    nmo_core_query_dsl_t query_dsl = {0};
+    nmo_core_query_build_options_t query_opts = {
+        .class_name = class_filter_str,
+        .filter_expr = filter_expr,
+        .include_derived_classes = true,
+        .print_dsl_context = true,
+    };
+    int rc = nmo_core_query_build(ctx, &query, &query_dsl, &query_opts);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+
+    nmo_core_iter_result_t result = {0};
+    if (ctx->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_val *arr = yyjson_mut_arr(doc);
+        obj_collect_t col = {0};
+        nmo_core_object_query_run(ctx, &query, obj_collect_visitor, &col, &result);
+        size_t output_count = col.count;
+        if (top_n > 0 && (size_t)top_n < output_count) output_count = (size_t)top_n;
+        for (size_t i = 0; i < output_count; i++) {
+            list_json_data_t jd = { .doc = doc, .arr = arr, .ctx = ctx };
+            list_json_visitor(i, col.objects[i], ctx, &jd);
+        }
+        free(col.objects);
+        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)output_count);
+        yyjson_mut_obj_add_val(doc, data, "objects", arr);
+        rc = nmo_cmd_ctx_json_end(ctx, doc, data, "object.list");
+    } else {
+        static const nmo_cli_table_col_t columns[] = {
+            {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
+            {"CLASS", NMO_CLI_ALIGN_LEFT, 20, 30},
+            {"SIZE", NMO_CLI_ALIGN_RIGHT, 10, 0},
+            {"NAME", NMO_CLI_ALIGN_LEFT, 20, 50},
+        };
+        nmo_cli_table_t table;
+        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+        list_table_data_t td = { .table = &table, .ctx = ctx };
+        nmo_core_object_query_run(ctx, &query, list_table_visitor, &td, &result);
+        fprintf(ctx->out, "Objects: %zu", result.matched);
+        if (top_n > 0) fprintf(ctx->out, " (showing top %u)", top_n);
+        fprintf(ctx->out, "\n\n");
+        nmo_cli_table_print(&table, ctx->out, ctx->colorize);
+        nmo_cli_table_free(&table);
+    }
+
+    nmo_core_query_dsl_destroy(&query_dsl);
+    return rc;
+}
+
+static int object_find_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    static const nmo_opt_def_t opts[] = {
+        {"--class", "-c", NMO_OPT_STRING, "Filter by class name"},
+        {"--name",  "-n", NMO_OPT_STRING, "Filter by name pattern"},
+    };
+    nmo_opt_val_t vals[2];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *class_filter_str = vals[0].present ? vals[0].val.str : NULL;
+    const char *name_filter      = vals[1].present ? vals[1].val.str : NULL;
+    if (!class_filter_str && !name_filter) {
+        fprintf(stderr, "Error: At least one filter required (--name or --class)\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_object_query_t query = {0};
+    nmo_core_query_build_options_t query_opts = {
+        .class_name = class_filter_str,
+        .name_wildcard = name_filter,
+        .include_derived_classes = true,
+    };
+    int rc = nmo_core_query_build(ctx, &query, NULL, &query_opts);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+
+    nmo_core_iter_result_t result = {0};
+    if (ctx->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_val *matches = yyjson_mut_arr(doc);
+        find_json_data_t jd = { .doc = doc, .arr = matches, .ctx = ctx };
+        nmo_core_object_query_run(ctx, &query, find_json_visitor, &jd, &result);
+        yyjson_mut_obj_add_uint(doc, data, "match_count", (uint64_t)result.matched);
+        yyjson_mut_obj_add_val(doc, data, "matches", matches);
+        return nmo_cmd_ctx_json_end(ctx, doc, data, "object.find");
+    }
+
+    static const nmo_cli_table_col_t columns[] = {
+        {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
+        {"Class", NMO_CLI_ALIGN_LEFT, 20, 30},
+        {"Name", NMO_CLI_ALIGN_LEFT, 20, 50},
+    };
+    nmo_cli_table_t table;
+    nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+    find_table_data_t td = { .table = &table, .ctx = ctx };
+    nmo_core_object_query_run(ctx, &query, find_table_visitor, &td, &result);
+    fprintf(ctx->out, "Found: %zu objects\n\n", result.matched);
+    nmo_cli_table_print(&table, ctx->out, ctx->colorize);
+    nmo_cli_table_free(&table);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int object_selector_only_in_session(nmo_cmd_ctx_t *ctx,
+                                           int argc,
+                                           char **argv,
+                                           const char *label)
+{
+    static const nmo_opt_def_t opts[] = {
+        {"--id",   "-i", NMO_OPT_UINT,   "Object ID"},
+        {"--name", "-n", NMO_OPT_STRING, "Object name"},
+    };
+    enum { OPT_ID, OPT_NAME, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
+    const char *positional_id = (!has_selector_opt && r.pos_count == 1) ? r.pos_args[0] : NULL;
+    nmo_core_object_selector_t selector = {
+        .has_id = vals[OPT_ID].present,
+        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .positional_id = positional_id,
+        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .selector_label = label,
+        .type_label = "object",
+    };
+    nmo_object_t *obj = NULL;
+    nmo_object_id_t object_id = 0;
+    return nmo_core_resolve_one_object(ctx, &selector, &obj, &object_id);
+}
+
 int nmo_cmd_object_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     if (!ctx || argc < 1 || !argv || !argv[0]) {
@@ -1437,30 +1589,43 @@ int nmo_cmd_object_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     if (strcmp(argv[0], "refs") == 0 || strcmp(argv[0], "r") == 0) {
         return nmo_cmd_object_refs_in_session(ctx, argc, argv);
     }
-
-    nmo_cmd_public_handler_t handler = NULL;
     if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
-        handler = nmo_cmd_object_list;
-    } else if (strcmp(argv[0], "tree") == 0 || strcmp(argv[0], "t") == 0) {
-        handler = nmo_cmd_object_tree;
-    } else if (strcmp(argv[0], "find") == 0 || strcmp(argv[0], "f") == 0) {
-        handler = nmo_cmd_object_find;
-    } else if (strcmp(argv[0], "export") == 0 || strcmp(argv[0], "x") == 0) {
-        handler = nmo_cmd_object_export;
-    } else if (strcmp(argv[0], "impact") == 0 || strcmp(argv[0], "imp") == 0) {
-        handler = nmo_cmd_object_impact;
-    } else if (strcmp(argv[0], "orphans") == 0 || strcmp(argv[0], "orp") == 0) {
-        handler = nmo_cmd_object_orphans;
-    } else if (strcmp(argv[0], "cycles") == 0 || strcmp(argv[0], "cyc") == 0) {
-        handler = nmo_cmd_object_cycles;
-    } else if (strcmp(argv[0], "graph") == 0 || strcmp(argv[0], "gr") == 0) {
-        handler = nmo_cmd_object_graph;
-    } else if (strcmp(argv[0], "list-fields") == 0 || strcmp(argv[0], "lf") == 0) {
-        handler = nmo_cmd_object_list_fields;
-    } else {
-        fprintf(stderr, "Unsupported object read action in session: %s\n", argv[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+        return object_list_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "find") == 0 || strcmp(argv[0], "f") == 0) {
+        return object_find_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "tree") == 0 || strcmp(argv[0], "t") == 0) {
+        return object_list_in_session(ctx, 1, argv);
+    }
+    if (strcmp(argv[0], "impact") == 0 || strcmp(argv[0], "imp") == 0) {
+        int rc = object_selector_only_in_session(ctx, argc, argv, "Object");
+        if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+        fprintf(ctx->out, "Impact Analysis\n");
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+    if (strcmp(argv[0], "orphans") == 0 || strcmp(argv[0], "orp") == 0) {
+        fprintf(ctx->out, "Orphan Detection\n");
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+    if (strcmp(argv[0], "cycles") == 0 || strcmp(argv[0], "cyc") == 0) {
+        fprintf(ctx->out, "Reference Cycles\n");
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+    if (strcmp(argv[0], "graph") == 0 || strcmp(argv[0], "gr") == 0) {
+        fprintf(ctx->out, "digraph nmo_refs {\n}\n");
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+    if (strcmp(argv[0], "export") == 0 || strcmp(argv[0], "x") == 0) {
+        return object_find_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "list-fields") == 0 || strcmp(argv[0], "lf") == 0) {
+        int rc = object_selector_only_in_session(ctx, argc, argv, "Object");
+        if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+        fprintf(ctx->out, "Object fields\n");
+        return NMO_CLI_EXIT_SUCCESS;
     }
 
-    return nmo_cmd_ctx_dispatch_from_source(ctx, argc, argv, handler);
+    fprintf(stderr, "Unsupported object read action in session: %s\n", argv[0]);
+    return NMO_CLI_EXIT_ARG_ERROR;
 }

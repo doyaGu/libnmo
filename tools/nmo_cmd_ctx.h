@@ -59,9 +59,6 @@ typedef struct nmo_cmd_in_session_result {
     bool dry_run;
 } nmo_cmd_in_session_result_t;
 
-typedef int (*nmo_cmd_public_handler_t)(int argc, char **argv,
-                                        const nmo_cli_global_opts_t *global);
-
 typedef enum nmo_cmd_source_kind {
     NMO_CMD_SOURCE_FILE_OPERAND = 0,
     NMO_CMD_SOURCE_EXPLICIT_FILE,
@@ -77,16 +74,6 @@ typedef struct nmo_cmd_source {
     const char *source_label;
     const nmo_load_options_t *load_options;
 } nmo_cmd_source_t;
-
-typedef struct nmo_cmd_invocation {
-    nmo_cli_global_opts_t global;
-    const nmo_cmd_source_t *source;
-} nmo_cmd_invocation_t;
-
-const nmo_cmd_source_t *nmo_cmd_global_source(
-    const nmo_cli_global_opts_t *global);
-bool nmo_cmd_global_uses_session_source(
-    const nmo_cli_global_opts_t *global);
 
 /**
  * @brief Initialize command context: find file arg, open session, open output.
@@ -182,18 +169,6 @@ void nmo_cmd_ctx_init_from_repl(nmo_cmd_ctx_t *c,
  * @return exit_code (pass-through for convenient `return nmo_cmd_ctx_done(&c, 0)`)
  */
 int nmo_cmd_ctx_done(nmo_cmd_ctx_t *c, int exit_code);
-
-/**
- * @brief Run a command family action against an existing session context.
- *
- * Family-level REPL dispatchers use this to reuse their public parse/report
- * core while nmo_cmd_ctx_init() resolves the session from ctx rather than
- * opening a file. The caller passes command-local argv without a file operand.
- */
-int nmo_cmd_ctx_dispatch_from_source(nmo_cmd_ctx_t *ctx,
-                                     int argc,
-                                     char **argv,
-                                     nmo_cmd_public_handler_t handler);
 
 /**
  * @brief Begin a JSON document for command output.

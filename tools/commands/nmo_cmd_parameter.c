@@ -281,6 +281,59 @@ static int parameter_list_single(const char *file_path,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+static int parameter_list_run(nmo_cmd_ctx_t *c) {
+    if (!c->registry) {
+        fprintf(stderr, "Error: Type registry unavailable\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_object_query_t query = {
+        .predicate = parameter_query_predicate,
+        .predicate_user_data = (void *)c->registry,
+    };
+
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+
+        yyjson_mut_val *arr = yyjson_mut_arr(doc);
+        parameter_list_data_t ld = { .doc = doc, .arr = arr };
+        int rc = nmo_core_object_query_run(c, &query,
+                                           parameter_list_core_visitor, &ld, NULL);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            return rc;
+        }
+
+        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)ld.count);
+        yyjson_mut_obj_add_val(doc, data, "objects", arr);
+
+        nmo_cmd_ctx_json_end(c, doc, data, "parameter.list");
+    } else {
+        static const nmo_cli_table_col_t columns[] = {
+            {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
+            {"Class", NMO_CLI_ALIGN_LEFT, 20, 30},
+            {"Name", NMO_CLI_ALIGN_LEFT, 20, 50},
+        };
+
+        nmo_cli_table_t table;
+        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+
+        parameter_list_data_t ld = { .table = &table };
+        int rc = nmo_core_object_query_run(c, &query,
+                                           parameter_list_core_visitor, &ld, NULL);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            nmo_cli_table_free(&table);
+            return rc;
+        }
+
+        fprintf(c->out, "Parameters: %zu\n\n", ld.count);
+        nmo_cli_table_print(&table, c->out, c->colorize);
+        nmo_cli_table_free(&table);
+    }
+
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     /* Batch mode */
     if (global->batch_mode) {
@@ -300,56 +353,8 @@ int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *g
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    if (!c.registry) {
-        fprintf(stderr, "Error: Type registry unavailable\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    nmo_object_query_t query = {
-        .predicate = parameter_query_predicate,
-        .predicate_user_data = (void *)c.registry,
-    };
-
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        parameter_list_data_t ld = { .doc = doc, .arr = arr };
-        rc = nmo_core_object_query_run(&c, &query,
-                                       parameter_list_core_visitor, &ld, NULL);
-        if (rc != NMO_CLI_EXIT_SUCCESS) {
-            return nmo_cmd_ctx_done(&c, rc);
-        }
-
-        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)ld.count);
-        yyjson_mut_obj_add_val(doc, data, "objects", arr);
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "parameter.list");
-    } else {
-        static const nmo_cli_table_col_t columns[] = {
-            {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
-            {"Class", NMO_CLI_ALIGN_LEFT, 20, 30},
-            {"Name", NMO_CLI_ALIGN_LEFT, 20, 50},
-        };
-
-        nmo_cli_table_t table;
-        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-
-        parameter_list_data_t ld = { .table = &table };
-        rc = nmo_core_object_query_run(&c, &query,
-                                       parameter_list_core_visitor, &ld, NULL);
-        if (rc != NMO_CLI_EXIT_SUCCESS) {
-            nmo_cli_table_free(&table);
-            return nmo_cmd_ctx_done(&c, rc);
-        }
-
-        fprintf(c.out, "Parameters: %zu\n\n", ld.count);
-        nmo_cli_table_print(&table, c.out, c.colorize);
-        nmo_cli_table_free(&table);
-    }
-
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    rc = parameter_list_run(&c);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 static int parameter_show_run(nmo_cmd_ctx_t *ctx, uint32_t object_id,
@@ -1633,8 +1638,7 @@ int nmo_cmd_parameter_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return nmo_cmd_parameter_dump_in_session(ctx, argc, argv);
     }
     if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
-        return nmo_cmd_ctx_dispatch_from_source(
-            ctx, argc, argv, nmo_cmd_parameter_list);
+        return parameter_list_run(ctx);
     }
 
     fprintf(stderr, "Unsupported parameter read action in session: %s\n", argv[0]);

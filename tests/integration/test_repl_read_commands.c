@@ -574,6 +574,25 @@ TEST(repl_read, chunk_session_dispatch_does_not_use_ctx_dispatch_helper) {
                                "nmo_cmd_invocation_t");
 }
 
+TEST(repl_read, command_source_dispatch_bridge_symbols_are_removed) {
+    assert_source_not_contains("tools/nmo_cmd_ctx.h",
+                               "nmo_cmd_ctx_dispatch_from_source");
+    assert_source_not_contains("tools/nmo_cmd_ctx.c",
+                               "nmo_cmd_ctx_dispatch_from_source");
+    assert_source_not_contains("tools/nmo_cmd_ctx.h",
+                               "nmo_cmd_public_handler_t");
+    assert_source_not_contains("tools/nmo_cmd_ctx.h",
+                               "nmo_cmd_invocation_t");
+    assert_source_not_contains("tools/nmo_cmd_ctx.h",
+                               "nmo_cmd_global_source");
+    assert_source_not_contains("tools/nmo_cmd_ctx.c",
+                               "nmo_cmd_global_source");
+    assert_source_not_contains("tools/nmo_cmd_ctx.h",
+                               "nmo_cmd_global_uses_session_source");
+    assert_source_not_contains("tools/nmo_cmd_ctx.c",
+                               "nmo_cmd_global_uses_session_source");
+}
+
 TEST(repl_read, diff_session_dispatch_does_not_use_ctx_dispatch_helper) {
     assert_source_not_contains("tools/commands/nmo_cmd_diff.c",
                                "nmo_cmd_ctx_dispatch_from_source");
@@ -703,6 +722,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, no_active_session_adapter_symbols_remain);
     REGISTER_TEST(repl_read, command_source_is_not_a_global_cli_option);
     REGISTER_TEST(repl_read, chunk_session_dispatch_does_not_use_ctx_dispatch_helper);
+    REGISTER_TEST(repl_read, command_source_dispatch_bridge_symbols_are_removed);
     REGISTER_TEST(repl_read, diff_session_dispatch_does_not_use_ctx_dispatch_helper);
     REGISTER_TEST(repl_read, explicit_session_source_initializes_command_context);
     REGISTER_TEST(repl_read, registry_dispatches_session_reads);

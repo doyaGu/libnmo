@@ -336,7 +336,7 @@ int nmo_cmd_object_impact(int argc, char **argv, const nmo_cli_global_opts_t *gl
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    bool in_session = nmo_cmd_global_uses_session_source(global);
+    bool in_session = false;
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id = NULL;
     if (!has_selector_opt) {

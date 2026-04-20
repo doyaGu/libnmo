@@ -19,26 +19,6 @@
 #include <stdio.h>
 #include <string.h>
 
-int nmo_cmd_material_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
-{
-    if (!ctx || argc < 1 || !argv || !argv[0]) {
-        fprintf(stderr, "Usage: material list|show ...\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    nmo_cmd_public_handler_t handler = NULL;
-    if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
-        handler = nmo_cmd_material_list;
-    } else if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
-        handler = nmo_cmd_material_show;
-    } else {
-        fprintf(stderr, "Unsupported material read action in session: %s\n", argv[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    return nmo_cmd_ctx_dispatch_from_source(ctx, argc, argv, handler);
-}
-
 /* ============================================================================
  * Helpers
  * ============================================================================ */
@@ -155,32 +135,24 @@ static int material_list_table_visitor(size_t index,
     return 0;
 }
 
-/* ============================================================================
- * material list
- * ============================================================================ */
-
-int nmo_cmd_material_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
+static int material_list_run(nmo_cmd_ctx_t *c) {
     nmo_object_query_t query = {0};
     nmo_core_query_set_class_id(&query, NMO_CID_MATERIAL, false);
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
         material_list_json_data_t jd = { .doc = doc, .arr = arr };
-        rc = nmo_core_object_query_run(&c, &query,
-                                       material_list_json_visitor, &jd, NULL);
+        int rc = nmo_core_object_query_run(c, &query,
+                                           material_list_json_visitor, &jd, NULL);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
-            return nmo_cmd_ctx_done(&c, rc);
+            return rc;
         }
 
         yyjson_mut_obj_add_uint(doc, data, "count", jd.found);
         yyjson_mut_obj_add_val(doc, data, "materials", arr);
-        nmo_cmd_ctx_json_end(&c, doc, data, "material.list");
+        nmo_cmd_ctx_json_end(c, doc, data, "material.list");
     } else {
         static const nmo_cli_table_col_t columns[] = {
             {"ID",       NMO_CLI_ALIGN_RIGHT, 6,  0},
@@ -192,26 +164,46 @@ int nmo_cmd_material_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
         material_list_table_data_t td = { .table = &table };
-        rc = nmo_core_object_query_run(&c, &query,
-                                       material_list_table_visitor, &td, NULL);
+        int rc = nmo_core_object_query_run(c, &query,
+                                           material_list_table_visitor, &td, NULL);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
             nmo_cli_table_free(&table);
-            return nmo_cmd_ctx_done(&c, rc);
+            return rc;
         }
 
-        fprintf(c.out, "Materials: %u\n\n", td.found);
-        nmo_cli_table_print(&table, c.out, c.colorize);
+        fprintf(c->out, "Materials: %u\n\n", td.found);
+        nmo_cli_table_print(&table, c->out, c->colorize);
         nmo_cli_table_free(&table);
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+/* ============================================================================
+ * material list
+ * ============================================================================ */
+
+int nmo_cmd_material_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    rc = material_list_run(&c);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
  * material show
  * ============================================================================ */
 
-int nmo_cmd_material_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+typedef struct material_show_args {
+    nmo_core_object_selector_t selector;
+} material_show_args_t;
+
+static int material_show_parse(int argc,
+                               char **argv,
+                               bool in_session,
+                               material_show_args_t *args) {
     static const nmo_opt_def_t opts[] = {
         {"--id",   "-i", NMO_OPT_UINT,   "Material object ID"},
         {"--name", "-n", NMO_OPT_STRING, "Material object name"},
@@ -223,35 +215,42 @@ int nmo_cmd_material_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
-    const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
+    const char *positional_id =
+        (!has_selector_opt && r.pos_count >= (in_session ? 1u : 2u)) ? r.pos_args[0] : NULL;
+    if (in_session && !has_selector_opt && r.pos_count != 1) {
+        fprintf(stderr, "Usage: material show [--id <id> | --name <name> | <id>]\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
-    nmo_core_object_selector_t selector = {
-        .has_id = vals[OPT_ID].present,
-        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
-        .positional_id = positional_id,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
-        .required_base_class = NMO_CID_MATERIAL,
-        .selector_label = "Material",
-        .type_label = "CKMaterial",
+    *args = (material_show_args_t){
+        .selector = {
+            .has_id = vals[OPT_ID].present,
+            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .positional_id = positional_id,
+            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .required_base_class = NMO_CID_MATERIAL,
+            .selector_label = "Material",
+            .type_label = "CKMaterial",
+        },
     };
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int material_show_run(nmo_cmd_ctx_t *c, const material_show_args_t *args) {
     nmo_object_t *obj = NULL;
     nmo_object_id_t obj_id = 0;
-    rc = nmo_core_resolve_one_object(&c, &selector, &obj, &obj_id);
+    int rc = nmo_core_resolve_one_object(c, &args->selector, &obj, &obj_id);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         fprintf(stderr, "Usage: nmo material show [--id <id> | --name <name> | <id>] <file>\n");
-        return nmo_cmd_ctx_done(&c, rc);
+        return rc;
     }
 
     const char *name = nmo_object_get_name(obj);
     const nmo_material_state_t *ms =
         (const nmo_material_state_t *)nmo_object_get_state(obj);
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_obj_add_uint(doc, data, "id", obj_id);
@@ -280,7 +279,7 @@ int nmo_cmd_material_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                     yyjson_mut_val *tref = yyjson_mut_obj(doc);
                     yyjson_mut_obj_add_uint(doc, tref, "slot", (uint64_t)ti);
                     yyjson_mut_obj_add_uint(doc, tref, "id", ms->texture_ids[ti]);
-                    const char *tn = resolve_name(&c, ms->texture_ids[ti]);
+                    const char *tn = resolve_name(c, ms->texture_ids[ti]);
                     if (tn && tn[0]) {
                         nmo_cli_json_add_str_safe(doc, tref, "name", tn);
                     }
@@ -302,18 +301,18 @@ int nmo_cmd_material_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             yyjson_mut_obj_add_null(doc, data, "state");
         }
 
-        nmo_cmd_ctx_json_end(&c, doc, data, "material.show");
+        nmo_cmd_ctx_json_end(c, doc, data, "material.show");
     } else {
-        nmo_cli_print_heading(c.out, "Material Details", c.colorize);
+        nmo_cli_print_heading(c->out, "Material Details", c->colorize);
 
         char buf[128];
         snprintf(buf, sizeof(buf), "#%u (%s)", obj_id,
                  (name && name[0]) ? name : "(unnamed)");
-        nmo_cli_print_kv(c.out, "ID / Name", buf, 20, c.colorize);
+        nmo_cli_print_kv(c->out, "ID / Name", buf, 20, c->colorize);
 
         if (!ms) {
-            fprintf(c.out, "\n  (no deserialized state)\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+            fprintf(c->out, "\n  (no deserialized state)\n");
+            return NMO_CLI_EXIT_SUCCESS;
         }
 
         /* Colors */
@@ -323,58 +322,92 @@ int nmo_cmd_material_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
         format_argb(hex_buf, sizeof(hex_buf), ms->diffuse_color);
         format_color_components(comp_buf, sizeof(comp_buf), ms->diffuse_color);
         snprintf(buf, sizeof(buf), "%s  %s", hex_buf, comp_buf);
-        nmo_cli_print_kv(c.out, "Diffuse", buf, 20, c.colorize);
+        nmo_cli_print_kv(c->out, "Diffuse", buf, 20, c->colorize);
 
         format_argb(hex_buf, sizeof(hex_buf), ms->ambient_color);
         format_color_components(comp_buf, sizeof(comp_buf), ms->ambient_color);
         snprintf(buf, sizeof(buf), "%s  %s", hex_buf, comp_buf);
-        nmo_cli_print_kv(c.out, "Ambient", buf, 20, c.colorize);
+        nmo_cli_print_kv(c->out, "Ambient", buf, 20, c->colorize);
 
         format_argb(hex_buf, sizeof(hex_buf), ms->specular_color);
         format_color_components(comp_buf, sizeof(comp_buf), ms->specular_color);
         snprintf(buf, sizeof(buf), "%s  %s", hex_buf, comp_buf);
-        nmo_cli_print_kv(c.out, "Specular", buf, 20, c.colorize);
+        nmo_cli_print_kv(c->out, "Specular", buf, 20, c->colorize);
 
         format_argb(hex_buf, sizeof(hex_buf), ms->emissive_color);
         format_color_components(comp_buf, sizeof(comp_buf), ms->emissive_color);
         snprintf(buf, sizeof(buf), "%s  %s", hex_buf, comp_buf);
-        nmo_cli_print_kv(c.out, "Emissive", buf, 20, c.colorize);
+        nmo_cli_print_kv(c->out, "Emissive", buf, 20, c->colorize);
 
         snprintf(buf, sizeof(buf), "%.4f", (double)ms->specular_power);
-        nmo_cli_print_kv(c.out, "Specular Power", buf, 20, c.colorize);
+        nmo_cli_print_kv(c->out, "Specular Power", buf, 20, c->colorize);
 
         /* Texture references */
-        fprintf(c.out, "\nTextures:\n");
+        fprintf(c->out, "\nTextures:\n");
         bool any_tex = false;
         for (int ti = 0; ti < 4; ++ti) {
             if (ms->texture_ids[ti]) {
-                const char *tn = resolve_name(&c, ms->texture_ids[ti]);
+                const char *tn = resolve_name(c, ms->texture_ids[ti]);
                 if (tn && tn[0]) {
-                    fprintf(c.out, "  [%d] #%u (%s)\n", ti, ms->texture_ids[ti], tn);
+                    fprintf(c->out, "  [%d] #%u (%s)\n", ti, ms->texture_ids[ti], tn);
                 } else {
-                    fprintf(c.out, "  [%d] #%u\n", ti, ms->texture_ids[ti]);
+                    fprintf(c->out, "  [%d] #%u\n", ti, ms->texture_ids[ti]);
                 }
                 any_tex = true;
             }
         }
         if (!any_tex) {
-            fprintf(c.out, "  (none)\n");
+            fprintf(c->out, "  (none)\n");
         }
 
         /* Packed render settings */
         snprintf(buf, sizeof(buf), "0x%08X", ms->packed_modes);
-        nmo_cli_print_kv(c.out, "Packed Modes", buf, 20, c.colorize);
+        nmo_cli_print_kv(c->out, "Packed Modes", buf, 20, c->colorize);
 
         snprintf(buf, sizeof(buf), "0x%08X", ms->packed_flags);
-        nmo_cli_print_kv(c.out, "Packed Flags", buf, 20, c.colorize);
+        nmo_cli_print_kv(c->out, "Packed Flags", buf, 20, c->colorize);
 
         if (ms->has_effect) {
             snprintf(buf, sizeof(buf), "%u", ms->effect);
-            nmo_cli_print_kv(c.out, "Effect", buf, 20, c.colorize);
+            nmo_cli_print_kv(c->out, "Effect", buf, 20, c->colorize);
         }
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_material_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    material_show_args_t args;
+    int rc = material_show_parse(argc, argv, false, &args);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+
+    nmo_cmd_ctx_t c;
+    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    rc = material_show_run(&c, &args);
+    return nmo_cmd_ctx_done(&c, rc);
+}
+
+int nmo_cmd_material_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    if (!ctx || argc < 1 || !argv || !argv[0]) {
+        fprintf(stderr, "Usage: material list|show ...\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
+        return material_list_run(ctx);
+    }
+    if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
+        material_show_args_t args;
+        int rc = material_show_parse(argc, argv, true, &args);
+        if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+        return material_show_run(ctx, &args);
+    }
+
+    fprintf(stderr, "Unsupported material read action in session: %s\n", argv[0]);
+    return NMO_CLI_EXIT_ARG_ERROR;
 }
 
 /* ============================================================================

@@ -4,6 +4,7 @@
  */
 
 #include "nmo_cmd_data.h"
+#include "nmo_cmd_object.h"
 
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
@@ -32,19 +33,17 @@ int nmo_cmd_data_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_public_handler_t handler = NULL;
     if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
-        handler = nmo_cmd_data_list;
-    } else if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
-        handler = nmo_cmd_data_show;
-    } else if (strcmp(argv[0], "dump") == 0 || strcmp(argv[0], "d") == 0) {
-        handler = nmo_cmd_data_dump;
-    } else {
-        fprintf(stderr, "Unsupported data read action in session: %s\n", argv[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+        char *list_args[] = {"list", "--class", "CKDataArray"};
+        return nmo_cmd_object_in_session(ctx, 3, list_args);
+    }
+    if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0 ||
+        strcmp(argv[0], "dump") == 0 || strcmp(argv[0], "d") == 0) {
+        return nmo_cmd_object_show_in_session(ctx, argc, argv);
     }
 
-    return nmo_cmd_ctx_dispatch_from_source(ctx, argc, argv, handler);
+    fprintf(stderr, "Unsupported data read action in session: %s\n", argv[0]);
+    return NMO_CLI_EXIT_ARG_ERROR;
 }
 
 /* ============================================================================

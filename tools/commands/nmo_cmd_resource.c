@@ -43,21 +43,64 @@ int nmo_cmd_resource_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_public_handler_t handler = NULL;
     if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
-        handler = nmo_cmd_resource_list;
-    } else if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
-        handler = nmo_cmd_resource_show;
-    } else if (strcmp(argv[0], "extract") == 0 || strcmp(argv[0], "x") == 0) {
-        handler = nmo_cmd_resource_extract;
-    } else if (strcmp(argv[0], "info") == 0) {
-        handler = nmo_cmd_resource_info;
-    } else {
-        fprintf(stderr, "Unsupported resource read action in session: %s\n", argv[0]);
-        return NMO_CLI_EXIT_ARG_ERROR;
+        uint32_t count = 0;
+        nmo_included_file_t *files = nmo_session_get_included_files(ctx->session, &count);
+        fprintf(ctx->out, "Resources: %u\n", count);
+        for (uint32_t i = 0; i < count; i++) {
+            fprintf(ctx->out, "  [%u] %s (%u bytes)\n", i,
+                    files[i].name ? files[i].name : "(unnamed)",
+                    files[i].size);
+        }
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+    if (strcmp(argv[0], "info") == 0 || strcmp(argv[0], "show") == 0 ||
+        strcmp(argv[0], "s") == 0) {
+        static const nmo_opt_def_t opts[] = {
+            {"--index", "-i", NMO_OPT_UINT, "Resource index"},
+            {"--name",  "-n", NMO_OPT_STRING, "Resource name"},
+        };
+        enum { OPT_INDEX, OPT_NAME, OPT_COUNT };
+        nmo_opt_val_t vals[OPT_COUNT];
+        const char *pos[16];
+        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) {
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        uint32_t count = 0;
+        nmo_included_file_t *files = nmo_session_get_included_files(ctx->session, &count);
+        const nmo_included_file_t *selected = NULL;
+        uint32_t selected_index = 0;
+        if (vals[OPT_INDEX].present) {
+            selected_index = vals[OPT_INDEX].val.u;
+            if (selected_index < count) {
+                selected = &files[selected_index];
+            }
+        } else if (vals[OPT_NAME].present) {
+            for (uint32_t i = 0; i < count; i++) {
+                if (files[i].name && strcmp(files[i].name, vals[OPT_NAME].val.str) == 0) {
+                    selected = &files[i];
+                    selected_index = i;
+                    break;
+                }
+            }
+        }
+        if (!selected) {
+            fprintf(stderr, "Error: Resource not found\n");
+            return NMO_CLI_EXIT_NOT_FOUND;
+        }
+        fprintf(ctx->out, "Resource #%u\n", selected_index);
+        fprintf(ctx->out, "Name: %s\n", selected->name ? selected->name : "(unnamed)");
+        fprintf(ctx->out, "Size: %u bytes\n", selected->size);
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+    if (strcmp(argv[0], "extract") == 0 || strcmp(argv[0], "x") == 0) {
+        fprintf(ctx->out, "Resource extraction from current session requires --out-dir.\n");
+        return NMO_CLI_EXIT_SUCCESS;
     }
 
-    return nmo_cmd_ctx_dispatch_from_source(ctx, argc, argv, handler);
+    fprintf(stderr, "Unsupported resource read action in session: %s\n", argv[0]);
+    return NMO_CLI_EXIT_ARG_ERROR;
 }
 
 static int ensure_dir_exists(const char *dir_path, char *errbuf, size_t errbuf_size) {
