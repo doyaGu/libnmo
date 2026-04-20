@@ -2,6 +2,7 @@
 
 #include "behavior/nmo_behavior_boundary.h"
 #include "behavior/nmo_behavior_graph.h"
+#include "core/nmo_array.h"
 #include "core/nmo_error.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -359,6 +360,74 @@ static bool rewrite_fold_report_supports_single_anchor_write(
         (const nmo_behavior_state_t *)nmo_object_get_state(anchor));
 }
 
+static bool rewrite_selected_behavior_has_unselected_child(
+    nmo_context_t *ctx,
+    nmo_object_repository_t *repo,
+    const nmo_behavior_state_t *state,
+    const nmo_object_id_t *selected_ids,
+    size_t selected_count,
+    nmo_object_id_t *out_missing_id) {
+    if (!state || state->sub_behaviors.count == 0) {
+        return false;
+    }
+
+    const nmo_object_id_t *child_ids =
+        NMO_ARRAY_DATA(nmo_object_id_t, &state->sub_behaviors);
+    for (size_t i = 0; i < state->sub_behaviors.count; ++i) {
+        nmo_object_id_t child_id = child_ids[i];
+        if (!rewrite_id_in_set(selected_ids, selected_count, child_id)) {
+            if (out_missing_id) {
+                *out_missing_id = child_id;
+            }
+            return true;
+        }
+
+        nmo_object_t *child =
+            repo ? nmo_object_repository_find_by_id(repo, child_id)
+                 : NULL;
+        if (!child ||
+            !rewrite_is_behavior_class(ctx, nmo_object_get_class_id(child))) {
+            continue;
+        }
+        const nmo_behavior_state_t *child_state =
+            (const nmo_behavior_state_t *)nmo_object_get_state(child);
+        if (rewrite_selected_behavior_has_unselected_child(
+                ctx, repo, child_state, selected_ids, selected_count,
+                out_missing_id)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool rewrite_fold_selection_has_unselected_child(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const nmo_behavior_fold_report_t *report,
+    nmo_object_id_t *out_missing_id) {
+    if (!report || !report->selected_nodes) {
+        return false;
+    }
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    for (size_t i = 0; i < report->selected_node_count; ++i) {
+        nmo_object_t *object = repo
+            ? nmo_object_repository_find_by_id(repo, report->selected_nodes[i])
+            : NULL;
+        if (!object ||
+            !rewrite_is_behavior_class(ctx, nmo_object_get_class_id(object))) {
+            continue;
+        }
+        const nmo_behavior_state_t *state =
+            (const nmo_behavior_state_t *)nmo_object_get_state(object);
+        if (rewrite_selected_behavior_has_unselected_child(
+                ctx, repo, state, report->selected_nodes,
+                report->selected_node_count, out_missing_id)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void rewrite_fold_report_reject(nmo_behavior_fold_report_t *report,
                                        const char *code,
                                        const char *message) {
@@ -553,6 +622,16 @@ nmo_status_t nmo_behavior_fold_apply(
         rewrite_fold_report_reject(
             report, "preserve_boundary_required",
             "Behavior fold write requires preserve-boundary");
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_object_id_t missing_child_id = 0;
+    if (rewrite_fold_selection_has_unselected_child(ctx, session, report,
+                                                    &missing_child_id)) {
+        (void)missing_child_id;
+        rewrite_fold_report_reject(
+            report, "selection_not_closed",
+            "Selected graph fold must include child behavior from every "
+            "selected graph or script");
         return NMO_ERR_INVALID_ARGUMENT;
     }
     if (rewrite_fold_report_is_single_anchor_only(report)) {

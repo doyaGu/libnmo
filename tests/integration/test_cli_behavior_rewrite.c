@@ -840,7 +840,35 @@ TEST(cli, behavior_fold_write_rejects_with_analysis_blocker) {
 
     char args[2048];
     snprintf(args, sizeof(args),
+             "behavior fold --parent 4692 --nodes 2367,2370 "
+             "--anchor 2367 "
+             "--guid 42414C07-10000007 "
+             "--name \"Two Leaf Fold\" "
+             "--preserve-boundary "
+             "--map-input 0:0 --map-input 1:1 "
+             "--map-output 0:0 --map-output 1:1 "
+             "\"%s\" -o \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output);
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "analysis_only");
+    ASSERT_STR_CONTAINS(result.output, "write mode is not implemented");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+}
+
+TEST(cli, behavior_fold_write_rejects_unclosed_graph_anchor) {
+    const char *output = "test_behavior_rewrite_tmp/fold_unclosed.cmo";
+    remove(output);
+    make_dir("test_behavior_rewrite_tmp");
+
+    char args[2048];
+    snprintf(args, sizeof(args),
              "behavior fold --parent 4692 --nodes 2364,2208 "
+             "--anchor 2364 "
              "--guid 42414C07-10000007 "
              "--name \"Ballance Event Handler\" "
              "--preserve-boundary --map-input 0:0 --map-input 1:1 "
@@ -851,8 +879,8 @@ TEST(cli, behavior_fold_write_rejects_with_analysis_blocker) {
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
-    ASSERT_STR_CONTAINS(result.output, "analysis_only");
-    ASSERT_STR_CONTAINS(result.output, "write mode is not implemented");
+    ASSERT_STR_CONTAINS(result.output, "selection_not_closed");
+    ASSERT_STR_CONTAINS(result.output, "must include child behavior");
     ASSERT_FALSE(file_exists(output));
     free(result.output);
 }
@@ -932,6 +960,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan);
     REGISTER_TEST(cli, behavior_fold_dry_run_rejects_parent_in_selected_nodes);
     REGISTER_TEST(cli, behavior_fold_write_rejects_with_analysis_blocker);
+    REGISTER_TEST(cli, behavior_fold_write_rejects_unclosed_graph_anchor);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_single_leaf_anchor_writable);
     REGISTER_TEST(cli, behavior_fold_writes_single_leaf_anchor);
 TEST_MAIN_END()

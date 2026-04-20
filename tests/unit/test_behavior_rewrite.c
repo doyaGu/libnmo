@@ -90,7 +90,7 @@ TEST(beh_rewrite, fold_write_rejects_until_supported)
         return;
     }
 
-    nmo_object_id_t nodes[] = {2364u, 2208u};
+    nmo_object_id_t nodes[] = {2367u, 2370u};
     nmo_behavior_fold_map_t input_maps[] = {
         {
             .kind = NMO_BEHAVIOR_FOLD_MAP_INPUT,
@@ -103,16 +103,30 @@ TEST(beh_rewrite, fold_write_rejects_until_supported)
             .new_index = 1u,
         },
     };
+    nmo_behavior_fold_map_t output_maps[] = {
+        {
+            .kind = NMO_BEHAVIOR_FOLD_MAP_OUTPUT,
+            .old_index = 0u,
+            .new_index = 0u,
+        },
+        {
+            .kind = NMO_BEHAVIOR_FOLD_MAP_OUTPUT,
+            .old_index = 1u,
+            .new_index = 1u,
+        },
+    };
     nmo_behavior_fold_desc_t desc = {
         .parent_id = 4692u,
         .node_ids = nodes,
         .node_count = 2u,
         .block_guid = {0x42414C07u, 0x10000007u},
-        .name = "Ballance Event Handler",
+        .name = "Two Leaf Fold",
         .block_version = 65536u,
         .preserve_boundary = true,
         .input_maps = input_maps,
         .input_map_count = 2u,
+        .output_maps = output_maps,
+        .output_map_count = 2u,
     };
     nmo_behavior_fold_report_t report = {0};
 
@@ -137,7 +151,7 @@ TEST(beh_rewrite, fold_apply_rejects_until_supported)
         return;
     }
 
-    nmo_object_id_t nodes[] = {2364u, 2208u};
+    nmo_object_id_t nodes[] = {2367u, 2370u};
     nmo_behavior_fold_map_t input_maps[] = {
         {
             .kind = NMO_BEHAVIOR_FOLD_MAP_INPUT,
@@ -150,16 +164,30 @@ TEST(beh_rewrite, fold_apply_rejects_until_supported)
             .new_index = 1u,
         },
     };
+    nmo_behavior_fold_map_t output_maps[] = {
+        {
+            .kind = NMO_BEHAVIOR_FOLD_MAP_OUTPUT,
+            .old_index = 0u,
+            .new_index = 0u,
+        },
+        {
+            .kind = NMO_BEHAVIOR_FOLD_MAP_OUTPUT,
+            .old_index = 1u,
+            .new_index = 1u,
+        },
+    };
     nmo_behavior_fold_desc_t desc = {
         .parent_id = 4692u,
         .node_ids = nodes,
         .node_count = 2u,
         .block_guid = {0x42414C07u, 0x10000007u},
-        .name = "Ballance Event Handler",
+        .name = "Two Leaf Fold",
         .block_version = 65536u,
         .preserve_boundary = true,
         .input_maps = input_maps,
         .input_map_count = 2u,
+        .output_maps = output_maps,
+        .output_map_count = 2u,
     };
     nmo_behavior_fold_report_t report = {0};
 
