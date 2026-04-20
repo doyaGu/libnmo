@@ -81,8 +81,12 @@ typedef struct nmo_behavior_fold_desc {
     bool preserve_boundary;
     bool preserve_links;
     bool preserve_params;
+    const nmo_behavior_fold_map_t *input_maps;
+    size_t input_map_count;
     const nmo_behavior_fold_map_t *output_maps;
     size_t output_map_count;
+    const nmo_behavior_fold_map_t *parameter_maps;
+    size_t parameter_map_count;
 } nmo_behavior_fold_desc_t;
 
 typedef struct nmo_behavior_fold_write_blocker {
@@ -103,8 +107,12 @@ typedef struct nmo_behavior_fold_report {
     bool preserve_boundary;
     bool preserve_links;
     bool preserve_params;
+    nmo_behavior_fold_map_t *input_maps;
+    size_t input_map_count;
     nmo_behavior_fold_map_t *output_maps;
     size_t output_map_count;
+    nmo_behavior_fold_map_t *parameter_maps;
+    size_t parameter_map_count;
 
     nmo_object_id_t *selected_nodes;
     size_t selected_node_count;

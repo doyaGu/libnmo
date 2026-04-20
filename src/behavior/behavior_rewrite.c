@@ -364,6 +364,16 @@ nmo_status_t nmo_behavior_fold_analyze(
         goto fail;
     }
 
+    rc = rewrite_copy_fold_maps(&report->input_maps,
+                                &report->input_map_count,
+                                desc->input_maps,
+                                desc->input_map_count);
+    if (rc != NMO_OK) {
+        rewrite_fold_report_reject(report, "out_of_memory",
+                                   "Failed to copy fold input maps");
+        goto fail;
+    }
+
     rc = rewrite_copy_fold_maps(&report->output_maps,
                                 &report->output_map_count,
                                 desc->output_maps,
@@ -371,6 +381,16 @@ nmo_status_t nmo_behavior_fold_analyze(
     if (rc != NMO_OK) {
         rewrite_fold_report_reject(report, "out_of_memory",
                                    "Failed to copy fold output maps");
+        goto fail;
+    }
+
+    rc = rewrite_copy_fold_maps(&report->parameter_maps,
+                                &report->parameter_map_count,
+                                desc->parameter_maps,
+                                desc->parameter_map_count);
+    if (rc != NMO_OK) {
+        rewrite_fold_report_reject(report, "out_of_memory",
+                                   "Failed to copy fold parameter maps");
         goto fail;
     }
 
@@ -451,7 +471,9 @@ void nmo_behavior_fold_report_free(nmo_behavior_fold_report_t *report) {
     }
     free(report->selected_nodes);
     free(report->nodes_to_delete);
+    free(report->input_maps);
     free(report->output_maps);
+    free(report->parameter_maps);
     free(report->control_links_to_delete);
     free(report->write_blockers);
     nmo_behavior_boundary_free(&report->boundary);

@@ -314,8 +314,12 @@ typedef struct fold_args {
     bool preserve_boundary;
     bool preserve_links;
     bool preserve_params;
+    nmo_behavior_fold_map_t input_maps[16];
+    size_t input_map_count;
     nmo_behavior_fold_map_t output_maps[16];
     size_t output_map_count;
+    nmo_behavior_fold_map_t parameter_maps[16];
+    size_t parameter_map_count;
     bool dry_run;
     const char *output_path;
 } fold_args_t;
@@ -927,7 +931,9 @@ static bool parse_fold_args(int argc,
          "Require full behavior boundary preservation"},
         {"--preserve-links",  NULL, NMO_OPT_FLAG,   "Require control boundary preservation"},
         {"--preserve-params", NULL, NMO_OPT_FLAG,   "Require parameter boundary preservation"},
+        {"--map-input",       NULL, NMO_OPT_STRING, "Map input old_index:new_index"},
         {"--map-output",      NULL, NMO_OPT_STRING, "Map output old_index:new_index"},
+        {"--map-param",       NULL, NMO_OPT_STRING, "Map parameter old_index:new_index"},
         {"--output",          "-o", NMO_OPT_STRING, "Output file"},
         {"--dry-run",         NULL, NMO_OPT_FLAG,   "Preview without saving"},
     };
@@ -941,7 +947,9 @@ static bool parse_fold_args(int argc,
         OPT_PRESERVE_BOUNDARY,
         OPT_PRESERVE_LINKS,
         OPT_PRESERVE_PARAMS,
+        OPT_MAP_INPUT,
         OPT_MAP_OUTPUT,
+        OPT_MAP_PARAM,
         OPT_OUTPUT,
         OPT_DRY_RUN,
         OPT_COUNT
@@ -984,6 +992,14 @@ static bool parse_fold_args(int argc,
     args.output_path = vals[OPT_OUTPUT].present
         ? vals[OPT_OUTPUT].val.str
         : NULL;
+    if (vals[OPT_MAP_INPUT].present) {
+        if (!parse_fold_index_map(vals[OPT_MAP_INPUT].val.str,
+                                  NMO_BEHAVIOR_FOLD_MAP_INPUT,
+                                  &args.input_maps[0])) {
+            return false;
+        }
+        args.input_map_count = 1;
+    }
     if (vals[OPT_MAP_OUTPUT].present) {
         if (!parse_fold_index_map(vals[OPT_MAP_OUTPUT].val.str,
                                   NMO_BEHAVIOR_FOLD_MAP_OUTPUT,
@@ -991,6 +1007,14 @@ static bool parse_fold_args(int argc,
             return false;
         }
         args.output_map_count = 1;
+    }
+    if (vals[OPT_MAP_PARAM].present) {
+        if (!parse_fold_index_map(vals[OPT_MAP_PARAM].val.str,
+                                  NMO_BEHAVIOR_FOLD_MAP_PARAMETER,
+                                  &args.parameter_maps[0])) {
+            return false;
+        }
+        args.parameter_map_count = 1;
     }
     if (args.parent_id == 0 || nmo_guid_is_null(args.block_guid) ||
         !parse_fold_nodes(vals[OPT_NODES].val.str, args.nodes,
@@ -1056,9 +1080,15 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
         yyjson_mut_obj_add_bool(doc, data, "preserve_params",
                                 report->preserve_params);
         yyjson_mut_val *maps = yyjson_mut_obj(doc);
+        add_fold_maps_json(doc, maps, "inputs",
+                           report->input_maps,
+                           report->input_map_count);
         add_fold_maps_json(doc, maps, "outputs",
                            report->output_maps,
                            report->output_map_count);
+        add_fold_maps_json(doc, maps, "parameters",
+                           report->parameter_maps,
+                           report->parameter_map_count);
         yyjson_mut_obj_add_val(doc, data, "maps", maps);
 
         char guid_buf[24];
@@ -1220,8 +1250,12 @@ int nmo_cmd_behavior_fold(int argc,
         .preserve_boundary = args.preserve_boundary,
         .preserve_links = args.preserve_links,
         .preserve_params = args.preserve_params,
+        .input_maps = args.input_maps,
+        .input_map_count = args.input_map_count,
         .output_maps = args.output_maps,
         .output_map_count = args.output_map_count,
+        .parameter_maps = args.parameter_maps,
+        .parameter_map_count = args.parameter_map_count,
     };
     nmo_status_t fold_rc = args.dry_run
         ? nmo_behavior_fold_analyze(c.ctx, c.session, &desc, &report)

@@ -652,14 +652,15 @@ TEST(cli, behavior_fold_dry_run_accepts_preserve_boundary) {
     yyjson_doc_free(doc);
 }
 
-TEST(cli, behavior_fold_dry_run_reports_output_map) {
+TEST(cli, behavior_fold_dry_run_reports_maps) {
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold --parent 4692 --nodes 2364,2208 "
              "--anchor 2364 "
              "--guid 42414C07-10000007 "
              "--name \"Ballance Event Handler\" "
-             "--preserve-boundary --map-output 0:1 --dry-run \"%s\"",
+             "--preserve-boundary --map-input 2:3 "
+             "--map-output 0:1 --map-param 4:5 --dry-run \"%s\"",
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     yyjson_doc *doc = NULL;
@@ -672,14 +673,32 @@ TEST(cli, behavior_fold_dry_run_reports_output_map) {
     ASSERT_NOT_NULL(data);
     yyjson_val *maps = get_object_field(data, "maps");
     ASSERT_NOT_NULL(maps);
+    yyjson_val *inputs = get_array_field(maps, "inputs");
+    ASSERT_NOT_NULL(inputs);
+    ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(inputs));
+    yyjson_val *input_map = yyjson_arr_get(inputs, 0);
+    ASSERT_TRUE(input_map && yyjson_is_obj(input_map));
+    ASSERT_STR_EQ("input", get_string_field(input_map, "kind"));
+    ASSERT_EQ(2u, (uint32_t)get_uint_field(input_map, "old_index"));
+    ASSERT_EQ(3u, (uint32_t)get_uint_field(input_map, "new_index"));
+
     yyjson_val *outputs = get_array_field(maps, "outputs");
     ASSERT_NOT_NULL(outputs);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(outputs));
-    yyjson_val *map = yyjson_arr_get(outputs, 0);
-    ASSERT_TRUE(map && yyjson_is_obj(map));
-    ASSERT_STR_EQ("output", get_string_field(map, "kind"));
-    ASSERT_EQ(0u, (uint32_t)get_uint_field(map, "old_index"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(map, "new_index"));
+    yyjson_val *output_map = yyjson_arr_get(outputs, 0);
+    ASSERT_TRUE(output_map && yyjson_is_obj(output_map));
+    ASSERT_STR_EQ("output", get_string_field(output_map, "kind"));
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(output_map, "old_index"));
+    ASSERT_EQ(1u, (uint32_t)get_uint_field(output_map, "new_index"));
+
+    yyjson_val *parameters = get_array_field(maps, "parameters");
+    ASSERT_NOT_NULL(parameters);
+    ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(parameters));
+    yyjson_val *parameter_map = yyjson_arr_get(parameters, 0);
+    ASSERT_TRUE(parameter_map && yyjson_is_obj(parameter_map));
+    ASSERT_STR_EQ("parameter", get_string_field(parameter_map, "kind"));
+    ASSERT_EQ(4u, (uint32_t)get_uint_field(parameter_map, "old_index"));
+    ASSERT_EQ(5u, (uint32_t)get_uint_field(parameter_map, "new_index"));
 
     yyjson_doc_free(doc);
 }
@@ -783,7 +802,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_fold_dry_run_uses_explicit_node_set);
     REGISTER_TEST(cli, behavior_fold_dry_run_uses_explicit_anchor);
     REGISTER_TEST(cli, behavior_fold_dry_run_accepts_preserve_boundary);
-    REGISTER_TEST(cli, behavior_fold_dry_run_reports_output_map);
+    REGISTER_TEST(cli, behavior_fold_dry_run_reports_maps);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan);
     REGISTER_TEST(cli, behavior_fold_dry_run_rejects_parent_in_selected_nodes);
     REGISTER_TEST(cli, behavior_fold_write_rejects_with_analysis_blocker);

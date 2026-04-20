@@ -170,7 +170,7 @@ TEST(beh_rewrite, fold_analyze_preserve_boundary_enables_edges)
     nmo_session_close_with_context(ctx, session);
 }
 
-TEST(beh_rewrite, fold_analyze_reports_output_maps)
+TEST(beh_rewrite, fold_analyze_reports_maps)
 {
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
@@ -180,12 +180,28 @@ TEST(beh_rewrite, fold_analyze_reports_output_maps)
     }
 
     nmo_object_id_t nodes[] = {2364u, 2208u};
+    nmo_behavior_fold_map_t input_maps[] = {
+        {
+            .kind = NMO_BEHAVIOR_FOLD_MAP_INPUT,
+            .old_index = 2u,
+            .new_index = 3u,
+            .label = "In",
+        },
+    };
     nmo_behavior_fold_map_t output_maps[] = {
         {
             .kind = NMO_BEHAVIOR_FOLD_MAP_OUTPUT,
             .old_index = 0u,
             .new_index = 1u,
             .label = "Out",
+        },
+    };
+    nmo_behavior_fold_map_t parameter_maps[] = {
+        {
+            .kind = NMO_BEHAVIOR_FOLD_MAP_PARAMETER,
+            .old_index = 4u,
+            .new_index = 5u,
+            .label = "Level",
         },
     };
     nmo_behavior_fold_desc_t desc = {
@@ -197,19 +213,33 @@ TEST(beh_rewrite, fold_analyze_reports_output_maps)
         .name = "Ballance Event Handler",
         .block_version = 65536u,
         .preserve_boundary = true,
+        .input_maps = input_maps,
+        .input_map_count = 1u,
         .output_maps = output_maps,
         .output_map_count = 1u,
+        .parameter_maps = parameter_maps,
+        .parameter_map_count = 1u,
     };
     nmo_behavior_fold_report_t report = {0};
 
     nmo_status_t rc = nmo_behavior_fold_analyze(ctx, session, &desc,
                                                 &report);
     ASSERT_EQ(NMO_OK, rc);
+    ASSERT_EQ(1u, report.input_map_count);
+    ASSERT_EQ(NMO_BEHAVIOR_FOLD_MAP_INPUT, report.input_maps[0].kind);
+    ASSERT_EQ(2u, report.input_maps[0].old_index);
+    ASSERT_EQ(3u, report.input_maps[0].new_index);
+    ASSERT_STR_EQ("In", report.input_maps[0].label);
     ASSERT_EQ(1u, report.output_map_count);
     ASSERT_EQ(NMO_BEHAVIOR_FOLD_MAP_OUTPUT, report.output_maps[0].kind);
     ASSERT_EQ(0u, report.output_maps[0].old_index);
     ASSERT_EQ(1u, report.output_maps[0].new_index);
     ASSERT_STR_EQ("Out", report.output_maps[0].label);
+    ASSERT_EQ(1u, report.parameter_map_count);
+    ASSERT_EQ(NMO_BEHAVIOR_FOLD_MAP_PARAMETER, report.parameter_maps[0].kind);
+    ASSERT_EQ(4u, report.parameter_maps[0].old_index);
+    ASSERT_EQ(5u, report.parameter_maps[0].new_index);
+    ASSERT_STR_EQ("Level", report.parameter_maps[0].label);
 
     nmo_behavior_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
@@ -287,7 +317,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(beh_rewrite, fold_write_rejects_until_supported);
     REGISTER_TEST(beh_rewrite, fold_analyze_uses_explicit_anchor);
     REGISTER_TEST(beh_rewrite, fold_analyze_preserve_boundary_enables_edges);
-    REGISTER_TEST(beh_rewrite, fold_analyze_reports_output_maps);
+    REGISTER_TEST(beh_rewrite, fold_analyze_reports_maps);
     REGISTER_TEST(beh_rewrite, fold_analyze_rejects_anchor_outside_selection);
     REGISTER_TEST(beh_rewrite, fold_analyze_rejects_parent_in_selected_nodes);
 TEST_MAIN_END()
