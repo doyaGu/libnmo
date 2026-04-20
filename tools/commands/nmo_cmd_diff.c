@@ -116,7 +116,6 @@ static int class_entry_cmp(const void *a, const void *b) {
  * @return 0 on success, NMO_CLI_EXIT_IO_ERROR on failure
  */
 static int open_two_sessions(const char *path1, const char *path2,
-                             const nmo_cli_global_opts_t *global,
                              nmo_context_t **ctx1, nmo_session_t **ses1,
                              bool *owns1,
                              nmo_context_t **ctx2, nmo_session_t **ses2,
@@ -127,19 +126,9 @@ static int open_two_sessions(const char *path1, const char *path2,
     *owns1 = true;
     *owns2 = true;
 
-    const nmo_cmd_source_t *source = nmo_cmd_global_source(global);
-    if (source && source->kind == NMO_CMD_SOURCE_SESSION &&
-        path1 && source->source_label &&
-        strcmp(path1, source->source_label) == 0) {
-        *ctx1 = source->ctx;
-        *ses1 = source->session;
-        *owns1 = false;
-    } else {
-        /* Open first file */
-        if (!nmo_tool_open_session(path1, ctx1, ses1, errbuf, sizeof(errbuf))) {
-            fprintf(stderr, "Error opening '%s': %s\n", path1, errbuf);
-            return NMO_CLI_EXIT_IO_ERROR;
-        }
+    if (!nmo_tool_open_session(path1, ctx1, ses1, errbuf, sizeof(errbuf))) {
+        fprintf(stderr, "Error opening '%s': %s\n", path1, errbuf);
+        return NMO_CLI_EXIT_IO_ERROR;
     }
 
     /* Open second file */
@@ -165,15 +154,27 @@ static void close_two_sessions(nmo_context_t *ctx1, nmo_session_t *ses1, bool ow
     }
 }
 
-typedef int (*diff_public_handler_t)(int argc, char **argv,
-                                     const nmo_cli_global_opts_t *global);
-
-static int diff_dispatch_current_session_left(nmo_cmd_ctx_t *left,
-                                              int argc,
-                                              char **argv,
-                                              diff_public_handler_t handler)
+static int open_current_left_session(nmo_cmd_ctx_t *left, const char *right_path,
+                                     nmo_context_t **ctx1, nmo_session_t **ses1,
+                                     bool *owns1,
+                                     nmo_context_t **ctx2, nmo_session_t **ses2,
+                                     bool *owns2)
 {
-    return nmo_cmd_ctx_dispatch_from_source(left, argc, argv, handler);
+    if (!left || !left->ctx || !left->session || !right_path) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    char errbuf[256];
+    *ctx1 = left->ctx;
+    *ses1 = left->session;
+    *owns1 = false;
+    *owns2 = true;
+
+    if (!nmo_tool_open_session(right_path, ctx2, ses2, errbuf, sizeof(errbuf))) {
+        fprintf(stderr, "Error opening '%s': %s\n", right_path, errbuf);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+    return NMO_CLI_EXIT_SUCCESS;
 }
 
 /**
@@ -221,22 +222,15 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const nmo_cmd_source_t *source = nmo_cmd_global_source(global);
-    const char *current_label = source ? source->source_label : NULL;
-    bool left_is_current_session =
-        source && source->kind == NMO_CMD_SOURCE_SESSION;
-    if ((!left_is_current_session && r.pos_count < 2) ||
-        (left_is_current_session && r.pos_count < 1)) {
+    if (r.pos_count < 2) {
         fprintf(stderr, "Error: Need two files to compare\n");
         fprintf(stderr, "Usage: nmo diff summary [options] <file1> <file2>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     const char *paths[2] = {
-        left_is_current_session
-            ? (current_label ? current_label : "(current session)")
-            : r.pos_args[0],
-        left_is_current_session ? r.pos_args[0] : r.pos_args[1]
+        r.pos_args[0],
+        r.pos_args[1]
     };
     bool ignore_order = vals[OPT_IGNORD].present && vals[OPT_IGNORD].val.flag;
     bool verbose      = vals[OPT_VERBOSE].present && vals[OPT_VERBOSE].val.flag;
@@ -246,7 +240,7 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_context_t *ctx1 = NULL, *ctx2 = NULL;
     nmo_session_t *ses1 = NULL, *ses2 = NULL;
     bool owns1 = true, owns2 = true;
-    int open_result = open_two_sessions(paths[0], paths[1], global,
+    int open_result = open_two_sessions(paths[0], paths[1],
                                         &ctx1, &ses1, &owns1,
                                         &ctx2, &ses2, &owns2);
     if (open_result != 0) {
@@ -434,11 +428,6 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
-int nmo_cmd_diff_summary_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
-{
-    return diff_dispatch_current_session_left(ctx, argc, argv, nmo_cmd_diff_summary);
-}
-
 /* ============================================================================
  * diff objects -- thin CLI wrapper over nmo_diff_objects() library API
  * ============================================================================ */
@@ -458,22 +447,15 @@ int nmo_cmd_diff_objects(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const nmo_cmd_source_t *source = nmo_cmd_global_source(global);
-    const char *current_label = source ? source->source_label : NULL;
-    bool left_is_current_session =
-        source && source->kind == NMO_CMD_SOURCE_SESSION;
-    if ((!left_is_current_session && r.pos_count < 2) ||
-        (left_is_current_session && r.pos_count < 1)) {
+    if (r.pos_count < 2) {
         fprintf(stderr, "Error: Need two files to compare\n");
         fprintf(stderr, "Usage: nmo diff objects [options] <file1> <file2>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     const char *paths[2] = {
-        left_is_current_session
-            ? (current_label ? current_label : "(current session)")
-            : r.pos_args[0],
-        left_is_current_session ? r.pos_args[0] : r.pos_args[1]
+        r.pos_args[0],
+        r.pos_args[1]
     };
     uint32_t max_objects = vals[OPT_MAXOBJ].present ? vals[OPT_MAXOBJ].val.u : 0;
     uint32_t max_fields  = vals[OPT_MAXFLD].present ? vals[OPT_MAXFLD].val.u : 0;
@@ -484,7 +466,7 @@ int nmo_cmd_diff_objects(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_context_t *ctx1 = NULL, *ctx2 = NULL;
     nmo_session_t *ses1 = NULL, *ses2 = NULL;
     bool owns1 = true, owns2 = true;
-    int open_result = open_two_sessions(paths[0], paths[1], global,
+    int open_result = open_two_sessions(paths[0], paths[1],
                                         &ctx1, &ses1, &owns1,
                                         &ctx2, &ses2, &owns2);
     if (open_result != 0) return open_result;
@@ -721,11 +703,6 @@ int nmo_cmd_diff_objects(int argc, char **argv, const nmo_cli_global_opts_t *glo
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
-int nmo_cmd_diff_objects_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
-{
-    return diff_dispatch_current_session_left(ctx, argc, argv, nmo_cmd_diff_objects);
-}
-
 /* ============================================================================
  * diff chunks
  * ============================================================================ */
@@ -740,22 +717,15 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
     if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const nmo_cmd_source_t *source = nmo_cmd_global_source(global);
-    const char *current_label = source ? source->source_label : NULL;
-    bool left_is_current_session =
-        source && source->kind == NMO_CMD_SOURCE_SESSION;
-    if ((!left_is_current_session && r.pos_count < 2) ||
-        (left_is_current_session && r.pos_count < 1)) {
+    if (r.pos_count < 2) {
         fprintf(stderr, "Error: Need two files to compare\n");
         fprintf(stderr, "Usage: nmo diff chunks [options] <file1> <file2>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     const char *paths[2] = {
-        left_is_current_session
-            ? (current_label ? current_label : "(current session)")
-            : r.pos_args[0],
-        left_is_current_session ? r.pos_args[0] : r.pos_args[1]
+        r.pos_args[0],
+        r.pos_args[1]
     };
     uint32_t object_id = vals[0].present ? vals[0].val.u : 0;
     bool specific_object = vals[0].present;
@@ -764,7 +734,7 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
     nmo_context_t *ctx1 = NULL, *ctx2 = NULL;
     nmo_session_t *ses1 = NULL, *ses2 = NULL;
     bool owns1 = true, owns2 = true;
-    int open_result = open_two_sessions(paths[0], paths[1], global,
+    int open_result = open_two_sessions(paths[0], paths[1],
                                         &ctx1, &ses1, &owns1,
                                         &ctx2, &ses2, &owns2);
     if (open_result != 0) {
@@ -894,11 +864,6 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
-int nmo_cmd_diff_chunks_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
-{
-    return diff_dispatch_current_session_left(ctx, argc, argv, nmo_cmd_diff_chunks);
-}
-
 /* ============================================================================
  * diff full
  * ============================================================================ */
@@ -913,22 +878,15 @@ int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
     if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const nmo_cmd_source_t *source = nmo_cmd_global_source(global);
-    const char *current_label = source ? source->source_label : NULL;
-    bool left_is_current_session =
-        source && source->kind == NMO_CMD_SOURCE_SESSION;
-    if ((!left_is_current_session && r.pos_count < 2) ||
-        (left_is_current_session && r.pos_count < 1)) {
+    if (r.pos_count < 2) {
         fprintf(stderr, "Error: Need two files to compare\n");
         fprintf(stderr, "Usage: nmo diff full [options] <file1> <file2>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     const char *paths[2] = {
-        left_is_current_session
-            ? (current_label ? current_label : "(current session)")
-            : r.pos_args[0],
-        left_is_current_session ? r.pos_args[0] : r.pos_args[1]
+        r.pos_args[0],
+        r.pos_args[1]
     };
     bool ignore_order = vals[0].present && vals[0].val.flag;
 
@@ -936,7 +894,7 @@ int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global
     nmo_context_t *ctx1 = NULL, *ctx2 = NULL;
     nmo_session_t *ses1 = NULL, *ses2 = NULL;
     bool owns1 = true, owns2 = true;
-    int open_result = open_two_sessions(paths[0], paths[1], global,
+    int open_result = open_two_sessions(paths[0], paths[1],
                                         &ctx1, &ses1, &owns1,
                                         &ctx2, &ses2, &owns2);
     if (open_result != 0) {
@@ -1059,9 +1017,380 @@ int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
+static bool diff_ctx_json_pretty(const nmo_cmd_ctx_t *ctx)
+{
+    return ctx && ctx->global &&
+           ctx->global->format == NMO_CLI_FORMAT_JSON_PRETTY;
+}
+
+static const char *diff_current_session_label(const nmo_cmd_ctx_t *ctx)
+{
+    return (ctx && ctx->file_path && ctx->file_path[0])
+        ? ctx->file_path
+        : "(current session)";
+}
+
+int nmo_cmd_diff_summary_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    static const nmo_opt_def_t opts[] = {
+        {"--ignore-order", NULL, NMO_OPT_FLAG, "Ignore object order"},
+        {"--verbose",      "-v", NMO_OPT_FLAG, "Show detailed differences"},
+        {"--strict",       NULL, NMO_OPT_FLAG, "Return failure exit code if differences found"},
+    };
+    enum { OPT_IGNORD, OPT_VERBOSE, OPT_STRICT, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (r.pos_count < 1) {
+        fprintf(stderr, "Error: Need comparison file\n");
+        fprintf(stderr, "Usage: diff summary [options] <file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *paths[2] = { diff_current_session_label(ctx), r.pos_args[0] };
+    bool ignore_order = vals[OPT_IGNORD].present && vals[OPT_IGNORD].val.flag;
+    bool verbose      = vals[OPT_VERBOSE].present && vals[OPT_VERBOSE].val.flag;
+    bool strict       = vals[OPT_STRICT].present && vals[OPT_STRICT].val.flag;
+
+    nmo_context_t *ctx1 = NULL, *ctx2 = NULL;
+    nmo_session_t *ses1 = NULL, *ses2 = NULL;
+    bool owns1 = false, owns2 = true;
+    int open_result = open_current_left_session(ctx, paths[1],
+                                                &ctx1, &ses1, &owns1,
+                                                &ctx2, &ses2, &owns2);
+    if (open_result != 0) return open_result;
+
+    nmo_compare_flags_t flags = NMO_COMPARE_STRUCTURE | NMO_COMPARE_FILE_INFO;
+    if (ignore_order) flags |= NMO_COMPARE_IGNORE_ORDER;
+    if (verbose) flags |= NMO_COMPARE_VERBOSE;
+
+    nmo_comparison_result_t result;
+    nmo_comparison_result_init(&result);
+    nmo_status_t cmp_result = nmo_session_compare(ses1, ses2, flags, &result);
+    if (cmp_result != NMO_OK) {
+        fprintf(stderr, "Error: Comparison failed with code %d\n", cmp_result);
+        close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_file_info_t info1 = nmo_session_get_file_info(ses1);
+    nmo_file_info_t info2 = nmo_session_get_file_info(ses2);
+
+    nmo_object_repository_t *repo1 = nmo_session_get_repository(ses1);
+    nmo_object_repository_t *repo2 = nmo_session_get_repository(ses2);
+    class_histogram_t hist;
+    build_class_histogram(repo1, repo2, &hist);
+    qsort(hist.entries, hist.count, sizeof(class_count_entry_t), class_entry_cmp);
+
+    nmo_cmd_ctx_t c = *ctx;
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+
+        yyjson_mut_obj_add_str(doc, data, "file1", paths[0]);
+        yyjson_mut_obj_add_str(doc, data, "file2", paths[1]);
+        yyjson_mut_obj_add_bool(doc, data, "identical", result.match != 0);
+        yyjson_mut_obj_add_int(doc, data, "diff_count", result.diff_count);
+        yyjson_mut_obj_add_uint(doc, data, "objects_compared", result.objects_compared);
+        yyjson_mut_obj_add_uint(doc, data, "objects_matched", result.objects_matched);
+
+        yyjson_mut_val *file1_info = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, file1_info, "object_count", info1.object_count);
+        yyjson_mut_obj_add_uint(doc, file1_info, "manager_count", info1.manager_count);
+        yyjson_mut_obj_add_uint(doc, file1_info, "file_version", info1.file_version);
+        yyjson_mut_obj_add_uint(doc, file1_info, "ck_version", info1.ck_version);
+        yyjson_mut_obj_add_val(doc, data, "file1_info", file1_info);
+
+        yyjson_mut_val *file2_info = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, file2_info, "object_count", info2.object_count);
+        yyjson_mut_obj_add_uint(doc, file2_info, "manager_count", info2.manager_count);
+        yyjson_mut_obj_add_uint(doc, file2_info, "file_version", info2.file_version);
+        yyjson_mut_obj_add_uint(doc, file2_info, "ck_version", info2.ck_version);
+        yyjson_mut_obj_add_val(doc, data, "file2_info", file2_info);
+
+        if (hist.count > 0) {
+            yyjson_mut_val *classes = yyjson_mut_arr(doc);
+            for (size_t i = 0; i < hist.count; i++) {
+                class_count_entry_t *e = &hist.entries[i];
+                yyjson_mut_val *cls = yyjson_mut_obj(doc);
+                yyjson_mut_obj_add_uint(doc, cls, "class_id", e->class_id);
+                const char *cname = nmo_cli_class_name_from_id(ctx1, e->class_id);
+                if (!cname) cname = nmo_cli_class_name_from_id(ctx2, e->class_id);
+                nmo_cli_json_add_str_safe(doc, cls, "class_name", cname);
+                yyjson_mut_obj_add_uint(doc, cls, "count1", e->count1);
+                yyjson_mut_obj_add_uint(doc, cls, "count2", e->count2);
+                if (e->count1 != e->count2) {
+                    yyjson_mut_obj_add_sint(doc, cls, "delta",
+                        (int64_t)e->count2 - (int64_t)e->count1);
+                }
+                yyjson_mut_arr_append(classes, cls);
+            }
+            yyjson_mut_obj_add_val(doc, data, "class_breakdown", classes);
+        }
+
+        nmo_cli_json_write_enveloped_and_free(doc, data, "diff.summary",
+                                              paths[0], c.out,
+                                              diff_ctx_json_pretty(&c));
+    } else {
+        nmo_cli_print_heading(c.out, "Diff Summary", c.colorize);
+        char buf[128];
+        snprintf(buf, sizeof(buf), "%s", paths[0]);
+        nmo_cli_print_kv(c.out, "File 1", buf, 18, c.colorize);
+        snprintf(buf, sizeof(buf), "%s", paths[1]);
+        nmo_cli_print_kv(c.out, "File 2", buf, 18, c.colorize);
+        if (result.match) {
+            fprintf(c.out, "\n%sFiles are identical%s\n",
+                    c.colorize ? NMO_CLI_COLOR_GREEN : "",
+                    c.colorize ? NMO_CLI_COLOR_RESET : "");
+        } else {
+            fprintf(c.out, "\n%sDifferences found: %d%s\n",
+                    c.colorize ? NMO_CLI_COLOR_YELLOW : "",
+                    result.diff_count,
+                    c.colorize ? NMO_CLI_COLOR_RESET : "");
+        }
+        fprintf(c.out, "\n");
+        snprintf(buf, sizeof(buf), "%u / %u", info1.object_count, info2.object_count);
+        nmo_cli_print_kv(c.out, "Object count", buf, 18, c.colorize);
+        snprintf(buf, sizeof(buf), "%u / %u", info1.manager_count, info2.manager_count);
+        nmo_cli_print_kv(c.out, "Manager count", buf, 18, c.colorize);
+        snprintf(buf, sizeof(buf), "0x%08X / 0x%08X", info1.ck_version, info2.ck_version);
+        nmo_cli_print_kv(c.out, "CK version", buf, 18, c.colorize);
+    }
+
+    close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
+    return (strict && !result.match) ? NMO_CLI_EXIT_STRICT_FAILURE : NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_diff_objects_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    static const nmo_opt_def_t opts[] = {
+        {"--max-objects",       NULL, NMO_OPT_UINT,  "Maximum objects to show"},
+        {"--max-fields",        NULL, NMO_OPT_UINT,  "Maximum fields per object"},
+        {"--min-similarity",    NULL, NMO_OPT_FLOAT, "Minimum similarity threshold (0..1)"},
+        {"--rename-similarity", NULL, NMO_OPT_FLOAT, "Rename detection threshold (0..1)"},
+        {"--format",            "-f", NMO_OPT_STRING, "Output format"},
+    };
+    enum { OPT_MAXOBJ, OPT_MAXFLD, OPT_MINSIM, OPT_RENSIM, OPT_FMT, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (r.pos_count < 1) {
+        fprintf(stderr, "Error: Need comparison file\n");
+        fprintf(stderr, "Usage: diff objects [options] <file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *paths[2] = { diff_current_session_label(ctx), r.pos_args[0] };
+    uint32_t max_objects = vals[OPT_MAXOBJ].present ? vals[OPT_MAXOBJ].val.u : 0;
+    uint32_t max_fields  = vals[OPT_MAXFLD].present ? vals[OPT_MAXFLD].val.u : 0;
+    float min_similarity = vals[OPT_MINSIM].present ? vals[OPT_MINSIM].val.f : -1.0f;
+    float rename_similarity = vals[OPT_RENSIM].present ? vals[OPT_RENSIM].val.f : -1.0f;
+
+    nmo_context_t *ctx1 = NULL, *ctx2 = NULL;
+    nmo_session_t *ses1 = NULL, *ses2 = NULL;
+    bool owns1 = false, owns2 = true;
+    int open_result = open_current_left_session(ctx, paths[1],
+                                                &ctx1, &ses1, &owns1,
+                                                &ctx2, &ses2, &owns2);
+    if (open_result != 0) return open_result;
+
+    nmo_diff_config_t cfg = nmo_diff_config_default();
+    cfg.max_objects = max_objects;
+    cfg.max_fields = max_fields;
+    if (min_similarity >= 0.0f) cfg.min_similarity = min_similarity;
+    if (rename_similarity >= 0.0f) cfg.rename_similarity = rename_similarity;
+
+    nmo_diff_result_t diff;
+    nmo_status_t st = nmo_diff_objects(ctx1, ses1, ctx2, ses2, &cfg, &diff);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Diff engine failed with code %d\n", st);
+        close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_cmd_ctx_t c = *ctx;
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_str(doc, data, "file1", paths[0]);
+        yyjson_mut_obj_add_str(doc, data, "file2", paths[1]);
+        yyjson_mut_obj_add_uint(doc, data, "objects_file1", (uint64_t)diff.total_objects1);
+        yyjson_mut_obj_add_uint(doc, data, "objects_file2", (uint64_t)diff.total_objects2);
+        yyjson_mut_obj_add_uint(doc, data, "changed_count", (uint64_t)diff.changed_count);
+        yyjson_mut_obj_add_uint(doc, data, "renamed_count", (uint64_t)diff.renamed_count);
+        yyjson_mut_obj_add_uint(doc, data, "removed_count", (uint64_t)diff.removed_count);
+        yyjson_mut_obj_add_uint(doc, data, "added_count", (uint64_t)diff.added_count);
+        yyjson_mut_obj_add_uint(doc, data, "identical_count", (uint64_t)diff.identical_count);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "diff.objects",
+                                              paths[0], c.out,
+                                              diff_ctx_json_pretty(&c));
+    } else {
+        fprintf(c.out, "%sdiff a/%s b/%s%s\n",
+                c.colorize ? "\x1b[1m" : "",
+                paths[0], paths[1],
+                c.colorize ? "\x1b[0m" : "");
+        fprintf(c.out, "\n%zu object(s) changed, %zu renamed, %zu removed, %zu added"
+                " (%zu identical)\n",
+                diff.changed_count, diff.renamed_count,
+                diff.removed_count, diff.added_count, diff.identical_count);
+    }
+
+    nmo_diff_result_destroy(&diff);
+    close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_diff_chunks_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+{
+    static const nmo_opt_def_t opts[] = {
+        {"--object", "-o", NMO_OPT_UINT, "Filter by object ID"},
+    };
+    nmo_opt_val_t vals[1];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (r.pos_count < 1) {
+        fprintf(stderr, "Error: Need comparison file\n");
+        fprintf(stderr, "Usage: diff chunks [options] <file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *paths[2] = { diff_current_session_label(ctx), r.pos_args[0] };
+    uint32_t object_id = vals[0].present ? vals[0].val.u : 0;
+    bool specific_object = vals[0].present;
+
+    nmo_context_t *ctx1 = NULL, *ctx2 = NULL;
+    nmo_session_t *ses1 = NULL, *ses2 = NULL;
+    bool owns1 = false, owns2 = true;
+    int open_result = open_current_left_session(ctx, paths[1],
+                                                &ctx1, &ses1, &owns1,
+                                                &ctx2, &ses2, &owns2);
+    if (open_result != 0) return open_result;
+
+    nmo_comparison_result_t result;
+    nmo_comparison_result_init(&result);
+    nmo_status_t cmp_result = nmo_session_compare(
+        ses1, ses2, NMO_COMPARE_CHUNKS | NMO_COMPARE_IDS, &result);
+    if (cmp_result != NMO_OK) {
+        fprintf(stderr, "Error: Comparison failed with code %d\n", cmp_result);
+        close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    int chunk_diff_count = 0;
+    for (int i = 0; i < result.diff_count; i++) {
+        if (specific_object && result.diffs[i].object_id != object_id) continue;
+        nmo_diff_type_t type = result.diffs[i].type;
+        if (type == NMO_DIFF_OBJECT_CHUNK_SIZE ||
+            type == NMO_DIFF_OBJECT_CHUNK_DATA) {
+            chunk_diff_count++;
+        }
+    }
+
+    nmo_cmd_ctx_t c = *ctx;
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_str(doc, data, "file1", paths[0]);
+        yyjson_mut_obj_add_str(doc, data, "file2", paths[1]);
+        if (specific_object) yyjson_mut_obj_add_uint(doc, data, "id", object_id);
+        yyjson_mut_obj_add_bool(doc, data, "identical", chunk_diff_count == 0);
+        yyjson_mut_obj_add_int(doc, data, "diff_count", chunk_diff_count);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "diff.chunks",
+                                              paths[0], c.out,
+                                              diff_ctx_json_pretty(&c));
+    } else {
+        nmo_cli_print_heading(c.out, "Chunk Comparison", c.colorize);
+        char buf[128];
+        snprintf(buf, sizeof(buf), "%s", paths[0]);
+        nmo_cli_print_kv(c.out, "File 1", buf, 18, c.colorize);
+        snprintf(buf, sizeof(buf), "%s", paths[1]);
+        nmo_cli_print_kv(c.out, "File 2", buf, 18, c.colorize);
+        fprintf(c.out, "\n%sChunk differences: %d%s\n",
+                chunk_diff_count ? (c.colorize ? NMO_CLI_COLOR_YELLOW : "") : "",
+                chunk_diff_count,
+                chunk_diff_count && c.colorize ? NMO_CLI_COLOR_RESET : "");
+    }
+
+    close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 int nmo_cmd_diff_full_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
-    return diff_dispatch_current_session_left(ctx, argc, argv, nmo_cmd_diff_full);
+    static const nmo_opt_def_t opts[] = {
+        {"--ignore-order", NULL, NMO_OPT_FLAG, "Ignore object order"},
+    };
+    nmo_opt_val_t vals[1];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (r.pos_count < 1) {
+        fprintf(stderr, "Error: Need comparison file\n");
+        fprintf(stderr, "Usage: diff full [options] <file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *paths[2] = { diff_current_session_label(ctx), r.pos_args[0] };
+    bool ignore_order = vals[0].present && vals[0].val.flag;
+
+    nmo_context_t *ctx1 = NULL, *ctx2 = NULL;
+    nmo_session_t *ses1 = NULL, *ses2 = NULL;
+    bool owns1 = false, owns2 = true;
+    int open_result = open_current_left_session(ctx, paths[1],
+                                                &ctx1, &ses1, &owns1,
+                                                &ctx2, &ses2, &owns2);
+    if (open_result != 0) return open_result;
+
+    nmo_compare_flags_t flags = NMO_COMPARE_STRUCTURE | NMO_COMPARE_IDS |
+                                NMO_COMPARE_NAMES | NMO_COMPARE_CLASS_IDS |
+                                NMO_COMPARE_CHUNKS | NMO_COMPARE_SHADOW |
+                                NMO_COMPARE_MANAGERS | NMO_COMPARE_FILE_INFO |
+                                NMO_COMPARE_VERBOSE;
+    if (ignore_order) flags |= NMO_COMPARE_IGNORE_ORDER;
+
+    nmo_comparison_result_t result;
+    nmo_comparison_result_init(&result);
+    nmo_status_t cmp_result = nmo_session_compare(ses1, ses2, flags, &result);
+    if (cmp_result != NMO_OK) {
+        fprintf(stderr, "Error: Comparison failed with code %d\n", cmp_result);
+        close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    nmo_comparison_result_format_report(&result);
+
+    nmo_cmd_ctx_t c = *ctx;
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_str(doc, data, "file1", paths[0]);
+        yyjson_mut_obj_add_str(doc, data, "file2", paths[1]);
+        yyjson_mut_obj_add_bool(doc, data, "identical", result.match != 0);
+        yyjson_mut_obj_add_int(doc, data, "diff_count", result.diff_count);
+        yyjson_mut_obj_add_bool(doc, data, "diff_overflow", result.diff_overflow != 0);
+        yyjson_mut_obj_add_uint(doc, data, "objects_compared", result.objects_compared);
+        yyjson_mut_obj_add_uint(doc, data, "objects_matched", result.objects_matched);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "diff.full",
+                                              paths[0], c.out,
+                                              diff_ctx_json_pretty(&c));
+    } else {
+        nmo_cli_print_heading(c.out, "Full Comparison Report", c.colorize);
+        char buf[128];
+        snprintf(buf, sizeof(buf), "%s", paths[0]);
+        nmo_cli_print_kv(c.out, "File 1", buf, 18, c.colorize);
+        snprintf(buf, sizeof(buf), "%s", paths[1]);
+        nmo_cli_print_kv(c.out, "File 2", buf, 18, c.colorize);
+        fprintf(c.out, "\n");
+        snprintf(buf, sizeof(buf), "%u", result.objects_compared);
+        nmo_cli_print_kv(c.out, "Objects compared", buf, 18, c.colorize);
+        snprintf(buf, sizeof(buf), "%u", result.objects_matched);
+        nmo_cli_print_kv(c.out, "Objects matched", buf, 18, c.colorize);
+    }
+
+    close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
+    return NMO_CLI_EXIT_SUCCESS;
 }
 
 int nmo_cmd_diff_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
