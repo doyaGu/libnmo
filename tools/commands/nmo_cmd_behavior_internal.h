@@ -83,6 +83,9 @@ void nmo_cmd_behavior_print_interface_diagnostics(
     FILE *out,
     nmo_session_t *session);
 
+int nmo_cmd_behavior_graph_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
+int nmo_cmd_behavior_interface_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
+
 #ifdef __cplusplus
 }
 #endif

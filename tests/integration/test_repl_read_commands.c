@@ -875,6 +875,11 @@ TEST(repl_read, read_family_headers_only_export_family_session_entrypoints) {
                                "nmo_cmd_mesh_export_in_session");
     assert_source_not_contains("tools/commands/nmo_cmd_animation.h",
                                "nmo_cmd_animation_export_in_session");
+
+    assert_source_not_contains("tools/commands/nmo_cmd_behavior.h",
+                               "nmo_cmd_behavior_graph_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_behavior.h",
+                               "nmo_cmd_behavior_interface_in_session");
 }
 
 TEST(repl_read, no_active_session_adapter_symbols_remain) {
