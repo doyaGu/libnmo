@@ -55,6 +55,18 @@ static void patch_guid_to_string(nmo_guid_t guid, char *buf, size_t size) {
     snprintf(buf, size, "%08X-%08X", guid.d1, guid.d2);
 }
 
+static void patch_add_id_array_json(yyjson_mut_doc *doc,
+                                    yyjson_mut_val *obj,
+                                    const char *key,
+                                    const nmo_object_id_t *ids,
+                                    size_t count) {
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    for (size_t i = 0; ids && i < count; ++i) {
+        yyjson_mut_arr_add_uint(doc, arr, ids[i]);
+    }
+    yyjson_mut_obj_add_val(doc, obj, key, arr);
+}
+
 static void patch_plan_free(patch_plan_t *plan) {
     if (!plan) {
         return;
@@ -649,6 +661,91 @@ static int patch_apply_plan(patch_plan_t *plan,
     }
 
     if (emit_diff) {
+        if (ctx.is_json) {
+            yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&ctx);
+            if (!doc) {
+                return nmo_cmd_ctx_done(&ctx,
+                                        NMO_CLI_EXIT_INTERNAL_ERROR);
+            }
+            yyjson_mut_val *data = yyjson_mut_obj(doc);
+            nmo_cli_json_add_str_safe(doc, data, "input", plan->input);
+            nmo_cli_json_add_str_safe(doc, data, "output", plan->output);
+            yyjson_mut_obj_add_uint(doc, data, "operation_count",
+                                    (uint64_t)plan->operation_count);
+
+            yyjson_mut_val *ops = yyjson_mut_arr(doc);
+            for (size_t i = 0; i < plan->operation_count; ++i) {
+                patch_operation_t *op = &plan->operations[i];
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                if (op->kind == PATCH_OP_FOLD) {
+                    nmo_cli_json_add_str_safe(doc, item, "op", "fold");
+                    yyjson_mut_obj_add_uint(
+                        doc, item, "parent",
+                        (uint64_t)op->fold.parent_id);
+                    yyjson_mut_obj_add_uint(
+                        doc, item, "anchor",
+                        (uint64_t)op->fold_report.anchor_id);
+                    yyjson_mut_obj_add_bool(
+                        doc, item, "can_write",
+                        op->fold_report.can_write);
+                    yyjson_mut_obj_add_bool(
+                        doc, item, "rejected",
+                        op->fold_report.rejected);
+                    patch_add_id_array_json(
+                        doc, item, "selected_nodes",
+                        op->fold_report.selected_nodes,
+                        op->fold_report.selected_node_count);
+
+                    yyjson_mut_val *planned = yyjson_mut_obj(doc);
+                    patch_add_id_array_json(
+                        doc, planned, "nodes_to_delete",
+                        op->fold_report.nodes_to_delete,
+                        op->fold_report.nodes_to_delete_count);
+                    yyjson_mut_obj_add_uint(
+                        doc, planned, "control_in_count",
+                        (uint64_t)op->fold_report.boundary.control_in_count);
+                    yyjson_mut_obj_add_uint(
+                        doc, planned, "control_out_count",
+                        (uint64_t)op->fold_report.boundary.control_out_count);
+                    yyjson_mut_obj_add_uint(
+                        doc, planned, "parameter_in_count",
+                        (uint64_t)op->fold_report.boundary.parameter_in_count);
+                    yyjson_mut_obj_add_uint(
+                        doc, planned, "parameter_out_count",
+                        (uint64_t)op->fold_report.boundary.parameter_out_count);
+                    yyjson_mut_obj_add_uint(
+                        doc, planned, "delete_link_count",
+                        (uint64_t)op->fold_report
+                            .control_links_to_delete_count);
+                    yyjson_mut_obj_add_val(doc, item, "planned", planned);
+                } else {
+                    char before_guid[24];
+                    char after_guid[24];
+                    patch_guid_to_string(op->report.before_guid,
+                                         before_guid,
+                                         sizeof(before_guid));
+                    patch_guid_to_string(op->report.after_guid,
+                                         after_guid,
+                                         sizeof(after_guid));
+
+                    nmo_cli_json_add_str_safe(doc, item, "op",
+                                              "replace_bb");
+                    yyjson_mut_obj_add_uint(
+                        doc, item, "behavior_id",
+                        (uint64_t)op->replace_bb.behavior_id);
+                    yyjson_mut_obj_add_bool(doc, item, "changed",
+                                            op->report.changed);
+                    nmo_cli_json_add_str_safe(doc, item, "before_guid",
+                                              before_guid);
+                    nmo_cli_json_add_str_safe(doc, item, "after_guid",
+                                              after_guid);
+                }
+                yyjson_mut_arr_add_val(ops, item);
+            }
+            yyjson_mut_obj_add_val(doc, data, "operations", ops);
+            return nmo_cmd_ctx_json_end(&ctx, doc, data, "patch.diff");
+        }
+
         for (size_t i = 0; i < plan->operation_count; ++i) {
             patch_operation_t *op = &plan->operations[i];
             if (op->kind == PATCH_OP_FOLD) {

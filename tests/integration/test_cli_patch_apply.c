@@ -271,6 +271,49 @@ static void write_fold_patch(const char *path, const char *output_path) {
     ASSERT_TRUE(write_text_file(path, json));
 }
 
+static void write_closed_graph_fold_patch(const char *path,
+                                          const char *output_path) {
+    char json[4096];
+    snprintf(json, sizeof(json),
+             "{\n"
+             "  \"version\": 1,\n"
+             "  \"input\": \"%s\",\n"
+             "  \"output\": \"%s\",\n"
+             "  \"operations\": [\n"
+             "    {\n"
+             "      \"op\": \"fold\",\n"
+             "      \"parent\": 4692,\n"
+             "      \"nodes\": [4166, 4140, 4147, 4157, 4165, 4153, 4151, 4155, 4143, 4145],\n"
+             "      \"anchor\": 4166,\n"
+             "      \"name\": \"Patch Fold Small Graph\",\n"
+             "      \"guid\": \"42414C07-10000007\",\n"
+             "      \"version\": 65536,\n"
+             "      \"preserve_boundary\": true,\n"
+             "      \"interface\": \"preserve\"\n"
+             "    }\n"
+             "  ]\n"
+             "}\n",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output_path);
+    ASSERT_TRUE(write_text_file(path, json));
+}
+
+static bool array_contains_uint(yyjson_val *arr, uint64_t needle) {
+    size_t idx;
+    size_t max;
+    yyjson_val *item;
+
+    if (!arr) {
+        return false;
+    }
+    yyjson_arr_foreach(arr, idx, max, item) {
+        if (yyjson_is_uint(item) && yyjson_get_uint(item) == needle) {
+            return true;
+        }
+    }
+    return false;
+}
+
 TEST(cli, patch_apply_leaf_replace_bb_dry_run_and_apply) {
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/replace_bb.json";
@@ -373,8 +416,46 @@ TEST(cli, patch_apply_fold_dry_run_reports_analysis) {
     remove(patch);
 }
 
+TEST(cli, patch_diff_json_reports_fold_delete_plan) {
+    make_dir("test_patch_tmp");
+    const char *patch = "test_patch_tmp/fold_closed_graph.json";
+    const char *output = "test_patch_tmp/fold_closed_graph.cmo";
+    remove(patch);
+    remove(output);
+    write_closed_graph_fold_patch(patch, output);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "-f json patch diff \"%s\"", patch);
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "patch.diff", &doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    yyjson_val *operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
+    yyjson_val *op = yyjson_arr_get(operations, 0);
+    ASSERT_TRUE(op && yyjson_is_obj(op));
+    ASSERT_STR_EQ("fold", get_string_field(op, "op"));
+    ASSERT_TRUE(get_bool_field(op, "can_write"));
+
+    yyjson_val *planned = get_object_field(op, "planned");
+    ASSERT_NOT_NULL(planned);
+    yyjson_val *nodes_to_delete = get_array_field(planned,
+                                                  "nodes_to_delete");
+    ASSERT_NOT_NULL(nodes_to_delete);
+    ASSERT_TRUE(array_contains_uint(nodes_to_delete, 4140u));
+    ASSERT_FALSE(file_exists(output));
+    yyjson_doc_free(doc);
+
+    remove(patch);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, patch_apply_rejects_non_leaf_replace_bb);
     REGISTER_TEST(cli, patch_apply_fold_dry_run_reports_analysis);
+    REGISTER_TEST(cli, patch_diff_json_reports_fold_delete_plan);
     REGISTER_TEST(cli, patch_apply_leaf_replace_bb_dry_run_and_apply);
 TEST_MAIN_END()
