@@ -1407,9 +1407,35 @@ int nmo_cmd_behavior_fold(int argc,
         goto cleanup;
     }
 
-    rc = args.dry_run
-        ? fold_emit_dry_run(&c, parent, representative, &report)
-        : NMO_CLI_EXIT_SUCCESS;
+    if (args.dry_run) {
+        rc = fold_emit_dry_run(&c, parent, representative, &report);
+    } else {
+        nmo_save_options_t save_opts = nmo_save_options_default();
+        rc = nmo_cli_save_session(c.session, args.output_path, &save_opts);
+        if (rc == NMO_CLI_EXIT_SUCCESS) {
+            if (c.is_json) {
+                yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+                if (!doc) {
+                    rc = NMO_CLI_EXIT_INTERNAL_ERROR;
+                    goto cleanup;
+                }
+                yyjson_mut_val *data = yyjson_mut_obj(doc);
+                yyjson_mut_obj_add_bool(doc, data, "dry_run", false);
+                yyjson_mut_obj_add_bool(doc, data, "can_write",
+                                        report.can_write);
+                yyjson_mut_obj_add_uint(doc, data, "parent_id",
+                                        report.parent_id);
+                yyjson_mut_obj_add_uint(doc, data, "anchor_id",
+                                        report.anchor_id);
+                nmo_cli_json_add_str_safe(doc, data, "output",
+                                          args.output_path);
+                rc = nmo_cmd_ctx_json_end(&c, doc, data,
+                                          "behavior.fold");
+            } else {
+                fprintf(c.out, "Saved to: %s\n", args.output_path);
+            }
+        }
+    }
 
 cleanup:
     nmo_behavior_fold_report_free(&report);

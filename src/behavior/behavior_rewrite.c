@@ -310,6 +310,26 @@ static nmo_status_t rewrite_fold_validate_explicit_maps(
     return NMO_OK;
 }
 
+static bool rewrite_fold_report_is_single_anchor_only(
+    const nmo_behavior_fold_report_t *report) {
+    return report &&
+           report->selected_node_count == 1 &&
+           report->nodes_to_delete_count == 0 &&
+           report->control_links_to_delete_count == 0 &&
+           report->boundary.parameter_in_count == 0 &&
+           report->boundary.parameter_out_count == 0;
+}
+
+static bool rewrite_behavior_state_is_leaf_bb(
+    const nmo_behavior_state_t *state) {
+    return state &&
+           (state->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0u &&
+           (state->flags & CKBEHAVIOR_SCRIPT) == 0u &&
+           state->sub_behaviors.count == 0 &&
+           state->sub_behavior_links.count == 0 &&
+           state->operations.count == 0;
+}
+
 static void rewrite_fold_report_reject(nmo_behavior_fold_report_t *report,
                                        const char *code,
                                        const char *message) {
@@ -498,6 +518,74 @@ nmo_status_t nmo_behavior_fold_apply(
             report, "preserve_boundary_required",
             "Behavior fold write requires preserve-boundary");
         return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (rewrite_fold_report_is_single_anchor_only(report)) {
+        nmo_object_repository_t *repo = nmo_session_get_repository(session);
+        nmo_object_t *anchor =
+            repo ? nmo_object_repository_find_by_id(repo, report->anchor_id)
+                 : NULL;
+        if (!anchor ||
+            !rewrite_is_behavior_class(ctx, nmo_object_get_class_id(anchor))) {
+            rewrite_fold_report_reject(report, "anchor_not_found",
+                                       "Fold anchor behavior was not found");
+            return NMO_ERR_NOT_FOUND;
+        }
+        nmo_behavior_state_t *state =
+            (nmo_behavior_state_t *)nmo_object_get_state(anchor);
+        if (!rewrite_behavior_state_is_leaf_bb(state)) {
+            rewrite_fold_report_reject(
+                report, "anchor_not_leaf",
+                "Single-node fold requires a leaf BB anchor");
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+
+        nmo_session_edit_t *edit = NULL;
+        nmo_status_t edit_rc =
+            nmo_session_edit_begin(session, "behavior fold anchor", &edit);
+        if (edit_rc != NMO_OK) {
+            rewrite_fold_report_reject(report, "edit_begin_failed",
+                                       "Failed to begin behavior fold edit");
+            return edit_rc;
+        }
+        edit_rc = nmo_session_edit_snapshot_bytes(edit, state,
+                                                  sizeof(*state));
+        if (edit_rc != NMO_OK) {
+            rewrite_fold_report_reject(report, "snapshot_failed",
+                                       "Failed to snapshot fold anchor");
+            nmo_session_edit_rollback(edit);
+            return edit_rc;
+        }
+
+        state->flags |= CKBEHAVIOR_BUILDINGBLOCK | CKBEHAVIOR_USEFUNCTION;
+        state->flags &= ~CKBEHAVIOR_SCRIPT;
+        state->priority = 0;
+        state->block_guid = desc->block_guid;
+        state->block_version =
+            desc->block_version != 0 ? desc->block_version : 65536u;
+        if (desc->name && desc->name[0] != '\0') {
+            edit_rc = nmo_session_edit_rename_object(
+                edit, report->anchor_id, desc->name);
+            if (edit_rc != NMO_OK) {
+                rewrite_fold_report_reject(report, "rename_failed",
+                                           "Failed to rename fold anchor");
+                nmo_session_edit_rollback(edit);
+                return edit_rc;
+            }
+        }
+        nmo_session_edit_mark(edit, NMO_SESSION_EDIT_OBJECT_STATE);
+        edit_rc = nmo_session_edit_commit(edit);
+        if (edit_rc != NMO_OK) {
+            rewrite_fold_report_reject(report, "commit_failed",
+                                       "Failed to commit behavior fold");
+            return edit_rc;
+        }
+
+        free(report->write_blockers);
+        report->write_blockers = NULL;
+        report->write_blocker_count = 0;
+        report->analysis_only = false;
+        report->can_write = true;
+        return NMO_OK;
     }
     if (!report->can_write) {
         if (report->write_blocker_count > 0) {

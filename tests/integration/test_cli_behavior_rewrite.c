@@ -843,7 +843,8 @@ TEST(cli, behavior_fold_write_rejects_with_analysis_blocker) {
              "behavior fold --parent 4692 --nodes 2364,2208 "
              "--guid 42414C07-10000007 "
              "--name \"Ballance Event Handler\" "
-             "--preserve-links --preserve-params \"%s\" -o \"%s\"",
+             "--preserve-boundary --map-input 0:0 --map-input 1:1 "
+             "\"%s\" -o \"%s\"",
              NMO_TEST_DATA_FILE("Ballance/base.cmo"),
              output);
 
@@ -854,6 +855,40 @@ TEST(cli, behavior_fold_write_rejects_with_analysis_blocker) {
     ASSERT_STR_CONTAINS(result.output, "write mode is not implemented");
     ASSERT_FALSE(file_exists(output));
     free(result.output);
+}
+
+TEST(cli, behavior_fold_writes_single_leaf_anchor) {
+    const char *output = "test_behavior_rewrite_tmp/fold_single_anchor.cmo";
+    remove(output);
+    make_dir("test_behavior_rewrite_tmp");
+
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "behavior fold --parent 4692 --nodes 2367 "
+             "--anchor 2367 "
+             "--guid 42414C07-10000007 "
+             "--name \"Ballance Single Fold\" "
+             "--preserve-boundary \"%s\" -o \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output);
+
+    assert_cli_success(args, "Saved to");
+    ASSERT_TRUE(file_exists(output));
+    assert_validate_ok(output);
+
+    snprintf(args, sizeof(args), "-f json behavior show 2367 \"%s\"",
+             output);
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.show", &doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_STR_EQ("Ballance Single Fold", get_string_field(data, "name"));
+    ASSERT_STR_EQ("42414C07-10000007", get_string_field(data, "bb_guid"));
+    ASSERT_STR_EQ("BB", get_string_field(data, "behavior_type"));
+    yyjson_doc_free(doc);
+
+    remove(output);
 }
 
 TEST_MAIN_BEGIN()
@@ -873,4 +908,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan);
     REGISTER_TEST(cli, behavior_fold_dry_run_rejects_parent_in_selected_nodes);
     REGISTER_TEST(cli, behavior_fold_write_rejects_with_analysis_blocker);
+    REGISTER_TEST(cli, behavior_fold_writes_single_leaf_anchor);
 TEST_MAIN_END()
