@@ -63,6 +63,7 @@ typedef struct nmo_behavior_fold_desc {
     nmo_guid_t block_guid;
     const char *name;
     uint32_t block_version;
+    bool preserve_boundary;
     bool preserve_links;
     bool preserve_params;
 } nmo_behavior_fold_desc_t;
@@ -82,6 +83,7 @@ typedef struct nmo_behavior_fold_report {
     nmo_guid_t target_guid;
     const char *target_name;
     uint32_t target_version;
+    bool preserve_boundary;
     bool preserve_links;
     bool preserve_params;
 

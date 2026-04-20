@@ -137,6 +137,39 @@ TEST(beh_rewrite, fold_analyze_uses_explicit_anchor)
     nmo_session_close_with_context(ctx, session);
 }
 
+TEST(beh_rewrite, fold_analyze_preserve_boundary_enables_edges)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+                        &ctx, &session)) {
+        return;
+    }
+
+    nmo_object_id_t nodes[] = {2364u, 2208u};
+    nmo_behavior_fold_desc_t desc = {
+        .parent_id = 4692u,
+        .node_ids = nodes,
+        .node_count = 2u,
+        .anchor_id = 2364u,
+        .block_guid = {0x42414C07u, 0x10000007u},
+        .name = "Ballance Event Handler",
+        .block_version = 65536u,
+        .preserve_boundary = true,
+    };
+    nmo_behavior_fold_report_t report = {0};
+
+    nmo_status_t rc = nmo_behavior_fold_analyze(ctx, session, &desc,
+                                                &report);
+    ASSERT_EQ(NMO_OK, rc);
+    ASSERT_TRUE(report.preserve_boundary);
+    ASSERT_TRUE(report.preserve_links);
+    ASSERT_TRUE(report.preserve_params);
+
+    nmo_behavior_fold_report_free(&report);
+    nmo_session_close_with_context(ctx, session);
+}
+
 TEST(beh_rewrite, fold_analyze_rejects_anchor_outside_selection)
 {
     nmo_context_t *ctx = NULL;
@@ -208,6 +241,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(beh_rewrite, fold_analyze_reports_selected_boundary_plan);
     REGISTER_TEST(beh_rewrite, fold_write_rejects_until_supported);
     REGISTER_TEST(beh_rewrite, fold_analyze_uses_explicit_anchor);
+    REGISTER_TEST(beh_rewrite, fold_analyze_preserve_boundary_enables_edges);
     REGISTER_TEST(beh_rewrite, fold_analyze_rejects_anchor_outside_selection);
     REGISTER_TEST(beh_rewrite, fold_analyze_rejects_parent_in_selected_nodes);
 TEST_MAIN_END()

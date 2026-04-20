@@ -311,6 +311,7 @@ typedef struct fold_args {
     nmo_guid_t block_guid;
     const char *name;
     uint32_t block_version;
+    bool preserve_boundary;
     bool preserve_links;
     bool preserve_params;
     bool dry_run;
@@ -843,6 +844,8 @@ static bool parse_fold_args(int argc,
         {"--guid",            NULL, NMO_OPT_STRING, "Target BB GUID"},
         {"--name",            NULL, NMO_OPT_STRING, "Target BB name"},
         {"--version",         NULL, NMO_OPT_UINT,   "Target BB version"},
+        {"--preserve-boundary", NULL, NMO_OPT_FLAG,
+         "Require full behavior boundary preservation"},
         {"--preserve-links",  NULL, NMO_OPT_FLAG,   "Require control boundary preservation"},
         {"--preserve-params", NULL, NMO_OPT_FLAG,   "Require parameter boundary preservation"},
         {"--output",          "-o", NMO_OPT_STRING, "Output file"},
@@ -855,6 +858,7 @@ static bool parse_fold_args(int argc,
         OPT_GUID,
         OPT_NAME,
         OPT_VERSION,
+        OPT_PRESERVE_BOUNDARY,
         OPT_PRESERVE_LINKS,
         OPT_PRESERVE_PARAMS,
         OPT_OUTPUT,
@@ -886,10 +890,14 @@ static bool parse_fold_args(int argc,
     args.block_version = vals[OPT_VERSION].present
         ? vals[OPT_VERSION].val.u
         : 65536u;
-    args.preserve_links = vals[OPT_PRESERVE_LINKS].present &&
-                          vals[OPT_PRESERVE_LINKS].val.flag;
-    args.preserve_params = vals[OPT_PRESERVE_PARAMS].present &&
-                           vals[OPT_PRESERVE_PARAMS].val.flag;
+    args.preserve_boundary = vals[OPT_PRESERVE_BOUNDARY].present &&
+                             vals[OPT_PRESERVE_BOUNDARY].val.flag;
+    args.preserve_links = args.preserve_boundary ||
+                          (vals[OPT_PRESERVE_LINKS].present &&
+                           vals[OPT_PRESERVE_LINKS].val.flag);
+    args.preserve_params = args.preserve_boundary ||
+                           (vals[OPT_PRESERVE_PARAMS].present &&
+                            vals[OPT_PRESERVE_PARAMS].val.flag);
     args.dry_run = vals[OPT_DRY_RUN].present &&
                    vals[OPT_DRY_RUN].val.flag;
     args.output_path = vals[OPT_OUTPUT].present
@@ -952,6 +960,8 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
         add_id_list_json(doc, data, "selected_nodes",
                          report->selected_nodes,
                          report->selected_node_count);
+        yyjson_mut_obj_add_bool(doc, data, "preserve_boundary",
+                                report->preserve_boundary);
         yyjson_mut_obj_add_bool(doc, data, "preserve_links",
                                 report->preserve_links);
         yyjson_mut_obj_add_bool(doc, data, "preserve_params",
@@ -1113,6 +1123,7 @@ int nmo_cmd_behavior_fold(int argc,
         .block_guid = args.block_guid,
         .name = args.name,
         .block_version = args.block_version,
+        .preserve_boundary = args.preserve_boundary,
         .preserve_links = args.preserve_links,
         .preserve_params = args.preserve_params,
     };
