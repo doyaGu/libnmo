@@ -12,7 +12,6 @@
 #include "../nmo_opt.h"
 
 #include "behavior/nmo_behavior_boundary.h"
-#include "behavior/nmo_behavior_graph.h"
 #include "behavior/nmo_behavior_rewrite.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
@@ -25,7 +24,6 @@
 
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 static void rewrite_guid_to_string(nmo_guid_t guid, char *buf, size_t size) {
@@ -317,11 +315,6 @@ typedef struct fold_args {
     bool dry_run;
 } fold_args_t;
 
-typedef struct fold_control_plan {
-    nmo_behavior_boundary_control_edge_t *links_to_delete;
-    size_t links_to_delete_count;
-} fold_control_plan_t;
-
 static const char *fold_behavior_type(const nmo_behavior_state_t *state) {
     if (!state) {
         return "Unknown";
@@ -437,119 +430,6 @@ static void add_id_list_json(yyjson_mut_doc *doc,
         yyjson_mut_arr_add_uint(doc, arr, ids[i]);
     }
     yyjson_mut_obj_add_val(doc, obj, key, arr);
-}
-
-static void add_fold_nodes_to_delete_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *obj,
-    const nmo_behavior_boundary_t *boundary,
-    nmo_object_id_t representative_id) {
-    yyjson_mut_val *arr = yyjson_mut_arr(doc);
-    for (size_t i = 0; i < boundary->internal_node_count; ++i) {
-        nmo_object_id_t node_id = boundary->internal_nodes[i];
-        if (node_id != representative_id) {
-            yyjson_mut_arr_add_uint(doc, arr, node_id);
-        }
-    }
-    yyjson_mut_obj_add_val(doc, obj, "nodes_to_delete", arr);
-}
-
-static bool fold_id_in_set(const nmo_object_id_t *ids,
-                           size_t count,
-                           nmo_object_id_t id) {
-    if (!ids || id == 0) {
-        return false;
-    }
-    for (size_t i = 0; i < count; ++i) {
-        if (ids[i] == id) {
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool fold_plan_add_delete_link(
-    fold_control_plan_t *plan,
-    const nmo_behavior_graph_edge_t *edge) {
-    if (!plan || !edge) {
-        return false;
-    }
-
-    size_t new_count = plan->links_to_delete_count + 1;
-    nmo_behavior_boundary_control_edge_t *new_edges =
-        (nmo_behavior_boundary_control_edge_t *)realloc(
-            plan->links_to_delete,
-            new_count * sizeof(*new_edges));
-    if (!new_edges) {
-        return false;
-    }
-
-    new_edges[plan->links_to_delete_count] =
-        (nmo_behavior_boundary_control_edge_t){
-            .link_id = edge->link_id,
-            .source_owner_id = edge->from_id,
-            .source_io_id = edge->in_io_id,
-            .target_owner_id = edge->to_id,
-            .target_io_id = edge->out_io_id,
-            .activation_delay = edge->activation_delay,
-            .initial_activation_delay = edge->initial_activation_delay,
-        };
-    plan->links_to_delete = new_edges;
-    plan->links_to_delete_count = new_count;
-    return true;
-}
-
-static bool fold_control_plan_build(nmo_context_t *ctx,
-                                    nmo_session_t *session,
-                                    nmo_object_id_t parent_id,
-                                    const nmo_object_id_t *node_ids,
-                                    size_t node_count,
-                                    fold_control_plan_t *out_plan) {
-    if (!ctx || !session || parent_id == 0 || !node_ids ||
-        node_count == 0 || !out_plan) {
-        return false;
-    }
-
-    memset(out_plan, 0, sizeof(*out_plan));
-    nmo_behavior_graph_t graph = {0};
-    if (!nmo_behavior_graph_build(ctx, session, parent_id,
-                                  UINT32_MAX, &graph)) {
-        return false;
-    }
-
-    bool ok = true;
-    for (size_t i = 0; i < graph.edge_count; ++i) {
-        const nmo_behavior_graph_edge_t *edge = &graph.edges[i];
-        if (!edge->kind || strcmp(edge->kind, "behavior_link") != 0) {
-            continue;
-        }
-
-        bool source_internal = fold_id_in_set(node_ids, node_count,
-                                              edge->from_id);
-        bool target_internal = fold_id_in_set(node_ids, node_count,
-                                              edge->to_id);
-        if (source_internal && target_internal) {
-            ok = fold_plan_add_delete_link(out_plan, edge);
-            if (!ok) {
-                break;
-            }
-        }
-    }
-
-    nmo_behavior_graph_free(&graph);
-    if (!ok) {
-        free(out_plan->links_to_delete);
-        memset(out_plan, 0, sizeof(*out_plan));
-    }
-    return ok;
-}
-
-static void fold_control_plan_free(fold_control_plan_t *plan) {
-    if (!plan) {
-        return;
-    }
-    free(plan->links_to_delete);
-    memset(plan, 0, sizeof(*plan));
 }
 
 static void add_fold_retarget_control_edges_json(
@@ -1024,12 +904,11 @@ static bool parse_fold_args(int argc,
 }
 
 static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
-                             const fold_args_t *args,
                              const nmo_behavior_state_t *parent,
                              const nmo_behavior_state_t *representative,
-                             const nmo_behavior_boundary_t *boundary,
-                             const fold_control_plan_t *control_plan) {
-    nmo_object_id_t representative_id = args->nodes[0];
+                             const nmo_behavior_fold_report_t *report) {
+    const nmo_behavior_boundary_t *boundary = &report->boundary;
+    nmo_object_id_t representative_id = report->representative_id;
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         if (!doc) {
@@ -1039,7 +918,7 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
         yyjson_mut_obj_add_bool(doc, data, "dry_run", true);
         yyjson_mut_obj_add_bool(doc, data, "write_supported", false);
         nmo_cli_json_add_str_safe(doc, data, "status", "analysis_only");
-        yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
+        yyjson_mut_obj_add_uint(doc, data, "parent_id", report->parent_id);
         nmo_cli_json_add_str_safe(doc, data, "parent_behavior_type",
                                   fold_behavior_type(parent));
         yyjson_mut_obj_add_uint(doc, data, "representative_id",
@@ -1047,34 +926,33 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
         nmo_cli_json_add_str_safe(doc, data,
                                   "representative_behavior_type",
                                   fold_behavior_type(representative));
-        add_id_list_json(doc, data, "selected_nodes", args->nodes,
-                         args->node_count);
+        add_id_list_json(doc, data, "selected_nodes",
+                         report->selected_nodes,
+                         report->selected_node_count);
         yyjson_mut_obj_add_bool(doc, data, "preserve_links",
-                                args->preserve_links);
+                                report->preserve_links);
         yyjson_mut_obj_add_bool(doc, data, "preserve_params",
-                                args->preserve_params);
+                                report->preserve_params);
 
         char guid_buf[24];
-        rewrite_guid_to_string(args->block_guid, guid_buf, sizeof(guid_buf));
+        rewrite_guid_to_string(report->target_guid, guid_buf,
+                               sizeof(guid_buf));
         yyjson_mut_val *target = yyjson_mut_obj(doc);
         nmo_cli_json_add_str_safe(doc, target, "guid", guid_buf);
-        nmo_cli_json_add_str_safe(doc, target, "name", args->name);
+        nmo_cli_json_add_str_safe(doc, target, "name", report->target_name);
         yyjson_mut_obj_add_uint(doc, target, "version",
-                                (uint64_t)args->block_version);
+                                (uint64_t)report->target_version);
         yyjson_mut_obj_add_val(doc, data, "target", target);
 
         yyjson_mut_val *planned = yyjson_mut_obj(doc);
         add_internal_nodes_json(doc, planned, boundary);
-        add_fold_nodes_to_delete_json(doc, planned, boundary,
-                                      representative_id);
+        add_id_list_json(doc, planned, "nodes_to_delete",
+                         report->nodes_to_delete,
+                         report->nodes_to_delete_count);
         yyjson_mut_val *delete_links = yyjson_mut_obj(doc);
         add_control_edges_json(doc, delete_links, "control",
-                               control_plan
-                                   ? control_plan->links_to_delete
-                                   : NULL,
-                               control_plan
-                                   ? control_plan->links_to_delete_count
-                                   : 0);
+                               report->control_links_to_delete,
+                               report->control_links_to_delete_count);
         yyjson_mut_obj_add_val(doc, planned, "links_to_delete",
                                delete_links);
         yyjson_mut_val *links = yyjson_mut_obj(doc);
@@ -1130,18 +1008,17 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
         yyjson_mut_obj_add_uint(doc, planned, "parameter_out_count",
                                 (uint64_t)boundary->parameter_out_count);
         yyjson_mut_obj_add_uint(doc, planned, "delete_link_count",
-                                control_plan
-                                    ? (uint64_t)control_plan->links_to_delete_count
-                                    : 0u);
+                                (uint64_t)report->control_links_to_delete_count);
         yyjson_mut_obj_add_val(doc, data, "planned", planned);
 
         return nmo_cmd_ctx_json_end(ctx, doc, data, "behavior.fold");
     }
 
     fprintf(ctx->out, "[dry-run] Fold behavior #%u into BB %08X-%08X\n",
-            representative_id, args->block_guid.d1, args->block_guid.d2);
+            representative_id, report->target_guid.d1,
+            report->target_guid.d2);
     fprintf(ctx->out, "Parent #%u (%s), representative #%u (%s)\n",
-            args->parent_id, fold_behavior_type(parent),
+            report->parent_id, fold_behavior_type(parent),
             representative_id, fold_behavior_type(representative));
     fprintf(ctx->out,
             "Planned: nodes=%zu delete=%zu control_in=%zu control_out=%zu parameter_in=%zu parameter_out=%zu interface=%s\n",
@@ -1155,7 +1032,7 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
             boundary->parameter_out_count,
             fold_interface_action(representative));
     fprintf(ctx->out, "Delete links: %zu\n",
-            control_plan ? control_plan->links_to_delete_count : 0);
+            report->control_links_to_delete_count);
     fprintf(ctx->out,
             "Write mode is not implemented yet; dry-run report only.\n");
     return NMO_CLI_EXIT_SUCCESS;
@@ -1187,8 +1064,7 @@ int nmo_cmd_behavior_fold(int argc,
         return rc;
     }
 
-    nmo_behavior_boundary_t fold_boundary = {0};
-    fold_control_plan_t control_plan = {0};
+    nmo_behavior_fold_report_t report = {0};
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
     const nmo_behavior_state_t *parent =
         fold_find_behavior_state(repo, args.parent_id);
@@ -1200,38 +1076,35 @@ int nmo_cmd_behavior_fold(int argc,
         goto cleanup;
     }
 
-    if (!nmo_behavior_boundary_build_for_nodes(c.ctx, c.session,
-                                               args.parent_id,
-                                               args.nodes,
-                                               args.node_count,
-                                               &fold_boundary)) {
-        char detail[256];
-        size_t detail_len = nmo_last_error_message_copy(detail,
-                                                        sizeof(detail));
-        fprintf(stderr, "Error: %s\n",
-                detail_len > 0 ? detail
-                               : "Failed to build selected fold boundary");
-        nmo_error_code_t code = nmo_last_error_code();
-        rc = (code == NMO_ERR_INVALID_ARGUMENT || code == NMO_ERR_NOT_FOUND)
+    nmo_behavior_fold_desc_t desc = {
+        .parent_id = args.parent_id,
+        .node_ids = args.nodes,
+        .node_count = args.node_count,
+        .block_guid = args.block_guid,
+        .name = args.name,
+        .block_version = args.block_version,
+        .preserve_links = args.preserve_links,
+        .preserve_params = args.preserve_params,
+    };
+    nmo_status_t analyze_rc = nmo_behavior_fold_analyze(c.ctx, c.session,
+                                                        &desc, &report);
+    if (analyze_rc != NMO_OK) {
+        if (report.diagnostic_message) {
+            fprintf(stderr, "Error: %s\n", report.diagnostic_message);
+        } else {
+            fprintf(stderr, "Error: Failed to analyze behavior fold\n");
+        }
+        rc = (analyze_rc == NMO_ERR_INVALID_ARGUMENT ||
+              analyze_rc == NMO_ERR_NOT_FOUND)
             ? NMO_CLI_EXIT_ARG_ERROR
             : NMO_CLI_EXIT_INTERNAL_ERROR;
         goto cleanup;
     }
 
-    if (!fold_control_plan_build(c.ctx, c.session, args.parent_id,
-                                 args.nodes, args.node_count,
-                                 &control_plan)) {
-        fprintf(stderr, "Error: Failed to build fold control plan\n");
-        rc = NMO_CLI_EXIT_INTERNAL_ERROR;
-        goto cleanup;
-    }
-
-    rc = fold_emit_dry_run(&c, &args, parent, representative,
-                           &fold_boundary, &control_plan);
+    rc = fold_emit_dry_run(&c, parent, representative, &report);
 
 cleanup:
-    fold_control_plan_free(&control_plan);
-    nmo_behavior_boundary_free(&fold_boundary);
+    nmo_behavior_fold_report_free(&report);
     return nmo_cmd_ctx_done(&c, rc);
 }
 

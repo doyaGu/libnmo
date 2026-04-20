@@ -199,6 +199,10 @@ set_tests_properties(test_behavior_index PROPERTIES WORKING_DIRECTORY "${CMAKE_S
 add_unit_test(test_behavior_graph_recursive)
 set_tests_properties(test_behavior_graph_recursive PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+# Behavior rewrite planning
+add_unit_test(test_behavior_rewrite)
+set_tests_properties(test_behavior_rewrite PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
 # Typed parameter chain tracing
 add_unit_test(test_param_chain)
 set_tests_properties(test_param_chain PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")

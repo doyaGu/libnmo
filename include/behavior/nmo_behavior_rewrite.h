@@ -6,6 +6,7 @@
 #ifndef NMO_BEHAVIOR_REWRITE_H
 #define NMO_BEHAVIOR_REWRITE_H
 
+#include "behavior/nmo_behavior_boundary.h"
 #include "core/nmo_guid.h"
 #include "nmo_types.h"
 
@@ -54,11 +55,54 @@ typedef struct nmo_behavior_rewrite_report {
     size_t diagnostics_count;
 } nmo_behavior_rewrite_report_t;
 
+typedef struct nmo_behavior_fold_desc {
+    nmo_object_id_t parent_id;
+    const nmo_object_id_t *node_ids;
+    size_t node_count;
+    nmo_guid_t block_guid;
+    const char *name;
+    uint32_t block_version;
+    bool preserve_links;
+    bool preserve_params;
+} nmo_behavior_fold_desc_t;
+
+typedef struct nmo_behavior_fold_report {
+    bool analysis_only;
+    nmo_object_id_t parent_id;
+    nmo_object_id_t representative_id;
+    nmo_guid_t target_guid;
+    const char *target_name;
+    uint32_t target_version;
+    bool preserve_links;
+    bool preserve_params;
+
+    nmo_object_id_t *selected_nodes;
+    size_t selected_node_count;
+    nmo_object_id_t *nodes_to_delete;
+    size_t nodes_to_delete_count;
+
+    nmo_behavior_boundary_t boundary;
+    nmo_behavior_boundary_control_edge_t *control_links_to_delete;
+    size_t control_links_to_delete_count;
+
+    const char *diagnostic_code;
+    const char *diagnostic_message;
+} nmo_behavior_fold_report_t;
+
 NMO_API nmo_status_t nmo_behavior_replace_bb(
     nmo_context_t *ctx,
     nmo_session_t *session,
     const nmo_behavior_replace_bb_desc_t *desc,
     nmo_behavior_rewrite_report_t *report);
+
+NMO_API nmo_status_t nmo_behavior_fold_analyze(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const nmo_behavior_fold_desc_t *desc,
+    nmo_behavior_fold_report_t *report);
+
+NMO_API void nmo_behavior_fold_report_free(
+    nmo_behavior_fold_report_t *report);
 
 #ifdef __cplusplus
 }

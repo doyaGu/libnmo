@@ -1,6 +1,7 @@
 #include "behavior/nmo_behavior_rewrite.h"
 
 #include "behavior/nmo_behavior_boundary.h"
+#include "behavior/nmo_behavior_graph.h"
 #include "core/nmo_error.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -13,6 +14,7 @@
 #include "type/nmo_type_system.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static bool rewrite_is_behavior_class(nmo_context_t *ctx,
@@ -107,6 +109,232 @@ static void rewrite_report_reject(nmo_behavior_rewrite_report_t *report,
     report->diagnostic_code = code;
     report->diagnostic_message = message;
     report->diagnostics_count = 1;
+}
+
+static bool rewrite_id_in_set(const nmo_object_id_t *ids,
+                              size_t count,
+                              nmo_object_id_t id) {
+    if (!ids || id == 0) {
+        return false;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        if (ids[i] == id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static nmo_status_t rewrite_copy_node_ids(nmo_object_id_t **out_ids,
+                                          size_t *out_count,
+                                          const nmo_object_id_t *ids,
+                                          size_t count) {
+    if (!out_ids || !out_count || (!ids && count > 0)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_ids = NULL;
+    *out_count = 0;
+    if (count == 0) {
+        return NMO_OK;
+    }
+
+    nmo_object_id_t *copy =
+        (nmo_object_id_t *)malloc(count * sizeof(*copy));
+    if (!copy) {
+        return NMO_ERR_NOMEM;
+    }
+    memcpy(copy, ids, count * sizeof(*copy));
+    *out_ids = copy;
+    *out_count = count;
+    return NMO_OK;
+}
+
+static nmo_status_t rewrite_build_nodes_to_delete(
+    nmo_behavior_fold_report_t *report,
+    const nmo_behavior_fold_desc_t *desc) {
+    if (!report || !desc || desc->node_count == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t delete_count = desc->node_count > 0 ? desc->node_count - 1 : 0;
+    if (delete_count == 0) {
+        return NMO_OK;
+    }
+
+    report->nodes_to_delete =
+        (nmo_object_id_t *)malloc(delete_count *
+                                  sizeof(*report->nodes_to_delete));
+    if (!report->nodes_to_delete) {
+        return NMO_ERR_NOMEM;
+    }
+
+    size_t out = 0;
+    for (size_t i = 0; i < desc->node_count; ++i) {
+        if (desc->node_ids[i] != report->representative_id) {
+            report->nodes_to_delete[out++] = desc->node_ids[i];
+        }
+    }
+    report->nodes_to_delete_count = out;
+    return NMO_OK;
+}
+
+static nmo_status_t rewrite_add_delete_control_link(
+    nmo_behavior_fold_report_t *report,
+    const nmo_behavior_graph_edge_t *edge) {
+    if (!report || !edge) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t new_count = report->control_links_to_delete_count + 1;
+    nmo_behavior_boundary_control_edge_t *new_edges =
+        (nmo_behavior_boundary_control_edge_t *)realloc(
+            report->control_links_to_delete,
+            new_count * sizeof(*new_edges));
+    if (!new_edges) {
+        return NMO_ERR_NOMEM;
+    }
+
+    new_edges[report->control_links_to_delete_count] =
+        (nmo_behavior_boundary_control_edge_t){
+            .link_id = edge->link_id,
+            .source_owner_id = edge->from_id,
+            .source_io_id = edge->in_io_id,
+            .target_owner_id = edge->to_id,
+            .target_io_id = edge->out_io_id,
+            .activation_delay = edge->activation_delay,
+            .initial_activation_delay = edge->initial_activation_delay,
+        };
+    report->control_links_to_delete = new_edges;
+    report->control_links_to_delete_count = new_count;
+    return NMO_OK;
+}
+
+static nmo_status_t rewrite_build_delete_control_links(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const nmo_behavior_fold_desc_t *desc,
+    nmo_behavior_fold_report_t *report) {
+    nmo_behavior_graph_t graph = {0};
+    if (!nmo_behavior_graph_build(ctx, session, desc->parent_id,
+                                  UINT32_MAX, &graph)) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_status_t rc = NMO_OK;
+    for (size_t i = 0; i < graph.edge_count; ++i) {
+        const nmo_behavior_graph_edge_t *edge = &graph.edges[i];
+        if (!edge->kind || strcmp(edge->kind, "behavior_link") != 0) {
+            continue;
+        }
+
+        bool source_internal = rewrite_id_in_set(desc->node_ids,
+                                                 desc->node_count,
+                                                 edge->from_id);
+        bool target_internal = rewrite_id_in_set(desc->node_ids,
+                                                 desc->node_count,
+                                                 edge->to_id);
+        if (source_internal && target_internal) {
+            rc = rewrite_add_delete_control_link(report, edge);
+            if (rc != NMO_OK) {
+                break;
+            }
+        }
+    }
+
+    nmo_behavior_graph_free(&graph);
+    return rc;
+}
+
+static void rewrite_fold_report_reject(nmo_behavior_fold_report_t *report,
+                                       const char *code,
+                                       const char *message) {
+    if (!report) {
+        return;
+    }
+    report->diagnostic_code = code;
+    report->diagnostic_message = message;
+}
+
+nmo_status_t nmo_behavior_fold_analyze(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const nmo_behavior_fold_desc_t *desc,
+    nmo_behavior_fold_report_t *report) {
+    if (report) {
+        memset(report, 0, sizeof(*report));
+    }
+    if (!ctx || !session || !desc || !report || desc->parent_id == 0 ||
+        !desc->node_ids || desc->node_count == 0 ||
+        nmo_guid_is_null(desc->block_guid)) {
+        rewrite_fold_report_reject(report, "invalid_argument",
+                                   "Invalid behavior fold analysis arguments");
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    report->analysis_only = true;
+    report->parent_id = desc->parent_id;
+    report->representative_id = desc->node_ids[0];
+    report->target_guid = desc->block_guid;
+    report->target_name = desc->name;
+    report->target_version =
+        desc->block_version != 0 ? desc->block_version : 65536u;
+    report->preserve_links = desc->preserve_links;
+    report->preserve_params = desc->preserve_params;
+
+    nmo_status_t rc = rewrite_copy_node_ids(&report->selected_nodes,
+                                            &report->selected_node_count,
+                                            desc->node_ids,
+                                            desc->node_count);
+    if (rc != NMO_OK) {
+        rewrite_fold_report_reject(report, "out_of_memory",
+                                   "Failed to copy selected fold nodes");
+        goto fail;
+    }
+
+    rc = rewrite_build_nodes_to_delete(report, desc);
+    if (rc != NMO_OK) {
+        rewrite_fold_report_reject(report, "out_of_memory",
+                                   "Failed to build fold delete node plan");
+        goto fail;
+    }
+
+    if (!nmo_behavior_boundary_build_for_nodes(ctx, session,
+                                               desc->parent_id,
+                                               desc->node_ids,
+                                               desc->node_count,
+                                               &report->boundary)) {
+        nmo_error_code_t code = nmo_last_error_code();
+        rewrite_fold_report_reject(report, "boundary_failed",
+                                   "Failed to build selected fold boundary");
+        rc = (code == NMO_ERR_INVALID_ARGUMENT || code == NMO_ERR_NOT_FOUND)
+            ? code
+            : NMO_ERR_INVALID_STATE;
+        goto fail;
+    }
+
+    rc = rewrite_build_delete_control_links(ctx, session, desc, report);
+    if (rc != NMO_OK) {
+        rewrite_fold_report_reject(report, "control_plan_failed",
+                                   "Failed to build fold control plan");
+        goto fail;
+    }
+
+    return NMO_OK;
+
+fail:
+    nmo_behavior_fold_report_free(report);
+    return rc;
+}
+
+void nmo_behavior_fold_report_free(nmo_behavior_fold_report_t *report) {
+    if (!report) {
+        return;
+    }
+    free(report->selected_nodes);
+    free(report->nodes_to_delete);
+    free(report->control_links_to_delete);
+    nmo_behavior_boundary_free(&report->boundary);
+    memset(report, 0, sizeof(*report));
 }
 
 nmo_status_t nmo_behavior_replace_bb(
