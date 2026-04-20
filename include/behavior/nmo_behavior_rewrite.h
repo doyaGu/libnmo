@@ -59,6 +59,7 @@ typedef struct nmo_behavior_fold_desc {
     nmo_object_id_t parent_id;
     const nmo_object_id_t *node_ids;
     size_t node_count;
+    nmo_object_id_t anchor_id;
     nmo_guid_t block_guid;
     const char *name;
     uint32_t block_version;
@@ -75,6 +76,7 @@ typedef struct nmo_behavior_fold_report {
     bool analysis_only;
     bool can_write;
     nmo_object_id_t parent_id;
+    nmo_object_id_t anchor_id;
     nmo_object_id_t representative_id;
     nmo_guid_t target_guid;
     const char *target_name;

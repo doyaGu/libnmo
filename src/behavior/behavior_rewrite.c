@@ -299,8 +299,11 @@ nmo_status_t nmo_behavior_fold_analyze(
 
     report->analysis_only = true;
     report->can_write = false;
+    nmo_object_id_t anchor_id =
+        desc->anchor_id != 0 ? desc->anchor_id : desc->node_ids[0];
     report->parent_id = desc->parent_id;
-    report->representative_id = desc->node_ids[0];
+    report->anchor_id = anchor_id;
+    report->representative_id = anchor_id;
     report->target_guid = desc->block_guid;
     report->target_name = desc->name;
     report->target_version =

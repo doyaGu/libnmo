@@ -307,6 +307,7 @@ typedef struct fold_args {
     nmo_object_id_t parent_id;
     nmo_object_id_t nodes[256];
     size_t node_count;
+    nmo_object_id_t anchor_id;
     nmo_guid_t block_guid;
     const char *name;
     uint32_t block_version;
@@ -838,6 +839,7 @@ static bool parse_fold_args(int argc,
     static const nmo_opt_def_t opts[] = {
         {"--parent",          "-p", NMO_OPT_UINT,   "Parent behavior ID"},
         {"--nodes",           NULL, NMO_OPT_STRING, "Comma-separated node IDs"},
+        {"--anchor",          NULL, NMO_OPT_UINT,   "Anchor behavior ID"},
         {"--guid",            NULL, NMO_OPT_STRING, "Target BB GUID"},
         {"--name",            NULL, NMO_OPT_STRING, "Target BB name"},
         {"--version",         NULL, NMO_OPT_UINT,   "Target BB version"},
@@ -849,6 +851,7 @@ static bool parse_fold_args(int argc,
     enum {
         OPT_PARENT,
         OPT_NODES,
+        OPT_ANCHOR,
         OPT_GUID,
         OPT_NAME,
         OPT_VERSION,
@@ -877,6 +880,7 @@ static bool parse_fold_args(int argc,
 
     fold_args_t args = {0};
     args.parent_id = vals[OPT_PARENT].val.u;
+    args.anchor_id = vals[OPT_ANCHOR].present ? vals[OPT_ANCHOR].val.u : 0;
     args.block_guid = nmo_guid_parse(vals[OPT_GUID].val.str);
     args.name = vals[OPT_NAME].val.str;
     args.block_version = vals[OPT_VERSION].present
@@ -937,6 +941,7 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
         yyjson_mut_obj_add_val(doc, data, "write_blockers",
                                write_blockers);
         yyjson_mut_obj_add_uint(doc, data, "parent_id", report->parent_id);
+        yyjson_mut_obj_add_uint(doc, data, "anchor_id", report->anchor_id);
         nmo_cli_json_add_str_safe(doc, data, "parent_behavior_type",
                                   fold_behavior_type(parent));
         yyjson_mut_obj_add_uint(doc, data, "representative_id",
@@ -1104,6 +1109,7 @@ int nmo_cmd_behavior_fold(int argc,
         .parent_id = args.parent_id,
         .node_ids = args.nodes,
         .node_count = args.node_count,
+        .anchor_id = args.anchor_id,
         .block_guid = args.block_guid,
         .name = args.name,
         .block_version = args.block_version,

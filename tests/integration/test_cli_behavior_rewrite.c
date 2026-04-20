@@ -596,6 +596,37 @@ TEST(cli, behavior_fold_dry_run_uses_explicit_node_set) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, behavior_fold_dry_run_uses_explicit_anchor) {
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior fold --parent 4692 --nodes 2364,2208 "
+             "--anchor 2208 "
+             "--guid 42414C07-10000007 "
+             "--name \"Ballance Event Handler\" "
+             "--preserve-links --preserve-params --dry-run \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.fold", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_EQ(2208u, (uint32_t)get_uint_field(data, "anchor_id"));
+    ASSERT_EQ(2208u, (uint32_t)get_uint_field(data, "representative_id"));
+
+    yyjson_val *planned = get_object_field(data, "planned");
+    ASSERT_NOT_NULL(planned);
+    yyjson_val *nodes_to_delete = get_array_field(planned, "nodes_to_delete");
+    ASSERT_NOT_NULL(nodes_to_delete);
+    ASSERT_TRUE(array_contains_uint(nodes_to_delete, 2364u));
+    ASSERT_FALSE(array_contains_uint(nodes_to_delete, 2208u));
+
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan) {
     char args[2048];
     snprintf(args, sizeof(args),
@@ -720,6 +751,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_fold_candidates_reports_direct_child_groups);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_boundary_plan);
     REGISTER_TEST(cli, behavior_fold_dry_run_uses_explicit_node_set);
+    REGISTER_TEST(cli, behavior_fold_dry_run_uses_explicit_anchor);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_parameter_rewire_plan);
     REGISTER_TEST(cli, behavior_fold_write_rejects_with_analysis_blocker);
