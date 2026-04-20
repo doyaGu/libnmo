@@ -238,6 +238,39 @@ static void write_non_leaf_patch(const char *path, const char *output_path) {
     ASSERT_TRUE(write_text_file(path, json));
 }
 
+static void write_fold_patch(const char *path, const char *output_path) {
+    char json[4096];
+    snprintf(json, sizeof(json),
+             "{\n"
+             "  \"version\": 1,\n"
+             "  \"input\": \"%s\",\n"
+             "  \"output\": \"%s\",\n"
+             "  \"operations\": [\n"
+             "    {\n"
+             "      \"op\": \"fold\",\n"
+             "      \"parent\": 4692,\n"
+             "      \"nodes\": [2364, 2208],\n"
+             "      \"anchor\": 2364,\n"
+             "      \"name\": \"Ballance Event Handler\",\n"
+             "      \"guid\": \"42414C07-10000007\",\n"
+             "      \"version\": 65536,\n"
+             "      \"preserve_boundary\": true,\n"
+             "      \"inputs\": [\n"
+             "        {\"old_index\": 0, \"new_index\": 0},\n"
+             "        {\"old_index\": 1, \"new_index\": 1}\n"
+             "      ],\n"
+             "      \"outputs\": [\n"
+             "        {\"old_index\": 0, \"new_index\": 1}\n"
+             "      ],\n"
+             "      \"interface\": \"preserve\"\n"
+             "    }\n"
+             "  ]\n"
+             "}\n",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output_path);
+    ASSERT_TRUE(write_text_file(path, json));
+}
+
 TEST(cli, patch_apply_leaf_replace_bb_dry_run_and_apply) {
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/replace_bb.json";
@@ -304,7 +337,44 @@ TEST(cli, patch_apply_rejects_non_leaf_replace_bb) {
     remove(patch);
 }
 
+TEST(cli, patch_apply_fold_dry_run_reports_analysis) {
+    make_dir("test_patch_tmp");
+    const char *patch = "test_patch_tmp/fold.json";
+    const char *output = "test_patch_tmp/fold.cmo";
+    remove(patch);
+    remove(output);
+    write_fold_patch(patch, output);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
+             patch);
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "patch.apply", &doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    yyjson_val *operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
+    yyjson_val *op = yyjson_arr_get(operations, 0);
+    ASSERT_TRUE(op && yyjson_is_obj(op));
+    ASSERT_STR_EQ("fold", get_string_field(op, "op"));
+    ASSERT_EQ(4692u, (uint32_t)get_uint_field(op, "parent"));
+    ASSERT_FALSE(get_bool_field(op, "can_write"));
+    ASSERT_FALSE(get_bool_field(op, "rejected"));
+    ASSERT_FALSE(file_exists(output));
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args), "patch diff \"%s\"", patch);
+    assert_cli_success(args, "fold #4692");
+
+    remove(patch);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, patch_apply_rejects_non_leaf_replace_bb);
+    REGISTER_TEST(cli, patch_apply_fold_dry_run_reports_analysis);
     REGISTER_TEST(cli, patch_apply_leaf_replace_bb_dry_run_and_apply);
 TEST_MAIN_END()
