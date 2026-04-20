@@ -55,6 +55,21 @@ typedef struct nmo_behavior_rewrite_report {
     size_t diagnostics_count;
 } nmo_behavior_rewrite_report_t;
 
+typedef enum nmo_behavior_fold_map_kind {
+    NMO_BEHAVIOR_FOLD_MAP_INPUT = 0,
+    NMO_BEHAVIOR_FOLD_MAP_OUTPUT = 1,
+    NMO_BEHAVIOR_FOLD_MAP_PARAMETER = 2,
+} nmo_behavior_fold_map_kind_t;
+
+typedef struct nmo_behavior_fold_map {
+    nmo_behavior_fold_map_kind_t kind;
+    uint32_t old_index;
+    uint32_t new_index;
+    nmo_object_id_t old_id;
+    nmo_object_id_t new_id;
+    const char *label;
+} nmo_behavior_fold_map_t;
+
 typedef struct nmo_behavior_fold_desc {
     nmo_object_id_t parent_id;
     const nmo_object_id_t *node_ids;
@@ -66,6 +81,8 @@ typedef struct nmo_behavior_fold_desc {
     bool preserve_boundary;
     bool preserve_links;
     bool preserve_params;
+    const nmo_behavior_fold_map_t *output_maps;
+    size_t output_map_count;
 } nmo_behavior_fold_desc_t;
 
 typedef struct nmo_behavior_fold_write_blocker {
@@ -86,6 +103,8 @@ typedef struct nmo_behavior_fold_report {
     bool preserve_boundary;
     bool preserve_links;
     bool preserve_params;
+    nmo_behavior_fold_map_t *output_maps;
+    size_t output_map_count;
 
     nmo_object_id_t *selected_nodes;
     size_t selected_node_count;

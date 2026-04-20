@@ -149,6 +149,31 @@ static nmo_status_t rewrite_copy_node_ids(nmo_object_id_t **out_ids,
     return NMO_OK;
 }
 
+static nmo_status_t rewrite_copy_fold_maps(
+    nmo_behavior_fold_map_t **out_maps,
+    size_t *out_count,
+    const nmo_behavior_fold_map_t *maps,
+    size_t count) {
+    if (!out_maps || !out_count || (!maps && count > 0)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_maps = NULL;
+    *out_count = 0;
+    if (count == 0) {
+        return NMO_OK;
+    }
+
+    nmo_behavior_fold_map_t *copy =
+        (nmo_behavior_fold_map_t *)malloc(count * sizeof(*copy));
+    if (!copy) {
+        return NMO_ERR_NOMEM;
+    }
+    memcpy(copy, maps, count * sizeof(*copy));
+    *out_maps = copy;
+    *out_count = count;
+    return NMO_OK;
+}
+
 static nmo_status_t rewrite_build_nodes_to_delete(
     nmo_behavior_fold_report_t *report,
     const nmo_behavior_fold_desc_t *desc) {
@@ -339,6 +364,16 @@ nmo_status_t nmo_behavior_fold_analyze(
         goto fail;
     }
 
+    rc = rewrite_copy_fold_maps(&report->output_maps,
+                                &report->output_map_count,
+                                desc->output_maps,
+                                desc->output_map_count);
+    if (rc != NMO_OK) {
+        rewrite_fold_report_reject(report, "out_of_memory",
+                                   "Failed to copy fold output maps");
+        goto fail;
+    }
+
     rc = rewrite_fold_add_write_blocker(
         report, "analysis_only",
         "Behavior fold write mode is not implemented yet");
@@ -416,6 +451,7 @@ void nmo_behavior_fold_report_free(nmo_behavior_fold_report_t *report) {
     }
     free(report->selected_nodes);
     free(report->nodes_to_delete);
+    free(report->output_maps);
     free(report->control_links_to_delete);
     free(report->write_blockers);
     nmo_behavior_boundary_free(&report->boundary);

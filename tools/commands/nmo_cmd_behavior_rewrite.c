@@ -314,6 +314,8 @@ typedef struct fold_args {
     bool preserve_boundary;
     bool preserve_links;
     bool preserve_params;
+    nmo_behavior_fold_map_t output_maps[16];
+    size_t output_map_count;
     bool dry_run;
     const char *output_path;
 } fold_args_t;
@@ -431,6 +433,46 @@ static void add_id_list_json(yyjson_mut_doc *doc,
     yyjson_mut_val *arr = yyjson_mut_arr(doc);
     for (size_t i = 0; ids && i < count; ++i) {
         yyjson_mut_arr_add_uint(doc, arr, ids[i]);
+    }
+    yyjson_mut_obj_add_val(doc, obj, key, arr);
+}
+
+static const char *fold_map_kind_string(nmo_behavior_fold_map_kind_t kind) {
+    switch (kind) {
+    case NMO_BEHAVIOR_FOLD_MAP_INPUT:
+        return "input";
+    case NMO_BEHAVIOR_FOLD_MAP_OUTPUT:
+        return "output";
+    case NMO_BEHAVIOR_FOLD_MAP_PARAMETER:
+        return "parameter";
+    }
+    return "unknown";
+}
+
+static void add_fold_maps_json(yyjson_mut_doc *doc,
+                               yyjson_mut_val *obj,
+                               const char *key,
+                               const nmo_behavior_fold_map_t *maps,
+                               size_t count) {
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    for (size_t i = 0; i < count; ++i) {
+        yyjson_mut_val *item = yyjson_mut_obj(doc);
+        nmo_cli_json_add_str_safe(doc, item, "kind",
+                                  fold_map_kind_string(maps[i].kind));
+        yyjson_mut_obj_add_uint(doc, item, "old_index",
+                                (uint64_t)maps[i].old_index);
+        yyjson_mut_obj_add_uint(doc, item, "new_index",
+                                (uint64_t)maps[i].new_index);
+        if (maps[i].old_id != 0) {
+            yyjson_mut_obj_add_uint(doc, item, "old_id", maps[i].old_id);
+        }
+        if (maps[i].new_id != 0) {
+            yyjson_mut_obj_add_uint(doc, item, "new_id", maps[i].new_id);
+        }
+        if (maps[i].label) {
+            nmo_cli_json_add_str_safe(doc, item, "label", maps[i].label);
+        }
+        yyjson_mut_arr_add_val(arr, item);
     }
     yyjson_mut_obj_add_val(doc, obj, key, arr);
 }
@@ -558,6 +600,43 @@ static bool parse_fold_nodes(const char *text,
         out_nodes[(*out_count)++] = id;
     }
     return *out_count > 0;
+}
+
+static bool parse_fold_index_map(const char *text,
+                                 nmo_behavior_fold_map_kind_t kind,
+                                 nmo_behavior_fold_map_t *out_map) {
+    if (!text || !out_map) {
+        return false;
+    }
+    const char *colon = strchr(text, ':');
+    if (!colon || colon == text || colon[1] == '\0') {
+        return false;
+    }
+
+    char left[32];
+    char right[32];
+    size_t left_len = (size_t)(colon - text);
+    size_t right_len = strlen(colon + 1);
+    if (left_len >= sizeof(left) || right_len >= sizeof(right)) {
+        return false;
+    }
+    memcpy(left, text, left_len);
+    left[left_len] = '\0';
+    memcpy(right, colon + 1, right_len + 1);
+
+    uint32_t old_index = 0;
+    uint32_t new_index = 0;
+    if (nmo_parse_u32_range(left, 0, UINT32_MAX, &old_index) != NMO_OK ||
+        nmo_parse_u32_range(right, 0, UINT32_MAX, &new_index) != NMO_OK) {
+        return false;
+    }
+
+    *out_map = (nmo_behavior_fold_map_t){
+        .kind = kind,
+        .old_index = old_index,
+        .new_index = new_index,
+    };
+    return true;
 }
 
 static bool parse_fold_candidates_args(int argc,
@@ -848,6 +927,7 @@ static bool parse_fold_args(int argc,
          "Require full behavior boundary preservation"},
         {"--preserve-links",  NULL, NMO_OPT_FLAG,   "Require control boundary preservation"},
         {"--preserve-params", NULL, NMO_OPT_FLAG,   "Require parameter boundary preservation"},
+        {"--map-output",      NULL, NMO_OPT_STRING, "Map output old_index:new_index"},
         {"--output",          "-o", NMO_OPT_STRING, "Output file"},
         {"--dry-run",         NULL, NMO_OPT_FLAG,   "Preview without saving"},
     };
@@ -861,6 +941,7 @@ static bool parse_fold_args(int argc,
         OPT_PRESERVE_BOUNDARY,
         OPT_PRESERVE_LINKS,
         OPT_PRESERVE_PARAMS,
+        OPT_MAP_OUTPUT,
         OPT_OUTPUT,
         OPT_DRY_RUN,
         OPT_COUNT
@@ -903,6 +984,14 @@ static bool parse_fold_args(int argc,
     args.output_path = vals[OPT_OUTPUT].present
         ? vals[OPT_OUTPUT].val.str
         : NULL;
+    if (vals[OPT_MAP_OUTPUT].present) {
+        if (!parse_fold_index_map(vals[OPT_MAP_OUTPUT].val.str,
+                                  NMO_BEHAVIOR_FOLD_MAP_OUTPUT,
+                                  &args.output_maps[0])) {
+            return false;
+        }
+        args.output_map_count = 1;
+    }
     if (args.parent_id == 0 || nmo_guid_is_null(args.block_guid) ||
         !parse_fold_nodes(vals[OPT_NODES].val.str, args.nodes,
                           sizeof(args.nodes) / sizeof(args.nodes[0]),
@@ -966,6 +1055,11 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
                                 report->preserve_links);
         yyjson_mut_obj_add_bool(doc, data, "preserve_params",
                                 report->preserve_params);
+        yyjson_mut_val *maps = yyjson_mut_obj(doc);
+        add_fold_maps_json(doc, maps, "outputs",
+                           report->output_maps,
+                           report->output_map_count);
+        yyjson_mut_obj_add_val(doc, data, "maps", maps);
 
         char guid_buf[24];
         rewrite_guid_to_string(report->target_guid, guid_buf,
@@ -1126,6 +1220,8 @@ int nmo_cmd_behavior_fold(int argc,
         .preserve_boundary = args.preserve_boundary,
         .preserve_links = args.preserve_links,
         .preserve_params = args.preserve_params,
+        .output_maps = args.output_maps,
+        .output_map_count = args.output_map_count,
     };
     nmo_status_t fold_rc = args.dry_run
         ? nmo_behavior_fold_analyze(c.ctx, c.session, &desc, &report)

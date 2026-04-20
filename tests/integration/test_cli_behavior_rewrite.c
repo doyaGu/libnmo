@@ -652,6 +652,38 @@ TEST(cli, behavior_fold_dry_run_accepts_preserve_boundary) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, behavior_fold_dry_run_reports_output_map) {
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior fold --parent 4692 --nodes 2364,2208 "
+             "--anchor 2364 "
+             "--guid 42414C07-10000007 "
+             "--name \"Ballance Event Handler\" "
+             "--preserve-boundary --map-output 0:1 --dry-run \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.fold", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    yyjson_val *maps = get_object_field(data, "maps");
+    ASSERT_NOT_NULL(maps);
+    yyjson_val *outputs = get_array_field(maps, "outputs");
+    ASSERT_NOT_NULL(outputs);
+    ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(outputs));
+    yyjson_val *map = yyjson_arr_get(outputs, 0);
+    ASSERT_TRUE(map && yyjson_is_obj(map));
+    ASSERT_STR_EQ("output", get_string_field(map, "kind"));
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(map, "old_index"));
+    ASSERT_EQ(1u, (uint32_t)get_uint_field(map, "new_index"));
+
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan) {
     char args[2048];
     snprintf(args, sizeof(args),
@@ -751,6 +783,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_fold_dry_run_uses_explicit_node_set);
     REGISTER_TEST(cli, behavior_fold_dry_run_uses_explicit_anchor);
     REGISTER_TEST(cli, behavior_fold_dry_run_accepts_preserve_boundary);
+    REGISTER_TEST(cli, behavior_fold_dry_run_reports_output_map);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan);
     REGISTER_TEST(cli, behavior_fold_dry_run_rejects_parent_in_selected_nodes);
     REGISTER_TEST(cli, behavior_fold_write_rejects_with_analysis_blocker);
