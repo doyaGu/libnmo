@@ -6,7 +6,14 @@
 #include "../test_framework.h"
 
 #include "behavior/nmo_behavior_rewrite.h"
+#include "core/nmo_array.h"
 #include "core/nmo_guid.h"
+#include "format/nmo_object.h"
+#include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_behaviorlink_schemas.h"
+#include "object/builtin/nmo_beobject_schemas.h"
+#include "object/nmo_class_ids.h"
+#include "object/nmo_object_repository.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_util.h"
@@ -20,6 +27,162 @@ static bool open_test_file(const char *path,
     char errbuf[256] = {0};
     return nmo_session_open_file_with_context(path, out_ctx, out_session,
                                               errbuf, sizeof(errbuf));
+}
+
+static nmo_object_t *test_find_object(nmo_session_t *session,
+                                      nmo_object_id_t id)
+{
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    return repo ? nmo_object_repository_find_by_id(repo, id) : NULL;
+}
+
+static nmo_behavior_state_t *test_behavior_state(nmo_session_t *session,
+                                                 nmo_object_id_t id)
+{
+    nmo_object_t *object = test_find_object(session, id);
+    return object ? (nmo_behavior_state_t *)nmo_object_get_state(object)
+                  : NULL;
+}
+
+static nmo_behaviorlink_state_t *test_behavior_link_state(
+    nmo_session_t *session,
+    nmo_object_id_t id)
+{
+    nmo_object_t *object = test_find_object(session, id);
+    return object
+        ? (nmo_behaviorlink_state_t *)nmo_object_get_state(object)
+        : NULL;
+}
+
+static nmo_object_id_t test_create_object(nmo_session_t *session,
+                                          nmo_class_id_t class_id,
+                                          const char *name)
+{
+    nmo_runtime_report_t report = {0};
+    nmo_object_id_t id = 0;
+    if (nmo_session_create_object(session, class_id, name,
+                                  (nmo_guid_t){0, 0}, &id,
+                                  &report) != NMO_OK ||
+        id == 0) {
+        return 0;
+    }
+    return id;
+}
+
+static void test_append_id(nmo_array_t *array, nmo_object_id_t id)
+{
+    ASSERT_EQ(NMO_OK, nmo_array_append(array, &id));
+}
+
+static nmo_object_id_t test_create_behavior_link(nmo_session_t *session,
+                                                 nmo_behavior_state_t *owner,
+                                                 nmo_object_id_t source_io,
+                                                 nmo_object_id_t target_io)
+{
+    nmo_object_id_t link_id = test_create_object(
+        session, NMO_CID_BEHAVIORLINK, "Link");
+    nmo_behaviorlink_state_t *link =
+        test_behavior_link_state(session, link_id);
+    if (!link) {
+        return 0;
+    }
+    link->in_io_id = source_io;
+    link->out_io_id = target_io;
+    link->use_new_format = true;
+    link->has_format = true;
+    test_append_id(&owner->sub_behavior_links, link_id);
+    return link_id;
+}
+
+static bool create_control_output_fold_fixture(
+    nmo_context_t **out_ctx,
+    nmo_session_t **out_session,
+    nmo_object_id_t *out_parent,
+    nmo_object_id_t *out_anchor,
+    nmo_object_id_t *out_child,
+    nmo_object_id_t *out_anchor_output,
+    nmo_object_id_t *out_external_link)
+{
+    nmo_context_t *ctx =
+        nmo_context_create(&(nmo_context_desc_t){ .data_dir = "data" });
+    if (!ctx) {
+        return false;
+    }
+    nmo_session_t *session = nmo_session_create(ctx);
+    if (!session) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    nmo_object_id_t parent = test_create_object(
+        session, NMO_CID_BEHAVIOR, "Parent");
+    nmo_object_id_t owner = test_create_object(
+        session, NMO_CID_BEOBJECT, "Owner");
+    nmo_object_id_t anchor = test_create_object(
+        session, NMO_CID_BEHAVIOR, "Anchor Graph");
+    nmo_object_id_t child = test_create_object(
+        session, NMO_CID_BEHAVIOR, "Internal Child");
+    nmo_object_id_t external = test_create_object(
+        session, NMO_CID_BEHAVIOR, "External Target");
+    nmo_object_id_t anchor_in = test_create_object(
+        session, NMO_CID_BEHAVIORIO, "Anchor In");
+    nmo_object_id_t anchor_out = test_create_object(
+        session, NMO_CID_BEHAVIORIO, "Anchor Out");
+    nmo_object_id_t child_in = test_create_object(
+        session, NMO_CID_BEHAVIORIO, "Child In");
+    nmo_object_id_t child_out = test_create_object(
+        session, NMO_CID_BEHAVIORIO, "Child Out");
+    nmo_object_id_t external_in = test_create_object(
+        session, NMO_CID_BEHAVIORIO, "External In");
+
+    nmo_behavior_state_t *parent_state =
+        test_behavior_state(session, parent);
+    nmo_beobject_state_t *owner_state =
+        (nmo_beobject_state_t *)nmo_object_get_state(
+            test_find_object(session, owner));
+    nmo_behavior_state_t *anchor_state =
+        test_behavior_state(session, anchor);
+    nmo_behavior_state_t *child_state =
+        test_behavior_state(session, child);
+    nmo_behavior_state_t *external_state =
+        test_behavior_state(session, external);
+    if (!parent_state || !owner_state || !anchor_state || !child_state ||
+        !external_state) {
+        nmo_session_destroy(session);
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    test_append_id(&owner_state->script_ids, parent);
+    test_append_id(&parent_state->sub_behaviors, anchor);
+    test_append_id(&parent_state->sub_behaviors, external);
+    test_append_id(&anchor_state->inputs, anchor_in);
+    test_append_id(&anchor_state->outputs, anchor_out);
+    test_append_id(&anchor_state->sub_behaviors, child);
+    test_append_id(&child_state->inputs, child_in);
+    test_append_id(&child_state->outputs, child_out);
+    test_append_id(&external_state->inputs, external_in);
+
+    (void)test_create_behavior_link(session, anchor_state, anchor_in,
+                                    child_in);
+    nmo_object_id_t external_link = test_create_behavior_link(
+        session, parent_state, child_out, external_in);
+
+    if (external_link == 0 ||
+        nmo_session_ensure_behavior_acceleration(session) != NMO_OK) {
+        nmo_session_destroy(session);
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    *out_ctx = ctx;
+    *out_session = session;
+    *out_parent = parent;
+    *out_anchor = anchor;
+    *out_child = child;
+    *out_anchor_output = anchor_out;
+    *out_external_link = external_link;
+    return true;
 }
 
 TEST(beh_rewrite, fold_analyze_reports_selected_boundary_plan)
@@ -76,6 +239,47 @@ TEST(beh_rewrite, fold_analyze_reports_selected_boundary_plan)
     ASSERT_EQ(2208u, report.nodes_to_delete[0]);
     ASSERT_TRUE(report.boundary.control_in_count > 0);
     ASSERT_TRUE(report.boundary.control_out_count > 0);
+
+    nmo_behavior_fold_report_free(&report);
+    nmo_session_close_with_context(ctx, session);
+}
+
+TEST(beh_rewrite, fold_apply_retargets_control_out_to_anchor_output)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    nmo_object_id_t parent = 0;
+    nmo_object_id_t anchor = 0;
+    nmo_object_id_t child = 0;
+    nmo_object_id_t anchor_output = 0;
+    nmo_object_id_t external_link = 0;
+    ASSERT_TRUE(create_control_output_fold_fixture(
+        &ctx, &session, &parent, &anchor, &child, &anchor_output,
+        &external_link));
+
+    nmo_object_id_t nodes[] = {anchor, child};
+    nmo_behavior_fold_desc_t desc = {
+        .parent_id = parent,
+        .node_ids = nodes,
+        .node_count = 2u,
+        .anchor_id = anchor,
+        .block_guid = {0x42414C07u, 0x10000007u},
+        .name = "Folded Control Out",
+        .block_version = 65536u,
+        .preserve_boundary = true,
+    };
+    nmo_behavior_fold_report_t report = {0};
+
+    nmo_status_t rc = nmo_behavior_fold_apply(ctx, session, &desc,
+                                              &report);
+    ASSERT_EQ(NMO_OK, rc);
+    ASSERT_EQ(1u, report.boundary.control_out_count);
+
+    nmo_behaviorlink_state_t *link =
+        test_behavior_link_state(session, external_link);
+    ASSERT_NOT_NULL(link);
+    ASSERT_EQ(anchor_output, link->in_io_id);
+    ASSERT_NULL(test_find_object(session, child));
 
     nmo_behavior_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
@@ -533,6 +737,7 @@ TEST(beh_rewrite, fold_analyze_rejects_parent_in_selected_nodes)
 }
 
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(beh_rewrite, fold_apply_retargets_control_out_to_anchor_output);
     REGISTER_TEST(beh_rewrite, fold_analyze_reports_selected_boundary_plan);
     REGISTER_TEST(beh_rewrite, fold_write_rejects_until_supported);
     REGISTER_TEST(beh_rewrite, fold_apply_rejects_until_supported);

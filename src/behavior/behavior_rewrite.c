@@ -6,6 +6,7 @@
 #include "core/nmo_error.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_repository.h"
@@ -755,6 +756,177 @@ static nmo_status_t rewrite_fold_transform_anchor(
     return NMO_OK;
 }
 
+static uint32_t rewrite_fold_mapped_new_index(
+    const nmo_behavior_fold_map_t *maps,
+    size_t map_count,
+    uint32_t old_index) {
+    for (size_t i = 0; maps && i < map_count; ++i) {
+        if (maps[i].old_index == old_index) {
+            return maps[i].new_index;
+        }
+    }
+    return old_index;
+}
+
+static nmo_status_t rewrite_fold_anchor_io_at(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    nmo_object_id_t anchor_id,
+    bool input,
+    uint32_t index,
+    nmo_object_id_t *out_io_id) {
+    if (!session || !out_io_id) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_io_id = 0;
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_t *anchor =
+        repo ? nmo_object_repository_find_by_id(repo, anchor_id) : NULL;
+    if (!anchor ||
+        !rewrite_is_behavior_class(ctx, nmo_object_get_class_id(anchor))) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    const nmo_behavior_state_t *state =
+        (const nmo_behavior_state_t *)nmo_object_get_state(anchor);
+    if (!state) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    const nmo_array_t *ios = input ? &state->inputs : &state->outputs;
+    if (index >= ios->count || !ios->data) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    const nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, ios);
+    *out_io_id = ids[index];
+    return *out_io_id != 0 ? NMO_OK : NMO_ERR_NOT_FOUND;
+}
+
+static nmo_status_t rewrite_fold_rewire_control_boundary(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    nmo_behavior_fold_report_t *report) {
+    if (!session || !report) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (report->boundary.control_in_count == 0 &&
+        report->boundary.control_out_count == 0) {
+        return NMO_OK;
+    }
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    if (!repo) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_session_edit_t *edit = NULL;
+    nmo_status_t rc =
+        nmo_session_edit_begin(session, "behavior fold boundary", &edit);
+    if (rc != NMO_OK) {
+        rewrite_fold_report_reject(report, "edit_begin_failed",
+                                   "Failed to begin fold boundary edit");
+        return rc;
+    }
+
+    for (size_t i = 0; i < report->boundary.control_in_count; ++i) {
+        const nmo_behavior_boundary_control_edge_t *edge =
+            &report->boundary.control_in[i];
+        uint32_t new_index = rewrite_fold_mapped_new_index(
+            report->input_maps, report->input_map_count, (uint32_t)i);
+        nmo_object_id_t new_io_id = 0;
+        rc = rewrite_fold_anchor_io_at(ctx, session, report->anchor_id,
+                                       true, new_index, &new_io_id);
+        if (rc != NMO_OK) {
+            rewrite_fold_report_reject(
+                report, "input_map_target_missing",
+                "Fold input map does not resolve to an anchor input");
+            nmo_session_edit_rollback(edit);
+            return rc;
+        }
+
+        nmo_object_t *link_obj =
+            nmo_object_repository_find_by_id(repo, edge->link_id);
+        nmo_behaviorlink_state_t *link_state = link_obj
+            ? (nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj)
+            : NULL;
+        if (!link_state) {
+            rewrite_fold_report_reject(
+                report, "control_link_missing",
+                "Boundary control link was not found");
+            nmo_session_edit_rollback(edit);
+            return NMO_ERR_NOT_FOUND;
+        }
+        rc = nmo_session_edit_snapshot_bytes(edit, link_state,
+                                             sizeof(*link_state));
+        if (rc != NMO_OK) {
+            rewrite_fold_report_reject(
+                report, "snapshot_failed",
+                "Failed to snapshot boundary control link");
+            nmo_session_edit_rollback(edit);
+            return rc;
+        }
+
+        /* CK2/SDK naming is counterintuitive: link in_io_id is the source IO,
+         * and link out_io_id is the target IO. Keep graph edge direction
+         * source owner -> target owner. */
+        link_state->out_io_id = new_io_id;
+    }
+
+    for (size_t i = 0; i < report->boundary.control_out_count; ++i) {
+        const nmo_behavior_boundary_control_edge_t *edge =
+            &report->boundary.control_out[i];
+        uint32_t new_index = rewrite_fold_mapped_new_index(
+            report->output_maps, report->output_map_count, (uint32_t)i);
+        nmo_object_id_t new_io_id = 0;
+        rc = rewrite_fold_anchor_io_at(ctx, session, report->anchor_id,
+                                       false, new_index, &new_io_id);
+        if (rc != NMO_OK) {
+            rewrite_fold_report_reject(
+                report, "output_map_target_missing",
+                "Fold output map does not resolve to an anchor output");
+            nmo_session_edit_rollback(edit);
+            return rc;
+        }
+
+        nmo_object_t *link_obj =
+            nmo_object_repository_find_by_id(repo, edge->link_id);
+        nmo_behaviorlink_state_t *link_state = link_obj
+            ? (nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj)
+            : NULL;
+        if (!link_state) {
+            rewrite_fold_report_reject(
+                report, "control_link_missing",
+                "Boundary control link was not found");
+            nmo_session_edit_rollback(edit);
+            return NMO_ERR_NOT_FOUND;
+        }
+        rc = nmo_session_edit_snapshot_bytes(edit, link_state,
+                                             sizeof(*link_state));
+        if (rc != NMO_OK) {
+            rewrite_fold_report_reject(
+                report, "snapshot_failed",
+                "Failed to snapshot boundary control link");
+            nmo_session_edit_rollback(edit);
+            return rc;
+        }
+
+        /* CK2/SDK naming is counterintuitive: link in_io_id is the source IO,
+         * and link out_io_id is the target IO. Keep graph edge direction
+         * source owner -> target owner. */
+        link_state->in_io_id = new_io_id;
+    }
+
+    nmo_session_edit_mark(edit, NMO_SESSION_EDIT_BEHAVIOR_GRAPH |
+                                NMO_SESSION_EDIT_REFERENCES);
+    rc = nmo_session_edit_commit(edit);
+    if (rc != NMO_OK) {
+        rewrite_fold_report_reject(report, "commit_failed",
+                                   "Failed to commit fold boundary edit");
+        return rc;
+    }
+    return NMO_OK;
+}
+
 static void rewrite_fold_report_reject(nmo_behavior_fold_report_t *report,
                                        const char *code,
                                        const char *message) {
@@ -1034,6 +1206,12 @@ nmo_status_t nmo_behavior_fold_apply(
     }
     if (rewrite_fold_report_is_closed_graph_anchor(report) &&
         report->can_write) {
+        nmo_status_t rewire_rc = rewrite_fold_rewire_control_boundary(
+            ctx, session, report);
+        if (rewire_rc != NMO_OK) {
+            return rewire_rc;
+        }
+
         nmo_object_id_t *delete_ids = NULL;
         size_t delete_count = 0;
         nmo_status_t delete_rc = rewrite_fold_collect_delete_ids(
