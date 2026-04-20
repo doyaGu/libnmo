@@ -506,8 +506,12 @@ static bool rewrite_fold_report_supports_closed_graph_write(
     if (!state || state->sub_behaviors.count == 0) {
         return false;
     }
-    if (report->boundary.parameter_in_count > 0) {
-        return false;
+    for (size_t i = 0; i < report->boundary.parameter_in_count; ++i) {
+        uint32_t new_index = rewrite_fold_mapped_new_index(
+            report->parameter_maps, report->parameter_map_count, (uint32_t)i);
+        if ((size_t)new_index >= state->in_parameters.count) {
+            return false;
+        }
     }
     for (size_t i = 0; i < report->boundary.parameter_out_count; ++i) {
         uint32_t new_index = rewrite_fold_mapped_new_index(
@@ -1037,13 +1041,8 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary(
     if (!session || !report) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    if (report->boundary.parameter_in_count > 0) {
-        rewrite_fold_report_reject(
-            report, "parameter_input_unsupported",
-            "Fold parameter input rewrites are not implemented yet");
-        return NMO_ERR_INVALID_STATE;
-    }
-    if (report->boundary.parameter_out_count == 0) {
+    if (report->boundary.parameter_in_count == 0 &&
+        report->boundary.parameter_out_count == 0) {
         return NMO_OK;
     }
 
@@ -1059,6 +1058,79 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary(
         rewrite_fold_report_reject(report, "edit_begin_failed",
                                    "Failed to begin fold parameter edit");
         return rc;
+    }
+
+    for (size_t i = 0; i < report->boundary.parameter_in_count; ++i) {
+        const nmo_behavior_boundary_parameter_edge_t *edge =
+            &report->boundary.parameter_in[i];
+        uint32_t new_index = rewrite_fold_mapped_new_index(
+            report->parameter_maps, report->parameter_map_count, (uint32_t)i);
+        nmo_object_id_t new_parameter_id = 0;
+        rc = rewrite_fold_anchor_parameter_at(
+            ctx, session, report->anchor_id, true, new_index,
+            &new_parameter_id);
+        if (rc != NMO_OK) {
+            rewrite_fold_report_reject(
+                report, "parameter_map_target_missing",
+                "Fold parameter map does not resolve to an anchor input "
+                "parameter");
+            nmo_session_edit_rollback(edit);
+            return rc;
+        }
+
+        nmo_object_t *new_target_obj =
+            nmo_object_repository_find_by_id(repo, new_parameter_id);
+        nmo_parameterin_state_t *new_target_in = new_target_obj &&
+            nmo_object_get_class_id(new_target_obj) == NMO_CID_PARAMETERIN
+            ? (nmo_parameterin_state_t *)nmo_object_get_state(new_target_obj)
+            : NULL;
+        if (!new_target_in) {
+            rewrite_fold_report_reject(
+                report, "parameter_target_missing",
+                "Fold anchor input parameter was not found");
+            nmo_session_edit_rollback(edit);
+            return NMO_ERR_NOT_FOUND;
+        }
+        rc = nmo_session_edit_snapshot_bytes(edit, new_target_in,
+                                             sizeof(*new_target_in));
+        if (rc != NMO_OK) {
+            rewrite_fold_report_reject(
+                report, "snapshot_failed",
+                "Failed to snapshot fold anchor input parameter");
+            nmo_session_edit_rollback(edit);
+            return rc;
+        }
+        new_target_in->source_id = edge->source_parameter_id;
+        new_target_in->is_shared = edge->shared ? 1u : 0u;
+
+        nmo_object_t *source_obj =
+            nmo_object_repository_find_by_id(repo, edge->source_parameter_id);
+        nmo_parameterout_state_t *source_out = source_obj &&
+            nmo_object_get_class_id(source_obj) == NMO_CID_PARAMETEROUT
+            ? (nmo_parameterout_state_t *)nmo_object_get_state(source_obj)
+            : NULL;
+        if (source_out) {
+            rc = nmo_session_edit_snapshot_bytes(edit, source_out,
+                                                 sizeof(*source_out));
+            if (rc != NMO_OK) {
+                rewrite_fold_report_reject(
+                    report, "snapshot_failed",
+                    "Failed to snapshot fold parameter source output");
+                nmo_session_edit_rollback(edit);
+                return rc;
+            }
+            rc = rewrite_parameterout_add_destination(source_out,
+                                                      new_parameter_id);
+            if (rc != NMO_OK) {
+                rewrite_fold_report_reject(
+                    report, "out_of_memory",
+                    "Failed to update fold source parameter destinations");
+                nmo_session_edit_rollback(edit);
+                return rc;
+            }
+            rewrite_parameterout_remove_destination(source_out,
+                                                    edge->target_parameter_id);
+        }
     }
 
     for (size_t i = 0; i < report->boundary.parameter_out_count; ++i) {
