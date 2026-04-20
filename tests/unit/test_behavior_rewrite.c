@@ -137,8 +137,77 @@ TEST(beh_rewrite, fold_analyze_uses_explicit_anchor)
     nmo_session_close_with_context(ctx, session);
 }
 
+TEST(beh_rewrite, fold_analyze_rejects_anchor_outside_selection)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+                        &ctx, &session)) {
+        return;
+    }
+
+    nmo_object_id_t nodes[] = {2364u, 2208u};
+    nmo_behavior_fold_desc_t desc = {
+        .parent_id = 4692u,
+        .node_ids = nodes,
+        .node_count = 2u,
+        .anchor_id = 2178u,
+        .block_guid = {0x42414C07u, 0x10000007u},
+        .name = "Ballance Event Handler",
+        .block_version = 65536u,
+        .preserve_links = true,
+        .preserve_params = true,
+    };
+    nmo_behavior_fold_report_t report = {0};
+
+    nmo_status_t rc = nmo_behavior_fold_analyze(ctx, session, &desc,
+                                                &report);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, rc);
+    ASSERT_TRUE(report.rejected);
+    ASSERT_STR_EQ("anchor_not_selected", report.diagnostic_code);
+    ASSERT_EQ(2178u, report.anchor_id);
+
+    nmo_behavior_fold_report_free(&report);
+    nmo_session_close_with_context(ctx, session);
+}
+
+TEST(beh_rewrite, fold_analyze_rejects_parent_in_selected_nodes)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+                        &ctx, &session)) {
+        return;
+    }
+
+    nmo_object_id_t nodes[] = {4692u};
+    nmo_behavior_fold_desc_t desc = {
+        .parent_id = 4692u,
+        .node_ids = nodes,
+        .node_count = 1u,
+        .block_guid = {0x42414C07u, 0x10000007u},
+        .name = "Invalid Self Fold",
+        .block_version = 65536u,
+        .preserve_links = true,
+        .preserve_params = true,
+    };
+    nmo_behavior_fold_report_t report = {0};
+
+    nmo_status_t rc = nmo_behavior_fold_analyze(ctx, session, &desc,
+                                                &report);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, rc);
+    ASSERT_TRUE(report.rejected);
+    ASSERT_STR_EQ("parent_selected", report.diagnostic_code);
+    ASSERT_EQ(4692u, report.parent_id);
+
+    nmo_behavior_fold_report_free(&report);
+    nmo_session_close_with_context(ctx, session);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(beh_rewrite, fold_analyze_reports_selected_boundary_plan);
     REGISTER_TEST(beh_rewrite, fold_write_rejects_until_supported);
     REGISTER_TEST(beh_rewrite, fold_analyze_uses_explicit_anchor);
+    REGISTER_TEST(beh_rewrite, fold_analyze_rejects_anchor_outside_selection);
+    REGISTER_TEST(beh_rewrite, fold_analyze_rejects_parent_in_selected_nodes);
 TEST_MAIN_END()

@@ -74,6 +74,7 @@ typedef struct nmo_behavior_fold_write_blocker {
 
 typedef struct nmo_behavior_fold_report {
     bool analysis_only;
+    bool rejected;
     bool can_write;
     nmo_object_id_t parent_id;
     nmo_object_id_t anchor_id;

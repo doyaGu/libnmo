@@ -251,6 +251,7 @@ static void rewrite_fold_report_reject(nmo_behavior_fold_report_t *report,
     if (!report) {
         return;
     }
+    report->rejected = true;
     report->diagnostic_code = code;
     report->diagnostic_message = message;
 }
@@ -310,6 +311,22 @@ nmo_status_t nmo_behavior_fold_analyze(
         desc->block_version != 0 ? desc->block_version : 65536u;
     report->preserve_links = desc->preserve_links;
     report->preserve_params = desc->preserve_params;
+
+    if (rewrite_id_in_set(desc->node_ids, desc->node_count,
+                          desc->parent_id)) {
+        rewrite_fold_report_reject(
+            report, "parent_selected",
+            "Selected fold nodes must not include the parent behavior");
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (desc->anchor_id != 0 &&
+        !rewrite_id_in_set(desc->node_ids, desc->node_count,
+                           desc->anchor_id)) {
+        rewrite_fold_report_reject(
+            report, "anchor_not_selected",
+            "Fold anchor must be one of the selected nodes");
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
 
     nmo_status_t rc = rewrite_copy_node_ids(&report->selected_nodes,
                                             &report->selected_node_count,
