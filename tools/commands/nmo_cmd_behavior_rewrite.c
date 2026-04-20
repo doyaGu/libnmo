@@ -1278,6 +1278,68 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+static int fold_emit_rejection(nmo_cmd_ctx_t *ctx,
+                               const nmo_behavior_fold_report_t *report,
+                               int exit_code) {
+    if (ctx->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
+        if (!doc) {
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_bool(doc, data, "ok", false);
+        yyjson_mut_obj_add_bool(doc, data, "dry_run",
+                                report->analysis_only);
+        yyjson_mut_obj_add_bool(doc, data, "rejected",
+                                report->rejected);
+        yyjson_mut_obj_add_bool(doc, data, "can_write",
+                                report->can_write);
+        yyjson_mut_obj_add_uint(doc, data, "parent_id",
+                                report->parent_id);
+        yyjson_mut_obj_add_uint(doc, data, "anchor_id",
+                                report->anchor_id);
+        add_id_list_json(doc, data, "selected_nodes",
+                         report->selected_nodes,
+                         report->selected_node_count);
+
+        yyjson_mut_val *rejections = yyjson_mut_arr(doc);
+        yyjson_mut_val *rejection = yyjson_mut_obj(doc);
+        nmo_cli_json_add_str_safe(doc, rejection, "code",
+                                  report->diagnostic_code);
+        nmo_cli_json_add_str_safe(doc, rejection, "message",
+                                  report->diagnostic_message);
+        yyjson_mut_arr_add_val(rejections, rejection);
+        yyjson_mut_obj_add_val(doc, data, "rejections", rejections);
+
+        yyjson_mut_val *maps = yyjson_mut_obj(doc);
+        add_fold_maps_json(doc, maps, "inputs",
+                           report->input_maps,
+                           report->input_map_count);
+        add_fold_maps_json(doc, maps, "outputs",
+                           report->output_maps,
+                           report->output_map_count);
+        add_fold_maps_json(doc, maps, "parameters",
+                           report->parameter_maps,
+                           report->parameter_map_count);
+        yyjson_mut_obj_add_val(doc, data, "maps", maps);
+
+        int json_rc = nmo_cmd_ctx_json_end(ctx, doc, data,
+                                           "behavior.fold");
+        return json_rc == NMO_CLI_EXIT_SUCCESS ? exit_code : json_rc;
+    }
+
+    if (report->diagnostic_message) {
+        fprintf(stderr, "Error: behavior fold rejected");
+        if (report->diagnostic_code) {
+            fprintf(stderr, " (%s)", report->diagnostic_code);
+        }
+        fprintf(stderr, ": %s\n", report->diagnostic_message);
+    } else {
+        fprintf(stderr, "Error: Failed to analyze behavior fold\n");
+    }
+    return exit_code;
+}
+
 int nmo_cmd_behavior_fold(int argc,
                           char **argv,
                           const nmo_cli_global_opts_t *global) {
@@ -1337,19 +1399,11 @@ int nmo_cmd_behavior_fold(int argc,
         ? nmo_behavior_fold_analyze(c.ctx, c.session, &desc, &report)
         : nmo_behavior_fold(c.ctx, c.session, &desc, &report);
     if (fold_rc != NMO_OK) {
-        if (report.diagnostic_message) {
-            fprintf(stderr, "Error: behavior fold rejected");
-            if (report.diagnostic_code) {
-                fprintf(stderr, " (%s)", report.diagnostic_code);
-            }
-            fprintf(stderr, ": %s\n", report.diagnostic_message);
-        } else {
-            fprintf(stderr, "Error: Failed to analyze behavior fold\n");
-        }
         rc = (fold_rc == NMO_ERR_INVALID_ARGUMENT ||
               fold_rc == NMO_ERR_NOT_FOUND)
             ? NMO_CLI_EXIT_ARG_ERROR
             : NMO_CLI_EXIT_INTERNAL_ERROR;
+        rc = fold_emit_rejection(&c, &report, rc);
         goto cleanup;
     }
 

@@ -741,8 +741,30 @@ TEST(cli, behavior_fold_dry_run_rejects_ambiguous_input_without_map) {
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
-    ASSERT_STR_CONTAINS(result.output, "input_map_required");
-    ASSERT_STR_CONTAINS(result.output, "multiple boundary control inputs");
+
+    yyjson_doc *doc = yyjson_read(result.output, strlen(result.output), 0);
+    if (!doc) {
+        fprintf(stderr, "\nExpected JSON output, got:\n%s\n", result.output);
+    }
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    ASSERT_STR_EQ("behavior.fold", get_string_field(root, "command"));
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_FALSE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "rejected"));
+    yyjson_val *rejections = get_array_field(data, "rejections");
+    ASSERT_NOT_NULL(rejections);
+    ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(rejections));
+    yyjson_val *rejection = yyjson_arr_get(rejections, 0);
+    ASSERT_TRUE(rejection && yyjson_is_obj(rejection));
+    ASSERT_STR_EQ("input_map_required",
+                  get_string_field(rejection, "code"));
+    ASSERT_STR_CONTAINS(get_string_field(rejection, "message"),
+                        "multiple boundary control inputs");
+
+    yyjson_doc_free(doc);
     free(result.output);
 }
 
