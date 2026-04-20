@@ -1475,8 +1475,52 @@ static bool repl_token_looks_like_session_file(const char *token) {
            repl_token_has_suffix_ci(token, ".vmo");
 }
 
+static bool repl_cli_option_takes_value(const char *token) {
+    static const char *value_options[] = {
+        "--class", "-c",
+        "--depth",
+        "--expr", "-e",
+        "--filter", "-f",
+        "--format",
+        "--from",
+        "--id", "-i",
+        "--index",
+        "--kind",
+        "--max-bytes", "-m",
+        "--name", "-n",
+        "--object",
+        "--out-dir", "-d",
+        "--owner",
+        "--row",
+        "--select", "-s",
+        "--sort",
+        "--top", "-t",
+        "--type",
+        "--value",
+    };
+
+    if (!token || token[0] != '-') {
+        return false;
+    }
+    for (size_t i = 0; i < sizeof(value_options) / sizeof(value_options[0]); i++) {
+        if (repl_streq(token, value_options[i])) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool repl_has_explicit_session_file_operand(int argc, char **argv) {
     for (int i = 2; i < argc; i++) {
+        if (argv[i][0] == '-') {
+            if (strchr(argv[i], '=') != NULL) {
+                continue;
+            }
+            if (repl_cli_option_takes_value(argv[i]) && i + 1 < argc) {
+                i++;
+            }
+            continue;
+        }
         if (repl_token_looks_like_session_file(argv[i])) {
             return true;
         }

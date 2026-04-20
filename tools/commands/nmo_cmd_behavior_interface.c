@@ -3963,11 +3963,23 @@ int nmo_cmd_behavior_interface_in_session(nmo_cmd_ctx_t *ctx, int argc, char **a
 
     int arg_offset = 0;
     if (strcmp(argv[0], "interface") == 0 || strcmp(argv[0], "iface") == 0) {
-        arg_offset = 1;
+        if (argc >= 2 &&
+            (strcmp(argv[1], "show") == 0 || strcmp(argv[1], "s") == 0)) {
+            arg_offset = 1;
+        } else if (argc >= 2 &&
+                   (argv[1][0] == '-' ||
+                    (argv[1][0] >= '0' && argv[1][0] <= '9'))) {
+            arg_offset = 0;
+        } else {
+            fprintf(stderr, "Usage: behavior interface show [--brief] [--json] [--id <id> | --name <name> | <id>]\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
     }
     if (argc <= arg_offset ||
         (strcmp(argv[arg_offset], "show") != 0 &&
-         strcmp(argv[arg_offset], "s") != 0)) {
+         strcmp(argv[arg_offset], "s") != 0 &&
+         strcmp(argv[arg_offset], "interface") != 0 &&
+         strcmp(argv[arg_offset], "iface") != 0)) {
         fprintf(stderr, "Usage: behavior interface show [--brief] [--json] [--id <id> | --name <name> | <id>]\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }

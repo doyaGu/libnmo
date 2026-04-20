@@ -342,6 +342,54 @@ TEST(repl_read, behavior_read_actions_use_session_core) {
         "behavior interface show --name \"Topic - Prevent Collision\"",
         "test_repl_behavior_interface.txt",
         "Sub-behaviors");
+    assert_captured_read_ok_contains(
+        &repl,
+        "behavior interface --name \"Topic - Prevent Collision\"",
+        "test_repl_behavior_interface_default.txt",
+        "Interface:");
+
+    close_repl(&repl);
+}
+
+TEST(repl_read, cli_read_option_values_with_file_suffix_are_not_file_operands) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+
+    ASSERT_EQ(0, run_repl_command(&repl, "object rename 2 ReplSuffixProbe.nmo"));
+    ASSERT_TRUE(repl.dirty);
+    repl.dirty = false;
+    assert_read_ok(&repl, "object show --name ReplSuffixProbe.nmo");
+
+    const char payload[] = "resource suffix probe";
+    ASSERT_EQ(NMO_OK,
+              nmo_session_add_included_file(repl.session,
+                                            "repl_suffix_probe.bin",
+                                            payload,
+                                            (uint32_t)sizeof(payload)));
+    repl.dirty = false;
+
+    remove("test_repl_resource_extract.nmo/repl_suffix_probe.bin");
+    NMO_TEST_RMDIR("test_repl_resource_extract.nmo");
+    ASSERT_EQ(0, run_repl_command(
+                     &repl,
+                     "resource extract --out-dir test_repl_resource_extract.nmo --index 0"));
+    ASSERT_FALSE(repl.dirty);
+    ASSERT_TRUE(file_exists("test_repl_resource_extract.nmo/repl_suffix_probe.bin"));
+    remove("test_repl_resource_extract.nmo/repl_suffix_probe.bin");
+    NMO_TEST_RMDIR("test_repl_resource_extract.nmo");
+
+    close_repl(&repl);
+}
+
+TEST(repl_read, domain_list_class_filter_cannot_be_overridden) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/P_Box.nmo"));
+
+    assert_captured_read_ok_contains(
+        &repl,
+        "mesh list --class CKTexture",
+        "test_repl_mesh_list_class_override.txt",
+        "CKMesh");
 
     close_repl(&repl);
 }
@@ -1062,6 +1110,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, object_list_fields_uses_full_session_core);
     REGISTER_TEST(repl_read, object_refgraph_actions_use_session_core);
     REGISTER_TEST(repl_read, behavior_read_actions_use_session_core);
+    REGISTER_TEST(repl_read, cli_read_option_values_with_file_suffix_are_not_file_operands);
+    REGISTER_TEST(repl_read, domain_list_class_filter_cannot_be_overridden);
     REGISTER_TEST(repl_read, mesh_and_animation_exports_use_session_core);
     REGISTER_TEST(repl_read, resource_and_texture_extract_use_session_core);
     REGISTER_TEST(repl_read, export_reads_reject_missing_output_directory);

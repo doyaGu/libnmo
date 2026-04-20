@@ -1535,11 +1535,11 @@ int nmo_cmd_object_list_class_in_session(nmo_cmd_ctx_t *ctx,
     }
 
     merged[0] = argv[0];
-    merged[1] = "--class";
-    merged[2] = (char *)class_name;
     for (int i = 1; i < argc; i++) {
-        merged[i + 2] = argv[i];
+        merged[i] = argv[i];
     }
+    merged[argc] = "--class";
+    merged[argc + 1] = (char *)class_name;
 
     int rc = object_list_in_session(ctx, argc + 2, merged);
     free(merged);
@@ -1616,11 +1616,11 @@ int nmo_cmd_object_find_class_in_session(nmo_cmd_ctx_t *ctx,
     }
 
     merged[0] = argv[0];
-    merged[1] = "--class";
-    merged[2] = (char *)class_name;
     for (int i = 1; i < argc; i++) {
-        merged[i + 2] = argv[i];
+        merged[i] = argv[i];
     }
+    merged[argc] = "--class";
+    merged[argc + 1] = (char *)class_name;
 
     int rc = object_find_in_session(ctx, argc + 2, merged);
     free(merged);
