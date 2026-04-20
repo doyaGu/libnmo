@@ -16,6 +16,7 @@
 #include "commands/nmo_cmd_validate.h"
 #include "commands/nmo_cmd_resource.h"
 #include "commands/nmo_cmd_behavior.h"
+#include "commands/nmo_cmd_patch.h"
 #include "commands/nmo_cmd_parameter.h"
 #include "commands/nmo_cmd_convert.h"
 #include "commands/nmo_cmd_diff.h"
@@ -498,6 +499,18 @@ static void behavior_remove_link_usage(FILE *out) {
     fprintf(out, "  -p, --parent <id>      Parent behavior ID (required)\n");
     fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
     fprintf(out, "  --dry-run              Preview without saving\n");
+}
+
+static void patch_apply_usage(FILE *out) {
+    fprintf(out, "Usage: nmo patch apply <patch.json> [--dry-run]\n\n");
+    fprintf(out, "Apply a strict behavior rewrite patch.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --dry-run    Preview operations without saving output\n");
+}
+
+static void patch_diff_usage(FILE *out) {
+    fprintf(out, "Usage: nmo patch diff <patch.json>\n\n");
+    fprintf(out, "Print planned behavior rewrite operations without saving output.\n");
 }
 
 static void parameter_list_usage(FILE *out) {
@@ -990,6 +1003,11 @@ static const nmo_cli_action_t behavior_actions[] = {
         nmo_behavior_interface_sub_actions, NMO_BEHAVIOR_INTERFACE_SUB_ACTION_COUNT, "show", NMO_REPL_ACTION_READ_SESSION),
 };
 
+static const nmo_cli_action_t patch_actions[] = {
+    ACTION("apply", NULL, "Apply rewrite patch", nmo_cmd_patch_apply, patch_apply_usage, NMO_REPL_ACTION_FORBIDDEN),
+    ACTION("diff", NULL, "Preview rewrite patch", nmo_cmd_patch_diff, patch_diff_usage, NMO_REPL_ACTION_FORBIDDEN),
+};
+
 static const nmo_cli_action_t parameter_actions[] = {
     ACTION("list", "ls", "List parameters", nmo_cmd_parameter_list, parameter_list_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("show", "s", "Show parameter object", nmo_cmd_parameter_show, parameter_show_usage, NMO_REPL_ACTION_READ_SESSION),
@@ -1132,6 +1150,7 @@ static const nmo_cli_group_t groups[] = {
     {"chunk", "ch", "Chunk inspection", chunk_actions, ARRAY_SIZE(chunk_actions), nmo_cmd_chunk_in_session},
     {"object", "obj", "Object inspection", object_actions, ARRAY_SIZE(object_actions), nmo_cmd_object_in_session},
     {"behavior", "beh", "Behavior inspection", behavior_actions, ARRAY_SIZE(behavior_actions), nmo_cmd_behavior_in_session},
+    {"patch", NULL, "Patch apply and diff", patch_actions, ARRAY_SIZE(patch_actions), NULL},
     {"parameter", "param", "Parameter inspection", parameter_actions, ARRAY_SIZE(parameter_actions), nmo_cmd_parameter_in_session},
     {"resource", "res", "Resource management", resource_actions, ARRAY_SIZE(resource_actions), nmo_cmd_resource_in_session},
     {"texture", "tex", "Texture management", texture_actions, ARRAY_SIZE(texture_actions), nmo_cmd_texture_in_session},

@@ -50,6 +50,7 @@ add_executable(nmo_cli
     commands/nmo_cmd_behavior_search.c
     commands/nmo_cmd_behavior_interface.c
     commands/nmo_cmd_behavior_link.c
+    commands/nmo_cmd_patch.c
     commands/nmo_cmd_parameter.c
     commands/nmo_cmd_convert.c
     commands/nmo_cmd_diff.c
