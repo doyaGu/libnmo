@@ -451,6 +451,21 @@ static void behavior_fold_candidates_usage(FILE *out) {
     fprintf(out, "  -d, --depth <n>    Recursion depth (default: unlimited)\n");
 }
 
+static void behavior_fold_usage(FILE *out) {
+    fprintf(out, "Usage: nmo behavior fold --parent <id> --nodes <ids> --guid <guid> --name <name> [options] <file> -o <output>\n\n");
+    fprintf(out, "Analyze a graph/script subgraph fold into a high-level building block.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -p, --parent <id>       Parent behavior ID\n");
+    fprintf(out, "  --nodes <ids>           Comma-separated behavior node IDs\n");
+    fprintf(out, "  --guid <guid>           Target building-block GUID\n");
+    fprintf(out, "  --name <name>           Target behavior name\n");
+    fprintf(out, "  --version <n>           Target building-block version (default: 65536)\n");
+    fprintf(out, "  --preserve-links        Require control boundary preservation\n");
+    fprintf(out, "  --preserve-params       Require parameter boundary preservation\n");
+    fprintf(out, "  -o, --output <path>     Future output file path\n");
+    fprintf(out, "  --dry-run               Report planned fold without saving (currently required)\n");
+}
+
 static void behavior_dump_usage(FILE *out) {
     fprintf(out, "Usage: nmo behavior dump [options] [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Dump a compact behavior tree overview.\n\n");
@@ -1002,6 +1017,7 @@ static const nmo_cli_action_t behavior_actions[] = {
     ACTION("graph", "g", "Export behavior graph", nmo_cmd_behavior_graph, behavior_graph_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("graph-boundary", NULL, "Export behavior graph boundary", nmo_cmd_behavior_graph_boundary, behavior_graph_boundary_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("replace-bb", NULL, "Replace a leaf building block", nmo_cmd_behavior_replace_bb, behavior_replace_bb_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
+    ACTION("fold", NULL, "Analyze subgraph fold rewrite", nmo_cmd_behavior_fold, behavior_fold_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
     ACTION("fold-candidates", NULL, "Report fold candidate boundaries", nmo_cmd_behavior_fold_candidates, behavior_fold_candidates_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("dump", "d", "Dump compact behavior tree overview", nmo_cmd_behavior_dump, behavior_dump_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("find", "f", "Search behaviors by name/GUID/type", nmo_cmd_behavior_find, behavior_find_usage, NMO_REPL_ACTION_READ_SESSION),

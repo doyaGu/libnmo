@@ -303,6 +303,18 @@ typedef struct fold_candidates_args {
     uint32_t depth;
 } fold_candidates_args_t;
 
+typedef struct fold_args {
+    nmo_object_id_t parent_id;
+    nmo_object_id_t nodes[256];
+    size_t node_count;
+    nmo_guid_t block_guid;
+    const char *name;
+    uint32_t block_version;
+    bool preserve_links;
+    bool preserve_params;
+    bool dry_run;
+} fold_args_t;
+
 static const char *fold_behavior_type(const nmo_behavior_state_t *state) {
     if (!state) {
         return "Unknown";
@@ -406,6 +418,87 @@ static void add_fold_candidate_group_json(
     yyjson_mut_obj_add_uint(doc, group, "missing_nodes",
                             (uint64_t)boundary->missing_nodes);
     yyjson_mut_arr_add_val(groups, group);
+}
+
+static bool fold_boundary_contains_node(
+    const nmo_behavior_boundary_t *boundary,
+    nmo_object_id_t node_id) {
+    if (!boundary) {
+        return false;
+    }
+    for (size_t i = 0; i < boundary->internal_node_count; ++i) {
+        if (boundary->internal_nodes[i] == node_id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void add_id_list_json(yyjson_mut_doc *doc,
+                             yyjson_mut_val *obj,
+                             const char *key,
+                             const nmo_object_id_t *ids,
+                             size_t count) {
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    for (size_t i = 0; ids && i < count; ++i) {
+        yyjson_mut_arr_add_uint(doc, arr, ids[i]);
+    }
+    yyjson_mut_obj_add_val(doc, obj, key, arr);
+}
+
+static void add_fold_nodes_to_delete_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *obj,
+    const nmo_behavior_boundary_t *boundary,
+    nmo_object_id_t representative_id) {
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    for (size_t i = 0; i < boundary->internal_node_count; ++i) {
+        nmo_object_id_t node_id = boundary->internal_nodes[i];
+        if (node_id != representative_id) {
+            yyjson_mut_arr_add_uint(doc, arr, node_id);
+        }
+    }
+    yyjson_mut_obj_add_val(doc, obj, "nodes_to_delete", arr);
+}
+
+static bool parse_fold_nodes(const char *text,
+                             nmo_object_id_t *out_nodes,
+                             size_t out_capacity,
+                             size_t *out_count) {
+    if (!text || !out_nodes || out_capacity == 0 || !out_count) {
+        return false;
+    }
+    *out_count = 0;
+    const char *p = text;
+    while (*p != '\0') {
+        while (*p == ' ' || *p == '\t' || *p == ',') {
+            ++p;
+        }
+        if (*p == '\0') {
+            break;
+        }
+        char token[32];
+        size_t len = 0;
+        while (*p != '\0' && *p != ',') {
+            if (*p != ' ' && *p != '\t') {
+                if (len + 1 >= sizeof(token)) {
+                    return false;
+                }
+                token[len++] = *p;
+            }
+            ++p;
+        }
+        token[len] = '\0';
+        if (len == 0 || *out_count >= out_capacity) {
+            return false;
+        }
+        uint32_t id = 0;
+        if (nmo_parse_u32_range(token, 1, UINT32_MAX, &id) != NMO_OK) {
+            return false;
+        }
+        out_nodes[(*out_count)++] = id;
+    }
+    return *out_count > 0;
 }
 
 static bool parse_fold_candidates_args(int argc,
@@ -679,6 +772,261 @@ int nmo_cmd_behavior_fold_candidates_in_session(nmo_cmd_ctx_t *ctx,
     }
     (void)file_path;
     return fold_candidates_run(ctx, &args, false, usage);
+}
+
+static bool parse_fold_args(int argc,
+                            char **argv,
+                            fold_args_t *out_args,
+                            const char **out_file) {
+    static const nmo_opt_def_t opts[] = {
+        {"--parent",          "-p", NMO_OPT_UINT,   "Parent behavior ID"},
+        {"--nodes",           NULL, NMO_OPT_STRING, "Comma-separated node IDs"},
+        {"--guid",            NULL, NMO_OPT_STRING, "Target BB GUID"},
+        {"--name",            NULL, NMO_OPT_STRING, "Target BB name"},
+        {"--version",         NULL, NMO_OPT_UINT,   "Target BB version"},
+        {"--preserve-links",  NULL, NMO_OPT_FLAG,   "Require control boundary preservation"},
+        {"--preserve-params", NULL, NMO_OPT_FLAG,   "Require parameter boundary preservation"},
+        {"--output",          "-o", NMO_OPT_STRING, "Output file"},
+        {"--dry-run",         NULL, NMO_OPT_FLAG,   "Preview without saving"},
+    };
+    enum {
+        OPT_PARENT,
+        OPT_NODES,
+        OPT_GUID,
+        OPT_NAME,
+        OPT_VERSION,
+        OPT_PRESERVE_LINKS,
+        OPT_PRESERVE_PARAMS,
+        OPT_OUTPUT,
+        OPT_DRY_RUN,
+        OPT_COUNT
+    };
+
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = {
+        .vals = vals,
+        .pos_args = pos,
+        .pos_capacity = 16,
+    };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) {
+        return false;
+    }
+    if (!vals[OPT_PARENT].present || !vals[OPT_NODES].present ||
+        !vals[OPT_GUID].present || !vals[OPT_NAME].present ||
+        r.pos_count != 1) {
+        return false;
+    }
+
+    fold_args_t args = {0};
+    args.parent_id = vals[OPT_PARENT].val.u;
+    args.block_guid = nmo_guid_parse(vals[OPT_GUID].val.str);
+    args.name = vals[OPT_NAME].val.str;
+    args.block_version = vals[OPT_VERSION].present
+        ? vals[OPT_VERSION].val.u
+        : 65536u;
+    args.preserve_links = vals[OPT_PRESERVE_LINKS].present &&
+                          vals[OPT_PRESERVE_LINKS].val.flag;
+    args.preserve_params = vals[OPT_PRESERVE_PARAMS].present &&
+                           vals[OPT_PRESERVE_PARAMS].val.flag;
+    args.dry_run = vals[OPT_DRY_RUN].present &&
+                   vals[OPT_DRY_RUN].val.flag;
+    if (args.parent_id == 0 || nmo_guid_is_null(args.block_guid) ||
+        !parse_fold_nodes(vals[OPT_NODES].val.str, args.nodes,
+                          sizeof(args.nodes) / sizeof(args.nodes[0]),
+                          &args.node_count)) {
+        return false;
+    }
+
+    if (out_args) {
+        *out_args = args;
+    }
+    if (out_file) {
+        *out_file = r.pos_args[0];
+    }
+    return true;
+}
+
+static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
+                             const fold_args_t *args,
+                             const nmo_behavior_state_t *parent,
+                             const nmo_behavior_state_t *representative,
+                             const nmo_behavior_boundary_t *boundary) {
+    nmo_object_id_t representative_id = args->nodes[0];
+    if (ctx->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
+        if (!doc) {
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_bool(doc, data, "dry_run", true);
+        yyjson_mut_obj_add_bool(doc, data, "write_supported", false);
+        nmo_cli_json_add_str_safe(doc, data, "status", "analysis_only");
+        yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
+        nmo_cli_json_add_str_safe(doc, data, "parent_behavior_type",
+                                  fold_behavior_type(parent));
+        yyjson_mut_obj_add_uint(doc, data, "representative_id",
+                                representative_id);
+        nmo_cli_json_add_str_safe(doc, data,
+                                  "representative_behavior_type",
+                                  fold_behavior_type(representative));
+        add_id_list_json(doc, data, "selected_nodes", args->nodes,
+                         args->node_count);
+        yyjson_mut_obj_add_bool(doc, data, "preserve_links",
+                                args->preserve_links);
+        yyjson_mut_obj_add_bool(doc, data, "preserve_params",
+                                args->preserve_params);
+
+        char guid_buf[24];
+        rewrite_guid_to_string(args->block_guid, guid_buf, sizeof(guid_buf));
+        yyjson_mut_val *target = yyjson_mut_obj(doc);
+        nmo_cli_json_add_str_safe(doc, target, "guid", guid_buf);
+        nmo_cli_json_add_str_safe(doc, target, "name", args->name);
+        yyjson_mut_obj_add_uint(doc, target, "version",
+                                (uint64_t)args->block_version);
+        yyjson_mut_obj_add_val(doc, data, "target", target);
+
+        yyjson_mut_val *planned = yyjson_mut_obj(doc);
+        add_internal_nodes_json(doc, planned, boundary);
+        add_fold_nodes_to_delete_json(doc, planned, boundary,
+                                      representative_id);
+        yyjson_mut_val *links = yyjson_mut_obj(doc);
+        add_control_edges_json(doc, links, "control_in",
+                               boundary->control_in,
+                               boundary->control_in_count);
+        add_control_edges_json(doc, links, "control_out",
+                               boundary->control_out,
+                               boundary->control_out_count);
+        yyjson_mut_obj_add_val(doc, planned, "links_to_move", links);
+
+        yyjson_mut_val *params = yyjson_mut_obj(doc);
+        add_parameter_edges_json(doc, params, "parameter_in",
+                                 boundary->parameter_in,
+                                 boundary->parameter_in_count);
+        add_parameter_edges_json(doc, params, "parameter_out",
+                                 boundary->parameter_out,
+                                 boundary->parameter_out_count);
+        yyjson_mut_obj_add_val(doc, planned,
+                               "parameters_to_preserve", params);
+        add_fold_interface_json(doc, planned, representative);
+        yyjson_mut_obj_add_uint(doc, planned, "node_count",
+                                (uint64_t)boundary->internal_node_count);
+        yyjson_mut_obj_add_uint(doc, planned, "control_in_count",
+                                (uint64_t)boundary->control_in_count);
+        yyjson_mut_obj_add_uint(doc, planned, "control_out_count",
+                                (uint64_t)boundary->control_out_count);
+        yyjson_mut_obj_add_uint(doc, planned, "parameter_in_count",
+                                (uint64_t)boundary->parameter_in_count);
+        yyjson_mut_obj_add_uint(doc, planned, "parameter_out_count",
+                                (uint64_t)boundary->parameter_out_count);
+        yyjson_mut_obj_add_val(doc, data, "planned", planned);
+
+        return nmo_cmd_ctx_json_end(ctx, doc, data, "behavior.fold");
+    }
+
+    fprintf(ctx->out, "[dry-run] Fold behavior #%u into BB %08X-%08X\n",
+            representative_id, args->block_guid.d1, args->block_guid.d2);
+    fprintf(ctx->out, "Parent #%u (%s), representative #%u (%s)\n",
+            args->parent_id, fold_behavior_type(parent),
+            representative_id, fold_behavior_type(representative));
+    fprintf(ctx->out,
+            "Planned: nodes=%zu delete=%zu control_in=%zu control_out=%zu parameter_in=%zu parameter_out=%zu interface=%s\n",
+            boundary->internal_node_count,
+            boundary->internal_node_count > 0
+                ? boundary->internal_node_count - 1
+                : 0,
+            boundary->control_in_count,
+            boundary->control_out_count,
+            boundary->parameter_in_count,
+            boundary->parameter_out_count,
+            fold_interface_action(representative));
+    fprintf(ctx->out,
+            "Write mode is not implemented yet; dry-run report only.\n");
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_behavior_fold(int argc,
+                          char **argv,
+                          const nmo_cli_global_opts_t *global) {
+    fold_args_t args = {0};
+    const char *file_path = NULL;
+    const char *usage =
+        "nmo behavior fold --parent <id> --nodes <id,...> "
+        "--guid <guid> --name <name> [--dry-run] <file> -o <output>";
+
+    if (!parse_fold_args(argc, argv, &args, &file_path)) {
+        fprintf(stderr, "Error: Missing or invalid arguments\n");
+        fprintf(stderr, "Usage: %s\n", usage);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!args.dry_run) {
+        fprintf(stderr,
+                "Error: behavior fold write mode is not implemented yet; "
+                "use --dry-run\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (args.node_count != 1) {
+        fprintf(stderr,
+                "Error: behavior fold dry-run currently requires exactly "
+                "one representative node\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    nmo_behavior_boundary_t parent_boundary = {0};
+    nmo_behavior_boundary_t fold_boundary = {0};
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    const nmo_behavior_state_t *parent =
+        fold_find_behavior_state(repo, args.parent_id);
+    const nmo_behavior_state_t *representative =
+        fold_find_behavior_state(repo, args.nodes[0]);
+    if (!parent || !representative) {
+        fprintf(stderr, "Error: Parent or representative behavior not found\n");
+        rc = NMO_CLI_EXIT_ARG_ERROR;
+        goto cleanup;
+    }
+
+    if (!nmo_behavior_boundary_build(c.ctx, c.session, args.parent_id,
+                                     UINT32_MAX, &parent_boundary)) {
+        char detail[256];
+        size_t detail_len = nmo_last_error_message_copy(detail,
+                                                        sizeof(detail));
+        fprintf(stderr, "Error: %s\n",
+                detail_len > 0 ? detail : "Failed to build parent boundary");
+        rc = NMO_CLI_EXIT_INTERNAL_ERROR;
+        goto cleanup;
+    }
+    if (!fold_boundary_contains_node(&parent_boundary, args.nodes[0])) {
+        fprintf(stderr,
+                "Error: Representative behavior %u is not inside parent %u\n",
+                args.nodes[0], args.parent_id);
+        rc = NMO_CLI_EXIT_ARG_ERROR;
+        goto cleanup;
+    }
+
+    if (!nmo_behavior_boundary_build(c.ctx, c.session, args.nodes[0],
+                                     UINT32_MAX, &fold_boundary)) {
+        char detail[256];
+        size_t detail_len = nmo_last_error_message_copy(detail,
+                                                        sizeof(detail));
+        fprintf(stderr, "Error: %s\n",
+                detail_len > 0 ? detail : "Failed to build fold boundary");
+        rc = NMO_CLI_EXIT_INTERNAL_ERROR;
+        goto cleanup;
+    }
+
+    rc = fold_emit_dry_run(&c, &args, parent, representative,
+                           &fold_boundary);
+
+cleanup:
+    nmo_behavior_boundary_free(&parent_boundary);
+    nmo_behavior_boundary_free(&fold_boundary);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 typedef struct replace_bb_args {

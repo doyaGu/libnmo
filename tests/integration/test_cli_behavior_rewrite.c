@@ -462,6 +462,67 @@ TEST(cli, behavior_fold_candidates_reports_direct_child_groups) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, behavior_fold_dry_run_reports_boundary_plan) {
+    const char *output = "test_behavior_rewrite_tmp/fold_dry.cmo";
+    remove(output);
+    make_dir("test_behavior_rewrite_tmp");
+
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior fold --parent 4692 --nodes 2364 "
+             "--guid 42414C07-10000007 "
+             "--name \"Ballance Event Handler\" "
+             "--preserve-links --preserve-params --dry-run \"%s\" -o \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output);
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.fold", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    ASSERT_FALSE(get_bool_field(data, "write_supported"));
+    ASSERT_EQ(4692u, (uint32_t)get_uint_field(data, "parent_id"));
+    ASSERT_EQ(2364u, (uint32_t)get_uint_field(data, "representative_id"));
+
+    yyjson_val *target = get_object_field(data, "target");
+    ASSERT_NOT_NULL(target);
+    ASSERT_STR_EQ("42414C07-10000007", get_string_field(target, "guid"));
+    ASSERT_STR_EQ("Ballance Event Handler", get_string_field(target, "name"));
+
+    yyjson_val *selected_nodes = get_array_field(data, "selected_nodes");
+    ASSERT_NOT_NULL(selected_nodes);
+    ASSERT_TRUE(array_contains_uint(selected_nodes, 2364u));
+
+    yyjson_val *planned = get_object_field(data, "planned");
+    ASSERT_NOT_NULL(planned);
+    ASSERT_NOT_NULL(get_array_field(planned, "internal_nodes"));
+    ASSERT_TRUE(array_contains_uint(get_array_field(planned, "internal_nodes"),
+                                    2364u));
+    ASSERT_NOT_NULL(get_array_field(planned, "nodes_to_delete"));
+
+    yyjson_val *links_to_move = get_object_field(planned, "links_to_move");
+    ASSERT_NOT_NULL(links_to_move);
+    ASSERT_NOT_NULL(get_array_field(links_to_move, "control_in"));
+    ASSERT_NOT_NULL(get_array_field(links_to_move, "control_out"));
+
+    yyjson_val *parameters = get_object_field(planned, "parameters_to_preserve");
+    ASSERT_NOT_NULL(parameters);
+    ASSERT_NOT_NULL(get_array_field(parameters, "parameter_in"));
+    ASSERT_NOT_NULL(get_array_field(parameters, "parameter_out"));
+
+    yyjson_val *interface_obj = get_object_field(planned, "interface");
+    ASSERT_NOT_NULL(interface_obj);
+    ASSERT_NOT_NULL(get_string_field(interface_obj, "action"));
+
+    ASSERT_FALSE(file_exists(output));
+    yyjson_doc_free(doc);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_graph_boundary_json_smoke);
     REGISTER_TEST(cli, behavior_replace_bb_dry_run_reports_leaf_preservation);
@@ -469,4 +530,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_replace_bb_saves_output);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_parent_boundary);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_direct_child_groups);
+    REGISTER_TEST(cli, behavior_fold_dry_run_reports_boundary_plan);
 TEST_MAIN_END()

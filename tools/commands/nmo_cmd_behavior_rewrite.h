@@ -25,6 +25,10 @@ int nmo_cmd_behavior_replace_bb(int argc,
                                 char **argv,
                                 const nmo_cli_global_opts_t *global);
 
+int nmo_cmd_behavior_fold(int argc,
+                          char **argv,
+                          const nmo_cli_global_opts_t *global);
+
 int nmo_cmd_behavior_fold_candidates(int argc,
                                      char **argv,
                                      const nmo_cli_global_opts_t *global);
