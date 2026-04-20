@@ -4,7 +4,6 @@
  */
 
 #include "nmo_cmd_entity.h"
-#include "nmo_cmd_object.h"
 
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
@@ -272,7 +271,15 @@ int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
  * entity show
  * ============================================================================ */
 
-int nmo_cmd_entity_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+typedef struct entity_show_args {
+    nmo_core_object_selector_t selector;
+} entity_show_args_t;
+
+static int entity_show_parse(int argc,
+                             char **argv,
+                             bool in_session,
+                             entity_show_args_t *args)
+{
     static const nmo_opt_def_t opts[] = {
         {"--id",   "-i", NMO_OPT_UINT,   "Entity object ID"},
         {"--name", "-n", NMO_OPT_STRING, "Entity object name"},
@@ -284,27 +291,41 @@ int nmo_cmd_entity_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
-    const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
+    uint32_t min_pos = in_session ? 1u : 2u;
+    const char *positional_id =
+        (!has_selector_opt && r.pos_count >= min_pos) ? r.pos_args[0] : NULL;
+    if (in_session && !has_selector_opt && r.pos_count != 1) {
+        fprintf(stderr, "Usage: entity show [--id <id> | --name <name> | <id>]\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
-    nmo_core_object_selector_t selector = {
-        .has_id = vals[OPT_ID].present,
-        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
-        .positional_id = positional_id,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
-        .required_base_class = NMO_CID_3DENTITY,
-        .selector_label = "Entity",
-        .type_label = "CK3dEntity",
+    *args = (entity_show_args_t) {
+        .selector = {
+            .has_id = vals[OPT_ID].present,
+            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .positional_id = positional_id,
+            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .required_base_class = NMO_CID_3DENTITY,
+            .selector_label = "Entity",
+            .type_label = "CK3dEntity",
+        },
     };
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int entity_show_run(nmo_cmd_ctx_t *ctx, const entity_show_args_t *args)
+{
+    if (ctx == NULL || args == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+#define c (*ctx)
     nmo_object_t *obj = NULL;
     nmo_object_id_t obj_id = 0;
-    rc = nmo_core_resolve_one_object(&c, &selector, &obj, &obj_id);
+    int rc = nmo_core_resolve_one_object(&c, &args->selector, &obj, &obj_id);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         fprintf(stderr, "Usage: nmo entity show [--id <id> | --name <name> | <id>] <file>\n");
-        return nmo_cmd_ctx_done(&c, rc);
+        return rc;
     }
 
     nmo_class_id_t class_id = nmo_object_get_class_id(obj);
@@ -439,7 +460,7 @@ int nmo_cmd_entity_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
         if (!es) {
             fprintf(c.out, "\n  (no deserialized state)\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+            return NMO_CLI_EXIT_SUCCESS;
         }
 
         format_position(buf, sizeof(buf), es->world_matrix);
@@ -572,40 +593,21 @@ int nmo_cmd_entity_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
         }
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+#undef c
+    return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int entity_validate_show_selector(nmo_cmd_ctx_t *ctx, int argc, char **argv)
-{
-    static const nmo_opt_def_t opts[] = {
-        {"--id",   "-i", NMO_OPT_UINT,   "Entity object ID"},
-        {"--name", "-n", NMO_OPT_STRING, "Entity object name"},
-    };
-    enum { OPT_ID, OPT_NAME, OPT_COUNT };
-    nmo_opt_val_t vals[OPT_COUNT];
-    const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+int nmo_cmd_entity_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    entity_show_args_t args;
+    int rc = entity_show_parse(argc, argv, false, &args);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
 
-    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
-    const char *positional_id = (!has_selector_opt && r.pos_count == 1) ? r.pos_args[0] : NULL;
-    if (!has_selector_opt && positional_id == NULL) {
-        fprintf(stderr, "Usage: entity show [--id <id> | --name <name> | <id>]\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    nmo_cmd_ctx_t c;
+    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
 
-    nmo_core_object_selector_t selector = {
-        .has_id = vals[OPT_ID].present,
-        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
-        .positional_id = positional_id,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
-        .required_base_class = NMO_CID_3DENTITY,
-        .selector_label = "Entity",
-        .type_label = "CK3dEntity",
-    };
-    nmo_object_t *obj = NULL;
-    nmo_object_id_t obj_id = 0;
-    return nmo_core_resolve_one_object(ctx, &selector, &obj, &obj_id);
+    rc = entity_show_run(&c, &args);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 int nmo_cmd_entity_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
@@ -622,9 +624,10 @@ int nmo_cmd_entity_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return entity_list_run(ctx, class_filter);
     }
     if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
-        int rc = entity_validate_show_selector(ctx, argc, argv);
+        entity_show_args_t args;
+        int rc = entity_show_parse(argc, argv, true, &args);
         if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
-        return nmo_cmd_object_show_in_session(ctx, argc, argv);
+        return entity_show_run(ctx, &args);
     }
 
     fprintf(stderr, "Unsupported entity read action in session: %s\n", argv[0]);

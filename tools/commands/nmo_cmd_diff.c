@@ -1030,7 +1030,7 @@ static const char *diff_current_session_label(const nmo_cmd_ctx_t *ctx)
         : "(current session)";
 }
 
-int nmo_cmd_diff_summary_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+static int nmo_cmd_diff_summary_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     static const nmo_opt_def_t opts[] = {
         {"--ignore-order", NULL, NMO_OPT_FLAG, "Ignore object order"},
@@ -1162,7 +1162,7 @@ int nmo_cmd_diff_summary_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     return (strict && !result.match) ? NMO_CLI_EXIT_STRICT_FAILURE : NMO_CLI_EXIT_SUCCESS;
 }
 
-int nmo_cmd_diff_objects_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+static int nmo_cmd_diff_objects_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     static const nmo_opt_def_t opts[] = {
         {"--max-objects",       NULL, NMO_OPT_UINT,  "Maximum objects to show"},
@@ -1242,7 +1242,7 @@ int nmo_cmd_diff_objects_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-int nmo_cmd_diff_chunks_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+static int nmo_cmd_diff_chunks_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     static const nmo_opt_def_t opts[] = {
         {"--object", "-o", NMO_OPT_UINT, "Filter by object ID"},
@@ -1318,7 +1318,7 @@ int nmo_cmd_diff_chunks_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-int nmo_cmd_diff_full_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+static int nmo_cmd_diff_full_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     static const nmo_opt_def_t opts[] = {
         {"--ignore-order", NULL, NMO_OPT_FLAG, "Ignore object order"},

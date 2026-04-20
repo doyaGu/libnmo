@@ -31,6 +31,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int nmo_cmd_validate_all_in_session(nmo_cmd_ctx_t *cmd, int argc, char **argv);
+static int nmo_cmd_validate_structure_in_session(nmo_cmd_ctx_t *c, int argc, char **argv);
+static int nmo_cmd_validate_references_in_session(nmo_cmd_ctx_t *c, int argc, char **argv);
+static int nmo_cmd_validate_resources_in_session(nmo_cmd_ctx_t *c, int argc, char **argv);
+static int nmo_cmd_validate_orphans_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
+
 int nmo_cmd_validate_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     if (!ctx || argc < 1 || !argv || !argv[0]) {
@@ -302,7 +308,7 @@ static int validate_all_run(nmo_cmd_ctx_t *cmd,
     return exit_code;
 }
 
-int nmo_cmd_validate_all_in_session(nmo_cmd_ctx_t *cmd, int argc, char **argv)
+static int nmo_cmd_validate_all_in_session(nmo_cmd_ctx_t *cmd, int argc, char **argv)
 {
     (void)argc;
     (void)argv;
@@ -391,7 +397,7 @@ int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *glo
  * validate structure
  * ============================================================================ */
 
-int nmo_cmd_validate_structure_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
+static int nmo_cmd_validate_structure_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
     bool suggest_fixes = parse_fix_flag(argc, argv);
 
     yyjson_mut_doc *doc = NULL;
@@ -475,7 +481,7 @@ int nmo_cmd_validate_structure(int argc, char **argv, const nmo_cli_global_opts_
  * validate references
  * ============================================================================ */
 
-int nmo_cmd_validate_references_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
+static int nmo_cmd_validate_references_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
     bool suggest_fixes = parse_fix_flag(argc, argv);
 
     /* Get reference graph from session cache */
@@ -654,7 +660,7 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
  * validate resources
  * ============================================================================ */
 
-int nmo_cmd_validate_resources_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
+static int nmo_cmd_validate_resources_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
     (void)argc;
     (void)argv;
 
@@ -1186,7 +1192,7 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
     return validate_orphans_run_in_ctx(c, argc, argv, global, true);
 }
 
-int nmo_cmd_validate_orphans_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+static int nmo_cmd_validate_orphans_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     if (!ctx) {
         return NMO_CLI_EXIT_ARG_ERROR;

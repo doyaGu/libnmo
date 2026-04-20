@@ -447,7 +447,7 @@ int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t
     return debug_load_phases_run_in_ctx(c, profile, &phase_stats);
 }
 
-int nmo_cmd_debug_load_phases_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+static int nmo_cmd_debug_load_phases_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     if (!ctx) {
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -533,7 +533,7 @@ int nmo_cmd_debug_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glo
     return debug_chunks_run_in_ctx(c);
 }
 
-int nmo_cmd_debug_chunks_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+static int nmo_cmd_debug_chunks_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     (void)argc;
     (void)argv;
@@ -613,7 +613,7 @@ int nmo_cmd_debug_objects(int argc, char **argv, const nmo_cli_global_opts_t *gl
     return debug_objects_run_in_ctx(c);
 }
 
-int nmo_cmd_debug_objects_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+static int nmo_cmd_debug_objects_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     (void)argc;
     (void)argv;
@@ -696,7 +696,7 @@ int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *glo
     return debug_export_run_in_ctx(c, include_data, max_bytes);
 }
 
-int nmo_cmd_debug_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
+static int nmo_cmd_debug_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     if (!ctx) {
         return NMO_CLI_EXIT_ARG_ERROR;

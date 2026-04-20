@@ -450,6 +450,27 @@ TEST(repl_read, domain_show_commands_enforce_family_type) {
     close_repl(&repl);
 }
 
+TEST(repl_read, entity_show_uses_entity_session_core) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+
+    remove("test_repl_entity_show_capture.txt");
+    ASSERT_EQ(0, run_repl_command_capture(
+                     &repl,
+                     "entity show 518",
+                     "test_repl_entity_show_capture.txt"));
+    ASSERT_FALSE(repl.dirty);
+    char *output = read_text_file("test_repl_entity_show_capture.txt");
+    ASSERT_NOT_NULL(output);
+    ASSERT_TRUE(strstr(output, "3D Entity Details") != NULL);
+    ASSERT_TRUE(strstr(output, "Current Mesh") != NULL);
+    ASSERT_FALSE(strstr(output, "Object Details") != NULL);
+    free(output);
+    remove("test_repl_entity_show_capture.txt");
+
+    close_repl(&repl);
+}
+
 TEST(repl_read, parameter_grouped_read_commands_use_cli_shape) {
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
@@ -670,7 +691,7 @@ TEST(repl_read, cli_batch_mode_is_rejected) {
     close_repl(&repl);
 }
 
-TEST(repl_read, specialized_repl_read_cores_are_directly_callable) {
+TEST(repl_read, family_repl_read_cores_are_directly_callable) {
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
@@ -699,22 +720,22 @@ TEST(repl_read, specialized_repl_read_cores_are_directly_callable) {
     char *parameter_show[] = {"show", "46"};
     char *parameter_dump[] = {"dump", "46"};
 
-    assert_in_session_ok(&repl, nmo_cmd_file_info_in_session, 1, file_info);
-    assert_in_session_ok(&repl, nmo_cmd_file_header_in_session, 1, file_header);
-    assert_in_session_ok(&repl, nmo_cmd_file_stats_in_session, 1, file_stats);
-    assert_in_session_ok(&repl, nmo_cmd_file_classes_in_session, 1, file_classes);
-    assert_in_session_ok(&repl, nmo_cmd_file_plugins_in_session, 1, file_plugins);
-    assert_in_session_ok(&repl, nmo_cmd_file_space_in_session, 1, file_space);
-    assert_in_session_ok(&repl, nmo_cmd_validate_all_in_session, 1, validate_all);
-    assert_in_session_ok(&repl, nmo_cmd_validate_structure_in_session, 1, validate_structure);
-    assert_in_session_ok(&repl, nmo_cmd_validate_references_in_session, 1, validate_references);
-    assert_in_session_ok(&repl, nmo_cmd_validate_resources_in_session, 1, validate_resources);
-    assert_in_session_ok(&repl, nmo_cmd_validate_orphans_in_session, 1, validate_orphans);
+    assert_in_session_ok(&repl, nmo_cmd_file_in_session, 1, file_info);
+    assert_in_session_ok(&repl, nmo_cmd_file_in_session, 1, file_header);
+    assert_in_session_ok(&repl, nmo_cmd_file_in_session, 1, file_stats);
+    assert_in_session_ok(&repl, nmo_cmd_file_in_session, 1, file_classes);
+    assert_in_session_ok(&repl, nmo_cmd_file_in_session, 1, file_plugins);
+    assert_in_session_ok(&repl, nmo_cmd_file_in_session, 1, file_space);
+    assert_in_session_ok(&repl, nmo_cmd_validate_in_session, 1, validate_all);
+    assert_in_session_ok(&repl, nmo_cmd_validate_in_session, 1, validate_structure);
+    assert_in_session_ok(&repl, nmo_cmd_validate_in_session, 1, validate_references);
+    assert_in_session_ok(&repl, nmo_cmd_validate_in_session, 1, validate_resources);
+    assert_in_session_ok(&repl, nmo_cmd_validate_in_session, 1, validate_orphans);
     assert_in_session_ok(&repl, nmo_cmd_query_eval_in_session, 4, query_eval);
-    assert_in_session_ok(&repl, nmo_cmd_diff_summary_in_session, 2, diff_summary);
-    assert_in_session_ok(&repl, nmo_cmd_diff_objects_in_session, 2, diff_objects);
-    assert_in_session_ok(&repl, nmo_cmd_diff_chunks_in_session, 2, diff_chunks);
-    assert_in_session_ok(&repl, nmo_cmd_diff_full_in_session, 2, diff_full);
+    assert_in_session_ok(&repl, nmo_cmd_diff_in_session, 2, diff_summary);
+    assert_in_session_ok(&repl, nmo_cmd_diff_in_session, 2, diff_objects);
+    assert_in_session_ok(&repl, nmo_cmd_diff_in_session, 2, diff_chunks);
+    assert_in_session_ok(&repl, nmo_cmd_diff_in_session, 2, diff_full);
     assert_in_session_ok(&repl, nmo_cmd_chunk_in_session, 3, chunk_list);
     assert_in_session_ok(&repl, nmo_cmd_chunk_in_session, 1, chunk_tree);
     assert_in_session_ok(&repl, nmo_cmd_chunk_in_session, 2, chunk_show);
@@ -782,6 +803,8 @@ TEST(repl_read, no_remaining_repl_read_placeholder_strings) {
 }
 
 TEST(repl_read, domain_session_dispatchers_do_not_construct_object_argv) {
+    assert_source_not_contains("tools/commands/nmo_cmd_entity.c",
+                               "nmo_cmd_object_show_in_session(ctx");
     assert_source_not_contains("tools/commands/nmo_cmd_behavior.c",
                                "nmo_cmd_object_in_session(ctx");
     assert_source_not_contains("tools/commands/nmo_cmd_mesh.c",
@@ -792,6 +815,50 @@ TEST(repl_read, domain_session_dispatchers_do_not_construct_object_argv) {
                                "nmo_cmd_object_in_session(ctx");
     assert_source_not_contains("tools/commands/nmo_cmd_data.c",
                                "nmo_cmd_object_in_session(ctx");
+}
+
+TEST(repl_read, read_family_headers_only_export_family_session_entrypoints) {
+    assert_source_not_contains("tools/commands/nmo_cmd_file.h",
+                               "nmo_cmd_file_info_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_file.h",
+                               "nmo_cmd_file_header_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_file.h",
+                               "nmo_cmd_file_stats_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_file.h",
+                               "nmo_cmd_file_classes_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_file.h",
+                               "nmo_cmd_file_plugins_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_file.h",
+                               "nmo_cmd_file_space_in_session");
+
+    assert_source_not_contains("tools/commands/nmo_cmd_debug.h",
+                               "nmo_cmd_debug_load_phases_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_debug.h",
+                               "nmo_cmd_debug_chunks_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_debug.h",
+                               "nmo_cmd_debug_objects_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_debug.h",
+                               "nmo_cmd_debug_export_in_session");
+
+    assert_source_not_contains("tools/commands/nmo_cmd_validate.h",
+                               "nmo_cmd_validate_all_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_validate.h",
+                               "nmo_cmd_validate_structure_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_validate.h",
+                               "nmo_cmd_validate_references_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_validate.h",
+                               "nmo_cmd_validate_resources_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_validate.h",
+                               "nmo_cmd_validate_orphans_in_session");
+
+    assert_source_not_contains("tools/commands/nmo_cmd_diff.h",
+                               "nmo_cmd_diff_summary_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_diff.h",
+                               "nmo_cmd_diff_objects_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_diff.h",
+                               "nmo_cmd_diff_chunks_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_diff.h",
+                               "nmo_cmd_diff_full_in_session");
 }
 
 TEST(repl_read, no_active_session_adapter_symbols_remain) {
@@ -962,6 +1029,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, resource_and_texture_extract_use_session_core);
     REGISTER_TEST(repl_read, export_reads_reject_missing_output_directory);
     REGISTER_TEST(repl_read, domain_show_commands_enforce_family_type);
+    REGISTER_TEST(repl_read, entity_show_uses_entity_session_core);
     REGISTER_TEST(repl_read, parameter_grouped_read_commands_use_cli_shape);
     REGISTER_TEST(repl_read, grouped_read_commands_reject_invalid_cli_shape);
     REGISTER_TEST(repl_read, mirrored_cli_read_groups_are_available);
@@ -972,12 +1040,13 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, validate_all_reads_dirty_current_session);
     REGISTER_TEST(repl_read, mutating_cli_actions_are_rejected_by_read_mirror);
     REGISTER_TEST(repl_read, cli_batch_mode_is_rejected);
-    REGISTER_TEST(repl_read, specialized_repl_read_cores_are_directly_callable);
+    REGISTER_TEST(repl_read, family_repl_read_cores_are_directly_callable);
     REGISTER_TEST(repl_read, cli_read_table_has_no_session_public_fallbacks);
     REGISTER_TEST(repl_read, all_read_session_groups_have_family_dispatchers);
     REGISTER_TEST(repl_read, no_borrowed_session_adapter_symbols_remain);
     REGISTER_TEST(repl_read, no_remaining_repl_read_placeholder_strings);
     REGISTER_TEST(repl_read, domain_session_dispatchers_do_not_construct_object_argv);
+    REGISTER_TEST(repl_read, read_family_headers_only_export_family_session_entrypoints);
     REGISTER_TEST(repl_read, no_active_session_adapter_symbols_remain);
     REGISTER_TEST(repl_read, command_source_is_not_a_global_cli_option);
     REGISTER_TEST(repl_read, chunk_session_dispatch_does_not_use_ctx_dispatch_helper);

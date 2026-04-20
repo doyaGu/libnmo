@@ -21,6 +21,13 @@
 #include <string.h>
 #include <stdlib.h>
 
+static int nmo_cmd_file_info_in_session(nmo_cmd_ctx_t *c, int argc, char **argv);
+static int nmo_cmd_file_header_in_session(nmo_cmd_ctx_t *c, int argc, char **argv);
+static int nmo_cmd_file_stats_in_session(nmo_cmd_ctx_t *c, int argc, char **argv);
+static int nmo_cmd_file_classes_in_session(nmo_cmd_ctx_t *c, int argc, char **argv);
+static int nmo_cmd_file_plugins_in_session(nmo_cmd_ctx_t *c, int argc, char **argv);
+static int nmo_cmd_file_space_in_session(nmo_cmd_ctx_t *c, int argc, char **argv);
+
 int nmo_cmd_file_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     if (!ctx || argc < 1 || !argv || !argv[0]) {
@@ -97,7 +104,7 @@ static int file_info_single(const char *file_path,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-int nmo_cmd_file_info_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
+static int nmo_cmd_file_info_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
     (void)argc;
     (void)argv;
 
@@ -191,7 +198,7 @@ int nmo_cmd_file_info(int argc, char **argv, const nmo_cli_global_opts_t *global
  * file header
  * ============================================================================ */
 
-int nmo_cmd_file_header_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
+static int nmo_cmd_file_header_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
     (void)argc;
     (void)argv;
 
@@ -291,7 +298,7 @@ int nmo_cmd_file_header(int argc, char **argv, const nmo_cli_global_opts_t *glob
  * file stats
  * ============================================================================ */
 
-int nmo_cmd_file_stats_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
+static int nmo_cmd_file_stats_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
     (void)argc;
     (void)argv;
     /* Collect stats */
@@ -538,7 +545,7 @@ static int file_classes_object(size_t index,
     return 0;
 }
 
-int nmo_cmd_file_classes_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
+static int nmo_cmd_file_classes_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
     static const nmo_opt_def_t opts[] = {
         {"--sort", "-s", NMO_OPT_STRING, "Sort by: id (default), size, count, name"},
     };
@@ -663,7 +670,7 @@ static const char *file_plugin_category_name(nmo_plugin_category_t category) {
     }
 }
 
-int nmo_cmd_file_plugins_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
+static int nmo_cmd_file_plugins_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
     (void)argc;
     (void)argv;
 
@@ -886,7 +893,7 @@ static int file_space_object(size_t index,
     return 0;
 }
 
-int nmo_cmd_file_space_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
+static int nmo_cmd_file_space_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
     static const nmo_opt_def_t opts[] = {
         {"--top", "-t", NMO_OPT_UINT, "Show top N objects by size (default: 15)"},
     };
