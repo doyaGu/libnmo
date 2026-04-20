@@ -129,6 +129,25 @@ NMO_API nmo_status_t nmo_file_header_parse(nmo_io_interface_t *io, nmo_file_head
 NMO_API nmo_status_t nmo_file_header_validate(const nmo_file_header_t *header);
 
 /**
+ * @brief Compute the CK2-compatible file Adler-32 checksum
+ *
+ * CK2 computes the checksum over Part0 with the crc field set to 0,
+ * Part1, the packed Header1 section, and the packed Data section.
+ *
+ * @param header Header structure used for Part0 and Part1
+ * @param header1_packed Packed Header1 section bytes
+ * @param header1_pack_size Packed Header1 section size
+ * @param data_packed Packed Data section bytes
+ * @param data_pack_size Packed Data section size
+ * @return Adler-32 checksum, or 0 if arguments are invalid
+ */
+NMO_API uint32_t nmo_file_header_compute_crc(const nmo_file_header_t *header,
+                                             const uint8_t *header1_packed,
+                                             uint32_t header1_pack_size,
+                                             const uint8_t *data_packed,
+                                             uint32_t data_pack_size);
+
+/**
  * @brief Serialize Virtools file header to IO
  *
  * Writes the Virtools file header to the given IO interface.

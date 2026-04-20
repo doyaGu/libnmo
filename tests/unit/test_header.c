@@ -6,6 +6,8 @@
 #include "../test_framework.h"
 #include "format/nmo_header.h"
 #include "io/nmo_io_memory.h"
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 TEST(header, create_and_destroy) {
@@ -68,9 +70,44 @@ TEST(header, validate) {
     nmo_header_destroy(header);
 }
 
+TEST(header, compute_crc_matches_ck2_reference_fixture) {
+    FILE *file = fopen(NMO_TEST_DATA_FILE("Nop.cmo"), "rb");
+    ASSERT_NOT_NULL(file);
+
+    ASSERT_EQ(0, fseek(file, 0, SEEK_END));
+    long file_size = ftell(file);
+    ASSERT_GT(file_size, 64);
+    ASSERT_EQ(0, fseek(file, 0, SEEK_SET));
+
+    uint8_t *bytes = (uint8_t *)malloc((size_t)file_size);
+    ASSERT_NOT_NULL(bytes);
+    ASSERT_EQ((int)file_size, (int)fread(bytes, 1, (size_t)file_size, file));
+    fclose(file);
+
+    nmo_file_header_t header;
+    nmo_io_interface_t *io = nmo_memory_io_open_read(bytes, (size_t)file_size);
+    ASSERT_NOT_NULL(io);
+    ASSERT_EQ(NMO_OK, nmo_file_header_parse(io, &header));
+    nmo_io_close(io);
+
+    ASSERT_EQ(0xCDB6A00Au, header.crc);
+    ASSERT((uint32_t)file_size >= 64u + header.hdr1_pack_size + header.data_pack_size);
+
+    uint32_t computed = nmo_file_header_compute_crc(
+        &header,
+        bytes + 64,
+        header.hdr1_pack_size,
+        bytes + 64 + header.hdr1_pack_size,
+        header.data_pack_size);
+
+    ASSERT_EQ(header.crc, computed);
+    free(bytes);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(header, create_and_destroy);
     REGISTER_TEST(header, get_size);
     REGISTER_TEST(header, write_and_read);
     REGISTER_TEST(header, validate);
+    REGISTER_TEST(header, compute_crc_matches_ck2_reference_fixture);
 TEST_MAIN_END()

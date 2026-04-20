@@ -444,10 +444,11 @@ static nmo_status_t builder_build_file_header(nmo_builder_t *builder) {
 
     uint32_t crc = 0;
     if (builder->compute_crc) {
-        crc = mz_adler32(crc, (const uint8_t *)&header, 32);
-        crc = mz_adler32(crc, (const uint8_t *)&header.object_count, 56);
-        crc = mz_adler32(crc, (const uint8_t *)builder->header1_packed, builder->header1_pack_size);
-        crc = mz_adler32(crc, (const uint8_t *)builder->data_packed, builder->data_pack_size);
+        crc = nmo_file_header_compute_crc(&header,
+                                          (const uint8_t *)builder->header1_packed,
+                                          builder->header1_pack_size,
+                                          (const uint8_t *)builder->data_packed,
+                                          builder->data_pack_size);
     }
     header.crc = crc;
 

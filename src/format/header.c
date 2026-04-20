@@ -5,6 +5,7 @@
 
 #include "format/nmo_header.h"
 #include "core/nmo_allocator.h"
+#include <miniz.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -222,6 +223,36 @@ nmo_status_t nmo_file_header_validate(const nmo_file_header_t *header) {
     }
 
     NMO_RETURN_OK();
+}
+
+uint32_t nmo_file_header_compute_crc(const nmo_file_header_t *header,
+                                     const uint8_t *header1_packed,
+                                     uint32_t header1_pack_size,
+                                     const uint8_t *data_packed,
+                                     uint32_t data_pack_size) {
+    if (header == NULL) {
+        return 0;
+    }
+    if ((header1_pack_size > 0 && header1_packed == NULL) ||
+        (data_pack_size > 0 && data_packed == NULL)) {
+        return 0;
+    }
+
+    nmo_file_header_t crc_header = *header;
+    crc_header.crc = 0;
+
+    uint32_t crc = 0;
+    crc = (uint32_t)mz_adler32(crc, (const uint8_t *)&crc_header, 32);
+    if (crc_header.file_version >= 5) {
+        crc = (uint32_t)mz_adler32(crc, (const uint8_t *)&crc_header.data_pack_size, 32);
+    }
+    if (header1_pack_size > 0) {
+        crc = (uint32_t)mz_adler32(crc, header1_packed, header1_pack_size);
+    }
+    if (data_pack_size > 0) {
+        crc = (uint32_t)mz_adler32(crc, data_packed, data_pack_size);
+    }
+    return crc;
 }
 
 /**

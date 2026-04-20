@@ -1444,10 +1444,11 @@ static nmo_status_t save_write_file(nmo_serializer_t *ctx, const char *path) {
     uint32_t crc = 0;
     if (ctx->options.compute_crc) {
         uint64_t crc_start = save_perf_begin(ctx);
-        crc = mz_adler32(crc, (const uint8_t *)&header, 32);               /* Part0 */
-        crc = mz_adler32(crc, (const uint8_t *)&header.object_count, 56);  /* Part1 */
-        crc = mz_adler32(crc, (const uint8_t *)ctx->header1_packed, ctx->header1_pack_size);
-        crc = mz_adler32(crc, (const uint8_t *)ctx->data_packed, ctx->data_pack_size);
+        crc = nmo_file_header_compute_crc(&header,
+                                          (const uint8_t *)ctx->header1_packed,
+                                          ctx->header1_pack_size,
+                                          (const uint8_t *)ctx->data_packed,
+                                          ctx->data_pack_size);
         save_perf_end(ctx, NMO_SAVE_PERF_CRC, crc_start);
     }
     header.crc = crc;
