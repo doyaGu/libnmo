@@ -95,8 +95,7 @@ int nmo_cmd_resource_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return NMO_CLI_EXIT_SUCCESS;
     }
     if (strcmp(argv[0], "extract") == 0 || strcmp(argv[0], "x") == 0) {
-        fprintf(ctx->out, "Resource extraction from current session requires --out-dir.\n");
-        return NMO_CLI_EXIT_SUCCESS;
+        return nmo_cmd_resource_extract_in_session(ctx, argc, argv);
     }
 
     fprintf(stderr, "Unsupported resource read action in session: %s\n", argv[0]);
@@ -547,7 +546,19 @@ int nmo_cmd_resource_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
  * resource extract
  * ============================================================================ */
 
-int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+typedef struct resource_extract_args {
+    const char *out_dir;
+    const char *index_str;
+    const char *name_str;
+    bool overwrite;
+} resource_extract_args_t;
+
+static int resource_extract_parse(int argc, char **argv,
+                                  bool expect_file_operand,
+                                  resource_extract_args_t *args,
+                                  const char *usage) {
+    memset(args, 0, sizeof(*args));
+
     static const nmo_opt_def_t opts[] = {
         {"--out-dir",   "-d", NMO_OPT_STRING, "Output directory"},
         {"--index",     "-i", NMO_OPT_STRING, "Resource index"},
@@ -559,44 +570,57 @@ int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t 
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, 4, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *out_dir = vals[0].present ? vals[0].val.str : NULL;
-    if (!out_dir || !*out_dir) {
-        fprintf(stderr, "Error: Missing --out-dir\n");
-        fprintf(stderr, "Usage: nmo resource extract --out-dir <dir> [--index <n> | --name <name>] <file>\n");
+    if (!expect_file_operand && r.pos_count != 0) {
+        fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[0]);
+        fprintf(stderr, "Usage: %s\n", usage);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *index_str = vals[1].present ? vals[1].val.str : NULL;
-    const char *name_str = vals[2].present ? vals[2].val.str : NULL;
-    const bool overwrite = vals[3].val.flag;
+    args->out_dir = vals[0].present ? vals[0].val.str : NULL;
+    args->index_str = vals[1].present ? vals[1].val.str : NULL;
+    args->name_str = vals[2].present ? vals[2].val.str : NULL;
+    args->overwrite = vals[3].present && vals[3].val.flag;
 
-    char dir_err[256];
-    if (ensure_dir_exists(out_dir, dir_err, sizeof(dir_err)) != 0) {
-        fprintf(stderr, "Error: %s\n", dir_err);
-        return NMO_CLI_EXIT_IO_ERROR;
+    if (!args->out_dir || !*args->out_dir) {
+        fprintf(stderr, "Error: Missing --out-dir\n");
+        fprintf(stderr, "Usage: %s\n", usage);
+        return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int resource_extract_run(nmo_cmd_ctx_t *ctx,
+                                const resource_extract_args_t *args,
+                                bool close_ctx) {
+    nmo_cmd_ctx_t c = *ctx;
+
+    char dir_err[256];
+    if (ensure_dir_exists(args->out_dir, dir_err, sizeof(dir_err)) != 0) {
+        fprintf(stderr, "Error: %s\n", dir_err);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR)
+                         : NMO_CLI_EXIT_IO_ERROR;
+    }
 
     uint32_t count = 0;
     nmo_included_file_t *files = nmo_session_get_included_files(c.session, &count);
 
     uint32_t start = 0;
     uint32_t end = count;
-    if (index_str) {
+    if (args->index_str) {
         uint32_t idx;
-        if (!nmo_tool_parse_u32_dec(index_str, &idx) || idx >= count) {
-            fprintf(stderr, "Error: Invalid --index '%s'\n", index_str ? index_str : "");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        if (!nmo_tool_parse_u32_dec(args->index_str, &idx) || idx >= count) {
+            fprintf(stderr, "Error: Invalid --index '%s'\n",
+                    args->index_str ? args->index_str : "");
+            return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR)
+                             : NMO_CLI_EXIT_ARG_ERROR;
         }
         start = idx;
         end = idx + 1;
-    } else if (name_str) {
+    } else if (args->name_str) {
         bool found = false;
         for (uint32_t i = 0; i < count; ++i) {
-            if (files[i].name && strcmp(files[i].name, name_str) == 0) {
+            if (files[i].name && strcmp(files[i].name, args->name_str) == 0) {
                 start = i;
                 end = i + 1;
                 found = true;
@@ -604,8 +628,9 @@ int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t 
             }
         }
         if (!found) {
-            fprintf(stderr, "Error: Resource '%s' not found\n", name_str);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+            fprintf(stderr, "Error: Resource '%s' not found\n", args->name_str);
+            return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR)
+                             : NMO_CLI_EXIT_ARG_ERROR;
         }
     }
 
@@ -619,10 +644,10 @@ int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t 
     if (c.is_json) {
         doc = nmo_cmd_ctx_json_begin(&c);
         data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_str(doc, data, "out_dir", out_dir);
+        yyjson_mut_obj_add_str(doc, data, "out_dir", args->out_dir);
         entries = yyjson_mut_arr(doc);
     } else {
-        fprintf(c.out, "Extracting resources to: %s\n", out_dir);
+        fprintf(c.out, "Extracting resources to: %s\n", args->out_dir);
     }
 
     for (uint32_t i = start; i < end; ++i) {
@@ -632,7 +657,7 @@ int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t 
 
         char safe_name[260];
         nmo_tool_sanitize_filename(safe_name, sizeof(safe_name), res->name, i);
-        char *path = join_path(out_dir, safe_name);
+        char *path = join_path(args->out_dir, safe_name);
         if (!path) {
             errors++;
             if (c.is_json) {
@@ -666,7 +691,7 @@ int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t 
             continue;
         }
 
-        if (!overwrite && file_exists(path)) {
+        if (!args->overwrite && file_exists(path)) {
             skipped++;
             if (c.is_json) {
                 yyjson_mut_val *e = yyjson_mut_obj(doc);
@@ -751,7 +776,31 @@ int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t 
         fprintf(c.out, "\nExtracted: %u, Skipped: %u, Errors: %u\n", extracted, skipped, errors);
     }
 
-    return nmo_cmd_ctx_done(&c, exit_code);
+    return close_ctx ? nmo_cmd_ctx_done(&c, exit_code) : exit_code;
+}
+
+int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    resource_extract_args_t args;
+    const char *usage =
+        "nmo resource extract --out-dir <dir> [--index <n> | --name <name>] <file>";
+    int rc = resource_extract_parse(argc, argv, true, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+
+    nmo_cmd_ctx_t c;
+    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    return resource_extract_run(&c, &args, true);
+}
+
+int nmo_cmd_resource_extract_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
+    resource_extract_args_t args;
+    const char *usage =
+        "resource extract --out-dir <dir> [--index <n> | --name <name>]";
+    int rc = resource_extract_parse(argc, argv, false, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+
+    return resource_extract_run(ctx, &args, false);
 }
 
 /* ============================================================================

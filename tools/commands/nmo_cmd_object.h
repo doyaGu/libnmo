@@ -30,6 +30,19 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
  */
 int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_object_show_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
+int nmo_cmd_object_show_class_in_session(nmo_cmd_ctx_t *ctx,
+                                         int argc,
+                                         char **argv,
+                                         uint32_t required_base_class,
+                                         const char *type_label);
+int nmo_cmd_object_list_class_in_session(nmo_cmd_ctx_t *ctx,
+                                         int argc,
+                                         char **argv,
+                                         const char *class_name);
+int nmo_cmd_object_find_class_in_session(nmo_cmd_ctx_t *ctx,
+                                         int argc,
+                                         char **argv,
+                                         const char *class_name);
 
 /**
  * @brief nmo object find - Find objects by query

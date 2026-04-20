@@ -722,6 +722,8 @@ typedef struct object_show_args {
     uint32_t id;
     const char *positional_id;
     const char *name;
+    uint32_t required_base_class;
+    const char *type_label;
 } object_show_args_t;
 
 static int object_show_parse(int argc, char **argv, bool expect_file_operand,
@@ -833,8 +835,9 @@ static int object_show_run(nmo_cmd_ctx_t *ctx, const object_show_args_t *args,
         .id = args->id,
         .positional_id = args->positional_id,
         .name = args->name,
+        .required_base_class = (nmo_class_id_t)args->required_base_class,
         .selector_label = "Object",
-        .type_label = "object",
+        .type_label = args->type_label ? args->type_label : "object",
     };
     nmo_object_t *target = NULL;
     nmo_object_id_t object_id = 0;
@@ -1004,6 +1007,25 @@ int nmo_cmd_object_show_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
         return rc;
     }
 
+    return object_show_run(ctx, &args, false, usage);
+}
+
+int nmo_cmd_object_show_class_in_session(nmo_cmd_ctx_t *ctx,
+                                         int argc,
+                                         char **argv,
+                                         uint32_t required_base_class,
+                                         const char *type_label) {
+    object_show_args_t args;
+    const char *usage =
+        "show [--select <path>]... [--expr <expr>]... "
+        "[--id <id> | --name <name> | <id>]";
+    int rc = object_show_parse(argc, argv, false, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    args.required_base_class = required_base_class;
+    args.type_label = type_label;
     return object_show_run(ctx, &args, false, usage);
 }
 
@@ -1496,6 +1518,33 @@ static int object_list_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     return rc;
 }
 
+int nmo_cmd_object_list_class_in_session(nmo_cmd_ctx_t *ctx,
+                                         int argc,
+                                         char **argv,
+                                         const char *class_name)
+{
+    if (!ctx || argc < 1 || !argv || !argv[0] || !class_name) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    char **merged = (char **)malloc(((size_t)argc + 2u) * sizeof(char *));
+    if (!merged) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    merged[0] = argv[0];
+    merged[1] = "--class";
+    merged[2] = (char *)class_name;
+    for (int i = 1; i < argc; i++) {
+        merged[i + 2] = argv[i];
+    }
+
+    int rc = object_list_in_session(ctx, argc + 2, merged);
+    free(merged);
+    return rc;
+}
+
 static int object_find_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     static const nmo_opt_def_t opts[] = {
@@ -1548,6 +1597,33 @@ static int object_find_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     nmo_cli_table_print(&table, ctx->out, ctx->colorize);
     nmo_cli_table_free(&table);
     return NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_object_find_class_in_session(nmo_cmd_ctx_t *ctx,
+                                         int argc,
+                                         char **argv,
+                                         const char *class_name)
+{
+    if (!ctx || argc < 1 || !argv || !argv[0] || !class_name) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    char **merged = (char **)malloc(((size_t)argc + 2u) * sizeof(char *));
+    if (!merged) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    merged[0] = argv[0];
+    merged[1] = "--class";
+    merged[2] = (char *)class_name;
+    for (int i = 1; i < argc; i++) {
+        merged[i + 2] = argv[i];
+    }
+
+    int rc = object_find_in_session(ctx, argc + 2, merged);
+    free(merged);
+    return rc;
 }
 
 static int object_selector_only_in_session(nmo_cmd_ctx_t *ctx,

@@ -45,15 +45,14 @@ int nmo_cmd_texture_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     }
 
     if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
-        char *list_args[] = {"list", "--class", "CKTexture"};
-        return nmo_cmd_object_in_session(ctx, 3, list_args);
+        return nmo_cmd_object_list_class_in_session(ctx, argc, argv, "CKTexture");
     }
     if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
-        return nmo_cmd_object_show_in_session(ctx, argc, argv);
+        return nmo_cmd_object_show_class_in_session(
+            ctx, argc, argv, NMO_CID_TEXTURE, "CKTexture");
     }
     if (strcmp(argv[0], "extract") == 0 || strcmp(argv[0], "x") == 0) {
-        fprintf(ctx->out, "Texture extraction from current session is not available for this object set.\n");
-        return NMO_CLI_EXIT_SUCCESS;
+        return nmo_cmd_texture_extract_in_session(ctx, argc, argv);
     }
 
     fprintf(stderr, "Unsupported texture read action in session: %s\n", argv[0]);
@@ -872,7 +871,23 @@ static uint8_t *decode_bitmap2_slot(nmo_arena_t *arena,
  * texture extract
  * ============================================================================ */
 
-int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+typedef struct texture_extract_args {
+    const char *out_dir;
+    bool has_id;
+    uint32_t id;
+    const char *name_pat;
+    nmo_bitmap_format_t out_format;
+    const char *ext;
+    uint32_t quality;
+    bool overwrite;
+} texture_extract_args_t;
+
+static int texture_extract_parse(int argc, char **argv,
+                                 bool expect_file_operand,
+                                 texture_extract_args_t *args,
+                                 const char *usage) {
+    memset(args, 0, sizeof(*args));
+
     static const nmo_opt_def_t opts[] = {
         {"--out-dir",   "-d", NMO_OPT_STRING, "Output directory"},
         {"--id",        NULL,  NMO_OPT_UINT,   "Extract single texture by ID"},
@@ -886,43 +901,55 @@ int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, 6, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *out_dir   = vals[0].present ? vals[0].val.str : NULL;
-    uint32_t filter_id    = vals[1].present ? vals[1].val.u   : 0;
-    const char *name_pat  = vals[2].present ? vals[2].val.str : NULL;
-    const char *fmt_str   = vals[3].present ? vals[3].val.str : NULL;
-    uint32_t quality      = vals[4].present ? vals[4].val.u   : 90;
-    bool overwrite        = vals[5].val.flag;
-
-    if (!out_dir || !*out_dir) {
-        fprintf(stderr, "Error: Missing --out-dir\n");
-        fprintf(stderr, "Usage: nmo texture extract --out-dir <dir> [options] <file>\n");
+    if (!expect_file_operand && r.pos_count != 0) {
+        fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[0]);
+        fprintf(stderr, "Usage: %s\n", usage);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_bitmap_format_t out_format = parse_format_name(fmt_str);
-    const char *ext = format_ext(out_format);
+    args->out_dir = vals[0].present ? vals[0].val.str : NULL;
+    args->has_id = vals[1].present;
+    args->id = vals[1].present ? vals[1].val.u : 0;
+    args->name_pat = vals[2].present ? vals[2].val.str : NULL;
+    const char *fmt_str   = vals[3].present ? vals[3].val.str : NULL;
+    args->quality = vals[4].present ? vals[4].val.u : 90;
+    args->overwrite = vals[5].present && vals[5].val.flag;
 
-    if (quality < 1) quality = 1;
-    if (quality > 100) quality = 100;
-
-    char dir_err[256];
-    if (tex_ensure_dir(out_dir, dir_err, sizeof(dir_err)) != 0) {
-        fprintf(stderr, "Error: %s\n", dir_err);
-        return NMO_CLI_EXIT_IO_ERROR;
+    if (!args->out_dir || !*args->out_dir) {
+        fprintf(stderr, "Error: Missing --out-dir\n");
+        fprintf(stderr, "Usage: %s\n", usage);
+        return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    args->out_format = parse_format_name(fmt_str);
+    args->ext = format_ext(args->out_format);
+
+    if (args->quality < 1) args->quality = 1;
+    if (args->quality > 100) args->quality = 100;
+
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int texture_extract_run(nmo_cmd_ctx_t *ctx,
+                               const texture_extract_args_t *args,
+                               bool close_ctx) {
+    nmo_cmd_ctx_t c = *ctx;
+
+    char dir_err[256];
+    if (tex_ensure_dir(args->out_dir, dir_err, sizeof(dir_err)) != 0) {
+        fprintf(stderr, "Error: %s\n", dir_err);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR)
+                         : NMO_CLI_EXIT_IO_ERROR;
+    }
 
     /* Collect textures */
     nmo_object_query_t query = {0};
     nmo_core_query_set_class_id(&query, NMO_CID_TEXTURE, true);
-    if (filter_id) {
-        nmo_core_query_set_object_id(&query, filter_id);
+    if (args->has_id) {
+        nmo_core_query_set_object_id(&query, args->id);
     }
-    if (name_pat) {
-        nmo_core_query_set_name_wildcard(&query, name_pat);
+    if (args->name_pat) {
+        nmo_core_query_set_name_wildcard(&query, args->name_pat);
     }
 
     texture_list_t tl = {0};
@@ -930,13 +957,14 @@ int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *
     nmo_core_object_query_run(&c, &query, collect_texture_visitor, &tl, &iter_result);
 
     if (tl.count == 0) {
-        if (filter_id) {
-            fprintf(stderr, "Error: Texture %u not found\n", filter_id);
+        if (args->has_id) {
+            fprintf(stderr, "Error: Texture %u not found\n", args->id);
         } else {
             fprintf(stderr, "No textures found\n");
         }
         free(tl.objects);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR)
+                         : NMO_CLI_EXIT_ARG_ERROR;
     }
 
     nmo_arena_t *arena = nmo_session_get_arena(c.session);
@@ -951,11 +979,12 @@ int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *
     if (c.is_json) {
         doc = nmo_cmd_ctx_json_begin(&c);
         data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_str(doc, data, "out_dir", out_dir);
-        yyjson_mut_obj_add_str(doc, data, "format", ext);
+        yyjson_mut_obj_add_str(doc, data, "out_dir", args->out_dir);
+        yyjson_mut_obj_add_str(doc, data, "format", args->ext);
         entries = yyjson_mut_arr(doc);
     } else {
-        fprintf(c.out, "Extracting textures to: %s (format: %s)\n", out_dir, ext);
+        fprintf(c.out, "Extracting textures to: %s (format: %s)\n",
+                args->out_dir, args->ext);
     }
 
     for (size_t ti = 0; ti < tl.count; ++ti) {
@@ -968,7 +997,7 @@ int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *
 
         /* Build output filename */
         char fname[512];
-        sanitize_tex_filename(fname, sizeof(fname), name, id, ext);
+        sanitize_tex_filename(fname, sizeof(fname), name, id, args->ext);
 
         /* No state? */
         if (!ts) {
@@ -1124,7 +1153,7 @@ int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *
         /* Encode to output format */
         size_t out_size = 0;
         uint8_t *encoded = nmo_stbi_write_to_memory(
-            arena, out_format, w, h, ch, pixels, (int)quality, &out_size);
+            arena, args->out_format, w, h, ch, pixels, (int)args->quality, &out_size);
 
         if (!encoded || out_size == 0) {
             warnings++;
@@ -1143,13 +1172,13 @@ int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *
         }
 
         /* Write to file */
-        char *path = tex_join_path(out_dir, fname);
+        char *path = tex_join_path(args->out_dir, fname);
         if (!path) {
             warnings++;
             continue;
         }
 
-        if (!overwrite && tex_file_exists(path)) {
+        if (!args->overwrite && tex_file_exists(path)) {
             skipped++;
             if (c.is_json) {
                 yyjson_mut_val *e = yyjson_mut_obj(doc);
@@ -1241,7 +1270,29 @@ int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *
     }
 
     free(tl.objects);
-    return nmo_cmd_ctx_done(&c, exit_code);
+    return close_ctx ? nmo_cmd_ctx_done(&c, exit_code) : exit_code;
+}
+
+int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    texture_extract_args_t args;
+    const char *usage = "nmo texture extract --out-dir <dir> [options] <file>";
+    int rc = texture_extract_parse(argc, argv, true, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+
+    nmo_cmd_ctx_t c;
+    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    return texture_extract_run(&c, &args, true);
+}
+
+int nmo_cmd_texture_extract_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
+    texture_extract_args_t args;
+    const char *usage = "texture extract --out-dir <dir> [options]";
+    int rc = texture_extract_parse(argc, argv, false, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+
+    return texture_extract_run(ctx, &args, false);
 }
 
 /* ============================================================================

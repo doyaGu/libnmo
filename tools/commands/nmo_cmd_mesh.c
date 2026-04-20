@@ -51,11 +51,11 @@ int nmo_cmd_mesh_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     }
 
     if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
-        char *list_args[] = {"list", "--class", "CKMesh"};
-        return nmo_cmd_object_in_session(ctx, 3, list_args);
+        return nmo_cmd_object_list_class_in_session(ctx, argc, argv, "CKMesh");
     }
     if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
-        return nmo_cmd_object_show_in_session(ctx, argc, argv);
+        return nmo_cmd_object_show_class_in_session(
+            ctx, argc, argv, NMO_CID_MESH, "CKMesh");
     }
     if (strcmp(argv[0], "export") == 0 || strcmp(argv[0], "x") == 0) {
         return nmo_cmd_mesh_export_in_session(ctx, argc, argv);

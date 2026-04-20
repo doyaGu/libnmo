@@ -380,6 +380,42 @@ TEST(repl_read, mesh_and_animation_exports_use_session_core) {
     close_repl(&repl);
 }
 
+TEST(repl_read, resource_and_texture_extract_use_session_core) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+
+    const char payload[] = "resource extract probe";
+    ASSERT_EQ(NMO_OK,
+              nmo_session_add_included_file(repl.session,
+                                            "repl_extract_probe.bin",
+                                            payload,
+                                            (uint32_t)sizeof(payload)));
+    repl.dirty = false;
+
+    remove("test_repl_resource_extract/repl_extract_probe.bin");
+    NMO_TEST_RMDIR("test_repl_resource_extract");
+
+    ASSERT_EQ(0, run_repl_command(&repl, "resource extract --out-dir test_repl_resource_extract --index 0"));
+    ASSERT_FALSE(repl.dirty);
+    ASSERT_TRUE(file_exists("test_repl_resource_extract/repl_extract_probe.bin"));
+
+    remove("test_repl_resource_extract/repl_extract_probe.bin");
+    NMO_TEST_RMDIR("test_repl_resource_extract");
+    close_repl(&repl);
+
+    open_repl(&repl, NMO_TEST_DATA_FILE("Demo/Tunnel.cmo"));
+    remove("test_repl_texture_extract/simple lit pink_1061.png");
+    NMO_TEST_RMDIR("test_repl_texture_extract");
+
+    ASSERT_EQ(0, run_repl_command(&repl, "texture extract --out-dir test_repl_texture_extract --id 1061 --format png"));
+    ASSERT_FALSE(repl.dirty);
+    ASSERT_TRUE(file_exists("test_repl_texture_extract/simple lit pink_1061.png"));
+
+    remove("test_repl_texture_extract/simple lit pink_1061.png");
+    NMO_TEST_RMDIR("test_repl_texture_extract");
+    close_repl(&repl);
+}
+
 TEST(repl_read, export_reads_reject_missing_output_directory) {
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/P_Box.nmo"));
@@ -389,6 +425,27 @@ TEST(repl_read, export_reads_reject_missing_output_directory) {
 
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
     assert_read_fails_clean(&repl, "animation export --all");
+    close_repl(&repl);
+
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    assert_read_fails_clean(&repl, "resource extract");
+    close_repl(&repl);
+
+    open_repl(&repl, NMO_TEST_DATA_FILE("Demo/Tunnel.cmo"));
+    assert_read_fails_clean(&repl, "texture extract --id 1061");
+
+    close_repl(&repl);
+}
+
+TEST(repl_read, domain_show_commands_enforce_family_type) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+
+    assert_read_fails_clean(&repl, "mesh show 2");
+    assert_read_fails_clean(&repl, "animation show 2");
+    assert_read_fails_clean(&repl, "texture show 2");
+    assert_read_fails_clean(&repl, "data show 2");
+    assert_read_fails_clean(&repl, "behavior show 2");
 
     close_repl(&repl);
 }
@@ -718,6 +775,23 @@ TEST(repl_read, no_remaining_repl_read_placeholder_strings) {
                                "digraph nmo_refs");
     assert_source_not_contains("tools/commands/nmo_cmd_behavior.c",
                                "digraph behavior");
+    assert_source_not_contains("tools/commands/nmo_cmd_resource.c",
+                               "Resource extraction from current session");
+    assert_source_not_contains("tools/commands/nmo_cmd_texture.c",
+                               "Texture extraction from current session");
+}
+
+TEST(repl_read, domain_session_dispatchers_do_not_construct_object_argv) {
+    assert_source_not_contains("tools/commands/nmo_cmd_behavior.c",
+                               "nmo_cmd_object_in_session(ctx");
+    assert_source_not_contains("tools/commands/nmo_cmd_mesh.c",
+                               "nmo_cmd_object_in_session(ctx");
+    assert_source_not_contains("tools/commands/nmo_cmd_animation.c",
+                               "nmo_cmd_object_in_session(ctx");
+    assert_source_not_contains("tools/commands/nmo_cmd_texture.c",
+                               "nmo_cmd_object_in_session(ctx");
+    assert_source_not_contains("tools/commands/nmo_cmd_data.c",
+                               "nmo_cmd_object_in_session(ctx");
 }
 
 TEST(repl_read, no_active_session_adapter_symbols_remain) {
@@ -885,7 +959,9 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, object_refgraph_actions_use_session_core);
     REGISTER_TEST(repl_read, behavior_read_actions_use_session_core);
     REGISTER_TEST(repl_read, mesh_and_animation_exports_use_session_core);
+    REGISTER_TEST(repl_read, resource_and_texture_extract_use_session_core);
     REGISTER_TEST(repl_read, export_reads_reject_missing_output_directory);
+    REGISTER_TEST(repl_read, domain_show_commands_enforce_family_type);
     REGISTER_TEST(repl_read, parameter_grouped_read_commands_use_cli_shape);
     REGISTER_TEST(repl_read, grouped_read_commands_reject_invalid_cli_shape);
     REGISTER_TEST(repl_read, mirrored_cli_read_groups_are_available);
@@ -901,6 +977,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, all_read_session_groups_have_family_dispatchers);
     REGISTER_TEST(repl_read, no_borrowed_session_adapter_symbols_remain);
     REGISTER_TEST(repl_read, no_remaining_repl_read_placeholder_strings);
+    REGISTER_TEST(repl_read, domain_session_dispatchers_do_not_construct_object_argv);
     REGISTER_TEST(repl_read, no_active_session_adapter_symbols_remain);
     REGISTER_TEST(repl_read, command_source_is_not_a_global_cli_option);
     REGISTER_TEST(repl_read, chunk_session_dispatch_does_not_use_ctx_dispatch_helper);

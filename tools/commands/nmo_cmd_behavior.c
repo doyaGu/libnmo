@@ -44,8 +44,7 @@ int nmo_cmd_behavior_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     }
 
     if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
-        char *list_args[] = {"list", "--class", "CKBehavior"};
-        return nmo_cmd_object_in_session(ctx, 3, list_args);
+        return nmo_cmd_object_list_class_in_session(ctx, argc, argv, "CKBehavior");
     }
     if (strcmp(argv[0], "stats") == 0 || strcmp(argv[0], "st") == 0) {
         nmo_object_query_t query = {0};
@@ -59,11 +58,11 @@ int nmo_cmd_behavior_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0 ||
         strcmp(argv[0], "dump") == 0 || strcmp(argv[0], "d") == 0 ||
         strcmp(argv[0], "trace") == 0 || strcmp(argv[0], "tr") == 0) {
-        return nmo_cmd_object_show_in_session(ctx, argc, argv);
+        return nmo_cmd_object_show_class_in_session(
+            ctx, argc, argv, NMO_CID_BEHAVIOR, "CKBehavior");
     }
     if (strcmp(argv[0], "find") == 0 || strcmp(argv[0], "f") == 0) {
-        char *find_args[] = {"find", "--class", "CKBehavior"};
-        return nmo_cmd_object_in_session(ctx, 3, find_args);
+        return nmo_cmd_object_find_class_in_session(ctx, argc, argv, "CKBehavior");
     }
     if (strcmp(argv[0], "graph") == 0 || strcmp(argv[0], "g") == 0) {
         return nmo_cmd_behavior_graph_in_session(ctx, argc, argv);
