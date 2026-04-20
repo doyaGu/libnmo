@@ -337,6 +337,7 @@ nmo_status_t nmo_behavior_fold_analyze(
     report->preserve_boundary = desc->preserve_boundary;
     report->preserve_links = desc->preserve_boundary || desc->preserve_links;
     report->preserve_params = desc->preserve_boundary || desc->preserve_params;
+    report->interface_mode = desc->interface_mode;
 
     if (rewrite_id_in_set(desc->node_ids, desc->node_count,
                           desc->parent_id)) {

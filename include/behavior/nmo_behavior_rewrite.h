@@ -70,6 +70,12 @@ typedef struct nmo_behavior_fold_map {
     const char *label;
 } nmo_behavior_fold_map_t;
 
+typedef enum nmo_behavior_fold_interface_mode {
+    NMO_BEHAVIOR_FOLD_INTERFACE_PRESERVE = 0,
+    NMO_BEHAVIOR_FOLD_INTERFACE_CANONICALIZE = 1,
+    NMO_BEHAVIOR_FOLD_INTERFACE_REMOVE = 2,
+} nmo_behavior_fold_interface_mode_t;
+
 typedef struct nmo_behavior_fold_desc {
     nmo_object_id_t parent_id;
     const nmo_object_id_t *node_ids;
@@ -87,6 +93,7 @@ typedef struct nmo_behavior_fold_desc {
     size_t output_map_count;
     const nmo_behavior_fold_map_t *parameter_maps;
     size_t parameter_map_count;
+    nmo_behavior_fold_interface_mode_t interface_mode;
 } nmo_behavior_fold_desc_t;
 
 typedef struct nmo_behavior_fold_write_blocker {
@@ -113,6 +120,7 @@ typedef struct nmo_behavior_fold_report {
     size_t output_map_count;
     nmo_behavior_fold_map_t *parameter_maps;
     size_t parameter_map_count;
+    nmo_behavior_fold_interface_mode_t interface_mode;
 
     nmo_object_id_t *selected_nodes;
     size_t selected_node_count;

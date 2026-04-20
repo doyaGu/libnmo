@@ -320,6 +320,7 @@ typedef struct fold_args {
     size_t output_map_count;
     nmo_behavior_fold_map_t parameter_maps[16];
     size_t parameter_map_count;
+    nmo_behavior_fold_interface_mode_t interface_mode;
     bool dry_run;
     const char *output_path;
 } fold_args_t;
@@ -449,6 +450,19 @@ static const char *fold_map_kind_string(nmo_behavior_fold_map_kind_t kind) {
         return "output";
     case NMO_BEHAVIOR_FOLD_MAP_PARAMETER:
         return "parameter";
+    }
+    return "unknown";
+}
+
+static const char *fold_interface_mode_string(
+    nmo_behavior_fold_interface_mode_t mode) {
+    switch (mode) {
+    case NMO_BEHAVIOR_FOLD_INTERFACE_PRESERVE:
+        return "preserve";
+    case NMO_BEHAVIOR_FOLD_INTERFACE_CANONICALIZE:
+        return "canonicalize";
+    case NMO_BEHAVIOR_FOLD_INTERFACE_REMOVE:
+        return "remove";
     }
     return "unknown";
 }
@@ -641,6 +655,27 @@ static bool parse_fold_index_map(const char *text,
         .new_index = new_index,
     };
     return true;
+}
+
+static bool parse_fold_interface_mode(
+    const char *text,
+    nmo_behavior_fold_interface_mode_t *out_mode) {
+    if (!text || !out_mode) {
+        return false;
+    }
+    if (strcmp(text, "preserve") == 0) {
+        *out_mode = NMO_BEHAVIOR_FOLD_INTERFACE_PRESERVE;
+        return true;
+    }
+    if (strcmp(text, "canonicalize") == 0) {
+        *out_mode = NMO_BEHAVIOR_FOLD_INTERFACE_CANONICALIZE;
+        return true;
+    }
+    if (strcmp(text, "remove") == 0) {
+        *out_mode = NMO_BEHAVIOR_FOLD_INTERFACE_REMOVE;
+        return true;
+    }
+    return false;
 }
 
 static bool parse_fold_candidates_args(int argc,
@@ -934,6 +969,7 @@ static bool parse_fold_args(int argc,
         {"--map-input",       NULL, NMO_OPT_STRING, "Map input old_index:new_index"},
         {"--map-output",      NULL, NMO_OPT_STRING, "Map output old_index:new_index"},
         {"--map-param",       NULL, NMO_OPT_STRING, "Map parameter old_index:new_index"},
+        {"--interface",       NULL, NMO_OPT_STRING, "Interface mode: preserve|canonicalize|remove"},
         {"--output",          "-o", NMO_OPT_STRING, "Output file"},
         {"--dry-run",         NULL, NMO_OPT_FLAG,   "Preview without saving"},
     };
@@ -950,6 +986,7 @@ static bool parse_fold_args(int argc,
         OPT_MAP_INPUT,
         OPT_MAP_OUTPUT,
         OPT_MAP_PARAM,
+        OPT_INTERFACE,
         OPT_OUTPUT,
         OPT_DRY_RUN,
         OPT_COUNT
@@ -979,6 +1016,7 @@ static bool parse_fold_args(int argc,
     args.block_version = vals[OPT_VERSION].present
         ? vals[OPT_VERSION].val.u
         : 65536u;
+    args.interface_mode = NMO_BEHAVIOR_FOLD_INTERFACE_PRESERVE;
     args.preserve_boundary = vals[OPT_PRESERVE_BOUNDARY].present &&
                              vals[OPT_PRESERVE_BOUNDARY].val.flag;
     args.preserve_links = args.preserve_boundary ||
@@ -1015,6 +1053,11 @@ static bool parse_fold_args(int argc,
             return false;
         }
         args.parameter_map_count = 1;
+    }
+    if (vals[OPT_INTERFACE].present &&
+        !parse_fold_interface_mode(vals[OPT_INTERFACE].val.str,
+                                   &args.interface_mode)) {
+        return false;
     }
     if (args.parent_id == 0 || nmo_guid_is_null(args.block_guid) ||
         !parse_fold_nodes(vals[OPT_NODES].val.str, args.nodes,
@@ -1079,6 +1122,9 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
                                 report->preserve_links);
         yyjson_mut_obj_add_bool(doc, data, "preserve_params",
                                 report->preserve_params);
+        nmo_cli_json_add_str_safe(
+            doc, data, "interface_mode",
+            fold_interface_mode_string(report->interface_mode));
         yyjson_mut_val *maps = yyjson_mut_obj(doc);
         add_fold_maps_json(doc, maps, "inputs",
                            report->input_maps,
@@ -1256,6 +1302,7 @@ int nmo_cmd_behavior_fold(int argc,
         .output_map_count = args.output_map_count,
         .parameter_maps = args.parameter_maps,
         .parameter_map_count = args.parameter_map_count,
+        .interface_mode = args.interface_mode,
     };
     nmo_status_t fold_rc = args.dry_run
         ? nmo_behavior_fold_analyze(c.ctx, c.session, &desc, &report)
