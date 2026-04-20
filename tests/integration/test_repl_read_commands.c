@@ -330,6 +330,16 @@ TEST(repl_read, mirrored_cli_read_groups_are_available) {
     assert_read_ok(&repl, "query eval --object 520 has_target");
     assert_read_ok(&repl, "type list");
     assert_read_ok(&repl, "extension list");
+    assert_captured_read_ok_contains(
+        &repl,
+        "extension info",
+        "test_repl_extension_info.txt",
+        "Extension Metadata");
+    assert_captured_read_ok_contains(
+        &repl,
+        "extension check",
+        "test_repl_extension_check.txt",
+        "Plugin Dependency Check");
     assert_read_ok(&repl, "completion bash");
 
     close_repl(&repl);

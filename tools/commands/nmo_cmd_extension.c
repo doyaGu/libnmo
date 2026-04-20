@@ -15,6 +15,9 @@
 #include <stdio.h>
 #include <string.h>
 
+static int extension_info_run(nmo_cmd_ctx_t *c);
+static int extension_check_run(nmo_cmd_ctx_t *c, bool strict_mode);
+
 int nmo_cmd_extension_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     if (!ctx || argc < 1 || !argv || !argv[0]) {
@@ -23,12 +26,10 @@ int nmo_cmd_extension_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     }
 
     if (strcmp(argv[0], "info") == 0 || strcmp(argv[0], "i") == 0) {
-        fprintf(ctx->out, "Extension Info\n");
-        return NMO_CLI_EXIT_SUCCESS;
+        return extension_info_run(ctx);
     }
     if (strcmp(argv[0], "check") == 0 || strcmp(argv[0], "ch") == 0) {
-        fprintf(ctx->out, "Extension Check\n");
-        return NMO_CLI_EXIT_SUCCESS;
+        return extension_check_run(ctx, false);
     }
 
     fprintf(stderr, "Unsupported extension read action in session: %s\n", argv[0]);
@@ -326,24 +327,21 @@ int nmo_cmd_extension_load(int argc, char **argv, const nmo_cli_global_opts_t *g
  * extension info
  * ============================================================================ */
 
-int nmo_cmd_extension_info(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
+static int extension_info_run(nmo_cmd_ctx_t *c)
+{
     /* Get plugin diagnostics */
-    const nmo_session_plugin_diagnostics_t *diag = nmo_session_get_plugin_diagnostics(c.session);
+    const nmo_session_plugin_diagnostics_t *diag = nmo_session_get_plugin_diagnostics(c->session);
     if (!diag) {
         fprintf(stderr, "Error: No plugin diagnostics available\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Output in requested format */
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
-        yyjson_mut_obj_add_str(doc, data, "file", c.file_path);
+        yyjson_mut_obj_add_str(doc, data, "file", c->file_path);
         yyjson_mut_obj_add_uint(doc, data, "plugin_count", (uint64_t)diag->entry_count);
         yyjson_mut_obj_add_uint(doc, data, "missing_count", (uint64_t)diag->missing_count);
         yyjson_mut_obj_add_uint(doc, data, "outdated_count", (uint64_t)diag->outdated_count);
@@ -376,27 +374,27 @@ int nmo_cmd_extension_info(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
         yyjson_mut_obj_add_val(doc, data, "plugins", plugins_arr);
 
-        nmo_cmd_ctx_json_end(&c, doc, data, "extension.info");
+        nmo_cmd_ctx_json_end(c, doc, data, "extension.info");
     } else {
         /* Text output */
-        nmo_cli_print_heading(c.out, "Extension Metadata", c.colorize);
-        nmo_cli_print_kv(c.out, "File", c.file_path, 16, c.colorize);
-        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c->out, "Extension Metadata", c->colorize);
+        nmo_cli_print_kv(c->out, "File", c->file_path, 16, c->colorize);
+        fprintf(c->out, "\n");
 
         char count_str[32];
         snprintf(count_str, sizeof(count_str), "%zu", diag->entry_count);
-        nmo_cli_print_kv(c.out, "Plugin Count", count_str, 16, c.colorize);
+        nmo_cli_print_kv(c->out, "Plugin Count", count_str, 16, c->colorize);
 
         snprintf(count_str, sizeof(count_str), "%zu", diag->missing_count);
-        nmo_cli_print_kv(c.out, "Missing", count_str, 16, c.colorize);
+        nmo_cli_print_kv(c->out, "Missing", count_str, 16, c->colorize);
 
         snprintf(count_str, sizeof(count_str), "%zu", diag->outdated_count);
-        nmo_cli_print_kv(c.out, "Outdated", count_str, 16, c.colorize);
+        nmo_cli_print_kv(c->out, "Outdated", count_str, 16, c->colorize);
 
-        nmo_cli_print_kv(c.out, "Registry", diag->extension_registry_available ? "Available" : "Not Available", 16, c.colorize);
+        nmo_cli_print_kv(c->out, "Registry", diag->extension_registry_available ? "Available" : "Not Available", 16, c->colorize);
 
         if (diag->entry_count > 0) {
-            fprintf(c.out, "\nPlugin Dependencies:\n\n");
+            fprintf(c->out, "\nPlugin Dependencies:\n\n");
 
             /* Build table */
             nmo_cli_table_col_t columns[] = {
@@ -454,44 +452,50 @@ int nmo_cmd_extension_info(int argc, char **argv, const nmo_cli_global_opts_t *g
                 nmo_cli_table_add_row(&table, cells, sizeof(cells) / sizeof(cells[0]));
             }
 
-            nmo_cli_table_print(&table, c.out, c.colorize);
+            nmo_cli_table_print(&table, c->out, c->colorize);
             nmo_cli_table_free(&table);
         }
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_extension_info(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    rc = extension_info_run(&c);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
  * extension check
  * ============================================================================ */
 
-int nmo_cmd_extension_check(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
+static int extension_check_run(nmo_cmd_ctx_t *c, bool strict_mode)
+{
     /* Get plugin diagnostics */
-    const nmo_session_plugin_diagnostics_t *diag = nmo_session_get_plugin_diagnostics(c.session);
+    const nmo_session_plugin_diagnostics_t *diag = nmo_session_get_plugin_diagnostics(c->session);
     if (!diag) {
         fprintf(stderr, "Error: No plugin diagnostics available\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Determine exit code based on diagnostics */
     int exit_code = NMO_CLI_EXIT_SUCCESS;
     bool has_issues = (diag->missing_count > 0 || diag->outdated_count > 0);
 
-    if (has_issues && global->strict_mode) {
+    if (has_issues && strict_mode) {
         exit_code = NMO_CLI_EXIT_STRICT_FAILURE;
     }
 
     /* Output in requested format */
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
-        yyjson_mut_obj_add_str(doc, data, "file", c.file_path);
+        yyjson_mut_obj_add_str(doc, data, "file", c->file_path);
         yyjson_mut_obj_add_bool(doc, data, "all_dependencies_satisfied", !has_issues);
         yyjson_mut_obj_add_uint(doc, data, "total_dependencies", (uint64_t)diag->entry_count);
         yyjson_mut_obj_add_uint(doc, data, "missing_count", (uint64_t)diag->missing_count);
@@ -525,25 +529,25 @@ int nmo_cmd_extension_check(int argc, char **argv, const nmo_cli_global_opts_t *
         }
         yyjson_mut_obj_add_val(doc, data, "issues", issues_arr);
 
-        nmo_cmd_ctx_json_end(&c, doc, data, "extension.check");
+        nmo_cmd_ctx_json_end(c, doc, data, "extension.check");
     } else {
         /* Text output */
-        nmo_cli_print_heading(c.out, "Plugin Dependency Check", c.colorize);
-        nmo_cli_print_kv(c.out, "File", c.file_path, 16, c.colorize);
-        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c->out, "Plugin Dependency Check", c->colorize);
+        nmo_cli_print_kv(c->out, "File", c->file_path, 16, c->colorize);
+        fprintf(c->out, "\n");
 
         char count_str[32];
         snprintf(count_str, sizeof(count_str), "%zu", diag->entry_count);
-        nmo_cli_print_kv(c.out, "Total", count_str, 16, c.colorize);
+        nmo_cli_print_kv(c->out, "Total", count_str, 16, c->colorize);
 
         snprintf(count_str, sizeof(count_str), "%zu", diag->missing_count);
-        nmo_cli_print_kv(c.out, "Missing", count_str, 16, c.colorize);
+        nmo_cli_print_kv(c->out, "Missing", count_str, 16, c->colorize);
 
         snprintf(count_str, sizeof(count_str), "%zu", diag->outdated_count);
-        nmo_cli_print_kv(c.out, "Outdated", count_str, 16, c.colorize);
+        nmo_cli_print_kv(c->out, "Outdated", count_str, 16, c->colorize);
 
         if (has_issues) {
-            fprintf(c.out, "\nIssues Found:\n\n");
+            fprintf(c->out, "\nIssues Found:\n\n");
 
             for (size_t i = 0; i < diag->entry_count; ++i) {
                 const nmo_session_plugin_dependency_status_t *p = &diag->entries[i];
@@ -552,28 +556,37 @@ int nmo_cmd_extension_check(int argc, char **argv, const nmo_cli_global_opts_t *
                     char guid_str[64];
                     nmo_guid_format(p->guid, guid_str, sizeof(guid_str));
 
-                    fprintf(c.out, "  - %s (%s)\n", guid_str, plugin_category_to_string(p->category));
+                    fprintf(c->out, "  - %s (%s)\n", guid_str, plugin_category_to_string(p->category));
 
                     if (p->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_MISSING) {
-                        fprintf(c.out, "    Status: MISSING (required version %u)\n", p->required_version);
+                        fprintf(c->out, "    Status: MISSING (required version %u)\n", p->required_version);
                     } else if (p->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) {
-                        fprintf(c.out, "    Status: VERSION_TOO_OLD (required: %u, found: %u)\n",
+                        fprintf(c->out, "    Status: VERSION_TOO_OLD (required: %u, found: %u)\n",
                                 p->required_version, p->resolved_version);
                     } else if (p->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) {
-                        fprintf(c.out, "    Status: MANAGER_UNAVAILABLE\n");
+                        fprintf(c->out, "    Status: MANAGER_UNAVAILABLE\n");
                     }
 
                     if (p->resolved_name && p->resolved_name[0] != '\0') {
-                        fprintf(c.out, "    Name: %s\n", p->resolved_name);
+                        fprintf(c->out, "    Name: %s\n", p->resolved_name);
                     }
                 }
             }
 
-            fprintf(c.out, "\nResult: ISSUES FOUND\n");
+            fprintf(c->out, "\nResult: ISSUES FOUND\n");
         } else {
-            fprintf(c.out, "\nResult: ALL DEPENDENCIES SATISFIED\n");
+            fprintf(c->out, "\nResult: ALL DEPENDENCIES SATISFIED\n");
         }
     }
 
-    return nmo_cmd_ctx_done(&c, exit_code);
+    return exit_code;
+}
+
+int nmo_cmd_extension_check(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    rc = extension_check_run(&c, global ? global->strict_mode : false);
+    return nmo_cmd_ctx_done(&c, rc);
 }
