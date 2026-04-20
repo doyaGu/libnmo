@@ -1126,6 +1126,7 @@ nmo_status_t nmo_texture_replace_bitmap(
     state->reader_width = (int32_t)width;
     state->reader_height = (int32_t)height;
     state->reader_bpp = 32;
+    state->save_options = NMO_CKTEXTURE_IMAGEFORMAT;
 
     /* Ensure at least one slot */
     if (state->slot_count == 0)
@@ -1148,7 +1149,7 @@ nmo_status_t nmo_texture_replace_bitmap(
     nmo_texture_reader_slot_t *slot = &state->reader_slots[0];
     slot->data = encoded;
     slot->data_size = (uint32_t)encoded_size;
-    slot->format_type = 0;
+    slot->format_type = 1;
     slot->extension = 0;
     slot->alpha_plane = NULL;
     slot->alpha_plane_size = 0;

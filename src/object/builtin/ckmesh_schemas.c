@@ -209,6 +209,52 @@ static nmo_status_t nmo_mesh_read_raw_bytes(nmo_chunk_t *chunk, void *buffer, si
     NMO_RETURN_OK();
 }
 
+static void nmo_mesh_recompute_bounds(nmo_mesh_state_t *state) {
+    if (!state || !state->vertices || state->vertex_count == 0) {
+        return;
+    }
+
+    float minx = state->vertices[0].position.x;
+    float miny = state->vertices[0].position.y;
+    float minz = state->vertices[0].position.z;
+    float maxx = minx;
+    float maxy = miny;
+    float maxz = minz;
+
+    for (uint32_t i = 1; i < state->vertex_count; ++i) {
+        const nmo_vector_t *pos = &state->vertices[i].position;
+        if (pos->x < minx) minx = pos->x;
+        if (pos->y < miny) miny = pos->y;
+        if (pos->z < minz) minz = pos->z;
+        if (pos->x > maxx) maxx = pos->x;
+        if (pos->y > maxy) maxy = pos->y;
+        if (pos->z > maxz) maxz = pos->z;
+    }
+
+    state->local_box_min.x = minx;
+    state->local_box_min.y = miny;
+    state->local_box_min.z = minz;
+    state->local_box_max.x = maxx;
+    state->local_box_max.y = maxy;
+    state->local_box_max.z = maxz;
+    state->bary_center.x = (minx + maxx) * 0.5f;
+    state->bary_center.y = (miny + maxy) * 0.5f;
+    state->bary_center.z = (minz + maxz) * 0.5f;
+
+    float max_dist_sq = 0.0f;
+    for (uint32_t i = 0; i < state->vertex_count; ++i) {
+        const nmo_vector_t *pos = &state->vertices[i].position;
+        float dx = pos->x - state->bary_center.x;
+        float dy = pos->y - state->bary_center.y;
+        float dz = pos->z - state->bary_center.z;
+        float dist_sq = dx * dx + dy * dy + dz * dz;
+        if (dist_sq > max_dist_sq) {
+            max_dist_sq = dist_sq;
+        }
+    }
+    state->radius = sqrtf(max_dist_sq);
+}
+
 /* =============================================================================
  * CKMesh DESERIALIZATION
  * ============================================================================= */
@@ -1056,11 +1102,15 @@ nmo_status_t nmo_mesh_deserialize(
     // Get chunk data version
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
     
-    if (data_version >= 9) {
-        return nmo_mesh_deserialize_modern(chunk, arena, out_state);
+    nmo_status_t result = (data_version >= 9)
+        ? nmo_mesh_deserialize_modern(chunk, arena, out_state)
+        : nmo_mesh_deserialize_legacy(chunk, arena, out_state);
+    if (result != NMO_OK) {
+        return result;
     }
 
-    return nmo_mesh_deserialize_legacy(chunk, arena, out_state);
+    nmo_mesh_recompute_bounds(out_state);
+    return NMO_OK;
 }
 
 /* =============================================================================

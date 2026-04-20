@@ -1074,6 +1074,19 @@ static size_t hex_decode(const char *hex, uint8_t *out, size_t out_size) {
     return count;
 }
 
+static double animation_json_get_number(yyjson_val *val) {
+    if (!val || !yyjson_is_num(val)) {
+        return 0.0;
+    }
+    if (yyjson_is_real(val)) {
+        return yyjson_get_real(val);
+    }
+    if (yyjson_is_sint(val)) {
+        return (double)yyjson_get_sint(val);
+    }
+    return (double)yyjson_get_uint(val);
+}
+
 int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
@@ -1130,7 +1143,7 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
     /* Extract metadata */
     const char *format_str = yyjson_get_str(yyjson_obj_get(jroot, "format"));
     uint32_t entity_id = (uint32_t)yyjson_get_uint(yyjson_obj_get(jroot, "entity_id"));
-    double length_val = yyjson_get_real(yyjson_obj_get(jroot, "length"));
+    double length_val = animation_json_get_number(yyjson_obj_get(jroot, "length"));
     uint32_t flags_val = (uint32_t)yyjson_get_uint(yyjson_obj_get(jroot, "flags"));
 
     nmo_objectanimation_format_t format = CKOBJANIM_FORMAT_NEWDATA;
@@ -1250,14 +1263,14 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
                 float *fp = (float *)data + ki * floats_per_key;
                 yyjson_val *jtime = yyjson_obj_get(jkey, "time");
                 if (jtime)
-                    fp[0] = (float)yyjson_get_real(jtime);
+                    fp[0] = (float)animation_json_get_number(jtime);
 
                 yyjson_val *jvals = yyjson_obj_get(jkey, "values");
                 if (yyjson_is_arr(jvals)) {
                     size_t nvals = yyjson_arr_size(jvals);
                     for (size_t vi = 0; vi < nvals && vi + 1 < floats_per_key; ++vi) {
                         yyjson_val *jv = yyjson_arr_get(jvals, vi);
-                        fp[vi + 1] = (float)yyjson_get_real(jv);
+                        fp[vi + 1] = (float)animation_json_get_number(jv);
                     }
                 }
             }
@@ -1267,6 +1280,103 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
         controllers[ci].key_count = key_count;
         controllers[ci].data_size = data_size;
         controllers[ci].data = data;
+    }
+
+    uint8_t has_morph_counts = 0;
+    int32_t morph_vertex_count = 0;
+    int32_t morph_key_count = 0;
+    uint32_t morph_key_parsed_count = 0;
+    nmo_objanim_morph_key_t *morph_keys = NULL;
+
+    yyjson_val *jmorph_vertex_count = yyjson_obj_get(jroot, "morph_vertex_count");
+    yyjson_val *jmorph_key_count = yyjson_obj_get(jroot, "morph_key_count");
+    yyjson_val *jmorph_arr = yyjson_obj_get(jroot, "morph_keys");
+
+    if (jmorph_vertex_count && yyjson_is_num(jmorph_vertex_count)) {
+        morph_vertex_count = (int32_t)yyjson_get_sint(jmorph_vertex_count);
+        has_morph_counts = 1;
+    }
+    if (jmorph_key_count && yyjson_is_num(jmorph_key_count)) {
+        morph_key_count = (int32_t)yyjson_get_sint(jmorph_key_count);
+        has_morph_counts = 1;
+    }
+
+    if (yyjson_is_arr(jmorph_arr)) {
+        size_t morph_count = yyjson_arr_size(jmorph_arr);
+        if (morph_count > UINT32_MAX) {
+            fprintf(stderr, "Error: Too many morph keys\n");
+            parse_ok = false;
+        } else if (morph_count > 0) {
+            morph_keys = (nmo_objanim_morph_key_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_objanim_morph_key_t) * morph_count,
+                _Alignof(nmo_objanim_morph_key_t));
+            if (!morph_keys) {
+                fprintf(stderr, "Error: Out of memory allocating morph keys\n");
+                parse_ok = false;
+            } else {
+                memset(morph_keys, 0, sizeof(nmo_objanim_morph_key_t) * morph_count);
+                morph_key_parsed_count = (uint32_t)morph_count;
+                has_morph_counts = 1;
+                if (morph_key_count == 0) {
+                    morph_key_count = (int32_t)morph_count;
+                }
+
+                for (uint32_t mi = 0; mi < morph_key_parsed_count && parse_ok; ++mi) {
+                    yyjson_val *jmorph = yyjson_arr_get(jmorph_arr, mi);
+                    if (!yyjson_is_obj(jmorph)) {
+                        fprintf(stderr, "Error: morph key %u must be an object\n", mi);
+                        parse_ok = false;
+                        break;
+                    }
+
+                    yyjson_val *jtime = yyjson_obj_get(jmorph, "time_step");
+                    if (jtime) {
+                        morph_keys[mi].time_step = (float)animation_json_get_number(jtime);
+                    }
+                    uint32_t data_size =
+                        (uint32_t)yyjson_get_uint(yyjson_obj_get(jmorph, "data_size"));
+                    const char *hex = yyjson_get_str(yyjson_obj_get(jmorph, "hex"));
+                    if (hex) {
+                        size_t hex_len = strlen(hex);
+                        if ((hex_len % 2u) != 0u || hex_len / 2u > UINT32_MAX) {
+                            fprintf(stderr, "Error: Invalid morph key hex data in key %u\n", mi);
+                            parse_ok = false;
+                            break;
+                        }
+                        if (data_size == 0) {
+                            data_size = (uint32_t)(hex_len / 2u);
+                        } else if (hex_len / 2u != data_size) {
+                            fprintf(stderr, "Error: morph key %u data_size=%u but hex has %zu bytes\n",
+                                    mi, data_size, hex_len / 2u);
+                            parse_ok = false;
+                            break;
+                        }
+                    }
+
+                    morph_keys[mi].data_size = data_size;
+                    if (data_size > 0) {
+                        uint8_t *data = (uint8_t *)nmo_arena_alloc(arena, data_size, 4);
+                        if (!data) {
+                            fprintf(stderr, "Error: Out of memory allocating morph key data\n");
+                            parse_ok = false;
+                            break;
+                        }
+                        memset(data, 0, data_size);
+                        if (hex) {
+                            size_t decoded = hex_decode(hex, data, data_size);
+                            if (decoded != data_size) {
+                                fprintf(stderr, "Error: Failed to decode morph key %u hex data\n", mi);
+                                parse_ok = false;
+                                break;
+                            }
+                        }
+                        morph_keys[mi].data = data;
+                    }
+                }
+            }
+        } else {
+            has_morph_counts = 1;
+        }
     }
 
     yyjson_doc_free(jdoc);
@@ -1364,6 +1474,11 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
     st->flags = flags_val;
     st->has_length = 1;
     st->length = (float)length_val;
+    st->has_morph_counts = has_morph_counts;
+    st->morph_vertex_count = morph_vertex_count;
+    st->morph_key_count = morph_key_count;
+    st->morph_key_parsed_count = morph_key_parsed_count;
+    st->morph_keys = morph_keys;
     st->controller_count = ctrl_count;
     st->controllers = controllers;
     nmo_session_edit_mark(

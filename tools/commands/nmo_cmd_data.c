@@ -17,6 +17,7 @@
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_parse.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
@@ -61,6 +62,14 @@ static const char *arraytype_name(CK_ARRAYTYPE type) {
     }
 }
 
+static bool is_parameter_reference_class(nmo_class_id_t class_id) {
+    return class_id == NMO_CID_PARAMETER ||
+           class_id == NMO_CID_PARAMETERIN ||
+           class_id == NMO_CID_PARAMETEROUT ||
+           class_id == NMO_CID_PARAMETERLOCAL ||
+           class_id == NMO_CID_PARAMETEROPERATION;
+}
+
 static void format_cell(char *buf, size_t buf_size,
                         const nmo_dataarray_cell_t *cell,
                         CK_ARRAYTYPE type,
@@ -100,6 +109,40 @@ static void format_cell(char *buf, size_t buf_size,
             snprintf(buf, buf_size, "?");
             break;
     }
+}
+
+static int validate_dataarray_reference_value(
+    const nmo_cmd_ctx_t *c,
+    CK_ARRAYTYPE col_type,
+    const char *value_str)
+{
+    if (col_type != CKARRAYTYPE_OBJECT && col_type != CKARRAYTYPE_PARAMETER) {
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+
+    nmo_object_id_t ref_id = 0;
+    if (nmo_parse_object_id(value_str, &ref_id) != NMO_OK) {
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+    if (ref_id == 0) {
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+
+    nmo_object_t *ref = nmo_core_find_by_id(c, ref_id);
+    if (ref == NULL) {
+        fprintf(stderr, "Error: Referenced %s #%u not found\n",
+                col_type == CKARRAYTYPE_PARAMETER ? "parameter" : "object",
+                ref_id);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    (void)c;
+    if (col_type == CKARRAYTYPE_PARAMETER &&
+        !is_parameter_reference_class(nmo_object_get_class_id(ref))) {
+        fprintf(stderr, "Error: Referenced parameter #%u not found\n", ref_id);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    return NMO_CLI_EXIT_SUCCESS;
 }
 
 static void add_cell_json(yyjson_mut_doc *doc, yyjson_mut_val *arr,
@@ -672,6 +715,11 @@ static int data_set_cell_mutate(
 
     format_cell(args->old_buf, sizeof(args->old_buf),
                 &target_row->cells[args->col], col_type, c);
+
+    int ref_rc = validate_dataarray_reference_value(c, col_type, args->value_str);
+    if (ref_rc != NMO_CLI_EXIT_SUCCESS) {
+        return ref_rc;
+    }
 
     nmo_session_edit_t *edit = NULL;
     nmo_status_t set_rc = nmo_session_edit_begin(c->session, "data set-cell", &edit);

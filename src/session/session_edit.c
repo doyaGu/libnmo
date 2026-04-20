@@ -320,6 +320,15 @@ static bool session_class_derives(
                registry, (uint32_t)class_id, (uint32_t)base_class_id);
 }
 
+static bool session_is_parameter_reference_class(nmo_class_id_t class_id)
+{
+    return class_id == NMO_CID_PARAMETER ||
+           class_id == NMO_CID_PARAMETERIN ||
+           class_id == NMO_CID_PARAMETEROUT ||
+           class_id == NMO_CID_PARAMETERLOCAL ||
+           class_id == NMO_CID_PARAMETEROPERATION;
+}
+
 static nmo_status_t parse_dataarray_cell(
     nmo_dataarray_state_t *state,
     nmo_arena_t *arena,
@@ -1019,6 +1028,22 @@ nmo_status_t nmo_session_edit_set_dataarray_cell(
             state, nmo_session_get_arena(edit->session), row, col, value_str, &new_cell, &is_ref);
     if (parse_result != NMO_OK) {
         return parse_result;
+    }
+    if (is_ref) {
+        CK_ARRAYTYPE col_type = state->column_formats[col].type;
+        nmo_object_id_t ref_id =
+            col_type == CKARRAYTYPE_OBJECT ? new_cell.object_id : new_cell.parameter_id;
+        if (ref_id != 0) {
+            nmo_object_t *ref = nmo_object_repository_find_by_id(repo, ref_id);
+            if (ref == NULL) {
+                return NMO_ERR_NOT_FOUND;
+            }
+            if (col_type == CKARRAYTYPE_PARAMETER) {
+                if (!session_is_parameter_reference_class(nmo_object_get_class_id(ref))) {
+                    return NMO_ERR_NOT_FOUND;
+                }
+            }
+        }
     }
 
     nmo_dataarray_cell_t *target_cell = &state->rows[row].cells[col];

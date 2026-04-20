@@ -1435,7 +1435,7 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
         if (chunk) {
             chunk->class_id = NMO_CID_MESH;
             chunk->chunk_version = 7;
-            chunk->data_version = 7;
+            chunk->data_version = 9;
             chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
             nmo_object_set_chunk(mesh_obj, chunk);
         }
