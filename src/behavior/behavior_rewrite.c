@@ -272,6 +272,46 @@ static nmo_status_t rewrite_build_delete_control_links(
 
 static void rewrite_fold_report_reject(nmo_behavior_fold_report_t *report,
                                        const char *code,
+                                       const char *message);
+
+static nmo_status_t rewrite_fold_validate_explicit_maps(
+    nmo_behavior_fold_report_t *report) {
+    if (!report || !report->preserve_boundary) {
+        return NMO_OK;
+    }
+
+    if (report->boundary.control_in_count > 1 &&
+        report->input_map_count < report->boundary.control_in_count) {
+        rewrite_fold_report_reject(
+            report, "input_map_required",
+            "preserve-boundary has multiple boundary control inputs; "
+            "provide --map-input for each input edge");
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (report->boundary.control_out_count > 1 &&
+        report->output_map_count < report->boundary.control_out_count) {
+        rewrite_fold_report_reject(
+            report, "output_map_required",
+            "preserve-boundary has multiple boundary control outputs; "
+            "provide --map-output for each output edge");
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t parameter_edge_count = report->boundary.parameter_in_count +
+                                  report->boundary.parameter_out_count;
+    if (parameter_edge_count > 1 &&
+        report->parameter_map_count < parameter_edge_count) {
+        rewrite_fold_report_reject(
+            report, "parameter_map_required",
+            "preserve-boundary has multiple boundary parameter edges; "
+            "provide --map-param for each parameter edge");
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    return NMO_OK;
+}
+
+static void rewrite_fold_report_reject(nmo_behavior_fold_report_t *report,
+                                       const char *code,
                                        const char *message) {
     if (!report) {
         return;
@@ -423,6 +463,11 @@ nmo_status_t nmo_behavior_fold_analyze(
             ? code
             : NMO_ERR_INVALID_STATE;
         goto fail;
+    }
+
+    rc = rewrite_fold_validate_explicit_maps(report);
+    if (rc != NMO_OK) {
+        return rc;
     }
 
     rc = rewrite_build_delete_control_links(ctx, session, desc, report);

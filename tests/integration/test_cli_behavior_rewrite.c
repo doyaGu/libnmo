@@ -634,7 +634,8 @@ TEST(cli, behavior_fold_dry_run_accepts_preserve_boundary) {
              "--anchor 2364 "
              "--guid 42414C07-10000007 "
              "--name \"Ballance Event Handler\" "
-             "--preserve-boundary --dry-run \"%s\"",
+             "--preserve-boundary --map-input 0:0 --map-input 1:1 "
+             "--dry-run \"%s\"",
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     yyjson_doc *doc = NULL;
@@ -659,7 +660,7 @@ TEST(cli, behavior_fold_dry_run_reports_maps) {
              "--anchor 2364 "
              "--guid 42414C07-10000007 "
              "--name \"Ballance Event Handler\" "
-             "--preserve-boundary --map-input 2:3 "
+             "--preserve-boundary --map-input 2:3 --map-input 6:7 "
              "--map-output 0:1 --map-param 4:5 --dry-run \"%s\"",
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
@@ -675,7 +676,7 @@ TEST(cli, behavior_fold_dry_run_reports_maps) {
     ASSERT_NOT_NULL(maps);
     yyjson_val *inputs = get_array_field(maps, "inputs");
     ASSERT_NOT_NULL(inputs);
-    ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(inputs));
+    ASSERT_EQ(2u, (uint32_t)yyjson_arr_size(inputs));
     yyjson_val *input_map = yyjson_arr_get(inputs, 0);
     ASSERT_TRUE(input_map && yyjson_is_obj(input_map));
     ASSERT_STR_EQ("input", get_string_field(input_map, "kind"));
@@ -710,8 +711,8 @@ TEST(cli, behavior_fold_dry_run_reports_interface_mode) {
              "--anchor 2364 "
              "--guid 42414C07-10000007 "
              "--name \"Ballance Event Handler\" "
-             "--preserve-boundary --interface canonicalize "
-             "--dry-run \"%s\"",
+             "--preserve-boundary --map-input 0:0 --map-input 1:1 "
+             "--interface canonicalize --dry-run \"%s\"",
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     yyjson_doc *doc = NULL;
@@ -725,6 +726,24 @@ TEST(cli, behavior_fold_dry_run_reports_interface_mode) {
     ASSERT_STR_EQ("canonicalize", get_string_field(data, "interface_mode"));
 
     yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_fold_dry_run_rejects_ambiguous_input_without_map) {
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior fold --parent 4692 --nodes 2364,2208 "
+             "--anchor 2364 "
+             "--guid 42414C07-10000007 "
+             "--name \"Ballance Event Handler\" "
+             "--preserve-boundary --dry-run \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "input_map_required");
+    ASSERT_STR_CONTAINS(result.output, "multiple boundary control inputs");
+    free(result.output);
 }
 
 TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan) {
@@ -828,6 +847,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_fold_dry_run_accepts_preserve_boundary);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_maps);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_interface_mode);
+    REGISTER_TEST(cli, behavior_fold_dry_run_rejects_ambiguous_input_without_map);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan);
     REGISTER_TEST(cli, behavior_fold_dry_run_rejects_parent_in_selected_nodes);
     REGISTER_TEST(cli, behavior_fold_write_rejects_with_analysis_blocker);

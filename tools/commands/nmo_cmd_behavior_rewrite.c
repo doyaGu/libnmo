@@ -657,6 +657,42 @@ static bool parse_fold_index_map(const char *text,
     return true;
 }
 
+static bool parse_fold_maps_from_argv(int argc,
+                                      char **argv,
+                                      const char *option,
+                                      nmo_behavior_fold_map_kind_t kind,
+                                      nmo_behavior_fold_map_t *out_maps,
+                                      size_t out_capacity,
+                                      size_t *out_count) {
+    if (!argv || !option || !out_maps || !out_count) {
+        return false;
+    }
+    *out_count = 0;
+
+    size_t option_len = strlen(option);
+    for (int i = 0; i < argc; ++i) {
+        const char *value = NULL;
+        if (strcmp(argv[i], option) == 0) {
+            if (i + 1 >= argc) {
+                return false;
+            }
+            value = argv[++i];
+        } else if (strncmp(argv[i], option, option_len) == 0 &&
+                   argv[i][option_len] == '=') {
+            value = argv[i] + option_len + 1;
+        } else {
+            continue;
+        }
+
+        if (*out_count >= out_capacity ||
+            !parse_fold_index_map(value, kind, &out_maps[*out_count])) {
+            return false;
+        }
+        ++(*out_count);
+    }
+    return true;
+}
+
 static bool parse_fold_interface_mode(
     const char *text,
     nmo_behavior_fold_interface_mode_t *out_mode) {
@@ -1030,29 +1066,22 @@ static bool parse_fold_args(int argc,
     args.output_path = vals[OPT_OUTPUT].present
         ? vals[OPT_OUTPUT].val.str
         : NULL;
-    if (vals[OPT_MAP_INPUT].present) {
-        if (!parse_fold_index_map(vals[OPT_MAP_INPUT].val.str,
-                                  NMO_BEHAVIOR_FOLD_MAP_INPUT,
-                                  &args.input_maps[0])) {
-            return false;
-        }
-        args.input_map_count = 1;
-    }
-    if (vals[OPT_MAP_OUTPUT].present) {
-        if (!parse_fold_index_map(vals[OPT_MAP_OUTPUT].val.str,
-                                  NMO_BEHAVIOR_FOLD_MAP_OUTPUT,
-                                  &args.output_maps[0])) {
-            return false;
-        }
-        args.output_map_count = 1;
-    }
-    if (vals[OPT_MAP_PARAM].present) {
-        if (!parse_fold_index_map(vals[OPT_MAP_PARAM].val.str,
-                                  NMO_BEHAVIOR_FOLD_MAP_PARAMETER,
-                                  &args.parameter_maps[0])) {
-            return false;
-        }
-        args.parameter_map_count = 1;
+    if (!parse_fold_maps_from_argv(
+            argc, argv, "--map-input", NMO_BEHAVIOR_FOLD_MAP_INPUT,
+            args.input_maps,
+            sizeof(args.input_maps) / sizeof(args.input_maps[0]),
+            &args.input_map_count) ||
+        !parse_fold_maps_from_argv(
+            argc, argv, "--map-output", NMO_BEHAVIOR_FOLD_MAP_OUTPUT,
+            args.output_maps,
+            sizeof(args.output_maps) / sizeof(args.output_maps[0]),
+            &args.output_map_count) ||
+        !parse_fold_maps_from_argv(
+            argc, argv, "--map-param", NMO_BEHAVIOR_FOLD_MAP_PARAMETER,
+            args.parameter_maps,
+            sizeof(args.parameter_maps) / sizeof(args.parameter_maps[0]),
+            &args.parameter_map_count)) {
+        return false;
     }
     if (vals[OPT_INTERFACE].present &&
         !parse_fold_interface_mode(vals[OPT_INTERFACE].val.str,
