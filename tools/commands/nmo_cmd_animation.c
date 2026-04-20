@@ -4,7 +4,7 @@
  */
 
 #include "nmo_cmd_animation.h"
-#include "nmo_cmd_object.h"
+#include "nmo_cmd_object_internal.h"
 
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"

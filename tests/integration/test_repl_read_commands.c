@@ -740,8 +740,8 @@ TEST(repl_read, family_repl_read_cores_are_directly_callable) {
     assert_in_session_ok(&repl, nmo_cmd_chunk_in_session, 1, chunk_tree);
     assert_in_session_ok(&repl, nmo_cmd_chunk_in_session, 2, chunk_show);
     assert_in_session_ok(&repl, nmo_cmd_chunk_in_session, 3, chunk_find);
-    assert_in_session_ok(&repl, nmo_cmd_object_show_in_session, 2, object_show);
-    assert_in_session_ok(&repl, nmo_cmd_object_refs_in_session, 2, object_refs);
+    assert_in_session_ok(&repl, nmo_cmd_object_in_session, 2, object_show);
+    assert_in_session_ok(&repl, nmo_cmd_object_in_session, 2, object_refs);
     assert_in_session_ok(&repl, nmo_cmd_parameter_in_session, 2, parameter_show);
     assert_in_session_ok(&repl, nmo_cmd_parameter_in_session, 2, parameter_dump);
 
@@ -862,6 +862,18 @@ TEST(repl_read, read_family_headers_only_export_family_session_entrypoints) {
 
     assert_source_not_contains("tools/commands/nmo_cmd_query.h",
                                "nmo_cmd_query_eval_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_object.h",
+                               "nmo_cmd_object_show_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_object.h",
+                               "nmo_cmd_object_show_class_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_object.h",
+                               "nmo_cmd_object_list_class_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_object.h",
+                               "nmo_cmd_object_find_class_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_object.h",
+                               "nmo_cmd_object_refs_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_object.h",
+                               "nmo_cmd_object_refgraph_in_session");
     assert_source_not_contains("tools/commands/nmo_cmd_parameter.h",
                                "nmo_cmd_parameter_show_in_session");
     assert_source_not_contains("tools/commands/nmo_cmd_parameter.h",
