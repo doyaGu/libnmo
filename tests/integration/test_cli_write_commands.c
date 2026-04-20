@@ -8,6 +8,7 @@
 
 #include "../../tools/nmo_cli_common.h"
 
+#include "format/nmo_stb_adapter.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_guids.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
@@ -171,6 +172,14 @@ static int write_text_file(const char *path, const char *text) {
     if (!fp) return 0;
     size_t len = strlen(text);
     int ok = fwrite(text, 1, len, fp) == len;
+    fclose(fp);
+    return ok;
+}
+
+static int write_binary_file(const char *path, const unsigned char *data, size_t size) {
+    FILE *fp = fopen(path, "wb");
+    if (!fp) return 0;
+    int ok = fwrite(data, 1, size, fp) == size;
     fclose(fp);
     return ok;
 }
@@ -356,6 +365,7 @@ TEST(cli_write, object_data_entity_material_texture_parameter_dry_run_preserves_
     ASSERT_TRUE(data_before->row_count > 0u);
     ASSERT_TRUE(data_before->rows[0].column_count > 1u);
     float data_value_before = data_before->rows[0].cells[1].float_value;
+    ASSERT_NOT_NULL(data_before->rows[0].cells[0].string_value);
     write_probe_close(&data_before_probe);
 
     write_semantic_probe_t param_before_probe;
@@ -377,6 +387,12 @@ TEST(cli_write, object_data_entity_material_texture_parameter_dry_run_preserves_
         "-o \"test_cli_write_tmp/data_dry.nmo\"",
         "dry run");
     ASSERT_FALSE(file_exists("test_cli_write_tmp/data_dry.nmo"));
+    assert_cli_success(
+        "data set-cell --name Physicalize_GameBall --row 0 --col 0 --value DryRunBall --dry-run "
+        "\"" NMO_TEST_DATA_FILE("Ballance/Balls.nmo") "\" "
+        "-o \"test_cli_write_tmp/data_string_dry.nmo\"",
+        "dry run");
+    ASSERT_FALSE(file_exists("test_cli_write_tmp/data_string_dry.nmo"));
 
     assert_cli_success(
         "parameter set --dry-run --id 5 1.25 "
@@ -391,6 +407,7 @@ TEST(cli_write, object_data_entity_material_texture_parameter_dry_run_preserves_
         (const nmo_dataarray_state_t *)write_probe_state(&data_after_probe, 2261, CKPGUID_DATAARRAY);
     ASSERT_NOT_NULL(data_after);
     ASSERT_FLOAT_EQ(data_value_before, data_after->rows[0].cells[1].float_value, 0.0001f);
+    ASSERT_STR_EQ("Ball_Paper", data_after->rows[0].cells[0].string_value);
     write_probe_close(&data_after_probe);
 
     write_semantic_probe_t param_after_probe;
@@ -513,6 +530,134 @@ TEST(cli_write, resource_replace_warns_for_texture_named_payload) {
     free(result.output);
 
     assert_validate_ok("test_cli_write_tmp/texture_resource_replace.nmo");
+}
+
+TEST(cli_write, behavior_interface_set_pos_saves_and_reloads) {
+    make_dir("test_cli_write_tmp");
+    remove("test_cli_write_tmp/interface_set_pos.cmo");
+    remove("test_cli_write_tmp/interface_set_color.cmo");
+    remove("test_cli_write_tmp/interface_unfold.cmo");
+    remove("test_cli_write_tmp/interface_comment.cmo");
+    remove("test_cli_write_tmp/interface_point.cmo");
+    remove("test_cli_write_tmp/interface_viewport.cmo");
+    remove("test_cli_write_tmp/interface_translate.cmo");
+    remove("test_cli_write_tmp/interface_graph_io.cmo");
+
+    assert_cli_success(
+        "behavior interface set-pos --name \"Topic - Prevent Collision\" "
+        "134 301 302 "
+        "\"" NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo") "\" "
+        "-o \"test_cli_write_tmp/interface_set_pos.cmo\"",
+        "Moved behavior");
+    assert_validate_ok("test_cli_write_tmp/interface_set_pos.cmo");
+
+    cli_run_result_t result = run_cli_capture(
+        "behavior interface show --id 253 \"test_cli_write_tmp/interface_set_pos.cmo\"");
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "pos=(301.0,302.0)");
+    free(result.output);
+
+    assert_cli_success(
+        "behavior interface set-color --id 253 0x112233 "
+        "\"test_cli_write_tmp/interface_set_pos.cmo\" "
+        "-o \"test_cli_write_tmp/interface_set_color.cmo\"",
+        "Set script color");
+    assert_validate_ok("test_cli_write_tmp/interface_set_color.cmo");
+    result = run_cli_capture(
+        "behavior interface show --id 253 \"test_cli_write_tmp/interface_set_color.cmo\"");
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "color: 0x00112233");
+    free(result.output);
+
+    assert_cli_success(
+        "behavior interface unfold --id 253 197 "
+        "\"test_cli_write_tmp/interface_set_color.cmo\" "
+        "-o \"test_cli_write_tmp/interface_unfold.cmo\"",
+        "Unfolded behavior");
+    assert_validate_ok("test_cli_write_tmp/interface_unfold.cmo");
+    result = run_cli_capture(
+        "behavior interface show --id 253 \"test_cli_write_tmp/interface_unfold.cmo\"");
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "[0] id=197 depth=1 flags=0x0");
+    free(result.output);
+
+    assert_cli_success(
+        "behavior interface add-comment --id 253 "
+        "--text \"Codex interface note\" --rect 10,20,110,80 "
+        "\"" NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo") "\" "
+        "-o \"test_cli_write_tmp/interface_comment.cmo\"",
+        "Added comment");
+    assert_validate_ok("test_cli_write_tmp/interface_comment.cmo");
+    result = run_cli_capture(
+        "behavior interface show --id 253 \"test_cli_write_tmp/interface_comment.cmo\"");
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Script Comments (1)");
+    ASSERT_STR_CONTAINS(result.output, "rect=(10,20,110,80)");
+    ASSERT_STR_CONTAINS(result.output, "\"Codex interface note\"");
+    free(result.output);
+
+    assert_cli_success(
+        "behavior interface add-point --id 253 247 333 444 "
+        "\"" NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo") "\" "
+        "-o \"test_cli_write_tmp/interface_point.cmo\"",
+        "Added point");
+    assert_validate_ok("test_cli_write_tmp/interface_point.cmo");
+    result = run_cli_capture(
+        "behavior interface show --id 253 \"test_cli_write_tmp/interface_point.cmo\"");
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "pts=3 [(210,230), (210,290), (333,444)]");
+    free(result.output);
+
+    assert_cli_success(
+        "behavior interface set-viewport --id 253 12 34 456 "
+        "\"" NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo") "\" "
+        "-o \"test_cli_write_tmp/interface_viewport.cmo\"",
+        "Set viewport");
+    assert_validate_ok("test_cli_write_tmp/interface_viewport.cmo");
+    result = run_cli_capture(
+        "behavior interface show --id 253 \"test_cli_write_tmp/interface_viewport.cmo\"");
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "start: (12.0, 34.0)  v_size: 456.0");
+    free(result.output);
+
+    assert_cli_success(
+        "behavior interface translate --id 253 5 6 "
+        "\"test_cli_write_tmp/interface_comment.cmo\" "
+        "-o \"test_cli_write_tmp/interface_translate.cmo\"",
+        "Translated all positions");
+    assert_validate_ok("test_cli_write_tmp/interface_translate.cmo");
+    result = run_cli_capture(
+        "behavior interface show --id 253 \"test_cli_write_tmp/interface_translate.cmo\"");
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "rect=(15,26,115,86)");
+    ASSERT_STR_CONTAINS(result.output, "pts=2 [(215,236), (215,296)]");
+    ASSERT_STR_CONTAINS(result.output, "pos=(265.0,286.0)");
+    free(result.output);
+
+    assert_cli_success(
+        "behavior interface set-graph-io --id 253 --body 113 "
+        "--in-in 9,8 --out-in 7,6 --in-out 5 --out-out 4 "
+        "\"" NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo") "\" "
+        "-o \"test_cli_write_tmp/interface_graph_io.cmo\"",
+        "Set 4 graph IO array");
+    assert_validate_ok("test_cli_write_tmp/interface_graph_io.cmo");
+    result = run_cli_capture(
+        "behavior interface show --id 253 \"test_cli_write_tmp/interface_graph_io.cmo\"");
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Sub[3] Graph IO");
+    ASSERT_STR_CONTAINS(result.output, "inward_inputs (2): 9 8");
+    ASSERT_STR_CONTAINS(result.output, "outward_inputs (2): 7 6");
+    ASSERT_STR_CONTAINS(result.output, "inward_outputs (1): 5");
+    ASSERT_STR_CONTAINS(result.output, "outward_outputs (1): 4");
+    free(result.output);
 }
 
 TEST(cli_write, mesh_animation_import_dry_run_does_not_write_output) {
@@ -757,8 +902,122 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     ASSERT_NOT_NULL(data_state);
     ASSERT_TRUE(data_state->row_count > 0u);
     ASSERT_TRUE(data_state->rows[0].column_count > 1u);
+    ASSERT_EQ(8u, data_state->column_count);
+    ASSERT_EQ(CKARRAYTYPE_STRING, data_state->column_formats[0].type);
+    ASSERT_EQ(CKARRAYTYPE_FLOAT, data_state->column_formats[1].type);
+    ASSERT_STR_EQ("Ballname", data_state->column_formats[0].name);
+    ASSERT_STR_EQ("Friction", data_state->column_formats[1].name);
+    ASSERT_EQ(0, data_state->order);
+    ASSERT_EQ(0u, data_state->column_index);
+    ASSERT_EQ(0, data_state->key_column);
+    ASSERT_STR_EQ("Ball_Paper", data_state->rows[0].cells[0].string_value);
     ASSERT_FLOAT_EQ(0.75f, data_state->rows[0].cells[1].float_value, 0.0001f);
     write_probe_close(&data_probe);
+
+    assert_cli_success(
+        "data set-cell --name Physicalize_GameBall --row 0 --col 0 --value CodexBall "
+        "\"" NMO_TEST_DATA_FILE("Ballance/Balls.nmo") "\" "
+        "-o \"test_cli_write_tmp/data_string_out.nmo\"",
+        "New:");
+    assert_validate_ok("test_cli_write_tmp/data_string_out.nmo");
+    write_semantic_probe_t data_string_probe;
+    assert_probe_open(&data_string_probe, "test_cli_write_tmp/data_string_out.nmo");
+    const nmo_dataarray_state_t *data_string_state =
+        (const nmo_dataarray_state_t *)write_probe_state(&data_string_probe, 2261, CKPGUID_DATAARRAY);
+    ASSERT_NOT_NULL(data_string_state);
+    ASSERT_EQ(8u, data_string_state->column_count);
+    ASSERT_TRUE(data_string_state->row_count > 0u);
+    ASSERT_EQ(CKARRAYTYPE_STRING, data_string_state->column_formats[0].type);
+    ASSERT_EQ(CKARRAYTYPE_FLOAT, data_string_state->column_formats[1].type);
+    ASSERT_STR_EQ("CodexBall", data_string_state->rows[0].cells[0].string_value);
+    ASSERT_FLOAT_EQ(0.5f, data_string_state->rows[0].cells[1].float_value, 0.0001f);
+    ASSERT_EQ(0, data_string_state->key_column);
+    write_probe_close(&data_string_probe);
+
+    assert_cli_success(
+        "data set-cell --name Physicalize_GameBall --row 2 --col 1 --value 0.66 "
+        "\"" NMO_TEST_DATA_FILE("Ballance/Balls.nmo") "\" "
+        "-o \"test_cli_write_tmp/data_multirow_out.nmo\"",
+        "New:");
+    assert_validate_ok("test_cli_write_tmp/data_multirow_out.nmo");
+    write_semantic_probe_t data_multirow_probe;
+    assert_probe_open(&data_multirow_probe, "test_cli_write_tmp/data_multirow_out.nmo");
+    const nmo_dataarray_state_t *data_multirow_state =
+        (const nmo_dataarray_state_t *)write_probe_state(
+            &data_multirow_probe, 2261, CKPGUID_DATAARRAY);
+    ASSERT_NOT_NULL(data_multirow_state);
+    ASSERT_EQ(3u, data_multirow_state->row_count);
+    ASSERT_TRUE(data_multirow_state->rows[0].column_count > 1u);
+    ASSERT_TRUE(data_multirow_state->rows[2].column_count > 1u);
+    ASSERT_STR_EQ("Ball_Paper", data_multirow_state->rows[0].cells[0].string_value);
+    ASSERT_STR_EQ("Ball_Wood", data_multirow_state->rows[2].cells[0].string_value);
+    ASSERT_FLOAT_EQ(0.5f, data_multirow_state->rows[0].cells[1].float_value, 0.0001f);
+    ASSERT_FLOAT_EQ(0.66f, data_multirow_state->rows[2].cells[1].float_value, 0.0001f);
+    write_probe_close(&data_multirow_probe);
+
+    assert_cli_success(
+        "data set-cell --name CurrentLevel --row 0 --col 1 --value 520 "
+        "\"" NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo") "\" "
+        "-o \"test_cli_write_tmp/data_object_out.nmo\"",
+        "New:");
+    assert_validate_ok("test_cli_write_tmp/data_object_out.nmo");
+    write_semantic_probe_t data_object_probe;
+    assert_probe_open(&data_object_probe, "test_cli_write_tmp/data_object_out.nmo");
+    const nmo_dataarray_state_t *data_object_state =
+        (const nmo_dataarray_state_t *)write_probe_state(&data_object_probe, 10703, CKPGUID_DATAARRAY);
+    ASSERT_NOT_NULL(data_object_state);
+    ASSERT_TRUE(data_object_state->row_count > 0u);
+    ASSERT_TRUE(data_object_state->rows[0].column_count > 3u);
+    ASSERT_EQ(CKARRAYTYPE_OBJECT, data_object_state->column_formats[1].type);
+    ASSERT_EQ(CKARRAYTYPE_PARAMETER, data_object_state->column_formats[3].type);
+    ASSERT_STR_EQ("ActiveBall", data_object_state->column_formats[1].name);
+    ASSERT_STR_EQ("CurrentResetpoint", data_object_state->column_formats[3].name);
+    ASSERT_EQ(520u, data_object_state->rows[0].cells[1].object_id);
+    ASSERT_EQ(10701u, data_object_state->rows[0].cells[3].parameter_id);
+    write_probe_close(&data_object_probe);
+
+    assert_cli_success(
+        "data set-cell --name CurrentLevel --row 0 --col 3 --value 520 "
+        "\"" NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo") "\" "
+        "-o \"test_cli_write_tmp/data_parameter_out.nmo\"",
+        "New:");
+    assert_validate_ok("test_cli_write_tmp/data_parameter_out.nmo");
+    write_semantic_probe_t data_parameter_probe;
+    assert_probe_open(&data_parameter_probe, "test_cli_write_tmp/data_parameter_out.nmo");
+    const nmo_dataarray_state_t *data_parameter_state =
+        (const nmo_dataarray_state_t *)write_probe_state(&data_parameter_probe, 10703, CKPGUID_DATAARRAY);
+    ASSERT_NOT_NULL(data_parameter_state);
+    ASSERT_TRUE(data_parameter_state->row_count > 0u);
+    ASSERT_TRUE(data_parameter_state->rows[0].column_count > 3u);
+    ASSERT_EQ(CKARRAYTYPE_OBJECT, data_parameter_state->column_formats[1].type);
+    ASSERT_EQ(CKARRAYTYPE_PARAMETER, data_parameter_state->column_formats[3].type);
+    ASSERT_EQ(0u, data_parameter_state->rows[0].cells[1].object_id);
+    ASSERT_EQ(520u, data_parameter_state->rows[0].cells[3].parameter_id);
+    write_probe_close(&data_parameter_probe);
+
+    remove("test_cli_write_tmp/data_invalid_object_out.nmo");
+    assert_cli_failure(
+        "data set-cell --name CurrentLevel --row 0 --col 1 --value 999999 "
+        "\"" NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo") "\" "
+        "-o \"test_cli_write_tmp/data_invalid_object_out.nmo\"",
+        "Referenced object #999999 not found");
+    ASSERT_FALSE(file_exists("test_cli_write_tmp/data_invalid_object_out.nmo"));
+
+    remove("test_cli_write_tmp/data_invalid_parameter_out.nmo");
+    assert_cli_failure(
+        "data set-cell --name CurrentLevel --row 0 --col 3 --value 999999 "
+        "\"" NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo") "\" "
+        "-o \"test_cli_write_tmp/data_invalid_parameter_out.nmo\"",
+        "Referenced parameter #999999 not found");
+    ASSERT_FALSE(file_exists("test_cli_write_tmp/data_invalid_parameter_out.nmo"));
+
+    remove("test_cli_write_tmp/data_wrong_parameter_out.nmo");
+    assert_cli_failure(
+        "data set-cell --name CurrentLevel --row 0 --col 3 --value 1 "
+        "\"" NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo") "\" "
+        "-o \"test_cli_write_tmp/data_wrong_parameter_out.nmo\"",
+        "Referenced parameter #1 not found");
+    ASSERT_FALSE(file_exists("test_cli_write_tmp/data_wrong_parameter_out.nmo"));
 
     assert_cli_success(
         "entity set-position --name Cam_Pos 1 2 3 "
@@ -842,9 +1101,11 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
 
     assert_cli_success(
         "material set --name Interface_Life --diffuse \"(1,0,1,1)\" "
+        "--ambient \"(0,1,0,1)\" --specular \"(0,0,1,1)\" "
+        "--emissive \"(0.25,0.5,0.75,1)\" --power 12.5 "
         "\"" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "\" "
         "-o \"test_cli_write_tmp/material_out.nmo\"",
-        "diffuse_color:");
+        "specular_power:");
     assert_validate_ok("test_cli_write_tmp/material_out.nmo");
     write_semantic_probe_t material_probe;
     assert_probe_open(&material_probe, "test_cli_write_tmp/material_out.nmo");
@@ -852,6 +1113,10 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
         (const nmo_material_state_t *)write_probe_state(&material_probe, 8, CKPGUID_MATERIAL);
     ASSERT_NOT_NULL(material_state);
     ASSERT_EQ(0xFFFF00FFu, material_state->diffuse_color);
+    ASSERT_EQ(0xFF00FF00u, material_state->ambient_color);
+    ASSERT_EQ(0xFF0000FFu, material_state->specular_color);
+    ASSERT_EQ(0xFF4080BFu, material_state->emissive_color);
+    ASSERT_FLOAT_EQ(12.5f, material_state->specular_power, 0.0001f);
     ASSERT_EQ(7u, material_state->texture_ids[0]);
     write_probe_close(&material_probe);
 
@@ -876,8 +1141,71 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     ASSERT_EQ(128, texture_state->reader_height);
     ASSERT_TRUE(texture_state->slot_count > 0u);
     ASSERT_NOT_NULL(texture_state->reader_slots);
+    ASSERT_TRUE(texture_state->reader_slots[0].data_size > 8u);
+    ASSERT_NOT_NULL(texture_state->reader_slots[0].data);
+    const unsigned char png_signature[] = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n' };
+    assert_bytes_eq(texture_state->reader_slots[0].data, sizeof(png_signature),
+                    png_signature, sizeof(png_signature));
     ASSERT_EQ(texture_baseline_resources, write_probe_included_count(&texture_probe));
     write_probe_close(&texture_probe);
+
+    const unsigned char alpha_png[] = {
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+        0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02,
+        0x08, 0x06, 0x00, 0x00, 0x00, 0x72, 0xB6, 0x0D, 0x24, 0x00, 0x00, 0x00,
+        0x14, 0x49, 0x44, 0x41, 0x54, 0x78, 0xDA, 0x63, 0xF8, 0xCF, 0x00, 0x04,
+        0xFF, 0x19, 0x1A, 0x40, 0x24, 0x08, 0x38, 0x00, 0x00, 0x36, 0x21, 0x07,
+        0xBA, 0xF9, 0x3C, 0x5C, 0x6E, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+        0x44, 0xAE, 0x42, 0x60, 0x82,
+    };
+    ASSERT_TRUE(write_binary_file("test_cli_write_tmp/texture_alpha.png",
+                                  alpha_png, sizeof(alpha_png)));
+    assert_cli_success(
+        "texture replace --name Button01_special --file "
+        "\"test_cli_write_tmp/texture_alpha.png\" "
+        "\"" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "\" "
+        "-o \"test_cli_write_tmp/texture_alpha_out.nmo\"",
+        "New dims: 2x2");
+    assert_validate_ok("test_cli_write_tmp/texture_alpha_out.nmo");
+    write_semantic_probe_t texture_alpha_probe;
+    assert_probe_open(&texture_alpha_probe, "test_cli_write_tmp/texture_alpha_out.nmo");
+    const nmo_texture_state_t *texture_alpha_state =
+        (const nmo_texture_state_t *)write_probe_state(&texture_alpha_probe, 7, CKPGUID_TEXTURE);
+    ASSERT_NOT_NULL(texture_alpha_state);
+    ASSERT_EQ(2, texture_alpha_state->reader_width);
+    ASSERT_EQ(2, texture_alpha_state->reader_height);
+    ASSERT_TRUE(texture_alpha_state->slot_count > 0u);
+    ASSERT_NOT_NULL(texture_alpha_state->reader_slots);
+    ASSERT_NOT_NULL(texture_alpha_state->reader_slots[0].data);
+    ASSERT_TRUE(texture_alpha_state->reader_slots[0].data_size > 8u);
+
+    nmo_arena_t *texture_decode_arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(texture_decode_arena);
+    int alpha_w = 0;
+    int alpha_h = 0;
+    int alpha_ch = 0;
+    uint8_t *alpha_pixels = nmo_stbi_load_from_memory(
+        texture_decode_arena,
+        texture_alpha_state->reader_slots[0].data,
+        (int)texture_alpha_state->reader_slots[0].data_size,
+        &alpha_w,
+        &alpha_h,
+        &alpha_ch,
+        4);
+    ASSERT_NOT_NULL(alpha_pixels);
+    ASSERT_EQ(2, alpha_w);
+    ASSERT_EQ(2, alpha_h);
+    ASSERT_EQ(4, alpha_ch);
+    const unsigned char expected_alpha_pixels[] = {
+        255, 0, 0, 0,
+        0, 255, 0, 128,
+        0, 0, 255, 255,
+        255, 255, 255, 64,
+    };
+    assert_bytes_eq(alpha_pixels, sizeof(expected_alpha_pixels),
+                    expected_alpha_pixels, sizeof(expected_alpha_pixels));
+    nmo_arena_destroy(texture_decode_arena);
+    write_probe_close(&texture_alpha_probe);
 
     make_dir("test_cli_write_tmp/mesh_export");
     write_semantic_probe_t mesh_baseline;
@@ -902,6 +1230,75 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     ASSERT_EQ(mesh_baseline_meshes + 1u,
               write_probe_count_class_name(&mesh_probe, NMO_CID_MESH, NULL));
     write_probe_close(&mesh_probe);
+
+    ASSERT_TRUE(write_text_file(
+        "test_cli_write_tmp/mesh_semantic.obj",
+        "o MeshSemanticProbe\n"
+        "v 0 0 0 1 0 0\n"
+        "v 1 0 0 0 1 0\n"
+        "v 0 1 0 0 0 1\n"
+        "v 1 1 0 1 1 1\n"
+        "vt 0 0\n"
+        "vt 1 0\n"
+        "vt 0 1\n"
+        "vt 1 1\n"
+        "vn 0 0 1\n"
+        "f 1/1/1 2/2/1 3/3/1\n"
+        "usemtl Interface_Life\n"
+        "f 2/2/1 4/4/1 3/3/1\n"
+        "l 1/1/1 4/4/1\n"));
+    assert_cli_success(
+        "mesh import --name MeshSemanticProbe "
+        "\"test_cli_write_tmp/mesh_semantic.obj\" "
+        "\"" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "\" "
+        "-o \"test_cli_write_tmp/mesh_semantic_out.nmo\"",
+        "Imported 4 vertices");
+    assert_validate_ok("test_cli_write_tmp/mesh_semantic_out.nmo");
+    write_semantic_probe_t mesh_semantic_probe;
+    assert_probe_open(&mesh_semantic_probe, "test_cli_write_tmp/mesh_semantic_out.nmo");
+    nmo_object_t *semantic_mesh_obj =
+        write_probe_object_by_name(&mesh_semantic_probe, "MeshSemanticProbe");
+    ASSERT_NOT_NULL(semantic_mesh_obj);
+    const nmo_mesh_state_t *semantic_mesh =
+        (const nmo_mesh_state_t *)write_probe_state(
+            &mesh_semantic_probe, semantic_mesh_obj->id, CKPGUID_MESH);
+    ASSERT_NOT_NULL(semantic_mesh);
+    ASSERT_EQ(4u, semantic_mesh->vertex_count);
+    ASSERT_EQ(2u, semantic_mesh->face_count);
+    ASSERT_EQ(1u, semantic_mesh->line_count);
+    ASSERT_EQ(2u, semantic_mesh->material_group_count);
+    ASSERT_NOT_NULL(semantic_mesh->vertices);
+    ASSERT_NOT_NULL(semantic_mesh->vertex_colors);
+    ASSERT_NOT_NULL(semantic_mesh->faces);
+    ASSERT_NOT_NULL(semantic_mesh->face_vertex_indices);
+    ASSERT_NOT_NULL(semantic_mesh->line_indices);
+    ASSERT_NOT_NULL(semantic_mesh->material_groups);
+    ASSERT_EQ(0u, semantic_mesh->faces[0].material_group_idx);
+    ASSERT_EQ(1u, semantic_mesh->faces[1].material_group_idx);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, semantic_mesh->material_groups[0].material_id);
+    ASSERT_EQ(8u, semantic_mesh->material_groups[1].material_id);
+    ASSERT_EQ(0u, semantic_mesh->face_vertex_indices[0]);
+    ASSERT_EQ(1u, semantic_mesh->face_vertex_indices[1]);
+    ASSERT_EQ(2u, semantic_mesh->face_vertex_indices[2]);
+    ASSERT_EQ(1u, semantic_mesh->face_vertex_indices[3]);
+    ASSERT_EQ(3u, semantic_mesh->face_vertex_indices[4]);
+    ASSERT_EQ(2u, semantic_mesh->face_vertex_indices[5]);
+    ASSERT_EQ(0u, semantic_mesh->line_indices[0]);
+    ASSERT_EQ(3u, semantic_mesh->line_indices[1]);
+    ASSERT_EQ(0xFFFF0000u, semantic_mesh->vertex_colors[0]);
+    ASSERT_EQ(0xFF00FF00u, semantic_mesh->vertex_colors[1]);
+    ASSERT_EQ(0xFF0000FFu, semantic_mesh->vertex_colors[2]);
+    ASSERT_EQ(0xFFFFFFFFu, semantic_mesh->vertex_colors[3]);
+    ASSERT_FLOAT_EQ(0.5f, semantic_mesh->bary_center.x, 0.0001f);
+    ASSERT_FLOAT_EQ(0.5f, semantic_mesh->bary_center.y, 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, semantic_mesh->bary_center.z, 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, semantic_mesh->local_box_min.x, 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, semantic_mesh->local_box_min.y, 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, semantic_mesh->local_box_min.z, 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, semantic_mesh->local_box_max.x, 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, semantic_mesh->local_box_max.y, 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, semantic_mesh->local_box_max.z, 0.0001f);
+    write_probe_close(&mesh_semantic_probe);
 
     ASSERT_TRUE(write_text_file(
         "test_cli_write_tmp/tiny_replace.obj",
@@ -943,13 +1340,37 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
         "  \"format\":\"NEWDATA\",\n"
         "  \"entity_id\":520,\n"
         "  \"length\":12.5,\n"
-        "  \"flags\":0,\n"
-        "  \"controllers\":[{\n"
-        "    \"type\":\"0x637c4301\",\n"
-        "    \"key_count\":1,\n"
-        "    \"key_size\":16,\n"
-        "    \"keys\":[{\"time\":0,\"values\":[1,2,3]}]\n"
-        "  }]\n"
+        "  \"flags\":1,\n"
+        "  \"morph_vertex_count\":1,\n"
+        "  \"morph_key_count\":1,\n"
+        "  \"morph_keys\":[{\n"
+        "    \"time_step\":0.25,\n"
+        "    \"data_size\":12,\n"
+        "    \"hex\":\"0000803f0000004000004040\"\n"
+        "  }],\n"
+        "  \"controllers\":[\n"
+        "    {\n"
+        "      \"type\":\"0x637c4301\",\n"
+        "      \"key_count\":2,\n"
+        "      \"key_size\":16,\n"
+        "      \"keys\":[\n"
+        "        {\"time\":0,\"values\":[1,2,3]},\n"
+        "        {\"time\":1.5,\"values\":[4,5,6]}\n"
+        "      ]\n"
+        "    },\n"
+        "    {\n"
+        "      \"type\":\"0x654a3a04\",\n"
+        "      \"key_count\":1,\n"
+        "      \"key_size\":16,\n"
+        "      \"keys\":[{\"time\":0,\"values\":[1,1,1]}]\n"
+        "    },\n"
+        "    {\n"
+        "      \"type\":\"0x49ed4002\",\n"
+        "      \"key_count\":1,\n"
+        "      \"key_size\":20,\n"
+        "      \"keys\":[{\"time\":0,\"values\":[0,0,0,1]}]\n"
+        "    }\n"
+        "  ]\n"
         "}\n"));
     assert_cli_success(
         "animation import \"test_cli_write_tmp/import_anim.anim.json\" "
@@ -972,10 +1393,43 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     ASSERT_EQ(CKOBJANIM_FORMAT_NEWDATA, anim_state->format);
     ASSERT_TRUE(anim_state->has_length);
     ASSERT_FLOAT_EQ(12.5f, anim_state->length, 0.0001f);
-    ASSERT_EQ(1u, anim_state->controller_count);
-    ASSERT_EQ(1u, anim_state->controllers[0].key_count);
-    ASSERT_EQ(16u, anim_state->controllers[0].data_size);
+    ASSERT_EQ(520u, anim_state->entity_id);
+    ASSERT_EQ(1u, anim_state->flags);
+    ASSERT_TRUE(anim_state->has_morph_counts);
+    ASSERT_EQ(1, anim_state->morph_vertex_count);
+    ASSERT_EQ(1, anim_state->morph_key_count);
+    ASSERT_EQ(1u, anim_state->morph_key_parsed_count);
+    ASSERT_NOT_NULL(anim_state->morph_keys);
+    ASSERT_FLOAT_EQ(0.25f, anim_state->morph_keys[0].time_step, 0.0001f);
+    ASSERT_EQ(12u, anim_state->morph_keys[0].data_size);
+    ASSERT_NOT_NULL(anim_state->morph_keys[0].data);
+    const unsigned char morph_payload[] = {
+        0x00, 0x00, 0x80, 0x3f,
+        0x00, 0x00, 0x00, 0x40,
+        0x00, 0x00, 0x40, 0x40
+    };
+    assert_bytes_eq(anim_state->morph_keys[0].data, sizeof(morph_payload),
+                    morph_payload, sizeof(morph_payload));
+    ASSERT_EQ(3u, anim_state->controller_count);
+    ASSERT_EQ(0x637c4301u, anim_state->controllers[0].type);
+    ASSERT_EQ(2u, anim_state->controllers[0].key_count);
+    ASSERT_EQ(32u, anim_state->controllers[0].data_size);
     ASSERT_NOT_NULL(anim_state->controllers[0].data);
+    const float *pos_keys = (const float *)anim_state->controllers[0].data;
+    ASSERT_FLOAT_EQ(0.0f, pos_keys[0], 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, pos_keys[1], 0.0001f);
+    ASSERT_FLOAT_EQ(2.0f, pos_keys[2], 0.0001f);
+    ASSERT_FLOAT_EQ(3.0f, pos_keys[3], 0.0001f);
+    ASSERT_FLOAT_EQ(1.5f, pos_keys[4], 0.0001f);
+    ASSERT_FLOAT_EQ(4.0f, pos_keys[5], 0.0001f);
+    ASSERT_FLOAT_EQ(5.0f, pos_keys[6], 0.0001f);
+    ASSERT_FLOAT_EQ(6.0f, pos_keys[7], 0.0001f);
+    ASSERT_EQ(0x654a3a04u, anim_state->controllers[1].type);
+    ASSERT_EQ(1u, anim_state->controllers[1].key_count);
+    ASSERT_EQ(16u, anim_state->controllers[1].data_size);
+    ASSERT_EQ(0x49ed4002u, anim_state->controllers[2].type);
+    ASSERT_EQ(1u, anim_state->controllers[2].key_count);
+    ASSERT_EQ(20u, anim_state->controllers[2].data_size);
     write_probe_close(&anim_probe);
 }
 
@@ -1036,6 +1490,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli_write, resource_import_replace_dry_run_does_not_write_output);
     REGISTER_TEST(cli_write, resource_import_replace_remove_save_and_validate);
     REGISTER_TEST(cli_write, resource_replace_warns_for_texture_named_payload);
+    REGISTER_TEST(cli_write, behavior_interface_set_pos_saves_and_reloads);
     REGISTER_TEST(cli_write, mesh_animation_import_dry_run_does_not_write_output);
     REGISTER_TEST(cli_write, type_specific_name_selector_skips_duplicate_wrong_class_name);
     REGISTER_TEST(cli_write, object_create_copy_import_delete_save_and_validate);
