@@ -71,6 +71,9 @@ int nmo_cmd_behavior_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     if (strcmp(argv[0], "graph-boundary") == 0) {
         return nmo_cmd_behavior_graph_boundary_in_session(ctx, argc, argv);
     }
+    if (strcmp(argv[0], "fold-candidates") == 0) {
+        return nmo_cmd_behavior_fold_candidates_in_session(ctx, argc, argv);
+    }
     if (strcmp(argv[0], "interface") == 0 || strcmp(argv[0], "iface") == 0) {
         return nmo_cmd_behavior_interface_in_session(ctx, argc, argv);
     }

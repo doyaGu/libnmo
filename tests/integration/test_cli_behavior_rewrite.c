@@ -375,9 +375,45 @@ TEST(cli, behavior_replace_bb_saves_output) {
     remove(output);
 }
 
+TEST(cli, behavior_fold_candidates_reports_parent_boundary) {
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior fold-candidates --parent 363 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.fold-candidates", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_EQ(363u, (uint32_t)get_uint_field(data, "parent_id"));
+
+    yyjson_val *parent = get_object_field(data, "parent");
+    ASSERT_NOT_NULL(parent);
+    ASSERT_STR_EQ("Script", get_string_field(parent, "behavior_type"));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(parent, "flags")));
+
+    yyjson_val *groups = get_array_field(data, "candidate_groups");
+    ASSERT_NOT_NULL(groups);
+    ASSERT_TRUE(yyjson_arr_size(groups) >= 1);
+    yyjson_val *group = yyjson_arr_get(groups, 0);
+    ASSERT_TRUE(group && yyjson_is_obj(group));
+    ASSERT_NOT_NULL(get_array_field(group, "nodes"));
+    ASSERT_NOT_NULL(get_array_field(group, "control_in"));
+    ASSERT_NOT_NULL(get_array_field(group, "control_out"));
+    ASSERT_NOT_NULL(get_array_field(group, "parameter_in"));
+    ASSERT_NOT_NULL(get_array_field(group, "parameter_out"));
+
+    yyjson_doc_free(doc);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_graph_boundary_json_smoke);
     REGISTER_TEST(cli, behavior_replace_bb_dry_run_reports_leaf_preservation);
     REGISTER_TEST(cli, behavior_replace_bb_rejects_non_leaf_script);
     REGISTER_TEST(cli, behavior_replace_bb_saves_output);
+    REGISTER_TEST(cli, behavior_fold_candidates_reports_parent_boundary);
 TEST_MAIN_END()

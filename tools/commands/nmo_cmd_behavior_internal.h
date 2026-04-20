@@ -85,6 +85,7 @@ void nmo_cmd_behavior_print_interface_diagnostics(
 
 int nmo_cmd_behavior_graph_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 int nmo_cmd_behavior_graph_boundary_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
+int nmo_cmd_behavior_fold_candidates_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 int nmo_cmd_behavior_interface_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
 #ifdef __cplusplus

@@ -16,7 +16,11 @@
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_parse.h"
+#include "format/nmo_object.h"
+#include "object/builtin/nmo_behavior_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_defs.h"
+#include "object/nmo_object_repository.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -292,6 +296,262 @@ int nmo_cmd_behavior_graph_boundary_in_session(nmo_cmd_ctx_t *ctx,
     (void)file_path;
 
     return graph_boundary_run(ctx, &selector, depth, false, usage);
+}
+
+typedef struct fold_candidates_args {
+    nmo_object_id_t parent_id;
+    uint32_t depth;
+} fold_candidates_args_t;
+
+static const char *fold_behavior_type(const nmo_behavior_state_t *state) {
+    if (!state) {
+        return "Unknown";
+    }
+    if ((state->flags & CKBEHAVIOR_SCRIPT) != 0u) {
+        return "Script";
+    }
+    if ((state->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0u) {
+        return "BB";
+    }
+    return "Graph";
+}
+
+static bool parse_fold_candidates_args(int argc,
+                                       char **argv,
+                                       bool expect_file_operand,
+                                       fold_candidates_args_t *out_args,
+                                       const char **out_file) {
+    static const nmo_opt_def_t opts[] = {
+        {"--parent", "-p", NMO_OPT_UINT, "Parent behavior ID"},
+        {"--depth",  "-d", NMO_OPT_UINT, "Recursion depth (default: unlimited)"},
+        {"--json",   "-j", NMO_OPT_FLAG, "JSON output"},
+    };
+    enum { OPT_PARENT, OPT_DEPTH, OPT_JSON, OPT_COUNT };
+
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t result = {
+        .vals = vals,
+        .pos_args = pos,
+        .pos_capacity = 16,
+    };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &result) < 0) {
+        return false;
+    }
+    (void)vals[OPT_JSON];
+
+    nmo_object_id_t parent_id = 0;
+    const char *file_path = NULL;
+    if (vals[OPT_PARENT].present) {
+        parent_id = vals[OPT_PARENT].val.u;
+        if (expect_file_operand) {
+            if (result.pos_count != 1) {
+                return false;
+            }
+            file_path = result.pos_args[0];
+        } else if (result.pos_count != 0) {
+            return false;
+        }
+    } else {
+        if (expect_file_operand) {
+            if (result.pos_count != 2) {
+                return false;
+            }
+            if (nmo_parse_u32_range(result.pos_args[0], 1, UINT32_MAX,
+                                    &parent_id) != NMO_OK) {
+                return false;
+            }
+            file_path = result.pos_args[1];
+        } else {
+            if (result.pos_count != 1) {
+                return false;
+            }
+            if (nmo_parse_u32_range(result.pos_args[0], 1, UINT32_MAX,
+                                    &parent_id) != NMO_OK) {
+                return false;
+            }
+        }
+    }
+
+    if (out_args) {
+        out_args->parent_id = parent_id;
+        out_args->depth = vals[OPT_DEPTH].present
+            ? vals[OPT_DEPTH].val.u
+            : UINT32_MAX;
+    }
+    if (out_file) {
+        *out_file = file_path;
+    }
+    return parent_id != 0;
+}
+
+static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
+                                const nmo_behavior_state_t *parent,
+                                const nmo_behavior_boundary_t *boundary) {
+    if (ctx->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
+        if (!doc) {
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, data, "parent_id",
+                                boundary->behavior_id);
+
+        yyjson_mut_val *parent_obj = yyjson_mut_obj(doc);
+        nmo_cli_json_add_str_safe(doc, parent_obj, "behavior_type",
+                                  fold_behavior_type(parent));
+        yyjson_mut_obj_add_uint(doc, parent_obj, "flags",
+                                parent ? (uint64_t)parent->flags : 0u);
+        yyjson_mut_obj_add_bool(doc, parent_obj, "script",
+                                parent &&
+                                (parent->flags & CKBEHAVIOR_SCRIPT) != 0u);
+        yyjson_mut_obj_add_bool(doc, parent_obj, "building_block",
+                                parent &&
+                                (parent->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0u);
+        yyjson_mut_obj_add_uint(doc, parent_obj, "sub_behaviors",
+                                parent ? (uint64_t)parent->sub_behaviors.count : 0u);
+        yyjson_mut_obj_add_uint(doc, parent_obj, "sub_behavior_links",
+                                parent ? (uint64_t)parent->sub_behavior_links.count : 0u);
+        yyjson_mut_obj_add_uint(doc, parent_obj, "operations",
+                                parent ? (uint64_t)parent->operations.count : 0u);
+        yyjson_mut_obj_add_val(doc, data, "parent", parent_obj);
+
+        yyjson_mut_val *groups = yyjson_mut_arr(doc);
+        yyjson_mut_val *group = yyjson_mut_obj(doc);
+        nmo_cli_json_add_str_safe(doc, group, "kind", "parent_recursive");
+        yyjson_mut_val *nodes = yyjson_mut_arr(doc);
+        for (size_t i = 0; i < boundary->internal_node_count; ++i) {
+            yyjson_mut_arr_add_uint(doc, nodes, boundary->internal_nodes[i]);
+        }
+        yyjson_mut_obj_add_val(doc, group, "nodes", nodes);
+        add_internal_nodes_json(doc, group, boundary);
+        add_control_edges_json(doc, group, "control_in",
+                               boundary->control_in,
+                               boundary->control_in_count);
+        add_control_edges_json(doc, group, "control_out",
+                               boundary->control_out,
+                               boundary->control_out_count);
+        add_parameter_edges_json(doc, group, "parameter_in",
+                                 boundary->parameter_in,
+                                 boundary->parameter_in_count);
+        add_parameter_edges_json(doc, group, "parameter_out",
+                                 boundary->parameter_out,
+                                 boundary->parameter_out_count);
+        yyjson_mut_obj_add_uint(doc, group, "node_count",
+                                (uint64_t)boundary->internal_node_count);
+        yyjson_mut_obj_add_uint(doc, group, "control_in_count",
+                                (uint64_t)boundary->control_in_count);
+        yyjson_mut_obj_add_uint(doc, group, "control_out_count",
+                                (uint64_t)boundary->control_out_count);
+        yyjson_mut_obj_add_uint(doc, group, "parameter_in_count",
+                                (uint64_t)boundary->parameter_in_count);
+        yyjson_mut_obj_add_uint(doc, group, "parameter_out_count",
+                                (uint64_t)boundary->parameter_out_count);
+        yyjson_mut_arr_add_val(groups, group);
+        yyjson_mut_obj_add_val(doc, data, "candidate_groups", groups);
+
+        return nmo_cmd_ctx_json_end(ctx, doc, data,
+                                    "behavior.fold-candidates");
+    }
+
+    fprintf(ctx->out, "Fold candidates for behavior #%u (%s)\n",
+            boundary->behavior_id, fold_behavior_type(parent));
+    fprintf(ctx->out, "Candidate parent_recursive: nodes=%zu control_in=%zu control_out=%zu parameter_in=%zu parameter_out=%zu\n",
+            boundary->internal_node_count,
+            boundary->control_in_count,
+            boundary->control_out_count,
+            boundary->parameter_in_count,
+            boundary->parameter_out_count);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int fold_candidates_run(nmo_cmd_ctx_t *ctx,
+                               const fold_candidates_args_t *args,
+                               bool close_ctx,
+                               const char *usage) {
+    nmo_cmd_ctx_t c = *ctx;
+    int exit_code = NMO_CLI_EXIT_SUCCESS;
+    nmo_behavior_boundary_t boundary = {0};
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_t *object = repo
+        ? nmo_object_repository_find_by_id(repo, args->parent_id)
+        : NULL;
+    if (!object || nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
+        fprintf(stderr, "Error: Parent behavior %u not found\n",
+                args->parent_id);
+        fprintf(stderr, "Usage: %s\n", usage);
+        exit_code = NMO_CLI_EXIT_ARG_ERROR;
+        goto cleanup;
+    }
+
+    const nmo_behavior_state_t *parent =
+        (const nmo_behavior_state_t *)nmo_object_get_state(object);
+    if (!parent) {
+        fprintf(stderr, "Error: Parent behavior state unavailable\n");
+        exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
+        goto cleanup;
+    }
+
+    if (!nmo_behavior_boundary_build(c.ctx, c.session,
+                                     args->parent_id,
+                                     args->depth,
+                                     &boundary)) {
+        char detail[256];
+        size_t detail_len = nmo_last_error_message_copy(detail,
+                                                        sizeof(detail));
+        fprintf(stderr, "Error: %s\n",
+                detail_len > 0 ? detail : "Failed to build fold boundary");
+        exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
+        goto cleanup;
+    }
+
+    exit_code = fold_candidates_emit(&c, parent, &boundary);
+
+cleanup:
+    nmo_behavior_boundary_free(&boundary);
+    return close_ctx ? nmo_cmd_ctx_done(&c, exit_code) : exit_code;
+}
+
+int nmo_cmd_behavior_fold_candidates(int argc,
+                                     char **argv,
+                                     const nmo_cli_global_opts_t *global) {
+    fold_candidates_args_t args = {0};
+    const char *file_path = NULL;
+    const char *usage =
+        "nmo behavior fold-candidates --parent <id> <file>";
+
+    if (!parse_fold_candidates_args(argc, argv, true, &args, &file_path)) {
+        fprintf(stderr, "Error: Missing or invalid arguments\n");
+        fprintf(stderr, "Usage: %s\n", usage);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) {
+        return rc;
+    }
+    (void)file_path;
+    return fold_candidates_run(&c, &args, true, usage);
+}
+
+int nmo_cmd_behavior_fold_candidates_in_session(nmo_cmd_ctx_t *ctx,
+                                                int argc,
+                                                char **argv) {
+    fold_candidates_args_t args = {0};
+    const char *file_path = NULL;
+    const char *usage =
+        "behavior fold-candidates --parent <id>";
+
+    if (!parse_fold_candidates_args(argc, argv, false, &args, &file_path)) {
+        fprintf(stderr, "Error: Missing or invalid arguments\n");
+        fprintf(stderr, "Usage: %s\n", usage);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    (void)file_path;
+    return fold_candidates_run(ctx, &args, false, usage);
 }
 
 typedef struct replace_bb_args {
