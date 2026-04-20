@@ -420,20 +420,6 @@ static void add_fold_candidate_group_json(
     yyjson_mut_arr_add_val(groups, group);
 }
 
-static bool fold_boundary_contains_node(
-    const nmo_behavior_boundary_t *boundary,
-    nmo_object_id_t node_id) {
-    if (!boundary) {
-        return false;
-    }
-    for (size_t i = 0; i < boundary->internal_node_count; ++i) {
-        if (boundary->internal_nodes[i] == node_id) {
-            return true;
-        }
-    }
-    return false;
-}
-
 static void add_id_list_json(yyjson_mut_doc *doc,
                              yyjson_mut_val *obj,
                              const char *key,
@@ -965,20 +951,12 @@ int nmo_cmd_behavior_fold(int argc,
                 "use --dry-run\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (args.node_count != 1) {
-        fprintf(stderr,
-                "Error: behavior fold dry-run currently requires exactly "
-                "one representative node\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
     }
 
-    nmo_behavior_boundary_t parent_boundary = {0};
     nmo_behavior_boundary_t fold_boundary = {0};
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
     const nmo_behavior_state_t *parent =
@@ -991,32 +969,21 @@ int nmo_cmd_behavior_fold(int argc,
         goto cleanup;
     }
 
-    if (!nmo_behavior_boundary_build(c.ctx, c.session, args.parent_id,
-                                     UINT32_MAX, &parent_boundary)) {
+    if (!nmo_behavior_boundary_build_for_nodes(c.ctx, c.session,
+                                               args.parent_id,
+                                               args.nodes,
+                                               args.node_count,
+                                               &fold_boundary)) {
         char detail[256];
         size_t detail_len = nmo_last_error_message_copy(detail,
                                                         sizeof(detail));
         fprintf(stderr, "Error: %s\n",
-                detail_len > 0 ? detail : "Failed to build parent boundary");
-        rc = NMO_CLI_EXIT_INTERNAL_ERROR;
-        goto cleanup;
-    }
-    if (!fold_boundary_contains_node(&parent_boundary, args.nodes[0])) {
-        fprintf(stderr,
-                "Error: Representative behavior %u is not inside parent %u\n",
-                args.nodes[0], args.parent_id);
-        rc = NMO_CLI_EXIT_ARG_ERROR;
-        goto cleanup;
-    }
-
-    if (!nmo_behavior_boundary_build(c.ctx, c.session, args.nodes[0],
-                                     UINT32_MAX, &fold_boundary)) {
-        char detail[256];
-        size_t detail_len = nmo_last_error_message_copy(detail,
-                                                        sizeof(detail));
-        fprintf(stderr, "Error: %s\n",
-                detail_len > 0 ? detail : "Failed to build fold boundary");
-        rc = NMO_CLI_EXIT_INTERNAL_ERROR;
+                detail_len > 0 ? detail
+                               : "Failed to build selected fold boundary");
+        nmo_error_code_t code = nmo_last_error_code();
+        rc = (code == NMO_ERR_INVALID_ARGUMENT || code == NMO_ERR_NOT_FOUND)
+            ? NMO_CLI_EXIT_ARG_ERROR
+            : NMO_CLI_EXIT_INTERNAL_ERROR;
         goto cleanup;
     }
 
@@ -1024,7 +991,6 @@ int nmo_cmd_behavior_fold(int argc,
                            &fold_boundary);
 
 cleanup:
-    nmo_behavior_boundary_free(&parent_boundary);
     nmo_behavior_boundary_free(&fold_boundary);
     return nmo_cmd_ctx_done(&c, rc);
 }

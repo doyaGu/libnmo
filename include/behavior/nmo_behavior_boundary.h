@@ -61,6 +61,14 @@ NMO_API bool nmo_behavior_boundary_build(nmo_context_t *ctx,
                                          uint32_t max_depth,
                                          nmo_behavior_boundary_t *out_boundary);
 
+NMO_API bool nmo_behavior_boundary_build_for_nodes(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    nmo_object_id_t parent_behavior_id,
+    const nmo_object_id_t *node_ids,
+    size_t node_count,
+    nmo_behavior_boundary_t *out_boundary);
+
 NMO_API void nmo_behavior_boundary_free(nmo_behavior_boundary_t *boundary);
 
 #ifdef __cplusplus
