@@ -98,6 +98,11 @@ static const nmo_parameter_state_t *repl_parameter_state(
     return obj ? nmo_parameter_get_state(obj) : NULL;
 }
 
+static nmo_object_t *repl_object_by_id(nmo_repl_context_t *repl, nmo_object_id_t id) {
+    nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
+    return repo ? nmo_object_repository_find_by_id(repo, id) : NULL;
+}
+
 TEST(repl_write, legacy_mutation_commands_are_removed) {
     make_dir("test_repl_write_tmp");
     ASSERT_TRUE(copy_file_binary(
@@ -134,6 +139,9 @@ TEST(repl_write, object_rename_uses_cli_shape) {
 
     ASSERT_EQ(0, run_repl_command(&repl, "object rename 2 ReplCamPos"));
     ASSERT_EQ(0, run_repl_command(&repl, "object ren 2 ReplCamAlias"));
+    nmo_object_t *in_memory = repl_object_by_id(&repl, 2);
+    ASSERT_NOT_NULL(in_memory);
+    ASSERT_STR_EQ("ReplCamAlias", nmo_object_get_name(in_memory));
     ASSERT_TRUE(repl.dirty);
     ASSERT_EQ(0, run_repl_command(&repl, "save test_repl_write_tmp/rename_out.nmo"));
     close_repl(&repl);
@@ -195,12 +203,122 @@ TEST(repl_write, parameter_set_uses_cli_shape) {
 
     ASSERT_EQ(0, run_repl_command(&repl, "parameter set --id 46 520"));
     ASSERT_EQ(0, run_repl_command(&repl, "parameter set --hex --id 64 2A000000"));
+    const nmo_parameter_state_t *in_memory_object_state = repl_parameter_state(&repl, 46);
+    ASSERT_NOT_NULL(in_memory_object_state);
+    ASSERT_EQ(520u, in_memory_object_state->object_id);
     ASSERT_TRUE(repl.dirty);
     ASSERT_EQ(0, run_repl_command(&repl, "save test_repl_write_tmp/parameter_out.nmo"));
     close_repl(&repl);
 
     write_semantic_probe_t probe;
     assert_probe_open(&probe, "test_repl_write_tmp/parameter_out.nmo");
+    const nmo_parameter_state_t *object_state = write_probe_parameter_state(&probe, 46);
+    ASSERT_NOT_NULL(object_state);
+    ASSERT_EQ(520u, object_state->object_id);
+    const nmo_parameter_state_t *hex_state = write_probe_parameter_state(&probe, 64);
+    ASSERT_NOT_NULL(hex_state);
+    const unsigned char expected[] = {0x2A, 0x00, 0x00, 0x00};
+    assert_bytes_eq(hex_state->buffer_data.data, hex_state->buffer_data.count,
+                    expected, sizeof(expected));
+    write_probe_close(&probe);
+}
+
+TEST(repl_write, parameter_set_owner_selectors_save_and_reload) {
+    make_dir("test_repl_write_tmp");
+    ASSERT_TRUE(copy_file_binary(
+        NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"),
+        "test_repl_write_tmp/parameter_owner_input.nmo"));
+    remove("test_repl_write_tmp/parameter_owner_out.nmo");
+
+    nmo_repl_context_t repl;
+    memset(&repl, 0, sizeof(repl));
+    char errbuf[256];
+    ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/parameter_owner_input.nmo",
+                                   errbuf, sizeof(errbuf)));
+
+    const nmo_parameter_state_t *before = repl_parameter_state(&repl, 46);
+    ASSERT_NOT_NULL(before);
+    ASSERT_NE(520u, before->object_id);
+
+    ASSERT_EQ(0, run_repl_command(&repl, "parameter set --owner 84 --index 0 520"));
+    const nmo_parameter_state_t *by_index = repl_parameter_state(&repl, 46);
+    ASSERT_NOT_NULL(by_index);
+    ASSERT_EQ(520u, by_index->object_id);
+
+    ASSERT_EQ(0, run_repl_command(&repl, "parameter set --owner 84 --name Object 521"));
+    const nmo_parameter_state_t *by_name = repl_parameter_state(&repl, 46);
+    ASSERT_NOT_NULL(by_name);
+    ASSERT_EQ(521u, by_name->object_id);
+    ASSERT_TRUE(repl.dirty);
+
+    ASSERT_EQ(0, run_repl_command(&repl, "save test_repl_write_tmp/parameter_owner_out.nmo"));
+    close_repl(&repl);
+
+    write_semantic_probe_t probe;
+    assert_probe_open(&probe, "test_repl_write_tmp/parameter_owner_out.nmo");
+    const nmo_parameter_state_t *saved = write_probe_parameter_state(&probe, 46);
+    ASSERT_NOT_NULL(saved);
+    ASSERT_EQ(521u, saved->object_id);
+    write_probe_close(&probe);
+
+    nmo_repl_context_t reloaded;
+    memset(&reloaded, 0, sizeof(reloaded));
+    ASSERT_TRUE(nmo_repl_load_file(&reloaded, "test_repl_write_tmp/parameter_owner_out.nmo",
+                                   errbuf, sizeof(errbuf)));
+    const nmo_parameter_state_t *reloaded_param = repl_parameter_state(&reloaded, 46);
+    ASSERT_NOT_NULL(reloaded_param);
+    ASSERT_EQ(521u, reloaded_param->object_id);
+    ASSERT_FALSE(reloaded.dirty);
+    close_repl(&reloaded);
+}
+
+TEST(repl_write, saved_mutation_reloads_as_mutable_session) {
+    make_dir("test_repl_write_tmp");
+    ASSERT_TRUE(copy_file_binary(
+        NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"),
+        "test_repl_write_tmp/reload_input.nmo"));
+    remove("test_repl_write_tmp/reload_once.nmo");
+    remove("test_repl_write_tmp/reload_twice.nmo");
+
+    write_semantic_probe_t baseline;
+    assert_probe_open(&baseline, "test_repl_write_tmp/reload_input.nmo");
+    size_t baseline_count = write_probe_object_count(&baseline);
+    write_probe_close(&baseline);
+
+    nmo_repl_context_t repl;
+    memset(&repl, 0, sizeof(repl));
+    char errbuf[256];
+    ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/reload_input.nmo",
+                                   errbuf, sizeof(errbuf)));
+
+    ASSERT_EQ(0, run_repl_command(&repl, "object create --class CKGroup --name ReplReloadGroup"));
+    ASSERT_EQ(0, run_repl_command(&repl, "object copy 1"));
+    ASSERT_EQ(0, run_repl_command(&repl, "parameter set --id 46 520"));
+    ASSERT_TRUE(repl.dirty);
+    ASSERT_EQ(0, run_repl_command(&repl, "save test_repl_write_tmp/reload_once.nmo"));
+    ASSERT_FALSE(repl.dirty);
+    close_repl(&repl);
+
+    nmo_repl_context_t reloaded;
+    memset(&reloaded, 0, sizeof(reloaded));
+    ASSERT_TRUE(nmo_repl_load_file(&reloaded, "test_repl_write_tmp/reload_once.nmo",
+                                   errbuf, sizeof(errbuf)));
+    ASSERT_FALSE(reloaded.dirty);
+    ASSERT_EQ(baseline_count + 2u, nmo_repl_object_count(&reloaded));
+    const nmo_parameter_state_t *loaded_param = repl_parameter_state(&reloaded, 46);
+    ASSERT_NOT_NULL(loaded_param);
+    ASSERT_EQ(520u, loaded_param->object_id);
+
+    ASSERT_EQ(0, run_repl_command(&reloaded, "object delete --name ReplReloadGroup"));
+    ASSERT_EQ(0, run_repl_command(&reloaded, "parameter set --hex --id 64 2A000000"));
+    ASSERT_TRUE(reloaded.dirty);
+    ASSERT_EQ(0, run_repl_command(&reloaded, "save test_repl_write_tmp/reload_twice.nmo"));
+    close_repl(&reloaded);
+
+    write_semantic_probe_t probe;
+    assert_probe_open(&probe, "test_repl_write_tmp/reload_twice.nmo");
+    ASSERT_EQ(baseline_count + 1u, write_probe_object_count(&probe));
+    ASSERT_NULL(write_probe_object_by_name(&probe, "ReplReloadGroup"));
     const nmo_parameter_state_t *object_state = write_probe_parameter_state(&probe, 46);
     ASSERT_NOT_NULL(object_state);
     ASSERT_EQ(520u, object_state->object_id);
@@ -279,6 +397,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_write, object_rename_uses_cli_shape);
     REGISTER_TEST(repl_write, object_create_delete_and_copy_use_cli_filters);
     REGISTER_TEST(repl_write, parameter_set_uses_cli_shape);
+    REGISTER_TEST(repl_write, parameter_set_owner_selectors_save_and_reload);
+    REGISTER_TEST(repl_write, saved_mutation_reloads_as_mutable_session);
     REGISTER_TEST(repl_write, mutation_options_reject_output_and_unknown_options);
     REGISTER_TEST(repl_write, dry_run_mutations_do_not_change_session_or_dirty_flag);
 TEST_MAIN_END()
