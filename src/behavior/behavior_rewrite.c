@@ -484,7 +484,7 @@ fail:
     return rc;
 }
 
-nmo_status_t nmo_behavior_fold(
+nmo_status_t nmo_behavior_fold_apply(
     nmo_context_t *ctx,
     nmo_session_t *session,
     const nmo_behavior_fold_desc_t *desc,
@@ -509,6 +509,14 @@ nmo_status_t nmo_behavior_fold(
     rewrite_fold_report_reject(report, "unsupported",
                                "Behavior fold write mode is not supported");
     return NMO_ERR_NOT_IMPLEMENTED;
+}
+
+nmo_status_t nmo_behavior_fold(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const nmo_behavior_fold_desc_t *desc,
+    nmo_behavior_fold_report_t *report) {
+    return nmo_behavior_fold_apply(ctx, session, desc, report);
 }
 
 void nmo_behavior_fold_report_free(nmo_behavior_fold_report_t *report) {
