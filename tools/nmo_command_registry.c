@@ -233,20 +233,28 @@ static void object_list_fields_usage(FILE *out) {
     fprintf(out, "List all typed fields of an object with current values.\n");
 }
 
+static void debug_diagnostic_note(FILE *out) {
+    fprintf(out, "\nNotes:\n");
+    fprintf(out, "  Diagnostic output is for inspection and is not a stable API.\n");
+}
+
 static void debug_load_phases_usage(FILE *out) {
     fprintf(out, "Usage: nmo debug load-phases [--profile=full|metadata|header-only] <file>\n\n");
     fprintf(out, "Show load pipeline phase details including reference resolution\n");
     fprintf(out, "statistics and index memory usage when a full load is used.\n");
+    debug_diagnostic_note(out);
 }
 
 static void debug_chunks_usage(FILE *out) {
     fprintf(out, "Usage: nmo debug chunks <file>\n\n");
     fprintf(out, "Show detailed chunk parse information for debugging.\n");
+    debug_diagnostic_note(out);
 }
 
 static void debug_objects_usage(FILE *out) {
     fprintf(out, "Usage: nmo debug objects <file>\n\n");
     fprintf(out, "Show detailed object load information for debugging.\n");
+    debug_diagnostic_note(out);
 }
 
 static void repl_start_usage(FILE *out) {
@@ -315,7 +323,7 @@ static void debug_export_usage(FILE *out) {
     fprintf(out, "Options:\n");
     fprintf(out, "  --data, --include-data     Include chunk raw bytes as data_hex\n");
     fprintf(out, "  --max-bytes <n>            Limit emitted chunk bytes when --data is set (default 4096)\n");
-    fprintf(out, "\nNotes:\n");
+    debug_diagnostic_note(out);
     fprintf(out, "  Use --format json-pretty for human-readable JSON.\n");
     fprintf(out, "  Use -o/--output to write JSON to a file.\n");
 }
@@ -852,6 +860,7 @@ static void mesh_import_usage(FILE *out) {
     fprintf(out, "Options:\n");
     fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
     fprintf(out, "  --replace <id>         Replace existing mesh by ID\n");
+    fprintf(out, "  --replace-name <name>  Replace existing mesh by exact name\n");
     fprintf(out, "  --name, -n <name>      Mesh name\n");
     fprintf(out, "  --dry-run              Preview without saving\n");
 }
@@ -888,6 +897,7 @@ static void animation_import_usage(FILE *out) {
     fprintf(out, "Options:\n");
     fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
     fprintf(out, "  --replace <id>         Replace existing animation by ID\n");
+    fprintf(out, "  --replace-name <name>  Replace existing animation by exact name\n");
     fprintf(out, "  --dry-run              Preview without saving\n");
 }
 

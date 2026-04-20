@@ -30,7 +30,11 @@ void nmo_cli_print_usage(FILE *out) {
     fprintf(out, "  --fail-on-warning       Exit with code 4 on warnings\n");
     fprintf(out, "  --plugin <path>         Load extension plugin (repeatable)\n");
     fprintf(out, "  -F, --filter <pattern>  Filter objects by name pattern\n");
-    fprintf(out, "  --batch                 Process multiple files\n");
+    fprintf(out, "  --batch                 Process multiple files for supported commands\n");
+    fprintf(out, "\n");
+    fprintf(out, "Supported batch commands:\n");
+    fprintf(out, "  file info, object list, object rename, object delete\n");
+    fprintf(out, "  parameter list, behavior list, behavior stats, validate all\n");
     fprintf(out, "\n");
     fprintf(out, "Command Groups:\n");
     for (size_t i = 0; i < group_count; ++i) {

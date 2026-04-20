@@ -14,13 +14,14 @@ _nmo() {
         cword=$COMP_CWORD
     fi
     local groups="file f chunk ch object obj behavior beh parameter param resource res texture tex data da scene sc entity ent material mat mesh m animation anim type t validate val convert conv diff d query q extension ext completion comp debug dbg repl"
-    local flags="-h --help -V --version -f --format --color -o --output -v --verbose -q --quiet --no-pager --strict --fail-on-warning --plugin -F --filter --batch"
-    local value_options="-f --format --color -o --output --plugin -F --filter -c --class -n --name -i --index -m --max-bytes -d --out-dir --id --top --sort --replace"
+    local global_flags="-h --help -V --version -f --format --color -o --output -v --verbose -q --quiet --no-pager --strict --fail-on-warning --plugin -F --filter --batch"
+    local value_options="-f --format --color -o --output --plugin --top -m --max-bytes -c --class -f --filter --name -o --output -n -d --depth --id --type-guid --kind --max-nodes --max-edges --guid --type --from --max-depth -p --parent --to --delay -b --owner -i --index -s --sort -t --out-dir --format -q --quality --file -r --row --col -v --value --bg-color --ambient --fog-color --camera --fov --near --far --diffuse --range --specular --emissive --power --replace --replace-name --strip --compress --max-objects --max-fields --min-similarity --rename-similarity --object --expr"
+    local file_value_options="-o --output --plugin -d --out-dir --file --obj"
 
     case "$prev" in
         -f|--format) COMPREPLY=( $(compgen -W "text json json-pretty" -- "$cur") ); return ;;
         --color) COMPREPLY=( $(compgen -W "auto always never" -- "$cur") ); return ;;
-        -o|--output|--plugin|-F|--filter|-d|--out-dir) compopt -o filenames 2>/dev/null; COMPREPLY=( $(compgen -f -- "$cur") ); return ;;
+        *) if [[ " $file_value_options " == *" $prev "* ]]; then compopt -o filenames 2>/dev/null; COMPREPLY=( $(compgen -f -- "$cur") ); return; fi ;;
         --*) if [[ " $value_options " == *" $prev "* ]]; then return; fi ;;
         -*) if [[ " $value_options " == *" $prev "* ]]; then return; fi ;;
     esac
@@ -88,6 +89,269 @@ _nmo() {
         esac
     }
 
+    _nmo_action_flags() {
+        case "$1/$2/$3" in
+            file/info/) echo '' ;;
+            file/i/) echo '' ;;
+            file/header/) echo '' ;;
+            file/hdr/) echo '' ;;
+            file/stats/) echo '' ;;
+            file/st/) echo '' ;;
+            file/classes/) echo '' ;;
+            file/cls/) echo '' ;;
+            file/plugins/) echo '' ;;
+            file/pl/) echo '' ;;
+            file/space/) echo '--top' ;;
+            file/sp/) echo '--top' ;;
+            chunk/list/) echo '' ;;
+            chunk/ls/) echo '' ;;
+            chunk/tree/) echo '' ;;
+            chunk/t/) echo '' ;;
+            chunk/show/) echo '--hexdump -m --max-bytes' ;;
+            chunk/s/) echo '--hexdump -m --max-bytes' ;;
+            chunk/find/) echo '' ;;
+            chunk/f/) echo '' ;;
+            object/list/) echo '-c --class -f --filter' ;;
+            object/ls/) echo '-c --class -f --filter' ;;
+            object/tree/) echo '' ;;
+            object/t/) echo '' ;;
+            object/show/) echo '' ;;
+            object/s/) echo '' ;;
+            object/find/) echo '--name -c --class' ;;
+            object/f/) echo '--name -c --class' ;;
+            object/refs/) echo '' ;;
+            object/r/) echo '' ;;
+            object/rename/) echo '-o --output' ;;
+            object/ren/) echo '-o --output' ;;
+            object/export/) echo '-c --class -n --name -f --filter -d --depth --full --id' ;;
+            object/x/) echo '-c --class -n --name -f --filter -d --depth --full --id' ;;
+            object/impact/) echo '' ;;
+            object/imp/) echo '' ;;
+            object/orphans/) echo '-c --class' ;;
+            object/orp/) echo '-c --class' ;;
+            object/cycles/) echo '' ;;
+            object/cyc/) echo '' ;;
+            object/delete/) echo '-o --output -c --class -n --name -f --filter --cascade --dry-run --strict' ;;
+            object/del/) echo '-o --output -c --class -n --name -f --filter --cascade --dry-run --strict' ;;
+            object/create/) echo '-o --output -c --class -n --name --type-guid --dry-run' ;;
+            object/copy/) echo '-o --output -c --class -n --name -f --filter --cascade --dry-run' ;;
+            object/cp/) echo '-o --output -c --class -n --name -f --filter --cascade --dry-run' ;;
+            object/import/) echo '-f --format -o --output --create --dry-run' ;;
+            object/graph/) echo '--dot --kind' ;;
+            object/gr/) echo '--dot --kind' ;;
+            object/set-field/) echo '-o --output --dry-run' ;;
+            object/sf/) echo '-o --output --dry-run' ;;
+            object/list-fields/) echo '' ;;
+            object/lf/) echo '' ;;
+            behavior/list/) echo '' ;;
+            behavior/ls/) echo '' ;;
+            behavior/stats/) echo '' ;;
+            behavior/st/) echo '' ;;
+            behavior/show/) echo '--raw' ;;
+            behavior/s/) echo '--raw' ;;
+            behavior/graph/) echo '--dot --max-nodes --max-edges' ;;
+            behavior/g/) echo '--dot --max-nodes --max-edges' ;;
+            behavior/dump/) echo '--all --flows --values' ;;
+            behavior/d/) echo '--all --flows --values' ;;
+            behavior/find/) echo '--name --guid --type' ;;
+            behavior/f/) echo '--name --guid --type' ;;
+            behavior/trace/) echo '--from --max-depth' ;;
+            behavior/tr/) echo '--from --max-depth' ;;
+            behavior/add-link/) echo '-p --parent --from --to -d --delay -o --output --dry-run' ;;
+            behavior/remove-link/) echo '-p --parent -o --output --dry-run' ;;
+            behavior/interface/) echo '' ;;
+            behavior/iface/) echo '' ;;
+            behavior/interface/show) echo '' ;;
+            behavior/iface/show) echo '' ;;
+            behavior/interface/set-pos) echo '' ;;
+            behavior/iface/set-pos) echo '' ;;
+            behavior/interface/fold) echo '' ;;
+            behavior/iface/fold) echo '' ;;
+            behavior/interface/unfold) echo '' ;;
+            behavior/iface/unfold) echo '' ;;
+            behavior/interface/set-color) echo '' ;;
+            behavior/iface/set-color) echo '' ;;
+            behavior/interface/canonicalize) echo '' ;;
+            behavior/iface/canonicalize) echo '' ;;
+            behavior/interface/add-comment) echo '' ;;
+            behavior/iface/add-comment) echo '' ;;
+            behavior/interface/remove-comment) echo '' ;;
+            behavior/iface/remove-comment) echo '' ;;
+            behavior/interface/set-comment-text) echo '' ;;
+            behavior/iface/set-comment-text) echo '' ;;
+            behavior/interface/move-comment) echo '' ;;
+            behavior/iface/move-comment) echo '' ;;
+            behavior/interface/set-comment-style) echo '' ;;
+            behavior/iface/set-comment-style) echo '' ;;
+            behavior/interface/add-point) echo '' ;;
+            behavior/iface/add-point) echo '' ;;
+            behavior/interface/clear-points) echo '' ;;
+            behavior/iface/clear-points) echo '' ;;
+            behavior/interface/remove-point) echo '' ;;
+            behavior/iface/remove-point) echo '' ;;
+            behavior/interface/move-point) echo '' ;;
+            behavior/iface/move-point) echo '' ;;
+            behavior/interface/set-link-highlight) echo '' ;;
+            behavior/iface/set-link-highlight) echo '' ;;
+            behavior/interface/move-op) echo '' ;;
+            behavior/iface/move-op) echo '' ;;
+            behavior/interface/move-param) echo '' ;;
+            behavior/iface/move-param) echo '' ;;
+            behavior/interface/set-param-style) echo '' ;;
+            behavior/iface/set-param-style) echo '' ;;
+            behavior/interface/resize) echo '' ;;
+            behavior/iface/resize) echo '' ;;
+            behavior/interface/set-expand) echo '' ;;
+            behavior/iface/set-expand) echo '' ;;
+            behavior/interface/set-viewport) echo '' ;;
+            behavior/iface/set-viewport) echo '' ;;
+            behavior/interface/set-graph-io) echo '' ;;
+            behavior/iface/set-graph-io) echo '' ;;
+            behavior/interface/translate) echo '' ;;
+            behavior/iface/translate) echo '' ;;
+            parameter/list/) echo '' ;;
+            parameter/ls/) echo '' ;;
+            parameter/show/) echo '' ;;
+            parameter/s/) echo '' ;;
+            parameter/dump/) echo '--all --type' ;;
+            parameter/d/) echo '--all --type' ;;
+            parameter/set/) echo '-o --output -b --owner -n --name -i --index --hex --dry-run' ;;
+            resource/list/) echo '' ;;
+            resource/ls/) echo '' ;;
+            resource/show/) echo '' ;;
+            resource/s/) echo '' ;;
+            resource/extract/) echo '' ;;
+            resource/x/) echo '' ;;
+            resource/import/) echo '-o --output -n --name --owner' ;;
+            resource/imp/) echo '-o --output -n --name --owner' ;;
+            resource/replace/) echo '-o --output -i --index -n --name --dry-run' ;;
+            resource/rep/) echo '-o --output -i --index -n --name --dry-run' ;;
+            resource/remove/) echo '-o --output -i --index -n --name --dry-run' ;;
+            resource/rm/) echo '-o --output -i --index -n --name --dry-run' ;;
+            resource/info/) echo '-i --index -n --name' ;;
+            texture/list/) echo '-s --sort -t --top -r --reverse' ;;
+            texture/ls/) echo '-s --sort -t --top -r --reverse' ;;
+            texture/show/) echo '--id -n --name' ;;
+            texture/s/) echo '--id -n --name' ;;
+            texture/extract/) echo '-d --out-dir --id -n --name -f --format -q --quality --overwrite' ;;
+            texture/x/) echo '-d --out-dir --id -n --name -f --format -q --quality --overwrite' ;;
+            texture/replace/) echo '--id -n --name -f --file -o --output --dry-run' ;;
+            texture/rep/) echo '--id -n --name -f --file -o --output --dry-run' ;;
+            data/list/) echo '' ;;
+            data/ls/) echo '' ;;
+            data/show/) echo '' ;;
+            data/s/) echo '' ;;
+            data/dump/) echo '-r --row' ;;
+            data/d/) echo '-r --row' ;;
+            data/set-cell/) echo '-r --row -c --col -v --value -o --output --dry-run' ;;
+            data/sc/) echo '-r --row -c --col -v --value -o --output --dry-run' ;;
+            scene/list/) echo '' ;;
+            scene/ls/) echo '' ;;
+            scene/show/) echo '' ;;
+            scene/s/) echo '' ;;
+            scene/set/) echo '--id -n --name -o --output --bg-color --ambient --fog-color --camera --dry-run' ;;
+            entity/list/) echo '-c --class' ;;
+            entity/ls/) echo '-c --class' ;;
+            entity/show/) echo '' ;;
+            entity/s/) echo '' ;;
+            entity/set-position/) echo '-o --output --dry-run' ;;
+            entity/sp/) echo '-o --output --dry-run' ;;
+            entity/set-parent/) echo '-o --output --dry-run' ;;
+            entity/set-camera/) echo '-o --output --fov --near --far --dry-run' ;;
+            entity/sc/) echo '-o --output --fov --near --far --dry-run' ;;
+            entity/set-light/) echo '-o --output --diffuse --range --dry-run' ;;
+            entity/sl/) echo '-o --output --diffuse --range --dry-run' ;;
+            material/list/) echo '' ;;
+            material/ls/) echo '' ;;
+            material/show/) echo '' ;;
+            material/s/) echo '' ;;
+            material/set/) echo '--id -n --name -o --output --diffuse --ambient --specular --emissive --power --dry-run' ;;
+            mesh/list/) echo '' ;;
+            mesh/ls/) echo '' ;;
+            mesh/show/) echo '' ;;
+            mesh/s/) echo '' ;;
+            mesh/export/) echo '-d --out-dir --id -a --all' ;;
+            mesh/x/) echo '-d --out-dir --id -a --all' ;;
+            mesh/import/) echo '-o --output --replace --replace-name -n --name --dry-run' ;;
+            mesh/imp/) echo '-o --output --replace --replace-name -n --name --dry-run' ;;
+            animation/list/) echo '' ;;
+            animation/ls/) echo '' ;;
+            animation/show/) echo '' ;;
+            animation/s/) echo '' ;;
+            animation/keys/) echo '' ;;
+            animation/k/) echo '' ;;
+            animation/export/) echo '-d --out-dir -i --id --all' ;;
+            animation/x/) echo '-d --out-dir -i --id --all' ;;
+            animation/import/) echo '-o --output --replace --replace-name --dry-run' ;;
+            animation/imp/) echo '-o --output --replace --replace-name --dry-run' ;;
+            type/list/) echo '' ;;
+            type/ls/) echo '' ;;
+            type/show/) echo '' ;;
+            type/s/) echo '' ;;
+            type/class-tree/) echo '' ;;
+            type/ct/) echo '' ;;
+            validate/all/) echo '' ;;
+            validate/a/) echo '' ;;
+            validate/structure/) echo '--fix --strict --fail-on-warning' ;;
+            validate/st/) echo '--fix --strict --fail-on-warning' ;;
+            validate/references/) echo '--fix --strict --fail-on-warning' ;;
+            validate/ref/) echo '--fix --strict --fail-on-warning' ;;
+            validate/resources/) echo '--strict --fail-on-warning' ;;
+            validate/res/) echo '--strict --fail-on-warning' ;;
+            validate/orphans/) echo '-c --class --strict --summary -o --strip' ;;
+            validate/orp/) echo '-c --class --strict --summary -o --strip' ;;
+            convert/copy/) echo '-o --output --compress --sequential-ids --no-managers --strip-resources --validate --fast-save' ;;
+            convert/cp/) echo '-o --output --compress --sequential-ids --no-managers --strip-resources --validate --fast-save' ;;
+            convert/version/) echo '' ;;
+            convert/v/) echo '' ;;
+            convert/strip/) echo '-o --output -c --class --name --dry-run --fast-save' ;;
+            convert/st/) echo '-o --output -c --class --name --dry-run --fast-save' ;;
+            convert/merge/) echo '-o --output --fast-save' ;;
+            convert/m/) echo '-o --output --fast-save' ;;
+            convert/export/) echo '-o --output -c --class -n --name -f --filter --all --deps --dry-run --compress --fast-save' ;;
+            convert/x/) echo '-o --output -c --class -n --name -f --filter --all --deps --dry-run --compress --fast-save' ;;
+            diff/summary/) echo '--ignore-order' ;;
+            diff/s/) echo '--ignore-order' ;;
+            diff/objects/) echo '--max-objects --max-fields --min-similarity --rename-similarity' ;;
+            diff/obj/) echo '--max-objects --max-fields --min-similarity --rename-similarity' ;;
+            diff/chunks/) echo '--object' ;;
+            diff/ch/) echo '--object' ;;
+            diff/full/) echo '' ;;
+            diff/f/) echo '' ;;
+            query/eval/) echo '--expr' ;;
+            query/e/) echo '--expr' ;;
+            query/script/) echo '' ;;
+            query/s/) echo '' ;;
+            query/schema/) echo '' ;;
+            query/sc/) echo '' ;;
+            query/module/) echo '' ;;
+            query/m/) echo '' ;;
+            extension/list/) echo '' ;;
+            extension/ls/) echo '' ;;
+            extension/load/) echo '' ;;
+            extension/ld/) echo '' ;;
+            extension/info/) echo '' ;;
+            extension/i/) echo '' ;;
+            extension/check/) echo '' ;;
+            extension/ch/) echo '' ;;
+            completion/bash/) echo '' ;;
+            completion/fish/) echo '' ;;
+            completion/zsh/) echo '' ;;
+            completion/powershell/) echo '' ;;
+            completion/ps1/) echo '' ;;
+            debug/load-phases/) echo '' ;;
+            debug/lp/) echo '' ;;
+            debug/chunks/) echo '' ;;
+            debug/ch/) echo '' ;;
+            debug/objects/) echo '' ;;
+            debug/obj/) echo '' ;;
+            debug/export/) echo '--data --max-bytes' ;;
+            debug/x/) echo '--data --max-bytes' ;;
+            repl/start/) echo '' ;;
+            *) echo "" ;;
+        esac
+    }
+
     local positional=()
     local expect_value=0
     local i word
@@ -101,11 +365,15 @@ _nmo() {
         positional+=("$word")
     done
 
-    if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "$flags" -- "$cur") ); return; fi
-    if (( ${#positional[@]} == 0 )); then COMPREPLY=( $(compgen -W "$groups" -- "$cur") ); return; fi
-    local group canonical actions subactions
+    if (( ${#positional[@]} == 0 )); then
+        if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "$global_flags" -- "$cur") ); return; fi
+        COMPREPLY=( $(compgen -W "$groups" -- "$cur") ); return
+    fi
+    local group canonical actions subactions action_flags
     group=${positional[0]}
     canonical=$(_nmo_resolve_group "$group")
+    action_flags=$(_nmo_action_flags "$canonical" "${positional[1]}" "${positional[2]}")
+    if [[ "$cur" == -* ]]; then COMPREPLY=( $(compgen -W "$global_flags $action_flags" -- "$cur") ); return; fi
     if (( ${#positional[@]} == 1 )); then
         actions=$(_nmo_actions "$canonical")
         COMPREPLY=( $(compgen -W "$actions" -- "$cur") )

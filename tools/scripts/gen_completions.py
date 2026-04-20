@@ -23,6 +23,14 @@ GENERATED_DIR = ROOT / "tools" / "generated"
 COMPLETION_DATA_H = GENERATED_DIR / "nmo_completion_data.h"
 
 
+@dataclass(frozen=True)
+class CompletionOption:
+    short: str | None
+    long: str | None
+    desc: str
+    takes_value: bool
+
+
 GLOBAL_OPTIONS = [
     ("-h", "--help", "Show help", None),
     ("-V", "--version", "Show version", None),
@@ -36,32 +44,51 @@ GLOBAL_OPTIONS = [
     (None, "--fail-on-warning", "Exit with code 4 on warnings", None),
     (None, "--plugin", "Load extension plugin", None),
     ("-F", "--filter", "Filter objects by name pattern", None),
-    (None, "--batch", "Process multiple files", None),
+    (None, "--batch", "Process multiple files for supported commands", None),
 ]
 
 
-COMMON_ACTION_OPTIONS = [
-    ("-c", "--class", "Filter by class", True),
-    ("-n", "--name", "Filter by name", True),
-    ("-i", "--index", "Select by index", True),
-    ("-m", "--max-bytes", "Limit emitted bytes", True),
-    ("-d", "--out-dir", "Output directory", True),
-    (None, "--id", "Object ID", True),
-    (None, "--top", "Show top N results", True),
-    (None, "--sort", "Sort output", True),
-    (None, "--reverse", "Reverse sort order", False),
-    (None, "--dry-run", "Preview changes", False),
-    (None, "--overwrite", "Overwrite existing files", False),
-    (None, "--fix", "Show suggested fixes", False),
-    (None, "--summary", "Summary only", False),
-    (None, "--strip", "Strip matching data", False),
-    (None, "--cascade", "Include dependents", False),
-    (None, "--create", "Create missing objects", False),
-    (None, "--dot", "Output DOT graph", False),
-    (None, "--raw", "Show raw data", False),
-    (None, "--all", "Process all matching entries", False),
-    (None, "--replace", "Replace existing entry", True),
-]
+def opt(short: str | None, long: str | None, desc: str, takes_value: bool) -> "CompletionOption":
+    return CompletionOption(short, long, desc, takes_value)
+
+
+EXPLICIT_ACTION_OPTIONS: dict[tuple[str, str], list["CompletionOption"]] = {
+    ("parameter", "set"): [
+        opt("-o", "--output", "Output file (required unless --dry-run)", True),
+        opt("-b", "--owner", "Owner behavior/object ID", True),
+        opt("-n", "--name", "Parameter name within owner", True),
+        opt("-i", "--index", "Parameter index within owner", True),
+        opt(None, "--hex", "Value is raw hex bytes", False),
+        opt(None, "--dry-run", "Show old/new without saving", False),
+    ],
+    ("data", "set-cell"): [
+        opt("-r", "--row", "Row index (0-based, required)", True),
+        opt("-c", "--col", "Column index (0-based, required)", True),
+        opt("-v", "--value", "New cell value (required)", True),
+        opt("-o", "--output", "Output file (required unless --dry-run)", True),
+        opt(None, "--dry-run", "Preview without saving", False),
+    ],
+    ("texture", "replace"): [
+        opt(None, "--id", "Texture object ID (alternative to positional)", True),
+        opt("-n", "--name", "Exact texture object name", True),
+        opt("-f", "--file", "Image file to load (required)", True),
+        opt("-o", "--output", "Output file (required unless --dry-run)", True),
+        opt(None, "--dry-run", "Preview without saving", False),
+    ],
+    ("mesh", "import"): [
+        opt("-o", "--output", "Output file (required unless --dry-run)", True),
+        opt(None, "--replace", "Replace existing mesh by ID", True),
+        opt(None, "--replace-name", "Replace existing mesh by exact name", True),
+        opt("-n", "--name", "Mesh name", True),
+        opt(None, "--dry-run", "Preview without saving", False),
+    ],
+    ("animation", "import"): [
+        opt("-o", "--output", "Output file (required unless --dry-run)", True),
+        opt(None, "--replace", "Replace existing animation by ID", True),
+        opt(None, "--replace-name", "Replace existing animation by exact name", True),
+        opt(None, "--dry-run", "Preview without saving", False),
+    ],
+}
 
 
 @dataclass
@@ -69,6 +96,8 @@ class Action:
     name: str
     alias: str | None
     brief: str
+    usage_symbol: str | None = None
+    options: list[CompletionOption] = field(default_factory=list)
     sub_actions: list["Action"] = field(default_factory=list)
     default_sub: str | None = None
 
@@ -223,6 +252,74 @@ def parse_c_string(value: str) -> str | None:
     return value
 
 
+def find_function_body(text: str, symbol: str) -> str | None:
+    match = re.search(rf"\b{re.escape(symbol)}\s*\([^)]*\)\s*\{{", text)
+    if not match:
+        return None
+    open_brace = text.find("{", match.end() - 1)
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(open_brace, len(text)):
+        ch = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_brace + 1 : i]
+    return None
+
+
+def iter_c_string_literals(text: str) -> Iterable[str]:
+    for match in re.finditer(r'"(?:\\.|[^"\\])*"', text):
+        yield parse_c_string(match.group(0)) or ""
+
+
+def parse_usage_options(source: str, usage_symbol: str | None) -> list[CompletionOption]:
+    if not usage_symbol:
+        return []
+    body = find_function_body(source, usage_symbol)
+    if body is None:
+        return []
+
+    options: list[CompletionOption] = []
+    seen: set[tuple[str | None, str | None]] = set()
+    for literal in iter_c_string_literals(body):
+        for raw_line in literal.splitlines():
+            line = raw_line.rstrip()
+            if not line.startswith("  -"):
+                continue
+            option_part = re.split(r"\s{2,}", line.strip(), maxsplit=1)[0]
+            tokens = [token.strip().rstrip(",") for token in option_part.split()]
+            flags = [token for token in tokens if token.startswith("-")]
+            if not flags:
+                continue
+            short = next((flag for flag in flags if flag.startswith("-") and not flag.startswith("--")), None)
+            long = next((flag for flag in flags if flag.startswith("--")), None)
+            if not short and not long:
+                continue
+            key = (short, long)
+            if key in seen:
+                continue
+            seen.add(key)
+            desc = re.split(r"\s{2,}", line.strip(), maxsplit=1)[1] if re.search(r"\s{2,}", line.strip()) else ""
+            takes_value = "<" in option_part and ">" in option_part
+            options.append(CompletionOption(short, long, desc, takes_value))
+    return options
+
+
 def parse_action_array(source: str, symbol: str) -> list[Action]:
     body = find_initializer_body(source, symbol)
     actions: list[Action] = []
@@ -238,14 +335,17 @@ def parse_action_array(source: str, symbol: str) -> list[Action]:
             continue
         alias = parse_c_string(fields[1])
         brief = parse_c_string(fields[2]) or ""
+        usage_symbol = fields[4].strip() if macro == "ACTION" and len(fields) >= 5 else None
         sub_symbol = None
         default_sub = None
         if macro == "ACTION_SUB" and len(fields) >= 7:
+            usage_symbol = fields[3].strip()
             sub_candidate = fields[4].strip()
             if sub_candidate != "NULL":
                 sub_symbol = sub_candidate
             default_sub = parse_c_string(fields[6])
         elif macro is None and len(fields) >= 8:
+            usage_symbol = fields[4].strip()
             sub_candidate = fields[5].strip()
             if sub_candidate != "NULL":
                 sub_symbol = sub_candidate
@@ -254,7 +354,15 @@ def parse_action_array(source: str, symbol: str) -> list[Action]:
         if sub_symbol == "nmo_behavior_interface_sub_actions":
             iface_source = strip_comments(BEHAVIOR_INTERFACE_C.read_text(encoding="utf-8"))
             sub_actions = parse_action_array(iface_source, sub_symbol)
-        actions.append(Action(name=name, alias=alias, brief=brief, sub_actions=sub_actions, default_sub=default_sub))
+        actions.append(Action(
+            name=name,
+            alias=alias,
+            brief=brief,
+            usage_symbol=usage_symbol,
+            options=parse_usage_options(source, usage_symbol),
+            sub_actions=sub_actions,
+            default_sub=default_sub,
+        ))
     return actions
 
 
@@ -274,8 +382,16 @@ def parse_groups() -> list[Group]:
         actions_name = fields[3].strip()
         group = Group(name=name, alias=alias, brief=brief, actions_name=actions_name)
         group.actions = parse_action_array(source, actions_name)
+        apply_explicit_action_options(group)
         groups.append(group)
     return groups
+
+
+def apply_explicit_action_options(group: Group) -> None:
+    for action in group.actions:
+        explicit = EXPLICIT_ACTION_OPTIONS.get((group.name, action.name))
+        if explicit is not None:
+            action.options = list(explicit)
 
 
 def shell_quote(value: str) -> str:
@@ -312,6 +428,36 @@ def action_names(action: Action) -> list[str]:
     return names
 
 
+def option_flags(options: Iterable[CompletionOption]) -> list[str]:
+    flags: list[str] = []
+    for option in options:
+        if option.short:
+            flags.append(option.short)
+        if option.long:
+            flags.append(option.long)
+    return flags
+
+
+def all_action_options(groups: Iterable[Group]) -> list[CompletionOption]:
+    options: list[CompletionOption] = []
+    for group in groups:
+        for action in group.actions:
+            options.extend(action.options)
+            for sub in action.sub_actions:
+                options.extend(sub.options)
+    return options
+
+
+def unique_words(words: Iterable[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for word in words:
+        if word not in seen:
+            seen.add(word)
+            result.append(word)
+    return result
+
+
 def render_header(shell: str) -> str:
     return (
         f"# {shell} completion for nmo - Virtools NMO file tool\n"
@@ -322,11 +468,29 @@ def render_header(shell: str) -> str:
 def render_bash(groups: list[Group]) -> str:
     lines: list[str] = [render_header("Bash")]
     group_words = " ".join(all_group_names(groups))
-    flag_words = " ".join(
+    global_flag_words = " ".join(
         item
         for short, long, _desc, _choices in GLOBAL_OPTIONS
         for item in (short, long)
         if item
+    )
+    value_options = " ".join(unique_words(
+        item
+        for option in all_action_options(groups)
+        if option.takes_value
+        for item in option_flags([option])
+    ))
+    global_value_options = " ".join(
+        item
+        for short, long, _desc, choices in GLOBAL_OPTIONS
+        for item in (short, long)
+        if item and choices is not None
+    )
+    file_value_options = " ".join(
+        item
+        for short, long, _desc, _choices in GLOBAL_OPTIONS
+        for item in (short, long)
+        if item in {"-o", "--output", "--plugin"}
     )
     lines += [
         "_nmo() {",
@@ -341,13 +505,14 @@ def render_bash(groups: list[Group]) -> str:
         "        cword=$COMP_CWORD",
         "    fi",
         f"    local groups=\"{group_words}\"",
-        f"    local flags=\"{flag_words}\"",
-        "    local value_options=\"-f --format --color -o --output --plugin -F --filter -c --class -n --name -i --index -m --max-bytes -d --out-dir --id --top --sort --replace\"",
+        f"    local global_flags=\"{global_flag_words}\"",
+        f"    local value_options=\"{global_value_options} {file_value_options} {value_options}\"",
+        f"    local file_value_options=\"{file_value_options} -d --out-dir --file --obj\"",
         "",
         "    case \"$prev\" in",
         "        -f|--format) COMPREPLY=( $(compgen -W \"text json json-pretty\" -- \"$cur\") ); return ;;",
         "        --color) COMPREPLY=( $(compgen -W \"auto always never\" -- \"$cur\") ); return ;;",
-        "        -o|--output|--plugin|-F|--filter|-d|--out-dir) compopt -o filenames 2>/dev/null; COMPREPLY=( $(compgen -f -- \"$cur\") ); return ;;",
+        "        *) if [[ \" $file_value_options \" == *\" $prev \"* ]]; then compopt -o filenames 2>/dev/null; COMPREPLY=( $(compgen -f -- \"$cur\") ); return; fi ;;",
         "        --*) if [[ \" $value_options \" == *\" $prev \"* ]]; then return; fi ;;",
         "        -*) if [[ \" $value_options \" == *\" $prev \"* ]]; then return; fi ;;",
         "    esac",
@@ -388,6 +553,24 @@ def render_bash(groups: list[Group]) -> str:
         "        esac",
         "    }",
         "",
+        "    _nmo_action_flags() {",
+        "        case \"$1/$2/$3\" in",
+    ]
+    for group in groups:
+        for action in group.actions:
+            words = " ".join(option_flags(action.options))
+            for action_name in action_names(action):
+                lines.append(f"            {group.name}/{action_name}/) echo {shell_quote(words)} ;;")
+            for sub in action.sub_actions:
+                sub_words = " ".join(option_flags(sub.options))
+                for action_name in action_names(action):
+                    for sub_name in action_names(sub):
+                        lines.append(f"            {group.name}/{action_name}/{sub_name}) echo {shell_quote(sub_words)} ;;")
+    lines += [
+        "            *) echo \"\" ;;",
+        "        esac",
+        "    }",
+        "",
         "    local positional=()",
         "    local expect_value=0",
         "    local i word",
@@ -401,11 +584,15 @@ def render_bash(groups: list[Group]) -> str:
         "        positional+=(\"$word\")",
         "    done",
         "",
-        "    if [[ \"$cur\" == -* ]]; then COMPREPLY=( $(compgen -W \"$flags\" -- \"$cur\") ); return; fi",
-        "    if (( ${#positional[@]} == 0 )); then COMPREPLY=( $(compgen -W \"$groups\" -- \"$cur\") ); return; fi",
-        "    local group canonical actions subactions",
+        "    if (( ${#positional[@]} == 0 )); then",
+        "        if [[ \"$cur\" == -* ]]; then COMPREPLY=( $(compgen -W \"$global_flags\" -- \"$cur\") ); return; fi",
+        "        COMPREPLY=( $(compgen -W \"$groups\" -- \"$cur\") ); return",
+        "    fi",
+        "    local group canonical actions subactions action_flags",
         "    group=${positional[0]}",
         "    canonical=$(_nmo_resolve_group \"$group\")",
+        "    action_flags=$(_nmo_action_flags \"$canonical\" \"${positional[1]}\" \"${positional[2]}\")",
+        "    if [[ \"$cur\" == -* ]]; then COMPREPLY=( $(compgen -W \"$global_flags $action_flags\" -- \"$cur\") ); return; fi",
         "    if (( ${#positional[@]} == 1 )); then",
         "        actions=$(_nmo_actions \"$canonical\")",
         "        COMPREPLY=( $(compgen -W \"$actions\" -- \"$cur\") )",
@@ -432,6 +619,12 @@ def render_bash(groups: list[Group]) -> str:
 
 def render_fish(groups: list[Group]) -> str:
     lines = [render_header("Fish"), "complete -c nmo -f", ""]
+    value_options = " ".join(shell_quote(word) for word in unique_words(
+        item
+        for option in all_action_options(groups)
+        if option.takes_value
+        for item in option_flags([option])
+    ))
     lines += [
         "function __nmo_positionals",
         "    set -l cmd (commandline -opc)",
@@ -442,7 +635,7 @@ def render_fish(groups: list[Group]) -> str:
         "            continue",
         "        end",
         "        switch $cmd[$i]",
-        "            case '-f' '--format' '--color' '-o' '--output' '--plugin' '-F' '--filter' '-c' '--class' '-n' '--name' '-i' '--index' '-m' '--max-bytes' '-d' '--out-dir' '--id' '--top' '--sort' '--replace'",
+        f"            case '-f' '--format' '--color' '-o' '--output' '--plugin' '-F' '--filter' {value_options}",
         "                set expect_value 1",
         "            case '-*'",
         "            case '*'",
@@ -460,6 +653,10 @@ def render_fish(groups: list[Group]) -> str:
         "function __nmo_action",
         "    set -l p (__nmo_positionals)",
         "    test (count $p) -ge 2; and echo $p[2]",
+        "end",
+        "function __nmo_subaction",
+        "    set -l p (__nmo_positionals)",
+        "    test (count $p) -ge 3; and echo $p[3]",
         "end",
         "",
     ]
@@ -494,16 +691,37 @@ def render_fish(groups: list[Group]) -> str:
             args.append(f"-a {shell_quote(choices)}")
         args.append(f"-d {shell_quote(desc)}")
         lines.append(" ".join(args))
-    for short, long, desc, takes_value in COMMON_ACTION_OPTIONS:
-        args = ["complete -c nmo"]
-        if short:
-            args.append(f"-s {short[1:]}")
-        if long:
-            args.append(f"-l {long[2:]}")
-        if takes_value:
-            args.append("-r")
-        args.append(f"-d {shell_quote(desc)}")
-        lines.append(" ".join(arg for arg in args if arg))
+    for group in groups:
+        group_terms = [group.name] + ([group.alias] if group.alias else [])
+        group_cond = " or ".join(f"test (__nmo_group) = {fish_condition_word(term)}" for term in group_terms)
+        for action in group.actions:
+            action_terms = action_names(action)
+            action_cond = " or ".join(f"test (__nmo_action) = {fish_condition_word(term)}" for term in action_terms)
+            cond = f"test (__nmo_pos_count) -ge 2; and ({group_cond}); and ({action_cond})"
+            for option in action.options:
+                args = ["complete -c nmo", f"-n {shell_quote(cond)}"]
+                if option.short:
+                    args.append(f"-s {option.short[1:]}")
+                if option.long:
+                    args.append(f"-l {option.long[2:]}")
+                if option.takes_value:
+                    args.append("-r")
+                args.append(f"-d {shell_quote(option.desc)}")
+                lines.append(" ".join(args))
+            for sub in action.sub_actions:
+                sub_terms = action_names(sub)
+                sub_cond = " or ".join(f"test (__nmo_subaction) = {fish_condition_word(term)}" for term in sub_terms)
+                cond = f"test (__nmo_pos_count) -ge 3; and ({group_cond}); and ({action_cond}); and ({sub_cond})"
+                for option in sub.options:
+                    args = ["complete -c nmo", f"-n {shell_quote(cond)}"]
+                    if option.short:
+                        args.append(f"-s {option.short[1:]}")
+                    if option.long:
+                        args.append(f"-l {option.long[2:]}")
+                    if option.takes_value:
+                        args.append("-r")
+                    args.append(f"-d {shell_quote(option.desc)}")
+                    lines.append(" ".join(args))
     lines += [
         "",
         "complete -c nmo -F -k -a '(for f in *.nmo *.cmo *.vmo *.json *.obj; test -f $f; and echo $f; end 2>/dev/null)'",
@@ -542,21 +760,40 @@ def render_powershell(groups: list[Group]) -> str:
             flags.append((short, desc))
         if long:
             flags.append((long, desc))
-    for short, long, desc, _takes_value in COMMON_ACTION_OPTIONS:
-        if short:
-            flags.append((short, desc))
-        if long:
-            flags.append((long, desc))
     lines.append("$_nmo_flags = @(")
     for name, desc in flags:
         lines.append(f"    @{{ Name = {ps_quote(name)}; Desc = {ps_quote(desc)} }}")
     lines.append(")")
+    lines.append("$_nmo_action_flags = @{")
+    for group in groups:
+        for action in group.actions:
+            action_flags = []
+            for option in action.options:
+                for flag in option_flags([option]):
+                    action_flags.append(f"@{{ Name = {ps_quote(flag)}; Desc = {ps_quote(option.desc)} }}")
+            for action_name in action_names(action):
+                lines.append(f"    {ps_quote(group.name + '/' + action_name + '/')} = @({', '.join(action_flags)})")
+            for sub in action.sub_actions:
+                sub_flags = []
+                for option in sub.options:
+                    for flag in option_flags([option]):
+                        sub_flags.append(f"@{{ Name = {ps_quote(flag)}; Desc = {ps_quote(option.desc)} }}")
+                for action_name in action_names(action):
+                    for sub_name in action_names(sub):
+                        lines.append(f"    {ps_quote(group.name + '/' + action_name + '/' + sub_name)} = @({', '.join(sub_flags)})")
+    lines.append("}")
+    value_options = ", ".join(ps_quote(word) for word in unique_words(
+        item
+        for option in all_action_options(groups)
+        if option.takes_value
+        for item in option_flags([option])
+    ))
     lines += [
         "",
         "Register-ArgumentCompleter -CommandName nmo -Native -ScriptBlock {",
         "    param($wordToComplete, $commandAst, $cursorPosition)",
         "    $tokens = $commandAst.ToString().Substring(0, $cursorPosition).Trim() -split '\\s+'",
-        "    $valueOptions = @('-f','--format','--color','-o','--output','--plugin','-F','--filter','-c','--class','-n','--name','-i','--index','-m','--max-bytes','-d','--out-dir','--id','--top','--sort','--replace')",
+        f"    $valueOptions = @('-f','--format','--color','-o','--output','--plugin','-F','--filter',{value_options})",
         "    $positional = @()",
         "    $expectValue = $false",
         "    for ($i = 1; $i -lt $tokens.Count; $i++) {",
@@ -567,8 +804,15 @@ def render_powershell(groups: list[Group]) -> str:
         "    if ($wordToComplete -ne '' -and $positional.Count -gt 0 -and $tokens[-1] -eq $wordToComplete) {",
         "        $positional = @($positional[0..($positional.Count - 2)])",
         "    }",
+        "    $group = if ($positional.Count -ge 1) { $positional[0] } else { $null }",
+        "    if ($group -and $_nmo_aliases.ContainsKey($group)) { $group = $_nmo_aliases[$group] }",
         "    if ($wordToComplete.StartsWith('-')) {",
-        "        $_nmo_flags | Where-Object { $_.Name -like \"$wordToComplete*\" } | ForEach-Object { [System.Management.Automation.CompletionResult]::new($_.Name, $_.Name, 'ParameterValue', $_.Desc) }",
+        "        $actionFlags = @()",
+        "        if ($positional.Count -ge 2) {",
+        "            $flagKey = if ($positional.Count -ge 3) { \"$group/$($positional[1])/$($positional[2])\" } else { \"$group/$($positional[1])/\" }",
+        "            if ($_nmo_action_flags.ContainsKey($flagKey)) { $actionFlags = $_nmo_action_flags[$flagKey] }",
+        "        }",
+        "        ($_nmo_flags + $actionFlags) | Where-Object { $_.Name -like \"$wordToComplete*\" } | ForEach-Object { [System.Management.Automation.CompletionResult]::new($_.Name, $_.Name, 'ParameterValue', $_.Desc) }",
         "        return",
         "    }",
         "    if ($positional.Count -eq 0) {",
@@ -578,8 +822,6 @@ def render_powershell(groups: list[Group]) -> str:
         "        $items | Where-Object { $_.Name -like \"$wordToComplete*\" } | Sort-Object Name | ForEach-Object { [System.Management.Automation.CompletionResult]::new($_.Name, $_.Name, 'ParameterValue', $_.Desc) }",
         "        return",
         "    }",
-        "    $group = $positional[0]",
-        "    if ($_nmo_aliases.ContainsKey($group)) { $group = $_nmo_aliases[$group] }",
         "    if ($positional.Count -eq 1 -and $_nmo_groups.ContainsKey($group)) {",
         "        $_nmo_groups[$group] | Where-Object { $_ -like \"$wordToComplete*\" } | ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', \"$group $_\") }",
         "        return",
@@ -601,7 +843,7 @@ def render_powershell(groups: list[Group]) -> str:
 
 
 def render_zsh(groups: list[Group]) -> str:
-    lines = ["#compdef nmo", render_header("Zsh").rstrip(), "local -a groups flags", "local state", "typeset -A opt_args", ""]
+    lines = ["#compdef nmo", render_header("Zsh").rstrip(), "local -a groups flags action_flags", "local state", "typeset -A opt_args", ""]
     lines.append("flags=(")
     for short, long, desc, choices in GLOBAL_OPTIONS:
         if short:
@@ -609,13 +851,6 @@ def render_zsh(groups: list[Group]) -> str:
         if long:
             arg = f":value:(({choices.replace(' ', ' ') }))" if choices else ""
             lines.append(f"    '{long}[{zsh_desc(desc)}]{arg}'")
-    for short, long, desc, takes_value in COMMON_ACTION_OPTIONS:
-        if short:
-            suffix = ":value:" if takes_value else ""
-            lines.append(f"    '{short}[{zsh_desc(desc)}]{suffix}'")
-        if long:
-            suffix = ":value:" if takes_value else ""
-            lines.append(f"    '{long}[{zsh_desc(desc)}]{suffix}'")
     lines.append(")")
     lines.append("groups=(")
     for group in groups:
@@ -632,6 +867,19 @@ def render_zsh(groups: list[Group]) -> str:
         if group.alias:
             lines.append(f"        {group.alias}) echo {shell_quote(group.name)} ;;")
     lines += ["        *) echo \"$1\" ;;", "    esac", "}", ""]
+    lines.append("_nmo_action_flags() {")
+    lines.append("    case \"$1/$2/$3\" in")
+    for group in groups:
+        for action in group.actions:
+            words = " ".join(option_flags(action.options))
+            for action_name in action_names(action):
+                lines.append(f"        {group.name}/{action_name}/) echo {shell_quote(words)} ;;")
+            for sub in action.sub_actions:
+                sub_words = " ".join(option_flags(sub.options))
+                for action_name in action_names(action):
+                    for sub_name in action_names(sub):
+                        lines.append(f"        {group.name}/{action_name}/{sub_name}) echo {shell_quote(sub_words)} ;;")
+    lines += ["        *) echo \"\" ;;", "    esac", "}", ""]
     lines.append("_nmo_actions() {")
     lines.append("    local -a acts")
     lines.append("    case \"$1\" in")
@@ -660,7 +908,11 @@ def render_zsh(groups: list[Group]) -> str:
                     lines.append("            ) ;;")
     lines += ["    esac", "    _describe -t sub-actions 'sub-action' acts", "}", ""]
     lines += [
-        "_arguments -C $flags \\",
+        "local canonical",
+        "canonical=$(_nmo_resolve_group \"$words[2]\")",
+        "action_flags=( ${(z)$(_nmo_action_flags \"$canonical\" \"$words[3]\" \"$words[4]\")} )",
+        "",
+        "_arguments -C $flags $action_flags \\",
         "    '1:group:->group' \\",
         "    '2:action:->action' \\",
         "    '3:sub-action:->subaction' \\",
@@ -750,7 +1002,59 @@ def render_c_header(rendered: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
-def check_completions(rendered: dict[str, str]) -> list[str]:
+def find_group(groups: Iterable[Group], name: str) -> Group | None:
+    return next((group for group in groups if group.name == name), None)
+
+
+def find_action(group: Group | None, name: str) -> Action | None:
+    if group is None:
+        return None
+    return next((action for action in group.actions if action.name == name), None)
+
+
+def check_completion_semantics(groups: list[Group], rendered: dict[str, str]) -> list[str]:
+    errors: list[str] = []
+    expected_flags = {
+        ("mesh", "import"): {"--replace-name"},
+        ("animation", "import"): {"--replace-name"},
+        ("material", "set"): {"--diffuse", "--ambient", "--specular", "--emissive", "--power"},
+        ("type", "class-tree"): set(),
+    }
+    for (group_name, action_name), expected in expected_flags.items():
+        action = find_action(find_group(groups, group_name), action_name)
+        if action is None:
+            errors.append(f"completion schema cannot find {group_name} {action_name}")
+            continue
+        actual = set(option_flags(action.options))
+        missing = sorted(expected - actual)
+        if missing:
+            errors.append(f"completion schema for {group_name} {action_name} is missing: {' '.join(missing)}")
+        if not expected and actual:
+            errors.append(f"completion schema for {group_name} {action_name} should be empty, got: {' '.join(sorted(actual))}")
+
+    for (group_name, action_name), explicit_options in EXPLICIT_ACTION_OPTIONS.items():
+        action = find_action(find_group(groups, group_name), action_name)
+        if action is None:
+            errors.append(f"explicit completion schema cannot find {group_name} {action_name}")
+            continue
+        actual_flags = option_flags(action.options)
+        explicit_flags = option_flags(explicit_options)
+        if actual_flags != explicit_flags:
+            errors.append(
+                f"explicit completion schema for {group_name} {action_name} drifted: "
+                f"expected {' '.join(explicit_flags)}, got {' '.join(actual_flags)}")
+
+    zsh = rendered["_nmo"]
+    if "_nmo_action_flags" not in zsh:
+        errors.append("completions/_nmo must render action-level option flags")
+    if "object/list/) echo '-c --class -f --filter'" not in zsh:
+        errors.append("completions/_nmo must include object list action options")
+    if "type/class-tree/) echo ''" not in zsh:
+        errors.append("completions/_nmo must keep type class-tree action options empty")
+    return errors
+
+
+def check_completions(groups: list[Group], rendered: dict[str, str]) -> list[str]:
     errors: list[str] = []
     for filename, expected in rendered.items():
         path = COMPLETIONS_DIR / filename
@@ -761,6 +1065,7 @@ def check_completions(rendered: dict[str, str]) -> list[str]:
     actual_header = COMPLETION_DATA_H.read_text(encoding="utf-8") if COMPLETION_DATA_H.exists() else ""
     if actual_header != expected_header:
         errors.append(f"{COMPLETION_DATA_H.relative_to(ROOT)} is out of date; regenerate with tools/scripts/gen_completions.py --write")
+    errors.extend(check_completion_semantics(groups, rendered))
     return errors
 
 
@@ -784,7 +1089,7 @@ def main(argv: list[str]) -> int:
         COMPLETION_DATA_H.write_text(render_c_header(rendered), encoding="utf-8", newline="\n")
 
     if args.check:
-        errors = check_completions(rendered)
+        errors = check_completions(groups, rendered)
         if errors:
             for error in errors:
                 print(error, file=sys.stderr)
