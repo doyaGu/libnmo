@@ -570,11 +570,22 @@ int nmo_cmd_chunk_tree(int argc, char **argv, const nmo_cli_global_opts_t *globa
  * chunk show - Show chunk for a specific object ID
  * ============================================================================ */
 
-int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    /* Modes:
-       - nmo chunk show --index <n> <file> (supports sub-chunks)
-       - nmo chunk show <object-id> <file> (root chunk for object)
-    */
+typedef struct chunk_show_args {
+    uint32_t object_id;
+    uint32_t chunk_index;
+    bool use_index;
+    bool include_hexdump;
+    size_t max_bytes;
+} chunk_show_args_t;
+
+static int chunk_show_parse(int argc, char **argv, bool in_session, chunk_show_args_t *args)
+{
+    if (!args) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    memset(args, 0, sizeof(*args));
+    args->max_bytes = 256;
+
     static const nmo_opt_def_t opts[] = {
         {"--index",     "-i", NMO_OPT_STRING, "Chunk index"},
         {"--hexdump",   NULL, NMO_OPT_FLAG,   "Include hex dump"},
@@ -586,10 +597,9 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
     if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *index_str = vals[0].present ? vals[0].val.str : NULL;
-    bool include_hexdump = vals[1].val.flag;
-    size_t max_bytes = vals[2].present ? (size_t)vals[2].val.u : 256;
+    args->include_hexdump = vals[1].val.flag;
+    args->max_bytes = vals[2].present ? (size_t)vals[2].val.u : 256;
 
-    bool in_session = nmo_cmd_global_uses_session_source(global);
     /* Positional args:
        CLI: [object-id] <file>; in-session: [object-id]. */
     const char *obj_id_str = NULL;
@@ -623,51 +633,58 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         }
     }
 
-    uint32_t object_id = 0;
-    uint32_t chunk_index = 0;
-    bool use_index = false;
+    if (index_str) {
+        if (!nmo_tool_parse_u32(index_str, &args->chunk_index)) {
+            fprintf(stderr, "Error: Invalid chunk index '%s'\n", index_str);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        args->use_index = true;
+    } else {
+        if (!obj_id_str || !nmo_tool_parse_u32(obj_id_str, &args->object_id)) {
+            fprintf(stderr, "Error: Invalid object ID\n");
+            if (in_session) {
+                fprintf(stderr, "Usage: chunk show <object-id>\n");
+            } else {
+                fprintf(stderr, "Usage: nmo chunk show <object-id> <file>\n");
+            }
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    }
 
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int chunk_show_run(nmo_cmd_ctx_t *ctx, const chunk_show_args_t *args)
+{
+    if (!ctx || !args) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_cmd_ctx_t c = *ctx;
+    uint32_t object_id = args->object_id;
     bool flat_index_known = false;
     uint32_t flat_index = 0;
 
     int64_t parent_index = -1;
     uint32_t depth = 0;
 
-    if (index_str) {
-        if (!nmo_tool_parse_u32(index_str, &chunk_index)) {
-            fprintf(stderr, "Error: Invalid chunk index '%s'\n", index_str);
-            return NMO_CLI_EXIT_ARG_ERROR;
-        }
-        use_index = true;
-    } else {
-        if (!obj_id_str || !nmo_tool_parse_u32(obj_id_str, &object_id)) {
-            fprintf(stderr, "Error: Invalid object ID\n");
-            fprintf(stderr, "Usage: nmo chunk show <object-id> <file>\n");
-            return NMO_CLI_EXIT_ARG_ERROR;
-        }
-    }
-
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
     nmo_object_t *target = NULL;
     nmo_chunk_t *chunk = NULL;
 
-    if (use_index) {
+    if (args->use_index) {
         nmo_cli_chunk_entry_t *entries = NULL;
         size_t entry_count = 0;
         if (!collect_all_chunk_entries(c.session, &entries, &entry_count, NULL)) {
             fprintf(stderr, "Error: Failed to collect chunks\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
-        if ((size_t)chunk_index >= entry_count) {
+        if ((size_t)args->chunk_index >= entry_count) {
             nmo_chunk_index_free_entries(entries);
             fprintf(stderr, "Error: Chunk index %u out of range (0..%zu)\n",
-                    chunk_index, entry_count ? (entry_count - 1) : 0);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+                    args->chunk_index, entry_count ? (entry_count - 1) : 0);
+            return NMO_CLI_EXIT_ARG_ERROR;
         }
-        const nmo_cli_chunk_entry_t selected = entries[chunk_index];
+        const nmo_cli_chunk_entry_t selected = entries[args->chunk_index];
         chunk = selected.chunk;
         object_id = selected.owner_object_id;
         parent_index = selected.parent_index;
@@ -675,7 +692,7 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         nmo_chunk_index_free_entries(entries);
 
         flat_index_known = true;
-        flat_index = chunk_index;
+        flat_index = args->chunk_index;
 
         /* Best-effort resolve owner object for name */
         target = nmo_core_find_by_id(&c, object_id);
@@ -683,13 +700,13 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         target = nmo_core_find_by_id(&c, object_id);
         if (!target) {
             fprintf(stderr, "Error: Object %u not found\n", object_id);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+            return NMO_CLI_EXIT_ARG_ERROR;
         }
 
         chunk = nmo_object_get_chunk(target);
         if (!chunk) {
             fprintf(stderr, "Error: Object %u has no chunk data\n", object_id);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+            return NMO_CLI_EXIT_ARG_ERROR;
         }
 
         /* Provide stable index info when possible */
@@ -747,10 +764,10 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         yyjson_mut_obj_add_uint(doc, data, "compressed_size", (uint64_t)chunk->compressed_size);
         yyjson_mut_obj_add_uint(doc, data, "uncompressed_size", (uint64_t)chunk->uncompressed_size);
 
-        if (include_hexdump) {
+        if (args->include_hexdump) {
             size_t data_size = 0;
             const uint8_t *raw = (const uint8_t *)nmo_chunk_get_data(chunk, &data_size);
-            (void)nmo_cli_json_add_data_hex(doc, data, raw, data_size, max_bytes, false);
+            (void)nmo_cli_json_add_data_hex(doc, data, raw, data_size, args->max_bytes, false);
         }
 
         /* Count sub-chunks and IDs */
@@ -821,7 +838,7 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         snprintf(buf, sizeof(buf), "%zu bytes", chunk->uncompressed_size);
         nmo_cli_print_kv(c.out, "Uncompressed Size", buf, 18, c.colorize);
 
-        if (include_hexdump) {
+        if (args->include_hexdump) {
             size_t data_size = 0;
             const uint8_t *raw = (const uint8_t *)nmo_chunk_get_data(chunk, &data_size);
             fprintf(c.out, "\n");
@@ -829,7 +846,7 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
             if (!raw || data_size == 0) {
                 nmo_cli_print_kv(c.out, "Data", "(empty)", 18, c.colorize);
             } else {
-                size_t emit_size = (max_bytes > 0 && data_size > max_bytes) ? max_bytes : data_size;
+                size_t emit_size = (args->max_bytes > 0 && data_size > args->max_bytes) ? args->max_bytes : data_size;
                 if (emit_size < data_size) {
                     snprintf(buf, sizeof(buf), "showing %zu/%zu bytes", emit_size, data_size);
                     nmo_cli_print_kv(c.out, "Data", buf, 18, c.colorize);
@@ -860,7 +877,24 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         nmo_cli_print_kv(c.out, "Manager Refs", buf, 18, c.colorize);
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    /* Modes:
+       - nmo chunk show --index <n> <file> (supports sub-chunks)
+       - nmo chunk show <object-id> <file> (root chunk for object)
+    */
+    chunk_show_args_t args;
+    int rc = chunk_show_parse(argc, argv, false, &args);
+    if (rc) return rc;
+
+    nmo_cmd_ctx_t c;
+    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    rc = chunk_show_run(&c, &args);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
@@ -984,22 +1018,12 @@ int nmo_cmd_chunk_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return chunk_tree_run(ctx);
     }
     if (strcmp(argv[0], "show") == 0 || strcmp(argv[0], "s") == 0) {
-        nmo_cmd_public_handler_t handler = nmo_cmd_chunk_show;
-        nmo_cmd_invocation_t invocation;
-        if (ctx->global) {
-            invocation.global = *ctx->global;
-        } else {
-            nmo_cli_global_opts_init(&invocation.global);
+        chunk_show_args_t args;
+        int rc = chunk_show_parse(argc, argv, true, &args);
+        if (rc) {
+            return rc;
         }
-        nmo_cmd_source_t source = {
-            .kind = NMO_CMD_SOURCE_SESSION,
-            .ctx = ctx->ctx,
-            .session = ctx->session,
-            .source_label = ctx->file_path,
-        };
-        invocation.global.struct_size = sizeof(invocation);
-        invocation.source = &source;
-        return handler(argc, argv, &invocation.global);
+        return chunk_show_run(ctx, &args);
     }
     if (strcmp(argv[0], "find") == 0 || strcmp(argv[0], "f") == 0) {
         static const nmo_opt_def_t opts[] = {

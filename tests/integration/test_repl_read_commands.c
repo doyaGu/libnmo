@@ -568,6 +568,10 @@ TEST(repl_read, command_source_is_not_a_global_cli_option) {
 TEST(repl_read, chunk_session_dispatch_does_not_use_ctx_dispatch_helper) {
     assert_source_not_contains("tools/commands/nmo_cmd_chunk.c",
                                "nmo_cmd_ctx_dispatch_from_source");
+    assert_source_not_contains("tools/commands/nmo_cmd_chunk.c",
+                               "nmo_cmd_public_handler_t");
+    assert_source_not_contains("tools/commands/nmo_cmd_chunk.c",
+                               "nmo_cmd_invocation_t");
 }
 
 TEST(repl_read, explicit_session_source_initializes_command_context) {
