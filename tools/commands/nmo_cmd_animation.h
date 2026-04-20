@@ -16,7 +16,6 @@ int nmo_cmd_animation_list(int argc, char **argv, const nmo_cli_global_opts_t *g
 int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_animation_keys(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_animation_export(int argc, char **argv, const nmo_cli_global_opts_t *global);
-int nmo_cmd_animation_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_animation_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 

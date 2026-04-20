@@ -37,6 +37,8 @@
 #define NMO_TEX_PATH_SEP '/'
 #endif
 
+static int nmo_cmd_texture_extract_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
+
 int nmo_cmd_texture_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     if (!ctx || argc < 1 || !argv || !argv[0]) {
@@ -1286,7 +1288,7 @@ int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *
     return texture_extract_run(&c, &args, true);
 }
 
-int nmo_cmd_texture_extract_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
+static int nmo_cmd_texture_extract_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
     texture_extract_args_t args;
     const char *usage = "texture extract --out-dir <dir> [options]";
     int rc = texture_extract_parse(argc, argv, false, &args, usage);

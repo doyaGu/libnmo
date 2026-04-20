@@ -731,7 +731,7 @@ TEST(repl_read, family_repl_read_cores_are_directly_callable) {
     assert_in_session_ok(&repl, nmo_cmd_validate_in_session, 1, validate_references);
     assert_in_session_ok(&repl, nmo_cmd_validate_in_session, 1, validate_resources);
     assert_in_session_ok(&repl, nmo_cmd_validate_in_session, 1, validate_orphans);
-    assert_in_session_ok(&repl, nmo_cmd_query_eval_in_session, 4, query_eval);
+    assert_in_session_ok(&repl, nmo_cmd_query_in_session, 4, query_eval);
     assert_in_session_ok(&repl, nmo_cmd_diff_in_session, 2, diff_summary);
     assert_in_session_ok(&repl, nmo_cmd_diff_in_session, 2, diff_objects);
     assert_in_session_ok(&repl, nmo_cmd_diff_in_session, 2, diff_chunks);
@@ -742,8 +742,8 @@ TEST(repl_read, family_repl_read_cores_are_directly_callable) {
     assert_in_session_ok(&repl, nmo_cmd_chunk_in_session, 3, chunk_find);
     assert_in_session_ok(&repl, nmo_cmd_object_show_in_session, 2, object_show);
     assert_in_session_ok(&repl, nmo_cmd_object_refs_in_session, 2, object_refs);
-    assert_in_session_ok(&repl, nmo_cmd_parameter_show_in_session, 2, parameter_show);
-    assert_in_session_ok(&repl, nmo_cmd_parameter_dump_in_session, 2, parameter_dump);
+    assert_in_session_ok(&repl, nmo_cmd_parameter_in_session, 2, parameter_show);
+    assert_in_session_ok(&repl, nmo_cmd_parameter_in_session, 2, parameter_dump);
 
     close_repl(&repl);
 }
@@ -859,6 +859,22 @@ TEST(repl_read, read_family_headers_only_export_family_session_entrypoints) {
                                "nmo_cmd_diff_chunks_in_session");
     assert_source_not_contains("tools/commands/nmo_cmd_diff.h",
                                "nmo_cmd_diff_full_in_session");
+
+    assert_source_not_contains("tools/commands/nmo_cmd_query.h",
+                               "nmo_cmd_query_eval_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_parameter.h",
+                               "nmo_cmd_parameter_show_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_parameter.h",
+                               "nmo_cmd_parameter_dump_in_session");
+
+    assert_source_not_contains("tools/commands/nmo_cmd_resource.h",
+                               "nmo_cmd_resource_extract_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_texture.h",
+                               "nmo_cmd_texture_extract_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_mesh.h",
+                               "nmo_cmd_mesh_export_in_session");
+    assert_source_not_contains("tools/commands/nmo_cmd_animation.h",
+                               "nmo_cmd_animation_export_in_session");
 }
 
 TEST(repl_read, no_active_session_adapter_symbols_remain) {

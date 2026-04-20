@@ -19,7 +19,6 @@ int nmo_cmd_query_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
  * @brief nmo query eval - Evaluate a single DSL expression
  */
 int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *global);
-int nmo_cmd_query_eval_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
 /**
  * @brief nmo query script - Execute a DSL script file

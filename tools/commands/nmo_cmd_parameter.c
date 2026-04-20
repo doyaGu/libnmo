@@ -612,7 +612,7 @@ int nmo_cmd_parameter_show(int argc, char **argv, const nmo_cli_global_opts_t *g
     return parameter_show_run(&c, object_id, argc, argv, global, true);
 }
 
-int nmo_cmd_parameter_show_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
+static int nmo_cmd_parameter_show_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
     const char *usage = "parameter show <id>";
     uint32_t object_id = 0;
     int rc = parameter_show_parse_id(argc, argv, false, &object_id, usage);
@@ -1073,7 +1073,7 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
     return parameter_dump_run(&c, &args, true);
 }
 
-int nmo_cmd_parameter_dump_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
+static int nmo_cmd_parameter_dump_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
     const char *usage =
         "parameter dump [--all] [--type <guid>] [<id>]\n"
         "       parameter dump --all [--type <guid>]";

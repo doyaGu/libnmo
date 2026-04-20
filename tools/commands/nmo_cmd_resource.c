@@ -36,6 +36,8 @@
 #define NMO_PATH_SEP '/'
 #endif
 
+static int nmo_cmd_resource_extract_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
+
 int nmo_cmd_resource_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     if (!ctx || argc < 1 || !argv || !argv[0]) {
@@ -793,7 +795,7 @@ int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t 
     return resource_extract_run(&c, &args, true);
 }
 
-int nmo_cmd_resource_extract_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
+static int nmo_cmd_resource_extract_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
     resource_extract_args_t args;
     const char *usage =
         "resource extract --out-dir <dir> [--index <n> | --name <name>]";

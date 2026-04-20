@@ -43,6 +43,8 @@
 #define NMO_MESH_PATH_SEP '/'
 #endif
 
+static int nmo_cmd_mesh_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
+
 int nmo_cmd_mesh_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     if (!ctx || argc < 1 || !argv || !argv[0]) {
@@ -829,7 +831,7 @@ int nmo_cmd_mesh_export(int argc, char **argv, const nmo_cli_global_opts_t *glob
     return mesh_export_run(&c, &args, true, usage);
 }
 
-int nmo_cmd_mesh_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
+static int nmo_cmd_mesh_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
     mesh_export_args_t args;
     const char *usage = "mesh export --out-dir <dir> [--all | --id <id> | --name <name> | <id>]";
     int rc = mesh_export_parse(argc, argv, false, &args, usage);

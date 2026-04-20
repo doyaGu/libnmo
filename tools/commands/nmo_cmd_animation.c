@@ -34,6 +34,8 @@
 #include <direct.h>
 #endif
 
+static int nmo_cmd_animation_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
+
 int nmo_cmd_animation_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     if (!ctx || argc < 1 || !argv || !argv[0]) {
@@ -1045,7 +1047,7 @@ int nmo_cmd_animation_export(int argc, char **argv, const nmo_cli_global_opts_t 
     return animation_export_run(&c, &args, true, usage);
 }
 
-int nmo_cmd_animation_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
+static int nmo_cmd_animation_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
     animation_export_args_t args;
     const char *usage = "animation export [--all | --id <id> | --name <name> | <id>] --out-dir <dir>";
     int rc = animation_export_parse(argc, argv, false, &args, usage);

@@ -25,6 +25,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+static int nmo_cmd_query_eval_in_session(nmo_cmd_ctx_t *c, int argc, char **argv);
+
 int nmo_cmd_query_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     if (!ctx || argc < 1 || !argv || !argv[0]) {
@@ -277,7 +279,7 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
-int nmo_cmd_query_eval_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
+static int nmo_cmd_query_eval_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
     static const nmo_opt_def_t opts[] = {
         {"--stdin",  NULL, NMO_OPT_FLAG,   "Read expression from stdin"},
         {"--expr",   "-e", NMO_OPT_STRING, "Expression to evaluate"},
