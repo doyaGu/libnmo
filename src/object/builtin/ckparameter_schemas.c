@@ -503,7 +503,12 @@ nmo_status_t nmo_parameter_remap_dependencies(
             break;
     }
 
-    state->has_state = nmo_parameter_has_payload(state);
+    /*
+     * CK2 distinguishes a missing value section from an explicit "no payload"
+     * value section.  CKParameter::Save writes paramState=3 for the latter,
+     * and CKParameter::Load reads that dword before returning.
+     */
+    state->has_state = state->has_state || nmo_parameter_has_payload(state);
 
     return nmo_parameter_validate(state, NULL, NULL);
 }

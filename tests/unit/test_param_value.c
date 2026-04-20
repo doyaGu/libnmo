@@ -88,6 +88,18 @@ TEST(param_value, mode_none) {
 
 }
 
+TEST(param_value, remap_preserves_serialized_none_state_marker) {
+    nmo_parameter_state_t p;
+    memset(&p, 0, sizeof(p));
+    p.has_state = true;
+    p.mode = CKPARAM_MODE_NONE;
+
+    nmo_status_t st = nmo_parameter_remap_dependencies(&p, NULL, NULL);
+    ASSERT_EQ(NMO_OK, st);
+    ASSERT_TRUE(p.has_state);
+    ASSERT_EQ(CKPARAM_MODE_NONE, p.mode);
+}
+
 TEST(param_value, mode_object) {
     nmo_parameter_state_t p;
     memset(&p, 0, sizeof(p));
@@ -373,6 +385,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(param_value, mode_to_string);
     REGISTER_TEST(param_value, no_state);
     REGISTER_TEST(param_value, mode_none);
+    REGISTER_TEST(param_value, remap_preserves_serialized_none_state_marker);
     REGISTER_TEST(param_value, mode_object);
     REGISTER_TEST(param_value, mode_object_null_id);
     REGISTER_TEST(param_value, empty_buffer);

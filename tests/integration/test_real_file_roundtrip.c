@@ -80,6 +80,37 @@ static int validate_runtime_load_no_regression(
     return 0;
 }
 
+static int validate_ballance_base_parameter_none_marker(nmo_session_t *session,
+                                                        const char *path) {
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    if (repo == NULL) {
+        printf("  FAILED: repository unavailable for %s\n", path);
+        return 1;
+    }
+
+    nmo_object_t *obj = nmo_object_repository_find_by_id(repo, 152);
+    if (obj == NULL || obj->chunk == NULL) {
+        printf("  FAILED: Ballance base CKParameterOut #152 missing in %s\n", path);
+        return 1;
+    }
+
+    size_t data_size = 0;
+    const uint32_t *data = (const uint32_t *)nmo_chunk_get_data(obj->chunk, &data_size);
+    if (data == NULL || data_size != 20u) {
+        printf("  FAILED: Ballance base CKParameterOut #152 chunk size %zu, expected 20 in %s\n",
+               data_size, path);
+        return 1;
+    }
+
+    if (data[4] != 3u) {
+        printf("  FAILED: Ballance base CKParameterOut #152 missing CKParameter state marker 3 in %s\n",
+               path);
+        return 1;
+    }
+
+    return 0;
+}
+
 /**
  * Test round-trip for a real file
  */
@@ -135,6 +166,14 @@ static int test_file_roundtrip(const char* input_file) {
         return 1;
     }
 
+    int is_ballance_base = strcmp(basename, "base.cmo") == 0;
+    if (is_ballance_base &&
+        validate_ballance_base_parameter_none_marker(load1_session, input_file) != 0) {
+        nmo_session_destroy(load1_session);
+        nmo_context_release(ctx);
+        return 1;
+    }
+
     /* === SAVE: Save to temporary file (schema required) === */
     nmo_save_options_t save_opts = nmo_save_options_default();
     save_opts.flags |= NMO_SAVE_REQUIRE_SCHEMA;
@@ -182,6 +221,13 @@ static int test_file_roundtrip(const char* input_file) {
         nmo_session_destroy(load1_session);
         nmo_context_release(ctx);
         remove(temp_file);
+        return 1;
+    }
+    if (is_ballance_base &&
+        validate_ballance_base_parameter_none_marker(load2_session, temp_file) != 0) {
+        nmo_session_destroy(load2_session);
+        nmo_session_destroy(load1_session);
+        nmo_context_release(ctx);
         return 1;
     }
 
