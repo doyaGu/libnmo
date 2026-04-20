@@ -218,6 +218,25 @@ static bool array_contains_object_id(yyjson_val *arr, uint64_t needle) {
     return false;
 }
 
+static yyjson_val *find_object_by_uint_field(yyjson_val *arr,
+                                             const char *key,
+                                             uint64_t needle) {
+    size_t idx;
+    size_t max;
+    yyjson_val *item;
+
+    if (!arr) {
+        return NULL;
+    }
+    yyjson_arr_foreach(arr, idx, max, item) {
+        if (yyjson_is_obj(item) &&
+            get_uint_field(item, key) == needle) {
+            return item;
+        }
+    }
+    return NULL;
+}
+
 TEST(cli, behavior_graph_boundary_json_smoke) {
     char args[1024];
     snprintf(args, sizeof(args),
@@ -565,6 +584,53 @@ TEST(cli, behavior_fold_dry_run_uses_explicit_node_set) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan) {
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior fold --parent 4692 --nodes 2364,2208 "
+             "--guid 42414C07-10000007 "
+             "--name \"Ballance Event Handler\" "
+             "--preserve-links --preserve-params --dry-run \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.fold", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    yyjson_val *planned = get_object_field(data, "planned");
+    ASSERT_NOT_NULL(planned);
+
+    yyjson_val *links_to_delete = get_object_field(planned, "links_to_delete");
+    ASSERT_NOT_NULL(links_to_delete);
+    yyjson_val *delete_control = get_array_field(links_to_delete, "control");
+    ASSERT_NOT_NULL(delete_control);
+    ASSERT_NOT_NULL(find_object_by_uint_field(delete_control, "link_id",
+                                              2357u));
+
+    yyjson_val *links_to_retarget =
+        get_object_field(planned, "links_to_retarget");
+    ASSERT_NOT_NULL(links_to_retarget);
+    yyjson_val *retarget_in = get_array_field(links_to_retarget, "control_in");
+    yyjson_val *retarget_out =
+        get_array_field(links_to_retarget, "control_out");
+    ASSERT_NOT_NULL(retarget_in);
+    ASSERT_NOT_NULL(retarget_out);
+
+    yyjson_val *out_link = find_object_by_uint_field(retarget_out,
+                                                     "link_id", 2345u);
+    ASSERT_NOT_NULL(out_link);
+    ASSERT_EQ(2208u, (uint32_t)get_uint_field(out_link,
+                                              "old_source_owner_id"));
+    ASSERT_EQ(2364u, (uint32_t)get_uint_field(out_link,
+                                              "new_source_owner_id"));
+
+    yyjson_doc_free(doc);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_graph_boundary_json_smoke);
     REGISTER_TEST(cli, behavior_replace_bb_dry_run_reports_leaf_preservation);
@@ -574,4 +640,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_fold_candidates_reports_direct_child_groups);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_boundary_plan);
     REGISTER_TEST(cli, behavior_fold_dry_run_uses_explicit_node_set);
+    REGISTER_TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan);
 TEST_MAIN_END()
