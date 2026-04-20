@@ -1121,7 +1121,9 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
                                 report->can_write);
         yyjson_mut_obj_add_bool(doc, data, "write_supported",
                                 report->can_write);
-        nmo_cli_json_add_str_safe(doc, data, "status", "analysis_only");
+        nmo_cli_json_add_str_safe(doc, data, "status",
+                                  report->can_write ? "ready"
+                                                    : "analysis_only");
         yyjson_mut_val *write_blockers = yyjson_mut_arr(doc);
         for (size_t i = 0; i < report->write_blocker_count; ++i) {
             yyjson_mut_val *blocker = yyjson_mut_obj(doc);

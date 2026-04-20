@@ -857,6 +857,30 @@ TEST(cli, behavior_fold_write_rejects_with_analysis_blocker) {
     free(result.output);
 }
 
+TEST(cli, behavior_fold_dry_run_reports_single_leaf_anchor_writable) {
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior fold --parent 4692 --nodes 2367 "
+             "--anchor 2367 "
+             "--guid 42414C07-10000007 "
+             "--name \"Ballance Single Fold\" "
+             "--preserve-boundary --dry-run \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.fold", &doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "can_write"));
+    ASSERT_TRUE(get_bool_field(data, "write_supported"));
+    ASSERT_STR_EQ("ready", get_string_field(data, "status"));
+    yyjson_val *write_blockers = get_array_field(data, "write_blockers");
+    ASSERT_NOT_NULL(write_blockers);
+    ASSERT_EQ(0u, (uint32_t)yyjson_arr_size(write_blockers));
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, behavior_fold_writes_single_leaf_anchor) {
     const char *output = "test_behavior_rewrite_tmp/fold_single_anchor.cmo";
     remove(output);
@@ -908,5 +932,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan);
     REGISTER_TEST(cli, behavior_fold_dry_run_rejects_parent_in_selected_nodes);
     REGISTER_TEST(cli, behavior_fold_write_rejects_with_analysis_blocker);
+    REGISTER_TEST(cli, behavior_fold_dry_run_reports_single_leaf_anchor_writable);
     REGISTER_TEST(cli, behavior_fold_writes_single_leaf_anchor);
 TEST_MAIN_END()

@@ -330,6 +330,35 @@ static bool rewrite_behavior_state_is_leaf_bb(
            state->operations.count == 0;
 }
 
+static void rewrite_fold_report_clear_write_blockers(
+    nmo_behavior_fold_report_t *report) {
+    if (!report) {
+        return;
+    }
+    free(report->write_blockers);
+    report->write_blockers = NULL;
+    report->write_blocker_count = 0;
+}
+
+static bool rewrite_fold_report_supports_single_anchor_write(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const nmo_behavior_fold_report_t *report) {
+    if (!rewrite_fold_report_is_single_anchor_only(report)) {
+        return false;
+    }
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_t *anchor =
+        repo ? nmo_object_repository_find_by_id(repo, report->anchor_id)
+             : NULL;
+    if (!anchor ||
+        !rewrite_is_behavior_class(ctx, nmo_object_get_class_id(anchor))) {
+        return false;
+    }
+    return rewrite_behavior_state_is_leaf_bb(
+        (const nmo_behavior_state_t *)nmo_object_get_state(anchor));
+}
+
 static void rewrite_fold_report_reject(nmo_behavior_fold_report_t *report,
                                        const char *code,
                                        const char *message) {
@@ -497,6 +526,13 @@ nmo_status_t nmo_behavior_fold_analyze(
         goto fail;
     }
 
+    if (rewrite_fold_report_supports_single_anchor_write(ctx, session,
+                                                         report)) {
+        rewrite_fold_report_clear_write_blockers(report);
+        report->analysis_only = false;
+        report->can_write = true;
+    }
+
     return NMO_OK;
 
 fail:
@@ -580,9 +616,7 @@ nmo_status_t nmo_behavior_fold_apply(
             return edit_rc;
         }
 
-        free(report->write_blockers);
-        report->write_blockers = NULL;
-        report->write_blocker_count = 0;
+        rewrite_fold_report_clear_write_blockers(report);
         report->analysis_only = false;
         report->can_write = true;
         return NMO_OK;
