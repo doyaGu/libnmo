@@ -603,6 +603,59 @@ static uint32_t hash_array_for_diff(const nmo_array_t *arr,
     return h;
 }
 
+static uint32_t hash_field_value_for_diff(const nmo_type_field_t *field,
+                                          const void *value,
+                                          const nmo_type_registry_t *reg,
+                                          uint32_t seed,
+                                          int depth)
+{
+    if (!field || !value) return seed;
+    if (is_object_ref(field)) return seed;
+
+    const nmo_type_descriptor_t *field_type =
+        (reg && !nmo_guid_is_null(field->type_guid))
+            ? nmo_type_registry_find_by_guid(reg, field->type_guid)
+            : NULL;
+
+    if (field->flags & NMO_FIELD_POINTER) {
+        if (field->size < sizeof(void *)) {
+            return hash_bytes32(value, field->size, seed);
+        }
+
+        const void *pointed = *(const void *const *)value;
+        uint8_t present = pointed ? 1u : 0u;
+        uint32_t h = hash_bytes32(&present, sizeof(present), seed);
+        if (!pointed) return h;
+
+        /* Raw pointer arrays need count metadata and element ownership rules.
+         * The diff equality path also avoids dereferencing them blindly, so the
+         * signature records presence without walking potentially invalid memory.
+         */
+        if (field->flags & NMO_FIELD_REPEATED) {
+            return h;
+        }
+
+        if (field_type && field_type->size > 0) {
+            uint32_t ph = hash_instance_for_diff(
+                field_type, pointed, field_type->size, reg, 0x9747b28cu, depth + 1);
+            return hash_bytes32(&ph, sizeof(ph), h);
+        }
+        return h;
+    }
+
+    if ((field->flags & NMO_FIELD_REPEATED) && field->size == sizeof(nmo_array_t)) {
+        return hash_array_for_diff((const nmo_array_t *)value, field_type,
+                                   reg, 0x7f4a7c15u, depth + 1);
+    }
+
+    if (field->flags & NMO_FIELD_REPEATED) {
+        return hash_bytes32(value, field->size, seed);
+    }
+
+    return hash_instance_for_diff(field_type, value, field->size,
+                                  reg, 0x9747b28cu, depth + 1);
+}
+
 static uint32_t hash_instance_for_diff(const nmo_type_descriptor_t *type,
                                        const void *value,
                                        size_t size_fallback,
@@ -625,18 +678,7 @@ static uint32_t hash_instance_for_diff(const nmo_type_descriptor_t *type,
             if (!p) continue;
             if (is_object_ref(f)) continue;
 
-            const nmo_type_descriptor_t *ft =
-                (reg && !nmo_guid_is_null(f->type_guid))
-                    ? nmo_type_registry_find_by_guid(reg, f->type_guid)
-                    : NULL;
-
-            if ((f->flags & NMO_FIELD_REPEATED) && f->size == sizeof(nmo_array_t)) {
-                uint32_t ah = hash_array_for_diff((const nmo_array_t *)p, ft, reg, 0x7f4a7c15u, depth + 1);
-                h = hash_bytes32(&ah, sizeof(ah), h);
-                continue;
-            }
-
-            uint32_t fh = hash_instance_for_diff(ft, p, f->size, reg, 0x9747b28cu, depth + 1);
+            uint32_t fh = hash_field_value_for_diff(f, p, reg, 0x9747b28cu, depth);
             h = hash_bytes32(&fh, sizeof(fh), h);
         }
         return h;
@@ -675,19 +717,7 @@ static uint64_t compute_signature(const nmo_object_t *obj, const nmo_type_regist
             if (!p) continue;
             if (is_object_ref(f)) continue;
 
-            const nmo_type_descriptor_t *field_type =
-                (reg && !nmo_guid_is_null(f->type_guid))
-                    ? nmo_type_registry_find_by_guid(reg, f->type_guid)
-                    : NULL;
-
-            if ((f->flags & NMO_FIELD_REPEATED) && f->size == sizeof(nmo_array_t)) {
-                uint32_t arr_sig = hash_array_for_diff(
-                    (const nmo_array_t *)p, field_type, reg, 0x7f4a7c15u, 0);
-                sig = hash_bytes32(&arr_sig, sizeof(arr_sig), sig);
-                continue;
-            }
-
-            uint32_t field_sig = hash_instance_for_diff(field_type, p, f->size, reg, 0x9747b28cu, 0);
+            uint32_t field_sig = hash_field_value_for_diff(f, p, reg, 0x9747b28cu, 0);
             sig = hash_bytes32(&field_sig, sizeof(field_sig), sig);
         }
         if (touched) return ((uint64_t)nmo_object_get_class_id(obj) << 32) | (uint64_t)sig;
