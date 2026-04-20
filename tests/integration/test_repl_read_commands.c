@@ -748,13 +748,6 @@ TEST(repl_read, family_repl_read_cores_are_directly_callable) {
     close_repl(&repl);
 }
 
-TEST(repl_read, cli_read_table_has_no_session_public_fallbacks) {
-    ASSERT_EQ(0u, nmo_repl_cli_read_session_public_fallback_count());
-    ASSERT_EQ(0u, nmo_repl_cli_read_generic_session_count_for_group("chunk"));
-    ASSERT_EQ(0u, nmo_repl_cli_read_generic_session_count_for_group("object"));
-    ASSERT_EQ(0u, nmo_repl_cli_read_generic_session_count_for_group("parameter"));
-}
-
 TEST(repl_read, all_read_session_groups_have_family_dispatchers) {
     size_t group_count = 0;
     const nmo_cli_group_t *groups =
@@ -774,6 +767,17 @@ TEST(repl_read, all_read_session_groups_have_family_dispatchers) {
             ASSERT_NOT_NULL(group->repl_session_handler);
         }
     }
+}
+
+TEST(repl_read, repl_does_not_export_read_fallback_probes) {
+    assert_source_not_contains("tools/nmo_repl_commands.h",
+                               "nmo_repl_cli_read_session_public_fallback_count");
+    assert_source_not_contains("tools/nmo_repl_commands.c",
+                               "nmo_repl_cli_read_session_public_fallback_count");
+    assert_source_not_contains("tools/nmo_repl_commands.h",
+                               "nmo_repl_cli_read_generic_session_count_for_group");
+    assert_source_not_contains("tools/nmo_repl_commands.c",
+                               "nmo_repl_cli_read_generic_session_count_for_group");
 }
 
 TEST(repl_read, no_borrowed_session_adapter_symbols_remain) {
@@ -1074,8 +1078,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, mutating_cli_actions_are_rejected_by_read_mirror);
     REGISTER_TEST(repl_read, cli_batch_mode_is_rejected);
     REGISTER_TEST(repl_read, family_repl_read_cores_are_directly_callable);
-    REGISTER_TEST(repl_read, cli_read_table_has_no_session_public_fallbacks);
     REGISTER_TEST(repl_read, all_read_session_groups_have_family_dispatchers);
+    REGISTER_TEST(repl_read, repl_does_not_export_read_fallback_probes);
     REGISTER_TEST(repl_read, no_borrowed_session_adapter_symbols_remain);
     REGISTER_TEST(repl_read, no_remaining_repl_read_placeholder_strings);
     REGISTER_TEST(repl_read, domain_session_dispatchers_do_not_construct_object_argv);

@@ -1507,29 +1507,6 @@ static const nmo_cli_action_t *repl_find_cli_read_action(const char *group,
         : NULL;
 }
 
-size_t nmo_repl_cli_read_session_public_fallback_count(void)
-{
-    return 0;
-}
-
-size_t nmo_repl_cli_read_generic_session_count_for_group(const char *group)
-{
-    const nmo_cli_group_t *entry_group = repl_find_cli_group(group);
-    if (!entry_group || entry_group->repl_session_handler) {
-        return 0;
-    }
-
-    size_t count = 0;
-    for (size_t i = 0; i < entry_group->action_count; i++) {
-        const nmo_cli_action_t *entry = &entry_group->actions[i];
-        if (entry->repl_policy == NMO_REPL_ACTION_READ_SESSION) {
-            count++;
-        }
-    }
-    return count;
-}
-
-
 static bool repl_resource_info_has_selector(int argc, char **argv) {
     for (int i = 2; i < argc; i++) {
         if (repl_streq(argv[i], "--index") || repl_streq(argv[i], "-i") ||
