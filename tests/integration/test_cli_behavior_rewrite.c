@@ -410,10 +410,63 @@ TEST(cli, behavior_fold_candidates_reports_parent_boundary) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, behavior_fold_candidates_reports_direct_child_groups) {
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior fold-candidates --parent 4692 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.fold-candidates", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_EQ(4692u, (uint32_t)get_uint_field(data, "parent_id"));
+
+    yyjson_val *groups = get_array_field(data, "candidate_groups");
+    ASSERT_NOT_NULL(groups);
+    ASSERT_TRUE(yyjson_arr_size(groups) > 1);
+
+    bool saw_direct_child = false;
+    size_t idx;
+    size_t max;
+    yyjson_val *group;
+    yyjson_arr_foreach(groups, idx, max, group) {
+        if (!yyjson_is_obj(group) ||
+            strcmp("direct_child", get_string_field(group, "kind")) != 0) {
+            continue;
+        }
+
+        uint64_t root_id = get_uint_field(group, "root_id");
+        yyjson_val *nodes = get_array_field(group, "nodes");
+        yyjson_val *interface_obj = get_object_field(group, "interface");
+        ASSERT_TRUE(root_id > 0);
+        ASSERT_NOT_NULL(get_string_field(group, "root_behavior_type"));
+        ASSERT_NOT_NULL(nodes);
+        ASSERT_TRUE(array_contains_uint(nodes, root_id));
+        ASSERT_NOT_NULL(get_array_field(group, "control_in"));
+        ASSERT_NOT_NULL(get_array_field(group, "control_out"));
+        ASSERT_NOT_NULL(get_array_field(group, "parameter_in"));
+        ASSERT_NOT_NULL(get_array_field(group, "parameter_out"));
+        ASSERT_NOT_NULL(interface_obj);
+        ASSERT_TRUE(yyjson_is_bool(yyjson_obj_get(interface_obj, "available")));
+        ASSERT_NOT_NULL(get_string_field(interface_obj, "action"));
+        saw_direct_child = true;
+        break;
+    }
+
+    ASSERT_TRUE(saw_direct_child);
+    yyjson_doc_free(doc);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_graph_boundary_json_smoke);
     REGISTER_TEST(cli, behavior_replace_bb_dry_run_reports_leaf_preservation);
     REGISTER_TEST(cli, behavior_replace_bb_rejects_non_leaf_script);
     REGISTER_TEST(cli, behavior_replace_bb_saves_output);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_parent_boundary);
+    REGISTER_TEST(cli, behavior_fold_candidates_reports_direct_child_groups);
 TEST_MAIN_END()

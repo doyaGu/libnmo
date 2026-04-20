@@ -316,6 +316,98 @@ static const char *fold_behavior_type(const nmo_behavior_state_t *state) {
     return "Graph";
 }
 
+static const nmo_behavior_state_t *fold_find_behavior_state(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t behavior_id) {
+    nmo_object_t *object = repo
+        ? nmo_object_repository_find_by_id(repo, behavior_id)
+        : NULL;
+    if (!object || nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
+        return NULL;
+    }
+    return (const nmo_behavior_state_t *)nmo_object_get_state(object);
+}
+
+static const char *fold_interface_action(
+    const nmo_behavior_state_t *state) {
+    if (!state || !state->has_interface) {
+        return "none";
+    }
+    if (state->interface_data) {
+        return "preserve";
+    }
+    if (state->interface_chunk) {
+        return "preserve_raw";
+    }
+    return "preserve_marker";
+}
+
+static void add_fold_interface_json(yyjson_mut_doc *doc,
+                                    yyjson_mut_val *group,
+                                    const nmo_behavior_state_t *state) {
+    yyjson_mut_val *interface_obj = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_bool(doc, interface_obj, "available",
+                            state && state->has_interface);
+    yyjson_mut_obj_add_bool(doc, interface_obj, "structured",
+                            state && state->interface_data != NULL);
+    yyjson_mut_obj_add_bool(doc, interface_obj, "raw",
+                            state && state->interface_chunk != NULL);
+    yyjson_mut_obj_add_bool(doc, interface_obj, "runtime_ids",
+                            state && state->interface_ids_are_runtime);
+    nmo_cli_json_add_str_safe(doc, interface_obj, "action",
+                              fold_interface_action(state));
+    yyjson_mut_obj_add_val(doc, group, "interface", interface_obj);
+}
+
+static void add_fold_candidate_group_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *groups,
+    const char *kind,
+    nmo_object_id_t root_id,
+    const nmo_behavior_state_t *root_state,
+    const nmo_behavior_boundary_t *boundary) {
+    yyjson_mut_val *group = yyjson_mut_obj(doc);
+    nmo_cli_json_add_str_safe(doc, group, "kind", kind);
+    yyjson_mut_obj_add_uint(doc, group, "root_id", root_id);
+    nmo_cli_json_add_str_safe(doc, group, "root_behavior_type",
+                              fold_behavior_type(root_state));
+
+    yyjson_mut_val *nodes = yyjson_mut_arr(doc);
+    for (size_t i = 0; i < boundary->internal_node_count; ++i) {
+        yyjson_mut_arr_add_uint(doc, nodes, boundary->internal_nodes[i]);
+    }
+    yyjson_mut_obj_add_val(doc, group, "nodes", nodes);
+    add_internal_nodes_json(doc, group, boundary);
+    add_control_edges_json(doc, group, "control_in",
+                           boundary->control_in,
+                           boundary->control_in_count);
+    add_control_edges_json(doc, group, "control_out",
+                           boundary->control_out,
+                           boundary->control_out_count);
+    add_parameter_edges_json(doc, group, "parameter_in",
+                             boundary->parameter_in,
+                             boundary->parameter_in_count);
+    add_parameter_edges_json(doc, group, "parameter_out",
+                             boundary->parameter_out,
+                             boundary->parameter_out_count);
+    add_fold_interface_json(doc, group, root_state);
+    yyjson_mut_obj_add_uint(doc, group, "node_count",
+                            (uint64_t)boundary->internal_node_count);
+    yyjson_mut_obj_add_uint(doc, group, "control_in_count",
+                            (uint64_t)boundary->control_in_count);
+    yyjson_mut_obj_add_uint(doc, group, "control_out_count",
+                            (uint64_t)boundary->control_out_count);
+    yyjson_mut_obj_add_uint(doc, group, "parameter_in_count",
+                            (uint64_t)boundary->parameter_in_count);
+    yyjson_mut_obj_add_uint(doc, group, "parameter_out_count",
+                            (uint64_t)boundary->parameter_out_count);
+    yyjson_mut_obj_add_uint(doc, group, "broken_links",
+                            (uint64_t)boundary->broken_links);
+    yyjson_mut_obj_add_uint(doc, group, "missing_nodes",
+                            (uint64_t)boundary->missing_nodes);
+    yyjson_mut_arr_add_val(groups, group);
+}
+
 static bool parse_fold_candidates_args(int argc,
                                        char **argv,
                                        bool expect_file_operand,
@@ -387,7 +479,9 @@ static bool parse_fold_candidates_args(int argc,
 
 static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
                                 const nmo_behavior_state_t *parent,
-                                const nmo_behavior_boundary_t *boundary) {
+                                const nmo_behavior_boundary_t *boundary,
+                                uint32_t depth) {
+    nmo_object_repository_t *repo = nmo_session_get_repository(ctx->session);
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         if (!doc) {
@@ -418,37 +512,40 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
         yyjson_mut_obj_add_val(doc, data, "parent", parent_obj);
 
         yyjson_mut_val *groups = yyjson_mut_arr(doc);
-        yyjson_mut_val *group = yyjson_mut_obj(doc);
-        nmo_cli_json_add_str_safe(doc, group, "kind", "parent_recursive");
-        yyjson_mut_val *nodes = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < boundary->internal_node_count; ++i) {
-            yyjson_mut_arr_add_uint(doc, nodes, boundary->internal_nodes[i]);
+        size_t group_count = 0;
+        add_fold_candidate_group_json(doc, groups, "parent_recursive",
+                                      boundary->behavior_id, parent,
+                                      boundary);
+        ++group_count;
+
+        const nmo_object_id_t *sub_ids = parent
+            ? NMO_ARRAY_DATA(nmo_object_id_t, &parent->sub_behaviors)
+            : NULL;
+        for (size_t i = 0; sub_ids && i < parent->sub_behaviors.count; ++i) {
+            nmo_behavior_boundary_t child_boundary = {0};
+            nmo_object_id_t child_id = sub_ids[i];
+            const nmo_behavior_state_t *child_state =
+                fold_find_behavior_state(repo, child_id);
+            if (!nmo_behavior_boundary_build(ctx->ctx, ctx->session,
+                                             child_id, depth,
+                                             &child_boundary)) {
+                char detail[256];
+                size_t detail_len = nmo_last_error_message_copy(
+                    detail, sizeof(detail));
+                fprintf(stderr, "Error: %s\n",
+                        detail_len > 0 ? detail
+                                       : "Failed to build child fold boundary");
+                yyjson_mut_doc_free(doc);
+                return NMO_CLI_EXIT_INTERNAL_ERROR;
+            }
+            add_fold_candidate_group_json(doc, groups, "direct_child",
+                                          child_id, child_state,
+                                          &child_boundary);
+            nmo_behavior_boundary_free(&child_boundary);
+            ++group_count;
         }
-        yyjson_mut_obj_add_val(doc, group, "nodes", nodes);
-        add_internal_nodes_json(doc, group, boundary);
-        add_control_edges_json(doc, group, "control_in",
-                               boundary->control_in,
-                               boundary->control_in_count);
-        add_control_edges_json(doc, group, "control_out",
-                               boundary->control_out,
-                               boundary->control_out_count);
-        add_parameter_edges_json(doc, group, "parameter_in",
-                                 boundary->parameter_in,
-                                 boundary->parameter_in_count);
-        add_parameter_edges_json(doc, group, "parameter_out",
-                                 boundary->parameter_out,
-                                 boundary->parameter_out_count);
-        yyjson_mut_obj_add_uint(doc, group, "node_count",
-                                (uint64_t)boundary->internal_node_count);
-        yyjson_mut_obj_add_uint(doc, group, "control_in_count",
-                                (uint64_t)boundary->control_in_count);
-        yyjson_mut_obj_add_uint(doc, group, "control_out_count",
-                                (uint64_t)boundary->control_out_count);
-        yyjson_mut_obj_add_uint(doc, group, "parameter_in_count",
-                                (uint64_t)boundary->parameter_in_count);
-        yyjson_mut_obj_add_uint(doc, group, "parameter_out_count",
-                                (uint64_t)boundary->parameter_out_count);
-        yyjson_mut_arr_add_val(groups, group);
+        yyjson_mut_obj_add_uint(doc, data, "candidate_group_count",
+                                (uint64_t)group_count);
         yyjson_mut_obj_add_val(doc, data, "candidate_groups", groups);
 
         return nmo_cmd_ctx_json_end(ctx, doc, data,
@@ -463,6 +560,36 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
             boundary->control_out_count,
             boundary->parameter_in_count,
             boundary->parameter_out_count);
+    const nmo_object_id_t *sub_ids = parent
+        ? NMO_ARRAY_DATA(nmo_object_id_t, &parent->sub_behaviors)
+        : NULL;
+    for (size_t i = 0; sub_ids && i < parent->sub_behaviors.count; ++i) {
+        nmo_behavior_boundary_t child_boundary = {0};
+        nmo_object_id_t child_id = sub_ids[i];
+        const nmo_behavior_state_t *child_state =
+            fold_find_behavior_state(repo, child_id);
+        if (!nmo_behavior_boundary_build(ctx->ctx, ctx->session,
+                                         child_id, depth,
+                                         &child_boundary)) {
+            char detail[256];
+            size_t detail_len = nmo_last_error_message_copy(
+                detail, sizeof(detail));
+            fprintf(stderr, "Error: %s\n",
+                    detail_len > 0 ? detail
+                                   : "Failed to build child fold boundary");
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+        fprintf(ctx->out, "Candidate direct_child #%u (%s): nodes=%zu control_in=%zu control_out=%zu parameter_in=%zu parameter_out=%zu interface=%s\n",
+                child_id,
+                fold_behavior_type(child_state),
+                child_boundary.internal_node_count,
+                child_boundary.control_in_count,
+                child_boundary.control_out_count,
+                child_boundary.parameter_in_count,
+                child_boundary.parameter_out_count,
+                fold_interface_action(child_state));
+        nmo_behavior_boundary_free(&child_boundary);
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -507,7 +634,7 @@ static int fold_candidates_run(nmo_cmd_ctx_t *ctx,
         goto cleanup;
     }
 
-    exit_code = fold_candidates_emit(&c, parent, &boundary);
+    exit_code = fold_candidates_emit(&c, parent, &boundary, args->depth);
 
 cleanup:
     nmo_behavior_boundary_free(&boundary);
