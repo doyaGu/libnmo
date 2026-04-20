@@ -1300,6 +1300,90 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
  *   nmo object list-fields <id> <file>
  * ============================================================================ */
 
+static int object_list_fields_report(nmo_cmd_ctx_t *c,
+                                     nmo_object_t *obj,
+                                     nmo_object_id_t object_id)
+{
+    void *state = nmo_object_get_state(obj);
+    const nmo_type_descriptor_t *type =
+        nmo_type_registry_find_by_class_id_inherited(
+            (nmo_type_registry_t *)c->registry, nmo_object_get_class_id(obj));
+
+    if (!type || !state) {
+        fprintf(stderr, "Error: No typed state for object #%u\n", object_id);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, data, "id", object_id);
+        yyjson_mut_obj_add_uint(doc, data, "class_id", nmo_object_get_class_id(obj));
+        nmo_cli_json_add_str_safe(doc, data, "class_name",
+                                  type->name ? type->name : "<unnamed>");
+        yyjson_mut_obj_add_uint(doc, data, "field_count", type->field_count);
+
+        yyjson_mut_val *fields = yyjson_mut_arr(doc);
+        for (size_t i = 0; i < type->field_count; i++) {
+            const nmo_type_field_t *field = &type->fields[i];
+            const nmo_type_descriptor_t *ftype =
+                nmo_type_registry_find_by_guid(
+                    (nmo_type_registry_t *)c->registry, field->type_guid);
+
+            char val_buf[256];
+            val_buf[0] = '\0';
+            if (state && ftype) {
+                const void *fptr = nmo_field_get_ptr_const(state, field);
+                if (fptr) {
+                    nmo_type_value_to_string(fptr, ftype,
+                        (nmo_type_registry_t *)c->registry, val_buf, sizeof(val_buf));
+                }
+            }
+
+            yyjson_mut_val *item = yyjson_mut_obj(doc);
+            yyjson_mut_obj_add_uint(doc, item, "index", i);
+            nmo_cli_json_add_str_safe(doc, item, "name",
+                                      field->name ? field->name : "<unnamed>");
+            nmo_cli_json_add_str_safe(doc, item, "type",
+                                      ftype && ftype->name ? ftype->name : "???");
+            nmo_cli_json_add_str_safe(doc, item, "value",
+                                      val_buf[0] ? val_buf : "(empty)");
+            yyjson_mut_arr_add_val(fields, item);
+        }
+        yyjson_mut_obj_add_val(doc, data, "fields", fields);
+
+        return nmo_cmd_ctx_json_end(c, doc, data, "object.list-fields");
+    }
+
+    fprintf(c->out, "Object #%u (%s) -- %zu fields:\n",
+            object_id, type->name ? type->name : "<unnamed>",
+            type->field_count);
+
+    for (size_t i = 0; i < type->field_count; i++) {
+        const nmo_type_field_t *field = &type->fields[i];
+        const nmo_type_descriptor_t *ftype =
+            nmo_type_registry_find_by_guid(
+                (nmo_type_registry_t *)c->registry, field->type_guid);
+
+        char val_buf[256];
+        val_buf[0] = '\0';
+        if (state && ftype) {
+            const void *fptr = nmo_field_get_ptr_const(state, field);
+            if (fptr) {
+                nmo_type_value_to_string(fptr, ftype,
+                    (nmo_type_registry_t *)c->registry, val_buf, sizeof(val_buf));
+            }
+        }
+
+        fprintf(c->out, "  %-30s %-20s = %s\n",
+                field->name ? field->name : "<unnamed>",
+                ftype && ftype->name ? ftype->name : "???",
+                val_buf[0] ? val_buf : "(empty)");
+    }
+
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 int nmo_cmd_object_list_fields(int argc, char **argv,
                                const nmo_cli_global_opts_t *global)
 {
@@ -1314,13 +1398,10 @@ int nmo_cmd_object_list_fields(int argc, char **argv,
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
-    bool in_session = false;
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id = NULL;
     if (!has_selector_opt) {
-        positional_id = in_session
-            ? (r.pos_count >= 1 ? r.pos_args[0] : NULL)
-            : (r.pos_count >= 2 ? r.pos_args[0] : NULL);
+        positional_id = r.pos_count >= 2 ? r.pos_args[0] : NULL;
     }
 
     nmo_cmd_ctx_t c;
@@ -1343,85 +1424,8 @@ int nmo_cmd_object_list_fields(int argc, char **argv,
         return nmo_cmd_ctx_done(&c, rc);
     }
 
-    void *state = nmo_object_get_state(obj);
-    const nmo_type_descriptor_t *type =
-        nmo_type_registry_find_by_class_id_inherited(
-            (nmo_type_registry_t *)c.registry, nmo_object_get_class_id(obj));
-
-    if (!type || !state) {
-        fprintf(stderr, "Error: No typed state for object #%u\n", object_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, data, "id", object_id);
-        yyjson_mut_obj_add_uint(doc, data, "class_id", nmo_object_get_class_id(obj));
-        nmo_cli_json_add_str_safe(doc, data, "class_name",
-                                  type->name ? type->name : "<unnamed>");
-        yyjson_mut_obj_add_uint(doc, data, "field_count", type->field_count);
-
-        yyjson_mut_val *fields = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < type->field_count; i++) {
-            const nmo_type_field_t *field = &type->fields[i];
-            const nmo_type_descriptor_t *ftype =
-                nmo_type_registry_find_by_guid(
-                    (nmo_type_registry_t *)c.registry, field->type_guid);
-
-            char val_buf[256];
-            val_buf[0] = '\0';
-            if (state && ftype) {
-                const void *fptr = nmo_field_get_ptr_const(state, field);
-                if (fptr) {
-                    nmo_type_value_to_string(fptr, ftype,
-                        (nmo_type_registry_t *)c.registry, val_buf, sizeof(val_buf));
-                }
-            }
-
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, item, "index", i);
-            nmo_cli_json_add_str_safe(doc, item, "name",
-                                      field->name ? field->name : "<unnamed>");
-            nmo_cli_json_add_str_safe(doc, item, "type",
-                                      ftype && ftype->name ? ftype->name : "???");
-            nmo_cli_json_add_str_safe(doc, item, "value",
-                                      val_buf[0] ? val_buf : "(empty)");
-            yyjson_mut_arr_add_val(fields, item);
-        }
-        yyjson_mut_obj_add_val(doc, data, "fields", fields);
-
-        int done = nmo_cmd_ctx_json_end(&c, doc, data, "object.list-fields");
-        return nmo_cmd_ctx_done(&c, done);
-    }
-
-    fprintf(c.out, "Object #%u (%s) -- %zu fields:\n",
-            object_id, type->name ? type->name : "<unnamed>",
-            type->field_count);
-
-    for (size_t i = 0; i < type->field_count; i++) {
-        const nmo_type_field_t *field = &type->fields[i];
-        const nmo_type_descriptor_t *ftype =
-            nmo_type_registry_find_by_guid(
-                (nmo_type_registry_t *)c.registry, field->type_guid);
-
-        char val_buf[256];
-        val_buf[0] = '\0';
-        if (state && ftype) {
-            const void *fptr = nmo_field_get_ptr_const(state, field);
-            if (fptr) {
-                nmo_type_value_to_string(fptr, ftype,
-                    (nmo_type_registry_t *)c.registry, val_buf, sizeof(val_buf));
-            }
-        }
-
-        fprintf(c.out, "  %-30s %-20s = %s\n",
-                field->name ? field->name : "<unnamed>",
-                ftype && ftype->name ? ftype->name : "???",
-                val_buf[0] ? val_buf : "(empty)");
-    }
-
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    rc = object_list_fields_report(&c, obj, object_id);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 static int object_list_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
@@ -1549,7 +1553,9 @@ static int object_find_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 static int object_selector_only_in_session(nmo_cmd_ctx_t *ctx,
                                            int argc,
                                            char **argv,
-                                           const char *label)
+                                           const char *label,
+                                           nmo_object_t **out_obj,
+                                           nmo_object_id_t *out_object_id)
 {
     static const nmo_opt_def_t opts[] = {
         {"--id",   "-i", NMO_OPT_UINT,   "Object ID"},
@@ -1573,7 +1579,11 @@ static int object_selector_only_in_session(nmo_cmd_ctx_t *ctx,
     };
     nmo_object_t *obj = NULL;
     nmo_object_id_t object_id = 0;
-    return nmo_core_resolve_one_object(ctx, &selector, &obj, &object_id);
+    int rc = nmo_core_resolve_one_object(ctx, &selector, &obj, &object_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+    if (out_obj) *out_obj = obj;
+    if (out_object_id) *out_object_id = object_id;
+    return NMO_CLI_EXIT_SUCCESS;
 }
 
 int nmo_cmd_object_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
@@ -1599,7 +1609,7 @@ int nmo_cmd_object_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return object_list_in_session(ctx, 1, argv);
     }
     if (strcmp(argv[0], "impact") == 0 || strcmp(argv[0], "imp") == 0) {
-        int rc = object_selector_only_in_session(ctx, argc, argv, "Object");
+        int rc = object_selector_only_in_session(ctx, argc, argv, "Object", NULL, NULL);
         if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
         fprintf(ctx->out, "Impact Analysis\n");
         return NMO_CLI_EXIT_SUCCESS;
@@ -1620,10 +1630,13 @@ int nmo_cmd_object_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return object_find_in_session(ctx, argc, argv);
     }
     if (strcmp(argv[0], "list-fields") == 0 || strcmp(argv[0], "lf") == 0) {
-        int rc = object_selector_only_in_session(ctx, argc, argv, "Object");
+        nmo_object_t *obj = NULL;
+        nmo_object_id_t object_id = 0;
+        int rc = object_selector_only_in_session(ctx, argc, argv, "Object",
+                                                 &obj, &object_id);
         if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
-        fprintf(ctx->out, "Object fields\n");
-        return NMO_CLI_EXIT_SUCCESS;
+
+        return object_list_fields_report(ctx, obj, object_id);
     }
 
     fprintf(stderr, "Unsupported object read action in session: %s\n", argv[0]);

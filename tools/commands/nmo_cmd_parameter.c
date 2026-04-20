@@ -50,6 +50,19 @@ static int is_parameter_class(const nmo_type_registry_t *registry, nmo_class_id_
            class_id == NMO_CID_PARAMETEROPERATION;
 }
 
+static int is_behavior_class(const nmo_type_registry_t *registry, nmo_class_id_t class_id) {
+    if (!registry) {
+        return class_id == NMO_CID_BEHAVIOR;
+    }
+
+    if (nmo_type_registry_is_class_derived_from(
+            registry, (uint32_t)class_id, (uint32_t)NMO_CID_BEHAVIOR)) {
+        return 1;
+    }
+
+    return class_id == NMO_CID_BEHAVIOR;
+}
+
 static bool parameter_query_predicate(const nmo_object_t *obj, void *user_data) {
     const nmo_type_registry_t *registry = (const nmo_type_registry_t *)user_data;
     if (!obj) return false;
@@ -1215,6 +1228,12 @@ static int parameter_set_mutate(
         if (!owner_obj) {
             fprintf(stderr, "Error: Owner object #%u not found\n", owner_id);
             return NMO_CLI_EXIT_NOT_FOUND;
+        }
+        nmo_class_id_t owner_cid = nmo_object_get_class_id(owner_obj);
+        if (!is_behavior_class(c->registry, owner_cid)) {
+            fprintf(stderr, "Error: Owner object #%u is not a CKBehavior (class %u)\n",
+                    owner_id, owner_cid);
+            return NMO_CLI_EXIT_ARG_ERROR;
         }
 
         if (args->name_str) {

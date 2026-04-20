@@ -228,6 +228,21 @@ static void assert_captured_read_ok_not_contains(nmo_repl_context_t *repl,
     remove(path);
 }
 
+static void assert_captured_read_ok_contains(nmo_repl_context_t *repl,
+                                             const char *line,
+                                             const char *path,
+                                             const char *expected)
+{
+    remove(path);
+    ASSERT_EQ(0, run_repl_command_capture(repl, line, path));
+    ASSERT_FALSE(repl->dirty);
+    char *output = read_text_file(path);
+    ASSERT_NOT_NULL(output);
+    ASSERT_TRUE(strstr(output, expected) != NULL);
+    free(output);
+    remove(path);
+}
+
 TEST(repl_read, object_grouped_read_commands_use_cli_shape) {
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
@@ -236,6 +251,24 @@ TEST(repl_read, object_grouped_read_commands_use_cli_shape) {
     assert_read_ok(&repl, "object show --id 2");
     assert_read_ok(&repl, "object show --name Cam_Pos");
     assert_read_ok(&repl, "object refs 2");
+
+    close_repl(&repl);
+}
+
+TEST(repl_read, object_list_fields_uses_full_session_core) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+
+    assert_captured_read_ok_contains(
+        &repl,
+        "object list-fields 2",
+        "test_repl_object_fields.txt",
+        "world_matrix");
+    assert_captured_read_ok_contains(
+        &repl,
+        "object list-fields 2",
+        "test_repl_object_fields.txt",
+        "parent_id");
 
     close_repl(&repl);
 }
@@ -705,6 +738,7 @@ TEST(repl_read, legacy_read_shortcuts_still_work) {
 
 TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, object_grouped_read_commands_use_cli_shape);
+    REGISTER_TEST(repl_read, object_list_fields_uses_full_session_core);
     REGISTER_TEST(repl_read, parameter_grouped_read_commands_use_cli_shape);
     REGISTER_TEST(repl_read, grouped_read_commands_reject_invalid_cli_shape);
     REGISTER_TEST(repl_read, mirrored_cli_read_groups_are_available);

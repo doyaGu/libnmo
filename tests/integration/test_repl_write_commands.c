@@ -266,7 +266,10 @@ TEST(repl_write, dry_run_mutations_do_not_change_session_or_dirty_flag) {
     ASSERT_EQ(before_param->object_id, after_param->object_id);
     ASSERT_FALSE(repl.dirty);
 
-    ASSERT_EQ(0, run_repl_command(&repl, "parameter set --dry-run --owner 1 --index 0 1"));
+    ASSERT_NE(0, run_repl_command(&repl, "parameter set --dry-run --owner 1 --index 0 1"));
+    ASSERT_FALSE(repl.dirty);
+
+    ASSERT_EQ(0, run_repl_command(&repl, "parameter set --dry-run --owner 84 --index 0 1"));
     ASSERT_FALSE(repl.dirty);
     close_repl(&repl);
 }
