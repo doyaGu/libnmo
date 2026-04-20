@@ -141,12 +141,12 @@ nmo chunk show 7 composition.nmo
 # Behavior analysis
 nmo behavior graph 10 composition.nmo
 nmo behavior show 10 composition.nmo
-nmo behavior search --op-type "SetPosition" composition.nmo
+nmo behavior find --op-type "SetPosition" composition.nmo
+nmo behavior interface show 10 composition.nmo
 
 # Type system
-nmo type list composition.nmo
-nmo type show CK3dEntity composition.nmo
-nmo type class-tree composition.nmo
+nmo type list
+nmo type show CK3dEntity
 
 # Validation
 nmo validate all composition.nmo
@@ -155,6 +155,18 @@ nmo validate references composition.nmo
 # Debug
 nmo debug load-phases composition.nmo
 nmo repl start composition.nmo
+```
+
+Inside the REPL, CLI-shaped grouped commands read the loaded in-memory session
+instead of reopening the original file. Save explicitly with `save <path>`:
+
+```text
+object list --class CK3dEntity
+object show 42
+behavior interface --name "Main Script"
+cli -f json object list --top 5
+object rename 42 PlayerStart
+save edited.nmo
 ```
 
 ### C API Quick Start
@@ -327,8 +339,8 @@ This installs the library, public headers, and pkg-config files.
 
 ## CLI Reference
 
-The `nmo` tool uses a group/action command structure.  JSON output is available
-for all commands via the `--json` flag.
+The `nmo` tool uses a group/action command structure. JSON output is available
+through the global format option, for example `-f json` or `-f json-pretty`.
 
 ### File Inspection
 
@@ -357,17 +369,17 @@ nmo chunk show <id> <file>     # Inspect a single chunk in detail
 ```
 nmo behavior graph <id> <file>              # Behavior graph structure
 nmo behavior show <id> <file>               # Behavior details and parameters
-nmo behavior search [--op-type <type>] <file> # Search behaviors by operation
-nmo behavior link <id> <file>               # Link structure
-nmo behavior interface <id> <file>          # Interface data
+nmo behavior find [--name <pattern> | --op-type <type>] <file> # Search behaviors
+nmo behavior trace --from <io> <id> <file>  # Trace execution paths
+nmo behavior interface show <id> <file>     # Interface layout data
 ```
 
 ### Type System
 
 ```
-nmo type list <file>            # List all registered types
-nmo type show <name> <file>     # Type details and fields
-nmo type class-tree <file>      # CK class inheritance hierarchy
+nmo type list                   # List all registered types
+nmo type show <name>            # Type details and fields
+nmo type class-tree             # CK class inheritance hierarchy
 ```
 
 ### Validation
@@ -380,12 +392,12 @@ nmo validate references <file>  # Check reference integrity
 ### Editing
 
 ```
-nmo object rename <id> --name "NewName" <file>
-nmo object delete <id> <file>
+nmo object rename <id> "NewName" <file> -o <out>
+nmo object delete <id> <file> -o <out>
 nmo -f json object export --id <id> <file>              # Importable semantic snapshot
 nmo object import -f json <snapshot.json> <file> -o <out> # Import object snapshot JSON
-nmo texture extract <id> <file>
-nmo convert <input> <output>    # Format conversion (.nmo/.cmo/.vmo)
+nmo texture extract --id <id> --out-dir textures <file>
+nmo convert copy <file> -o <out> # Round-trip copy / format conversion
 ```
 
 `object export` JSON is a semantic snapshot protocol intended for round-trip
@@ -399,6 +411,38 @@ and preview-only `{name,value_str}` exports are not accepted by import.
 nmo debug load-phases <file>    # Show 15-phase load pipeline timing
 nmo repl start <file>           # Interactive REPL with tab completion
 ```
+
+The REPL has two layers:
+
+- Legacy browsing shortcuts such as `list`, `show`, `dump`, `param`, `refs`,
+  `trace`, `query`, `eval`, `stats`, `meta`, `verify`, and `export` remain
+  optimized for interactive exploration.
+- CLI-shaped grouped commands such as `object show`, `object graph`,
+  `parameter dump`, `behavior interface`, `resource extract`, `mesh export`,
+  and `validate all` reuse the same command registry and family command cores
+  as the CLI, but operate on the currently loaded in-memory session.
+
+REPL grouped read commands do not accept an implicit current-file operand. Use
+the session already loaded in the REPL; `diff` is the exception, where the REPL
+session is the left side and the explicit file operand is the comparison side.
+Commands that write external artifacts, such as `resource extract`,
+`texture extract`, `mesh export`, `animation export`, and `debug export`, still
+require their explicit output path or directory and do not mark the session
+dirty.
+
+Use `cli ...` inside the REPL when global CLI options are needed:
+
+```text
+cli -f json object list --top 5
+cli -o debug.json debug export
+cli --strict validate all
+```
+
+Supported REPL grouped mutations are limited to `object rename`,
+`object delete`, `object create`, `object copy`, and `parameter set`. They mutate
+the loaded session and must be persisted with `save <path>`. Other file-writing,
+import, replace, convert, and fix-style CLI actions are rejected in the REPL
+grouped command path.
 
 ### Shell Completions
 
