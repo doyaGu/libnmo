@@ -9,6 +9,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_repository.h"
+#include "object/nmo_statesave_ids.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_edit.h"
@@ -175,6 +176,57 @@ static nmo_status_t rewrite_copy_fold_maps(
     return NMO_OK;
 }
 
+static nmo_status_t rewrite_add_unique_delete_id(nmo_object_id_t **ids,
+                                                 size_t *count,
+                                                 size_t *capacity,
+                                                 nmo_object_id_t id) {
+    if (!ids || !count || !capacity || id == 0) {
+        return NMO_OK;
+    }
+    for (size_t i = 0; i < *count; ++i) {
+        if ((*ids)[i] == id) {
+            return NMO_OK;
+        }
+    }
+    if (*count == *capacity) {
+        size_t next_capacity = *capacity ? *capacity * 2u : 16u;
+        nmo_object_id_t *next =
+            (nmo_object_id_t *)realloc(*ids,
+                                       next_capacity * sizeof(**ids));
+        if (!next) {
+            return NMO_ERR_NOMEM;
+        }
+        *ids = next;
+        *capacity = next_capacity;
+    }
+    (*ids)[(*count)++] = id;
+    return NMO_OK;
+}
+
+static nmo_status_t rewrite_add_array_delete_ids(nmo_object_id_t **ids,
+                                                 size_t *count,
+                                                 size_t *capacity,
+                                                 const nmo_array_t *array,
+                                                 nmo_object_id_t keep_id) {
+    if (!array || array->count == 0 || !array->data) {
+        return NMO_OK;
+    }
+    const nmo_object_id_t *array_ids =
+        NMO_ARRAY_DATA(nmo_object_id_t, array);
+    for (size_t i = 0; i < array->count; ++i) {
+        if (array_ids[i] == keep_id) {
+            continue;
+        }
+        nmo_status_t rc = rewrite_add_unique_delete_id(ids, count,
+                                                       capacity,
+                                                       array_ids[i]);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t rewrite_build_nodes_to_delete(
     nmo_behavior_fold_report_t *report,
     const nmo_behavior_fold_desc_t *desc) {
@@ -321,6 +373,15 @@ static bool rewrite_fold_report_is_single_anchor_only(
            report->boundary.parameter_out_count == 0;
 }
 
+static bool rewrite_fold_report_is_closed_graph_anchor(
+    const nmo_behavior_fold_report_t *report) {
+    return report &&
+           report->selected_node_count > 1 &&
+           report->nodes_to_delete_count > 0 &&
+           report->boundary.parameter_in_count == 0 &&
+           report->boundary.parameter_out_count == 0;
+}
+
 static bool rewrite_behavior_state_is_leaf_bb(
     const nmo_behavior_state_t *state) {
     return state &&
@@ -341,6 +402,12 @@ static void rewrite_fold_report_clear_write_blockers(
     report->write_blocker_count = 0;
 }
 
+static bool rewrite_fold_selection_has_unselected_child(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const nmo_behavior_fold_report_t *report,
+    nmo_object_id_t *out_missing_id);
+
 static bool rewrite_fold_report_supports_single_anchor_write(
     nmo_context_t *ctx,
     nmo_session_t *session,
@@ -358,6 +425,31 @@ static bool rewrite_fold_report_supports_single_anchor_write(
     }
     return rewrite_behavior_state_is_leaf_bb(
         (const nmo_behavior_state_t *)nmo_object_get_state(anchor));
+}
+
+static bool rewrite_fold_report_supports_closed_graph_write(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const nmo_behavior_fold_report_t *report) {
+    if (!rewrite_fold_report_is_closed_graph_anchor(report)) {
+        return false;
+    }
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_t *anchor =
+        repo ? nmo_object_repository_find_by_id(repo, report->anchor_id)
+             : NULL;
+    if (!anchor ||
+        !rewrite_is_behavior_class(ctx, nmo_object_get_class_id(anchor))) {
+        return false;
+    }
+    const nmo_behavior_state_t *state =
+        (const nmo_behavior_state_t *)nmo_object_get_state(anchor);
+    if (!state || state->sub_behaviors.count == 0) {
+        return false;
+    }
+    nmo_object_id_t missing_child_id = 0;
+    return !rewrite_fold_selection_has_unselected_child(ctx, session, report,
+                                                        &missing_child_id);
 }
 
 static bool rewrite_selected_behavior_has_unselected_child(
@@ -426,6 +518,188 @@ static bool rewrite_fold_selection_has_unselected_child(
         }
     }
     return false;
+}
+
+static nmo_status_t rewrite_fold_collect_delete_ids(
+    nmo_session_t *session,
+    const nmo_behavior_fold_report_t *report,
+    nmo_object_id_t **out_ids,
+    size_t *out_count) {
+    if (!session || !report || !out_ids || !out_count) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_ids = NULL;
+    *out_count = 0;
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    if (!repo) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_object_id_t *ids = NULL;
+    size_t count = 0;
+    size_t capacity = 0;
+
+    for (size_t i = 0; i < report->nodes_to_delete_count; ++i) {
+        nmo_status_t rc = rewrite_add_unique_delete_id(
+            &ids, &count, &capacity, report->nodes_to_delete[i]);
+        if (rc != NMO_OK) {
+            free(ids);
+            return rc;
+        }
+    }
+    for (size_t i = 0; i < report->control_links_to_delete_count; ++i) {
+        nmo_status_t rc = rewrite_add_unique_delete_id(
+            &ids, &count, &capacity,
+            report->control_links_to_delete[i].link_id);
+        if (rc != NMO_OK) {
+            free(ids);
+            return rc;
+        }
+    }
+
+    for (size_t i = 0; i < report->selected_node_count; ++i) {
+        nmo_object_id_t behavior_id = report->selected_nodes[i];
+        nmo_object_t *object =
+            nmo_object_repository_find_by_id(repo, behavior_id);
+        if (!object || nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
+            continue;
+        }
+        const nmo_behavior_state_t *state =
+            (const nmo_behavior_state_t *)nmo_object_get_state(object);
+        if (!state) {
+            continue;
+        }
+        nmo_status_t rc = NMO_OK;
+        if (behavior_id != report->anchor_id) {
+            rc = rewrite_add_array_delete_ids(
+                &ids, &count, &capacity, &state->inputs, report->anchor_id);
+            if (rc == NMO_OK) {
+                rc = rewrite_add_array_delete_ids(
+                    &ids, &count, &capacity, &state->outputs,
+                    report->anchor_id);
+            }
+            if (rc == NMO_OK) {
+                rc = rewrite_add_array_delete_ids(
+                    &ids, &count, &capacity, &state->in_parameters,
+                    report->anchor_id);
+            }
+            if (rc == NMO_OK) {
+                rc = rewrite_add_array_delete_ids(
+                    &ids, &count, &capacity, &state->out_parameters,
+                    report->anchor_id);
+            }
+        }
+        if (rc == NMO_OK) {
+            rc = rewrite_add_array_delete_ids(
+                &ids, &count, &capacity, &state->local_parameters,
+                report->anchor_id);
+        }
+        if (rc == NMO_OK) {
+            rc = rewrite_add_array_delete_ids(
+                &ids, &count, &capacity, &state->sub_behavior_links,
+                report->anchor_id);
+        }
+        if (rc == NMO_OK) {
+            rc = rewrite_add_array_delete_ids(
+                &ids, &count, &capacity, &state->operations,
+                report->anchor_id);
+        }
+        if (rc != NMO_OK) {
+            free(ids);
+            return rc;
+        }
+    }
+
+    *out_ids = ids;
+    *out_count = count;
+    return NMO_OK;
+}
+
+static nmo_status_t rewrite_fold_transform_anchor(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const nmo_behavior_fold_desc_t *desc,
+    nmo_behavior_fold_report_t *report,
+    bool clear_graph_state) {
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_t *anchor =
+        repo ? nmo_object_repository_find_by_id(repo, report->anchor_id)
+             : NULL;
+    if (!anchor ||
+        !rewrite_is_behavior_class(ctx, nmo_object_get_class_id(anchor))) {
+        rewrite_fold_report_reject(report, "anchor_not_found",
+                                   "Fold anchor behavior was not found");
+        return NMO_ERR_NOT_FOUND;
+    }
+    nmo_behavior_state_t *state =
+        (nmo_behavior_state_t *)nmo_object_get_state(anchor);
+    if (!state) {
+        rewrite_fold_report_reject(report, "anchor_invalid",
+                                   "Fold anchor behavior state is unavailable");
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_session_edit_t *edit = NULL;
+    nmo_status_t rc =
+        nmo_session_edit_begin(session, "behavior fold anchor", &edit);
+    if (rc != NMO_OK) {
+        rewrite_fold_report_reject(report, "edit_begin_failed",
+                                   "Failed to begin behavior fold edit");
+        return rc;
+    }
+    rc = nmo_session_edit_snapshot_bytes(edit, state, sizeof(*state));
+    if (rc != NMO_OK) {
+        rewrite_fold_report_reject(report, "snapshot_failed",
+                                   "Failed to snapshot fold anchor");
+        nmo_session_edit_rollback(edit);
+        return rc;
+    }
+
+    state->flags |= CKBEHAVIOR_BUILDINGBLOCK | CKBEHAVIOR_USEFUNCTION;
+    state->flags &= ~CKBEHAVIOR_SCRIPT;
+    state->priority = 0;
+    state->block_guid = desc->block_guid;
+    state->block_version =
+        desc->block_version != 0 ? desc->block_version : 65536u;
+
+    if (clear_graph_state) {
+        nmo_array_clear(&state->sub_behaviors);
+        nmo_array_clear(&state->sub_behavior_chunks);
+        nmo_array_clear(&state->sub_behavior_links);
+        nmo_array_clear(&state->operations);
+        nmo_array_clear(&state->local_parameters);
+        nmo_array_clear(&state->local_parameter_chunks);
+        state->save_flags &= ~(CK_STATESAVE_BEHAVIORSUBBEHAV |
+                               CK_STATESAVE_BEHAVIORSUBLINKS |
+                               CK_STATESAVE_BEHAVIOROPERATIONS |
+                               CK_STATESAVE_BEHAVIORLOCALPARAMS);
+        state->has_save_flags = true;
+    }
+
+    if (desc->name && desc->name[0] != '\0') {
+        rc = nmo_session_edit_rename_object(edit, report->anchor_id,
+                                            desc->name);
+        if (rc != NMO_OK) {
+            rewrite_fold_report_reject(report, "rename_failed",
+                                       "Failed to rename fold anchor");
+            nmo_session_edit_rollback(edit);
+            return rc;
+        }
+    }
+
+    nmo_session_edit_mark(
+        edit, NMO_SESSION_EDIT_OBJECT_STATE |
+              (clear_graph_state ? (NMO_SESSION_EDIT_BEHAVIOR_GRAPH |
+                                    NMO_SESSION_EDIT_REFERENCES)
+                                 : 0u));
+    rc = nmo_session_edit_commit(edit);
+    if (rc != NMO_OK) {
+        rewrite_fold_report_reject(report, "commit_failed",
+                                   "Failed to commit behavior fold");
+        return rc;
+    }
+    return NMO_OK;
 }
 
 static void rewrite_fold_report_reject(nmo_behavior_fold_report_t *report,
@@ -600,6 +874,11 @@ nmo_status_t nmo_behavior_fold_analyze(
         rewrite_fold_report_clear_write_blockers(report);
         report->analysis_only = false;
         report->can_write = true;
+    } else if (rewrite_fold_report_supports_closed_graph_write(ctx, session,
+                                                               report)) {
+        rewrite_fold_report_clear_write_blockers(report);
+        report->analysis_only = false;
+        report->can_write = true;
     }
 
     return NMO_OK;
@@ -693,6 +972,41 @@ nmo_status_t nmo_behavior_fold_apply(
             rewrite_fold_report_reject(report, "commit_failed",
                                        "Failed to commit behavior fold");
             return edit_rc;
+        }
+
+        rewrite_fold_report_clear_write_blockers(report);
+        report->analysis_only = false;
+        report->can_write = true;
+        return NMO_OK;
+    }
+    if (rewrite_fold_report_is_closed_graph_anchor(report) &&
+        report->can_write) {
+        nmo_object_id_t *delete_ids = NULL;
+        size_t delete_count = 0;
+        nmo_status_t delete_rc = rewrite_fold_collect_delete_ids(
+            session, report, &delete_ids, &delete_count);
+        if (delete_rc != NMO_OK) {
+            rewrite_fold_report_reject(report, "delete_plan_failed",
+                                       "Failed to build fold delete set");
+            return delete_rc;
+        }
+
+        nmo_runtime_report_t runtime_report = {0};
+        delete_rc = nmo_session_destroy_objects(
+            session, delete_ids, delete_count,
+            NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
+            &runtime_report);
+        free(delete_ids);
+        if (delete_rc != NMO_OK) {
+            rewrite_fold_report_reject(report, "delete_failed",
+                                       "Failed to delete folded graph objects");
+            return delete_rc;
+        }
+
+        nmo_status_t transform_rc = rewrite_fold_transform_anchor(
+            ctx, session, desc, report, true);
+        if (transform_rc != NMO_OK) {
+            return transform_rc;
         }
 
         rewrite_fold_report_clear_write_blockers(report);
