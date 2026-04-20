@@ -493,6 +493,12 @@ nmo_status_t nmo_behavior_fold_apply(
     if (rc != NMO_OK) {
         return rc;
     }
+    if (!report->preserve_boundary) {
+        rewrite_fold_report_reject(
+            report, "preserve_boundary_required",
+            "Behavior fold write requires preserve-boundary");
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
     if (!report->can_write) {
         if (report->write_blocker_count > 0) {
             rewrite_fold_report_reject(report,
