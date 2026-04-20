@@ -14,7 +14,9 @@
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 #include "app/nmo_save.h"
+#include "core/nmo_arena.h"
 #include "core/nmo_array.h"
+#include "format/nmo_stb_adapter.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/nmo_class_ids.h"
@@ -25,6 +27,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#endif
 #if !defined(_WIN32)
 #include <sys/wait.h>
 #endif
@@ -158,6 +165,43 @@ static char *read_file_text(const char *path) {
     return buf;
 }
 
+static unsigned char *read_file_binary(const char *path, size_t *out_size) {
+    if (out_size) {
+        *out_size = 0;
+    }
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        return NULL;
+    }
+
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        return NULL;
+    }
+    long size = ftell(fp);
+    if (size < 0 || fseek(fp, 0, SEEK_SET) != 0) {
+        fclose(fp);
+        return NULL;
+    }
+
+    unsigned char *buf = (unsigned char *)malloc((size_t)size);
+    if (!buf) {
+        fclose(fp);
+        return NULL;
+    }
+
+    size_t read_size = fread(buf, 1, (size_t)size, fp);
+    fclose(fp);
+    if (read_size != (size_t)size) {
+        free(buf);
+        return NULL;
+    }
+    if (out_size) {
+        *out_size = read_size;
+    }
+    return buf;
+}
+
 static uint64_t file_size_bytes(const char *path) {
     FILE *fp = fopen(path, "rb");
     if (!fp) {
@@ -170,6 +214,23 @@ static uint64_t file_size_bytes(const char *path) {
     long size = ftell(fp);
     fclose(fp);
     return size > 0 ? (uint64_t)size : 0;
+}
+
+static size_t count_lines_with_prefix(const char *text, const char *prefix) {
+    size_t count = 0;
+    size_t prefix_len = strlen(prefix);
+    const char *line = text;
+    while (*line) {
+        if (strncmp(line, prefix, prefix_len) == 0) {
+            ++count;
+        }
+        const char *next = strchr(line, '\n');
+        if (!next) {
+            break;
+        }
+        line = next + 1;
+    }
+    return count;
 }
 
 static yyjson_doc *run_cli_json(const char *args) {
@@ -189,6 +250,14 @@ static int file_exists(const char *path) {
     }
     fclose(fp);
     return 1;
+}
+
+static void make_dir(const char *path) {
+#if defined(_WIN32)
+    _mkdir(path);
+#else
+    mkdir(path, 0777);
+#endif
 }
 
 static yyjson_val *json_envelope_data(yyjson_doc *doc) {
@@ -1066,6 +1135,16 @@ TEST(cli, type_list_json) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, type_class_tree_text) {
+    cli_run_result_t result = run_cli_capture("type class-tree");
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Class Tree:");
+    ASSERT_STR_CONTAINS(result.output, "CKObject");
+
+    free(result.output);
+}
+
 /* ============================================================================
  * batch processing
  * ============================================================================ */
@@ -1619,6 +1698,654 @@ TEST(cli, texture_show_name_selector_reports_missing_texture) {
     ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
     ASSERT_STR_CONTAINS(result.output, "Texture 'DefinitelyMissingTexture' not found");
     free(result.output);
+}
+
+TEST(cli, texture_show_reports_raw_slot_channels) {
+    char args[512];
+    snprintf(args, sizeof(args),
+             "texture show --id 42 \"%s\"",
+             NMO_TEST_DATA_FILE("TechnicalSamples/VSL/Samples/MipMap.cmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_EQ(42, yyjson_get_uint(yyjson_obj_get(data, "id")));
+    ASSERT_STR_EQ("CheckBoard1", yyjson_get_str(yyjson_obj_get(data, "name")));
+    ASSERT_STR_EQ("raw", yyjson_get_str(yyjson_obj_get(data, "bitmap_kind")));
+    ASSERT_STR_EQ("rawdata", yyjson_get_str(yyjson_obj_get(data, "save_options")));
+    ASSERT_EQ(1, yyjson_get_uint(yyjson_obj_get(data, "slot_count")));
+
+    yyjson_val *slots = yyjson_obj_get(data, "slots");
+    ASSERT_NOT_NULL(slots);
+    yyjson_val *slot = yyjson_arr_get_first(slots);
+    ASSERT_NOT_NULL(slot);
+    ASSERT_STR_EQ("raw", yyjson_get_str(yyjson_obj_get(slot, "type")));
+    ASSERT_EQ(64, yyjson_get_uint(yyjson_obj_get(slot, "width")));
+    ASSERT_EQ(64, yyjson_get_uint(yyjson_obj_get(slot, "height")));
+    ASSERT_EQ(32, yyjson_get_uint(yyjson_obj_get(slot, "bits_per_pixel")));
+    ASSERT_EQ(4096, yyjson_get_uint(yyjson_obj_get(slot, "red_size")));
+    ASSERT_EQ(4096, yyjson_get_uint(yyjson_obj_get(slot, "green_size")));
+    ASSERT_EQ(4096, yyjson_get_uint(yyjson_obj_get(slot, "blue_size")));
+    ASSERT_EQ(4096, yyjson_get_uint(yyjson_obj_get(slot, "alpha_size")));
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, texture_extract_decodes_raw_slot) {
+    make_dir("test_cli_tmp_raw_extract");
+    remove("test_cli_tmp_raw_extract/CheckBoard1_42.png");
+
+    char args[512];
+    snprintf(args, sizeof(args),
+             "texture extract --id 42 --out-dir \"test_cli_tmp_raw_extract\" --overwrite \"%s\"",
+             NMO_TEST_DATA_FILE("TechnicalSamples/VSL/Samples/MipMap.cmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_EQ(1, yyjson_get_uint(yyjson_obj_get(data, "extracted")));
+    ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(data, "skipped")));
+    ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(data, "warnings")));
+
+    yyjson_val *entries = yyjson_obj_get(data, "entries");
+    ASSERT_NOT_NULL(entries);
+    yyjson_val *entry = yyjson_arr_get_first(entries);
+    ASSERT_NOT_NULL(entry);
+    ASSERT_EQ(42, yyjson_get_uint(yyjson_obj_get(entry, "id")));
+    ASSERT_EQ(64, yyjson_get_uint(yyjson_obj_get(entry, "width")));
+    ASSERT_EQ(64, yyjson_get_uint(yyjson_obj_get(entry, "height")));
+    ASSERT_STR_EQ("ok", yyjson_get_str(yyjson_obj_get(entry, "status")));
+    ASSERT_TRUE(file_exists("test_cli_tmp_raw_extract/CheckBoard1_42.png"));
+    ASSERT_TRUE(file_size_bytes("test_cli_tmp_raw_extract/CheckBoard1_42.png") > 0);
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, texture_external_raw_slot_extracts_from_real_fixture) {
+    make_dir("test_cli_tmp_external_extract");
+    remove("test_cli_tmp_external_extract/Wood_175.png");
+
+    char show_args[512];
+    snprintf(show_args, sizeof(show_args),
+             "texture show --id 175 \"%s\"",
+             NMO_TEST_DATA_FILE("BBSamples/Controllers/Get Mouse Displacement.cmo"));
+    yyjson_doc *show_doc = run_cli_json(show_args);
+    ASSERT_NOT_NULL(show_doc);
+
+    yyjson_val *show_data = json_envelope_data(show_doc);
+    ASSERT_NOT_NULL(show_data);
+    ASSERT_EQ(175, yyjson_get_uint(yyjson_obj_get(show_data, "id")));
+    ASSERT_STR_EQ("Wood", yyjson_get_str(yyjson_obj_get(show_data, "name")));
+    ASSERT_STR_EQ("raw", yyjson_get_str(yyjson_obj_get(show_data, "bitmap_kind")));
+    ASSERT_STR_EQ("external", yyjson_get_str(yyjson_obj_get(show_data, "save_options")));
+    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(show_data, "is_external")));
+
+    yyjson_val *filenames = yyjson_obj_get(show_data, "slot_filenames");
+    ASSERT_NOT_NULL(filenames);
+    ASSERT_STR_EQ("wood.jpg", yyjson_get_str(yyjson_arr_get_first(filenames)));
+
+    yyjson_val *slots = yyjson_obj_get(show_data, "slots");
+    ASSERT_NOT_NULL(slots);
+    yyjson_val *slot = yyjson_arr_get_first(slots);
+    ASSERT_NOT_NULL(slot);
+    ASSERT_STR_EQ("raw", yyjson_get_str(yyjson_obj_get(slot, "type")));
+    ASSERT_EQ(64, yyjson_get_uint(yyjson_obj_get(slot, "width")));
+    ASSERT_EQ(64, yyjson_get_uint(yyjson_obj_get(slot, "height")));
+    ASSERT_EQ(32, yyjson_get_uint(yyjson_obj_get(slot, "bits_per_pixel")));
+    ASSERT_EQ(4096, yyjson_get_uint(yyjson_obj_get(slot, "alpha_size")));
+    yyjson_doc_free(show_doc);
+
+    char extract_args[512];
+    snprintf(extract_args, sizeof(extract_args),
+             "texture extract --id 175 --out-dir \"test_cli_tmp_external_extract\" --overwrite \"%s\"",
+             NMO_TEST_DATA_FILE("BBSamples/Controllers/Get Mouse Displacement.cmo"));
+    yyjson_doc *extract_doc = run_cli_json(extract_args);
+    ASSERT_NOT_NULL(extract_doc);
+
+    yyjson_val *extract_data = json_envelope_data(extract_doc);
+    ASSERT_NOT_NULL(extract_data);
+    ASSERT_EQ(1, yyjson_get_uint(yyjson_obj_get(extract_data, "extracted")));
+    ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(extract_data, "skipped")));
+    ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(extract_data, "warnings")));
+
+    yyjson_val *entries = yyjson_obj_get(extract_data, "entries");
+    ASSERT_NOT_NULL(entries);
+    yyjson_val *entry = yyjson_arr_get_first(entries);
+    ASSERT_NOT_NULL(entry);
+    ASSERT_EQ(175, yyjson_get_uint(yyjson_obj_get(entry, "id")));
+    ASSERT_STR_EQ("Wood", yyjson_get_str(yyjson_obj_get(entry, "name")));
+    ASSERT_EQ(64, yyjson_get_uint(yyjson_obj_get(entry, "width")));
+    ASSERT_EQ(64, yyjson_get_uint(yyjson_obj_get(entry, "height")));
+    ASSERT_STR_EQ("ok", yyjson_get_str(yyjson_obj_get(entry, "status")));
+    ASSERT_TRUE(file_exists("test_cli_tmp_external_extract/Wood_175.png"));
+    ASSERT_TRUE(file_size_bytes("test_cli_tmp_external_extract/Wood_175.png") > 0);
+
+    yyjson_doc_free(extract_doc);
+}
+
+TEST(cli, texture_external_reader_slot_reports_mipmap_and_extracts) {
+    make_dir("test_cli_tmp_reader_external_extract");
+    remove("test_cli_tmp_reader_external_extract/Eva_609.png");
+
+    char show_args[512];
+    snprintf(show_args, sizeof(show_args),
+             "texture show --id 609 \"%s\"",
+             NMO_TEST_DATA_FILE("BBSamples/Controllers/Switch On Midi.cmo"));
+    yyjson_doc *show_doc = run_cli_json(show_args);
+    ASSERT_NOT_NULL(show_doc);
+
+    yyjson_val *show_data = json_envelope_data(show_doc);
+    ASSERT_NOT_NULL(show_data);
+    ASSERT_EQ(609, yyjson_get_uint(yyjson_obj_get(show_data, "id")));
+    ASSERT_STR_EQ("Eva", yyjson_get_str(yyjson_obj_get(show_data, "name")));
+    ASSERT_STR_EQ("reader", yyjson_get_str(yyjson_obj_get(show_data, "bitmap_kind")));
+    ASSERT_STR_EQ("external", yyjson_get_str(yyjson_obj_get(show_data, "save_options")));
+    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(show_data, "is_external")));
+    ASSERT_EQ(8, yyjson_get_uint(yyjson_obj_get(show_data, "mipmap_level")));
+    ASSERT_EQ(256, yyjson_get_uint(yyjson_obj_get(show_data, "reader_width")));
+    ASSERT_EQ(256, yyjson_get_uint(yyjson_obj_get(show_data, "reader_height")));
+    ASSERT_EQ(32, yyjson_get_uint(yyjson_obj_get(show_data, "reader_bpp")));
+
+    yyjson_val *filenames = yyjson_obj_get(show_data, "slot_filenames");
+    ASSERT_NOT_NULL(filenames);
+    ASSERT_STR_EQ("Eva.Bmp", yyjson_get_str(yyjson_arr_get_first(filenames)));
+
+    yyjson_val *slots = yyjson_obj_get(show_data, "slots");
+    ASSERT_NOT_NULL(slots);
+    yyjson_val *slot = yyjson_arr_get_first(slots);
+    ASSERT_NOT_NULL(slot);
+    ASSERT_STR_EQ("reader", yyjson_get_str(yyjson_obj_get(slot, "type")));
+    ASSERT_EQ(7593, yyjson_get_uint(yyjson_obj_get(slot, "data_size")));
+    ASSERT_EQ(2, yyjson_get_uint(yyjson_obj_get(slot, "format_type")));
+    yyjson_doc_free(show_doc);
+
+    char extract_args[512];
+    snprintf(extract_args, sizeof(extract_args),
+             "texture extract --id 609 --out-dir \"test_cli_tmp_reader_external_extract\" --overwrite \"%s\"",
+             NMO_TEST_DATA_FILE("BBSamples/Controllers/Switch On Midi.cmo"));
+    yyjson_doc *extract_doc = run_cli_json(extract_args);
+    ASSERT_NOT_NULL(extract_doc);
+
+    yyjson_val *extract_data = json_envelope_data(extract_doc);
+    ASSERT_NOT_NULL(extract_data);
+    ASSERT_EQ(1, yyjson_get_uint(yyjson_obj_get(extract_data, "extracted")));
+    ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(extract_data, "skipped")));
+    ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(extract_data, "warnings")));
+
+    yyjson_val *entries = yyjson_obj_get(extract_data, "entries");
+    ASSERT_NOT_NULL(entries);
+    yyjson_val *entry = yyjson_arr_get_first(entries);
+    ASSERT_NOT_NULL(entry);
+    ASSERT_EQ(609, yyjson_get_uint(yyjson_obj_get(entry, "id")));
+    ASSERT_STR_EQ("Eva", yyjson_get_str(yyjson_obj_get(entry, "name")));
+    ASSERT_EQ(256, yyjson_get_uint(yyjson_obj_get(entry, "width")));
+    ASSERT_EQ(256, yyjson_get_uint(yyjson_obj_get(entry, "height")));
+    ASSERT_STR_EQ("ok", yyjson_get_str(yyjson_obj_get(entry, "status")));
+    ASSERT_TRUE(file_exists("test_cli_tmp_reader_external_extract/Eva_609.png"));
+    ASSERT_TRUE(file_size_bytes("test_cli_tmp_reader_external_extract/Eva_609.png") > 0);
+
+    yyjson_doc_free(extract_doc);
+}
+
+TEST(cli, texture_reader_alpha_plane_extracts_transparency) {
+    make_dir("test_cli_tmp_alpha_plane_extract");
+    remove("test_cli_tmp_alpha_plane_extract/MaskNote_719.png");
+
+    const char *fixture =
+        NMO_TEST_DATA_FILE("BBSamples/Controllers/Switch On Midi.cmo");
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json texture show --id 719 \"%s\"",
+             fixture);
+    yyjson_doc *show_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(show_doc);
+    yyjson_val *show_data = json_envelope_data(show_doc);
+    ASSERT_NOT_NULL(show_data);
+    ASSERT_STR_EQ("MaskNote", yyjson_get_str(yyjson_obj_get(show_data, "name")));
+    ASSERT_STR_EQ("reader", yyjson_get_str(yyjson_obj_get(show_data, "bitmap_kind")));
+
+    yyjson_val *slots = yyjson_obj_get(show_data, "slots");
+    ASSERT_NOT_NULL(slots);
+    yyjson_val *slot = yyjson_arr_get_first(slots);
+    ASSERT_NOT_NULL(slot);
+    ASSERT_STR_EQ("reader", yyjson_get_str(yyjson_obj_get(slot, "type")));
+    ASSERT_EQ(285, yyjson_get_uint(yyjson_obj_get(slot, "data_size")));
+    ASSERT_EQ(2, yyjson_get_uint(yyjson_obj_get(slot, "format_type")));
+    ASSERT_EQ(64, yyjson_get_uint(yyjson_obj_get(slot, "alpha_plane_size")));
+    yyjson_doc_free(show_doc);
+
+    snprintf(args, sizeof(args),
+             "texture extract --id 719 --out-dir \"test_cli_tmp_alpha_plane_extract\" "
+             "--overwrite \"%s\"",
+             fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Extracted");
+    free(result.output);
+
+    const char *png_path = "test_cli_tmp_alpha_plane_extract/MaskNote_719.png";
+    ASSERT_TRUE(file_exists(png_path));
+    size_t png_size = 0;
+    unsigned char *png_data = read_file_binary(png_path, &png_size);
+    ASSERT_NOT_NULL(png_data);
+    ASSERT_TRUE(png_size > 0);
+
+    nmo_arena_t *decode_arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(decode_arena);
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    uint8_t *pixels = nmo_stbi_load_from_memory(
+        decode_arena, png_data, (int)png_size, &width, &height, &channels, 4);
+    ASSERT_NOT_NULL(pixels);
+    ASSERT_EQ(8, width);
+    ASSERT_EQ(8, height);
+    ASSERT_EQ(4, channels);
+
+    bool saw_transparent = false;
+    bool saw_opaque = false;
+    for (int i = 0; i < width * height; ++i) {
+        uint8_t alpha = pixels[i * 4 + 3];
+        if (alpha == 0) {
+            saw_transparent = true;
+        }
+        if (alpha == 255) {
+            saw_opaque = true;
+        }
+    }
+    ASSERT_TRUE(saw_transparent);
+    ASSERT_TRUE(saw_opaque);
+
+    nmo_arena_destroy(decode_arena);
+    free(png_data);
+}
+
+TEST(cli, texture_extract_reports_unsupported_empty_raw_slot) {
+    make_dir("test_cli_tmp_empty_raw_extract");
+
+    char args[512];
+    snprintf(args, sizeof(args),
+             "-f json texture extract --id 74 --out-dir \"test_cli_tmp_empty_raw_extract\" --overwrite \"%s\"",
+             NMO_TEST_DATA_FILE("BBSamples/3D Transformations/BillBoard.cmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    yyjson_doc *doc = yyjson_read(result.output, strlen(result.output), 0);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(data, "extracted")));
+    ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(data, "skipped")));
+    ASSERT_EQ(1, yyjson_get_uint(yyjson_obj_get(data, "warnings")));
+
+    yyjson_val *entries = yyjson_obj_get(data, "entries");
+    ASSERT_NOT_NULL(entries);
+    yyjson_val *entry = yyjson_arr_get_first(entries);
+    ASSERT_NOT_NULL(entry);
+    ASSERT_EQ(74, yyjson_get_uint(yyjson_obj_get(entry, "id")));
+    ASSERT_STR_EQ("Skull", yyjson_get_str(yyjson_obj_get(entry, "name")));
+    ASSERT_STR_EQ("warn", yyjson_get_str(yyjson_obj_get(entry, "status")));
+    ASSERT_STR_EQ("unsupported_raw_bpp", yyjson_get_str(yyjson_obj_get(entry, "reason")));
+
+    yyjson_doc_free(doc);
+    free(result.output);
+}
+
+TEST(cli, animation_real_sample_reports_keyed_and_object_controllers) {
+    const char *fixture = NMO_TEST_DATA_FILE("BBSamples/Characters/Share Character Animation Keys.cmo");
+
+    char args[512];
+    snprintf(args, sizeof(args), "animation list \"%s\"", fixture);
+    yyjson_doc *list_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(list_doc);
+    yyjson_val *list_data = json_envelope_data(list_doc);
+    ASSERT_NOT_NULL(list_data);
+    ASSERT_EQ(140, yyjson_get_uint(yyjson_obj_get(list_data, "count")));
+    yyjson_doc_free(list_doc);
+
+    snprintf(args, sizeof(args), "animation show --id 224 \"%s\"", fixture);
+    yyjson_doc *keyed_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(keyed_doc);
+    yyjson_val *keyed_data = json_envelope_data(keyed_doc);
+    ASSERT_NOT_NULL(keyed_data);
+    ASSERT_EQ(224, yyjson_get_uint(yyjson_obj_get(keyed_data, "id")));
+    ASSERT_STR_EQ("CKKeyedAnimation", yyjson_get_str(yyjson_obj_get(keyed_data, "class")));
+    ASSERT_STR_EQ("Walk.Copy", yyjson_get_str(yyjson_obj_get(keyed_data, "name")));
+    ASSERT_EQ(34, yyjson_get_uint(yyjson_obj_get(keyed_data, "animation_count")));
+    ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(keyed_data, "subanim_count")));
+    ASSERT_EQ(30, yyjson_get_num(yyjson_obj_get(keyed_data, "frame_rate")));
+
+    yyjson_val *animations = yyjson_obj_get(keyed_data, "animations");
+    ASSERT_NOT_NULL(animations);
+    yyjson_val *first_anim = yyjson_arr_get_first(animations);
+    ASSERT_NOT_NULL(first_anim);
+    ASSERT_EQ(118, yyjson_get_uint(yyjson_obj_get(first_anim, "id")));
+    ASSERT_STR_EQ("Bip01", yyjson_get_str(yyjson_obj_get(first_anim, "name")));
+    yyjson_doc_free(keyed_doc);
+
+    snprintf(args, sizeof(args), "animation show --id 118 \"%s\"", fixture);
+    yyjson_doc *object_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(object_doc);
+    yyjson_val *object_data = json_envelope_data(object_doc);
+    ASSERT_NOT_NULL(object_data);
+    ASSERT_EQ(118, yyjson_get_uint(yyjson_obj_get(object_data, "id")));
+    ASSERT_STR_EQ("CKObjectAnimation", yyjson_get_str(yyjson_obj_get(object_data, "class")));
+    ASSERT_STR_EQ("Bip01", yyjson_get_str(yyjson_obj_get(object_data, "name")));
+    ASSERT_STR_EQ("CONTROLLERS", yyjson_get_str(yyjson_obj_get(object_data, "format")));
+    ASSERT_EQ(1, yyjson_get_uint(yyjson_obj_get(object_data, "flags")));
+    ASSERT_EQ(223, yyjson_get_uint(yyjson_obj_get(object_data, "entity_id")));
+    ASSERT_EQ(30, yyjson_get_num(yyjson_obj_get(object_data, "length")));
+    ASSERT_EQ(4, yyjson_get_uint(yyjson_obj_get(object_data, "controller_count")));
+    yyjson_doc_free(object_doc);
+
+    snprintf(args, sizeof(args), "animation keys --id 118 \"%s\"", fixture);
+    yyjson_doc *keys_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(keys_doc);
+    yyjson_val *keys_data = json_envelope_data(keys_doc);
+    ASSERT_NOT_NULL(keys_data);
+    ASSERT_EQ(118, yyjson_get_uint(yyjson_obj_get(keys_data, "id")));
+    ASSERT_EQ(4, yyjson_get_uint(yyjson_obj_get(keys_data, "controller_count")));
+
+    yyjson_val *controllers = yyjson_obj_get(keys_data, "controllers");
+    ASSERT_NOT_NULL(controllers);
+    yyjson_val *ctrl0 = yyjson_arr_get(controllers, 0);
+    yyjson_val *ctrl1 = yyjson_arr_get(controllers, 1);
+    ASSERT_NOT_NULL(ctrl0);
+    ASSERT_NOT_NULL(ctrl1);
+    ASSERT_STR_EQ("0x637c4301", yyjson_get_str(yyjson_obj_get(ctrl0, "type")));
+    ASSERT_STR_EQ("position/scale", yyjson_get_str(yyjson_obj_get(ctrl0, "type_name")));
+    ASSERT_EQ(16, yyjson_get_uint(yyjson_obj_get(ctrl0, "key_size")));
+    ASSERT_EQ(116, yyjson_get_uint(yyjson_obj_get(ctrl0, "data_size")));
+    ASSERT_STR_EQ("0x49ed4002", yyjson_get_str(yyjson_obj_get(ctrl1, "type")));
+    ASSERT_STR_EQ("rotation", yyjson_get_str(yyjson_obj_get(ctrl1, "type_name")));
+    ASSERT_EQ(20, yyjson_get_uint(yyjson_obj_get(ctrl1, "key_size")));
+    ASSERT_EQ(144, yyjson_get_uint(yyjson_obj_get(ctrl1, "data_size")));
+    yyjson_doc_free(keys_doc);
+}
+
+TEST(cli, animation_export_real_sample_preserves_controller_metadata) {
+    make_dir("test_cli_tmp_anim_real_export");
+    remove("test_cli_tmp_anim_real_export/Bip01_118.anim.json");
+
+    char args[512];
+    snprintf(args, sizeof(args),
+             "animation export --id 118 --out-dir \"test_cli_tmp_anim_real_export\" \"%s\"",
+             NMO_TEST_DATA_FILE("BBSamples/Characters/Share Character Animation Keys.cmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_TRUE(file_exists("test_cli_tmp_anim_real_export/Bip01_118.anim.json"));
+
+    char *json = read_file_text("test_cli_tmp_anim_real_export/Bip01_118.anim.json");
+    ASSERT_NOT_NULL(json);
+    yyjson_doc *doc = yyjson_read(json, strlen(json), 0);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    ASSERT_EQ(118, yyjson_get_uint(yyjson_obj_get(root, "id")));
+    ASSERT_STR_EQ("CKObjectAnimation", yyjson_get_str(yyjson_obj_get(root, "class")));
+    ASSERT_STR_EQ("CONTROLLERS", yyjson_get_str(yyjson_obj_get(root, "format")));
+    ASSERT_EQ(223, yyjson_get_uint(yyjson_obj_get(root, "entity_id")));
+    ASSERT_EQ(30, yyjson_get_num(yyjson_obj_get(root, "length")));
+    ASSERT_EQ(1, yyjson_get_uint(yyjson_obj_get(root, "flags")));
+
+    yyjson_val *controllers = yyjson_obj_get(root, "controllers");
+    ASSERT_NOT_NULL(controllers);
+    ASSERT_EQ(4, yyjson_arr_size(controllers));
+    yyjson_val *ctrl0 = yyjson_arr_get(controllers, 0);
+    yyjson_val *ctrl1 = yyjson_arr_get(controllers, 1);
+    ASSERT_NOT_NULL(ctrl0);
+    ASSERT_NOT_NULL(ctrl1);
+    ASSERT_STR_EQ("0x637c4301", yyjson_get_str(yyjson_obj_get(ctrl0, "type")));
+    ASSERT_EQ(16, yyjson_get_uint(yyjson_obj_get(ctrl0, "key_size")));
+    ASSERT_STR_EQ("0x49ed4002", yyjson_get_str(yyjson_obj_get(ctrl1, "type")));
+    ASSERT_EQ(20, yyjson_get_uint(yyjson_obj_get(ctrl1, "key_size")));
+
+    yyjson_doc_free(doc);
+    free(json);
+    free(result.output);
+}
+
+TEST(cli, animation_real_sample_reports_shared_format) {
+    make_dir("test_cli_tmp_anim_shared_export");
+    remove("test_cli_tmp_anim_shared_export/FloorRef_255.anim.json");
+
+    const char *fixture =
+        NMO_TEST_DATA_FILE("BBSamples/Characters/Share Character Animation Keys.cmo");
+
+    char args[512];
+    snprintf(args, sizeof(args), "animation show --id 255 \"%s\"", fixture);
+    yyjson_doc *show_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(show_doc);
+    yyjson_val *show_data = json_envelope_data(show_doc);
+    ASSERT_NOT_NULL(show_data);
+    ASSERT_EQ(255, yyjson_get_uint(yyjson_obj_get(show_data, "id")));
+    ASSERT_STR_EQ("CKObjectAnimation", yyjson_get_str(yyjson_obj_get(show_data, "class")));
+    ASSERT_STR_EQ("FloorRef", yyjson_get_str(yyjson_obj_get(show_data, "name")));
+    ASSERT_STR_EQ("SHARED", yyjson_get_str(yyjson_obj_get(show_data, "format")));
+    ASSERT_EQ(364, yyjson_get_uint(yyjson_obj_get(show_data, "entity_id")));
+    ASSERT_EQ(2, yyjson_get_uint(yyjson_obj_get(show_data, "flags")));
+    ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(show_data, "controller_count")));
+    yyjson_doc_free(show_doc);
+
+    snprintf(args, sizeof(args), "animation keys --id 255 \"%s\"", fixture);
+    yyjson_doc *keys_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(keys_doc);
+    yyjson_val *keys_data = json_envelope_data(keys_doc);
+    ASSERT_NOT_NULL(keys_data);
+    ASSERT_EQ(255, yyjson_get_uint(yyjson_obj_get(keys_data, "id")));
+    ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(keys_data, "controller_count")));
+    yyjson_val *controllers = yyjson_obj_get(keys_data, "controllers");
+    ASSERT_NOT_NULL(controllers);
+    ASSERT_EQ(0, yyjson_arr_size(controllers));
+    yyjson_doc_free(keys_doc);
+
+    snprintf(args, sizeof(args),
+             "animation export --id 255 --out-dir \"test_cli_tmp_anim_shared_export\" \"%s\"",
+             fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    free(result.output);
+
+    ASSERT_TRUE(file_exists("test_cli_tmp_anim_shared_export/FloorRef_255.anim.json"));
+    char *json = read_file_text("test_cli_tmp_anim_shared_export/FloorRef_255.anim.json");
+    ASSERT_NOT_NULL(json);
+    yyjson_doc *doc = yyjson_read(json, strlen(json), 0);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    ASSERT_STR_EQ("SHARED", yyjson_get_str(yyjson_obj_get(root, "format")));
+    ASSERT_EQ(364, yyjson_get_uint(yyjson_obj_get(root, "entity_id")));
+    ASSERT_EQ(2, yyjson_get_uint(yyjson_obj_get(root, "flags")));
+    yyjson_val *exported_controllers = yyjson_obj_get(root, "controllers");
+    ASSERT_NOT_NULL(exported_controllers);
+    ASSERT_EQ(0, yyjson_arr_size(exported_controllers));
+    yyjson_doc_free(doc);
+    free(json);
+}
+
+TEST(cli, mesh_real_sample_reports_material_groups_and_exports_obj_mtl) {
+    const char *fixture = NMO_TEST_DATA_FILE("TechnicalSamples/ScriptedCameras/MouseCamera.cmo");
+
+    char args[512];
+    snprintf(args, sizeof(args), "mesh list \"%s\"", fixture);
+    yyjson_doc *list_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(list_doc);
+    yyjson_val *list_data = json_envelope_data(list_doc);
+    ASSERT_NOT_NULL(list_data);
+    ASSERT_EQ(23, yyjson_get_uint(yyjson_obj_get(list_data, "count")));
+
+    yyjson_val *meshes = yyjson_obj_get(list_data, "meshes");
+    ASSERT_NOT_NULL(meshes);
+    int found = 0;
+    size_t idx, max;
+    yyjson_val *mesh;
+    yyjson_arr_foreach(meshes, idx, max, mesh) {
+        if (yyjson_get_uint(yyjson_obj_get(mesh, "id")) == 50) {
+            found = 1;
+            ASSERT_STR_EQ("Calculator_Mesh", yyjson_get_str(yyjson_obj_get(mesh, "name")));
+            ASSERT_EQ(412, yyjson_get_uint(yyjson_obj_get(mesh, "vertices")));
+            ASSERT_EQ(198, yyjson_get_uint(yyjson_obj_get(mesh, "faces")));
+            ASSERT_EQ(39, yyjson_get_uint(yyjson_obj_get(mesh, "materials")));
+            break;
+        }
+    }
+    ASSERT_TRUE(found);
+    yyjson_doc_free(list_doc);
+
+    snprintf(args, sizeof(args), "mesh show --id 50 \"%s\"", fixture);
+    yyjson_doc *show_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(show_doc);
+    yyjson_val *show_data = json_envelope_data(show_doc);
+    ASSERT_NOT_NULL(show_data);
+    ASSERT_EQ(50, yyjson_get_uint(yyjson_obj_get(show_data, "id")));
+    ASSERT_STR_EQ("Calculator_Mesh", yyjson_get_str(yyjson_obj_get(show_data, "name")));
+    ASSERT_EQ(412, yyjson_get_uint(yyjson_obj_get(show_data, "vertex_count")));
+    ASSERT_EQ(198, yyjson_get_uint(yyjson_obj_get(show_data, "face_count")));
+    ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(show_data, "line_count")));
+    ASSERT_EQ(39, yyjson_get_uint(yyjson_obj_get(show_data, "material_group_count")));
+    ASSERT_FALSE(yyjson_get_bool(yyjson_obj_get(show_data, "has_progressive_mesh")));
+    ASSERT_FLOAT_EQ(1.5129958f, (float)yyjson_get_num(yyjson_obj_get(show_data, "radius")), 0.0001f);
+
+    yyjson_val *box_min = yyjson_obj_get(show_data, "local_box_min");
+    yyjson_val *box_max = yyjson_obj_get(show_data, "local_box_max");
+    ASSERT_NOT_NULL(box_min);
+    ASSERT_NOT_NULL(box_max);
+    ASSERT_FLOAT_EQ(-1.0893812f, (float)yyjson_get_num(yyjson_obj_get(box_min, "x")), 0.0001f);
+    ASSERT_FLOAT_EQ(-1.0021085f, (float)yyjson_get_num(yyjson_obj_get(box_min, "y")), 0.0001f);
+    ASSERT_FLOAT_EQ(1.0893817f, (float)yyjson_get_num(yyjson_obj_get(box_max, "x")), 0.0001f);
+    ASSERT_FLOAT_EQ(1.0021087f, (float)yyjson_get_num(yyjson_obj_get(box_max, "y")), 0.0001f);
+
+    yyjson_val *groups = yyjson_obj_get(show_data, "material_groups");
+    ASSERT_NOT_NULL(groups);
+    ASSERT_EQ(39, yyjson_arr_size(groups));
+    yyjson_val *group0 = yyjson_arr_get(groups, 0);
+    yyjson_val *group5 = yyjson_arr_get(groups, 5);
+    ASSERT_NOT_NULL(group0);
+    ASSERT_NOT_NULL(group5);
+    ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(group0, "material_id")));
+    ASSERT_EQ(45, yyjson_get_uint(yyjson_obj_get(group5, "material_id")));
+    ASSERT_STR_EQ("Calculator_Material", yyjson_get_str(yyjson_obj_get(group5, "material_name")));
+    yyjson_doc_free(show_doc);
+
+    make_dir("test_cli_tmp_mesh_real_export");
+    remove("test_cli_tmp_mesh_real_export/Calculator_Mesh_50.obj");
+    remove("test_cli_tmp_mesh_real_export/Calculator_Mesh_50.mtl");
+    snprintf(args, sizeof(args),
+             "mesh export --id 50 --out-dir \"test_cli_tmp_mesh_real_export\" \"%s\"",
+             fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Exported: 1, Errors: 0");
+    ASSERT_TRUE(file_exists("test_cli_tmp_mesh_real_export/Calculator_Mesh_50.obj"));
+    ASSERT_TRUE(file_exists("test_cli_tmp_mesh_real_export/Calculator_Mesh_50.mtl"));
+
+    char *obj_text = read_file_text("test_cli_tmp_mesh_real_export/Calculator_Mesh_50.obj");
+    char *mtl_text = read_file_text("test_cli_tmp_mesh_real_export/Calculator_Mesh_50.mtl");
+    ASSERT_NOT_NULL(obj_text);
+    ASSERT_NOT_NULL(mtl_text);
+    ASSERT_STR_CONTAINS(obj_text, "mtllib Calculator_Mesh_50.mtl");
+    ASSERT_STR_CONTAINS(obj_text, "usemtl Calculator_Material");
+    ASSERT_STR_CONTAINS(mtl_text, "newmtl Calculator_Material");
+    ASSERT_EQ(412, count_lines_with_prefix(obj_text, "v "));
+    ASSERT_EQ(412, count_lines_with_prefix(obj_text, "vt "));
+    ASSERT_EQ(412, count_lines_with_prefix(obj_text, "vn "));
+    ASSERT_EQ(198, count_lines_with_prefix(obj_text, "f "));
+    ASSERT_EQ(39, count_lines_with_prefix(obj_text, "usemtl "));
+    ASSERT_EQ(39, count_lines_with_prefix(mtl_text, "newmtl "));
+
+    free(obj_text);
+    free(mtl_text);
+    free(result.output);
+}
+
+TEST(cli, mesh_real_sample_reports_progressive_and_point_variants) {
+    make_dir("test_cli_tmp_mesh_variant_export");
+    remove("test_cli_tmp_mesh_variant_export/Pot_Mesh_712.obj");
+    remove("test_cli_tmp_mesh_variant_export/Pot_Mesh_712.mtl");
+    remove("test_cli_tmp_mesh_variant_export/Point_Mesh.Copy_1236.obj");
+    remove("test_cli_tmp_mesh_variant_export/Point_Mesh.Copy_1236.mtl");
+
+    char args[512];
+    snprintf(args, sizeof(args), "mesh show --id 712 \"%s\"",
+             NMO_TEST_DATA_FILE("BBSamples/Optimizations/LOD.cmo"));
+    yyjson_doc *progressive_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(progressive_doc);
+    yyjson_val *progressive_data = json_envelope_data(progressive_doc);
+    ASSERT_NOT_NULL(progressive_data);
+    ASSERT_STR_EQ("Pot_Mesh", yyjson_get_str(yyjson_obj_get(progressive_data, "name")));
+    ASSERT_EQ(77, yyjson_get_uint(yyjson_obj_get(progressive_data, "vertex_count")));
+    ASSERT_EQ(97, yyjson_get_uint(yyjson_obj_get(progressive_data, "face_count")));
+    ASSERT_EQ(2, yyjson_get_uint(yyjson_obj_get(progressive_data, "material_group_count")));
+    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(progressive_data, "has_progressive_mesh")));
+    yyjson_doc_free(progressive_doc);
+
+    snprintf(args, sizeof(args),
+             "mesh export --id 712 --out-dir \"test_cli_tmp_mesh_variant_export\" \"%s\"",
+             NMO_TEST_DATA_FILE("BBSamples/Optimizations/LOD.cmo"));
+    cli_run_result_t progressive_export = run_cli_capture(args);
+    ASSERT_NOT_NULL(progressive_export.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, progressive_export.exit_code);
+    free(progressive_export.output);
+    ASSERT_TRUE(file_exists("test_cli_tmp_mesh_variant_export/Pot_Mesh_712.obj"));
+    ASSERT_TRUE(file_exists("test_cli_tmp_mesh_variant_export/Pot_Mesh_712.mtl"));
+
+    char *pot_obj = read_file_text("test_cli_tmp_mesh_variant_export/Pot_Mesh_712.obj");
+    char *pot_mtl = read_file_text("test_cli_tmp_mesh_variant_export/Pot_Mesh_712.mtl");
+    ASSERT_NOT_NULL(pot_obj);
+    ASSERT_NOT_NULL(pot_mtl);
+    ASSERT_EQ(77, count_lines_with_prefix(pot_obj, "v "));
+    ASSERT_EQ(77, count_lines_with_prefix(pot_obj, "vt "));
+    ASSERT_EQ(77, count_lines_with_prefix(pot_obj, "vn "));
+    ASSERT_EQ(97, count_lines_with_prefix(pot_obj, "f "));
+    ASSERT_EQ(2, count_lines_with_prefix(pot_obj, "usemtl "));
+    ASSERT_EQ(2, count_lines_with_prefix(pot_mtl, "newmtl "));
+    free(pot_obj);
+    free(pot_mtl);
+
+    snprintf(args, sizeof(args), "mesh show --id 1236 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+    yyjson_doc *point_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(point_doc);
+    yyjson_val *point_data = json_envelope_data(point_doc);
+    ASSERT_NOT_NULL(point_data);
+    ASSERT_STR_EQ("Point Mesh.Copy", yyjson_get_str(yyjson_obj_get(point_data, "name")));
+    ASSERT_EQ(5, yyjson_get_uint(yyjson_obj_get(point_data, "vertex_count")));
+    ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(point_data, "face_count")));
+    ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(point_data, "line_count")));
+    ASSERT_EQ(1, yyjson_get_uint(yyjson_obj_get(point_data, "material_group_count")));
+    ASSERT_FALSE(yyjson_get_bool(yyjson_obj_get(point_data, "has_progressive_mesh")));
+    yyjson_doc_free(point_doc);
+
+    snprintf(args, sizeof(args),
+             "mesh export --id 1236 --out-dir \"test_cli_tmp_mesh_variant_export\" \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+    cli_run_result_t point_export = run_cli_capture(args);
+    ASSERT_NOT_NULL(point_export.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, point_export.exit_code);
+    free(point_export.output);
+    ASSERT_TRUE(file_exists("test_cli_tmp_mesh_variant_export/Point_Mesh.Copy_1236.obj"));
+    ASSERT_TRUE(file_exists("test_cli_tmp_mesh_variant_export/Point_Mesh.Copy_1236.mtl"));
+
+    char *point_obj = read_file_text("test_cli_tmp_mesh_variant_export/Point_Mesh.Copy_1236.obj");
+    char *point_mtl = read_file_text("test_cli_tmp_mesh_variant_export/Point_Mesh.Copy_1236.mtl");
+    ASSERT_NOT_NULL(point_obj);
+    ASSERT_NOT_NULL(point_mtl);
+    ASSERT_EQ(5, count_lines_with_prefix(point_obj, "v "));
+    ASSERT_EQ(5, count_lines_with_prefix(point_obj, "vt "));
+    ASSERT_EQ(5, count_lines_with_prefix(point_obj, "vn "));
+    ASSERT_EQ(0, count_lines_with_prefix(point_obj, "f "));
+    ASSERT_EQ(0, count_lines_with_prefix(point_obj, "usemtl "));
+    ASSERT_EQ(1, count_lines_with_prefix(point_mtl, "newmtl "));
+    free(point_obj);
+    free(point_mtl);
 }
 
 TEST(cli, specialized_read_commands_accept_exact_name_selectors) {
@@ -2332,6 +3059,21 @@ TEST(cli, help_shows_groups) {
     free(output);
 }
 
+TEST(cli, help_documents_batch_supported_subset) {
+    char *output = run_cli("--help");
+    ASSERT_NOT_NULL(output);
+    ASSERT_STR_CONTAINS(output, "Supported batch commands");
+    ASSERT_STR_CONTAINS(output, "file info");
+    ASSERT_STR_CONTAINS(output, "object list");
+    ASSERT_STR_CONTAINS(output, "object rename");
+    ASSERT_STR_CONTAINS(output, "object delete");
+    ASSERT_STR_CONTAINS(output, "parameter list");
+    ASSERT_STR_CONTAINS(output, "behavior list");
+    ASSERT_STR_CONTAINS(output, "behavior stats");
+    ASSERT_STR_CONTAINS(output, "validate all");
+    free(output);
+}
+
 TEST(cli, resource_replace_help_distinguishes_payload_from_texture_bitmap) {
     char *output = run_cli("resource replace --help");
     ASSERT_NOT_NULL(output);
@@ -2339,6 +3081,22 @@ TEST(cli, resource_replace_help_distinguishes_payload_from_texture_bitmap) {
     ASSERT_STR_CONTAINS(output, "does not update CKTexture bitmap data");
     ASSERT_STR_CONTAINS(output, "texture replace");
     free(output);
+}
+
+TEST(cli, debug_help_marks_output_as_diagnostic) {
+    const char *commands[] = {
+        "debug load-phases --help",
+        "debug chunks --help",
+        "debug objects --help",
+        "debug export --help",
+    };
+    for (size_t i = 0; i < sizeof(commands) / sizeof(commands[0]); ++i) {
+        char *output = run_cli(commands[i]);
+        ASSERT_NOT_NULL(output);
+        ASSERT_STR_CONTAINS(output, "Diagnostic output");
+        ASSERT_STR_CONTAINS(output, "not a stable API");
+        free(output);
+    }
 }
 
 TEST(cli, unknown_command_error) {
@@ -2407,6 +3165,7 @@ TEST_MAIN_BEGIN()
     /* type commands */
     REGISTER_TEST(cli, type_list_text);
     REGISTER_TEST(cli, type_list_json);
+    REGISTER_TEST(cli, type_class_tree_text);
 
     /* batch processing */
     REGISTER_TEST(cli, batch_file_info);
@@ -2452,6 +3211,17 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, texture_list_uses_slot_dimensions_when_reader_dimensions_missing);
     REGISTER_TEST(cli, texture_show_accepts_exact_name_selector);
     REGISTER_TEST(cli, texture_show_name_selector_reports_missing_texture);
+    REGISTER_TEST(cli, texture_show_reports_raw_slot_channels);
+    REGISTER_TEST(cli, texture_extract_decodes_raw_slot);
+    REGISTER_TEST(cli, texture_external_raw_slot_extracts_from_real_fixture);
+    REGISTER_TEST(cli, texture_external_reader_slot_reports_mipmap_and_extracts);
+    REGISTER_TEST(cli, texture_reader_alpha_plane_extracts_transparency);
+    REGISTER_TEST(cli, texture_extract_reports_unsupported_empty_raw_slot);
+    REGISTER_TEST(cli, animation_real_sample_reports_keyed_and_object_controllers);
+    REGISTER_TEST(cli, animation_export_real_sample_preserves_controller_metadata);
+    REGISTER_TEST(cli, animation_real_sample_reports_shared_format);
+    REGISTER_TEST(cli, mesh_real_sample_reports_material_groups_and_exports_obj_mtl);
+    REGISTER_TEST(cli, mesh_real_sample_reports_progressive_and_point_variants);
     REGISTER_TEST(cli, specialized_read_commands_accept_exact_name_selectors);
     REGISTER_TEST(cli, object_read_commands_accept_exact_name_selectors);
     REGISTER_TEST(cli, name_selectors_report_family_specific_missing_errors);
@@ -2464,6 +3234,8 @@ TEST_MAIN_BEGIN()
 
     /* help/usage */
     REGISTER_TEST(cli, help_shows_groups);
+    REGISTER_TEST(cli, help_documents_batch_supported_subset);
     REGISTER_TEST(cli, resource_replace_help_distinguishes_payload_from_texture_bitmap);
+    REGISTER_TEST(cli, debug_help_marks_output_as_diagnostic);
     REGISTER_TEST(cli, unknown_command_error);
 TEST_MAIN_END()
