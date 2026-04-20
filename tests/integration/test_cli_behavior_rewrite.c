@@ -504,7 +504,19 @@ TEST(cli, behavior_fold_dry_run_reports_boundary_plan) {
     yyjson_val *data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    yyjson_val *can_write = yyjson_obj_get(data, "can_write");
+    ASSERT_TRUE(can_write && yyjson_is_bool(can_write));
+    ASSERT_FALSE(yyjson_get_bool(can_write));
+    yyjson_val *write_supported = yyjson_obj_get(data, "write_supported");
+    ASSERT_TRUE(write_supported && yyjson_is_bool(write_supported));
     ASSERT_FALSE(get_bool_field(data, "write_supported"));
+    yyjson_val *write_blockers = get_array_field(data, "write_blockers");
+    ASSERT_NOT_NULL(write_blockers);
+    ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(write_blockers));
+    yyjson_val *blocker = yyjson_arr_get(write_blockers, 0);
+    ASSERT_TRUE(blocker && yyjson_is_obj(blocker));
+    ASSERT_STR_EQ("analysis_only", get_string_field(blocker, "code"));
+    ASSERT_NOT_NULL(get_string_field(blocker, "message"));
     ASSERT_EQ(4692u, (uint32_t)get_uint_field(data, "parent_id"));
     ASSERT_EQ(2364u, (uint32_t)get_uint_field(data, "representative_id"));
 

@@ -255,6 +255,32 @@ static void rewrite_fold_report_reject(nmo_behavior_fold_report_t *report,
     report->diagnostic_message = message;
 }
 
+static nmo_status_t rewrite_fold_add_write_blocker(
+    nmo_behavior_fold_report_t *report,
+    const char *code,
+    const char *message) {
+    if (!report || !code || !message) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t new_count = report->write_blocker_count + 1;
+    nmo_behavior_fold_write_blocker_t *new_blockers =
+        (nmo_behavior_fold_write_blocker_t *)realloc(
+            report->write_blockers, new_count * sizeof(*new_blockers));
+    if (!new_blockers) {
+        return NMO_ERR_NOMEM;
+    }
+
+    new_blockers[report->write_blocker_count] =
+        (nmo_behavior_fold_write_blocker_t){
+            .code = code,
+            .message = message,
+        };
+    report->write_blockers = new_blockers;
+    report->write_blocker_count = new_count;
+    return NMO_OK;
+}
+
 nmo_status_t nmo_behavior_fold_analyze(
     nmo_context_t *ctx,
     nmo_session_t *session,
@@ -272,6 +298,7 @@ nmo_status_t nmo_behavior_fold_analyze(
     }
 
     report->analysis_only = true;
+    report->can_write = false;
     report->parent_id = desc->parent_id;
     report->representative_id = desc->node_ids[0];
     report->target_guid = desc->block_guid;
@@ -288,6 +315,15 @@ nmo_status_t nmo_behavior_fold_analyze(
     if (rc != NMO_OK) {
         rewrite_fold_report_reject(report, "out_of_memory",
                                    "Failed to copy selected fold nodes");
+        goto fail;
+    }
+
+    rc = rewrite_fold_add_write_blocker(
+        report, "analysis_only",
+        "Behavior fold write mode is not implemented yet");
+    if (rc != NMO_OK) {
+        rewrite_fold_report_reject(report, "out_of_memory",
+                                   "Failed to record fold write blocker");
         goto fail;
     }
 
@@ -333,6 +369,7 @@ void nmo_behavior_fold_report_free(nmo_behavior_fold_report_t *report) {
     free(report->selected_nodes);
     free(report->nodes_to_delete);
     free(report->control_links_to_delete);
+    free(report->write_blockers);
     nmo_behavior_boundary_free(&report->boundary);
     memset(report, 0, sizeof(*report));
 }

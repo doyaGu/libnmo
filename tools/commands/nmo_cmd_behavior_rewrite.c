@@ -916,8 +916,22 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
         }
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         yyjson_mut_obj_add_bool(doc, data, "dry_run", true);
-        yyjson_mut_obj_add_bool(doc, data, "write_supported", false);
+        yyjson_mut_obj_add_bool(doc, data, "can_write",
+                                report->can_write);
+        yyjson_mut_obj_add_bool(doc, data, "write_supported",
+                                report->can_write);
         nmo_cli_json_add_str_safe(doc, data, "status", "analysis_only");
+        yyjson_mut_val *write_blockers = yyjson_mut_arr(doc);
+        for (size_t i = 0; i < report->write_blocker_count; ++i) {
+            yyjson_mut_val *blocker = yyjson_mut_obj(doc);
+            nmo_cli_json_add_str_safe(doc, blocker, "code",
+                                      report->write_blockers[i].code);
+            nmo_cli_json_add_str_safe(doc, blocker, "message",
+                                      report->write_blockers[i].message);
+            yyjson_mut_arr_add_val(write_blockers, blocker);
+        }
+        yyjson_mut_obj_add_val(doc, data, "write_blockers",
+                               write_blockers);
         yyjson_mut_obj_add_uint(doc, data, "parent_id", report->parent_id);
         nmo_cli_json_add_str_safe(doc, data, "parent_behavior_type",
                                   fold_behavior_type(parent));
@@ -1033,8 +1047,16 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
             fold_interface_action(representative));
     fprintf(ctx->out, "Delete links: %zu\n",
             report->control_links_to_delete_count);
-    fprintf(ctx->out,
-            "Write mode is not implemented yet; dry-run report only.\n");
+    fprintf(ctx->out, "Can write: %s\n", report->can_write ? "yes" : "no");
+    for (size_t i = 0; i < report->write_blocker_count; ++i) {
+        fprintf(ctx->out, "Write blocker: %s",
+                report->write_blockers[i].code);
+        if (report->write_blockers[i].message) {
+            fprintf(ctx->out, " - %s",
+                    report->write_blockers[i].message);
+        }
+        fputc('\n', ctx->out);
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 

@@ -66,8 +66,14 @@ typedef struct nmo_behavior_fold_desc {
     bool preserve_params;
 } nmo_behavior_fold_desc_t;
 
+typedef struct nmo_behavior_fold_write_blocker {
+    const char *code;
+    const char *message;
+} nmo_behavior_fold_write_blocker_t;
+
 typedef struct nmo_behavior_fold_report {
     bool analysis_only;
+    bool can_write;
     nmo_object_id_t parent_id;
     nmo_object_id_t representative_id;
     nmo_guid_t target_guid;
@@ -84,6 +90,9 @@ typedef struct nmo_behavior_fold_report {
     nmo_behavior_boundary_t boundary;
     nmo_behavior_boundary_control_edge_t *control_links_to_delete;
     size_t control_links_to_delete_count;
+
+    nmo_behavior_fold_write_blocker_t *write_blockers;
+    size_t write_blocker_count;
 
     const char *diagnostic_code;
     const char *diagnostic_message;

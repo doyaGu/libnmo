@@ -48,6 +48,11 @@ TEST(beh_rewrite, fold_analyze_reports_selected_boundary_plan)
                                                 &report);
     ASSERT_EQ(NMO_OK, rc);
     ASSERT_TRUE(report.analysis_only);
+    ASSERT_FALSE(report.can_write);
+    ASSERT_EQ(1u, report.write_blocker_count);
+    ASSERT_NOT_NULL(report.write_blockers);
+    ASSERT_STR_EQ("analysis_only", report.write_blockers[0].code);
+    ASSERT_NOT_NULL(report.write_blockers[0].message);
     ASSERT_EQ(4692u, report.parent_id);
     ASSERT_EQ(2364u, report.representative_id);
     ASSERT_EQ(2u, report.selected_node_count);
