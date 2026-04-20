@@ -21,6 +21,10 @@ int nmo_cmd_behavior_graph_boundary_in_session(nmo_cmd_ctx_t *ctx,
                                                int argc,
                                                char **argv);
 
+int nmo_cmd_behavior_replace_bb(int argc,
+                                char **argv,
+                                const nmo_cli_global_opts_t *global);
+
 #ifdef __cplusplus
 }
 #endif

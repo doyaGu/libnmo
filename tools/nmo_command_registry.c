@@ -429,6 +429,19 @@ static void behavior_graph_boundary_usage(FILE *out) {
     fprintf(out, "  --depth <n>      Recursion depth (default: unlimited)\n");
 }
 
+static void behavior_replace_bb_usage(FILE *out) {
+    fprintf(out, "Usage: nmo behavior replace-bb <behavior-id> --guid <guid> [options] <file> -o <output>\n\n");
+    fprintf(out, "Replace an existing leaf building-block behavior while preserving graph boundaries.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --guid <guid>          Replacement building-block GUID (required)\n");
+    fprintf(out, "  --name <name>          Replacement behavior name\n");
+    fprintf(out, "  --version <n>          Replacement building-block version (default: 65536)\n");
+    fprintf(out, "  --preserve-links       Require unchanged control boundary links\n");
+    fprintf(out, "  --preserve-params      Require unchanged parameter boundary edges\n");
+    fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
+    fprintf(out, "  --dry-run              Preview without saving\n");
+}
+
 static void behavior_dump_usage(FILE *out) {
     fprintf(out, "Usage: nmo behavior dump [options] [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Dump a compact behavior tree overview.\n\n");
@@ -967,6 +980,7 @@ static const nmo_cli_action_t behavior_actions[] = {
     ACTION("show", "s", "Show behavior signature", nmo_cmd_behavior_show, behavior_show_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("graph", "g", "Export behavior graph", nmo_cmd_behavior_graph, behavior_graph_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("graph-boundary", NULL, "Export behavior graph boundary", nmo_cmd_behavior_graph_boundary, behavior_graph_boundary_usage, NMO_REPL_ACTION_READ_SESSION),
+    ACTION("replace-bb", NULL, "Replace a leaf building block", nmo_cmd_behavior_replace_bb, behavior_replace_bb_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
     ACTION("dump", "d", "Dump compact behavior tree overview", nmo_cmd_behavior_dump, behavior_dump_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("find", "f", "Search behaviors by name/GUID/type", nmo_cmd_behavior_find, behavior_find_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("trace", "tr", "Trace execution path from IO", nmo_cmd_behavior_trace, behavior_trace_usage, NMO_REPL_ACTION_READ_SESSION),

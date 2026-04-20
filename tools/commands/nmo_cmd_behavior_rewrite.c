@@ -8,10 +8,14 @@
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_common.h"
 #include "../nmo_cli_json.h"
+#include "../nmo_cli_write.h"
 #include "../nmo_opt.h"
 
 #include "behavior/nmo_behavior_boundary.h"
+#include "behavior/nmo_behavior_rewrite.h"
 #include "core/nmo_error.h"
+#include "core/nmo_guid.h"
+#include "core/nmo_parse.h"
 #include "object/nmo_class_ids.h"
 
 #include <stdint.h>
@@ -288,4 +292,267 @@ int nmo_cmd_behavior_graph_boundary_in_session(nmo_cmd_ctx_t *ctx,
     (void)file_path;
 
     return graph_boundary_run(ctx, &selector, depth, false, usage);
+}
+
+typedef struct replace_bb_args {
+    nmo_behavior_replace_bb_desc_t desc;
+    nmo_behavior_rewrite_report_t report;
+} replace_bb_args_t;
+
+static void replace_bb_add_report_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *data,
+    const nmo_behavior_rewrite_report_t *report) {
+    char before_guid[24];
+    char after_guid[24];
+    rewrite_guid_to_string(report->before_guid, before_guid,
+                           sizeof(before_guid));
+    rewrite_guid_to_string(report->after_guid, after_guid,
+                           sizeof(after_guid));
+
+    yyjson_mut_obj_add_uint(doc, data, "behavior_id",
+                            (uint64_t)report->behavior_id);
+    yyjson_mut_obj_add_bool(doc, data, "changed", report->changed);
+
+    yyjson_mut_val *before = yyjson_mut_obj(doc);
+    nmo_cli_json_add_str_safe(doc, before, "guid", before_guid);
+    yyjson_mut_obj_add_uint(doc, before, "flags",
+                            (uint64_t)report->before_flags);
+    yyjson_mut_obj_add_val(doc, data, "before", before);
+
+    yyjson_mut_val *after = yyjson_mut_obj(doc);
+    nmo_cli_json_add_str_safe(doc, after, "guid", after_guid);
+    yyjson_mut_obj_add_uint(doc, after, "flags",
+                            (uint64_t)report->after_flags);
+    yyjson_mut_obj_add_val(doc, data, "after", after);
+
+    yyjson_mut_val *eligibility = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_bool(doc, eligibility, "leaf",
+                            report->eligible_leaf);
+    yyjson_mut_obj_add_uint(doc, eligibility, "sub_behaviors",
+                            (uint64_t)report->sub_behavior_count);
+    yyjson_mut_obj_add_uint(doc, eligibility, "sub_behavior_links",
+                            (uint64_t)report->sub_behavior_link_count);
+    yyjson_mut_obj_add_uint(doc, eligibility, "operations",
+                            (uint64_t)report->operation_count);
+    yyjson_mut_obj_add_val(doc, data, "eligibility", eligibility);
+
+    yyjson_mut_val *preserved = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_uint(doc, preserved, "inputs",
+                            (uint64_t)report->preserved_inputs);
+    yyjson_mut_obj_add_uint(doc, preserved, "outputs",
+                            (uint64_t)report->preserved_outputs);
+    yyjson_mut_obj_add_uint(doc, preserved, "in_parameters",
+                            (uint64_t)report->preserved_in_parameters);
+    yyjson_mut_obj_add_uint(doc, preserved, "out_parameters",
+                            (uint64_t)report->preserved_out_parameters);
+    yyjson_mut_obj_add_uint(doc, preserved, "local_parameters",
+                            (uint64_t)report->preserved_local_parameters);
+    yyjson_mut_obj_add_uint(doc, preserved, "control_in",
+                            (uint64_t)report->preserved_control_in);
+    yyjson_mut_obj_add_uint(doc, preserved, "control_out",
+                            (uint64_t)report->preserved_control_out);
+    yyjson_mut_obj_add_uint(doc, preserved, "parameter_in",
+                            (uint64_t)report->preserved_parameter_in);
+    yyjson_mut_obj_add_uint(doc, preserved, "parameter_out",
+                            (uint64_t)report->preserved_parameter_out);
+    yyjson_mut_obj_add_val(doc, data, "preserved", preserved);
+
+    if (report->diagnostic_code || report->diagnostic_message) {
+        yyjson_mut_val *diagnostic = yyjson_mut_obj(doc);
+        if (report->diagnostic_code) {
+            nmo_cli_json_add_str_safe(doc, diagnostic, "code",
+                                      report->diagnostic_code);
+        }
+        if (report->diagnostic_message) {
+            nmo_cli_json_add_str_safe(doc, diagnostic, "message",
+                                      report->diagnostic_message);
+        }
+        yyjson_mut_obj_add_val(doc, data, "diagnostic", diagnostic);
+    }
+}
+
+static int replace_bb_mutate(nmo_cmd_ctx_t *c,
+                             bool dry_run,
+                             const char *output_path,
+                             void *user_data) {
+    (void)dry_run;
+    (void)output_path;
+    replace_bb_args_t *args = (replace_bb_args_t *)user_data;
+    if (!args) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_status_t rc = nmo_behavior_replace_bb(
+        c->ctx, c->session, &args->desc, &args->report);
+    if (rc != NMO_OK) {
+        fprintf(stderr,
+                "Error: behavior %u is not leaf-replaceable "
+                "(sub_behaviors=%zu, sub_behavior_links=%zu, operations=%zu)",
+                args->desc.behavior_id,
+                args->report.sub_behavior_count,
+                args->report.sub_behavior_link_count,
+                args->report.operation_count);
+        if (args->report.diagnostic_message) {
+            fprintf(stderr, ": %s", args->report.diagnostic_message);
+        }
+        fputc('\n', stderr);
+        return (rc == NMO_ERR_INVALID_ARGUMENT || rc == NMO_ERR_NOT_FOUND)
+            ? NMO_CLI_EXIT_ARG_ERROR
+            : NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int replace_bb_report(nmo_cmd_ctx_t *c,
+                             bool dry_run,
+                             const char *output_path,
+                             void *user_data) {
+    replace_bb_args_t *args = (replace_bb_args_t *)user_data;
+    if (!args) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
+        if (!doc) {
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
+        replace_bb_add_report_json(doc, data, &args->report);
+        if (!dry_run && output_path) {
+            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+        }
+        return nmo_cmd_ctx_json_end(c, doc, data,
+                                    "behavior.replace-bb");
+    }
+
+    if (dry_run) {
+        fprintf(c->out, "[dry-run] ");
+    }
+    char before_guid[24];
+    char after_guid[24];
+    rewrite_guid_to_string(args->report.before_guid, before_guid,
+                           sizeof(before_guid));
+    rewrite_guid_to_string(args->report.after_guid, after_guid,
+                           sizeof(after_guid));
+    fprintf(c->out,
+            "Replaced leaf BB #%u: %s -> %s\n",
+            args->report.behavior_id,
+            before_guid,
+            after_guid);
+    fprintf(c->out,
+            "Preserved: inputs=%zu outputs=%zu in_params=%zu "
+            "out_params=%zu local_params=%zu control_in=%zu "
+            "control_out=%zu parameter_in=%zu parameter_out=%zu\n",
+            args->report.preserved_inputs,
+            args->report.preserved_outputs,
+            args->report.preserved_in_parameters,
+            args->report.preserved_out_parameters,
+            args->report.preserved_local_parameters,
+            args->report.preserved_control_in,
+            args->report.preserved_control_out,
+            args->report.preserved_parameter_in,
+            args->report.preserved_parameter_out);
+    if (!dry_run && output_path) {
+        fprintf(c->out, "Saved to: %s\n", output_path);
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_behavior_replace_bb(int argc,
+                                char **argv,
+                                const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--guid",            NULL, NMO_OPT_STRING, "Replacement BB GUID"},
+        {"--name",            NULL, NMO_OPT_STRING, "Replacement BB name"},
+        {"--version",         NULL, NMO_OPT_UINT,   "Replacement BB version"},
+        {"--preserve-links",  NULL, NMO_OPT_FLAG,   "Require unchanged control boundary"},
+        {"--preserve-params", NULL, NMO_OPT_FLAG,   "Require unchanged parameter boundary"},
+        {"--output",          "-o", NMO_OPT_STRING, "Output file"},
+        {"--dry-run",         NULL, NMO_OPT_FLAG,   "Preview without saving"},
+    };
+    enum {
+        OPT_GUID,
+        OPT_NAME,
+        OPT_VERSION,
+        OPT_PRESERVE_LINKS,
+        OPT_PRESERVE_PARAMS,
+        OPT_OUTPUT,
+        OPT_DRY_RUN,
+        OPT_COUNT
+    };
+
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = {
+        .vals = vals,
+        .pos_args = pos,
+        .pos_capacity = 16,
+    };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (r.pos_count < 2) {
+        fprintf(stderr,
+                "Error: Usage: nmo behavior replace-bb <behavior-id> "
+                "--guid <guid> --name <name> <file> -o <output>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!vals[OPT_GUID].present) {
+        fprintf(stderr, "Error: --guid is required\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_guid_t guid = nmo_guid_parse(vals[OPT_GUID].val.str);
+    if (nmo_guid_is_null(guid)) {
+        fprintf(stderr, "Error: Invalid GUID '%s'\n",
+                vals[OPT_GUID].val.str);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    uint32_t behavior_id = 0;
+    if (nmo_parse_u32_range(r.pos_args[0], 1, UINT32_MAX,
+                            &behavior_id) != NMO_OK) {
+        fprintf(stderr, "Error: Invalid behavior id '%s'\n",
+                r.pos_args[0]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *file_path = r.pos_args[r.pos_count - 1];
+    const char *output_path = vals[OPT_OUTPUT].present
+        ? vals[OPT_OUTPUT].val.str
+        : NULL;
+    bool dry_run = vals[OPT_DRY_RUN].present &&
+                   vals[OPT_DRY_RUN].val.flag;
+
+    replace_bb_args_t args = {
+        .desc = {
+            .behavior_id = behavior_id,
+            .block_guid = guid,
+            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .block_version = vals[OPT_VERSION].present
+                ? vals[OPT_VERSION].val.u
+                : 65536u,
+            .preserve_links = vals[OPT_PRESERVE_LINKS].present &&
+                              vals[OPT_PRESERVE_LINKS].val.flag,
+            .preserve_params = vals[OPT_PRESERVE_PARAMS].present &&
+                               vals[OPT_PRESERVE_PARAMS].val.flag,
+        },
+    };
+    const nmo_cli_write_spec_t spec = {
+        .command_name = "behavior.replace-bb",
+        .output_required_unless_dry_run = true,
+    };
+
+    return nmo_cli_run_write_command(
+        file_path,
+        output_path,
+        dry_run,
+        global,
+        &spec,
+        replace_bb_mutate,
+        replace_bb_report,
+        &args);
 }

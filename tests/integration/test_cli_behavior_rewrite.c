@@ -14,7 +14,10 @@
 #include <stdint.h>
 #include <string.h>
 #if !defined(_WIN32)
+#include <sys/stat.h>
 #include <sys/wait.h>
+#else
+#include <direct.h>
 #endif
 
 #if defined(__MINGW32__) || defined(__MINGW64__)
@@ -112,6 +115,55 @@ static yyjson_val *get_array_field(yyjson_val *obj, const char *key) {
     return (val && yyjson_is_arr(val)) ? val : NULL;
 }
 
+static bool get_bool_field(yyjson_val *obj, const char *key) {
+    yyjson_val *val = yyjson_obj_get(obj, key);
+    return val && yyjson_is_bool(val) && yyjson_get_bool(val);
+}
+
+static uint64_t get_uint_field(yyjson_val *obj, const char *key) {
+    yyjson_val *val = yyjson_obj_get(obj, key);
+    return (val && yyjson_is_uint(val)) ? yyjson_get_uint(val) : 0;
+}
+
+static int file_exists(const char *path) {
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        return 0;
+    }
+    fclose(fp);
+    return 1;
+}
+
+static void make_dir(const char *path) {
+#if defined(_WIN32)
+    _mkdir(path);
+#else
+    mkdir(path, 0777);
+#endif
+}
+
+static void assert_cli_success(const char *args, const char *contains) {
+    cli_run_result_t result = run_cli_capture(args);
+    if (result.exit_code != NMO_CLI_EXIT_SUCCESS ||
+        (contains && (!result.output || !strstr(result.output, contains)))) {
+        fprintf(stderr, "\nCommand: %s\nExit: %d\nOutput:\n%s\n",
+                args, result.exit_code,
+                result.output ? result.output : "(null)");
+    }
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_NOT_NULL(result.output);
+    if (contains) {
+        ASSERT_STR_CONTAINS(result.output, contains);
+    }
+    free(result.output);
+}
+
+static void assert_validate_ok(const char *path) {
+    char args[1024];
+    snprintf(args, sizeof(args), "validate all \"%s\"", path);
+    assert_cli_success(args, "Result: VALID");
+}
+
 static void run_json_command(const char *args,
                              const char *expected_command,
                              yyjson_doc **out_doc) {
@@ -149,6 +201,23 @@ static bool array_contains_uint(yyjson_val *arr, uint64_t needle) {
     return false;
 }
 
+static bool array_contains_object_id(yyjson_val *arr, uint64_t needle) {
+    size_t idx;
+    size_t max;
+    yyjson_val *item;
+
+    if (!arr) {
+        return false;
+    }
+    yyjson_arr_foreach(arr, idx, max, item) {
+        if (yyjson_is_obj(item) &&
+            get_uint_field(item, "id") == needle) {
+            return true;
+        }
+    }
+    return false;
+}
+
 TEST(cli, behavior_graph_boundary_json_smoke) {
     char args[1024];
     snprintf(args, sizeof(args),
@@ -180,6 +249,135 @@ TEST(cli, behavior_graph_boundary_json_smoke) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, behavior_replace_bb_dry_run_reports_leaf_preservation) {
+    remove("test_behavior_rewrite_tmp/replace_bb_dry.cmo");
+    make_dir("test_behavior_rewrite_tmp");
+
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior replace-bb 343 "
+             "--guid 42414C02-10000002 "
+             "--name \"Ballance Load NMO Range\" "
+             "--preserve-links --preserve-params --dry-run \"%s\" "
+             "-o \"test_behavior_rewrite_tmp/replace_bb_dry.cmo\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.replace-bb", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    ASSERT_TRUE(get_bool_field(data, "changed"));
+    ASSERT_EQ(343u, (uint32_t)get_uint_field(data, "behavior_id"));
+
+    yyjson_val *before = get_object_field(data, "before");
+    yyjson_val *after = get_object_field(data, "after");
+    ASSERT_NOT_NULL(before);
+    ASSERT_NOT_NULL(after);
+    ASSERT_STR_EQ("7BD977D7-26396C0C", get_string_field(before, "guid"));
+    ASSERT_STR_EQ("42414C02-10000002", get_string_field(after, "guid"));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(before, "flags")));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(after, "flags")));
+
+    yyjson_val *eligibility = get_object_field(data, "eligibility");
+    ASSERT_NOT_NULL(eligibility);
+    ASSERT_TRUE(get_bool_field(eligibility, "leaf"));
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(eligibility, "sub_behaviors"));
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(eligibility, "sub_behavior_links"));
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(eligibility, "operations"));
+
+    yyjson_val *preserved = get_object_field(data, "preserved");
+    ASSERT_NOT_NULL(preserved);
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(preserved, "control_in")));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(preserved, "control_out")));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(preserved, "parameter_in")));
+    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(preserved, "parameter_out")));
+
+    ASSERT_FALSE(file_exists("test_behavior_rewrite_tmp/replace_bb_dry.cmo"));
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_replace_bb_rejects_non_leaf_script) {
+    remove("test_behavior_rewrite_tmp/replace_bb_reject.cmo");
+    make_dir("test_behavior_rewrite_tmp");
+
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior replace-bb 363 "
+             "--guid 42414C02-10000002 "
+             "--name \"Ballance Load NMO Range\" "
+             "--preserve-links --preserve-params --dry-run \"%s\" "
+             "-o \"test_behavior_rewrite_tmp/replace_bb_reject.cmo\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "not leaf-replaceable");
+    ASSERT_STR_CONTAINS(result.output, "sub_behaviors");
+    ASSERT_STR_CONTAINS(result.output, "sub_behavior_links");
+    ASSERT_STR_CONTAINS(result.output, "operations");
+    ASSERT_FALSE(file_exists("test_behavior_rewrite_tmp/replace_bb_reject.cmo"));
+    free(result.output);
+}
+
+TEST(cli, behavior_replace_bb_saves_output) {
+    const char *output = "test_behavior_rewrite_tmp/replace_bb_save.cmo";
+    remove(output);
+    make_dir("test_behavior_rewrite_tmp");
+
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "behavior replace-bb 343 "
+             "--guid 42414C02-10000002 "
+             "--name \"Ballance Load NMO Range\" "
+             "--preserve-links --preserve-params \"%s\" -o \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output);
+
+    assert_cli_success(args, "Saved to");
+    ASSERT_TRUE(file_exists(output));
+    assert_validate_ok(output);
+
+    char show_args[1024];
+    snprintf(show_args, sizeof(show_args), "-f json behavior show 343 \"%s\"",
+             output);
+    yyjson_doc *doc = NULL;
+    run_json_command(show_args, "behavior.show", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+
+    ASSERT_STR_EQ("BB", get_string_field(data, "behavior_type"));
+    ASSERT_STR_EQ("42414C02-10000002", get_string_field(data, "bb_guid"));
+
+    yyjson_val *inputs = get_array_field(data, "inputs");
+    yyjson_val *outputs = get_array_field(data, "outputs");
+    ASSERT_NOT_NULL(inputs);
+    ASSERT_NOT_NULL(outputs);
+    ASSERT_EQ(2u, (uint32_t)yyjson_arr_size(inputs));
+    ASSERT_EQ(3u, (uint32_t)yyjson_arr_size(outputs));
+    ASSERT_TRUE(array_contains_object_id(inputs, 324u));
+    ASSERT_TRUE(array_contains_object_id(inputs, 325u));
+    ASSERT_TRUE(array_contains_object_id(outputs, 326u));
+    ASSERT_TRUE(array_contains_object_id(outputs, 327u));
+    ASSERT_TRUE(array_contains_object_id(outputs, 328u));
+
+    yyjson_doc_free(doc);
+    remove(output);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_graph_boundary_json_smoke);
+    REGISTER_TEST(cli, behavior_replace_bb_dry_run_reports_leaf_preservation);
+    REGISTER_TEST(cli, behavior_replace_bb_rejects_non_leaf_script);
+    REGISTER_TEST(cli, behavior_replace_bb_saves_output);
 TEST_MAIN_END()
