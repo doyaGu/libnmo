@@ -596,6 +596,47 @@ static void add_fold_retarget_control_edges_json(
     yyjson_mut_obj_add_val(doc, obj, key, arr);
 }
 
+static void add_fold_retarget_parameter_edges_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *obj,
+    const char *key,
+    const nmo_behavior_boundary_parameter_edge_t *edges,
+    size_t count,
+    nmo_object_id_t representative_id,
+    bool incoming) {
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    for (size_t i = 0; i < count; ++i) {
+        char guid_buf[24];
+        rewrite_guid_to_string(edges[i].type_guid, guid_buf,
+                               sizeof(guid_buf));
+
+        yyjson_mut_val *item = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, item, "source_parameter_id",
+                                edges[i].source_parameter_id);
+        yyjson_mut_obj_add_uint(doc, item, "target_parameter_id",
+                                edges[i].target_parameter_id);
+        nmo_cli_json_add_str_safe(doc, item, "type_guid", guid_buf);
+        yyjson_mut_obj_add_bool(doc, item, "shared", edges[i].shared);
+        if (incoming) {
+            yyjson_mut_obj_add_uint(doc, item, "source_owner_id",
+                                    edges[i].source_owner_id);
+            yyjson_mut_obj_add_uint(doc, item, "old_target_owner_id",
+                                    edges[i].target_owner_id);
+            yyjson_mut_obj_add_uint(doc, item, "new_target_owner_id",
+                                    representative_id);
+        } else {
+            yyjson_mut_obj_add_uint(doc, item, "old_source_owner_id",
+                                    edges[i].source_owner_id);
+            yyjson_mut_obj_add_uint(doc, item, "new_source_owner_id",
+                                    representative_id);
+            yyjson_mut_obj_add_uint(doc, item, "target_owner_id",
+                                    edges[i].target_owner_id);
+        }
+        yyjson_mut_arr_add_val(arr, item);
+    }
+    yyjson_mut_obj_add_val(doc, obj, key, arr);
+}
+
 static bool parse_fold_nodes(const char *text,
                              nmo_object_id_t *out_nodes,
                              size_t out_capacity,
@@ -1066,6 +1107,17 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
                                  boundary->parameter_out_count);
         yyjson_mut_obj_add_val(doc, planned,
                                "parameters_to_preserve", params);
+        yyjson_mut_val *param_retarget = yyjson_mut_obj(doc);
+        add_fold_retarget_parameter_edges_json(
+            doc, param_retarget, "parameter_in",
+            boundary->parameter_in, boundary->parameter_in_count,
+            representative_id, true);
+        add_fold_retarget_parameter_edges_json(
+            doc, param_retarget, "parameter_out",
+            boundary->parameter_out, boundary->parameter_out_count,
+            representative_id, false);
+        yyjson_mut_obj_add_val(doc, planned, "parameters_to_retarget",
+                               param_retarget);
         add_fold_interface_json(doc, planned, representative);
         yyjson_mut_obj_add_uint(doc, planned, "node_count",
                                 (uint64_t)boundary->internal_node_count);

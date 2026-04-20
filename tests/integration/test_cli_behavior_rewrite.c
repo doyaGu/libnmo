@@ -631,6 +631,51 @@ TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, behavior_fold_dry_run_reports_parameter_rewire_plan) {
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior fold --parent 2378 --nodes 2378,2374 "
+             "--guid 42414C07-10000007 "
+             "--name \"Param Fold\" "
+             "--preserve-links --preserve-params --dry-run \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.fold", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    yyjson_val *planned = get_object_field(data, "planned");
+    ASSERT_NOT_NULL(planned);
+
+    yyjson_val *parameters_to_retarget =
+        get_object_field(planned, "parameters_to_retarget");
+    ASSERT_NOT_NULL(parameters_to_retarget);
+    yyjson_val *retarget_in =
+        get_array_field(parameters_to_retarget, "parameter_in");
+    yyjson_val *retarget_out =
+        get_array_field(parameters_to_retarget, "parameter_out");
+    ASSERT_NOT_NULL(retarget_in);
+    ASSERT_NOT_NULL(retarget_out);
+
+    yyjson_val *param = find_object_by_uint_field(retarget_in,
+                                                  "source_parameter_id",
+                                                  2373u);
+    ASSERT_NOT_NULL(param);
+    ASSERT_EQ(2374u, (uint32_t)get_uint_field(param,
+                                              "target_parameter_id"));
+    ASSERT_EQ(2378u, (uint32_t)get_uint_field(param,
+                                              "old_target_owner_id"));
+    ASSERT_EQ(2378u, (uint32_t)get_uint_field(param,
+                                              "new_target_owner_id"));
+    ASSERT_NOT_NULL(get_string_field(param, "type_guid"));
+
+    yyjson_doc_free(doc);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_graph_boundary_json_smoke);
     REGISTER_TEST(cli, behavior_replace_bb_dry_run_reports_leaf_preservation);
@@ -641,4 +686,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_boundary_plan);
     REGISTER_TEST(cli, behavior_fold_dry_run_uses_explicit_node_set);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan);
+    REGISTER_TEST(cli, behavior_fold_dry_run_reports_parameter_rewire_plan);
 TEST_MAIN_END()
