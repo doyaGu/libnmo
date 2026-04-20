@@ -688,6 +688,29 @@ TEST(cli, behavior_fold_dry_run_reports_parameter_rewire_plan) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, behavior_fold_write_rejects_with_analysis_blocker) {
+    const char *output = "test_behavior_rewrite_tmp/fold_write_reject.cmo";
+    remove(output);
+    make_dir("test_behavior_rewrite_tmp");
+
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "behavior fold --parent 4692 --nodes 2364,2208 "
+             "--guid 42414C07-10000007 "
+             "--name \"Ballance Event Handler\" "
+             "--preserve-links --preserve-params \"%s\" -o \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output);
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "analysis_only");
+    ASSERT_STR_CONTAINS(result.output, "write mode is not implemented");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_graph_boundary_json_smoke);
     REGISTER_TEST(cli, behavior_replace_bb_dry_run_reports_leaf_preservation);
@@ -699,4 +722,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_fold_dry_run_uses_explicit_node_set);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_parameter_rewire_plan);
+    REGISTER_TEST(cli, behavior_fold_write_rejects_with_analysis_blocker);
 TEST_MAIN_END()

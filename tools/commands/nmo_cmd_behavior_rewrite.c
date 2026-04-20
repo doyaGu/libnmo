@@ -313,6 +313,7 @@ typedef struct fold_args {
     bool preserve_links;
     bool preserve_params;
     bool dry_run;
+    const char *output_path;
 } fold_args_t;
 
 static const char *fold_behavior_type(const nmo_behavior_state_t *state) {
@@ -887,6 +888,9 @@ static bool parse_fold_args(int argc,
                            vals[OPT_PRESERVE_PARAMS].val.flag;
     args.dry_run = vals[OPT_DRY_RUN].present &&
                    vals[OPT_DRY_RUN].val.flag;
+    args.output_path = vals[OPT_OUTPUT].present
+        ? vals[OPT_OUTPUT].val.str
+        : NULL;
     if (args.parent_id == 0 || nmo_guid_is_null(args.block_guid) ||
         !parse_fold_nodes(vals[OPT_NODES].val.str, args.nodes,
                           sizeof(args.nodes) / sizeof(args.nodes[0]),
@@ -1074,10 +1078,8 @@ int nmo_cmd_behavior_fold(int argc,
         fprintf(stderr, "Usage: %s\n", usage);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (!args.dry_run) {
-        fprintf(stderr,
-                "Error: behavior fold write mode is not implemented yet; "
-                "use --dry-run\n");
+    if (!args.dry_run && (!args.output_path || args.output_path[0] == '\0')) {
+        fprintf(stderr, "Error: behavior fold write requires -o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     nmo_cmd_ctx_t c;
@@ -1108,22 +1110,29 @@ int nmo_cmd_behavior_fold(int argc,
         .preserve_links = args.preserve_links,
         .preserve_params = args.preserve_params,
     };
-    nmo_status_t analyze_rc = nmo_behavior_fold_analyze(c.ctx, c.session,
-                                                        &desc, &report);
-    if (analyze_rc != NMO_OK) {
+    nmo_status_t fold_rc = args.dry_run
+        ? nmo_behavior_fold_analyze(c.ctx, c.session, &desc, &report)
+        : nmo_behavior_fold(c.ctx, c.session, &desc, &report);
+    if (fold_rc != NMO_OK) {
         if (report.diagnostic_message) {
-            fprintf(stderr, "Error: %s\n", report.diagnostic_message);
+            fprintf(stderr, "Error: behavior fold rejected");
+            if (report.diagnostic_code) {
+                fprintf(stderr, " (%s)", report.diagnostic_code);
+            }
+            fprintf(stderr, ": %s\n", report.diagnostic_message);
         } else {
             fprintf(stderr, "Error: Failed to analyze behavior fold\n");
         }
-        rc = (analyze_rc == NMO_ERR_INVALID_ARGUMENT ||
-              analyze_rc == NMO_ERR_NOT_FOUND)
+        rc = (fold_rc == NMO_ERR_INVALID_ARGUMENT ||
+              fold_rc == NMO_ERR_NOT_FOUND)
             ? NMO_CLI_EXIT_ARG_ERROR
             : NMO_CLI_EXIT_INTERNAL_ERROR;
         goto cleanup;
     }
 
-    rc = fold_emit_dry_run(&c, parent, representative, &report);
+    rc = args.dry_run
+        ? fold_emit_dry_run(&c, parent, representative, &report)
+        : NMO_CLI_EXIT_SUCCESS;
 
 cleanup:
     nmo_behavior_fold_report_free(&report);

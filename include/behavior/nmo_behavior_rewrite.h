@@ -110,6 +110,12 @@ NMO_API nmo_status_t nmo_behavior_fold_analyze(
     const nmo_behavior_fold_desc_t *desc,
     nmo_behavior_fold_report_t *report);
 
+NMO_API nmo_status_t nmo_behavior_fold(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const nmo_behavior_fold_desc_t *desc,
+    nmo_behavior_fold_report_t *report);
+
 NMO_API void nmo_behavior_fold_report_free(
     nmo_behavior_fold_report_t *report);
 

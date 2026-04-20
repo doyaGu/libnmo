@@ -362,6 +362,33 @@ fail:
     return rc;
 }
 
+nmo_status_t nmo_behavior_fold(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const nmo_behavior_fold_desc_t *desc,
+    nmo_behavior_fold_report_t *report) {
+    nmo_status_t rc = nmo_behavior_fold_analyze(ctx, session, desc, report);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    if (!report->can_write) {
+        if (report->write_blocker_count > 0) {
+            rewrite_fold_report_reject(report,
+                                       report->write_blockers[0].code,
+                                       report->write_blockers[0].message);
+        } else {
+            rewrite_fold_report_reject(
+                report, "unsupported",
+                "Behavior fold write mode is not supported");
+        }
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    rewrite_fold_report_reject(report, "unsupported",
+                               "Behavior fold write mode is not supported");
+    return NMO_ERR_NOT_IMPLEMENTED;
+}
+
 void nmo_behavior_fold_report_free(nmo_behavior_fold_report_t *report) {
     if (!report) {
         return;
