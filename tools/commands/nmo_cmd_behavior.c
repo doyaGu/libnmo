@@ -66,18 +66,10 @@ int nmo_cmd_behavior_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return nmo_cmd_object_in_session(ctx, 3, find_args);
     }
     if (strcmp(argv[0], "graph") == 0 || strcmp(argv[0], "g") == 0) {
-        fprintf(ctx->out, "digraph behavior {\n}\n");
-        return NMO_CLI_EXIT_SUCCESS;
+        return nmo_cmd_behavior_graph_in_session(ctx, argc, argv);
     }
     if (strcmp(argv[0], "interface") == 0 || strcmp(argv[0], "iface") == 0) {
-        if (argc >= 2 && argv[1][0] != '-' &&
-            !(argv[1][0] >= '0' && argv[1][0] <= '9') &&
-            strcmp(argv[1], "show") != 0 && strcmp(argv[1], "s") != 0) {
-            fprintf(stderr, "Unsupported behavior interface read action in session: %s\n", argv[1]);
-            return NMO_CLI_EXIT_ARG_ERROR;
-        }
-        fprintf(ctx->out, "Behavior Interface\n");
-        return NMO_CLI_EXIT_SUCCESS;
+        return nmo_cmd_behavior_interface_in_session(ctx, argc, argv);
     }
 
     fprintf(stderr, "Unsupported behavior read action in session: %s\n", argv[0]);

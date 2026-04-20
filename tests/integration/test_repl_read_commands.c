@@ -24,17 +24,21 @@
 #include <stdlib.h>
 #include <string.h>
 #if defined(_WIN32)
+#include <direct.h>
 #include <io.h>
 #define NMO_TEST_DUP _dup
 #define NMO_TEST_DUP2 _dup2
 #define NMO_TEST_CLOSE _close
 #define NMO_TEST_FILENO _fileno
+#define NMO_TEST_RMDIR _rmdir
 #else
+#include <sys/stat.h>
 #include <unistd.h>
 #define NMO_TEST_DUP dup
 #define NMO_TEST_DUP2 dup2
 #define NMO_TEST_CLOSE close
 #define NMO_TEST_FILENO fileno
+#define NMO_TEST_RMDIR rmdir
 #endif
 
 #ifndef NMO_SOURCE_DIR
@@ -115,6 +119,16 @@ static char *read_text_file(const char *path) {
     }
     buf[size] = '\0';
     return buf;
+}
+
+static bool file_exists(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        return false;
+    }
+    fclose(f);
+    return true;
 }
 
 static char *read_source_text(const char *relative_path)
@@ -269,6 +283,112 @@ TEST(repl_read, object_list_fields_uses_full_session_core) {
         "object list-fields 2",
         "test_repl_object_fields.txt",
         "parent_id");
+
+    close_repl(&repl);
+}
+
+TEST(repl_read, object_refgraph_actions_use_session_core) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+
+    assert_captured_read_ok_contains(
+        &repl,
+        "object impact 46",
+        "test_repl_object_impact.txt",
+        "Cascade deletion would remove");
+    assert_captured_read_ok_contains(
+        &repl,
+        "object orphans",
+        "test_repl_object_orphans.txt",
+        "Orphan Analysis");
+    assert_captured_read_ok_contains(
+        &repl,
+        "object cycles",
+        "test_repl_object_cycles.txt",
+        "Cycle Detection");
+    assert_captured_read_ok_contains(
+        &repl,
+        "object graph",
+        "test_repl_object_graph.txt",
+        "Reference Graph:");
+
+    close_repl(&repl);
+}
+
+TEST(repl_read, behavior_read_actions_use_session_core) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+
+    assert_captured_read_ok_contains(
+        &repl,
+        "behavior graph 517",
+        "test_repl_behavior_graph.txt",
+        "Behavior Graph");
+    assert_captured_read_ok_contains(
+        &repl,
+        "behavior graph 517",
+        "test_repl_behavior_graph.txt",
+        "Nodes:");
+    close_repl(&repl);
+
+    open_repl(&repl, NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo"));
+    assert_captured_read_ok_contains(
+        &repl,
+        "behavior interface show --name \"Topic - Prevent Collision\"",
+        "test_repl_behavior_interface.txt",
+        "Interface:");
+    assert_captured_read_ok_contains(
+        &repl,
+        "behavior interface show --name \"Topic - Prevent Collision\"",
+        "test_repl_behavior_interface.txt",
+        "Sub-behaviors");
+
+    close_repl(&repl);
+}
+
+TEST(repl_read, mesh_and_animation_exports_use_session_core) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/P_Box.nmo"));
+
+    remove("test_repl_mesh_export/P_Box_Mesh_3.obj");
+    remove("test_repl_mesh_export/P_Box_Mesh_3.mtl");
+    NMO_TEST_RMDIR("test_repl_mesh_export");
+
+    ASSERT_EQ(0, run_repl_command(&repl, "mesh export --out-dir test_repl_mesh_export --all"));
+    ASSERT_FALSE(repl.dirty);
+    ASSERT_TRUE(file_exists("test_repl_mesh_export/P_Box_Mesh_3.obj"));
+    ASSERT_TRUE(file_exists("test_repl_mesh_export/P_Box_Mesh_3.mtl"));
+
+    remove("test_repl_mesh_export/P_Box_Mesh_3.obj");
+    remove("test_repl_mesh_export/P_Box_Mesh_3.mtl");
+    NMO_TEST_RMDIR("test_repl_mesh_export");
+    close_repl(&repl);
+
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+    remove("test_repl_anim_export/Kamera02_519.anim.json");
+    remove("test_repl_anim_export/Record Anim_1082.anim.json");
+    NMO_TEST_RMDIR("test_repl_anim_export");
+
+    ASSERT_EQ(0, run_repl_command(&repl, "animation export --out-dir test_repl_anim_export --all"));
+    ASSERT_FALSE(repl.dirty);
+    ASSERT_TRUE(file_exists("test_repl_anim_export/Kamera02_519.anim.json"));
+    ASSERT_TRUE(file_exists("test_repl_anim_export/Record Anim_1082.anim.json"));
+
+    remove("test_repl_anim_export/Kamera02_519.anim.json");
+    remove("test_repl_anim_export/Record Anim_1082.anim.json");
+    NMO_TEST_RMDIR("test_repl_anim_export");
+    close_repl(&repl);
+}
+
+TEST(repl_read, export_reads_reject_missing_output_directory) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/P_Box.nmo"));
+
+    assert_read_fails_clean(&repl, "mesh export --all");
+    close_repl(&repl);
+
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+    assert_read_fails_clean(&repl, "animation export --all");
 
     close_repl(&repl);
 }
@@ -587,6 +707,19 @@ TEST(repl_read, no_borrowed_session_adapter_symbols_remain) {
                                "nmo_cmd_in_session_dispatch_with_source");
 }
 
+TEST(repl_read, no_remaining_repl_read_placeholder_strings) {
+    assert_source_not_contains("tools/commands/nmo_cmd_behavior.c",
+                               "Behavior Interface");
+    assert_source_not_contains("tools/commands/nmo_cmd_mesh.c",
+                               "Mesh export from current session");
+    assert_source_not_contains("tools/commands/nmo_cmd_animation.c",
+                               "Animation export from current session");
+    assert_source_not_contains("tools/commands/nmo_cmd_object.c",
+                               "digraph nmo_refs");
+    assert_source_not_contains("tools/commands/nmo_cmd_behavior.c",
+                               "digraph behavior");
+}
+
 TEST(repl_read, no_active_session_adapter_symbols_remain) {
     assert_source_not_contains("tools/nmo_cmd_ctx.c", "g_active_session_ctx");
     assert_source_not_contains("tools/nmo_cmd_ctx.h",
@@ -749,6 +882,10 @@ TEST(repl_read, legacy_read_shortcuts_still_work) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, object_grouped_read_commands_use_cli_shape);
     REGISTER_TEST(repl_read, object_list_fields_uses_full_session_core);
+    REGISTER_TEST(repl_read, object_refgraph_actions_use_session_core);
+    REGISTER_TEST(repl_read, behavior_read_actions_use_session_core);
+    REGISTER_TEST(repl_read, mesh_and_animation_exports_use_session_core);
+    REGISTER_TEST(repl_read, export_reads_reject_missing_output_directory);
     REGISTER_TEST(repl_read, parameter_grouped_read_commands_use_cli_shape);
     REGISTER_TEST(repl_read, grouped_read_commands_reject_invalid_cli_shape);
     REGISTER_TEST(repl_read, mirrored_cli_read_groups_are_available);
@@ -763,6 +900,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, cli_read_table_has_no_session_public_fallbacks);
     REGISTER_TEST(repl_read, all_read_session_groups_have_family_dispatchers);
     REGISTER_TEST(repl_read, no_borrowed_session_adapter_symbols_remain);
+    REGISTER_TEST(repl_read, no_remaining_repl_read_placeholder_strings);
     REGISTER_TEST(repl_read, no_active_session_adapter_symbols_remain);
     REGISTER_TEST(repl_read, command_source_is_not_a_global_cli_option);
     REGISTER_TEST(repl_read, chunk_session_dispatch_does_not_use_ctx_dispatch_helper);

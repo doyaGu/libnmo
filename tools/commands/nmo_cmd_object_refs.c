@@ -325,49 +325,23 @@ int nmo_cmd_object_refs_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
  * object impact - Show deletion impact analysis
  * ============================================================================ */
 
-int nmo_cmd_object_impact(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    static const nmo_opt_def_t opts[] = {
-        {"--id",   "-i", NMO_OPT_UINT,   "Object ID"},
-        {"--name", "-n", NMO_OPT_STRING, "Object name"},
-    };
-    enum { OPT_ID, OPT_NAME, OPT_COUNT };
-    nmo_opt_val_t vals[OPT_COUNT];
-    const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
-
-    bool in_session = false;
-    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
-    const char *positional_id = NULL;
-    if (!has_selector_opt) {
-        positional_id = in_session
-            ? (r.pos_count >= 1 ? r.pos_args[0] : NULL)
-            : (r.pos_count >= 2 ? r.pos_args[0] : NULL);
-    }
-    if (!has_selector_opt && positional_id == NULL) {
-        fprintf(stderr, "Error: No object selector specified\n");
-        fprintf(stderr, "Usage: nmo object impact [--id <id> | --name <name> | <id>] <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
+static int object_impact_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
+                             bool close_ctx, const char *usage) {
+    nmo_cmd_ctx_t c = *ctx;
     nmo_core_object_selector_t selector = {
-        .has_id = vals[OPT_ID].present,
-        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
-        .positional_id = positional_id,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .has_id = args->has_id,
+        .id = args->id,
+        .positional_id = args->positional_id,
+        .name = args->name,
         .selector_label = "Object",
         .type_label = "object",
     };
     nmo_object_t *obj = NULL;
     nmo_object_id_t object_id = 0;
-    rc = nmo_core_resolve_one_object(&c, &selector, &obj, &object_id);
+    int rc = nmo_core_resolve_one_object(&c, &selector, &obj, &object_id);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
-        fprintf(stderr, "Usage: nmo object impact [--id <id> | --name <name> | <id>] <file>\n");
-        return nmo_cmd_ctx_done(&c, rc);
+        fprintf(stderr, "Usage: %s\n", usage);
+        return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
     }
 
     const char *obj_name = nmo_object_get_name(obj);
@@ -379,14 +353,16 @@ int nmo_cmd_object_impact(int argc, char **argv, const nmo_cli_global_opts_t *gl
     nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
     if (!graph) {
         fprintf(stderr, "Error: Failed to create reference graph\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Arena for cascade preview */
     nmo_arena_t *arena = nmo_arena_create(NULL, 0);
     if (!arena) {
         fprintf(stderr, "Error: Failed to create arena\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
@@ -552,14 +528,38 @@ int nmo_cmd_object_impact(int argc, char **argv, const nmo_cli_global_opts_t *gl
     }
 
     nmo_arena_destroy(arena);
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS)
+                     : NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_object_impact(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    object_refs_args_t args;
+    const char *usage = "nmo object impact [--id <id> | --name <name> | <id>] <file>";
+    int rc = object_refs_parse(argc, argv, true, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    nmo_cmd_ctx_t c;
+    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    return object_impact_run(&c, &args, true, usage);
 }
 
 /* ============================================================================
  * object orphans - Find unreachable objects
  * ============================================================================ */
 
-int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+typedef struct object_orphans_args {
+    const char *class_filter_str;
+} object_orphans_args_t;
+
+static int object_orphans_parse(int argc, char **argv, bool expect_file_operand,
+                                object_orphans_args_t *args,
+                                const char *usage) {
+    memset(args, 0, sizeof(*args));
+
     static const nmo_opt_def_t opts[] = {
         {"--class", "-c", NMO_OPT_STRING, "Filter by class name"},
     };
@@ -569,29 +569,37 @@ int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *g
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *class_filter_str = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL;
+    if (!expect_file_operand && r.pos_count != 0) {
+        fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[0]);
+        fprintf(stderr, "Usage: %s\n", usage);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    args->class_filter_str = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL;
+    return NMO_CLI_EXIT_SUCCESS;
+}
 
+static int object_orphans_run(nmo_cmd_ctx_t *ctx, const object_orphans_args_t *args,
+                              bool close_ctx) {
+    nmo_cmd_ctx_t c = *ctx;
     nmo_object_query_t class_query = {0};
     nmo_core_query_build_options_t query_opts = {
-        .class_name = class_filter_str,
+        .class_name = args->class_filter_str,
         .include_derived_classes = true,
     };
-    rc = nmo_core_query_build(&c, &class_query, NULL, &query_opts);
+    int rc = nmo_core_query_build(&c, &class_query, NULL, &query_opts);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
-        return nmo_cmd_ctx_done(&c, rc);
+        return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
     }
     const nmo_object_query_t *filter_query =
-        class_filter_str != NULL ? &class_query : NULL;
+        args->class_filter_str != NULL ? &class_query : NULL;
 
     nmo_core_iter_result_t object_query_result = {0};
     rc = nmo_core_object_query_run(&c, NULL, NULL, NULL, &object_query_result);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         fprintf(stderr, "Error: Failed to query objects\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
     size_t object_count = object_query_result.matched;
 
@@ -599,13 +607,15 @@ int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *g
     nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
     if (!graph) {
         fprintf(stderr, "Error: Failed to create reference graph\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     nmo_arena_t *arena = nmo_arena_create(NULL, 0);
     if (!arena) {
         fprintf(stderr, "Error: Failed to create arena\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Use library API for orphan detection */
@@ -617,7 +627,8 @@ int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *g
     if (st != NMO_OK) {
         nmo_arena_destroy(arena);
         fprintf(stderr, "Error: Orphan detection failed\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Apply optional class filter to the orphan list */
@@ -695,34 +706,58 @@ int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *g
     }
 
     nmo_arena_destroy(arena);
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS)
+                     : NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    object_orphans_args_t args;
+    const char *usage = "nmo object orphans [--class <name>] <file>";
+    int rc = object_orphans_parse(argc, argv, true, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+
+    nmo_cmd_ctx_t c;
+    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    return object_orphans_run(&c, &args, true);
 }
 
 /* ============================================================================
  * object cycles - Detect circular references
  * ============================================================================ */
 
-int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+static int object_cycles_parse(int argc, char **argv, bool expect_file_operand,
+                               const char *usage) {
     nmo_opt_val_t vals[1];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, NULL, 0, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    if (!expect_file_operand && r.pos_count != 0) {
+        fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[0]);
+        fprintf(stderr, "Usage: %s\n", usage);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int object_cycles_run(nmo_cmd_ctx_t *ctx, bool close_ctx) {
+    nmo_cmd_ctx_t c = *ctx;
     /* Get reference graph from session cache */
     nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
     if (!graph) {
         fprintf(stderr, "Error: Failed to create reference graph\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     nmo_arena_t *arena = nmo_arena_create(NULL, 0);
     if (!arena) {
         fprintf(stderr, "Error: Failed to create arena\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Use library API for cycle detection */
@@ -734,7 +769,8 @@ int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *gl
     if (st != NMO_OK) {
         nmo_arena_destroy(arena);
         fprintf(stderr, "Error: Cycle detection failed\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Output results */
@@ -818,7 +854,20 @@ int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *gl
     }
 
     nmo_arena_destroy(arena);
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS)
+                     : NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    const char *usage = "nmo object cycles <file>";
+    int rc = object_cycles_parse(argc, argv, true, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+
+    nmo_cmd_ctx_t c;
+    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    return object_cycles_run(&c, true);
 }
 
 /* ============================================================================
@@ -855,7 +904,16 @@ static size_t graph_collect_nodes(const nmo_ref_edge_t *edges, size_t edge_count
     return count;
 }
 
-int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+typedef struct object_graph_args {
+    bool dot_mode;
+    const char *kind_str;
+} object_graph_args_t;
+
+static int object_graph_parse(int argc, char **argv, bool expect_file_operand,
+                              object_graph_args_t *args,
+                              const char *usage) {
+    memset(args, 0, sizeof(*args));
+
     static const nmo_opt_def_t opts[] = {
         {"--dot",  NULL, NMO_OPT_FLAG,   "Output DOT digraph format"},
         {"--kind", NULL, NMO_OPT_STRING, "Filter edges by ref kind name"},
@@ -866,18 +924,26 @@ int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    bool dot_mode = vals[OPT_DOT].present && vals[OPT_DOT].val.flag;
-    const char *kind_str = vals[OPT_KIND].present ? vals[OPT_KIND].val.str : NULL;
+    if (!expect_file_operand && r.pos_count != 0) {
+        fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[0]);
+        fprintf(stderr, "Usage: %s\n", usage);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
+    args->dot_mode = vals[OPT_DOT].present && vals[OPT_DOT].val.flag;
+    args->kind_str = vals[OPT_KIND].present ? vals[OPT_KIND].val.str : NULL;
+    return NMO_CLI_EXIT_SUCCESS;
+}
 
+static int object_graph_run(nmo_cmd_ctx_t *ctx, const object_graph_args_t *args,
+                            bool close_ctx) {
+    nmo_cmd_ctx_t c = *ctx;
     /* Get reference graph from session cache */
     nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
     if (!graph) {
         fprintf(stderr, "Error: Failed to create reference graph\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Get all edges */
@@ -885,7 +951,8 @@ int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *glo
     size_t all_count = 0;
     if (nmo_ref_graph_get_edges(graph, &all_edges, &all_count) != NMO_OK) {
         fprintf(stderr, "Error: Failed to get edges\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Optional kind filter: build a filtered edge list */
@@ -893,15 +960,17 @@ int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *glo
     size_t edge_count = all_count;
     nmo_ref_edge_t *filtered = NULL;
 
-    if (kind_str) {
+    if (args->kind_str) {
         filtered = (nmo_ref_edge_t *)malloc(all_count * sizeof(nmo_ref_edge_t));
         if (!filtered) {
             fprintf(stderr, "Error: Allocation failed\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                             : NMO_CLI_EXIT_INTERNAL_ERROR;
         }
         size_t fc = 0;
         for (size_t i = 0; i < all_count; ++i) {
-            if (nmo_tool_streq_ci(nmo_ref_kind_name(all_edges[i].kind), kind_str)) {
+            if (nmo_tool_streq_ci(nmo_ref_kind_name(all_edges[i].kind),
+                                  args->kind_str)) {
                 filtered[fc++] = all_edges[i];
             }
         }
@@ -980,12 +1049,13 @@ int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *glo
         yyjson_mut_obj_add_val(doc, data, "kind_summary", jsummary);
 
         nmo_cmd_ctx_json_end(&c, doc, data, "object.graph");
-    } else if (dot_mode) {
+    } else if (args->dot_mode) {
         /* ---- DOT output via library ---- */
         uint32_t kind_mask = 0;
-        if (kind_str) {
+        if (args->kind_str) {
             for (int k = 0; k < NMO_REF_KIND_MAX; ++k) {
-                if (nmo_tool_streq_ci(nmo_ref_kind_name((nmo_ref_kind_t)k), kind_str)) {
+                if (nmo_tool_streq_ci(nmo_ref_kind_name((nmo_ref_kind_t)k),
+                                      args->kind_str)) {
                     kind_mask |= (1u << (unsigned)k);
                     break;
                 }
@@ -1016,5 +1086,61 @@ int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
     free(node_ids);
     free(filtered);
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS)
+                     : NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    object_graph_args_t args;
+    const char *usage = "nmo object graph [--dot] [--kind <kind>] <file>";
+    int rc = object_graph_parse(argc, argv, true, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+
+    nmo_cmd_ctx_t c;
+    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    return object_graph_run(&c, &args, true);
+}
+
+int nmo_cmd_object_refgraph_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
+    if (!ctx || argc < 1 || !argv || !argv[0]) {
+        fprintf(stderr, "Usage: object impact|orphans|cycles|graph ...\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (strcmp(argv[0], "impact") == 0 || strcmp(argv[0], "imp") == 0) {
+        object_refs_args_t args;
+        const char *usage = "object impact [--id <id> | --name <name> | <id>]";
+        int rc = object_refs_parse(argc, argv, false, &args, usage);
+        if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+        return object_impact_run(ctx, &args, false, usage);
+    }
+
+    if (strcmp(argv[0], "orphans") == 0 || strcmp(argv[0], "orp") == 0) {
+        object_orphans_args_t args;
+        const char *usage = "object orphans [--class <name>]";
+        int rc = object_orphans_parse(argc, argv, false, &args, usage);
+        if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+        return object_orphans_run(ctx, &args, false);
+    }
+
+    if (strcmp(argv[0], "cycles") == 0 || strcmp(argv[0], "cyc") == 0) {
+        const char *usage = "object cycles";
+        int rc = object_cycles_parse(argc, argv, false, usage);
+        if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+        return object_cycles_run(ctx, false);
+    }
+
+    if (strcmp(argv[0], "graph") == 0 || strcmp(argv[0], "gr") == 0) {
+        object_graph_args_t args;
+        const char *usage = "object graph [--dot] [--kind <kind>]";
+        int rc = object_graph_parse(argc, argv, false, &args, usage);
+        if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+        return object_graph_run(ctx, &args, false);
+    }
+
+    fprintf(stderr, "Unsupported object reference graph action in session: %s\n",
+            argv[0]);
+    return NMO_CLI_EXIT_ARG_ERROR;
 }

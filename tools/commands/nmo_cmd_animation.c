@@ -50,8 +50,7 @@ int nmo_cmd_animation_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return nmo_cmd_object_show_in_session(ctx, argc, argv);
     }
     if (strcmp(argv[0], "export") == 0 || strcmp(argv[0], "x") == 0) {
-        fprintf(ctx->out, "Animation export from current session requires an animation selector and output path.\n");
-        return NMO_CLI_EXIT_SUCCESS;
+        return nmo_cmd_animation_export_in_session(ctx, argc, argv);
     }
 
     fprintf(stderr, "Unsupported animation read action in session: %s\n", argv[0]);
@@ -883,6 +882,66 @@ typedef struct animation_export_data {
     uint32_t exported;
 } animation_export_data_t;
 
+typedef struct animation_export_args {
+    bool has_id;
+    uint32_t id;
+    const char *name;
+    const char *out_dir;
+    const char *positional_id;
+    bool export_all;
+} animation_export_args_t;
+
+static int animation_export_parse(int argc, char **argv,
+                                  bool expect_file_operand,
+                                  animation_export_args_t *args,
+                                  const char *usage) {
+    memset(args, 0, sizeof(*args));
+
+    static const nmo_opt_def_t opts[] = {
+        {"--id",      "-i", NMO_OPT_UINT,   "Object animation ID"},
+        {"--name",    "-n", NMO_OPT_STRING, "Object animation name"},
+        {"--out-dir", "-d", NMO_OPT_STRING, "Output directory (required)"},
+        {"--all",     NULL, NMO_OPT_FLAG,   "Export all CKObjectAnimation objects"},
+    };
+    enum { OPT_ID, OPT_NAME, OPT_OUT_DIR, OPT_ALL, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    args->has_id = vals[OPT_ID].present;
+    args->id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0;
+    args->name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
+    args->out_dir = vals[OPT_OUT_DIR].present ? vals[OPT_OUT_DIR].val.str : NULL;
+    args->export_all = vals[OPT_ALL].present && vals[OPT_ALL].val.flag;
+
+    bool has_selector_opt = args->has_id || args->name != NULL;
+    if (!has_selector_opt && !args->export_all) {
+        if (expect_file_operand) {
+            args->positional_id = r.pos_count >= 2 ? r.pos_args[0] : NULL;
+        } else {
+            args->positional_id = r.pos_count == 1 ? r.pos_args[0] : NULL;
+        }
+    } else if (!expect_file_operand && r.pos_count != 0) {
+        fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[0]);
+        fprintf(stderr, "Usage: %s\n", usage);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (!args->out_dir || !*args->out_dir) {
+        fprintf(stderr, "Error: --out-dir is required\n");
+        fprintf(stderr, "Usage: %s\n", usage);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!args->has_id && !args->name && !args->positional_id && !args->export_all) {
+        fprintf(stderr, "Error: Specify --id <id>, --name <name>, <id>, or --all\n");
+        fprintf(stderr, "Usage: %s\n", usage);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static int animation_export_visitor(size_t index,
                                     nmo_object_t *obj,
                                     const nmo_cmd_ctx_t *c,
@@ -913,91 +972,86 @@ static int anim_ensure_dir(const char *dir_path) {
     return -1;
 }
 
-int nmo_cmd_animation_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    static const nmo_opt_def_t opts[] = {
-        {"--id",      "-i", NMO_OPT_UINT,   "Object animation ID"},
-        {"--name",    "-n", NMO_OPT_STRING, "Object animation name"},
-        {"--out-dir", "-d", NMO_OPT_STRING, "Output directory (required)"},
-        {"--all",     NULL, NMO_OPT_FLAG,   "Export all CKObjectAnimation objects"},
-    };
-    enum { OPT_ID, OPT_NAME, OPT_OUT_DIR, OPT_ALL, OPT_COUNT };
-    nmo_opt_val_t vals[OPT_COUNT];
-    const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+static int animation_export_run(nmo_cmd_ctx_t *ctx,
+                                const animation_export_args_t *args,
+                                bool close_ctx,
+                                const char *usage) {
+    nmo_cmd_ctx_t c = *ctx;
 
-    const char *out_dir = vals[OPT_OUT_DIR].present ? vals[OPT_OUT_DIR].val.str : NULL;
-    bool export_all = vals[OPT_ALL].present && vals[OPT_ALL].val.flag;
-
-    /* Positional: <id> <file> or just <file> with --all */
-    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
-    const char *positional_id = (!has_selector_opt && !export_all && r.pos_count >= 2)
-        ? r.pos_args[0]
-        : NULL;
-
-    if (!out_dir) {
-        fprintf(stderr, "Error: --out-dir is required\n");
-        fprintf(stderr, "Usage: nmo animation export [--all | --id <id> | --name <name> | <id>] --out-dir <dir> <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-    if (!vals[OPT_ID].present && !vals[OPT_NAME].present && !positional_id && !export_all) {
-        fprintf(stderr, "Error: Specify --id <id>, --name <name>, <id>, or --all\n");
-        fprintf(stderr, "Usage: nmo animation export [--all | --id <id> | --name <name> | <id>] --out-dir <dir> <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
-    if (anim_ensure_dir(out_dir) < 0) {
+    if (anim_ensure_dir(args->out_dir) < 0) {
         fprintf(stderr, "Error: Cannot create directory '%s' (%s)\n",
-                out_dir, strerror(errno));
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+                args->out_dir, strerror(errno));
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR)
+                         : NMO_CLI_EXIT_IO_ERROR;
     }
 
-    if (export_all) {
+    if (args->export_all) {
         nmo_object_query_t query = {0};
         nmo_core_query_set_class_id(&query, NMO_CID_OBJECTANIMATION, false);
 
-        animation_export_data_t export_data = { .out_dir = out_dir };
-        rc = nmo_core_object_query_run(&c, &query,
+        animation_export_data_t export_data = { .out_dir = args->out_dir };
+        int rc = nmo_core_object_query_run(&c, &query,
                                        animation_export_visitor, &export_data, NULL);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
-            return nmo_cmd_ctx_done(&c, rc);
+            return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
         }
         fprintf(c.out, "Exported %u animations to %s\n",
-                export_data.exported, out_dir);
+                export_data.exported, args->out_dir);
     } else {
         nmo_core_object_selector_t selector = {
-            .has_id = vals[OPT_ID].present,
-            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
-            .positional_id = positional_id,
-            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .has_id = args->has_id,
+            .id = args->id,
+            .positional_id = args->positional_id,
+            .name = args->name,
             .required_base_class = NMO_CID_OBJECTANIMATION,
             .selector_label = "Animation",
             .type_label = "CKObjectAnimation",
         };
         nmo_object_t *obj = NULL;
         nmo_object_id_t obj_id = 0;
-        rc = nmo_core_resolve_one_object(&c, &selector, &obj, &obj_id);
+        int rc = nmo_core_resolve_one_object(&c, &selector, &obj, &obj_id);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
-            fprintf(stderr, "Usage: nmo animation export [--all | --id <id> | --name <name> | <id>] --out-dir <dir> <file>\n");
-            return nmo_cmd_ctx_done(&c, rc);
+            fprintf(stderr, "Usage: %s\n", usage);
+            return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
         }
 
         nmo_objectanimation_state_t *st =
             (nmo_objectanimation_state_t *)nmo_object_get_state(obj);
         if (!st) {
             fprintf(stderr, "Error: No data for object %u\n", obj_id);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                             : NMO_CLI_EXIT_INTERNAL_ERROR;
         }
 
-        if (export_one_animation(st, obj, out_dir) != 0)
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        if (export_one_animation(st, obj, args->out_dir) != 0)
+            return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                             : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS)
+                     : NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_animation_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    animation_export_args_t args;
+    const char *usage = "nmo animation export [--all | --id <id> | --name <name> | <id>] --out-dir <dir> <file>";
+    int rc = animation_export_parse(argc, argv, true, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+
+    nmo_cmd_ctx_t c;
+    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    return animation_export_run(&c, &args, true, usage);
+}
+
+int nmo_cmd_animation_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
+    animation_export_args_t args;
+    const char *usage = "animation export [--all | --id <id> | --name <name> | <id>] --out-dir <dir>";
+    int rc = animation_export_parse(argc, argv, false, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+
+    return animation_export_run(ctx, &args, false, usage);
 }
 
 /* ============================================================================

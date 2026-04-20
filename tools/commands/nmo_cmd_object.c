@@ -1609,22 +1609,16 @@ int nmo_cmd_object_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return object_list_in_session(ctx, 1, argv);
     }
     if (strcmp(argv[0], "impact") == 0 || strcmp(argv[0], "imp") == 0) {
-        int rc = object_selector_only_in_session(ctx, argc, argv, "Object", NULL, NULL);
-        if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
-        fprintf(ctx->out, "Impact Analysis\n");
-        return NMO_CLI_EXIT_SUCCESS;
+        return nmo_cmd_object_refgraph_in_session(ctx, argc, argv);
     }
     if (strcmp(argv[0], "orphans") == 0 || strcmp(argv[0], "orp") == 0) {
-        fprintf(ctx->out, "Orphan Detection\n");
-        return NMO_CLI_EXIT_SUCCESS;
+        return nmo_cmd_object_refgraph_in_session(ctx, argc, argv);
     }
     if (strcmp(argv[0], "cycles") == 0 || strcmp(argv[0], "cyc") == 0) {
-        fprintf(ctx->out, "Reference Cycles\n");
-        return NMO_CLI_EXIT_SUCCESS;
+        return nmo_cmd_object_refgraph_in_session(ctx, argc, argv);
     }
     if (strcmp(argv[0], "graph") == 0 || strcmp(argv[0], "gr") == 0) {
-        fprintf(ctx->out, "digraph nmo_refs {\n}\n");
-        return NMO_CLI_EXIT_SUCCESS;
+        return nmo_cmd_object_refgraph_in_session(ctx, argc, argv);
     }
     if (strcmp(argv[0], "export") == 0 || strcmp(argv[0], "x") == 0) {
         return object_find_in_session(ctx, argc, argv);

@@ -58,8 +58,7 @@ int nmo_cmd_mesh_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         return nmo_cmd_object_show_in_session(ctx, argc, argv);
     }
     if (strcmp(argv[0], "export") == 0 || strcmp(argv[0], "x") == 0) {
-        fprintf(ctx->out, "Mesh export from current session requires a mesh selector and output path.\n");
-        return NMO_CLI_EXIT_SUCCESS;
+        return nmo_cmd_mesh_export_in_session(ctx, argc, argv);
     }
 
     fprintf(stderr, "Unsupported mesh read action in session: %s\n", argv[0]);
@@ -662,6 +661,64 @@ typedef struct mesh_export_data {
     uint32_t errors;
 } mesh_export_data_t;
 
+typedef struct mesh_export_args {
+    const char *out_dir;
+    bool has_id;
+    uint32_t id;
+    const char *name;
+    const char *positional_id;
+    bool export_all;
+} mesh_export_args_t;
+
+static int mesh_export_parse(int argc, char **argv, bool expect_file_operand,
+                             mesh_export_args_t *args, const char *usage) {
+    memset(args, 0, sizeof(*args));
+
+    static const nmo_opt_def_t opts[] = {
+        {"--out-dir", "-d", NMO_OPT_STRING, "Output directory (required)"},
+        {"--id",      NULL,  NMO_OPT_UINT,   "Export single mesh by ID"},
+        {"--name",    "-n",  NMO_OPT_STRING, "Export single mesh by name"},
+        {"--all",     "-a", NMO_OPT_FLAG,   "Export all meshes"},
+    };
+    enum { OPT_OUT_DIR, OPT_ID, OPT_NAME, OPT_ALL, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    args->out_dir = vals[OPT_OUT_DIR].present ? vals[OPT_OUT_DIR].val.str : NULL;
+    args->has_id = vals[OPT_ID].present;
+    args->id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0;
+    args->name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
+    args->export_all = vals[OPT_ALL].present && vals[OPT_ALL].val.flag;
+
+    bool has_selector_opt = args->has_id || args->name != NULL;
+    if (!has_selector_opt && !args->export_all) {
+        if (expect_file_operand) {
+            args->positional_id = r.pos_count >= 2 ? r.pos_args[0] : NULL;
+        } else {
+            args->positional_id = r.pos_count == 1 ? r.pos_args[0] : NULL;
+        }
+    } else if (!expect_file_operand && r.pos_count != 0) {
+        fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[0]);
+        fprintf(stderr, "Usage: %s\n", usage);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (!args->out_dir || !*args->out_dir) {
+        fprintf(stderr, "Error: Missing --out-dir\n");
+        fprintf(stderr, "Usage: %s\n", usage);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!args->has_id && !args->name && !args->positional_id && !args->export_all) {
+        fprintf(stderr, "Error: Specify --id <id>, --name <name>, <id>, or --all\n");
+        fprintf(stderr, "Usage: %s\n", usage);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static int mesh_export_visitor(size_t index,
                                nmo_object_t *obj,
                                const nmo_cmd_ctx_t *c,
@@ -683,49 +740,16 @@ static int mesh_export_visitor(size_t index,
     return 0;
 }
 
-int nmo_cmd_mesh_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    static const nmo_opt_def_t opts[] = {
-        {"--out-dir", "-d", NMO_OPT_STRING, "Output directory (required)"},
-        {"--id",      NULL,  NMO_OPT_UINT,   "Export single mesh by ID"},
-        {"--name",    "-n",  NMO_OPT_STRING, "Export single mesh by name"},
-        {"--all",     "-a", NMO_OPT_FLAG,   "Export all meshes"},
-    };
-    enum { OPT_OUT_DIR, OPT_ID, OPT_NAME, OPT_ALL, OPT_COUNT };
-    nmo_opt_val_t vals[OPT_COUNT];
-    const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+static int mesh_export_run(nmo_cmd_ctx_t *ctx, const mesh_export_args_t *args,
+                           bool close_ctx, const char *usage) {
+    nmo_cmd_ctx_t c = *ctx;
 
-    const char *out_dir = vals[OPT_OUT_DIR].present ? vals[OPT_OUT_DIR].val.str : NULL;
-    uint32_t filter_id  = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0;
-    bool export_all     = vals[OPT_ALL].val.flag;
-
-    /* Also accept positional: <id> <file> */
-    bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
-    const char *positional_id = (!has_selector_opt && !export_all && r.pos_count >= 2)
-        ? r.pos_args[0]
-        : NULL;
-
-    if (!out_dir || !*out_dir) {
-        fprintf(stderr, "Error: Missing --out-dir\n");
-        fprintf(stderr, "Usage: nmo mesh export --out-dir <dir> [--all | --id <id> | --name <name> | <id>] <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-    if (!filter_id && !vals[OPT_NAME].present && !positional_id && !export_all) {
-        fprintf(stderr, "Error: Specify --id <id>, --name <name>, <id>, or --all\n");
-        fprintf(stderr, "Usage: nmo mesh export --out-dir <dir> [--all | --id <id> | --name <name> | <id>] <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    if (mesh_ensure_dir(out_dir) < 0) {
+    if (mesh_ensure_dir(args->out_dir) < 0) {
         fprintf(stderr, "Error: Cannot create directory '%s' (%s)\n",
-                out_dir, strerror(errno));
-        return NMO_CLI_EXIT_IO_ERROR;
+                args->out_dir, strerror(errno));
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR)
+                         : NMO_CLI_EXIT_IO_ERROR;
     }
-
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
 
     uint32_t exported = 0;
     uint32_t errors = 0;
@@ -737,42 +761,42 @@ int nmo_cmd_mesh_export(int argc, char **argv, const nmo_cli_global_opts_t *glob
     if (c.is_json) {
         doc = nmo_cmd_ctx_json_begin(&c);
         data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_str(doc, data, "out_dir", out_dir);
+        yyjson_mut_obj_add_str(doc, data, "out_dir", args->out_dir);
         entries = yyjson_mut_arr(doc);
     } else {
-        fprintf(c.out, "Exporting meshes to: %s\n", out_dir);
+        fprintf(c.out, "Exporting meshes to: %s\n", args->out_dir);
     }
 
     nmo_object_query_t query = {0};
     nmo_core_query_set_class_id(&query, NMO_CID_MESH, false);
-    if (!export_all) {
+    if (!args->export_all) {
         nmo_core_object_selector_t selector = {
-            .has_id = vals[OPT_ID].present,
-            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
-            .positional_id = positional_id,
-            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .has_id = args->has_id,
+            .id = args->id,
+            .positional_id = args->positional_id,
+            .name = args->name,
             .required_base_class = NMO_CID_MESH,
             .selector_label = "Mesh",
             .type_label = "CKMesh",
         };
         nmo_object_t *selected = NULL;
         nmo_object_id_t selected_id = 0;
-        rc = nmo_core_resolve_one_object(&c, &selector, &selected, &selected_id);
+        int rc = nmo_core_resolve_one_object(&c, &selector, &selected, &selected_id);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
-            fprintf(stderr, "Usage: nmo mesh export --out-dir <dir> [--all | --id <id> | --name <name> | <id>] <file>\n");
-            return nmo_cmd_ctx_done(&c, rc);
+            fprintf(stderr, "Usage: %s\n", usage);
+            return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
         }
         query.object_id = selected_id;
     }
 
     mesh_export_data_t export_data = {
-        .out_dir = out_dir,
+        .out_dir = args->out_dir,
         .doc = doc,
         .entries = entries
     };
-    rc = nmo_core_object_query_run(&c, &query, mesh_export_visitor, &export_data, NULL);
+    int rc = nmo_core_object_query_run(&c, &query, mesh_export_visitor, &export_data, NULL);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
-        return nmo_cmd_ctx_done(&c, rc);
+        return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
     }
     exported = export_data.exported;
     errors = export_data.errors;
@@ -789,7 +813,29 @@ int nmo_cmd_mesh_export(int argc, char **argv, const nmo_cli_global_opts_t *glob
         fprintf(c.out, "\nExported: %u, Errors: %u\n", exported, errors);
     }
 
-    return nmo_cmd_ctx_done(&c, exit_code);
+    return close_ctx ? nmo_cmd_ctx_done(&c, exit_code) : exit_code;
+}
+
+int nmo_cmd_mesh_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    mesh_export_args_t args;
+    const char *usage = "nmo mesh export --out-dir <dir> [--all | --id <id> | --name <name> | <id>] <file>";
+    int rc = mesh_export_parse(argc, argv, true, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+
+    nmo_cmd_ctx_t c;
+    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    return mesh_export_run(&c, &args, true, usage);
+}
+
+int nmo_cmd_mesh_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
+    mesh_export_args_t args;
+    const char *usage = "mesh export --out-dir <dir> [--all | --id <id> | --name <name> | <id>]";
+    int rc = mesh_export_parse(argc, argv, false, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+
+    return mesh_export_run(ctx, &args, false, usage);
 }
 
 /* ============================================================================

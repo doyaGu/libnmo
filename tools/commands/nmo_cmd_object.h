@@ -41,6 +41,7 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
  */
 int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_object_refs_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
+int nmo_cmd_object_refgraph_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
 /**
  * @brief nmo object rename - Rename an object and save

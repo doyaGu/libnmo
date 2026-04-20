@@ -3525,7 +3525,17 @@ int nmo_cmd_behavior_iface_translate(int argc, char **argv, const nmo_cli_global
  * Interface show (read-only, the default sub-action)
  * ================================================================ */
 
-int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+typedef struct behavior_iface_show_args {
+    bool brief;
+    nmo_core_object_selector_t selector;
+} behavior_iface_show_args_t;
+
+static int behavior_iface_show_parse(int argc, char **argv,
+                                     bool expect_file_operand,
+                                     behavior_iface_show_args_t *args,
+                                     const char *usage) {
+    memset(args, 0, sizeof(*args));
+
     static const nmo_opt_def_t opts[] = {
         {"--brief", "-b", NMO_OPT_FLAG, "Brief summary output"},
         {"--json",  "-j", NMO_OPT_FLAG, "JSON output"},
@@ -3538,26 +3548,32 @@ int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    bool brief = vals[OPT_BRIEF].present && vals[OPT_BRIEF].val.flag;
-
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
-    const char *positional_id = has_selector_opt ? NULL : (r.pos_count >= 2 ? r.pos_args[0] : NULL);
-    if ((has_selector_opt && r.pos_count < 1) || (!has_selector_opt && positional_id == NULL)) {
-        fprintf(stderr, "Usage: nmo behavior interface [--brief] [--json] [--id <id> | --name <name> | <id>] <file>\n");
-        fprintf(stderr, "Output: use global -f json or command --json for machine-readable output.\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
+    const char *positional_id = NULL;
+    if (expect_file_operand) {
+        positional_id = has_selector_opt ? NULL : (r.pos_count >= 2 ? r.pos_args[0] : NULL);
+        if ((has_selector_opt && r.pos_count < 1) || (!has_selector_opt && positional_id == NULL)) {
+            fprintf(stderr, "Usage: %s\n", usage);
+            fprintf(stderr, "Output: use global -f json or command --json for machine-readable output.\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    } else if (has_selector_opt) {
+        if (r.pos_count != 0) {
+            fprintf(stderr, "Error: Unexpected argument '%s'\n", r.pos_args[0]);
+            fprintf(stderr, "Usage: %s\n", usage);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    } else {
+        if (r.pos_count != 1) {
+            fprintf(stderr, "Usage: %s\n", usage);
+            fprintf(stderr, "Output: use global -f json or command --json for machine-readable output.\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        positional_id = r.pos_args[0];
     }
 
-    nmo_cmd_ctx_t c;
-    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
-    if (rc) return rc;
-
-    if (nmo_session_ensure_behavior_acceleration(c.session) != NMO_OK) {
-        fprintf(stderr, "Error: Failed to build behavior acceleration\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    nmo_core_object_selector_t selector = {
+    args->brief = vals[OPT_BRIEF].present && vals[OPT_BRIEF].val.flag;
+    args->selector = (nmo_core_object_selector_t){
         .has_id = vals[OPT_ID].present,
         .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
         .positional_id = positional_id,
@@ -3566,25 +3582,42 @@ int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts
         .selector_label = "Behavior",
         .type_label = "CKBehavior",
     };
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int behavior_iface_show_run(nmo_cmd_ctx_t *ctx,
+                                   const behavior_iface_show_args_t *args,
+                                   bool close_ctx,
+                                   const char *usage) {
+    nmo_cmd_ctx_t c = *ctx;
+
+    if (nmo_session_ensure_behavior_acceleration(c.session) != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build behavior acceleration\n");
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
     nmo_object_t *beh = NULL;
     nmo_object_id_t target_id = 0;
-    rc = nmo_core_resolve_one_object(&c, &selector, &beh, &target_id);
+    int rc = nmo_core_resolve_one_object(&c, &args->selector, &beh, &target_id);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
-        fprintf(stderr, "Usage: nmo behavior interface [--brief] [--json] [--id <id> | --name <name> | <id>] <file>\n");
-        return nmo_cmd_ctx_done(&c, rc);
+        fprintf(stderr, "Usage: %s\n", usage);
+        return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
     }
 
     const nmo_behavior_state_t *bs = (const nmo_behavior_state_t *)nmo_object_get_state(beh);
     if (!bs) {
         fprintf(stderr, "Error: No state for behavior %u\n", target_id);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR)
+                         : NMO_CLI_EXIT_ARG_ERROR;
     }
 
     const nmo_interface_data_t *idata = bs->interface_data;
     if (!idata) {
         fprintf(stderr, "Error: Behavior %u has no interface data\n", target_id);
         nmo_cmd_behavior_print_interface_diagnostics(stderr, c.session);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR)
+                         : NMO_CLI_EXIT_ARG_ERROR;
     }
 
     const char *name = nmo_object_get_name(beh);
@@ -3700,11 +3733,12 @@ int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts
         }
 
         nmo_cmd_ctx_json_end(&c, doc, data, "behavior.interface");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS)
+                         : NMO_CLI_EXIT_SUCCESS;
     }
 
     /* --- Brief output --- */
-    if (brief) {
+    if (args->brief) {
         char buf[128];
         char heading[256];
         snprintf(heading, sizeof(heading), "Interface: Behavior #%u %s",
@@ -3797,7 +3831,8 @@ int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts
         snprintf(buf, sizeof(buf), "%zu", folded_count);
         nmo_cli_print_kv(c.out, "Folded", buf, 22, c.colorize);
 
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS)
+                         : NMO_CLI_EXIT_SUCCESS;
     }
 
     /* --- Full text output --- */
@@ -3903,7 +3938,47 @@ int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts
         }
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS)
+                     : NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    behavior_iface_show_args_t args;
+    const char *usage = "nmo behavior interface [--brief] [--json] [--id <id> | --name <name> | <id>] <file>";
+    int rc = behavior_iface_show_parse(argc, argv, true, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+
+    nmo_cmd_ctx_t c;
+    rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    return behavior_iface_show_run(&c, &args, true, usage);
+}
+
+int nmo_cmd_behavior_interface_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
+    if (!ctx || argc < 1 || !argv || !argv[0]) {
+        fprintf(stderr, "Usage: behavior interface show [--brief] [--json] [--id <id> | --name <name> | <id>]\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    int arg_offset = 0;
+    if (strcmp(argv[0], "interface") == 0 || strcmp(argv[0], "iface") == 0) {
+        arg_offset = 1;
+    }
+    if (argc <= arg_offset ||
+        (strcmp(argv[arg_offset], "show") != 0 &&
+         strcmp(argv[arg_offset], "s") != 0)) {
+        fprintf(stderr, "Usage: behavior interface show [--brief] [--json] [--id <id> | --name <name> | <id>]\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    behavior_iface_show_args_t args;
+    const char *usage = "behavior interface show [--brief] [--json] [--id <id> | --name <name> | <id>]";
+    int rc = behavior_iface_show_parse(argc - arg_offset, argv + arg_offset,
+                                       false, &args, usage);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
+
+    return behavior_iface_show_run(ctx, &args, false, usage);
 }
 
 /* ================================================================
