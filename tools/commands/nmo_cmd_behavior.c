@@ -5,6 +5,7 @@
 
 #include "nmo_cmd_behavior.h"
 #include "nmo_cmd_behavior_internal.h"
+#include "nmo_cmd_behavior_rewrite.h"
 #include "nmo_cmd_object_internal.h"
 
 #include "../nmo_cmd_ctx.h"
@@ -66,6 +67,9 @@ int nmo_cmd_behavior_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     }
     if (strcmp(argv[0], "graph") == 0 || strcmp(argv[0], "g") == 0) {
         return nmo_cmd_behavior_graph_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "graph-boundary") == 0) {
+        return nmo_cmd_behavior_graph_boundary_in_session(ctx, argc, argv);
     }
     if (strcmp(argv[0], "interface") == 0 || strcmp(argv[0], "iface") == 0) {
         return nmo_cmd_behavior_interface_in_session(ctx, argc, argv);

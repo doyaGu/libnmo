@@ -46,6 +46,7 @@ add_executable(nmo_cli
     commands/nmo_cmd_behavior.c
     commands/nmo_cmd_behavior_show.c
     commands/nmo_cmd_behavior_graph.c
+    commands/nmo_cmd_behavior_rewrite.c
     commands/nmo_cmd_behavior_search.c
     commands/nmo_cmd_behavior_interface.c
     commands/nmo_cmd_behavior_link.c

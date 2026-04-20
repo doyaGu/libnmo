@@ -420,6 +420,15 @@ static void behavior_graph_usage(FILE *out) {
     fprintf(out, "  --max-edges <n>      Limit edge output (0 = no limit)\n");
 }
 
+static void behavior_graph_boundary_usage(FILE *out) {
+    fprintf(out, "Usage: nmo behavior graph-boundary [options] [--id <id> | --name <name> | <id>] <file>\n\n");
+    fprintf(out, "Export behavior graph boundary links and parameter crossings.\n\n");
+    fprintf(out, "Output:\n");
+    fprintf(out, "  Use global -f json or -f json-pretty for machine-readable output.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --depth <n>      Recursion depth (default: unlimited)\n");
+}
+
 static void behavior_dump_usage(FILE *out) {
     fprintf(out, "Usage: nmo behavior dump [options] [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Dump a compact behavior tree overview.\n\n");
@@ -957,6 +966,7 @@ static const nmo_cli_action_t behavior_actions[] = {
     ACTION("stats", "st", "Show behavior statistics", nmo_cmd_behavior_stats, behavior_stats_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("show", "s", "Show behavior signature", nmo_cmd_behavior_show, behavior_show_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("graph", "g", "Export behavior graph", nmo_cmd_behavior_graph, behavior_graph_usage, NMO_REPL_ACTION_READ_SESSION),
+    ACTION("graph-boundary", NULL, "Export behavior graph boundary", nmo_cmd_behavior_graph_boundary, behavior_graph_boundary_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("dump", "d", "Dump compact behavior tree overview", nmo_cmd_behavior_dump, behavior_dump_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("find", "f", "Search behaviors by name/GUID/type", nmo_cmd_behavior_find, behavior_find_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("trace", "tr", "Trace execution path from IO", nmo_cmd_behavior_trace, behavior_trace_usage, NMO_REPL_ACTION_READ_SESSION),
