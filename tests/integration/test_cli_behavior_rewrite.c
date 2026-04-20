@@ -660,8 +660,8 @@ TEST(cli, behavior_fold_dry_run_reports_maps) {
              "--anchor 2364 "
              "--guid 42414C07-10000007 "
              "--name \"Ballance Event Handler\" "
-             "--preserve-boundary --map-input 2:3 --map-input 6:7 "
-             "--map-output 0:1 --map-param 4:5 --dry-run \"%s\"",
+             "--preserve-boundary --map-input 0:3 --map-input 1:7 "
+             "--map-output 0:1 --dry-run \"%s\"",
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     yyjson_doc *doc = NULL;
@@ -680,7 +680,7 @@ TEST(cli, behavior_fold_dry_run_reports_maps) {
     yyjson_val *input_map = yyjson_arr_get(inputs, 0);
     ASSERT_TRUE(input_map && yyjson_is_obj(input_map));
     ASSERT_STR_EQ("input", get_string_field(input_map, "kind"));
-    ASSERT_EQ(2u, (uint32_t)get_uint_field(input_map, "old_index"));
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(input_map, "old_index"));
     ASSERT_EQ(3u, (uint32_t)get_uint_field(input_map, "new_index"));
 
     yyjson_val *outputs = get_array_field(maps, "outputs");
@@ -694,12 +694,7 @@ TEST(cli, behavior_fold_dry_run_reports_maps) {
 
     yyjson_val *parameters = get_array_field(maps, "parameters");
     ASSERT_NOT_NULL(parameters);
-    ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(parameters));
-    yyjson_val *parameter_map = yyjson_arr_get(parameters, 0);
-    ASSERT_TRUE(parameter_map && yyjson_is_obj(parameter_map));
-    ASSERT_STR_EQ("parameter", get_string_field(parameter_map, "kind"));
-    ASSERT_EQ(4u, (uint32_t)get_uint_field(parameter_map, "old_index"));
-    ASSERT_EQ(5u, (uint32_t)get_uint_field(parameter_map, "new_index"));
+    ASSERT_EQ(0u, (uint32_t)yyjson_arr_size(parameters));
 
     yyjson_doc_free(doc);
 }
@@ -763,6 +758,47 @@ TEST(cli, behavior_fold_dry_run_rejects_ambiguous_input_without_map) {
                   get_string_field(rejection, "code"));
     ASSERT_STR_CONTAINS(get_string_field(rejection, "message"),
                         "multiple boundary control inputs");
+
+    yyjson_doc_free(doc);
+    free(result.output);
+}
+
+TEST(cli, behavior_fold_dry_run_rejects_invalid_input_map_index) {
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior fold --parent 4692 --nodes 2364,2208 "
+             "--anchor 2364 "
+             "--guid 42414C07-10000007 "
+             "--name \"Ballance Event Handler\" "
+             "--preserve-boundary "
+             "--map-input 0:0 --map-input 99:0 "
+             "--dry-run \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    yyjson_doc *doc = yyjson_read(result.output, strlen(result.output), 0);
+    if (!doc) {
+        fprintf(stderr, "\nExpected JSON output, got:\n%s\n", result.output);
+    }
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    ASSERT_STR_EQ("behavior.fold", get_string_field(root, "command"));
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_FALSE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "rejected"));
+    yyjson_val *rejections = get_array_field(data, "rejections");
+    ASSERT_NOT_NULL(rejections);
+    yyjson_val *rejection = yyjson_arr_get(rejections, 0);
+    ASSERT_TRUE(rejection && yyjson_is_obj(rejection));
+    ASSERT_STR_EQ("input_map_invalid",
+                  get_string_field(rejection, "code"));
+    ASSERT_STR_CONTAINS(get_string_field(rejection, "message"),
+                        "boundary control input");
 
     yyjson_doc_free(doc);
     free(result.output);
@@ -992,6 +1028,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_maps);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_interface_mode);
     REGISTER_TEST(cli, behavior_fold_dry_run_rejects_ambiguous_input_without_map);
+    REGISTER_TEST(cli, behavior_fold_dry_run_rejects_invalid_input_map_index);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan);
     REGISTER_TEST(cli, behavior_fold_dry_run_rejects_parent_in_selected_nodes);
     REGISTER_TEST(cli, behavior_fold_write_rejects_with_analysis_blocker);

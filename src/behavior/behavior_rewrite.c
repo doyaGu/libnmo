@@ -327,6 +327,32 @@ static void rewrite_fold_report_reject(nmo_behavior_fold_report_t *report,
                                        const char *code,
                                        const char *message);
 
+static nmo_status_t rewrite_fold_validate_map_indices(
+    nmo_behavior_fold_report_t *report,
+    const nmo_behavior_fold_map_t *maps,
+    size_t map_count,
+    size_t boundary_count,
+    const char *code,
+    const char *message) {
+    if (!report || !maps || map_count == 0) {
+        return NMO_OK;
+    }
+
+    for (size_t i = 0; i < map_count; ++i) {
+        if ((size_t)maps[i].old_index >= boundary_count) {
+            rewrite_fold_report_reject(report, code, message);
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+        for (size_t j = i + 1; j < map_count; ++j) {
+            if (maps[i].old_index == maps[j].old_index) {
+                rewrite_fold_report_reject(report, code, message);
+                return NMO_ERR_INVALID_ARGUMENT;
+            }
+        }
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t rewrite_fold_validate_explicit_maps(
     nmo_behavior_fold_report_t *report) {
     if (!report || !report->preserve_boundary) {
@@ -341,6 +367,15 @@ static nmo_status_t rewrite_fold_validate_explicit_maps(
             "provide --map-input for each input edge");
         return NMO_ERR_INVALID_ARGUMENT;
     }
+    nmo_status_t rc = rewrite_fold_validate_map_indices(
+        report, report->input_maps, report->input_map_count,
+        report->boundary.control_in_count,
+        "input_map_invalid",
+        "preserve-boundary input maps must reference existing boundary "
+        "control input edges exactly once");
+    if (rc != NMO_OK) {
+        return rc;
+    }
     if (report->boundary.control_out_count > 1 &&
         report->output_map_count < report->boundary.control_out_count) {
         rewrite_fold_report_reject(
@@ -348,6 +383,15 @@ static nmo_status_t rewrite_fold_validate_explicit_maps(
             "preserve-boundary has multiple boundary control outputs; "
             "provide --map-output for each output edge");
         return NMO_ERR_INVALID_ARGUMENT;
+    }
+    rc = rewrite_fold_validate_map_indices(
+        report, report->output_maps, report->output_map_count,
+        report->boundary.control_out_count,
+        "output_map_invalid",
+        "preserve-boundary output maps must reference existing boundary "
+        "control output edges exactly once");
+    if (rc != NMO_OK) {
+        return rc;
     }
 
     size_t parameter_edge_count = report->boundary.parameter_in_count +
@@ -359,6 +403,15 @@ static nmo_status_t rewrite_fold_validate_explicit_maps(
             "preserve-boundary has multiple boundary parameter edges; "
             "provide --map-param for each parameter edge");
         return NMO_ERR_INVALID_ARGUMENT;
+    }
+    rc = rewrite_fold_validate_map_indices(
+        report, report->parameter_maps, report->parameter_map_count,
+        parameter_edge_count,
+        "parameter_map_invalid",
+        "preserve-boundary parameter maps must reference existing boundary "
+        "parameter edges exactly once");
+    if (rc != NMO_OK) {
+        return rc;
     }
     return NMO_OK;
 }

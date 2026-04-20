@@ -364,13 +364,13 @@ TEST(beh_rewrite, fold_analyze_reports_maps)
     nmo_behavior_fold_map_t input_maps[] = {
         {
             .kind = NMO_BEHAVIOR_FOLD_MAP_INPUT,
-            .old_index = 2u,
+            .old_index = 0u,
             .new_index = 3u,
             .label = "In",
         },
         {
             .kind = NMO_BEHAVIOR_FOLD_MAP_INPUT,
-            .old_index = 6u,
+            .old_index = 1u,
             .new_index = 7u,
             .label = "Next",
         },
@@ -381,14 +381,6 @@ TEST(beh_rewrite, fold_analyze_reports_maps)
             .old_index = 0u,
             .new_index = 1u,
             .label = "Out",
-        },
-    };
-    nmo_behavior_fold_map_t parameter_maps[] = {
-        {
-            .kind = NMO_BEHAVIOR_FOLD_MAP_PARAMETER,
-            .old_index = 4u,
-            .new_index = 5u,
-            .label = "Level",
         },
     };
     nmo_behavior_fold_desc_t desc = {
@@ -404,8 +396,6 @@ TEST(beh_rewrite, fold_analyze_reports_maps)
         .input_map_count = 2u,
         .output_maps = output_maps,
         .output_map_count = 1u,
-        .parameter_maps = parameter_maps,
-        .parameter_map_count = 1u,
     };
     nmo_behavior_fold_report_t report = {0};
 
@@ -414,7 +404,7 @@ TEST(beh_rewrite, fold_analyze_reports_maps)
     ASSERT_EQ(NMO_OK, rc);
     ASSERT_EQ(2u, report.input_map_count);
     ASSERT_EQ(NMO_BEHAVIOR_FOLD_MAP_INPUT, report.input_maps[0].kind);
-    ASSERT_EQ(2u, report.input_maps[0].old_index);
+    ASSERT_EQ(0u, report.input_maps[0].old_index);
     ASSERT_EQ(3u, report.input_maps[0].new_index);
     ASSERT_STR_EQ("In", report.input_maps[0].label);
     ASSERT_EQ(1u, report.output_map_count);
@@ -422,11 +412,7 @@ TEST(beh_rewrite, fold_analyze_reports_maps)
     ASSERT_EQ(0u, report.output_maps[0].old_index);
     ASSERT_EQ(1u, report.output_maps[0].new_index);
     ASSERT_STR_EQ("Out", report.output_maps[0].label);
-    ASSERT_EQ(1u, report.parameter_map_count);
-    ASSERT_EQ(NMO_BEHAVIOR_FOLD_MAP_PARAMETER, report.parameter_maps[0].kind);
-    ASSERT_EQ(4u, report.parameter_maps[0].old_index);
-    ASSERT_EQ(5u, report.parameter_maps[0].new_index);
-    ASSERT_STR_EQ("Level", report.parameter_maps[0].label);
+    ASSERT_EQ(0u, report.parameter_map_count);
 
     nmo_behavior_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
