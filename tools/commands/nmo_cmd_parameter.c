@@ -16,6 +16,8 @@
 #include "../nmo_opt.h"
 
 #include "nmo.h"
+#include "behavior/nmo_behavior_index.h"
+#include "behavior/nmo_script_edit.h"
 #include "session/nmo_context.h"
 #include "behavior/nmo_param_value.h"
 #include "object/nmo_object_types.h"
@@ -1199,6 +1201,75 @@ static void parameter_set_args_cleanup(parameter_set_args_t *args)
     args->new_value_str = NULL;
 }
 
+static bool parameter_is_graph_owned(nmo_cmd_ctx_t *c, nmo_object_id_t param_id)
+{
+    const nmo_behavior_index_t *index = NULL;
+    const nmo_port_owner_t *owner = NULL;
+
+    if (!c || !c->session || param_id == 0u) {
+        return false;
+    }
+    if (nmo_session_ensure_behavior_acceleration(c->session) != NMO_OK) {
+        return false;
+    }
+    index = nmo_session_get_behavior_index(c->session);
+    if (!index) {
+        return false;
+    }
+    owner = nmo_behavior_index_find(index, param_id);
+    return owner != NULL &&
+           (owner->kind == NMO_PORT_PARAM_IN ||
+            owner->kind == NMO_PORT_PARAM_OUT ||
+            owner->kind == NMO_PORT_PARAM_LOCAL);
+}
+
+static int parameter_finalize_script_tx(nmo_script_edit_tx_t *tx, bool dry_run)
+{
+    nmo_status_t rc = NMO_OK;
+
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Parameter roundtrip validation failed: %s\n",
+                nmo_error_string(rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Parameter reference validation failed: %s\n",
+                nmo_error_string(rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Parameter behavior-index validation failed: %s\n",
+                nmo_error_string(rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_INTERFACE);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Parameter interface validation failed: %s\n",
+                nmo_error_string(rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    if (dry_run) {
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+
+    rc = nmo_script_edit_commit(tx);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to commit parameter edit: %s\n",
+                nmo_error_string(rc));
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static int parameter_set_mutate(
     nmo_cmd_ctx_t *c,
     bool dry_run,
@@ -1291,6 +1362,77 @@ static int parameter_set_mutate(
     args->param_name = nmo_object_get_name(param_obj);
     args->type_name = nmo_param_value_type_name(pstate, (nmo_type_registry_t *)c->registry);
     args->mode_name = nmo_param_mode_to_string(pstate->mode);
+
+    if (parameter_is_graph_owned(c, args->param_id)) {
+        nmo_script_edit_tx_t *tx = NULL;
+        nmo_status_t begin_rc =
+            nmo_script_edit_begin(c->ctx, c->session, "parameter set", &tx);
+        if (begin_rc != NMO_OK) {
+            fprintf(stderr, "Error: Failed to begin script edit: %s\n",
+                    nmo_error_string(begin_rc));
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+
+        if (args->hex_mode) {
+            if (pstate->mode != CKPARAM_MODE_BUFFER) {
+                fprintf(stderr, "Error: --hex only supported for MODE_BUFFER parameters\n");
+                nmo_script_edit_rollback(tx);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+
+            size_t max_len = strlen(args->value_str) / 2 + 1;
+            uint8_t *hex_buf = (uint8_t *)malloc(max_len);
+            if (!hex_buf) {
+                fprintf(stderr, "Error: Out of memory\n");
+                nmo_script_edit_rollback(tx);
+                return NMO_CLI_EXIT_INTERNAL_ERROR;
+            }
+
+            size_t hex_len = 0;
+            nmo_status_t parse_rc =
+                nmo_parse_hex_bytes(args->value_str, hex_buf, max_len, &hex_len);
+            if (parse_rc != NMO_OK) {
+                fprintf(stderr, "Error: Invalid hex string '%s'\n", args->value_str);
+                nmo_script_edit_rollback(tx);
+                free(hex_buf);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+
+            nmo_status_t bytes_rc =
+                nmo_script_edit_set_parameter_bytes(tx, args->param_id, hex_buf, hex_len);
+            free(hex_buf);
+            if (bytes_rc == NMO_ERR_OUT_OF_BOUNDS) {
+                fprintf(stderr, "Error: Hex data exceeds buffer size\n");
+                nmo_script_edit_rollback(tx);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            if (bytes_rc != NMO_OK) {
+                fprintf(stderr, "Error: Failed to set raw parameter bytes: %s\n",
+                        nmo_error_string(bytes_rc));
+                nmo_script_edit_rollback(tx);
+                return NMO_CLI_EXIT_INTERNAL_ERROR;
+            }
+        } else {
+            nmo_status_t set_rc =
+                nmo_script_edit_set_parameter_value(tx, args->param_id, args->value_str);
+            if (set_rc != NMO_OK) {
+                if (dry_run && args->owner_str != NULL) {
+                    args->new_value_str = nmo_tool_strdup(args->value_str);
+                    nmo_script_edit_rollback(tx);
+                    return args->new_value_str ? NMO_CLI_EXIT_SUCCESS
+                                               : NMO_CLI_EXIT_INTERNAL_ERROR;
+                }
+                fprintf(stderr, "Error: Failed to set parameter value: %s\n",
+                        nmo_error_string(set_rc));
+                nmo_script_edit_rollback(tx);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+        }
+
+        args->new_value_str = format_parameter_value(
+            pstate, (nmo_type_registry_t *)c->registry, c->session, NULL);
+        return parameter_finalize_script_tx(tx, dry_run);
+    }
 
     nmo_session_edit_t *edit = NULL;
     nmo_status_t begin_rc = nmo_session_edit_begin(c->session, "parameter set", &edit);

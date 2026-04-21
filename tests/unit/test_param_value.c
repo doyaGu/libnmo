@@ -195,6 +195,22 @@ TEST(param_value, decode_int) {
     nmo_context_release(ctx);
 }
 
+TEST(param_value, decode_int_exact_small_value) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_type_registry_t *reg = nmo_context_get_type_registry(ctx);
+
+    int32_t val = 3;
+    nmo_parameter_state_t p = make_buffer_param(CKPGUID_INT, &val, sizeof(val));
+
+    char buf[128];
+    nmo_status_t st = nmo_param_value_to_string(&p, reg, NULL, buf, sizeof(buf));
+    ASSERT_EQ(NMO_OK, st);
+    ASSERT_STR_EQ("3", buf);
+
+    nmo_context_release(ctx);
+}
+
 TEST(param_value, decode_bool_true) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -391,6 +407,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(param_value, empty_buffer);
     REGISTER_TEST(param_value, decode_float);
     REGISTER_TEST(param_value, decode_int);
+    REGISTER_TEST(param_value, decode_int_exact_small_value);
     REGISTER_TEST(param_value, decode_bool_true);
     REGISTER_TEST(param_value, decode_string);
     REGISTER_TEST(param_value, decode_raw_string_buffer);

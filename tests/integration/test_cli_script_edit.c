@@ -228,6 +228,282 @@ static yyjson_val *find_control_edge_by_link_id(yyjson_val *edges, uint32_t link
     return NULL;
 }
 
+static yyjson_val *find_array_object_by_id(yyjson_val *arr, uint32_t id)
+{
+    size_t idx = 0;
+    size_t max = 0;
+    yyjson_val *item = NULL;
+
+    if (!arr) {
+        return NULL;
+    }
+
+    yyjson_arr_foreach(arr, idx, max, item) {
+        if (get_uint_field(item, "id") == id) {
+            return item;
+        }
+    }
+
+    return NULL;
+}
+
+static yyjson_val *find_array_object_by_name(yyjson_val *arr, const char *name)
+{
+    size_t idx = 0;
+    size_t max = 0;
+    yyjson_val *item = NULL;
+
+    if (!arr || !name) {
+        return NULL;
+    }
+
+    yyjson_arr_foreach(arr, idx, max, item) {
+        const char *item_name = get_string_field(item, "name");
+        if (item_name && strcmp(item_name, name) == 0) {
+            return item;
+        }
+    }
+
+    return NULL;
+}
+
+static yyjson_val *find_data_edge(yyjson_val *edges,
+                                  uint32_t source_parameter_id,
+                                  uint32_t target_parameter_id)
+{
+    size_t idx = 0;
+    size_t max = 0;
+    yyjson_val *edge = NULL;
+
+    if (!edges) {
+        return NULL;
+    }
+
+    yyjson_arr_foreach(edges, idx, max, edge) {
+        if (get_uint_field(edge, "source_parameter_id") == source_parameter_id &&
+            get_uint_field(edge, "target_parameter_id") == target_parameter_id) {
+            return edge;
+        }
+    }
+
+    return NULL;
+}
+
+static void load_behavior_parameter_entry(const char *path,
+                                          uint32_t behavior_id,
+                                          const char *field_name,
+                                          uint32_t parameter_id,
+                                          uint32_t *out_index,
+                                          yyjson_doc **out_doc,
+                                          yyjson_val **out_item)
+{
+    char args[1024];
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *arr = NULL;
+    yyjson_val *item = NULL;
+
+    if (out_index) {
+        *out_index = 0u;
+    }
+    if (out_doc) {
+        *out_doc = NULL;
+    }
+    if (out_item) {
+        *out_item = NULL;
+    }
+
+    snprintf(args, sizeof(args),
+             "-f json behavior show %u \"%s\"",
+             behavior_id, path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    arr = get_array_field(data, field_name);
+    ASSERT_NOT_NULL(arr);
+    item = find_array_object_by_id(arr, parameter_id);
+    ASSERT_NOT_NULL(item);
+
+    if (out_index) {
+        *out_index = (uint32_t)get_uint_field(item, "index");
+    }
+    if (out_item) {
+        *out_item = item;
+    }
+    if (out_doc) {
+        *out_doc = doc;
+    } else {
+        yyjson_doc_free(doc);
+    }
+}
+
+static void load_behavior_parameter_entry_by_name(const char *path,
+                                                  uint32_t behavior_id,
+                                                  const char *field_name,
+                                                  const char *parameter_name,
+                                                  uint32_t *out_parameter_id)
+{
+    char args[1024];
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *arr = NULL;
+    yyjson_val *item = NULL;
+
+    if (out_parameter_id) {
+        *out_parameter_id = 0u;
+    }
+
+    snprintf(args, sizeof(args),
+             "-f json behavior show %u \"%s\"",
+             behavior_id,
+             path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    arr = get_array_field(data, field_name);
+    ASSERT_NOT_NULL(arr);
+    item = find_array_object_by_name(arr, parameter_name);
+    ASSERT_NOT_NULL(item);
+
+    if (out_parameter_id) {
+        *out_parameter_id = (uint32_t)get_uint_field(item, "id");
+    }
+
+    yyjson_doc_free(doc);
+}
+
+static void assert_parameter_show_value(const char *path,
+                                        uint32_t parameter_id,
+                                        const char *expected_value,
+                                        uint32_t expected_destination_count)
+{
+    char args[1024];
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+
+    snprintf(args, sizeof(args),
+             "-f json parameter show %u \"%s\"",
+             parameter_id, path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_STR_EQ(expected_value, get_string_field(data, "value"));
+    ASSERT_EQ(expected_destination_count,
+              (uint32_t)get_uint_field(data, "destination_count"));
+    yyjson_doc_free(doc);
+}
+
+static void assert_parameter_show_source(const char *path,
+                                         uint32_t parameter_id,
+                                         uint32_t expected_source_id)
+{
+    char args[1024];
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+
+    snprintf(args, sizeof(args),
+             "-f json parameter show %u \"%s\"",
+             parameter_id, path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_EQ(expected_source_id,
+              (uint32_t)get_uint_field(data, "source_id"));
+    yyjson_doc_free(doc);
+}
+
+static void assert_script_graph_data_edge_present(const char *path,
+                                                  uint32_t root_behavior_id,
+                                                  uint32_t source_parameter_id,
+                                                  uint32_t target_parameter_id)
+{
+    char args[1024];
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *edges = NULL;
+
+    snprintf(args, sizeof(args),
+             "-f json script graph %u \"%s\"",
+             root_behavior_id, path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    edges = get_array_field(data, "data_edges");
+    ASSERT_NOT_NULL(edges);
+    ASSERT_NOT_NULL(find_data_edge(edges, source_parameter_id, target_parameter_id));
+    yyjson_doc_free(doc);
+}
+
+static void assert_script_graph_data_edge_missing(const char *path,
+                                                  uint32_t root_behavior_id,
+                                                  uint32_t source_parameter_id,
+                                                  uint32_t target_parameter_id)
+{
+    char args[1024];
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *edges = NULL;
+
+    snprintf(args, sizeof(args),
+             "-f json script graph %u \"%s\"",
+             root_behavior_id, path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    edges = get_array_field(data, "data_edges");
+    ASSERT_NOT_NULL(edges);
+    ASSERT_NULL(find_data_edge(edges, source_parameter_id, target_parameter_id));
+    yyjson_doc_free(doc);
+}
+
 static void assert_script_graph_link(const char *path,
                                      uint32_t root_behavior_id,
                                      uint32_t link_id,
@@ -1037,10 +1313,504 @@ TEST(cli, script_control_flow_crud_roundtrip)
                                      link_id);
 }
 
+TEST(cli, script_parameter_crud_roundtrip)
+{
+    rewrite_manifest_t manifest;
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *root = NULL;
+    uint32_t source_param_id = 0;
+    uint32_t target_node_id = 0;
+    uint32_t target_param_id = 0;
+    uint32_t removed_target_param_id = 0;
+    uint32_t source_param_index = 0;
+    char args[1024];
+    const char *source_add_path = "test_script_edit_tmp/param_source_add.cmo";
+    const char *source_set_path = "test_script_edit_tmp/param_source_set.cmo";
+    const char *target_node_path = "test_script_edit_tmp/param_target_node.cmo";
+    const char *target_add_path = "test_script_edit_tmp/param_target_add.cmo";
+    const char *connect_path = "test_script_edit_tmp/param_connect.cmo";
+    const char *disconnect_path = "test_script_edit_tmp/param_disconnect.cmo";
+    const char *remove_path = "test_script_edit_tmp/param_remove.cmo";
+
+    ASSERT_TRUE(load_rewrite_manifest(&manifest));
+    make_dir("test_script_edit_tmp");
+    remove(source_add_path);
+    remove(source_set_path);
+    remove(target_node_path);
+    remove(target_add_path);
+    remove(connect_path);
+    remove(disconnect_path);
+    remove(remove_path);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind out "
+             "--type CKPGUID_INT --name Level "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             source_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.param.add", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    source_param_id = (uint32_t)get_uint_field(data, "param_id");
+    ASSERT_TRUE(source_param_id != 0u);
+    yyjson_doc_free(doc);
+    assert_validate_ok(source_add_path);
+
+    snprintf(args, sizeof(args),
+             "-f json script param set --param %u --value 3 "
+             "\"%s\" -o \"%s\"",
+             source_param_id,
+             source_add_path,
+             source_set_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.param.set", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_STR_EQ("3", get_string_field(data, "new_value"));
+    yyjson_doc_free(doc);
+    assert_validate_ok(source_set_path);
+    assert_parameter_show_value(source_set_path, source_param_id, "3", 0u);
+
+    load_behavior_parameter_entry(source_set_path,
+                                  manifest.root_behavior_id,
+                                  "output_parameters",
+                                  source_param_id,
+                                  &source_param_index,
+                                  NULL,
+                                  NULL);
+
+    snprintf(args, sizeof(args),
+             "-f json script node add --parent %u "
+             "--bb-guid 42414C07-10000007 --name \"Param Target\" "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             source_set_path,
+             target_node_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    target_node_id = (uint32_t)get_uint_field(data, "node_id");
+    ASSERT_TRUE(target_node_id != 0u);
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind in "
+             "--type CKPGUID_INT --name LevelIn "
+             "\"%s\" -o \"%s\"",
+             target_node_id,
+             target_node_path,
+             target_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.param.add", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    target_param_id = (uint32_t)get_uint_field(data, "param_id");
+    ASSERT_TRUE(target_param_id != 0u);
+    yyjson_doc_free(doc);
+    assert_validate_ok(target_add_path);
+
+    snprintf(args, sizeof(args),
+             "-f json script param connect --from %u --to %u "
+             "\"%s\" -o \"%s\"",
+             source_param_id,
+             target_param_id,
+             target_add_path,
+             connect_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.param.connect", get_string_field(root, "command"));
+    yyjson_doc_free(doc);
+    assert_validate_ok(connect_path);
+    assert_parameter_show_value(connect_path, source_param_id, "3", 0u);
+    assert_parameter_show_source(connect_path, target_param_id, source_param_id);
+    assert_script_graph_data_edge_present(connect_path,
+                                          manifest.root_behavior_id,
+                                          source_param_id,
+                                          target_param_id);
+
+    snprintf(args, sizeof(args),
+             "-f json script param remove --param %u "
+             "\"%s\" -o \"%s\"",
+             source_param_id,
+             connect_path,
+             remove_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    free(result.output);
+    ASSERT_FALSE(file_exists(remove_path));
+
+    snprintf(args, sizeof(args),
+             "-f json script param disconnect --to %u "
+             "\"%s\" -o \"%s\"",
+             target_param_id,
+             connect_path,
+             disconnect_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.param.disconnect", get_string_field(root, "command"));
+    yyjson_doc_free(doc);
+    assert_validate_ok(disconnect_path);
+    assert_parameter_show_value(disconnect_path, source_param_id, "3", 0u);
+    assert_parameter_show_source(disconnect_path, target_param_id, 0u);
+    assert_script_graph_data_edge_missing(disconnect_path,
+                                          manifest.root_behavior_id,
+                                          source_param_id,
+                                          target_param_id);
+
+    snprintf(args, sizeof(args),
+             "-f json script param remove --param %u "
+             "\"%s\" -o \"%s\"",
+             source_param_id,
+             disconnect_path,
+             remove_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.param.remove", get_string_field(root, "command"));
+    yyjson_doc_free(doc);
+    assert_validate_ok(remove_path);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior show %u \"%s\"",
+             manifest.root_behavior_id,
+             remove_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_NULL(find_array_object_by_id(get_array_field(data, "output_parameters"),
+                                        source_param_id));
+    yyjson_doc_free(doc);
+    load_behavior_parameter_entry_by_name(remove_path,
+                                          target_node_id,
+                                          "input_parameters",
+                                          "LevelIn",
+                                          &removed_target_param_id);
+    assert_parameter_show_source(remove_path, removed_target_param_id, 0u);
+    assert_script_graph_data_edge_missing(remove_path,
+                                          manifest.root_behavior_id,
+                                          source_param_id,
+                                          removed_target_param_id);
+    (void)source_param_index;
+}
+
+TEST(cli, script_operation_crud_roundtrip)
+{
+    rewrite_manifest_t manifest;
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *root = NULL;
+    yyjson_val *operations = NULL;
+    yyjson_val *op_item = NULL;
+    uint32_t lhs_id = 0;
+    uint32_t rhs_id = 0;
+    uint32_t alt_id = 0;
+    uint32_t out_id = 0;
+    uint32_t op_id = 0;
+    char args[1024];
+    const char *lhs_add_path = "test_script_edit_tmp/op_lhs_add.cmo";
+    const char *rhs_add_path = "test_script_edit_tmp/op_rhs_add.cmo";
+    const char *out_add_path = "test_script_edit_tmp/op_out_add.cmo";
+    const char *alt_add_path = "test_script_edit_tmp/op_alt_add.cmo";
+    const char *lhs_set_path = "test_script_edit_tmp/op_lhs_set.cmo";
+    const char *rhs_set_path = "test_script_edit_tmp/op_rhs_set.cmo";
+    const char *alt_set_path = "test_script_edit_tmp/op_alt_set.cmo";
+    const char *op_add_path = "test_script_edit_tmp/op_add.cmo";
+    const char *op_rewire_path = "test_script_edit_tmp/op_rewire.cmo";
+    const char *op_remove_path = "test_script_edit_tmp/op_remove.cmo";
+
+    ASSERT_TRUE(load_rewrite_manifest(&manifest));
+    make_dir("test_script_edit_tmp");
+    remove(lhs_add_path);
+    remove(rhs_add_path);
+    remove(out_add_path);
+    remove(alt_add_path);
+    remove(lhs_set_path);
+    remove(rhs_set_path);
+    remove(alt_set_path);
+    remove(op_add_path);
+    remove(op_rewire_path);
+    remove(op_remove_path);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind local "
+             "--type CKPGUID_INT --name Lhs "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             lhs_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    lhs_id = (uint32_t)get_uint_field(data, "param_id");
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind local "
+             "--type CKPGUID_INT --name Rhs "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             lhs_add_path,
+             rhs_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    rhs_id = (uint32_t)get_uint_field(data, "param_id");
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind out "
+             "--type CKPGUID_INT --name Result "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             rhs_add_path,
+             out_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    out_id = (uint32_t)get_uint_field(data, "param_id");
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind local "
+             "--type CKPGUID_INT --name Alt "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             out_add_path,
+             alt_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    alt_id = (uint32_t)get_uint_field(data, "param_id");
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script param set --param %u --value 3 "
+             "\"%s\" -o \"%s\"",
+             lhs_id,
+             alt_add_path,
+             lhs_set_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    free(result.output);
+
+    snprintf(args, sizeof(args),
+             "-f json script param set --param %u --value 4 "
+             "\"%s\" -o \"%s\"",
+             rhs_id,
+             lhs_set_path,
+             rhs_set_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    free(result.output);
+
+    snprintf(args, sizeof(args),
+             "-f json script param set --param %u --value 7 "
+             "\"%s\" -o \"%s\"",
+             alt_id,
+             rhs_set_path,
+             alt_set_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    free(result.output);
+
+    snprintf(args, sizeof(args),
+             "-f json script op add --parent %u "
+             "--op-guid 33CC6B49-3589282B --in1 %u --in2 %u --out %u "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             lhs_id,
+             rhs_id,
+             out_id,
+             alt_set_path,
+             op_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.op.add", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    op_id = (uint32_t)get_uint_field(data, "op_id");
+    ASSERT_TRUE(op_id != 0u);
+    yyjson_doc_free(doc);
+    assert_validate_ok(op_add_path);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior show %u \"%s\"",
+             manifest.root_behavior_id,
+             op_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    op_item = find_array_object_by_id(operations, op_id);
+    ASSERT_NOT_NULL(op_item);
+    ASSERT_STR_EQ("33CC6B49-3589282B", get_string_field(op_item, "operation_guid"));
+    ASSERT_EQ(lhs_id, (uint32_t)get_uint_field(op_item, "in1_id"));
+    ASSERT_EQ(rhs_id, (uint32_t)get_uint_field(op_item, "in2_id"));
+    ASSERT_EQ(out_id, (uint32_t)get_uint_field(op_item, "out_id"));
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script op rewire --op %u --in1 %u "
+             "\"%s\" -o \"%s\"",
+             op_id,
+             alt_id,
+             op_add_path,
+             op_rewire_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.op.rewire", get_string_field(root, "command"));
+    yyjson_doc_free(doc);
+    assert_validate_ok(op_rewire_path);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior show %u \"%s\"",
+             manifest.root_behavior_id,
+             op_rewire_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    op_item = find_array_object_by_id(operations, op_id);
+    ASSERT_NOT_NULL(op_item);
+    ASSERT_EQ(alt_id, (uint32_t)get_uint_field(op_item, "in1_id"));
+    ASSERT_EQ(rhs_id, (uint32_t)get_uint_field(op_item, "in2_id"));
+    ASSERT_EQ(out_id, (uint32_t)get_uint_field(op_item, "out_id"));
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script op remove --op %u "
+             "\"%s\" -o \"%s\"",
+             op_id,
+             op_rewire_path,
+             op_remove_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.op.remove", get_string_field(root, "command"));
+    yyjson_doc_free(doc);
+    assert_validate_ok(op_remove_path);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior show %u \"%s\"",
+             manifest.root_behavior_id,
+             op_remove_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_NULL(find_array_object_by_id(operations, op_id));
+    yyjson_doc_free(doc);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_edit_fixture_manifest_contains_locked_ballance_ids);
     REGISTER_TEST(cli, script_edit_report_contract_is_checked_in);
     REGISTER_TEST(cli, script_graph_json_smoke);
     REGISTER_TEST(cli, script_node_and_io_crud_roundtrip);
     REGISTER_TEST(cli, script_control_flow_crud_roundtrip);
+    REGISTER_TEST(cli, script_parameter_crud_roundtrip);
+    REGISTER_TEST(cli, script_operation_crud_roundtrip);
 TEST_MAIN_END()

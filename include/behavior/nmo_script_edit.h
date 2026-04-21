@@ -28,6 +28,19 @@ typedef enum nmo_script_edit_io_kind {
     NMO_SCRIPT_EDIT_IO_OUTPUT = 1
 } nmo_script_edit_io_kind_t;
 
+typedef enum nmo_script_edit_parameter_kind {
+    NMO_SCRIPT_EDIT_PARAM_IN = 0,
+    NMO_SCRIPT_EDIT_PARAM_OUT = 1,
+    NMO_SCRIPT_EDIT_PARAM_LOCAL = 2,
+    NMO_SCRIPT_EDIT_PARAM_SHARED = 3
+} nmo_script_edit_parameter_kind_t;
+
+typedef enum nmo_script_edit_operation_slot_flags {
+    NMO_SCRIPT_EDIT_OP_SLOT_IN1 = 1u << 0,
+    NMO_SCRIPT_EDIT_OP_SLOT_IN2 = 1u << 1,
+    NMO_SCRIPT_EDIT_OP_SLOT_OUT = 1u << 2
+} nmo_script_edit_operation_slot_flags_t;
+
 typedef enum nmo_script_edit_validation_flags {
     NMO_SCRIPT_EDIT_VALIDATE_REFERENCES      = 1u << 0,
     NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX  = 1u << 1,
@@ -93,6 +106,39 @@ NMO_API nmo_status_t nmo_script_edit_remove_io(
     nmo_object_id_t io_id,
     bool detach_links);
 
+NMO_API nmo_status_t nmo_script_edit_add_parameter(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t owner_behavior_id,
+    nmo_script_edit_parameter_kind_t kind,
+    nmo_guid_t type_guid,
+    const char *name,
+    nmo_object_id_t *out_parameter_id);
+
+NMO_API nmo_status_t nmo_script_edit_set_parameter_value(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parameter_id,
+    const char *value_str);
+
+NMO_API nmo_status_t nmo_script_edit_set_parameter_bytes(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parameter_id,
+    const uint8_t *bytes,
+    size_t byte_count);
+
+NMO_API nmo_status_t nmo_script_edit_connect_parameter(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t source_parameter_id,
+    nmo_object_id_t target_parameter_id);
+
+NMO_API nmo_status_t nmo_script_edit_disconnect_parameter(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t target_parameter_id);
+
+NMO_API nmo_status_t nmo_script_edit_remove_parameter(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parameter_id,
+    bool detach);
+
 NMO_API nmo_status_t nmo_script_edit_add_behavior_link(
     nmo_script_edit_tx_t *tx,
     nmo_object_id_t parent_behavior_id,
@@ -116,6 +162,27 @@ NMO_API nmo_status_t nmo_script_edit_remove_behavior_link(
     nmo_script_edit_tx_t *tx,
     nmo_object_id_t parent_behavior_id,
     nmo_object_id_t link_id);
+
+NMO_API nmo_status_t nmo_script_edit_add_operation(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parent_behavior_id,
+    nmo_guid_t operation_guid,
+    nmo_object_id_t in1_parameter_id,
+    nmo_object_id_t in2_parameter_id,
+    nmo_object_id_t out_parameter_id,
+    nmo_object_id_t *out_operation_id);
+
+NMO_API nmo_status_t nmo_script_edit_rewire_operation(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t operation_id,
+    uint32_t slot_flags,
+    nmo_object_id_t in1_parameter_id,
+    nmo_object_id_t in2_parameter_id,
+    nmo_object_id_t out_parameter_id);
+
+NMO_API nmo_status_t nmo_script_edit_remove_operation(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t operation_id);
 
 NMO_API nmo_status_t nmo_script_edit_commit(nmo_script_edit_tx_t *tx);
 NMO_API void nmo_script_edit_rollback(nmo_script_edit_tx_t *tx);

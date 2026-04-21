@@ -7,6 +7,7 @@
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
 #include "session/nmo_context.h"
@@ -441,6 +442,79 @@ static bool add_owned_io_nodes(nmo_script_edit_graph_t *graph,
     return true;
 }
 
+static bool add_owned_parameter_nodes(nmo_script_edit_graph_t *graph,
+                                      const nmo_behavior_graph_t *behavior_graph)
+{
+    size_t i = 0;
+
+    for (i = 0; i < behavior_graph->node_count; ++i) {
+        const nmo_behavior_graph_node_t *behavior_node = &behavior_graph->nodes[i];
+        const nmo_behavior_state_t *state = NULL;
+        const nmo_object_id_t *ids = NULL;
+        size_t count = 0;
+        size_t slot = 0;
+        nmo_port_kind_t kind = NMO_PORT_PARAM_IN;
+
+        if (!behavior_node->kind ||
+            strcmp(behavior_node->kind, "behavior") != 0) {
+            continue;
+        }
+
+        state = get_behavior_state(graph->repo, behavior_node->id);
+        if (!state) {
+            continue;
+        }
+
+        for (kind = NMO_PORT_PARAM_IN; kind <= NMO_PORT_PARAM_LOCAL; ++kind) {
+            switch (kind) {
+            case NMO_PORT_PARAM_IN:
+                ids = (const nmo_object_id_t *)state->in_parameters.data;
+                count = state->in_parameters.count;
+                break;
+            case NMO_PORT_PARAM_OUT:
+                ids = (const nmo_object_id_t *)state->out_parameters.data;
+                count = state->out_parameters.count;
+                break;
+            case NMO_PORT_PARAM_LOCAL:
+                ids = (const nmo_object_id_t *)state->local_parameters.data;
+                count = state->local_parameters.count;
+                break;
+            default:
+                ids = NULL;
+                count = 0u;
+                break;
+            }
+
+            for (slot = 0; slot < count; ++slot) {
+                nmo_object_t *object = NULL;
+                nmo_script_edit_node_t node = {
+                    .object_id = ids[slot],
+                    .kind = NMO_SCRIPT_EDIT_NODE_PARAMETER,
+                    .depth = behavior_node->depth + 1u,
+                    .parent_behavior_id = behavior_node->id,
+                    .owner_behavior_id = behavior_node->id,
+                    .owner_slot_index = (int32_t)slot,
+                    .owner_slot_kind = (uint32_t)kind,
+                };
+
+                object = ids[slot] != 0u
+                    ? nmo_object_repository_find_by_id(graph->repo, ids[slot])
+                    : NULL;
+                if (object) {
+                    node.name = nmo_object_get_name(object);
+                    node.class_id = nmo_object_get_class_id(object);
+                }
+
+                if (!add_or_update_node(graph, &node)) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
 static bool copy_behavior_graph_nodes(nmo_script_edit_graph_t *graph,
                                       const nmo_behavior_graph_t *behavior_graph)
 {
@@ -661,6 +735,119 @@ static bool copy_data_edges(nmo_script_edit_graph_t *graph,
     return true;
 }
 
+static bool add_runtime_data_edges(nmo_script_edit_graph_t *graph)
+{
+    size_t i = 0;
+
+    if (!graph) {
+        return false;
+    }
+
+    for (i = 0; i < graph->node_count; ++i) {
+        const nmo_script_edit_node_t *node = &graph->nodes[i];
+        nmo_object_t *object = NULL;
+        nmo_class_id_t class_id = 0;
+
+        if (node->kind != NMO_SCRIPT_EDIT_NODE_PARAMETER || node->object_id == 0u) {
+            continue;
+        }
+
+        object = nmo_object_repository_find_by_id(graph->repo, node->object_id);
+        if (!object) {
+            continue;
+        }
+
+        class_id = nmo_object_get_class_id(object);
+        if (class_id == NMO_CID_PARAMETERIN) {
+            const nmo_parameterin_state_t *state =
+                (const nmo_parameterin_state_t *)nmo_object_get_state(object);
+            nmo_script_edit_data_edge_t edge = {0};
+            nmo_script_edit_endpoint_t owner = {0};
+
+            if (!state || state->source_id == 0u) {
+                continue;
+            }
+
+            edge.source_parameter_id = state->source_id;
+            edge.target_parameter_id = node->object_id;
+            edge.shared = state->is_shared != 0u;
+            edge.type_guid = state->type_guid;
+
+            if (populate_owner_from_index(graph->behavior_index,
+                                          edge.source_parameter_id, &owner)) {
+                edge.source_owner_id = owner.owner_behavior_id;
+                apply_owner_to_node(graph, edge.source_parameter_id, &owner);
+            } else if (!apply_parameter_owner_fallback(graph,
+                                                       edge.source_parameter_id,
+                                                       &edge.source_owner_id)) {
+                graph->edit_ready = false;
+            }
+
+            if (populate_owner_from_index(graph->behavior_index,
+                                          edge.target_parameter_id, &owner)) {
+                edge.target_owner_id = owner.owner_behavior_id;
+                apply_owner_to_node(graph, edge.target_parameter_id, &owner);
+            } else if (!apply_parameter_owner_fallback(graph,
+                                                       edge.target_parameter_id,
+                                                       &edge.target_owner_id)) {
+                graph->edit_ready = false;
+            }
+
+            if (!add_or_merge_data_edge(graph, &edge)) {
+                return false;
+            }
+        } else if (class_id == NMO_CID_PARAMETEROUT) {
+            const nmo_parameterout_state_t *state =
+                (const nmo_parameterout_state_t *)nmo_object_get_state(object);
+
+            if (!state || !state->destination_ids) {
+                continue;
+            }
+
+            for (uint32_t d = 0; d < state->destination_count; ++d) {
+                nmo_script_edit_data_edge_t edge = {0};
+                nmo_script_edit_endpoint_t owner = {0};
+
+                if (state->destination_ids[d] == 0u) {
+                    continue;
+                }
+
+                edge.source_parameter_id = node->object_id;
+                edge.target_parameter_id = state->destination_ids[d];
+                edge.type_guid = get_parameter_type_guid(graph->repo,
+                                                         edge.target_parameter_id);
+                edge.shared = false;
+
+                if (populate_owner_from_index(graph->behavior_index,
+                                              edge.source_parameter_id, &owner)) {
+                    edge.source_owner_id = owner.owner_behavior_id;
+                    apply_owner_to_node(graph, edge.source_parameter_id, &owner);
+                } else if (!apply_parameter_owner_fallback(graph,
+                                                           edge.source_parameter_id,
+                                                           &edge.source_owner_id)) {
+                    graph->edit_ready = false;
+                }
+
+                if (populate_owner_from_index(graph->behavior_index,
+                                              edge.target_parameter_id, &owner)) {
+                    edge.target_owner_id = owner.owner_behavior_id;
+                    apply_owner_to_node(graph, edge.target_parameter_id, &owner);
+                } else if (!apply_parameter_owner_fallback(graph,
+                                                           edge.target_parameter_id,
+                                                           &edge.target_owner_id)) {
+                    graph->edit_ready = false;
+                }
+
+                if (!add_or_merge_data_edge(graph, &edge)) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
 static nmo_status_t copy_filtered_control_edges(const nmo_script_edit_graph_t *graph,
                                                 nmo_object_id_t behavior_id,
                                                 bool incoming,
@@ -828,6 +1015,7 @@ NMO_API nmo_status_t nmo_script_edit_graph_build(nmo_context_t *ctx,
 
     if (!copy_behavior_graph_nodes(graph, &behavior_graph) ||
         !add_owned_io_nodes(graph, &behavior_graph) ||
+        !add_owned_parameter_nodes(graph, &behavior_graph) ||
         !copy_control_edges(graph, &behavior_graph)) {
         nmo_behavior_graph_free(&behavior_graph);
         nmo_script_edit_graph_destroy(graph);
@@ -837,7 +1025,8 @@ NMO_API nmo_status_t nmo_script_edit_graph_build(nmo_context_t *ctx,
 
     derive_parameter_owners_from_behavior_edges(graph, &behavior_graph);
 
-    if (!copy_data_edges(graph, &behavior_graph)) {
+    if (!copy_data_edges(graph, &behavior_graph) ||
+        !add_runtime_data_edges(graph)) {
         nmo_behavior_graph_free(&behavior_graph);
         nmo_script_edit_graph_destroy(graph);
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,

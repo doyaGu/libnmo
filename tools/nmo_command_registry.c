@@ -462,6 +462,28 @@ static void script_link_usage(FILE *out) {
             "       nmo script link remove --parent <id> --link <id> <file> -o <output>\n\n");
 }
 
+static void script_param_usage(FILE *out) {
+    fprintf(out,
+            "Usage: nmo script param add --owner <id> --kind <in|out|local|shared> --type <type> --name <name> <file> -o <output>\n");
+    fprintf(out,
+            "       nmo script param set --param <id> --value <typed-value> <file> -o <output>\n");
+    fprintf(out,
+            "       nmo script param connect --from <param-id> --to <param-in-id> <file> -o <output>\n");
+    fprintf(out,
+            "       nmo script param disconnect --to <param-in-id> <file> -o <output>\n");
+    fprintf(out,
+            "       nmo script param remove --param <id> [--detach] <file> -o <output>\n\n");
+}
+
+static void script_op_usage(FILE *out) {
+    fprintf(out,
+            "Usage: nmo script op add --parent <id> --op-guid <guid> [--in1 <param-id>] [--in2 <param-id>] [--out <param-id>] <file> -o <output>\n");
+    fprintf(out,
+            "       nmo script op rewire --op <id> [--in1 <param-id>] [--in2 <param-id>] [--out <param-id>] <file> -o <output>\n");
+    fprintf(out,
+            "       nmo script op remove --op <id> <file> -o <output>\n\n");
+}
+
 static void behavior_graph_boundary_usage(FILE *out) {
     fprintf(out, "Usage: nmo behavior graph-boundary [options] [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Export behavior graph boundary links and parameter crossings.\n\n");
@@ -1086,6 +1108,8 @@ static const nmo_cli_action_t script_actions[] = {
     ACTION("node", NULL, "Script node editing", nmo_cmd_script_node, script_node_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
     ACTION("io", NULL, "Script IO editing", nmo_cmd_script_io, script_io_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
     ACTION("link", NULL, "Script control-flow editing", nmo_cmd_script_link, script_link_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
+    ACTION("param", NULL, "Script parameter editing", nmo_cmd_script_param, script_param_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
+    ACTION("op", NULL, "Script operation editing", nmo_cmd_script_op, script_op_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
 };
 
 static const nmo_cli_action_t resource_actions[] = {

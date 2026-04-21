@@ -18,7 +18,11 @@
 #include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
+#include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "format/nmo_object.h"
+#include "type/nmo_operation_system.h"
+#include "type/nmo_type_system.h"
+#include "core/nmo_arena.h"
 #include "core/nmo_array.h"
 
 #include <stdbool.h>
@@ -203,6 +207,84 @@ static nmo_behaviorlink_state_t *script_edit_find_link_state(
     return (nmo_behaviorlink_state_t *)nmo_object_get_state(object);
 }
 
+static nmo_parameterin_state_t *script_edit_find_parameterin_state(
+    nmo_session_t *session,
+    nmo_object_id_t parameter_id,
+    nmo_object_t **out_object)
+{
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *object = NULL;
+
+    if (out_object) {
+        *out_object = NULL;
+    }
+    if (!session || parameter_id == 0) {
+        return NULL;
+    }
+
+    repo = nmo_session_get_repository(session);
+    object = repo ? nmo_object_repository_find_by_id(repo, parameter_id) : NULL;
+    if (!object || nmo_object_get_class_id(object) != NMO_CID_PARAMETERIN) {
+        return NULL;
+    }
+    if (out_object) {
+        *out_object = object;
+    }
+    return (nmo_parameterin_state_t *)nmo_object_get_state(object);
+}
+
+static nmo_parameterout_state_t *script_edit_find_parameterout_state(
+    nmo_session_t *session,
+    nmo_object_id_t parameter_id,
+    nmo_object_t **out_object)
+{
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *object = NULL;
+
+    if (out_object) {
+        *out_object = NULL;
+    }
+    if (!session || parameter_id == 0) {
+        return NULL;
+    }
+
+    repo = nmo_session_get_repository(session);
+    object = repo ? nmo_object_repository_find_by_id(repo, parameter_id) : NULL;
+    if (!object || nmo_object_get_class_id(object) != NMO_CID_PARAMETEROUT) {
+        return NULL;
+    }
+    if (out_object) {
+        *out_object = object;
+    }
+    return (nmo_parameterout_state_t *)nmo_object_get_state(object);
+}
+
+static nmo_parameteroperation_state_t *script_edit_find_operation_state(
+    nmo_session_t *session,
+    nmo_object_id_t operation_id,
+    nmo_object_t **out_object)
+{
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *object = NULL;
+
+    if (out_object) {
+        *out_object = NULL;
+    }
+    if (!session || operation_id == 0) {
+        return NULL;
+    }
+
+    repo = nmo_session_get_repository(session);
+    object = repo ? nmo_object_repository_find_by_id(repo, operation_id) : NULL;
+    if (!object || nmo_object_get_class_id(object) != NMO_CID_PARAMETEROPERATION) {
+        return NULL;
+    }
+    if (out_object) {
+        *out_object = object;
+    }
+    return (nmo_parameteroperation_state_t *)nmo_object_get_state(object);
+}
+
 static void script_edit_update_behavior_save_flags(
     nmo_behavior_state_t *state)
 {
@@ -215,6 +297,16 @@ static void script_edit_update_behavior_save_flags(
         state->save_flags |= CK_STATESAVE_BEHAVIORSUBBEHAV;
     } else {
         state->save_flags &= ~CK_STATESAVE_BEHAVIORSUBBEHAV;
+    }
+    if (state->sub_behavior_links.count > 0u) {
+        state->save_flags |= CK_STATESAVE_BEHAVIORSUBLINKS;
+    } else {
+        state->save_flags &= ~CK_STATESAVE_BEHAVIORSUBLINKS;
+    }
+    if (state->operations.count > 0u) {
+        state->save_flags |= CK_STATESAVE_BEHAVIOROPERATIONS;
+    } else {
+        state->save_flags &= ~CK_STATESAVE_BEHAVIOROPERATIONS;
     }
     if (state->in_parameters.count > 0u) {
         state->save_flags |= CK_STATESAVE_BEHAVIORINPARAMS;
@@ -318,6 +410,9 @@ static nmo_status_t script_edit_create_parameter_object(
     nmo_object_repository_t *repo = NULL;
     nmo_object_t *object = NULL;
     nmo_parameter_state_t *parameter = NULL;
+    nmo_parameterin_state_t *input_state = NULL;
+    const nmo_type_descriptor_t *type_desc = NULL;
+    nmo_type_registry_t *registry = NULL;
     nmo_status_t rc = script_edit_create_runtime_object(
         tx, class_id, name, NMO_GUID_NULL, out_parameter_id);
     if (rc != NMO_OK) {
@@ -330,21 +425,68 @@ static nmo_status_t script_edit_create_parameter_object(
         return NMO_ERR_INVALID_STATE;
     }
 
-    parameter = nmo_parameter_get_mutable_state(object);
-    if (!parameter) {
+    registry = nmo_context_get_type_registry(tx->ctx);
+    if (!registry) {
         return NMO_ERR_INVALID_STATE;
     }
-    parameter->type_guid = type_guid;
+    type_desc = nmo_type_registry_find_by_guid(registry, type_guid);
+    if (!type_desc) {
+        return NMO_ERR_NOT_FOUND;
+    }
 
     if (class_id == NMO_CID_PARAMETERIN) {
-        ((nmo_parameterin_state_t *)nmo_object_get_state(object))->owner_id =
-            owner_id;
-    } else if (class_id == NMO_CID_PARAMETEROUT) {
-        ((nmo_parameterout_state_t *)nmo_object_get_state(object))->owner_id =
-            owner_id;
+        input_state = (nmo_parameterin_state_t *)nmo_object_get_state(object);
+        if (!input_state) {
+            return NMO_ERR_INVALID_STATE;
+        }
+        input_state->type_guid = type_guid;
+        input_state->owner_id = owner_id;
+        input_state->source_id = 0u;
+        input_state->is_shared = 0u;
+        input_state->is_disabled = 0u;
+    } else {
+        parameter = nmo_parameter_get_mutable_state(object);
+        if (!parameter) {
+            return NMO_ERR_INVALID_STATE;
+        }
+
+        parameter->type_guid = type_guid;
+        parameter->has_state = true;
+        parameter->manager_guid = NMO_GUID_NULL;
+        parameter->manager_value = 0;
+        parameter->subchunk = NULL;
+        parameter->object_id = 0;
+        nmo_array_dispose(&parameter->buffer_data);
+
+        if ((type_desc->category & NMO_TYPE_CATEGORY_OBJECT_REF) != 0u) {
+            parameter->mode = CKPARAM_MODE_OBJECT;
+        } else {
+            size_t buffer_size = type_desc->size;
+            if (buffer_size == 0u) {
+                return NMO_ERR_INVALID_ARGUMENT;
+            }
+            parameter->mode = CKPARAM_MODE_BUFFER;
+            rc = nmo_array_alloc(&parameter->buffer_data, sizeof(uint8_t),
+                                 buffer_size, NULL);
+            if (rc != NMO_OK) {
+                return rc;
+            }
+            memset(parameter->buffer_data.data, 0, buffer_size);
+        }
+    }
+
+    if (class_id == NMO_CID_PARAMETEROUT) {
+        nmo_parameterout_state_t *state =
+            (nmo_parameterout_state_t *)nmo_object_get_state(object);
+        state->owner_id = owner_id;
+        state->destination_ids = NULL;
+        state->destination_count = 0u;
     } else if (class_id == NMO_CID_PARAMETERLOCAL) {
-        ((nmo_parameterlocal_state_t *)nmo_object_get_state(object))->owner_id =
-            owner_id;
+        nmo_parameterlocal_state_t *state =
+            (nmo_parameterlocal_state_t *)nmo_object_get_state(object);
+        state->owner_id = owner_id;
+        state->is_myself = 0u;
+        state->is_setting = 0u;
     }
 
     nmo_script_edit_mark(tx, NMO_SESSION_EDIT_OBJECT_STATE);
@@ -460,6 +602,53 @@ static bool script_edit_behavior_is_direct_graph_member(
     return nmo_array_find(&parent->sub_behaviors, &behavior_id, NULL) != 0;
 }
 
+static bool script_edit_find_direct_parent_behavior(
+    nmo_session_t *session,
+    nmo_object_id_t behavior_id,
+    nmo_object_id_t *out_parent_behavior_id)
+{
+    nmo_object_repository_t *repo = NULL;
+    size_t object_count = 0;
+
+    if (out_parent_behavior_id) {
+        *out_parent_behavior_id = 0u;
+    }
+    if (!session || behavior_id == 0u) {
+        return false;
+    }
+
+    repo = nmo_session_get_repository(session);
+    if (!repo) {
+        return false;
+    }
+
+    object_count = nmo_object_repository_get_count(repo);
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        nmo_behavior_state_t *state = NULL;
+        nmo_object_id_t parent_id = 0u;
+
+        if (!object || nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
+            continue;
+        }
+
+        state = (nmo_behavior_state_t *)nmo_object_get_state(object);
+        if (!state || state->sub_behaviors.count == 0u) {
+            continue;
+        }
+
+        parent_id = nmo_object_get_id(object);
+        if (nmo_array_find(&state->sub_behaviors, &behavior_id, NULL) != 0) {
+            if (out_parent_behavior_id) {
+                *out_parent_behavior_id = parent_id;
+            }
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static bool script_edit_find_parent_graph_io_owner(
     nmo_session_t *session,
     const nmo_behavior_index_t *index,
@@ -531,6 +720,119 @@ static bool script_edit_io_can_target_control(
     return owner->kind == NMO_PORT_IO_IN;
 }
 
+static bool script_edit_is_parameter_owner_kind(nmo_port_kind_t kind)
+{
+    return kind == NMO_PORT_PARAM_IN ||
+           kind == NMO_PORT_PARAM_OUT ||
+           kind == NMO_PORT_PARAM_LOCAL;
+}
+
+static bool script_edit_find_parameter_owner(
+    const nmo_behavior_index_t *index,
+    nmo_object_id_t parameter_id,
+    const nmo_port_owner_t **out_owner)
+{
+    const nmo_port_owner_t *owner = NULL;
+
+    if (out_owner) {
+        *out_owner = NULL;
+    }
+    if (!index || parameter_id == 0) {
+        return false;
+    }
+
+    owner = nmo_behavior_index_find(index, parameter_id);
+    if (!owner || !script_edit_is_parameter_owner_kind(owner->kind)) {
+        return false;
+    }
+    if (out_owner) {
+        *out_owner = owner;
+    }
+    return true;
+}
+
+static bool script_edit_parameter_belongs_to_parent_graph(
+    nmo_session_t *session,
+    const nmo_behavior_index_t *index,
+    nmo_object_id_t parent_behavior_id,
+    nmo_object_id_t parameter_id,
+    const nmo_port_owner_t **out_owner)
+{
+    const nmo_port_owner_t *owner = NULL;
+
+    if (out_owner) {
+        *out_owner = NULL;
+    }
+    if (!script_edit_find_parameter_owner(index, parameter_id, &owner)) {
+        return false;
+    }
+    if (!script_edit_behavior_is_direct_graph_member(session,
+                                                     parent_behavior_id,
+                                                     owner->owner_id)) {
+        return false;
+    }
+    if (out_owner) {
+        *out_owner = owner;
+    }
+    return true;
+}
+
+static bool script_edit_resolve_common_parent_graph(
+    nmo_session_t *session,
+    nmo_object_id_t left_owner_id,
+    nmo_object_id_t right_owner_id,
+    nmo_object_id_t *out_parent_behavior_id)
+{
+    nmo_object_id_t left_parent_id = 0u;
+    nmo_object_id_t right_parent_id = 0u;
+
+    if (out_parent_behavior_id) {
+        *out_parent_behavior_id = 0u;
+    }
+    if (!session || left_owner_id == 0u || right_owner_id == 0u) {
+        return false;
+    }
+
+    if (left_owner_id == right_owner_id) {
+        if (out_parent_behavior_id) {
+            *out_parent_behavior_id = left_owner_id;
+        }
+        return true;
+    }
+
+    if (script_edit_behavior_is_direct_graph_member(session,
+                                                    right_owner_id,
+                                                    left_owner_id)) {
+        if (out_parent_behavior_id) {
+            *out_parent_behavior_id = right_owner_id;
+        }
+        return true;
+    }
+    if (script_edit_behavior_is_direct_graph_member(session,
+                                                    left_owner_id,
+                                                    right_owner_id)) {
+        if (out_parent_behavior_id) {
+            *out_parent_behavior_id = left_owner_id;
+        }
+        return true;
+    }
+
+    if (!script_edit_find_direct_parent_behavior(session, left_owner_id,
+                                                 &left_parent_id) ||
+        !script_edit_find_direct_parent_behavior(session, right_owner_id,
+                                                 &right_parent_id)) {
+        return false;
+    }
+
+    if (left_parent_id != 0u && left_parent_id == right_parent_id) {
+        if (out_parent_behavior_id) {
+            *out_parent_behavior_id = left_parent_id;
+        }
+        return true;
+    }
+    return false;
+}
+
 static bool script_edit_is_parameter_reference_class(nmo_class_id_t class_id)
 {
     return class_id == NMO_CID_PARAMETER ||
@@ -538,6 +840,104 @@ static bool script_edit_is_parameter_reference_class(nmo_class_id_t class_id)
            class_id == NMO_CID_PARAMETEROUT ||
            class_id == NMO_CID_PARAMETERLOCAL ||
            class_id == NMO_CID_PARAMETEROPERATION;
+}
+
+static bool script_edit_parameter_class_holds_value(nmo_class_id_t class_id)
+{
+    return class_id == NMO_CID_PARAMETER ||
+           class_id == NMO_CID_PARAMETEROUT ||
+           class_id == NMO_CID_PARAMETERLOCAL;
+}
+
+static bool script_edit_parameterout_has_destination(
+    const nmo_parameterout_state_t *state,
+    nmo_object_id_t destination_id)
+{
+    if (!state || destination_id == 0u) {
+        return false;
+    }
+    for (uint32_t i = 0; i < state->destination_count; ++i) {
+        if (state->destination_ids && state->destination_ids[i] == destination_id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static nmo_status_t script_edit_parameterout_append_destination(
+    nmo_script_edit_tx_t *tx,
+    nmo_parameterout_state_t *state,
+    nmo_object_id_t destination_id)
+{
+    nmo_object_id_t *new_ids = NULL;
+
+    if (!tx || !state || destination_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (script_edit_parameterout_has_destination(state, destination_id)) {
+        return NMO_OK;
+    }
+
+    new_ids = (nmo_object_id_t *)nmo_arena_alloc(
+        nmo_session_get_arena(tx->session),
+        (size_t)(state->destination_count + 1u) * sizeof(*new_ids),
+        _Alignof(nmo_object_id_t));
+    if (!new_ids) {
+        return NMO_ERR_NOMEM;
+    }
+
+    if (state->destination_count > 0u && state->destination_ids) {
+        memcpy(new_ids, state->destination_ids,
+               (size_t)state->destination_count * sizeof(*new_ids));
+    }
+    new_ids[state->destination_count] = destination_id;
+    state->destination_ids = new_ids;
+    state->destination_count += 1u;
+    return NMO_OK;
+}
+
+static nmo_status_t script_edit_parameterout_remove_destination(
+    nmo_script_edit_tx_t *tx,
+    nmo_parameterout_state_t *state,
+    nmo_object_id_t destination_id)
+{
+    nmo_object_id_t *new_ids = NULL;
+    uint32_t kept = 0u;
+
+    if (!tx || !state || destination_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (state->destination_count == 0u || !state->destination_ids) {
+        return NMO_OK;
+    }
+
+    for (uint32_t i = 0; i < state->destination_count; ++i) {
+        if (state->destination_ids[i] != destination_id) {
+            kept++;
+        }
+    }
+    if (kept == state->destination_count) {
+        return NMO_OK;
+    }
+    if (kept > 0u) {
+        uint32_t out_index = 0u;
+        new_ids = (nmo_object_id_t *)nmo_arena_alloc(
+            nmo_session_get_arena(tx->session),
+            (size_t)kept * sizeof(*new_ids),
+            _Alignof(nmo_object_id_t));
+        if (!new_ids) {
+            return NMO_ERR_NOMEM;
+        }
+        for (uint32_t i = 0; i < state->destination_count; ++i) {
+            if (state->destination_ids[i] != destination_id) {
+                new_ids[out_index++] = state->destination_ids[i];
+            }
+        }
+    }
+
+    state->destination_ids = new_ids;
+    state->destination_count = kept;
+    return NMO_OK;
 }
 
 static nmo_status_t validate_behavior_link_owners(
@@ -648,6 +1048,75 @@ static nmo_status_t validate_parameter_links(
                         nmo_object_get_class_id(destination))) {
                     return NMO_ERR_VALIDATION_FAILED;
                 }
+            }
+        }
+    }
+
+    return NMO_OK;
+}
+
+static nmo_status_t validate_parameter_operations(
+    const nmo_script_edit_tx_t *tx,
+    nmo_object_repository_t *repo,
+    const nmo_behavior_index_t *index)
+{
+    size_t object_count = 0;
+
+    if (!repo || !index) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    object_count = nmo_object_repository_get_count(repo);
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        const nmo_parameteroperation_state_t *state = NULL;
+
+        if (!object ||
+            nmo_object_get_class_id(object) != NMO_CID_PARAMETEROPERATION) {
+            continue;
+        }
+        if (script_edit_is_pending_destroy(tx, nmo_object_get_id(object))) {
+            continue;
+        }
+
+        state = (const nmo_parameteroperation_state_t *)nmo_object_get_state(object);
+        if (!state) {
+            return NMO_ERR_INVALID_STATE;
+        }
+        if (!nmo_behavior_index_find(index, nmo_object_get_id(object))) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+        if (state->has_in1) {
+            nmo_object_t *param = NULL;
+            if (state->in1_id == 0u) {
+                return NMO_ERR_VALIDATION_FAILED;
+            }
+            param = nmo_object_repository_find_by_id(repo, state->in1_id);
+            if (!param || !script_edit_is_parameter_reference_class(
+                              nmo_object_get_class_id(param))) {
+                return NMO_ERR_VALIDATION_FAILED;
+            }
+        }
+        if (state->has_in2) {
+            nmo_object_t *param = NULL;
+            if (state->in2_id == 0u) {
+                return NMO_ERR_VALIDATION_FAILED;
+            }
+            param = nmo_object_repository_find_by_id(repo, state->in2_id);
+            if (!param || !script_edit_is_parameter_reference_class(
+                              nmo_object_get_class_id(param))) {
+                return NMO_ERR_VALIDATION_FAILED;
+            }
+        }
+        if (state->has_out) {
+            nmo_object_t *param = NULL;
+            if (state->out_id == 0u) {
+                return NMO_ERR_VALIDATION_FAILED;
+            }
+            param = nmo_object_repository_find_by_id(repo, state->out_id);
+            if (!param || !script_edit_is_parameter_reference_class(
+                              nmo_object_get_class_id(param))) {
+                return NMO_ERR_VALIDATION_FAILED;
             }
         }
     }
@@ -796,6 +1265,12 @@ NMO_API nmo_status_t nmo_script_edit_validate(nmo_script_edit_tx_t *tx,
         }
 
         rc = validate_parameter_links(tx, repo, index);
+        if (rc != NMO_OK) {
+            script_edit_note_error(tx);
+            return rc;
+        }
+
+        rc = validate_parameter_operations(tx, repo, index);
         if (rc != NMO_OK) {
             script_edit_note_error(tx);
             return rc;
@@ -1190,6 +1665,849 @@ NMO_API nmo_status_t nmo_script_edit_remove_io(
         NMO_SESSION_EDIT_OBJECT_STATE |
             NMO_SESSION_EDIT_REFERENCES |
             NMO_SESSION_EDIT_BEHAVIOR_GRAPH);
+    return NMO_OK;
+}
+
+static nmo_guid_t script_edit_parameter_type_guid_from_object(
+    const nmo_object_t *object)
+{
+    if (!object) {
+        return NMO_GUID_NULL;
+    }
+    if (nmo_object_get_class_id(object) == NMO_CID_PARAMETERIN) {
+        const nmo_parameterin_state_t *state =
+            (const nmo_parameterin_state_t *)nmo_object_get_state(object);
+        return state ? state->type_guid : NMO_GUID_NULL;
+    }
+
+    {
+        const nmo_parameter_state_t *state = nmo_parameter_get_state(object);
+        return state ? state->type_guid : NMO_GUID_NULL;
+    }
+}
+
+static nmo_status_t script_edit_disconnect_parameter_internal(
+    nmo_script_edit_tx_t *tx,
+    nmo_parameterin_state_t *target_state,
+    nmo_object_id_t target_parameter_id)
+{
+    nmo_parameterout_state_t *source_state = NULL;
+    nmo_status_t rc = NMO_OK;
+
+    if (!tx || !tx->edit || !target_state || target_parameter_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (target_state->source_id == 0u) {
+        return NMO_OK;
+    }
+
+    if (target_state->is_shared == 0u) {
+        source_state = script_edit_find_parameterout_state(tx->session,
+                                                           target_state->source_id,
+                                                           NULL);
+        if (source_state) {
+            rc = nmo_session_edit_snapshot_bytes(tx->edit, source_state,
+                                                 sizeof(*source_state));
+            if (rc != NMO_OK) {
+                return rc;
+            }
+            rc = script_edit_parameterout_remove_destination(
+                tx, source_state, target_parameter_id);
+            if (rc != NMO_OK) {
+                return rc;
+            }
+        }
+    }
+
+    rc = nmo_session_edit_snapshot_bytes(tx->edit, target_state,
+                                         sizeof(*target_state));
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    target_state->source_id = 0u;
+    target_state->is_shared = 0u;
+    nmo_script_edit_mark(tx, NMO_SESSION_EDIT_OBJECT_STATE |
+                               NMO_SESSION_EDIT_REFERENCES);
+    return NMO_OK;
+}
+
+static bool script_edit_parameter_has_live_connections(
+    const nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parameter_id)
+{
+    nmo_object_repository_t *repo = NULL;
+    size_t object_count = 0;
+
+    if (!tx || !tx->session || parameter_id == 0u) {
+        return false;
+    }
+
+    repo = nmo_session_get_repository(tx->session);
+    if (!repo) {
+        return false;
+    }
+
+    object_count = nmo_object_repository_get_count(repo);
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        nmo_class_id_t class_id = 0;
+        if (!object ||
+            script_edit_is_pending_destroy(tx, nmo_object_get_id(object))) {
+            continue;
+        }
+
+        class_id = nmo_object_get_class_id(object);
+        if (class_id == NMO_CID_PARAMETERIN) {
+            const nmo_parameterin_state_t *state =
+                (const nmo_parameterin_state_t *)nmo_object_get_state(object);
+            if (!state) {
+                continue;
+            }
+            if (nmo_object_get_id(object) == parameter_id && state->source_id != 0u) {
+                return true;
+            }
+            if (state->source_id == parameter_id) {
+                return true;
+            }
+        } else if (class_id == NMO_CID_PARAMETEROUT) {
+            const nmo_parameterout_state_t *state =
+                (const nmo_parameterout_state_t *)nmo_object_get_state(object);
+            if (!state) {
+                continue;
+            }
+            if (nmo_object_get_id(object) == parameter_id &&
+                state->destination_count > 0u) {
+                return true;
+            }
+            for (uint32_t j = 0; j < state->destination_count; ++j) {
+                if (state->destination_ids && state->destination_ids[j] == parameter_id) {
+                    return true;
+                }
+            }
+        } else if (class_id == NMO_CID_PARAMETEROPERATION) {
+            const nmo_parameteroperation_state_t *state =
+                (const nmo_parameteroperation_state_t *)nmo_object_get_state(object);
+            if (!state) {
+                continue;
+            }
+            if ((state->has_in1 && state->in1_id == parameter_id) ||
+                (state->has_in2 && state->in2_id == parameter_id) ||
+                (state->has_out && state->out_id == parameter_id)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+static nmo_status_t script_edit_detach_parameter_references(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parameter_id)
+{
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *object = NULL;
+    nmo_class_id_t class_id = 0;
+    size_t object_count = 0;
+
+    if (!tx || !tx->edit || !tx->session || parameter_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    repo = nmo_session_get_repository(tx->session);
+    object = repo ? nmo_object_repository_find_by_id(repo, parameter_id) : NULL;
+    if (!object) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    class_id = nmo_object_get_class_id(object);
+
+    if (class_id == NMO_CID_PARAMETERIN) {
+        nmo_parameterin_state_t *target_state =
+            (nmo_parameterin_state_t *)nmo_object_get_state(object);
+        nmo_status_t rc = script_edit_disconnect_parameter_internal(
+            tx, target_state, parameter_id);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+    }
+
+    object_count = nmo_object_repository_get_count(repo);
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_t *other = nmo_object_repository_get_by_index(repo, i);
+        nmo_class_id_t other_class = 0;
+        nmo_status_t rc = NMO_OK;
+
+        if (!other || nmo_object_get_id(other) == parameter_id ||
+            script_edit_is_pending_destroy(tx, nmo_object_get_id(other))) {
+            continue;
+        }
+
+        other_class = nmo_object_get_class_id(other);
+        if (other_class == NMO_CID_PARAMETERIN) {
+            nmo_parameterin_state_t *state =
+                (nmo_parameterin_state_t *)nmo_object_get_state(other);
+            if (state && state->source_id == parameter_id) {
+                rc = nmo_session_edit_snapshot_bytes(tx->edit, state, sizeof(*state));
+                if (rc != NMO_OK) {
+                    return rc;
+                }
+                state->source_id = 0u;
+                state->is_shared = 0u;
+            }
+        } else if (other_class == NMO_CID_PARAMETEROUT) {
+            nmo_parameterout_state_t *state =
+                (nmo_parameterout_state_t *)nmo_object_get_state(other);
+            if (state && script_edit_parameterout_has_destination(state, parameter_id)) {
+                rc = nmo_session_edit_snapshot_bytes(tx->edit, state, sizeof(*state));
+                if (rc != NMO_OK) {
+                    return rc;
+                }
+                rc = script_edit_parameterout_remove_destination(tx, state,
+                                                                 parameter_id);
+                if (rc != NMO_OK) {
+                    return rc;
+                }
+            }
+        } else if (other_class == NMO_CID_PARAMETEROPERATION) {
+            nmo_parameteroperation_state_t *state =
+                (nmo_parameteroperation_state_t *)nmo_object_get_state(other);
+            if (!state) {
+                continue;
+            }
+            if ((state->has_in1 && state->in1_id == parameter_id) ||
+                (state->has_in2 && state->in2_id == parameter_id) ||
+                (state->has_out && state->out_id == parameter_id)) {
+                rc = nmo_session_edit_snapshot_bytes(tx->edit, state, sizeof(*state));
+                if (rc != NMO_OK) {
+                    return rc;
+                }
+                if (state->has_in1 && state->in1_id == parameter_id) {
+                    state->has_in1 = 0u;
+                    state->in1_id = 0u;
+                }
+                if (state->has_in2 && state->in2_id == parameter_id) {
+                    state->has_in2 = 0u;
+                    state->in2_id = 0u;
+                }
+                if (state->has_out && state->out_id == parameter_id) {
+                    state->has_out = 0u;
+                    state->out_id = 0u;
+                }
+            }
+        }
+    }
+
+    nmo_script_edit_mark(tx, NMO_SESSION_EDIT_OBJECT_STATE |
+                               NMO_SESSION_EDIT_REFERENCES);
+    return NMO_OK;
+}
+
+NMO_API nmo_status_t nmo_script_edit_add_parameter(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t owner_behavior_id,
+    nmo_script_edit_parameter_kind_t kind,
+    nmo_guid_t type_guid,
+    const char *name,
+    nmo_object_id_t *out_parameter_id)
+{
+    nmo_behavior_state_t *behavior = NULL;
+    nmo_array_t *array = NULL;
+    nmo_class_id_t class_id = 0;
+    nmo_object_id_t parameter_id = 0;
+    nmo_status_t rc = NMO_OK;
+
+    if (out_parameter_id) {
+        *out_parameter_id = 0u;
+    }
+    if (!tx || !tx->edit || owner_behavior_id == 0u ||
+        nmo_guid_is_null(type_guid) || !name || name[0] == '\0') {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    behavior = script_edit_find_behavior_state(tx->session, owner_behavior_id, NULL);
+    if (!behavior) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    switch (kind) {
+    case NMO_SCRIPT_EDIT_PARAM_IN:
+    case NMO_SCRIPT_EDIT_PARAM_SHARED:
+        class_id = NMO_CID_PARAMETERIN;
+        array = &behavior->in_parameters;
+        break;
+    case NMO_SCRIPT_EDIT_PARAM_OUT:
+        class_id = NMO_CID_PARAMETEROUT;
+        array = &behavior->out_parameters;
+        break;
+    case NMO_SCRIPT_EDIT_PARAM_LOCAL:
+        class_id = NMO_CID_PARAMETERLOCAL;
+        array = &behavior->local_parameters;
+        break;
+    default:
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    rc = nmo_session_edit_snapshot_bytes(tx->edit, behavior, sizeof(*behavior));
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    rc = script_edit_create_parameter_object(tx, class_id, owner_behavior_id, name,
+                                             type_guid, &parameter_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    if (kind == NMO_SCRIPT_EDIT_PARAM_SHARED) {
+        nmo_parameterin_state_t *state =
+            script_edit_find_parameterin_state(tx->session, parameter_id, NULL);
+        if (!state) {
+            return NMO_ERR_INVALID_STATE;
+        }
+        state->is_shared = 1u;
+    }
+
+    rc = nmo_array_append(array, &parameter_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    script_edit_update_behavior_save_flags(behavior);
+    (void)nmo_session_edit_mark_behavior_interface(tx->edit, owner_behavior_id);
+    nmo_script_edit_mark(tx, NMO_SESSION_EDIT_OBJECT_STATE |
+                               NMO_SESSION_EDIT_REFERENCES |
+                               NMO_SESSION_EDIT_BEHAVIOR_GRAPH |
+                               NMO_SESSION_EDIT_NAMES);
+
+    if (out_parameter_id) {
+        *out_parameter_id = parameter_id;
+    }
+    return NMO_OK;
+}
+
+NMO_API nmo_status_t nmo_script_edit_set_parameter_value(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parameter_id,
+    const char *value_str)
+{
+    const nmo_behavior_index_t *index = NULL;
+    nmo_object_t *object = NULL;
+    nmo_parameter_state_t *state = NULL;
+    nmo_status_t rc = NMO_OK;
+
+    if (!tx || !tx->edit || parameter_id == 0u || !value_str) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    rc = script_edit_require_behavior_index(tx, &index);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    if (!script_edit_find_parameter_owner(index, parameter_id, NULL)) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    object = nmo_object_repository_find_by_id(nmo_session_get_repository(tx->session),
+                                              parameter_id);
+    if (!object) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (!script_edit_parameter_class_holds_value(nmo_object_get_class_id(object))) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    state = nmo_parameter_get_mutable_state(object);
+    if (!state) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    rc = nmo_session_edit_set_parameter_value(tx->edit, parameter_id, value_str);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    nmo_script_edit_mark(tx, NMO_SESSION_EDIT_OBJECT_STATE |
+                               NMO_SESSION_EDIT_REFERENCES);
+    return NMO_OK;
+}
+
+NMO_API nmo_status_t nmo_script_edit_set_parameter_bytes(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parameter_id,
+    const uint8_t *bytes,
+    size_t byte_count)
+{
+    const nmo_behavior_index_t *index = NULL;
+    nmo_object_t *object = NULL;
+    nmo_status_t rc = NMO_OK;
+
+    if (!tx || !tx->edit || parameter_id == 0u ||
+        (bytes == NULL && byte_count > 0u)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    rc = script_edit_require_behavior_index(tx, &index);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    if (!script_edit_find_parameter_owner(index, parameter_id, NULL)) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    object = nmo_object_repository_find_by_id(nmo_session_get_repository(tx->session),
+                                              parameter_id);
+    if (!object) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (!script_edit_parameter_class_holds_value(nmo_object_get_class_id(object))) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    rc = nmo_session_edit_set_parameter_bytes(tx->edit, parameter_id, bytes,
+                                              byte_count);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    nmo_script_edit_mark(tx, NMO_SESSION_EDIT_OBJECT_STATE |
+                               NMO_SESSION_EDIT_REFERENCES);
+    return NMO_OK;
+}
+
+NMO_API nmo_status_t nmo_script_edit_connect_parameter(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t source_parameter_id,
+    nmo_object_id_t target_parameter_id)
+{
+    const nmo_behavior_index_t *index = NULL;
+    const nmo_port_owner_t *source_owner = NULL;
+    const nmo_port_owner_t *target_owner = NULL;
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *source_object = NULL;
+    nmo_object_t *target_object = NULL;
+    nmo_parameterin_state_t *target_state = NULL;
+    nmo_parameterout_state_t *source_state = NULL;
+    nmo_guid_t source_type = NMO_GUID_NULL;
+    nmo_guid_t target_type = NMO_GUID_NULL;
+    nmo_object_id_t common_parent_id = 0u;
+    nmo_status_t rc = NMO_OK;
+
+    if (!tx || !tx->edit || source_parameter_id == 0u || target_parameter_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    rc = script_edit_require_behavior_index(tx, &index);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    if (!script_edit_find_parameter_owner(index, source_parameter_id, &source_owner) ||
+        !script_edit_find_parameter_owner(index, target_parameter_id, &target_owner)) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (!script_edit_resolve_common_parent_graph(tx->session,
+                                                 source_owner->owner_id,
+                                                 target_owner->owner_id,
+                                                 &common_parent_id)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    repo = nmo_session_get_repository(tx->session);
+    source_object = repo ? nmo_object_repository_find_by_id(repo, source_parameter_id) : NULL;
+    target_object = repo ? nmo_object_repository_find_by_id(repo, target_parameter_id) : NULL;
+    if (!source_object || !target_object) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (!script_edit_is_parameter_reference_class(
+            nmo_object_get_class_id(source_object)) ||
+        nmo_object_get_class_id(target_object) != NMO_CID_PARAMETERIN) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    source_type = script_edit_parameter_type_guid_from_object(source_object);
+    target_type = script_edit_parameter_type_guid_from_object(target_object);
+    if (!nmo_guid_equals(source_type, target_type)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    target_state = (nmo_parameterin_state_t *)nmo_object_get_state(target_object);
+    if (!target_state) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    if (target_state->source_id != 0u && target_state->source_id != source_parameter_id) {
+        rc = script_edit_disconnect_parameter_internal(tx, target_state,
+                                                       target_parameter_id);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+    }
+
+    rc = nmo_session_edit_snapshot_bytes(tx->edit, target_state, sizeof(*target_state));
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    target_state->source_id = source_parameter_id;
+    target_state->is_shared =
+        nmo_object_get_class_id(source_object) == NMO_CID_PARAMETERIN ? 1u : 0u;
+
+    source_state = script_edit_find_parameterout_state(tx->session,
+                                                       source_parameter_id,
+                                                       NULL);
+    if (source_state) {
+        rc = nmo_session_edit_snapshot_bytes(tx->edit, source_state,
+                                             sizeof(*source_state));
+        if (rc != NMO_OK) {
+            return rc;
+        }
+        rc = script_edit_parameterout_append_destination(tx, source_state,
+                                                         target_parameter_id);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+    }
+
+    (void)common_parent_id;
+    nmo_script_edit_mark(tx, NMO_SESSION_EDIT_OBJECT_STATE |
+                               NMO_SESSION_EDIT_REFERENCES);
+    tx->report.rewired_parameters++;
+    return NMO_OK;
+}
+
+NMO_API nmo_status_t nmo_script_edit_disconnect_parameter(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t target_parameter_id)
+{
+    const nmo_behavior_index_t *index = NULL;
+    nmo_parameterin_state_t *target_state = NULL;
+    nmo_status_t rc = NMO_OK;
+
+    if (!tx || !tx->edit || target_parameter_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    rc = script_edit_require_behavior_index(tx, &index);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    if (!script_edit_find_parameter_owner(index, target_parameter_id, NULL)) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    target_state = script_edit_find_parameterin_state(tx->session,
+                                                      target_parameter_id,
+                                                      NULL);
+    if (!target_state) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    rc = script_edit_disconnect_parameter_internal(tx, target_state,
+                                                   target_parameter_id);
+    if (rc == NMO_OK) {
+        tx->report.rewired_parameters++;
+    }
+    return rc;
+}
+
+NMO_API nmo_status_t nmo_script_edit_remove_parameter(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parameter_id,
+    bool detach)
+{
+    const nmo_behavior_index_t *index = NULL;
+    const nmo_port_owner_t *owner = NULL;
+    nmo_behavior_state_t *behavior = NULL;
+    nmo_array_t *array = NULL;
+    nmo_status_t rc = NMO_OK;
+
+    if (!tx || !tx->edit || parameter_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    rc = script_edit_require_behavior_index(tx, &index);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    if (!script_edit_find_parameter_owner(index, parameter_id, &owner)) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    if (!detach && script_edit_parameter_has_live_connections(tx, parameter_id)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (detach) {
+        rc = script_edit_detach_parameter_references(tx, parameter_id);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+    }
+
+    behavior = script_edit_find_behavior_state(tx->session, owner->owner_id, NULL);
+    if (!behavior) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    rc = nmo_session_edit_snapshot_bytes(tx->edit, behavior, sizeof(*behavior));
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    switch (owner->kind) {
+    case NMO_PORT_PARAM_IN:
+        array = &behavior->in_parameters;
+        break;
+    case NMO_PORT_PARAM_OUT:
+        array = &behavior->out_parameters;
+        break;
+    case NMO_PORT_PARAM_LOCAL:
+        array = &behavior->local_parameters;
+        break;
+    default:
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    rc = nmo_array_remove(array, (size_t)owner->index, NULL);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    script_edit_update_behavior_save_flags(behavior);
+
+    rc = script_edit_append_deferred_destroy(tx, parameter_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    (void)nmo_session_edit_mark_behavior_interface(tx->edit, owner->owner_id);
+    nmo_script_edit_mark(tx, NMO_SESSION_EDIT_OBJECT_STATE |
+                               NMO_SESSION_EDIT_REFERENCES |
+                               NMO_SESSION_EDIT_BEHAVIOR_GRAPH);
+    script_edit_note_delete(tx);
+    return NMO_OK;
+}
+
+NMO_API nmo_status_t nmo_script_edit_add_operation(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parent_behavior_id,
+    nmo_guid_t operation_guid,
+    nmo_object_id_t in1_parameter_id,
+    nmo_object_id_t in2_parameter_id,
+    nmo_object_id_t out_parameter_id,
+    nmo_object_id_t *out_operation_id)
+{
+    const nmo_behavior_index_t *index = NULL;
+    const nmo_operation_family_t *family = NULL;
+    nmo_behavior_state_t *behavior = NULL;
+    nmo_parameteroperation_state_t *state = NULL;
+    nmo_object_id_t operation_id = 0u;
+    nmo_status_t rc = NMO_OK;
+
+    if (out_operation_id) {
+        *out_operation_id = 0u;
+    }
+    if (!tx || !tx->edit || parent_behavior_id == 0u ||
+        nmo_guid_is_null(operation_guid)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    behavior = script_edit_find_behavior_state(tx->session, parent_behavior_id, NULL);
+    if (!behavior) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    family = nmo_operation_registry_get_family(
+        nmo_context_get_operation_registry(tx->ctx), &operation_guid);
+    if (!family) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    if (in1_parameter_id != 0u || in2_parameter_id != 0u || out_parameter_id != 0u) {
+        rc = script_edit_require_behavior_index(tx, &index);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+        if ((in1_parameter_id != 0u &&
+             !script_edit_parameter_belongs_to_parent_graph(tx->session, index,
+                                                            parent_behavior_id,
+                                                            in1_parameter_id,
+                                                            NULL)) ||
+            (in2_parameter_id != 0u &&
+             !script_edit_parameter_belongs_to_parent_graph(tx->session, index,
+                                                            parent_behavior_id,
+                                                            in2_parameter_id,
+                                                            NULL)) ||
+            (out_parameter_id != 0u &&
+             !script_edit_parameter_belongs_to_parent_graph(tx->session, index,
+                                                            parent_behavior_id,
+                                                            out_parameter_id,
+                                                            NULL))) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+    }
+
+    rc = nmo_session_edit_snapshot_bytes(tx->edit, behavior, sizeof(*behavior));
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    rc = script_edit_create_runtime_object(tx, NMO_CID_PARAMETEROPERATION,
+                                           family->name ? family->name : "Operation",
+                                           NMO_GUID_NULL, &operation_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    state = script_edit_find_operation_state(tx->session, operation_id, NULL);
+    if (!state) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    state->operation_guid = operation_guid;
+    state->owner_id = parent_behavior_id;
+    state->has_owner = 1u;
+    state->has_in1 = in1_parameter_id != 0u;
+    state->in1_id = in1_parameter_id;
+    state->has_in2 = in2_parameter_id != 0u;
+    state->in2_id = in2_parameter_id;
+    state->has_out = out_parameter_id != 0u;
+    state->out_id = out_parameter_id;
+    state->in1_chunk = NULL;
+    state->in2_chunk = NULL;
+    state->out_chunk = NULL;
+
+    rc = nmo_array_append(&behavior->operations, &operation_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    script_edit_update_behavior_save_flags(behavior);
+    (void)nmo_session_edit_mark_behavior_interface(tx->edit, parent_behavior_id);
+    nmo_script_edit_mark(tx, NMO_SESSION_EDIT_OBJECT_STATE |
+                               NMO_SESSION_EDIT_REFERENCES |
+                               NMO_SESSION_EDIT_BEHAVIOR_GRAPH |
+                               NMO_SESSION_EDIT_NAMES);
+
+    if (out_operation_id) {
+        *out_operation_id = operation_id;
+    }
+    return NMO_OK;
+}
+
+NMO_API nmo_status_t nmo_script_edit_rewire_operation(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t operation_id,
+    uint32_t slot_flags,
+    nmo_object_id_t in1_parameter_id,
+    nmo_object_id_t in2_parameter_id,
+    nmo_object_id_t out_parameter_id)
+{
+    const nmo_behavior_index_t *index = NULL;
+    const nmo_port_owner_t *owner = NULL;
+    nmo_parameteroperation_state_t *state = NULL;
+    nmo_status_t rc = NMO_OK;
+
+    if (!tx || !tx->edit || operation_id == 0u || slot_flags == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    rc = script_edit_require_behavior_index(tx, &index);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    owner = nmo_behavior_index_find(index, operation_id);
+    if (!owner || owner->kind != NMO_PORT_OPERATION) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    if (((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u &&
+         in1_parameter_id != 0u &&
+         !script_edit_parameter_belongs_to_parent_graph(tx->session, index,
+                                                        owner->owner_id,
+                                                        in1_parameter_id,
+                                                        NULL)) ||
+        ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u &&
+         in2_parameter_id != 0u &&
+         !script_edit_parameter_belongs_to_parent_graph(tx->session, index,
+                                                        owner->owner_id,
+                                                        in2_parameter_id,
+                                                        NULL)) ||
+        ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u &&
+         out_parameter_id != 0u &&
+         !script_edit_parameter_belongs_to_parent_graph(tx->session, index,
+                                                        owner->owner_id,
+                                                        out_parameter_id,
+                                                        NULL))) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    state = script_edit_find_operation_state(tx->session, operation_id, NULL);
+    if (!state) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    rc = nmo_session_edit_snapshot_bytes(tx->edit, state, sizeof(*state));
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    if ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u) {
+        state->has_in1 = in1_parameter_id != 0u;
+        state->in1_id = in1_parameter_id;
+    }
+    if ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u) {
+        state->has_in2 = in2_parameter_id != 0u;
+        state->in2_id = in2_parameter_id;
+    }
+    if ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u) {
+        state->has_out = out_parameter_id != 0u;
+        state->out_id = out_parameter_id;
+    }
+
+    nmo_script_edit_mark(tx, NMO_SESSION_EDIT_OBJECT_STATE |
+                               NMO_SESSION_EDIT_REFERENCES);
+    tx->report.rewired_parameters++;
+    return NMO_OK;
+}
+
+NMO_API nmo_status_t nmo_script_edit_remove_operation(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t operation_id)
+{
+    const nmo_behavior_index_t *index = NULL;
+    const nmo_port_owner_t *owner = NULL;
+    nmo_behavior_state_t *behavior = NULL;
+    nmo_status_t rc = NMO_OK;
+
+    if (!tx || !tx->edit || operation_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    rc = script_edit_require_behavior_index(tx, &index);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    owner = nmo_behavior_index_find(index, operation_id);
+    if (!owner || owner->kind != NMO_PORT_OPERATION) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    behavior = script_edit_find_behavior_state(tx->session, owner->owner_id, NULL);
+    if (!behavior) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    rc = nmo_session_edit_snapshot_bytes(tx->edit, behavior, sizeof(*behavior));
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = nmo_array_remove(&behavior->operations, (size_t)owner->index, NULL);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    script_edit_update_behavior_save_flags(behavior);
+
+    rc = script_edit_append_deferred_destroy(tx, operation_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    (void)nmo_session_edit_mark_behavior_interface(tx->edit, owner->owner_id);
+    nmo_script_edit_mark(tx, NMO_SESSION_EDIT_OBJECT_STATE |
+                               NMO_SESSION_EDIT_REFERENCES |
+                               NMO_SESSION_EDIT_BEHAVIOR_GRAPH);
+    script_edit_note_delete(tx);
     return NMO_OK;
 }
 

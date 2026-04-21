@@ -18,6 +18,8 @@ int nmo_cmd_script_graph(int argc, char **argv, const nmo_cli_global_opts_t *glo
 int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_script_io(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
 #ifdef __cplusplus
 }
