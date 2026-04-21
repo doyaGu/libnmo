@@ -1,6 +1,13 @@
 #include "test_framework.h"
 
 #include "../../tools/nmo_cli_common.h"
+#include "app/nmo_save.h"
+#include "format/nmo_interface_chunk.h"
+#include "format/nmo_object.h"
+#include "object/nmo_object_repository.h"
+#include "object/builtin/nmo_behavior_schemas.h"
+#include "session/nmo_context.h"
+#include "session/nmo_session.h"
 #include "yyjson.h"
 
 #include <stdio.h>
@@ -11,6 +18,9 @@
 #else
 #include <direct.h>
 #endif
+
+#define NMO_SCRIPT_INTERFACE_FIXTURE NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo")
+#define NMO_SCRIPT_INTERFACE_TARGET_ID 253u
 
 #if defined(__MINGW32__) || defined(__MINGW64__)
 #define NMO_POPEN popen
@@ -43,6 +53,8 @@ typedef struct rewrite_manifest {
     uint32_t fold_node_ids[32];
     size_t fold_node_count;
 } rewrite_manifest_t;
+
+static yyjson_val *find_array_object_by_name(yyjson_val *arr, const char *name);
 
 static cli_run_result_t run_cli_capture(const char *args)
 {
@@ -209,6 +221,97 @@ static void load_behavior_first_ios(const char *path,
     yyjson_doc_free(doc);
 }
 
+static void load_behavior_io_by_name(const char *path,
+                                     uint32_t behavior_id,
+                                     const char *field_name,
+                                     const char *io_name,
+                                     uint32_t *out_io_id)
+{
+    char args[1024];
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *arr = NULL;
+    yyjson_val *item = NULL;
+
+    if (out_io_id) {
+        *out_io_id = 0u;
+    }
+
+    snprintf(args, sizeof(args),
+             "-f json behavior show %u \"%s\"",
+             behavior_id, path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    arr = get_array_field(data, field_name);
+    ASSERT_NOT_NULL(arr);
+    item = find_array_object_by_name(arr, io_name);
+    ASSERT_NOT_NULL(item);
+
+    if (out_io_id) {
+        *out_io_id = (uint32_t)get_uint_field(item, "id");
+    }
+
+    yyjson_doc_free(doc);
+}
+
+static void load_behavior_io_entry_by_name(const char *path,
+                                           uint32_t behavior_id,
+                                           const char *field_name,
+                                           const char *io_name,
+                                           uint32_t *out_io_id,
+                                           uint32_t *out_index)
+{
+    char args[1024];
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *arr = NULL;
+    yyjson_val *item = NULL;
+
+    if (out_io_id) {
+        *out_io_id = 0u;
+    }
+    if (out_index) {
+        *out_index = 0u;
+    }
+
+    snprintf(args, sizeof(args),
+             "-f json behavior show %u \"%s\"",
+             behavior_id, path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    arr = get_array_field(data, field_name);
+    ASSERT_NOT_NULL(arr);
+    item = find_array_object_by_name(arr, io_name);
+    ASSERT_NOT_NULL(item);
+
+    if (out_io_id) {
+        *out_io_id = (uint32_t)get_uint_field(item, "id");
+    }
+    if (out_index) {
+        *out_index = (uint32_t)get_uint_field(item, "index");
+    }
+
+    yyjson_doc_free(doc);
+}
+
 static yyjson_val *find_control_edge_by_link_id(yyjson_val *edges, uint32_t link_id)
 {
     size_t idx = 0;
@@ -240,6 +343,26 @@ static yyjson_val *find_array_object_by_id(yyjson_val *arr, uint32_t id)
 
     yyjson_arr_foreach(arr, idx, max, item) {
         if (get_uint_field(item, "id") == id) {
+            return item;
+        }
+    }
+
+    return NULL;
+}
+
+static yyjson_val *find_array_object_by_behavior_id(yyjson_val *arr,
+                                                    uint32_t behavior_id)
+{
+    size_t idx = 0;
+    size_t max = 0;
+    yyjson_val *item = NULL;
+
+    if (!arr) {
+        return NULL;
+    }
+
+    yyjson_arr_foreach(arr, idx, max, item) {
+        if (get_uint_field(item, "behavior_id") == behavior_id) {
             return item;
         }
     }
@@ -747,6 +870,455 @@ static char *load_report_contract(void)
     return read_text_file(path);
 }
 
+static bool create_interface_sub_fixture(const char *input_path,
+                                         const char *output_path,
+                                         uint32_t behavior_id)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *obj = NULL;
+    nmo_behavior_state_t *state = NULL;
+    nmo_interface_behavior_t *subs = NULL;
+    nmo_save_options_t save_opts;
+    nmo_arena_t *arena = NULL;
+    bool ok = false;
+    remove(output_path);
+
+    ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
+    if (!ctx) {
+        return false;
+    }
+
+    session = nmo_session_create(ctx);
+    if (!session) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    if (nmo_session_load_file(session, input_path, NULL, NULL) != NMO_OK ||
+        nmo_session_ensure_behavior_acceleration(session) != NMO_OK) {
+        goto cleanup;
+    }
+
+    repo = nmo_session_get_repository(session);
+    obj = repo ? nmo_object_repository_find_by_id(repo, NMO_SCRIPT_INTERFACE_TARGET_ID) : NULL;
+    state = obj ? (nmo_behavior_state_t *)nmo_object_get_state(obj) : NULL;
+    if (!state || !state->interface_data || state->interface_data->sub_count == 0u) {
+        goto cleanup;
+    }
+
+    arena = nmo_object_get_storage_arena(obj);
+    if (!arena) {
+        goto cleanup;
+    }
+
+    subs = (nmo_interface_behavior_t *)nmo_arena_alloc(
+        arena,
+        (state->interface_data->sub_count + 1u) * sizeof(*subs),
+        alignof(nmo_interface_behavior_t));
+    if (!subs) {
+        goto cleanup;
+    }
+
+    memcpy(subs, state->interface_data->subs,
+           state->interface_data->sub_count * sizeof(*subs));
+    subs[state->interface_data->sub_count] = state->interface_data->subs[0];
+    subs[state->interface_data->sub_count].behavior_id = behavior_id;
+    state->interface_data->subs = subs;
+    state->interface_data->sub_count += 1u;
+
+    save_opts = nmo_save_options_default();
+    ok = nmo_save_file(session, output_path, &save_opts) == NMO_OK;
+
+cleanup:
+    if (session) {
+        nmo_session_destroy(session);
+    }
+    if (ctx) {
+        nmo_context_release(ctx);
+    }
+    return ok && file_exists(output_path);
+}
+
+static bool create_interface_link_fixture(const char *input_path,
+                                          const char *output_path,
+                                          uint32_t owner_behavior_id,
+                                          uint32_t link_id,
+                                          uint32_t from_id,
+                                          uint32_t to_id)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *obj = NULL;
+    nmo_behavior_state_t *state = NULL;
+    nmo_interface_body_t *body = NULL;
+    nmo_interface_link_t *links = NULL;
+    nmo_save_options_t save_opts;
+    nmo_arena_t *arena = NULL;
+    bool ok = false;
+    remove(output_path);
+
+    ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
+    if (!ctx) {
+        return false;
+    }
+
+    session = nmo_session_create(ctx);
+    if (!session) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    if (nmo_session_load_file(session, input_path, NULL, NULL) != NMO_OK ||
+        nmo_session_ensure_behavior_acceleration(session) != NMO_OK) {
+        goto cleanup;
+    }
+
+    repo = nmo_session_get_repository(session);
+    obj = repo ? nmo_object_repository_find_by_id(repo, owner_behavior_id) : NULL;
+    state = obj ? (nmo_behavior_state_t *)nmo_object_get_state(obj) : NULL;
+    if (!state || !state->interface_data) {
+        goto cleanup;
+    }
+
+    body = &state->interface_data->script.body;
+    if (state->interface_data->script.behavior_id != owner_behavior_id) {
+        body = NULL;
+        for (size_t i = 0; i < state->interface_data->sub_count; ++i) {
+            if (state->interface_data->subs[i].behavior_id == owner_behavior_id) {
+                body = &state->interface_data->subs[i].body;
+                break;
+            }
+        }
+    }
+    if (!body || body->link_count == 0u) {
+        goto cleanup;
+    }
+
+    arena = nmo_object_get_storage_arena(obj);
+    if (!arena) {
+        goto cleanup;
+    }
+
+    links = (nmo_interface_link_t *)nmo_arena_alloc(
+        arena,
+        (body->link_count + 1u) * sizeof(*links),
+        alignof(nmo_interface_link_t));
+    if (!links) {
+        goto cleanup;
+    }
+
+    memcpy(links, body->links, body->link_count * sizeof(*links));
+    links[body->link_count] = body->links[0];
+    links[body->link_count].link_id = link_id;
+    links[body->link_count].start.id = from_id;
+    links[body->link_count].end.id = to_id;
+    body->links = links;
+    body->link_count += 1u;
+
+    save_opts = nmo_save_options_default();
+    ok = nmo_save_file(session, output_path, &save_opts) == NMO_OK;
+
+cleanup:
+    if (session) {
+        nmo_session_destroy(session);
+    }
+    if (ctx) {
+        nmo_context_release(ctx);
+    }
+    return ok && file_exists(output_path);
+}
+
+static bool create_interface_operation_fixture(const char *input_path,
+                                               const char *output_path,
+                                               uint32_t owner_behavior_id,
+                                               uint32_t op_id)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *obj = NULL;
+    nmo_behavior_state_t *state = NULL;
+    nmo_interface_body_t *body = NULL;
+    nmo_interface_operation_t *ops = NULL;
+    nmo_save_options_t save_opts;
+    nmo_arena_t *arena = NULL;
+    bool ok = false;
+    remove(output_path);
+
+    ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
+    if (!ctx) {
+        return false;
+    }
+
+    session = nmo_session_create(ctx);
+    if (!session) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    if (nmo_session_load_file(session, input_path, NULL, NULL) != NMO_OK ||
+        nmo_session_ensure_behavior_acceleration(session) != NMO_OK) {
+        goto cleanup;
+    }
+
+    repo = nmo_session_get_repository(session);
+    obj = repo ? nmo_object_repository_find_by_id(repo, owner_behavior_id) : NULL;
+    state = obj ? (nmo_behavior_state_t *)nmo_object_get_state(obj) : NULL;
+    if (!state || !state->interface_data) {
+        goto cleanup;
+    }
+
+    body = &state->interface_data->script.body;
+    if (state->interface_data->script.behavior_id != owner_behavior_id) {
+        body = NULL;
+        for (size_t i = 0; i < state->interface_data->sub_count; ++i) {
+            if (state->interface_data->subs[i].behavior_id == owner_behavior_id) {
+                body = &state->interface_data->subs[i].body;
+                break;
+            }
+        }
+    }
+    if (!body) {
+        goto cleanup;
+    }
+
+    arena = nmo_object_get_storage_arena(obj);
+    if (!arena) {
+        goto cleanup;
+    }
+
+    ops = (nmo_interface_operation_t *)nmo_arena_alloc(
+        arena,
+        (body->operation_count + 1u) * sizeof(*ops),
+        alignof(nmo_interface_operation_t));
+    if (!ops) {
+        goto cleanup;
+    }
+
+    if (body->operation_count > 0u) {
+        memcpy(ops, body->operations, body->operation_count * sizeof(*ops));
+        ops[body->operation_count] = body->operations[0];
+    } else {
+        memset(ops, 0, sizeof(*ops));
+        ops[0].h_pos = 0.0f;
+        ops[0].v_pos = 0.0f;
+    }
+    ops[body->operation_count].id = op_id;
+    body->operations = ops;
+    body->operation_count += 1u;
+
+    save_opts = nmo_save_options_default();
+    ok = nmo_save_file(session, output_path, &save_opts) == NMO_OK;
+
+cleanup:
+    if (session) {
+        nmo_session_destroy(session);
+    }
+    if (ctx) {
+        nmo_context_release(ctx);
+    }
+    return ok && file_exists(output_path);
+}
+
+static bool create_interface_shared_param_fixture(const char *input_path,
+                                                  const char *output_path,
+                                                  uint32_t owner_behavior_id,
+                                                  uint32_t param_id)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *obj = NULL;
+    nmo_behavior_state_t *state = NULL;
+    nmo_interface_body_t *body = NULL;
+    nmo_interface_param_t *params = NULL;
+    nmo_save_options_t save_opts;
+    nmo_arena_t *arena = NULL;
+    bool ok = false;
+    remove(output_path);
+
+    ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
+    if (!ctx) {
+        return false;
+    }
+
+    session = nmo_session_create(ctx);
+    if (!session) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    if (nmo_session_load_file(session, input_path, NULL, NULL) != NMO_OK ||
+        nmo_session_ensure_behavior_acceleration(session) != NMO_OK) {
+        goto cleanup;
+    }
+
+    repo = nmo_session_get_repository(session);
+    obj = repo ? nmo_object_repository_find_by_id(repo, owner_behavior_id) : NULL;
+    state = obj ? (nmo_behavior_state_t *)nmo_object_get_state(obj) : NULL;
+    if (!state || !state->interface_data) {
+        goto cleanup;
+    }
+
+    body = &state->interface_data->script.body;
+    if (state->interface_data->script.behavior_id != owner_behavior_id) {
+        body = NULL;
+        for (size_t i = 0; i < state->interface_data->sub_count; ++i) {
+            if (state->interface_data->subs[i].behavior_id == owner_behavior_id) {
+                body = &state->interface_data->subs[i].body;
+                break;
+            }
+        }
+    }
+    if (!body || !body->has_params) {
+        goto cleanup;
+    }
+
+    arena = nmo_object_get_storage_arena(obj);
+    if (!arena) {
+        goto cleanup;
+    }
+
+    params = (nmo_interface_param_t *)nmo_arena_alloc(
+        arena,
+        (body->params.shared_count + 1u) * sizeof(*params),
+        alignof(nmo_interface_param_t));
+    if (!params) {
+        goto cleanup;
+    }
+
+    if (body->params.shared_count > 0u) {
+        memcpy(params, body->params.shared,
+               body->params.shared_count * sizeof(*params));
+        params[body->params.shared_count] = body->params.shared[0];
+    } else {
+        memset(params, 0, sizeof(*params));
+        params[0].h_pos = 0;
+        params[0].v_pos = 0;
+        params[0].style = 0;
+    }
+    params[body->params.shared_count].source_id = param_id;
+    body->params.shared = params;
+    body->params.shared_count += 1u;
+
+    save_opts = nmo_save_options_default();
+    ok = nmo_save_file(session, output_path, &save_opts) == NMO_OK;
+
+cleanup:
+    if (session) {
+        nmo_session_destroy(session);
+    }
+    if (ctx) {
+        nmo_context_release(ctx);
+    }
+    return ok && file_exists(output_path);
+}
+
+static bool create_interface_graph_io_fixture(const char *input_path,
+                                              const char *output_path,
+                                              uint32_t owner_behavior_id,
+                                              int32_t input_index)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *obj = NULL;
+    nmo_behavior_state_t *state = NULL;
+    nmo_interface_behavior_t *subs = NULL;
+    nmo_interface_behavior_t *target_sub = NULL;
+    const nmo_interface_behavior_t *template_sub = NULL;
+    int32_t *inputs = NULL;
+    nmo_save_options_t save_opts;
+    nmo_arena_t *arena = NULL;
+    bool ok = false;
+    remove(output_path);
+
+    ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
+    if (!ctx) {
+        return false;
+    }
+
+    session = nmo_session_create(ctx);
+    if (!session) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    if (nmo_session_load_file(session, input_path, NULL, NULL) != NMO_OK ||
+        nmo_session_ensure_behavior_acceleration(session) != NMO_OK) {
+        goto cleanup;
+    }
+
+    repo = nmo_session_get_repository(session);
+    obj = repo ? nmo_object_repository_find_by_id(repo, NMO_SCRIPT_INTERFACE_TARGET_ID) : NULL;
+    state = obj ? (nmo_behavior_state_t *)nmo_object_get_state(obj) : NULL;
+    if (!state || !state->interface_data) {
+        goto cleanup;
+    }
+
+    for (size_t i = 0; i < state->interface_data->sub_count; ++i) {
+        if (state->interface_data->subs[i].body.has_graph_io &&
+            state->interface_data->subs[i].body.graph_io) {
+            template_sub = &state->interface_data->subs[i];
+            break;
+        }
+    }
+    if (!template_sub) {
+        goto cleanup;
+    }
+
+    arena = nmo_object_get_storage_arena(obj);
+    if (!arena) {
+        goto cleanup;
+    }
+
+    subs = (nmo_interface_behavior_t *)nmo_arena_alloc(
+        arena,
+        (state->interface_data->sub_count + 1u) * sizeof(*subs),
+        alignof(nmo_interface_behavior_t));
+    if (!subs) {
+        goto cleanup;
+    }
+    memcpy(subs, state->interface_data->subs,
+           state->interface_data->sub_count * sizeof(*subs));
+    subs[state->interface_data->sub_count] = *template_sub;
+    subs[state->interface_data->sub_count].behavior_id = owner_behavior_id;
+    state->interface_data->subs = subs;
+    state->interface_data->sub_count += 1u;
+    target_sub = &state->interface_data->subs[state->interface_data->sub_count - 1u];
+
+    inputs = (int32_t *)nmo_arena_alloc(
+        arena,
+        (target_sub->body.graph_io->outward_input_count + 1u) * sizeof(*inputs),
+        alignof(int32_t));
+    if (!inputs) {
+        goto cleanup;
+    }
+
+    if (target_sub->body.graph_io->outward_input_count > 0u) {
+        memcpy(inputs, target_sub->body.graph_io->outward_inputs,
+               target_sub->body.graph_io->outward_input_count * sizeof(*inputs));
+    }
+    inputs[target_sub->body.graph_io->outward_input_count] = input_index;
+    target_sub->body.graph_io->outward_inputs = inputs;
+    target_sub->body.graph_io->outward_input_count += 1u;
+
+    save_opts = nmo_save_options_default();
+    ok = nmo_save_file(session, output_path, &save_opts) == NMO_OK;
+
+cleanup:
+    if (session) {
+        nmo_session_destroy(session);
+    }
+    if (ctx) {
+        nmo_context_release(ctx);
+    }
+    return ok && file_exists(output_path);
+}
+
 TEST(cli, script_edit_fixture_manifest_contains_locked_ballance_ids)
 {
     static const uint32_t expected_fold_nodes[] = {
@@ -973,6 +1545,229 @@ TEST(cli, script_node_and_io_crud_roundtrip)
     ASSERT_STR_EQ("script.node.remove", get_string_field(root, "command"));
     yyjson_doc_free(doc);
     assert_validate_ok(node_remove);
+}
+
+TEST(cli, script_node_remove_canonicalizes_interface_refs)
+{
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *root = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *subs = NULL;
+    uint32_t node_id = 0;
+    char args[1024];
+    const char *node_add = "test_script_edit_tmp/interface_stale_add.cmo";
+    const char *iface_node = "test_script_edit_tmp/interface_node_present.cmo";
+    const char *node_remove = "test_script_edit_tmp/interface_node_remove.cmo";
+
+    make_dir("test_script_edit_tmp");
+    remove(node_add);
+    remove(iface_node);
+    remove(node_remove);
+
+    snprintf(args, sizeof(args),
+             "-f json script node add --parent %u "
+             "--bb-guid 42414C07-10000007 --name \"Iface Canon\" "
+             "\"%s\" -o \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             NMO_SCRIPT_INTERFACE_FIXTURE,
+             node_add);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    node_id = (uint32_t)get_uint_field(data, "node_id");
+    ASSERT_TRUE(node_id != 0u);
+    yyjson_doc_free(doc);
+
+    ASSERT_TRUE(create_interface_sub_fixture(node_add, iface_node, node_id));
+
+    snprintf(args, sizeof(args),
+             "-f json behavior interface show %u \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             iface_node);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    subs = get_array_field(data, "subs");
+    ASSERT_NOT_NULL(subs);
+    ASSERT_NOT_NULL(find_array_object_by_behavior_id(subs, node_id));
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script node remove --parent %u --node %u "
+             "--interface canonicalize \"%s\" -o \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             node_id,
+             iface_node,
+             node_remove);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.node.remove", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_STR_EQ("canonicalize", get_string_field(data, "interface_mode"));
+    yyjson_doc_free(doc);
+    assert_validate_ok(node_remove);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior interface show %u \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             node_remove);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    subs = get_array_field(data, "subs");
+    ASSERT_NOT_NULL(subs);
+    ASSERT_NULL(find_array_object_by_behavior_id(subs, node_id));
+    {
+        yyjson_val *diag = get_object_field(data, "interface_parse");
+        yyjson_val *available = diag ? yyjson_obj_get(diag, "available") : NULL;
+        ASSERT_TRUE(available && yyjson_is_bool(available));
+        ASSERT_TRUE(yyjson_get_bool(available));
+    }
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, script_node_remove_preserve_rejects_stale_interface_refs)
+{
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    uint32_t node_id = 0;
+    char args[1024];
+    const char *node_add = "test_script_edit_tmp/interface_preserve_add.cmo";
+    const char *iface_node = "test_script_edit_tmp/interface_preserve_present.cmo";
+    const char *node_remove = "test_script_edit_tmp/interface_preserve_remove.cmo";
+
+    make_dir("test_script_edit_tmp");
+    remove(node_add);
+    remove(iface_node);
+    remove(node_remove);
+
+    snprintf(args, sizeof(args),
+             "-f json script node add --parent %u "
+             "--bb-guid 42414C07-10000007 --name \"Iface Preserve\" "
+             "\"%s\" -o \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             NMO_SCRIPT_INTERFACE_FIXTURE,
+             node_add);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    node_id = (uint32_t)get_uint_field(data, "node_id");
+    ASSERT_TRUE(node_id != 0u);
+    yyjson_doc_free(doc);
+
+    ASSERT_TRUE(create_interface_sub_fixture(node_add, iface_node, node_id));
+
+    snprintf(args, sizeof(args),
+             "-f json script node remove --parent %u --node %u "
+             "--interface preserve \"%s\" -o \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             node_id,
+             iface_node,
+             node_remove);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "interface");
+    free(result.output);
+    ASSERT_FALSE(file_exists(node_remove));
+}
+
+TEST(cli, script_node_remove_remove_strips_interface_data)
+{
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *root = NULL;
+    yyjson_val *data = NULL;
+    uint32_t node_id = 0;
+    char args[1024];
+    const char *node_add = "test_script_edit_tmp/interface_remove_add.cmo";
+    const char *iface_node = "test_script_edit_tmp/interface_remove_present.cmo";
+    const char *node_remove = "test_script_edit_tmp/interface_remove_output.cmo";
+
+    make_dir("test_script_edit_tmp");
+    remove(node_add);
+    remove(iface_node);
+    remove(node_remove);
+
+    snprintf(args, sizeof(args),
+             "-f json script node add --parent %u "
+             "--bb-guid 42414C07-10000007 --name \"Iface Remove\" "
+             "\"%s\" -o \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             NMO_SCRIPT_INTERFACE_FIXTURE,
+             node_add);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    node_id = (uint32_t)get_uint_field(data, "node_id");
+    ASSERT_TRUE(node_id != 0u);
+    yyjson_doc_free(doc);
+
+    ASSERT_TRUE(create_interface_sub_fixture(node_add, iface_node, node_id));
+
+    snprintf(args, sizeof(args),
+             "-f json script node remove --parent %u --node %u "
+             "--interface remove \"%s\" -o \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             node_id,
+             iface_node,
+             node_remove);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.node.remove", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_STR_EQ("remove", get_string_field(data, "interface_mode"));
+    yyjson_doc_free(doc);
+    assert_validate_ok(node_remove);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior interface show %u \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             node_remove);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "has no interface data");
+    free(result.output);
 }
 
 TEST(cli, script_control_flow_crud_roundtrip)
@@ -1311,6 +2106,501 @@ TEST(cli, script_control_flow_crud_roundtrip)
     assert_script_graph_link_missing(link_remove_path,
                                      manifest.root_behavior_id,
                                      link_id);
+}
+
+TEST(cli, script_link_remove_canonicalizes_interface_refs)
+{
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *root = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *script = NULL;
+    yyjson_val *body = NULL;
+    yyjson_val *links = NULL;
+    uint32_t node_a = 0;
+    uint32_t node_b = 0;
+    uint32_t a_out = 0;
+    uint32_t b_in = 0;
+    uint32_t link_id = 0;
+    char args[1024];
+    const char *node_a_path = "test_script_edit_tmp/interface_link_node_a.cmo";
+    const char *node_b_path = "test_script_edit_tmp/interface_link_node_b.cmo";
+    const char *io_a_out_path = "test_script_edit_tmp/interface_link_io_a_out.cmo";
+    const char *io_b_in_path = "test_script_edit_tmp/interface_link_io_b_in.cmo";
+    const char *link_add_path = "test_script_edit_tmp/interface_link_add.cmo";
+    const char *iface_link_path = "test_script_edit_tmp/interface_link_present.cmo";
+    const char *link_remove_path = "test_script_edit_tmp/interface_link_remove.cmo";
+
+    make_dir("test_script_edit_tmp");
+    remove(node_a_path);
+    remove(node_b_path);
+    remove(io_a_out_path);
+    remove(io_b_in_path);
+    remove(link_add_path);
+    remove(iface_link_path);
+    remove(link_remove_path);
+
+    snprintf(args, sizeof(args),
+             "-f json script node add --parent %u "
+             "--bb-guid 42414C07-10000007 --name \"Iface Link A\" "
+             "\"%s\" -o \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             NMO_SCRIPT_INTERFACE_FIXTURE,
+             node_a_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    node_a = (uint32_t)get_uint_field(data, "node_id");
+    ASSERT_TRUE(node_a != 0u);
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script node add --parent %u "
+             "--bb-guid 42414C07-10000007 --name \"Iface Link B\" "
+             "\"%s\" -o \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             node_a_path,
+             node_b_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    node_b = (uint32_t)get_uint_field(data, "node_id");
+    ASSERT_TRUE(node_b != 0u);
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script io add --behavior %u --kind output --name AOut "
+             "\"%s\" -o \"%s\"",
+             node_a,
+             node_b_path,
+             io_a_out_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    free(result.output);
+
+    snprintf(args, sizeof(args),
+             "-f json script io add --behavior %u --kind input --name BIn "
+             "\"%s\" -o \"%s\"",
+             node_b,
+             io_a_out_path,
+             io_b_in_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    free(result.output);
+
+    load_behavior_io_by_name(io_b_in_path, node_a, "outputs", "AOut", &a_out);
+    load_behavior_io_by_name(io_b_in_path, node_b, "inputs", "BIn", &b_in);
+
+    snprintf(args, sizeof(args),
+             "-f json script link add --parent %u --from %u --to %u "
+             "\"%s\" -o \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             a_out,
+             b_in,
+             io_b_in_path,
+             link_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    link_id = (uint32_t)get_uint_field(data, "link_id");
+    ASSERT_TRUE(link_id != 0u);
+    yyjson_doc_free(doc);
+
+    ASSERT_TRUE(create_interface_link_fixture(link_add_path, iface_link_path,
+                                              NMO_SCRIPT_INTERFACE_TARGET_ID, link_id,
+                                              a_out, b_in));
+
+    snprintf(args, sizeof(args),
+             "-f json script link remove --parent %u --link %u "
+             "--interface canonicalize \"%s\" -o \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             link_id,
+             iface_link_path,
+             link_remove_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.link.remove", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_STR_EQ("canonicalize", get_string_field(data, "interface_mode"));
+    yyjson_doc_free(doc);
+
+    assert_validate_ok(link_remove_path);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior interface show %u \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             link_remove_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    script = get_object_field(data, "script");
+    ASSERT_NOT_NULL(script);
+    body = get_object_field(script, "body");
+    ASSERT_NOT_NULL(body);
+    links = get_array_field(body, "links");
+    ASSERT_NOT_NULL(links);
+    ASSERT_NULL(find_control_edge_by_link_id(links, link_id));
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, script_io_remove_canonicalizes_interface_refs)
+{
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *root = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *subs = NULL;
+    yyjson_val *sub = NULL;
+    yyjson_val *body = NULL;
+    yyjson_val *graph_io = NULL;
+    yyjson_val *outward_inputs = NULL;
+    uint32_t io_id = 0;
+    uint32_t io_index = 0;
+    char args[1024];
+    const uint32_t owner_behavior_id = 229u;
+    const char *io_add_path = "test_script_edit_tmp/interface_io_add.cmo";
+    const char *iface_io_path = "test_script_edit_tmp/interface_io_present.cmo";
+    const char *io_remove_path = "test_script_edit_tmp/interface_io_remove.cmo";
+
+    make_dir("test_script_edit_tmp");
+    remove(io_add_path);
+    remove(iface_io_path);
+    remove(io_remove_path);
+
+    snprintf(args, sizeof(args),
+             "-f json script io add --behavior %u --kind input --name IfaceIo "
+             "\"%s\" -o \"%s\"",
+             owner_behavior_id,
+             NMO_SCRIPT_INTERFACE_FIXTURE,
+             io_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    free(result.output);
+
+    load_behavior_io_entry_by_name(io_add_path, owner_behavior_id,
+                                   "inputs", "IfaceIo",
+                                   &io_id, &io_index);
+    ASSERT_TRUE(io_id != 0u);
+
+    ASSERT_TRUE(create_interface_graph_io_fixture(io_add_path, iface_io_path,
+                                                  owner_behavior_id,
+                                                  (int32_t)io_index));
+
+    snprintf(args, sizeof(args),
+             "-f json script io remove --io %u --interface canonicalize "
+             "\"%s\" -o \"%s\"",
+             io_id,
+             iface_io_path,
+             io_remove_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.io.remove", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_STR_EQ("canonicalize", get_string_field(data, "interface_mode"));
+    yyjson_doc_free(doc);
+
+    assert_validate_ok(io_remove_path);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior interface show %u \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             io_remove_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    subs = get_array_field(data, "subs");
+    ASSERT_NOT_NULL(subs);
+    sub = find_array_object_by_behavior_id(subs, owner_behavior_id);
+    ASSERT_NOT_NULL(sub);
+    body = get_object_field(sub, "body");
+    ASSERT_NOT_NULL(body);
+    graph_io = get_object_field(body, "graph_io");
+    ASSERT_NOT_NULL(graph_io);
+    outward_inputs = get_array_field(graph_io, "outward_inputs");
+    ASSERT_NOT_NULL(outward_inputs);
+    for (size_t i = 0; i < yyjson_arr_size(outward_inputs); ++i) {
+        ASSERT_TRUE((uint32_t)yyjson_get_int(yyjson_arr_get(outward_inputs, i)) != io_index);
+    }
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, script_param_remove_canonicalizes_interface_refs)
+{
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *root = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *script = NULL;
+    yyjson_val *body = NULL;
+    yyjson_val *params = NULL;
+    yyjson_val *shared = NULL;
+    uint32_t param_id = 0;
+    char args[1024];
+    const char *param_add_path = "test_script_edit_tmp/interface_param_add.cmo";
+    const char *iface_param_path = "test_script_edit_tmp/interface_param_present.cmo";
+    const char *param_remove_path = "test_script_edit_tmp/interface_param_remove.cmo";
+
+    make_dir("test_script_edit_tmp");
+    remove(param_add_path);
+    remove(iface_param_path);
+    remove(param_remove_path);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind shared "
+             "--type int --name IfaceParam \"%s\" -o \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             NMO_SCRIPT_INTERFACE_FIXTURE,
+             param_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    param_id = (uint32_t)get_uint_field(data, "param_id");
+    ASSERT_TRUE(param_id != 0u);
+    yyjson_doc_free(doc);
+
+    ASSERT_TRUE(create_interface_shared_param_fixture(param_add_path, iface_param_path,
+                                                      NMO_SCRIPT_INTERFACE_TARGET_ID,
+                                                      param_id));
+
+    snprintf(args, sizeof(args),
+             "-f json script param remove --param %u --detach "
+             "--interface canonicalize \"%s\" -o \"%s\"",
+             param_id,
+             iface_param_path,
+             param_remove_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.param.remove", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_STR_EQ("canonicalize", get_string_field(data, "interface_mode"));
+    yyjson_doc_free(doc);
+
+    assert_validate_ok(param_remove_path);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior interface show %u \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             param_remove_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    script = get_object_field(data, "script");
+    ASSERT_NOT_NULL(script);
+    body = get_object_field(script, "body");
+    ASSERT_NOT_NULL(body);
+    params = get_object_field(body, "params");
+    ASSERT_NOT_NULL(params);
+    shared = get_array_field(params, "shared");
+    ASSERT_NOT_NULL(shared);
+    ASSERT_NULL(find_array_object_by_id(shared, param_id));
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, script_op_remove_canonicalizes_interface_refs)
+{
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *root = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *script = NULL;
+    yyjson_val *body = NULL;
+    yyjson_val *ops = NULL;
+    uint32_t in1_param_id = 0;
+    uint32_t in2_param_id = 0;
+    uint32_t out_param_id = 0;
+    uint32_t op_id = 0;
+    char args[1024];
+    const char *in_param_add_path = "test_script_edit_tmp/interface_op_in_param_add.cmo";
+    const char *in2_param_add_path = "test_script_edit_tmp/interface_op_in2_param_add.cmo";
+    const char *param_add_path = "test_script_edit_tmp/interface_op_param_add.cmo";
+    const char *op_add_path = "test_script_edit_tmp/interface_op_add.cmo";
+    const char *iface_op_path = "test_script_edit_tmp/interface_op_present.cmo";
+    const char *op_remove_path = "test_script_edit_tmp/interface_op_remove.cmo";
+
+    make_dir("test_script_edit_tmp");
+    remove(in_param_add_path);
+    remove(in2_param_add_path);
+    remove(param_add_path);
+    remove(op_add_path);
+    remove(iface_op_path);
+    remove(op_remove_path);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind local "
+             "--type int --name IfaceOpIn \"%s\" -o \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             NMO_SCRIPT_INTERFACE_FIXTURE,
+             in_param_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    in1_param_id = (uint32_t)get_uint_field(data, "param_id");
+    ASSERT_TRUE(in1_param_id != 0u);
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind local "
+             "--type int --name IfaceOpIn2 \"%s\" -o \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             in_param_add_path,
+             in2_param_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    in2_param_id = (uint32_t)get_uint_field(data, "param_id");
+    ASSERT_TRUE(in2_param_id != 0u);
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind out "
+             "--type int --name IfaceOpOut \"%s\" -o \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             in2_param_add_path,
+             param_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    out_param_id = (uint32_t)get_uint_field(data, "param_id");
+    ASSERT_TRUE(out_param_id != 0u);
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script op add --parent %u "
+             "--op-guid 33CC6B49-3589282B --in1 %u --in2 %u --out %u \"%s\" -o \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             in1_param_id,
+             in2_param_id,
+             out_param_id,
+             param_add_path,
+             op_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    op_id = (uint32_t)get_uint_field(data, "op_id");
+    ASSERT_TRUE(op_id != 0u);
+    yyjson_doc_free(doc);
+
+    ASSERT_TRUE(create_interface_operation_fixture(op_add_path, iface_op_path,
+                                                   NMO_SCRIPT_INTERFACE_TARGET_ID,
+                                                   op_id));
+
+    snprintf(args, sizeof(args),
+             "-f json script op remove --op %u "
+             "--interface canonicalize \"%s\" -o \"%s\"",
+             op_id,
+             iface_op_path,
+             op_remove_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.op.remove", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_STR_EQ("canonicalize", get_string_field(data, "interface_mode"));
+    yyjson_doc_free(doc);
+
+    assert_validate_ok(op_remove_path);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior interface show %u \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             op_remove_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    script = get_object_field(data, "script");
+    ASSERT_NOT_NULL(script);
+    body = get_object_field(script, "body");
+    ASSERT_NOT_NULL(body);
+    ops = get_array_field(body, "operations");
+    ASSERT_NOT_NULL(ops);
+    ASSERT_NULL(find_array_object_by_id(ops, op_id));
+    yyjson_doc_free(doc);
 }
 
 TEST(cli, script_parameter_crud_roundtrip)
@@ -2024,7 +3314,14 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_edit_report_contract_is_checked_in);
     REGISTER_TEST(cli, script_graph_json_smoke);
     REGISTER_TEST(cli, script_node_and_io_crud_roundtrip);
+    REGISTER_TEST(cli, script_node_remove_canonicalizes_interface_refs);
+    REGISTER_TEST(cli, script_node_remove_preserve_rejects_stale_interface_refs);
+    REGISTER_TEST(cli, script_node_remove_remove_strips_interface_data);
     REGISTER_TEST(cli, script_control_flow_crud_roundtrip);
+    REGISTER_TEST(cli, script_link_remove_canonicalizes_interface_refs);
+    REGISTER_TEST(cli, script_io_remove_canonicalizes_interface_refs);
+    REGISTER_TEST(cli, script_param_remove_canonicalizes_interface_refs);
+    REGISTER_TEST(cli, script_op_remove_canonicalizes_interface_refs);
     REGISTER_TEST(cli, script_parameter_crud_roundtrip);
     REGISTER_TEST(cli, script_operation_crud_roundtrip);
     REGISTER_TEST(cli, script_operation_rejects_invalid_signature);

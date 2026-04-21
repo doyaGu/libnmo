@@ -48,6 +48,12 @@ typedef enum nmo_script_edit_validation_flags {
     NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY = 1u << 3
 } nmo_script_edit_validation_flags_t;
 
+typedef enum nmo_script_edit_interface_mode {
+    NMO_SCRIPT_EDIT_INTERFACE_PRESERVE = 0,
+    NMO_SCRIPT_EDIT_INTERFACE_CANONICALIZE = 1,
+    NMO_SCRIPT_EDIT_INTERFACE_REMOVE = 2
+} nmo_script_edit_interface_mode_t;
+
 typedef struct nmo_script_edit_report {
     size_t created_objects;
     size_t deleted_objects;
@@ -75,6 +81,15 @@ NMO_API const nmo_script_edit_report_t *nmo_script_edit_report(
 
 NMO_API nmo_status_t nmo_script_edit_validate(nmo_script_edit_tx_t *tx,
                                               uint32_t validation_flags);
+
+NMO_API nmo_status_t nmo_script_edit_validate_interface_refs(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t behavior_id);
+
+NMO_API nmo_status_t nmo_script_edit_apply_interface_policy(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t behavior_id,
+    nmo_script_edit_interface_mode_t mode);
 
 NMO_API nmo_status_t nmo_script_edit_add_node(
     nmo_script_edit_tx_t *tx,

@@ -19,6 +19,7 @@
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
+#include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "type/nmo_operation_system.h"
 #include "type/nmo_type_system.h"
@@ -1287,6 +1288,417 @@ NMO_API nmo_status_t nmo_script_edit_validate(nmo_script_edit_tx_t *tx,
         }
     }
 
+    return NMO_OK;
+}
+
+static bool script_edit_interface_owner_matches(const nmo_port_owner_t *owner,
+                                                nmo_object_id_t owner_id,
+                                                nmo_port_kind_t kind)
+{
+    return owner && owner->owner_id == owner_id && owner->kind == kind;
+}
+
+static bool script_edit_interface_endpoint_exists(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t object_id)
+{
+    return object_id == 0u ||
+           (repo && nmo_object_repository_find_by_id(repo, object_id) != NULL);
+}
+
+static bool script_edit_interface_link_is_valid(
+    nmo_session_t *session,
+    nmo_object_repository_t *repo,
+    const nmo_behavior_index_t *index,
+    nmo_object_id_t owner_id,
+    const nmo_interface_link_t *link)
+{
+    const nmo_port_owner_t *owner = NULL;
+
+    if (!link) {
+        return false;
+    }
+    owner = index ? nmo_behavior_index_find(index, link->link_id) : NULL;
+    if (!script_edit_interface_owner_matches(owner, owner_id, NMO_PORT_SUB_LINK)) {
+        return false;
+    }
+    return script_edit_interface_endpoint_exists(repo, link->start.id) &&
+           script_edit_interface_endpoint_exists(repo, link->end.id) &&
+           script_edit_find_link_state(session, link->link_id, NULL) != NULL;
+}
+
+static bool script_edit_interface_operation_is_valid(
+    nmo_session_t *session,
+    const nmo_behavior_index_t *index,
+    nmo_object_id_t owner_id,
+    const nmo_interface_operation_t *op)
+{
+    const nmo_port_owner_t *owner = NULL;
+
+    if (!op) {
+        return false;
+    }
+    owner = index ? nmo_behavior_index_find(index, op->id) : NULL;
+    if (!script_edit_interface_owner_matches(owner, owner_id, NMO_PORT_OPERATION)) {
+        return false;
+    }
+    return script_edit_find_operation_state(session, op->id, NULL) != NULL;
+}
+
+static bool script_edit_interface_shared_param_is_valid(
+    nmo_session_t *session,
+    const nmo_behavior_index_t *index,
+    nmo_object_id_t owner_id,
+    const nmo_interface_param_t *param)
+{
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *object = NULL;
+    const nmo_port_owner_t *owner = NULL;
+
+    if (!param || param->source_id == 0u) {
+        return false;
+    }
+    repo = nmo_session_get_repository(session);
+    object = repo ? nmo_object_repository_find_by_id(repo, param->source_id) : NULL;
+    owner = index ? nmo_behavior_index_find(index, param->source_id) : NULL;
+    if (!owner || owner->owner_id != owner_id) {
+        return false;
+    }
+    return object != NULL && nmo_parameter_get_state(object) != NULL;
+}
+
+static bool script_edit_interface_graph_io_is_valid(
+    const nmo_behavior_state_t *owner_state,
+    const nmo_interface_graph_io_t *graph_io)
+{
+    const int32_t *sets[4];
+    size_t counts[4];
+    size_t limits[4];
+
+    if (!owner_state || !graph_io) {
+        return false;
+    }
+
+    sets[0] = graph_io->inward_inputs;
+    sets[1] = graph_io->outward_inputs;
+    sets[2] = graph_io->inward_outputs;
+    sets[3] = graph_io->outward_outputs;
+    counts[0] = graph_io->inward_input_count;
+    counts[1] = graph_io->outward_input_count;
+    counts[2] = graph_io->inward_output_count;
+    counts[3] = graph_io->outward_output_count;
+    limits[0] = owner_state->inputs.count;
+    limits[1] = owner_state->inputs.count;
+    limits[2] = owner_state->outputs.count;
+    limits[3] = owner_state->outputs.count;
+
+    for (size_t set_index = 0; set_index < 4u; ++set_index) {
+        for (size_t i = 0; i < counts[set_index]; ++i) {
+            if (sets[set_index][i] < 0 ||
+                (size_t)sets[set_index][i] >= limits[set_index]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+static bool script_edit_interface_body_is_valid(
+    nmo_session_t *session,
+    nmo_object_repository_t *repo,
+    const nmo_behavior_index_t *index,
+    nmo_object_id_t owner_id,
+    const nmo_interface_body_t *body)
+{
+    nmo_behavior_state_t *owner_state = NULL;
+
+    if (!body || !body->has_body) {
+        return true;
+    }
+    owner_state = script_edit_find_behavior_state(session, owner_id, NULL);
+    if (!owner_state) {
+        return false;
+    }
+
+    for (size_t i = 0; i < body->link_count; ++i) {
+        if (!script_edit_interface_link_is_valid(session, repo, index, owner_id,
+                                                 &body->links[i])) {
+            return false;
+        }
+    }
+    for (size_t i = 0; i < body->operation_count; ++i) {
+        if (!script_edit_interface_operation_is_valid(session, index, owner_id,
+                                                      &body->operations[i])) {
+            return false;
+        }
+    }
+    if (body->has_params) {
+        if (body->params.local_count > owner_state->local_parameters.count) {
+            return false;
+        }
+        for (size_t i = 0; i < body->params.shared_count; ++i) {
+            if (!script_edit_interface_shared_param_is_valid(session, index, owner_id,
+                                                             &body->params.shared[i])) {
+                return false;
+            }
+        }
+    }
+    if (body->has_graph_io && body->graph_io &&
+        !script_edit_interface_graph_io_is_valid(owner_state, body->graph_io)) {
+        return false;
+    }
+    return true;
+}
+
+NMO_API nmo_status_t nmo_script_edit_validate_interface_refs(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t behavior_id)
+{
+    nmo_behavior_state_t *behavior = NULL;
+    nmo_object_repository_t *repo = NULL;
+    const nmo_behavior_index_t *index = NULL;
+
+    if (!tx || !tx->session || behavior_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    behavior = script_edit_find_behavior_state(tx->session, behavior_id, NULL);
+    if (!behavior) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (!behavior->interface_data) {
+        return NMO_OK;
+    }
+
+    repo = nmo_session_get_repository(tx->session);
+    if (!repo) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    index = nmo_session_get_behavior_index(tx->session);
+
+    for (size_t i = 0; i < behavior->interface_data->sub_count; ++i) {
+        const nmo_interface_behavior_t *sub = &behavior->interface_data->subs[i];
+        if (!script_edit_behavior_is_direct_graph_member(tx->session,
+                                                         behavior_id,
+                                                         sub->behavior_id) ||
+            !nmo_object_repository_find_by_id(repo, sub->behavior_id)) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+        if (!script_edit_interface_body_is_valid(tx->session, repo, index,
+                                                 sub->behavior_id, &sub->body)) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+    }
+
+    if (!script_edit_interface_body_is_valid(tx->session, repo, index,
+                                             behavior_id,
+                                             &behavior->interface_data->script.body)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    return NMO_OK;
+}
+
+static bool script_edit_filter_graph_io_indices(int32_t *items,
+                                                size_t *count,
+                                                size_t limit)
+{
+    size_t write_index = 0u;
+    bool changed = false;
+
+    if (!count) {
+        return false;
+    }
+    for (size_t read_index = 0; read_index < *count; ++read_index) {
+        if (!items || items[read_index] < 0 ||
+            (size_t)items[read_index] >= limit) {
+            changed = true;
+            continue;
+        }
+        if (items && write_index != read_index) {
+            items[write_index] = items[read_index];
+        }
+        ++write_index;
+    }
+    *count = write_index;
+    return changed;
+}
+
+static bool script_edit_canonicalize_interface_body(
+    nmo_session_t *session,
+    nmo_object_repository_t *repo,
+    const nmo_behavior_index_t *index,
+    nmo_object_id_t owner_id,
+    nmo_interface_body_t *body)
+{
+    nmo_behavior_state_t *owner_state = NULL;
+    size_t write_index = 0u;
+    bool changed = false;
+
+    if (!body || !body->has_body) {
+        return false;
+    }
+    owner_state = script_edit_find_behavior_state(session, owner_id, NULL);
+    if (!owner_state) {
+        return false;
+    }
+
+    for (size_t read_index = 0; read_index < body->link_count; ++read_index) {
+        if (!script_edit_interface_link_is_valid(session, repo, index, owner_id,
+                                                 &body->links[read_index])) {
+            changed = true;
+            continue;
+        }
+        if (write_index != read_index) {
+            body->links[write_index] = body->links[read_index];
+        }
+        ++write_index;
+    }
+    body->link_count = write_index;
+
+    write_index = 0u;
+    for (size_t read_index = 0; read_index < body->operation_count; ++read_index) {
+        if (!script_edit_interface_operation_is_valid(session, index, owner_id,
+                                                      &body->operations[read_index])) {
+            changed = true;
+            continue;
+        }
+        if (write_index != read_index) {
+            body->operations[write_index] = body->operations[read_index];
+        }
+        ++write_index;
+    }
+    body->operation_count = write_index;
+
+    if (body->has_params) {
+        if (body->params.local_count > owner_state->local_parameters.count) {
+            body->params.local_count = owner_state->local_parameters.count;
+            changed = true;
+        }
+        write_index = 0u;
+        for (size_t read_index = 0; read_index < body->params.shared_count; ++read_index) {
+            if (!script_edit_interface_shared_param_is_valid(
+                    session, index, owner_id, &body->params.shared[read_index])) {
+                changed = true;
+                continue;
+            }
+            if (write_index != read_index) {
+                body->params.shared[write_index] = body->params.shared[read_index];
+            }
+            ++write_index;
+        }
+        body->params.shared_count = write_index;
+    }
+
+    if (body->has_graph_io && body->graph_io) {
+        changed |= script_edit_filter_graph_io_indices(
+            body->graph_io->inward_inputs,
+            &body->graph_io->inward_input_count,
+            owner_state->inputs.count);
+        changed |= script_edit_filter_graph_io_indices(
+            body->graph_io->outward_inputs,
+            &body->graph_io->outward_input_count,
+            owner_state->inputs.count);
+        changed |= script_edit_filter_graph_io_indices(
+            body->graph_io->inward_outputs,
+            &body->graph_io->inward_output_count,
+            owner_state->outputs.count);
+        changed |= script_edit_filter_graph_io_indices(
+            body->graph_io->outward_outputs,
+            &body->graph_io->outward_output_count,
+            owner_state->outputs.count);
+    }
+
+    return changed;
+}
+
+NMO_API nmo_status_t nmo_script_edit_apply_interface_policy(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t behavior_id,
+    nmo_script_edit_interface_mode_t mode)
+{
+    nmo_behavior_state_t *behavior = NULL;
+    nmo_interface_data_t *idata = NULL;
+    nmo_object_repository_t *repo = NULL;
+    const nmo_behavior_index_t *index = NULL;
+    size_t write_index = 0u;
+    nmo_status_t rc = NMO_OK;
+
+    if (!tx || !tx->edit || behavior_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (mode == NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
+        return nmo_script_edit_validate_interface_refs(tx, behavior_id);
+    }
+
+    behavior = script_edit_find_behavior_state(tx->session, behavior_id, NULL);
+    if (!behavior) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    rc = nmo_session_edit_snapshot_bytes(tx->edit, behavior, sizeof(*behavior));
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    if (mode == NMO_SCRIPT_EDIT_INTERFACE_REMOVE) {
+        if (!behavior->has_interface &&
+            !behavior->interface_chunk &&
+            !behavior->interface_data) {
+            return NMO_OK;
+        }
+        behavior->has_interface = false;
+        behavior->interface_chunk = NULL;
+        behavior->interface_data = NULL;
+        behavior->interface_ids_are_runtime = false;
+        (void)nmo_session_edit_mark_behavior_interface(tx->edit, behavior_id);
+        tx->report.interface_changes++;
+        nmo_script_edit_mark(tx, NMO_SESSION_EDIT_OBJECT_STATE);
+        return NMO_OK;
+    }
+
+    idata = behavior->interface_data;
+    if (!idata) {
+        return NMO_OK;
+    }
+    repo = nmo_session_get_repository(tx->session);
+    index = nmo_session_get_behavior_index(tx->session);
+
+    for (size_t read_index = 0; read_index < idata->sub_count; ++read_index) {
+        nmo_interface_behavior_t *sub = &idata->subs[read_index];
+        if (!script_edit_behavior_is_direct_graph_member(tx->session,
+                                                         behavior_id,
+                                                         sub->behavior_id)) {
+            tx->report.interface_changes++;
+            continue;
+        }
+        if (write_index != read_index) {
+            idata->subs[write_index] = *sub;
+        }
+        if (script_edit_canonicalize_interface_body(tx->session, repo, index,
+                                                    sub->behavior_id,
+                                                    &idata->subs[write_index].body)) {
+            tx->report.interface_changes++;
+        }
+        ++write_index;
+    }
+    idata->sub_count = write_index;
+    if (script_edit_canonicalize_interface_body(tx->session, repo, index,
+                                                behavior_id,
+                                                &idata->script.body)) {
+        tx->report.interface_changes++;
+    }
+
+    rc = nmo_script_edit_validate_interface_refs(tx, behavior_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    if (tx->report.interface_changes > 0u) {
+        (void)nmo_session_edit_mark_behavior_interface(tx->edit, behavior_id);
+        nmo_script_edit_mark(tx, NMO_SESSION_EDIT_OBJECT_STATE);
+    }
     return NMO_OK;
 }
 
