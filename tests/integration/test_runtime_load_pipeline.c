@@ -1,6 +1,7 @@
 #include "test_framework.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_query.h"
 
 #include <stdio.h>
 
@@ -26,9 +27,8 @@ TEST(runtime_load_pipeline, save_then_load_via_execute_path) {
     ASSERT_NOT_NULL(reader);
     ASSERT_EQ(NMO_OK, nmo_session_load_file(reader, temp_file, NULL, NULL));
 
-    nmo_object_t **objects = NULL;
     size_t count = 0;
-    ASSERT_EQ(NMO_OK, nmo_session_get_objects(reader, &objects, &count));
+    ASSERT_EQ(NMO_OK, nmo_session_query_count_objects(reader, &count));
     ASSERT_TRUE(count >= 1);
 
     nmo_session_destroy(reader);

@@ -6,6 +6,7 @@
 #include "../test_framework.h"
 #include "behavior/nmo_behavior_index.h"
 #include "session/nmo_context.h"
+#include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"

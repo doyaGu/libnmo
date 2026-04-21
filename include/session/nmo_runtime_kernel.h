@@ -13,6 +13,13 @@ typedef struct nmo_session nmo_session_t;
 typedef struct nmo_load_options nmo_load_options_t;
 typedef struct nmo_save_options nmo_save_options_t;
 
+/*
+ * Runtime kernel request/ops shaping is kept public for advanced C callers,
+ * but it is not the default binding-facing contract.
+ */
+#define NMO_RUNTIME_KERNEL_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_RUNTIME_KERNEL_API_TIER NMO_API_TIER_ADVANCED_C
+
 /**
  * @brief Runtime operation callbacks (set by app layer, called by runtime kernel)
  *
@@ -80,6 +87,33 @@ typedef struct nmo_runtime_report {
     uint32_t manager_event_errors;
     uint32_t object_hook_errors;
 } nmo_runtime_report_t;
+
+/**
+ * @brief Execute an advanced runtime-kernel request against the session.
+ *
+ * Ordinary consumers should prefer the high-level workflow wrappers in
+ * nmo_session.h such as load/save/create/copy/destroy helpers.
+ */
+NMO_API nmo_status_t nmo_session_execute(
+    nmo_session_t *session,
+    const nmo_runtime_request_t *request,
+    nmo_runtime_report_t *out_report);
+
+/**
+ * @brief Install runtime operation callbacks for the session.
+ *
+ * Advanced setup API used by the app/load-save orchestration layer.
+ */
+NMO_API void nmo_session_set_runtime_ops(
+    nmo_session_t *session,
+    const nmo_runtime_ops_t *ops);
+
+/**
+ * @brief Get the runtime operation callbacks installed on the session.
+ * @ownership borrowed
+ */
+NMO_API const nmo_runtime_ops_t *nmo_session_get_runtime_ops(
+    const nmo_session_t *session);
 
 NMO_API nmo_status_t nmo_runtime_kernel_execute(
     nmo_session_t *session,

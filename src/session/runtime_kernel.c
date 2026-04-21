@@ -4,6 +4,7 @@
 
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_pipeline.h"
 #include "session/nmo_session_edit.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_logger.h"

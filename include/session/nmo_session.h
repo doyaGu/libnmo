@@ -8,11 +8,9 @@
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
-#include "session/nmo_runtime_kernel.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_arena_array.h"
 #include "object/nmo_object_query.h"
-#include "session/nmo_runtime_kernel.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,6 +29,28 @@ typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
 typedef struct nmo_shadow_storage nmo_shadow_storage_t;
 typedef struct nmo_behavior_index nmo_behavior_index_t;
 typedef struct nmo_ref_graph nmo_ref_graph_t;
+typedef struct nmo_load_options nmo_load_options_t;
+typedef struct nmo_save_options nmo_save_options_t;
+typedef struct nmo_runtime_report nmo_runtime_report_t;
+
+/*
+ * This header intentionally remains mixed during API refinement:
+ * - workflow/session lifecycle families are Tier 1
+ * - execution, cached acceleration, and session-internal wiring stay Tier 2
+ */
+#define NMO_SESSION_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_MIXED_TIER
+#define NMO_SESSION_WORKFLOW_API_TIER NMO_API_TIER_STABLE_CONSUMER
+#define NMO_SESSION_QUERY_API_TIER NMO_API_TIER_ADVANCED_C
+#define NMO_SESSION_EXECUTION_API_TIER NMO_API_TIER_ADVANCED_C
+#define NMO_SESSION_ACCELERATION_CACHE_API_TIER NMO_API_TIER_ADVANCED_C
+#define NMO_SESSION_INTERNAL_STATE_API_TIER NMO_API_TIER_ADVANCED_C
+
+/*
+ * Default consumers should treat this header plus nmo_session_query.h as the
+ * stable session/workflow entry point. Advanced request shaping, resolver
+ * plumbing, and raw pipeline staging now live in nmo_runtime_kernel.h,
+ * nmo_reference_resolver.h, and nmo_session_pipeline.h.
+ */
 
 /**
  * @brief Session structure
@@ -193,37 +213,6 @@ NMO_API void nmo_session_invalidate_ref_graph(nmo_session_t *session);
 NMO_API void nmo_session_invalidate_behavior_index(nmo_session_t *session);
 
 /**
- * @brief Get the session's reference resolver (may be NULL).
- * @ownership borrowed
- */
-NMO_API nmo_reference_resolver_t *nmo_session_get_reference_resolver(
-    const nmo_session_t *session);
-
-/**
- * @brief Ensure a reference resolver exists on the session (lazy init).
- * @ownership borrowed
- */
-NMO_API nmo_reference_resolver_t *nmo_session_ensure_reference_resolver(
-    nmo_session_t *session);
-
-/**
- * @brief Reset (destroy) the session's reference resolver.
- */
-NMO_API void nmo_session_reset_reference_resolver(nmo_session_t *session);
-
-/**
- * @brief Set runtime operation callbacks (called by app layer during session setup)
- */
-NMO_API void nmo_session_set_runtime_ops(nmo_session_t *session,
-                                         const nmo_runtime_ops_t *ops);
-
-/**
- * @brief Get runtime operation callbacks
- */
-NMO_API const nmo_runtime_ops_t *nmo_session_get_runtime_ops(
-    const nmo_session_t *session);
-
-/**
  * @brief Return non-zero when the session contains partial load data only.
  */
 NMO_API int nmo_session_is_partial_load(const nmo_session_t *session);
@@ -237,14 +226,6 @@ NMO_API int nmo_session_is_partial_load(const nmo_session_t *session);
  * false before they can safely populate a session.
  */
 NMO_API int nmo_session_has_materialized_load_state(const nmo_session_t *session);
-
-/**
- * @brief Execute unified runtime operation.
- */
-NMO_API nmo_status_t nmo_session_execute(
-    nmo_session_t *session,
-    const nmo_runtime_request_t *request,
-    nmo_runtime_report_t *out_report);
 
 /**
  * @brief Load file into an existing session via runtime execute.
@@ -367,10 +348,11 @@ NMO_API nmo_chunk_pool_t *nmo_session_ensure_chunk_pool(
  *
  * Returns a read-only view of all format-layer metadata needed for
  * lossless round-trip: file info, manager data, and plugin dependencies.
+ * The returned view is invalidated by subsequent load/pipeline staging updates.
  *
  * @param session Session
  * @return File state pointer, or NULL if no file has been loaded
- * @ownership borrowed
+ * @ownership borrowed (session-owned, invalidated by load-state mutation)
  */
 NMO_API const nmo_file_state_t *nmo_session_get_file_state(const nmo_session_t *session);
 
@@ -380,33 +362,6 @@ NMO_API const nmo_file_state_t *nmo_session_get_file_state(const nmo_session_t *
  * @return File information (zero-initialized if no file loaded)
  */
 NMO_API nmo_file_info_t nmo_session_get_file_info(const nmo_session_t *session);
-
-/**
- * @brief Set file info
- *
- * @param session Session
- * @param info File information to set
- * @return NMO_OK on success
- */
-NMO_API nmo_status_t nmo_session_set_file_info(nmo_session_t *session, const nmo_file_info_t *info);
-
-/**
- * @brief Set manager data (borrowed pointers, arena-allocated)
- */
-NMO_API void nmo_session_set_manager_data(nmo_session_t *session, nmo_manager_data_t *data, uint32_t count);
-
-/**
- * @brief Set plugin dependencies (borrowed pointers, arena-allocated)
- *
- * Also triggers plugin dependency diagnostics refresh.
- * @return NMO_OK on success
- */
-NMO_API nmo_status_t nmo_session_set_plugin_dependencies(nmo_session_t *session, nmo_plugin_dep_t *deps, uint32_t count);
-
-/**
- * @brief Rebuild plugin dependency diagnostics based on current file state.
- */
-NMO_API nmo_status_t nmo_session_refresh_plugin_diagnostics(nmo_session_t *session);
 
 /* High-level convenience API */
 
@@ -423,17 +378,6 @@ NMO_API nmo_status_t nmo_session_refresh_plugin_diagnostics(nmo_session_t *sessi
  */
 NMO_API nmo_session_t *nmo_session_load(nmo_context_t *ctx, const char *filename);
 
-/**
- * @brief Save session to NMO file
- *
- * High-level function to save session to file.
- *
- * @param session Session to save
- * @param filename Output file path
- * @return NMO_OK on success, otherwise an NMO_ERR_* code
- */
-NMO_API nmo_status_t nmo_session_save(nmo_session_t *session, const char *filename);
-
 /* Forward declaration */
 typedef struct nmo_object nmo_object_t;
 typedef struct nmo_header nmo_header_t;
@@ -444,11 +388,14 @@ typedef struct nmo_index_stats nmo_index_stats_t;
  * @brief Get all objects from session
  *
  * Returns array of all objects in the session's repository.
+ * The returned storage is owned by the repository and is invalidated by
+ * repository mutation or operations that rebuild/repack the repository array.
  *
  * @param session Session
  * @param out_objects Output object array pointer
  * @param out_count Output object count
  * @return NMO_OK on success, otherwise an NMO_ERR_* code
+ * @ownership borrowed (repository-owned, invalidated after mutation)
  */
 NMO_API nmo_status_t nmo_session_get_objects(
     nmo_session_t *session,
@@ -470,24 +417,13 @@ NMO_API const nmo_header_t *nmo_session_get_header(const nmo_session_t *session)
 /* ==================== Object Index Management (Phase 5) ==================== */
 
 /**
- * @brief Set object index
- *
- * Sets the object index for this session. Used by runtime load pipeline.
- * If an index is already set, it will be destroyed and replaced.
- *
- * @param session Session
- * @param index Object index (session takes ownership)
- */
-NMO_API void nmo_session_set_object_index(nmo_session_t *session, nmo_object_index_t *index);
-
-/**
  * @brief Get object index
  *
  * Returns the object index if available.
  *
  * @param session Session
  * @return Object index or NULL if not built
- * @ownership borrowed
+ * @ownership borrowed (session-owned, invalidated after rebuild or mutation)
  */
 NMO_API nmo_object_index_t *nmo_session_get_object_index(const nmo_session_t *session);
 
@@ -545,21 +481,6 @@ NMO_API nmo_status_t nmo_session_query_first(
     const nmo_object_query_t *query,
     nmo_object_t **out_object,
     size_t *out_index);
-
-/**
- * @brief Count all session objects using the repository's O(1) object count.
- */
-NMO_API nmo_status_t nmo_session_count_objects(
-    nmo_session_t *session,
-    size_t *out_count);
-
-/**
- * @brief Find the first session object with an exact name match.
- */
-NMO_API nmo_status_t nmo_session_find_object_by_name(
-    nmo_session_t *session,
-    const char *name,
-    nmo_object_t **out_object);
 
 /**
  * @brief Invalidate the session-owned object query index when low-level state changes.
@@ -686,13 +607,6 @@ typedef struct nmo_runtime_load_stats {
     uint32_t manager_errors;
 } nmo_runtime_load_stats_t;
 
-/**
- * @brief Store runtime load diagnostics for later retrieval.
- */
-NMO_API void nmo_session_set_runtime_load_stats(
-    nmo_session_t *session,
-    const nmo_runtime_load_stats_t *stats);
-
 NMO_API nmo_status_t nmo_session_get_runtime_load_stats(
     const nmo_session_t *session,
     nmo_runtime_load_stats_t *out_stats);
@@ -718,41 +632,9 @@ typedef struct nmo_session_plugin_diagnostics {
     int extension_registry_available;
 } nmo_session_plugin_diagnostics_t;
 
-NMO_API void nmo_session_set_plugin_diagnostics(
-    nmo_session_t *session,
-    const nmo_session_plugin_dependency_status_t *entries,
-    size_t entry_count,
-    size_t missing_count,
-    size_t outdated_count,
-    int extension_registry_available);
-
-/** @ownership borrowed */
+/** @ownership borrowed (session-owned, invalidated by diagnostics refresh or dependency staging) */
 NMO_API const nmo_session_plugin_diagnostics_t *nmo_session_get_plugin_diagnostics(
     const nmo_session_t *session);
-
-/* ==================== Internal API (Used by Parser) ==================== */
-
-/**
- * @brief Set file header (internal use by parser)
- *
- * Stores the parsed file header in session arena as opaque data.
- * This is an internal API used by the parser during file loading.
- * The session stores the header without needing to know its structure,
- * maintaining proper layer separation.
- *
- * @param session Session
- * @param header Opaque file header data to store
- * @param header_size Size of header data in bytes
- */
-/**
- * @brief Set file header (internal use by parser)
- *
- * This function is used by the in-library parser. It is exported so consumers
- * including this header do not see an uncallable symbol when building shared.
- */
-NMO_API void nmo_session_set_file_header(nmo_session_t *session,
-                                        const void *header,
-                                        size_t header_size);
 
 #ifdef __cplusplus
 }

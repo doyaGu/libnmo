@@ -505,7 +505,7 @@ int nmo_cmd_query_script(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
     /* Save session if output path specified */
     if (output_path) {
-        status = nmo_session_save(c.session, output_path);
+        status = nmo_save_file(c.session, output_path, NULL);
         if (status != NMO_OK) {
             nmo_dsl_value_destroy(&result);
             fprintf(stderr, "Error: Failed to save session: %s\n", nmo_error_string(status));
@@ -689,7 +689,7 @@ int nmo_cmd_query_module(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
     /* Save session if output path specified */
     if (output_path) {
-        status = nmo_session_save(c.session, output_path);
+        status = nmo_save_file(c.session, output_path, NULL);
         if (status != NMO_OK) {
             nmo_dsl_value_destroy(&result);
             fprintf(stderr, "Error: Failed to save session: %s\n", nmo_error_string(status));

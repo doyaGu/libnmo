@@ -14,6 +14,7 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_statesave_ids.h"
 #include "session/nmo_context.h"
+#include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_edit.h"
 #include "type/nmo_type_system.h"

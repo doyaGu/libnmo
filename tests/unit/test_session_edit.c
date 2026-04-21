@@ -3,6 +3,7 @@
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_edit.h"
+#include "session/nmo_session_query.h"
 #include "behavior/nmo_behavior_index.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_index.h"
@@ -67,7 +68,7 @@ static nmo_object_t *find_object_by_name_or_null(
     const char *name)
 {
     nmo_object_t *object = NULL;
-    return nmo_session_find_object_by_name(session, name, &object) == NMO_OK
+    return nmo_session_query_find_object_by_name(session, name, &object) == NMO_OK
         ? object
         : NULL;
 }

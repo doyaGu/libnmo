@@ -489,6 +489,7 @@ TEST(no_legacy_runtime_api_exports, session_status_apis_use_status_return_type) 
     assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_set_plugin_dependencies");
     assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_refresh_plugin_diagnostics");
     assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_save(");
+    assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_save(");
     assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_get_objects");
     assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_rebuild_indexes");
     assert_file_has_no_substring("include/session/nmo_session.h", "NMO_API int nmo_session_get_object_index_stats");
@@ -706,18 +707,19 @@ TEST(no_legacy_runtime_api_exports, legacy_session_query_api_is_removed) {
     assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_find_object_by_guid");
     assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_get_objects_by_class");
     assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_count_objects_by_class");
+    assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_count_objects(");
+    assert_file_has_no_substring("include/session/nmo_session.h", "nmo_session_find_object_by_name(");
 }
 
 TEST(no_legacy_runtime_api_exports, session_object_count_does_not_scan_via_query_runner) {
     const char *stale_count_comment =
         "Count all session objects "
         "using the query engine";
-    assert_function_has_no_substring(
-        "src/app/session.c",
-        "nmo_session_count_objects",
-        "nmo_session_query_objects");
     assert_file_has_no_substring(
-        "include/session/nmo_session.h",
+        "src/session/session_query.c",
+        "nmo_session_query_objects(");
+    assert_file_has_no_substring(
+        "include/session/nmo_session_query.h",
         stale_count_comment);
 }
 

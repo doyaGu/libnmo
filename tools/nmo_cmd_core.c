@@ -9,6 +9,7 @@
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_edit.h"
+#include "session/nmo_session_query.h"
 #include "type/nmo_type_string.h"
 #include "object/nmo_object_repository.h"
 #include "core/nmo_guid.h"
@@ -70,7 +71,7 @@ int nmo_core_find_by_name(const nmo_cmd_ctx_t *c,
     }
 
     nmo_status_t status =
-        nmo_session_find_object_by_name(c->session, name, out_object);
+        nmo_session_query_find_object_by_name(c->session, name, out_object);
     if (status == NMO_ERR_NOT_FOUND) {
         return NMO_CLI_EXIT_NOT_FOUND;
     }
@@ -294,7 +295,7 @@ int nmo_core_object_count(const nmo_cmd_ctx_t *c, size_t *out_count)
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_status_t status = nmo_session_count_objects(c->session, out_count);
+    nmo_status_t status = nmo_session_query_count_objects(c->session, out_count);
     return status == NMO_OK ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_INTERNAL_ERROR;
 }
 

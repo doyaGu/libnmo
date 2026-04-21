@@ -1,5 +1,6 @@
 #include "test_framework.h"
 #include "session/nmo_context.h"
+#include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_ref_graph.h"

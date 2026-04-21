@@ -11,6 +11,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define NMO_SESSION_EDIT_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_SESSION_EDIT_TRANSACTION_API_TIER NMO_API_TIER_STABLE_CONSUMER
+
 #ifdef __cplusplus
 extern "C" {
 #endif

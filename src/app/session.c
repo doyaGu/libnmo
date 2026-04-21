@@ -4,6 +4,7 @@
  */
 
 #include "session/nmo_session.h"
+#include "session/nmo_session_pipeline.h"
 #include "session/nmo_context.h"
 #include "app/nmo_load.h"
 #include "app/nmo_save.h"
@@ -884,17 +885,6 @@ nmo_session_t *nmo_session_load(nmo_context_t *ctx, const char *filename) {
     return session;
 }
 
-/**
- * Save session to NMO file
- */
-nmo_status_t nmo_session_save(nmo_session_t *session, const char *filename) {
-    if (session == NULL || filename == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    return nmo_session_save_file(session, filename, NULL, NULL);
-}
-
 nmo_status_t nmo_session_execute(
     nmo_session_t *session,
     const nmo_runtime_request_t *request,
@@ -1295,35 +1285,6 @@ nmo_status_t nmo_session_query_first(
         *out_index = first.index;
     }
     return NMO_OK;
-}
-
-nmo_status_t nmo_session_count_objects(
-    nmo_session_t *session,
-    size_t *out_count)
-{
-    if (session == NULL || out_count == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    *out_count = session->repository != NULL
-        ? nmo_object_repository_get_count(session->repository)
-        : 0;
-    return NMO_OK;
-}
-
-nmo_status_t nmo_session_find_object_by_name(
-    nmo_session_t *session,
-    const char *name,
-    nmo_object_t **out_object)
-{
-    if (name == NULL || out_object == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    nmo_object_query_t query = {
-        .name = name,
-        .name_mode = NMO_OBJECT_QUERY_NAME_EXACT,
-        .name_case_insensitive = false
-    };
-    return nmo_session_query_first(session, &query, out_object, NULL);
 }
 
 nmo_status_t nmo_session_get_runtime_load_stats(

@@ -6,6 +6,7 @@
 #include "../test_framework.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_pipeline.h"
 #include "app/nmo_plugin.h"
 #include "format/nmo_header1.h"
 #include "core/nmo_guid.h"
