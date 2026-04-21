@@ -356,6 +356,38 @@ static nmo_status_t rewrite_fold_validate_map_indices(
     return NMO_OK;
 }
 
+static nmo_status_t rewrite_fold_validate_map_targets(
+    nmo_behavior_fold_report_t *report,
+    const nmo_behavior_fold_map_t *maps,
+    size_t map_count,
+    uint32_t old_index_base,
+    size_t boundary_count,
+    const char *code,
+    const char *message) {
+    if (!report || !maps || map_count == 0 || boundary_count <= 1u) {
+        return NMO_OK;
+    }
+
+    uint32_t old_index_limit = old_index_base + (uint32_t)boundary_count;
+    for (size_t i = 0; i < map_count; ++i) {
+        if (maps[i].old_index < old_index_base ||
+            maps[i].old_index >= old_index_limit) {
+            continue;
+        }
+        for (size_t j = i + 1; j < map_count; ++j) {
+            if (maps[j].old_index < old_index_base ||
+                maps[j].old_index >= old_index_limit) {
+                continue;
+            }
+            if (maps[i].new_index == maps[j].new_index) {
+                rewrite_fold_report_reject(report, code, message);
+                return NMO_ERR_INVALID_ARGUMENT;
+            }
+        }
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t rewrite_fold_validate_explicit_maps(
     nmo_behavior_fold_report_t *report) {
     if (!report || !report->preserve_boundary) {
@@ -379,6 +411,15 @@ static nmo_status_t rewrite_fold_validate_explicit_maps(
     if (rc != NMO_OK) {
         return rc;
     }
+    rc = rewrite_fold_validate_map_targets(
+        report, report->input_maps, report->input_map_count, 0u,
+        report->boundary.control_in_count,
+        "input_map_invalid",
+        "preserve-boundary input maps must target distinct anchor "
+        "control inputs");
+    if (rc != NMO_OK) {
+        return rc;
+    }
     if (report->boundary.control_out_count > 1 &&
         report->output_map_count < report->boundary.control_out_count) {
         rewrite_fold_report_reject(
@@ -393,6 +434,15 @@ static nmo_status_t rewrite_fold_validate_explicit_maps(
         "output_map_invalid",
         "preserve-boundary output maps must reference existing boundary "
         "control output edges exactly once");
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = rewrite_fold_validate_map_targets(
+        report, report->output_maps, report->output_map_count, 0u,
+        report->boundary.control_out_count,
+        "output_map_invalid",
+        "preserve-boundary output maps must target distinct anchor "
+        "control outputs");
     if (rc != NMO_OK) {
         return rc;
     }
@@ -413,6 +463,25 @@ static nmo_status_t rewrite_fold_validate_explicit_maps(
         "parameter_map_invalid",
         "preserve-boundary parameter maps must reference existing boundary "
         "parameter edges exactly once");
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = rewrite_fold_validate_map_targets(
+        report, report->parameter_maps, report->parameter_map_count, 0u,
+        report->boundary.parameter_in_count,
+        "parameter_map_invalid",
+        "preserve-boundary parameter input maps must target distinct "
+        "anchor input parameters");
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = rewrite_fold_validate_map_targets(
+        report, report->parameter_maps, report->parameter_map_count,
+        (uint32_t)report->boundary.parameter_in_count,
+        report->boundary.parameter_out_count,
+        "parameter_map_invalid",
+        "preserve-boundary parameter output maps must target distinct "
+        "anchor output parameters");
     if (rc != NMO_OK) {
         return rc;
     }

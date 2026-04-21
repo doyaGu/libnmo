@@ -899,6 +899,52 @@ TEST(beh_rewrite, fold_analyze_reports_maps)
     nmo_session_close_with_context(ctx, session);
 }
 
+TEST(beh_rewrite, fold_analyze_rejects_duplicate_input_map_target)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+                        &ctx, &session)) {
+        return;
+    }
+
+    nmo_object_id_t nodes[] = {2364u, 2208u};
+    nmo_behavior_fold_map_t input_maps[] = {
+        {
+            .kind = NMO_BEHAVIOR_FOLD_MAP_INPUT,
+            .old_index = 0u,
+            .new_index = 0u,
+        },
+        {
+            .kind = NMO_BEHAVIOR_FOLD_MAP_INPUT,
+            .old_index = 1u,
+            .new_index = 0u,
+        },
+    };
+    nmo_behavior_fold_desc_t desc = {
+        .parent_id = 4692u,
+        .node_ids = nodes,
+        .node_count = 2u,
+        .anchor_id = 2364u,
+        .block_guid = {0x42414C07u, 0x10000007u},
+        .name = "Ballance Event Handler",
+        .block_version = 65536u,
+        .preserve_boundary = true,
+        .input_maps = input_maps,
+        .input_map_count = 2u,
+    };
+    nmo_behavior_fold_report_t report = {0};
+
+    nmo_status_t rc = nmo_behavior_fold_analyze(ctx, session, &desc,
+                                                &report);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, rc);
+    ASSERT_TRUE(report.rejected);
+    ASSERT_STR_EQ("input_map_invalid", report.diagnostic_code);
+
+    nmo_behavior_fold_report_free(&report);
+    nmo_session_close_with_context(ctx, session);
+}
+
 TEST(beh_rewrite, fold_analyze_reports_interface_mode)
 {
     nmo_context_t *ctx = NULL;
@@ -1025,6 +1071,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(beh_rewrite, fold_analyze_preserve_boundary_enables_edges);
     REGISTER_TEST(beh_rewrite, fold_analyze_rejects_ambiguous_input_without_map);
     REGISTER_TEST(beh_rewrite, fold_analyze_reports_maps);
+    REGISTER_TEST(beh_rewrite, fold_analyze_rejects_duplicate_input_map_target);
     REGISTER_TEST(beh_rewrite, fold_analyze_reports_interface_mode);
     REGISTER_TEST(beh_rewrite, fold_analyze_rejects_anchor_outside_selection);
     REGISTER_TEST(beh_rewrite, fold_analyze_rejects_parent_in_selected_nodes);

@@ -804,6 +804,47 @@ TEST(cli, behavior_fold_dry_run_rejects_invalid_input_map_index) {
     free(result.output);
 }
 
+TEST(cli, behavior_fold_dry_run_rejects_duplicate_input_map_target) {
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior fold --parent 4692 --nodes 2364,2208 "
+             "--anchor 2364 "
+             "--guid 42414C07-10000007 "
+             "--name \"Ballance Event Handler\" "
+             "--preserve-boundary "
+             "--map-input 0:0 --map-input 1:0 "
+             "--dry-run \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    yyjson_doc *doc = yyjson_read(result.output, strlen(result.output), 0);
+    if (!doc) {
+        fprintf(stderr, "\nExpected JSON output, got:\n%s\n", result.output);
+    }
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    ASSERT_STR_EQ("behavior.fold", get_string_field(root, "command"));
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_FALSE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "rejected"));
+    yyjson_val *rejections = get_array_field(data, "rejections");
+    ASSERT_NOT_NULL(rejections);
+    yyjson_val *rejection = yyjson_arr_get(rejections, 0);
+    ASSERT_TRUE(rejection && yyjson_is_obj(rejection));
+    ASSERT_STR_EQ("input_map_invalid",
+                  get_string_field(rejection, "code"));
+    ASSERT_STR_CONTAINS(get_string_field(rejection, "message"),
+                        "distinct");
+
+    yyjson_doc_free(doc);
+    free(result.output);
+}
+
 TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan) {
     char args[2048];
     snprintf(args, sizeof(args),
@@ -1029,6 +1070,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_interface_mode);
     REGISTER_TEST(cli, behavior_fold_dry_run_rejects_ambiguous_input_without_map);
     REGISTER_TEST(cli, behavior_fold_dry_run_rejects_invalid_input_map_index);
+    REGISTER_TEST(cli, behavior_fold_dry_run_rejects_duplicate_input_map_target);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan);
     REGISTER_TEST(cli, behavior_fold_dry_run_rejects_parent_in_selected_nodes);
     REGISTER_TEST(cli, behavior_fold_write_rejects_with_analysis_blocker);
