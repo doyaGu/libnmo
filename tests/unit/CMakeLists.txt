@@ -183,6 +183,7 @@ add_unit_test(test_script_walker)
 # Script edit graph
 add_unit_test(test_script_edit_graph)
 set_tests_properties(test_script_edit_graph PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+add_unit_test(test_script_edit_transaction)
 
 # BB prototype registry (JSON loader now in nmo core)
 add_unit_test(test_bb_registry)

@@ -367,6 +367,7 @@ set(NMO_BEHAVIOR_SOURCES
     src/behavior/behavior_graph.c
     src/behavior/behavior_index.c
     src/behavior/behavior_rewrite.c
+    src/behavior/script_edit.c
     src/behavior/script_edit_graph.c
     src/behavior/script_walker.c
     src/behavior/param_value.c
