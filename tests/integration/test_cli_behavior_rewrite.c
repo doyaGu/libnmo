@@ -481,6 +481,108 @@ TEST(cli, behavior_fold_candidates_reports_direct_child_groups) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, behavior_fold_candidates_reports_connected_components) {
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior fold-candidates --parent 4692 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.fold-candidates", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+
+    yyjson_val *groups = get_array_field(data, "candidate_groups");
+    ASSERT_NOT_NULL(groups);
+
+    bool saw_component = false;
+    size_t idx;
+    size_t max;
+    yyjson_val *group;
+    yyjson_arr_foreach(groups, idx, max, group) {
+        if (!yyjson_is_obj(group) ||
+            strcmp("connected_component", get_string_field(group, "kind")) != 0) {
+            continue;
+        }
+
+        yyjson_val *roots = get_array_field(group, "roots");
+        yyjson_val *nodes = get_array_field(group, "nodes");
+        ASSERT_NOT_NULL(roots);
+        ASSERT_NOT_NULL(nodes);
+        if (array_contains_uint(roots, 2364u) &&
+            array_contains_uint(roots, 2370u)) {
+            ASSERT_EQ((uint32_t)yyjson_arr_size(roots),
+                      (uint32_t)yyjson_arr_size(nodes));
+            ASSERT_TRUE(array_contains_uint(nodes, 2364u));
+            ASSERT_TRUE(array_contains_uint(nodes, 2370u));
+            ASSERT_GT((uint32_t)get_uint_field(group, "control_in_count"), 1u);
+            saw_component = true;
+            break;
+        }
+    }
+
+    ASSERT_TRUE(saw_component);
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_fold_candidates_reports_control_router_group) {
+    static const uint32_t router_ids[] = {
+        2367u, 2370u, 2565u, 2568u, 2571u, 3032u,
+        3043u, 3516u, 3519u, 3525u, 3528u, 3534u,
+    };
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior fold-candidates --parent 4692 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.fold-candidates", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    yyjson_val *groups = get_array_field(data, "candidate_groups");
+    ASSERT_NOT_NULL(groups);
+
+    bool saw_router = false;
+    size_t idx;
+    size_t max;
+    yyjson_val *group;
+    yyjson_arr_foreach(groups, idx, max, group) {
+        yyjson_val *nodes = get_array_field(group, "nodes");
+        if (!yyjson_is_obj(group) || !nodes ||
+            yyjson_arr_size(nodes) != (sizeof(router_ids) / sizeof(router_ids[0]))) {
+            continue;
+        }
+        if (strcmp("control_router", get_string_field(group, "kind")) != 0) {
+            continue;
+        }
+        bool matches = true;
+        for (size_t i = 0; i < sizeof(router_ids) / sizeof(router_ids[0]); ++i) {
+            if (!array_contains_uint(nodes, router_ids[i])) {
+                matches = false;
+                break;
+            }
+        }
+        if (!matches) {
+            continue;
+        }
+        ASSERT_EQ(1u, (uint32_t)get_uint_field(group, "control_in_count"));
+        ASSERT_GT((uint32_t)get_uint_field(group, "control_out_count"), 1u);
+        saw_router = true;
+        break;
+    }
+
+    ASSERT_TRUE(saw_router);
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, behavior_fold_dry_run_reports_boundary_plan) {
     const char *output = "test_behavior_rewrite_tmp/fold_dry.cmo";
     remove(output);
@@ -552,6 +654,48 @@ TEST(cli, behavior_fold_dry_run_reports_boundary_plan) {
 
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_fold_dry_run_rejects_event_handler_router_without_output_maps) {
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior fold --parent 4692 "
+             "--nodes 2367,2370,2565,2568,2571,3032,3043,3516,3519,3525,3528,3534 "
+             "--anchor 3516 "
+             "--guid 42414C07-10000007 "
+             "--name \"Ballance Base Event Router\" "
+             "--preserve-boundary --dry-run \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    yyjson_doc *doc = yyjson_read(result.output, strlen(result.output), 0);
+    if (!doc) {
+        fprintf(stderr, "\nExpected JSON output, got:\n%s\n", result.output);
+    }
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    ASSERT_STR_EQ("behavior.fold", get_string_field(root, "command"));
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_FALSE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "rejected"));
+
+    yyjson_val *rejections = get_array_field(data, "rejections");
+    ASSERT_NOT_NULL(rejections);
+    ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(rejections));
+    yyjson_val *rejection = yyjson_arr_get(rejections, 0);
+    ASSERT_TRUE(rejection && yyjson_is_obj(rejection));
+    ASSERT_STR_EQ("output_map_required",
+                  get_string_field(rejection, "code"));
+    ASSERT_STR_CONTAINS(get_string_field(rejection, "message"),
+                        "multiple boundary control outputs");
+
+    yyjson_doc_free(doc);
+    free(result.output);
 }
 
 TEST(cli, behavior_fold_dry_run_uses_explicit_node_set) {
@@ -1062,7 +1206,10 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_replace_bb_saves_output);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_parent_boundary);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_direct_child_groups);
+    REGISTER_TEST(cli, behavior_fold_candidates_reports_connected_components);
+    REGISTER_TEST(cli, behavior_fold_candidates_reports_control_router_group);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_boundary_plan);
+    REGISTER_TEST(cli, behavior_fold_dry_run_rejects_event_handler_router_without_output_maps);
     REGISTER_TEST(cli, behavior_fold_dry_run_uses_explicit_node_set);
     REGISTER_TEST(cli, behavior_fold_dry_run_uses_explicit_anchor);
     REGISTER_TEST(cli, behavior_fold_dry_run_accepts_preserve_boundary);

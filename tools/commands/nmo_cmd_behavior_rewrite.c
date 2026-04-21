@@ -12,15 +12,18 @@
 #include "../nmo_opt.h"
 
 #include "behavior/nmo_behavior_boundary.h"
+#include "behavior/nmo_behavior_index.h"
 #include "behavior/nmo_behavior_rewrite.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_parse.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_repository.h"
+#include "session/nmo_session.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -303,6 +306,21 @@ typedef struct fold_candidates_args {
     uint32_t depth;
 } fold_candidates_args_t;
 
+typedef struct fold_candidate_group_desc {
+    const char *kind;
+    nmo_object_id_t root_id;
+    const nmo_behavior_state_t *root_state;
+    const nmo_object_id_t *roots;
+    size_t root_count;
+    const nmo_behavior_boundary_t *boundary;
+} fold_candidate_group_desc_t;
+
+typedef struct fold_candidate_child {
+    nmo_object_id_t root_id;
+    const nmo_behavior_state_t *root_state;
+    nmo_behavior_boundary_t boundary;
+} fold_candidate_child_t;
+
 typedef struct fold_args {
     nmo_object_id_t parent_id;
     nmo_object_id_t nodes[256];
@@ -381,52 +399,60 @@ static void add_fold_interface_json(yyjson_mut_doc *doc,
     yyjson_mut_obj_add_val(doc, group, "interface", interface_obj);
 }
 
+static void add_id_list_json(yyjson_mut_doc *doc,
+                             yyjson_mut_val *obj,
+                             const char *key,
+                             const nmo_object_id_t *ids,
+                             size_t count);
+
 static void add_fold_candidate_group_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *groups,
-    const char *kind,
-    nmo_object_id_t root_id,
-    const nmo_behavior_state_t *root_state,
-    const nmo_behavior_boundary_t *boundary) {
+    const fold_candidate_group_desc_t *desc) {
+    if (!doc || !groups || !desc || !desc->boundary) {
+        return;
+    }
+
     yyjson_mut_val *group = yyjson_mut_obj(doc);
-    nmo_cli_json_add_str_safe(doc, group, "kind", kind);
-    yyjson_mut_obj_add_uint(doc, group, "root_id", root_id);
+    nmo_cli_json_add_str_safe(doc, group, "kind", desc->kind);
+    yyjson_mut_obj_add_uint(doc, group, "root_id", desc->root_id);
     nmo_cli_json_add_str_safe(doc, group, "root_behavior_type",
-                              fold_behavior_type(root_state));
+                              fold_behavior_type(desc->root_state));
+    add_id_list_json(doc, group, "roots", desc->roots, desc->root_count);
 
     yyjson_mut_val *nodes = yyjson_mut_arr(doc);
-    for (size_t i = 0; i < boundary->internal_node_count; ++i) {
-        yyjson_mut_arr_add_uint(doc, nodes, boundary->internal_nodes[i]);
+    for (size_t i = 0; i < desc->boundary->internal_node_count; ++i) {
+        yyjson_mut_arr_add_uint(doc, nodes, desc->boundary->internal_nodes[i]);
     }
     yyjson_mut_obj_add_val(doc, group, "nodes", nodes);
-    add_internal_nodes_json(doc, group, boundary);
+    add_internal_nodes_json(doc, group, desc->boundary);
     add_control_edges_json(doc, group, "control_in",
-                           boundary->control_in,
-                           boundary->control_in_count);
+                           desc->boundary->control_in,
+                           desc->boundary->control_in_count);
     add_control_edges_json(doc, group, "control_out",
-                           boundary->control_out,
-                           boundary->control_out_count);
+                           desc->boundary->control_out,
+                           desc->boundary->control_out_count);
     add_parameter_edges_json(doc, group, "parameter_in",
-                             boundary->parameter_in,
-                             boundary->parameter_in_count);
+                             desc->boundary->parameter_in,
+                             desc->boundary->parameter_in_count);
     add_parameter_edges_json(doc, group, "parameter_out",
-                             boundary->parameter_out,
-                             boundary->parameter_out_count);
-    add_fold_interface_json(doc, group, root_state);
+                             desc->boundary->parameter_out,
+                             desc->boundary->parameter_out_count);
+    add_fold_interface_json(doc, group, desc->root_state);
     yyjson_mut_obj_add_uint(doc, group, "node_count",
-                            (uint64_t)boundary->internal_node_count);
+                            (uint64_t)desc->boundary->internal_node_count);
     yyjson_mut_obj_add_uint(doc, group, "control_in_count",
-                            (uint64_t)boundary->control_in_count);
+                            (uint64_t)desc->boundary->control_in_count);
     yyjson_mut_obj_add_uint(doc, group, "control_out_count",
-                            (uint64_t)boundary->control_out_count);
+                            (uint64_t)desc->boundary->control_out_count);
     yyjson_mut_obj_add_uint(doc, group, "parameter_in_count",
-                            (uint64_t)boundary->parameter_in_count);
+                            (uint64_t)desc->boundary->parameter_in_count);
     yyjson_mut_obj_add_uint(doc, group, "parameter_out_count",
-                            (uint64_t)boundary->parameter_out_count);
+                            (uint64_t)desc->boundary->parameter_out_count);
     yyjson_mut_obj_add_uint(doc, group, "broken_links",
-                            (uint64_t)boundary->broken_links);
+                            (uint64_t)desc->boundary->broken_links);
     yyjson_mut_obj_add_uint(doc, group, "missing_nodes",
-                            (uint64_t)boundary->missing_nodes);
+                            (uint64_t)desc->boundary->missing_nodes);
     yyjson_mut_arr_add_val(groups, group);
 }
 
@@ -440,6 +466,391 @@ static void add_id_list_json(yyjson_mut_doc *doc,
         yyjson_mut_arr_add_uint(doc, arr, ids[i]);
     }
     yyjson_mut_obj_add_val(doc, obj, key, arr);
+}
+
+static bool fold_candidate_contains_id(const nmo_behavior_boundary_t *boundary,
+                                       nmo_object_id_t id) {
+    if (!boundary || id == 0) {
+        return false;
+    }
+    for (size_t i = 0; i < boundary->internal_node_count; ++i) {
+        if (boundary->internal_nodes[i] == id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool fold_id_in_list(const nmo_object_id_t *ids,
+                            size_t count,
+                            nmo_object_id_t id) {
+    if (!ids || id == 0) {
+        return false;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        if (ids[i] == id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static size_t fold_candidate_find_child_index(const fold_candidate_child_t *children,
+                                              size_t child_count,
+                                              nmo_object_id_t id) {
+    for (size_t i = 0; children && i < child_count; ++i) {
+        if (fold_candidate_contains_id(&children[i].boundary, id)) {
+            return i;
+        }
+    }
+    return SIZE_MAX;
+}
+
+static size_t fold_candidate_find_root_index(const fold_candidate_child_t *children,
+                                             size_t child_count,
+                                             nmo_object_id_t id) {
+    for (size_t i = 0; children && i < child_count; ++i) {
+        if (children[i].root_id == id) {
+            return i;
+        }
+    }
+    return SIZE_MAX;
+}
+
+static size_t fold_component_find(size_t *parents, size_t index) {
+    while (parents[index] != index) {
+        parents[index] = parents[parents[index]];
+        index = parents[index];
+    }
+    return index;
+}
+
+static void fold_component_union(size_t *parents, size_t a, size_t b) {
+    size_t root_a = fold_component_find(parents, a);
+    size_t root_b = fold_component_find(parents, b);
+    if (root_a == root_b) {
+        return;
+    }
+    if (root_a < root_b) {
+        parents[root_b] = root_a;
+    } else {
+        parents[root_a] = root_b;
+    }
+}
+
+static bool fold_component_append_unique_id(nmo_object_id_t **ids,
+                                            size_t *count,
+                                            nmo_object_id_t id) {
+    if (!ids || !count || id == 0) {
+        return false;
+    }
+    for (size_t i = 0; i < *count; ++i) {
+        if ((*ids)[i] == id) {
+            return true;
+        }
+    }
+    nmo_object_id_t *next = (nmo_object_id_t *)realloc(
+        *ids, (*count + 1u) * sizeof(**ids));
+    if (!next) {
+        return false;
+    }
+    next[*count] = id;
+    *ids = next;
+    (*count)++;
+    return true;
+}
+
+static bool fold_guid_equals(nmo_guid_t a, nmo_guid_t b) {
+    return a.d1 == b.d1 && a.d2 == b.d2;
+}
+
+static nmo_guid_t fold_nop_guid(void) {
+    return (nmo_guid_t){0x302561C4u, 0x0D282980u};
+}
+
+static bool fold_behavior_is_leaf_bb(const nmo_behavior_state_t *state) {
+    return state &&
+           (state->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0u &&
+           state->sub_behaviors.count == 0u &&
+           state->sub_behavior_links.count == 0u;
+}
+
+static bool fold_behavior_is_control_router_root(
+    const nmo_behavior_state_t *state) {
+    return fold_behavior_is_leaf_bb(state) &&
+           state->outputs.count > 1u;
+}
+
+static bool fold_behavior_is_control_router_bridge(
+    const nmo_behavior_state_t *state) {
+    return fold_behavior_is_leaf_bb(state) &&
+           state->inputs.count == 1u &&
+           state->outputs.count == 1u &&
+           state->in_parameters.count == 0u &&
+           state->out_parameters.count == 0u &&
+           state->local_parameters.count == 0u &&
+           fold_guid_equals(state->block_guid, fold_nop_guid());
+}
+
+static void fold_candidates_union_connected_children(
+    nmo_cmd_ctx_t *ctx,
+    const nmo_behavior_state_t *parent,
+    const fold_candidate_child_t *children,
+    size_t child_count,
+    size_t *parents) {
+    if (!ctx || !parent || !children || child_count == 0 || !parents) {
+        return;
+    }
+
+    const nmo_behavior_index_t *index =
+        nmo_session_get_behavior_index(ctx->session);
+    const nmo_object_id_t *link_ids = parent
+        ? NMO_ARRAY_DATA(nmo_object_id_t, &parent->sub_behavior_links)
+        : NULL;
+    nmo_object_repository_t *repo = nmo_session_get_repository(ctx->session);
+    for (size_t i = 0; link_ids && i < parent->sub_behavior_links.count; ++i) {
+        nmo_object_t *link_obj =
+            repo ? nmo_object_repository_find_by_id(repo, link_ids[i]) : NULL;
+        const nmo_behaviorlink_state_t *link_state =
+            link_obj && nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK
+                ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj)
+                : NULL;
+        if (!link_state || !index) {
+            continue;
+        }
+        const nmo_port_owner_t *source_owner =
+            nmo_behavior_index_find(index, link_state->in_io_id);
+        const nmo_port_owner_t *target_owner =
+            nmo_behavior_index_find(index, link_state->out_io_id);
+        size_t from_index = source_owner
+            ? fold_candidate_find_child_index(children, child_count,
+                                              source_owner->owner_id)
+            : SIZE_MAX;
+        size_t to_index = target_owner
+            ? fold_candidate_find_child_index(children, child_count,
+                                              target_owner->owner_id)
+            : SIZE_MAX;
+        if (from_index == SIZE_MAX || to_index == SIZE_MAX ||
+            from_index == to_index) {
+            continue;
+        }
+        fold_component_union(parents, from_index, to_index);
+    }
+}
+
+static int fold_candidates_emit_control_router_groups(
+    nmo_cmd_ctx_t *ctx,
+    nmo_object_id_t parent_id,
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *groups,
+    const nmo_behavior_state_t *parent,
+    const fold_candidate_child_t *children,
+    size_t child_count,
+    size_t *inout_group_count) {
+    if (!ctx || !doc || !groups || !parent || !children || child_count == 0) {
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+
+    const nmo_behavior_index_t *index =
+        nmo_session_get_behavior_index(ctx->session);
+    const nmo_object_id_t *link_ids =
+        NMO_ARRAY_DATA(nmo_object_id_t, &parent->sub_behavior_links);
+    nmo_object_repository_t *repo = nmo_session_get_repository(ctx->session);
+
+    for (size_t i = 0; i < child_count; ++i) {
+        if (!fold_behavior_is_control_router_root(children[i].root_state)) {
+            continue;
+        }
+
+        nmo_object_id_t *router_ids = NULL;
+        size_t router_count = 0;
+        if (!fold_component_append_unique_id(&router_ids, &router_count,
+                                             children[i].root_id)) {
+            fprintf(stderr, "Error: Out of memory\n");
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+
+        bool changed = true;
+        while (changed) {
+            changed = false;
+            for (size_t link_idx = 0;
+                 link_ids && link_idx < parent->sub_behavior_links.count;
+                 ++link_idx) {
+                nmo_object_t *link_obj = repo
+                    ? nmo_object_repository_find_by_id(repo, link_ids[link_idx])
+                    : NULL;
+                const nmo_behaviorlink_state_t *link_state =
+                    link_obj &&
+                            nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK
+                        ? (const nmo_behaviorlink_state_t *)
+                              nmo_object_get_state(link_obj)
+                        : NULL;
+                if (!link_state || !index) {
+                    continue;
+                }
+
+                const nmo_port_owner_t *source_owner =
+                    nmo_behavior_index_find(index, link_state->in_io_id);
+                const nmo_port_owner_t *target_owner =
+                    nmo_behavior_index_find(index, link_state->out_io_id);
+                size_t from_index = source_owner
+                    ? fold_candidate_find_root_index(children, child_count,
+                                                     source_owner->owner_id)
+                    : SIZE_MAX;
+                size_t to_index = target_owner
+                    ? fold_candidate_find_root_index(children, child_count,
+                                                     target_owner->owner_id)
+                    : SIZE_MAX;
+                if (from_index == SIZE_MAX || to_index == SIZE_MAX) {
+                    continue;
+                }
+
+                bool from_selected = fold_id_in_list(router_ids, router_count,
+                                                     children[from_index].root_id);
+                bool to_selected = fold_id_in_list(router_ids, router_count,
+                                                   children[to_index].root_id);
+                if (from_selected == to_selected) {
+                    continue;
+                }
+
+                size_t candidate_index = from_selected ? to_index : from_index;
+                if (!fold_behavior_is_control_router_bridge(
+                        children[candidate_index].root_state)) {
+                    continue;
+                }
+                if (!fold_component_append_unique_id(
+                        &router_ids, &router_count,
+                        children[candidate_index].root_id)) {
+                    free(router_ids);
+                    fprintf(stderr, "Error: Out of memory\n");
+                    return NMO_CLI_EXIT_INTERNAL_ERROR;
+                }
+                changed = true;
+            }
+        }
+
+        if (router_count > 1u) {
+            nmo_behavior_boundary_t router_boundary = {0};
+            if (!nmo_behavior_boundary_build_for_nodes(
+                    ctx->ctx, ctx->session, parent_id,
+                    router_ids, router_count, &router_boundary)) {
+                char detail[256];
+                size_t detail_len = nmo_last_error_message_copy(
+                    detail, sizeof(detail));
+                free(router_ids);
+                fprintf(stderr, "Error: %s\n",
+                        detail_len > 0 ? detail
+                                       : "Failed to build control router boundary");
+                return NMO_CLI_EXIT_INTERNAL_ERROR;
+            }
+
+            if (router_boundary.control_out_count > 1u) {
+                fold_candidate_group_desc_t desc = {
+                    .kind = "control_router",
+                    .root_id = children[i].root_id,
+                    .root_state = children[i].root_state,
+                    .roots = router_ids,
+                    .root_count = router_count,
+                    .boundary = &router_boundary,
+                };
+                add_fold_candidate_group_json(doc, groups, &desc);
+                (*inout_group_count)++;
+            }
+            nmo_behavior_boundary_free(&router_boundary);
+        }
+
+        free(router_ids);
+    }
+
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int fold_candidates_emit_connected_components(
+    nmo_cmd_ctx_t *ctx,
+    nmo_object_id_t parent_id,
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *groups,
+    const nmo_behavior_state_t *parent,
+    const fold_candidate_child_t *children,
+    size_t child_count,
+    size_t *inout_group_count) {
+    if (!ctx || !groups || !parent || !children || child_count == 0) {
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+
+    size_t *parents = (size_t *)malloc(child_count * sizeof(*parents));
+    if (!parents) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    for (size_t i = 0; i < child_count; ++i) {
+        parents[i] = i;
+    }
+
+    fold_candidates_union_connected_children(ctx, parent, children,
+                                             child_count, parents);
+
+    bool saw_component = false;
+    for (size_t i = 0; i < child_count; ++i) {
+        if (fold_component_find(parents, i) != i) {
+            continue;
+        }
+
+        nmo_object_id_t *component_roots = NULL;
+        size_t component_root_count = 0;
+        const nmo_behavior_state_t *root_state = children[i].root_state;
+        nmo_object_id_t root_id = children[i].root_id;
+
+        for (size_t j = 0; j < child_count; ++j) {
+            if (fold_component_find(parents, j) != i) {
+                continue;
+            }
+            if (!fold_component_append_unique_id(
+                    &component_roots, &component_root_count,
+                    children[j].root_id)) {
+                free(component_roots);
+                free(parents);
+                fprintf(stderr, "Error: Out of memory\n");
+                return NMO_CLI_EXIT_INTERNAL_ERROR;
+            }
+        }
+
+        if (component_root_count > 1u) {
+            nmo_behavior_boundary_t component_boundary = {0};
+            if (!nmo_behavior_boundary_build_for_nodes(
+                    ctx->ctx, ctx->session, parent_id,
+                    component_roots, component_root_count,
+                    &component_boundary)) {
+                char detail[256];
+                size_t detail_len = nmo_last_error_message_copy(
+                    detail, sizeof(detail));
+                free(component_roots);
+                free(parents);
+                fprintf(stderr, "Error: %s\n",
+                        detail_len > 0 ? detail
+                                       : "Failed to build component boundary");
+                return NMO_CLI_EXIT_INTERNAL_ERROR;
+            }
+
+            fold_candidate_group_desc_t desc = {
+                .kind = "connected_component",
+                .root_id = root_id,
+                .root_state = root_state,
+                .roots = component_roots,
+                .root_count = component_root_count,
+                .boundary = &component_boundary,
+            };
+            add_fold_candidate_group_json(doc, groups, &desc);
+            nmo_behavior_boundary_free(&component_boundary);
+            (*inout_group_count)++;
+            saw_component = true;
+        }
+
+        free(component_roots);
+    }
+
+    free(parents);
+    return saw_component ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_SUCCESS;
 }
 
 static const char *fold_map_kind_string(nmo_behavior_fold_map_kind_t kind) {
@@ -788,10 +1199,47 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
                                 const nmo_behavior_boundary_t *boundary,
                                 uint32_t depth) {
     nmo_object_repository_t *repo = nmo_session_get_repository(ctx->session);
+    const nmo_object_id_t *sub_ids = parent
+        ? NMO_ARRAY_DATA(nmo_object_id_t, &parent->sub_behaviors)
+        : NULL;
+    size_t child_count = parent ? parent->sub_behaviors.count : 0u;
+    fold_candidate_child_t *children = child_count > 0
+        ? (fold_candidate_child_t *)calloc(child_count, sizeof(*children))
+        : NULL;
+    if (child_count > 0 && !children) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    for (size_t i = 0; i < child_count; ++i) {
+        nmo_object_id_t child_id = sub_ids[i];
+        const nmo_behavior_state_t *child_state =
+            fold_find_behavior_state(repo, child_id);
+        children[i].root_id = child_id;
+        children[i].root_state = child_state;
+        if (!nmo_behavior_boundary_build(ctx->ctx, ctx->session,
+                                         child_id, depth,
+                                         &children[i].boundary)) {
+            char detail[256];
+            size_t detail_len = nmo_last_error_message_copy(
+                detail, sizeof(detail));
+            fprintf(stderr, "Error: %s\n",
+                    detail_len > 0 ? detail
+                                   : "Failed to build child fold boundary");
+            for (size_t j = 0; j <= i; ++j) {
+                nmo_behavior_boundary_free(&children[j].boundary);
+            }
+            free(children);
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+    }
+
+    int exit_code = NMO_CLI_EXIT_SUCCESS;
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         if (!doc) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
+            exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
+            goto cleanup;
         }
 
         yyjson_mut_val *data = yyjson_mut_obj(doc);
@@ -819,43 +1267,52 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
 
         yyjson_mut_val *groups = yyjson_mut_arr(doc);
         size_t group_count = 0;
-        add_fold_candidate_group_json(doc, groups, "parent_recursive",
-                                      boundary->behavior_id, parent,
-                                      boundary);
+        fold_candidate_group_desc_t parent_desc = {
+            .kind = "parent_recursive",
+            .root_id = boundary->behavior_id,
+            .root_state = parent,
+            .roots = &boundary->behavior_id,
+            .root_count = 1u,
+            .boundary = boundary,
+        };
+        add_fold_candidate_group_json(doc, groups, &parent_desc);
         ++group_count;
 
-        const nmo_object_id_t *sub_ids = parent
-            ? NMO_ARRAY_DATA(nmo_object_id_t, &parent->sub_behaviors)
-            : NULL;
-        for (size_t i = 0; sub_ids && i < parent->sub_behaviors.count; ++i) {
-            nmo_behavior_boundary_t child_boundary = {0};
-            nmo_object_id_t child_id = sub_ids[i];
-            const nmo_behavior_state_t *child_state =
-                fold_find_behavior_state(repo, child_id);
-            if (!nmo_behavior_boundary_build(ctx->ctx, ctx->session,
-                                             child_id, depth,
-                                             &child_boundary)) {
-                char detail[256];
-                size_t detail_len = nmo_last_error_message_copy(
-                    detail, sizeof(detail));
-                fprintf(stderr, "Error: %s\n",
-                        detail_len > 0 ? detail
-                                       : "Failed to build child fold boundary");
-                yyjson_mut_doc_free(doc);
-                return NMO_CLI_EXIT_INTERNAL_ERROR;
-            }
-            add_fold_candidate_group_json(doc, groups, "direct_child",
-                                          child_id, child_state,
-                                          &child_boundary);
-            nmo_behavior_boundary_free(&child_boundary);
+        exit_code = fold_candidates_emit_control_router_groups(
+            ctx, boundary->behavior_id, doc, groups, parent, children,
+            child_count, &group_count);
+        if (exit_code != NMO_CLI_EXIT_SUCCESS) {
+            yyjson_mut_doc_free(doc);
+            goto cleanup;
+        }
+
+        exit_code = fold_candidates_emit_connected_components(
+            ctx, boundary->behavior_id, doc, groups, parent, children,
+            child_count, &group_count);
+        if (exit_code != NMO_CLI_EXIT_SUCCESS) {
+            yyjson_mut_doc_free(doc);
+            goto cleanup;
+        }
+
+        for (size_t i = 0; i < child_count; ++i) {
+            fold_candidate_group_desc_t child_desc = {
+                .kind = "direct_child",
+                .root_id = children[i].root_id,
+                .root_state = children[i].root_state,
+                .roots = &children[i].root_id,
+                .root_count = 1u,
+                .boundary = &children[i].boundary,
+            };
+            add_fold_candidate_group_json(doc, groups, &child_desc);
             ++group_count;
         }
         yyjson_mut_obj_add_uint(doc, data, "candidate_group_count",
                                 (uint64_t)group_count);
         yyjson_mut_obj_add_val(doc, data, "candidate_groups", groups);
 
-        return nmo_cmd_ctx_json_end(ctx, doc, data,
-                                    "behavior.fold-candidates");
+        exit_code = nmo_cmd_ctx_json_end(ctx, doc, data,
+                                         "behavior.fold-candidates");
+        goto cleanup;
     }
 
     fprintf(ctx->out, "Fold candidates for behavior #%u (%s)\n",
@@ -866,37 +1323,200 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
             boundary->control_out_count,
             boundary->parameter_in_count,
             boundary->parameter_out_count);
-    const nmo_object_id_t *sub_ids = parent
-        ? NMO_ARRAY_DATA(nmo_object_id_t, &parent->sub_behaviors)
+
+    size_t text_group_count = 0;
+    size_t *parents = child_count > 0
+        ? (size_t *)malloc(child_count * sizeof(*parents))
         : NULL;
-    for (size_t i = 0; sub_ids && i < parent->sub_behaviors.count; ++i) {
-        nmo_behavior_boundary_t child_boundary = {0};
-        nmo_object_id_t child_id = sub_ids[i];
-        const nmo_behavior_state_t *child_state =
-            fold_find_behavior_state(repo, child_id);
-        if (!nmo_behavior_boundary_build(ctx->ctx, ctx->session,
-                                         child_id, depth,
-                                         &child_boundary)) {
-            char detail[256];
-            size_t detail_len = nmo_last_error_message_copy(
-                detail, sizeof(detail));
-            fprintf(stderr, "Error: %s\n",
-                    detail_len > 0 ? detail
-                                   : "Failed to build child fold boundary");
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        fprintf(ctx->out, "Candidate direct_child #%u (%s): nodes=%zu control_in=%zu control_out=%zu parameter_in=%zu parameter_out=%zu interface=%s\n",
-                child_id,
-                fold_behavior_type(child_state),
-                child_boundary.internal_node_count,
-                child_boundary.control_in_count,
-                child_boundary.control_out_count,
-                child_boundary.parameter_in_count,
-                child_boundary.parameter_out_count,
-                fold_interface_action(child_state));
-        nmo_behavior_boundary_free(&child_boundary);
+    if (child_count > 0 && !parents) {
+        fprintf(stderr, "Error: Out of memory\n");
+        exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
+        goto cleanup;
     }
-    return NMO_CLI_EXIT_SUCCESS;
+    for (size_t i = 0; i < child_count; ++i) {
+        parents[i] = i;
+    }
+    if (child_count > 0) {
+        for (size_t i = 0; i < child_count; ++i) {
+            if (!fold_behavior_is_control_router_root(children[i].root_state)) {
+                continue;
+            }
+            nmo_object_id_t *router_ids = NULL;
+            size_t router_count = 0;
+            if (!fold_component_append_unique_id(&router_ids, &router_count,
+                                                 children[i].root_id)) {
+                free(router_ids);
+                free(parents);
+                fprintf(stderr, "Error: Out of memory\n");
+                exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
+                goto cleanup;
+            }
+
+            bool changed = true;
+            while (changed) {
+                changed = false;
+                const nmo_behavior_index_t *index =
+                    nmo_session_get_behavior_index(ctx->session);
+                const nmo_object_id_t *link_ids =
+                    NMO_ARRAY_DATA(nmo_object_id_t, &parent->sub_behavior_links);
+                for (size_t link_idx = 0;
+                     link_ids && link_idx < parent->sub_behavior_links.count;
+                     ++link_idx) {
+                    nmo_object_t *link_obj = repo
+                        ? nmo_object_repository_find_by_id(repo, link_ids[link_idx])
+                        : NULL;
+                    const nmo_behaviorlink_state_t *link_state =
+                        link_obj &&
+                                nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK
+                            ? (const nmo_behaviorlink_state_t *)
+                                  nmo_object_get_state(link_obj)
+                            : NULL;
+                    if (!link_state || !index) {
+                        continue;
+                    }
+                    const nmo_port_owner_t *source_owner =
+                        nmo_behavior_index_find(index, link_state->in_io_id);
+                    const nmo_port_owner_t *target_owner =
+                        nmo_behavior_index_find(index, link_state->out_io_id);
+                    size_t from_index = source_owner
+                        ? fold_candidate_find_root_index(children, child_count,
+                                                         source_owner->owner_id)
+                        : SIZE_MAX;
+                    size_t to_index = target_owner
+                        ? fold_candidate_find_root_index(children, child_count,
+                                                         target_owner->owner_id)
+                        : SIZE_MAX;
+                    if (from_index == SIZE_MAX || to_index == SIZE_MAX) {
+                        continue;
+                    }
+                    bool from_selected =
+                        fold_id_in_list(router_ids, router_count,
+                                        children[from_index].root_id);
+                    bool to_selected =
+                        fold_id_in_list(router_ids, router_count,
+                                        children[to_index].root_id);
+                    if (from_selected == to_selected) {
+                        continue;
+                    }
+                    size_t candidate_index =
+                        from_selected ? to_index : from_index;
+                    if (!fold_behavior_is_control_router_bridge(
+                            children[candidate_index].root_state)) {
+                        continue;
+                    }
+                    if (!fold_component_append_unique_id(
+                            &router_ids, &router_count,
+                            children[candidate_index].root_id)) {
+                        free(router_ids);
+                        free(parents);
+                        fprintf(stderr, "Error: Out of memory\n");
+                        exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
+                        goto cleanup;
+                    }
+                    changed = true;
+                }
+            }
+            if (router_count > 1u) {
+                nmo_behavior_boundary_t router_boundary = {0};
+                if (!nmo_behavior_boundary_build_for_nodes(
+                        ctx->ctx, ctx->session, boundary->behavior_id,
+                        router_ids, router_count, &router_boundary)) {
+                    char detail[256];
+                    size_t detail_len = nmo_last_error_message_copy(
+                        detail, sizeof(detail));
+                    free(router_ids);
+                    free(parents);
+                    fprintf(stderr, "Error: %s\n",
+                            detail_len > 0 ? detail
+                                           : "Failed to build control router boundary");
+                    exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
+                    goto cleanup;
+                }
+                if (router_boundary.control_out_count > 1u) {
+                    fprintf(ctx->out,
+                            "Candidate control_router #%u: roots=%zu nodes=%zu control_in=%zu control_out=%zu parameter_in=%zu parameter_out=%zu interface=%s\n",
+                            children[i].root_id, router_count,
+                            router_boundary.internal_node_count,
+                            router_boundary.control_in_count,
+                            router_boundary.control_out_count,
+                            router_boundary.parameter_in_count,
+                            router_boundary.parameter_out_count,
+                            fold_interface_action(children[i].root_state));
+                }
+                nmo_behavior_boundary_free(&router_boundary);
+            }
+            free(router_ids);
+        }
+
+        fold_candidates_union_connected_children(ctx, parent, children,
+                                                 child_count, parents);
+        for (size_t i = 0; i < child_count; ++i) {
+            if (fold_component_find(parents, i) != i) {
+                continue;
+            }
+            nmo_object_id_t *component_roots = NULL;
+            size_t root_count = 0;
+            for (size_t j = 0; j < child_count; ++j) {
+                if (fold_component_find(parents, j) == i) {
+                    if (!fold_component_append_unique_id(
+                            &component_roots, &root_count,
+                            children[j].root_id)) {
+                        free(component_roots);
+                        free(parents);
+                        fprintf(stderr, "Error: Out of memory\n");
+                        exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
+                        goto cleanup;
+                    }
+                }
+            }
+            if (root_count > 1u) {
+                nmo_behavior_boundary_t component_boundary = {0};
+                if (!nmo_behavior_boundary_build_for_nodes(
+                        ctx->ctx, ctx->session, boundary->behavior_id,
+                        component_roots, root_count,
+                        &component_boundary)) {
+                    char detail[256];
+                    size_t detail_len = nmo_last_error_message_copy(
+                        detail, sizeof(detail));
+                    free(component_roots);
+                    free(parents);
+                    fprintf(stderr, "Error: %s\n",
+                            detail_len > 0 ? detail
+                                           : "Failed to build component boundary");
+                    exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
+                    goto cleanup;
+                }
+                fprintf(ctx->out,
+                        "Candidate connected_component #%u: roots=%zu nodes=%zu control_in=? control_out=? parameter_in=? parameter_out=? interface=%s\n",
+                        children[i].root_id, root_count,
+                        component_boundary.internal_node_count,
+                        fold_interface_action(children[i].root_state));
+                nmo_behavior_boundary_free(&component_boundary);
+                ++text_group_count;
+            }
+            free(component_roots);
+        }
+        free(parents);
+    }
+
+    for (size_t i = 0; i < child_count; ++i) {
+        fprintf(ctx->out, "Candidate direct_child #%u (%s): nodes=%zu control_in=%zu control_out=%zu parameter_in=%zu parameter_out=%zu interface=%s\n",
+                children[i].root_id,
+                fold_behavior_type(children[i].root_state),
+                children[i].boundary.internal_node_count,
+                children[i].boundary.control_in_count,
+                children[i].boundary.control_out_count,
+                children[i].boundary.parameter_in_count,
+                children[i].boundary.parameter_out_count,
+                fold_interface_action(children[i].root_state));
+    }
+
+cleanup:
+    for (size_t i = 0; i < child_count; ++i) {
+        nmo_behavior_boundary_free(&children[i].boundary);
+    }
+    free(children);
+    return exit_code;
 }
 
 static int fold_candidates_run(nmo_cmd_ctx_t *ctx,
