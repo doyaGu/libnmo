@@ -6,6 +6,7 @@
 #include "test_framework.h"
 #include "nmo.h"
 #include "object/nmo_object_index.h"
+#include "session/nmo_session_query.h"
 
 static nmo_object_t *create_session_object(
     nmo_session_t *session,
@@ -144,9 +145,34 @@ TEST(session, object_index_stats) {
     nmo_context_release(ctx);
 }
 
+TEST(session, stable_query_facade) {
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    ASSERT_NOT_NULL(create_session_object(session, 21, 100, "Alpha"));
+    ASSERT_NOT_NULL(create_session_object(session, 22, 100, "Beta"));
+
+    size_t count = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_query_count_objects(session, &count));
+    ASSERT_EQ(2u, count);
+
+    nmo_object_t *found = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_query_find_object_by_name(session, "Beta", &found));
+    ASSERT_NOT_NULL(found);
+    ASSERT_EQ(22, found->id);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(session, create);
     REGISTER_TEST(session, get_context);
     REGISTER_TEST(session, index_incremental_updates);
     REGISTER_TEST(session, object_index_stats);
+    REGISTER_TEST(session, stable_query_facade);
 TEST_MAIN_END()

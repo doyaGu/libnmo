@@ -12,6 +12,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * Graph node/edge arrays remain public for advanced analysis and rewrite
+ * tooling. Ordinary consumers should prefer stable summaries such as
+ * nmo_behavior_view_describe_boundary() instead of depending on graph-owned
+ * arrays as the default read contract.
+ */
+#define NMO_BEHAVIOR_GRAPH_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_BEHAVIOR_GRAPH_API_TIER NMO_API_TIER_ADVANCED_C
+
 #ifdef __cplusplus
 extern "C" {
 #endif

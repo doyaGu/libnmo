@@ -9,6 +9,20 @@
 #include "core/nmo_allocator.h"
 #include "core/nmo_ownership.h"
 
+#define NMO_TYPE_SYSTEM_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_MIXED_TIER
+#define NMO_TYPE_SYSTEM_REGISTRY_API_TIER NMO_API_TIER_ADVANCED_C
+#define NMO_TYPE_SYSTEM_AUTHORING_API_TIER NMO_API_TIER_PUBLIC_PROTOCOL
+
+/*
+ * This header intentionally mixes two stories:
+ * - registry/runtime coordination for advanced C callers
+ * - type/schema authoring structures and macros needed for plugin authors
+ *
+ * Future bindings should prefer stable metadata views and scalar query helpers
+ * instead of depending on raw nmo_type_descriptor_t layouts as the default
+ * consumer contract.
+ */
+
 #ifdef __cplusplus
 extern "C" {
 #endif

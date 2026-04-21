@@ -8,6 +8,9 @@
 #include "core/nmo_guid.h"
 #include "core/nmo_allocator.h"
 
+#define NMO_FORMAT_OBJECT_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_FORMAT_OBJECT_LAYOUT_API_TIER NMO_API_TIER_PUBLIC_PROTOCOL
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -29,6 +32,11 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
  *
  * Runtime representation of a Virtools object with metadata, hierarchical
  * relationships, and chunk data.
+ *
+ * This public layout remains available for protocol-level and advanced C
+ * consumers. Ordinary consumers should prefer the accessor APIs in this header
+ * together with stable repository/query facades instead of depending on direct
+ * field access.
  */
 typedef struct nmo_object {
     /* Identity */

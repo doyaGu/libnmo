@@ -24,6 +24,14 @@ extern "C" {
 /* Forward declarations */
 typedef struct nmo_chunk nmo_chunk_t;
 
+/*
+ * Parsed interface layout is a protocol-oriented public surface. The type
+ * registration hook remains advanced support API for C callers.
+ */
+#define NMO_INTERFACE_CHUNK_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_MIXED_TIER
+#define NMO_INTERFACE_CHUNK_LAYOUT_API_TIER NMO_API_TIER_PUBLIC_PROTOCOL
+#define NMO_INTERFACE_CHUNK_TYPE_REGISTRATION_API_TIER NMO_API_TIER_ADVANCED_C
+
 /* ================================================================
  * Constants
  * ================================================================ */

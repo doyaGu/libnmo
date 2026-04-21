@@ -1,0 +1,169 @@
+#include "behavior/nmo_script_view.h"
+
+#include "format/nmo_object.h"
+#include "object/builtin/nmo_beobject_schemas.h"
+#include "object/nmo_class_ids.h"
+#include "object/nmo_object_repository.h"
+#include "session/nmo_context.h"
+#include "session/nmo_session.h"
+#include "type/nmo_type_system.h"
+
+#include <string.h>
+
+static void nmo_script_view_clear(nmo_script_view_t *view)
+{
+    if (view == NULL) {
+        return;
+    }
+
+    memset(view, 0, sizeof(*view));
+}
+
+static bool nmo_script_view_is_script_owner(
+    const nmo_type_registry_t *registry,
+    nmo_class_id_t class_id)
+{
+    if (registry == NULL) {
+        return false;
+    }
+
+    return nmo_type_registry_is_class_derived_from(
+        registry, (uint32_t)class_id, (uint32_t)NMO_CID_BEOBJECT);
+}
+
+static nmo_status_t nmo_script_view_lookup(
+    nmo_session_t *session,
+    nmo_object_id_t target_script_id,
+    size_t target_index,
+    bool use_index,
+    nmo_script_view_t *out_view,
+    size_t *out_count)
+{
+    nmo_object_t **objects = NULL;
+    size_t object_count = 0;
+    size_t script_index = 0;
+    nmo_context_t *ctx = NULL;
+    nmo_type_registry_t *registry = NULL;
+    nmo_object_repository_t *repo = NULL;
+
+    if (session == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (use_index) {
+        if (out_view == NULL) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+        nmo_script_view_clear(out_view);
+    } else if (target_script_id != 0) {
+        if (out_view == NULL) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+        nmo_script_view_clear(out_view);
+    } else if (out_count == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (nmo_session_get_objects(session, &objects, &object_count) != NMO_OK) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    ctx = nmo_session_get_context(session);
+    if (ctx == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    registry = nmo_context_get_type_registry(ctx);
+    repo = nmo_session_get_repository(session);
+
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_t *owner = objects[i];
+        const nmo_beobject_state_t *be_state = NULL;
+        const nmo_object_id_t *script_ids = NULL;
+        size_t script_count = 0;
+
+        if (owner == NULL) {
+            continue;
+        }
+        if (!nmo_script_view_is_script_owner(
+                registry, nmo_object_get_class_id(owner))) {
+            continue;
+        }
+
+        be_state = (const nmo_beobject_state_t *)nmo_object_get_state(owner);
+        if (be_state == NULL) {
+            continue;
+        }
+
+        script_ids = (const nmo_object_id_t *)be_state->script_ids.data;
+        script_count = be_state->script_ids.count;
+        for (size_t s = 0; s < script_count; ++s) {
+            nmo_object_id_t script_id = script_ids[s];
+            nmo_object_t *script = NULL;
+
+            if (script_id == 0) {
+                continue;
+            }
+
+            if (out_count != NULL) {
+                (*out_count)++;
+                continue;
+            }
+
+            if (use_index && script_index++ != target_index) {
+                continue;
+            }
+            if (!use_index && target_script_id != 0 && script_id != target_script_id) {
+                continue;
+            }
+
+            script = repo ? nmo_object_repository_find_by_id(repo, script_id) : NULL;
+
+            out_view->script_id = script_id;
+            out_view->owner_id = nmo_object_get_id(owner);
+            out_view->script_name = script ? nmo_object_get_name(script) : NULL;
+            out_view->owner_name = nmo_object_get_name(owner);
+            out_view->owner_class_id = nmo_object_get_class_id(owner);
+            return NMO_OK;
+        }
+    }
+
+    return NMO_ERR_NOT_FOUND;
+}
+
+nmo_status_t nmo_script_view_count(
+    nmo_session_t *session,
+    size_t *out_count)
+{
+    nmo_status_t status = NMO_OK;
+
+    if (session == NULL || out_count == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    *out_count = 0;
+    status = nmo_script_view_lookup(session, 0, 0, false, NULL, out_count);
+    if (status == NMO_ERR_NOT_FOUND) {
+        return NMO_OK;
+    }
+    return status;
+}
+
+nmo_status_t nmo_script_view_at(
+    nmo_session_t *session,
+    size_t index,
+    nmo_script_view_t *out_view)
+{
+    return nmo_script_view_lookup(session, 0, index, true, out_view, NULL);
+}
+
+nmo_status_t nmo_script_view_from_script_id(
+    nmo_session_t *session,
+    nmo_object_id_t script_id,
+    nmo_script_view_t *out_view)
+{
+    if (script_id == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    return nmo_script_view_lookup(session, script_id, 0, false, out_view, NULL);
+}

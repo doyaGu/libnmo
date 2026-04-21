@@ -66,6 +66,7 @@ add_unit_test(test_chunk_encoded_bitmap)
 add_unit_test(test_chunk_legacy_bitmap)
 add_unit_test(test_interface_chunk)
 add_unit_test(test_interface_edit)
+add_unit_test(test_interface_view)
 add_unit_test(test_obj_parser)
 add_unit_test(test_image_utils)
 add_unit_test(test_image_decode)
@@ -105,6 +106,7 @@ add_unit_test(test_type_compatibility)
 
 # Phase 6.4: String conversion and serialization tests
 add_unit_test(test_type_string)
+add_unit_test(test_type_view)
 
 # Phase 6.x: DSL expression engine tests (Phase A parity)
 add_unit_test(test_dsl_expr)
@@ -138,6 +140,7 @@ add_unit_test(test_shadow_storage)  # Phase 1.2: Shadow blob preservation
 add_unit_test(test_repository)
 add_unit_test(test_object_repository)
 add_unit_test(test_object_query)
+add_unit_test(test_ref_query)
 add_unit_test(test_builder)
 add_unit_test(test_object_index)  # Phase 5: Object indexing tests
 add_unit_test(test_chunk_advanced)  # Phase 6: Advanced chunk features tests
@@ -161,6 +164,7 @@ target_link_libraries(test_app_util PRIVATE yyjson)
 add_unit_test(test_object_summary_api)
 target_link_libraries(test_object_summary_api PRIVATE yyjson)
 add_unit_test(test_object_import_api)
+add_unit_test(test_report_result)
 
 # Batch rename helpers (wildcard capture + template substitution)
 # Compiles tool common sources directly; needs CLI support files for linkage.
@@ -179,6 +183,7 @@ add_unit_test(test_param_value)
 
 # Script walker
 add_unit_test(test_script_walker)
+add_unit_test(test_script_view)
 
 # Script edit graph
 add_unit_test(test_script_edit_graph)
@@ -199,6 +204,9 @@ set_tests_properties(test_virtools_data_files PROPERTIES WORKING_DIRECTORY "${CM
 # Behavior ownership index
 add_unit_test(test_behavior_index)
 set_tests_properties(test_behavior_index PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+# Stable behavior view facade
+add_unit_test(test_behavior_view)
 
 # Recursive behavior graph
 add_unit_test(test_behavior_graph_recursive)

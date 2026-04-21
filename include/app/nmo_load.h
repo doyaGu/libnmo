@@ -15,12 +15,20 @@ extern "C" {
 
 typedef struct nmo_session nmo_session_t;
 
+/*
+ * High-level load workflow is part of the stable consumer API.
+ */
+#define NMO_LOAD_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_LOAD_WORKFLOW_API_TIER NMO_API_TIER_STABLE_CONSUMER
+
 /**
  * @brief Load file (high-level wrapper)
  *
  * Implements the complete load pipeline with automatic IO selection
  * (mmap for uncompressed files, standard file IO otherwise).
  * Internally creates a deserializer and runs all phases.
+ * Callers consume the workflow result through session state rather than any
+ * CLI/reporting output contract.
  *
  * @param session Session to load into
  * @param path    File path

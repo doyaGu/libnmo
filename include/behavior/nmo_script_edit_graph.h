@@ -15,6 +15,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * This graph IR remains public for advanced validation, handle resolution, and
+ * power-user tooling around script edits. Ordinary consumers should prefer
+ * nmo_script_edit_*() for writes and stable read facades such as
+ * nmo_behavior_view_*() where possible instead of depending on this IR as the
+ * default behavior contract.
+ */
+#define NMO_SCRIPT_EDIT_GRAPH_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_SCRIPT_EDIT_GRAPH_API_TIER NMO_API_TIER_ADVANCED_C
+
 #ifdef __cplusplus
 extern "C" {
 #endif

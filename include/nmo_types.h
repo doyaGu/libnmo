@@ -79,6 +79,31 @@ typedef enum nmo_plugin_category {
     NMO_PLUGIN_CUSTOM_DLL         = 255
 } nmo_plugin_category_t;
 
+/*
+ * Public API tier map used by binding-readiness work.
+ *
+ * Tier 1: Stable consumer API intended for long-lived callers and bindings.
+ * Tier 2: Advanced C API kept public for lower-level orchestration/tooling.
+ * Tier 3: Public protocol/authoring API kept public for fidelity or plugins.
+ */
+typedef enum nmo_api_tier {
+    NMO_API_TIER_STABLE_CONSUMER = 1,
+    NMO_API_TIER_ADVANCED_C = 2,
+    NMO_API_TIER_PUBLIC_PROTOCOL = 3
+} nmo_api_tier_t;
+
+/*
+ * Public header classification:
+ * - single-tier headers expose one tier only
+ * - mixed-tier headers contain multiple supported API families
+ * - excluded headers are public but intentionally outside binding-ready scope
+ */
+typedef enum nmo_public_header_kind {
+    NMO_PUBLIC_HEADER_KIND_SINGLE_TIER = 1,
+    NMO_PUBLIC_HEADER_KIND_MIXED_TIER = 2,
+    NMO_PUBLIC_HEADER_KIND_EXCLUDED = 3
+} nmo_public_header_kind_t;
+
 // Visibility macros
 #ifdef _WIN32
 #ifdef NMO_BUILD_SHARED

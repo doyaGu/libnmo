@@ -23,6 +23,12 @@ typedef struct nmo_session nmo_session_t;
 typedef struct nmo_session_edit nmo_session_edit_t;
 typedef struct nmo_script_edit_tx nmo_script_edit_tx_t;
 
+/*
+ * Script edit transactions are the stable write-oriented behavior API.
+ */
+#define NMO_SCRIPT_EDIT_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_SCRIPT_EDIT_TRANSACTION_API_TIER NMO_API_TIER_STABLE_CONSUMER
+
 typedef enum nmo_script_edit_io_kind {
     NMO_SCRIPT_EDIT_IO_INPUT = 0,
     NMO_SCRIPT_EDIT_IO_OUTPUT = 1

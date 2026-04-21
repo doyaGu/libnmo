@@ -17,6 +17,10 @@
  *    emitting fields from each class level with section headers.
  *
  * 4. DRY + SOLID: Single responsibility for each component, no code duplication.
+ *
+ * This header remains the advanced rendering/reporting surface. For stable
+ * binding-facing structured summary data, prefer the result helpers in
+ * nmo_report_result.h instead of modeling FILE* or yyjson output contexts.
  */
 
 #ifndef NMO_OBJECT_SUMMARY_H
@@ -40,6 +44,13 @@ typedef struct nmo_type_registry nmo_type_registry_t;
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 typedef struct yyjson_mut_doc yyjson_mut_doc;
 typedef struct yyjson_mut_val yyjson_mut_val;
+
+/*
+ * Summary rendering stays public for advanced C and CLI/reporting consumers.
+ * It is not the default binding-facing result contract.
+ */
+#define NMO_OBJECT_SUMMARY_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_OBJECT_SUMMARY_RENDERING_API_TIER NMO_API_TIER_ADVANCED_C
 
 /* ============================================================================
  * Summary Output Context

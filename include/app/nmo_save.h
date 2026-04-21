@@ -10,6 +10,9 @@
 #include "core/nmo_error.h"
 #include "session/nmo_serializer.h"
 
+#define NMO_SAVE_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_SAVE_WORKFLOW_API_TIER NMO_API_TIER_STABLE_CONSUMER
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -22,6 +25,8 @@ typedef struct nmo_session nmo_session_t;
  * Two-phase commit: Layout & Serialize to memory, then Pack & Commit
  * atomically to disk.  When @p opts is NULL compression settings are
  * inherited from the session's original file (round-trip safe).
+ * Callers consume this workflow through explicit status and options rather
+ * than any formatter or report-buffer contract.
  *
  * @param session Session to save from
  * @param path    Output file path

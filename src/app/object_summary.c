@@ -20,8 +20,10 @@
 #include "yyjson.h"
 
 #include "type/nmo_reflection.h"
+#include "type/nmo_type_query.h"
 #include "type/nmo_type_string.h"
 #include "type/nmo_type_system.h"
+#include "type/nmo_type_view.h"
 #include "type/nmo_type_guids.h"
 #include "object/nmo_param_guids.h"
 #include "core/nmo_guid.h"
@@ -102,6 +104,9 @@ static const char *nmo_summary_resolve_object_name(const nmo_summary_output_t *o
 static const nmo_type_descriptor_t *nmo_summary_get_type_for_object(
     const nmo_type_registry_t *registry, nmo_object_t *obj);
 static bool nmo_summary_is_object_ref_field(const nmo_type_field_t *field);
+static void nmo_summary_emit_stable_object_metadata(
+    nmo_object_t *obj,
+    nmo_summary_output_t *out);
 
 /* Value formatting */
 static bool nmo_summary_format_via_type_system(
@@ -176,6 +181,41 @@ static bool nmo_summary_is_object_ref_field(const nmo_type_field_t *field) {
     if (field->flags & NMO_FIELD_REFERENCE) return true;
     if (field->semantic == NMO_SEMANTIC_OBJECT_REF) return true;
     return nmo_guid_equals(field->type_guid, CKPGUID_ID);
+}
+
+static void nmo_summary_emit_stable_object_metadata(
+    nmo_object_t *obj,
+    nmo_summary_output_t *out)
+{
+    if (!obj || !out || !out->is_json || !out->json_doc || !out->json_data) {
+        return;
+    }
+
+    const nmo_type_registry_t *registry = nmo_summary_get_registry(out);
+    if (!registry) {
+        return;
+    }
+
+    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+    nmo_summary_add_uint(out, "class_id", class_id, 0);
+
+    const char *class_name = nmo_type_query_class_name_from_id(registry, class_id);
+    if (class_name && class_name[0]) {
+        nmo_summary_add_string(out, "class_name", class_name, 0);
+    }
+
+    nmo_type_view_t type_view;
+    if (nmo_type_view_from_object(registry, obj, &type_view) != NMO_OK) {
+        return;
+    }
+
+    if (!nmo_guid_is_null(type_view.guid)) {
+        nmo_summary_add_guid(out, "type_guid", type_view.guid, 0);
+    }
+    if (type_view.name && type_view.name[0]) {
+        nmo_summary_add_string(out, "type_name", type_view.name, 0);
+    }
+    nmo_summary_add_bool(out, "has_reflection", type_view.has_reflection, 0);
 }
 
 /* ============================================================================
@@ -2160,8 +2200,9 @@ bool nmo_summary_has_reflection(nmo_context_t *ctx, nmo_class_id_t class_id) {
     const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
     if (!registry) return false;
 
-    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_class_id_inherited(registry, class_id);
-    return type && nmo_type_has_reflection(type);
+    nmo_type_view_t type_view;
+    return nmo_type_view_from_class_id(registry, class_id, &type_view) == NMO_OK &&
+           type_view.has_reflection;
 }
 
 bool nmo_object_summary(nmo_object_t *obj, nmo_summary_output_t *out) {
@@ -2177,6 +2218,7 @@ bool nmo_object_summary_with_config(
     if (!obj || !out) return false;
 
     nmo_summary_config_t cfg = config ? *config : nmo_summary_config_default();
+    nmo_summary_emit_stable_object_metadata(obj, out);
 
     return nmo_summary_emit_reflection_fields(obj, out, &cfg);
 }

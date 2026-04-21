@@ -20,6 +20,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * Ownership-index lookups remain an advanced acceleration surface for C
+ * tooling. Ordinary consumers should avoid depending on raw owner-index
+ * internals when stable behavior/script views or script-edit APIs suffice.
+ */
+#define NMO_BEHAVIOR_INDEX_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_BEHAVIOR_INDEX_API_TIER NMO_API_TIER_ADVANCED_C
+
 #ifdef __cplusplus
 extern "C" {
 #endif

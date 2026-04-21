@@ -6,6 +6,10 @@
  * field snapshots and writes them into live objects through reflection.
  * This importer accepts the snapshot protocol produced by `object export`;
  * legacy hand-written flat maps and preview-only summaries are rejected.
+ *
+ * Import outcomes are exposed through the structured nmo_import_result_t
+ * result object. Rendering or CLI-specific reporting policy should remain
+ * outside this API.
  */
 
 #ifndef NMO_OBJECT_IMPORT_H
@@ -14,6 +18,9 @@
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+
+#define NMO_OBJECT_IMPORT_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_OBJECT_IMPORT_API_TIER NMO_API_TIER_ADVANCED_C
 
 #ifdef __cplusplus
 extern "C" {

@@ -4,12 +4,18 @@
  *
  * Provides structured comparison between two loaded sessions to verify
  * data integrity after save/load cycles.
+ * For stable binding-facing summary consumption, prefer
+ * nmo_comparison_result_collect_stats() from nmo_report_result.h over the
+ * human-readable report buffer.
  */
 
 #ifndef NMO_APP_COMPARISON_H
 #define NMO_APP_COMPARISON_H
 
 #include "nmo_types.h"
+
+#define NMO_COMPARISON_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_COMPARISON_API_TIER NMO_API_TIER_ADVANCED_C
 
 #ifdef __cplusplus
 extern "C" {

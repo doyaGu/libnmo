@@ -1,6 +1,10 @@
 /**
  * @file nmo_json_stream.h
  * @brief Lightweight streaming JSON writer for FILE* outputs.
+ *
+ * This is an advanced C/CLI helper for textual emission only. Stable
+ * binding-facing consumers should prefer structured result helpers and
+ * structured import/export APIs rather than modeling FILE* JSON streams.
  */
 
 #ifndef NMO_JSON_STREAM_H
@@ -12,6 +16,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+
+#define NMO_JSON_STREAM_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_JSON_STREAM_API_TIER NMO_API_TIER_ADVANCED_C
 
 #ifdef __cplusplus
 extern "C" {

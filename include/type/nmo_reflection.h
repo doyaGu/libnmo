@@ -19,6 +19,16 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#define NMO_REFLECTION_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_MIXED_TIER
+#define NMO_REFLECTION_FIELD_QUERY_API_TIER NMO_API_TIER_ADVANCED_C
+#define NMO_REFLECTION_AUTHORING_API_TIER NMO_API_TIER_PUBLIC_PROTOCOL
+
+/*
+ * Reflection stays public for schema authors and advanced inspectors. Future
+ * bindings should avoid depending on these raw field/query structures as their
+ * default metadata story unless they explicitly need advanced reflection.
+ */
+
 #ifdef __cplusplus
 extern "C" {
 #endif

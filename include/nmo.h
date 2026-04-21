@@ -44,6 +44,12 @@
 // Common types
 #include "nmo_types.h"
 
+/*
+ * nmo.h is a convenience umbrella, not a promise that every transitively
+ * included header belongs to the same stable binding-facing tier.
+ */
+#define NMO_UMBRELLA_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_MIXED_TIER
+
 // Core layer
 #include "core/nmo_allocator.h"
 #include "core/nmo_arena.h"
@@ -92,10 +98,13 @@
 #include "format/nmo_image_codec.h"
 #include "format/nmo_stb_adapter.h"
 #include "format/nmo_data.h"
+#include "format/nmo_interface_view.h"
 
 // Object layer
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_types.h"
+#include "object/nmo_object_iter.h"
+#include "object/nmo_ref_query.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_index.h"
@@ -105,6 +114,7 @@
 // Type layer
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_runtime.h"
+#include "type/nmo_type_view.h"
 #include "type/nmo_dynamic_types.h"
 #include "type/nmo_operation_system.h"
 #include "type/nmo_operations.h"
@@ -127,16 +137,21 @@
 #include "session/nmo_builder.h"
 #include "session/nmo_object_system.h"
 #include "session/nmo_runtime_kernel.h"
+#include "session/nmo_reference_resolver.h"
 #include "session/nmo_session_edit.h"
+#include "session/nmo_session_pipeline.h"
 
 // Session layer (context, session, serializer)
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_query.h"
 #include "session/nmo_session_util.h"
 #include "session/nmo_serializer.h"
 
 // Behavior layer
+#include "behavior/nmo_behavior_view.h"
 #include "behavior/nmo_behavior_graph.h"
+#include "behavior/nmo_script_view.h"
 
 // App layer
 #include "app/nmo_load.h"
@@ -149,6 +164,7 @@
 #include "app/nmo_json_util.h"
 #include "app/nmo_object_diff.h"
 #include "app/nmo_object_hierarchy.h"
+#include "app/nmo_report_result.h"
 #include "app/nmo_object_summary.h"
 #include "type/nmo_type_query.h"
 

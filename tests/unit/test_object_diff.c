@@ -22,6 +22,7 @@
 #define GUID_NODE       NMO_GUID(0xA0010003u, 0xB0010003u)
 #define GUID_REFHOLDER  NMO_GUID(0xA0010004u, 0xB0010004u)
 #define GUID_TRAP       NMO_GUID(0xA0010005u, 0xB0010005u)
+#define GUID_PAIR_ALIAS NMO_GUID(0xA0010006u, 0xB0010006u)
 
 typedef struct {
     int32_t a;
@@ -191,12 +192,29 @@ static bool register_test_types(nmo_context_t *ctx) {
         .field_count = NMO_FIELD_COUNT(trap_fields),
         .vtable = &k_dummy_object_vtable,
     };
+    nmo_type_descriptor_t pair_alias_desc = {
+        .guid = GUID_PAIR_ALIAS,
+        .id = 0,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_STRUCT,
+        .flags = NMO_TYPE_FLAG_COPYABLE | NMO_TYPE_FLAG_POD,
+        .name = "DiffPairAlias",
+        .description = NULL,
+        .base_type = NMO_GUID_NULL,
+        .base_type_id = 0,
+        .size = sizeof(pair_state_t),
+        .alignment = (uint32_t)_Alignof(pair_state_t),
+        .fields = pair_fields,
+        .field_count = NMO_FIELD_COUNT(pair_fields),
+        .vtable = NULL,
+    };
 
     if (nmo_type_registry_register(registry, &pair_desc) != NMO_OK) return false;
     if (nmo_type_registry_register(registry, &owner_desc) != NMO_OK) return false;
     if (nmo_type_registry_register(registry, &node_desc) != NMO_OK) return false;
     if (nmo_type_registry_register(registry, &ref_desc) != NMO_OK) return false;
     if (nmo_type_registry_register(registry, &trap_desc) != NMO_OK) return false;
+    if (nmo_type_registry_register(registry, &pair_alias_desc) != NMO_OK) return false;
     if (nmo_type_registry_finalize(registry) != NMO_OK) return false;
     return true;
 }
@@ -472,6 +490,22 @@ TEST(object_diff, result_stable_across_repeated_runs) {
     fixture_destroy(&fx);
 }
 
+TEST(object_diff, format_path_prefers_explicit_type_view_name) {
+    diff_fixture_t fx;
+    ASSERT_TRUE(fixture_init(&fx));
+
+    nmo_object_t *obj = add_object(fx.ctx, fx.ses1, 1, CID_PAIR, "AliasTarget", sizeof(pair_state_t));
+    ASSERT_NOT_NULL(obj);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(obj, GUID_PAIR_ALIAS));
+
+    char path[128];
+    memset(path, 0, sizeof(path));
+    nmo_object_format_path(path, sizeof(path), fx.ctx, obj);
+    ASSERT_STR_EQ("DiffPairAlias/AliasTarget", path);
+
+    fixture_destroy(&fx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_diff, pure_rename_not_add_remove_not_identical);
     REGISTER_TEST(object_diff, rename_and_changed_both_reported);
@@ -480,4 +514,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_diff, reference_target_rename_compares_equal);
     REGISTER_TEST(object_diff, min_similarity_rejects_low_pairs);
     REGISTER_TEST(object_diff, result_stable_across_repeated_runs);
+    REGISTER_TEST(object_diff, format_path_prefers_explicit_type_view_name);
 TEST_MAIN_END()

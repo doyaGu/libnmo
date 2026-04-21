@@ -17,6 +17,9 @@
 #include "core/nmo_guid.h"
 #include "core/nmo_arena.h"
 
+#define NMO_REFERENCE_RESOLVER_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_REFERENCE_RESOLVER_API_TIER NMO_API_TIER_ADVANCED_C
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -25,6 +28,7 @@ extern "C" {
 typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_object nmo_object_t;
 typedef struct nmo_reference_resolver nmo_reference_resolver_t;
+typedef struct nmo_session nmo_session_t;
 
 /**
  * @brief Object reference descriptor
@@ -87,6 +91,26 @@ NMO_API nmo_reference_resolver_t *nmo_reference_resolver_create(
     nmo_object_repository_t *repo,
     nmo_arena_t *arena
 );
+
+/**
+ * @brief Get the resolver currently attached to a session, if any.
+ * @ownership borrowed
+ */
+NMO_API nmo_reference_resolver_t *nmo_session_get_reference_resolver(
+    const nmo_session_t *session);
+
+/**
+ * @brief Ensure a resolver exists on the session and return it.
+ * @ownership borrowed
+ */
+NMO_API nmo_reference_resolver_t *nmo_session_ensure_reference_resolver(
+    nmo_session_t *session);
+
+/**
+ * @brief Destroy and clear the resolver currently attached to the session.
+ */
+NMO_API void nmo_session_reset_reference_resolver(
+    nmo_session_t *session);
 
 /**
  * @brief Register custom resolution strategy

@@ -22,6 +22,9 @@
 #include "core/nmo_allocator.h"
 #include "extension/nmo_extension_abi.h"
 
+#define NMO_EXTENSION_REGISTRY_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_EXTENSION_REGISTRY_API_TIER NMO_API_TIER_ADVANCED_C
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -16,6 +16,15 @@
 
 #include <stdio.h>
 
+/*
+ * Traversal callbacks, nmo_array_t collection, and FILE* dump helpers remain
+ * advanced C inspection surfaces. Binding-facing consumers should prefer
+ * stable summaries such as nmo_script_view_*() and nmo_behavior_view_*()
+ * instead of inheriting these traversal/result-buffer contracts by default.
+ */
+#define NMO_SCRIPT_WALKER_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_SCRIPT_WALKER_API_TIER NMO_API_TIER_ADVANCED_C
+
 #ifdef __cplusplus
 extern "C" {
 #endif

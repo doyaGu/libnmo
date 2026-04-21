@@ -20,6 +20,15 @@ typedef struct nmo_object nmo_object_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_object_index nmo_object_index_t;
 
+/*
+ * Repository identity and membership operations are Tier 1, while mutation
+ * observer plumbing and scratch-result helpers remain advanced Tier 2 APIs.
+ */
+#define NMO_OBJECT_REPOSITORY_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_MIXED_TIER
+#define NMO_OBJECT_REPOSITORY_IDENTITY_API_TIER NMO_API_TIER_STABLE_CONSUMER
+#define NMO_OBJECT_REPOSITORY_MUTATION_OBSERVER_API_TIER NMO_API_TIER_ADVANCED_C
+#define NMO_OBJECT_REPOSITORY_SCRATCH_RESULT_API_TIER NMO_API_TIER_ADVANCED_C
+
 /**
  * @brief Object repository
  */
@@ -133,9 +142,12 @@ NMO_API nmo_object_t *nmo_object_repository_find_by_file_id(const nmo_object_rep
  * @param out_count Output count of found objects
  * @return Array of objects or NULL (caller must not free).
  *         The returned array is owned by the repository and is valid until the
- *         next call to nmo_object_repository_find_by_class() or repository destruction.
+ *         next call to nmo_object_repository_find_by_class(), any repository
+ *         membership mutation, or repository destruction.
+ *         Ordinary consumers should prefer nmo_object_iter_count_class() /
+ *         nmo_object_iter_at_class() instead of depending on this scratch array.
  * @note Returned array is repository-owned; do not free.
- * @ownership borrowed
+ * @ownership borrowed (repository scratch storage; invalidated after next class query or mutation)
  */
 NMO_API nmo_object_t **nmo_object_repository_find_by_class(nmo_object_repository_t *repository,
                                                            nmo_class_id_t class_id,
@@ -161,10 +173,13 @@ NMO_API size_t nmo_object_repository_get_count(const nmo_object_repository_t *re
  * @param out_count Output count (always set, even on error)
  * @return Array of objects (caller must not free).
  *         The returned array is owned by the repository and is valid until the
- *         next call to nmo_object_repository_get_all() or repository destruction.
+ *         next call to nmo_object_repository_get_all(), any repository
+ *         membership mutation, or repository destruction.
  *         Returns NULL on error or if repository is empty.
+ *         Ordinary consumers should prefer nmo_object_iter_count() /
+ *         nmo_object_iter_at() instead of depending on this scratch array.
  * @note Returned array is repository-owned; do not free.
- * @ownership borrowed
+ * @ownership borrowed (repository scratch storage; invalidated after next get_all or mutation)
  */
 NMO_API nmo_object_t **nmo_object_repository_get_all(nmo_object_repository_t *repository,
                                                      size_t *out_count);

@@ -17,11 +17,21 @@ extern "C" {
 typedef struct nmo_type_registry nmo_type_registry_t;
 typedef struct nmo_operation_registry nmo_operation_registry_t;
 
+/*
+ * The aggregate runtime object is public for advanced C coordination only.
+ * It is not the intended long-lived binding-facing contract.
+ */
+#define NMO_TYPE_RUNTIME_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_TYPE_RUNTIME_AGGREGATE_API_TIER NMO_API_TIER_ADVANCED_C
+
 /**
  * @brief Aggregated runtime for type-related registries.
  *
  * Ownership is external (typically nmo_context_t). This struct is a borrowed
- * view used to reduce parameter fan-out across upper layers.
+ * view used to reduce parameter fan-out across upper layers. Ordinary
+ * consumers should prefer stable metadata/query facades such as
+ * nmo_type_view_*() and scalar type-query helpers instead of holding this
+ * aggregate directly.
  */
 typedef struct nmo_type_runtime {
     nmo_type_registry_t *types;

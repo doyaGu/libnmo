@@ -34,6 +34,14 @@
 #include "core/nmo_math.h"
 #include "core/nmo_color.h"
 
+/*
+ * CKStateChunk-compatible operations remain public because libnmo needs a
+ * fidelity-preserving chunk protocol surface. This is not the default
+ * high-level consumer boundary for future bindings.
+ */
+#define NMO_CHUNK_API_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_CHUNK_API_COMPAT_API_TIER NMO_API_TIER_PUBLIC_PROTOCOL
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -18,6 +18,10 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 
+#define NMO_REF_GRAPH_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_MIXED_TIER
+#define NMO_REF_GRAPH_KIND_ENUM_API_TIER NMO_API_TIER_PUBLIC_PROTOCOL
+#define NMO_REF_GRAPH_ANALYSIS_API_TIER NMO_API_TIER_ADVANCED_C
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -119,6 +123,7 @@ NMO_API void nmo_ref_graph_destroy(nmo_ref_graph_t *graph);
  * @param count Output edge count
  * @return NMO_OK on success
  * @note Returned array is graph-owned; valid until graph destruction.
+ *       Ordinary consumers should prefer nmo_ref_query_visit_all_edges().
  */
 NMO_API nmo_status_t nmo_ref_graph_get_edges(
     nmo_ref_graph_t *graph,
@@ -136,6 +141,8 @@ NMO_API nmo_status_t nmo_ref_graph_get_edges(
  * @param count Output edge count
  * @return NMO_OK on success
  * @note Returned array is graph-owned; valid until graph destruction.
+ *       Each call allocates graph-arena storage for the filtered view.
+ *       Ordinary consumers should prefer nmo_ref_query_visit_object_edges().
  */
 NMO_API nmo_status_t nmo_ref_graph_get_object_edges(
     nmo_ref_graph_t *graph,

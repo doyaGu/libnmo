@@ -24,6 +24,13 @@ typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_object_query_index nmo_object_query_index_t;
 typedef struct nmo_type_registry nmo_type_registry_t;
 
+/*
+ * The raw query engine remains public for advanced C callers, but bindings are
+ * expected to depend on narrower result/iterator facades over time.
+ */
+#define NMO_OBJECT_QUERY_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_OBJECT_QUERY_ENGINE_API_TIER NMO_API_TIER_ADVANCED_C
+
 typedef enum nmo_object_query_index_flags {
     NMO_OBJECT_QUERY_INDEX_MEMBERSHIP = 1u << 0,
     NMO_OBJECT_QUERY_INDEX_NAMES      = 1u << 1,
@@ -112,6 +119,9 @@ NMO_API nmo_status_t nmo_object_query_iterate(
     void *user_data,
     nmo_object_query_result_t *out_result);
 
+/**
+ * @ownership borrowed (arena-owned by caller; valid until arena reset/destroy)
+ */
 NMO_API nmo_status_t nmo_object_query_collect(
     const nmo_object_query_context_t *ctx,
     const nmo_object_query_t *query,

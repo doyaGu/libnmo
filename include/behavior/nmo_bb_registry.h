@@ -24,6 +24,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * Building-block prototype metadata remains public for advanced inspection and
+ * plugin-style authoring. Future bindings should avoid depending on raw
+ * prototype layouts as their default behavior API when stable behavior/script
+ * summaries or script-edit writes are sufficient.
+ */
+#define NMO_BB_REGISTRY_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_BB_REGISTRY_API_TIER NMO_API_TIER_ADVANCED_C
+
 #ifdef __cplusplus
 extern "C" {
 #endif

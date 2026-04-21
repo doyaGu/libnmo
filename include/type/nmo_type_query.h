@@ -21,6 +21,17 @@ typedef struct nmo_object nmo_object_t;
 typedef struct nmo_type_registry nmo_type_registry_t;
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 
+/*
+ * Scalar class/name relationship lookups are Tier 1. Borrowed descriptor and
+ * state-pointer views remain advanced; ordinary consumers should prefer
+ * nmo_type_view_*() when they need stable metadata snapshots instead of
+ * registry-owned descriptor pointers.
+ */
+#define NMO_TYPE_QUERY_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_MIXED_TIER
+#define NMO_TYPE_QUERY_SCALAR_LOOKUP_API_TIER NMO_API_TIER_STABLE_CONSUMER
+#define NMO_TYPE_QUERY_DESCRIPTOR_VIEW_API_TIER NMO_API_TIER_ADVANCED_C
+#define NMO_TYPE_QUERY_STATE_VIEW_API_TIER NMO_API_TIER_ADVANCED_C
+
 /**
  * @brief Get class name from class ID using the context's type registry.
  *
@@ -50,6 +61,8 @@ NMO_API bool nmo_type_query_class_is_derived_from(const nmo_type_registry_t *reg
 
 /**
  * @brief Lookup type descriptor by type GUID.
+ * Ordinary consumers should prefer nmo_type_view_from_guid() for a stable
+ * metadata snapshot.
  * @ownership borrowed
  */
 NMO_API const nmo_type_descriptor_t *nmo_type_query_find_by_guid(
@@ -58,6 +71,8 @@ NMO_API const nmo_type_descriptor_t *nmo_type_query_find_by_guid(
 
 /**
  * @brief Lookup type descriptor by class ID.
+ * Ordinary consumers should prefer nmo_type_view_from_class_id() for a stable
+ * metadata snapshot.
  * @ownership borrowed
  */
 NMO_API const nmo_type_descriptor_t *nmo_type_query_find_by_class_id(
@@ -74,6 +89,9 @@ NMO_API bool nmo_type_query_object_is_derived_from_guid(
 
 /**
  * @brief Get ancestor state pointer for object as viewed as @p base_guid type.
+ * This is an advanced state-layout API. Ordinary consumers should prefer
+ * nmo_type_view_from_object() plus explicit object/value accessors where
+ * possible instead of retaining raw ancestor-state pointers.
  * @ownership borrowed
  */
 NMO_API void *nmo_type_query_object_get_ancestor_state_by_guid(

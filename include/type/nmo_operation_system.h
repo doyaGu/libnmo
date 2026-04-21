@@ -24,6 +24,19 @@
 #include "core/nmo_arena_array.h"
 #include "type/nmo_type_system.h"
 
+#define NMO_OPERATION_SYSTEM_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_MIXED_TIER
+#define NMO_OPERATION_SYSTEM_LIFECYCLE_API_TIER NMO_API_TIER_ADVANCED_C
+#define NMO_OPERATION_SYSTEM_LOOKUP_API_TIER NMO_API_TIER_ADVANCED_C
+#define NMO_OPERATION_SYSTEM_EXECUTION_API_TIER NMO_API_TIER_ADVANCED_C
+#define NMO_OPERATION_SYSTEM_INTROSPECTION_API_TIER NMO_API_TIER_ADVANCED_C
+#define NMO_OPERATION_SYSTEM_AUTHORING_API_TIER NMO_API_TIER_PUBLIC_PROTOCOL
+
+/*
+ * This registry remains public for advanced execution and plugin authoring.
+ * Future bindings should avoid depending on raw operation-tree structs as the
+ * default consumer contract.
+ */
+
 #ifdef __cplusplus
 extern "C" {
 #endif

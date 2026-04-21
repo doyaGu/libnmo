@@ -23,6 +23,14 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 
+/*
+ * Direct mutation of parsed interface layout remains an advanced C surface.
+ * Binding-facing callers should prefer stable read-only summaries or
+ * higher-level behavior edit APIs instead of depending on this layout contract.
+ */
+#define NMO_INTERFACE_EDIT_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_INTERFACE_EDIT_API_TIER NMO_API_TIER_ADVANCED_C
+
 #ifdef __cplusplus
 extern "C" {
 #endif

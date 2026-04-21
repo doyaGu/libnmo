@@ -14,6 +14,7 @@
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_guids.h"
 #include "type/nmo_type_string.h"
+#include "type/nmo_type_view.h"
 
 #include <float.h>
 #include <math.h>
@@ -311,9 +312,11 @@ void nmo_object_format_path(char *buf, size_t buf_size,
     if (ctx) {
         nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
         if (registry) {
-            const nmo_type_descriptor_t *t =
-                nmo_type_registry_find_by_class_id_inherited(registry, nmo_object_get_class_id(obj));
-            if (t) class_name = t->name;
+            nmo_type_view_t type_view;
+            if (nmo_type_view_from_object(registry, obj, &type_view) == NMO_OK &&
+                type_view.name && type_view.name[0]) {
+                class_name = type_view.name;
+            }
         }
     }
     const char *name = norm_name(nmo_object_get_name(obj));

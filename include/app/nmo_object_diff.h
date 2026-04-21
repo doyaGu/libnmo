@@ -8,6 +8,10 @@
  * Object reference IDs are resolved to "ClassName/ObjectName" paths since IDs
  * are session-local indices and NOT stable across saves.
  *
+ * For stable binding-facing summary consumption, prefer
+ * nmo_diff_result_collect_stats() from nmo_report_result.h over re-parsing
+ * formatted field strings.
+ *
  * Architecture: App Layer (depends on Session, Object, Type, Format, Core)
  */
 
@@ -18,6 +22,9 @@
 #include "core/nmo_error.h"
 #include <stdbool.h>
 #include <stddef.h>
+
+#define NMO_OBJECT_DIFF_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_OBJECT_DIFF_API_TIER NMO_API_TIER_ADVANCED_C
 
 #ifdef __cplusplus
 extern "C" {
@@ -233,4 +240,3 @@ NMO_API float nmo_object_similarity(
 #endif
 
 #endif /* NMO_APP_OBJECT_DIFF_H */
-

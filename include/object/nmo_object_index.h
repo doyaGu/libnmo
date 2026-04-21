@@ -4,6 +4,11 @@
  *
  * Provides efficient indexing of objects by class ID, name, and GUID.
  * Based on CKFile::m_IndexByClassId and related indexing structures.
+ *
+ * This header is an advanced index/cache surface. Ordinary consumers should
+ * prefer stable query facades such as nmo_object_iter_*(),
+ * nmo_object_query_iterate()/collect(), or nmo_session_query_*() when they do
+ * not need to manage index lifetimes directly.
  */
 
 #ifndef NMO_OBJECT_INDEX_H
@@ -14,6 +19,9 @@
 #include "object/nmo_object_repository.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
+
+#define NMO_OBJECT_INDEX_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_OBJECT_INDEX_API_TIER NMO_API_TIER_ADVANCED_C
 
 #ifdef __cplusplus
 extern "C" {
@@ -164,8 +172,11 @@ NMO_API uint32_t nmo_object_index_get_active_flags(const nmo_object_index_t *ind
  * @param index Object index
  * @param class_id Class ID to search for
  * @param out_count Output: number of objects found
- * @return Array of object pointers (valid until next rebuild), or NULL if none found
+ * @return Array of object pointers, or NULL if none found
  * @note Returned array is index-owned; do not free.
+ * The returned pointer becomes invalid after any rebuild/clear/add/remove that
+ * touches the class index. Ordinary consumers should prefer
+ * nmo_object_iter_count_class() / nmo_object_iter_at_class().
  * @ownership borrowed
  *
  * Time complexity: O(1) average case with index, O(n) without index
@@ -224,6 +235,8 @@ NMO_API nmo_object_t *nmo_object_index_find_by_name(
  *         If class_id != 0, the returned array is owned by the index and is valid until the
  *         next call to nmo_object_index_get_by_name_all() with a non-zero class_id, or until
  *         the index is destroyed.
+ * @note Ordinary consumers should prefer nmo_object_query_iterate()/collect()
+ * or nmo_session_query_objects() instead of depending on index-owned arrays.
  * @note Returned array is index-owned; do not free.
  * @ownership borrowed
  */
@@ -275,6 +288,9 @@ NMO_API nmo_object_t *nmo_object_index_find_by_guid(
  * @param guid Type GUID
  * @param out_count Output: number of objects found
  * @return Array of object pointers, or NULL if none found
+ * @note The returned array is index-owned and may be replaced by later index
+ * rebuilds. Ordinary consumers should prefer nmo_object_query_iterate()/
+ * collect() or nmo_session_query_objects() for stable query contracts.
  * @note Returned array is index-owned; do not free.
  * @ownership borrowed
  */

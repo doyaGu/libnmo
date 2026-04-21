@@ -19,6 +19,9 @@
 #include "type/nmo_type_string.h"
 #include <string.h>
 
+#define NMO_OBJECT_TYPE_COMMON_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_OBJECT_TYPE_COMMON_API_TIER NMO_API_TIER_PUBLIC_PROTOCOL
+
 #ifdef __cplusplus
 extern "C" {
 #endif
