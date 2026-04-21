@@ -5,6 +5,7 @@
 
 #include "test_framework.h"
 
+#include "ballance_rewrite_fixture.h"
 #include "../../tools/nmo_cli_common.h"
 #include "yyjson.h"
 
@@ -37,6 +38,11 @@ typedef struct cli_run_result {
     char *output;
     int exit_code;
 } cli_run_result_t;
+
+static void load_ballance_manifest_or_die(rewrite_manifest_t *manifest) {
+    ASSERT_NOT_NULL(manifest);
+    ASSERT_TRUE(load_rewrite_manifest(manifest));
+}
 
 static int normalize_cli_exit_code(int status) {
     if (status < 0) {
@@ -191,7 +197,14 @@ static void run_json_command(const char *args,
 }
 
 static void write_leaf_patch(const char *path, const char *output_path) {
+    rewrite_manifest_t manifest;
+    char replace_guid[64];
     char json[2048];
+
+    load_ballance_manifest_or_die(&manifest);
+    rewrite_manifest_cli_guid(manifest.replace_guid, replace_guid,
+                              sizeof(replace_guid));
+
     snprintf(json, sizeof(json),
              "{\n"
              "  \"version\": 1,\n"
@@ -201,8 +214,8 @@ static void write_leaf_patch(const char *path, const char *output_path) {
              "    {\n"
              "      \"op\": \"replace_bb\",\n"
              "      \"behavior_id\": 343,\n"
-             "      \"name\": \"Ballance Load NMO Range\",\n"
-             "      \"guid\": \"42414C02-10000002\",\n"
+             "      \"name\": \"%s\",\n"
+             "      \"guid\": \"%s\",\n"
              "      \"version\": 65536,\n"
              "      \"preserve_links\": true,\n"
              "      \"preserve_params\": true\n"
@@ -210,12 +223,21 @@ static void write_leaf_patch(const char *path, const char *output_path) {
              "  ]\n"
              "}\n",
              NMO_TEST_DATA_FILE("Ballance/base.cmo"),
-             output_path);
+             output_path,
+             manifest.replace_name,
+             replace_guid);
     ASSERT_TRUE(write_text_file(path, json));
 }
 
 static void write_non_leaf_patch(const char *path, const char *output_path) {
+    rewrite_manifest_t manifest;
+    char replace_guid[64];
     char json[2048];
+
+    load_ballance_manifest_or_die(&manifest);
+    rewrite_manifest_cli_guid(manifest.replace_guid, replace_guid,
+                              sizeof(replace_guid));
+
     snprintf(json, sizeof(json),
              "{\n"
              "  \"version\": 1,\n"
@@ -224,9 +246,9 @@ static void write_non_leaf_patch(const char *path, const char *output_path) {
              "  \"operations\": [\n"
              "    {\n"
              "      \"op\": \"replace_bb\",\n"
-             "      \"behavior_id\": 363,\n"
-             "      \"name\": \"Ballance Load NMO Range\",\n"
-             "      \"guid\": \"42414C02-10000002\",\n"
+             "      \"behavior_id\": %u,\n"
+             "      \"name\": \"%s\",\n"
+             "      \"guid\": \"%s\",\n"
              "      \"version\": 65536,\n"
              "      \"preserve_links\": true,\n"
              "      \"preserve_params\": true\n"
@@ -234,7 +256,10 @@ static void write_non_leaf_patch(const char *path, const char *output_path) {
              "  ]\n"
              "}\n",
              NMO_TEST_DATA_FILE("Ballance/base.cmo"),
-             output_path);
+             output_path,
+             manifest.replace_node_id,
+             manifest.replace_name,
+             replace_guid);
     ASSERT_TRUE(write_text_file(path, json));
 }
 
@@ -273,7 +298,14 @@ static void write_fold_patch(const char *path, const char *output_path) {
 
 static void write_closed_graph_fold_patch(const char *path,
                                           const char *output_path) {
+    rewrite_manifest_t manifest;
+    char fold_nodes[256];
     char json[4096];
+
+    load_ballance_manifest_or_die(&manifest);
+    ASSERT_TRUE(rewrite_manifest_fold_nodes_csv(&manifest, fold_nodes,
+                                                sizeof(fold_nodes)));
+
     snprintf(json, sizeof(json),
              "{\n"
              "  \"version\": 1,\n"
@@ -282,9 +314,9 @@ static void write_closed_graph_fold_patch(const char *path,
              "  \"operations\": [\n"
              "    {\n"
              "      \"op\": \"fold\",\n"
-             "      \"parent\": 4692,\n"
-             "      \"nodes\": [4166, 4140, 4147, 4157, 4165, 4153, 4151, 4155, 4143, 4145],\n"
-             "      \"anchor\": 4166,\n"
+             "      \"parent\": %u,\n"
+             "      \"nodes\": [%s],\n"
+             "      \"anchor\": %u,\n"
              "      \"name\": \"Patch Fold Small Graph\",\n"
              "      \"guid\": \"42414C07-10000007\",\n"
              "      \"version\": 65536,\n"
@@ -294,7 +326,10 @@ static void write_closed_graph_fold_patch(const char *path,
              "  ]\n"
              "}\n",
              NMO_TEST_DATA_FILE("Ballance/base.cmo"),
-             output_path);
+             output_path,
+             manifest.fold_parent_id,
+             fold_nodes,
+             manifest.fold_anchor_id);
     ASSERT_TRUE(write_text_file(path, json));
 }
 
@@ -315,6 +350,12 @@ static bool array_contains_uint(yyjson_val *arr, uint64_t needle) {
 }
 
 TEST(cli, patch_apply_leaf_replace_bb_dry_run_and_apply) {
+    rewrite_manifest_t manifest;
+    char replace_guid[64];
+
+    load_ballance_manifest_or_die(&manifest);
+    rewrite_manifest_cli_guid(manifest.replace_guid, replace_guid,
+                              sizeof(replace_guid));
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/replace_bb.json";
     const char *output = "test_patch_tmp/replace_bb.cmo";
@@ -352,7 +393,7 @@ TEST(cli, patch_apply_leaf_replace_bb_dry_run_and_apply) {
     root = yyjson_doc_get_root(doc);
     data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
-    ASSERT_STR_EQ("42414C02-10000002", get_string_field(data, "bb_guid"));
+    ASSERT_STR_EQ(replace_guid, get_string_field(data, "bb_guid"));
     yyjson_doc_free(doc);
 
     remove(output);
@@ -381,6 +422,9 @@ TEST(cli, patch_apply_rejects_non_leaf_replace_bb) {
 }
 
 TEST(cli, patch_apply_fold_dry_run_reports_analysis) {
+    rewrite_manifest_t manifest;
+
+    load_ballance_manifest_or_die(&manifest);
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/fold.json";
     const char *output = "test_patch_tmp/fold.cmo";
@@ -404,7 +448,7 @@ TEST(cli, patch_apply_fold_dry_run_reports_analysis) {
     yyjson_val *op = yyjson_arr_get(operations, 0);
     ASSERT_TRUE(op && yyjson_is_obj(op));
     ASSERT_STR_EQ("fold", get_string_field(op, "op"));
-    ASSERT_EQ(4692u, (uint32_t)get_uint_field(op, "parent"));
+    ASSERT_EQ(manifest.fold_parent_id, (uint32_t)get_uint_field(op, "parent"));
     ASSERT_FALSE(get_bool_field(op, "can_write"));
     ASSERT_FALSE(get_bool_field(op, "rejected"));
     ASSERT_FALSE(file_exists(output));

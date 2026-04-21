@@ -445,10 +445,10 @@ static void behavior_graph_boundary_usage(FILE *out) {
 }
 
 static void behavior_replace_bb_usage(FILE *out) {
-    fprintf(out, "Usage: nmo behavior replace-bb <behavior-id> --guid <guid> [options] <file> -o <output>\n\n");
+    fprintf(out, "Usage: nmo behavior replace-bb <behavior-id> --bb-guid <guid> [options] <file> -o <output>\n\n");
     fprintf(out, "Replace an existing leaf building-block behavior while preserving graph boundaries.\n\n");
     fprintf(out, "Options:\n");
-    fprintf(out, "  --guid <guid>          Replacement building-block GUID (required)\n");
+    fprintf(out, "  --bb-guid <guid>       Replacement building-block GUID (required)\n");
     fprintf(out, "  --name <name>          Replacement behavior name\n");
     fprintf(out, "  --version <n>          Replacement building-block version (default: 65536)\n");
     fprintf(out, "  --preserve-links       Require unchanged control boundary links\n");
@@ -466,12 +466,12 @@ static void behavior_fold_candidates_usage(FILE *out) {
 }
 
 static void behavior_fold_usage(FILE *out) {
-    fprintf(out, "Usage: nmo behavior fold --parent <id> --nodes <ids> --guid <guid> --name <name> [options] <file> -o <output>\n\n");
+    fprintf(out, "Usage: nmo behavior fold --parent <id> --nodes <ids> --bb-guid <guid> --name <name> [options] <file> -o <output>\n\n");
     fprintf(out, "Analyze a graph/script subgraph fold into a high-level building block.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  -p, --parent <id>       Parent behavior ID\n");
     fprintf(out, "  --nodes <ids>           Comma-separated behavior node IDs\n");
-    fprintf(out, "  --guid <guid>           Target building-block GUID\n");
+    fprintf(out, "  --bb-guid <guid>        Target building-block GUID\n");
     fprintf(out, "  --name <name>           Target behavior name\n");
     fprintf(out, "  --version <n>           Target building-block version (default: 65536)\n");
     fprintf(out, "  --preserve-links        Require control boundary preservation\n");

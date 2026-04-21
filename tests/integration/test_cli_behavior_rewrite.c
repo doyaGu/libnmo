@@ -5,6 +5,7 @@
 
 #include "test_framework.h"
 
+#include "ballance_rewrite_fixture.h"
 #include "../../tools/nmo_cli_common.h"
 #include "yyjson.h"
 
@@ -39,6 +40,17 @@ typedef struct cli_run_result {
     char *output;
     int exit_code;
 } cli_run_result_t;
+
+static void load_ballance_manifest_or_die(rewrite_manifest_t *manifest) {
+    ASSERT_NOT_NULL(manifest);
+    ASSERT_TRUE(load_rewrite_manifest(manifest));
+}
+
+static uint32_t ballance_fold_parent_id(void) {
+    rewrite_manifest_t manifest;
+    load_ballance_manifest_or_die(&manifest);
+    return manifest.fold_parent_id;
+}
 
 static int normalize_cli_exit_code(int status) {
     if (status < 0) {
@@ -238,9 +250,13 @@ static yyjson_val *find_object_by_uint_field(yyjson_val *arr,
 }
 
 TEST(cli, behavior_graph_boundary_json_smoke) {
+    rewrite_manifest_t manifest;
+    load_ballance_manifest_or_die(&manifest);
+
     char args[1024];
     snprintf(args, sizeof(args),
-             "-f json behavior graph-boundary 237 \"%s\"",
+             "-f json behavior graph-boundary %u \"%s\"",
+             manifest.root_behavior_id,
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     yyjson_doc *doc = NULL;
@@ -254,11 +270,11 @@ TEST(cli, behavior_graph_boundary_json_smoke) {
 
     yyjson_val *behavior_id = yyjson_obj_get(data, "behavior_id");
     ASSERT_TRUE(behavior_id && yyjson_is_uint(behavior_id));
-    ASSERT_EQ(237u, (uint32_t)yyjson_get_uint(behavior_id));
+    ASSERT_EQ(manifest.root_behavior_id, (uint32_t)yyjson_get_uint(behavior_id));
 
     yyjson_val *internal_nodes = get_array_field(data, "internal_nodes");
     ASSERT_NOT_NULL(internal_nodes);
-    ASSERT_TRUE(array_contains_uint(internal_nodes, 237u));
+    ASSERT_TRUE(array_contains_uint(internal_nodes, manifest.root_behavior_id));
 
     ASSERT_NOT_NULL(get_array_field(data, "control_in"));
     ASSERT_NOT_NULL(get_array_field(data, "control_out"));
@@ -269,16 +285,25 @@ TEST(cli, behavior_graph_boundary_json_smoke) {
 }
 
 TEST(cli, behavior_replace_bb_dry_run_reports_leaf_preservation) {
+    rewrite_manifest_t manifest;
+    char replace_guid[64];
+
+    load_ballance_manifest_or_die(&manifest);
+    rewrite_manifest_cli_guid(manifest.replace_guid, replace_guid,
+                              sizeof(replace_guid));
+
     remove("test_behavior_rewrite_tmp/replace_bb_dry.cmo");
     make_dir("test_behavior_rewrite_tmp");
 
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior replace-bb 343 "
-             "--guid 42414C02-10000002 "
-             "--name \"Ballance Load NMO Range\" "
+             "--bb-guid %s "
+             "--name \"%s\" "
              "--preserve-links --preserve-params --dry-run \"%s\" "
              "-o \"test_behavior_rewrite_tmp/replace_bb_dry.cmo\"",
+             replace_guid,
+             manifest.replace_name,
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     yyjson_doc *doc = NULL;
@@ -322,16 +347,26 @@ TEST(cli, behavior_replace_bb_dry_run_reports_leaf_preservation) {
 }
 
 TEST(cli, behavior_replace_bb_rejects_non_leaf_script) {
+    rewrite_manifest_t manifest;
+    char replace_guid[64];
+
+    load_ballance_manifest_or_die(&manifest);
+    rewrite_manifest_cli_guid(manifest.replace_guid, replace_guid,
+                              sizeof(replace_guid));
+
     remove("test_behavior_rewrite_tmp/replace_bb_reject.cmo");
     make_dir("test_behavior_rewrite_tmp");
 
     char args[2048];
     snprintf(args, sizeof(args),
-             "-f json behavior replace-bb 363 "
-             "--guid 42414C02-10000002 "
-             "--name \"Ballance Load NMO Range\" "
+             "-f json behavior replace-bb %u "
+             "--bb-guid %s "
+             "--name \"%s\" "
              "--preserve-links --preserve-params --dry-run \"%s\" "
              "-o \"test_behavior_rewrite_tmp/replace_bb_reject.cmo\"",
+             manifest.replace_node_id,
+             replace_guid,
+             manifest.replace_name,
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     cli_run_result_t result = run_cli_capture(args);
@@ -346,6 +381,13 @@ TEST(cli, behavior_replace_bb_rejects_non_leaf_script) {
 }
 
 TEST(cli, behavior_replace_bb_saves_output) {
+    rewrite_manifest_t manifest;
+    char replace_guid[64];
+
+    load_ballance_manifest_or_die(&manifest);
+    rewrite_manifest_cli_guid(manifest.replace_guid, replace_guid,
+                              sizeof(replace_guid));
+
     const char *output = "test_behavior_rewrite_tmp/replace_bb_save.cmo";
     remove(output);
     make_dir("test_behavior_rewrite_tmp");
@@ -353,9 +395,11 @@ TEST(cli, behavior_replace_bb_saves_output) {
     char args[2048];
     snprintf(args, sizeof(args),
              "behavior replace-bb 343 "
-             "--guid 42414C02-10000002 "
-             "--name \"Ballance Load NMO Range\" "
+             "--bb-guid %s "
+             "--name \"%s\" "
              "--preserve-links --preserve-params \"%s\" -o \"%s\"",
+             replace_guid,
+             manifest.replace_name,
              NMO_TEST_DATA_FILE("Ballance/base.cmo"),
              output);
 
@@ -432,7 +476,8 @@ TEST(cli, behavior_fold_candidates_reports_parent_boundary) {
 TEST(cli, behavior_fold_candidates_reports_direct_child_groups) {
     char args[2048];
     snprintf(args, sizeof(args),
-             "-f json behavior fold-candidates --parent 4692 \"%s\"",
+             "-f json behavior fold-candidates --parent %u \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     yyjson_doc *doc = NULL;
@@ -443,7 +488,7 @@ TEST(cli, behavior_fold_candidates_reports_direct_child_groups) {
     ASSERT_NOT_NULL(root);
     yyjson_val *data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
-    ASSERT_EQ(4692u, (uint32_t)get_uint_field(data, "parent_id"));
+    ASSERT_EQ(ballance_fold_parent_id(), (uint32_t)get_uint_field(data, "parent_id"));
 
     yyjson_val *groups = get_array_field(data, "candidate_groups");
     ASSERT_NOT_NULL(groups);
@@ -484,7 +529,8 @@ TEST(cli, behavior_fold_candidates_reports_direct_child_groups) {
 TEST(cli, behavior_fold_candidates_reports_connected_components) {
     char args[2048];
     snprintf(args, sizeof(args),
-             "-f json behavior fold-candidates --parent 4692 \"%s\"",
+             "-f json behavior fold-candidates --parent %u \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     yyjson_doc *doc = NULL;
@@ -536,7 +582,8 @@ TEST(cli, behavior_fold_candidates_reports_control_router_group) {
     };
     char args[2048];
     snprintf(args, sizeof(args),
-             "-f json behavior fold-candidates --parent 4692 \"%s\"",
+             "-f json behavior fold-candidates --parent %u \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     yyjson_doc *doc = NULL;
@@ -586,7 +633,8 @@ TEST(cli, behavior_fold_candidates_reports_control_router_group) {
 TEST(cli, behavior_fold_candidates_text_reports_connected_component_counts) {
     char args[2048];
     snprintf(args, sizeof(args),
-             "behavior fold-candidates --parent 4692 \"%s\"",
+             "behavior fold-candidates --parent %u \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     cli_run_result_t result = run_cli_capture(args);
@@ -612,10 +660,11 @@ TEST(cli, behavior_fold_dry_run_reports_boundary_plan) {
 
     char args[2048];
     snprintf(args, sizeof(args),
-             "-f json behavior fold --parent 4692 --nodes 2364 "
-             "--guid 42414C07-10000007 "
+             "-f json behavior fold --parent %u --nodes 2364 "
+             "--bb-guid 42414C07-10000007 "
              "--name \"Ballance Event Handler\" "
              "--preserve-links --preserve-params --dry-run \"%s\" -o \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"),
              output);
 
@@ -641,7 +690,7 @@ TEST(cli, behavior_fold_dry_run_reports_boundary_plan) {
     ASSERT_TRUE(blocker && yyjson_is_obj(blocker));
     ASSERT_STR_EQ("analysis_only", get_string_field(blocker, "code"));
     ASSERT_NOT_NULL(get_string_field(blocker, "message"));
-    ASSERT_EQ(4692u, (uint32_t)get_uint_field(data, "parent_id"));
+    ASSERT_EQ(ballance_fold_parent_id(), (uint32_t)get_uint_field(data, "parent_id"));
     ASSERT_EQ(2364u, (uint32_t)get_uint_field(data, "representative_id"));
 
     yyjson_val *target = get_object_field(data, "target");
@@ -681,12 +730,13 @@ TEST(cli, behavior_fold_dry_run_reports_boundary_plan) {
 TEST(cli, behavior_fold_dry_run_rejects_event_handler_router_without_output_maps) {
     char args[2048];
     snprintf(args, sizeof(args),
-             "-f json behavior fold --parent 4692 "
+             "-f json behavior fold --parent %u "
              "--nodes 2367,2370,2565,2568,2571,3032,3043,3516,3519,3525,3528,3534 "
              "--anchor 3516 "
-             "--guid 42414C07-10000007 "
+             "--bb-guid 42414C07-10000007 "
              "--name \"Ballance Base Event Router\" "
              "--preserve-boundary --dry-run \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     cli_run_result_t result = run_cli_capture(args);
@@ -723,10 +773,11 @@ TEST(cli, behavior_fold_dry_run_rejects_event_handler_router_without_output_maps
 TEST(cli, behavior_fold_dry_run_uses_explicit_node_set) {
     char args[2048];
     snprintf(args, sizeof(args),
-             "-f json behavior fold --parent 4692 --nodes 2364,2178 "
-             "--guid 42414C07-10000007 "
+             "-f json behavior fold --parent %u --nodes 2364,2178 "
+             "--bb-guid 42414C07-10000007 "
              "--name \"Ballance Event Handler\" "
              "--preserve-links --preserve-params --dry-run \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     yyjson_doc *doc = NULL;
@@ -765,11 +816,12 @@ TEST(cli, behavior_fold_dry_run_uses_explicit_node_set) {
 TEST(cli, behavior_fold_dry_run_uses_explicit_anchor) {
     char args[2048];
     snprintf(args, sizeof(args),
-             "-f json behavior fold --parent 4692 --nodes 2364,2208 "
+             "-f json behavior fold --parent %u --nodes 2364,2208 "
              "--anchor 2208 "
-             "--guid 42414C07-10000007 "
+             "--bb-guid 42414C07-10000007 "
              "--name \"Ballance Event Handler\" "
              "--preserve-links --preserve-params --dry-run \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     yyjson_doc *doc = NULL;
@@ -796,12 +848,13 @@ TEST(cli, behavior_fold_dry_run_uses_explicit_anchor) {
 TEST(cli, behavior_fold_dry_run_accepts_preserve_boundary) {
     char args[2048];
     snprintf(args, sizeof(args),
-             "-f json behavior fold --parent 4692 --nodes 2364,2208 "
+             "-f json behavior fold --parent %u --nodes 2364,2208 "
              "--anchor 2364 "
-             "--guid 42414C07-10000007 "
+             "--bb-guid 42414C07-10000007 "
              "--name \"Ballance Event Handler\" "
              "--preserve-boundary --map-input 0:0 --map-input 1:1 "
              "--dry-run \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     yyjson_doc *doc = NULL;
@@ -822,12 +875,13 @@ TEST(cli, behavior_fold_dry_run_accepts_preserve_boundary) {
 TEST(cli, behavior_fold_dry_run_reports_maps) {
     char args[2048];
     snprintf(args, sizeof(args),
-             "-f json behavior fold --parent 4692 --nodes 2364,2208 "
+             "-f json behavior fold --parent %u --nodes 2364,2208 "
              "--anchor 2364 "
-             "--guid 42414C07-10000007 "
+             "--bb-guid 42414C07-10000007 "
              "--name \"Ballance Event Handler\" "
              "--preserve-boundary --map-input 0:3 --map-input 1:7 "
              "--map-output 0:1 --dry-run \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     yyjson_doc *doc = NULL;
@@ -868,12 +922,13 @@ TEST(cli, behavior_fold_dry_run_reports_maps) {
 TEST(cli, behavior_fold_dry_run_reports_interface_mode) {
     char args[2048];
     snprintf(args, sizeof(args),
-             "-f json behavior fold --parent 4692 --nodes 2364,2208 "
+             "-f json behavior fold --parent %u --nodes 2364,2208 "
              "--anchor 2364 "
-             "--guid 42414C07-10000007 "
+             "--bb-guid 42414C07-10000007 "
              "--name \"Ballance Event Handler\" "
              "--preserve-boundary --map-input 0:0 --map-input 1:1 "
              "--interface canonicalize --dry-run \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     yyjson_doc *doc = NULL;
@@ -892,11 +947,12 @@ TEST(cli, behavior_fold_dry_run_reports_interface_mode) {
 TEST(cli, behavior_fold_dry_run_rejects_ambiguous_input_without_map) {
     char args[2048];
     snprintf(args, sizeof(args),
-             "-f json behavior fold --parent 4692 --nodes 2364,2208 "
+             "-f json behavior fold --parent %u --nodes 2364,2208 "
              "--anchor 2364 "
-             "--guid 42414C07-10000007 "
+             "--bb-guid 42414C07-10000007 "
              "--name \"Ballance Event Handler\" "
              "--preserve-boundary --dry-run \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     cli_run_result_t result = run_cli_capture(args);
@@ -932,13 +988,14 @@ TEST(cli, behavior_fold_dry_run_rejects_ambiguous_input_without_map) {
 TEST(cli, behavior_fold_dry_run_rejects_invalid_input_map_index) {
     char args[2048];
     snprintf(args, sizeof(args),
-             "-f json behavior fold --parent 4692 --nodes 2364,2208 "
+             "-f json behavior fold --parent %u --nodes 2364,2208 "
              "--anchor 2364 "
-             "--guid 42414C07-10000007 "
+             "--bb-guid 42414C07-10000007 "
              "--name \"Ballance Event Handler\" "
              "--preserve-boundary "
              "--map-input 0:0 --map-input 99:0 "
              "--dry-run \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     cli_run_result_t result = run_cli_capture(args);
@@ -973,13 +1030,14 @@ TEST(cli, behavior_fold_dry_run_rejects_invalid_input_map_index) {
 TEST(cli, behavior_fold_dry_run_rejects_duplicate_input_map_target) {
     char args[2048];
     snprintf(args, sizeof(args),
-             "-f json behavior fold --parent 4692 --nodes 2364,2208 "
+             "-f json behavior fold --parent %u --nodes 2364,2208 "
              "--anchor 2364 "
-             "--guid 42414C07-10000007 "
+             "--bb-guid 42414C07-10000007 "
              "--name \"Ballance Event Handler\" "
              "--preserve-boundary "
              "--map-input 0:0 --map-input 1:0 "
              "--dry-run \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     cli_run_result_t result = run_cli_capture(args);
@@ -1014,10 +1072,11 @@ TEST(cli, behavior_fold_dry_run_rejects_duplicate_input_map_target) {
 TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan) {
     char args[2048];
     snprintf(args, sizeof(args),
-             "-f json behavior fold --parent 4692 --nodes 2364,2208 "
-             "--guid 42414C07-10000007 "
+             "-f json behavior fold --parent %u --nodes 2364,2208 "
+             "--bb-guid 42414C07-10000007 "
              "--name \"Ballance Event Handler\" "
              "--preserve-links --preserve-params --dry-run \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     yyjson_doc *doc = NULL;
@@ -1062,7 +1121,7 @@ TEST(cli, behavior_fold_dry_run_rejects_parent_in_selected_nodes) {
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold --parent 2378 --nodes 2378,2374 "
-             "--guid 42414C07-10000007 "
+             "--bb-guid 42414C07-10000007 "
              "--name \"Param Fold\" "
              "--preserve-links --preserve-params --dry-run \"%s\"",
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
@@ -1083,14 +1142,15 @@ TEST(cli, behavior_fold_write_rejects_with_analysis_blocker) {
 
     char args[2048];
     snprintf(args, sizeof(args),
-             "behavior fold --parent 4692 --nodes 2367,2370 "
+             "behavior fold --parent %u --nodes 2367,2370 "
              "--anchor 2367 "
-             "--guid 42414C07-10000007 "
+             "--bb-guid 42414C07-10000007 "
              "--name \"Two Leaf Fold\" "
              "--preserve-boundary "
              "--map-input 0:0 --map-input 1:1 "
              "--map-output 0:0 --map-output 1:1 "
              "\"%s\" -o \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"),
              output);
 
@@ -1110,12 +1170,13 @@ TEST(cli, behavior_fold_write_rejects_unclosed_graph_anchor) {
 
     char args[2048];
     snprintf(args, sizeof(args),
-             "behavior fold --parent 4692 --nodes 2364,2208 "
+             "behavior fold --parent %u --nodes 2364,2208 "
              "--anchor 2364 "
-             "--guid 42414C07-10000007 "
+             "--bb-guid 42414C07-10000007 "
              "--name \"Ballance Event Handler\" "
              "--preserve-boundary --map-input 0:0 --map-input 1:1 "
              "\"%s\" -o \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"),
              output);
 
@@ -1131,11 +1192,12 @@ TEST(cli, behavior_fold_write_rejects_unclosed_graph_anchor) {
 TEST(cli, behavior_fold_dry_run_reports_single_leaf_anchor_writable) {
     char args[2048];
     snprintf(args, sizeof(args),
-             "-f json behavior fold --parent 4692 --nodes 2367 "
+             "-f json behavior fold --parent %u --nodes 2367 "
              "--anchor 2367 "
-             "--guid 42414C07-10000007 "
+             "--bb-guid 42414C07-10000007 "
              "--name \"Ballance Single Fold\" "
              "--preserve-boundary --dry-run \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
 
     yyjson_doc *doc = NULL;
@@ -1159,11 +1221,12 @@ TEST(cli, behavior_fold_writes_single_leaf_anchor) {
 
     char args[2048];
     snprintf(args, sizeof(args),
-             "behavior fold --parent 4692 --nodes 2367 "
+             "behavior fold --parent %u --nodes 2367 "
              "--anchor 2367 "
-             "--guid 42414C07-10000007 "
+             "--bb-guid 42414C07-10000007 "
              "--name \"Ballance Single Fold\" "
              "--preserve-boundary \"%s\" -o \"%s\"",
+             ballance_fold_parent_id(),
              NMO_TEST_DATA_FILE("Ballance/base.cmo"),
              output);
 
@@ -1187,18 +1250,28 @@ TEST(cli, behavior_fold_writes_single_leaf_anchor) {
 }
 
 TEST(cli, behavior_fold_writes_closed_graph_anchor) {
+    rewrite_manifest_t manifest;
+    char fold_nodes[256];
     const char *output = "test_behavior_rewrite_tmp/fold_closed_graph.cmo";
+
+    load_ballance_manifest_or_die(&manifest);
+    ASSERT_TRUE(rewrite_manifest_fold_nodes_csv(&manifest, fold_nodes,
+                                                sizeof(fold_nodes)));
+
     remove(output);
     make_dir("test_behavior_rewrite_tmp");
 
     char args[2048];
     snprintf(args, sizeof(args),
-             "behavior fold --parent 4692 "
-             "--nodes 4166,4140,4147,4157,4165,4153,4151,4155,4143,4145 "
-             "--anchor 4166 "
-             "--guid 42414C07-10000007 "
+             "behavior fold --parent %u "
+             "--nodes %s "
+             "--anchor %u "
+             "--bb-guid 42414C07-10000007 "
              "--name \"Fold Small Graph\" "
              "--preserve-boundary \"%s\" -o \"%s\"",
+             manifest.fold_parent_id,
+             fold_nodes,
+             manifest.fold_anchor_id,
              NMO_TEST_DATA_FILE("Ballance/base.cmo"),
              output);
 
@@ -1206,8 +1279,8 @@ TEST(cli, behavior_fold_writes_closed_graph_anchor) {
     ASSERT_TRUE(file_exists(output));
     assert_validate_ok(output);
 
-    snprintf(args, sizeof(args), "-f json behavior show 4166 \"%s\"",
-             output);
+    snprintf(args, sizeof(args), "-f json behavior show %u \"%s\"",
+             manifest.fold_anchor_id, output);
     yyjson_doc *doc = NULL;
     run_json_command(args, "behavior.show", &doc);
     yyjson_val *root = yyjson_doc_get_root(doc);

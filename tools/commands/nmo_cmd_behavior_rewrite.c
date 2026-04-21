@@ -1613,7 +1613,7 @@ static bool parse_fold_args(int argc,
         {"--parent",          "-p", NMO_OPT_UINT,   "Parent behavior ID"},
         {"--nodes",           NULL, NMO_OPT_STRING, "Comma-separated node IDs"},
         {"--anchor",          NULL, NMO_OPT_UINT,   "Anchor behavior ID"},
-        {"--guid",            NULL, NMO_OPT_STRING, "Target BB GUID"},
+        {"--bb-guid",         NULL, NMO_OPT_STRING, "Target BB GUID"},
         {"--name",            NULL, NMO_OPT_STRING, "Target BB name"},
         {"--version",         NULL, NMO_OPT_UINT,   "Target BB version"},
         {"--preserve-boundary", NULL, NMO_OPT_FLAG,
@@ -1967,7 +1967,7 @@ int nmo_cmd_behavior_fold(int argc,
     const char *file_path = NULL;
     const char *usage =
         "nmo behavior fold --parent <id> --nodes <id,...> "
-        "--guid <guid> --name <name> [--dry-run] <file> -o <output>";
+        "--bb-guid <guid> --name <name> [--dry-run] <file> -o <output>";
 
     if (!parse_fold_args(argc, argv, &args, &file_path)) {
         fprintf(stderr, "Error: Missing or invalid arguments\n");
@@ -2233,7 +2233,7 @@ int nmo_cmd_behavior_replace_bb(int argc,
                                 char **argv,
                                 const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--guid",            NULL, NMO_OPT_STRING, "Replacement BB GUID"},
+        {"--bb-guid",         NULL, NMO_OPT_STRING, "Replacement BB GUID"},
         {"--name",            NULL, NMO_OPT_STRING, "Replacement BB name"},
         {"--version",         NULL, NMO_OPT_UINT,   "Replacement BB version"},
         {"--preserve-links",  NULL, NMO_OPT_FLAG,   "Require unchanged control boundary"},
@@ -2265,11 +2265,11 @@ int nmo_cmd_behavior_replace_bb(int argc,
     if (r.pos_count < 2) {
         fprintf(stderr,
                 "Error: Usage: nmo behavior replace-bb <behavior-id> "
-                "--guid <guid> --name <name> <file> -o <output>\n");
+                "--bb-guid <guid> --name <name> <file> -o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (!vals[OPT_GUID].present) {
-        fprintf(stderr, "Error: --guid is required\n");
+        fprintf(stderr, "Error: --bb-guid is required\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
