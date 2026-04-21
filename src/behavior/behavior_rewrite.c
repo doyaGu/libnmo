@@ -530,6 +530,11 @@ static uint32_t rewrite_fold_mapped_new_index(
     size_t map_count,
     uint32_t old_index);
 
+static bool rewrite_fold_boundary_targets_are_writable(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const nmo_behavior_fold_report_t *report);
+
 static bool rewrite_fold_selection_has_unselected_child(
     nmo_context_t *ctx,
     nmo_session_t *session,
@@ -588,6 +593,9 @@ static bool rewrite_fold_report_supports_closed_graph_write(
         if ((size_t)new_index >= state->out_parameters.count) {
             return false;
         }
+    }
+    if (!rewrite_fold_boundary_targets_are_writable(ctx, session, report)) {
+        return false;
     }
     nmo_object_id_t missing_child_id = 0;
     return !rewrite_fold_selection_has_unselected_child(ctx, session, report,
@@ -923,6 +931,64 @@ static nmo_status_t rewrite_fold_anchor_parameter_at(
     const nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, parameters);
     *out_parameter_id = ids[index];
     return *out_parameter_id != 0 ? NMO_OK : NMO_ERR_NOT_FOUND;
+}
+
+static bool rewrite_fold_boundary_targets_are_writable(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const nmo_behavior_fold_report_t *report) {
+    if (!ctx || !session || !report || !report->preserve_boundary) {
+        return true;
+    }
+
+    for (size_t i = 0; i < report->boundary.control_in_count; ++i) {
+        uint32_t new_index = rewrite_fold_mapped_new_index(
+            report->input_maps, report->input_map_count, (uint32_t)i);
+        nmo_object_id_t io_id = 0;
+        if (rewrite_fold_anchor_io_at(
+                ctx, session, report->anchor_id, true, new_index, &io_id) !=
+            NMO_OK) {
+            return false;
+        }
+    }
+
+    for (size_t i = 0; i < report->boundary.control_out_count; ++i) {
+        uint32_t new_index = rewrite_fold_mapped_new_index(
+            report->output_maps, report->output_map_count, (uint32_t)i);
+        nmo_object_id_t io_id = 0;
+        if (rewrite_fold_anchor_io_at(
+                ctx, session, report->anchor_id, false, new_index, &io_id) !=
+            NMO_OK) {
+            return false;
+        }
+    }
+
+    for (size_t i = 0; i < report->boundary.parameter_in_count; ++i) {
+        uint32_t new_index = rewrite_fold_mapped_new_index(
+            report->parameter_maps, report->parameter_map_count,
+            (uint32_t)i);
+        nmo_object_id_t parameter_id = 0;
+        if (rewrite_fold_anchor_parameter_at(
+                ctx, session, report->anchor_id, true, new_index,
+                &parameter_id) != NMO_OK) {
+            return false;
+        }
+    }
+
+    for (size_t i = 0; i < report->boundary.parameter_out_count; ++i) {
+        uint32_t old_index = (uint32_t)report->boundary.parameter_in_count +
+                             (uint32_t)i;
+        uint32_t new_index = rewrite_fold_mapped_new_index(
+            report->parameter_maps, report->parameter_map_count, old_index);
+        nmo_object_id_t parameter_id = 0;
+        if (rewrite_fold_anchor_parameter_at(
+                ctx, session, report->anchor_id, false, new_index,
+                &parameter_id) != NMO_OK) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 static bool rewrite_parameterout_has_destination(

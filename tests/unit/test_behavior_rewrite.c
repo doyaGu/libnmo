@@ -562,6 +562,53 @@ TEST(beh_rewrite, fold_apply_retargets_parameter_in_to_anchor_input_parameter)
     nmo_session_close_with_context(ctx, session);
 }
 
+TEST(beh_rewrite, fold_analyze_blocks_write_for_missing_control_output_target)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    nmo_object_id_t parent = 0;
+    nmo_object_id_t anchor = 0;
+    nmo_object_id_t child = 0;
+    nmo_object_id_t anchor_output = 0;
+    nmo_object_id_t external_link = 0;
+    ASSERT_TRUE(create_control_output_fold_fixture(
+        &ctx, &session, &parent, &anchor, &child, &anchor_output,
+        &external_link));
+
+    nmo_object_id_t nodes[] = {anchor, child};
+    nmo_behavior_fold_map_t output_maps[] = {
+        {
+            .kind = NMO_BEHAVIOR_FOLD_MAP_OUTPUT,
+            .old_index = 0u,
+            .new_index = 99u,
+        },
+    };
+    nmo_behavior_fold_desc_t desc = {
+        .parent_id = parent,
+        .node_ids = nodes,
+        .node_count = 2u,
+        .anchor_id = anchor,
+        .block_guid = {0x42414C07u, 0x10000007u},
+        .name = "Folded Missing Control Out",
+        .block_version = 65536u,
+        .preserve_boundary = true,
+        .output_maps = output_maps,
+        .output_map_count = 1u,
+    };
+    nmo_behavior_fold_report_t report = {0};
+
+    nmo_status_t rc = nmo_behavior_fold_analyze(ctx, session, &desc,
+                                                &report);
+    ASSERT_EQ(NMO_OK, rc);
+    ASSERT_FALSE(report.rejected);
+    ASSERT_FALSE(report.can_write);
+    ASSERT_TRUE(report.analysis_only);
+    ASSERT_TRUE(report.write_blocker_count > 0u);
+
+    nmo_behavior_fold_report_free(&report);
+    nmo_session_close_with_context(ctx, session);
+}
+
 TEST(beh_rewrite, fold_write_rejects_until_supported)
 {
     nmo_context_t *ctx = NULL;
@@ -1063,6 +1110,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(beh_rewrite, fold_apply_retargets_parameter_in_to_anchor_input_parameter);
     REGISTER_TEST(beh_rewrite, fold_apply_retargets_parameter_out_to_anchor_output_parameter);
     REGISTER_TEST(beh_rewrite, fold_apply_retargets_control_out_to_anchor_output);
+    REGISTER_TEST(beh_rewrite, fold_analyze_blocks_write_for_missing_control_output_target);
     REGISTER_TEST(beh_rewrite, fold_analyze_reports_selected_boundary_plan);
     REGISTER_TEST(beh_rewrite, fold_write_rejects_until_supported);
     REGISTER_TEST(beh_rewrite, fold_apply_rejects_until_supported);
