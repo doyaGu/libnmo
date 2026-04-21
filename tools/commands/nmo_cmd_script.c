@@ -1061,7 +1061,7 @@ static int script_link_remove_mutate(
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    return script_edit_finalize_tx_impl(tx, dry_run, false, false);
+    return script_edit_finalize_tx(tx, dry_run);
 }
 
 static int script_link_remove_report(

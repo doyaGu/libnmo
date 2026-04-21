@@ -50,6 +50,22 @@ static int behavior_link_finalize_tx(nmo_script_edit_tx_t *tx, bool dry_run)
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Behavior link reference validation failed: %s\n",
+                nmo_error_string(rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Behavior link behavior-index validation failed: %s\n",
+                nmo_error_string(rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
     rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_INTERFACE);
     if (rc != NMO_OK) {
         fprintf(stderr, "Error: Behavior link interface validation failed: %s\n",

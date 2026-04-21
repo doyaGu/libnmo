@@ -9,12 +9,16 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
+#include "object/nmo_statesave_ids.h"
+#include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_behaviorio_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "format/nmo_object.h"
+#include "core/nmo_array.h"
 
 #include <stdio.h>
 
@@ -100,6 +104,118 @@ static void assert_behavior_owner_checks_green(nmo_object_repository_t *repo,
             }
         }
     }
+}
+
+typedef struct script_control_fixture {
+    nmo_object_id_t root_behavior_id;
+    nmo_object_id_t source_behavior_id;
+    nmo_object_id_t target_behavior_id;
+    nmo_object_id_t root_input_id;
+    nmo_object_id_t root_output_id;
+    nmo_object_id_t source_output_id;
+    nmo_object_id_t target_input_id;
+} script_control_fixture_t;
+
+static void set_io_direction_or_fail(nmo_session_t *session,
+                                     nmo_object_id_t io_id,
+                                     uint32_t flags)
+{
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_t *io_obj = repo ? nmo_object_repository_find_by_id(repo, io_id) : NULL;
+    nmo_behaviorio_state_t *io_state = io_obj
+        ? (nmo_behaviorio_state_t *)nmo_object_get_state(io_obj)
+        : NULL;
+
+    ASSERT_NOT_NULL(io_state);
+    io_state->old_flags = flags | CK_BEHAVIORIO_ACTIVE;
+    io_state->has_flags = true;
+}
+
+static void setup_script_control_fixture(nmo_session_t *session,
+                                         script_control_fixture_t *fixture)
+{
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *owner_obj = NULL;
+    nmo_object_t *root_obj = NULL;
+    nmo_object_t *source_obj = NULL;
+    nmo_object_t *target_obj = NULL;
+    nmo_beobject_state_t *owner_state = NULL;
+    nmo_behavior_state_t *root_state = NULL;
+    nmo_behavior_state_t *source_state = NULL;
+    nmo_behavior_state_t *target_state = NULL;
+
+    ASSERT_NOT_NULL(session);
+    ASSERT_NOT_NULL(fixture);
+    memset(fixture, 0, sizeof(*fixture));
+
+    nmo_object_id_t owner_id = 0;
+
+    create_object_or_fail(session, NMO_CID_3DENTITY, "Owner", &owner_id);
+    create_object_or_fail(session, NMO_CID_BEHAVIOR, "Graph", &fixture->root_behavior_id);
+    create_object_or_fail(session, NMO_CID_BEHAVIOR, "Source", &fixture->source_behavior_id);
+    create_object_or_fail(session, NMO_CID_BEHAVIOR, "Target", &fixture->target_behavior_id);
+    create_object_or_fail(session, NMO_CID_BEHAVIORIO, "Graph In", &fixture->root_input_id);
+    create_object_or_fail(session, NMO_CID_BEHAVIORIO, "Graph Out", &fixture->root_output_id);
+    create_object_or_fail(session, NMO_CID_BEHAVIORIO, "Source Out", &fixture->source_output_id);
+    create_object_or_fail(session, NMO_CID_BEHAVIORIO, "Target In", &fixture->target_input_id);
+
+    repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+    owner_obj = nmo_object_repository_find_by_id(repo, owner_id);
+    root_obj = nmo_object_repository_find_by_id(repo, fixture->root_behavior_id);
+    source_obj = nmo_object_repository_find_by_id(repo, fixture->source_behavior_id);
+    target_obj = nmo_object_repository_find_by_id(repo, fixture->target_behavior_id);
+    ASSERT_NOT_NULL(owner_obj);
+    ASSERT_NOT_NULL(root_obj);
+    ASSERT_NOT_NULL(source_obj);
+    ASSERT_NOT_NULL(target_obj);
+
+    owner_state = (nmo_beobject_state_t *)nmo_object_get_state(owner_obj);
+    root_state = (nmo_behavior_state_t *)nmo_object_get_state(root_obj);
+    source_state = (nmo_behavior_state_t *)nmo_object_get_state(source_obj);
+    target_state = (nmo_behavior_state_t *)nmo_object_get_state(target_obj);
+    ASSERT_NOT_NULL(owner_state);
+    ASSERT_NOT_NULL(root_state);
+    ASSERT_NOT_NULL(source_state);
+    ASSERT_NOT_NULL(target_state);
+
+    ASSERT_EQ(NMO_OK,
+              nmo_array_append(&owner_state->script_ids,
+                               &fixture->root_behavior_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_array_append(&root_state->sub_behaviors,
+                               &fixture->source_behavior_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_array_append(&root_state->sub_behaviors,
+                               &fixture->target_behavior_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_array_append(&root_state->inputs, &fixture->root_input_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_array_append(&root_state->outputs, &fixture->root_output_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_array_append(&source_state->outputs, &fixture->source_output_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_array_append(&target_state->inputs, &fixture->target_input_id));
+
+    root_state->flags |= 0x00000002u;
+    root_state->owner_id = owner_id;
+    root_state->has_save_flags = true;
+    root_state->save_flags |= CK_STATESAVE_BEHAVIORSUBBEHAV |
+                              CK_STATESAVE_BEHAVIORINPUTS |
+                              CK_STATESAVE_BEHAVIOROUTPUTS;
+
+    source_state->owner_id = fixture->root_behavior_id;
+    source_state->has_save_flags = true;
+    source_state->save_flags |= CK_STATESAVE_BEHAVIOROUTPUTS;
+
+    target_state->owner_id = fixture->root_behavior_id;
+    target_state->has_save_flags = true;
+    target_state->save_flags |= CK_STATESAVE_BEHAVIORINPUTS;
+
+    set_io_direction_or_fail(session, fixture->root_input_id, CK_BEHAVIORIO_IN);
+    set_io_direction_or_fail(session, fixture->root_output_id, CK_BEHAVIORIO_OUT);
+    set_io_direction_or_fail(session, fixture->source_output_id, CK_BEHAVIORIO_OUT);
+    set_io_direction_or_fail(session, fixture->target_input_id, CK_BEHAVIORIO_IN);
 }
 
 TEST(script_edit_transaction, rollback_restores_original_state_after_validation_failure)
@@ -276,9 +392,136 @@ TEST(script_edit_transaction, add_node_keeps_ballance_script_edit_validation_gre
     nmo_session_close_with_context(ctx, session);
 }
 
+TEST(script_edit_transaction,
+     remove_link_then_add_link_keeps_validation_green_within_transaction)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    nmo_session_t *session = NULL;
+    nmo_script_edit_tx_t *tx = NULL;
+    script_control_fixture_t fixture;
+    nmo_session_edit_t *seed_edit = NULL;
+    nmo_object_id_t original_link_id = 0;
+    nmo_object_id_t new_link_id = 0;
+
+    ASSERT_NOT_NULL(ctx);
+    session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    setup_script_control_fixture(session, &fixture);
+
+    ASSERT_EQ(NMO_OK, nmo_session_edit_begin(session, "seed-link", &seed_edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_session_edit_add_behavior_link(seed_edit,
+                                                 fixture.root_behavior_id,
+                                                 fixture.source_output_id,
+                                                 fixture.target_input_id,
+                                                 1,
+                                                 &original_link_id));
+    ASSERT_TRUE(original_link_id != 0u);
+    ASSERT_EQ(NMO_OK, nmo_session_edit_commit(seed_edit));
+
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_begin(ctx, session, "remove-add-link", &tx));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_remove_behavior_link(tx,
+                                                   fixture.root_behavior_id,
+                                                   original_link_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_behavior_link(tx,
+                                                fixture.root_behavior_id,
+                                                fixture.root_input_id,
+                                                fixture.target_input_id,
+                                                0u,
+                                                &new_link_id));
+    ASSERT_TRUE(new_link_id != 0u);
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX));
+
+    nmo_script_edit_rollback(tx);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(script_edit_transaction,
+     add_behavior_link_rejects_reversed_child_endpoint_directions)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    nmo_session_t *session = NULL;
+    nmo_script_edit_tx_t *tx = NULL;
+    script_control_fixture_t fixture;
+
+    ASSERT_NOT_NULL(ctx);
+    session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    setup_script_control_fixture(session, &fixture);
+
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_begin(ctx, session, "reject-reversed-link", &tx));
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_script_edit_add_behavior_link(tx,
+                                                fixture.root_behavior_id,
+                                                fixture.target_input_id,
+                                                fixture.source_output_id,
+                                                1u,
+                                                NULL));
+
+    nmo_script_edit_rollback(tx);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(script_edit_transaction,
+     rewire_behavior_link_rejects_reversed_child_endpoint_directions)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    nmo_session_t *session = NULL;
+    nmo_script_edit_tx_t *tx = NULL;
+    script_control_fixture_t fixture;
+    nmo_session_edit_t *seed_edit = NULL;
+    nmo_object_id_t link_id = 0;
+
+    ASSERT_NOT_NULL(ctx);
+    session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    setup_script_control_fixture(session, &fixture);
+
+    ASSERT_EQ(NMO_OK, nmo_session_edit_begin(session, "seed-link", &seed_edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_session_edit_add_behavior_link(seed_edit,
+                                                 fixture.root_behavior_id,
+                                                 fixture.source_output_id,
+                                                 fixture.target_input_id,
+                                                 1,
+                                                 &link_id));
+    ASSERT_TRUE(link_id != 0u);
+    ASSERT_EQ(NMO_OK, nmo_session_edit_commit(seed_edit));
+
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_begin(ctx, session, "reject-reversed-rewire", &tx));
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_script_edit_rewire_behavior_link(tx,
+                                                   link_id,
+                                                   fixture.target_input_id,
+                                                   fixture.source_output_id));
+
+    nmo_script_edit_rollback(tx);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(script_edit_transaction,
                   rollback_restores_original_state_after_validation_failure);
     REGISTER_TEST(script_edit_transaction,
                   add_node_keeps_ballance_script_edit_validation_green);
+    REGISTER_TEST(script_edit_transaction,
+                  remove_link_then_add_link_keeps_validation_green_within_transaction);
+    REGISTER_TEST(script_edit_transaction,
+                  add_behavior_link_rejects_reversed_child_endpoint_directions);
+    REGISTER_TEST(script_edit_transaction,
+                  rewire_behavior_link_rejects_reversed_child_endpoint_directions);
 TEST_MAIN_END()

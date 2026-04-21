@@ -303,7 +303,7 @@ static nmo_status_t script_edit_create_io_object(
                                           : CK_BEHAVIORIO_OUT) |
         CK_BEHAVIORIO_ACTIVE;
     state->has_flags = true;
-    nmo_session_edit_mark(tx->edit, NMO_SESSION_EDIT_OBJECT_STATE);
+    nmo_script_edit_mark(tx, NMO_SESSION_EDIT_OBJECT_STATE);
     return NMO_OK;
 }
 
@@ -347,7 +347,7 @@ static nmo_status_t script_edit_create_parameter_object(
             owner_id;
     }
 
-    nmo_session_edit_mark(tx->edit, NMO_SESSION_EDIT_OBJECT_STATE);
+    nmo_script_edit_mark(tx, NMO_SESSION_EDIT_OBJECT_STATE);
     return NMO_OK;
 }
 
@@ -362,6 +362,23 @@ static nmo_status_t script_edit_require_behavior_index(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
+    if ((tx->session_edit_flags &
+         (NMO_SESSION_EDIT_REFERENCES |
+          NMO_SESSION_EDIT_BEHAVIOR_GRAPH |
+          NMO_SESSION_EDIT_NAMES |
+          NMO_SESSION_EDIT_RESOURCES)) != 0u) {
+        rc = nmo_session_apply_edit_flags(
+            tx->session,
+            tx->session_edit_flags &
+                (NMO_SESSION_EDIT_REFERENCES |
+                 NMO_SESSION_EDIT_BEHAVIOR_GRAPH |
+                 NMO_SESSION_EDIT_NAMES |
+                 NMO_SESSION_EDIT_RESOURCES));
+        if (rc != NMO_OK) {
+            return rc;
+        }
+    }
+
     rc = nmo_session_ensure_behavior_acceleration(tx->session);
     if (rc != NMO_OK) {
         return rc;
@@ -373,6 +390,22 @@ static nmo_status_t script_edit_require_behavior_index(
     }
     *out_index = index;
     return NMO_OK;
+}
+
+static bool script_edit_is_pending_destroy(
+    const nmo_script_edit_tx_t *tx,
+    nmo_object_id_t object_id)
+{
+    if (!tx || object_id == 0u) {
+        return false;
+    }
+
+    for (size_t i = 0; i < tx->deferred_destroy_count; ++i) {
+        if (tx->deferred_destroy_ids[i] == object_id) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static bool script_edit_io_is_linked(
@@ -406,44 +439,96 @@ static bool script_edit_io_is_linked(
     return false;
 }
 
-static bool script_edit_io_belongs_to_parent_graph(
+static bool script_edit_behavior_is_direct_graph_member(
     nmo_session_t *session,
-    const nmo_behavior_index_t *index,
     nmo_object_id_t parent_behavior_id,
-    nmo_object_id_t io_id)
+    nmo_object_id_t behavior_id)
 {
     nmo_behavior_state_t *parent = NULL;
-    const nmo_object_id_t *child_ids = NULL;
 
-    (void)index;
-
-    if (!session || parent_behavior_id == 0 || io_id == 0) {
+    if (!session || parent_behavior_id == 0 || behavior_id == 0) {
         return false;
+    }
+    if (behavior_id == parent_behavior_id) {
+        return true;
     }
 
     parent = script_edit_find_behavior_state(session, parent_behavior_id, NULL);
     if (!parent) {
         return false;
     }
-    if (nmo_array_find(&parent->inputs, &io_id, NULL) != 0 ||
-        nmo_array_find(&parent->outputs, &io_id, NULL) != 0) {
-        return true;
+    return nmo_array_find(&parent->sub_behaviors, &behavior_id, NULL) != 0;
+}
+
+static bool script_edit_find_parent_graph_io_owner(
+    nmo_session_t *session,
+    const nmo_behavior_index_t *index,
+    nmo_object_id_t parent_behavior_id,
+    nmo_object_id_t io_id,
+    const nmo_port_owner_t **out_owner)
+{
+    const nmo_port_owner_t *owner = NULL;
+
+    if (out_owner) {
+        *out_owner = NULL;
+    }
+    if (!session || parent_behavior_id == 0 || io_id == 0) {
+        return false;
     }
 
-    child_ids = (const nmo_object_id_t *)parent->sub_behaviors.data;
-    for (size_t i = 0; child_ids && i < parent->sub_behaviors.count; ++i) {
-        nmo_behavior_state_t *child =
-            script_edit_find_behavior_state(session, child_ids[i], NULL);
-        if (!child) {
-            continue;
-        }
-        if (nmo_array_find(&child->inputs, &io_id, NULL) != 0 ||
-            nmo_array_find(&child->outputs, &io_id, NULL) != 0) {
-            return true;
-        }
+    owner = index ? nmo_behavior_index_find(index, io_id) : NULL;
+    if (!owner ||
+        (owner->kind != NMO_PORT_IO_IN && owner->kind != NMO_PORT_IO_OUT) ||
+        !script_edit_behavior_is_direct_graph_member(session,
+                                                     parent_behavior_id,
+                                                     owner->owner_id)) {
+        return false;
     }
 
-    return false;
+    if (out_owner) {
+        *out_owner = owner;
+    }
+    return true;
+}
+
+static bool script_edit_io_can_source_control(
+    nmo_session_t *session,
+    const nmo_behavior_index_t *index,
+    nmo_object_id_t parent_behavior_id,
+    nmo_object_id_t io_id)
+{
+    const nmo_port_owner_t *owner = NULL;
+
+    if (!script_edit_find_parent_graph_io_owner(session, index,
+                                                parent_behavior_id, io_id,
+                                                &owner)) {
+        return false;
+    }
+
+    if (owner->owner_id == parent_behavior_id) {
+        return owner->kind == NMO_PORT_IO_IN;
+    }
+    return owner->kind == NMO_PORT_IO_OUT;
+}
+
+static bool script_edit_io_can_target_control(
+    nmo_session_t *session,
+    const nmo_behavior_index_t *index,
+    nmo_object_id_t parent_behavior_id,
+    nmo_object_id_t io_id)
+{
+    const nmo_port_owner_t *owner = NULL;
+
+    if (!script_edit_find_parent_graph_io_owner(session, index,
+                                                parent_behavior_id, io_id,
+                                                &owner)) {
+        return false;
+    }
+
+    if (owner->owner_id == parent_behavior_id) {
+        return owner->kind == NMO_PORT_IO_OUT;
+    }
+    return owner->kind == NMO_PORT_IO_IN;
 }
 
 static bool script_edit_is_parameter_reference_class(nmo_class_id_t class_id)
@@ -456,6 +541,7 @@ static bool script_edit_is_parameter_reference_class(nmo_class_id_t class_id)
 }
 
 static nmo_status_t validate_behavior_link_owners(
+    const nmo_script_edit_tx_t *tx,
     nmo_object_repository_t *repo,
     const nmo_behavior_index_t *index)
 {
@@ -471,6 +557,9 @@ static nmo_status_t validate_behavior_link_owners(
         const nmo_behaviorlink_state_t *state = NULL;
 
         if (!object || nmo_object_get_class_id(object) != NMO_CID_BEHAVIORLINK) {
+            continue;
+        }
+        if (script_edit_is_pending_destroy(tx, nmo_object_get_id(object))) {
             continue;
         }
 
@@ -489,6 +578,7 @@ static nmo_status_t validate_behavior_link_owners(
 }
 
 static nmo_status_t validate_parameter_links(
+    const nmo_script_edit_tx_t *tx,
     nmo_object_repository_t *repo,
     const nmo_behavior_index_t *index)
 {
@@ -508,6 +598,9 @@ static nmo_status_t validate_parameter_links(
         }
 
         class_id = nmo_object_get_class_id(object);
+        if (script_edit_is_pending_destroy(tx, nmo_object_get_id(object))) {
+            continue;
+        }
         if (class_id == NMO_CID_PARAMETERIN) {
             const nmo_parameterin_state_t *state =
                 (const nmo_parameterin_state_t *)nmo_object_get_state(object);
@@ -696,13 +789,13 @@ NMO_API nmo_status_t nmo_script_edit_validate(nmo_script_edit_tx_t *tx,
             return NMO_ERR_INVALID_STATE;
         }
 
-        rc = validate_behavior_link_owners(repo, index);
+        rc = validate_behavior_link_owners(tx, repo, index);
         if (rc != NMO_OK) {
             script_edit_note_error(tx);
             return rc;
         }
 
-        rc = validate_parameter_links(repo, index);
+        rc = validate_parameter_links(tx, repo, index);
         if (rc != NMO_OK) {
             script_edit_note_error(tx);
             return rc;
@@ -862,8 +955,8 @@ NMO_API nmo_status_t nmo_script_edit_add_node(
     }
     script_edit_update_behavior_save_flags(parent_state);
 
-    nmo_session_edit_mark(
-        tx->edit,
+    nmo_script_edit_mark(
+        tx,
         NMO_SESSION_EDIT_OBJECT_STATE |
             NMO_SESSION_EDIT_REFERENCES |
             NMO_SESSION_EDIT_BEHAVIOR_GRAPH |
@@ -948,8 +1041,8 @@ NMO_API nmo_status_t nmo_script_edit_remove_node(
         }
     }
 
-    nmo_session_edit_mark(
-        tx->edit,
+    nmo_script_edit_mark(
+        tx,
         NMO_SESSION_EDIT_OBJECT_STATE |
             NMO_SESSION_EDIT_REFERENCES |
             NMO_SESSION_EDIT_BEHAVIOR_GRAPH);
@@ -995,8 +1088,8 @@ NMO_API nmo_status_t nmo_script_edit_add_io(
     }
     script_edit_update_behavior_save_flags(behavior);
     nmo_session_edit_mark_behavior_interface(tx->edit, behavior_id);
-    nmo_session_edit_mark(
-        tx->edit,
+    nmo_script_edit_mark(
+        tx,
         NMO_SESSION_EDIT_OBJECT_STATE |
             NMO_SESSION_EDIT_REFERENCES |
             NMO_SESSION_EDIT_BEHAVIOR_GRAPH |
@@ -1092,8 +1185,8 @@ NMO_API nmo_status_t nmo_script_edit_remove_io(
     }
     script_edit_note_delete(tx);
     (void)nmo_session_edit_mark_behavior_interface(tx->edit, owner->owner_id);
-    nmo_session_edit_mark(
-        tx->edit,
+    nmo_script_edit_mark(
+        tx,
         NMO_SESSION_EDIT_OBJECT_STATE |
             NMO_SESSION_EDIT_REFERENCES |
             NMO_SESSION_EDIT_BEHAVIOR_GRAPH);
@@ -1128,10 +1221,10 @@ NMO_API nmo_status_t nmo_script_edit_add_behavior_link(
     if (rc != NMO_OK) {
         return rc;
     }
-    if (!script_edit_io_belongs_to_parent_graph(tx->session, index,
-                                                parent_behavior_id, from_io_id) ||
-        !script_edit_io_belongs_to_parent_graph(tx->session, index,
-                                                parent_behavior_id, to_io_id)) {
+    if (!script_edit_io_can_source_control(tx->session, index,
+                                           parent_behavior_id, from_io_id) ||
+        !script_edit_io_can_target_control(tx->session, index,
+                                           parent_behavior_id, to_io_id)) {
         return NMO_ERR_VALIDATION_FAILED;
     }
 
@@ -1180,11 +1273,11 @@ NMO_API nmo_status_t nmo_script_edit_rewire_behavior_link(
         return NMO_ERR_NOT_FOUND;
     }
     if ((from_io_id != 0 &&
-         !script_edit_io_belongs_to_parent_graph(tx->session, index,
-                                                 owner->owner_id, from_io_id)) ||
+         !script_edit_io_can_source_control(tx->session, index,
+                                            owner->owner_id, from_io_id)) ||
         (to_io_id != 0 &&
-         !script_edit_io_belongs_to_parent_graph(tx->session, index,
-                                                 owner->owner_id, to_io_id))) {
+         !script_edit_io_can_target_control(tx->session, index,
+                                            owner->owner_id, to_io_id))) {
         return NMO_ERR_VALIDATION_FAILED;
     }
 
@@ -1210,8 +1303,8 @@ NMO_API nmo_status_t nmo_script_edit_rewire_behavior_link(
     }
 
     (void)nmo_session_edit_mark_behavior_interface(tx->edit, owner->owner_id);
-    nmo_session_edit_mark(
-        tx->edit,
+    nmo_script_edit_mark(
+        tx,
         NMO_SESSION_EDIT_OBJECT_STATE |
             NMO_SESSION_EDIT_REFERENCES |
             NMO_SESSION_EDIT_BEHAVIOR_GRAPH);
@@ -1245,8 +1338,8 @@ NMO_API nmo_status_t nmo_script_edit_set_behavior_link_delay(
 
     link_state->activation_delay = (int16_t)activation_delay;
     link_state->initial_activation_delay = (int16_t)activation_delay;
-    nmo_session_edit_mark(
-        tx->edit,
+    nmo_script_edit_mark(
+        tx,
         NMO_SESSION_EDIT_OBJECT_STATE |
             NMO_SESSION_EDIT_BEHAVIOR_GRAPH);
     return NMO_OK;
@@ -1290,8 +1383,8 @@ NMO_API nmo_status_t nmo_script_edit_remove_behavior_link(
     }
 
     (void)nmo_session_edit_mark_behavior_interface(tx->edit, parent_behavior_id);
-    nmo_session_edit_mark(
-        tx->edit,
+    nmo_script_edit_mark(
+        tx,
         NMO_SESSION_EDIT_OBJECT_STATE |
             NMO_SESSION_EDIT_REFERENCES |
             NMO_SESSION_EDIT_BEHAVIOR_GRAPH);

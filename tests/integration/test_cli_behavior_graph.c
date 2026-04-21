@@ -13,6 +13,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
+#include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "core/nmo_array.h"
@@ -211,12 +212,15 @@ static bool create_behavior_link_fixture(
     }
 
     nmo_runtime_report_t report = {0};
+    nmo_object_id_t owner_id = 0;
     nmo_object_id_t behavior_id = 0;
     nmo_object_id_t source_behavior_id = 0;
     nmo_object_id_t target_behavior_id = 0;
     nmo_object_id_t from_id = 0;
     nmo_object_id_t to_id = 0;
     bool ok =
+        nmo_session_create_object(session, NMO_CID_3DENTITY, "Owner",
+                                  (nmo_guid_t){0, 0}, &owner_id, &report) == NMO_OK &&
         nmo_session_create_object(session, NMO_CID_BEHAVIOR, "Graph",
                                   (nmo_guid_t){0, 0}, &behavior_id, &report) == NMO_OK &&
         nmo_session_create_object(session, NMO_CID_BEHAVIOR, "Source",
@@ -230,12 +234,17 @@ static bool create_behavior_link_fixture(
 
     if (ok) {
         nmo_object_repository_t *repo = nmo_session_get_repository(session);
+        nmo_object_t *owner_obj =
+            repo ? nmo_object_repository_find_by_id(repo, owner_id) : NULL;
         nmo_object_t *behavior_obj =
             repo ? nmo_object_repository_find_by_id(repo, behavior_id) : NULL;
         nmo_object_t *source_behavior_obj =
             repo ? nmo_object_repository_find_by_id(repo, source_behavior_id) : NULL;
         nmo_object_t *target_behavior_obj =
             repo ? nmo_object_repository_find_by_id(repo, target_behavior_id) : NULL;
+        nmo_beobject_state_t *owner_state = owner_obj
+            ? (nmo_beobject_state_t *)nmo_object_get_state(owner_obj)
+            : NULL;
         nmo_behavior_state_t *behavior_state = behavior_obj
             ? (nmo_behavior_state_t *)nmo_object_get_state(behavior_obj)
             : NULL;
@@ -245,15 +254,18 @@ static bool create_behavior_link_fixture(
         nmo_behavior_state_t *target_behavior_state = target_behavior_obj
             ? (nmo_behavior_state_t *)nmo_object_get_state(target_behavior_obj)
             : NULL;
-        ok = behavior_state != NULL &&
+        ok = owner_state != NULL &&
+             behavior_state != NULL &&
              source_behavior_state != NULL &&
              target_behavior_state != NULL &&
+             nmo_array_append(&owner_state->script_ids, &behavior_id) == NMO_OK &&
              nmo_array_append(&behavior_state->sub_behaviors, &source_behavior_id) == NMO_OK &&
              nmo_array_append(&behavior_state->sub_behaviors, &target_behavior_id) == NMO_OK &&
              nmo_array_append(&source_behavior_state->outputs, &from_id) == NMO_OK &&
              nmo_array_append(&target_behavior_state->inputs, &to_id) == NMO_OK;
         if (ok) {
             behavior_state->flags |= 0x00000002u;
+            behavior_state->owner_id = owner_id;
             behavior_state->has_save_flags = true;
             behavior_state->save_flags |= CK_STATESAVE_BEHAVIORSUBBEHAV;
             source_behavior_state->owner_id = behavior_id;
