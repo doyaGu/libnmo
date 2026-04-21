@@ -18,6 +18,7 @@
 #include "commands/nmo_cmd_behavior.h"
 #include "commands/nmo_cmd_patch.h"
 #include "commands/nmo_cmd_parameter.h"
+#include "commands/nmo_cmd_script.h"
 #include "commands/nmo_cmd_convert.h"
 #include "commands/nmo_cmd_diff.h"
 #include "commands/nmo_cmd_query.h"
@@ -419,6 +420,19 @@ static void behavior_graph_usage(FILE *out) {
     fprintf(out, "  --dot               Include DOT graph output (text format only)\n");
     fprintf(out, "  --max-nodes <n>      Limit node output (0 = no limit)\n");
     fprintf(out, "  --max-edges <n>      Limit edge output (0 = no limit)\n");
+}
+
+static void script_graph_usage(FILE *out) {
+    fprintf(out,
+            "Usage: nmo script graph [--depth N] [--dot] [--id <id> | --name <name> | <id>] <file>\n\n");
+    fprintf(out,
+            "Build the script edit graph IR for a script root and report\n");
+    fprintf(out,
+            "control/data edges together with edit-readiness diagnostics.\n\n");
+    fprintf(out,
+            "Output:\n");
+    fprintf(out,
+            "  Use global -f json or -f json-pretty for machine-readable output.\n");
 }
 
 static void behavior_graph_boundary_usage(FILE *out) {
@@ -1040,6 +1054,10 @@ static const nmo_cli_action_t parameter_actions[] = {
     ACTION("set", NULL, "Set parameter value", nmo_cmd_parameter_set, parameter_set_usage, NMO_REPL_ACTION_MUTATE_SESSION_SUPPORTED),
 };
 
+static const nmo_cli_action_t script_actions[] = {
+    ACTION("graph", "g", "Export script edit graph", nmo_cmd_script_graph, script_graph_usage, NMO_REPL_ACTION_READ_SESSION),
+};
+
 static const nmo_cli_action_t resource_actions[] = {
     ACTION("list", "ls", "List resources", nmo_cmd_resource_list, resource_list_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("show", "s", "Show resource details", nmo_cmd_resource_show, resource_show_usage, NMO_REPL_ACTION_READ_SESSION),
@@ -1177,6 +1195,7 @@ static const nmo_cli_group_t groups[] = {
     {"behavior", "beh", "Behavior inspection", behavior_actions, ARRAY_SIZE(behavior_actions), nmo_cmd_behavior_in_session},
     {"patch", NULL, "Patch apply and diff", patch_actions, ARRAY_SIZE(patch_actions), NULL},
     {"parameter", "param", "Parameter inspection", parameter_actions, ARRAY_SIZE(parameter_actions), nmo_cmd_parameter_in_session},
+    {"script", NULL, "Script editing and graph queries", script_actions, ARRAY_SIZE(script_actions), nmo_cmd_script_in_session},
     {"resource", "res", "Resource management", resource_actions, ARRAY_SIZE(resource_actions), nmo_cmd_resource_in_session},
     {"texture", "tex", "Texture management", texture_actions, ARRAY_SIZE(texture_actions), nmo_cmd_texture_in_session},
     {"data", "da", "Data array inspection", data_actions, ARRAY_SIZE(data_actions), nmo_cmd_data_in_session},

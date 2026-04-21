@@ -180,6 +180,10 @@ add_unit_test(test_param_value)
 # Script walker
 add_unit_test(test_script_walker)
 
+# Script edit graph
+add_unit_test(test_script_edit_graph)
+set_tests_properties(test_script_edit_graph PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
 # BB prototype registry (JSON loader now in nmo core)
 add_unit_test(test_bb_registry)
 set_tests_properties(test_bb_registry PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")

@@ -67,6 +67,12 @@ if(TARGET nmo_cli)
     target_compile_definitions(test_cli_behavior_rewrite PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_cli_behavior_rewrite COMMAND test_cli_behavior_rewrite)
 
+    add_executable(test_cli_script_edit test_cli_script_edit.c)
+    target_link_libraries(test_cli_script_edit PRIVATE nmo test_framework yyjson)
+    add_dependencies(test_cli_script_edit nmo_cli)
+    target_compile_definitions(test_cli_script_edit PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
+    add_test(NAME test_cli_script_edit COMMAND test_cli_script_edit)
+
     add_executable(test_cli_patch_apply test_cli_patch_apply.c)
     target_link_libraries(test_cli_patch_apply PRIVATE nmo test_framework yyjson)
     add_dependencies(test_cli_patch_apply nmo_cli)
@@ -134,6 +140,7 @@ if(TARGET nmo_cli)
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_link.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_patch.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_parameter.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_script.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_convert.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_diff.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_query.c
