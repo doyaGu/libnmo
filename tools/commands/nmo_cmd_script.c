@@ -6,11 +6,14 @@
 #include "nmo_cmd_script.h"
 
 #include "../nmo_cli_json.h"
+#include "../nmo_cli_write.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_opt.h"
 
+#include "behavior/nmo_script_edit.h"
 #include "behavior/nmo_script_edit_graph.h"
 #include "core/nmo_error.h"
+#include "core/nmo_guid.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -412,4 +415,570 @@ int nmo_cmd_script_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     (void)file_path;
 
     return script_graph_run(ctx, &selector, emit_dot, depth, false, usage);
+}
+
+typedef struct script_node_add_args {
+    uint32_t parent_id;
+    nmo_guid_t bb_guid;
+    const char *name;
+    nmo_object_id_t node_id;
+} script_node_add_args_t;
+
+typedef struct script_node_remove_args {
+    uint32_t parent_id;
+    uint32_t node_id;
+} script_node_remove_args_t;
+
+typedef struct script_io_add_args {
+    uint32_t behavior_id;
+    nmo_script_edit_io_kind_t kind;
+    const char *name;
+    nmo_object_id_t io_id;
+} script_io_add_args_t;
+
+typedef struct script_io_rename_args {
+    uint32_t io_id;
+    const char *name;
+} script_io_rename_args_t;
+
+typedef struct script_io_remove_args {
+    uint32_t io_id;
+} script_io_remove_args_t;
+
+static int script_edit_finalize_tx(nmo_script_edit_tx_t *tx, bool dry_run)
+{
+    nmo_status_t rc = NMO_OK;
+
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Script edit roundtrip validation failed: %s\n",
+                nmo_error_string(rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Script edit reference validation failed: %s\n",
+                nmo_error_string(rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Script edit behavior-index validation failed: %s\n",
+                nmo_error_string(rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_INTERFACE);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Script edit interface validation failed: %s\n",
+                nmo_error_string(rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    if (dry_run) {
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+
+    rc = nmo_script_edit_commit(tx);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Script edit commit failed: %s\n",
+                nmo_error_string(rc));
+    }
+    return rc == NMO_OK ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_INTERNAL_ERROR;
+}
+
+static int script_node_add_mutate(
+    nmo_cmd_ctx_t *ctx,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    script_node_add_args_t *args = (script_node_add_args_t *)user_data;
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_status_t rc = NMO_OK;
+
+    (void)output_path;
+    if (!args) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script node add", &tx);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to begin script node add: %s\n",
+                nmo_error_string(rc));
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    rc = nmo_script_edit_add_node(tx, args->parent_id, args->bb_guid,
+                                  args->name, &args->node_id);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to add script node: %s\n",
+                nmo_error_string(rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    return script_edit_finalize_tx(tx, dry_run);
+}
+
+static int script_node_add_report(
+    nmo_cmd_ctx_t *ctx,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    script_node_add_args_t *args = (script_node_add_args_t *)user_data;
+    if (!args) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    if (ctx->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
+        yyjson_mut_obj_add_uint(doc, data, "node_id", args->node_id);
+        if (!dry_run && output_path) {
+            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+        }
+        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.node.add");
+    }
+
+    fprintf(ctx->out, "Created script node #%u in behavior #%u\n",
+            args->node_id, args->parent_id);
+    if (!dry_run && output_path) {
+        fprintf(ctx->out, "Saved to: %s\n", output_path);
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int script_node_remove_mutate(
+    nmo_cmd_ctx_t *ctx,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    script_node_remove_args_t *args = (script_node_remove_args_t *)user_data;
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_status_t rc = NMO_OK;
+
+    (void)output_path;
+    if (!args) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script node remove", &tx);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to begin script node remove: %s\n",
+                nmo_error_string(rc));
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    rc = nmo_script_edit_remove_node(tx, args->parent_id, args->node_id, 0u);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to remove script node: %s\n",
+                nmo_error_string(rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    return script_edit_finalize_tx(tx, dry_run);
+}
+
+static int script_node_remove_report(
+    nmo_cmd_ctx_t *ctx,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    script_node_remove_args_t *args = (script_node_remove_args_t *)user_data;
+    if (!args) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    if (ctx->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
+        yyjson_mut_obj_add_uint(doc, data, "node_id", args->node_id);
+        if (!dry_run && output_path) {
+            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+        }
+        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.node.remove");
+    }
+
+    fprintf(ctx->out, "Removed script node #%u from behavior #%u\n",
+            args->node_id, args->parent_id);
+    if (!dry_run && output_path) {
+        fprintf(ctx->out, "Saved to: %s\n", output_path);
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int script_io_add_mutate(
+    nmo_cmd_ctx_t *ctx,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    script_io_add_args_t *args = (script_io_add_args_t *)user_data;
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_status_t rc = NMO_OK;
+
+    (void)output_path;
+    if (!args) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script io add", &tx);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to begin script io add: %s\n",
+                nmo_error_string(rc));
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    rc = nmo_script_edit_add_io(tx, args->behavior_id, args->kind, args->name,
+                                &args->io_id);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to add script io: %s\n",
+                nmo_error_string(rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    return script_edit_finalize_tx(tx, dry_run);
+}
+
+static int script_io_add_report(
+    nmo_cmd_ctx_t *ctx,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    script_io_add_args_t *args = (script_io_add_args_t *)user_data;
+    if (!args) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    if (ctx->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        yyjson_mut_obj_add_uint(doc, data, "behavior_id", args->behavior_id);
+        yyjson_mut_obj_add_uint(doc, data, "io_id", args->io_id);
+        if (!dry_run && output_path) {
+            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+        }
+        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.io.add");
+    }
+    fprintf(ctx->out, "Created IO #%u on behavior #%u\n",
+            args->io_id, args->behavior_id);
+    if (!dry_run && output_path) {
+        fprintf(ctx->out, "Saved to: %s\n", output_path);
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int script_io_rename_mutate(
+    nmo_cmd_ctx_t *ctx,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    script_io_rename_args_t *args = (script_io_rename_args_t *)user_data;
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_status_t rc = NMO_OK;
+
+    (void)output_path;
+    if (!args) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script io rename", &tx);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to begin script io rename: %s\n",
+                nmo_error_string(rc));
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    rc = nmo_script_edit_rename_io(tx, args->io_id, args->name);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to rename script io: %s\n",
+                nmo_error_string(rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    return script_edit_finalize_tx(tx, dry_run);
+}
+
+static int script_io_rename_report(
+    nmo_cmd_ctx_t *ctx,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    script_io_rename_args_t *args = (script_io_rename_args_t *)user_data;
+    if (!args) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    if (ctx->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        yyjson_mut_obj_add_uint(doc, data, "io_id", args->io_id);
+        if (!dry_run && output_path) {
+            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+        }
+        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.io.rename");
+    }
+    fprintf(ctx->out, "Renamed IO #%u\n", args->io_id);
+    if (!dry_run && output_path) {
+        fprintf(ctx->out, "Saved to: %s\n", output_path);
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int script_io_remove_mutate(
+    nmo_cmd_ctx_t *ctx,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    script_io_remove_args_t *args = (script_io_remove_args_t *)user_data;
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_status_t rc = NMO_OK;
+
+    (void)output_path;
+    if (!args) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script io remove", &tx);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to begin script io remove: %s\n",
+                nmo_error_string(rc));
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    rc = nmo_script_edit_remove_io(tx, args->io_id, false);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to remove script io: %s\n",
+                nmo_error_string(rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    return script_edit_finalize_tx(tx, dry_run);
+}
+
+static int script_io_remove_report(
+    nmo_cmd_ctx_t *ctx,
+    bool dry_run,
+    const char *output_path,
+    void *user_data)
+{
+    script_io_remove_args_t *args = (script_io_remove_args_t *)user_data;
+    if (!args) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    if (ctx->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        yyjson_mut_obj_add_uint(doc, data, "io_id", args->io_id);
+        if (!dry_run && output_path) {
+            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+        }
+        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.io.remove");
+    }
+    fprintf(ctx->out, "Removed IO #%u\n", args->io_id);
+    if (!dry_run && output_path) {
+        fprintf(ctx->out, "Saved to: %s\n", output_path);
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *global)
+{
+    static const nmo_cli_write_spec_t spec = {
+        .command_name = "script.node",
+        .output_required_unless_dry_run = true,
+    };
+    if (argc < 2 || !argv || !argv[1]) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (strcmp(argv[1], "add") == 0) {
+        static const nmo_opt_def_t opts[] = {
+            {"--parent", NULL, NMO_OPT_UINT, "Parent behavior ID"},
+            {"--bb-guid", NULL, NMO_OPT_STRING, "Building block GUID"},
+            {"--name", NULL, NMO_OPT_STRING, "Behavior name"},
+            {"--output", "-o", NMO_OPT_STRING, "Output file"},
+            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+        };
+        enum { OPT_PARENT, OPT_BB_GUID, OPT_NAME, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
+        nmo_opt_val_t vals[OPT_COUNT];
+        const char *pos[16];
+        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        script_node_add_args_t args = {0};
+        if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
+            !vals[OPT_PARENT].present || !vals[OPT_BB_GUID].present ||
+            r.pos_count != 1) {
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        args.parent_id = vals[OPT_PARENT].val.u;
+        args.bb_guid = nmo_guid_parse(vals[OPT_BB_GUID].val.str);
+        args.name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
+        if (nmo_guid_is_null(args.bb_guid)) {
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        return nmo_cli_run_write_command(
+            r.pos_args[0],
+            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
+            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            global,
+            &spec,
+            script_node_add_mutate,
+            script_node_add_report,
+            &args);
+    }
+
+    if (strcmp(argv[1], "remove") == 0) {
+        static const nmo_opt_def_t opts[] = {
+            {"--parent", NULL, NMO_OPT_UINT, "Parent behavior ID"},
+            {"--node", NULL, NMO_OPT_UINT, "Node ID"},
+            {"--output", "-o", NMO_OPT_STRING, "Output file"},
+            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+        };
+        enum { OPT_PARENT, OPT_NODE, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
+        nmo_opt_val_t vals[OPT_COUNT];
+        const char *pos[16];
+        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        script_node_remove_args_t args = {0};
+        if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
+            !vals[OPT_PARENT].present || !vals[OPT_NODE].present ||
+            r.pos_count != 1) {
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        args.parent_id = vals[OPT_PARENT].val.u;
+        args.node_id = vals[OPT_NODE].val.u;
+        return nmo_cli_run_write_command(
+            r.pos_args[0],
+            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
+            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            global,
+            &spec,
+            script_node_remove_mutate,
+            script_node_remove_report,
+            &args);
+    }
+
+    return NMO_CLI_EXIT_ARG_ERROR;
+}
+
+int nmo_cmd_script_io(int argc, char **argv, const nmo_cli_global_opts_t *global)
+{
+    static const nmo_cli_write_spec_t spec = {
+        .command_name = "script.io",
+        .output_required_unless_dry_run = true,
+    };
+    if (argc < 2 || !argv || !argv[1]) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (strcmp(argv[1], "add") == 0) {
+        static const nmo_opt_def_t opts[] = {
+            {"--behavior", NULL, NMO_OPT_UINT, "Owner behavior ID"},
+            {"--kind", NULL, NMO_OPT_STRING, "input|output"},
+            {"--name", NULL, NMO_OPT_STRING, "IO name"},
+            {"--output", "-o", NMO_OPT_STRING, "Output file"},
+            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+        };
+        enum { OPT_BEHAVIOR, OPT_KIND, OPT_NAME, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
+        nmo_opt_val_t vals[OPT_COUNT];
+        const char *pos[16];
+        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        script_io_add_args_t args = {0};
+        if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
+            !vals[OPT_BEHAVIOR].present || !vals[OPT_KIND].present ||
+            !vals[OPT_NAME].present || r.pos_count != 1) {
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        args.behavior_id = vals[OPT_BEHAVIOR].val.u;
+        args.kind = strcmp(vals[OPT_KIND].val.str, "output") == 0
+            ? NMO_SCRIPT_EDIT_IO_OUTPUT
+            : NMO_SCRIPT_EDIT_IO_INPUT;
+        args.name = vals[OPT_NAME].val.str;
+        return nmo_cli_run_write_command(
+            r.pos_args[0],
+            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
+            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            global,
+            &spec,
+            script_io_add_mutate,
+            script_io_add_report,
+            &args);
+    }
+
+    if (strcmp(argv[1], "rename") == 0) {
+        static const nmo_opt_def_t opts[] = {
+            {"--io", NULL, NMO_OPT_UINT, "IO ID"},
+            {"--name", NULL, NMO_OPT_STRING, "New IO name"},
+            {"--output", "-o", NMO_OPT_STRING, "Output file"},
+            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+        };
+        enum { OPT_IO, OPT_NAME, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
+        nmo_opt_val_t vals[OPT_COUNT];
+        const char *pos[16];
+        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        script_io_rename_args_t args = {0};
+        if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
+            !vals[OPT_IO].present || !vals[OPT_NAME].present ||
+            r.pos_count != 1) {
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        args.io_id = vals[OPT_IO].val.u;
+        args.name = vals[OPT_NAME].val.str;
+        return nmo_cli_run_write_command(
+            r.pos_args[0],
+            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
+            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            global,
+            &spec,
+            script_io_rename_mutate,
+            script_io_rename_report,
+            &args);
+    }
+
+    if (strcmp(argv[1], "remove") == 0) {
+        static const nmo_opt_def_t opts[] = {
+            {"--io", NULL, NMO_OPT_UINT, "IO ID"},
+            {"--output", "-o", NMO_OPT_STRING, "Output file"},
+            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+        };
+        enum { OPT_IO, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
+        nmo_opt_val_t vals[OPT_COUNT];
+        const char *pos[16];
+        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        script_io_remove_args_t args = {0};
+        if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
+            !vals[OPT_IO].present || r.pos_count != 1) {
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        args.io_id = vals[OPT_IO].val.u;
+        return nmo_cli_run_write_command(
+            r.pos_args[0],
+            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
+            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            global,
+            &spec,
+            script_io_remove_mutate,
+            script_io_remove_report,
+            &args);
+    }
+
+    return NMO_CLI_EXIT_ARG_ERROR;
 }

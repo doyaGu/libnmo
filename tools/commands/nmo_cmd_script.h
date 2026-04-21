@@ -15,6 +15,8 @@ extern "C" {
 
 int nmo_cmd_script_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 int nmo_cmd_script_graph(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_script_io(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
 #ifdef __cplusplus
 }

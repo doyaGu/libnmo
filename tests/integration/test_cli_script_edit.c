@@ -6,6 +6,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if !defined(_WIN32)
+#include <sys/stat.h>
+#else
+#include <direct.h>
+#endif
 
 #if defined(__MINGW32__) || defined(__MINGW64__)
 #define NMO_POPEN popen
@@ -101,6 +106,44 @@ static yyjson_val *get_array_field(yyjson_val *obj, const char *key)
 {
     yyjson_val *val = yyjson_obj_get(obj, key);
     return (val && yyjson_is_arr(val)) ? val : NULL;
+}
+
+static uint64_t get_uint_field(yyjson_val *obj, const char *key)
+{
+    yyjson_val *val = yyjson_obj_get(obj, key);
+    return (val && yyjson_is_uint(val)) ? yyjson_get_uint(val) : 0u;
+}
+
+static int file_exists(const char *path)
+{
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        return 0;
+    }
+    fclose(fp);
+    return 1;
+}
+
+static void make_dir(const char *path)
+{
+#if defined(_WIN32)
+    _mkdir(path);
+#else
+    mkdir(path, 0777);
+#endif
+}
+
+static void assert_validate_ok(const char *path)
+{
+    char args[1024];
+    cli_run_result_t result;
+
+    snprintf(args, sizeof(args), "validate all \"%s\"", path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Result: VALID");
+    free(result.output);
 }
 
 static int build_repo_fixture_path(const char *relative_path,
@@ -362,8 +405,145 @@ TEST(cli, script_graph_json_smoke)
     yyjson_doc_free(doc);
 }
 
+TEST(cli, script_node_and_io_crud_roundtrip)
+{
+    rewrite_manifest_t manifest;
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *root = NULL;
+    yyjson_val *data = NULL;
+    uint32_t node_id = 0;
+    uint32_t io_id = 0;
+    char args[1024];
+    const char *node_add = "test_script_edit_tmp/node_add.cmo";
+    const char *node_remove = "test_script_edit_tmp/node_remove.cmo";
+    const char *io_add = "test_script_edit_tmp/io_add.cmo";
+    const char *io_rename = "test_script_edit_tmp/io_rename.cmo";
+    const char *io_remove = "test_script_edit_tmp/io_remove.cmo";
+
+    ASSERT_TRUE(load_rewrite_manifest(&manifest));
+    make_dir("test_script_edit_tmp");
+    remove(node_add);
+    remove(node_remove);
+    remove(io_add);
+    remove(io_rename);
+    remove(io_remove);
+
+    snprintf(args, sizeof(args),
+             "-f json script node add --parent %u "
+             "--bb-guid 42414C07-10000007 --name \"Test BB\" "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             node_add);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.node.add", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    node_id = (uint32_t)get_uint_field(data, "node_id");
+    ASSERT_TRUE(node_id != 0u);
+    ASSERT_TRUE(file_exists(node_add));
+    yyjson_doc_free(doc);
+    assert_validate_ok(node_add);
+
+    snprintf(args, sizeof(args),
+             "-f json script io add --behavior %u --kind input --name In "
+             "\"%s\" -o \"%s\"",
+             node_id,
+             node_add,
+             io_add);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.io.add", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    io_id = (uint32_t)get_uint_field(data, "io_id");
+    ASSERT_TRUE(io_id != 0u);
+    ASSERT_TRUE(file_exists(io_add));
+    yyjson_doc_free(doc);
+    assert_validate_ok(io_add);
+
+    snprintf(args, sizeof(args),
+             "-f json script io rename --io %u --name Start "
+             "\"%s\" -o \"%s\"",
+             io_id,
+             io_add,
+             io_rename);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.io.rename", get_string_field(root, "command"));
+    yyjson_doc_free(doc);
+    assert_validate_ok(io_rename);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior show %u \"%s\"",
+             node_id,
+             io_rename);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_NOT_NULL(get_array_field(data, "inputs"));
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script io remove --io %u \"%s\" -o \"%s\"",
+             io_id,
+             io_rename,
+             io_remove);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.io.remove", get_string_field(root, "command"));
+    yyjson_doc_free(doc);
+    assert_validate_ok(io_remove);
+
+    snprintf(args, sizeof(args),
+             "-f json script node remove --parent %u --node %u "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             node_id,
+             io_remove,
+             node_remove);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.node.remove", get_string_field(root, "command"));
+    yyjson_doc_free(doc);
+    assert_validate_ok(node_remove);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_edit_fixture_manifest_contains_locked_ballance_ids);
     REGISTER_TEST(cli, script_edit_report_contract_is_checked_in);
     REGISTER_TEST(cli, script_graph_json_smoke);
+    REGISTER_TEST(cli, script_node_and_io_crud_roundtrip);
 TEST_MAIN_END()

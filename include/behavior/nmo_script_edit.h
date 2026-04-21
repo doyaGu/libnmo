@@ -8,7 +8,9 @@
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
+#include "core/nmo_guid.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -20,6 +22,11 @@ typedef struct nmo_context nmo_context_t;
 typedef struct nmo_session nmo_session_t;
 typedef struct nmo_session_edit nmo_session_edit_t;
 typedef struct nmo_script_edit_tx nmo_script_edit_tx_t;
+
+typedef enum nmo_script_edit_io_kind {
+    NMO_SCRIPT_EDIT_IO_INPUT = 0,
+    NMO_SCRIPT_EDIT_IO_OUTPUT = 1
+} nmo_script_edit_io_kind_t;
 
 typedef enum nmo_script_edit_validation_flags {
     NMO_SCRIPT_EDIT_VALIDATE_REFERENCES      = 1u << 0,
@@ -55,6 +62,36 @@ NMO_API const nmo_script_edit_report_t *nmo_script_edit_report(
 
 NMO_API nmo_status_t nmo_script_edit_validate(nmo_script_edit_tx_t *tx,
                                               uint32_t validation_flags);
+
+NMO_API nmo_status_t nmo_script_edit_add_node(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parent_behavior_id,
+    nmo_guid_t bb_guid,
+    const char *name,
+    nmo_object_id_t *out_node_id);
+
+NMO_API nmo_status_t nmo_script_edit_remove_node(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parent_behavior_id,
+    nmo_object_id_t node_id,
+    uint32_t delete_flags);
+
+NMO_API nmo_status_t nmo_script_edit_add_io(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t behavior_id,
+    nmo_script_edit_io_kind_t kind,
+    const char *name,
+    nmo_object_id_t *out_io_id);
+
+NMO_API nmo_status_t nmo_script_edit_rename_io(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t io_id,
+    const char *name);
+
+NMO_API nmo_status_t nmo_script_edit_remove_io(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t io_id,
+    bool detach_links);
 
 NMO_API nmo_status_t nmo_script_edit_commit(nmo_script_edit_tx_t *tx);
 NMO_API void nmo_script_edit_rollback(nmo_script_edit_tx_t *tx);
