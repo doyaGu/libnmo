@@ -13,9 +13,9 @@
 #include "../nmo_tool_common.h"
 #include "../nmo_opt.h"
 
+#include "behavior/nmo_script_edit.h"
 #include "nmo.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_edit.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
@@ -38,43 +38,73 @@ typedef struct behavior_remove_link_args {
     nmo_object_id_t to_id;
 } behavior_remove_link_args_t;
 
+static int behavior_link_finalize_tx(nmo_script_edit_tx_t *tx, bool dry_run)
+{
+    nmo_status_t rc = NMO_OK;
+
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Behavior link roundtrip validation failed: %s\n",
+                nmo_error_string(rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_INTERFACE);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Behavior link interface validation failed: %s\n",
+                nmo_error_string(rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    if (dry_run) {
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+
+    rc = nmo_script_edit_commit(tx);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Behavior link commit failed: %s\n",
+                nmo_error_string(rc));
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static int behavior_add_link_mutate(
     nmo_cmd_ctx_t *c,
     bool dry_run,
     const char *output_path,
     void *user_data)
 {
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_status_t add_rc = NMO_OK;
+
     (void)output_path;
     behavior_add_link_args_t *args = (behavior_add_link_args_t *)user_data;
     if (args == NULL) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (dry_run) {
-        return NMO_CLI_EXIT_SUCCESS;
-    }
 
-    nmo_session_edit_t *edit = NULL;
-    int add_rc = nmo_session_edit_begin(c->session, "behavior add-link", &edit);
-    if (add_rc == NMO_OK) {
-        add_rc = nmo_session_edit_add_behavior_link(
-            edit,
-            args->parent_id,
-            args->from_id,
-            args->to_id,
-            (int16_t)args->delay,
-            &args->link_id);
-    }
-    if (add_rc == NMO_OK) {
-        add_rc = nmo_session_edit_commit(edit);
-    } else if (edit != NULL) {
-        nmo_session_edit_rollback(edit);
-    }
+    add_rc = nmo_script_edit_begin(c->ctx, c->session, "behavior add-link", &tx);
     if (add_rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to add link: %s\n",
+        fprintf(stderr, "Error: Failed to begin behavior add-link: %s\n",
                 nmo_error_string(add_rc));
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    return NMO_CLI_EXIT_SUCCESS;
+
+    add_rc = nmo_script_edit_add_behavior_link(tx, args->parent_id, args->from_id,
+                                               args->to_id, args->delay,
+                                               &args->link_id);
+    if (add_rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to add link: %s\n",
+                nmo_error_string(add_rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    return behavior_link_finalize_tx(tx, dry_run);
 }
 
 static int behavior_add_link_report(
@@ -141,26 +171,24 @@ static int behavior_remove_link_mutate(
         }
     }
 
-    if (dry_run) {
-        return NMO_CLI_EXIT_SUCCESS;
-    }
-
-    nmo_session_edit_t *edit = NULL;
-    int rm_rc = nmo_session_edit_begin(c->session, "behavior remove-link", &edit);
-    if (rm_rc == NMO_OK) {
-        rm_rc = nmo_session_edit_remove_behavior_link(edit, args->parent_id, args->link_id);
-    }
-    if (rm_rc == NMO_OK) {
-        rm_rc = nmo_session_edit_commit(edit);
-    } else if (edit != NULL) {
-        nmo_session_edit_rollback(edit);
-    }
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_status_t rm_rc =
+        nmo_script_edit_begin(c->ctx, c->session, "behavior remove-link", &tx);
     if (rm_rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to remove link: %s\n",
+        fprintf(stderr, "Error: Failed to begin behavior remove-link: %s\n",
                 nmo_error_string(rm_rc));
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    return NMO_CLI_EXIT_SUCCESS;
+
+    rm_rc = nmo_script_edit_remove_behavior_link(tx, args->parent_id, args->link_id);
+    if (rm_rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to remove link: %s\n",
+                nmo_error_string(rm_rc));
+        nmo_script_edit_rollback(tx);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    return behavior_link_finalize_tx(tx, dry_run);
 }
 
 static int behavior_remove_link_report(

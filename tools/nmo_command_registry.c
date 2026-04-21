@@ -451,6 +451,17 @@ static void script_io_usage(FILE *out) {
             "       nmo script io remove --io <id> <file> -o <output>\n\n");
 }
 
+static void script_link_usage(FILE *out) {
+    fprintf(out,
+            "Usage: nmo script link add --parent <id> --from <io-id> --to <io-id> [--delay <n>] <file> -o <output>\n");
+    fprintf(out,
+            "       nmo script link rewire --link <id> [--from <io-id>] [--to <io-id>] <file> -o <output>\n");
+    fprintf(out,
+            "       nmo script link set-delay --link <id> --delay <n> <file> -o <output>\n");
+    fprintf(out,
+            "       nmo script link remove --parent <id> --link <id> <file> -o <output>\n\n");
+}
+
 static void behavior_graph_boundary_usage(FILE *out) {
     fprintf(out, "Usage: nmo behavior graph-boundary [options] [--id <id> | --name <name> | <id>] <file>\n\n");
     fprintf(out, "Export behavior graph boundary links and parameter crossings.\n\n");
@@ -1074,6 +1085,7 @@ static const nmo_cli_action_t script_actions[] = {
     ACTION("graph", "g", "Export script edit graph", nmo_cmd_script_graph, script_graph_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("node", NULL, "Script node editing", nmo_cmd_script_node, script_node_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
     ACTION("io", NULL, "Script IO editing", nmo_cmd_script_io, script_io_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
+    ACTION("link", NULL, "Script control-flow editing", nmo_cmd_script_link, script_link_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
 };
 
 static const nmo_cli_action_t resource_actions[] = {

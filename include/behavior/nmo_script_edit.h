@@ -93,6 +93,30 @@ NMO_API nmo_status_t nmo_script_edit_remove_io(
     nmo_object_id_t io_id,
     bool detach_links);
 
+NMO_API nmo_status_t nmo_script_edit_add_behavior_link(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parent_behavior_id,
+    nmo_object_id_t from_io_id,
+    nmo_object_id_t to_io_id,
+    uint32_t activation_delay,
+    nmo_object_id_t *out_link_id);
+
+NMO_API nmo_status_t nmo_script_edit_rewire_behavior_link(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t link_id,
+    nmo_object_id_t from_io_id,
+    nmo_object_id_t to_io_id);
+
+NMO_API nmo_status_t nmo_script_edit_set_behavior_link_delay(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t link_id,
+    uint32_t activation_delay);
+
+NMO_API nmo_status_t nmo_script_edit_remove_behavior_link(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parent_behavior_id,
+    nmo_object_id_t link_id);
+
 NMO_API nmo_status_t nmo_script_edit_commit(nmo_script_edit_tx_t *tx);
 NMO_API void nmo_script_edit_rollback(nmo_script_edit_tx_t *tx);
 
