@@ -1686,6 +1686,178 @@ static nmo_guid_t script_edit_parameter_type_guid_from_object(
     }
 }
 
+static const nmo_type_descriptor_t *script_edit_resolve_parameter_type_desc(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parameter_id)
+{
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *object = NULL;
+    nmo_type_registry_t *registry = NULL;
+    nmo_guid_t type_guid = NMO_GUID_NULL;
+
+    if (!tx || !tx->ctx || !tx->session || parameter_id == 0u) {
+        return NULL;
+    }
+
+    repo = nmo_session_get_repository(tx->session);
+    object = repo ? nmo_object_repository_find_by_id(repo, parameter_id) : NULL;
+    if (!object) {
+        return NULL;
+    }
+
+    type_guid = script_edit_parameter_type_guid_from_object(object);
+    if (nmo_guid_is_null(type_guid)) {
+        return NULL;
+    }
+
+    registry = nmo_context_get_type_registry(tx->ctx);
+    return registry ? nmo_type_registry_find_by_guid(registry, type_guid) : NULL;
+}
+
+static bool script_edit_type_matches_operation_guid(
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *actual_type,
+    nmo_guid_t expected_guid)
+{
+    nmo_type_id_t actual_id = NMO_TYPE_ID_INVALID;
+    nmo_type_id_t expected_id = NMO_TYPE_ID_INVALID;
+
+    if (!actual_type || nmo_guid_is_null(expected_guid)) {
+        return false;
+    }
+    if (nmo_guid_equals(actual_type->guid, expected_guid)) {
+        return true;
+    }
+    if (!registry) {
+        return false;
+    }
+
+    actual_id = nmo_type_registry_guid_to_type_id(registry, actual_type->guid);
+    expected_id = nmo_type_registry_guid_to_type_id(registry, expected_guid);
+    if (actual_id == NMO_TYPE_ID_INVALID || expected_id == NMO_TYPE_ID_INVALID) {
+        return false;
+    }
+
+    return nmo_type_get_derivation_depth((nmo_type_registry_t *)registry,
+                                         actual_id, expected_id) >= 0;
+}
+
+static bool script_edit_operation_family_matches(
+    const nmo_operation_family_t *family,
+    const nmo_type_registry_t *type_registry,
+    const nmo_type_descriptor_t *in1_type,
+    const nmo_type_descriptor_t *in2_type,
+    const nmo_type_descriptor_t *out_type)
+{
+    if (!family) {
+        return false;
+    }
+
+    for (size_t i = 0; i < family->p1_layers.count; ++i) {
+        const nmo_operation_p1_layer_t *p1_layer =
+            (const nmo_operation_p1_layer_t *)nmo_arena_array_get(
+                (nmo_arena_array_t *)&family->p1_layers, i);
+        if (!p1_layer) {
+            continue;
+        }
+        if (in1_type &&
+            !script_edit_type_matches_operation_guid(type_registry, in1_type,
+                                                     p1_layer->p1_type_guid)) {
+            continue;
+        }
+
+        for (size_t j = 0; j < p1_layer->p2_layers.count; ++j) {
+            const nmo_operation_p2_layer_t *p2_layer =
+                (const nmo_operation_p2_layer_t *)nmo_arena_array_get(
+                    (nmo_arena_array_t *)&p1_layer->p2_layers, j);
+            if (!p2_layer) {
+                continue;
+            }
+            if (in2_type &&
+                !script_edit_type_matches_operation_guid(type_registry, in2_type,
+                                                         p2_layer->p2_type_guid)) {
+                continue;
+            }
+
+            for (size_t k = 0; k < p2_layer->cells.count; ++k) {
+                const nmo_operation_tree_cell_t *cell =
+                    (const nmo_operation_tree_cell_t *)nmo_arena_array_get(
+                        (nmo_arena_array_t *)&p2_layer->cells, k);
+                if (!cell) {
+                    continue;
+                }
+                if (out_type &&
+                    !script_edit_type_matches_operation_guid(type_registry, out_type,
+                                                             cell->desc.result_type_guid)) {
+                    continue;
+                }
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+static nmo_status_t script_edit_validate_operation_signature(
+    nmo_script_edit_tx_t *tx,
+    nmo_guid_t operation_guid,
+    nmo_object_id_t in1_parameter_id,
+    nmo_object_id_t in2_parameter_id,
+    nmo_object_id_t out_parameter_id)
+{
+    nmo_operation_registry_t *operation_registry = NULL;
+    nmo_type_registry_t *type_registry = NULL;
+    const nmo_operation_family_t *family = NULL;
+    const nmo_type_descriptor_t *in1_type = NULL;
+    const nmo_type_descriptor_t *in2_type = NULL;
+    const nmo_type_descriptor_t *out_type = NULL;
+
+    if (!tx || !tx->ctx || nmo_guid_is_null(operation_guid)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (in1_parameter_id == 0u &&
+        in2_parameter_id == 0u &&
+        out_parameter_id == 0u) {
+        return NMO_OK;
+    }
+
+    operation_registry = nmo_context_get_operation_registry(tx->ctx);
+    type_registry = nmo_context_get_type_registry(tx->ctx);
+    if (!operation_registry || !type_registry) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    family = nmo_operation_registry_get_family(operation_registry, &operation_guid);
+    if (!family) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    if (in1_parameter_id != 0u) {
+        in1_type = script_edit_resolve_parameter_type_desc(tx, in1_parameter_id);
+        if (!in1_type) {
+            return NMO_ERR_INVALID_STATE;
+        }
+    }
+    if (in2_parameter_id != 0u) {
+        in2_type = script_edit_resolve_parameter_type_desc(tx, in2_parameter_id);
+        if (!in2_type) {
+            return NMO_ERR_INVALID_STATE;
+        }
+    }
+    if (out_parameter_id != 0u) {
+        out_type = script_edit_resolve_parameter_type_desc(tx, out_parameter_id);
+        if (!out_type) {
+            return NMO_ERR_INVALID_STATE;
+        }
+    }
+
+    return script_edit_operation_family_matches(family, type_registry,
+                                                in1_type, in2_type, out_type)
+        ? NMO_OK
+        : NMO_ERR_VALIDATION_FAILED;
+}
+
 static nmo_status_t script_edit_disconnect_parameter_internal(
     nmo_script_edit_tx_t *tx,
     nmo_parameterin_state_t *target_state,
@@ -2337,6 +2509,14 @@ NMO_API nmo_status_t nmo_script_edit_add_operation(
                                                             NULL))) {
             return NMO_ERR_VALIDATION_FAILED;
         }
+
+        rc = script_edit_validate_operation_signature(tx, operation_guid,
+                                                      in1_parameter_id,
+                                                      in2_parameter_id,
+                                                      out_parameter_id);
+        if (rc != NMO_OK) {
+            return rc;
+        }
     }
 
     rc = nmo_session_edit_snapshot_bytes(tx->edit, behavior, sizeof(*behavior));
@@ -2396,6 +2576,9 @@ NMO_API nmo_status_t nmo_script_edit_rewire_operation(
     const nmo_behavior_index_t *index = NULL;
     const nmo_port_owner_t *owner = NULL;
     nmo_parameteroperation_state_t *state = NULL;
+    nmo_object_id_t final_in1_parameter_id = 0u;
+    nmo_object_id_t final_in2_parameter_id = 0u;
+    nmo_object_id_t final_out_parameter_id = 0u;
     nmo_status_t rc = NMO_OK;
 
     if (!tx || !tx->edit || operation_id == 0u || slot_flags == 0u) {
@@ -2435,6 +2618,27 @@ NMO_API nmo_status_t nmo_script_edit_rewire_operation(
     state = script_edit_find_operation_state(tx->session, operation_id, NULL);
     if (!state) {
         return NMO_ERR_NOT_FOUND;
+    }
+
+    final_in1_parameter_id =
+        ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u)
+            ? in1_parameter_id
+            : (state->has_in1 ? state->in1_id : 0u);
+    final_in2_parameter_id =
+        ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u)
+            ? in2_parameter_id
+            : (state->has_in2 ? state->in2_id : 0u);
+    final_out_parameter_id =
+        ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u)
+            ? out_parameter_id
+            : (state->has_out ? state->out_id : 0u);
+
+    rc = script_edit_validate_operation_signature(tx, state->operation_guid,
+                                                  final_in1_parameter_id,
+                                                  final_in2_parameter_id,
+                                                  final_out_parameter_id);
+    if (rc != NMO_OK) {
+        return rc;
     }
 
     rc = nmo_session_edit_snapshot_bytes(tx->edit, state, sizeof(*state));

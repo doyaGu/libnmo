@@ -62,10 +62,12 @@ static bool nmo_parameterout_is_valid_target(
         return false;
     }
 
-    return nmo_type_registry_is_class_derived_from(
-        registry,
-        (uint32_t)nmo_object_get_class_id(obj),
-        (uint32_t)NMO_CID_PARAMETER);
+    {
+        uint32_t class_id = (uint32_t)nmo_object_get_class_id(obj);
+        return nmo_type_registry_is_class_derived_from(
+                   registry, class_id, (uint32_t)NMO_CID_PARAMETER) ||
+               class_id == (uint32_t)NMO_CID_PARAMETERIN;
+    }
 }
 
 static bool nmo_parameterout_is_valid_owner(
@@ -393,7 +395,6 @@ NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
     nmo_parameterout_state_t,
     &nmo_parameterout_vtable,
     nmo_parameterout_fields)
-
 
 
 

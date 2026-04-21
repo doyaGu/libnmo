@@ -1453,7 +1453,7 @@ TEST(cli, script_parameter_crud_roundtrip)
     ASSERT_STR_EQ("script.param.connect", get_string_field(root, "command"));
     yyjson_doc_free(doc);
     assert_validate_ok(connect_path);
-    assert_parameter_show_value(connect_path, source_param_id, "3", 0u);
+    assert_parameter_show_value(connect_path, source_param_id, "3", 1u);
     assert_parameter_show_source(connect_path, target_param_id, source_param_id);
     assert_script_graph_data_edge_present(connect_path,
                                           manifest.root_behavior_id,
@@ -1805,6 +1805,220 @@ TEST(cli, script_operation_crud_roundtrip)
     yyjson_doc_free(doc);
 }
 
+TEST(cli, script_operation_rejects_invalid_signature)
+{
+    rewrite_manifest_t manifest;
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    uint32_t lhs_id = 0;
+    uint32_t rhs_id = 0;
+    uint32_t out_id = 0;
+    uint32_t text_id = 0;
+    uint32_t bool_in_id = 0;
+    uint32_t bool_out_id = 0;
+    uint32_t op_id = 0;
+    char args[1024];
+    const char *lhs_add_path = "test_script_edit_tmp/op_invalid_lhs_add.cmo";
+    const char *rhs_add_path = "test_script_edit_tmp/op_invalid_rhs_add.cmo";
+    const char *out_add_path = "test_script_edit_tmp/op_invalid_out_add.cmo";
+    const char *text_add_path = "test_script_edit_tmp/op_invalid_text_add.cmo";
+    const char *bool_in_add_path = "test_script_edit_tmp/op_invalid_bool_in_add.cmo";
+    const char *bool_out_add_path = "test_script_edit_tmp/op_invalid_bool_out_add.cmo";
+    const char *valid_add_path = "test_script_edit_tmp/op_invalid_valid_add.cmo";
+    const char *invalid_add_path = "test_script_edit_tmp/op_invalid_add_fail.cmo";
+    const char *invalid_rewire_path = "test_script_edit_tmp/op_invalid_rewire_fail.cmo";
+    const char *invalid_unary_add_path = "test_script_edit_tmp/op_invalid_unary_add_fail.cmo";
+
+    ASSERT_TRUE(load_rewrite_manifest(&manifest));
+    make_dir("test_script_edit_tmp");
+    remove(lhs_add_path);
+    remove(rhs_add_path);
+    remove(out_add_path);
+    remove(text_add_path);
+    remove(bool_in_add_path);
+    remove(bool_out_add_path);
+    remove(valid_add_path);
+    remove(invalid_add_path);
+    remove(invalid_rewire_path);
+    remove(invalid_unary_add_path);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind local "
+             "--type CKPGUID_INT --name Lhs "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             lhs_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    lhs_id = (uint32_t)get_uint_field(data, "param_id");
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind local "
+             "--type CKPGUID_INT --name Rhs "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             lhs_add_path,
+             rhs_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    rhs_id = (uint32_t)get_uint_field(data, "param_id");
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind out "
+             "--type CKPGUID_INT --name Result "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             rhs_add_path,
+             out_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    out_id = (uint32_t)get_uint_field(data, "param_id");
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind local "
+             "--type CKPGUID_STRING --name Text "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             out_add_path,
+             text_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    text_id = (uint32_t)get_uint_field(data, "param_id");
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind local "
+             "--type CKPGUID_BOOL --name Flag "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             text_add_path,
+             bool_in_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    bool_in_id = (uint32_t)get_uint_field(data, "param_id");
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind out "
+             "--type CKPGUID_BOOL --name FlagOut "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             bool_in_add_path,
+             bool_out_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    bool_out_id = (uint32_t)get_uint_field(data, "param_id");
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script op add --parent %u "
+             "--op-guid 33CC6B49-3589282B --in1 %u --in2 %u --out %u "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             lhs_id,
+             text_id,
+             out_id,
+             text_add_path,
+             invalid_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    free(result.output);
+    ASSERT_FALSE(file_exists(invalid_add_path));
+
+    snprintf(args, sizeof(args),
+             "-f json script op add --parent %u "
+             "--op-guid 0E5C02E8-3AAD7BB8 --in1 %u --in2 %u --out %u "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             bool_in_id,
+             lhs_id,
+             bool_out_id,
+             bool_out_add_path,
+             invalid_unary_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    free(result.output);
+    ASSERT_FALSE(file_exists(invalid_unary_add_path));
+
+    snprintf(args, sizeof(args),
+             "-f json script op add --parent %u "
+             "--op-guid 33CC6B49-3589282B --in1 %u --in2 %u --out %u "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             lhs_id,
+             rhs_id,
+             out_id,
+             bool_out_add_path,
+             valid_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    op_id = (uint32_t)get_uint_field(data, "op_id");
+    ASSERT_TRUE(op_id != 0u);
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script op rewire --op %u --in2 %u "
+             "\"%s\" -o \"%s\"",
+             op_id,
+             text_id,
+             valid_add_path,
+             invalid_rewire_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    free(result.output);
+    ASSERT_FALSE(file_exists(invalid_rewire_path));
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_edit_fixture_manifest_contains_locked_ballance_ids);
     REGISTER_TEST(cli, script_edit_report_contract_is_checked_in);
@@ -1813,4 +2027,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_control_flow_crud_roundtrip);
     REGISTER_TEST(cli, script_parameter_crud_roundtrip);
     REGISTER_TEST(cli, script_operation_crud_roundtrip);
+    REGISTER_TEST(cli, script_operation_rejects_invalid_signature);
 TEST_MAIN_END()
