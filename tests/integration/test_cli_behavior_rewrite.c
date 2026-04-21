@@ -583,6 +583,28 @@ TEST(cli, behavior_fold_candidates_reports_control_router_group) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, behavior_fold_candidates_text_reports_connected_component_counts) {
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "behavior fold-candidates --parent 4692 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output,
+                        "Candidate connected_component #");
+    ASSERT_STR_CONTAINS(result.output, "control_in=");
+    ASSERT_STR_CONTAINS(result.output, "control_out=");
+    ASSERT_STR_CONTAINS(result.output, "parameter_in=");
+    ASSERT_STR_CONTAINS(result.output, "parameter_out=");
+    ASSERT_TRUE(strstr(result.output, "control_in=?") == NULL);
+    ASSERT_TRUE(strstr(result.output, "control_out=?") == NULL);
+    ASSERT_TRUE(strstr(result.output, "parameter_in=?") == NULL);
+    ASSERT_TRUE(strstr(result.output, "parameter_out=?") == NULL);
+    free(result.output);
+}
+
 TEST(cli, behavior_fold_dry_run_reports_boundary_plan) {
     const char *output = "test_behavior_rewrite_tmp/fold_dry.cmo";
     remove(output);
@@ -1208,6 +1230,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_fold_candidates_reports_direct_child_groups);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_connected_components);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_control_router_group);
+    REGISTER_TEST(cli, behavior_fold_candidates_text_reports_connected_component_counts);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_boundary_plan);
     REGISTER_TEST(cli, behavior_fold_dry_run_rejects_event_handler_router_without_output_maps);
     REGISTER_TEST(cli, behavior_fold_dry_run_uses_explicit_node_set);

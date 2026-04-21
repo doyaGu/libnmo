@@ -560,14 +560,6 @@ static bool fold_component_append_unique_id(nmo_object_id_t **ids,
     return true;
 }
 
-static bool fold_guid_equals(nmo_guid_t a, nmo_guid_t b) {
-    return a.d1 == b.d1 && a.d2 == b.d2;
-}
-
-static nmo_guid_t fold_nop_guid(void) {
-    return (nmo_guid_t){0x302561C4u, 0x0D282980u};
-}
-
 static bool fold_behavior_is_leaf_bb(const nmo_behavior_state_t *state) {
     return state &&
            (state->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0u &&
@@ -583,13 +575,15 @@ static bool fold_behavior_is_control_router_root(
 
 static bool fold_behavior_is_control_router_bridge(
     const nmo_behavior_state_t *state) {
+    const uint32_t passthrough_flags =
+        CKBEHAVIOR_VARIABLEINPUTS | CKBEHAVIOR_VARIABLEOUTPUTS;
     return fold_behavior_is_leaf_bb(state) &&
            state->inputs.count == 1u &&
            state->outputs.count == 1u &&
            state->in_parameters.count == 0u &&
            state->out_parameters.count == 0u &&
            state->local_parameters.count == 0u &&
-           fold_guid_equals(state->block_guid, fold_nop_guid());
+           (state->flags & passthrough_flags) == passthrough_flags;
 }
 
 static void fold_candidates_union_connected_children(
@@ -1487,9 +1481,13 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
                     goto cleanup;
                 }
                 fprintf(ctx->out,
-                        "Candidate connected_component #%u: roots=%zu nodes=%zu control_in=? control_out=? parameter_in=? parameter_out=? interface=%s\n",
+                        "Candidate connected_component #%u: roots=%zu nodes=%zu control_in=%zu control_out=%zu parameter_in=%zu parameter_out=%zu interface=%s\n",
                         children[i].root_id, root_count,
                         component_boundary.internal_node_count,
+                        component_boundary.control_in_count,
+                        component_boundary.control_out_count,
+                        component_boundary.parameter_in_count,
+                        component_boundary.parameter_out_count,
                         fold_interface_action(children[i].root_state));
                 nmo_behavior_boundary_free(&component_boundary);
                 ++text_group_count;
