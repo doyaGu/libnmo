@@ -1,0 +1,25 @@
+{
+  "root_behavior_id": 237,
+  "replace_bb": {
+    "parent_id": 237,
+    "node_id": 363,
+    "guid": "{42414C02-10000002}",
+    "name": "Ballance Load NMO Range"
+  },
+  "fold": {
+    "parent_id": 4692,
+    "anchor_id": 4166,
+    "node_ids": [
+      4166,
+      4140,
+      4147,
+      4157,
+      4165,
+      4153,
+      4151,
+      4155,
+      4143,
+      4145
+    ]
+  }
+}

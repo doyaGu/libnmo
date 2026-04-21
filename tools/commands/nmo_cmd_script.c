@@ -16,6 +16,10 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Task 2 freezes the future script write option spellings in
+ * tests/fixtures/script_edit_reports.md. Keep CLI long options aligned with
+ * Lua option-table fields through the direct kebab-case -> snake_case mapping.
+ */
 static bool parse_script_graph_args(int argc,
                                     char **argv,
                                     bool expect_file_operand,
