@@ -9,6 +9,7 @@
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
+#include "document/nmo_document.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -22,7 +23,6 @@ typedef struct nmo_allocator nmo_allocator_t;
 typedef struct nmo_object nmo_object_t;
 typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_object_query_index nmo_object_query_index_t;
-typedef struct nmo_session nmo_document_t;
 typedef struct nmo_type_registry nmo_type_registry_t;
 
 /*

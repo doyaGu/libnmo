@@ -4,6 +4,9 @@
  */
 
 #include "test_framework.h"
+#include "document/nmo_document.h"
+#include "document/nmo_document_load.h"
+#include "runtime/nmo_workspace.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
@@ -384,6 +387,28 @@ TEST(context_session, operation_registry_access) {
     nmo_context_release(ctx);
 }
 
+TEST(context_session, document_and_workspace_are_distinct_handles) {
+    const char *path = NMO_TEST_DATA_FILE("Ballance/Camera.nmo");
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+
+    ASSERT_NOT_NULL(ctx);
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, path, &document));
+    ASSERT_NOT_NULL(document);
+    ASSERT_EQ(ctx, nmo_document_get_context(document));
+    ASSERT_NOT_NULL(nmo_document_get_repository(document));
+
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
+    ASSERT_NOT_NULL(workspace);
+    ASSERT_TRUE(document != (void *)workspace);
+
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(context_session, create_default);
     REGISTER_TEST(context_session, create_custom);
@@ -395,4 +420,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(context_session, null_inputs);
     REGISTER_TEST(context_session, type_registry_access);
     REGISTER_TEST(context_session, operation_registry_access);
+    REGISTER_TEST(context_session, document_and_workspace_are_distinct_handles);
 TEST_MAIN_END()

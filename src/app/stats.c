@@ -196,7 +196,7 @@ nmo_status_t nmo_document_stats_collect(
     nmo_document_t *document,
     nmo_file_stats_t *out_stats
 ) {
-    return nmo_stats_collect((nmo_session_t *)document, out_stats);
+    return nmo_stats_collect(nmo_document_session(document), out_stats);
 }
 
 void nmo_stats_print(

@@ -32,14 +32,13 @@ static bool nmo_behavior_query_is_script_owner(
 }
 
 static nmo_status_t nmo_behavior_query_lookup(
-    nmo_document_t *document,
+    nmo_session_t *session,
     nmo_object_id_t target_script_id,
     size_t target_index,
     bool use_index,
     nmo_behavior_script_view_t *out_view,
     size_t *out_count)
 {
-    nmo_session_t *session = (nmo_session_t *)document;
     nmo_object_t **objects = NULL;
     size_t object_count = 0;
     size_t script_index = 0;
@@ -142,7 +141,8 @@ nmo_status_t nmo_behavior_query_count_scripts(
     }
 
     *out_count = 0;
-    status = nmo_behavior_query_lookup(document, 0, 0, false, NULL, out_count);
+    status = nmo_behavior_query_lookup(
+        nmo_document_session(document), 0, 0, false, NULL, out_count);
     if (status == NMO_ERR_NOT_FOUND) {
         return NMO_OK;
     }
@@ -154,7 +154,8 @@ nmo_status_t nmo_behavior_query_script_at(
     size_t index,
     nmo_behavior_script_view_t *out_view)
 {
-    return nmo_behavior_query_lookup(document, 0, index, true, out_view, NULL);
+    return nmo_behavior_query_lookup(
+        nmo_document_session(document), 0, index, true, out_view, NULL);
 }
 
 nmo_status_t nmo_behavior_query_script_from_script_id(
@@ -166,14 +167,15 @@ nmo_status_t nmo_behavior_query_script_from_script_id(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    return nmo_behavior_query_lookup(document, script_id, 0, false, out_view, NULL);
+    return nmo_behavior_query_lookup(
+        nmo_document_session(document), script_id, 0, false, out_view, NULL);
 }
 
 nmo_status_t nmo_script_view_count(
     nmo_session_t *session,
     size_t *out_count)
 {
-    return nmo_behavior_query_count_scripts((nmo_document_t *)session, out_count);
+    return nmo_behavior_query_lookup(session, 0, 0, false, NULL, out_count);
 }
 
 nmo_status_t nmo_script_view_at(
@@ -181,7 +183,7 @@ nmo_status_t nmo_script_view_at(
     size_t index,
     nmo_script_view_t *out_view)
 {
-    return nmo_behavior_query_script_at((nmo_document_t *)session, index, out_view);
+    return nmo_behavior_query_lookup(session, 0, index, true, out_view, NULL);
 }
 
 nmo_status_t nmo_script_view_from_script_id(
@@ -189,6 +191,8 @@ nmo_status_t nmo_script_view_from_script_id(
     nmo_object_id_t script_id,
     nmo_script_view_t *out_view)
 {
-    return nmo_behavior_query_script_from_script_id(
-        (nmo_document_t *)session, script_id, out_view);
+    if (script_id == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    return nmo_behavior_query_lookup(session, script_id, 0, false, out_view, NULL);
 }

@@ -7,6 +7,7 @@
  */
 
 #include "app/nmo_load.h"
+#include "document/nmo_document_load.h"
 #include "session/nmo_session.h"
 #include "session/nmo_context.h"
 #include "session/nmo_deserializer.h"
@@ -176,4 +177,32 @@ nmo_status_t nmo_load_file(nmo_session_t *session,
 
     nmo_deserializer_destroy(ds);
     return st;
+}
+
+nmo_status_t nmo_document_load_file(
+    nmo_context_t *ctx,
+    const char *path,
+    nmo_document_t **out_document)
+{
+    nmo_document_t *document = NULL;
+    nmo_status_t status = NMO_OK;
+
+    if (ctx == NULL || path == NULL || out_document == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_document = NULL;
+
+    document = nmo_document_create(ctx);
+    if (document == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    status = nmo_load_file(nmo_document_session(document), path, NULL);
+    if (status != NMO_OK) {
+        nmo_document_destroy(document);
+        return status;
+    }
+
+    *out_document = document;
+    return NMO_OK;
 }

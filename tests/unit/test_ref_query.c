@@ -203,9 +203,10 @@ TEST(ref_query, stable_owner_iterates_object_edges) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
 
-    nmo_document_t *document = (nmo_document_t *)nmo_session_create(ctx);
+    nmo_document_t *document = nmo_document_create(ctx);
     ASSERT_NOT_NULL(document);
-    nmo_session_t *session = (nmo_session_t *)document;
+    nmo_session_t *session = nmo_document_session(document);
+    ASSERT_NOT_NULL(session);
 
     nmo_object_id_t member_id = 0;
     ASSERT_EQ(NMO_OK,
@@ -230,7 +231,7 @@ TEST(ref_query, stable_owner_iterates_object_edges) {
         NULL));
     ASSERT_EQ(1u, count);
 
-    nmo_session_destroy(session);
+    nmo_document_destroy(document);
     nmo_context_release(ctx);
 }
 

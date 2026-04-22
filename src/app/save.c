@@ -19,6 +19,7 @@
  */
 
 #include "session/nmo_serializer.h"
+#include "document/nmo_document_save.h"
 #include "nmo_save_buffer.h"
 #include "session/nmo_session.h"
 #include "session/nmo_context.h"
@@ -1683,6 +1684,17 @@ static int should_save_as_reference(const nmo_object_t *obj, uint32_t flags) {
     }
 
     return 0;
+}
+
+nmo_status_t nmo_document_save_file(
+    nmo_document_t *document,
+    const char *path,
+    const nmo_save_options_t *options)
+{
+    if (document == NULL || path == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    return nmo_save_file(nmo_document_session(document), path, options);
 }
 
 static nmo_chunk_t *serialize_object_with_schema(

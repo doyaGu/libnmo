@@ -704,10 +704,9 @@ TEST(object_query, stable_owner_count_and_find_first_facades)
     nmo_allocator_t allocator = nmo_allocator_default();
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
-    nmo_document_t *document = (nmo_document_t *)nmo_session_create(ctx);
+    nmo_document_t *document = nmo_document_create(ctx);
     ASSERT_NOT_NULL(document);
-    nmo_object_repository_t *repo =
-        nmo_session_get_repository((nmo_session_t *)document);
+    nmo_object_repository_t *repo = nmo_document_get_repository(document);
     ASSERT_NOT_NULL(repo);
 
     nmo_object_t *alpha = make_object(&allocator, 31, NMO_CID_OBJECT, "AlphaStable");
@@ -733,7 +732,7 @@ TEST(object_query, stable_owner_count_and_find_first_facades)
     ASSERT_EQ(32u, nmo_object_get_id(found));
     ASSERT_EQ(1u, found_index);
 
-    nmo_session_destroy((nmo_session_t *)document);
+    nmo_document_destroy(document);
     nmo_context_release(ctx);
 }
 
@@ -742,10 +741,9 @@ TEST(object_query, stable_owner_resolve_one_matches_selector)
     nmo_allocator_t allocator = nmo_allocator_default();
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
-    nmo_document_t *document = (nmo_document_t *)nmo_session_create(ctx);
+    nmo_document_t *document = nmo_document_create(ctx);
     ASSERT_NOT_NULL(document);
-    nmo_object_repository_t *repo =
-        nmo_session_get_repository((nmo_session_t *)document);
+    nmo_object_repository_t *repo = nmo_document_get_repository(document);
     ASSERT_NOT_NULL(repo);
 
     nmo_object_t *alpha = make_object(&allocator, 41, NMO_CID_OBJECT, "Alpha");
@@ -783,7 +781,7 @@ TEST(object_query, stable_owner_resolve_one_matches_selector)
               nmo_object_query_resolve_one(document, &wrong_class, &found, NULL));
     ASSERT_NULL(found);
 
-    nmo_session_destroy((nmo_session_t *)document);
+    nmo_document_destroy(document);
     nmo_context_release(ctx);
 }
 

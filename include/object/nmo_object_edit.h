@@ -3,6 +3,7 @@
 
 #include "runtime/nmo_workspace.h"
 #include "app/nmo_object_import.h"
+#include "session/nmo_session_edit.h"
 
 #ifdef __cplusplus
 extern "C" {

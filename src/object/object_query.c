@@ -780,7 +780,7 @@ nmo_status_t nmo_object_query_count(
 
     if (query == NULL) {
         nmo_object_repository_t *repository =
-            nmo_session_get_repository((nmo_session_t *)document);
+            nmo_document_get_repository(document);
         *out_count = repository != NULL
             ? nmo_object_repository_get_count(repository)
             : 0u;
@@ -789,7 +789,7 @@ nmo_status_t nmo_object_query_count(
 
     nmo_object_query_result_t result = {0};
     nmo_status_t rc = nmo_session_query_objects(
-        (nmo_session_t *)document,
+        nmo_document_session(document),
         query,
         NULL,
         NULL,
@@ -813,7 +813,7 @@ nmo_status_t nmo_object_query_find_first(
     }
 
     return nmo_session_query_first(
-        (nmo_session_t *)document,
+        nmo_document_session(document),
         query,
         out_object,
         out_index);
@@ -837,7 +837,7 @@ nmo_status_t nmo_object_query_resolve_one(
     nmo_object_t *object = NULL;
     if (selector->has_id) {
         nmo_object_repository_t *repository =
-            nmo_session_get_repository((nmo_session_t *)document);
+            nmo_document_get_repository(document);
         if (repository == NULL) {
             return NMO_ERR_INVALID_STATE;
         }
@@ -864,7 +864,7 @@ nmo_status_t nmo_object_query_resolve_one(
 
     nmo_class_id_t class_id = nmo_object_get_class_id(object);
     if (selector->required_base_class != 0) {
-        nmo_context_t *ctx = nmo_session_get_context((nmo_session_t *)document);
+        nmo_context_t *ctx = nmo_document_get_context(document);
         const nmo_type_registry_t *registry =
             ctx != NULL ? nmo_context_get_type_registry(ctx) : NULL;
         if (registry == NULL ||

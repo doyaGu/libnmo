@@ -1197,7 +1197,7 @@ nmo_status_t nmo_object_edit_import_json(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_session_t *session = (nmo_session_t *)workspace;
+    nmo_session_t *session = nmo_workspace_session(workspace);
     nmo_context_t *ctx = nmo_session_get_context(session);
     const nmo_type_registry_t *registry =
         ctx != NULL ? nmo_context_get_type_registry(ctx) : NULL;

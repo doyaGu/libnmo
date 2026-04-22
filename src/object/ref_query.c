@@ -210,9 +210,9 @@ nmo_status_t nmo_object_refs_iterate(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_session_t *session = (nmo_session_t *)document;
+    nmo_session_t *session = nmo_document_session(document);
     nmo_ref_graph_t *graph = nmo_session_get_ref_graph(session);
-    nmo_object_repository_t *repository = nmo_session_get_repository(session);
+    nmo_object_repository_t *repository = nmo_document_get_repository(document);
     if (graph == NULL || repository == NULL) {
         return NMO_ERR_INVALID_STATE;
     }

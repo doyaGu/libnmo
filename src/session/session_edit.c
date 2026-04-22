@@ -458,7 +458,7 @@ nmo_status_t nmo_workspace_edit_begin(
     nmo_workspace_edit_t **out_edit)
 {
     return nmo_session_edit_begin(
-        (nmo_session_t *)workspace,
+        nmo_workspace_session(workspace),
         label,
         (nmo_session_edit_t **)out_edit);
 }

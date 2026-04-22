@@ -6,6 +6,8 @@
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
 #include "session/nmo_context.h"
+#include "document/nmo_document.h"
+#include "runtime/nmo_workspace.h"
 #include "app/nmo_load.h"
 #include "app/nmo_save.h"
 #include "session/nmo_runtime_kernel.h"
@@ -34,6 +36,17 @@
 
 #define DEFAULT_ARENA_SIZE (1024 * 1024)  /* 1 MB */
 #define DEFAULT_CHUNK_POOL_CAPACITY 128
+
+struct nmo_document {
+    nmo_allocator_t allocator;
+    nmo_session_t *session;
+};
+
+struct nmo_workspace {
+    nmo_allocator_t allocator;
+    nmo_context_t *context;
+    nmo_document_t *document;
+};
 
 /**
  * Session structure
@@ -114,6 +127,127 @@ typedef struct nmo_session {
 static int nmo_session_build_behavior_index(nmo_session_t *session);
 static int nmo_session_ensure_behavior_index(nmo_session_t *session);
 static void nmo_session_post_load(nmo_session_t *session);
+
+static nmo_allocator_t owner_allocator_from_context(nmo_context_t *ctx)
+{
+    nmo_allocator_t *ctx_allocator = nmo_context_get_allocator(ctx);
+    return (ctx_allocator != NULL) ? *ctx_allocator : nmo_allocator_default();
+}
+
+nmo_document_t *nmo_document_create(nmo_context_t *ctx)
+{
+    if (ctx == NULL) {
+        return NULL;
+    }
+
+    nmo_allocator_t allocator = owner_allocator_from_context(ctx);
+    nmo_document_t *document = (nmo_document_t *)nmo_alloc(
+        &allocator, sizeof(*document), _Alignof(nmo_document_t));
+    if (document == NULL) {
+        return NULL;
+    }
+
+    memset(document, 0, sizeof(*document));
+    document->allocator = allocator;
+    document->session = nmo_session_create(ctx);
+    if (document->session == NULL) {
+        nmo_free(&allocator, document);
+        return NULL;
+    }
+
+    return document;
+}
+
+void nmo_document_destroy(nmo_document_t *document)
+{
+    if (document == NULL) {
+        return;
+    }
+
+    if (document->session != NULL) {
+        nmo_session_destroy(document->session);
+        document->session = NULL;
+    }
+    nmo_free(&document->allocator, document);
+}
+
+nmo_context_t *nmo_document_get_context(const nmo_document_t *document)
+{
+    return document != NULL ? nmo_session_get_context(document->session) : NULL;
+}
+
+nmo_object_repository_t *nmo_document_get_repository(const nmo_document_t *document)
+{
+    return document != NULL ? nmo_session_get_repository(document->session) : NULL;
+}
+
+nmo_session_t *nmo_document_session(nmo_document_t *document)
+{
+    return document != NULL ? document->session : NULL;
+}
+
+const nmo_session_t *nmo_document_session_const(const nmo_document_t *document)
+{
+    return document != NULL ? document->session : NULL;
+}
+
+nmo_status_t nmo_workspace_create(
+    nmo_context_t *ctx,
+    nmo_document_t *document,
+    nmo_workspace_t **out_workspace)
+{
+    nmo_workspace_t *workspace = NULL;
+    nmo_context_t *document_ctx = NULL;
+    nmo_allocator_t allocator;
+
+    if (ctx == NULL || document == NULL || out_workspace == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_workspace = NULL;
+
+    document_ctx = nmo_document_get_context(document);
+    if (document_ctx == NULL || document_ctx != ctx) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    allocator = owner_allocator_from_context(ctx);
+    workspace = (nmo_workspace_t *)nmo_alloc(
+        &allocator, sizeof(*workspace), _Alignof(nmo_workspace_t));
+    if (workspace == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    memset(workspace, 0, sizeof(*workspace));
+    workspace->allocator = allocator;
+    workspace->context = ctx;
+    workspace->document = document;
+    *out_workspace = workspace;
+    return NMO_OK;
+}
+
+void nmo_workspace_destroy(nmo_workspace_t *workspace)
+{
+    if (workspace == NULL) {
+        return;
+    }
+    nmo_free(&workspace->allocator, workspace);
+}
+
+nmo_document_t *nmo_workspace_get_document(nmo_workspace_t *workspace)
+{
+    return workspace != NULL ? workspace->document : NULL;
+}
+
+nmo_session_t *nmo_workspace_session(nmo_workspace_t *workspace)
+{
+    return workspace != NULL ? nmo_document_session(workspace->document) : NULL;
+}
+
+const nmo_session_t *nmo_workspace_session_const(const nmo_workspace_t *workspace)
+{
+    return workspace != NULL ? nmo_document_session_const(workspace->document) : NULL;
+}
+
 nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     if (ctx == NULL) {
         return NULL;
@@ -121,8 +255,7 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
 
     nmo_context_retain(ctx);
 
-    nmo_allocator_t *ctx_allocator = nmo_context_get_allocator(ctx);
-    nmo_allocator_t allocator = (ctx_allocator != NULL) ? *ctx_allocator : nmo_allocator_default();
+    nmo_allocator_t allocator = owner_allocator_from_context(ctx);
 
     nmo_session_t *session = (nmo_session_t *) nmo_alloc(&allocator, sizeof(nmo_session_t), _Alignof(nmo_session_t));
     if (session == NULL) {

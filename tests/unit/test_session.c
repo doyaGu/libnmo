@@ -6,6 +6,7 @@
 #include "test_framework.h"
 #include "nmo.h"
 #include "document/nmo_document.h"
+#include "runtime/nmo_workspace.h"
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_query.h"
 #include "session/nmo_session_query.h"
@@ -176,9 +177,14 @@ TEST(session, stable_object_owner_facade) {
     nmo_context_t *ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
 
-    nmo_document_t *document = (nmo_document_t *)nmo_session_create(ctx);
+    nmo_document_t *document = nmo_document_create(ctx);
     ASSERT_NOT_NULL(document);
-    nmo_session_t *session = (nmo_session_t *)document;
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
+    ASSERT_NOT_NULL(workspace);
+
+    nmo_session_t *session = nmo_workspace_session(workspace);
+    ASSERT_NOT_NULL(session);
 
     ASSERT_NOT_NULL(create_session_object(session, 31, 100, "Gamma"));
     ASSERT_NOT_NULL(create_session_object(session, 32, 100, "Delta"));
@@ -195,7 +201,8 @@ TEST(session, stable_object_owner_facade) {
     ASSERT_NOT_NULL(found);
     ASSERT_EQ(32u, found->id);
 
-    nmo_session_destroy(session);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_context_release(ctx);
 }
 

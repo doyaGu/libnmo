@@ -284,16 +284,20 @@ TEST(script_edit_transaction, rollback_restores_original_state_after_validation_
 TEST(script_edit_transaction, behavior_edit_add_link_through_workspace_owner)
 {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
-    nmo_session_t *session = NULL;
+    nmo_document_t *document = NULL;
     nmo_workspace_t *workspace = NULL;
+    nmo_session_t *session = NULL;
     nmo_workspace_edit_t *edit = NULL;
     script_control_fixture_t fixture;
     nmo_object_id_t link_id = 0;
 
     ASSERT_NOT_NULL(ctx);
-    session = nmo_session_create(ctx);
+    document = nmo_document_create(ctx);
+    ASSERT_NOT_NULL(document);
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
+    ASSERT_NOT_NULL(workspace);
+    session = nmo_workspace_session(workspace);
     ASSERT_NOT_NULL(session);
-    workspace = (nmo_workspace_t *)session;
 
     setup_script_control_fixture(session, &fixture);
 
@@ -308,7 +312,8 @@ TEST(script_edit_transaction, behavior_edit_add_link_through_workspace_owner)
     ASSERT_TRUE(link_id != 0u);
     ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
 
-    nmo_session_destroy(session);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_context_release(ctx);
 }
 

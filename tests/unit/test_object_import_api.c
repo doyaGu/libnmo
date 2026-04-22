@@ -614,9 +614,14 @@ TEST(object_import_api, snapshot_inline_array_imports_all_items) {
 TEST(object_import_api, object_owner_import_wrapper_imports_snapshot) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
-    nmo_workspace_t *workspace = (nmo_workspace_t *)nmo_session_create(ctx);
+    nmo_document_t *document = nmo_document_create(ctx);
+    nmo_workspace_t *workspace = NULL;
+    nmo_session_t *session = NULL;
+    ASSERT_NOT_NULL(document);
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
     ASSERT_NOT_NULL(workspace);
-    nmo_session_t *session = (nmo_session_t *)workspace;
+    session = nmo_workspace_session(workspace);
+    ASSERT_NOT_NULL(session);
 
     nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
     ASSERT_NOT_NULL(registry);
@@ -650,7 +655,8 @@ TEST(object_import_api, object_owner_import_wrapper_imports_snapshot) {
     ASSERT_EQ(9u, *(uint32_t *)nmo_array_get(&state->values, 1));
 
     nmo_array_dispose(&state->values);
-    nmo_session_destroy(session);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_context_release(ctx);
 }
 
