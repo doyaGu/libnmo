@@ -24,7 +24,6 @@
 #include "commands/nmo_cmd_mesh.h"
 #include "commands/nmo_cmd_object.h"
 #include "commands/nmo_cmd_parameter.h"
-#include "commands/nmo_cmd_query.h"
 #include "commands/nmo_cmd_resource.h"
 #include "commands/nmo_cmd_scene.h"
 #include "commands/nmo_cmd_texture.h"
@@ -38,7 +37,6 @@
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_parse.h"
-#include "dsl/nmo_dsl.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterlocal_schemas.h"
@@ -72,8 +70,6 @@ static int cmd_find(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_trace(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_param(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_refs(nmo_repl_context_t *repl, int argc, char **argv);
-static int cmd_eval(nmo_repl_context_t *repl, int argc, char **argv);
-static int cmd_query(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_save(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_verify(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_stats(nmo_repl_context_t *repl, int argc, char **argv);
@@ -103,8 +99,6 @@ static const nmo_repl_command_t commands[] = {
     {"trace", "t", "Trace object references", "trace [selector] [--incoming|--outgoing|--both]", cmd_trace},
     {"param", "p", "Show parameter details with decoded value", "param [selector]", cmd_param},
     {"refs", "", "Show references for object", "refs [selector]", cmd_refs},
-    {"eval", "e", "Evaluate DSL expression on selected object", "eval <expression>", cmd_eval},
-    {"query", "", "Filter objects by DSL predicate", "query <expression>", cmd_query},
     {"save", "", "Save session to file", "save <path> [--compress] [--sequential-ids]", cmd_save},
     {"verify", "v", "Verify chunks", "verify [all|selector]", cmd_verify},
     {"stats", "st", "Show file statistics", "stats", cmd_stats},
@@ -912,139 +906,6 @@ static int cmd_refs(nmo_repl_context_t *repl, int argc, char **argv) {
     return 0;
 }
 
-static int cmd_eval(nmo_repl_context_t *repl, int argc, char **argv) {
-    if (argc < 2) {
-        fprintf(stderr, "Usage: eval <expression>\n");
-        fprintf(stderr, "Evaluates a DSL expression in the context of the selected object.\n");
-        return -1;
-    }
-
-    if (!repl->has_selection) {
-        fprintf(stderr, "No object selected. Use 'select <index>' first.\n");
-        return -1;
-    }
-
-    size_t object_count = nmo_repl_object_count(repl);
-    nmo_object_t *obj = nmo_repl_object_at(repl, repl->selected_index);
-
-    if (repl->selected_index >= object_count || !obj) {
-        fprintf(stderr, "Error: Selected index out of range\n");
-        return -1;
-    }
-
-    /* Reconstruct expression from remaining args (handles spaces in quoted strings) */
-    char expr_buf[NMO_REPL_MAX_CMD_LEN];
-    size_t pos = 0;
-    for (int i = 1; i < argc && pos < sizeof(expr_buf) - 1; ++i) {
-        if (i > 1 && pos < sizeof(expr_buf) - 1) {
-            expr_buf[pos++] = ' ';
-        }
-        size_t len = strlen(argv[i]);
-        if (pos + len >= sizeof(expr_buf)) {
-            len = sizeof(expr_buf) - pos - 1;
-        }
-        memcpy(expr_buf + pos, argv[i], len);
-        pos += len;
-    }
-    expr_buf[pos] = '\0';
-
-    nmo_cmd_ctx_t c;
-    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
-
-    nmo_dsl_value_t result = {0};
-    nmo_status_t st = nmo_core_dsl_eval(&c, obj, expr_buf, &result);
-
-    if (st != NMO_OK) {
-        fprintf(stderr, "Error: DSL evaluation failed: %s\n", nmo_error_string(st));
-        return -1;
-    }
-
-    char buf[512];
-    nmo_core_dsl_format(&result, buf, sizeof(buf));
-    printf("=> %s\n", buf);
-
-    nmo_dsl_value_destroy(&result);
-    return 0;
-}
-
-/** Visitor for REPL query command - prints matching objects with pagination */
-typedef struct {
-    nmo_repl_context_t *repl;
-    size_t found;
-} repl_query_data_t;
-
-static int repl_query_visitor(size_t index, nmo_object_t *obj,
-                              const nmo_cmd_ctx_t *c, void *user) {
-    (void)c;
-    repl_query_data_t *d = (repl_query_data_t *)user;
-    nmo_repl_print_object_summary(d->repl, index, obj);
-    d->found++;
-    if (!nmo_repl_paginate_if_needed(d->repl, d->found)) return 1;
-    return 0;
-}
-
-static int cmd_query(nmo_repl_context_t *repl, int argc, char **argv) {
-    if (argc < 2) {
-        fprintf(stderr, "Usage: query <expression>\n");
-        fprintf(stderr, "Filters objects: evaluates expression for each, shows matches.\n");
-        return -1;
-    }
-
-    if (strcmp(argv[1], "eval") == 0 || strcmp(argv[1], "e") == 0 ||
-        strcmp(argv[1], "script") == 0 || strcmp(argv[1], "s") == 0 ||
-        strcmp(argv[1], "schema") == 0 || strcmp(argv[1], "sc") == 0 ||
-        strcmp(argv[1], "module") == 0 || strcmp(argv[1], "m") == 0) {
-        return repl_dispatch_cli_read_group(repl, argc, argv, NULL);
-    }
-
-    /* Reconstruct expression */
-    char expr_buf[NMO_REPL_MAX_CMD_LEN];
-    size_t pos = 0;
-    for (int i = 1; i < argc && pos < sizeof(expr_buf) - 1; ++i) {
-        if (i > 1 && pos < sizeof(expr_buf) - 1) {
-            expr_buf[pos++] = ' ';
-        }
-        size_t len = strlen(argv[i]);
-        if (pos + len >= sizeof(expr_buf)) {
-            len = sizeof(expr_buf) - pos - 1;
-        }
-        memcpy(expr_buf + pos, argv[i], len);
-        pos += len;
-    }
-    expr_buf[pos] = '\0';
-
-    nmo_cmd_ctx_t c;
-    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
-
-    nmo_object_query_t query = {0};
-    nmo_core_query_dsl_t query_dsl = {0};
-    nmo_core_query_build_options_t query_opts = {
-        .filter_expr = expr_buf,
-        .print_dsl_context = true,
-        .dsl_error_prefix = "Error: Failed to compile expression",
-    };
-    if (nmo_core_query_build(&c, &query, &query_dsl, &query_opts) !=
-        NMO_CLI_EXIT_SUCCESS) {
-        return -1;
-    }
-
-    printf("\nQuery matches:\n");
-
-    repl_query_data_t qd = { .repl = repl, .found = 0 };
-    nmo_core_iter_result_t result = {0};
-    nmo_core_object_query_run(&c, &query, repl_query_visitor, &qd, &result);
-
-    nmo_core_query_dsl_destroy(&query_dsl);
-
-    if (!qd.found) {
-        printf("No matches.\n");
-    } else {
-        printf("\n%zu match(es)\n", qd.found);
-    }
-    printf("\n");
-    return 0;
-}
-
 static int cmd_save(nmo_repl_context_t *repl, int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Usage: save <path> [--compress] [--sequential-ids]\n");
@@ -1479,8 +1340,6 @@ static bool repl_cli_option_takes_value(const char *token) {
     static const char *value_options[] = {
         "--class", "-c",
         "--depth",
-        "--expr", "-e",
-        "--filter", "-f",
         "--format",
         "--from",
         "--id", "-i",

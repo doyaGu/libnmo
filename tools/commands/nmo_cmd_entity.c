@@ -201,7 +201,7 @@ static int entity_list_run(nmo_cmd_ctx_t *c, const char *class_filter) {
             .class_name = class_filter,
             .include_derived_classes = true,
         };
-        int rc = nmo_core_query_build(c, &entity_query, NULL, &query_opts);
+        int rc = nmo_core_query_build(c, &entity_query, &query_opts);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
             return rc;
         }

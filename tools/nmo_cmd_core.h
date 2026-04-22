@@ -3,7 +3,7 @@
  * @brief Shared command core - reusable logic for CLI and REPL commands
  *
  * Provides class utilities, object iteration with filtering, reference
- * iteration, regex/wildcard matching, and DSL evaluation helpers.
+ * iteration and regex/wildcard matching helpers.
  * All functions operate on nmo_cmd_ctx_t so they can be used from
  * both CLI commands and REPL commands.
  */
@@ -14,8 +14,6 @@
 #include "nmo_cmd_ctx.h"
 #include "nmo.h"
 #include "object/nmo_ref_graph.h"
-#include "dsl/nmo_dsl.h"
-
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -113,25 +111,14 @@ typedef struct {
 } nmo_core_iter_result_t;
 
 /**
- * @brief Owned DSL predicate attached to an object query.
- */
-typedef struct nmo_core_query_dsl {
-    const nmo_cmd_ctx_t *cmd;
-    nmo_dsl_program_t *program;
-} nmo_core_query_dsl_t;
-
-/**
  * @brief Common CLI object query inputs.
  */
 typedef struct nmo_core_query_build_options {
     const char *class_name;
     const char *name_wildcard;
-    const char *filter_expr;
     bool include_derived_classes;
     bool has_object_id;
     nmo_object_id_t object_id;
-    bool print_dsl_context;
-    const char *dsl_error_prefix;
 } nmo_core_query_build_options_t;
 
 /**
@@ -171,7 +158,6 @@ void nmo_core_query_set_object_id(
 int nmo_core_query_build(
     const nmo_cmd_ctx_t *c,
     nmo_object_query_t *query,
-    nmo_core_query_dsl_t *out_dsl,
     const nmo_core_query_build_options_t *opts);
 
 /**
@@ -181,20 +167,6 @@ bool nmo_core_query_matches_object(
     const nmo_cmd_ctx_t *c,
     const nmo_object_query_t *query,
     const nmo_object_t *object);
-
-/**
- * @brief Compile a DSL expression and attach it as query->predicate.
- */
-nmo_status_t nmo_core_query_add_dsl_filter(
-    const nmo_cmd_ctx_t *c,
-    nmo_object_query_t *query,
-    const char *expr,
-    nmo_core_query_dsl_t *out_dsl);
-
-/**
- * @brief Destroy a DSL predicate helper created by nmo_core_query_add_dsl_filter.
- */
-void nmo_core_query_dsl_destroy(nmo_core_query_dsl_t *dsl);
 
 /**
  * @brief Run a library object query with CLI visitor/result conventions.
@@ -273,49 +245,7 @@ int nmo_core_iter_refs(const nmo_cmd_ctx_t *c,
                        nmo_core_ref_result_t *result);
 
 /* ============================================================================
- * 5. DSL evaluation helpers
- * ============================================================================ */
-
-/**
- * @brief Set up a DSL eval context for an object
- * @return true on success, false if object has no chunk
- */
-bool nmo_core_dsl_setup_ctx(const nmo_cmd_ctx_t *c, nmo_object_t *obj,
-                            nmo_dsl_eval_context_t *out);
-
-/**
- * @brief Evaluate a DSL expression against an object (compile + eval)
- */
-nmo_status_t nmo_core_dsl_eval(const nmo_cmd_ctx_t *c, nmo_object_t *obj,
-                               const char *expr, nmo_dsl_value_t *result);
-
-/**
- * @brief Check if a DSL value is truthy
- */
-bool nmo_core_dsl_is_truthy(const nmo_dsl_value_t *val);
-
-/**
- * @brief Format a DSL value into a text buffer
- * @return true if formatted successfully
- */
-bool nmo_core_dsl_format(const nmo_dsl_value_t *val, char *buf, size_t sz);
-
-/**
- * @brief Print a DSL compile/eval error with source context and caret
- *
- * Reads the last error message (expected format "line:col: message"),
- * prints the error message then shows the relevant source line with
- * a caret (^) pointing to the error column.
- *
- * @param stream  Output stream for the error (typically stderr)
- * @param source  The original DSL source string
- * @param prefix  Error prefix (e.g. "Error: Failed to compile filter")
- */
-void nmo_core_dsl_print_error(FILE *stream, const char *source,
-                              const char *prefix);
-
-/* ============================================================================
- * 7. Field mutation
+ * 5. Field mutation
  * ============================================================================ */
 
 typedef struct nmo_field_set_entry {

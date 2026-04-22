@@ -588,7 +588,7 @@ static int object_orphans_run(nmo_cmd_ctx_t *ctx, const object_orphans_args_t *a
         .class_name = args->class_filter_str,
         .include_derived_classes = true,
     };
-    int rc = nmo_core_query_build(&c, &class_query, NULL, &query_opts);
+    int rc = nmo_core_query_build(&c, &class_query, &query_opts);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
     }

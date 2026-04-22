@@ -48,14 +48,6 @@ static const char *ck_class_names[] = {
     NULL
 };
 
-/* DSL keywords for eval/query completion */
-static const char *dsl_keywords[] = {
-    "true", "false", "null",
-    "id", "name", "class", "size", "cid",
-    "schema", "enum", "flags", "struct", "alias",
-    NULL
-};
-
 /* File-scoped pointer set before inner completion callback invocation */
 static nmo_repl_context_t *s_repl_for_completion;
 
@@ -131,10 +123,6 @@ static void complete_set_level(ic_completion_env_t *cenv, const char *word_prefi
 
 static void complete_class_names(ic_completion_env_t *cenv, const char *word_prefix) {
     ic_add_completions(cenv, word_prefix, ck_class_names);
-}
-
-static void complete_dsl_keywords(ic_completion_env_t *cenv, const char *prefix) {
-    ic_add_completions(cenv, prefix, dsl_keywords);
 }
 
 /* ---- Object name completion cache ---- */
@@ -358,13 +346,6 @@ static void nmo_repl_completer(ic_completion_env_t *cenv, const char *prefix) {
         } else if (words == 3 && strcmp(arg1, "class") == 0) {
             ic_complete_word(cenv, prefix, &complete_class_names, NULL);
         }
-        return;
-    }
-
-    /* eval/query <TAB> -> DSL keywords */
-    if (strcmp(cmd, "eval") == 0 || strcmp(cmd, "e") == 0 ||
-        strcmp(cmd, "query") == 0) {
-        ic_complete_word(cenv, prefix, &complete_dsl_keywords, NULL);
         return;
     }
 

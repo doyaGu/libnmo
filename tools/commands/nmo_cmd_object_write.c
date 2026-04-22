@@ -21,7 +21,6 @@
 #include "app/nmo_object_import.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_parse.h"
-#include "dsl/nmo_dsl.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 
@@ -212,7 +211,7 @@ static int object_rename_batch_mutate(
         .class_name = args->class_filter,
         .include_derived_classes = true,
     };
-    int rc = nmo_core_query_build(c, &class_query, NULL, &query_opts);
+    int rc = nmo_core_query_build(c, &class_query, &query_opts);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
     }
@@ -697,7 +696,7 @@ int nmo_cmd_object_rename_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
  * object delete - Delete objects with filter support and cascade preview
  *
  *   nmo object delete <id>[,<id>,...] <file> -o <output>
- *   nmo object delete --class <cls> [--name <pat>] [--filter <expr>] <file> -o <output>
+ *   nmo object delete --class <cls> [--name <pat>] <file> -o <output>
  *   nmo object delete --cascade --dry-run <id> <file>
  * ============================================================================ */
 
@@ -729,10 +728,8 @@ static int delete_collect_visitor(size_t index, nmo_object_t *obj,
 typedef struct {
     char class_str[64];
     char name_str[256];
-    char filter_str[512];
     bool has_class;
     bool has_name;
-    bool has_filter;
     bool cascade;
     bool strict;
 } delete_batch_ctx_t;
@@ -764,15 +761,12 @@ static int delete_batch_handler(
 
     /* Build query */
     nmo_object_query_t query;
-    nmo_core_query_dsl_t query_dsl = {0};
     nmo_core_query_build_options_t query_opts = {
         .class_name = ctx->has_class ? ctx->class_str : NULL,
         .name_wildcard = ctx->has_name ? ctx->name_str : NULL,
-        .filter_expr = ctx->has_filter ? ctx->filter_str : NULL,
         .include_derived_classes = true,
-        .print_dsl_context = true,
     };
-    rc = nmo_core_query_build(&c, &query, &query_dsl, &query_opts);
+    rc = nmo_core_query_build(&c, &query, &query_opts);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return nmo_cmd_ctx_done(&c, rc);
     }
@@ -781,8 +775,6 @@ static int delete_batch_handler(
     delete_id_collector_t col = {0};
     nmo_core_iter_result_t iter_result = {0};
     rc = nmo_core_object_query_run(&c, &query, delete_collect_visitor, &col, &iter_result);
-
-    nmo_core_query_dsl_destroy(&query_dsl);
 
     if (rc < 0) {
         free(col.ids);
@@ -830,7 +822,6 @@ typedef struct object_delete_preview_entry {
 typedef struct object_delete_args {
     const char *class_name;
     const char *name_wildcard;
-    const char *filter_expr;
     const char **id_args;
     size_t id_arg_count;
     bool use_filter;
@@ -868,14 +859,12 @@ static int object_delete_collect_targets(nmo_cmd_ctx_t *c, object_delete_args_t 
 {
     if (args->use_filter) {
         nmo_object_query_t query;
-        nmo_core_query_dsl_t query_dsl = {0};
         nmo_core_query_build_options_t query_opts = {
             .class_name = args->class_name,
             .name_wildcard = args->name_wildcard,
-            .filter_expr = args->filter_expr,
             .include_derived_classes = true,
         };
-        int rc = nmo_core_query_build(c, &query, &query_dsl, &query_opts);
+        int rc = nmo_core_query_build(c, &query, &query_opts);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
             return rc;
         }
@@ -883,7 +872,6 @@ static int object_delete_collect_targets(nmo_cmd_ctx_t *c, object_delete_args_t 
         delete_id_collector_t col = {0};
         nmo_core_iter_result_t iter_result = {0};
         rc = nmo_core_object_query_run(c, &query, delete_collect_visitor, &col, &iter_result);
-        nmo_core_query_dsl_destroy(&query_dsl);
 
         if (rc < 0) {
             free(col.ids);
@@ -1196,12 +1184,11 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
         {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
         {"--class",   "-c", NMO_OPT_STRING, "Filter by class (includes derived)"},
         {"--name",    "-n", NMO_OPT_STRING, "Filter by name wildcard pattern"},
-        {"--filter",  "-f", NMO_OPT_STRING, "Filter by DSL expression"},
         {"--cascade", NULL, NMO_OPT_FLAG,   "Delete dependents (default: safe-detach)"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview only, do not save"},
         {"--strict",  NULL, NMO_OPT_FLAG,   "Fail if any ID not found"},
     };
-    enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_FILTER, OPT_CASCADE,
+    enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_CASCADE,
            OPT_DRYRUN, OPT_STRICT, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
@@ -1214,8 +1201,7 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
     bool cascade  = vals[OPT_CASCADE].present && vals[OPT_CASCADE].val.flag;
     bool dry_run  = vals[OPT_DRYRUN].present  && vals[OPT_DRYRUN].val.flag;
     bool strict   = vals[OPT_STRICT].present  && vals[OPT_STRICT].val.flag;
-    bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present ||
-                      vals[OPT_FILTER].present;
+    bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present;
 
     if (!dry_run && !output_path) {
         fprintf(stderr, "Error: -o/--output is required (or use --dry-run)\n");
@@ -1234,10 +1220,6 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
             snprintf(batch_ctx.name_str, sizeof(batch_ctx.name_str), "%s", vals[OPT_NAME].val.str);
             batch_ctx.has_name = true;
         }
-        if (vals[OPT_FILTER].present) {
-            snprintf(batch_ctx.filter_str, sizeof(batch_ctx.filter_str), "%s", vals[OPT_FILTER].val.str);
-            batch_ctx.has_filter = true;
-        }
         batch_ctx.cascade = cascade;
         batch_ctx.strict = strict;
         return nmo_tool_batch_write_run(
@@ -1255,7 +1237,6 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
     object_delete_args_t args = {
         .class_name = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL,
         .name_wildcard = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
-        .filter_expr = vals[OPT_FILTER].present ? vals[OPT_FILTER].val.str : NULL,
         .id_args = r.pos_args,
         .id_arg_count = r.pos_count > 0 ? r.pos_count - 1 : 0,
         .use_filter = use_filter,
@@ -1287,12 +1268,11 @@ int nmo_cmd_object_delete_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
         {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
         {"--class",   "-c", NMO_OPT_STRING, "Filter by class (includes derived)"},
         {"--name",    "-n", NMO_OPT_STRING, "Filter by name wildcard pattern"},
-        {"--filter",  "-f", NMO_OPT_STRING, "Filter by DSL expression"},
         {"--cascade", NULL, NMO_OPT_FLAG,   "Delete dependents (default: safe-detach)"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview only, do not save"},
         {"--strict",  NULL, NMO_OPT_FLAG,   "Fail if any ID not found"},
     };
-    enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_FILTER, OPT_CASCADE,
+    enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_CASCADE,
            OPT_DRYRUN, OPT_STRICT, OPT_COUNT };
 
     if (result != NULL) {
@@ -1310,8 +1290,7 @@ int nmo_cmd_object_delete_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
     }
 
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present ||
-                      vals[OPT_FILTER].present;
+    bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present;
     if (!use_filter && r.pos_count == 0) {
         fprintf(stderr, "Usage: object delete [options] <id>[,<id>,...]\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -1323,7 +1302,6 @@ int nmo_cmd_object_delete_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
     object_delete_args_t args = {
         .class_name = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL,
         .name_wildcard = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
-        .filter_expr = vals[OPT_FILTER].present ? vals[OPT_FILTER].val.str : NULL,
         .id_args = r.pos_args,
         .id_arg_count = r.pos_count,
         .use_filter = use_filter,
@@ -1651,7 +1629,6 @@ int nmo_cmd_object_create_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
 typedef struct object_copy_args {
     const char *class_name;
     const char *name_wildcard;
-    const char *filter_expr;
     const char **id_args;
     size_t id_arg_count;
     bool use_filter;
@@ -1677,14 +1654,12 @@ static int object_copy_collect_targets(nmo_cmd_ctx_t *c, object_copy_args_t *arg
 {
     if (args->use_filter) {
         nmo_object_query_t query;
-        nmo_core_query_dsl_t query_dsl = {0};
         nmo_core_query_build_options_t query_opts = {
             .class_name = args->class_name,
             .name_wildcard = args->name_wildcard,
-            .filter_expr = args->filter_expr,
             .include_derived_classes = true,
         };
-        int rc = nmo_core_query_build(c, &query, &query_dsl, &query_opts);
+        int rc = nmo_core_query_build(c, &query, &query_opts);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
             return rc;
         }
@@ -1692,7 +1667,6 @@ static int object_copy_collect_targets(nmo_cmd_ctx_t *c, object_copy_args_t *arg
         delete_id_collector_t col = {0};
         nmo_core_iter_result_t iter_result = {0};
         rc = nmo_core_object_query_run(c, &query, delete_collect_visitor, &col, &iter_result);
-        nmo_core_query_dsl_destroy(&query_dsl);
 
         if (rc < 0) {
             free(col.ids);
@@ -1865,11 +1839,10 @@ int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *glob
         {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
         {"--class",   "-c", NMO_OPT_STRING, "Filter by class (includes derived)"},
         {"--name",    "-n", NMO_OPT_STRING, "Filter by name wildcard pattern"},
-        {"--filter",  "-f", NMO_OPT_STRING, "Filter by DSL expression"},
         {"--cascade", NULL, NMO_OPT_FLAG,   "Copy dependents"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
     };
-    enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_FILTER, OPT_CASCADE, OPT_DRYRUN, OPT_COUNT };
+    enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_CASCADE, OPT_DRYRUN, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
@@ -1880,8 +1853,7 @@ int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *glob
     const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     bool cascade   = vals[OPT_CASCADE].present && vals[OPT_CASCADE].val.flag;
     bool dry_run   = vals[OPT_DRYRUN].present  && vals[OPT_DRYRUN].val.flag;
-    bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present ||
-                      vals[OPT_FILTER].present;
+    bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present;
 
     if (!dry_run && !output_path) {
         fprintf(stderr, "Error: -o/--output is required (or use --dry-run)\n");
@@ -1897,7 +1869,6 @@ int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *glob
     object_copy_args_t args = {
         .class_name = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL,
         .name_wildcard = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
-        .filter_expr = vals[OPT_FILTER].present ? vals[OPT_FILTER].val.str : NULL,
         .id_args = r.pos_args,
         .id_arg_count = r.pos_count > 0 ? r.pos_count - 1 : 0,
         .use_filter = use_filter,
@@ -1928,11 +1899,10 @@ int nmo_cmd_object_copy_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
         {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
         {"--class",   "-c", NMO_OPT_STRING, "Filter by class (includes derived)"},
         {"--name",    "-n", NMO_OPT_STRING, "Filter by name wildcard pattern"},
-        {"--filter",  "-f", NMO_OPT_STRING, "Filter by DSL expression"},
         {"--cascade", NULL, NMO_OPT_FLAG,   "Copy dependents"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
     };
-    enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_FILTER, OPT_CASCADE, OPT_DRYRUN, OPT_COUNT };
+    enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_CASCADE, OPT_DRYRUN, OPT_COUNT };
 
     if (result != NULL) {
         memset(result, 0, sizeof(*result));
@@ -1949,8 +1919,7 @@ int nmo_cmd_object_copy_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
     }
 
     bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present ||
-                      vals[OPT_FILTER].present;
+    bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present;
     if (!use_filter && r.pos_count == 0) {
         fprintf(stderr, "Usage: object copy [options] <id>[,<id>,...]\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -1962,7 +1931,6 @@ int nmo_cmd_object_copy_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
     object_copy_args_t args = {
         .class_name = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL,
         .name_wildcard = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
-        .filter_expr = vals[OPT_FILTER].present ? vals[OPT_FILTER].val.str : NULL,
         .id_args = r.pos_args,
         .id_arg_count = r.pos_count,
         .use_filter = use_filter,

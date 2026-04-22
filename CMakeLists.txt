@@ -274,16 +274,6 @@ set(NMO_TYPE_SOURCES
     src/type/type_query.c
 )
 
-# DSL System sources
-set(NMO_DSL_SOURCES
-    src/dsl/nmo_dsl.c
-    src/dsl/nmo_dsl_lex.c
-    src/dsl/nmo_dsl_ast.c
-    src/dsl/nmo_dsl_parse.c
-    src/dsl/nmo_dsl_eval.c
-    src/dsl/nmo_dsl_seq.c
-)
-
 # Extension layer sources
 set(NMO_EXTENSION_SOURCES
     src/extension/extension_registry.c
@@ -369,7 +359,6 @@ set(NMO_JSON_SOURCES
     src/app/json_util.c
     src/app/object_summary.c
     src/app/object_import.c
-    src/app/dsl_json.c
 )
 
 # Combine all sources (yyjson compiled directly into nmo)
@@ -379,7 +368,6 @@ set(NMO_SOURCES
     ${NMO_FORMAT_SOURCES}
     ${NMO_TYPE_SOURCES}
     ${NMO_OBJECT_SOURCES}
-    ${NMO_DSL_SOURCES}
     ${NMO_SESSION_SOURCES}
     ${NMO_BEHAVIOR_SOURCES}
     ${NMO_LUA_SOURCES}

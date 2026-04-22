@@ -19,7 +19,6 @@
 #include "session/nmo_session.h"
 #include "app/nmo_object_hierarchy.h"
 #include "core/nmo_arena.h"
-#include "dsl/nmo_dsl.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "type/nmo_type_string.h"
@@ -172,7 +171,6 @@ static obj_compare_fn obj_sort_comparator(nmo_cli_sort_key_t key) {
 /** User data forwarded through batch handler for object list */
 typedef struct {
     const char *class_filter_str;
-    const char *filter_expr;
     const char *sort_key_str;
     bool reverse;
     uint32_t top_n;
@@ -195,7 +193,6 @@ static int object_list_single(const char *file_path,
         opts = text_ctx ? (const object_list_opts_t *)text_ctx->user_data : NULL;
     }
     const char *class_filter_str = opts ? opts->class_filter_str : NULL;
-    const char *filter_expr      = opts ? opts->filter_expr : NULL;
     const char *sort_key_str     = opts ? opts->sort_key_str : NULL;
     bool reverse                 = opts ? opts->reverse : false;
     uint32_t top_n               = opts ? opts->top_n : 0;
@@ -224,14 +221,11 @@ static int object_list_single(const char *file_path,
 
     /* Build query */
     nmo_object_query_t query = {0};
-    nmo_core_query_dsl_t query_dsl = {0};
     nmo_core_query_build_options_t query_opts = {
         .class_name = class_filter_str,
-        .filter_expr = filter_expr,
         .include_derived_classes = true,
-        .print_dsl_context = true,
     };
-    rc = nmo_core_query_build(&c, &query, &query_dsl, &query_opts);
+    rc = nmo_core_query_build(&c, &query, &query_opts);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         nmo_tool_close_session(ctx, session);
         return rc;
@@ -282,7 +276,6 @@ static int object_list_single(const char *file_path,
             }
             fprintf(c.out, "Objects: %zu", result.matched);
             if (class_filter_str) fprintf(c.out, " (filtered by class: %s)", class_filter_str);
-            if (filter_expr) fprintf(c.out, " (filtered by: %s)", filter_expr);
             if (top_n > 0) fprintf(c.out, " (showing top %u)", top_n);
             fprintf(c.out, "\n\n");
             nmo_cli_table_print(&table, c.out, c.colorize);
@@ -309,14 +302,12 @@ static int object_list_single(const char *file_path,
             nmo_core_object_query_run(&c, &query, list_table_visitor, &td, &result);
             fprintf(c.out, "Objects: %zu", result.matched);
             if (class_filter_str) fprintf(c.out, " (filtered by class: %s)", class_filter_str);
-            if (filter_expr) fprintf(c.out, " (filtered by: %s)", filter_expr);
             fprintf(c.out, "\n\n");
             nmo_cli_table_print(&table, c.out, c.colorize);
             nmo_cli_table_free(&table);
         }
     }
 
-    nmo_core_query_dsl_destroy(&query_dsl);
     nmo_tool_close_session(ctx, session);
     return rc;
 }
@@ -324,21 +315,19 @@ static int object_list_single(const char *file_path,
 int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--class",   "-c", NMO_OPT_STRING, "Filter by class name"},
-        {"--filter",  "-f", NMO_OPT_STRING, "Filter by DSL expression"},
         {"--sort",    "-s",  NMO_OPT_STRING, "Sort by: id, name, class, size"},
         {"--reverse", "-r",  NMO_OPT_FLAG,   "Reverse sort direction"},
         {"--top",     NULL,  NMO_OPT_UINT,   "Show only first N results"},
     };
-    nmo_opt_val_t vals[5];
+    nmo_opt_val_t vals[4];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 5, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, 4, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *class_filter_str = vals[0].present ? vals[0].val.str : NULL;
-    const char *filter_expr      = vals[1].present ? vals[1].val.str : NULL;
-    const char *sort_key_str     = vals[2].present ? vals[2].val.str : NULL;
-    bool reverse                 = vals[3].present && vals[3].val.flag;
-    uint32_t top_n               = vals[4].present ? vals[4].val.u : 0;
+    const char *sort_key_str     = vals[1].present ? vals[1].val.str : NULL;
+    bool reverse                 = vals[2].present && vals[2].val.flag;
+    uint32_t top_n               = vals[3].present ? vals[3].val.u : 0;
 
     /* Validate sort key early */
     nmo_cli_sort_key_t sort_key = nmo_cli_parse_sort_key(sort_key_str);
@@ -350,7 +339,7 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
     /* Batch mode */
     if (global->batch_mode) {
         static const char *const value_opts[] = {
-            "--class", "-c", "--filter", "-f", "--sort", "-s", "--top",
+            "--class", "-c", "--sort", "-s", "--top",
         };
         const char *paths[256];
         size_t count = nmo_tool_find_file_args_ex(
@@ -365,7 +354,6 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
         object_list_opts_t opts = {
             .class_filter_str = class_filter_str,
-            .filter_expr = filter_expr,
             .sort_key_str = sort_key_str,
             .reverse = reverse,
             .top_n = top_n,
@@ -381,14 +369,11 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
     /* Build query */
     nmo_object_query_t query = {0};
-    nmo_core_query_dsl_t query_dsl = {0};
     nmo_core_query_build_options_t query_opts = {
         .class_name = class_filter_str,
-        .filter_expr = filter_expr,
         .include_derived_classes = true,
-        .print_dsl_context = true,
     };
-    rc = nmo_core_query_build(&c, &query, &query_dsl, &query_opts);
+    rc = nmo_core_query_build(&c, &query, &query_opts);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return nmo_cmd_ctx_done(&c, rc);
     }
@@ -452,9 +437,6 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
             if (class_filter_str) {
                 fprintf(c.out, " (filtered by class: %s)", class_filter_str);
             }
-            if (filter_expr) {
-                fprintf(c.out, " (filtered by: %s)", filter_expr);
-            }
             if (top_n > 0) {
                 fprintf(c.out, " (showing top %u)", top_n);
             }
@@ -498,9 +480,6 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
             if (class_filter_str) {
                 fprintf(c.out, " (filtered by class: %s)", class_filter_str);
             }
-            if (filter_expr) {
-                fprintf(c.out, " (filtered by: %s)", filter_expr);
-            }
             fprintf(c.out, "\n\n");
 
             nmo_cli_table_print(&table, c.out, c.colorize);
@@ -508,7 +487,6 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
         }
     }
 
-    nmo_core_query_dsl_destroy(&query_dsl);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
@@ -715,8 +693,6 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
 typedef struct object_show_args {
     const char *select_paths[64];
     size_t select_path_count;
-    const char *exprs[64];
-    size_t expr_count;
     int depth;
     bool full_mode;
     bool has_id;
@@ -733,7 +709,7 @@ static int object_show_parse(int argc, char **argv, bool expect_file_operand,
     memset(args, 0, sizeof(*args));
     args->depth = -1;
 
-    /* Pass 1: collect --select/--expr, build cleaned argv */
+    /* Pass 1: collect --select, build cleaned argv */
     char **clean_argv = (char **)malloc((size_t)argc * sizeof(char *));
     if (!clean_argv) {
         fprintf(stderr, "Error: Out of memory\n");
@@ -754,22 +730,6 @@ static int object_show_parse(int argc, char **argv, bool expect_file_operand,
                 args->select_paths[args->select_path_count++] = argv[i + 1];
             } else {
                 fprintf(stderr, "Warning: --select limit reached (64 max), extra paths ignored\n");
-            }
-            i++; /* skip value */
-            continue;
-        }
-
-        if ((strcmp(argv[i], "--expr") == 0 || strcmp(argv[i], "-e") == 0)) {
-            if (i + 1 >= argc) {
-                fprintf(stderr, "Error: Missing argument for %s\n", argv[i]);
-                fprintf(stderr, "Usage: %s\n", usage);
-                free(clean_argv);
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            if (args->expr_count < (sizeof(args->exprs) / sizeof(args->exprs[0]))) {
-                args->exprs[args->expr_count++] = argv[i + 1];
-            } else {
-                fprintf(stderr, "Warning: --expr limit reached (64 max), extra expressions ignored\n");
             }
             i++; /* skip value */
             continue;
@@ -904,11 +864,7 @@ static int object_show_run(nmo_cmd_ctx_t *ctx, const object_show_args_t *args,
                                                             args->select_paths,
                                                             args->select_path_count);
             }
-            if (args->expr_count > 0) {
-                ok |= nmo_object_summary_expr_with_config(target, &sum_out, &cfg,
-                                                          args->exprs, args->expr_count);
-            }
-            if (args->select_path_count == 0 && args->expr_count == 0) {
+            if (args->select_path_count == 0) {
                 ok |= nmo_object_summary_with_config(target, &sum_out, &cfg);
             }
             if (ok) {
@@ -968,11 +924,7 @@ static int object_show_run(nmo_cmd_ctx_t *ctx, const object_show_args_t *args,
                                                             args->select_paths,
                                                             args->select_path_count);
             }
-            if (args->expr_count > 0) {
-                (void)nmo_object_summary_expr_with_config(target, &sum_out, &cfg,
-                                                          args->exprs, args->expr_count);
-            }
-            if (args->select_path_count == 0 && args->expr_count == 0) {
+            if (args->select_path_count == 0) {
                 (void)nmo_object_summary_with_config(target, &sum_out, &cfg);
             }
         }
@@ -984,7 +936,7 @@ static int object_show_run(nmo_cmd_ctx_t *ctx, const object_show_args_t *args,
 int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     object_show_args_t args;
     const char *usage =
-        "nmo object show [--select <path>]... [--expr <expr>]... "
+        "nmo object show [--select <path>]... "
         "[--id <id> | --name <name> | <id>] <file>";
     int rc = object_show_parse(argc, argv, true, &args, usage);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
@@ -1001,7 +953,7 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
 int nmo_cmd_object_show_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
     object_show_args_t args;
     const char *usage =
-        "object show [--select <path>]... [--expr <expr>]... "
+        "object show [--select <path>]... "
         "[--id <id> | --name <name> | <id>]";
     int rc = object_show_parse(argc, argv, false, &args, usage);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
@@ -1018,7 +970,7 @@ int nmo_cmd_object_show_class_in_session(nmo_cmd_ctx_t *ctx,
                                          const char *type_label) {
     object_show_args_t args;
     const char *usage =
-        "show [--select <path>]... [--expr <expr>]... "
+        "show [--select <path>]... "
         "[--id <id> | --name <name> | <id>]";
     int rc = object_show_parse(argc, argv, false, &args, usage);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
@@ -1102,7 +1054,7 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
         .name_wildcard = name_filter,
         .include_derived_classes = true,
     };
-    rc = nmo_core_query_build(&c, &query, NULL, &query_opts);
+    rc = nmo_core_query_build(&c, &query, &query_opts);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return nmo_cmd_ctx_done(&c, rc);
     }
@@ -1169,12 +1121,11 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
     static const nmo_opt_def_t opts[] = {
         {"--class",  "-c", NMO_OPT_STRING, "Filter by class name"},
         {"--name",   "-n", NMO_OPT_STRING, "Filter by name pattern"},
-        {"--filter", "-f", NMO_OPT_STRING, "Filter by DSL expression"},
         {"--depth",  "-d", NMO_OPT_UINT,   "Recursion depth (default: 4)"},
         {"--full",   NULL, NMO_OPT_FLAG,   "Full detail mode for text output (depth 8)"},
         {"--id",     NULL, NMO_OPT_UINT,   "Export specific object by ID"},
     };
-    enum { OPT_CLASS, OPT_NAME, OPT_FILTER, OPT_DEPTH, OPT_FULL, OPT_ID, OPT_COUNT };
+    enum { OPT_CLASS, OPT_NAME, OPT_DEPTH, OPT_FULL, OPT_ID, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
@@ -1182,7 +1133,6 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     const char *class_filter_str = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL;
     const char *name_pattern     = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
-    const char *filter_expr      = vals[OPT_FILTER].present ? vals[OPT_FILTER].val.str : NULL;
     int depth                    = vals[OPT_DEPTH].present ? (int)vals[OPT_DEPTH].val.u : -1;
     bool full_mode               = vals[OPT_FULL].present && vals[OPT_FULL].val.flag;
     uint32_t id_filter           = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0;
@@ -1193,17 +1143,14 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     /* Build query */
     nmo_object_query_t query = {0};
-    nmo_core_query_dsl_t query_dsl = {0};
     nmo_core_query_build_options_t query_opts = {
         .class_name = class_filter_str,
         .name_wildcard = name_pattern,
-        .filter_expr = filter_expr,
         .include_derived_classes = true,
         .has_object_id = id_filter != 0,
         .object_id = id_filter,
-        .print_dsl_context = true,
     };
-    rc = nmo_core_query_build(&c, &query, &query_dsl, &query_opts);
+    rc = nmo_core_query_build(&c, &query, &query_opts);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return nmo_cmd_ctx_done(&c, rc);
     }
@@ -1231,7 +1178,6 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         if (!doc) {
             free(col.objects);
-            nmo_core_query_dsl_destroy(&query_dsl);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
         yyjson_mut_val *data = yyjson_mut_obj(doc);
@@ -1312,7 +1258,6 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
     }
 
     free(col.objects);
-    nmo_core_query_dsl_destroy(&query_dsl);
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
@@ -1455,29 +1400,24 @@ static int object_list_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     static const nmo_opt_def_t opts[] = {
         {"--class",   "-c", NMO_OPT_STRING, "Filter by class name"},
-        {"--filter",  "-f", NMO_OPT_STRING, "Filter by DSL expression"},
         {"--sort",    "-s", NMO_OPT_STRING, "Sort by: id, name, class, size"},
         {"--reverse", "-r", NMO_OPT_FLAG,   "Reverse sort direction"},
         {"--top",     NULL, NMO_OPT_UINT,   "Show only first N results"},
     };
-    nmo_opt_val_t vals[5];
+    nmo_opt_val_t vals[4];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 5, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, 4, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *class_filter_str = vals[0].present ? vals[0].val.str : NULL;
-    const char *filter_expr      = vals[1].present ? vals[1].val.str : NULL;
-    uint32_t top_n               = vals[4].present ? vals[4].val.u : 0;
+    uint32_t top_n               = vals[3].present ? vals[3].val.u : 0;
 
     nmo_object_query_t query = {0};
-    nmo_core_query_dsl_t query_dsl = {0};
     nmo_core_query_build_options_t query_opts = {
         .class_name = class_filter_str,
-        .filter_expr = filter_expr,
         .include_derived_classes = true,
-        .print_dsl_context = true,
     };
-    int rc = nmo_core_query_build(ctx, &query, &query_dsl, &query_opts);
+    int rc = nmo_core_query_build(ctx, &query, &query_opts);
     if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
 
     nmo_core_iter_result_t result = {0};
@@ -1515,7 +1455,6 @@ static int object_list_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         nmo_cli_table_free(&table);
     }
 
-    nmo_core_query_dsl_destroy(&query_dsl);
     return rc;
 }
 
@@ -1570,7 +1509,7 @@ static int object_find_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         .name_wildcard = name_filter,
         .include_derived_classes = true,
     };
-    int rc = nmo_core_query_build(ctx, &query, NULL, &query_opts);
+    int rc = nmo_core_query_build(ctx, &query, &query_opts);
     if (rc != NMO_CLI_EXIT_SUCCESS) return rc;
 
     nmo_core_iter_result_t result = {0};

@@ -14,7 +14,6 @@
  * - Format Layer: headers, chunks, objects, managers, data, chunk pool, image
  * - Object Layer: class IDs, object types, schemas
  * - Type Layer: type system, dynamic types, operation system, builtin operations, string conversion
- * - DSL Layer: compile-once evaluate-many query and mutation language
  * - Session Layer: repository, ID remapping, object system, object index, parser, builder
  * - App Layer: context, session, plugin, comparison, runtime load, inspector, save pipeline, stats
  *
@@ -119,9 +118,6 @@
 #include "type/nmo_operation_system.h"
 #include "type/nmo_operations.h"
 #include "type/nmo_type_string.h"
-
-// DSL layer
-#include "dsl/nmo_dsl.h"
 
 // Extension layer
 #include "extension/nmo_extension_abi.h"

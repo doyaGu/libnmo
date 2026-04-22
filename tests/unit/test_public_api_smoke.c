@@ -48,11 +48,64 @@
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_view.h"
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#ifndef NMO_SOURCE_DIR
+#define NMO_SOURCE_DIR "."
+#endif
+
 #ifdef NMO_JSON_STREAM_PUBLIC_HEADER_KIND
 #define NMO_TEST_HAS_JSON_STREAM_PUBLIC_API 1
 #else
 #define NMO_TEST_HAS_JSON_STREAM_PUBLIC_API 0
 #endif
+
+static char *read_source_text(const char *relative_path) {
+    const char *candidates[] = {
+        relative_path,
+        "../../",
+        NMO_SOURCE_DIR "/",
+    };
+
+    FILE *fp = NULL;
+    char path[1024];
+    for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); ++i) {
+        snprintf(path, sizeof(path), "%s%s", candidates[i], relative_path);
+        fp = fopen(path, "rb");
+        if (fp) {
+            break;
+        }
+    }
+    if (!fp) {
+        return NULL;
+    }
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        return NULL;
+    }
+    long size = ftell(fp);
+    if (size < 0 || fseek(fp, 0, SEEK_SET) != 0) {
+        fclose(fp);
+        return NULL;
+    }
+
+    char *buf = (char *)malloc((size_t)size + 1);
+    if (!buf) {
+        fclose(fp);
+        return NULL;
+    }
+
+    size_t nread = fread(buf, 1, (size_t)size, fp);
+    fclose(fp);
+    if (nread != (size_t)size) {
+        free(buf);
+        return NULL;
+    }
+    buf[size] = '\0';
+    return buf;
+}
 
 TEST(public_api_smoke, version) {
     const char *ver = nmo_version();
@@ -92,6 +145,22 @@ TEST(public_api_smoke, report_result_headers_are_directly_usable) {
 
 TEST(public_api_smoke, json_stream_is_not_part_of_public_api_surface) {
     ASSERT_FALSE(NMO_TEST_HAS_JSON_STREAM_PUBLIC_API);
+}
+
+TEST(public_api_smoke, dsl_headers_are_not_part_of_public_api_surface) {
+    char *umbrella = read_source_text("include/nmo.h");
+    ASSERT_NOT_NULL(umbrella);
+    ASSERT_FALSE(strstr(umbrella, "dsl/nmo_dsl.h") != NULL);
+    free(umbrella);
+
+    char *summary = read_source_text("include/app/nmo_object_summary.h");
+    ASSERT_NOT_NULL(summary);
+    ASSERT_FALSE(strstr(summary, "nmo_object_summary_expr(") != NULL);
+    ASSERT_FALSE(strstr(summary, "nmo_object_summary_expr_with_config(") != NULL);
+    free(summary);
+
+    char *dsl_json = read_source_text("include/app/nmo_dsl_json.h");
+    ASSERT_NULL(dsl_json);
 }
 
 TEST(public_api_smoke, public_api_tier_signals_are_declared) {
@@ -245,5 +314,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(public_api_smoke, preferred_edit_and_query_headers_are_directly_usable);
     REGISTER_TEST(public_api_smoke, report_result_headers_are_directly_usable);
     REGISTER_TEST(public_api_smoke, json_stream_is_not_part_of_public_api_surface);
+    REGISTER_TEST(public_api_smoke, dsl_headers_are_not_part_of_public_api_surface);
     REGISTER_TEST(public_api_smoke, public_api_tier_signals_are_declared);
 TEST_MAIN_END()

@@ -668,7 +668,6 @@ TEST(no_legacy_runtime_api_exports, cli_repl_parse_sites_use_shared_parse_helper
     assert_file_has_no_substring("tools/commands/nmo_cmd_convert.c", "strtol(");
     assert_file_has_no_substring("tools/commands/nmo_cmd_entity.c", "strtod(");
     assert_file_has_no_substring("tools/commands/nmo_cmd_object_refs.c", "strtoul(");
-    assert_file_has_no_substring("tools/commands/nmo_cmd_query.c", "strtol(");
     assert_file_has_no_substring("tools/commands/nmo_cmd_animation.c", "strtoul(");
     assert_file_has_no_substring("tools/commands/nmo_cmd_animation.c", "sscanf(");
     assert_file_has_no_substring("tools/commands/nmo_cmd_object_write.c", "sscanf(");
@@ -697,8 +696,7 @@ TEST(no_legacy_runtime_api_exports, core_string_parse_sites_use_shared_parse_hel
 
 TEST(no_legacy_runtime_api_exports, grammar_parse_sites_use_shared_parse_helpers) {
     assert_file_has_no_substring("src/format/obj_parser.c", "strtof(");
-    assert_file_has_no_substring("src/dsl/nmo_dsl_lex.c", "strtoll(");
-    assert_file_has_no_substring("src/dsl/nmo_dsl_lex.c", "strtod(");
+    assert_file_not_found("src/dsl/nmo_dsl_lex.c");
 }
 
 TEST(no_legacy_runtime_api_exports, legacy_session_query_api_is_removed) {
@@ -1111,13 +1109,6 @@ TEST(no_legacy_runtime_api_exports, tools_do_not_bypass_shared_query_matching) {
     assert_file_has_no_substring("tools/nmo_repl_util.c", "nmo_core_regex_match");
     assert_file_has_no_substring("tools/nmo_repl_input.c", "nmo_object_repository_get_count");
     assert_file_has_no_substring("tools/nmo_repl_input.c", "nmo_object_repository_get_by_index");
-    assert_file_has_no_substring("tools/commands/nmo_cmd_query.c", "nmo_object_repository_find_by_name");
-}
-
-TEST(no_legacy_runtime_api_exports, query_object_name_lookup_preserves_internal_errors) {
-    assert_file_has_no_substring(
-        "tools/commands/nmo_cmd_query.c",
-        "            if (lookup_rc != NMO_CLI_EXIT_SUCCESS) {");
 }
 
 TEST(no_legacy_runtime_api_exports, behavior_graph_commands_use_core_object_query_runner) {
@@ -1236,7 +1227,6 @@ REGISTER_TEST(no_legacy_runtime_api_exports, object_set_field_uses_shared_write_
 REGISTER_TEST(no_legacy_runtime_api_exports, remaining_cli_commands_use_object_query_api);
 REGISTER_TEST(no_legacy_runtime_api_exports, cli_commands_do_not_bypass_shared_object_query_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, tools_do_not_bypass_shared_query_matching);
-REGISTER_TEST(no_legacy_runtime_api_exports, query_object_name_lookup_preserves_internal_errors);
 REGISTER_TEST(no_legacy_runtime_api_exports, behavior_graph_commands_use_core_object_query_runner);
 REGISTER_TEST(no_legacy_runtime_api_exports, remaining_tools_do_not_use_repository_get_all_scans);
 REGISTER_TEST(no_legacy_runtime_api_exports, session_internals_do_not_use_repository_get_all_snapshots);

@@ -36,8 +36,10 @@ groups=(
     'obj:Alias for object'
     'behavior:Behavior inspection'
     'beh:Alias for behavior'
+    'patch:Patch apply and diff'
     'parameter:Parameter inspection'
     'param:Alias for parameter'
+    'script:Script editing and graph queries'
     'resource:Resource management'
     'res:Alias for resource'
     'texture:Texture management'
@@ -62,8 +64,6 @@ groups=(
     'conv:Alias for convert'
     'diff:File comparison'
     'd:Alias for diff'
-    'query:DSL query engine'
-    'q:Alias for query'
     'extension:Extension management'
     'ext:Alias for extension'
     'completion:Shell completion scripts'
@@ -92,7 +92,6 @@ _nmo_resolve_group() {
         val) echo 'validate' ;;
         conv) echo 'convert' ;;
         d) echo 'diff' ;;
-        q) echo 'query' ;;
         ext) echo 'extension' ;;
         comp) echo 'completion' ;;
         dbg) echo 'debug' ;;
@@ -122,8 +121,8 @@ _nmo_action_flags() {
         chunk/s/) echo '--hexdump -m --max-bytes' ;;
         chunk/find/) echo '' ;;
         chunk/f/) echo '' ;;
-        object/list/) echo '-c --class -f --filter' ;;
-        object/ls/) echo '-c --class -f --filter' ;;
+        object/list/) echo '-c --class' ;;
+        object/ls/) echo '-c --class' ;;
         object/tree/) echo '' ;;
         object/t/) echo '' ;;
         object/show/) echo '' ;;
@@ -134,19 +133,19 @@ _nmo_action_flags() {
         object/r/) echo '' ;;
         object/rename/) echo '-o --output' ;;
         object/ren/) echo '-o --output' ;;
-        object/export/) echo '-c --class -n --name -f --filter -d --depth --full --id' ;;
-        object/x/) echo '-c --class -n --name -f --filter -d --depth --full --id' ;;
+        object/export/) echo '-c --class -n --name -d --depth --full --id' ;;
+        object/x/) echo '-c --class -n --name -d --depth --full --id' ;;
         object/impact/) echo '' ;;
         object/imp/) echo '' ;;
         object/orphans/) echo '-c --class' ;;
         object/orp/) echo '-c --class' ;;
         object/cycles/) echo '' ;;
         object/cyc/) echo '' ;;
-        object/delete/) echo '-o --output -c --class -n --name -f --filter --cascade --dry-run --strict' ;;
-        object/del/) echo '-o --output -c --class -n --name -f --filter --cascade --dry-run --strict' ;;
+        object/delete/) echo '-o --output -c --class -n --name --cascade --dry-run --strict' ;;
+        object/del/) echo '-o --output -c --class -n --name --cascade --dry-run --strict' ;;
         object/create/) echo '-o --output -c --class -n --name --type-guid --dry-run' ;;
-        object/copy/) echo '-o --output -c --class -n --name -f --filter --cascade --dry-run' ;;
-        object/cp/) echo '-o --output -c --class -n --name -f --filter --cascade --dry-run' ;;
+        object/copy/) echo '-o --output -c --class -n --name --cascade --dry-run' ;;
+        object/cp/) echo '-o --output -c --class -n --name --cascade --dry-run' ;;
         object/import/) echo '-f --format -o --output --create --dry-run' ;;
         object/graph/) echo '--dot --kind' ;;
         object/gr/) echo '--dot --kind' ;;
@@ -162,6 +161,10 @@ _nmo_action_flags() {
         behavior/s/) echo '--raw' ;;
         behavior/graph/) echo '--dot --max-nodes --max-edges' ;;
         behavior/g/) echo '--dot --max-nodes --max-edges' ;;
+        behavior/graph-boundary/) echo '--depth' ;;
+        behavior/replace-bb/) echo '--bb-guid --name --version --preserve-links --preserve-params -o --output --dry-run' ;;
+        behavior/fold/) echo '-p --parent --nodes --bb-guid --name --version --preserve-links --preserve-params -o --output --dry-run' ;;
+        behavior/fold-candidates/) echo '-p --parent -d --depth' ;;
         behavior/dump/) echo '--all --flows --values' ;;
         behavior/d/) echo '--all --flows --values' ;;
         behavior/find/) echo '--name --guid --type' ;;
@@ -220,6 +223,8 @@ _nmo_action_flags() {
         behavior/iface/set-graph-io) echo '' ;;
         behavior/interface/translate) echo '' ;;
         behavior/iface/translate) echo '' ;;
+        patch/apply/) echo '--dry-run' ;;
+        patch/diff/) echo '' ;;
         parameter/list/) echo '' ;;
         parameter/ls/) echo '' ;;
         parameter/show/) echo '' ;;
@@ -227,6 +232,14 @@ _nmo_action_flags() {
         parameter/dump/) echo '--all --type' ;;
         parameter/d/) echo '--all --type' ;;
         parameter/set/) echo '-o --output -b --owner -n --name -i --index --hex --dry-run' ;;
+        script/graph/) echo '' ;;
+        script/g/) echo '' ;;
+        script/run/) echo '' ;;
+        script/node/) echo '' ;;
+        script/io/) echo '' ;;
+        script/link/) echo '' ;;
+        script/param/) echo '' ;;
+        script/op/) echo '' ;;
         resource/list/) echo '' ;;
         resource/ls/) echo '' ;;
         resource/show/) echo '' ;;
@@ -319,8 +332,8 @@ _nmo_action_flags() {
         convert/st/) echo '-o --output -c --class --name --dry-run --fast-save' ;;
         convert/merge/) echo '-o --output --fast-save' ;;
         convert/m/) echo '-o --output --fast-save' ;;
-        convert/export/) echo '-o --output -c --class -n --name -f --filter --all --deps --dry-run --compress --fast-save' ;;
-        convert/x/) echo '-o --output -c --class -n --name -f --filter --all --deps --dry-run --compress --fast-save' ;;
+        convert/export/) echo '-o --output -c --class -n --name --all --deps --dry-run --compress --fast-save' ;;
+        convert/x/) echo '-o --output -c --class -n --name --all --deps --dry-run --compress --fast-save' ;;
         diff/summary/) echo '--ignore-order' ;;
         diff/s/) echo '--ignore-order' ;;
         diff/objects/) echo '--max-objects --max-fields --min-similarity --rename-similarity' ;;
@@ -329,14 +342,6 @@ _nmo_action_flags() {
         diff/ch/) echo '--object' ;;
         diff/full/) echo '' ;;
         diff/f/) echo '' ;;
-        query/eval/) echo '--expr' ;;
-        query/e/) echo '--expr' ;;
-        query/script/) echo '' ;;
-        query/s/) echo '' ;;
-        query/schema/) echo '' ;;
-        query/sc/) echo '' ;;
-        query/module/) echo '' ;;
-        query/m/) echo '' ;;
         extension/list/) echo '' ;;
         extension/ls/) echo '' ;;
         extension/load/) echo '' ;;
@@ -437,6 +442,10 @@ _nmo_actions() {
                 's:Alias for show'
                 'graph:Export behavior graph'
                 'g:Alias for graph'
+                'graph-boundary:Export behavior graph boundary'
+                'replace-bb:Replace a leaf building block'
+                'fold:Analyze subgraph fold rewrite'
+                'fold-candidates:Report fold candidate boundaries'
                 'dump:Dump compact behavior tree overview'
                 'd:Alias for dump'
                 'find:Search behaviors by name/GUID/type'
@@ -448,6 +457,11 @@ _nmo_actions() {
                 'interface:Interface layout commands'
                 'iface:Alias for interface'
             ) ;;
+        patch)
+            acts=(
+                'apply:Apply rewrite patch'
+                'diff:Preview rewrite patch'
+            ) ;;
         parameter)
             acts=(
                 'list:List parameters'
@@ -457,6 +471,17 @@ _nmo_actions() {
                 'dump:Dump parameter with decoded value'
                 'd:Alias for dump'
                 'set:Set parameter value'
+            ) ;;
+        script)
+            acts=(
+                'graph:Export script edit graph'
+                'g:Alias for graph'
+                'run:Run Lua script automation'
+                'node:Script node editing'
+                'io:Script IO editing'
+                'link:Script control-flow editing'
+                'param:Script parameter editing'
+                'op:Script operation editing'
             ) ;;
         resource)
             acts=(
@@ -595,17 +620,6 @@ _nmo_actions() {
                 'ch:Alias for chunks'
                 'full:Full comparison'
                 'f:Alias for full'
-            ) ;;
-        query)
-            acts=(
-                'eval:Evaluate DSL expression'
-                'e:Alias for eval'
-                'script:Execute DSL script'
-                's:Alias for script'
-                'schema:Apply DSL schema'
-                'sc:Alias for schema'
-                'module:Run DSL module'
-                'm:Alias for module'
             ) ;;
         extension)
             acts=(

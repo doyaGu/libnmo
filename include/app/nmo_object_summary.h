@@ -114,7 +114,7 @@ NMO_API void nmo_summary_init(void);
  * This is the main entry point. It generates:
  * 1. Base metadata (file index, state size, parent, etc.)
  * 2. Reflection-based field dump (using type system)
- * 3. Optional projection/query sections when requested
+ * 3. Optional projection sections when requested
  *
  * @param obj Object to summarize
  * @param out Output context
@@ -169,33 +169,6 @@ NMO_API bool nmo_object_summary_select_with_config(
     const nmo_summary_config_t *config,
     const char *const *paths,
     size_t path_count);
-
-/**
- * @brief Evaluate one or more query expressions and emit results.
- *
- * Expressions are C-like and reflection-driven. See `include/dsl/nmo_dsl.h`.
- *
- * @param obj Object to query
- * @param out Output context
- * @param exprs Array of expression strings
- * @param expr_count Number of expressions
- * @return true if any result was emitted
- */
-NMO_API bool nmo_object_summary_expr(
-    nmo_object_t *obj,
-    nmo_summary_output_t *out,
-    const char *const *exprs,
-    size_t expr_count);
-
-/**
- * @brief Evaluate expressions with custom configuration.
- */
-NMO_API bool nmo_object_summary_expr_with_config(
-    nmo_object_t *obj,
-    nmo_summary_output_t *out,
-    const nmo_summary_config_t *config,
-    const char *const *exprs,
-    size_t expr_count);
 
 /**
  * @brief Check if a class has reflection available

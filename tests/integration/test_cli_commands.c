@@ -2,8 +2,8 @@
  * @file test_cli_commands.c
  * @brief CLI command integration tests
  *
- * Tests new CLI command groups (convert, diff, query, extension),
- * batch processing, object list --filter, file stats, and validate --fix.
+ * Tests new CLI command groups (convert, diff, extension),
+ * batch processing, file stats, and validate --fix.
  */
 
 #include "test_framework.h"
@@ -738,151 +738,46 @@ TEST(cli, object_list_json) {
  * ============================================================================ */
 
 /* ============================================================================
- * query and entity commands
+ * removed query commands and entity commands
  * ============================================================================ */
 
-static bool find_object_id_by_name(
-    const char *file_path,
-    const char *target_name,
-    uint64_t *out_id)
-{
-    if (out_id == NULL) {
-        return false;
-    }
-    *out_id = 0;
-
+TEST(cli, query_commands_are_not_available) {
+    cli_run_result_t result;
     char args[512];
-    snprintf(args, sizeof(args), "object list \"%s\"", file_path);
-    yyjson_doc *doc = run_cli_json(args);
-    if (doc == NULL) {
-        return false;
-    }
 
-    yyjson_val *data = json_envelope_data(doc);
-    if (data == NULL) {
-        yyjson_doc_free(doc);
-        return false;
-    }
-    yyjson_val *objects = yyjson_obj_get(data, "objects");
-    if (objects == NULL) {
-        yyjson_doc_free(doc);
-        return false;
-    }
-
-    size_t idx, max;
-    yyjson_val *obj;
-    yyjson_arr_foreach(objects, idx, max, obj) {
-        yyjson_val *name = yyjson_obj_get(obj, "name");
-        if (name != NULL && strcmp(yyjson_get_str(name), target_name) == 0) {
-            *out_id = yyjson_get_uint(yyjson_obj_get(obj, "id"));
-            break;
-        }
-    }
-    yyjson_doc_free(doc);
-    return *out_id != 0;
-}
-
-static bool create_numeric_name_query_fixture(const char *path) {
-    nmo_context_desc_t desc = {0};
-    nmo_context_t *ctx = nmo_context_create(&desc);
-    if (!ctx) {
-        return false;
-    }
-
-    nmo_session_t *session = nmo_session_create(ctx);
-    if (!session) {
-        nmo_context_release(ctx);
-        return false;
-    }
-
-    nmo_runtime_report_t report = {0};
-    nmo_object_id_t id = 0;
-    bool ok = nmo_session_create_object(
-        session,
-        NMO_CID_OBJECT,
-        "424242",
-        (nmo_guid_t){0, 0},
-        &id,
-        &report) == NMO_OK;
-    if (ok) {
-        nmo_save_options_t save_opts = nmo_save_options_default();
-        ok = nmo_save_file(session, path, &save_opts) == NMO_OK;
-    }
-
-    nmo_session_destroy(session);
-    nmo_context_release(ctx);
-    return ok;
-}
-
-TEST(cli, query_eval_object_id_uses_object_query_lookup) {
-    const char *file_path = NMO_TEST_DATA_FILE("Ballance/Camera.nmo");
-    uint64_t object_id = 0;
-    ASSERT_TRUE(find_object_id_by_name(file_path, "InGameCam", &object_id));
-
-    char args[512];
     snprintf(args, sizeof(args),
-             "query eval --object %u has_target \"%s\"",
-             (unsigned)object_id,
-             file_path);
-    yyjson_doc *doc = run_cli_json(args);
-    ASSERT_NOT_NULL(doc);
-    ASSERT_STR_EQ(json_envelope_command(doc), "query.eval");
-
-    yyjson_val *data = json_envelope_data(doc);
-    ASSERT_NOT_NULL(data);
-    yyjson_val *result = yyjson_obj_get(data, "result");
-    ASSERT_NOT_NULL(result);
-    ASSERT_NOT_NULL(yyjson_get_str(result));
-    yyjson_doc_free(doc);
-}
-
-TEST(cli, query_eval_numeric_object_selector_does_not_fall_back_to_name) {
-    const char *fixture = "test_query_numeric_name_fixture.nmo";
-    remove(fixture);
-    ASSERT_TRUE(create_numeric_name_query_fixture(fixture));
-
-    char args[512];
-    snprintf(args, sizeof(args),
-             "query eval --object 424242 has_target \"%s\"",
-             fixture);
-    cli_run_result_t result = run_cli_capture(args);
-    ASSERT_EQ(NMO_CLI_EXIT_NOT_FOUND, result.exit_code);
+             "query eval --object 520 has_target \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
-    ASSERT_STR_CONTAINS(result.output, "Object not found: 424242");
-    ASSERT_FALSE(strstr(result.output, "has no reflection data") != NULL);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_TRUE(strlen(result.output) > 0);
     free(result.output);
-    remove(fixture);
-}
 
-TEST(cli, query_eval_missing_object_name_returns_not_found) {
-    const char *file_path = NMO_TEST_DATA_FILE("Ballance/Camera.nmo");
-    char args[512];
     snprintf(args, sizeof(args),
-             "query eval --object DefinitelyMissingObject has_target \"%s\"",
-             file_path);
-    cli_run_result_t result = run_cli_capture(args);
-    ASSERT_EQ(NMO_CLI_EXIT_NOT_FOUND, result.exit_code);
+             "query script script.nmodsl \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
-    ASSERT_STR_CONTAINS(result.output, "Object not found: DefinitelyMissingObject");
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_TRUE(strlen(result.output) > 0);
     free(result.output);
-}
 
-TEST(cli, query_eval_object_name_uses_object_query_lookup) {
-    const char *file_path = NMO_TEST_DATA_FILE("Ballance/Camera.nmo");
-    char args[512];
+    snprintf(args, sizeof(args), "query schema schema.nmodsl");
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_TRUE(strlen(result.output) > 0);
+    free(result.output);
+
     snprintf(args, sizeof(args),
-             "query eval --object InGameCam has_target \"%s\"",
-             file_path);
-    yyjson_doc *doc = run_cli_json(args);
-    ASSERT_NOT_NULL(doc);
-    ASSERT_STR_EQ(json_envelope_command(doc), "query.eval");
-
-    yyjson_val *data = json_envelope_data(doc);
-    ASSERT_NOT_NULL(data);
-    yyjson_val *result = yyjson_obj_get(data, "result");
-    ASSERT_NOT_NULL(result);
-    ASSERT_NOT_NULL(yyjson_get_str(result));
-    yyjson_doc_free(doc);
+             "query module module.nmodsl \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_TRUE(strlen(result.output) > 0);
+    free(result.output);
 }
 
 TEST(cli, entity_list_class_filter_accepts_entity_derived_class) {
@@ -2880,7 +2775,7 @@ TEST(cli, object_delete_batch_name_filter_saves) {
     remove(output);
 }
 
-TEST(cli, object_delete_rejects_empty_dsl_filter) {
+TEST(cli, object_delete_rejects_filter_option) {
     const char *fixture = "test_delete_empty_filter_fixture.nmo";
     remove(fixture);
 
@@ -2888,11 +2783,11 @@ TEST(cli, object_delete_rejects_empty_dsl_filter) {
 
     char args[1024];
     snprintf(args, sizeof(args),
-             "object delete --dry-run --filter \"\" \"%s\"",
+             "object delete --dry-run --filter \"id > 0\" \"%s\"",
              fixture);
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
-    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
     ASSERT_STR_CONTAINS(result.output, "filter");
     free(result.output);
 
@@ -3054,7 +2949,7 @@ TEST(cli, help_shows_groups) {
     ASSERT_STR_CONTAINS(output, "validate");
     ASSERT_STR_CONTAINS(output, "convert");
     ASSERT_STR_CONTAINS(output, "diff");
-    ASSERT_STR_CONTAINS(output, "query");
+    ASSERT_FALSE(strstr(output, "query") != NULL);
     ASSERT_STR_CONTAINS(output, "extension");
     free(output);
 }
@@ -3144,10 +3039,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, object_list_top_limits_output);
     REGISTER_TEST(cli, object_list_sort_and_top_combined);
     REGISTER_TEST(cli, object_list_fields_json_outputs_envelope);
-    REGISTER_TEST(cli, query_eval_object_id_uses_object_query_lookup);
-    REGISTER_TEST(cli, query_eval_numeric_object_selector_does_not_fall_back_to_name);
-    REGISTER_TEST(cli, query_eval_missing_object_name_returns_not_found);
-    REGISTER_TEST(cli, query_eval_object_name_uses_object_query_lookup);
+    REGISTER_TEST(cli, query_commands_are_not_available);
     REGISTER_TEST(cli, entity_list_class_filter_accepts_entity_derived_class);
     REGISTER_TEST(cli, entity_list_class_filter_non_entity_class_returns_empty_result);
 
@@ -3195,7 +3087,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, object_rename_nonexistent_id);
     REGISTER_TEST(cli, object_rename_missing_output);
     REGISTER_TEST(cli, object_delete_batch_name_filter_saves);
-    REGISTER_TEST(cli, object_delete_rejects_empty_dsl_filter);
+    REGISTER_TEST(cli, object_delete_rejects_filter_option);
     REGISTER_TEST(cli, parameter_set_hex_dry_run_does_not_write_output);
     REGISTER_TEST(cli, parameter_set_hex_saves_output);
 

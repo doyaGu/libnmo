@@ -6,8 +6,10 @@ $_nmo_groups = @{
     'file' = @('info', 'i', 'header', 'hdr', 'stats', 'st', 'classes', 'cls', 'plugins', 'pl', 'space', 'sp')
     'chunk' = @('list', 'ls', 'tree', 't', 'show', 's', 'find', 'f')
     'object' = @('list', 'ls', 'tree', 't', 'show', 's', 'find', 'f', 'refs', 'r', 'rename', 'ren', 'export', 'x', 'impact', 'imp', 'orphans', 'orp', 'cycles', 'cyc', 'delete', 'del', 'create', 'copy', 'cp', 'import', 'graph', 'gr', 'set-field', 'sf', 'list-fields', 'lf')
-    'behavior' = @('list', 'ls', 'stats', 'st', 'show', 's', 'graph', 'g', 'dump', 'd', 'find', 'f', 'trace', 'tr', 'add-link', 'remove-link', 'interface', 'iface')
+    'behavior' = @('list', 'ls', 'stats', 'st', 'show', 's', 'graph', 'g', 'graph-boundary', 'replace-bb', 'fold', 'fold-candidates', 'dump', 'd', 'find', 'f', 'trace', 'tr', 'add-link', 'remove-link', 'interface', 'iface')
+    'patch' = @('apply', 'diff')
     'parameter' = @('list', 'ls', 'show', 's', 'dump', 'd', 'set')
+    'script' = @('graph', 'g', 'run', 'node', 'io', 'link', 'param', 'op')
     'resource' = @('list', 'ls', 'show', 's', 'extract', 'x', 'import', 'imp', 'replace', 'rep', 'remove', 'rm', 'info')
     'texture' = @('list', 'ls', 'show', 's', 'extract', 'x', 'replace', 'rep')
     'data' = @('list', 'ls', 'show', 's', 'dump', 'd', 'set-cell', 'sc')
@@ -20,7 +22,6 @@ $_nmo_groups = @{
     'validate' = @('all', 'a', 'structure', 'st', 'references', 'ref', 'resources', 'res', 'orphans', 'orp')
     'convert' = @('copy', 'cp', 'version', 'v', 'strip', 'st', 'merge', 'm', 'export', 'x')
     'diff' = @('summary', 's', 'objects', 'obj', 'chunks', 'ch', 'full', 'f')
-    'query' = @('eval', 'e', 'script', 's', 'schema', 'sc', 'module', 'm')
     'extension' = @('list', 'ls', 'load', 'ld', 'info', 'i', 'check', 'ch')
     'completion' = @('bash', 'fish', 'zsh', 'powershell', 'ps1')
     'debug' = @('load-phases', 'lp', 'chunks', 'ch', 'objects', 'obj', 'export', 'x')
@@ -48,7 +49,6 @@ $_nmo_aliases = @{
     'val' = 'validate'
     'conv' = 'convert'
     'd' = 'diff'
-    'q' = 'query'
     'ext' = 'extension'
     'comp' = 'completion'
     'dbg' = 'debug'
@@ -58,7 +58,9 @@ $_nmo_group_descriptions = @{
     'chunk' = 'Chunk inspection'
     'object' = 'Object inspection'
     'behavior' = 'Behavior inspection'
+    'patch' = 'Patch apply and diff'
     'parameter' = 'Parameter inspection'
+    'script' = 'Script editing and graph queries'
     'resource' = 'Resource management'
     'texture' = 'Texture management'
     'data' = 'Data array inspection'
@@ -71,7 +73,6 @@ $_nmo_group_descriptions = @{
     'validate' = 'File validation'
     'convert' = 'Format conversion'
     'diff' = 'File comparison'
-    'query' = 'DSL query engine'
     'extension' = 'Extension management'
     'completion' = 'Shell completion scripts'
     'debug' = 'Debugging tools'
@@ -120,8 +121,8 @@ $_nmo_action_flags = @{
     'chunk/s/' = @(@{ Name = '--hexdump'; Desc = 'Include hexdump -C compatible output (text) or data_hex (JSON)' }, @{ Name = '-m'; Desc = '' }, @{ Name = '--max-bytes'; Desc = '' })
     'chunk/find/' = @()
     'chunk/f/' = @()
-    'object/list/' = @(@{ Name = '-c'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '-f'; Desc = 'Filter by DSL expression (truthy = include)' }, @{ Name = '--filter'; Desc = 'Filter by DSL expression (truthy = include)' })
-    'object/ls/' = @(@{ Name = '-c'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '-f'; Desc = 'Filter by DSL expression (truthy = include)' }, @{ Name = '--filter'; Desc = 'Filter by DSL expression (truthy = include)' })
+    'object/list/' = @(@{ Name = '-c'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived classes)' })
+    'object/ls/' = @(@{ Name = '-c'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived classes)' })
     'object/tree/' = @()
     'object/t/' = @()
     'object/show/' = @()
@@ -132,19 +133,19 @@ $_nmo_action_flags = @{
     'object/r/' = @()
     'object/rename/' = @(@{ Name = '-o'; Desc = 'Output file (required)' }, @{ Name = '--output'; Desc = 'Output file (required)' })
     'object/ren/' = @(@{ Name = '-o'; Desc = 'Output file (required)' }, @{ Name = '--output'; Desc = 'Output file (required)' })
-    'object/export/' = @(@{ Name = '-c'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '-n'; Desc = 'Filter by name pattern' }, @{ Name = '--name'; Desc = 'Filter by name pattern' }, @{ Name = '-f'; Desc = 'Filter by DSL expression' }, @{ Name = '--filter'; Desc = 'Filter by DSL expression' }, @{ Name = '-d'; Desc = 'Recursion depth (default: 4)' }, @{ Name = '--depth'; Desc = 'Recursion depth (default: 4)' }, @{ Name = '--full'; Desc = 'Full detail mode for text output (depth 8)' }, @{ Name = '--id'; Desc = 'Export specific object by ID' })
-    'object/x/' = @(@{ Name = '-c'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '-n'; Desc = 'Filter by name pattern' }, @{ Name = '--name'; Desc = 'Filter by name pattern' }, @{ Name = '-f'; Desc = 'Filter by DSL expression' }, @{ Name = '--filter'; Desc = 'Filter by DSL expression' }, @{ Name = '-d'; Desc = 'Recursion depth (default: 4)' }, @{ Name = '--depth'; Desc = 'Recursion depth (default: 4)' }, @{ Name = '--full'; Desc = 'Full detail mode for text output (depth 8)' }, @{ Name = '--id'; Desc = 'Export specific object by ID' })
+    'object/export/' = @(@{ Name = '-c'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '-n'; Desc = 'Filter by name pattern' }, @{ Name = '--name'; Desc = 'Filter by name pattern' }, @{ Name = '-d'; Desc = 'Recursion depth (default: 4)' }, @{ Name = '--depth'; Desc = 'Recursion depth (default: 4)' }, @{ Name = '--full'; Desc = 'Full detail mode for text output (depth 8)' }, @{ Name = '--id'; Desc = 'Export specific object by ID' })
+    'object/x/' = @(@{ Name = '-c'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '-n'; Desc = 'Filter by name pattern' }, @{ Name = '--name'; Desc = 'Filter by name pattern' }, @{ Name = '-d'; Desc = 'Recursion depth (default: 4)' }, @{ Name = '--depth'; Desc = 'Recursion depth (default: 4)' }, @{ Name = '--full'; Desc = 'Full detail mode for text output (depth 8)' }, @{ Name = '--id'; Desc = 'Export specific object by ID' })
     'object/impact/' = @()
     'object/imp/' = @()
     'object/orphans/' = @(@{ Name = '-c'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived classes)' })
     'object/orp/' = @(@{ Name = '-c'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived classes)' })
     'object/cycles/' = @()
     'object/cyc/' = @()
-    'object/delete/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '-c'; Desc = 'Filter by class (includes derived)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived)' }, @{ Name = '-n'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '--name'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '-f'; Desc = 'Filter by DSL expression' }, @{ Name = '--filter'; Desc = 'Filter by DSL expression' }, @{ Name = '--cascade'; Desc = 'Delete dependents (default: safe-detach)' }, @{ Name = '--dry-run'; Desc = 'Preview only, do not save' }, @{ Name = '--strict'; Desc = 'Fail if any ID not found' })
-    'object/del/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '-c'; Desc = 'Filter by class (includes derived)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived)' }, @{ Name = '-n'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '--name'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '-f'; Desc = 'Filter by DSL expression' }, @{ Name = '--filter'; Desc = 'Filter by DSL expression' }, @{ Name = '--cascade'; Desc = 'Delete dependents (default: safe-detach)' }, @{ Name = '--dry-run'; Desc = 'Preview only, do not save' }, @{ Name = '--strict'; Desc = 'Fail if any ID not found' })
+    'object/delete/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '-c'; Desc = 'Filter by class (includes derived)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived)' }, @{ Name = '-n'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '--name'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '--cascade'; Desc = 'Delete dependents (default: safe-detach)' }, @{ Name = '--dry-run'; Desc = 'Preview only, do not save' }, @{ Name = '--strict'; Desc = 'Fail if any ID not found' })
+    'object/del/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '-c'; Desc = 'Filter by class (includes derived)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived)' }, @{ Name = '-n'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '--name'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '--cascade'; Desc = 'Delete dependents (default: safe-detach)' }, @{ Name = '--dry-run'; Desc = 'Preview only, do not save' }, @{ Name = '--strict'; Desc = 'Fail if any ID not found' })
     'object/create/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '-c'; Desc = 'Class name (required)' }, @{ Name = '--class'; Desc = 'Class name (required)' }, @{ Name = '-n'; Desc = 'Object name' }, @{ Name = '--name'; Desc = 'Object name' }, @{ Name = '--type-guid'; Desc = 'Type GUID (d1,d2 format)' }, @{ Name = '--dry-run'; Desc = 'Preview without saving' })
-    'object/copy/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '-c'; Desc = 'Filter by class (includes derived)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived)' }, @{ Name = '-n'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '--name'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '-f'; Desc = 'Filter by DSL expression' }, @{ Name = '--filter'; Desc = 'Filter by DSL expression' }, @{ Name = '--cascade'; Desc = 'Copy dependents' }, @{ Name = '--dry-run'; Desc = 'Preview without saving' })
-    'object/cp/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '-c'; Desc = 'Filter by class (includes derived)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived)' }, @{ Name = '-n'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '--name'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '-f'; Desc = 'Filter by DSL expression' }, @{ Name = '--filter'; Desc = 'Filter by DSL expression' }, @{ Name = '--cascade'; Desc = 'Copy dependents' }, @{ Name = '--dry-run'; Desc = 'Preview without saving' })
+    'object/copy/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '-c'; Desc = 'Filter by class (includes derived)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived)' }, @{ Name = '-n'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '--name'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '--cascade'; Desc = 'Copy dependents' }, @{ Name = '--dry-run'; Desc = 'Preview without saving' })
+    'object/cp/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '-c'; Desc = 'Filter by class (includes derived)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived)' }, @{ Name = '-n'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '--name'; Desc = 'Filter by name wildcard pattern' }, @{ Name = '--cascade'; Desc = 'Copy dependents' }, @{ Name = '--dry-run'; Desc = 'Preview without saving' })
     'object/import/' = @(@{ Name = '-f'; Desc = 'Input format (required)' }, @{ Name = '--format'; Desc = 'Input format (required)' }, @{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--create'; Desc = 'Create objects not found by ID' }, @{ Name = '--dry-run'; Desc = 'Preview changes without saving' })
     'object/graph/' = @(@{ Name = '--dot'; Desc = 'Output DOT digraph format' }, @{ Name = '--kind'; Desc = 'Filter edges by ref kind (case-insensitive)' })
     'object/gr/' = @(@{ Name = '--dot'; Desc = 'Output DOT digraph format' }, @{ Name = '--kind'; Desc = 'Filter edges by ref kind (case-insensitive)' })
@@ -160,6 +161,10 @@ $_nmo_action_flags = @{
     'behavior/s/' = @(@{ Name = '--raw'; Desc = 'Show raw reflection output (like object show)' })
     'behavior/graph/' = @(@{ Name = '--dot'; Desc = '' }, @{ Name = '--max-nodes'; Desc = 'Limit node output (0 = no limit)' }, @{ Name = '--max-edges'; Desc = 'Limit edge output (0 = no limit)' })
     'behavior/g/' = @(@{ Name = '--dot'; Desc = '' }, @{ Name = '--max-nodes'; Desc = 'Limit node output (0 = no limit)' }, @{ Name = '--max-edges'; Desc = 'Limit edge output (0 = no limit)' })
+    'behavior/graph-boundary/' = @(@{ Name = '--depth'; Desc = 'Recursion depth (default: unlimited)' })
+    'behavior/replace-bb/' = @(@{ Name = '--bb-guid'; Desc = 'Replacement building-block GUID (required)' }, @{ Name = '--name'; Desc = 'Replacement behavior name' }, @{ Name = '--version'; Desc = 'Replacement building-block version (default: 65536)' }, @{ Name = '--preserve-links'; Desc = 'Require unchanged control boundary links' }, @{ Name = '--preserve-params'; Desc = 'Require unchanged parameter boundary edges' }, @{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--dry-run'; Desc = 'Preview without saving' })
+    'behavior/fold/' = @(@{ Name = '-p'; Desc = 'Parent behavior ID' }, @{ Name = '--parent'; Desc = 'Parent behavior ID' }, @{ Name = '--nodes'; Desc = 'Comma-separated behavior node IDs' }, @{ Name = '--bb-guid'; Desc = 'Target building-block GUID' }, @{ Name = '--name'; Desc = 'Target behavior name' }, @{ Name = '--version'; Desc = 'Target building-block version (default: 65536)' }, @{ Name = '--preserve-links'; Desc = 'Require control boundary preservation' }, @{ Name = '--preserve-params'; Desc = 'Require parameter boundary preservation' }, @{ Name = '-o'; Desc = 'Future output file path' }, @{ Name = '--output'; Desc = 'Future output file path' }, @{ Name = '--dry-run'; Desc = 'Report planned fold without saving (currently required)' })
+    'behavior/fold-candidates/' = @(@{ Name = '-p'; Desc = 'Parent behavior ID' }, @{ Name = '--parent'; Desc = 'Parent behavior ID' }, @{ Name = '-d'; Desc = 'Recursion depth (default: unlimited)' }, @{ Name = '--depth'; Desc = 'Recursion depth (default: unlimited)' })
     'behavior/dump/' = @(@{ Name = '--all'; Desc = 'Dump all script behavior trees' }, @{ Name = '--flows'; Desc = 'Include execution/data flow summaries for one behavior' }, @{ Name = '--values'; Desc = 'Include decoded local/output parameter values' })
     'behavior/d/' = @(@{ Name = '--all'; Desc = 'Dump all script behavior trees' }, @{ Name = '--flows'; Desc = 'Include execution/data flow summaries for one behavior' }, @{ Name = '--values'; Desc = 'Include decoded local/output parameter values' })
     'behavior/find/' = @(@{ Name = '--name'; Desc = 'Name wildcard pattern' }, @{ Name = '--guid'; Desc = 'Building block GUID' }, @{ Name = '--type'; Desc = 'Behavior type filter' })
@@ -218,6 +223,8 @@ $_nmo_action_flags = @{
     'behavior/iface/set-graph-io' = @()
     'behavior/interface/translate' = @()
     'behavior/iface/translate' = @()
+    'patch/apply/' = @(@{ Name = '--dry-run'; Desc = 'Preview operations without saving output' })
+    'patch/diff/' = @()
     'parameter/list/' = @()
     'parameter/ls/' = @()
     'parameter/show/' = @()
@@ -225,6 +232,14 @@ $_nmo_action_flags = @{
     'parameter/dump/' = @(@{ Name = '--all'; Desc = 'Dump all parameters in the file' }, @{ Name = '--type'; Desc = 'Filter by parameter type GUID' })
     'parameter/d/' = @(@{ Name = '--all'; Desc = 'Dump all parameters in the file' }, @{ Name = '--type'; Desc = 'Filter by parameter type GUID' })
     'parameter/set/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '-b'; Desc = 'Owner behavior/object ID' }, @{ Name = '--owner'; Desc = 'Owner behavior/object ID' }, @{ Name = '-n'; Desc = 'Parameter name within owner' }, @{ Name = '--name'; Desc = 'Parameter name within owner' }, @{ Name = '-i'; Desc = 'Parameter index within owner' }, @{ Name = '--index'; Desc = 'Parameter index within owner' }, @{ Name = '--hex'; Desc = 'Value is raw hex bytes' }, @{ Name = '--dry-run'; Desc = 'Show old/new without saving' })
+    'script/graph/' = @()
+    'script/g/' = @()
+    'script/run/' = @()
+    'script/node/' = @()
+    'script/io/' = @()
+    'script/link/' = @()
+    'script/param/' = @()
+    'script/op/' = @()
     'resource/list/' = @()
     'resource/ls/' = @()
     'resource/show/' = @()
@@ -317,8 +332,8 @@ $_nmo_action_flags = @{
     'convert/st/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '-c'; Desc = 'Strip objects of this class' }, @{ Name = '--class'; Desc = 'Strip objects of this class' }, @{ Name = '--name'; Desc = 'Strip objects matching name pattern' }, @{ Name = '--dry-run'; Desc = 'Preview matching objects without modifying' }, @{ Name = '--fast-save'; Desc = 'Skip explicit save flush/write-through' })
     'convert/merge/' = @(@{ Name = '-o'; Desc = 'Output file (required)' }, @{ Name = '--output'; Desc = 'Output file (required)' }, @{ Name = '--fast-save'; Desc = 'Skip explicit save flush/write-through' })
     'convert/m/' = @(@{ Name = '-o'; Desc = 'Output file (required)' }, @{ Name = '--output'; Desc = 'Output file (required)' }, @{ Name = '--fast-save'; Desc = 'Skip explicit save flush/write-through' })
-    'convert/export/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '-c'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '-n'; Desc = 'Filter by name pattern' }, @{ Name = '--name'; Desc = 'Filter by name pattern' }, @{ Name = '-f'; Desc = 'Filter by DSL expression' }, @{ Name = '--filter'; Desc = 'Filter by DSL expression' }, @{ Name = '--all'; Desc = 'Export all objects (no filter required)' }, @{ Name = '--deps'; Desc = 'Include transitive dependencies' }, @{ Name = '--dry-run'; Desc = 'Preview matching objects without writing' }, @{ Name = '--compress'; Desc = 'Compression level' }, @{ Name = '--fast-save'; Desc = 'Skip explicit save flush/write-through' })
-    'convert/x/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '-c'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '-n'; Desc = 'Filter by name pattern' }, @{ Name = '--name'; Desc = 'Filter by name pattern' }, @{ Name = '-f'; Desc = 'Filter by DSL expression' }, @{ Name = '--filter'; Desc = 'Filter by DSL expression' }, @{ Name = '--all'; Desc = 'Export all objects (no filter required)' }, @{ Name = '--deps'; Desc = 'Include transitive dependencies' }, @{ Name = '--dry-run'; Desc = 'Preview matching objects without writing' }, @{ Name = '--compress'; Desc = 'Compression level' }, @{ Name = '--fast-save'; Desc = 'Skip explicit save flush/write-through' })
+    'convert/export/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '-c'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '-n'; Desc = 'Filter by name pattern' }, @{ Name = '--name'; Desc = 'Filter by name pattern' }, @{ Name = '--all'; Desc = 'Export all objects (no filter required)' }, @{ Name = '--deps'; Desc = 'Include transitive dependencies' }, @{ Name = '--dry-run'; Desc = 'Preview matching objects without writing' }, @{ Name = '--compress'; Desc = 'Compression level' }, @{ Name = '--fast-save'; Desc = 'Skip explicit save flush/write-through' })
+    'convert/x/' = @(@{ Name = '-o'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '--output'; Desc = 'Output file (required unless --dry-run)' }, @{ Name = '-c'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '--class'; Desc = 'Filter by class (includes derived classes)' }, @{ Name = '-n'; Desc = 'Filter by name pattern' }, @{ Name = '--name'; Desc = 'Filter by name pattern' }, @{ Name = '--all'; Desc = 'Export all objects (no filter required)' }, @{ Name = '--deps'; Desc = 'Include transitive dependencies' }, @{ Name = '--dry-run'; Desc = 'Preview matching objects without writing' }, @{ Name = '--compress'; Desc = 'Compression level' }, @{ Name = '--fast-save'; Desc = 'Skip explicit save flush/write-through' })
     'diff/summary/' = @(@{ Name = '--ignore-order'; Desc = 'Ignore object order differences' })
     'diff/s/' = @(@{ Name = '--ignore-order'; Desc = 'Ignore object order differences' })
     'diff/objects/' = @(@{ Name = '--max-objects'; Desc = 'Max changed objects to show (default: unlimited)' }, @{ Name = '--max-fields'; Desc = 'Max changed fields per object (default: unlimited)' }, @{ Name = '--min-similarity'; Desc = 'Min match similarity in [0,1] (default: 0.0)' }, @{ Name = '--rename-similarity'; Desc = '' })
@@ -327,14 +342,6 @@ $_nmo_action_flags = @{
     'diff/ch/' = @(@{ Name = '--object'; Desc = 'Compare a specific object''s chunks' })
     'diff/full/' = @()
     'diff/f/' = @()
-    'query/eval/' = @(@{ Name = '--expr'; Desc = 'Expression (alternative to positional)' })
-    'query/e/' = @(@{ Name = '--expr'; Desc = 'Expression (alternative to positional)' })
-    'query/script/' = @()
-    'query/s/' = @()
-    'query/schema/' = @()
-    'query/sc/' = @()
-    'query/module/' = @()
-    'query/m/' = @()
     'extension/list/' = @()
     'extension/ls/' = @()
     'extension/load/' = @()
@@ -362,7 +369,7 @@ $_nmo_action_flags = @{
 Register-ArgumentCompleter -CommandName nmo -Native -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
     $tokens = $commandAst.ToString().Substring(0, $cursorPosition).Trim() -split '\s+'
-    $valueOptions = @('-f','--format','--color','-o','--output','--plugin','-F','--filter','--top', '-m', '--max-bytes', '-c', '--class', '-f', '--filter', '--name', '-o', '--output', '-n', '-d', '--depth', '--id', '--type-guid', '--kind', '--max-nodes', '--max-edges', '--guid', '--type', '--from', '--max-depth', '-p', '--parent', '--to', '--delay', '-b', '--owner', '-i', '--index', '-s', '--sort', '-t', '--out-dir', '--format', '-q', '--quality', '--file', '-r', '--row', '--col', '-v', '--value', '--bg-color', '--ambient', '--fog-color', '--camera', '--fov', '--near', '--far', '--diffuse', '--range', '--specular', '--emissive', '--power', '--replace', '--replace-name', '--strip', '--compress', '--max-objects', '--max-fields', '--min-similarity', '--rename-similarity', '--object', '--expr')
+    $valueOptions = @('-f','--format','--color','-o','--output','--plugin','-F','--filter','--top', '-m', '--max-bytes', '-c', '--class', '--name', '-o', '--output', '-n', '-d', '--depth', '--id', '--type-guid', '--kind', '--max-nodes', '--max-edges', '--bb-guid', '--version', '-p', '--parent', '--nodes', '--guid', '--type', '--from', '--max-depth', '--to', '--delay', '-b', '--owner', '-i', '--index', '-s', '--sort', '-t', '--out-dir', '-f', '--format', '-q', '--quality', '--file', '-r', '--row', '--col', '-v', '--value', '--bg-color', '--ambient', '--fog-color', '--camera', '--fov', '--near', '--far', '--diffuse', '--range', '--specular', '--emissive', '--power', '--replace', '--replace-name', '--strip', '--compress', '--max-objects', '--max-fields', '--min-similarity', '--rename-similarity', '--object')
     $positional = @()
     $expectValue = $false
     for ($i = 1; $i -lt $tokens.Count; $i++) {

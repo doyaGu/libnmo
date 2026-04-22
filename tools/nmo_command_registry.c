@@ -21,7 +21,6 @@
 #include "commands/nmo_cmd_script.h"
 #include "commands/nmo_cmd_convert.h"
 #include "commands/nmo_cmd_diff.h"
-#include "commands/nmo_cmd_query.h"
 #include "commands/nmo_cmd_extension.h"
 #include "commands/nmo_cmd_texture.h"
 #include "commands/nmo_cmd_data.h"
@@ -98,11 +97,10 @@ static void chunk_find_usage(FILE *out) {
 }
 
 static void object_list_usage(FILE *out) {
-    fprintf(out, "Usage: nmo object list [--class <name>] [--filter <expr>] <file>\n\n");
+    fprintf(out, "Usage: nmo object list [--class <name>] <file>\n\n");
     fprintf(out, "List all objects in the file.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  --class, -c <name>    Filter by class (includes derived classes)\n");
-    fprintf(out, "  --filter, -f <expr>   Filter by DSL expression (truthy = include)\n");
 }
 
 static void object_show_usage(FILE *out) {
@@ -142,7 +140,6 @@ static void object_export_usage(FILE *out) {
     fprintf(out, "Options:\n");
     fprintf(out, "  --class, -c <name>   Filter by class (includes derived classes)\n");
     fprintf(out, "  --name, -n <pat>     Filter by name pattern\n");
-    fprintf(out, "  --filter, -f <expr>  Filter by DSL expression\n");
     fprintf(out, "  --depth, -d <n>      Recursion depth (default: 4)\n");
     fprintf(out, "  --full               Full detail mode for text output (depth 8)\n");
     fprintf(out, "  --id <n>             Export specific object by ID\n");
@@ -183,7 +180,6 @@ static void object_delete_usage(FILE *out) {
     fprintf(out, "  -o, --output <file>  Output file (required unless --dry-run)\n");
     fprintf(out, "  -c, --class <name>   Filter by class (includes derived)\n");
     fprintf(out, "  -n, --name <pat>     Filter by name wildcard pattern\n");
-    fprintf(out, "  -f, --filter <expr>  Filter by DSL expression\n");
     fprintf(out, "  --cascade            Delete dependents (default: safe-detach)\n");
     fprintf(out, "  --dry-run            Preview only, do not save\n");
     fprintf(out, "  --strict             Fail if any ID not found\n");
@@ -207,7 +203,6 @@ static void object_copy_usage(FILE *out) {
     fprintf(out, "  -o, --output <file>  Output file (required unless --dry-run)\n");
     fprintf(out, "  -c, --class <name>   Filter by class (includes derived)\n");
     fprintf(out, "  -n, --name <pat>     Filter by name wildcard pattern\n");
-    fprintf(out, "  -f, --filter <expr>  Filter by DSL expression\n");
     fprintf(out, "  --cascade            Copy dependents\n");
     fprintf(out, "  --dry-run            Preview without saving\n");
 }
@@ -698,7 +693,6 @@ static void convert_export_usage(FILE *out) {
     fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
     fprintf(out, "  --class, -c <name>     Filter by class (includes derived classes)\n");
     fprintf(out, "  --name, -n <pattern>   Filter by name pattern\n");
-    fprintf(out, "  --filter, -f <expr>    Filter by DSL expression\n");
     fprintf(out, "  --all                  Export all objects (no filter required)\n");
     fprintf(out, "  --deps                 Include transitive dependencies\n");
     fprintf(out, "  --dry-run              Preview matching objects without writing\n");
@@ -735,29 +729,6 @@ static void diff_chunks_usage(FILE *out) {
 static void diff_full_usage(FILE *out) {
     fprintf(out, "Usage: nmo diff full <file1> <file2>\n\n");
     fprintf(out, "Comprehensive comparison of two files.\n");
-}
-
-/* Query command usage */
-static void query_eval_usage(FILE *out) {
-    fprintf(out, "Usage: nmo query eval \"<expression>\" <file>\n\n");
-    fprintf(out, "Evaluate a single DSL expression against a file.\n\n");
-    fprintf(out, "Options:\n");
-    fprintf(out, "  --expr <expression>    Expression (alternative to positional)\n");
-}
-
-static void query_script_usage(FILE *out) {
-    fprintf(out, "Usage: nmo query script <script.nmodsl> <file> [-o <output>]\n\n");
-    fprintf(out, "Execute a DSL script file. Use -o to save mutated session.\n");
-}
-
-static void query_schema_usage(FILE *out) {
-    fprintf(out, "Usage: nmo query schema <schema.nmodsl>\n\n");
-    fprintf(out, "Apply DSL schema declarations to the type registry.\n");
-}
-
-static void query_module_usage(FILE *out) {
-    fprintf(out, "Usage: nmo query module <module.nmodsl> <file> [-o <output>]\n\n");
-    fprintf(out, "Run a complete DSL module (schema + script).\n");
 }
 
 /* Extension command usage */
@@ -1161,13 +1132,6 @@ static const nmo_cli_action_t diff_actions[] = {
     ACTION("full", "f", "Full comparison", nmo_cmd_diff_full, diff_full_usage, NMO_REPL_ACTION_READ_SESSION),
 };
 
-static const nmo_cli_action_t query_actions[] = {
-    ACTION("eval", "e", "Evaluate DSL expression", nmo_cmd_query_eval, query_eval_usage, NMO_REPL_ACTION_READ_SESSION),
-    ACTION("script", "s", "Execute DSL script", nmo_cmd_query_script, query_script_usage, NMO_REPL_ACTION_FORBIDDEN),
-    ACTION("schema", "sc", "Apply DSL schema", nmo_cmd_query_schema, query_schema_usage, NMO_REPL_ACTION_FORBIDDEN),
-    ACTION("module", "m", "Run DSL module", nmo_cmd_query_module, query_module_usage, NMO_REPL_ACTION_FORBIDDEN),
-};
-
 static const nmo_cli_action_t extension_actions[] = {
     ACTION("list", "ls", "List registered extensions", nmo_cmd_extension_list, extension_list_usage, NMO_REPL_ACTION_READ_NO_SESSION),
     ACTION("load", "ld", "Load extension DLL", nmo_cmd_extension_load, extension_load_usage, NMO_REPL_ACTION_FORBIDDEN),
@@ -1272,7 +1236,6 @@ static const nmo_cli_group_t groups[] = {
     {"validate", "val", "File validation", validate_actions, ARRAY_SIZE(validate_actions), nmo_cmd_validate_in_session},
     {"convert", "conv", "Format conversion", convert_actions, ARRAY_SIZE(convert_actions), NULL},
     {"diff", "d", "File comparison", diff_actions, ARRAY_SIZE(diff_actions), nmo_cmd_diff_in_session},
-    {"query", "q", "DSL query engine", query_actions, ARRAY_SIZE(query_actions), nmo_cmd_query_in_session},
     {"extension", "ext", "Extension management", extension_actions, ARRAY_SIZE(extension_actions), nmo_cmd_extension_in_session},
     {"completion", "comp", "Shell completion scripts", completion_actions, ARRAY_SIZE(completion_actions), NULL},
     {"debug", "dbg", "Debugging tools", debug_actions, ARRAY_SIZE(debug_actions), nmo_cmd_debug_in_session},

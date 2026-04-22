@@ -2,6 +2,7 @@
 macro(add_unit_test name)
     add_executable(${name} ${name}.c)
     target_link_libraries(${name} PRIVATE nmo test_framework)
+    target_compile_definitions(${name} PRIVATE NMO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     add_test(NAME ${name} COMMAND ${name})
 endmacro()
 
@@ -107,18 +108,6 @@ add_unit_test(test_type_compatibility)
 # Phase 6.4: String conversion and serialization tests
 add_unit_test(test_type_string)
 add_unit_test(test_type_view)
-
-# Phase 6.x: DSL expression engine tests (Phase A parity)
-add_unit_test(test_dsl_expr)
-
-# Phase B: DSL script mode tests
-add_unit_test(test_dsl_script)
-
-# Phase C: DSL schema mode tests
-add_unit_test(test_dsl_schema)
-
-# Phase D/E: DSL type builtins and operations tests
-add_unit_test(test_dsl_operations)
 
 # Phase 6.6: Custom manager support tests
 add_unit_test(test_custom_managers)

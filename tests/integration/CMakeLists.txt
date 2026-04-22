@@ -155,7 +155,6 @@ if(TARGET nmo_cli)
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_script.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_convert.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_diff.c
-        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_query.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_extension.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_texture.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_data.c

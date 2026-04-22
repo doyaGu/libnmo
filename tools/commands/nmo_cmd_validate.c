@@ -927,7 +927,7 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t c,
         .class_name = class_filter_str,
         .include_derived_classes = true,
     };
-    int rc = nmo_core_query_build(&c, &class_query, NULL, &query_opts);
+    int rc = nmo_core_query_build(&c, &class_query, &query_opts);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return nmo_cmd_ctx_done(&c, rc);
     }

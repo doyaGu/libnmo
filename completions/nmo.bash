@@ -13,9 +13,9 @@ _nmo() {
         words=("${COMP_WORDS[@]}")
         cword=$COMP_CWORD
     fi
-    local groups="file f chunk ch object obj behavior beh parameter param resource res texture tex data da scene sc entity ent material mat mesh m animation anim type t validate val convert conv diff d query q extension ext completion comp debug dbg repl"
+    local groups="file f chunk ch object obj behavior beh patch parameter param script resource res texture tex data da scene sc entity ent material mat mesh m animation anim type t validate val convert conv diff d extension ext completion comp debug dbg repl"
     local global_flags="-h --help -V --version -f --format --color -o --output -v --verbose -q --quiet --no-pager --strict --fail-on-warning --plugin -F --filter --batch"
-    local value_options="-f --format --color -o --output --plugin --top -m --max-bytes -c --class -f --filter --name -o --output -n -d --depth --id --type-guid --kind --max-nodes --max-edges --guid --type --from --max-depth -p --parent --to --delay -b --owner -i --index -s --sort -t --out-dir --format -q --quality --file -r --row --col -v --value --bg-color --ambient --fog-color --camera --fov --near --far --diffuse --range --specular --emissive --power --replace --replace-name --strip --compress --max-objects --max-fields --min-similarity --rename-similarity --object --expr"
+    local value_options="-f --format --color -o --output --plugin --top -m --max-bytes -c --class --name -o --output -n -d --depth --id --type-guid --kind --max-nodes --max-edges --bb-guid --version -p --parent --nodes --guid --type --from --max-depth --to --delay -b --owner -i --index -s --sort -t --out-dir -f --format -q --quality --file -r --row --col -v --value --bg-color --ambient --fog-color --camera --fov --near --far --diffuse --range --specular --emissive --power --replace --replace-name --strip --compress --max-objects --max-fields --min-similarity --rename-similarity --object"
     local file_value_options="-o --output --plugin -d --out-dir --file --obj"
 
     case "$prev" in
@@ -45,7 +45,6 @@ _nmo() {
             val) echo 'validate' ;;
             conv) echo 'convert' ;;
             d) echo 'diff' ;;
-            q) echo 'query' ;;
             ext) echo 'extension' ;;
             comp) echo 'completion' ;;
             dbg) echo 'debug' ;;
@@ -58,8 +57,10 @@ _nmo() {
             file) echo 'info i header hdr stats st classes cls plugins pl space sp' ;;
             chunk) echo 'list ls tree t show s find f' ;;
             object) echo 'list ls tree t show s find f refs r rename ren export x impact imp orphans orp cycles cyc delete del create copy cp import graph gr set-field sf list-fields lf' ;;
-            behavior) echo 'list ls stats st show s graph g dump d find f trace tr add-link remove-link interface iface' ;;
+            behavior) echo 'list ls stats st show s graph g graph-boundary replace-bb fold fold-candidates dump d find f trace tr add-link remove-link interface iface' ;;
+            patch) echo 'apply diff' ;;
             parameter) echo 'list ls show s dump d set' ;;
+            script) echo 'graph g run node io link param op' ;;
             resource) echo 'list ls show s extract x import imp replace rep remove rm info' ;;
             texture) echo 'list ls show s extract x replace rep' ;;
             data) echo 'list ls show s dump d set-cell sc' ;;
@@ -72,7 +73,6 @@ _nmo() {
             validate) echo 'all a structure st references ref resources res orphans orp' ;;
             convert) echo 'copy cp version v strip st merge m export x' ;;
             diff) echo 'summary s objects obj chunks ch full f' ;;
-            query) echo 'eval e script s schema sc module m' ;;
             extension) echo 'list ls load ld info i check ch' ;;
             completion) echo 'bash fish zsh powershell ps1' ;;
             debug) echo 'load-phases lp chunks ch objects obj export x' ;;
@@ -111,8 +111,8 @@ _nmo() {
             chunk/s/) echo '--hexdump -m --max-bytes' ;;
             chunk/find/) echo '' ;;
             chunk/f/) echo '' ;;
-            object/list/) echo '-c --class -f --filter' ;;
-            object/ls/) echo '-c --class -f --filter' ;;
+            object/list/) echo '-c --class' ;;
+            object/ls/) echo '-c --class' ;;
             object/tree/) echo '' ;;
             object/t/) echo '' ;;
             object/show/) echo '' ;;
@@ -123,19 +123,19 @@ _nmo() {
             object/r/) echo '' ;;
             object/rename/) echo '-o --output' ;;
             object/ren/) echo '-o --output' ;;
-            object/export/) echo '-c --class -n --name -f --filter -d --depth --full --id' ;;
-            object/x/) echo '-c --class -n --name -f --filter -d --depth --full --id' ;;
+            object/export/) echo '-c --class -n --name -d --depth --full --id' ;;
+            object/x/) echo '-c --class -n --name -d --depth --full --id' ;;
             object/impact/) echo '' ;;
             object/imp/) echo '' ;;
             object/orphans/) echo '-c --class' ;;
             object/orp/) echo '-c --class' ;;
             object/cycles/) echo '' ;;
             object/cyc/) echo '' ;;
-            object/delete/) echo '-o --output -c --class -n --name -f --filter --cascade --dry-run --strict' ;;
-            object/del/) echo '-o --output -c --class -n --name -f --filter --cascade --dry-run --strict' ;;
+            object/delete/) echo '-o --output -c --class -n --name --cascade --dry-run --strict' ;;
+            object/del/) echo '-o --output -c --class -n --name --cascade --dry-run --strict' ;;
             object/create/) echo '-o --output -c --class -n --name --type-guid --dry-run' ;;
-            object/copy/) echo '-o --output -c --class -n --name -f --filter --cascade --dry-run' ;;
-            object/cp/) echo '-o --output -c --class -n --name -f --filter --cascade --dry-run' ;;
+            object/copy/) echo '-o --output -c --class -n --name --cascade --dry-run' ;;
+            object/cp/) echo '-o --output -c --class -n --name --cascade --dry-run' ;;
             object/import/) echo '-f --format -o --output --create --dry-run' ;;
             object/graph/) echo '--dot --kind' ;;
             object/gr/) echo '--dot --kind' ;;
@@ -151,6 +151,10 @@ _nmo() {
             behavior/s/) echo '--raw' ;;
             behavior/graph/) echo '--dot --max-nodes --max-edges' ;;
             behavior/g/) echo '--dot --max-nodes --max-edges' ;;
+            behavior/graph-boundary/) echo '--depth' ;;
+            behavior/replace-bb/) echo '--bb-guid --name --version --preserve-links --preserve-params -o --output --dry-run' ;;
+            behavior/fold/) echo '-p --parent --nodes --bb-guid --name --version --preserve-links --preserve-params -o --output --dry-run' ;;
+            behavior/fold-candidates/) echo '-p --parent -d --depth' ;;
             behavior/dump/) echo '--all --flows --values' ;;
             behavior/d/) echo '--all --flows --values' ;;
             behavior/find/) echo '--name --guid --type' ;;
@@ -209,6 +213,8 @@ _nmo() {
             behavior/iface/set-graph-io) echo '' ;;
             behavior/interface/translate) echo '' ;;
             behavior/iface/translate) echo '' ;;
+            patch/apply/) echo '--dry-run' ;;
+            patch/diff/) echo '' ;;
             parameter/list/) echo '' ;;
             parameter/ls/) echo '' ;;
             parameter/show/) echo '' ;;
@@ -216,6 +222,14 @@ _nmo() {
             parameter/dump/) echo '--all --type' ;;
             parameter/d/) echo '--all --type' ;;
             parameter/set/) echo '-o --output -b --owner -n --name -i --index --hex --dry-run' ;;
+            script/graph/) echo '' ;;
+            script/g/) echo '' ;;
+            script/run/) echo '' ;;
+            script/node/) echo '' ;;
+            script/io/) echo '' ;;
+            script/link/) echo '' ;;
+            script/param/) echo '' ;;
+            script/op/) echo '' ;;
             resource/list/) echo '' ;;
             resource/ls/) echo '' ;;
             resource/show/) echo '' ;;
@@ -308,8 +322,8 @@ _nmo() {
             convert/st/) echo '-o --output -c --class --name --dry-run --fast-save' ;;
             convert/merge/) echo '-o --output --fast-save' ;;
             convert/m/) echo '-o --output --fast-save' ;;
-            convert/export/) echo '-o --output -c --class -n --name -f --filter --all --deps --dry-run --compress --fast-save' ;;
-            convert/x/) echo '-o --output -c --class -n --name -f --filter --all --deps --dry-run --compress --fast-save' ;;
+            convert/export/) echo '-o --output -c --class -n --name --all --deps --dry-run --compress --fast-save' ;;
+            convert/x/) echo '-o --output -c --class -n --name --all --deps --dry-run --compress --fast-save' ;;
             diff/summary/) echo '--ignore-order' ;;
             diff/s/) echo '--ignore-order' ;;
             diff/objects/) echo '--max-objects --max-fields --min-similarity --rename-similarity' ;;
@@ -318,14 +332,6 @@ _nmo() {
             diff/ch/) echo '--object' ;;
             diff/full/) echo '' ;;
             diff/f/) echo '' ;;
-            query/eval/) echo '--expr' ;;
-            query/e/) echo '--expr' ;;
-            query/script/) echo '' ;;
-            query/s/) echo '' ;;
-            query/schema/) echo '' ;;
-            query/sc/) echo '' ;;
-            query/module/) echo '' ;;
-            query/m/) echo '' ;;
             extension/list/) echo '' ;;
             extension/ls/) echo '' ;;
             extension/load/) echo '' ;;

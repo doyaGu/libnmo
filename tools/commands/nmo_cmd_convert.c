@@ -933,14 +933,13 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         {"--output",   "-o", NMO_OPT_STRING, "Output file path (required)"},
         {"--class",    "-c", NMO_OPT_STRING, "Filter by class name"},
         {"--name",     "-n", NMO_OPT_STRING, "Filter by name pattern"},
-        {"--filter",   "-f", NMO_OPT_STRING, "Filter by DSL expression"},
         {"--deps",     NULL, NMO_OPT_FLAG,   "Include transitive dependencies"},
         {"--all",      NULL, NMO_OPT_FLAG,   "Export all objects (no filter required)"},
         {"--dry-run",  NULL, NMO_OPT_FLAG,   "Preview matching objects without writing"},
         {"--compress", NULL, NMO_OPT_STRING, "Compression level (0-9)"},
         {"--fast-save", NULL, NMO_OPT_FLAG,  "Skip explicit save flush/write-through"},
     };
-    enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_FILTER, OPT_DEPS,
+    enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_DEPS,
            OPT_ALL, OPT_DRYRUN, OPT_COMPRESS, OPT_FAST_SAVE, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
@@ -950,7 +949,6 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     const char *output_path      = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
     const char *class_filter_str = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL;
     const char *name_pattern     = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
-    const char *filter_expr      = vals[OPT_FILTER].present ? vals[OPT_FILTER].val.str : NULL;
     bool include_deps            = vals[OPT_DEPS].present && vals[OPT_DEPS].val.flag;
     bool export_all              = vals[OPT_ALL].present && vals[OPT_ALL].val.flag;
     bool dry_run                 = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
@@ -962,8 +960,8 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    if (!export_all && !class_filter_str && !name_pattern && !filter_expr) {
-        fprintf(stderr, "Error: At least one filter required (--class, --name, --filter, or --all)\n");
+    if (!export_all && !class_filter_str && !name_pattern) {
+        fprintf(stderr, "Error: At least one filter required (--class, --name, or --all)\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -982,15 +980,12 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
 
     /* Build query */
     nmo_object_query_t query = {0};
-    nmo_core_query_dsl_t query_dsl = {0};
     nmo_core_query_build_options_t query_opts = {
         .class_name = class_filter_str,
         .name_wildcard = name_pattern,
-        .filter_expr = filter_expr,
         .include_derived_classes = true,
-        .print_dsl_context = true,
     };
-    rc = nmo_core_query_build(&c, &query, &query_dsl, &query_opts);
+    rc = nmo_core_query_build(&c, &query, &query_opts);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return nmo_cmd_ctx_done(&c, rc);
     }
@@ -1003,7 +998,6 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     if (col.count == 0) {
         fprintf(stderr, "No objects matched the filter.\n");
         free(col.objects);
-        nmo_core_query_dsl_destroy(&query_dsl);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
     }
 
@@ -1022,7 +1016,6 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         if (!seed_ids) {
             fprintf(stderr, "Error: Out of memory\n");
             free(col.objects);
-            nmo_core_query_dsl_destroy(&query_dsl);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
         for (size_t i = 0; i < seed_count; i++)
@@ -1035,7 +1028,6 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
             fprintf(stderr, "Error: Failed to build reference graph\n");
             free(seed_ids);
             free(col.objects);
-            nmo_core_query_dsl_destroy(&query_dsl);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
@@ -1044,7 +1036,6 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         if (!deps_arena) {
             free(seed_ids);
             free(col.objects);
-            nmo_core_query_dsl_destroy(&query_dsl);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
@@ -1059,7 +1050,6 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
             nmo_arena_destroy(deps_arena);
             free(seed_ids);
             free(col.objects);
-            nmo_core_query_dsl_destroy(&query_dsl);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
@@ -1069,7 +1059,6 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
             nmo_arena_destroy(deps_arena);
             free(seed_ids);
             free(col.objects);
-            nmo_core_query_dsl_destroy(&query_dsl);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
@@ -1152,7 +1141,6 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
         free(final_objects);
         free(col.objects);
-        nmo_core_query_dsl_destroy(&query_dsl);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
     }
 
@@ -1161,7 +1149,6 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     if (!include_ids) {
         free(final_objects);
         free(col.objects);
-        nmo_core_query_dsl_destroy(&query_dsl);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
     for (size_t i = 0; i < final_count; i++)
@@ -1184,7 +1171,6 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         free(include_ids);
         free(final_objects);
         free(col.objects);
-        nmo_core_query_dsl_destroy(&query_dsl);
         return nmo_cmd_ctx_done(&c, save_result);
     }
 
@@ -1205,7 +1191,6 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
             nmo_cli_json_add_uint_safe(doc, data, "exported", (uint64_t)final_count);
             if (class_filter_str) nmo_cli_json_add_str_safe(doc, data, "filter_class", class_filter_str);
             if (name_pattern) nmo_cli_json_add_str_safe(doc, data, "filter_name", name_pattern);
-            if (filter_expr) nmo_cli_json_add_str_safe(doc, data, "filter_expr", filter_expr);
             nmo_cmd_ctx_json_end(&c, doc, data, "convert.export");
         }
     } else {
@@ -1221,6 +1206,5 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     free(include_ids);
     free(final_objects);
     free(col.objects);
-    nmo_core_query_dsl_destroy(&query_dsl);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
