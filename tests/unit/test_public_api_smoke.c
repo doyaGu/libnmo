@@ -5,6 +5,26 @@
 
 #include "test_framework.h"
 #include "nmo.h"
+#include "runtime/nmo_context.h"
+#include "runtime/nmo_workspace.h"
+#include "document/nmo_document.h"
+#include "document/nmo_document_load.h"
+#include "document/nmo_document_save.h"
+#include "document/nmo_document_stats.h"
+#include "document/nmo_document_compare.h"
+#include "chunk/nmo_chunk_index.h"
+#include "chunk/nmo_chunk_inspect.h"
+#include "object/nmo_object_refs.h"
+#include "object/nmo_object_edit.h"
+#include "object/nmo_object_hierarchy.h"
+#include "behavior/nmo_behavior_registry.h"
+#include "behavior/nmo_behavior_query.h"
+#include "behavior/nmo_behavior_analyze.h"
+#include "behavior/nmo_behavior_edit.h"
+#include "behavior/nmo_behavior_execute.h"
+#include "export/nmo_export_text.h"
+#include "export/nmo_export_json.h"
+#include "export/nmo_export_dot.h"
 #include "app/nmo_comparison.h"
 #include "app/nmo_load.h"
 #include "app/nmo_object_diff.h"
@@ -131,6 +151,10 @@ TEST(public_api_smoke, preferred_edit_and_query_headers_are_directly_usable) {
 
     ASSERT_NULL(edit);
     ASSERT_EQ(NMO_OBJECT_QUERY_NAME_EXACT, query.name_mode);
+}
+
+TEST(public_api_smoke, reorg_owner_headers_are_directly_usable) {
+    ASSERT_TRUE(1);
 }
 
 TEST(public_api_smoke, report_result_headers_are_directly_usable) {
@@ -312,6 +336,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(public_api_smoke, version);
     REGISTER_TEST(public_api_smoke, context_create_release);
     REGISTER_TEST(public_api_smoke, preferred_edit_and_query_headers_are_directly_usable);
+    REGISTER_TEST(public_api_smoke, reorg_owner_headers_are_directly_usable);
     REGISTER_TEST(public_api_smoke, report_result_headers_are_directly_usable);
     REGISTER_TEST(public_api_smoke, json_stream_is_not_part_of_public_api_surface);
     REGISTER_TEST(public_api_smoke, dsl_headers_are_not_part_of_public_api_surface);

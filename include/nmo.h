@@ -145,6 +145,28 @@
 #include "session/nmo_session_util.h"
 #include "session/nmo_serializer.h"
 
+// Reorganization owner headers
+#include "runtime/nmo_context.h"
+#include "runtime/nmo_workspace.h"
+#include "document/nmo_document.h"
+#include "document/nmo_document_load.h"
+#include "document/nmo_document_save.h"
+#include "document/nmo_document_stats.h"
+#include "document/nmo_document_compare.h"
+#include "chunk/nmo_chunk_index.h"
+#include "chunk/nmo_chunk_inspect.h"
+#include "object/nmo_object_refs.h"
+#include "object/nmo_object_edit.h"
+#include "object/nmo_object_hierarchy.h"
+#include "behavior/nmo_behavior_registry.h"
+#include "behavior/nmo_behavior_query.h"
+#include "behavior/nmo_behavior_analyze.h"
+#include "behavior/nmo_behavior_edit.h"
+#include "behavior/nmo_behavior_execute.h"
+#include "export/nmo_export_text.h"
+#include "export/nmo_export_json.h"
+#include "export/nmo_export_dot.h"
+
 // Behavior layer
 #include "behavior/nmo_behavior_view.h"
 #include "behavior/nmo_behavior_graph.h"
