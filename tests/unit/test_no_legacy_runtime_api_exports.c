@@ -1155,6 +1155,24 @@ TEST(no_legacy_runtime_api_exports, object_summary_uses_reflection_count_metadat
     assert_file_has_no_substring("src/app/object_summary.c", "nmo_summary_is_count_field_name");
 }
 
+TEST(no_legacy_runtime_api_exports, umbrella_and_tooling_use_reorganized_public_owners) {
+    assert_file_has_no_substring("include/nmo.h", "app/nmo_comparison.h");
+    assert_file_has_no_substring("include/nmo.h", "app/nmo_inspector.h");
+    assert_file_has_no_substring("include/nmo.h", "app/nmo_load.h");
+    assert_file_has_no_substring("include/nmo.h", "app/nmo_object_diff.h");
+    assert_file_has_no_substring("include/nmo.h", "app/nmo_object_import.h");
+    assert_file_has_no_substring("include/nmo.h", "app/nmo_object_summary.h");
+    assert_file_has_no_substring("include/nmo.h", "app/nmo_report_result.h");
+    assert_file_has_no_substring("include/nmo.h", "app/nmo_report_view.h");
+    assert_file_has_no_substring("include/nmo.h", "app/nmo_save.h");
+    assert_file_has_no_substring("include/nmo.h", "app/nmo_stats.h");
+    assert_file_has_no_substring("include/nmo.h", "session/nmo_session_query.h");
+    assert_file_has_no_substring("include/nmo.h", "object/nmo_ref_query.h");
+
+    assert_file_has_no_substring("tools/nmo_cmd_core.c", "nmo_session_query_find_object_by_name");
+    assert_file_has_no_substring("tools/nmo_cmd_core.c", "nmo_session_edit_begin");
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_exports);
 REGISTER_TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_pointer_state);
@@ -1234,4 +1252,5 @@ REGISTER_TEST(no_legacy_runtime_api_exports, object_index_and_system_do_not_use_
 REGISTER_TEST(no_legacy_runtime_api_exports, ref_graph_and_behavior_schemas_do_not_use_repository_get_all_snapshots);
 REGISTER_TEST(no_legacy_runtime_api_exports, app_stats_and_object_diff_do_not_use_repository_get_all_snapshots);
 REGISTER_TEST(no_legacy_runtime_api_exports, object_summary_uses_reflection_count_metadata);
+REGISTER_TEST(no_legacy_runtime_api_exports, umbrella_and_tooling_use_reorganized_public_owners);
 TEST_MAIN_END()

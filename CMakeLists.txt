@@ -421,7 +421,10 @@ install(DIRECTORY include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     FILES_MATCHING
     PATTERN "*.h"
+    PATTERN "app/*" EXCLUDE
     PATTERN "schema" EXCLUDE
+    PATTERN "session/nmo_session_query.h" EXCLUDE
+    PATTERN "object/nmo_ref_query.h" EXCLUDE
     PATTERN "session/nmo_session_internal.h" EXCLUDE
     PATTERN "session/nmo_reference_resolver.h" EXCLUDE
     PATTERN "session/nmo_ref_graph.h" EXCLUDE

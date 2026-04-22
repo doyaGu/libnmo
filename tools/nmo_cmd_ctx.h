@@ -42,6 +42,8 @@ typedef struct nmo_cmd_ctx {
     /* Session (opened by init, closed by done) */
     nmo_context_t *ctx;
     nmo_session_t *session;
+    nmo_document_t *document;
+    nmo_workspace_t *workspace;
     bool owns_session;
 
     /* Output (opened by init, closed by done) */

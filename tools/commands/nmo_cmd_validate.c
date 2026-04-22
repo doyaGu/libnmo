@@ -885,11 +885,12 @@ static int validate_orphan_object(size_t index, nmo_object_t *obj,
     return 0;
 }
 
-static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t c,
+static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t *c,
                                        int argc,
                                        char **argv,
                                        const nmo_cli_global_opts_t *global,
-                                       bool allow_strip)
+                                       bool allow_strip,
+                                       bool close_ctx)
 {
     static const nmo_opt_def_t opts[] = {
         {"--class",   "-c", NMO_OPT_STRING, "Filter by class name"},
@@ -903,7 +904,8 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t c,
     const char *pos_arr[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, 5, &r) < 0) {
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_ARG_ERROR)
+                         : NMO_CLI_EXIT_ARG_ERROR;
     }
 
     const char *class_filter_str = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL;
@@ -914,12 +916,14 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t c,
 
     if (!allow_strip && (do_strip || vals[OPT_OUTPUT].present)) {
         fprintf(stderr, "Validation write/fix options are not supported in in-session read mode.\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_ARG_ERROR)
+                         : NMO_CLI_EXIT_ARG_ERROR;
     }
 
     if (do_strip && !output_path) {
         fprintf(stderr, "Error: --strip requires -o/--output\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_ARG_ERROR)
+                         : NMO_CLI_EXIT_ARG_ERROR;
     }
 
     nmo_object_query_t class_query = {0};
@@ -927,47 +931,51 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t c,
         .class_name = class_filter_str,
         .include_derived_classes = true,
     };
-    int rc = nmo_core_query_build(&c, &class_query, &query_opts);
+    int rc = nmo_core_query_build(c, &class_query, &query_opts);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
-        return nmo_cmd_ctx_done(&c, rc);
+        return close_ctx ? nmo_cmd_ctx_done(c, rc) : rc;
     }
     const nmo_object_query_t *filter_query =
         class_filter_str != NULL ? &class_query : NULL;
 
     nmo_core_iter_result_t object_query_result = {0};
-    rc = nmo_core_object_query_run(&c, NULL, NULL, NULL, &object_query_result);
+    rc = nmo_core_object_query_run(c, NULL, NULL, NULL, &object_query_result);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         fprintf(stderr, "Error: Failed to query objects\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
     size_t object_count = object_query_result.matched;
 
     /* Get reference graph from session cache */
-    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
+    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c->session);
     if (!graph) {
         fprintf(stderr, "Error: Failed to create reference graph\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Arena for mark-sweep allocations */
     nmo_arena_t *arena = nmo_arena_create(NULL, 0);
     if (!arena) {
         fprintf(stderr, "Error: Failed to create arena\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Use library API for core orphan detection */
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
     nmo_object_id_t *orphan_ids = NULL;
     size_t orphan_id_count = 0;
     {
         nmo_status_t ms = nmo_ref_graph_find_orphans(
-            graph, repo, c.registry, arena,
+            graph, repo, c->registry, arena,
             &orphan_ids, &orphan_id_count);
         if (ms != NMO_OK) {
             nmo_arena_destroy(arena);
             fprintf(stderr, "Error: Orphan detection failed\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                             : NMO_CLI_EXIT_INTERNAL_ERROR;
         }
     }
 
@@ -982,7 +990,8 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t c,
         if (!orphan_list) {
             nmo_arena_destroy(arena);
             fprintf(stderr, "Error: Allocation failed\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                             : NMO_CLI_EXIT_INTERNAL_ERROR;
         }
         orphan_cap = object_count;
     }
@@ -995,12 +1004,13 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t c,
         .orphan_list = orphan_list,
         .orphan_cap = orphan_cap,
     };
-    rc = nmo_core_object_query_run(&c, NULL, validate_orphan_object,
+    rc = nmo_core_object_query_run(c, NULL, validate_orphan_object,
                                    &orphan_data, NULL);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         nmo_arena_destroy(arena);
         fprintf(stderr, "Error: Failed to query objects\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Determine exit code */
@@ -1016,11 +1026,11 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t c,
     /* Global (pre-filter) reachability stats */
     size_t unreachable_count = object_count - reachable_count;
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
-        yyjson_mut_obj_add_str(doc, data, "file", c.file_path);
+        yyjson_mut_obj_add_str(doc, data, "file", c->file_path);
         yyjson_mut_obj_add_uint(doc, data, "total_objects",
                                 (uint64_t)orphan_data.total_filtered);
         yyjson_mut_obj_add_uint(doc, data, "reachable_count",
@@ -1042,7 +1052,7 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t c,
                                     (uint64_t)nmo_object_get_id(obj));
 
             nmo_class_id_t cid = nmo_object_get_class_id(obj);
-            const char *cname = nmo_core_class_name(&c, cid);
+            const char *cname = nmo_core_class_name(c, cid);
             char cbuf[32];
             if (!cname) {
                 snprintf(cbuf, sizeof(cbuf), "Class#%u", cid);
@@ -1065,12 +1075,12 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t c,
         }
         yyjson_mut_obj_add_val(doc, data, "objects", arr);
 
-        nmo_cmd_ctx_json_end(&c, doc, data, "validate.orphans");
+        nmo_cmd_ctx_json_end(c, doc, data, "validate.orphans");
     } else {
         /* Text output */
-        nmo_cli_print_heading(c.out, "Orphan Detection", c.colorize);
-        nmo_cli_print_kv(c.out, "File", c.file_path, 18, c.colorize);
-        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c->out, "Orphan Detection", c->colorize);
+        nmo_cli_print_kv(c->out, "File", c->file_path, 18, c->colorize);
+        fprintf(c->out, "\n");
 
         if (orphan_data.likely_orphans > 0 && !summary_only) {
             static const nmo_cli_table_col_t cols[] = {
@@ -1096,7 +1106,7 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t c,
                          orphan_list[i].outgoing);
 
                 nmo_class_id_t cid = nmo_object_get_class_id(obj);
-                const char *cname = nmo_core_class_name(&c, cid);
+                const char *cname = nmo_core_class_name(c, cid);
                 char cbuf[32];
                 if (!cname) {
                     snprintf(cbuf, sizeof(cbuf), "Class#%u", cid);
@@ -1114,7 +1124,7 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t c,
                 nmo_cli_table_add_row(&table, cells, 6);
             }
 
-            nmo_cli_table_print(&table, c.out, c.colorize);
+            nmo_cli_table_print(&table, c->out, c->colorize);
             nmo_cli_table_free(&table);
         }
 
@@ -1123,28 +1133,28 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t c,
             ? (100.0 * (double)reachable_count / (double)object_count)
             : 0.0;
 
-        fprintf(c.out, "\nReachable: %zu/%zu objects (%.1f%%)\n",
+        fprintf(c->out, "\nReachable: %zu/%zu objects (%.1f%%)\n",
                 reachable_count, object_count, reachable_pct);
-        fprintf(c.out, "Unreachable: %zu objects (%.1f%%), %zu bytes\n",
+        fprintf(c->out, "Unreachable: %zu objects (%.1f%%), %zu bytes\n",
                 unreachable_count,
                 (object_count > 0)
                     ? (100.0 * (double)unreachable_count / (double)object_count)
                     : 0.0,
                 orphan_data.likely_orphan_size);
-        fprintf(c.out, "  Direct orphans (zero incoming): %zu\n",
+        fprintf(c->out, "  Direct orphans (zero incoming): %zu\n",
                 orphan_data.direct_orphan_count);
-        fprintf(c.out, "  Chain orphans (reachable only from other orphans): %zu\n",
+        fprintf(c->out, "  Chain orphans (reachable only from other orphans): %zu\n",
                 orphan_data.chain_orphan_count);
     }
 
     /* --strip: remove orphan objects and save cleaned file */
     if (do_strip && orphan_data.likely_orphans > 0) {
         if (orphan_data.likely_orphans >= object_count) {
-            if (!c.is_json) {
-                fprintf(c.out, "\nAll objects are orphans - nothing to save.\n");
+            if (!c->is_json) {
+                fprintf(c->out, "\nAll objects are orphans - nothing to save.\n");
             }
             if (arena) nmo_arena_destroy(arena);
-            return nmo_cmd_ctx_done(&c, exit_code);
+            return close_ctx ? nmo_cmd_ctx_done(c, exit_code) : exit_code;
         }
 
         nmo_object_id_t *orphan_ids = (nmo_object_id_t *)malloc(
@@ -1152,7 +1162,8 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t c,
         if (!orphan_ids) {
             fprintf(stderr, "Error: Out of memory for strip operation\n");
             if (arena) nmo_arena_destroy(arena);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                             : NMO_CLI_EXIT_INTERNAL_ERROR;
         }
         {
             for (size_t i = 0; i < orphan_data.likely_orphans && i < orphan_cap; i++)
@@ -1164,32 +1175,32 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t c,
 
             nmo_runtime_report_t report;
             memset(&report, 0, sizeof(report));
-            nmo_session_destroy_objects(c.session, orphan_ids,
+            nmo_session_destroy_objects(c->session, orphan_ids,
                                         orphan_data.likely_orphans, 0, &report);
             free(orphan_ids);
 
             nmo_save_options_t save_opts = nmo_save_options_default();
-            int save_rc = nmo_cli_save_session(c.session, output_path, &save_opts);
+            int save_rc = nmo_cli_save_session(c->session, output_path, &save_opts);
             if (save_rc != NMO_CLI_EXIT_SUCCESS) {
-                return nmo_cmd_ctx_done(&c, save_rc);
+                return close_ctx ? nmo_cmd_ctx_done(c, save_rc) : save_rc;
             }
 
-            if (!c.is_json) {
-                fprintf(c.out, "\nStripped %zu orphan(s), saved to %s\n",
+            if (!c->is_json) {
+                fprintf(c->out, "\nStripped %zu orphan(s), saved to %s\n",
                         report.deleted_objects, output_path);
             }
         }
     }
 
     if (arena) nmo_arena_destroy(arena);
-    return nmo_cmd_ctx_done(&c, exit_code);
+    return close_ctx ? nmo_cmd_ctx_done(c, exit_code) : exit_code;
 }
 
 int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
-    return validate_orphans_run_in_ctx(c, argc, argv, global, true);
+    return validate_orphans_run_in_ctx(&c, argc, argv, global, true, true);
 }
 
 static int nmo_cmd_validate_orphans_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
@@ -1203,5 +1214,5 @@ static int nmo_cmd_validate_orphans_in_session(nmo_cmd_ctx_t *ctx, int argc, cha
     } else {
         nmo_cli_global_opts_init(&global);
     }
-    return validate_orphans_run_in_ctx(*ctx, argc, argv, &global, false);
+    return validate_orphans_run_in_ctx(ctx, argc, argv, &global, false, false);
 }

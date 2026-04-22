@@ -103,7 +103,6 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_iter.h"
-#include "object/nmo_ref_query.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_summary.h"
@@ -131,7 +130,6 @@
 // Session layer
 #include "session/nmo_deserializer.h"
 #include "format/nmo_id_remap.h"
-#include "app/nmo_load.h"
 #include "session/nmo_builder.h"
 #include "session/nmo_object_system.h"
 #include "session/nmo_runtime_kernel.h"
@@ -143,7 +141,6 @@
 // Session layer (context, session, serializer)
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_query.h"
 #include "session/nmo_session_util.h"
 #include "session/nmo_serializer.h"
 
@@ -177,18 +174,7 @@
 #include "behavior/nmo_script_view.h"
 
 // App layer
-#include "app/nmo_load.h"
-#include "app/nmo_save.h"
-#include "app/nmo_comparison.h"
-#include "app/nmo_inspector.h"
-#include "app/nmo_stats.h"
-#include "app/nmo_chunk_index.h"
 #include "app/nmo_json_util.h"
-#include "app/nmo_object_diff.h"
-#include "app/nmo_object_hierarchy.h"
-#include "app/nmo_report_result.h"
-#include "app/nmo_report_view.h"
-#include "app/nmo_object_summary.h"
 #include "type/nmo_type_query.h"
 
 // Lua platform layer

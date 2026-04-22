@@ -7,11 +7,11 @@
 #include "nmo_cli_common.h"
 #include "nmo_tool_common.h"
 #include "document/nmo_document.h"
+#include "object/nmo_object_query.h"
 #include "object/nmo_object_refs.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_edit.h"
-#include "session/nmo_session_query.h"
 #include "type/nmo_type_string.h"
 #include "object/nmo_object_repository.h"
 #include "core/nmo_guid.h"
@@ -65,7 +65,7 @@ int nmo_core_find_by_name(const nmo_cmd_ctx_t *c,
                           const char *name,
                           nmo_object_t **out_object)
 {
-    if (c == NULL || c->session == NULL || name == NULL || out_object == NULL) {
+    if (c == NULL || c->document == NULL || name == NULL || out_object == NULL) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
@@ -75,7 +75,7 @@ int nmo_core_find_by_name(const nmo_cmd_ctx_t *c,
         .name_case_insensitive = false
     };
     nmo_status_t status = nmo_object_query_find_first(
-        (nmo_document_t *)c->session,
+        c->document,
         &query,
         out_object,
         NULL);
@@ -135,11 +135,9 @@ int nmo_core_resolve_one_object(
         .allowed_class_ids = selector->allowed_class_ids,
         .allowed_class_count = selector->allowed_class_count
     };
-    nmo_status_t status = nmo_object_query_resolve_one(
-        (nmo_document_t *)c->session,
-        &object_selector,
-        &obj,
-        &id);
+    nmo_status_t status = c->document != NULL
+        ? nmo_object_query_resolve_one(c->document, &object_selector, &obj, &id)
+        : NMO_ERR_INVALID_ARGUMENT;
     if (status == NMO_ERR_NOT_FOUND) {
         if (object_selector.has_id) {
             fprintf(stderr, "Error: Object %u not found\n", id);
@@ -197,7 +195,7 @@ int nmo_core_object_query_run(const nmo_cmd_ctx_t *c,
                               void *user,
                               nmo_core_iter_result_t *result)
 {
-    if (c == NULL || c->session == NULL) {
+    if (c == NULL || c->document == NULL) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
@@ -206,9 +204,14 @@ int nmo_core_object_query_run(const nmo_cmd_ctx_t *c,
         .visitor = visitor,
         .user = user
     };
+    nmo_object_query_context_t query_ctx = {
+        .repository = nmo_document_get_repository(c->document),
+        .index = NULL,
+        .registry = c->registry
+    };
     nmo_object_query_result_t query_result = {0};
-    nmo_status_t status = nmo_session_query_objects(
-        c->session,
+    nmo_status_t status = nmo_object_query_iterate(
+        &query_ctx,
         query,
         visitor != NULL ? nmo_core_object_query_visit : NULL,
         &bridge,
@@ -228,12 +231,12 @@ int nmo_core_object_query_first(const nmo_cmd_ctx_t *c,
                                 nmo_object_t **out_object,
                                 size_t *out_index)
 {
-    if (c == NULL || c->session == NULL || out_object == NULL) {
+    if (c == NULL || c->document == NULL || out_object == NULL) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     nmo_status_t status = nmo_object_query_find_first(
-        (nmo_document_t *)c->session,
+        c->document,
         query,
         out_object,
         out_index);
@@ -245,12 +248,11 @@ int nmo_core_object_query_first(const nmo_cmd_ctx_t *c,
 
 int nmo_core_object_count(const nmo_cmd_ctx_t *c, size_t *out_count)
 {
-    if (c == NULL || c->session == NULL || out_count == NULL) {
+    if (c == NULL || c->document == NULL || out_count == NULL) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_status_t status =
-        nmo_object_query_count((nmo_document_t *)c->session, NULL, out_count);
+    nmo_status_t status = nmo_object_query_count(c->document, NULL, out_count);
     return status == NMO_OK ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_INTERNAL_ERROR;
 }
 
@@ -398,7 +400,7 @@ int nmo_core_iter_refs(const nmo_cmd_ctx_t *c,
                        unsigned dir,
                        nmo_core_ref_fn visitor, void *user,
                        nmo_core_ref_result_t *result) {
-    if (c == NULL || c->session == NULL) {
+    if (c == NULL || c->document == NULL) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
@@ -417,7 +419,7 @@ int nmo_core_iter_refs(const nmo_cmd_ctx_t *c,
     }
 
     nmo_status_t status = nmo_object_refs_iterate(
-        (nmo_document_t *)c->session,
+        c->document,
         obj_id,
         direction,
         visitor != NULL ? nmo_core_visit_ref_edge : NULL,
@@ -476,8 +478,9 @@ int nmo_core_set_fields(nmo_cmd_ctx_t *c, nmo_object_id_t object_id,
     }
 
     nmo_workspace_edit_t *edit = NULL;
-    nmo_status_t begin_rc =
-        nmo_workspace_edit_begin((nmo_workspace_t *)c->session, "cli set fields", &edit);
+    nmo_status_t begin_rc = c->workspace != NULL
+        ? nmo_workspace_edit_begin(c->workspace, "cli set fields", &edit)
+        : NMO_ERR_INVALID_ARGUMENT;
     if (begin_rc != NMO_OK) {
         fprintf(stderr, "Error: Failed to begin edit: %s\n",
                 nmo_error_string(begin_rc));

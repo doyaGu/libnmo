@@ -160,8 +160,9 @@ static nmo_status_t nmo_cmd_object_rename_with_edit(
     const char *new_name)
 {
     nmo_workspace_edit_t *edit = NULL;
-    nmo_status_t rc =
-        nmo_workspace_edit_begin((nmo_workspace_t *)c->session, "cli object rename", &edit);
+    nmo_status_t rc = c->workspace != NULL
+        ? nmo_workspace_edit_begin(c->workspace, "cli object rename", &edit)
+        : NMO_ERR_INVALID_ARGUMENT;
     if (rc != NMO_OK) {
         return rc;
     }
@@ -1985,12 +1986,14 @@ static int object_import_mutate(
     }
 
     memset(&args->result, 0, sizeof(args->result));
-    nmo_status_t st = nmo_object_edit_import_json(
-        (nmo_workspace_t *)c->session,
-        args->json_data,
-        args->json_size,
-        args->import_flags,
-        &args->result);
+    nmo_status_t st = c->workspace != NULL
+        ? nmo_object_edit_import_json(
+              c->workspace,
+              args->json_data,
+              args->json_size,
+              args->import_flags,
+              &args->result)
+        : NMO_ERR_INVALID_ARGUMENT;
 
     if (st != NMO_OK) {
         fprintf(stderr, "Error: Import failed: %s\n", nmo_error_string(st));

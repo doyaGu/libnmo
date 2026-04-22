@@ -322,9 +322,10 @@ static int debug_export_object(size_t index, nmo_object_t *obj,
  * debug load-phases
  * ============================================================================ */
 
-static int debug_load_phases_run_in_ctx(nmo_cmd_ctx_t c,
+static int debug_load_phases_run_in_ctx(nmo_cmd_ctx_t *c,
                                         nmo_load_profile_t profile,
-                                        const nmo_load_perf_stats_t *phase_stats)
+                                        const nmo_load_perf_stats_t *phase_stats,
+                                        bool close_ctx)
 {
     nmo_load_perf_stats_t empty_phase_stats;
     if (!phase_stats) {
@@ -334,13 +335,13 @@ static int debug_load_phases_run_in_ctx(nmo_cmd_ctx_t c,
 
     /* Get finish loading stats */
     nmo_runtime_load_stats_t stats;
-    bool has_stats = (nmo_session_get_runtime_load_stats(c.session, &stats) == NMO_OK);
+    bool has_stats = (nmo_session_get_runtime_load_stats(c->session, &stats) == NMO_OK);
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
-        yyjson_mut_obj_add_str(doc, data, "file", c.file_path);
+        yyjson_mut_obj_add_str(doc, data, "file", c->file_path);
         yyjson_mut_obj_add_str(doc, data, "profile", debug_load_profile_name(profile));
         yyjson_mut_obj_add_bool(doc, data, "stats_available", has_stats);
 
@@ -365,49 +366,50 @@ static int debug_load_phases_run_in_ctx(nmo_cmd_ctx_t c,
         }
         debug_add_load_phase_stats_json(doc, data, phase_stats);
 
-        nmo_cmd_ctx_json_end(&c, doc, data, "debug.load-phases");
+        nmo_cmd_ctx_json_end(c, doc, data, "debug.load-phases");
     } else {
-        nmo_cli_print_heading(c.out, "Load Phases", c.colorize);
-        nmo_cli_print_kv(c.out, "File", c.file_path, 16, c.colorize);
-        nmo_cli_print_kv(c.out, "Profile", debug_load_profile_name(profile), 16, c.colorize);
+        nmo_cli_print_heading(c->out, "Load Phases", c->colorize);
+        nmo_cli_print_kv(c->out, "File", c->file_path, 16, c->colorize);
+        nmo_cli_print_kv(c->out, "Profile", debug_load_profile_name(profile), 16, c->colorize);
 
         if (!has_stats) {
-            fprintf(c.out, "\nLoad statistics unavailable\n");
+            fprintf(c->out, "\nLoad statistics unavailable\n");
         } else {
             char buf[64];
-            fprintf(c.out, "\n");
+            fprintf(c->out, "\n");
 
             snprintf(buf, sizeof(buf), "%zu", stats.total_objects);
-            nmo_cli_print_kv(c.out, "Total Objects", buf, 16, c.colorize);
+            nmo_cli_print_kv(c->out, "Total Objects", buf, 16, c->colorize);
 
-            fprintf(c.out, "\nReferences:\n");
+            fprintf(c->out, "\nReferences:\n");
             snprintf(buf, sizeof(buf), "%u", stats.references.total);
-            nmo_cli_print_kv(c.out, "  Total", buf, 14, c.colorize);
+            nmo_cli_print_kv(c->out, "  Total", buf, 14, c->colorize);
             snprintf(buf, sizeof(buf), "%u", stats.references.resolved);
-            nmo_cli_print_kv(c.out, "  Resolved", buf, 14, c.colorize);
+            nmo_cli_print_kv(c->out, "  Resolved", buf, 14, c->colorize);
             snprintf(buf, sizeof(buf), "%u", stats.references.unresolved);
-            nmo_cli_print_kv(c.out, "  Unresolved", buf, 14, c.colorize);
+            nmo_cli_print_kv(c->out, "  Unresolved", buf, 14, c->colorize);
             snprintf(buf, sizeof(buf), "%u", stats.references.ambiguous);
-            nmo_cli_print_kv(c.out, "  Ambiguous", buf, 14, c.colorize);
+            nmo_cli_print_kv(c->out, "  Ambiguous", buf, 14, c->colorize);
 
-            fprintf(c.out, "\nIndexes:\n");
+            fprintf(c->out, "\nIndexes:\n");
             snprintf(buf, sizeof(buf), "%zu", stats.indexes.class_entries);
-            nmo_cli_print_kv(c.out, "  Classes", buf, 14, c.colorize);
+            nmo_cli_print_kv(c->out, "  Classes", buf, 14, c->colorize);
             snprintf(buf, sizeof(buf), "%zu", stats.indexes.name_entries);
-            nmo_cli_print_kv(c.out, "  Names", buf, 14, c.colorize);
+            nmo_cli_print_kv(c->out, "  Names", buf, 14, c->colorize);
             snprintf(buf, sizeof(buf), "%zu", stats.indexes.guid_entries);
-            nmo_cli_print_kv(c.out, "  GUIDs", buf, 14, c.colorize);
+            nmo_cli_print_kv(c->out, "  GUIDs", buf, 14, c->colorize);
             snprintf(buf, sizeof(buf), "%zu bytes", stats.indexes.memory_usage);
-            nmo_cli_print_kv(c.out, "  Memory", buf, 14, c.colorize);
+            nmo_cli_print_kv(c->out, "  Memory", buf, 14, c->colorize);
 
-            fprintf(c.out, "\n");
+            fprintf(c->out, "\n");
             snprintf(buf, sizeof(buf), "%u", stats.manager_errors);
-            nmo_cli_print_kv(c.out, "Manager Errors", buf, 16, c.colorize);
+            nmo_cli_print_kv(c->out, "Manager Errors", buf, 16, c->colorize);
         }
-        debug_print_load_phase_stats(c.out, phase_stats);
+        debug_print_load_phase_stats(c->out, phase_stats);
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_SUCCESS)
+                     : NMO_CLI_EXIT_SUCCESS;
 }
 
 int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -444,7 +446,7 @@ int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t
     }
     c.owns_session = true;
     c.registry = nmo_context_get_type_registry(c.ctx);
-    return debug_load_phases_run_in_ctx(c, profile, &phase_stats);
+    return debug_load_phases_run_in_ctx(&c, profile, &phase_stats, true);
 }
 
 static int nmo_cmd_debug_load_phases_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
@@ -457,18 +459,18 @@ static int nmo_cmd_debug_load_phases_in_session(nmo_cmd_ctx_t *ctx, int argc, ch
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
     }
-    return debug_load_phases_run_in_ctx(*ctx, profile, NULL);
+    return debug_load_phases_run_in_ctx(ctx, profile, NULL, false);
 }
 
 /* ============================================================================
  * debug chunks - Iterate objects to list chunk debug info
  * ============================================================================ */
 
-static int debug_chunks_run_in_ctx(nmo_cmd_ctx_t c)
+static int debug_chunks_run_in_ctx(nmo_cmd_ctx_t *c, bool close_ctx)
 {
     int rc = NMO_CLI_EXIT_SUCCESS;
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_val *chunks = yyjson_mut_arr(doc);
@@ -477,21 +479,22 @@ static int debug_chunks_run_in_ctx(nmo_cmd_ctx_t c)
             .chunks = chunks,
         };
         nmo_core_iter_result_t result = {0};
-        rc = nmo_core_object_query_run(&c, NULL, debug_chunks_object,
+        rc = nmo_core_object_query_run(c, NULL, debug_chunks_object,
                                        &chunks_data, &result);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
             yyjson_mut_doc_free(doc);
             fprintf(stderr, "Error: Failed to query objects\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                             : NMO_CLI_EXIT_INTERNAL_ERROR;
         }
         yyjson_mut_obj_add_uint(doc, data, "object_count", (uint64_t)result.matched);
         yyjson_mut_obj_add_uint(doc, data, "chunk_count",
                                 (uint64_t)chunks_data.chunk_count);
         yyjson_mut_obj_add_val(doc, data, "chunks", chunks);
 
-        nmo_cmd_ctx_json_end(&c, doc, data, "debug.chunks");
+        nmo_cmd_ctx_json_end(c, doc, data, "debug.chunks");
     } else {
-        nmo_cli_print_heading(c.out, "Chunk Debug Info", c.colorize);
+        nmo_cli_print_heading(c->out, "Chunk Debug Info", c->colorize);
 
         static const nmo_cli_table_col_t columns[] = {
             {"ObjectID", NMO_CLI_ALIGN_RIGHT, 5, 0},
@@ -509,28 +512,30 @@ static int debug_chunks_run_in_ctx(nmo_cmd_ctx_t c)
             .table = &table,
         };
         nmo_core_iter_result_t result = {0};
-        rc = nmo_core_object_query_run(&c, NULL, debug_chunks_object,
+        rc = nmo_core_object_query_run(c, NULL, debug_chunks_object,
                                        &chunks_data, &result);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
             nmo_cli_table_free(&table);
             fprintf(stderr, "Error: Failed to query objects\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                             : NMO_CLI_EXIT_INTERNAL_ERROR;
         }
 
-        fprintf(c.out, "Chunks: %zu (from %zu objects)\n\n",
+        fprintf(c->out, "Chunks: %zu (from %zu objects)\n\n",
                 chunks_data.chunk_count, result.matched);
-        nmo_cli_table_print(&table, c.out, c.colorize);
+        nmo_cli_table_print(&table, c->out, c->colorize);
         nmo_cli_table_free(&table);
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_SUCCESS)
+                     : NMO_CLI_EXIT_SUCCESS;
 }
 
 int nmo_cmd_debug_chunks(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
-    return debug_chunks_run_in_ctx(c);
+    return debug_chunks_run_in_ctx(&c, true);
 }
 
 static int nmo_cmd_debug_chunks_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
@@ -540,18 +545,18 @@ static int nmo_cmd_debug_chunks_in_session(nmo_cmd_ctx_t *ctx, int argc, char **
     if (!ctx) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    return debug_chunks_run_in_ctx(*ctx);
+    return debug_chunks_run_in_ctx(ctx, false);
 }
 
 /* ============================================================================
  * debug objects
  * ============================================================================ */
 
-static int debug_objects_run_in_ctx(nmo_cmd_ctx_t c)
+static int debug_objects_run_in_ctx(nmo_cmd_ctx_t *c, bool close_ctx)
 {
     int rc = NMO_CLI_EXIT_SUCCESS;
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_val *objs = yyjson_mut_arr(doc);
@@ -560,19 +565,20 @@ static int debug_objects_run_in_ctx(nmo_cmd_ctx_t c)
             .objects = objs,
         };
         nmo_core_iter_result_t result = {0};
-        rc = nmo_core_object_query_run(&c, NULL, debug_objects_object,
+        rc = nmo_core_object_query_run(c, NULL, debug_objects_object,
                                        &objects_data, &result);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
             yyjson_mut_doc_free(doc);
             fprintf(stderr, "Error: Failed to query objects\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                             : NMO_CLI_EXIT_INTERNAL_ERROR;
         }
         yyjson_mut_obj_add_uint(doc, data, "object_count", (uint64_t)result.matched);
         yyjson_mut_obj_add_val(doc, data, "objects", objs);
 
-        nmo_cmd_ctx_json_end(&c, doc, data, "debug.objects");
+        nmo_cmd_ctx_json_end(c, doc, data, "debug.objects");
     } else {
-        nmo_cli_print_heading(c.out, "Object Debug Info", c.colorize);
+        nmo_cli_print_heading(c->out, "Object Debug Info", c->colorize);
 
         static const nmo_cli_table_col_t columns[] = {
             {"Idx", NMO_CLI_ALIGN_RIGHT, 4, 0},
@@ -590,27 +596,29 @@ static int debug_objects_run_in_ctx(nmo_cmd_ctx_t c)
             .table = &table,
         };
         nmo_core_iter_result_t result = {0};
-        rc = nmo_core_object_query_run(&c, NULL, debug_objects_object,
+        rc = nmo_core_object_query_run(c, NULL, debug_objects_object,
                                        &objects_data, &result);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
             nmo_cli_table_free(&table);
             fprintf(stderr, "Error: Failed to query objects\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                             : NMO_CLI_EXIT_INTERNAL_ERROR;
         }
 
-        fprintf(c.out, "Objects: %zu\n\n", result.matched);
-        nmo_cli_table_print(&table, c.out, c.colorize);
+        fprintf(c->out, "Objects: %zu\n\n", result.matched);
+        nmo_cli_table_print(&table, c->out, c->colorize);
         nmo_cli_table_free(&table);
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_SUCCESS)
+                     : NMO_CLI_EXIT_SUCCESS;
 }
 
 int nmo_cmd_debug_objects(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
-    return debug_objects_run_in_ctx(c);
+    return debug_objects_run_in_ctx(&c, true);
 }
 
 static int nmo_cmd_debug_objects_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
@@ -620,7 +628,7 @@ static int nmo_cmd_debug_objects_in_session(nmo_cmd_ctx_t *ctx, int argc, char *
     if (!ctx) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    return debug_objects_run_in_ctx(*ctx);
+    return debug_objects_run_in_ctx(ctx, false);
 }
 
 /* ============================================================================
@@ -645,13 +653,14 @@ static int debug_export_parse(int argc, char **argv,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int debug_export_run_in_ctx(nmo_cmd_ctx_t c,
+static int debug_export_run_in_ctx(nmo_cmd_ctx_t *c,
                                    bool include_data,
-                                   size_t max_bytes)
+                                   size_t max_bytes,
+                                   bool close_ctx)
 {
-    yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+    yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
     yyjson_mut_val *data = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_str(doc, data, "file", c.file_path);
+    yyjson_mut_obj_add_str(doc, data, "file", c->file_path);
     yyjson_mut_obj_add_bool(doc, data, "include_data", include_data);
     yyjson_mut_obj_add_uint(doc, data, "max_bytes", (uint64_t)max_bytes);
 
@@ -663,23 +672,25 @@ static int debug_export_run_in_ctx(nmo_cmd_ctx_t c,
         .max_bytes = max_bytes,
     };
     nmo_core_iter_result_t result = {0};
-    int rc = nmo_core_object_query_run(&c, NULL, debug_export_object,
+    int rc = nmo_core_object_query_run(c, NULL, debug_export_object,
                                        &export_data, &result);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         yyjson_mut_doc_free(doc);
         fprintf(stderr, "Error: Failed to query objects\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     yyjson_mut_obj_add_uint(doc, data, "object_count", (uint64_t)result.matched);
     yyjson_mut_obj_add_val(doc, data, "objects", objs);
-    nmo_cmd_ctx_json_end(&c, doc, data, "debug.export");
+    nmo_cmd_ctx_json_end(c, doc, data, "debug.export");
 
-    if (!c.is_json && c.global && c.global->output_path) {
-        fprintf(stdout, "Exported %zu objects to %s\n", result.matched, c.global->output_path);
+    if (!c->is_json && c->global && c->global->output_path) {
+        fprintf(stdout, "Exported %zu objects to %s\n", result.matched, c->global->output_path);
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_SUCCESS)
+                     : NMO_CLI_EXIT_SUCCESS;
 }
 
 int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -693,7 +704,7 @@ int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_cmd_ctx_t c;
     rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
-    return debug_export_run_in_ctx(c, include_data, max_bytes);
+    return debug_export_run_in_ctx(&c, include_data, max_bytes, true);
 }
 
 static int nmo_cmd_debug_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
@@ -707,7 +718,7 @@ static int nmo_cmd_debug_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
     }
-    return debug_export_run_in_ctx(*ctx, include_data, max_bytes);
+    return debug_export_run_in_ctx(ctx, include_data, max_bytes, false);
 }
 
 int nmo_cmd_debug_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)

@@ -49,6 +49,8 @@ int nmo_cmd_ctx_init_from_source(nmo_cmd_ctx_t *c,
         c->file_path = NULL;
         c->ctx = NULL;
         c->session = NULL;
+        c->document = NULL;
+        c->workspace = NULL;
         c->registry = NULL;
         char out_err[128];
         c->out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
@@ -92,6 +94,24 @@ int nmo_cmd_ctx_init_from_source(nmo_cmd_ctx_t *c,
     }
     c->owns_session = true;
 
+    if (nmo_document_borrow_session(c->session, &c->document) != NMO_OK ||
+        nmo_workspace_create(c->ctx, c->document, &c->workspace) != NMO_OK) {
+        if (c->workspace != NULL) {
+            nmo_workspace_destroy(c->workspace);
+            c->workspace = NULL;
+        }
+        if (c->document != NULL) {
+            nmo_document_destroy(c->document);
+            c->document = NULL;
+        }
+        nmo_tool_close_session(c->ctx, c->session);
+        c->ctx = NULL;
+        c->session = NULL;
+        c->owns_session = false;
+        fprintf(stderr, "Error: Failed to create command context wrappers\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
     /* Cache type registry */
     c->registry = nmo_context_get_type_registry(c->ctx);
 
@@ -102,6 +122,10 @@ int nmo_cmd_ctx_init_from_source(nmo_cmd_ctx_t *c,
         nmo_tool_close_session(c->ctx, c->session);
         c->ctx = NULL;
         c->session = NULL;
+        nmo_workspace_destroy(c->workspace);
+        nmo_document_destroy(c->document);
+        c->workspace = NULL;
+        c->document = NULL;
         c->owns_session = false;
         fprintf(stderr, "Error: %s\n", out_err);
         return NMO_CLI_EXIT_IO_ERROR;
@@ -133,10 +157,28 @@ int nmo_cmd_ctx_init_with_session(nmo_cmd_ctx_t *c,
     c->file_path = source_label ? source_label : "(current session)";
     c->ctx = ctx;
     c->session = session;
+    c->document = NULL;
+    c->workspace = NULL;
     c->owns_session = false;
     c->is_json = global && (global->format == NMO_CLI_FORMAT_JSON ||
                             global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     c->registry = ctx ? nmo_context_get_type_registry(ctx) : NULL;
+
+    if (session != NULL) {
+        if (nmo_document_borrow_session(session, &c->document) != NMO_OK ||
+            nmo_workspace_create(ctx, c->document, &c->workspace) != NMO_OK) {
+            if (c->workspace != NULL) {
+                nmo_workspace_destroy(c->workspace);
+                c->workspace = NULL;
+            }
+            if (c->document != NULL) {
+                nmo_document_destroy(c->document);
+                c->document = NULL;
+            }
+            fprintf(stderr, "Error: Failed to create command context wrappers\n");
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+    }
 
     if (global) {
         char out_err[128];
@@ -175,12 +217,30 @@ void nmo_cmd_ctx_init_from_repl(nmo_cmd_ctx_t *c,
     c->file_path = NULL;
     c->ctx = ctx;
     c->session = session;
+    c->document = NULL;
+    c->workspace = NULL;
     c->owns_session = false;
     c->registry = ctx ? nmo_context_get_type_registry(ctx) : NULL;
     c->out = stdout;
     c->owns_output = false;
     c->colorize = colorize;
     c->is_json = false;  /* REPL is always text mode */
+
+    if (session != NULL) {
+        if (nmo_document_borrow_session(session, &c->document) != NMO_OK ||
+            nmo_workspace_create(ctx, c->document, &c->workspace) != NMO_OK) {
+            if (c->workspace != NULL) {
+                nmo_workspace_destroy(c->workspace);
+                c->workspace = NULL;
+            }
+            if (c->document != NULL) {
+                nmo_document_destroy(c->document);
+                c->document = NULL;
+            }
+            c->session = NULL;
+            c->ctx = NULL;
+        }
+    }
 }
 
 int nmo_cmd_ctx_done(nmo_cmd_ctx_t *c, int exit_code)
@@ -189,6 +249,14 @@ int nmo_cmd_ctx_done(nmo_cmd_ctx_t *c, int exit_code)
         nmo_cli_close_output_stream(c->global, c->out);
         c->out = NULL;
         c->owns_output = false;
+    }
+    if (c->workspace != NULL) {
+        nmo_workspace_destroy(c->workspace);
+        c->workspace = NULL;
+    }
+    if (c->document != NULL) {
+        nmo_document_destroy(c->document);
+        c->document = NULL;
     }
     if (c->owns_session && c->session) {
         nmo_tool_close_session(c->ctx, c->session);

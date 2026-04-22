@@ -14,6 +14,9 @@ typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_session nmo_session_t;
 
 NMO_API nmo_document_t *nmo_document_create(nmo_context_t *ctx);
+NMO_API nmo_status_t nmo_document_borrow_session(
+    nmo_session_t *session,
+    nmo_document_t **out_document);
 NMO_API void nmo_document_destroy(nmo_document_t *document);
 
 NMO_API nmo_context_t *nmo_document_get_context(const nmo_document_t *document);

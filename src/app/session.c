@@ -40,6 +40,7 @@
 struct nmo_document {
     nmo_allocator_t allocator;
     nmo_session_t *session;
+    bool owns_session;
 };
 
 struct nmo_workspace {
@@ -154,8 +155,42 @@ nmo_document_t *nmo_document_create(nmo_context_t *ctx)
         nmo_free(&allocator, document);
         return NULL;
     }
+    document->owns_session = true;
 
     return document;
+}
+
+nmo_status_t nmo_document_borrow_session(
+    nmo_session_t *session,
+    nmo_document_t **out_document)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_allocator_t allocator;
+    nmo_document_t *document = NULL;
+
+    if (session == NULL || out_document == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_document = NULL;
+
+    ctx = nmo_session_get_context(session);
+    if (ctx == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    allocator = owner_allocator_from_context(ctx);
+    document = (nmo_document_t *)nmo_alloc(
+        &allocator, sizeof(*document), _Alignof(nmo_document_t));
+    if (document == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    memset(document, 0, sizeof(*document));
+    document->allocator = allocator;
+    document->session = session;
+    document->owns_session = false;
+    *out_document = document;
+    return NMO_OK;
 }
 
 void nmo_document_destroy(nmo_document_t *document)
@@ -164,10 +199,10 @@ void nmo_document_destroy(nmo_document_t *document)
         return;
     }
 
-    if (document->session != NULL) {
+    if (document->owns_session && document->session != NULL) {
         nmo_session_destroy(document->session);
-        document->session = NULL;
     }
+    document->session = NULL;
     nmo_free(&document->allocator, document);
 }
 
