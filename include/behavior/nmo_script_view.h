@@ -6,10 +6,7 @@
 #ifndef NMO_SCRIPT_VIEW_H
 #define NMO_SCRIPT_VIEW_H
 
-#include "nmo_types.h"
-#include "core/nmo_error.h"
-
-#include <stddef.h>
+#include "behavior/nmo_behavior_query.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,13 +22,7 @@ typedef struct nmo_session nmo_session_t;
 #define NMO_SCRIPT_VIEW_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
 #define NMO_SCRIPT_VIEW_READ_API_TIER NMO_API_TIER_STABLE_CONSUMER
 
-typedef struct nmo_script_view {
-    nmo_object_id_t script_id;
-    nmo_object_id_t owner_id;
-    const char *script_name;
-    const char *owner_name;
-    nmo_class_id_t owner_class_id;
-} nmo_script_view_t;
+typedef nmo_behavior_script_view_t nmo_script_view_t;
 
 NMO_API nmo_status_t nmo_script_view_count(
     nmo_session_t *session,

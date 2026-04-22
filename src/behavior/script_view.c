@@ -10,7 +10,7 @@
 
 #include <string.h>
 
-static void nmo_script_view_clear(nmo_script_view_t *view)
+static void nmo_behavior_script_view_clear(nmo_behavior_script_view_t *view)
 {
     if (view == NULL) {
         return;
@@ -19,7 +19,7 @@ static void nmo_script_view_clear(nmo_script_view_t *view)
     memset(view, 0, sizeof(*view));
 }
 
-static bool nmo_script_view_is_script_owner(
+static bool nmo_behavior_query_is_script_owner(
     const nmo_type_registry_t *registry,
     nmo_class_id_t class_id)
 {
@@ -31,14 +31,15 @@ static bool nmo_script_view_is_script_owner(
         registry, (uint32_t)class_id, (uint32_t)NMO_CID_BEOBJECT);
 }
 
-static nmo_status_t nmo_script_view_lookup(
-    nmo_session_t *session,
+static nmo_status_t nmo_behavior_query_lookup(
+    nmo_document_t *document,
     nmo_object_id_t target_script_id,
     size_t target_index,
     bool use_index,
-    nmo_script_view_t *out_view,
+    nmo_behavior_script_view_t *out_view,
     size_t *out_count)
 {
+    nmo_session_t *session = (nmo_session_t *)document;
     nmo_object_t **objects = NULL;
     size_t object_count = 0;
     size_t script_index = 0;
@@ -54,12 +55,12 @@ static nmo_status_t nmo_script_view_lookup(
         if (out_view == NULL) {
             return NMO_ERR_INVALID_ARGUMENT;
         }
-        nmo_script_view_clear(out_view);
+        nmo_behavior_script_view_clear(out_view);
     } else if (target_script_id != 0) {
         if (out_view == NULL) {
             return NMO_ERR_INVALID_ARGUMENT;
         }
-        nmo_script_view_clear(out_view);
+        nmo_behavior_script_view_clear(out_view);
     } else if (out_count == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -84,7 +85,7 @@ static nmo_status_t nmo_script_view_lookup(
         if (owner == NULL) {
             continue;
         }
-        if (!nmo_script_view_is_script_owner(
+        if (!nmo_behavior_query_is_script_owner(
                 registry, nmo_object_get_class_id(owner))) {
             continue;
         }
@@ -130,22 +131,49 @@ static nmo_status_t nmo_script_view_lookup(
     return NMO_ERR_NOT_FOUND;
 }
 
-nmo_status_t nmo_script_view_count(
-    nmo_session_t *session,
+nmo_status_t nmo_behavior_query_count_scripts(
+    nmo_document_t *document,
     size_t *out_count)
 {
     nmo_status_t status = NMO_OK;
 
-    if (session == NULL || out_count == NULL) {
+    if (document == NULL || out_count == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     *out_count = 0;
-    status = nmo_script_view_lookup(session, 0, 0, false, NULL, out_count);
+    status = nmo_behavior_query_lookup(document, 0, 0, false, NULL, out_count);
     if (status == NMO_ERR_NOT_FOUND) {
         return NMO_OK;
     }
     return status;
+}
+
+nmo_status_t nmo_behavior_query_script_at(
+    nmo_document_t *document,
+    size_t index,
+    nmo_behavior_script_view_t *out_view)
+{
+    return nmo_behavior_query_lookup(document, 0, index, true, out_view, NULL);
+}
+
+nmo_status_t nmo_behavior_query_script_from_script_id(
+    nmo_document_t *document,
+    nmo_object_id_t script_id,
+    nmo_behavior_script_view_t *out_view)
+{
+    if (script_id == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    return nmo_behavior_query_lookup(document, script_id, 0, false, out_view, NULL);
+}
+
+nmo_status_t nmo_script_view_count(
+    nmo_session_t *session,
+    size_t *out_count)
+{
+    return nmo_behavior_query_count_scripts((nmo_document_t *)session, out_count);
 }
 
 nmo_status_t nmo_script_view_at(
@@ -153,7 +181,7 @@ nmo_status_t nmo_script_view_at(
     size_t index,
     nmo_script_view_t *out_view)
 {
-    return nmo_script_view_lookup(session, 0, index, true, out_view, NULL);
+    return nmo_behavior_query_script_at((nmo_document_t *)session, index, out_view);
 }
 
 nmo_status_t nmo_script_view_from_script_id(
@@ -161,9 +189,6 @@ nmo_status_t nmo_script_view_from_script_id(
     nmo_object_id_t script_id,
     nmo_script_view_t *out_view)
 {
-    if (script_id == 0) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    return nmo_script_view_lookup(session, script_id, 0, false, out_view, NULL);
+    return nmo_behavior_query_script_from_script_id(
+        (nmo_document_t *)session, script_id, out_view);
 }
