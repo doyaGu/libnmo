@@ -143,6 +143,7 @@ set_tests_properties(test_nmo_baseline PROPERTIES WORKING_DIRECTORY "${CMAKE_SOU
 # add_unit_test(test_save_pipeline)  # Uses old schema system - DISABLED
 add_unit_test(test_deserializer_id_remap)
 add_unit_test(test_session)
+add_unit_test(test_workspace_edit)
 
 # App layer tests (Phase 7)
 # Public API / umbrella header smoke test

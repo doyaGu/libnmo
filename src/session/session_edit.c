@@ -5,6 +5,7 @@
 
 #include "session/nmo_session_edit.h"
 
+#include "runtime/nmo_workspace.h"
 #include "runtime_internal.h"
 
 #include "session/nmo_context.h"
@@ -449,6 +450,17 @@ nmo_status_t nmo_session_edit_begin(
     return NMO_OK;
 }
 
+nmo_status_t nmo_workspace_edit_begin(
+    nmo_workspace_t *workspace,
+    const char *label,
+    nmo_workspace_edit_t **out_edit)
+{
+    return nmo_session_edit_begin(
+        (nmo_session_t *)workspace,
+        label,
+        (nmo_session_edit_t **)out_edit);
+}
+
 nmo_status_t nmo_session_edit_commit(nmo_session_edit_t *edit)
 {
     if (edit == NULL || edit->finished) {
@@ -472,6 +484,11 @@ nmo_status_t nmo_session_edit_commit(nmo_session_edit_t *edit)
     return apply_result;
 }
 
+nmo_status_t nmo_workspace_edit_commit(nmo_workspace_edit_t *edit)
+{
+    return nmo_session_edit_commit((nmo_session_edit_t *)edit);
+}
+
 void nmo_session_edit_rollback(nmo_session_edit_t *edit)
 {
     if (edit == NULL || edit->finished) {
@@ -480,6 +497,11 @@ void nmo_session_edit_rollback(nmo_session_edit_t *edit)
     session_edit_rollback_to(edit, 0);
     edit->finished = true;
     session_edit_free(edit);
+}
+
+void nmo_workspace_edit_rollback(nmo_workspace_edit_t *edit)
+{
+    nmo_session_edit_rollback((nmo_session_edit_t *)edit);
 }
 
 void *nmo_session_edit_alloc(nmo_session_edit_t *edit, size_t size, size_t align)
