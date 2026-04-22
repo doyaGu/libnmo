@@ -1,0 +1,32 @@
+local session = require("nmo.session")
+local behavior = require("nmo.behavior")
+local ctx = session.create_context()
+local s = session.load_file(ctx, "__INPUT_PATH__")
+local root = assert(behavior.script_at(s, 1)).script_id
+
+local tx = behavior.begin_edit(ctx, s, "public lua workflow")
+local node = assert(behavior.add_node(tx, root, "42414C07-10000007", "Lua Public Node"))
+local in_io = assert(behavior.add_io(tx, root, "input", "Lua Public In"))
+local out_io = assert(behavior.add_io(tx, root, "output", "Lua Public Out"))
+local p1 = assert(behavior.add_parameter(tx, root, "local", "__FLOAT_GUID__", "Lua Public Param A"))
+local p2 = assert(behavior.add_parameter(tx, root, "local", "__FLOAT_GUID__", "Lua Public Param B"))
+local p3 = assert(behavior.add_parameter(tx, root, "local", "__FLOAT_GUID__", "Lua Public Param Out"))
+
+behavior.set_parameter_value(tx, p1, "1.5")
+behavior.set_parameter_bytes(tx, p2, string.char(0, 0, 128, 63))
+assert(behavior.add_operation(tx, root, "33CC6B49-3589282B", p1, p2, p3) ~= nil)
+behavior.validate(tx)
+behavior.commit(tx)
+
+local ok, err = pcall(function()
+    behavior.report(tx)
+end)
+assert(ok == false)
+assert(string.find(err, "stale", 1, true) ~= nil)
+
+session.save_file(s, "__OUTPUT_PATH__")
+local fp = assert(io.open("__OUTPUT_PATH__", "rb"))
+fp:close()
+local marker = assert(io.open("__MARKER_PATH__", "w"))
+marker:write("__OUTPUT_PATH__")
+marker:close()

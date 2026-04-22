@@ -31,6 +31,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef struct script_edit_removed_io_ref {
+    nmo_object_id_t owner_behavior_id;
+    nmo_port_kind_t kind;
+    size_t removed_index;
+} script_edit_removed_io_ref_t;
+
 struct nmo_script_edit_tx {
     nmo_context_t *ctx;
     nmo_session_t *session;
@@ -40,6 +46,9 @@ struct nmo_script_edit_tx {
     nmo_object_id_t *deferred_destroy_ids;
     size_t deferred_destroy_count;
     size_t deferred_destroy_capacity;
+    script_edit_removed_io_ref_t *removed_io_refs;
+    size_t removed_io_ref_count;
+    size_t removed_io_ref_capacity;
     bool finished;
 };
 
@@ -47,6 +56,7 @@ static void script_edit_tx_destroy(nmo_script_edit_tx_t *tx)
 {
     if (tx) {
         free(tx->deferred_destroy_ids);
+        free(tx->removed_io_refs);
     }
     free(tx);
 }
@@ -110,6 +120,43 @@ static nmo_status_t script_edit_append_deferred_destroy(
     }
 
     tx->deferred_destroy_ids[tx->deferred_destroy_count++] = object_id;
+    return NMO_OK;
+}
+
+static nmo_status_t script_edit_append_removed_io_ref(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t owner_behavior_id,
+    nmo_port_kind_t kind,
+    size_t removed_index)
+{
+    script_edit_removed_io_ref_t *next_refs = NULL;
+    size_t next_capacity = 0u;
+
+    if (!tx || owner_behavior_id == 0u ||
+        (kind != NMO_PORT_IO_IN && kind != NMO_PORT_IO_OUT)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (tx->removed_io_ref_count == tx->removed_io_ref_capacity) {
+        next_capacity = tx->removed_io_ref_capacity == 0u
+                            ? 4u
+                            : tx->removed_io_ref_capacity * 2u;
+        next_refs = (script_edit_removed_io_ref_t *)realloc(
+            tx->removed_io_refs,
+            next_capacity * sizeof(*next_refs));
+        if (!next_refs) {
+            return NMO_ERR_NOMEM;
+        }
+        tx->removed_io_refs = next_refs;
+        tx->removed_io_ref_capacity = next_capacity;
+    }
+
+    tx->removed_io_refs[tx->removed_io_ref_count++] =
+        (script_edit_removed_io_ref_t){
+            .owner_behavior_id = owner_behavior_id,
+            .kind = kind,
+            .removed_index = removed_index,
+        };
     return NMO_OK;
 }
 
@@ -1524,6 +1571,110 @@ static bool script_edit_filter_graph_io_indices(int32_t *items,
     return changed;
 }
 
+static bool script_edit_rewrite_removed_graph_io_index(
+    int32_t *items,
+    size_t *count,
+    size_t removed_index)
+{
+    size_t write_index = 0u;
+    bool changed = false;
+
+    if (!count) {
+        return false;
+    }
+
+    for (size_t read_index = 0; read_index < *count; ++read_index) {
+        int32_t value = items ? items[read_index] : -1;
+        if (!items || value < 0) {
+            changed = true;
+            continue;
+        }
+        if ((size_t)value == removed_index) {
+            changed = true;
+            continue;
+        }
+        if (write_index != read_index) {
+            changed = true;
+        }
+        items[write_index++] = value;
+    }
+
+    *count = write_index;
+    return changed;
+}
+
+static bool script_edit_rewrite_interface_body_removed_io(
+    nmo_interface_body_t *body,
+    nmo_port_kind_t kind,
+    size_t removed_index)
+{
+    bool changed = false;
+
+    if (!body || !body->has_body || !body->has_graph_io || !body->graph_io) {
+        return false;
+    }
+
+    if (kind == NMO_PORT_IO_IN) {
+        changed |= script_edit_rewrite_removed_graph_io_index(
+            body->graph_io->inward_inputs,
+            &body->graph_io->inward_input_count,
+            removed_index);
+        changed |= script_edit_rewrite_removed_graph_io_index(
+            body->graph_io->outward_inputs,
+            &body->graph_io->outward_input_count,
+            removed_index);
+    } else if (kind == NMO_PORT_IO_OUT) {
+        changed |= script_edit_rewrite_removed_graph_io_index(
+            body->graph_io->inward_outputs,
+            &body->graph_io->inward_output_count,
+            removed_index);
+        changed |= script_edit_rewrite_removed_graph_io_index(
+            body->graph_io->outward_outputs,
+            &body->graph_io->outward_output_count,
+            removed_index);
+    }
+
+    return changed;
+}
+
+static bool script_edit_apply_removed_io_refs_to_behavior(
+    nmo_script_edit_tx_t *tx,
+    nmo_interface_data_t *idata,
+    nmo_object_id_t root_behavior_id)
+{
+    bool changed = false;
+
+    if (!tx || !idata || root_behavior_id == 0u) {
+        return false;
+    }
+
+    for (size_t i = 0; i < tx->removed_io_ref_count; ++i) {
+        const script_edit_removed_io_ref_t *ref = &tx->removed_io_refs[i];
+        nmo_interface_body_t *body = NULL;
+
+        if (idata->script.behavior_id == ref->owner_behavior_id ||
+            root_behavior_id == ref->owner_behavior_id) {
+            body = &idata->script.body;
+        } else {
+            for (size_t j = 0; j < idata->sub_count; ++j) {
+                if (idata->subs[j].behavior_id == ref->owner_behavior_id) {
+                    body = &idata->subs[j].body;
+                    break;
+                }
+            }
+        }
+
+        if (body != NULL &&
+            script_edit_rewrite_interface_body_removed_io(body,
+                                                          ref->kind,
+                                                          ref->removed_index)) {
+            changed = true;
+        }
+    }
+
+    return changed;
+}
+
 static bool script_edit_canonicalize_interface_body(
     nmo_session_t *session,
     nmo_object_repository_t *repo,
@@ -1687,6 +1838,9 @@ NMO_API nmo_status_t nmo_script_edit_apply_interface_policy(
     if (script_edit_canonicalize_interface_body(tx->session, repo, index,
                                                 behavior_id,
                                                 &idata->script.body)) {
+        tx->report.interface_changes++;
+    }
+    if (script_edit_apply_removed_io_refs_to_behavior(tx, idata, behavior_id)) {
         tx->report.interface_changes++;
     }
 
@@ -2065,6 +2219,14 @@ NMO_API nmo_status_t nmo_script_edit_remove_io(
         return rc;
     }
     script_edit_update_behavior_save_flags(behavior);
+
+    rc = script_edit_append_removed_io_ref(tx,
+                                           owner->owner_id,
+                                           owner->kind,
+                                           (size_t)owner->index);
+    if (rc != NMO_OK) {
+        return rc;
+    }
 
     rc = script_edit_append_deferred_destroy(tx, io_id);
     if (rc != NMO_OK) {

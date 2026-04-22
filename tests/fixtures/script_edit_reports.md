@@ -248,6 +248,27 @@ Required `data.validation` keys:
 - `final_status`
 - `final_status_name`
 
+Required `data.validation.references` keys:
+
+- `status`
+- `status_name`
+- `broken_count`
+
+Required `data.validation.behavior_index` keys:
+
+- `ok`
+
+Required `data.validation.interface` keys:
+
+- `attempted`
+- `available`
+- `status`
+- `status_name`
+
+Required stable dry-run values:
+
+- `data.dry_run == true`
+
 Explicitly non-stable:
 
 - `timestamp`
@@ -256,6 +277,7 @@ Explicitly non-stable:
 - executor timing fields if later added
 - Lua traceback strings beyond substring/code assertions
 - dry-run predicted ids inside `result_handles`
+- ordering inside `result_handles` unless a test documents a specific ordering rule
 
 ## CLI To Lua Option Mapping
 

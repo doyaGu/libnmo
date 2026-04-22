@@ -435,6 +435,15 @@ static void script_graph_usage(FILE *out) {
             "  Use global -f json or -f json-pretty for machine-readable output.\n");
 }
 
+static void script_run_usage(FILE *out) {
+    fprintf(out,
+            "Usage: nmo script run [--dry-run] <script.lua> <file> -o <output>\n\n");
+    fprintf(out,
+            "Load one Lua file, run it through the shared script executor,\n");
+    fprintf(out,
+            "validate once, and either save once or report a dry-run summary.\n");
+}
+
 static void script_node_usage(FILE *out) {
     fprintf(out,
             "Usage: nmo script node add --parent <id> --bb-guid <guid> [--name <name>] <file> -o <output>\n");
@@ -1105,6 +1114,7 @@ static const nmo_cli_action_t parameter_actions[] = {
 
 static const nmo_cli_action_t script_actions[] = {
     ACTION("graph", "g", "Export script edit graph", nmo_cmd_script_graph, script_graph_usage, NMO_REPL_ACTION_READ_SESSION),
+    ACTION("run", NULL, "Run Lua script automation", nmo_cmd_script_run, script_run_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
     ACTION("node", NULL, "Script node editing", nmo_cmd_script_node, script_node_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
     ACTION("io", NULL, "Script IO editing", nmo_cmd_script_io, script_io_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
     ACTION("link", NULL, "Script control-flow editing", nmo_cmd_script_link, script_link_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),

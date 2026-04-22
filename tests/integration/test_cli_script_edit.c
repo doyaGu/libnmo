@@ -126,6 +126,12 @@ static uint64_t get_uint_field(yyjson_val *obj, const char *key)
     return (val && yyjson_is_uint(val)) ? yyjson_get_uint(val) : 0u;
 }
 
+static bool get_bool_field(yyjson_val *obj, const char *key)
+{
+    yyjson_val *val = yyjson_obj_get(obj, key);
+    return val && yyjson_is_bool(val) && yyjson_get_bool(val);
+}
+
 static uint32_t get_array_uint_at(yyjson_val *arr, size_t index)
 {
     yyjson_val *val = yyjson_arr_get(arr, index);
@@ -1547,6 +1553,54 @@ TEST(cli, script_node_and_io_crud_roundtrip)
     assert_validate_ok(node_remove);
 }
 
+TEST(cli, script_io_add_dry_run_exposes_executor_validation_parity)
+{
+    char args[1024];
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *validation = NULL;
+    yyjson_val *references = NULL;
+    yyjson_val *behavior_index = NULL;
+    yyjson_val *interface_obj = NULL;
+    yyjson_val *result_handles = NULL;
+
+    snprintf(args, sizeof(args),
+             "-f json script io add --behavior 6 --kind input --name DryParity "
+             "--dry-run \"%s\"",
+             NMO_TEST_DATA_FILE("Nop.cmo"));
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+
+    ASSERT_STR_EQ("script.io.add",
+                  get_string_field(yyjson_doc_get_root(doc), "command"));
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    ASSERT_TRUE(get_uint_field(data, "io_id") != 0u);
+
+    validation = get_object_field(data, "validation");
+    ASSERT_NOT_NULL(validation);
+    references = get_object_field(validation, "references");
+    ASSERT_NOT_NULL(references);
+    ASSERT_NOT_NULL(get_string_field(references, "status_name"));
+    behavior_index = get_object_field(validation, "behavior_index");
+    ASSERT_NOT_NULL(behavior_index);
+    interface_obj = get_object_field(validation, "interface");
+    ASSERT_NOT_NULL(interface_obj);
+    ASSERT_EQ(0u, get_uint_field(validation, "final_status"));
+    result_handles = get_array_field(data, "result_handles");
+    ASSERT_NOT_NULL(result_handles);
+    ASSERT_EQ(1u, yyjson_arr_size(result_handles));
+
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, script_node_remove_canonicalizes_interface_refs)
 {
     cli_run_result_t result;
@@ -2108,6 +2162,134 @@ TEST(cli, script_control_flow_crud_roundtrip)
                                      link_id);
 }
 
+TEST(cli, script_link_add_dry_run_reports_executor_validation)
+{
+    rewrite_manifest_t manifest;
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *root = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *validation = NULL;
+    yyjson_val *references = NULL;
+    yyjson_val *behavior_index = NULL;
+    yyjson_val *interface_obj = NULL;
+    yyjson_val *result_handles = NULL;
+    uint32_t node_a = 0;
+    uint32_t node_b = 0;
+    uint32_t a_out = 0;
+    uint32_t b_in = 0;
+    char args[1024];
+    const char *node_a_path = "test_script_edit_tmp/link_dry_run_node_a.cmo";
+    const char *node_b_path = "test_script_edit_tmp/link_dry_run_node_b.cmo";
+    const char *io_a_out_path = "test_script_edit_tmp/link_dry_run_io_a_out.cmo";
+    const char *io_b_in_path = "test_script_edit_tmp/link_dry_run_io_b_in.cmo";
+
+    ASSERT_TRUE(load_rewrite_manifest(&manifest));
+    make_dir("test_script_edit_tmp");
+    remove(node_a_path);
+    remove(node_b_path);
+    remove(io_a_out_path);
+    remove(io_b_in_path);
+
+    snprintf(args, sizeof(args),
+             "-f json script node add --parent %u "
+             "--bb-guid 42414C07-10000007 --name \"Dry Link A\" "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             node_a_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    node_a = (uint32_t)get_uint_field(data, "node_id");
+    ASSERT_TRUE(node_a != 0u);
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script node add --parent %u "
+             "--bb-guid 42414C07-10000007 --name \"Dry Link B\" "
+             "\"%s\" -o \"%s\"",
+             manifest.root_behavior_id,
+             node_a_path,
+             node_b_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    node_b = (uint32_t)get_uint_field(data, "node_id");
+    ASSERT_TRUE(node_b != 0u);
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script io add --behavior %u --kind output --name DryAOut "
+             "\"%s\" -o \"%s\"",
+             node_a,
+             node_b_path,
+             io_a_out_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    free(result.output);
+
+    snprintf(args, sizeof(args),
+             "-f json script io add --behavior %u --kind input --name DryBIn "
+             "\"%s\" -o \"%s\"",
+             node_b,
+             io_a_out_path,
+             io_b_in_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    free(result.output);
+
+    load_behavior_io_by_name(io_b_in_path, node_a, "outputs", "DryAOut", &a_out);
+    load_behavior_io_by_name(io_b_in_path, node_b, "inputs", "DryBIn", &b_in);
+
+    snprintf(args, sizeof(args),
+             "-f json script link add --parent %u --from %u --to %u --delay 0 "
+             "--dry-run \"%s\"",
+             manifest.root_behavior_id,
+             a_out,
+             b_in,
+             io_b_in_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.link.add", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    validation = get_object_field(data, "validation");
+    ASSERT_NOT_NULL(validation);
+    references = get_object_field(validation, "references");
+    behavior_index = get_object_field(validation, "behavior_index");
+    interface_obj = get_object_field(validation, "interface");
+    ASSERT_NOT_NULL(references);
+    ASSERT_NOT_NULL(behavior_index);
+    ASSERT_NOT_NULL(interface_obj);
+    ASSERT_TRUE(get_bool_field(behavior_index, "ok"));
+    result_handles = get_array_field(data, "result_handles");
+    ASSERT_NOT_NULL(result_handles);
+    ASSERT_EQ(1u, yyjson_arr_size(result_handles));
+    ASSERT_TRUE(get_array_uint_at(result_handles, 0u) != 0u);
+    ASSERT_NULL(yyjson_obj_get(data, "output"));
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, script_link_remove_canonicalizes_interface_refs)
 {
     cli_run_result_t result;
@@ -2452,6 +2634,53 @@ TEST(cli, script_param_remove_canonicalizes_interface_refs)
     yyjson_doc_free(doc);
 }
 
+TEST(cli, script_param_add_dry_run_reports_executor_validation)
+{
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *root = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *validation = NULL;
+    yyjson_val *references = NULL;
+    yyjson_val *behavior_index = NULL;
+    yyjson_val *interface_obj = NULL;
+    yyjson_val *result_handles = NULL;
+    char args[1024];
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind local "
+             "--type int --name DryParam --dry-run \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             NMO_SCRIPT_INTERFACE_FIXTURE);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.param.add", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    validation = get_object_field(data, "validation");
+    ASSERT_NOT_NULL(validation);
+    references = get_object_field(validation, "references");
+    behavior_index = get_object_field(validation, "behavior_index");
+    interface_obj = get_object_field(validation, "interface");
+    ASSERT_NOT_NULL(references);
+    ASSERT_NOT_NULL(behavior_index);
+    ASSERT_NOT_NULL(interface_obj);
+    ASSERT_TRUE(get_bool_field(behavior_index, "ok"));
+    result_handles = get_array_field(data, "result_handles");
+    ASSERT_NOT_NULL(result_handles);
+    ASSERT_EQ(1u, yyjson_arr_size(result_handles));
+    ASSERT_TRUE(get_array_uint_at(result_handles, 0u) != 0u);
+    ASSERT_NULL(yyjson_obj_get(data, "output"));
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, script_op_remove_canonicalizes_interface_refs)
 {
     cli_run_result_t result;
@@ -2600,6 +2829,122 @@ TEST(cli, script_op_remove_canonicalizes_interface_refs)
     ops = get_array_field(body, "operations");
     ASSERT_NOT_NULL(ops);
     ASSERT_NULL(find_array_object_by_id(ops, op_id));
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, script_op_add_dry_run_reports_executor_validation)
+{
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *root = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *validation = NULL;
+    yyjson_val *references = NULL;
+    yyjson_val *behavior_index = NULL;
+    yyjson_val *interface_obj = NULL;
+    yyjson_val *result_handles = NULL;
+    uint32_t in1_param_id = 0;
+    uint32_t in2_param_id = 0;
+    uint32_t out_param_id = 0;
+    char args[1024];
+    const char *in_param_add_path = "test_script_edit_tmp/op_dry_run_in_param_add.cmo";
+    const char *in2_param_add_path = "test_script_edit_tmp/op_dry_run_in2_param_add.cmo";
+    const char *param_add_path = "test_script_edit_tmp/op_dry_run_param_add.cmo";
+
+    make_dir("test_script_edit_tmp");
+    remove(in_param_add_path);
+    remove(in2_param_add_path);
+    remove(param_add_path);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind local "
+             "--type int --name DryOpIn \"%s\" -o \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             NMO_SCRIPT_INTERFACE_FIXTURE,
+             in_param_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    in1_param_id = (uint32_t)get_uint_field(data, "param_id");
+    ASSERT_TRUE(in1_param_id != 0u);
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind local "
+             "--type int --name DryOpIn2 \"%s\" -o \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             in_param_add_path,
+             in2_param_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    in2_param_id = (uint32_t)get_uint_field(data, "param_id");
+    ASSERT_TRUE(in2_param_id != 0u);
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script param add --owner %u --kind out "
+             "--type int --name DryOpOut \"%s\" -o \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             in2_param_add_path,
+             param_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    out_param_id = (uint32_t)get_uint_field(data, "param_id");
+    ASSERT_TRUE(out_param_id != 0u);
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args),
+             "-f json script op add --parent %u "
+             "--op-guid 33CC6B49-3589282B --in1 %u --in2 %u --out %u "
+             "--dry-run \"%s\"",
+             NMO_SCRIPT_INTERFACE_TARGET_ID,
+             in1_param_id,
+             in2_param_id,
+             out_param_id,
+             param_add_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.op.add", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    validation = get_object_field(data, "validation");
+    ASSERT_NOT_NULL(validation);
+    references = get_object_field(validation, "references");
+    behavior_index = get_object_field(validation, "behavior_index");
+    interface_obj = get_object_field(validation, "interface");
+    ASSERT_NOT_NULL(references);
+    ASSERT_NOT_NULL(behavior_index);
+    ASSERT_NOT_NULL(interface_obj);
+    ASSERT_TRUE(get_bool_field(behavior_index, "ok"));
+    result_handles = get_array_field(data, "result_handles");
+    ASSERT_NOT_NULL(result_handles);
+    ASSERT_EQ(1u, yyjson_arr_size(result_handles));
+    ASSERT_TRUE(get_array_uint_at(result_handles, 0u) != 0u);
+    ASSERT_NULL(yyjson_obj_get(data, "output"));
     yyjson_doc_free(doc);
 }
 
@@ -3314,14 +3659,18 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_edit_report_contract_is_checked_in);
     REGISTER_TEST(cli, script_graph_json_smoke);
     REGISTER_TEST(cli, script_node_and_io_crud_roundtrip);
+    REGISTER_TEST(cli, script_io_add_dry_run_exposes_executor_validation_parity);
     REGISTER_TEST(cli, script_node_remove_canonicalizes_interface_refs);
     REGISTER_TEST(cli, script_node_remove_preserve_rejects_stale_interface_refs);
     REGISTER_TEST(cli, script_node_remove_remove_strips_interface_data);
     REGISTER_TEST(cli, script_control_flow_crud_roundtrip);
+    REGISTER_TEST(cli, script_link_add_dry_run_reports_executor_validation);
     REGISTER_TEST(cli, script_link_remove_canonicalizes_interface_refs);
     REGISTER_TEST(cli, script_io_remove_canonicalizes_interface_refs);
     REGISTER_TEST(cli, script_param_remove_canonicalizes_interface_refs);
+    REGISTER_TEST(cli, script_param_add_dry_run_reports_executor_validation);
     REGISTER_TEST(cli, script_op_remove_canonicalizes_interface_refs);
+    REGISTER_TEST(cli, script_op_add_dry_run_reports_executor_validation);
     REGISTER_TEST(cli, script_parameter_crud_roundtrip);
     REGISTER_TEST(cli, script_operation_crud_roundtrip);
     REGISTER_TEST(cli, script_operation_rejects_invalid_signature);

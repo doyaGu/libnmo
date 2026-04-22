@@ -9,14 +9,19 @@
 #include "../nmo_cli_write.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_opt.h"
+#include "../nmo_tool_session.h"
 
 #include "behavior/nmo_param_value.h"
 #include "behavior/nmo_behavior_index.h"
 #include "behavior/nmo_script_edit.h"
 #include "behavior/nmo_script_edit_graph.h"
+#include "behavior/nmo_script_executor.h"
+#include "behavior/nmo_script_view.h"
+#include "core/nmo_array.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "format/nmo_interface_chunk.h"
+#include "format/nmo_interface_view.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
@@ -30,10 +35,22 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "lauxlib.h"
+
 /* Task 2 freezes the future script write option spellings in
  * tests/fixtures/script_edit_reports.md. Keep CLI long options aligned with
  * Lua option-table fields through the direct kebab-case -> snake_case mapping.
  */
+static const char *script_interface_mode_string(
+    nmo_script_edit_interface_mode_t mode);
+static nmo_object_id_t script_interface_root_for_object_session(
+    nmo_session_t *session,
+    nmo_object_id_t object_id);
+static bool script_session_interface_references_behavior(
+    nmo_session_t *session,
+    nmo_object_id_t parent_behavior_id,
+    nmo_object_id_t node_id);
+
 static bool parse_script_graph_args(int argc,
                                     char **argv,
                                     bool expect_file_operand,
@@ -155,6 +172,1049 @@ static void dot_write_label(FILE *out, const char *label)
             fputc('?', out);
         }
     }
+}
+
+typedef struct script_run_operation {
+    nmo_object_id_t behavior_id;
+    char *kind;
+    char *io_kind;
+    char *name;
+    uint32_t *result_handles;
+    size_t result_handle_count;
+} script_run_operation_t;
+
+typedef struct script_run_validation {
+    nmo_status_t references_status;
+    size_t broken_reference_count;
+    bool behavior_index_ok;
+    bool interface_attempted;
+    bool interface_available;
+    nmo_status_t interface_status;
+    nmo_status_t final_status;
+} script_run_validation_t;
+
+typedef struct script_command_common {
+    script_run_validation_t validation;
+} script_command_common_t;
+
+typedef nmo_status_t (*script_executor_cli_action_fn)(
+    nmo_script_executor_t *executor,
+    void *user_data);
+
+typedef struct script_executor_cli_action_state {
+    script_executor_cli_action_fn action;
+    void *action_user_data;
+    script_command_common_t *common;
+} script_executor_cli_action_state_t;
+
+typedef struct script_run_args {
+    const char *script_path;
+    const char *input_path;
+    bool dry_run;
+    nmo_script_edit_report_t report;
+    script_run_validation_t validation;
+    script_run_operation_t *operations;
+    size_t operation_count;
+    size_t operation_capacity;
+    uint32_t *result_handles;
+    size_t result_handle_count;
+    size_t result_handle_capacity;
+    nmo_script_executor_t *executor;
+} script_run_args_t;
+
+static script_run_args_t *g_script_run_args = NULL;
+
+static char *script_run_strdup(const char *text)
+{
+    size_t len = 0;
+    char *copy = NULL;
+
+    if (text == NULL) {
+        return NULL;
+    }
+
+    len = strlen(text);
+    copy = (char *)malloc(len + 1u);
+    if (copy == NULL) {
+        return NULL;
+    }
+
+    memcpy(copy, text, len + 1u);
+    return copy;
+}
+
+static void script_run_reset_args(script_run_args_t *args)
+{
+    size_t i = 0;
+
+    if (args == NULL) {
+        return;
+    }
+
+    for (i = 0; i < args->operation_count; ++i) {
+        free(args->operations[i].kind);
+        free(args->operations[i].io_kind);
+        free(args->operations[i].name);
+        free(args->operations[i].result_handles);
+    }
+    free(args->operations);
+    free(args->result_handles);
+
+    memset(&args->report, 0, sizeof(args->report));
+    memset(&args->validation, 0, sizeof(args->validation));
+    args->operations = NULL;
+    args->operation_count = 0u;
+    args->operation_capacity = 0u;
+    args->result_handles = NULL;
+    args->result_handle_count = 0u;
+    args->result_handle_capacity = 0u;
+    args->executor = NULL;
+}
+
+static bool script_run_append_result_handle(script_run_args_t *args,
+                                            uint32_t handle_id)
+{
+    uint32_t *new_handles = NULL;
+    size_t new_capacity = 0u;
+
+    if (args == NULL) {
+        return false;
+    }
+
+    if (args->result_handle_count == args->result_handle_capacity) {
+        new_capacity = (args->result_handle_capacity == 0u)
+                           ? 4u
+                           : args->result_handle_capacity * 2u;
+        new_handles =
+            (uint32_t *)realloc(args->result_handles,
+                                new_capacity * sizeof(*new_handles));
+        if (new_handles == NULL) {
+            return false;
+        }
+        args->result_handles = new_handles;
+        args->result_handle_capacity = new_capacity;
+    }
+
+    args->result_handles[args->result_handle_count++] = handle_id;
+    return true;
+}
+
+static bool script_run_append_operation(script_run_args_t *args,
+                                        nmo_object_id_t behavior_id,
+                                        const char *kind,
+                                        const char *io_kind,
+                                        const char *name,
+                                        const uint32_t *result_handles,
+                                        size_t result_handle_count)
+{
+    script_run_operation_t *new_operations = NULL;
+    size_t new_capacity = 0u;
+    script_run_operation_t *op = NULL;
+    size_t i = 0u;
+
+    if (args == NULL || kind == NULL) {
+        return false;
+    }
+
+    if (args->operation_count == args->operation_capacity) {
+        new_capacity = (args->operation_capacity == 0u)
+                           ? 4u
+                           : args->operation_capacity * 2u;
+        new_operations =
+            (script_run_operation_t *)realloc(args->operations,
+                                              new_capacity * sizeof(*new_operations));
+        if (new_operations == NULL) {
+            return false;
+        }
+        args->operations = new_operations;
+        args->operation_capacity = new_capacity;
+    }
+
+    op = &args->operations[args->operation_count];
+    memset(op, 0, sizeof(*op));
+    op->behavior_id = behavior_id;
+    op->kind = script_run_strdup(kind);
+    op->io_kind = script_run_strdup(io_kind);
+    op->name = script_run_strdup(name);
+    if (op->kind == NULL || op->io_kind == NULL || op->name == NULL) {
+        free(op->kind);
+        free(op->io_kind);
+        free(op->name);
+        memset(op, 0, sizeof(*op));
+        return false;
+    }
+
+    if (result_handle_count > 0u) {
+        op->result_handles = (uint32_t *)malloc(result_handle_count *
+                                                sizeof(*op->result_handles));
+        if (op->result_handles == NULL) {
+            free(op->kind);
+            free(op->io_kind);
+            free(op->name);
+            memset(op, 0, sizeof(*op));
+            return false;
+        }
+
+        memcpy(op->result_handles,
+               result_handles,
+               result_handle_count * sizeof(*op->result_handles));
+        op->result_handle_count = result_handle_count;
+
+        for (i = 0u; i < result_handle_count; ++i) {
+            if (!script_run_append_result_handle(args, result_handles[i])) {
+                free(op->kind);
+                free(op->io_kind);
+                free(op->name);
+                free(op->result_handles);
+                memset(op, 0, sizeof(*op));
+                return false;
+            }
+        }
+    }
+
+    args->operation_count += 1u;
+    return true;
+}
+
+static script_run_args_t *script_run_current_args(lua_State *state)
+{
+    (void)state;
+    if (g_script_run_args == NULL || g_script_run_args->executor == NULL) {
+        luaL_error(state, "script executor state is unavailable");
+        return NULL;
+    }
+    return g_script_run_args;
+}
+
+static nmo_behavior_state_t *script_run_find_behavior_state(
+    nmo_session_t *session,
+    nmo_object_id_t behavior_id)
+{
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *object = NULL;
+
+    if (session == NULL || behavior_id == 0u) {
+        return NULL;
+    }
+
+    repo = nmo_session_get_repository(session);
+    object = repo ? nmo_object_repository_find_by_id(repo, behavior_id) : NULL;
+    if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
+        return NULL;
+    }
+
+    return (nmo_behavior_state_t *)nmo_object_get_state(object);
+}
+
+static int script_run_lua_root_script_id(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_script_view_t view = {0};
+    nmo_status_t status =
+        nmo_script_view_at(nmo_script_executor_session(args->executor), 0u, &view);
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to resolve root script");
+    }
+
+    lua_pushinteger(state, (lua_Integer)view.script_id);
+    return 1;
+}
+
+static int script_run_lua_io_at(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_session_t *session = nmo_script_executor_session(args->executor);
+    nmo_object_id_t behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
+    const char *kind_text = luaL_checkstring(state, 2);
+    lua_Integer lua_index = luaL_checkinteger(state, 3);
+    const nmo_array_t *ports = NULL;
+    const nmo_object_id_t *ids = NULL;
+    nmo_behavior_state_t *state_data = NULL;
+
+    if (lua_index < 1) {
+        return luaL_error(state, "io index must be 1-based");
+    }
+
+    state_data = script_run_find_behavior_state(session, behavior_id);
+    if (state_data == NULL) {
+        return luaL_error(state, "failed to resolve behavior state");
+    }
+
+    if (strcmp(kind_text, "input") == 0) {
+        ports = &state_data->inputs;
+    } else if (strcmp(kind_text, "output") == 0) {
+        ports = &state_data->outputs;
+    } else {
+        return luaL_error(state, "io kind must be 'input' or 'output'");
+    }
+
+    if ((size_t)(lua_index - 1) >= ports->count) {
+        lua_pushnil(state);
+        return 1;
+    }
+
+    ids = (const nmo_object_id_t *)ports->data;
+    lua_pushinteger(state, (lua_Integer)ids[(size_t)(lua_index - 1)]);
+    return 1;
+}
+
+static int script_run_lua_interface_sub_at(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_session_t *session = nmo_script_executor_session(args->executor);
+    nmo_object_id_t behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
+    lua_Integer lua_index = luaL_checkinteger(state, 2);
+    nmo_behavior_state_t *state_data = NULL;
+
+    if (lua_index < 1) {
+        return luaL_error(state, "sub-behavior index must be 1-based");
+    }
+
+    state_data = script_run_find_behavior_state(session, behavior_id);
+    if (state_data == NULL || state_data->interface_data == NULL) {
+        lua_pushnil(state);
+        return 1;
+    }
+
+    if ((size_t)(lua_index - 1) >= state_data->interface_data->sub_count) {
+        lua_pushnil(state);
+        return 1;
+    }
+
+    lua_pushinteger(
+        state,
+        (lua_Integer)state_data->interface_data->subs[(size_t)(lua_index - 1)].behavior_id);
+    return 1;
+}
+
+static int script_run_lua_add_io(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_object_id_t behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
+    const char *kind_text = luaL_checkstring(state, 2);
+    const char *name = luaL_checkstring(state, 3);
+    nmo_script_edit_io_kind_t kind = NMO_SCRIPT_EDIT_IO_INPUT;
+    nmo_object_id_t io_id = 0u;
+    nmo_status_t status = NMO_OK;
+
+    if (strcmp(kind_text, "input") == 0) {
+        kind = NMO_SCRIPT_EDIT_IO_INPUT;
+    } else if (strcmp(kind_text, "output") == 0) {
+        kind = NMO_SCRIPT_EDIT_IO_OUTPUT;
+    } else {
+        return luaL_error(state, "io kind must be 'input' or 'output'");
+    }
+
+    status = nmo_script_edit_add_io(nmo_script_executor_transaction(args->executor),
+                                    behavior_id,
+                                    kind,
+                                    name,
+                                    &io_id);
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to add script io");
+    }
+
+    {
+        const uint32_t result_handles[] = {io_id};
+        if (!script_run_append_operation(args,
+                                         behavior_id,
+                                         "add_io",
+                                         kind_text,
+                                         name,
+                                         result_handles,
+                                         1u)) {
+            return luaL_error(state, "failed to record script operation");
+        }
+    }
+
+    lua_pushinteger(state, (lua_Integer)io_id);
+    return 1;
+}
+
+static int script_run_lua_remove_io(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_script_edit_tx_t *tx = nmo_script_executor_transaction(args->executor);
+    nmo_session_t *session = nmo_script_executor_session(args->executor);
+    nmo_object_id_t io_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
+    const char *mode_text = luaL_optstring(state, 2, "preserve");
+    nmo_script_edit_interface_mode_t mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE;
+    nmo_object_id_t interface_behavior_id = 0u;
+    char io_id_text[32];
+    nmo_status_t status = NMO_OK;
+
+    if (strcmp(mode_text, "preserve") == 0) {
+        mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE;
+    } else if (strcmp(mode_text, "canonicalize") == 0) {
+        mode = NMO_SCRIPT_EDIT_INTERFACE_CANONICALIZE;
+    } else if (strcmp(mode_text, "remove") == 0) {
+        mode = NMO_SCRIPT_EDIT_INTERFACE_REMOVE;
+    } else {
+        return luaL_error(state,
+                          "interface mode must be 'preserve', 'canonicalize', or 'remove'");
+    }
+
+    interface_behavior_id = script_interface_root_for_object_session(session, io_id);
+    if (mode != NMO_SCRIPT_EDIT_INTERFACE_PRESERVE && interface_behavior_id == 0u) {
+        return luaL_error(state, "failed to resolve script interface root");
+    }
+
+    status = nmo_script_edit_remove_io(tx, io_id, false);
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to remove script io");
+    }
+
+    if (mode != NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
+        status = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
+        if (status != NMO_OK) {
+            return luaL_error(state, "%s",
+                              nmo_last_error_message() != NULL
+                                  ? nmo_last_error_message()
+                                  : "failed to validate roundtrip readiness");
+        }
+
+        status = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
+        if (status != NMO_OK) {
+            return luaL_error(state, "%s",
+                              nmo_last_error_message() != NULL
+                                  ? nmo_last_error_message()
+                                  : "failed to validate references");
+        }
+
+        status = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
+        if (status != NMO_OK) {
+            return luaL_error(state, "%s",
+                              nmo_last_error_message() != NULL
+                                  ? nmo_last_error_message()
+                                  : "failed to validate behavior index");
+        }
+
+        status = nmo_script_edit_apply_interface_policy(tx,
+                                                        interface_behavior_id,
+                                                        mode);
+        if (status != NMO_OK) {
+            return luaL_error(state, "%s",
+                              nmo_last_error_message() != NULL
+                                  ? nmo_last_error_message()
+                                  : "failed to apply interface policy");
+        }
+    }
+
+    snprintf(io_id_text, sizeof(io_id_text), "%u", io_id);
+    if (!script_run_append_operation(args,
+                                     interface_behavior_id,
+                                     "remove_io",
+                                     mode_text,
+                                     io_id_text,
+                                     NULL,
+                                     0u)) {
+        return luaL_error(state, "failed to record script operation");
+    }
+
+    return 0;
+}
+
+static int script_run_lua_remove_node(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_script_edit_tx_t *tx = nmo_script_executor_transaction(args->executor);
+    nmo_session_t *session = nmo_script_executor_session(args->executor);
+    nmo_object_id_t parent_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
+    nmo_object_id_t node_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    const char *mode_text = luaL_optstring(state, 3, "preserve");
+    nmo_script_edit_interface_mode_t mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE;
+    char node_id_text[32];
+    nmo_status_t status = NMO_OK;
+
+    if (strcmp(mode_text, "preserve") == 0) {
+        mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE;
+    } else if (strcmp(mode_text, "canonicalize") == 0) {
+        mode = NMO_SCRIPT_EDIT_INTERFACE_CANONICALIZE;
+    } else if (strcmp(mode_text, "remove") == 0) {
+        mode = NMO_SCRIPT_EDIT_INTERFACE_REMOVE;
+    } else {
+        return luaL_error(state,
+                          "interface mode must be 'preserve', 'canonicalize', or 'remove'");
+    }
+
+    if (mode == NMO_SCRIPT_EDIT_INTERFACE_PRESERVE &&
+        script_session_interface_references_behavior(session, parent_id, node_id)) {
+        return luaL_error(state, "Failed to apply script interface policy");
+    }
+
+    status = nmo_script_edit_remove_node(tx, parent_id, node_id, 0u);
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to remove script node");
+    }
+
+    if (mode != NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
+        status = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
+        if (status != NMO_OK) {
+            return luaL_error(state, "%s",
+                              nmo_last_error_message() != NULL
+                                  ? nmo_last_error_message()
+                                  : "failed to validate roundtrip readiness");
+        }
+
+        status = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
+        if (status != NMO_OK) {
+            return luaL_error(state, "%s",
+                              nmo_last_error_message() != NULL
+                                  ? nmo_last_error_message()
+                                  : "failed to validate references");
+        }
+
+        status = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
+        if (status != NMO_OK) {
+            return luaL_error(state, "%s",
+                              nmo_last_error_message() != NULL
+                                  ? nmo_last_error_message()
+                                  : "failed to validate behavior index");
+        }
+
+        status = nmo_script_edit_apply_interface_policy(tx, parent_id, mode);
+        if (status != NMO_OK) {
+            return luaL_error(state, "%s",
+                              nmo_last_error_message() != NULL
+                                  ? nmo_last_error_message()
+                                  : "failed to apply interface policy");
+        }
+    }
+
+    snprintf(node_id_text, sizeof(node_id_text), "%u", node_id);
+    if (!script_run_append_operation(args,
+                                     parent_id,
+                                     "remove_node",
+                                     mode_text,
+                                     node_id_text,
+                                     NULL,
+                                     0u)) {
+        return luaL_error(state, "failed to record script operation");
+    }
+
+    return 0;
+}
+
+static int script_run_lua_open_executor_module(lua_State *state)
+{
+    lua_createtable(state, 0, 6);
+
+    lua_pushcfunction(state, script_run_lua_root_script_id);
+    lua_setfield(state, -2, "root_script_id");
+
+    lua_pushcfunction(state, script_run_lua_io_at);
+    lua_setfield(state, -2, "io_at");
+
+    lua_pushcfunction(state, script_run_lua_interface_sub_at);
+    lua_setfield(state, -2, "interface_sub_at");
+
+    lua_pushcfunction(state, script_run_lua_add_io);
+    lua_setfield(state, -2, "add_io");
+
+    lua_pushcfunction(state, script_run_lua_remove_io);
+    lua_setfield(state, -2, "remove_io");
+
+    lua_pushcfunction(state, script_run_lua_remove_node);
+    lua_setfield(state, -2, "remove_node");
+
+    return 1;
+}
+
+static nmo_status_t script_run_read_file(const char *path,
+                                         char **out_text)
+{
+    FILE *fp = NULL;
+    long size = 0;
+    char *text = NULL;
+    size_t bytes_read = 0u;
+
+    if (path == NULL || out_text == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Script file path must be non-null");
+    }
+
+    *out_text = NULL;
+    fp = fopen(path, "rb");
+    if (fp == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_CANT_OPEN_FILE, NMO_SEVERITY_ERROR,
+                         "Failed to open Lua script file: %s", path);
+    }
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR,
+                         "Failed to seek Lua script file: %s", path);
+    }
+    size = ftell(fp);
+    if (size < 0) {
+        fclose(fp);
+        NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR,
+                         "Failed to size Lua script file: %s", path);
+    }
+    rewind(fp);
+
+    text = (char *)malloc((size_t)size + 1u);
+    if (text == NULL) {
+        fclose(fp);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate Lua script buffer");
+    }
+
+    bytes_read = fread(text, 1, (size_t)size, fp);
+    fclose(fp);
+    if (bytes_read != (size_t)size) {
+        free(text);
+        NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR,
+                         "Failed to read Lua script file: %s", path);
+    }
+    text[bytes_read] = '\0';
+    *out_text = text;
+    NMO_RETURN_OK();
+}
+
+static void script_collect_validation(nmo_script_executor_t *executor,
+                                      script_run_validation_t *validation)
+{
+    nmo_session_t *session = NULL;
+    nmo_ref_graph_t *ref_graph = NULL;
+    const nmo_behavior_index_t *behavior_index = NULL;
+    nmo_session_behavior_interface_diagnostics_t interface_diag = {0};
+
+    if (executor == NULL || validation == NULL) {
+        return;
+    }
+
+    memset(validation, 0, sizeof(*validation));
+    session = nmo_script_executor_session(executor);
+    if (session == NULL) {
+        return;
+    }
+
+    ref_graph = nmo_session_get_ref_graph(session);
+    validation->references_status = NMO_OK;
+    if (ref_graph != NULL) {
+        validation->references_status =
+            nmo_ref_graph_validate(ref_graph,
+                                   NULL,
+                                   &validation->broken_reference_count);
+    }
+
+    behavior_index = nmo_session_get_behavior_index(session);
+    validation->behavior_index_ok = behavior_index != NULL;
+
+    nmo_session_get_behavior_interface_diagnostics(session, &interface_diag);
+    validation->interface_status = interface_diag.status;
+    validation->interface_attempted = interface_diag.attempted != 0;
+    validation->interface_available = interface_diag.available != 0;
+}
+
+static void script_run_collect_validation(script_run_args_t *args)
+{
+    if (args == NULL || args->executor == NULL) {
+        return;
+    }
+
+    script_collect_validation(args->executor, &args->validation);
+}
+
+static nmo_status_t script_executor_cli_action_trampoline(
+    nmo_script_executor_t *executor,
+    void *user_data)
+{
+    script_executor_cli_action_state_t *state =
+        (script_executor_cli_action_state_t *)user_data;
+    nmo_status_t status = NMO_OK;
+    nmo_error_code_t error_code = NMO_OK;
+    char error_message[512] = {0};
+
+    if (state == NULL || state->action == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script executor CLI action");
+    }
+
+    status = state->action(executor, state->action_user_data);
+    if (status != NMO_OK) {
+        error_code = nmo_last_error_code();
+        (void)nmo_last_error_message_copy(error_message, sizeof(error_message));
+    }
+    if (state->common != NULL) {
+        script_collect_validation(executor, &state->common->validation);
+        state->common->validation.final_status = status;
+    }
+    if (status != NMO_OK) {
+        nmo_last_error_setf(
+            error_code != NMO_OK ? error_code : (nmo_error_code_t)status,
+            NMO_SEVERITY_ERROR,
+            __FILE__,
+            __LINE__,
+            "%s",
+            error_message[0] != '\0'
+                ? error_message
+                : nmo_error_string(status));
+    }
+    return status;
+}
+
+static int script_executor_cli_run_write_command(
+    const char *input_path,
+    const char *output_path,
+    bool dry_run,
+    const nmo_cli_global_opts_t *global,
+    const nmo_cli_write_spec_t *spec,
+    const char *label,
+    uint32_t validation_flags,
+    script_executor_cli_action_fn action,
+    nmo_cli_write_report_fn report,
+    void *user_data,
+    script_command_common_t *common)
+{
+    nmo_cmd_ctx_t ctx;
+    nmo_context_t *executor_ctx = NULL;
+    nmo_script_executor_options_t options = nmo_script_executor_options_default();
+    script_executor_cli_action_state_t state = {
+        .action = action,
+        .action_user_data = user_data,
+        .common = common,
+    };
+    nmo_status_t status = NMO_OK;
+    int rc = NMO_CLI_EXIT_SUCCESS;
+
+    if (input_path == NULL || spec == NULL || action == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (spec->output_required_unless_dry_run && !dry_run && output_path == NULL) {
+        fprintf(stderr, "Error: -o/--output is required (or use --dry-run)\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (common != NULL) {
+        memset(common, 0, sizeof(*common));
+    }
+
+    rc = nmo_cmd_ctx_init_no_file(&ctx, global);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+    ctx.file_path = input_path;
+
+    if (!nmo_tool_open_context(&executor_ctx, NULL, 0u)) {
+        fprintf(stderr, "Error: Failed to create libnmo context\n");
+        rc = NMO_CLI_EXIT_INTERNAL_ERROR;
+        goto cleanup;
+    }
+    ctx.ctx = executor_ctx;
+    ctx.registry = nmo_context_get_type_registry(executor_ctx);
+
+    options.label = label;
+    options.dry_run = dry_run;
+    options.validation_flags = validation_flags;
+    status = nmo_script_executor_execute(executor_ctx,
+                                         input_path,
+                                         output_path,
+                                         &options,
+                                         script_executor_cli_action_trampoline,
+                                         &state,
+                                         NULL);
+    if (common != NULL) {
+        common->validation.final_status = status;
+    }
+    if (status != NMO_OK) {
+        const char *message = nmo_last_error_message();
+        fprintf(stderr, "Error: %s\n",
+                (message != NULL && message[0] != '\0')
+                    ? message
+                    : nmo_error_string(status));
+        rc = NMO_CLI_EXIT_INTERNAL_ERROR;
+        goto cleanup;
+    }
+
+    if (report != NULL) {
+        rc = report(&ctx, dry_run, output_path, user_data);
+        goto cleanup;
+    }
+
+cleanup:
+    if (executor_ctx != NULL) {
+        nmo_context_release(executor_ctx);
+        ctx.ctx = NULL;
+        ctx.registry = NULL;
+    }
+    return nmo_cmd_ctx_done(&ctx, rc);
+}
+
+static void script_add_validation_json(yyjson_mut_doc *doc,
+                                       yyjson_mut_val *data,
+                                       const script_command_common_t *common,
+                                       const uint32_t *result_handles,
+                                       size_t result_handle_count)
+{
+    yyjson_mut_val *validation = NULL;
+    yyjson_mut_val *references = NULL;
+    yyjson_mut_val *behavior_index = NULL;
+    yyjson_mut_val *interface_obj = NULL;
+    yyjson_mut_val *handles = NULL;
+    size_t i = 0;
+
+    if (doc == NULL || data == NULL || common == NULL) {
+        return;
+    }
+
+    validation = yyjson_mut_obj(doc);
+    references = yyjson_mut_obj(doc);
+    behavior_index = yyjson_mut_obj(doc);
+    interface_obj = yyjson_mut_obj(doc);
+    handles = yyjson_mut_arr(doc);
+
+    yyjson_mut_obj_add_uint(doc, references, "status",
+                            (uint64_t)common->validation.references_status);
+    nmo_cli_json_add_str_safe(doc, references, "status_name",
+                              nmo_error_string(common->validation.references_status));
+    yyjson_mut_obj_add_uint(doc, references, "broken_count",
+                            common->validation.broken_reference_count);
+    yyjson_mut_obj_add_val(doc, validation, "references", references);
+
+    yyjson_mut_obj_add_bool(doc, behavior_index, "ok",
+                            common->validation.behavior_index_ok);
+    yyjson_mut_obj_add_val(doc, validation, "behavior_index", behavior_index);
+
+    yyjson_mut_obj_add_bool(doc, interface_obj, "attempted",
+                            common->validation.interface_attempted);
+    yyjson_mut_obj_add_bool(doc, interface_obj, "available",
+                            common->validation.interface_available);
+    yyjson_mut_obj_add_uint(doc, interface_obj, "status",
+                            (uint64_t)common->validation.interface_status);
+    nmo_cli_json_add_str_safe(doc, interface_obj, "status_name",
+                              nmo_error_string(common->validation.interface_status));
+    yyjson_mut_obj_add_val(doc, validation, "interface", interface_obj);
+
+    yyjson_mut_obj_add_uint(doc, validation, "final_status",
+                            (uint64_t)common->validation.final_status);
+    nmo_cli_json_add_str_safe(doc, validation, "final_status_name",
+                              nmo_error_string(common->validation.final_status));
+    yyjson_mut_obj_add_val(doc, data, "validation", validation);
+
+    for (i = 0; i < result_handle_count; ++i) {
+        yyjson_mut_arr_add_uint(doc, handles, result_handles[i]);
+    }
+    yyjson_mut_obj_add_val(doc, data, "result_handles", handles);
+}
+
+static nmo_status_t script_run_executor_action(nmo_script_executor_t *executor,
+                                               void *user_data)
+{
+    static const nmo_lua_module_t executor_module = {
+        .name = "nmo._executor",
+        .open_fn = script_run_lua_open_executor_module
+    };
+    script_run_args_t *args = (script_run_args_t *)user_data;
+    nmo_lua_runtime_t *runtime = NULL;
+    char *script_text = NULL;
+    nmo_status_t status = NMO_OK;
+
+    if (args == NULL || args->script_path == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script-run action arguments");
+    }
+
+    status = script_run_read_file(args->script_path, &script_text);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    runtime = nmo_script_executor_lua_runtime(executor);
+    status = nmo_lua_runtime_register_module(runtime, &executor_module);
+    if (status != NMO_OK) {
+        free(script_text);
+        return status;
+    }
+
+    if (g_script_run_args != NULL) {
+        free(script_text);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Nested script executor runs are not supported");
+    }
+
+    args->executor = executor;
+    g_script_run_args = args;
+    status = nmo_lua_runtime_execute_string(runtime, script_text);
+    g_script_run_args = NULL;
+    args->executor = NULL;
+    free(script_text);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    args->executor = executor;
+    script_run_collect_validation(args);
+    args->executor = NULL;
+    return NMO_OK;
+}
+
+static bool script_run_should_save(bool dry_run,
+                                   const char *output_path,
+                                   void *user_data)
+{
+    (void)dry_run;
+    (void)output_path;
+    (void)user_data;
+    return false;
+}
+
+static int script_run_mutate(nmo_cmd_ctx_t *ctx,
+                             bool dry_run,
+                             const char *output_path,
+                             void *user_data)
+{
+    script_run_args_t *args = (script_run_args_t *)user_data;
+    nmo_script_executor_options_t options = nmo_script_executor_options_default();
+    nmo_status_t status = NMO_OK;
+
+    if (ctx == NULL || args == NULL) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    script_run_reset_args(args);
+    args->dry_run = dry_run;
+    args->input_path = ctx->file_path;
+
+    options.label = "cli-script-run";
+    options.dry_run = dry_run;
+
+    status = nmo_script_executor_execute(ctx->ctx,
+                                         ctx->file_path,
+                                         output_path,
+                                         &options,
+                                         script_run_executor_action,
+                                         args,
+                                         &args->report);
+    args->validation.final_status = status;
+    if (status != NMO_OK) {
+        const char *message = nmo_last_error_message();
+        fprintf(stderr, "Error: %s\n",
+                (message != NULL && message[0] != '\0')
+                    ? message
+                    : nmo_error_string(status));
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static void script_run_add_operation_json(yyjson_mut_doc *doc,
+                                          yyjson_mut_val *arr,
+                                          size_t index,
+                                          const script_run_operation_t *op)
+{
+    yyjson_mut_val *item = yyjson_mut_obj(doc);
+    yyjson_mut_val *options = yyjson_mut_obj(doc);
+    yyjson_mut_val *handles = yyjson_mut_arr(doc);
+    size_t i = 0;
+
+    yyjson_mut_obj_add_uint(doc, item, "index", (uint64_t)(index + 1u));
+    nmo_cli_json_add_str_safe(doc, item, "kind", op->kind);
+    yyjson_mut_obj_add_uint(doc, options, "behavior", op->behavior_id);
+    nmo_cli_json_add_str_safe(doc, options, "kind", op->io_kind);
+    nmo_cli_json_add_str_safe(doc, options, "name", op->name);
+    yyjson_mut_obj_add_val(doc, item, "options", options);
+
+    for (i = 0; i < op->result_handle_count; ++i) {
+        yyjson_mut_arr_add_uint(doc, handles, op->result_handles[i]);
+    }
+    yyjson_mut_obj_add_val(doc, item, "result_handles", handles);
+    yyjson_mut_arr_add_val(arr, item);
+}
+
+static int script_run_report(nmo_cmd_ctx_t *ctx,
+                             bool dry_run,
+                             const char *output_path,
+                             void *user_data)
+{
+    script_run_args_t *args = (script_run_args_t *)user_data;
+
+    if (ctx == NULL || args == NULL) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    if (ctx->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_val *operations = yyjson_mut_arr(doc);
+        yyjson_mut_val *validation = yyjson_mut_obj(doc);
+        yyjson_mut_val *references = yyjson_mut_obj(doc);
+        yyjson_mut_val *behavior_index = yyjson_mut_obj(doc);
+        yyjson_mut_val *interface_obj = yyjson_mut_obj(doc);
+        yyjson_mut_val *result_handles = yyjson_mut_arr(doc);
+        size_t i = 0;
+
+        yyjson_mut_obj_add_bool(doc, data, "ok",
+                                args->validation.final_status == NMO_OK);
+        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        nmo_cli_json_add_str_safe(doc, data, "script_file", args->script_path);
+        yyjson_mut_obj_add_uint(doc, data, "op_count", args->operation_count);
+        for (i = 0; i < args->operation_count; ++i) {
+            script_run_add_operation_json(doc, operations, i, &args->operations[i]);
+        }
+        yyjson_mut_obj_add_val(doc, data, "operations", operations);
+
+        yyjson_mut_obj_add_uint(doc, references, "status",
+                                (uint64_t)args->validation.references_status);
+        nmo_cli_json_add_str_safe(doc, references, "status_name",
+                                  nmo_error_string(args->validation.references_status));
+        yyjson_mut_obj_add_uint(doc, references, "broken_count",
+                                args->validation.broken_reference_count);
+        yyjson_mut_obj_add_val(doc, validation, "references", references);
+
+        yyjson_mut_obj_add_bool(doc, behavior_index, "ok",
+                                args->validation.behavior_index_ok);
+        yyjson_mut_obj_add_val(doc, validation, "behavior_index", behavior_index);
+
+        yyjson_mut_obj_add_bool(doc, interface_obj, "attempted",
+                                args->validation.interface_attempted);
+        yyjson_mut_obj_add_bool(doc, interface_obj, "available",
+                                args->validation.interface_available);
+        yyjson_mut_obj_add_uint(doc, interface_obj, "status",
+                                (uint64_t)args->validation.interface_status);
+        nmo_cli_json_add_str_safe(doc, interface_obj, "status_name",
+                                  nmo_error_string(args->validation.interface_status));
+        yyjson_mut_obj_add_val(doc, validation, "interface", interface_obj);
+
+        yyjson_mut_obj_add_uint(doc, validation, "final_status",
+                                (uint64_t)args->validation.final_status);
+        nmo_cli_json_add_str_safe(doc, validation, "final_status_name",
+                                  nmo_error_string(args->validation.final_status));
+        yyjson_mut_obj_add_val(doc, data, "validation", validation);
+
+        for (i = 0; i < args->result_handle_count; ++i) {
+            yyjson_mut_arr_add_uint(doc, result_handles, args->result_handles[i]);
+        }
+        yyjson_mut_obj_add_val(doc, data, "result_handles", result_handles);
+
+        if (!dry_run && output_path != NULL) {
+            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+        }
+        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.run");
+    }
+
+    fprintf(ctx->out, "Script: %s\n", args->script_path);
+    fprintf(ctx->out, "Operations: %zu\n", args->operation_count);
+    fprintf(ctx->out, "Final status: %s\n",
+            nmo_error_string(args->validation.final_status));
+    if (dry_run) {
+        fprintf(ctx->out, "Dry-run: yes\n");
+    } else if (output_path != NULL) {
+        fprintf(ctx->out, "Saved to: %s\n", output_path);
+    }
+    return NMO_CLI_EXIT_SUCCESS;
 }
 
 static void add_endpoint_json(yyjson_mut_doc *doc,
@@ -428,7 +1488,53 @@ int nmo_cmd_script_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     return script_graph_run(ctx, &selector, emit_dot, depth, false, usage);
 }
 
+int nmo_cmd_script_run(int argc,
+                       char **argv,
+                       const nmo_cli_global_opts_t *global)
+{
+    static const nmo_cli_write_spec_t spec = {
+        .command_name = "script.run",
+        .output_required_unless_dry_run = true,
+        .should_save = script_run_should_save,
+    };
+    static const nmo_opt_def_t opts[] = {
+        {"--output", "-o", NMO_OPT_STRING, "Output file"},
+        {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+    };
+    enum { OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t result = {
+        .vals = vals,
+        .pos_args = pos,
+        .pos_capacity = 16
+    };
+    script_run_args_t args = {0};
+    int rc = 0;
+
+    if (argc < 2 || argv == NULL || argv[1] == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &result) < 0 ||
+        result.pos_count != 2) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    args.script_path = result.pos_args[0];
+    rc = nmo_cli_run_write_command(result.pos_args[1],
+                                   vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
+                                   vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+                                   global,
+                                   &spec,
+                                   script_run_mutate,
+                                   script_run_report,
+                                   &args);
+    script_run_reset_args(&args);
+    return rc;
+}
+
 typedef struct script_node_add_args {
+    script_command_common_t common;
     uint32_t parent_id;
     nmo_guid_t bb_guid;
     const char *name;
@@ -436,12 +1542,14 @@ typedef struct script_node_add_args {
 } script_node_add_args_t;
 
 typedef struct script_node_remove_args {
+    script_command_common_t common;
     uint32_t parent_id;
     uint32_t node_id;
     nmo_script_edit_interface_mode_t interface_mode;
 } script_node_remove_args_t;
 
 typedef struct script_io_add_args {
+    script_command_common_t common;
     uint32_t behavior_id;
     nmo_script_edit_io_kind_t kind;
     const char *name;
@@ -449,16 +1557,19 @@ typedef struct script_io_add_args {
 } script_io_add_args_t;
 
 typedef struct script_io_rename_args {
+    script_command_common_t common;
     uint32_t io_id;
     const char *name;
 } script_io_rename_args_t;
 
 typedef struct script_io_remove_args {
+    script_command_common_t common;
     uint32_t io_id;
     nmo_script_edit_interface_mode_t interface_mode;
 } script_io_remove_args_t;
 
 typedef struct script_link_add_args {
+    script_command_common_t common;
     uint32_t parent_id;
     uint32_t from_id;
     uint32_t to_id;
@@ -467,23 +1578,27 @@ typedef struct script_link_add_args {
 } script_link_add_args_t;
 
 typedef struct script_link_rewire_args {
+    script_command_common_t common;
     uint32_t link_id;
     uint32_t from_id;
     uint32_t to_id;
 } script_link_rewire_args_t;
 
 typedef struct script_link_set_delay_args {
+    script_command_common_t common;
     uint32_t link_id;
     uint32_t delay;
 } script_link_set_delay_args_t;
 
 typedef struct script_link_remove_args {
+    script_command_common_t common;
     uint32_t parent_id;
     uint32_t link_id;
     nmo_script_edit_interface_mode_t interface_mode;
 } script_link_remove_args_t;
 
 typedef struct script_param_add_args {
+    script_command_common_t common;
     uint32_t owner_id;
     const char *kind;
     const char *type_name;
@@ -492,6 +1607,7 @@ typedef struct script_param_add_args {
 } script_param_add_args_t;
 
 typedef struct script_param_set_args {
+    script_command_common_t common;
     uint32_t param_id;
     const char *value_str;
     char *old_value;
@@ -499,21 +1615,25 @@ typedef struct script_param_set_args {
 } script_param_set_args_t;
 
 typedef struct script_param_connect_args {
+    script_command_common_t common;
     uint32_t source_id;
     uint32_t target_id;
 } script_param_connect_args_t;
 
 typedef struct script_param_disconnect_args {
+    script_command_common_t common;
     uint32_t target_id;
 } script_param_disconnect_args_t;
 
 typedef struct script_param_remove_args {
+    script_command_common_t common;
     uint32_t param_id;
     bool detach;
     nmo_script_edit_interface_mode_t interface_mode;
 } script_param_remove_args_t;
 
 typedef struct script_op_add_args {
+    script_command_common_t common;
     uint32_t parent_id;
     nmo_guid_t op_guid;
     uint32_t in1_id;
@@ -523,6 +1643,7 @@ typedef struct script_op_add_args {
 } script_op_add_args_t;
 
 typedef struct script_op_rewire_args {
+    script_command_common_t common;
     uint32_t op_id;
     uint32_t slot_flags;
     uint32_t in1_id;
@@ -531,12 +1652,15 @@ typedef struct script_op_rewire_args {
 } script_op_rewire_args_t;
 
 typedef struct script_op_remove_args {
+    script_command_common_t common;
     uint32_t op_id;
     nmo_script_edit_interface_mode_t interface_mode;
 } script_op_remove_args_t;
 
-static char *script_format_parameter_value(nmo_cmd_ctx_t *ctx,
-                                           nmo_object_id_t param_id)
+static char *script_format_parameter_value_with_registry(
+    const nmo_type_registry_t *registry,
+    nmo_session_t *session,
+    nmo_object_id_t param_id)
 {
     nmo_object_repository_t *repo = NULL;
     nmo_object_t *object = NULL;
@@ -545,11 +1669,11 @@ static char *script_format_parameter_value(nmo_cmd_ctx_t *ctx,
     char *buffer = NULL;
     nmo_status_t rc = NMO_OK;
 
-    if (!ctx || !ctx->session || !ctx->registry || param_id == 0u) {
+    if (!session || !registry || param_id == 0u) {
         return NULL;
     }
 
-    repo = nmo_session_get_repository(ctx->session);
+    repo = nmo_session_get_repository(session);
     object = repo ? nmo_object_repository_find_by_id(repo, param_id) : NULL;
     state = object ? nmo_parameter_get_state(object) : NULL;
     if (!state) {
@@ -561,7 +1685,7 @@ static char *script_format_parameter_value(nmo_cmd_ctx_t *ctx,
         return NULL;
     }
 
-    rc = nmo_param_value_to_string(state, ctx->registry, ctx->session, buffer,
+    rc = nmo_param_value_to_string(state, registry, session, buffer,
                                    buffer_size);
     if (rc != NMO_OK) {
         free(buffer);
@@ -679,241 +1803,100 @@ static bool parse_script_interface_mode(
     return false;
 }
 
-static bool script_interface_references_node(
-    nmo_cmd_ctx_t *ctx,
+static bool script_session_interface_references_behavior(
+    nmo_session_t *session,
     nmo_object_id_t parent_behavior_id,
-    nmo_object_id_t node_id)
+    nmo_object_id_t behavior_id);
+
+static bool script_session_interface_references_behavior(
+    nmo_session_t *session,
+    nmo_object_id_t parent_behavior_id,
+    nmo_object_id_t behavior_id)
 {
-    nmo_object_repository_t *repo = NULL;
-    nmo_object_t *object = NULL;
-    nmo_behavior_state_t *state = NULL;
+    nmo_interface_view_t view = {0};
 
-    if (!ctx || !ctx->session || parent_behavior_id == 0u || node_id == 0u) {
+    if (session == NULL || parent_behavior_id == 0u || behavior_id == 0u) {
         return false;
     }
 
-    if (nmo_session_ensure_behavior_acceleration(ctx->session) != NMO_OK) {
-        return false;
-    }
-
-    repo = nmo_session_get_repository(ctx->session);
-    object = repo ? nmo_object_repository_find_by_id(repo, parent_behavior_id) : NULL;
-    state = object ? (nmo_behavior_state_t *)nmo_object_get_state(object) : NULL;
-    if (!state || !state->interface_data) {
-        return false;
-    }
-
-    for (size_t i = 0; i < state->interface_data->sub_count; ++i) {
-        if (state->interface_data->subs[i].behavior_id == node_id) {
-            return true;
-        }
-    }
-
-    return false;
+    return nmo_interface_view_find_behavior(session,
+                                            parent_behavior_id,
+                                            behavior_id,
+                                            &view) == NMO_OK;
 }
 
-static int script_edit_finalize_tx(nmo_script_edit_tx_t *tx, bool dry_run);
-
-static nmo_object_id_t script_interface_root_for_object(
-    nmo_cmd_ctx_t *ctx,
+static nmo_object_id_t script_interface_root_for_object_session(
+    nmo_session_t *session,
     nmo_object_id_t object_id)
 {
     const nmo_behavior_index_t *index = NULL;
     const nmo_port_owner_t *owner = NULL;
+    nmo_object_repository_t *repo = NULL;
     nmo_object_id_t behavior_id = 0u;
+    bool found_parent = false;
 
-    if (!ctx || !ctx->session || object_id == 0u) {
+    if (!session || object_id == 0u) {
         return 0u;
     }
-    if (nmo_session_ensure_behavior_acceleration(ctx->session) != NMO_OK) {
+    if (nmo_session_ensure_behavior_acceleration(session) != NMO_OK) {
         return 0u;
     }
 
-    index = nmo_session_get_behavior_index(ctx->session);
+    index = nmo_session_get_behavior_index(session);
     owner = index ? nmo_behavior_index_find(index, object_id) : NULL;
     if (!owner) {
         return 0u;
     }
 
     behavior_id = owner->owner_id;
-    for (;;) {
-        owner = index ? nmo_behavior_index_find(index, behavior_id) : NULL;
-        if (!owner || owner->kind != NMO_PORT_SUB_BEHAVIOR) {
+    repo = nmo_session_get_repository(session);
+    if (!repo) {
+        return behavior_id;
+    }
+
+    do {
+        found_parent = false;
+        for (size_t i = 0; i < nmo_object_repository_get_count(repo); ++i) {
+            nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+            nmo_behavior_state_t *state = NULL;
+            nmo_object_id_t parent_id = 0u;
+
+            if (!object || nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
+                continue;
+            }
+
+            state = (nmo_behavior_state_t *)nmo_object_get_state(object);
+            if (!state || nmo_array_find(&state->sub_behaviors, &behavior_id, NULL) == 0) {
+                continue;
+            }
+
+            parent_id = nmo_object_get_id(object);
+            if (parent_id != 0u && parent_id != behavior_id) {
+                behavior_id = parent_id;
+                found_parent = true;
+            }
             break;
         }
-        behavior_id = owner->owner_id;
-    }
+    } while (found_parent);
+
     return behavior_id;
 }
 
-static int script_edit_finalize_with_interface_mode(
-    nmo_script_edit_tx_t *tx,
-    bool dry_run,
-    nmo_object_id_t behavior_id,
-    nmo_script_edit_interface_mode_t interface_mode)
-{
-    nmo_status_t rc = NMO_OK;
-
-    if (!tx || behavior_id == 0u) {
-        if (tx) {
-            nmo_script_edit_rollback(tx);
-        }
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    if (interface_mode == NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
-        rc = nmo_script_edit_apply_interface_policy(tx, behavior_id, interface_mode);
-        if (rc != NMO_OK) {
-            fprintf(stderr, "Error: Failed to apply script interface policy: %s\n",
-                    nmo_error_string(rc));
-            nmo_script_edit_rollback(tx);
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        return script_edit_finalize_tx(tx, dry_run);
-    }
-
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Script edit roundtrip validation failed: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Script edit reference validation failed: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Script edit behavior-index validation failed: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    rc = nmo_script_edit_apply_interface_policy(tx, behavior_id, interface_mode);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to apply script interface policy: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    if (dry_run) {
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_SUCCESS;
-    }
-
-    rc = nmo_script_edit_commit(tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Script edit commit failed: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    return NMO_CLI_EXIT_SUCCESS;
-}
-
-static int script_edit_finalize_tx_impl(nmo_script_edit_tx_t *tx,
-                                        bool dry_run,
-                                        bool validate_references,
-                                        bool validate_behavior_index,
-                                        bool validate_interface)
-{
-    nmo_status_t rc = NMO_OK;
-
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Script edit roundtrip validation failed: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    if (validate_references) {
-        rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
-        if (rc != NMO_OK) {
-            fprintf(stderr, "Error: Script edit reference validation failed: %s\n",
-                    nmo_error_string(rc));
-            nmo_script_edit_rollback(tx);
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-    }
-
-    if (validate_behavior_index) {
-        rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
-        if (rc != NMO_OK) {
-            fprintf(stderr, "Error: Script edit behavior-index validation failed: %s\n",
-                    nmo_error_string(rc));
-            nmo_script_edit_rollback(tx);
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-    }
-
-    if (validate_interface) {
-        rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_INTERFACE);
-        if (rc != NMO_OK) {
-            fprintf(stderr, "Error: Script edit interface validation failed: %s\n",
-                    nmo_error_string(rc));
-            nmo_script_edit_rollback(tx);
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-    }
-
-    if (dry_run) {
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_SUCCESS;
-    }
-
-    rc = nmo_script_edit_commit(tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Script edit commit failed: %s\n",
-                nmo_error_string(rc));
-    }
-    return rc == NMO_OK ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_INTERNAL_ERROR;
-}
-
-static int script_edit_finalize_tx(nmo_script_edit_tx_t *tx, bool dry_run)
-{
-    return script_edit_finalize_tx_impl(tx, dry_run, true, true, true);
-}
-
-static int script_node_add_mutate(
-    nmo_cmd_ctx_t *ctx,
-    bool dry_run,
-    const char *output_path,
+static nmo_status_t script_node_add_execute(
+    nmo_script_executor_t *executor,
     void *user_data)
 {
     script_node_add_args_t *args = (script_node_add_args_t *)user_data;
-    nmo_script_edit_tx_t *tx = NULL;
-    nmo_status_t rc = NMO_OK;
-
-    (void)output_path;
-    if (!args) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (!args || executor == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script node add arguments");
     }
 
-    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script node add", &tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin script node add: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    rc = nmo_script_edit_add_node(tx, args->parent_id, args->bb_guid,
-                                  args->name, &args->node_id);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to add script node: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    return script_edit_finalize_tx(tx, dry_run);
+    return nmo_script_edit_add_node(nmo_script_executor_transaction(executor),
+                                    args->parent_id,
+                                    args->bb_guid,
+                                    args->name,
+                                    &args->node_id);
 }
 
 static int script_node_add_report(
@@ -930,9 +1913,15 @@ static int script_node_add_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
+        const uint32_t result_handles[] = {args->node_id};
         yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
         yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "node_id", args->node_id);
+        script_add_validation_json(doc,
+                                   data,
+                                   &args->common,
+                                   result_handles,
+                                   1u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -947,102 +1936,60 @@ static int script_node_add_report(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int script_node_remove_mutate(
-    nmo_cmd_ctx_t *ctx,
-    bool dry_run,
-    const char *output_path,
+static nmo_status_t script_node_remove_execute(
+    nmo_script_executor_t *executor,
     void *user_data)
 {
     script_node_remove_args_t *args = (script_node_remove_args_t *)user_data;
     nmo_script_edit_tx_t *tx = NULL;
+    nmo_session_t *session = NULL;
     nmo_status_t rc = NMO_OK;
 
-    (void)output_path;
-    if (!args) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (!args || executor == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script node remove arguments");
     }
-
-    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script node remove", &tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin script node remove: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
+    tx = nmo_script_executor_transaction(executor);
+    session = nmo_script_executor_session(executor);
 
     if (args->interface_mode == NMO_SCRIPT_EDIT_INTERFACE_PRESERVE &&
-        script_interface_references_node(ctx, args->parent_id, args->node_id)) {
-        fprintf(stderr,
-                "Error: Failed to apply script interface policy: %s\n",
-                nmo_error_string(NMO_ERR_VALIDATION_FAILED));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        script_session_interface_references_behavior(session,
+                                                     args->parent_id,
+                                                     args->node_id)) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Failed to apply script interface policy");
     }
 
     rc = nmo_script_edit_remove_node(tx, args->parent_id, args->node_id, 0u);
     if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to remove script node: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return rc;
     }
 
     if (args->interface_mode == NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
-        rc = nmo_script_edit_apply_interface_policy(tx, args->parent_id,
-                                                    args->interface_mode);
-        if (rc != NMO_OK) {
-            fprintf(stderr, "Error: Failed to apply script interface policy: %s\n",
-                    nmo_error_string(rc));
-            nmo_script_edit_rollback(tx);
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        return script_edit_finalize_tx(tx, dry_run);
+        return NMO_OK;
     }
 
     rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
     if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Script edit roundtrip validation failed: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return rc;
     }
 
     rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
     if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Script edit reference validation failed: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return rc;
     }
 
     rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
     if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Script edit behavior-index validation failed: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return rc;
     }
 
     rc = nmo_script_edit_apply_interface_policy(tx, args->parent_id,
                                                 args->interface_mode);
     if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to apply script interface policy: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return rc;
     }
-
-    if (dry_run) {
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_SUCCESS;
-    }
-
-    rc = nmo_script_edit_commit(tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Script edit commit failed: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+    return NMO_OK;
 }
 
 static int script_node_remove_report(
@@ -1064,6 +2011,7 @@ static int script_node_remove_report(
         nmo_cli_json_add_str_safe(doc, data, "interface_mode",
                                   script_interface_mode_string(
                                       args->interface_mode));
+        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -1080,37 +2028,21 @@ static int script_node_remove_report(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int script_io_add_mutate(
-    nmo_cmd_ctx_t *ctx,
-    bool dry_run,
-    const char *output_path,
+static nmo_status_t script_io_add_execute(
+    nmo_script_executor_t *executor,
     void *user_data)
 {
     script_io_add_args_t *args = (script_io_add_args_t *)user_data;
-    nmo_script_edit_tx_t *tx = NULL;
-    nmo_status_t rc = NMO_OK;
-
-    (void)output_path;
-    if (!args) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (!args || executor == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script io add arguments");
     }
 
-    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script io add", &tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin script io add: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    rc = nmo_script_edit_add_io(tx, args->behavior_id, args->kind, args->name,
-                                &args->io_id);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to add script io: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    return script_edit_finalize_tx(tx, dry_run);
+    return nmo_script_edit_add_io(nmo_script_executor_transaction(executor),
+                                  args->behavior_id,
+                                  args->kind,
+                                  args->name,
+                                  &args->io_id);
 }
 
 static int script_io_add_report(
@@ -1126,9 +2058,15 @@ static int script_io_add_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
+        const uint32_t result_handles[] = {args->io_id};
         yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
         yyjson_mut_obj_add_uint(doc, data, "behavior_id", args->behavior_id);
         yyjson_mut_obj_add_uint(doc, data, "io_id", args->io_id);
+        script_add_validation_json(doc,
+                                   data,
+                                   &args->common,
+                                   result_handles,
+                                   1u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -1142,36 +2080,19 @@ static int script_io_add_report(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int script_io_rename_mutate(
-    nmo_cmd_ctx_t *ctx,
-    bool dry_run,
-    const char *output_path,
+static nmo_status_t script_io_rename_execute(
+    nmo_script_executor_t *executor,
     void *user_data)
 {
     script_io_rename_args_t *args = (script_io_rename_args_t *)user_data;
-    nmo_script_edit_tx_t *tx = NULL;
-    nmo_status_t rc = NMO_OK;
-
-    (void)output_path;
-    if (!args) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (!args || executor == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script io rename arguments");
     }
 
-    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script io rename", &tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin script io rename: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    rc = nmo_script_edit_rename_io(tx, args->io_id, args->name);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to rename script io: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    return script_edit_finalize_tx(tx, dry_run);
+    return nmo_script_edit_rename_io(nmo_script_executor_transaction(executor),
+                                     args->io_id,
+                                     args->name);
 }
 
 static int script_io_rename_report(
@@ -1189,6 +2110,7 @@ static int script_io_rename_report(
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
         yyjson_mut_obj_add_uint(doc, data, "io_id", args->io_id);
+        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -1201,40 +2123,61 @@ static int script_io_rename_report(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int script_io_remove_mutate(
-    nmo_cmd_ctx_t *ctx,
-    bool dry_run,
-    const char *output_path,
+static nmo_status_t script_io_remove_execute(
+    nmo_script_executor_t *executor,
     void *user_data)
 {
     script_io_remove_args_t *args = (script_io_remove_args_t *)user_data;
     nmo_script_edit_tx_t *tx = NULL;
+    nmo_session_t *session = NULL;
     nmo_status_t rc = NMO_OK;
     nmo_object_id_t interface_behavior_id = 0u;
 
-    (void)output_path;
-    if (!args) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (!args || executor == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script io remove arguments");
     }
-    interface_behavior_id = script_interface_root_for_object(ctx, args->io_id);
+    tx = nmo_script_executor_transaction(executor);
+    session = nmo_script_executor_session(executor);
+    interface_behavior_id = script_interface_root_for_object_session(session,
+                                                                     args->io_id);
+    if (interface_behavior_id == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Failed to resolve script interface root");
+    }
 
-    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script io remove", &tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin script io remove: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
     rc = nmo_script_edit_remove_io(tx, args->io_id, false);
     if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to remove script io: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return rc;
     }
 
-    return script_edit_finalize_with_interface_mode(tx, dry_run,
-                                                    interface_behavior_id,
-                                                    args->interface_mode);
+    if (args->interface_mode == NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
+        return NMO_OK;
+    }
+
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    rc = nmo_script_edit_apply_interface_policy(tx,
+                                                interface_behavior_id,
+                                                args->interface_mode);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    return NMO_OK;
 }
 
 static int script_io_remove_report(
@@ -1255,6 +2198,7 @@ static int script_io_remove_report(
         nmo_cli_json_add_str_safe(doc, data, "interface_mode",
                                   script_interface_mode_string(
                                       args->interface_mode));
+        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -1269,38 +2213,23 @@ static int script_io_remove_report(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int script_link_add_mutate(
-    nmo_cmd_ctx_t *ctx,
-    bool dry_run,
-    const char *output_path,
+static nmo_status_t script_link_add_execute(
+    nmo_script_executor_t *executor,
     void *user_data)
 {
     script_link_add_args_t *args = (script_link_add_args_t *)user_data;
-    nmo_script_edit_tx_t *tx = NULL;
-    nmo_status_t rc = NMO_OK;
-
-    (void)output_path;
-    if (!args) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (!args || executor == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script link add arguments");
     }
 
-    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script link add", &tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin script link add: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    rc = nmo_script_edit_add_behavior_link(tx, args->parent_id, args->from_id,
-                                           args->to_id, args->delay,
-                                           &args->link_id);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to add script link: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    return script_edit_finalize_tx(tx, dry_run);
+    return nmo_script_edit_add_behavior_link(
+        nmo_script_executor_transaction(executor),
+        args->parent_id,
+        args->from_id,
+        args->to_id,
+        args->delay,
+        &args->link_id);
 }
 
 static int script_link_add_report(
@@ -1316,12 +2245,18 @@ static int script_link_add_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
+        const uint32_t result_handles[] = {args->link_id};
         yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
         yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "link_id", args->link_id);
         yyjson_mut_obj_add_uint(doc, data, "from_id", args->from_id);
         yyjson_mut_obj_add_uint(doc, data, "to_id", args->to_id);
         yyjson_mut_obj_add_uint(doc, data, "delay", args->delay);
+        script_add_validation_json(doc,
+                                   data,
+                                   &args->common,
+                                   result_handles,
+                                   1u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -1335,37 +2270,21 @@ static int script_link_add_report(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int script_link_rewire_mutate(
-    nmo_cmd_ctx_t *ctx,
-    bool dry_run,
-    const char *output_path,
+static nmo_status_t script_link_rewire_execute(
+    nmo_script_executor_t *executor,
     void *user_data)
 {
     script_link_rewire_args_t *args = (script_link_rewire_args_t *)user_data;
-    nmo_script_edit_tx_t *tx = NULL;
-    nmo_status_t rc = NMO_OK;
-
-    (void)output_path;
-    if (!args) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (!args || executor == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script link rewire arguments");
     }
 
-    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script link rewire", &tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin script link rewire: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    rc = nmo_script_edit_rewire_behavior_link(tx, args->link_id, args->from_id,
-                                              args->to_id);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to rewire script link: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    return script_edit_finalize_tx(tx, dry_run);
+    return nmo_script_edit_rewire_behavior_link(
+        nmo_script_executor_transaction(executor),
+        args->link_id,
+        args->from_id,
+        args->to_id);
 }
 
 static int script_link_rewire_report(
@@ -1389,6 +2308,7 @@ static int script_link_rewire_report(
         if (args->to_id != 0u) {
             yyjson_mut_obj_add_uint(doc, data, "to_id", args->to_id);
         }
+        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -1401,38 +2321,21 @@ static int script_link_rewire_report(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int script_link_set_delay_mutate(
-    nmo_cmd_ctx_t *ctx,
-    bool dry_run,
-    const char *output_path,
+static nmo_status_t script_link_set_delay_execute(
+    nmo_script_executor_t *executor,
     void *user_data)
 {
     script_link_set_delay_args_t *args =
         (script_link_set_delay_args_t *)user_data;
-    nmo_script_edit_tx_t *tx = NULL;
-    nmo_status_t rc = NMO_OK;
-
-    (void)output_path;
-    if (!args) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (!args || executor == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script link set-delay arguments");
     }
 
-    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script link set-delay",
-                               &tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin script link set-delay: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    rc = nmo_script_edit_set_behavior_link_delay(tx, args->link_id, args->delay);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to set script link delay: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    return script_edit_finalize_tx(tx, dry_run);
+    return nmo_script_edit_set_behavior_link_delay(
+        nmo_script_executor_transaction(executor),
+        args->link_id,
+        args->delay);
 }
 
 static int script_link_set_delay_report(
@@ -1452,6 +2355,7 @@ static int script_link_set_delay_report(
         yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
         yyjson_mut_obj_add_uint(doc, data, "link_id", args->link_id);
         yyjson_mut_obj_add_uint(doc, data, "delay", args->delay);
+        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -1464,93 +2368,49 @@ static int script_link_set_delay_report(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int script_link_remove_mutate(
-    nmo_cmd_ctx_t *ctx,
-    bool dry_run,
-    const char *output_path,
+static nmo_status_t script_link_remove_execute(
+    nmo_script_executor_t *executor,
     void *user_data)
 {
     script_link_remove_args_t *args = (script_link_remove_args_t *)user_data;
     nmo_script_edit_tx_t *tx = NULL;
     nmo_status_t rc = NMO_OK;
 
-    (void)output_path;
-    if (!args) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (!args || executor == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script link remove arguments");
     }
+    tx = nmo_script_executor_transaction(executor);
 
-    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script link remove", &tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin script link remove: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
     rc = nmo_script_edit_remove_behavior_link(tx, args->parent_id, args->link_id);
     if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to remove script link: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return rc;
     }
 
     if (args->interface_mode == NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
-        rc = nmo_script_edit_apply_interface_policy(tx, args->parent_id,
-                                                    args->interface_mode);
-        if (rc != NMO_OK) {
-            fprintf(stderr, "Error: Failed to apply script interface policy: %s\n",
-                    nmo_error_string(rc));
-            nmo_script_edit_rollback(tx);
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        return script_edit_finalize_tx(tx, dry_run);
+        return nmo_script_edit_apply_interface_policy(tx,
+                                                      args->parent_id,
+                                                      args->interface_mode);
     }
 
     rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
     if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Script edit roundtrip validation failed: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return rc;
     }
 
     rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
     if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Script edit reference validation failed: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return rc;
     }
 
     rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
     if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Script edit behavior-index validation failed: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return rc;
     }
 
-    rc = nmo_script_edit_apply_interface_policy(tx, args->parent_id,
-                                                args->interface_mode);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to apply script interface policy: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    if (dry_run) {
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_SUCCESS;
-    }
-
-    rc = nmo_script_edit_commit(tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Script edit commit failed: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_script_edit_apply_interface_policy(tx,
+                                                  args->parent_id,
+                                                  args->interface_mode);
 }
 
 static int script_link_remove_report(
@@ -1572,6 +2432,7 @@ static int script_link_remove_report(
         nmo_cli_json_add_str_safe(doc, data, "interface_mode",
                                   script_interface_mode_string(
                                       args->interface_mode));
+        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -1621,15 +2482,18 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
         if (nmo_guid_is_null(args.bb_guid)) {
             return NMO_CLI_EXIT_ARG_ERROR;
         }
-        return nmo_cli_run_write_command(
+        return script_executor_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
-            script_node_add_mutate,
+            "script node add",
+            nmo_script_executor_options_default().validation_flags,
+            script_node_add_execute,
             script_node_add_report,
-            &args);
+            &args,
+            &args.common);
     }
 
     if (strcmp(argv[1], "remove") == 0) {
@@ -1660,15 +2524,18 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
                                          &args.interface_mode)) {
             return NMO_CLI_EXIT_ARG_ERROR;
         }
-        return nmo_cli_run_write_command(
+        return script_executor_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
-            script_node_remove_mutate,
+            "script node remove",
+            0u,
+            script_node_remove_execute,
             script_node_remove_report,
-            &args);
+            &args,
+            &args.common);
     }
 
     return NMO_CLI_EXIT_ARG_ERROR;
@@ -1707,15 +2574,18 @@ int nmo_cmd_script_io(int argc, char **argv, const nmo_cli_global_opts_t *global
             ? NMO_SCRIPT_EDIT_IO_OUTPUT
             : NMO_SCRIPT_EDIT_IO_INPUT;
         args.name = vals[OPT_NAME].val.str;
-        return nmo_cli_run_write_command(
+        return script_executor_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
-            script_io_add_mutate,
+            "script io add",
+            nmo_script_executor_options_default().validation_flags,
+            script_io_add_execute,
             script_io_add_report,
-            &args);
+            &args,
+            &args.common);
     }
 
     if (strcmp(argv[1], "rename") == 0) {
@@ -1737,15 +2607,18 @@ int nmo_cmd_script_io(int argc, char **argv, const nmo_cli_global_opts_t *global
         }
         args.io_id = vals[OPT_IO].val.u;
         args.name = vals[OPT_NAME].val.str;
-        return nmo_cli_run_write_command(
+        return script_executor_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
-            script_io_rename_mutate,
+            "script io rename",
+            nmo_script_executor_options_default().validation_flags,
+            script_io_rename_execute,
             script_io_rename_report,
-            &args);
+            &args,
+            &args.common);
     }
 
     if (strcmp(argv[1], "remove") == 0) {
@@ -1773,15 +2646,18 @@ int nmo_cmd_script_io(int argc, char **argv, const nmo_cli_global_opts_t *global
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         args.io_id = vals[OPT_IO].val.u;
-        return nmo_cli_run_write_command(
+        return script_executor_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
-            script_io_remove_mutate,
+            "script io remove",
+            0u,
+            script_io_remove_execute,
             script_io_remove_report,
-            &args);
+            &args,
+            &args.common);
     }
 
     return NMO_CLI_EXIT_ARG_ERROR;
@@ -1823,15 +2699,18 @@ int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *glob
         args.from_id = vals[OPT_FROM].val.u;
         args.to_id = vals[OPT_TO].val.u;
         args.delay = vals[OPT_DELAY].present ? vals[OPT_DELAY].val.u : 1u;
-        return nmo_cli_run_write_command(
+        return script_executor_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
-            script_link_add_mutate,
+            "script link add",
+            0u,
+            script_link_add_execute,
             script_link_add_report,
-            &args);
+            &args,
+            &args.common);
     }
 
     if (strcmp(argv[1], "rewire") == 0) {
@@ -1856,15 +2735,18 @@ int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *glob
         args.link_id = vals[OPT_LINK].val.u;
         args.from_id = vals[OPT_FROM].present ? vals[OPT_FROM].val.u : 0u;
         args.to_id = vals[OPT_TO].present ? vals[OPT_TO].val.u : 0u;
-        return nmo_cli_run_write_command(
+        return script_executor_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
-            script_link_rewire_mutate,
+            "script link rewire",
+            0u,
+            script_link_rewire_execute,
             script_link_rewire_report,
-            &args);
+            &args,
+            &args.common);
     }
 
     if (strcmp(argv[1], "set-delay") == 0) {
@@ -1886,15 +2768,18 @@ int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *glob
         }
         args.link_id = vals[OPT_LINK].val.u;
         args.delay = vals[OPT_DELAY].val.u;
-        return nmo_cli_run_write_command(
+        return script_executor_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
-            script_link_set_delay_mutate,
+            "script link set-delay",
+            0u,
+            script_link_set_delay_execute,
             script_link_set_delay_report,
-            &args);
+            &args,
+            &args.common);
     }
 
     if (strcmp(argv[1], "remove") == 0) {
@@ -1925,60 +2810,50 @@ int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *glob
         }
         args.parent_id = vals[OPT_PARENT].val.u;
         args.link_id = vals[OPT_LINK].val.u;
-        return nmo_cli_run_write_command(
+        return script_executor_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
-            script_link_remove_mutate,
+            "script link remove",
+            0u,
+            script_link_remove_execute,
             script_link_remove_report,
-            &args);
+            &args,
+            &args.common);
     }
 
     return NMO_CLI_EXIT_ARG_ERROR;
 }
 
-static int script_param_add_mutate(
-    nmo_cmd_ctx_t *ctx,
-    bool dry_run,
-    const char *output_path,
+static nmo_status_t script_param_add_execute(
+    nmo_script_executor_t *executor,
     void *user_data)
 {
     script_param_add_args_t *args = (script_param_add_args_t *)user_data;
-    nmo_script_edit_tx_t *tx = NULL;
     nmo_script_edit_parameter_kind_t kind = NMO_SCRIPT_EDIT_PARAM_IN;
+    const nmo_type_registry_t *registry = NULL;
     nmo_guid_t type_guid = NMO_GUID_NULL;
-    nmo_status_t rc = NMO_OK;
-
-    (void)output_path;
-    if (!ctx || !args || !ctx->registry ||
+    if (!args || executor == NULL ||
         !script_parse_parameter_kind(args->kind, &kind)) {
-        return NMO_CLI_EXIT_ARG_ERROR;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script param add arguments");
     }
+    registry = nmo_context_get_type_registry(nmo_script_executor_context(executor));
 
-    if (!script_try_resolve_parameter_type_name(ctx->registry, args->type_name,
+    if (!script_try_resolve_parameter_type_name(registry, args->type_name,
                                                 &type_guid)) {
-        fprintf(stderr, "Error: Unknown parameter type '%s'\n", args->type_name);
-        return NMO_CLI_EXIT_ARG_ERROR;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Unknown parameter type '%s'", args->type_name);
     }
 
-    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script param add", &tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin script param add: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    rc = nmo_script_edit_add_parameter(tx, args->owner_id, kind, type_guid,
-                                       args->name, &args->param_id);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to add script parameter: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    return script_edit_finalize_tx(tx, dry_run);
+    return nmo_script_edit_add_parameter(nmo_script_executor_transaction(executor),
+                                         args->owner_id,
+                                         kind,
+                                         type_guid,
+                                         args->name,
+                                         &args->param_id);
 }
 
 static int script_param_add_report(
@@ -1994,12 +2869,18 @@ static int script_param_add_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
+        const uint32_t result_handles[] = {args->param_id};
         yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
         yyjson_mut_obj_add_uint(doc, data, "owner_id", args->owner_id);
         yyjson_mut_obj_add_uint(doc, data, "param_id", args->param_id);
         nmo_cli_json_add_str_safe(doc, data, "kind", args->kind);
         nmo_cli_json_add_str_safe(doc, data, "type", args->type_name);
         nmo_cli_json_add_str_safe(doc, data, "name", args->name);
+        script_add_validation_json(doc,
+                                   data,
+                                   &args->common,
+                                   result_handles,
+                                   1u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -2013,38 +2894,34 @@ static int script_param_add_report(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int script_param_set_mutate(
-    nmo_cmd_ctx_t *ctx,
-    bool dry_run,
-    const char *output_path,
+static nmo_status_t script_param_set_execute(
+    nmo_script_executor_t *executor,
     void *user_data)
 {
     script_param_set_args_t *args = (script_param_set_args_t *)user_data;
-    nmo_script_edit_tx_t *tx = NULL;
+    const nmo_type_registry_t *registry = NULL;
+    nmo_session_t *session = NULL;
     nmo_status_t rc = NMO_OK;
 
-    (void)output_path;
-    if (!ctx || !args) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (!args || executor == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script param set arguments");
+    }
+    session = nmo_script_executor_session(executor);
+    registry = nmo_context_get_type_registry(nmo_script_executor_context(executor));
+
+    args->old_value =
+        script_format_parameter_value_with_registry(registry, session, args->param_id);
+    rc = nmo_script_edit_set_parameter_value(nmo_script_executor_transaction(executor),
+                                             args->param_id,
+                                             args->value_str);
+    if (rc != NMO_OK) {
+        return rc;
     }
 
-    args->old_value = script_format_parameter_value(ctx, args->param_id);
-    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script param set", &tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin script param set: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    rc = nmo_script_edit_set_parameter_value(tx, args->param_id, args->value_str);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to set script parameter: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    args->new_value = script_format_parameter_value(ctx, args->param_id);
-    return script_edit_finalize_tx(tx, dry_run);
+    args->new_value =
+        script_format_parameter_value_with_registry(registry, session, args->param_id);
+    return NMO_OK;
 }
 
 static int script_param_set_report(
@@ -2068,6 +2945,7 @@ static int script_param_set_report(
         if (args->new_value) {
             nmo_cli_json_add_str_safe(doc, data, "new_value", args->new_value);
         }
+        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -2086,35 +2964,19 @@ static int script_param_set_report(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int script_param_connect_mutate(
-    nmo_cmd_ctx_t *ctx,
-    bool dry_run,
-    const char *output_path,
+static nmo_status_t script_param_connect_execute(
+    nmo_script_executor_t *executor,
     void *user_data)
 {
     script_param_connect_args_t *args = (script_param_connect_args_t *)user_data;
-    nmo_script_edit_tx_t *tx = NULL;
-    nmo_status_t rc = NMO_OK;
-
-    (void)output_path;
-    if (!ctx || !args) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (!args || executor == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script param connect arguments");
     }
 
-    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script param connect", &tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin script param connect: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    rc = nmo_script_edit_connect_parameter(tx, args->source_id, args->target_id);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to connect script parameters: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    return script_edit_finalize_tx(tx, dry_run);
+    return nmo_script_edit_connect_parameter(nmo_script_executor_transaction(executor),
+                                             args->source_id,
+                                             args->target_id);
 }
 
 static int script_param_connect_report(
@@ -2133,6 +2995,7 @@ static int script_param_connect_report(
         yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
         yyjson_mut_obj_add_uint(doc, data, "source_id", args->source_id);
         yyjson_mut_obj_add_uint(doc, data, "target_id", args->target_id);
+        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -2146,36 +3009,20 @@ static int script_param_connect_report(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int script_param_disconnect_mutate(
-    nmo_cmd_ctx_t *ctx,
-    bool dry_run,
-    const char *output_path,
+static nmo_status_t script_param_disconnect_execute(
+    nmo_script_executor_t *executor,
     void *user_data)
 {
     script_param_disconnect_args_t *args =
         (script_param_disconnect_args_t *)user_data;
-    nmo_script_edit_tx_t *tx = NULL;
-    nmo_status_t rc = NMO_OK;
-
-    (void)output_path;
-    if (!ctx || !args) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (!args || executor == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script param disconnect arguments");
     }
 
-    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script param disconnect", &tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin script param disconnect: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    rc = nmo_script_edit_disconnect_parameter(tx, args->target_id);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to disconnect script parameter: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    return script_edit_finalize_tx(tx, dry_run);
+    return nmo_script_edit_disconnect_parameter(
+        nmo_script_executor_transaction(executor),
+        args->target_id);
 }
 
 static int script_param_disconnect_report(
@@ -2194,6 +3041,7 @@ static int script_param_disconnect_report(
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
         yyjson_mut_obj_add_uint(doc, data, "target_id", args->target_id);
+        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -2206,39 +3054,54 @@ static int script_param_disconnect_report(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int script_param_remove_mutate(
-    nmo_cmd_ctx_t *ctx,
-    bool dry_run,
-    const char *output_path,
+static nmo_status_t script_param_remove_execute(
+    nmo_script_executor_t *executor,
     void *user_data)
 {
     script_param_remove_args_t *args = (script_param_remove_args_t *)user_data;
     nmo_script_edit_tx_t *tx = NULL;
+    nmo_session_t *session = NULL;
     nmo_status_t rc = NMO_OK;
     nmo_object_id_t interface_behavior_id = 0u;
 
-    (void)output_path;
-    if (!ctx || !args) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (!args || executor == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script param remove arguments");
     }
-    interface_behavior_id = script_interface_root_for_object(ctx, args->param_id);
+    tx = nmo_script_executor_transaction(executor);
+    session = nmo_script_executor_session(executor);
+    interface_behavior_id =
+        script_interface_root_for_object_session(session, args->param_id);
+    if (interface_behavior_id == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Failed to resolve script interface root");
+    }
 
-    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script param remove", &tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin script param remove: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
     rc = nmo_script_edit_remove_parameter(tx, args->param_id, args->detach);
     if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to remove script parameter: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return rc;
     }
-    return script_edit_finalize_with_interface_mode(tx, dry_run,
-                                                    interface_behavior_id,
-                                                    args->interface_mode);
+    if (args->interface_mode == NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
+        return nmo_script_edit_apply_interface_policy(tx,
+                                                      interface_behavior_id,
+                                                      args->interface_mode);
+    }
+
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    return nmo_script_edit_apply_interface_policy(tx,
+                                                  interface_behavior_id,
+                                                  args->interface_mode);
 }
 
 static int script_param_remove_report(
@@ -2260,6 +3123,7 @@ static int script_param_remove_report(
         nmo_cli_json_add_str_safe(doc, data, "interface_mode",
                                   script_interface_mode_string(
                                       args->interface_mode));
+        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -2274,37 +3138,23 @@ static int script_param_remove_report(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int script_op_add_mutate(
-    nmo_cmd_ctx_t *ctx,
-    bool dry_run,
-    const char *output_path,
+static nmo_status_t script_op_add_execute(
+    nmo_script_executor_t *executor,
     void *user_data)
 {
     script_op_add_args_t *args = (script_op_add_args_t *)user_data;
-    nmo_script_edit_tx_t *tx = NULL;
-    nmo_status_t rc = NMO_OK;
-
-    (void)output_path;
-    if (!ctx || !args) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (!args || executor == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script op add arguments");
     }
 
-    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script op add", &tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin script op add: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    rc = nmo_script_edit_add_operation(tx, args->parent_id, args->op_guid,
-                                       args->in1_id, args->in2_id, args->out_id,
-                                       &args->op_id);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to add script operation: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    return script_edit_finalize_tx(tx, dry_run);
+    return nmo_script_edit_add_operation(nmo_script_executor_transaction(executor),
+                                         args->parent_id,
+                                         args->op_guid,
+                                         args->in1_id,
+                                         args->in2_id,
+                                         args->out_id,
+                                         &args->op_id);
 }
 
 static int script_op_add_report(
@@ -2322,6 +3172,7 @@ static int script_op_add_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
+        const uint32_t result_handles[] = {args->op_id};
         yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
         yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "op_id", args->op_id);
@@ -2329,6 +3180,11 @@ static int script_op_add_report(
         if (args->in1_id != 0u) yyjson_mut_obj_add_uint(doc, data, "in1_id", args->in1_id);
         if (args->in2_id != 0u) yyjson_mut_obj_add_uint(doc, data, "in2_id", args->in2_id);
         if (args->out_id != 0u) yyjson_mut_obj_add_uint(doc, data, "out_id", args->out_id);
+        script_add_validation_json(doc,
+                                   data,
+                                   &args->common,
+                                   result_handles,
+                                   1u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -2342,36 +3198,22 @@ static int script_op_add_report(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int script_op_rewire_mutate(
-    nmo_cmd_ctx_t *ctx,
-    bool dry_run,
-    const char *output_path,
+static nmo_status_t script_op_rewire_execute(
+    nmo_script_executor_t *executor,
     void *user_data)
 {
     script_op_rewire_args_t *args = (script_op_rewire_args_t *)user_data;
-    nmo_script_edit_tx_t *tx = NULL;
-    nmo_status_t rc = NMO_OK;
-
-    (void)output_path;
-    if (!ctx || !args) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (!args || executor == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script op rewire arguments");
     }
 
-    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script op rewire", &tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin script op rewire: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    rc = nmo_script_edit_rewire_operation(tx, args->op_id, args->slot_flags,
-                                          args->in1_id, args->in2_id, args->out_id);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to rewire script operation: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    return script_edit_finalize_tx(tx, dry_run);
+    return nmo_script_edit_rewire_operation(nmo_script_executor_transaction(executor),
+                                            args->op_id,
+                                            args->slot_flags,
+                                            args->in1_id,
+                                            args->in2_id,
+                                            args->out_id);
 }
 
 static int script_op_rewire_report(
@@ -2398,6 +3240,7 @@ static int script_op_rewire_report(
         if ((args->slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u) {
             yyjson_mut_obj_add_uint(doc, data, "out_id", args->out_id);
         }
+        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -2410,39 +3253,52 @@ static int script_op_rewire_report(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int script_op_remove_mutate(
-    nmo_cmd_ctx_t *ctx,
-    bool dry_run,
-    const char *output_path,
+static nmo_status_t script_op_remove_execute(
+    nmo_script_executor_t *executor,
     void *user_data)
 {
     script_op_remove_args_t *args = (script_op_remove_args_t *)user_data;
     nmo_script_edit_tx_t *tx = NULL;
+    nmo_session_t *session = NULL;
     nmo_status_t rc = NMO_OK;
     nmo_object_id_t interface_behavior_id = 0u;
 
-    (void)output_path;
-    if (!ctx || !args) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (!args || executor == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing script op remove arguments");
     }
-    interface_behavior_id = script_interface_root_for_object(ctx, args->op_id);
+    tx = nmo_script_executor_transaction(executor);
+    session = nmo_script_executor_session(executor);
+    interface_behavior_id = script_interface_root_for_object_session(session, args->op_id);
+    if (interface_behavior_id == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Failed to resolve script interface root");
+    }
 
-    rc = nmo_script_edit_begin(ctx->ctx, ctx->session, "script op remove", &tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin script op remove: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
     rc = nmo_script_edit_remove_operation(tx, args->op_id);
     if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to remove script operation: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return rc;
     }
-    return script_edit_finalize_with_interface_mode(tx, dry_run,
-                                                    interface_behavior_id,
-                                                    args->interface_mode);
+    if (args->interface_mode == NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
+        return nmo_script_edit_apply_interface_policy(tx,
+                                                      interface_behavior_id,
+                                                      args->interface_mode);
+    }
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    return nmo_script_edit_apply_interface_policy(tx,
+                                                  interface_behavior_id,
+                                                  args->interface_mode);
 }
 
 static int script_op_remove_report(
@@ -2463,6 +3319,7 @@ static int script_op_remove_report(
         nmo_cli_json_add_str_safe(doc, data, "interface_mode",
                                   script_interface_mode_string(
                                       args->interface_mode));
+        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -2511,15 +3368,18 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         args.kind = vals[OPT_KIND].val.str;
         args.type_name = vals[OPT_TYPE].val.str;
         args.name = vals[OPT_NAME].val.str;
-        return nmo_cli_run_write_command(
+        return script_executor_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
-            script_param_add_mutate,
+            "script param add",
+            0u,
+            script_param_add_execute,
             script_param_add_report,
-            &args);
+            &args,
+            &args.common);
     }
 
     if (strcmp(argv[1], "set") == 0) {
@@ -2542,15 +3402,18 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         args.param_id = vals[OPT_PARAM].val.u;
         args.value_str = vals[OPT_VALUE].val.str;
         {
-            int rc = nmo_cli_run_write_command(
+            int rc = script_executor_cli_run_write_command(
                 r.pos_args[0],
                 vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
                 vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
                 global,
                 &spec,
-                script_param_set_mutate,
+                "script param set",
+                0u,
+                script_param_set_execute,
                 script_param_set_report,
-                &args);
+                &args,
+                &args.common);
             script_param_set_args_cleanup(&args);
             return rc;
         }
@@ -2574,15 +3437,18 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         }
         args.source_id = vals[OPT_FROM].val.u;
         args.target_id = vals[OPT_TO].val.u;
-        return nmo_cli_run_write_command(
+        return script_executor_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
-            script_param_connect_mutate,
+            "script param connect",
+            0u,
+            script_param_connect_execute,
             script_param_connect_report,
-            &args);
+            &args,
+            &args.common);
     }
 
     if (strcmp(argv[1], "disconnect") == 0) {
@@ -2601,15 +3467,18 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         args.target_id = vals[OPT_TO].val.u;
-        return nmo_cli_run_write_command(
+        return script_executor_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
-            script_param_disconnect_mutate,
+            "script param disconnect",
+            0u,
+            script_param_disconnect_execute,
             script_param_disconnect_report,
-            &args);
+            &args,
+            &args.common);
     }
 
     if (strcmp(argv[1], "remove") == 0) {
@@ -2639,15 +3508,18 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         }
         args.param_id = vals[OPT_PARAM].val.u;
         args.detach = vals[OPT_DETACH].present && vals[OPT_DETACH].val.flag;
-        return nmo_cli_run_write_command(
+        return script_executor_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
-            script_param_remove_mutate,
+            "script param remove",
+            0u,
+            script_param_remove_execute,
             script_param_remove_report,
-            &args);
+            &args,
+            &args.common);
     }
 
     return NMO_CLI_EXIT_ARG_ERROR;
@@ -2691,15 +3563,18 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
         args.in1_id = vals[OPT_IN1].present ? vals[OPT_IN1].val.u : 0u;
         args.in2_id = vals[OPT_IN2].present ? vals[OPT_IN2].val.u : 0u;
         args.out_id = vals[OPT_OUT].present ? vals[OPT_OUT].val.u : 0u;
-        return nmo_cli_run_write_command(
+        return script_executor_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
-            script_op_add_mutate,
+            "script op add",
+            0u,
+            script_op_add_execute,
             script_op_add_report,
-            &args);
+            &args,
+            &args.common);
     }
 
     if (strcmp(argv[1], "rewire") == 0) {
@@ -2735,15 +3610,18 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
             args.slot_flags |= NMO_SCRIPT_EDIT_OP_SLOT_OUT;
             args.out_id = vals[OPT_OUT].val.u;
         }
-        return nmo_cli_run_write_command(
+        return script_executor_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
-            script_op_rewire_mutate,
+            "script op rewire",
+            0u,
+            script_op_rewire_execute,
             script_op_rewire_report,
-            &args);
+            &args,
+            &args.common);
     }
 
     if (strcmp(argv[1], "remove") == 0) {
@@ -2771,15 +3649,18 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         args.op_id = vals[OPT_OP].val.u;
-        return nmo_cli_run_write_command(
+        return script_executor_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
-            script_op_remove_mutate,
+            "script op remove",
+            0u,
+            script_op_remove_execute,
             script_op_remove_report,
-            &args);
+            &args,
+            &args.common);
     }
 
     return NMO_CLI_EXIT_ARG_ERROR;

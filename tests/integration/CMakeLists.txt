@@ -73,6 +73,18 @@ if(TARGET nmo_cli)
     target_compile_definitions(test_cli_script_edit PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_cli_script_edit COMMAND test_cli_script_edit)
 
+    add_executable(test_cli_script_run test_cli_script_run.c)
+    target_link_libraries(test_cli_script_run PRIVATE nmo test_framework yyjson)
+    add_dependencies(test_cli_script_run nmo_cli)
+    target_compile_definitions(test_cli_script_run PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
+    add_test(NAME test_cli_script_run COMMAND test_cli_script_run)
+
+    add_executable(test_lua_public_workflow test_lua_public_workflow.c)
+    target_link_libraries(test_lua_public_workflow PRIVATE nmo test_framework yyjson)
+    add_dependencies(test_lua_public_workflow nmo_cli)
+    target_compile_definitions(test_lua_public_workflow PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
+    add_test(NAME test_lua_public_workflow COMMAND test_lua_public_workflow)
+
     add_executable(test_cli_patch_apply test_cli_patch_apply.c)
     target_link_libraries(test_cli_patch_apply PRIVATE nmo test_framework yyjson)
     add_dependencies(test_cli_patch_apply nmo_cli)

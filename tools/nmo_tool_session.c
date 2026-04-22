@@ -25,6 +25,22 @@ static bool nmo_tool_dir_exists(const char *path) {
     return (st.st_mode & S_IFDIR) != 0;
 }
 
+static const char *nmo_tool_try_buffer_path(char *buffer,
+                                            size_t buffer_size,
+                                            const char *fmt,
+                                            const char *base)
+{
+    if (buffer == NULL || buffer_size == 0u || fmt == NULL || base == NULL) {
+        return NULL;
+    }
+
+    snprintf(buffer, buffer_size, fmt, base);
+    if (nmo_tool_dir_exists(buffer)) {
+        return buffer;
+    }
+    return NULL;
+}
+
 static const char *nmo_tool_resolve_data_dir(char *buffer, size_t buffer_size) {
     const char *env = getenv("NMO_DATA_DIR");
     if (env != NULL && env[0] != '\0') {
@@ -46,8 +62,19 @@ static const char *nmo_tool_resolve_data_dir(char *buffer, size_t buffer_size) {
         }
         if (slash != NULL) {
             *slash = '\0';
-            snprintf(buffer, buffer_size, "%s\\..\\share\\libnmo\\data", exe_path);
-            if (nmo_tool_dir_exists(buffer)) {
+            if (nmo_tool_try_buffer_path(buffer, buffer_size,
+                                         "%s\\..\\share\\libnmo\\data",
+                                         exe_path) != NULL) {
+                return buffer;
+            }
+            if (nmo_tool_try_buffer_path(buffer, buffer_size,
+                                         "%s\\..\\data",
+                                         exe_path) != NULL) {
+                return buffer;
+            }
+            if (nmo_tool_try_buffer_path(buffer, buffer_size,
+                                         "%s\\..\\..\\data",
+                                         exe_path) != NULL) {
                 return buffer;
             }
         }
@@ -55,6 +82,33 @@ static const char *nmo_tool_resolve_data_dir(char *buffer, size_t buffer_size) {
 #endif
 
     return "data";
+}
+
+bool nmo_tool_open_context(nmo_context_t **out_ctx,
+                           char *errbuf,
+                           size_t errbuf_size) {
+    char data_dir_buffer[1024];
+    nmo_context_desc_t desc;
+
+    if (!out_ctx) {
+        if (errbuf && errbuf_size > 0) {
+            snprintf(errbuf, errbuf_size, "Invalid arguments");
+        }
+        return false;
+    }
+
+    *out_ctx = NULL;
+    memset(&desc, 0, sizeof(desc));
+    desc.data_dir = nmo_tool_resolve_data_dir(data_dir_buffer, sizeof(data_dir_buffer));
+    *out_ctx = nmo_context_create(&desc);
+    if (*out_ctx == NULL) {
+        if (errbuf && errbuf_size > 0) {
+            snprintf(errbuf, errbuf_size, "Failed to create libnmo context");
+        }
+        return false;
+    }
+
+    return true;
 }
 
 bool nmo_tool_open_session(const char *path,
@@ -71,15 +125,8 @@ bool nmo_tool_open_session(const char *path,
     *out_ctx = NULL;
     *out_session = NULL;
 
-    /* Prefer NMO_DATA_DIR, then source-tree data, then packaged share data. */
-    char data_dir_buffer[1024];
-    nmo_context_desc_t desc;
-    memset(&desc, 0, sizeof(desc));
-    desc.data_dir = nmo_tool_resolve_data_dir(data_dir_buffer, sizeof(data_dir_buffer));
-    nmo_context_t *ctx = nmo_context_create(&desc);
-    if (!ctx) {
-        if (errbuf && errbuf_size > 0)
-            snprintf(errbuf, errbuf_size, "Failed to create libnmo context");
+    nmo_context_t *ctx = NULL;
+    if (!nmo_tool_open_context(&ctx, errbuf, errbuf_size)) {
         return false;
     }
 
@@ -112,14 +159,8 @@ bool nmo_tool_open_session_opts(const char *path,
     *out_ctx = NULL;
     *out_session = NULL;
 
-    char data_dir_buffer[1024];
-    nmo_context_desc_t desc;
-    memset(&desc, 0, sizeof(desc));
-    desc.data_dir = nmo_tool_resolve_data_dir(data_dir_buffer, sizeof(data_dir_buffer));
-    nmo_context_t *ctx = nmo_context_create(&desc);
-    if (!ctx) {
-        if (errbuf && errbuf_size > 0)
-            snprintf(errbuf, errbuf_size, "Failed to create libnmo context");
+    nmo_context_t *ctx = NULL;
+    if (!nmo_tool_open_context(&ctx, errbuf, errbuf_size)) {
         return false;
     }
 

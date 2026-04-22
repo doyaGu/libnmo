@@ -11,6 +11,14 @@ extern "C" {
 #endif
 
 /**
+ * @brief Create a libnmo context using the same data-dir resolution as tool
+ * session loading.
+ */
+bool nmo_tool_open_context(nmo_context_t **out_ctx,
+                           char *errbuf,
+                           size_t errbuf_size);
+
+/**
  * @brief Create a libnmo context and load a session from a file.
  *
  * This helper does not print; it returns false and optionally fills errbuf.
