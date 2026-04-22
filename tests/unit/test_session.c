@@ -5,7 +5,9 @@
 
 #include "test_framework.h"
 #include "nmo.h"
+#include "document/nmo_document.h"
 #include "object/nmo_object_index.h"
+#include "object/nmo_object_query.h"
 #include "session/nmo_session_query.h"
 
 static nmo_object_t *create_session_object(
@@ -169,10 +171,39 @@ TEST(session, stable_query_facade) {
     nmo_context_release(ctx);
 }
 
+TEST(session, stable_object_owner_facade) {
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_document_t *document = (nmo_document_t *)nmo_session_create(ctx);
+    ASSERT_NOT_NULL(document);
+    nmo_session_t *session = (nmo_session_t *)document;
+
+    ASSERT_NOT_NULL(create_session_object(session, 31, 100, "Gamma"));
+    ASSERT_NOT_NULL(create_session_object(session, 32, 100, "Delta"));
+
+    size_t count = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_query_count(document, NULL, &count));
+    ASSERT_EQ(2u, count);
+
+    nmo_object_selector_t selector = {
+        .name = "Delta"
+    };
+    nmo_object_t *found = NULL;
+    ASSERT_EQ(NMO_OK, nmo_object_query_resolve_one(document, &selector, &found, NULL));
+    ASSERT_NOT_NULL(found);
+    ASSERT_EQ(32u, found->id);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(session, create);
     REGISTER_TEST(session, get_context);
     REGISTER_TEST(session, index_incremental_updates);
     REGISTER_TEST(session, object_index_stats);
     REGISTER_TEST(session, stable_query_facade);
+    REGISTER_TEST(session, stable_object_owner_facade);
 TEST_MAIN_END()

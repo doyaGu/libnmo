@@ -6,6 +6,8 @@
 #include "nmo_cmd_core.h"
 #include "nmo_cli_common.h"
 #include "nmo_tool_common.h"
+#include "document/nmo_document.h"
+#include "object/nmo_object_refs.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_edit.h"
@@ -67,37 +69,20 @@ int nmo_core_find_by_name(const nmo_cmd_ctx_t *c,
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_status_t status =
-        nmo_session_query_find_object_by_name(c->session, name, out_object);
+    nmo_object_query_t query = {
+        .name = name,
+        .name_mode = NMO_OBJECT_QUERY_NAME_EXACT,
+        .name_case_insensitive = false
+    };
+    nmo_status_t status = nmo_object_query_find_first(
+        (nmo_document_t *)c->session,
+        &query,
+        out_object,
+        NULL);
     if (status == NMO_ERR_NOT_FOUND) {
         return NMO_CLI_EXIT_NOT_FOUND;
     }
     return status == NMO_OK ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_INTERNAL_ERROR;
-}
-
-static bool nmo_core_selector_class_allowed(
-    const nmo_core_object_selector_t *selector,
-    nmo_class_id_t class_id)
-{
-    if (selector == NULL || selector->allowed_class_count == 0) {
-        return true;
-    }
-    for (size_t i = 0; i < selector->allowed_class_count; ++i) {
-        if (selector->allowed_class_ids[i] == class_id) {
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool nmo_core_selector_allowed_class_predicate(
-    const nmo_object_t *object,
-    void *user_data)
-{
-    const nmo_core_object_selector_t *selector =
-        (const nmo_core_object_selector_t *)user_data;
-    return object != NULL &&
-           nmo_core_selector_class_allowed(selector, nmo_object_get_class_id(object));
 }
 
 int nmo_core_resolve_one_object(
@@ -124,66 +109,56 @@ int nmo_core_resolve_one_object(
 
     nmo_object_t *obj = NULL;
     nmo_object_id_t id = 0;
-    bool selected_by_id = false;
-    if (selector->has_id) {
-        id = selector->id;
-        selected_by_id = true;
-    } else if (selector->positional_id != NULL) {
+    bool has_id = selector->has_id;
+    if (!has_id && selector->positional_id != NULL) {
         uint32_t parsed_id = 0;
         if (!nmo_tool_parse_u32(selector->positional_id, &parsed_id) || parsed_id == 0) {
             fprintf(stderr, "Error: Invalid %s ID '%s'\n", label, selector->positional_id);
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         id = (nmo_object_id_t)parsed_id;
-        selected_by_id = true;
+        has_id = true;
+    } else if (selector->has_id) {
+        id = selector->id;
     }
 
-    if (selected_by_id) {
-        obj = nmo_core_find_by_id(c, id);
-        if (obj == NULL) {
-            fprintf(stderr, "Error: Object %u not found\n", id);
-            return NMO_CLI_EXIT_NOT_FOUND;
-        }
-    } else if (selector->name != NULL && selector->name[0] != '\0') {
-        nmo_object_query_t query = {
-            .class_id = selector->required_base_class,
-            .include_derived_classes = selector->required_base_class != 0,
-            .name = selector->name,
-            .name_mode = NMO_OBJECT_QUERY_NAME_EXACT,
-            .name_case_insensitive = false,
-            .predicate = selector->allowed_class_count > 0
-                ? nmo_core_selector_allowed_class_predicate
-                : NULL,
-            .predicate_user_data = selector->allowed_class_count > 0
-                ? (void *)selector
-                : NULL,
-        };
-        int lookup_rc = nmo_core_object_query_first(c, &query, &obj, NULL);
-        if (lookup_rc == NMO_CLI_EXIT_NOT_FOUND) {
-            fprintf(stderr, "Error: %s '%s' not found\n", label, selector->name);
-            return NMO_CLI_EXIT_NOT_FOUND;
-        }
-        if (lookup_rc != NMO_CLI_EXIT_SUCCESS) {
-            return lookup_rc;
-        }
-        id = nmo_object_get_id(obj);
-    } else {
+    if (!has_id && (selector->name == NULL || selector->name[0] == '\0')) {
         fprintf(stderr, "Error: No %s selector specified\n", label);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    if (selector->required_base_class != 0) {
-        nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-        if (!nmo_core_class_derives(c, class_id, selector->required_base_class)) {
+    nmo_object_selector_t object_selector = {
+        .has_id = has_id,
+        .id = id,
+        .name = selector->name,
+        .required_base_class = selector->required_base_class,
+        .allowed_class_ids = selector->allowed_class_ids,
+        .allowed_class_count = selector->allowed_class_count
+    };
+    nmo_status_t status = nmo_object_query_resolve_one(
+        (nmo_document_t *)c->session,
+        &object_selector,
+        &obj,
+        &id);
+    if (status == NMO_ERR_NOT_FOUND) {
+        if (object_selector.has_id) {
+            fprintf(stderr, "Error: Object %u not found\n", id);
+        } else {
+            fprintf(stderr, "Error: %s '%s' not found\n", label, selector->name);
+        }
+        return NMO_CLI_EXIT_NOT_FOUND;
+    }
+    if (status != NMO_OK) {
+        if (status == NMO_ERR_INVALID_ARGUMENT && obj != NULL) {
             fprintf(stderr, "Error: Object %u is not a %s (class %u)\n",
-                    id, type_label, class_id);
+                    id, type_label, nmo_object_get_class_id(obj));
             return NMO_CLI_EXIT_ARG_ERROR;
         }
-    }
-    if (!nmo_core_selector_class_allowed(selector, nmo_object_get_class_id(obj))) {
-        fprintf(stderr, "Error: Object %u is not a %s (class %u)\n",
-                id, type_label, nmo_object_get_class_id(obj));
-        return NMO_CLI_EXIT_ARG_ERROR;
+        if (status == NMO_ERR_INVALID_ARGUMENT) {
+            fprintf(stderr, "Error: Invalid %s selector\n", label);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     *out_object = obj;
@@ -257,8 +232,11 @@ int nmo_core_object_query_first(const nmo_cmd_ctx_t *c,
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_status_t status =
-        nmo_session_query_first(c->session, query, out_object, out_index);
+    nmo_status_t status = nmo_object_query_find_first(
+        (nmo_document_t *)c->session,
+        query,
+        out_object,
+        out_index);
     if (status == NMO_ERR_NOT_FOUND) {
         return NMO_CLI_EXIT_NOT_FOUND;
     }
@@ -271,7 +249,8 @@ int nmo_core_object_count(const nmo_cmd_ctx_t *c, size_t *out_count)
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_status_t status = nmo_session_query_count_objects(c->session, out_count);
+    nmo_status_t status =
+        nmo_object_query_count((nmo_document_t *)c->session, NULL, out_count);
     return status == NMO_OK ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_INTERNAL_ERROR;
 }
 
@@ -388,67 +367,70 @@ bool nmo_core_query_matches_object(
  * 4. Reference iteration
  * ============================================================================ */
 
+typedef struct nmo_core_ref_bridge {
+    const nmo_cmd_ctx_t *cmd;
+    nmo_core_ref_fn visitor;
+    void *user;
+} nmo_core_ref_bridge_t;
+
+static bool nmo_core_visit_ref_edge(
+    const nmo_object_refs_edge_t *edge,
+    void *user_data)
+{
+    nmo_core_ref_bridge_t *state = (nmo_core_ref_bridge_t *)user_data;
+    if (state == NULL || state->visitor == NULL || edge == NULL || edge->edge == NULL) {
+        return true;
+    }
+    nmo_core_ref_info_t info = {
+        .edge = edge->edge,
+        .is_incoming = edge->is_incoming,
+        .peer = edge->peer,
+        .peer_name = edge->peer != NULL ? nmo_object_get_name(edge->peer) : NULL,
+        .peer_class_name = edge->peer != NULL
+            ? nmo_core_class_name(state->cmd, nmo_object_get_class_id(edge->peer))
+            : NULL
+    };
+    return state->visitor(&info, state->cmd, state->user) == 0;
+}
+
 int nmo_core_iter_refs(const nmo_cmd_ctx_t *c,
                        nmo_object_id_t obj_id,
                        unsigned dir,
                        nmo_core_ref_fn visitor, void *user,
                        nmo_core_ref_result_t *result) {
-    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
-
-    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c->session);
-    if (!graph) return NMO_CLI_EXIT_INTERNAL_ERROR;
-
-    nmo_core_ref_result_t r = {0};
-
-    /* Outgoing edges */
-    if (dir & NMO_CORE_REFS_OUT) {
-        nmo_ref_edge_t *edges = NULL;
-        size_t count = 0;
-        nmo_ref_graph_get_object_edges(graph, obj_id, NMO_REF_DIR_OUTGOING,
-                                       &edges, &count);
-        r.outgoing = count;
-        if (visitor) {
-            for (size_t i = 0; i < count; i++) {
-                nmo_core_ref_info_t info = {0};
-                info.edge = &edges[i];
-                info.is_incoming = false;
-                info.peer = nmo_object_repository_find_by_id(repo,
-                                                             edges[i].to);
-                if (info.peer) {
-                    info.peer_name = nmo_object_get_name(info.peer);
-                    info.peer_class_name = nmo_core_class_name(
-                        c, nmo_object_get_class_id(info.peer));
-                }
-                if (visitor(&info, c, user) != 0) break;
-            }
-        }
+    if (c == NULL || c->session == NULL) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    /* Incoming edges */
-    if (dir & NMO_CORE_REFS_IN) {
-        nmo_ref_edge_t *edges = NULL;
-        size_t count = 0;
-        nmo_ref_graph_get_object_edges(graph, obj_id, NMO_REF_DIR_INCOMING,
-                                       &edges, &count);
-        r.incoming = count;
-        if (visitor) {
-            for (size_t i = 0; i < count; i++) {
-                nmo_core_ref_info_t info = {0};
-                info.edge = &edges[i];
-                info.is_incoming = true;
-                info.peer = nmo_object_repository_find_by_id(repo,
-                                                             edges[i].from);
-                if (info.peer) {
-                    info.peer_name = nmo_object_get_name(info.peer);
-                    info.peer_class_name = nmo_core_class_name(
-                        c, nmo_object_get_class_id(info.peer));
-                }
-                if (visitor(&info, c, user) != 0) break;
-            }
-        }
+    nmo_core_ref_bridge_t bridge = {
+        .cmd = c,
+        .visitor = visitor,
+        .user = user
+    };
+    nmo_object_refs_result_t refs_result = {0};
+    nmo_object_refs_direction_t direction = 0;
+    if ((dir & NMO_CORE_REFS_OUT) != 0u) {
+        direction = (nmo_object_refs_direction_t)(direction | NMO_OBJECT_REFS_OUTGOING);
+    }
+    if ((dir & NMO_CORE_REFS_IN) != 0u) {
+        direction = (nmo_object_refs_direction_t)(direction | NMO_OBJECT_REFS_INCOMING);
     }
 
-    if (result) *result = r;
+    nmo_status_t status = nmo_object_refs_iterate(
+        (nmo_document_t *)c->session,
+        obj_id,
+        direction,
+        visitor != NULL ? nmo_core_visit_ref_edge : NULL,
+        &bridge,
+        &refs_result);
+    if (status != NMO_OK) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    if (result != NULL) {
+        result->outgoing = refs_result.outgoing;
+        result->incoming = refs_result.incoming;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 

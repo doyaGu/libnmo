@@ -699,6 +699,94 @@ TEST(object_query, session_query_api_tracks_type_guid_mutation)
     nmo_context_release(ctx);
 }
 
+TEST(object_query, stable_owner_count_and_find_first_facades)
+{
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = (nmo_document_t *)nmo_session_create(ctx);
+    ASSERT_NOT_NULL(document);
+    nmo_object_repository_t *repo =
+        nmo_session_get_repository((nmo_session_t *)document);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_t *alpha = make_object(&allocator, 31, NMO_CID_OBJECT, "AlphaStable");
+    nmo_object_t *beta = make_object(&allocator, 32, NMO_CID_OBJECT, "BetaStable");
+    ASSERT_NOT_NULL(alpha);
+    ASSERT_NOT_NULL(beta);
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &alpha));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &beta));
+
+    size_t count = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_query_count(document, NULL, &count));
+    ASSERT_EQ(2u, count);
+
+    nmo_object_query_t query = {
+        .name = "BetaStable",
+        .name_mode = NMO_OBJECT_QUERY_NAME_EXACT,
+        .name_case_insensitive = false
+    };
+    nmo_object_t *found = NULL;
+    size_t found_index = SIZE_MAX;
+    ASSERT_EQ(NMO_OK, nmo_object_query_find_first(document, &query, &found, &found_index));
+    ASSERT_NOT_NULL(found);
+    ASSERT_EQ(32u, nmo_object_get_id(found));
+    ASSERT_EQ(1u, found_index);
+
+    nmo_session_destroy((nmo_session_t *)document);
+    nmo_context_release(ctx);
+}
+
+TEST(object_query, stable_owner_resolve_one_matches_selector)
+{
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = (nmo_document_t *)nmo_session_create(ctx);
+    ASSERT_NOT_NULL(document);
+    nmo_object_repository_t *repo =
+        nmo_session_get_repository((nmo_session_t *)document);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_t *alpha = make_object(&allocator, 41, NMO_CID_OBJECT, "Alpha");
+    nmo_object_t *beta = make_object(&allocator, 42, NMO_CID_CAMERA, "Beta");
+    ASSERT_NOT_NULL(alpha);
+    ASSERT_NOT_NULL(beta);
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &alpha));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &beta));
+
+    nmo_object_selector_t by_name = {
+        .name = "Beta",
+        .required_base_class = NMO_CID_3DENTITY
+    };
+    nmo_object_t *found = NULL;
+    ASSERT_EQ(NMO_OK, nmo_object_query_resolve_one(document, &by_name, &found, NULL));
+    ASSERT_NOT_NULL(found);
+    ASSERT_EQ(42u, nmo_object_get_id(found));
+
+    nmo_object_selector_t by_id = {
+        .has_id = true,
+        .id = 41
+    };
+    found = NULL;
+    ASSERT_EQ(NMO_OK, nmo_object_query_resolve_one(document, &by_id, &found, NULL));
+    ASSERT_NOT_NULL(found);
+    ASSERT_EQ(41u, nmo_object_get_id(found));
+
+    nmo_object_selector_t wrong_class = {
+        .has_id = true,
+        .id = 41,
+        .required_base_class = NMO_CID_CAMERA
+    };
+    found = NULL;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_object_query_resolve_one(document, &wrong_class, &found, NULL));
+    ASSERT_NULL(found);
+
+    nmo_session_destroy((nmo_session_t *)document);
+    nmo_context_release(ctx);
+}
+
 TEST(object_query, attached_query_index_tracks_repository_mutation)
 {
     setup_objects();
@@ -880,6 +968,8 @@ REGISTER_TEST(object_query, indexed_text_reducers_preserve_matches);
 REGISTER_TEST(object_query, indexed_text_single_trigram_deduplicates_repeated_names);
 REGISTER_TEST(object_query, session_query_api_tracks_direct_repository_mutation);
 REGISTER_TEST(object_query, session_query_api_tracks_type_guid_mutation);
+REGISTER_TEST(object_query, stable_owner_count_and_find_first_facades);
+REGISTER_TEST(object_query, stable_owner_resolve_one_matches_selector);
 REGISTER_TEST(object_query, attached_query_index_tracks_repository_mutation);
 REGISTER_TEST(object_query, attached_query_index_tracks_type_guid_mutation);
 REGISTER_TEST(object_query, query_index_detach_preserves_other_repository_observers);

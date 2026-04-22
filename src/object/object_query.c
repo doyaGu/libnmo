@@ -7,6 +7,9 @@
 
 #include "core/nmo_arena.h"
 #include "format/nmo_object.h"
+#include "object/nmo_object_repository.h"
+#include "session/nmo_context.h"
+#include "session/nmo_session.h"
 #include "type/nmo_type_system.h"
 
 #include <ctype.h>
@@ -16,6 +19,21 @@ typedef struct query_collect_ctx {
     nmo_object_t **objects;
     size_t count;
 } query_collect_ctx_t;
+
+static bool query_selector_class_allowed(
+    const nmo_object_selector_t *selector,
+    nmo_class_id_t class_id)
+{
+    if (selector == NULL || selector->allowed_class_count == 0) {
+        return true;
+    }
+    for (size_t i = 0; i < selector->allowed_class_count; ++i) {
+        if (selector->allowed_class_ids[i] == class_id) {
+            return true;
+        }
+    }
+    return false;
+}
 
 
 static char query_fold_char(char c, bool icase)
@@ -747,6 +765,121 @@ nmo_status_t nmo_object_query_collect(
     *out_count = collect.count;
     if (out_result != NULL) {
         *out_result = collect_result;
+    }
+    return NMO_OK;
+}
+
+nmo_status_t nmo_object_query_count(
+    nmo_document_t *document,
+    const nmo_object_query_t *query,
+    size_t *out_count)
+{
+    if (document == NULL || out_count == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (query == NULL) {
+        nmo_object_repository_t *repository =
+            nmo_session_get_repository((nmo_session_t *)document);
+        *out_count = repository != NULL
+            ? nmo_object_repository_get_count(repository)
+            : 0u;
+        return NMO_OK;
+    }
+
+    nmo_object_query_result_t result = {0};
+    nmo_status_t rc = nmo_session_query_objects(
+        (nmo_session_t *)document,
+        query,
+        NULL,
+        NULL,
+        &result);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    *out_count = result.matched;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_object_query_find_first(
+    nmo_document_t *document,
+    const nmo_object_query_t *query,
+    nmo_object_t **out_object,
+    size_t *out_index)
+{
+    if (document == NULL || out_object == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    return nmo_session_query_first(
+        (nmo_session_t *)document,
+        query,
+        out_object,
+        out_index);
+}
+
+nmo_status_t nmo_object_query_resolve_one(
+    nmo_document_t *document,
+    const nmo_object_selector_t *selector,
+    nmo_object_t **out_object,
+    nmo_object_id_t *out_id)
+{
+    if (document == NULL || selector == NULL || out_object == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    *out_object = NULL;
+    if (out_id != NULL) {
+        *out_id = 0;
+    }
+
+    nmo_object_t *object = NULL;
+    if (selector->has_id) {
+        nmo_object_repository_t *repository =
+            nmo_session_get_repository((nmo_session_t *)document);
+        if (repository == NULL) {
+            return NMO_ERR_INVALID_STATE;
+        }
+        object = nmo_object_repository_find_by_id(repository, selector->id);
+        if (object == NULL) {
+            return NMO_ERR_NOT_FOUND;
+        }
+    } else if (selector->name != NULL && selector->name[0] != '\0') {
+        nmo_object_query_t query = {
+            .class_id = selector->required_base_class,
+            .include_derived_classes = selector->required_base_class != 0,
+            .name = selector->name,
+            .name_mode = NMO_OBJECT_QUERY_NAME_EXACT,
+            .name_case_insensitive = false
+        };
+        nmo_status_t rc = nmo_object_query_find_first(
+            document, &query, &object, NULL);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+    } else {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_class_id_t class_id = nmo_object_get_class_id(object);
+    if (selector->required_base_class != 0) {
+        nmo_context_t *ctx = nmo_session_get_context((nmo_session_t *)document);
+        const nmo_type_registry_t *registry =
+            ctx != NULL ? nmo_context_get_type_registry(ctx) : NULL;
+        if (registry == NULL ||
+            !nmo_type_registry_is_class_derived_from(
+                registry, class_id, selector->required_base_class)) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+    }
+    if (!query_selector_class_allowed(selector, class_id)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    *out_object = object;
+    if (out_id != NULL) {
+        *out_id = nmo_object_get_id(object);
     }
     return NMO_OK;
 }

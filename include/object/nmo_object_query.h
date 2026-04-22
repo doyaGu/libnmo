@@ -22,6 +22,7 @@ typedef struct nmo_allocator nmo_allocator_t;
 typedef struct nmo_object nmo_object_t;
 typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_object_query_index nmo_object_query_index_t;
+typedef struct nmo_session nmo_document_t;
 typedef struct nmo_type_registry nmo_type_registry_t;
 
 /*
@@ -77,6 +78,15 @@ typedef struct nmo_object_query_result {
     bool stopped_early;
 } nmo_object_query_result_t;
 
+typedef struct nmo_object_selector {
+    bool has_id;
+    nmo_object_id_t id;
+    const char *name;
+    nmo_class_id_t required_base_class;
+    const nmo_class_id_t *allowed_class_ids;
+    size_t allowed_class_count;
+} nmo_object_selector_t;
+
 typedef bool (*nmo_object_query_visitor_fn)(
     size_t object_index,
     nmo_object_t *object,
@@ -118,6 +128,23 @@ NMO_API nmo_status_t nmo_object_query_iterate(
     nmo_object_query_visitor_fn visitor,
     void *user_data,
     nmo_object_query_result_t *out_result);
+
+NMO_API nmo_status_t nmo_object_query_count(
+    nmo_document_t *document,
+    const nmo_object_query_t *query,
+    size_t *out_count);
+
+NMO_API nmo_status_t nmo_object_query_find_first(
+    nmo_document_t *document,
+    const nmo_object_query_t *query,
+    nmo_object_t **out_object,
+    size_t *out_index);
+
+NMO_API nmo_status_t nmo_object_query_resolve_one(
+    nmo_document_t *document,
+    const nmo_object_selector_t *selector,
+    nmo_object_t **out_object,
+    nmo_object_id_t *out_id);
 
 /**
  * @ownership borrowed (arena-owned by caller; valid until arena reset/destroy)

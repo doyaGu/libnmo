@@ -1,6 +1,7 @@
 #include "test_framework.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "object/nmo_object_refs.h"
 #include "object/nmo_ref_query.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_group_schemas.h"
@@ -60,6 +61,18 @@ static bool capture_ref_edge(
         capture->first_kind = edge->kind;
     }
     capture->count++;
+    return true;
+}
+
+static bool count_object_ref_edge(
+    const nmo_object_refs_edge_t *edge,
+    void *user_data)
+{
+    size_t *count = (size_t *)user_data;
+    if (edge == NULL || edge->edge == NULL || count == NULL) {
+        return false;
+    }
+    (*count)++;
     return true;
 }
 
@@ -186,8 +199,44 @@ TEST(ref_query, visits_edges_without_exposing_graph_handles) {
     nmo_context_release(ctx);
 }
 
+TEST(ref_query, stable_owner_iterates_object_edges) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_document_t *document = (nmo_document_t *)nmo_session_create(ctx);
+    ASSERT_NOT_NULL(document);
+    nmo_session_t *session = (nmo_session_t *)document;
+
+    nmo_object_id_t member_id = 0;
+    ASSERT_EQ(NMO_OK,
+        nmo_session_create_object(session, NMO_CID_OBJECT, "member",
+            (nmo_guid_t){0, 0}, &member_id, NULL));
+
+    nmo_object_id_t group_id = 0;
+    ASSERT_EQ(NMO_OK,
+        nmo_session_create_object(session, NMO_CID_GROUP, "group",
+            (nmo_guid_t){0, 0}, &group_id, NULL));
+
+    set_group_members(session, group_id, &member_id, 1);
+    nmo_session_invalidate_ref_graph(session);
+
+    size_t count = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_refs_iterate(
+        document,
+        group_id,
+        NMO_OBJECT_REFS_BOTH,
+        count_object_ref_edge,
+        &count,
+        NULL));
+    ASSERT_EQ(1u, count);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(ref_query, counts_session_references_without_graph_handles);
     REGISTER_TEST(ref_query, reports_broken_reference_count);
     REGISTER_TEST(ref_query, visits_edges_without_exposing_graph_handles);
+    REGISTER_TEST(ref_query, stable_owner_iterates_object_edges);
 TEST_MAIN_END()
