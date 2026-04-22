@@ -323,7 +323,6 @@ set(NMO_APP_SOURCES
     src/app/comparison.c
     src/app/stats.c
     src/app/inspector.c
-    src/app/json_stream.c
     src/app/hexdump.c
     src/app/chunk_index.c
     src/app/object_hierarchy.c

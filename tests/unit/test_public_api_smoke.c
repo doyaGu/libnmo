@@ -6,7 +6,6 @@
 #include "test_framework.h"
 #include "nmo.h"
 #include "app/nmo_comparison.h"
-#include "app/nmo_json_stream.h"
 #include "app/nmo_load.h"
 #include "app/nmo_object_diff.h"
 #include "app/nmo_object_import.h"
@@ -49,6 +48,12 @@
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_view.h"
 
+#ifdef NMO_JSON_STREAM_PUBLIC_HEADER_KIND
+#define NMO_TEST_HAS_JSON_STREAM_PUBLIC_API 1
+#else
+#define NMO_TEST_HAS_JSON_STREAM_PUBLIC_API 0
+#endif
+
 TEST(public_api_smoke, version) {
     const char *ver = nmo_version();
     ASSERT_NOT_NULL(ver);
@@ -83,6 +88,10 @@ TEST(public_api_smoke, report_result_headers_are_directly_usable) {
     ASSERT_FALSE(comparison_stats.match);
     ASSERT_EQ(0u, diff_stats.total_field_diffs);
     ASSERT_FALSE(summary_stats.has_reflection);
+}
+
+TEST(public_api_smoke, json_stream_is_not_part_of_public_api_surface) {
+    ASSERT_FALSE(NMO_TEST_HAS_JSON_STREAM_PUBLIC_API);
 }
 
 TEST(public_api_smoke, public_api_tier_signals_are_declared) {
@@ -214,9 +223,6 @@ TEST(public_api_smoke, public_api_tier_signals_are_declared) {
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_OBJECT_IMPORT_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_OBJECT_IMPORT_API_TIER);
 
-    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_JSON_STREAM_PUBLIC_HEADER_KIND);
-    ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_JSON_STREAM_API_TIER);
-
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_REPORT_RESULT_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_REPORT_RESULT_API_TIER);
 
@@ -238,5 +244,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(public_api_smoke, context_create_release);
     REGISTER_TEST(public_api_smoke, preferred_edit_and_query_headers_are_directly_usable);
     REGISTER_TEST(public_api_smoke, report_result_headers_are_directly_usable);
+    REGISTER_TEST(public_api_smoke, json_stream_is_not_part_of_public_api_surface);
     REGISTER_TEST(public_api_smoke, public_api_tier_signals_are_declared);
 TEST_MAIN_END()

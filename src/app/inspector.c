@@ -8,11 +8,12 @@
 #include "app/nmo_inspector.h"
 #include "app/nmo_ansi.h"
 #include "app/nmo_hexdump.h"
-#include "app/nmo_json_stream.h"
 #include "core/nmo_error.h"
+#include "core/nmo_hex.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_parser.h"
+#include "yyjson.h"
 #include <string.h>
 #include <ctype.h>
 #include <stdarg.h>
@@ -400,76 +401,67 @@ int nmo_inspector_compare_chunks(
     return 1;
 }
 
-static nmo_status_t json_write_chunk(nmo_json_stream_t *writer,
-                            const nmo_chunk_t *chunk,
-                            bool include_data) {
-    if (!writer || !chunk) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    if (!nmo_json_stream_begin_object(writer)) {
-        return NMO_ERR_CANT_WRITE_FILE;
-    }
-
+static yyjson_mut_val *json_build_chunk(yyjson_mut_doc *doc,
+                                        const nmo_chunk_t *chunk,
+                                        bool include_data) {
+    yyjson_mut_val *obj = NULL;
     size_t data_size = 0;
-    const uint8_t *data = (const uint8_t *)nmo_chunk_get_data(chunk, &data_size);
+    const uint8_t *data = NULL;
+    uint32_t sub_count = 0;
 
-    if (!nmo_json_stream_key(writer, "class_id") ||
-        !nmo_json_stream_value_uint(writer, (uint64_t)nmo_chunk_get_class_id(chunk))) {
-        return NMO_ERR_CANT_WRITE_FILE;
+    if (!doc || !chunk) {
+        return NULL;
     }
 
-    if (!nmo_json_stream_key(writer, "data_size") ||
-        !nmo_json_stream_value_uint(writer, (uint64_t)data_size)) {
-        return NMO_ERR_CANT_WRITE_FILE;
+    obj = yyjson_mut_obj(doc);
+    if (!obj) {
+        return NULL;
     }
 
-    if (!nmo_json_stream_key(writer, "id_count") ||
-        !nmo_json_stream_value_uint(writer, (uint64_t)nmo_chunk_get_id_count(chunk))) {
-        return NMO_ERR_CANT_WRITE_FILE;
-    }
+    data = (const uint8_t *)nmo_chunk_get_data(chunk, &data_size);
+    yyjson_mut_obj_add_uint(doc, obj, "class_id",
+                            (uint64_t)nmo_chunk_get_class_id(chunk));
+    yyjson_mut_obj_add_uint(doc, obj, "data_size", (uint64_t)data_size);
+    yyjson_mut_obj_add_uint(doc, obj, "id_count",
+                            (uint64_t)nmo_chunk_get_id_count(chunk));
 
     if (nmo_chunk_is_compressed(chunk)) {
-        if (!nmo_json_stream_key(writer, "compressed") ||
-            !nmo_json_stream_value_bool(writer, true)) {
-            return NMO_ERR_CANT_WRITE_FILE;
-        }
+        yyjson_mut_obj_add_bool(doc, obj, "compressed", true);
     }
 
     if (include_data && data && data_size > 0) {
-        if (!nmo_json_stream_key(writer, "data_hex") ||
-            !nmo_json_stream_value_hex_bytes(writer, data, data_size, false)) {
-            return NMO_ERR_CANT_WRITE_FILE;
+        char *hex = nmo_hex_bytes_to_string(data, data_size, false);
+        if (!hex) {
+            return NULL;
         }
+        yyjson_mut_obj_add_strcpy(doc, obj, "data_hex", hex);
+        free(hex);
     }
 
-    uint32_t sub_count = nmo_chunk_get_sub_chunk_count(chunk);
+    sub_count = nmo_chunk_get_sub_chunk_count(chunk);
     if (sub_count > 0) {
-        if (!nmo_json_stream_key(writer, "sub_chunks") ||
-            !nmo_json_stream_begin_array(writer)) {
-            return NMO_ERR_CANT_WRITE_FILE;
+        yyjson_mut_val *sub_arr = yyjson_mut_arr(doc);
+        if (!sub_arr) {
+            return NULL;
         }
 
         for (uint32_t i = 0; i < sub_count; ++i) {
             nmo_chunk_t *sub = nmo_chunk_get_sub_chunk(chunk, i);
+            yyjson_mut_val *sub_obj = NULL;
             if (!sub) {
                 continue;
             }
-            if (json_write_chunk(writer, sub, include_data) != NMO_OK) {
-                return NMO_ERR_CANT_WRITE_FILE;
+            sub_obj = json_build_chunk(doc, sub, include_data);
+            if (!sub_obj) {
+                return NULL;
             }
+            yyjson_mut_arr_add_val(sub_arr, sub_obj);
         }
 
-        if (!nmo_json_stream_end_array(writer)) {
-            return NMO_ERR_CANT_WRITE_FILE;
-        }
+        yyjson_mut_obj_add_val(doc, obj, "sub_chunks", sub_arr);
     }
 
-    if (!nmo_json_stream_end_object(writer)) {
-        return NMO_ERR_CANT_WRITE_FILE;
-    }
-
-    return NMO_OK;
+    return obj;
 }
 
 nmo_status_t nmo_inspector_export_json(
@@ -477,18 +469,32 @@ nmo_status_t nmo_inspector_export_json(
     FILE *stream,
     bool include_data
 ) {
+    yyjson_mut_doc *doc = NULL;
+    yyjson_mut_val *root = NULL;
+    yyjson_write_flag flags =
+        YYJSON_WRITE_PRETTY_TWO_SPACES | YYJSON_WRITE_NEWLINE_AT_END;
+
     if (chunk == NULL || stream == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_json_stream_t writer;
-    nmo_json_stream_init(&writer, stream, true);
+    doc = yyjson_mut_doc_new(NULL);
+    if (!doc) {
+        return NMO_ERR_NOMEM;
+    }
 
-    if (json_write_chunk(&writer, chunk, include_data) != NMO_OK) {
+    root = json_build_chunk(doc, chunk, include_data);
+    if (!root) {
+        yyjson_mut_doc_free(doc);
+        return NMO_ERR_NOMEM;
+    }
+    yyjson_mut_doc_set_root(doc, root);
+
+    if (!yyjson_mut_write_fp(stream, doc, flags, NULL, NULL)) {
+        yyjson_mut_doc_free(doc);
         return NMO_ERR_CANT_WRITE_FILE;
     }
-    if (fputc('\n', stream) == EOF) {
-        return NMO_ERR_CANT_WRITE_FILE;
-    }
+
+    yyjson_mut_doc_free(doc);
     return NMO_OK;
 }

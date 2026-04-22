@@ -33,7 +33,6 @@ extern "C" {
 typedef struct nmo_context nmo_context_t;
 typedef struct nmo_session nmo_session_t;
 typedef struct nmo_behavior_state nmo_behavior_state_t;
-typedef struct nmo_json_stream nmo_json_stream_t;
 
 /* ============================================================================
  * Script discovery
