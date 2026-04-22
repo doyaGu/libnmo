@@ -87,51 +87,16 @@ else()
     endif()
 endif()
 
-# Find dependencies
-# Use miniz
-set(MINIZ_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/miniz")
-if(EXISTS "${MINIZ_DIR}/miniz.h")
-    message(STATUS "Using miniz from parent project: ${MINIZ_DIR}")
-    set(ZLIB_FOUND TRUE)
-    set(ZLIB_INCLUDE_DIRS "${MINIZ_DIR}")
-    set(ZLIB_LIBRARIES miniz)
+# Find bundled third-party dependencies through one shared entrypoint.
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/deps" "${CMAKE_CURRENT_BINARY_DIR}/deps" EXCLUDE_FROM_ALL)
 
-    # Add miniz as a subdirectory if not already added
-    if(NOT TARGET miniz)
-        add_subdirectory("${MINIZ_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/miniz" EXCLUDE_FROM_ALL)
-    endif()
+set(ZLIB_FOUND TRUE)
+set(ZLIB_INCLUDE_DIRS "${NMO_MINIZ_DIR}")
+set(ZLIB_LIBRARIES miniz)
 
-    # Silence warnings from third-party miniz sources
-    if(TARGET miniz)
-        if(MSVC)
-            target_compile_options(miniz PRIVATE /w)
-        else()
-            target_compile_options(miniz PRIVATE -w)
-        endif()
-    endif()
-else()
-    # Fall back to system ZLIB if miniz not available
-    find_package(ZLIB REQUIRED)
-endif()
-
-# Use yyjson for JSON export
-set(YYJSON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/yyjson")
-if(EXISTS "${YYJSON_DIR}/src/yyjson.h")
-    message(STATUS "Using yyjson from: ${YYJSON_DIR}")
-    # Add yyjson as a subdirectory if not already added
-    if(NOT TARGET yyjson)
-        set(YYJSON_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-        set(YYJSON_BUILD_DOC OFF CACHE BOOL "" FORCE)
-        set(YYJSON_BUILD_MISC OFF CACHE BOOL "" FORCE)
-        add_subdirectory("${YYJSON_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/yyjson" EXCLUDE_FROM_ALL)
-    endif()
-    set(YYJSON_FOUND TRUE)
-    set(YYJSON_INCLUDE_DIRS "${YYJSON_DIR}/src")
-    set(YYJSON_LIBRARIES yyjson)
-else()
-    message(WARNING "yyjson not found, JSON export features will be limited")
-    set(YYJSON_FOUND FALSE)
-endif()
+set(YYJSON_FOUND TRUE)
+set(YYJSON_INCLUDE_DIRS "${NMO_YYJSON_DIR}/src")
+set(YYJSON_LIBRARIES yyjson)
 
 # Include directories
 include_directories(${PROJECT_SOURCE_DIR}/include)
@@ -217,6 +182,7 @@ set(NMO_FORMAT_SOURCES
     src/format/interface_chunk.c
     src/format/interface_chunk_types.c
     src/format/interface_edit.c
+    src/format/interface_view.c
     src/format/obj_parser.c
 )
 
@@ -227,7 +193,9 @@ set(NMO_OBJECT_SOURCES
     src/object/object_enums.c
     src/object/object_structs.c
     src/object/object_types.c
+    src/object/object_iter.c
     src/object/object_repository.c
+    src/object/ref_query.c
     src/object/object_query.c
     src/object/object_query_index.c
     src/object/object_index.c
@@ -302,6 +270,7 @@ set(NMO_TYPE_SOURCES
     src/type/builtin_trigonometry.c
     src/type/builtin_vector.c
     src/type/nmo_reflection.c
+    src/type/type_view.c
     src/type/type_query.c
 )
 
@@ -334,8 +303,10 @@ set(NMO_SESSION_SOURCES
     src/session/save_id_remap.c
     src/session/id_sanitizer.c
     src/session/reference_resolver.c
+    src/session/session_query.c
     src/session/session_edit.c
     src/session/runtime_kernel.c
+    src/session/runtime_result.c
     src/session/runtime_ref_remap.c
     src/session/runtime_delete.c
 )
@@ -357,6 +328,8 @@ set(NMO_APP_SOURCES
     src/app/chunk_index.c
     src/app/object_hierarchy.c
     src/app/object_diff.c
+    src/app/report_result.c
+    src/app/report_view.c
     src/app/export_dot.c
 )
 
@@ -367,10 +340,30 @@ set(NMO_BEHAVIOR_SOURCES
     src/behavior/behavior_graph.c
     src/behavior/behavior_index.c
     src/behavior/behavior_rewrite.c
+    src/behavior/behavior_view.c
     src/behavior/script_edit.c
     src/behavior/script_edit_graph.c
+    src/behavior/script_executor.c
+    src/behavior/script_trace_view.c
+    src/behavior/script_view.c
     src/behavior/script_walker.c
     src/behavior/param_value.c
+)
+
+# Lua platform sources
+set(NMO_LUA_SOURCES
+    src/lua/lua_bindings_core.c
+    src/lua/lua_bindings_behavior.c
+    src/lua/lua_bindings_format.c
+    src/lua/lua_bindings_app.c
+    src/lua/lua_bindings_object.c
+    src/lua/lua_bindings_runtime.c
+    src/lua/lua_bindings_session.c
+    src/lua/lua_bindings_type.c
+    src/lua/lua_handles.c
+    src/lua/lua_module.c
+    src/lua/lua_runtime.c
+    src/lua/lua_value.c
 )
 
 set(NMO_JSON_SOURCES
@@ -390,10 +383,11 @@ set(NMO_SOURCES
     ${NMO_DSL_SOURCES}
     ${NMO_SESSION_SOURCES}
     ${NMO_BEHAVIOR_SOURCES}
+    ${NMO_LUA_SOURCES}
     ${NMO_EXTENSION_SOURCES}
     ${NMO_APP_SOURCES}
     ${NMO_JSON_SOURCES}
-    ${YYJSON_DIR}/src/yyjson.c
+    ${NMO_YYJSON_DIR}/src/yyjson.c
 )
 
 # Create library
@@ -407,8 +401,9 @@ target_compile_definitions(nmo PUBLIC $<$<CONFIG:Debug>:NMO_ENABLE_DEBUG_ASSERTS
 
 # Link dependencies
 target_link_libraries(nmo PUBLIC ${ZLIB_LIBRARIES})
+target_link_libraries(nmo PUBLIC lua::lua)
 
-target_include_directories(nmo PRIVATE ${PROJECT_SOURCE_DIR}/deps ${YYJSON_DIR}/src)
+target_include_directories(nmo PRIVATE ${PROJECT_SOURCE_DIR}/deps ${NMO_YYJSON_DIR}/src)
 
 # Enable threads support
 find_package(Threads REQUIRED)

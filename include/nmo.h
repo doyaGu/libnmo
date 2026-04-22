@@ -138,6 +138,7 @@
 #include "session/nmo_object_system.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_reference_resolver.h"
+#include "session/nmo_runtime_result.h"
 #include "session/nmo_session_edit.h"
 #include "session/nmo_session_pipeline.h"
 
@@ -151,6 +152,8 @@
 // Behavior layer
 #include "behavior/nmo_behavior_view.h"
 #include "behavior/nmo_behavior_graph.h"
+#include "behavior/nmo_script_executor.h"
+#include "behavior/nmo_script_trace_view.h"
 #include "behavior/nmo_script_view.h"
 
 // App layer
@@ -165,8 +168,16 @@
 #include "app/nmo_object_diff.h"
 #include "app/nmo_object_hierarchy.h"
 #include "app/nmo_report_result.h"
+#include "app/nmo_report_view.h"
 #include "app/nmo_object_summary.h"
 #include "type/nmo_type_query.h"
+
+// Lua platform layer
+#include "lua/nmo_lua_module.h"
+#include "lua/nmo_lua_runtime.h"
+#include "lua/nmo_lua_bindings.h"
+#include "lua/nmo_lua_handles.h"
+#include "lua/nmo_lua_value.h"
 
 #ifdef __cplusplus
 extern "C" {
