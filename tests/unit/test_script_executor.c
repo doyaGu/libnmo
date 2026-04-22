@@ -1,6 +1,7 @@
 #include "test_framework.h"
 
 #include "app/nmo_save.h"
+#include "behavior/nmo_behavior_execute.h"
 #include "behavior/nmo_behavior_view.h"
 #include "behavior/nmo_behavior_index.h"
 #include "behavior/nmo_script_edit.h"
@@ -622,6 +623,35 @@ TEST(script_executor, dry_run_rolls_back_after_validation) {
     nmo_context_release(ctx);
 }
 
+TEST(script_executor, behavior_execute_owner_wraps_script_executor) {
+    const char *input_path = NMO_SCRIPT_INTERFACE_FIXTURE;
+    const char *output_path = "test_behavior_execute_owner.cmo";
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
+    nmo_behavior_execute_result_t result = {0};
+    executor_add_io_action_t action = {0};
+
+    ASSERT_NOT_NULL(ctx);
+    remove_file_if_exists(output_path);
+    action.behavior_id = 229u;
+    action.kind = NMO_SCRIPT_EDIT_IO_INPUT;
+    action.name = "OwnerIo";
+    options.label = "behavior-execute-owner";
+    ASSERT_EQ(NMO_OK,
+              nmo_behavior_execute(ctx,
+                                   input_path,
+                                   output_path,
+                                   &options,
+                                   add_io_action,
+                                   &action,
+                                   &result));
+    ASSERT_TRUE(action.io_id != 0u);
+    ASSERT_TRUE(file_exists(output_path));
+    remove_file_if_exists(output_path);
+
+    nmo_context_release(ctx);
+}
+
 TEST(script_executor, executor_remove_io_canonicalize_roundtrips_fixture) {
     const char *io_add_path = "test_script_executor_interface_io_add.cmo";
     const char *iface_io_path = "test_script_executor_interface_io_present.cmo";
@@ -797,6 +827,7 @@ TEST(script_executor, executor_remove_node_canonicalize_roundtrips_fixture) {
 }
 
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(script_executor, behavior_execute_owner_wraps_script_executor);
     REGISTER_TEST(script_executor, executes_multiple_actions_and_saves_once);
     REGISTER_TEST(script_executor, rolls_back_on_action_error_and_skips_output);
     REGISTER_TEST(script_executor, dry_run_rolls_back_after_validation);

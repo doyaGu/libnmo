@@ -1,4 +1,5 @@
 #include "behavior/nmo_script_executor.h"
+#include "behavior/nmo_behavior_execute.h"
 
 #include "app/nmo_save.h"
 #include "lua/nmo_lua_bindings.h"
@@ -101,6 +102,11 @@ NMO_API nmo_script_executor_options_t nmo_script_executor_options_default(void)
         NMO_SCRIPT_EDIT_VALIDATE_INTERFACE |
         NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY;
     return options;
+}
+
+NMO_API nmo_behavior_execute_options_t nmo_behavior_execute_options_default(void)
+{
+    return nmo_script_executor_options_default();
 }
 
 NMO_API nmo_context_t *nmo_script_executor_context(nmo_script_executor_t *executor)
@@ -238,4 +244,22 @@ NMO_API nmo_status_t nmo_script_executor_execute(
                            resolved_options.save_options);
     nmo_script_executor_destroy(executor);
     return status;
+}
+
+NMO_API nmo_status_t nmo_behavior_execute(
+    nmo_context_t *ctx,
+    const char *input_path,
+    const char *output_path,
+    const nmo_behavior_execute_options_t *options,
+    nmo_behavior_execute_action_fn action,
+    void *user_data,
+    nmo_behavior_execute_result_t *out_result)
+{
+    return nmo_script_executor_execute(ctx,
+                                       input_path,
+                                       output_path,
+                                       options,
+                                       action,
+                                       user_data,
+                                       out_result);
 }

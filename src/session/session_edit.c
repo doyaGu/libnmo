@@ -5,6 +5,7 @@
 
 #include "session/nmo_session_edit.h"
 
+#include "behavior/nmo_behavior_edit.h"
 #include "object/nmo_object_edit.h"
 #include "runtime/nmo_workspace.h"
 #include "runtime_internal.h"
@@ -486,6 +487,32 @@ nmo_status_t nmo_object_edit_rename(
         (nmo_session_edit_t *)edit,
         object_id,
         new_name);
+}
+
+nmo_status_t nmo_behavior_edit_add_link(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t parent_behavior_id,
+    nmo_object_id_t from_io_id,
+    nmo_object_id_t to_io_id,
+    int16_t activation_delay,
+    nmo_object_id_t *out_link_id)
+{
+    return nmo_session_edit_add_behavior_link(
+        (nmo_session_edit_t *)edit,
+        parent_behavior_id,
+        from_io_id,
+        to_io_id,
+        activation_delay,
+        out_link_id);
+}
+
+nmo_status_t nmo_behavior_edit_mark_interface(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t behavior_id)
+{
+    return nmo_session_edit_mark_behavior_interface(
+        (nmo_session_edit_t *)edit,
+        behavior_id);
 }
 
 nmo_status_t nmo_session_edit_commit(nmo_session_edit_t *edit)

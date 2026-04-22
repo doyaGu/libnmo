@@ -1,7 +1,9 @@
 #include "test_framework.h"
 
+#include "behavior/nmo_behavior_edit.h"
 #include "behavior/nmo_script_edit.h"
 #include "behavior/nmo_behavior_index.h"
+#include "runtime/nmo_workspace.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session_edit.h"
 #include "session/nmo_session.h"
@@ -274,6 +276,37 @@ TEST(script_edit_transaction, rollback_restores_original_state_after_validation_
 
     nmo_script_edit_rollback(tx);
     ASSERT_EQ(0u, child_state->parent_id);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(script_edit_transaction, behavior_edit_add_link_through_workspace_owner)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    nmo_session_t *session = NULL;
+    nmo_workspace_t *workspace = NULL;
+    nmo_workspace_edit_t *edit = NULL;
+    script_control_fixture_t fixture;
+    nmo_object_id_t link_id = 0;
+
+    ASSERT_NOT_NULL(ctx);
+    session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    workspace = (nmo_workspace_t *)session;
+
+    setup_script_control_fixture(session, &fixture);
+
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "seed-link", &edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_behavior_edit_add_link(edit,
+                                         fixture.root_behavior_id,
+                                         fixture.source_output_id,
+                                         fixture.target_input_id,
+                                         1,
+                                         &link_id));
+    ASSERT_TRUE(link_id != 0u);
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -595,6 +628,8 @@ TEST(script_edit_transaction,
 }
 
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(script_edit_transaction,
+                  behavior_edit_add_link_through_workspace_owner);
     REGISTER_TEST(script_edit_transaction,
                   rollback_restores_original_state_after_validation_failure);
     REGISTER_TEST(script_edit_transaction,
