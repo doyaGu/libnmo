@@ -475,9 +475,9 @@ int nmo_core_set_fields(nmo_cmd_ctx_t *c, nmo_object_id_t object_id,
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_session_edit_t *edit = NULL;
+    nmo_workspace_edit_t *edit = NULL;
     nmo_status_t begin_rc =
-        nmo_session_edit_begin(c->session, "cli set fields", &edit);
+        nmo_workspace_edit_begin((nmo_workspace_t *)c->session, "cli set fields", &edit);
     if (begin_rc != NMO_OK) {
         fprintf(stderr, "Error: Failed to begin edit: %s\n",
                 nmo_error_string(begin_rc));
@@ -500,7 +500,7 @@ int nmo_core_set_fields(nmo_cmd_ctx_t *c, nmo_object_id_t object_id,
             .value_str = vstr,
         };
         nmo_status_t rc =
-            nmo_session_edit_set_object_fields(edit, object_id, &field, 1, NULL);
+            nmo_object_edit_set_fields(edit, object_id, &field, 1, NULL);
         if (rc != NMO_OK) {
             fprintf(stderr, "Error: Failed to set '%s' = '%s': %s\n",
                     fname, vstr, nmo_error_string(rc));
@@ -522,9 +522,9 @@ int nmo_core_set_fields(nmo_cmd_ctx_t *c, nmo_object_id_t object_id,
     }
 
     if (dry_run || result.failed > 0) {
-        nmo_session_edit_rollback(edit);
+        nmo_workspace_edit_rollback(edit);
     } else {
-        nmo_status_t commit_rc = nmo_session_edit_commit(edit);
+        nmo_status_t commit_rc = nmo_workspace_edit_commit(edit);
         if (commit_rc != NMO_OK) {
             fprintf(stderr, "Error: Failed to commit edit: %s\n",
                     nmo_error_string(commit_rc));

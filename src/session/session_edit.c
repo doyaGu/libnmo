@@ -5,6 +5,7 @@
 
 #include "session/nmo_session_edit.h"
 
+#include "object/nmo_object_edit.h"
 #include "runtime/nmo_workspace.h"
 #include "runtime_internal.h"
 
@@ -459,6 +460,32 @@ nmo_status_t nmo_workspace_edit_begin(
         (nmo_session_t *)workspace,
         label,
         (nmo_session_edit_t **)out_edit);
+}
+
+nmo_status_t nmo_object_edit_set_fields(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    const nmo_session_field_edit_t *fields,
+    size_t field_count,
+    nmo_session_field_edit_result_t *out_result)
+{
+    return nmo_session_edit_set_object_fields(
+        (nmo_session_edit_t *)edit,
+        object_id,
+        fields,
+        field_count,
+        out_result);
+}
+
+nmo_status_t nmo_object_edit_rename(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    const char *new_name)
+{
+    return nmo_session_edit_rename_object(
+        (nmo_session_edit_t *)edit,
+        object_id,
+        new_name);
 }
 
 nmo_status_t nmo_session_edit_commit(nmo_session_edit_t *edit)

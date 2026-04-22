@@ -7,6 +7,7 @@
 #include "nmo.h"
 
 #include "app/nmo_object_import.h"
+#include "object/nmo_object_edit.h"
 #include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 
@@ -610,6 +611,49 @@ TEST(object_import_api, snapshot_inline_array_imports_all_items) {
     nmo_context_release(ctx);
 }
 
+TEST(object_import_api, object_owner_import_wrapper_imports_snapshot) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_workspace_t *workspace = (nmo_workspace_t *)nmo_session_create(ctx);
+    ASSERT_NOT_NULL(workspace);
+    nmo_session_t *session = (nmo_session_t *)workspace;
+
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(registry);
+    nmo_status_t status = nmo_type_registry_begin_update(registry);
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_TRUE(register_import_inline_array_type(registry));
+
+    nmo_object_t *obj = create_import_inline_array_object(session);
+    ASSERT_NOT_NULL(obj);
+    import_inline_array_state_t *state = (import_inline_array_state_t *)nmo_object_get_state(obj);
+    ASSERT_NOT_NULL(state);
+
+    const char json[] =
+        "{\"objects\":[{\"id\":9101,\"fields\":["
+        "{\"name\":\"values\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
+        "\"count\":2,\"value\":[8,9],\"items\":[8,9]}]}]}";
+    nmo_import_result_t result;
+    status = nmo_object_edit_import_json(
+        workspace,
+        json,
+        0,
+        0,
+        &result);
+
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_EQ(1u, result.objects_updated);
+    ASSERT_EQ(1u, result.fields_written);
+    ASSERT_EQ(0u, result.errors);
+    ASSERT_EQ(2u, nmo_array_size(&state->values));
+    ASSERT_EQ(8u, *(uint32_t *)nmo_array_get(&state->values, 0));
+    ASSERT_EQ(9u, *(uint32_t *)nmo_array_get(&state->values, 1));
+
+    nmo_array_dispose(&state->values);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_import_api, raw_pointer_array_missing_count_metadata_does_not_mutate);
     REGISTER_TEST(object_import_api, old_flat_map_schema_is_rejected);
@@ -619,4 +663,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_import_api, raw_pointer_array_parse_failure_does_not_mutate);
     REGISTER_TEST(object_import_api, inline_array_parse_failure_does_not_mutate);
     REGISTER_TEST(object_import_api, snapshot_inline_array_imports_all_items);
+    REGISTER_TEST(object_import_api, object_owner_import_wrapper_imports_snapshot);
 TEST_MAIN_END()

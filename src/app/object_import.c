@@ -7,6 +7,7 @@
  */
 
 #include "app/nmo_object_import.h"
+#include "object/nmo_object_edit.h"
 #include "session/nmo_session_edit.h"
 
 #include "session/nmo_session.h"
@@ -1183,4 +1184,40 @@ nmo_status_t nmo_object_import_json(
 
     yyjson_doc_free(doc);
     return NMO_OK;
+}
+
+nmo_status_t nmo_object_edit_import_json(
+    nmo_workspace_t *workspace,
+    const char *json_data,
+    size_t json_size,
+    uint32_t flags,
+    nmo_import_result_t *result)
+{
+    if (workspace == NULL || json_data == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_session_t *session = (nmo_session_t *)workspace;
+    nmo_context_t *ctx = nmo_session_get_context(session);
+    const nmo_type_registry_t *registry =
+        ctx != NULL ? nmo_context_get_type_registry(ctx) : NULL;
+    if (registry == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
+    if (arena == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    nmo_status_t status = nmo_object_import_json(
+        session,
+        registry,
+        arena,
+        json_data,
+        json_size,
+        flags,
+        result);
+    nmo_arena_destroy(arena);
+    return status;
 }

@@ -159,20 +159,20 @@ static nmo_status_t nmo_cmd_object_rename_with_edit(
     nmo_object_id_t object_id,
     const char *new_name)
 {
-    nmo_session_edit_t *edit = NULL;
+    nmo_workspace_edit_t *edit = NULL;
     nmo_status_t rc =
-        nmo_session_edit_begin(c->session, "cli object rename", &edit);
+        nmo_workspace_edit_begin((nmo_workspace_t *)c->session, "cli object rename", &edit);
     if (rc != NMO_OK) {
         return rc;
     }
 
-    rc = nmo_session_edit_rename_object(edit, object_id, new_name);
+    rc = nmo_object_edit_rename(edit, object_id, new_name);
     if (rc != NMO_OK) {
-        nmo_session_edit_rollback(edit);
+        nmo_workspace_edit_rollback(edit);
         return rc;
     }
 
-    return nmo_session_edit_commit(edit);
+    return nmo_workspace_edit_commit(edit);
 }
 
 
@@ -1984,22 +1984,13 @@ static int object_import_mutate(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
-    if (!arena) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
     memset(&args->result, 0, sizeof(args->result));
-    nmo_status_t st = nmo_object_import_json(
-        c->session,
-        c->registry,
-        arena,
+    nmo_status_t st = nmo_object_edit_import_json(
+        (nmo_workspace_t *)c->session,
         args->json_data,
         args->json_size,
         args->import_flags,
         &args->result);
-
-    nmo_arena_destroy(arena);
 
     if (st != NMO_OK) {
         fprintf(stderr, "Error: Import failed: %s\n", nmo_error_string(st));
