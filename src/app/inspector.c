@@ -8,6 +8,9 @@
 #include "app/nmo_inspector.h"
 #include "app/nmo_ansi.h"
 #include "app/nmo_hexdump.h"
+#include "chunk/nmo_chunk_inspect.h"
+#include "export/nmo_export_json.h"
+#include "export/nmo_export_text.h"
 #include "core/nmo_error.h"
 #include "core/nmo_hex.h"
 #include "format/nmo_chunk.h"
@@ -194,6 +197,14 @@ nmo_status_t nmo_inspector_dump_chunk(
     return dump_chunk_recursive(chunk, stream, options, 0);
 }
 
+nmo_status_t nmo_export_text_chunk(
+    const nmo_chunk_t *chunk,
+    FILE *stream,
+    const nmo_export_text_chunk_options_t *options
+) {
+    return nmo_inspector_dump_chunk(chunk, stream, options);
+}
+
 nmo_status_t nmo_inspector_validate_chunk(
     const nmo_chunk_t *chunk,
     nmo_chunk_validation_t *result
@@ -261,6 +272,13 @@ nmo_status_t nmo_inspector_validate_chunk(
     }
 
     return NMO_OK;
+}
+
+nmo_status_t nmo_chunk_inspect_validate(
+    const nmo_chunk_t *chunk,
+    nmo_chunk_validation_t *result
+) {
+    return nmo_inspector_validate_chunk(chunk, result);
 }
 
 int nmo_inspector_hex_dump(
@@ -497,4 +515,12 @@ nmo_status_t nmo_inspector_export_json(
 
     yyjson_mut_doc_free(doc);
     return NMO_OK;
+}
+
+nmo_status_t nmo_export_json_chunk(
+    const nmo_chunk_t *chunk,
+    FILE *stream,
+    bool include_data
+) {
+    return nmo_inspector_export_json(chunk, stream, include_data);
 }

@@ -6,6 +6,9 @@
  */
 
 #include "app/nmo_stats.h"
+#include "document/nmo_document_stats.h"
+#include "export/nmo_export_json.h"
+#include "export/nmo_export_text.h"
 #include "session/nmo_session.h"
 #include "session/nmo_reference_resolver.h"
 #include "format/nmo_object.h"
@@ -189,6 +192,13 @@ nmo_status_t nmo_stats_collect(
     return NMO_OK;
 }
 
+nmo_status_t nmo_document_stats_collect(
+    nmo_document_t *document,
+    nmo_file_stats_t *out_stats
+) {
+    return nmo_stats_collect((nmo_session_t *)document, out_stats);
+}
+
 void nmo_stats_print(
     const nmo_file_stats_t *stats,
     FILE *output
@@ -255,6 +265,13 @@ void nmo_stats_print(
     }
 }
 
+void nmo_export_text_document_stats(
+    const nmo_file_stats_t *stats,
+    FILE *stream
+) {
+    nmo_stats_print(stats, stream);
+}
+
 void nmo_stats_print_summary(
     const nmo_file_stats_t *stats,
     FILE *output
@@ -271,7 +288,14 @@ void nmo_stats_print_summary(
            stats->chunks.total_chunks,
            stats->chunks.total_chunks > 0
                ? (stats->chunks.compressed_chunks * 100.0) / stats->chunks.total_chunks
-               : 0.0);
+                : 0.0);
+}
+
+void nmo_export_text_document_stats_summary(
+    const nmo_file_stats_t *stats,
+    FILE *stream
+) {
+    nmo_stats_print_summary(stats, stream);
 }
 
 nmo_status_t nmo_stats_export_json(
@@ -398,4 +422,11 @@ nmo_status_t nmo_stats_export_json(
 
     yyjson_mut_doc_free(doc);
     return 0;
+}
+
+nmo_status_t nmo_export_json_document_stats(
+    const nmo_file_stats_t *stats,
+    const char *output_path
+) {
+    return nmo_stats_export_json(stats, output_path);
 }
