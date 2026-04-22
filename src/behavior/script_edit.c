@@ -46,6 +46,9 @@ struct nmo_script_edit_tx {
     nmo_object_id_t *deferred_destroy_ids;
     size_t deferred_destroy_count;
     size_t deferred_destroy_capacity;
+    nmo_ref_edge_t *baseline_broken_refs;
+    size_t baseline_broken_ref_count;
+    nmo_session_behavior_interface_diagnostics_t baseline_interface_diag;
     script_edit_removed_io_ref_t *removed_io_refs;
     size_t removed_io_ref_count;
     size_t removed_io_ref_capacity;
@@ -56,9 +59,151 @@ static void script_edit_tx_destroy(nmo_script_edit_tx_t *tx)
 {
     if (tx) {
         free(tx->deferred_destroy_ids);
+        free(tx->baseline_broken_refs);
         free(tx->removed_io_refs);
     }
     free(tx);
+}
+
+static bool script_edit_ref_edge_equals(const nmo_ref_edge_t *lhs,
+                                        const nmo_ref_edge_t *rhs)
+{
+    const char *lhs_field = NULL;
+    const char *rhs_field = NULL;
+
+    if (!lhs || !rhs) {
+        return lhs == rhs;
+    }
+
+    lhs_field = lhs->field_path ? lhs->field_path : "";
+    rhs_field = rhs->field_path ? rhs->field_path : "";
+    return lhs->from == rhs->from &&
+           lhs->to == rhs->to &&
+           lhs->kind == rhs->kind &&
+           lhs->index == rhs->index &&
+           strcmp(lhs_field, rhs_field) == 0;
+}
+
+static bool script_edit_broken_ref_set_matches(const nmo_ref_edge_t *current_edges,
+                                               size_t current_count,
+                                               const nmo_ref_edge_t *baseline_edges,
+                                               size_t baseline_count)
+{
+    bool *matched = NULL;
+    bool same = true;
+
+    if (current_count != baseline_count) {
+        return false;
+    }
+    if (current_count == 0u) {
+        return true;
+    }
+
+    matched = (bool *)calloc(current_count, sizeof(*matched));
+    if (!matched) {
+        return false;
+    }
+
+    for (size_t i = 0; i < baseline_count && same; ++i) {
+        bool found = false;
+        for (size_t j = 0; j < current_count; ++j) {
+            if (matched[j]) {
+                continue;
+            }
+            if (script_edit_ref_edge_equals(&baseline_edges[i], &current_edges[j])) {
+                matched[j] = true;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            same = false;
+        }
+    }
+
+    free(matched);
+    return same;
+}
+
+static nmo_status_t script_edit_capture_broken_ref_baseline(nmo_script_edit_tx_t *tx)
+{
+    nmo_ref_graph_t *ref_graph = NULL;
+    nmo_ref_edge_t *broken_edges = NULL;
+    size_t broken_count = 0u;
+    nmo_status_t rc = NMO_OK;
+
+    if (!tx || !tx->session) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    ref_graph = nmo_session_get_ref_graph(tx->session);
+    if (!ref_graph) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    rc = nmo_ref_graph_validate(ref_graph, &broken_edges, &broken_count);
+    if (rc != NMO_OK && rc != NMO_ERR_VALIDATION_FAILED) {
+        return rc;
+    }
+
+    if (broken_count == 0u) {
+        return NMO_OK;
+    }
+
+    tx->baseline_broken_refs = (nmo_ref_edge_t *)calloc(
+        broken_count, sizeof(*tx->baseline_broken_refs));
+    if (!tx->baseline_broken_refs) {
+        return NMO_ERR_NOMEM;
+    }
+    memcpy(tx->baseline_broken_refs,
+           broken_edges,
+           broken_count * sizeof(*tx->baseline_broken_refs));
+    tx->baseline_broken_ref_count = broken_count;
+    return NMO_OK;
+}
+
+static bool script_edit_interface_diag_matches(
+    const nmo_session_behavior_interface_diagnostics_t *lhs,
+    const nmo_session_behavior_interface_diagnostics_t *rhs)
+{
+    if (!lhs || !rhs) {
+        return lhs == rhs;
+    }
+
+    return lhs->attempted == rhs->attempted &&
+           lhs->available == rhs->available &&
+           lhs->status == rhs->status &&
+           lhs->attempted_count == rhs->attempted_count &&
+           lhs->parsed_count == rhs->parsed_count &&
+           lhs->failed_count == rhs->failed_count &&
+           lhs->skipped_no_arena_count == rhs->skipped_no_arena_count &&
+           lhs->allocation_failure_count == rhs->allocation_failure_count &&
+           lhs->first_error_object_id == rhs->first_error_object_id &&
+           lhs->first_error_file_id == rhs->first_error_file_id &&
+           lhs->first_error_chunk_version == rhs->first_error_chunk_version &&
+           lhs->first_error_data_version == rhs->first_error_data_version &&
+           lhs->first_error_reader_offset == rhs->first_error_reader_offset &&
+           lhs->first_error_chunk_dwords == rhs->first_error_chunk_dwords;
+}
+
+static nmo_status_t script_edit_capture_interface_diag_baseline(
+    nmo_script_edit_tx_t *tx)
+{
+    nmo_status_t rc = NMO_OK;
+
+    if (!tx || !tx->session) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    rc = nmo_session_ensure_behavior_acceleration(tx->session);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    memset(&tx->baseline_interface_diag, 0, sizeof(tx->baseline_interface_diag));
+    nmo_session_get_behavior_interface_diagnostics(tx->session,
+                                                   &tx->baseline_interface_diag);
+    return NMO_OK;
 }
 
 static void script_edit_note_change(nmo_script_edit_tx_t *tx)
@@ -1197,6 +1342,24 @@ NMO_API nmo_status_t nmo_script_edit_begin(nmo_context_t *ctx,
         script_edit_tx_destroy(tx);
         return rc;
     }
+    rc = script_edit_capture_broken_ref_baseline(tx);
+    if (rc != NMO_OK) {
+        if (tx->edit) {
+            nmo_session_edit_rollback(tx->edit);
+            tx->edit = NULL;
+        }
+        script_edit_tx_destroy(tx);
+        return rc;
+    }
+    rc = script_edit_capture_interface_diag_baseline(tx);
+    if (rc != NMO_OK) {
+        if (tx->edit) {
+            nmo_session_edit_rollback(tx->edit);
+            tx->edit = NULL;
+        }
+        script_edit_tx_destroy(tx);
+        return rc;
+    }
 
     *out_tx = tx;
     return NMO_OK;
@@ -1285,15 +1448,25 @@ NMO_API nmo_status_t nmo_script_edit_validate(nmo_script_edit_tx_t *tx,
     }
 
     if ((validation_flags & NMO_SCRIPT_EDIT_VALIDATE_REFERENCES) != 0u) {
+        nmo_ref_edge_t *broken_edges = NULL;
         ref_graph = nmo_session_get_ref_graph(tx->session);
         if (!ref_graph) {
             script_edit_note_error(tx);
             return NMO_ERR_INVALID_STATE;
         }
-        rc = nmo_ref_graph_validate(ref_graph, NULL, &broken_ref_count);
+        rc = nmo_ref_graph_validate(ref_graph, &broken_edges, &broken_ref_count);
         if (rc != NMO_OK || broken_ref_count != 0u) {
-            script_edit_note_error(tx);
-            return rc != NMO_OK ? rc : NMO_ERR_VALIDATION_FAILED;
+            bool inherited_broken_refs =
+                (rc == NMO_ERR_VALIDATION_FAILED || broken_ref_count != 0u) &&
+                script_edit_broken_ref_set_matches(
+                    broken_edges,
+                    broken_ref_count,
+                    tx->baseline_broken_refs,
+                    tx->baseline_broken_ref_count);
+            if (!inherited_broken_refs) {
+                script_edit_note_error(tx);
+                return rc != NMO_OK ? rc : NMO_ERR_VALIDATION_FAILED;
+            }
         }
     }
 
@@ -1330,6 +1503,10 @@ NMO_API nmo_status_t nmo_script_edit_validate(nmo_script_edit_tx_t *tx,
         nmo_session_get_behavior_interface_diagnostics(tx->session,
                                                        &interface_diag);
         if (interface_diag.attempted && interface_diag.status != NMO_OK) {
+            if (script_edit_interface_diag_matches(&interface_diag,
+                                                   &tx->baseline_interface_diag)) {
+                return NMO_OK;
+            }
             script_edit_note_error(tx);
             return interface_diag.status;
         }

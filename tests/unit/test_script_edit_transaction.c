@@ -513,6 +513,87 @@ TEST(script_edit_transaction,
     nmo_context_release(ctx);
 }
 
+TEST(script_edit_transaction,
+     reference_validation_allows_preexisting_broken_refs_for_value_only_parameter_edit)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_ref_graph_t *ref_graph = NULL;
+    nmo_ref_edge_t *broken_edges = NULL;
+    size_t broken_count = 0u;
+
+    ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = "data" });
+    ASSERT_NOT_NULL(ctx);
+    session = nmo_session_load(ctx, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+    ASSERT_NOT_NULL(session);
+
+    ref_graph = nmo_session_get_ref_graph(session);
+    ASSERT_NOT_NULL(ref_graph);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_ref_graph_validate(ref_graph, &broken_edges, &broken_count));
+    ASSERT_EQ(2u, broken_count);
+
+    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(ctx, session, "param-edit", &tx));
+    ASSERT_NOT_NULL(tx);
+    ASSERT_EQ(NMO_OK, nmo_script_edit_set_parameter_value(tx, 46u, "520"));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES));
+
+    nmo_script_edit_rollback(tx);
+    nmo_session_close_with_context(ctx, session);
+}
+
+TEST(script_edit_transaction,
+     reference_validation_rejects_new_broken_ref_beyond_preexisting_baseline)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    nmo_script_edit_tx_t *tx = NULL;
+
+    ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = "data" });
+    ASSERT_NOT_NULL(ctx);
+    session = nmo_session_load(ctx, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+    ASSERT_NOT_NULL(session);
+
+    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(ctx, session, "param-edit-invalid", &tx));
+    ASSERT_NOT_NULL(tx);
+    ASSERT_EQ(NMO_OK, nmo_script_edit_set_parameter_value(tx, 46u, "999999"));
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES));
+
+    nmo_script_edit_rollback(tx);
+    nmo_session_close_with_context(ctx, session);
+}
+
+TEST(script_edit_transaction,
+     interface_validation_allows_preexisting_diagnostics_for_value_only_parameter_edit)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_session_behavior_interface_diagnostics_t diag = {0};
+
+    ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = "data" });
+    ASSERT_NOT_NULL(ctx);
+    session = nmo_session_load(ctx, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+    ASSERT_NOT_NULL(session);
+
+    ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session));
+    nmo_session_get_behavior_interface_diagnostics(session, &diag);
+    ASSERT_TRUE(diag.attempted);
+    ASSERT_NE(NMO_OK, diag.status);
+
+    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(ctx, session, "param-edit-iface", &tx));
+    ASSERT_NOT_NULL(tx);
+    ASSERT_EQ(NMO_OK, nmo_script_edit_set_parameter_value(tx, 46u, "520"));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_INTERFACE));
+
+    nmo_script_edit_rollback(tx);
+    nmo_session_close_with_context(ctx, session);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(script_edit_transaction,
                   rollback_restores_original_state_after_validation_failure);
@@ -524,4 +605,10 @@ TEST_MAIN_BEGIN()
                   add_behavior_link_rejects_reversed_child_endpoint_directions);
     REGISTER_TEST(script_edit_transaction,
                   rewire_behavior_link_rejects_reversed_child_endpoint_directions);
+    REGISTER_TEST(script_edit_transaction,
+                  reference_validation_allows_preexisting_broken_refs_for_value_only_parameter_edit);
+    REGISTER_TEST(script_edit_transaction,
+                  reference_validation_rejects_new_broken_ref_beyond_preexisting_baseline);
+    REGISTER_TEST(script_edit_transaction,
+                  interface_validation_allows_preexisting_diagnostics_for_value_only_parameter_edit);
 TEST_MAIN_END()
