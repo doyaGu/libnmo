@@ -106,6 +106,8 @@
 #include "object/nmo_ref_query.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_query.h"
+#include "object/nmo_object_summary.h"
+#include "object/nmo_object_diff.h"
 #include "object/nmo_object_index.h"
 #include "object/nmo_shadow_storage.h"
 #include "object/nmo_object_system.h"

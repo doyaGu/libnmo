@@ -2,11 +2,13 @@
 
 #include "nmo.h"
 
-#include "app/nmo_object_summary.h"
-#include "app/nmo_report_view.h"
+#include "document/nmo_document_compare.h"
+#include "object/nmo_object_summary.h"
+#include "object/nmo_object_diff.h"
 #include "object/nmo_object_repository.h"
 #include "session/nmo_session_query.h"
 #include "session/nmo_session_util.h"
+#include "type/nmo_reflection.h"
 
 #include <stdalign.h>
 #include <string.h>

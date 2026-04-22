@@ -6,8 +6,7 @@
 #include "test_framework.h"
 #include "nmo.h"
 
-#include "app/nmo_object_summary.h"
-#include "app/nmo_report_result.h"
+#include "object/nmo_object_summary.h"
 #include "session/nmo_session_util.h"
 #include "type/nmo_reflection.h"
 #include "yyjson.h"

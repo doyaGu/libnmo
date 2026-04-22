@@ -1,8 +1,8 @@
 #include "test_framework.h"
 
-#include "app/nmo_comparison.h"
-#include "app/nmo_object_diff.h"
-#include "app/nmo_report_result.h"
+#include "document/nmo_document_compare.h"
+#include "object/nmo_object_diff.h"
+#include "object/nmo_object_summary.h"
 
 #include <string.h>
 

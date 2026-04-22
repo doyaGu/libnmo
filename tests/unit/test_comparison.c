@@ -4,7 +4,7 @@
  */
 
 #include "test_framework.h"
-#include "app/nmo_comparison.h"
+#include "document/nmo_document_compare.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
 #include "session/nmo_context.h"
