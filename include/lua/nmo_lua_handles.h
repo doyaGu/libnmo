@@ -71,6 +71,12 @@ NMO_API nmo_status_t nmo_lua_handle_get_scope(
     const nmo_lua_handle_descriptor_t *descriptor,
     nmo_lua_handle_scope_t **out_scope);
 
+NMO_API nmo_status_t nmo_lua_handle_get_owner_scope(
+    lua_State *state,
+    int index,
+    const nmo_lua_handle_descriptor_t *descriptor,
+    nmo_lua_handle_scope_t **out_scope);
+
 #ifdef __cplusplus
 }
 #endif

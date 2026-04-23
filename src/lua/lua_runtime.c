@@ -108,3 +108,8 @@ nmo_status_t nmo_lua_runtime_register_module(nmo_lua_runtime_t *runtime,
 
     return nmo_lua_module_register(runtime->state, module);
 }
+
+lua_State *nmo_lua_runtime_state(nmo_lua_runtime_t *runtime)
+{
+    return runtime != NULL ? runtime->state : NULL;
+}

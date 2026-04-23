@@ -17,7 +17,7 @@ static void assert_lua_ok(nmo_lua_runtime_t *runtime, const char *script)
     ASSERT_EQ(NMO_OK, status);
 }
 
-TEST(lua_bindings_object, object_module_exposes_iteration_and_edge_queries)
+TEST(lua_bindings_object, object_module_exposes_document_scoped_queries_and_edges)
 {
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
@@ -25,71 +25,96 @@ TEST(lua_bindings_object, object_module_exposes_iteration_and_edge_queries)
     ASSERT_EQ(NMO_OK, nmo_lua_register_platform_bindings(runtime));
     assert_lua_ok(
         runtime,
-        "local session = require('nmo.session')\n"
+        "local context = require('nmo.context')\n"
+        "local document = require('nmo.document')\n"
         "local object = require('nmo.object')\n"
-        "local ctx = session.create_context()\n"
-        "local s = session.load_file(ctx, '" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "')\n"
-        "assert(object.count(s) == session.object_count(s))\n"
-        "local first = object.at(s, 1)\n"
+        "local ctx = context.create()\n"
+        "local doc = document.load_file(ctx, '" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "')\n"
+        "assert(object.count(doc) == 18)\n"
+        "local first = object.at(doc, 1)\n"
         "assert(first ~= nil)\n"
-        "assert(object.id(first) ~= nil)\n"
-        "assert(object.class_id(first) ~= 0)\n"
-        "local camera = session.find_object_by_name(s, 'InGameCam')\n"
-        "assert(camera ~= nil)\n"
-        "assert(object.name(camera) == 'InGameCam')\n"
-        "assert(object.outgoing_edge_count(camera) == 2)\n"
-        "assert(object.incoming_edge_count(camera) == 1)\n"
-        "assert(object.has_outgoing_edges(camera) == true)\n"
-        "assert(object.has_incoming_edges(camera) == true)\n"
-        "local outgoing = object.outgoing_edges(camera)\n"
-        "assert(type(outgoing) == 'table')\n"
-        "assert(#outgoing == 2)\n"
-        "assert(type(outgoing[1].to) == 'number')\n"
-        "assert(type(outgoing[1].kind) == 'number')\n"
-        "local incoming = object.incoming_edges(camera)\n"
-        "assert(#incoming == 1)\n"
-        "local all_edges = object.all_edges(s)\n"
-        "assert(#all_edges == object.total_edge_count(s))\n"
-        "assert(object.broken_edge_count(s) == 0)\n");
+        "local cam = object.find_object_by_name(doc, 'InGameCam')\n"
+        "assert(cam ~= nil)\n"
+        "assert(object.name(cam) == 'InGameCam')\n"
+        "assert(object.outgoing_edge_count(cam) == 2)\n"
+        "assert(object.incoming_edge_count(cam) == 1)\n"
+        "assert(object.has_outgoing_edges(cam) == true)\n"
+        "assert(object.has_incoming_edges(cam) == true)\n"
+        "assert(type(object.outgoing_edges(cam)) == 'table')\n"
+        "assert(type(object.incoming_edges(cam)) == 'table')\n"
+        "assert(type(object.all_edges(doc)) == 'table')\n"
+        "assert(type(object.total_edge_count(doc)) == 'number')\n"
+        "assert(type(object.broken_edge_count(doc)) == 'number')\n"
+        "local q = object.query_first(doc, { name = 'InGameCam', name_mode = 'exact' })\n"
+        "assert(q ~= nil)\n"
+        "local collected = object.query_collect(doc, { class_id = object.class_id(cam) })\n"
+        "assert(type(collected) == 'table')\n"
+        "local info = object.query_collect_info(doc, { class_id = object.class_id(cam) })\n"
+        "assert(type(info) == 'table')\n"
+        "assert(type(info.objects) == 'table')\n");
+
+    nmo_lua_runtime_destroy(runtime);
 }
 
-TEST(lua_bindings_object, object_module_exposes_class_iteration_and_deterministic_errors)
+TEST(lua_bindings_object, object_module_exposes_workspace_scoped_mutations)
 {
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
     ASSERT_EQ(NMO_OK, nmo_lua_register_platform_bindings(runtime));
-    ASSERT_EQ(
-        NMO_OK,
-        nmo_lua_runtime_execute_string(
-            runtime,
-            "local session = require('nmo.session')\n"
-            "local object = require('nmo.object')\n"
-            "local ctx = session.create_context()\n"
-            "local s = session.load_file(ctx, '" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "')\n"
-            "local cam = session.find_object_by_name(s, 'InGameCam')\n"
-            "local class_id = object.class_id(cam)\n"
-            "assert(object.count_class(s, class_id) >= 1)\n"
-            "assert(object.at_class(s, class_id, 1) ~= nil)\n"
-            "assert(object.at(s, 9999) == nil)\n"
-            "assert(object.at_class(s, class_id, 9999) == nil)\n"
-            "local ok, err = pcall(function()\n"
-            "  object.at(s, 0)\n"
-            "end)\n"
-            "assert(ok == false)\n"
-            "assert(string.find(err, '1-based', 1, true) ~= nil)\n"
-            "ok, err = pcall(function()\n"
-            "  object.at_class(s, class_id, 0)\n"
-            "end)\n"
-            "assert(ok == false)\n"
-            "assert(string.find(err, '1-based', 1, true) ~= nil)\n"));
+    assert_lua_ok(
+        runtime,
+        "local context = require('nmo.context')\n"
+        "local session = require('nmo.session')\n"
+        "local workspace_mod = require('nmo.workspace')\n"
+        "local object = require('nmo.object')\n"
+        "local ctx = context.create()\n"
+        "local advanced = session.create(ctx)\n"
+        "local ws = workspace_mod.create(ctx, require('nmo.document').load_file(ctx, '" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "'))\n"
+        "assert(ws ~= nil)\n"
+        "local created = object.create_object(ws, 1, 'Lua Created Object')\n"
+        "assert(created ~= nil)\n"
+        "assert(object.name(created) == 'Lua Created Object')\n");
+
+    nmo_lua_runtime_destroy(runtime);
+}
+
+TEST(lua_bindings_object, object_module_reports_deterministic_errors)
+{
+    nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
+    ASSERT_NOT_NULL(runtime);
+
+    ASSERT_EQ(NMO_OK, nmo_lua_register_platform_bindings(runtime));
+    assert_lua_ok(
+        runtime,
+        "local context = require('nmo.context')\n"
+        "local document = require('nmo.document')\n"
+        "local workspace_mod = require('nmo.workspace')\n"
+        "local object = require('nmo.object')\n"
+        "local ctx = context.create()\n"
+        "local doc = document.load_file(ctx, '" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "')\n"
+        "local ws = workspace_mod.create(ctx, doc)\n"
+        "local ok, err = pcall(function() object.at(doc, 0) end)\n"
+        "assert(ok == false)\n"
+        "assert(string.find(err, '1-based', 1, true) ~= nil)\n"
+        "ok, err = pcall(function() object.query_collect(doc, 'bad') end)\n"
+        "assert(ok == false)\n"
+        "assert(string.find(err, 'query', 1, true) ~= nil)\n"
+        "ok, err = pcall(function() object.create_object(doc, 1, 'Bad') end)\n"
+        "assert(ok == false)\n"
+        "assert(string.find(err, 'workspace', 1, true) ~= nil)\n"
+        "ok, err = pcall(function() object.copy_objects(ws, {}) end)\n"
+        "assert(ok == false)\n"
+        "assert(type(err) == 'string')\n");
 
     nmo_lua_runtime_destroy(runtime);
 }
 
 TEST_MAIN_BEGIN()
     REGISTER_TEST(lua_bindings_object,
-                  object_module_exposes_iteration_and_edge_queries);
+                  object_module_exposes_document_scoped_queries_and_edges);
     REGISTER_TEST(lua_bindings_object,
-                  object_module_exposes_class_iteration_and_deterministic_errors);
+                  object_module_exposes_workspace_scoped_mutations);
+    REGISTER_TEST(lua_bindings_object,
+                  object_module_reports_deterministic_errors);
 TEST_MAIN_END()

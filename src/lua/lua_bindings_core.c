@@ -36,6 +36,31 @@ nmo_status_t nmo_lua_register_platform_bindings(nmo_lua_runtime_t *runtime)
         return status;
     }
 
+    status = nmo_lua_register_context_bindings(runtime);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    status = nmo_lua_register_document_bindings(runtime);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    status = nmo_lua_register_workspace_bindings(runtime);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    status = nmo_lua_register_object_bindings(runtime);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    status = nmo_lua_register_behavior_bindings(runtime);
+    if (status != NMO_OK) {
+        return status;
+    }
+
     status = nmo_lua_register_session_bindings(runtime);
     if (status != NMO_OK) {
         return status;
@@ -46,17 +71,7 @@ nmo_status_t nmo_lua_register_platform_bindings(nmo_lua_runtime_t *runtime)
         return status;
     }
 
-    status = nmo_lua_register_object_bindings(runtime);
-    if (status != NMO_OK) {
-        return status;
-    }
-
     status = nmo_lua_register_type_bindings(runtime);
-    if (status != NMO_OK) {
-        return status;
-    }
-
-    status = nmo_lua_register_behavior_bindings(runtime);
     if (status != NMO_OK) {
         return status;
     }
@@ -66,5 +81,5 @@ nmo_status_t nmo_lua_register_platform_bindings(nmo_lua_runtime_t *runtime)
         return status;
     }
 
-    return nmo_lua_register_app_bindings(runtime);
+    return NMO_OK;
 }

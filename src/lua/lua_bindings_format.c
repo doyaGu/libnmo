@@ -1,11 +1,12 @@
 #include "lua_bindings_internal.h"
 
 #include "format/nmo_interface_view.h"
+#include "session/nmo_session_bridge.h"
 
 #include "lauxlib.h"
 
-static void nmo_lua_push_interface_body_view(lua_State *state,
-                                             const nmo_interface_body_view_t *body)
+void nmo_lua_push_interface_body_view(lua_State *state,
+                                      const nmo_interface_body_view_t *body)
 {
     lua_createtable(state, 0, 16);
 
@@ -45,8 +46,8 @@ static void nmo_lua_push_interface_body_view(lua_State *state,
     lua_setfield(state, -2, "outward_output_count");
 }
 
-static void nmo_lua_push_interface_view(lua_State *state,
-                                        const nmo_interface_view_t *view)
+void nmo_lua_push_interface_view(lua_State *state,
+                                 const nmo_interface_view_t *view)
 {
     lua_createtable(state, 0, 10);
 
@@ -79,11 +80,19 @@ static void nmo_lua_push_interface_view(lua_State *state,
 
 static int nmo_lua_format_interface_view(lua_State *state)
 {
+    nmo_document_t *document = NULL;
     nmo_session_t *session = NULL;
     nmo_status_t status =
-        nmo_lua_check_session_handle(state, 1, &session, NULL);
+        nmo_lua_check_document_handle(state, 1, &document, NULL);
     if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid session handle");
+        return nmo_lua_raise_last_error(state, status, "Invalid document handle");
+    }
+
+    session = nmo_session_from_document(document);
+    if (session == NULL) {
+        return nmo_lua_raise_last_error(state,
+                                        NMO_ERR_INVALID_STATE,
+                                        "Document has no backing session");
     }
 
     nmo_object_id_t owner_behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
@@ -103,11 +112,19 @@ static int nmo_lua_format_interface_view(lua_State *state)
 
 static int nmo_lua_format_find_interface_behavior(lua_State *state)
 {
+    nmo_document_t *document = NULL;
     nmo_session_t *session = NULL;
     nmo_status_t status =
-        nmo_lua_check_session_handle(state, 1, &session, NULL);
+        nmo_lua_check_document_handle(state, 1, &document, NULL);
     if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid session handle");
+        return nmo_lua_raise_last_error(state, status, "Invalid document handle");
+    }
+
+    session = nmo_session_from_document(document);
+    if (session == NULL) {
+        return nmo_lua_raise_last_error(state,
+                                        NMO_ERR_INVALID_STATE,
+                                        "Document has no backing session");
     }
 
     nmo_object_id_t owner_behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 2);

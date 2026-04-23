@@ -13,13 +13,15 @@ extern "C" {
 #endif
 
 NMO_API nmo_status_t nmo_lua_register_core_bindings(nmo_lua_runtime_t *runtime);
+NMO_API nmo_status_t nmo_lua_register_context_bindings(nmo_lua_runtime_t *runtime);
+NMO_API nmo_status_t nmo_lua_register_document_bindings(nmo_lua_runtime_t *runtime);
+NMO_API nmo_status_t nmo_lua_register_workspace_bindings(nmo_lua_runtime_t *runtime);
 NMO_API nmo_status_t nmo_lua_register_session_bindings(nmo_lua_runtime_t *runtime);
 NMO_API nmo_status_t nmo_lua_register_runtime_bindings(nmo_lua_runtime_t *runtime);
 NMO_API nmo_status_t nmo_lua_register_object_bindings(nmo_lua_runtime_t *runtime);
 NMO_API nmo_status_t nmo_lua_register_type_bindings(nmo_lua_runtime_t *runtime);
 NMO_API nmo_status_t nmo_lua_register_behavior_bindings(nmo_lua_runtime_t *runtime);
 NMO_API nmo_status_t nmo_lua_register_format_bindings(nmo_lua_runtime_t *runtime);
-NMO_API nmo_status_t nmo_lua_register_app_bindings(nmo_lua_runtime_t *runtime);
 
 NMO_API nmo_status_t nmo_lua_register_platform_bindings(nmo_lua_runtime_t *runtime);
 

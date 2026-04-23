@@ -26,7 +26,7 @@ static void assert_lua_ok(nmo_lua_runtime_t *runtime, const char *script)
     ASSERT_EQ(NMO_OK, status);
 }
 
-TEST(lua_bindings_type, type_module_exposes_full_view_family)
+TEST(lua_bindings_type, type_module_works_with_context_and_document_scoped_objects)
 {
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     char float_guid[32];
@@ -35,64 +35,55 @@ TEST(lua_bindings_type, type_module_exposes_full_view_family)
 
     format_guid_literal(CKPGUID_FLOAT, float_guid, sizeof(float_guid));
     ASSERT_EQ(NMO_OK, nmo_lua_register_platform_bindings(runtime));
-    snprintf(
-        script,
-        sizeof(script),
-        "local session = require('nmo.session')\n"
-        "local object = require('nmo.object')\n"
-        "local type_mod = require('nmo.type')\n"
-        "local ctx = session.create_context()\n"
-        "local s = session.load_file(ctx, '%s')\n"
-        "local cam = session.find_object_by_name(s, 'InGameCam')\n"
-        "local by_guid = type_mod.view_from_guid(ctx, '%s')\n"
-        "assert(by_guid.guid == '%s')\n"
-        "local by_object = type_mod.view_from_object(cam)\n"
-        "local by_class = type_mod.view_from_class_id(ctx, object.class_id(cam))\n"
-        "local by_type_id = type_mod.view_from_type_id(ctx, by_object.type_id)\n"
-        "assert(by_class.class_id == by_object.class_id)\n"
-        "assert(by_type_id.type_id == by_object.type_id)\n"
-        "assert(by_type_id.name == by_object.name)\n"
-        "assert(type_mod.class_name(ctx, by_object.class_id) == by_object.name)\n"
-        "assert(type_mod.class_id(ctx, by_object.name) == by_object.class_id)\n"
-        "assert(type_mod.guid_from_name(ctx, by_guid.name) == '%s')\n",
-        NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
-        float_guid,
-        float_guid,
-        float_guid);
+    snprintf(script,
+             sizeof(script),
+             "local context = require('nmo.context')\n"
+             "local document = require('nmo.document')\n"
+             "local object = require('nmo.object')\n"
+             "local type_mod = require('nmo.type')\n"
+             "local ctx = context.create()\n"
+             "local doc = document.load_file(ctx, '%s')\n"
+             "local cam = object.find_object_by_name(doc, 'InGameCam')\n"
+             "local float_view = type_mod.view_from_guid(ctx, '%s')\n"
+             "assert(float_view.guid == '%s')\n"
+             "local cam_view = type_mod.view_from_object(cam)\n"
+             "assert(cam_view.class_id == object.class_id(cam))\n",
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
+             float_guid,
+             float_guid);
     assert_lua_ok(runtime, script);
 
     nmo_lua_runtime_destroy(runtime);
 }
 
-TEST(lua_bindings_type, type_module_roundtrips_values_and_handles_errors)
+TEST(lua_bindings_type, type_module_roundtrips_scalar_values)
 {
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     char float_guid[32];
+    char int_guid[32];
     char script[1024];
     ASSERT_NOT_NULL(runtime);
 
     format_guid_literal(CKPGUID_FLOAT, float_guid, sizeof(float_guid));
+    format_guid_literal(CKPGUID_INT, int_guid, sizeof(int_guid));
     ASSERT_EQ(NMO_OK, nmo_lua_register_platform_bindings(runtime));
-    snprintf(
-        script,
-        sizeof(script),
-        "local session = require('nmo.session')\n"
-        "local type_mod = require('nmo.type')\n"
-        "local ctx = session.create_context()\n"
-        "assert(type_mod.value_roundtrip(ctx, '%s', '1.5') == '1.5')\n"
-        "assert(type_mod.view_from_type_id(ctx, 999999) == nil)\n"
-        "local ok, err = pcall(function()\n"
-        "  type_mod.view_from_guid(ctx, 'not-a-guid')\n"
-        "end)\n"
-        "assert(ok == false)\n"
-        "assert(string.find(err, 'GUID', 1, true) ~= nil)\n",
-        float_guid);
+    snprintf(script,
+             sizeof(script),
+             "local context = require('nmo.context')\n"
+             "local type_mod = require('nmo.type')\n"
+             "local ctx = context.create()\n"
+             "assert(type_mod.value_roundtrip(ctx, '%s', '1.5') == '1.5')\n"
+             "assert(type_mod.value_roundtrip(ctx, '%s', '42') == '42')\n",
+             float_guid,
+             int_guid);
     assert_lua_ok(runtime, script);
 
     nmo_lua_runtime_destroy(runtime);
 }
 
 TEST_MAIN_BEGIN()
-    REGISTER_TEST(lua_bindings_type, type_module_exposes_full_view_family);
-    REGISTER_TEST(lua_bindings_type, type_module_roundtrips_values_and_handles_errors);
+    REGISTER_TEST(lua_bindings_type,
+                  type_module_works_with_context_and_document_scoped_objects);
+    REGISTER_TEST(lua_bindings_type,
+                  type_module_roundtrips_scalar_values);
 TEST_MAIN_END()

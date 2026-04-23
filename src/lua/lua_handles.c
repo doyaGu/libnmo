@@ -410,3 +410,33 @@ nmo_status_t nmo_lua_handle_get_scope(
     *out_scope = handle->scope;
     NMO_RETURN_OK();
 }
+
+nmo_status_t nmo_lua_handle_get_owner_scope(
+    lua_State *state,
+    int index,
+    const nmo_lua_handle_descriptor_t *descriptor,
+    nmo_lua_handle_scope_t **out_scope)
+{
+    nmo_lua_handle_userdata_t *handle = NULL;
+    nmo_status_t status =
+        nmo_lua_handle_get_userdata(state, index, descriptor, &handle);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    if (out_scope == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Output scope pointer must be non-null");
+    }
+    if (handle->owner_scope == NULL ||
+        !nmo_lua_handle_scope_is_alive(handle->owner_scope)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Lua %s owner scope is stale",
+                         descriptor->debug_name != NULL
+                             ? descriptor->debug_name
+                             : descriptor->metatable_name);
+    }
+
+    *out_scope = handle->owner_scope;
+    NMO_RETURN_OK();
+}

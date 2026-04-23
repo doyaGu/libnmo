@@ -2,17 +2,20 @@
 #define NMO_LUA_BINDINGS_INTERNAL_H
 
 #include "format/nmo_object.h"
+#include "format/nmo_interface_view.h"
 #include "behavior/nmo_script_edit.h"
 #include "core/nmo_arena.h"
+#include "document/nmo_document.h"
 #include "lua/nmo_lua_bindings.h"
 #include "lua/nmo_lua_handles.h"
 #include "lua/nmo_lua_module.h"
 #include "object/nmo_object_repository.h"
+#include "runtime/nmo_workspace.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 
 typedef struct nmo_lua_object_handle_data {
-    nmo_session_t *session;
+    nmo_document_t *document;
     nmo_object_id_t object_id;
 } nmo_lua_object_handle_data_t;
 
@@ -22,8 +25,11 @@ typedef struct nmo_lua_script_edit_tx_handle_data {
 } nmo_lua_script_edit_tx_handle_data_t;
 
 extern const nmo_lua_handle_descriptor_t NMO_LUA_CONTEXT_HANDLE_DESCRIPTOR;
+extern const nmo_lua_handle_descriptor_t NMO_LUA_DOCUMENT_HANDLE_DESCRIPTOR;
+extern const nmo_lua_handle_descriptor_t NMO_LUA_WORKSPACE_HANDLE_DESCRIPTOR;
 extern const nmo_lua_handle_descriptor_t NMO_LUA_SESSION_HANDLE_DESCRIPTOR;
 extern const nmo_lua_handle_descriptor_t NMO_LUA_OBJECT_HANDLE_DESCRIPTOR;
+extern const nmo_lua_handle_descriptor_t NMO_LUA_RUNTIME_HANDLE_DESCRIPTOR;
 extern const nmo_lua_handle_descriptor_t NMO_LUA_SCRIPT_EDIT_TX_HANDLE_DESCRIPTOR;
 
 int nmo_lua_raise_last_error(lua_State *state,
@@ -31,19 +37,32 @@ int nmo_lua_raise_last_error(lua_State *state,
                              const char *fallback_message);
 
 nmo_status_t nmo_lua_push_context_handle(lua_State *state, nmo_context_t *context);
+nmo_status_t nmo_lua_push_document_handle(lua_State *state, nmo_document_t *document);
+nmo_status_t nmo_lua_push_workspace_handle(lua_State *state,
+                                           nmo_workspace_t *workspace,
+                                           nmo_lua_handle_scope_t *document_scope);
 nmo_status_t nmo_lua_push_session_handle(lua_State *state, nmo_session_t *session);
 nmo_status_t nmo_lua_push_object_handle(lua_State *state,
-                                        nmo_session_t *session,
-                                        nmo_lua_handle_scope_t *session_scope,
+                                        nmo_document_t *document,
+                                        nmo_lua_handle_scope_t *document_scope,
                                         nmo_object_id_t object_id);
 nmo_status_t nmo_lua_push_script_edit_tx_handle(lua_State *state,
                                                 nmo_script_edit_tx_t *tx,
-                                                nmo_lua_handle_scope_t *session_scope);
+                                                nmo_lua_handle_scope_t *workspace_scope);
 
 nmo_status_t nmo_lua_check_context_handle(lua_State *state,
                                           int index,
                                           nmo_context_t **out_context,
                                           nmo_lua_handle_scope_t **out_scope);
+nmo_status_t nmo_lua_check_document_handle(lua_State *state,
+                                           int index,
+                                           nmo_document_t **out_document,
+                                           nmo_lua_handle_scope_t **out_scope);
+nmo_status_t nmo_lua_check_workspace_handle(lua_State *state,
+                                            int index,
+                                            nmo_workspace_t **out_workspace,
+                                            nmo_lua_handle_scope_t **out_scope,
+                                            nmo_lua_handle_scope_t **out_document_scope);
 nmo_status_t nmo_lua_check_session_handle(lua_State *state,
                                           int index,
                                           nmo_session_t **out_session,
@@ -67,5 +86,17 @@ nmo_status_t nmo_lua_check_optional_flags_arg(lua_State *state,
                                               int index,
                                               uint32_t default_flags,
                                               uint32_t *out_flags);
+
+nmo_status_t nmo_lua_parse_object_query(lua_State *state,
+                                        int index,
+                                        nmo_object_query_t *out_query);
+void nmo_lua_push_object_query_name_modes(lua_State *state);
+
+void nmo_lua_push_interface_body_view(lua_State *state,
+                                      const nmo_interface_body_view_t *body);
+void nmo_lua_push_interface_view(lua_State *state,
+                                 const nmo_interface_view_t *view);
+
+lua_State *nmo_lua_runtime_state(nmo_lua_runtime_t *runtime);
 
 #endif /* NMO_LUA_BINDINGS_INTERNAL_H */

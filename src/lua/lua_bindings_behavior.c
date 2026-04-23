@@ -1,16 +1,37 @@
 #include "lua_bindings_internal.h"
 
+#include "behavior/nmo_behavior_analyze.h"
+#include "behavior/nmo_behavior_execute.h"
+#include "behavior/nmo_behavior_query.h"
 #include "behavior/nmo_behavior_view.h"
-#include "behavior/nmo_script_trace_view.h"
-#include "behavior/nmo_script_view.h"
+#include "behavior/nmo_script_edit_graph.h"
+#include "behavior/nmo_behavior_view.h"
 #include "core/nmo_guid.h"
+#include "session/nmo_session_bridge.h"
 
 #include "lauxlib.h"
 
+#include <stdlib.h>
 #include <string.h>
 
+typedef struct nmo_lua_dump_buffer {
+    char *data;
+    size_t size;
+    size_t capacity;
+} nmo_lua_dump_buffer_t;
+
+typedef struct nmo_lua_behavior_execute_action {
+    char *dumped_chunk;
+    size_t dumped_size;
+} nmo_lua_behavior_execute_action_t;
+
+typedef struct nmo_lua_behavior_workspace_scope {
+    nmo_document_t *document;
+    nmo_workspace_t *workspace;
+} nmo_lua_behavior_workspace_scope_t;
+
 static void nmo_lua_behavior_push_script_view(lua_State *state,
-                                              const nmo_script_view_t *view)
+                                              const nmo_behavior_script_view_t *view)
 {
     lua_createtable(state, 0, 5);
 
@@ -34,10 +55,59 @@ static void nmo_lua_behavior_push_script_view(lua_State *state,
     lua_setfield(state, -2, "owner_class_id");
 }
 
+static nmo_status_t nmo_lua_behavior_query_count_scripts(
+    nmo_document_t *document,
+    size_t *out_count)
+{
+    return document != NULL && out_count != NULL
+        ? nmo_behavior_query_count_scripts(document, out_count)
+        : NMO_ERR_INVALID_ARGUMENT;
+}
+
+static nmo_status_t nmo_lua_behavior_query_script_at(
+    nmo_document_t *document,
+    size_t index,
+    nmo_behavior_script_view_t *out_view)
+{
+    return document != NULL && out_view != NULL
+        ? nmo_behavior_query_script_at(document, index, out_view)
+        : NMO_ERR_INVALID_ARGUMENT;
+}
+
+static nmo_status_t nmo_lua_behavior_query_script_from_id(
+    nmo_document_t *document,
+    nmo_object_id_t script_id,
+    nmo_behavior_script_view_t *out_view)
+{
+    return document != NULL && out_view != NULL
+        ? nmo_behavior_query_script_from_script_id(document, script_id, out_view)
+        : NMO_ERR_INVALID_ARGUMENT;
+}
+
+static nmo_status_t nmo_lua_behavior_begin_script_edit(
+    nmo_workspace_t *workspace,
+    const char *label,
+    nmo_script_edit_tx_t **out_tx)
+{
+    if (workspace == NULL || label == NULL || out_tx == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    return nmo_script_edit_begin(workspace, label, out_tx);
+}
+
+static nmo_session_t *nmo_lua_behavior_execution_session(
+    nmo_behavior_execution_t *execution)
+{
+    nmo_workspace_t *workspace =
+        nmo_behavior_execution_workspace(execution);
+    return workspace != NULL ? nmo_session_from_workspace(workspace) : NULL;
+}
+
 static void nmo_lua_behavior_push_view(lua_State *state,
                                        const nmo_behavior_view_t *view)
 {
-    lua_createtable(state, 0, 21);
+    lua_createtable(state, 0, 22);
 
     lua_pushinteger(state, (lua_Integer)view->behavior_id);
     lua_setfield(state, -2, "behavior_id");
@@ -85,6 +155,12 @@ static void nmo_lua_behavior_push_view(lua_State *state,
     lua_setfield(state, -2, "interface_available");
     lua_pushinteger(state, (lua_Integer)view->interface_status);
     lua_setfield(state, -2, "interface_status");
+    if (view->interface_available) {
+        nmo_lua_push_interface_view(state, &view->interface_view);
+    } else {
+        lua_pushnil(state);
+    }
+    lua_setfield(state, -2, "interface");
 }
 
 static void nmo_lua_behavior_push_boundary_view(
@@ -111,15 +187,228 @@ static void nmo_lua_behavior_push_boundary_view(
     lua_setfield(state, -2, "missing_nodes");
 }
 
+static void nmo_lua_behavior_push_guid_string(lua_State *state, nmo_guid_t guid)
+{
+    char guid_buffer[32];
+    if (nmo_guid_is_null(guid)) {
+        lua_pushnil(state);
+        return;
+    }
+
+    if (nmo_guid_format(guid, guid_buffer, sizeof(guid_buffer)) <= 0) {
+        lua_pushnil(state);
+        return;
+    }
+
+    lua_pushstring(state, guid_buffer);
+}
+
+static void nmo_lua_behavior_push_graph_endpoint(
+    lua_State *state,
+    const nmo_script_edit_endpoint_t *endpoint)
+{
+    lua_createtable(state, 0, 4);
+    lua_pushinteger(state, (lua_Integer)endpoint->object_id);
+    lua_setfield(state, -2, "object_id");
+    lua_pushinteger(state, (lua_Integer)endpoint->owner_behavior_id);
+    lua_setfield(state, -2, "owner_behavior_id");
+    lua_pushinteger(state, (lua_Integer)endpoint->owner_index);
+    lua_setfield(state, -2, "owner_index");
+    lua_pushinteger(state, (lua_Integer)endpoint->kind);
+    lua_setfield(state, -2, "kind");
+}
+
+
+static void nmo_lua_behavior_push_graph_node(
+    lua_State *state,
+    const nmo_script_edit_node_t *node)
+{
+    lua_createtable(state, 0, 10);
+    lua_pushinteger(state, (lua_Integer)node->object_id);
+    lua_setfield(state, -2, "object_id");
+    lua_pushinteger(state, (lua_Integer)node->kind);
+    lua_setfield(state, -2, "kind");
+    if (node->name != NULL) {
+        lua_pushstring(state, node->name);
+    } else {
+        lua_pushnil(state);
+    }
+    lua_setfield(state, -2, "name");
+    lua_pushinteger(state, (lua_Integer)node->class_id);
+    lua_setfield(state, -2, "class_id");
+    if (node->class_name != NULL) {
+        lua_pushstring(state, node->class_name);
+    } else {
+        lua_pushnil(state);
+    }
+    lua_setfield(state, -2, "class_name");
+    lua_pushinteger(state, (lua_Integer)node->depth);
+    lua_setfield(state, -2, "depth");
+    lua_pushinteger(state, (lua_Integer)node->parent_behavior_id);
+    lua_setfield(state, -2, "parent_behavior_id");
+    lua_pushinteger(state, (lua_Integer)node->owner_behavior_id);
+    lua_setfield(state, -2, "owner_behavior_id");
+    lua_pushinteger(state, (lua_Integer)node->owner_slot_index);
+    lua_setfield(state, -2, "owner_slot_index");
+    lua_pushinteger(state, (lua_Integer)node->owner_slot_kind);
+    lua_setfield(state, -2, "owner_slot_kind");
+}
+
+static void nmo_lua_behavior_push_graph_control_edge(
+    lua_State *state,
+    const nmo_script_edit_control_edge_t *edge)
+{
+    lua_createtable(state, 0, 5);
+    lua_pushinteger(state, (lua_Integer)edge->link_id);
+    lua_setfield(state, -2, "link_id");
+    nmo_lua_behavior_push_graph_endpoint(state, &edge->source);
+    lua_setfield(state, -2, "source");
+    nmo_lua_behavior_push_graph_endpoint(state, &edge->target);
+    lua_setfield(state, -2, "target");
+    lua_pushinteger(state, (lua_Integer)edge->activation_delay);
+    lua_setfield(state, -2, "activation_delay");
+    lua_pushinteger(state, (lua_Integer)edge->initial_activation_delay);
+    lua_setfield(state, -2, "initial_activation_delay");
+}
+
+static void nmo_lua_behavior_push_graph_data_edge(
+    lua_State *state,
+    const nmo_script_edit_data_edge_t *edge)
+{
+    lua_createtable(state, 0, 6);
+    lua_pushinteger(state, (lua_Integer)edge->source_parameter_id);
+    lua_setfield(state, -2, "source_parameter_id");
+    lua_pushinteger(state, (lua_Integer)edge->target_parameter_id);
+    lua_setfield(state, -2, "target_parameter_id");
+    lua_pushinteger(state, (lua_Integer)edge->source_owner_id);
+    lua_setfield(state, -2, "source_owner_id");
+    lua_pushinteger(state, (lua_Integer)edge->target_owner_id);
+    lua_setfield(state, -2, "target_owner_id");
+    nmo_lua_behavior_push_guid_string(state, edge->type_guid);
+    lua_setfield(state, -2, "type_guid");
+    lua_pushboolean(state, edge->shared ? 1 : 0);
+    lua_setfield(state, -2, "shared");
+}
+
+static void nmo_lua_behavior_push_ref_edge(lua_State *state,
+                                           const nmo_ref_edge_t *edge)
+{
+    lua_createtable(state, 0, 5);
+    lua_pushinteger(state, (lua_Integer)edge->from);
+    lua_setfield(state, -2, "from");
+    lua_pushinteger(state, (lua_Integer)edge->to);
+    lua_setfield(state, -2, "to");
+    lua_pushinteger(state, (lua_Integer)edge->kind);
+    lua_setfield(state, -2, "kind");
+    if (edge->field_path != NULL) {
+        lua_pushstring(state, edge->field_path);
+    } else {
+        lua_pushnil(state);
+    }
+    lua_setfield(state, -2, "field_path");
+    lua_pushinteger(state, (lua_Integer)edge->index);
+    lua_setfield(state, -2, "index");
+}
+
+static void nmo_lua_behavior_push_graph_node_array(
+    lua_State *state,
+    const nmo_script_edit_node_t *nodes,
+    size_t count)
+{
+    size_t i = 0u;
+    lua_createtable(state, (int)count, 0);
+    for (i = 0u; i < count; ++i) {
+        nmo_lua_behavior_push_graph_node(state, &nodes[i]);
+        lua_rawseti(state, -2, (lua_Integer)i + 1);
+    }
+}
+
+static void nmo_lua_behavior_push_graph_control_edge_array(
+    lua_State *state,
+    const nmo_script_edit_control_edge_t *edges,
+    size_t count)
+{
+    size_t i = 0u;
+    lua_createtable(state, (int)count, 0);
+    for (i = 0u; i < count; ++i) {
+        nmo_lua_behavior_push_graph_control_edge(state, &edges[i]);
+        lua_rawseti(state, -2, (lua_Integer)i + 1);
+    }
+}
+
+static void nmo_lua_behavior_push_graph_data_edge_array(
+    lua_State *state,
+    const nmo_script_edit_data_edge_t *edges,
+    size_t count)
+{
+    size_t i = 0u;
+    lua_createtable(state, (int)count, 0);
+    for (i = 0u; i < count; ++i) {
+        nmo_lua_behavior_push_graph_data_edge(state, &edges[i]);
+        lua_rawseti(state, -2, (lua_Integer)i + 1);
+    }
+}
+
+static void nmo_lua_behavior_push_ref_edge_array(lua_State *state,
+                                                 const nmo_ref_edge_t *edges,
+                                                 size_t count)
+{
+    size_t i = 0u;
+    lua_createtable(state, (int)count, 0);
+    for (i = 0u; i < count; ++i) {
+        nmo_lua_behavior_push_ref_edge(state, &edges[i]);
+        lua_rawseti(state, -2, (lua_Integer)i + 1);
+    }
+}
+
+
+static nmo_status_t nmo_lua_behavior_build_graph_from_args(
+    lua_State *state,
+    int workspace_index,
+    int root_index,
+    int depth_index,
+    nmo_script_edit_graph_t **out_graph)
+{
+    nmo_workspace_t *workspace = NULL;
+    nmo_session_t *session = NULL;
+    nmo_object_id_t root_behavior_id = 0u;
+    uint32_t max_depth = UINT32_MAX;
+    nmo_status_t status =
+        nmo_lua_check_workspace_handle(state, workspace_index, &workspace, NULL, NULL);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    root_behavior_id = (nmo_object_id_t)luaL_checkinteger(state, root_index);
+    if (root_behavior_id == 0u) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (!lua_isnoneornil(state, depth_index)) {
+        max_depth = (uint32_t)luaL_checkinteger(state, depth_index);
+    }
+
+    session = nmo_session_from_workspace(workspace);
+    if (session == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Lua workspace handle has no backing session");
+    }
+
+    return nmo_script_edit_graph_build(nmo_session_get_context(session),
+                                       session,
+                                       root_behavior_id,
+                                       max_depth,
+                                       out_graph);
+}
+
 static const char *nmo_lua_behavior_step_kind_name(
-    nmo_script_trace_step_kind_t kind)
+    nmo_behavior_trace_step_kind_t kind)
 {
     switch (kind) {
-        case NMO_SCRIPT_TRACE_STEP_SHARED_SOURCE:
+        case NMO_BEHAVIOR_TRACE_STEP_KIND_SHARED_SOURCE:
             return "shared_source";
-        case NMO_SCRIPT_TRACE_STEP_DIRECT_SOURCE:
+        case NMO_BEHAVIOR_TRACE_STEP_KIND_DIRECT_SOURCE:
             return "direct_source";
-        case NMO_SCRIPT_TRACE_STEP_START:
+        case NMO_BEHAVIOR_TRACE_STEP_KIND_START:
         default:
             return "start";
     }
@@ -127,7 +416,7 @@ static const char *nmo_lua_behavior_step_kind_name(
 
 static void nmo_lua_behavior_push_trace_chain_view(
     lua_State *state,
-    const nmo_script_trace_chain_view_t *view)
+    const nmo_behavior_trace_chain_view_t *view)
 {
     size_t i = 0u;
 
@@ -149,7 +438,7 @@ static void nmo_lua_behavior_push_trace_chain_view(
 
 static void nmo_lua_behavior_push_script_tree_view(
     lua_State *state,
-    const nmo_script_tree_view_t *view)
+    const nmo_behavior_tree_view_t *view)
 {
     size_t i = 0u;
 
@@ -194,6 +483,210 @@ static void nmo_lua_behavior_push_report(lua_State *state,
     lua_setfield(state, -2, "warnings");
     lua_pushinteger(state, (lua_Integer)report->errors);
     lua_setfield(state, -2, "errors");
+}
+
+static int nmo_lua_behavior_traceback(lua_State *state)
+{
+    const char *message = lua_tostring(state, 1);
+    if (message == NULL) {
+        if (!lua_isnoneornil(state, 1) && luaL_callmeta(state, 1, "__tostring")) {
+            message = lua_tostring(state, -1);
+        } else {
+            lua_pushliteral(state, "(error object is not a string)");
+            message = lua_tostring(state, -1);
+        }
+    }
+
+    luaL_traceback(state, state, message, 1);
+    return 1;
+}
+
+static int nmo_lua_behavior_dump_writer(lua_State *state,
+                                        const void *chunk,
+                                        size_t size,
+                                        void *user_data)
+{
+    nmo_lua_dump_buffer_t *buffer = (nmo_lua_dump_buffer_t *)user_data;
+    size_t required = 0u;
+    char *new_data = NULL;
+
+    (void)state;
+
+    if (buffer == NULL || (chunk == NULL && size != 0u)) {
+        return 1;
+    }
+
+    required = buffer->size + size;
+    if (required > buffer->capacity) {
+        size_t new_capacity = buffer->capacity == 0u ? 256u : buffer->capacity;
+        while (new_capacity < required) {
+            new_capacity *= 2u;
+        }
+
+        new_data = (char *)realloc(buffer->data, new_capacity);
+        if (new_data == NULL) {
+            return 1;
+        }
+        buffer->data = new_data;
+        buffer->capacity = new_capacity;
+    }
+
+    if (size != 0u) {
+        memcpy(buffer->data + buffer->size, chunk, size);
+        buffer->size += size;
+    }
+    return 0;
+}
+
+static void nmo_lua_behavior_dump_buffer_clear(nmo_lua_dump_buffer_t *buffer)
+{
+    if (buffer != NULL) {
+        free(buffer->data);
+        buffer->data = NULL;
+        buffer->size = 0u;
+        buffer->capacity = 0u;
+    }
+}
+
+static nmo_status_t nmo_lua_behavior_execute_lua_callback(
+    nmo_behavior_execution_t *executor,
+    const nmo_lua_behavior_execute_action_t *action)
+{
+    lua_State *state = NULL;
+    int traceback_index = 0;
+    nmo_context_t *context = NULL;
+    nmo_session_t *session = NULL;
+    nmo_lua_runtime_t *runtime = NULL;
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_lua_handle_scope_t *context_scope = NULL;
+    nmo_lua_handle_scope_t *session_scope = NULL;
+    nmo_lua_handle_scope_t *runtime_scope = NULL;
+    nmo_lua_handle_scope_t *tx_scope = NULL;
+    nmo_lua_script_edit_tx_handle_data_t tx_data = {0};
+    nmo_status_t status = NMO_OK;
+
+    if (executor == NULL || action == NULL || action->dumped_chunk == NULL ||
+        action->dumped_size == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Lua executor callback requires dumped Lua bytecode");
+    }
+
+    state = nmo_lua_runtime_state(nmo_behavior_execution_lua_runtime(executor));
+    if (state == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Behavior execution has no active Lua state");
+    }
+    context = nmo_behavior_execution_context(executor);
+    session = nmo_lua_behavior_execution_session(executor);
+    runtime = nmo_behavior_execution_lua_runtime(executor);
+    tx = nmo_behavior_execution_transaction(executor);
+    if (context == NULL || session == NULL || runtime == NULL || tx == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Script executor callback is missing active state");
+    }
+
+    lua_settop(state, 0);
+    lua_pushcfunction(state, nmo_lua_behavior_traceback);
+    traceback_index = lua_gettop(state);
+
+    if (luaL_loadbuffer(state,
+                        action->dumped_chunk,
+                        action->dumped_size,
+                        "behavior.execute") != LUA_OK) {
+        const char *message = lua_tostring(state, -1);
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Lua executor callback load failed: %s",
+                         message != NULL ? message : "unknown load error");
+    }
+
+    context_scope = nmo_lua_handle_scope_create();
+    session_scope = nmo_lua_handle_scope_create();
+    runtime_scope = nmo_lua_handle_scope_create();
+    tx_scope = nmo_lua_handle_scope_create();
+    if (context_scope == NULL || session_scope == NULL || runtime_scope == NULL ||
+        tx_scope == NULL) {
+        lua_settop(state, 0);
+        status = NMO_ERR_NOMEM;
+        goto cleanup;
+    }
+
+    status = nmo_lua_push_borrowed_handle(state,
+                                          &NMO_LUA_CONTEXT_HANDLE_DESCRIPTOR,
+                                          context,
+                                          context_scope,
+                                          NULL);
+    if (status != NMO_OK) {
+        lua_settop(state, 0);
+        goto cleanup;
+    }
+    status = nmo_lua_push_borrowed_handle(state,
+                                          &NMO_LUA_SESSION_HANDLE_DESCRIPTOR,
+                                          session,
+                                          session_scope,
+                                          context_scope);
+    if (status != NMO_OK) {
+        lua_settop(state, 0);
+        goto cleanup;
+    }
+    status = nmo_lua_push_borrowed_handle(state,
+                                          &NMO_LUA_RUNTIME_HANDLE_DESCRIPTOR,
+                                          runtime,
+                                          runtime_scope,
+                                          session_scope);
+    if (status != NMO_OK) {
+        lua_settop(state, 0);
+        goto cleanup;
+    }
+    tx_data.tx = tx;
+    tx_data.finished = false;
+    status = nmo_lua_push_borrowed_handle(state,
+                                          &NMO_LUA_SCRIPT_EDIT_TX_HANDLE_DESCRIPTOR,
+                                          &tx_data,
+                                          tx_scope,
+                                          session_scope);
+    if (status != NMO_OK) {
+        lua_settop(state, 0);
+        goto cleanup;
+    }
+
+    if (lua_pcall(state, 4, 0, traceback_index) != LUA_OK) {
+        const char *message = lua_tostring(state, -1);
+        lua_settop(state, 0);
+        status = NMO_ERR_VALIDATION_FAILED;
+        NMO_SET_LAST_ERROR(status, NMO_SEVERITY_ERROR,
+                           "Lua executor callback failed: %s",
+                           message != NULL ? message : "unknown execution error");
+        goto cleanup;
+    }
+
+    lua_settop(state, 0);
+    status = NMO_OK;
+
+cleanup:
+    if (tx_scope != NULL) {
+        nmo_lua_handle_scope_invalidate(tx_scope);
+        nmo_lua_handle_scope_release(tx_scope);
+    }
+    if (runtime_scope != NULL) {
+        nmo_lua_handle_scope_invalidate(runtime_scope);
+        nmo_lua_handle_scope_release(runtime_scope);
+    }
+    if (session_scope != NULL) {
+        nmo_lua_handle_scope_invalidate(session_scope);
+        nmo_lua_handle_scope_release(session_scope);
+    }
+    if (context_scope != NULL) {
+        nmo_lua_handle_scope_invalidate(context_scope);
+        nmo_lua_handle_scope_release(context_scope);
+    }
+    return status;
+}
+
+static nmo_status_t nmo_lua_behavior_execute_action_fn(nmo_behavior_execution_t *executor,
+                                                       void *user_data)
+{
+    return nmo_lua_behavior_execute_lua_callback(
+        executor, (const nmo_lua_behavior_execute_action_t *)user_data);
 }
 
 static nmo_status_t nmo_lua_behavior_parse_guid_arg(lua_State *state,
@@ -315,15 +808,15 @@ static int nmo_lua_behavior_invalidate_tx_handle(lua_State *state,
 
 static int nmo_lua_behavior_script_count(lua_State *state)
 {
-    nmo_session_t *session = NULL;
+    nmo_document_t *document = NULL;
     nmo_status_t status =
-        nmo_lua_check_session_handle(state, 1, &session, NULL);
+        nmo_lua_check_document_handle(state, 1, &document, NULL);
     if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid session handle");
+        return nmo_lua_raise_last_error(state, status, "Invalid document handle");
     }
 
     size_t count = 0;
-    status = nmo_script_view_count(session, &count);
+    status = nmo_lua_behavior_query_count_scripts(document, &count);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to count scripts");
     }
@@ -334,11 +827,11 @@ static int nmo_lua_behavior_script_count(lua_State *state)
 
 static int nmo_lua_behavior_script_at(lua_State *state)
 {
-    nmo_session_t *session = NULL;
+    nmo_document_t *document = NULL;
     nmo_status_t status =
-        nmo_lua_check_session_handle(state, 1, &session, NULL);
+        nmo_lua_check_document_handle(state, 1, &document, NULL);
     if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid session handle");
+        return nmo_lua_raise_last_error(state, status, "Invalid document handle");
     }
 
     lua_Integer lua_index = luaL_checkinteger(state, 2);
@@ -346,8 +839,8 @@ static int nmo_lua_behavior_script_at(lua_State *state)
         return luaL_error(state, "script index must be 1-based");
     }
 
-    nmo_script_view_t view = {0};
-    status = nmo_script_view_at(session, (size_t)(lua_index - 1), &view);
+    nmo_behavior_script_view_t view = {0};
+    status = nmo_lua_behavior_query_script_at(document, (size_t)(lua_index - 1), &view);
     if (status == NMO_ERR_NOT_FOUND) {
         lua_pushnil(state);
         return 1;
@@ -362,30 +855,30 @@ static int nmo_lua_behavior_script_at(lua_State *state)
 
 static int nmo_lua_behavior_script_from_id(lua_State *state)
 {
-    nmo_session_t *session = NULL;
+    nmo_document_t *document = NULL;
     size_t count = 0u;
     size_t index = 0u;
     nmo_status_t status =
-        nmo_lua_check_session_handle(state, 1, &session, NULL);
+        nmo_lua_check_document_handle(state, 1, &document, NULL);
     if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid session handle");
+        return nmo_lua_raise_last_error(state, status, "Invalid document handle");
     }
 
     nmo_object_id_t script_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    nmo_script_view_t view = {0};
-    status = nmo_script_view_from_script_id(session, script_id, &view);
+    nmo_behavior_script_view_t view = {0};
+    status = nmo_lua_behavior_query_script_from_id(document, script_id, &view);
     if (status == NMO_ERR_NOT_FOUND) {
         lua_pushnil(state);
         return 1;
     }
     if (status != NMO_OK && script_id != 0u) {
-        status = nmo_script_view_count(session, &count);
+        status = nmo_lua_behavior_query_count_scripts(document, &count);
         if (status != NMO_OK) {
             return nmo_lua_raise_last_error(state, status, "Failed to inspect script");
         }
 
         for (index = 0u; index < count; ++index) {
-            status = nmo_script_view_at(session, index, &view);
+            status = nmo_lua_behavior_query_script_at(document, index, &view);
             if (status != NMO_OK) {
                 return nmo_lua_raise_last_error(state, status, "Failed to inspect script");
             }
@@ -409,16 +902,16 @@ static int nmo_lua_behavior_script_from_id(lua_State *state)
 
 static int nmo_lua_behavior_view(lua_State *state)
 {
-    nmo_session_t *session = NULL;
+    nmo_workspace_t *workspace = NULL;
     nmo_status_t status =
-        nmo_lua_check_session_handle(state, 1, &session, NULL);
+        nmo_lua_check_workspace_handle(state, 1, &workspace, NULL, NULL);
     if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid session handle");
+        return nmo_lua_raise_last_error(state, status, "Invalid workspace handle");
     }
 
     nmo_object_id_t behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
     nmo_behavior_view_t view = {0};
-    status = nmo_behavior_view_from_behavior(session, behavior_id, &view);
+    status = nmo_behavior_view_from_behavior(workspace, behavior_id, &view);
     if (status == NMO_ERR_NOT_FOUND) {
         lua_pushnil(state);
         return 1;
@@ -431,13 +924,822 @@ static int nmo_lua_behavior_view(lua_State *state)
     return 1;
 }
 
+static int nmo_lua_behavior_inspect(lua_State *state)
+{
+    nmo_workspace_t *workspace = NULL;
+    nmo_object_id_t behavior_id = 0u;
+    uint32_t boundary_depth = UINT32_MAX;
+    uint32_t tree_depth = UINT32_MAX;
+    nmo_behavior_view_t behavior_view = {0};
+    nmo_behavior_boundary_view_t boundary_view = {0};
+    nmo_behavior_tree_view_t tree_view = {0};
+    nmo_status_t status =
+        nmo_lua_check_workspace_handle(state, 1, &workspace, NULL, NULL);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid workspace handle");
+    }
+
+    behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    if (!lua_isnoneornil(state, 3)) {
+        boundary_depth = (uint32_t)luaL_checkinteger(state, 3);
+    }
+    if (!lua_isnoneornil(state, 4)) {
+        tree_depth = (uint32_t)luaL_checkinteger(state, 4);
+    }
+
+    status = nmo_behavior_view_from_behavior(workspace, behavior_id, &behavior_view);
+    if (status == NMO_ERR_NOT_FOUND) {
+        lua_pushnil(state);
+        return 1;
+    }
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Failed to inspect behavior");
+    }
+
+    status = nmo_behavior_view_describe_boundary(workspace,
+                                                 behavior_id,
+                                                 boundary_depth,
+                                                 &boundary_view);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Failed to inspect behavior boundary");
+    }
+
+    memset(&tree_view, 0, sizeof(tree_view));
+    status = nmo_behavior_trace_script_tree(
+        workspace, behavior_id, tree_depth, &tree_view);
+    if (status != NMO_OK) {
+        nmo_behavior_tree_view_destroy(&tree_view);
+        return nmo_lua_raise_last_error(state, status, "Failed to inspect script tree");
+    }
+
+    lua_createtable(state, 0, 4);
+    nmo_lua_behavior_push_view(state, &behavior_view);
+    lua_setfield(state, -2, "view");
+    nmo_lua_behavior_push_boundary_view(state, &boundary_view);
+    lua_setfield(state, -2, "boundary");
+    if (behavior_view.interface_available) {
+        nmo_lua_push_interface_view(state, &behavior_view.interface_view);
+    } else {
+        lua_pushnil(state);
+    }
+    lua_setfield(state, -2, "interface");
+    nmo_lua_behavior_push_script_tree_view(state, &tree_view);
+    lua_setfield(state, -2, "tree");
+    nmo_behavior_tree_view_destroy(&tree_view);
+    return 1;
+}
+
+static int nmo_lua_behavior_graph(lua_State *state)
+{
+    nmo_script_edit_graph_t *graph = NULL;
+    nmo_arena_t *arena = NULL;
+    const nmo_script_edit_node_t *nodes = NULL;
+    const nmo_script_edit_control_edge_t *control_edges = NULL;
+    const nmo_script_edit_data_edge_t *data_edges = NULL;
+    const nmo_ref_edge_t *external_refs = NULL;
+    size_t node_count = 0u;
+    size_t control_edge_count = 0u;
+    size_t data_edge_count = 0u;
+    size_t external_ref_count = 0u;
+    size_t broken_ref_count = 0u;
+    nmo_status_t status =
+        nmo_lua_behavior_build_graph_from_args(state, 1, 2, 3, &graph);
+    if (status == NMO_ERR_NOT_FOUND) {
+        lua_pushnil(state);
+        return 1;
+    }
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Failed to build behavior graph");
+    }
+
+    arena = nmo_arena_create(NULL, 0);
+    if (arena == NULL) {
+        nmo_script_edit_graph_destroy(graph);
+        return nmo_lua_raise_last_error(state, NMO_ERR_NOMEM, "Failed to allocate graph arena");
+    }
+
+    nodes = nmo_script_edit_graph_nodes(graph, &node_count);
+    control_edges = nmo_script_edit_graph_control_edges(graph, &control_edge_count);
+    data_edges = nmo_script_edit_graph_data_edges(graph, &data_edge_count);
+    status = nmo_script_edit_graph_reference_validation_status(graph, &broken_ref_count);
+    if (status == NMO_OK) {
+        status = nmo_script_edit_graph_get_external_refs(graph,
+                                                         arena,
+                                                         &external_refs,
+                                                         &external_ref_count);
+    }
+    if (status != NMO_OK) {
+        nmo_arena_destroy(arena);
+        nmo_script_edit_graph_destroy(graph);
+        return nmo_lua_raise_last_error(state, status, "Failed to inspect behavior graph");
+    }
+
+    lua_createtable(state, 0, 7);
+    lua_pushinteger(state, (lua_Integer)nmo_script_edit_graph_root_behavior_id(graph));
+    lua_setfield(state, -2, "root_behavior_id");
+    lua_pushboolean(state, nmo_script_edit_graph_edit_ready(graph) ? 1 : 0);
+    lua_setfield(state, -2, "edit_ready");
+    lua_pushboolean(state, nmo_script_edit_graph_owner_index_available(graph) ? 1 : 0);
+    lua_setfield(state, -2, "owner_index_available");
+    lua_pushinteger(state, (lua_Integer)broken_ref_count);
+    lua_setfield(state, -2, "broken_ref_count");
+    nmo_lua_behavior_push_graph_node_array(state, nodes, node_count);
+    lua_setfield(state, -2, "nodes");
+    nmo_lua_behavior_push_graph_control_edge_array(state, control_edges, control_edge_count);
+    lua_setfield(state, -2, "control_edges");
+    nmo_lua_behavior_push_graph_data_edge_array(state, data_edges, data_edge_count);
+    lua_setfield(state, -2, "data_edges");
+    nmo_lua_behavior_push_ref_edge_array(state, external_refs, external_ref_count);
+    lua_setfield(state, -2, "external_refs");
+
+    nmo_arena_destroy(arena);
+    nmo_script_edit_graph_destroy(graph);
+    return 1;
+}
+
+static int nmo_lua_behavior_graph_find_owner(lua_State *state)
+{
+    nmo_script_edit_graph_t *graph = NULL;
+    nmo_object_id_t object_id = 0u;
+    nmo_script_edit_endpoint_t owner = {0};
+    nmo_status_t status =
+        nmo_lua_behavior_build_graph_from_args(state, 1, 2, 4, &graph);
+    if (status == NMO_ERR_NOT_FOUND) {
+        lua_pushnil(state);
+        return 1;
+    }
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Failed to build behavior graph");
+    }
+
+    object_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
+    status = nmo_script_edit_graph_find_owner(graph, object_id, &owner);
+    nmo_script_edit_graph_destroy(graph);
+    if (status == NMO_ERR_NOT_FOUND) {
+        lua_pushnil(state);
+        return 1;
+    }
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Failed to resolve graph owner");
+    }
+
+    nmo_lua_behavior_push_graph_endpoint(state, &owner);
+    return 1;
+}
+
+static int nmo_lua_behavior_graph_incoming_control(lua_State *state)
+{
+    nmo_script_edit_graph_t *graph = NULL;
+    nmo_object_id_t behavior_id = 0u;
+    nmo_arena_t *arena = NULL;
+    const nmo_script_edit_control_edge_t *edges = NULL;
+    size_t count = 0u;
+    nmo_status_t status =
+        nmo_lua_behavior_build_graph_from_args(state, 1, 2, 4, &graph);
+    if (status == NMO_ERR_NOT_FOUND) {
+        lua_pushnil(state);
+        return 1;
+    }
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Failed to build behavior graph");
+    }
+
+    behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
+    arena = nmo_arena_create(NULL, 0);
+    if (arena == NULL) {
+        nmo_script_edit_graph_destroy(graph);
+        return nmo_lua_raise_last_error(state, NMO_ERR_NOMEM, "Failed to allocate graph arena");
+    }
+
+    status = nmo_script_edit_graph_get_incoming_control(graph, behavior_id, arena, &edges, &count);
+    if (status == NMO_ERR_NOT_FOUND) {
+        nmo_arena_destroy(arena);
+        nmo_script_edit_graph_destroy(graph);
+        lua_pushnil(state);
+        return 1;
+    }
+    if (status != NMO_OK) {
+        nmo_arena_destroy(arena);
+        nmo_script_edit_graph_destroy(graph);
+        return nmo_lua_raise_last_error(state, status, "Failed to inspect incoming control edges");
+    }
+
+    nmo_lua_behavior_push_graph_control_edge_array(state, edges, count);
+    nmo_arena_destroy(arena);
+    nmo_script_edit_graph_destroy(graph);
+    return 1;
+}
+
+static int nmo_lua_behavior_graph_outgoing_control(lua_State *state)
+{
+    nmo_script_edit_graph_t *graph = NULL;
+    nmo_object_id_t behavior_id = 0u;
+    nmo_arena_t *arena = NULL;
+    const nmo_script_edit_control_edge_t *edges = NULL;
+    size_t count = 0u;
+    nmo_status_t status =
+        nmo_lua_behavior_build_graph_from_args(state, 1, 2, 4, &graph);
+    if (status == NMO_ERR_NOT_FOUND) {
+        lua_pushnil(state);
+        return 1;
+    }
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Failed to build behavior graph");
+    }
+
+    behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
+    arena = nmo_arena_create(NULL, 0);
+    if (arena == NULL) {
+        nmo_script_edit_graph_destroy(graph);
+        return nmo_lua_raise_last_error(state, NMO_ERR_NOMEM, "Failed to allocate graph arena");
+    }
+
+    status = nmo_script_edit_graph_get_outgoing_control(graph, behavior_id, arena, &edges, &count);
+    if (status == NMO_ERR_NOT_FOUND) {
+        nmo_arena_destroy(arena);
+        nmo_script_edit_graph_destroy(graph);
+        lua_pushnil(state);
+        return 1;
+    }
+    if (status != NMO_OK) {
+        nmo_arena_destroy(arena);
+        nmo_script_edit_graph_destroy(graph);
+        return nmo_lua_raise_last_error(state, status, "Failed to inspect outgoing control edges");
+    }
+
+    nmo_lua_behavior_push_graph_control_edge_array(state, edges, count);
+    nmo_arena_destroy(arena);
+    nmo_script_edit_graph_destroy(graph);
+    return 1;
+}
+
+static int nmo_lua_behavior_graph_parameter_sources(lua_State *state)
+{
+    nmo_script_edit_graph_t *graph = NULL;
+    nmo_object_id_t parameter_id = 0u;
+    nmo_arena_t *arena = NULL;
+    const nmo_script_edit_data_edge_t *edges = NULL;
+    size_t count = 0u;
+    nmo_status_t status =
+        nmo_lua_behavior_build_graph_from_args(state, 1, 2, 4, &graph);
+    if (status == NMO_ERR_NOT_FOUND) {
+        lua_pushnil(state);
+        return 1;
+    }
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Failed to build behavior graph");
+    }
+
+    parameter_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
+    arena = nmo_arena_create(NULL, 0);
+    if (arena == NULL) {
+        nmo_script_edit_graph_destroy(graph);
+        return nmo_lua_raise_last_error(state, NMO_ERR_NOMEM, "Failed to allocate graph arena");
+    }
+
+    status = nmo_script_edit_graph_get_parameter_sources(graph, parameter_id, arena, &edges, &count);
+    if (status == NMO_ERR_NOT_FOUND) {
+        nmo_arena_destroy(arena);
+        nmo_script_edit_graph_destroy(graph);
+        lua_pushnil(state);
+        return 1;
+    }
+    if (status != NMO_OK) {
+        nmo_arena_destroy(arena);
+        nmo_script_edit_graph_destroy(graph);
+        return nmo_lua_raise_last_error(state, status, "Failed to inspect parameter sources");
+    }
+
+    nmo_lua_behavior_push_graph_data_edge_array(state, edges, count);
+    nmo_arena_destroy(arena);
+    nmo_script_edit_graph_destroy(graph);
+    return 1;
+}
+
+static int nmo_lua_behavior_graph_parameter_destinations(lua_State *state)
+{
+    nmo_script_edit_graph_t *graph = NULL;
+    nmo_object_id_t parameter_id = 0u;
+    nmo_arena_t *arena = NULL;
+    const nmo_script_edit_data_edge_t *edges = NULL;
+    size_t count = 0u;
+    nmo_status_t status =
+        nmo_lua_behavior_build_graph_from_args(state, 1, 2, 4, &graph);
+    if (status == NMO_ERR_NOT_FOUND) {
+        lua_pushnil(state);
+        return 1;
+    }
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Failed to build behavior graph");
+    }
+
+    parameter_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
+    arena = nmo_arena_create(NULL, 0);
+    if (arena == NULL) {
+        nmo_script_edit_graph_destroy(graph);
+        return nmo_lua_raise_last_error(state, NMO_ERR_NOMEM, "Failed to allocate graph arena");
+    }
+
+    status = nmo_script_edit_graph_get_parameter_destinations(graph,
+                                                              parameter_id,
+                                                              arena,
+                                                              &edges,
+                                                              &count);
+    if (status == NMO_ERR_NOT_FOUND) {
+        nmo_arena_destroy(arena);
+        nmo_script_edit_graph_destroy(graph);
+        lua_pushnil(state);
+        return 1;
+    }
+    if (status != NMO_OK) {
+        nmo_arena_destroy(arena);
+        nmo_script_edit_graph_destroy(graph);
+        return nmo_lua_raise_last_error(state,
+                                        status,
+                                        "Failed to inspect parameter destinations");
+    }
+
+    nmo_lua_behavior_push_graph_data_edge_array(state, edges, count);
+    nmo_arena_destroy(arena);
+    nmo_script_edit_graph_destroy(graph);
+    return 1;
+}
+
+static nmo_status_t nmo_lua_behavior_parse_graph_handle_kind(
+    lua_State *state,
+    int index,
+    nmo_script_edit_handle_kind_t *out_kind)
+{
+    if (lua_isinteger(state, index)) {
+        lua_Integer value = lua_tointeger(state, index);
+        if (value < (lua_Integer)NMO_SCRIPT_EDIT_HANDLE_OBJECT_ID ||
+            value > (lua_Integer)NMO_SCRIPT_EDIT_HANDLE_SLOT) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "invalid graph handle kind");
+        }
+        *out_kind = (nmo_script_edit_handle_kind_t)value;
+        NMO_RETURN_OK();
+    }
+
+    if (!lua_isstring(state, index)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "graph handle kind must be a string or integer");
+    }
+
+    const char *kind = lua_tostring(state, index);
+    if (kind == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "graph handle kind must be non-null");
+    }
+    if (strcmp(kind, "object_id") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_HANDLE_OBJECT_ID;
+        NMO_RETURN_OK();
+    }
+    if (strcmp(kind, "alias") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_HANDLE_ALIAS;
+        NMO_RETURN_OK();
+    }
+    if (strcmp(kind, "query") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_HANDLE_QUERY;
+        NMO_RETURN_OK();
+    }
+    if (strcmp(kind, "slot") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_HANDLE_SLOT;
+        NMO_RETURN_OK();
+    }
+
+    NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                     "unknown graph handle kind '%s'", kind);
+}
+
+static nmo_status_t nmo_lua_behavior_parse_graph_op_kind(
+    lua_State *state,
+    int index,
+    nmo_script_edit_op_kind_t *out_kind)
+{
+    if (lua_isinteger(state, index)) {
+        lua_Integer value = lua_tointeger(state, index);
+        if (value < (lua_Integer)NMO_SCRIPT_EDIT_OP_NODE_ADD ||
+            value > (lua_Integer)NMO_SCRIPT_EDIT_OP_VALIDATE) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "invalid graph operation kind");
+        }
+        *out_kind = (nmo_script_edit_op_kind_t)value;
+        NMO_RETURN_OK();
+    }
+
+    if (!lua_isstring(state, index)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "graph operation kind must be a string or integer");
+    }
+
+    const char *kind = lua_tostring(state, index);
+    if (kind == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "graph operation kind must be non-null");
+    }
+    if (strcmp(kind, "node_add") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_OP_NODE_ADD;
+    } else if (strcmp(kind, "node_remove") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_OP_NODE_REMOVE;
+    } else if (strcmp(kind, "io_add") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_OP_IO_ADD;
+    } else if (strcmp(kind, "io_rename") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_OP_IO_RENAME;
+    } else if (strcmp(kind, "io_remove") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_OP_IO_REMOVE;
+    } else if (strcmp(kind, "link_add") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_OP_LINK_ADD;
+    } else if (strcmp(kind, "link_rewire") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_OP_LINK_REWIRE;
+    } else if (strcmp(kind, "link_remove") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_OP_LINK_REMOVE;
+    } else if (strcmp(kind, "param_add") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_OP_PARAM_ADD;
+    } else if (strcmp(kind, "param_set") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_OP_PARAM_SET;
+    } else if (strcmp(kind, "param_connect") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_OP_PARAM_CONNECT;
+    } else if (strcmp(kind, "param_disconnect") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_OP_PARAM_DISCONNECT;
+    } else if (strcmp(kind, "param_remove") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_OP_PARAM_REMOVE;
+    } else if (strcmp(kind, "operation_add") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_OP_OPERATION_ADD;
+    } else if (strcmp(kind, "operation_rewire") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_OP_OPERATION_REWIRE;
+    } else if (strcmp(kind, "operation_remove") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_OP_OPERATION_REMOVE;
+    } else if (strcmp(kind, "subgraph_fold") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_OP_SUBGRAPH_FOLD;
+    } else if (strcmp(kind, "validate") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_OP_VALIDATE;
+    } else {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "unknown graph operation kind '%s'", kind);
+    }
+
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_lua_behavior_parse_graph_handle(
+    lua_State *state,
+    int index,
+    nmo_script_edit_handle_t *out_handle)
+{
+    int table_index = 0;
+    bool has_kind = false;
+    bool has_object_id = false;
+    bool has_alias = false;
+    bool has_query = false;
+    bool has_owner_id = false;
+    bool has_slot_index = false;
+    bool has_slot_kind = false;
+    nmo_status_t status = NMO_OK;
+
+    if (out_handle == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "graph handle output must be non-null");
+    }
+    if (!lua_istable(state, index)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "graph handle must be a table");
+    }
+
+    memset(out_handle, 0, sizeof(*out_handle));
+    table_index = lua_absindex(state, index);
+
+    lua_getfield(state, table_index, "kind");
+    if (!lua_isnoneornil(state, -1)) {
+        has_kind = true;
+        status = nmo_lua_behavior_parse_graph_handle_kind(state, -1, &out_handle->kind);
+        lua_pop(state, 1);
+        if (status != NMO_OK) {
+            return status;
+        }
+    } else {
+        lua_pop(state, 1);
+    }
+
+    lua_getfield(state, table_index, "object_id");
+    if (!lua_isnoneornil(state, -1)) {
+        out_handle->object_id = (nmo_object_id_t)luaL_checkinteger(state, -1);
+        has_object_id = true;
+    }
+    lua_pop(state, 1);
+
+    lua_getfield(state, table_index, "alias");
+    if (!lua_isnoneornil(state, -1)) {
+        out_handle->alias = luaL_checkstring(state, -1);
+        has_alias = true;
+    }
+    lua_pop(state, 1);
+
+    lua_getfield(state, table_index, "query");
+    if (!lua_isnoneornil(state, -1)) {
+        out_handle->query = luaL_checkstring(state, -1);
+        has_query = true;
+    }
+    lua_pop(state, 1);
+
+    lua_getfield(state, table_index, "owner_id");
+    if (!lua_isnoneornil(state, -1)) {
+        out_handle->owner_id = (nmo_object_id_t)luaL_checkinteger(state, -1);
+        has_owner_id = true;
+    }
+    lua_pop(state, 1);
+
+    lua_getfield(state, table_index, "slot_index");
+    if (!lua_isnoneornil(state, -1)) {
+        out_handle->slot_index = (int32_t)luaL_checkinteger(state, -1);
+        has_slot_index = true;
+    }
+    lua_pop(state, 1);
+
+    lua_getfield(state, table_index, "slot_kind");
+    if (!lua_isnoneornil(state, -1)) {
+        out_handle->slot_kind = (uint32_t)luaL_checkinteger(state, -1);
+        has_slot_kind = true;
+    }
+    lua_pop(state, 1);
+
+    if (!has_kind) {
+        if (has_object_id) {
+            out_handle->kind = NMO_SCRIPT_EDIT_HANDLE_OBJECT_ID;
+        } else if (has_alias) {
+            out_handle->kind = NMO_SCRIPT_EDIT_HANDLE_ALIAS;
+        } else if (has_query) {
+            out_handle->kind = NMO_SCRIPT_EDIT_HANDLE_QUERY;
+        } else if (has_owner_id || has_slot_index || has_slot_kind) {
+            out_handle->kind = NMO_SCRIPT_EDIT_HANDLE_SLOT;
+        } else {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "graph handle table does not identify a handle kind");
+        }
+    }
+
+    switch (out_handle->kind) {
+    case NMO_SCRIPT_EDIT_HANDLE_OBJECT_ID:
+        if (!has_object_id) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "object_id handles require object_id");
+        }
+        break;
+    case NMO_SCRIPT_EDIT_HANDLE_ALIAS:
+        if (!has_alias) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "alias handles require alias");
+        }
+        break;
+    case NMO_SCRIPT_EDIT_HANDLE_QUERY:
+        if (!has_query) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "query handles require query");
+        }
+        break;
+    case NMO_SCRIPT_EDIT_HANDLE_SLOT:
+        if (!has_owner_id || !has_slot_index || !has_slot_kind) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "slot handles require owner_id, slot_index, and slot_kind");
+        }
+        break;
+    default:
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "unknown graph handle kind");
+    }
+
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_lua_behavior_parse_graph_operation(
+    lua_State *state,
+    int index,
+    nmo_script_edit_op_t *out_op)
+{
+    int table_index = 0;
+    nmo_status_t status = NMO_OK;
+
+    if (out_op == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "graph operation output must be non-null");
+    }
+    if (!lua_istable(state, index)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "graph operation must be a table");
+    }
+
+    memset(out_op, 0, sizeof(*out_op));
+    table_index = lua_absindex(state, index);
+
+    lua_getfield(state, table_index, "kind");
+    status = nmo_lua_behavior_parse_graph_op_kind(state, -1, &out_op->kind);
+    lua_pop(state, 1);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    lua_getfield(state, table_index, "primary");
+    if (!lua_isnoneornil(state, -1)) {
+        status = nmo_lua_behavior_parse_graph_handle(state, -1, &out_op->primary);
+        lua_pop(state, 1);
+        if (status != NMO_OK) {
+            return status;
+        }
+    } else {
+        lua_pop(state, 1);
+    }
+
+    lua_getfield(state, table_index, "secondary");
+    if (!lua_isnoneornil(state, -1)) {
+        status = nmo_lua_behavior_parse_graph_handle(state, -1, &out_op->secondary);
+        lua_pop(state, 1);
+        if (status != NMO_OK) {
+            return status;
+        }
+    } else {
+        lua_pop(state, 1);
+    }
+
+    lua_getfield(state, table_index, "label");
+    if (!lua_isnoneornil(state, -1)) {
+        out_op->label = luaL_checkstring(state, -1);
+    }
+    lua_pop(state, 1);
+
+    lua_getfield(state, table_index, "guid");
+    if (!lua_isnoneornil(state, -1)) {
+        status = nmo_lua_behavior_parse_guid_arg(state, -1, &out_op->guid);
+        lua_pop(state, 1);
+        if (status != NMO_OK) {
+            return status;
+        }
+    } else {
+        lua_pop(state, 1);
+    }
+
+    lua_getfield(state, table_index, "flags");
+    if (!lua_isnoneornil(state, -1)) {
+        out_op->flags = (uint32_t)luaL_checkinteger(state, -1);
+    }
+    lua_pop(state, 1);
+
+    NMO_RETURN_OK();
+}
+
+static int nmo_lua_behavior_graph_resolve_handle(lua_State *state)
+{
+    nmo_script_edit_graph_t *graph = NULL;
+    nmo_script_edit_handle_t handle = {0};
+    nmo_object_id_t object_id = 0u;
+    nmo_status_t status =
+        nmo_lua_behavior_build_graph_from_args(state, 1, 2, 4, &graph);
+    if (status == NMO_ERR_NOT_FOUND) {
+        lua_pushnil(state);
+        return 1;
+    }
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Failed to build behavior graph");
+    }
+
+    status = nmo_lua_behavior_parse_graph_handle(state, 3, &handle);
+    if (status != NMO_OK) {
+        nmo_script_edit_graph_destroy(graph);
+        return nmo_lua_raise_last_error(state, status, "Invalid graph handle");
+    }
+
+    status = nmo_script_edit_graph_resolve_handle(graph, &handle, &object_id);
+    nmo_script_edit_graph_destroy(graph);
+    if (status == NMO_ERR_NOT_FOUND) {
+        lua_pushnil(state);
+        return 1;
+    }
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Failed to resolve graph handle");
+    }
+
+    lua_pushinteger(state, (lua_Integer)object_id);
+    return 1;
+}
+
+static int nmo_lua_behavior_graph_validate_operation(lua_State *state)
+{
+    nmo_script_edit_graph_t *graph = NULL;
+    nmo_script_edit_op_t op = {0};
+    nmo_status_t status =
+        nmo_lua_behavior_build_graph_from_args(state, 1, 2, 4, &graph);
+    if (status == NMO_ERR_NOT_FOUND) {
+        lua_pushnil(state);
+        return 1;
+    }
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Failed to build behavior graph");
+    }
+
+    status = nmo_lua_behavior_parse_graph_operation(state, 3, &op);
+    if (status != NMO_OK) {
+        nmo_script_edit_graph_destroy(graph);
+        return nmo_lua_raise_last_error(state, status, "Invalid graph operation");
+    }
+
+    status = nmo_script_edit_graph_validate_operation(graph, &op);
+    nmo_script_edit_graph_destroy(graph);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state,
+                                        status,
+                                        "Graph operation validation failed");
+    }
+
+    lua_pushboolean(state, 1);
+    return 1;
+}
+
+static int nmo_lua_behavior_execute(lua_State *state)
+{
+    const char *input_path = NULL;
+    const char *output_path = NULL;
+    nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
+    nmo_script_edit_report_t report = {0};
+    nmo_context_t *context = NULL;
+    nmo_lua_behavior_execute_action_t action = {0};
+    nmo_lua_dump_buffer_t dump_buffer = {0};
+    nmo_status_t status = NMO_OK;
+
+    input_path = luaL_checkstring(state, 1);
+    if (!lua_isnoneornil(state, 2)) {
+        output_path = luaL_checkstring(state, 2);
+    }
+    if (!lua_isnoneornil(state, 3)) {
+        if (!lua_istable(state, 3)) {
+            return luaL_error(state, "executor options must be a table");
+        }
+
+        lua_getfield(state, 3, "label");
+        if (!lua_isnoneornil(state, -1)) {
+            options.label = luaL_checkstring(state, -1);
+        }
+        lua_pop(state, 1);
+
+        lua_getfield(state, 3, "dry_run");
+        if (!lua_isnoneornil(state, -1)) {
+            options.dry_run = lua_toboolean(state, -1) != 0;
+        }
+        lua_pop(state, 1);
+
+        lua_getfield(state, 3, "validation_flags");
+        if (!lua_isnoneornil(state, -1)) {
+            options.validation_flags = (uint32_t)luaL_checkinteger(state, -1);
+        }
+        lua_pop(state, 1);
+    }
+
+    luaL_checktype(state, 4, LUA_TFUNCTION);
+    if (lua_iscfunction(state, 4)) {
+        return luaL_error(state, "behavior.execute callback must be a Lua function");
+    }
+
+    lua_pushvalue(state, 4);
+    if (lua_dump(state, nmo_lua_behavior_dump_writer, &dump_buffer, 0) != 0) {
+        lua_pop(state, 1);
+        nmo_lua_behavior_dump_buffer_clear(&dump_buffer);
+        return nmo_lua_raise_last_error(state,
+                                        NMO_ERR_VALIDATION_FAILED,
+                                        "Failed to serialize executor callback");
+    }
+    lua_pop(state, 1);
+
+    action.dumped_chunk = dump_buffer.data;
+    action.dumped_size = dump_buffer.size;
+
+    context = nmo_context_create(NULL);
+    if (context == NULL) {
+        nmo_lua_behavior_dump_buffer_clear(&dump_buffer);
+        return nmo_lua_raise_last_error(state, NMO_ERR_NOMEM, "Failed to create executor context");
+    }
+
+    status = nmo_behavior_execute(context,
+                                         input_path,
+                                         output_path,
+                                         &options,
+                                         nmo_lua_behavior_execute_action_fn,
+                                         &action,
+                                         &report);
+    nmo_context_release(context);
+    nmo_lua_behavior_dump_buffer_clear(&dump_buffer);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Lua behavior executor failed");
+    }
+
+    nmo_lua_behavior_push_report(state, &report);
+    return 1;
+}
+
 static int nmo_lua_behavior_describe_boundary(lua_State *state)
 {
-    nmo_session_t *session = NULL;
+    nmo_workspace_t *workspace = NULL;
     nmo_status_t status =
-        nmo_lua_check_session_handle(state, 1, &session, NULL);
+        nmo_lua_check_workspace_handle(state, 1, &workspace, NULL, NULL);
     if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid session handle");
+        return nmo_lua_raise_last_error(state, status, "Invalid workspace handle");
     }
 
     nmo_object_id_t behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
@@ -447,7 +1749,7 @@ static int nmo_lua_behavior_describe_boundary(lua_State *state)
     }
 
     nmo_behavior_boundary_view_t view = {0};
-    status = nmo_behavior_view_describe_boundary(session, behavior_id, max_depth, &view);
+    status = nmo_behavior_view_describe_boundary(workspace, behavior_id, max_depth, &view);
     if (status == NMO_ERR_NOT_FOUND) {
         lua_pushnil(state);
         return 1;
@@ -462,110 +1764,88 @@ static int nmo_lua_behavior_describe_boundary(lua_State *state)
 
 static int nmo_lua_behavior_trace_parameter_chain(lua_State *state)
 {
-    nmo_session_t *session = NULL;
-    nmo_context_t *context = NULL;
+    nmo_workspace_t *workspace = NULL;
     nmo_object_id_t parameter_id = 0u;
     uint32_t max_depth = 32u;
-    nmo_script_trace_chain_view_t view;
+    nmo_behavior_trace_chain_view_t view;
     nmo_status_t status =
-        nmo_lua_check_session_handle(state, 1, &session, NULL);
+        nmo_lua_check_workspace_handle(state, 1, &workspace, NULL, NULL);
     if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid session handle");
+        return nmo_lua_raise_last_error(state, status, "Invalid workspace handle");
     }
 
     parameter_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
     if (!lua_isnoneornil(state, 3)) {
         max_depth = (uint32_t)luaL_checkinteger(state, 3);
     }
-    context = nmo_session_get_context(session);
-    if (context == NULL) {
-        return nmo_lua_raise_last_error(state,
-                                        NMO_ERR_INVALID_STATE,
-                                        "Lua session handle has no context");
-    }
 
     memset(&view, 0, sizeof(view));
-    status = nmo_script_trace_parameter_chain(
-        context, session, parameter_id, max_depth, &view);
+    status = nmo_behavior_trace_parameter_chain(workspace, parameter_id, max_depth, &view);
     if (status == NMO_ERR_NOT_FOUND) {
         lua_pushnil(state);
         return 1;
     }
     if (status != NMO_OK) {
-        nmo_script_trace_chain_view_destroy(&view);
+        nmo_behavior_trace_chain_view_destroy(&view);
         return nmo_lua_raise_last_error(state, status, "Failed to trace parameter chain");
     }
 
     nmo_lua_behavior_push_trace_chain_view(state, &view);
-    nmo_script_trace_chain_view_destroy(&view);
+    nmo_behavior_trace_chain_view_destroy(&view);
     return 1;
 }
 
 static int nmo_lua_behavior_script_tree(lua_State *state)
 {
-    nmo_session_t *session = NULL;
-    nmo_context_t *context = NULL;
+    nmo_workspace_t *workspace = NULL;
     nmo_object_id_t root_behavior_id = 0u;
     uint32_t max_depth = UINT32_MAX;
-    nmo_script_tree_view_t view;
+    nmo_behavior_tree_view_t view;
     nmo_status_t status =
-        nmo_lua_check_session_handle(state, 1, &session, NULL);
+        nmo_lua_check_workspace_handle(state, 1, &workspace, NULL, NULL);
     if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid session handle");
+        return nmo_lua_raise_last_error(state, status, "Invalid workspace handle");
     }
 
     root_behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
     if (!lua_isnoneornil(state, 3)) {
         max_depth = (uint32_t)luaL_checkinteger(state, 3);
     }
-    context = nmo_session_get_context(session);
-    if (context == NULL) {
-        return nmo_lua_raise_last_error(state,
-                                        NMO_ERR_INVALID_STATE,
-                                        "Lua session handle has no context");
-    }
 
     memset(&view, 0, sizeof(view));
-    status = nmo_script_trace_script_tree(
-        context, session, root_behavior_id, max_depth, &view);
+    status = nmo_behavior_trace_script_tree(workspace, root_behavior_id, max_depth, &view);
     if (status == NMO_ERR_NOT_FOUND) {
         lua_pushnil(state);
         return 1;
     }
     if (status != NMO_OK) {
-        nmo_script_tree_view_destroy(&view);
+        nmo_behavior_tree_view_destroy(&view);
         return nmo_lua_raise_last_error(state, status, "Failed to inspect script tree");
     }
 
     nmo_lua_behavior_push_script_tree_view(state, &view);
-    nmo_script_tree_view_destroy(&view);
+    nmo_behavior_tree_view_destroy(&view);
     return 1;
 }
 
 static int nmo_lua_behavior_begin_edit(lua_State *state)
 {
-    nmo_context_t *context = NULL;
-    nmo_session_t *session = NULL;
-    nmo_lua_handle_scope_t *session_scope = NULL;
+    nmo_workspace_t *workspace = NULL;
+    nmo_lua_handle_scope_t *workspace_scope = NULL;
     nmo_status_t status =
-        nmo_lua_check_context_handle(state, 1, &context, NULL);
+        nmo_lua_check_workspace_handle(state, 1, &workspace, &workspace_scope, NULL);
     if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid context handle");
+        return nmo_lua_raise_last_error(state, status, "Invalid workspace handle");
     }
 
-    status = nmo_lua_check_session_handle(state, 2, &session, &session_scope);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid session handle");
-    }
-
-    const char *label = luaL_optstring(state, 3, "lua-script-edit");
+    const char *label = luaL_optstring(state, 2, "lua-script-edit");
     nmo_script_edit_tx_t *tx = NULL;
-    status = nmo_script_edit_begin(context, session, label, &tx);
+    status = nmo_lua_behavior_begin_script_edit(workspace, label, &tx);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to begin script edit");
     }
 
-    status = nmo_lua_push_script_edit_tx_handle(state, tx, session_scope);
+    status = nmo_lua_push_script_edit_tx_handle(state, tx, workspace_scope);
     if (status != NMO_OK) {
         nmo_script_edit_rollback(tx);
         return nmo_lua_raise_last_error(state, status, "Failed to push script edit handle");
@@ -1135,9 +2415,63 @@ static void nmo_lua_behavior_push_operation_slot_flags(lua_State *state)
     lua_setfield(state, -2, "out");
 }
 
+static void nmo_lua_behavior_push_graph_handle_kinds(lua_State *state)
+{
+    lua_createtable(state, 0, 4);
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_HANDLE_OBJECT_ID);
+    lua_setfield(state, -2, "object_id");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_HANDLE_ALIAS);
+    lua_setfield(state, -2, "alias");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_HANDLE_QUERY);
+    lua_setfield(state, -2, "query");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_HANDLE_SLOT);
+    lua_setfield(state, -2, "slot");
+}
+
+static void nmo_lua_behavior_push_graph_op_kinds(lua_State *state)
+{
+    lua_createtable(state, 0, 18);
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_NODE_ADD);
+    lua_setfield(state, -2, "node_add");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_NODE_REMOVE);
+    lua_setfield(state, -2, "node_remove");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_IO_ADD);
+    lua_setfield(state, -2, "io_add");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_IO_RENAME);
+    lua_setfield(state, -2, "io_rename");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_IO_REMOVE);
+    lua_setfield(state, -2, "io_remove");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_LINK_ADD);
+    lua_setfield(state, -2, "link_add");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_LINK_REWIRE);
+    lua_setfield(state, -2, "link_rewire");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_LINK_REMOVE);
+    lua_setfield(state, -2, "link_remove");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_PARAM_ADD);
+    lua_setfield(state, -2, "param_add");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_PARAM_SET);
+    lua_setfield(state, -2, "param_set");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_PARAM_CONNECT);
+    lua_setfield(state, -2, "param_connect");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_PARAM_DISCONNECT);
+    lua_setfield(state, -2, "param_disconnect");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_PARAM_REMOVE);
+    lua_setfield(state, -2, "param_remove");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_OPERATION_ADD);
+    lua_setfield(state, -2, "operation_add");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_OPERATION_REWIRE);
+    lua_setfield(state, -2, "operation_rewire");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_OPERATION_REMOVE);
+    lua_setfield(state, -2, "operation_remove");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_SUBGRAPH_FOLD);
+    lua_setfield(state, -2, "subgraph_fold");
+    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_VALIDATE);
+    lua_setfield(state, -2, "validate");
+}
+
 static int nmo_lua_open_behavior_module(lua_State *state)
 {
-    lua_createtable(state, 0, 29);
+    lua_createtable(state, 0, 27);
 
     lua_pushcfunction(state, nmo_lua_behavior_script_count);
     lua_setfield(state, -2, "script_count");
@@ -1151,6 +2485,9 @@ static int nmo_lua_open_behavior_module(lua_State *state)
     lua_pushcfunction(state, nmo_lua_behavior_view);
     lua_setfield(state, -2, "view");
 
+    lua_pushcfunction(state, nmo_lua_behavior_inspect);
+    lua_setfield(state, -2, "inspect");
+
     lua_pushcfunction(state, nmo_lua_behavior_describe_boundary);
     lua_setfield(state, -2, "describe_boundary");
 
@@ -1159,6 +2496,28 @@ static int nmo_lua_open_behavior_module(lua_State *state)
 
     lua_pushcfunction(state, nmo_lua_behavior_script_tree);
     lua_setfield(state, -2, "script_tree");
+
+    lua_createtable(state, 0, 8);
+    lua_pushcfunction(state, nmo_lua_behavior_graph);
+    lua_setfield(state, -2, "build");
+    lua_pushcfunction(state, nmo_lua_behavior_graph_find_owner);
+    lua_setfield(state, -2, "find_owner");
+    lua_pushcfunction(state, nmo_lua_behavior_graph_incoming_control);
+    lua_setfield(state, -2, "incoming_control");
+    lua_pushcfunction(state, nmo_lua_behavior_graph_outgoing_control);
+    lua_setfield(state, -2, "outgoing_control");
+    lua_pushcfunction(state, nmo_lua_behavior_graph_parameter_sources);
+    lua_setfield(state, -2, "parameter_sources");
+    lua_pushcfunction(state, nmo_lua_behavior_graph_parameter_destinations);
+    lua_setfield(state, -2, "parameter_destinations");
+    lua_pushcfunction(state, nmo_lua_behavior_graph_resolve_handle);
+    lua_setfield(state, -2, "resolve_handle");
+    lua_pushcfunction(state, nmo_lua_behavior_graph_validate_operation);
+    lua_setfield(state, -2, "validate_operation");
+    lua_setfield(state, -2, "graph");
+
+    lua_pushcfunction(state, nmo_lua_behavior_execute);
+    lua_setfield(state, -2, "execute");
 
     lua_pushcfunction(state, nmo_lua_behavior_begin_edit);
     lua_setfield(state, -2, "begin_edit");
@@ -1244,6 +2603,12 @@ static int nmo_lua_open_behavior_module(lua_State *state)
     nmo_lua_behavior_push_operation_slot_flags(state);
     lua_setfield(state, -2, "operation_slot_flags");
 
+    nmo_lua_behavior_push_graph_handle_kinds(state);
+    lua_setfield(state, -2, "graph_handle_kinds");
+
+    nmo_lua_behavior_push_graph_op_kinds(state);
+    lua_setfield(state, -2, "graph_op_kinds");
+
     return 1;
 }
 
@@ -1256,3 +2621,5 @@ nmo_status_t nmo_lua_register_behavior_bindings(nmo_lua_runtime_t *runtime)
 
     return nmo_lua_runtime_register_module(runtime, &module);
 }
+
+

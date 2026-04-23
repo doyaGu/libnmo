@@ -195,10 +195,18 @@ set(NMO_OBJECT_SOURCES
     src/object/object_types.c
     src/object/object_iter.c
     src/object/object_repository.c
-    src/object/ref_query.c
+    src/object/object_refs.c
     src/object/object_query.c
     src/object/object_query_index.c
     src/object/object_index.c
+    src/object/object_hierarchy.c
+    src/object/object_diff.c
+    src/object/object_diff_result.c
+    src/object/object_diff_view.c
+    src/object/object_summary.c
+    src/object/object_summary_result.c
+    src/object/object_summary_view.c
+    src/object/object_import.c
     src/object/object_system.c
     src/object/shadow_storage.c
     src/object/deserialize_context.c
@@ -284,8 +292,12 @@ set(NMO_EXTENSION_SOURCES
     src/extension/virtools_loader.c
 )
 
-# Session layer sources
-set(NMO_SESSION_SOURCES
+# Runtime/session layer sources
+set(NMO_RUNTIME_SOURCES
+    src/runtime/context.c
+    src/runtime/document_workspace.c
+    src/runtime/session_util.c
+    src/runtime/workspace_edit.c
     src/session/object_system.c
     src/session/builder.c
     src/session/deserializer.c
@@ -293,48 +305,54 @@ set(NMO_SESSION_SOURCES
     src/session/save_id_remap.c
     src/session/id_sanitizer.c
     src/session/reference_resolver.c
-    src/session/session_query.c
-    src/session/session_edit.c
     src/session/runtime_kernel.c
     src/session/runtime_result.c
     src/session/runtime_ref_remap.c
     src/session/runtime_delete.c
 )
 
-# App layer sources
+# Document layer sources
+set(NMO_DOCUMENT_SOURCES
+    src/document/document_load.c
+    src/document/document_save.c
+    src/document/document_perf_stats.c
+    src/document/save_buffer.c
+    src/document/document_compare.c
+    src/document/document_compare_result.c
+    src/document/document_compare_view.c
+    src/document/document_stats.c
+)
+
+# Chunk layer sources
+set(NMO_CHUNK_SOURCES
+    src/chunk/chunk_index.c
+    src/chunk/chunk_inspect.c
+)
+
+# Export layer sources
+set(NMO_EXPORT_SOURCES
+    src/export/export_dot.c
+    src/export/export_hexdump.c
+    src/export/export_json_util.c
+)
+
+# Remaining app/support sources
 set(NMO_APP_SOURCES
-    src/app/context.c
-    src/app/session.c
-    src/app/session_util.c
-    src/app/load.c
-    src/app/save.c
-    src/app/perf_stats.c
-    src/app/save_buffer.c
-    src/app/comparison.c
-    src/app/stats.c
-    src/app/inspector.c
-    src/app/hexdump.c
-    src/app/chunk_index.c
-    src/app/object_hierarchy.c
-    src/app/object_diff.c
-    src/app/report_result.c
-    src/app/report_view.c
-    src/app/export_dot.c
 )
 
 # Behavior layer sources
 set(NMO_BEHAVIOR_SOURCES
     src/behavior/bb_registry.c
     src/behavior/behavior_boundary.c
+    src/behavior/behavior_execute.c
     src/behavior/behavior_graph.c
     src/behavior/behavior_index.c
+    src/behavior/behavior_query.c
     src/behavior/behavior_rewrite.c
     src/behavior/behavior_view.c
     src/behavior/script_edit.c
     src/behavior/script_edit_graph.c
-    src/behavior/script_executor.c
     src/behavior/script_trace_view.c
-    src/behavior/script_view.c
     src/behavior/script_walker.c
     src/behavior/param_value.c
 )
@@ -342,13 +360,15 @@ set(NMO_BEHAVIOR_SOURCES
 # Lua platform sources
 set(NMO_LUA_SOURCES
     src/lua/lua_bindings_core.c
+    src/lua/lua_bindings_context.c
     src/lua/lua_bindings_behavior.c
+    src/lua/lua_bindings_document.c
     src/lua/lua_bindings_format.c
-    src/lua/lua_bindings_app.c
     src/lua/lua_bindings_object.c
     src/lua/lua_bindings_runtime.c
     src/lua/lua_bindings_session.c
     src/lua/lua_bindings_type.c
+    src/lua/lua_bindings_workspace.c
     src/lua/lua_handles.c
     src/lua/lua_module.c
     src/lua/lua_runtime.c
@@ -356,9 +376,8 @@ set(NMO_LUA_SOURCES
 )
 
 set(NMO_JSON_SOURCES
-    src/app/json_util.c
-    src/app/object_summary.c
-    src/app/object_import.c
+    src/object/object_summary.c
+    src/object/object_import.c
 )
 
 # Combine all sources (yyjson compiled directly into nmo)
@@ -368,7 +387,10 @@ set(NMO_SOURCES
     ${NMO_FORMAT_SOURCES}
     ${NMO_TYPE_SOURCES}
     ${NMO_OBJECT_SOURCES}
-    ${NMO_SESSION_SOURCES}
+    ${NMO_RUNTIME_SOURCES}
+    ${NMO_DOCUMENT_SOURCES}
+    ${NMO_CHUNK_SOURCES}
+    ${NMO_EXPORT_SOURCES}
     ${NMO_BEHAVIOR_SOURCES}
     ${NMO_LUA_SOURCES}
     ${NMO_EXTENSION_SOURCES}
@@ -423,8 +445,6 @@ install(DIRECTORY include/
     PATTERN "*.h"
     PATTERN "app/*" EXCLUDE
     PATTERN "schema" EXCLUDE
-    PATTERN "session/nmo_session_query.h" EXCLUDE
-    PATTERN "object/nmo_ref_query.h" EXCLUDE
     PATTERN "session/nmo_session_internal.h" EXCLUDE
     PATTERN "session/nmo_reference_resolver.h" EXCLUDE
     PATTERN "session/nmo_ref_graph.h" EXCLUDE
