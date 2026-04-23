@@ -1,14 +1,17 @@
 /**
  * @file test_object_import_api.c
- * @brief Direct tests for app-level object import API.
+ * @brief Direct tests for owner-level object import API.
  */
 
 #include "test_framework.h"
 #include "nmo.h"
 
-#include "app/nmo_object_import.h"
+#include "document/nmo_document.h"
 #include "object/nmo_object_edit.h"
 #include "object/nmo_object_repository.h"
+#include "runtime/nmo_workspace.h"
+#include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 #include "type/nmo_reflection.h"
 
 #include <stdalign.h>
@@ -35,6 +38,14 @@ typedef struct import_counted_array_state {
     uint16_t *indices;
 } import_counted_array_state_t;
 
+typedef struct import_api_fixture {
+    nmo_context_t *ctx;
+    nmo_document_t *document;
+    nmo_workspace_t *workspace;
+    nmo_session_t *session;
+    nmo_type_registry_t *registry;
+} import_api_fixture_t;
+
 static const nmo_type_field_t import_raw_array_fields[] = {
     NMO_FIELD(import_raw_array_state_t, item_count, CKPGUID_UINT32),
     NMO_FIELD_PTR_ARRAY(import_raw_array_state_t, items, item_count, CKPGUID_UINT32),
@@ -48,6 +59,59 @@ static const nmo_type_field_t import_counted_array_fields[] = {
     NMO_FIELD(import_counted_array_state_t, face_count, CKPGUID_UINT32),
     NMO_FIELD_ARRAY_COUNTED(import_counted_array_state_t, indices, face_count, 3, CKPGUID_UINT16),
 };
+
+static bool import_api_fixture_init(import_api_fixture_t *fixture)
+{
+    if (fixture == NULL) {
+        return false;
+    }
+
+    memset(fixture, 0, sizeof(*fixture));
+    fixture->ctx = nmo_context_create(NULL);
+    if (fixture->ctx == NULL) {
+        return false;
+    }
+    fixture->document = nmo_document_create(fixture->ctx);
+    if (fixture->document == NULL) {
+        nmo_context_release(fixture->ctx);
+        memset(fixture, 0, sizeof(*fixture));
+        return false;
+    }
+    if (nmo_workspace_create(fixture->ctx, fixture->document, &fixture->workspace) != NMO_OK ||
+        fixture->workspace == NULL) {
+        nmo_document_destroy(fixture->document);
+        nmo_context_release(fixture->ctx);
+        memset(fixture, 0, sizeof(*fixture));
+        return false;
+    }
+    fixture->session = nmo_session_from_workspace(fixture->workspace);
+    fixture->registry = nmo_context_get_type_registry(fixture->ctx);
+    if (fixture->session == NULL || fixture->registry == NULL) {
+        nmo_workspace_destroy(fixture->workspace);
+        nmo_document_destroy(fixture->document);
+        nmo_context_release(fixture->ctx);
+        memset(fixture, 0, sizeof(*fixture));
+        return false;
+    }
+    return true;
+}
+
+static void import_api_fixture_destroy(import_api_fixture_t *fixture)
+{
+    if (fixture == NULL) {
+        return;
+    }
+    if (fixture->workspace != NULL) {
+        nmo_workspace_destroy(fixture->workspace);
+    }
+    if (fixture->document != NULL) {
+        nmo_document_destroy(fixture->document);
+    }
+    if (fixture->ctx != NULL) {
+        nmo_context_release(fixture->ctx);
+    }
+    memset(fixture, 0, sizeof(*fixture));
+}
 
 static nmo_status_t dummy_serialize(
     const void *instance,
@@ -264,13 +328,11 @@ static bool register_import_counted_array_type(nmo_type_registry_t *registry)
 }
 
 TEST(object_import_api, raw_pointer_array_missing_count_metadata_does_not_mutate) {
-    nmo_context_t *ctx = nmo_context_create(NULL);
-    ASSERT_NOT_NULL(ctx);
-    nmo_session_t *session = nmo_session_create(ctx);
-    ASSERT_NOT_NULL(session);
+    import_api_fixture_t fixture;
+    ASSERT_TRUE(import_api_fixture_init(&fixture));
 
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    ASSERT_NOT_NULL(registry);
+    nmo_type_registry_t *registry = fixture.registry;
+    nmo_session_t *session = fixture.session;
     nmo_status_t status = nmo_type_registry_begin_update(registry);
     ASSERT_EQ(NMO_OK, status);
 
@@ -289,14 +351,7 @@ TEST(object_import_api, raw_pointer_array_missing_count_metadata_does_not_mutate
         "{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
         "\"count\":2,\"value\":[1,2],\"items\":[1,2]}]}]}";
     nmo_import_result_t result;
-    status = nmo_object_import_json(
-        session,
-        registry,
-        nmo_session_get_arena(session),
-        json,
-        0,
-        0,
-        &result);
+    status = nmo_object_edit_import_json(fixture.workspace, json, 0, 0, &result);
 
     ASSERT_EQ(NMO_OK, status);
     ASSERT_EQ(1u, result.objects_updated);
@@ -305,18 +360,15 @@ TEST(object_import_api, raw_pointer_array_missing_count_metadata_does_not_mutate
     ASSERT_EQ(0u, state->item_count);
     ASSERT_NULL(state->items);
 
-    nmo_session_destroy(session);
-    nmo_context_release(ctx);
+    import_api_fixture_destroy(&fixture);
 }
 
 TEST(object_import_api, old_flat_map_schema_is_rejected) {
-    nmo_context_t *ctx = nmo_context_create(NULL);
-    ASSERT_NOT_NULL(ctx);
-    nmo_session_t *session = nmo_session_create(ctx);
-    ASSERT_NOT_NULL(session);
+    import_api_fixture_t fixture;
+    ASSERT_TRUE(import_api_fixture_init(&fixture));
 
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    ASSERT_NOT_NULL(registry);
+    nmo_type_registry_t *registry = fixture.registry;
+    nmo_session_t *session = fixture.session;
     nmo_status_t status = nmo_type_registry_begin_update(registry);
     ASSERT_EQ(NMO_OK, status);
     ASSERT_TRUE(register_import_raw_array_type(registry));
@@ -325,29 +377,19 @@ TEST(object_import_api, old_flat_map_schema_is_rejected) {
     const char json[] =
         "{\"objects\":[{\"id\":9001,\"fields\":{\"items\":[1,2]}}]}";
     nmo_import_result_t result;
-    status = nmo_object_import_json(
-        session,
-        registry,
-        nmo_session_get_arena(session),
-        json,
-        0,
-        0,
-        &result);
+    status = nmo_object_edit_import_json(fixture.workspace, json, 0, 0, &result);
 
     ASSERT_EQ(NMO_ERR_INVALID_FORMAT, status);
 
-    nmo_session_destroy(session);
-    nmo_context_release(ctx);
+    import_api_fixture_destroy(&fixture);
 }
 
 TEST(object_import_api, old_value_str_bridge_schema_is_rejected) {
-    nmo_context_t *ctx = nmo_context_create(NULL);
-    ASSERT_NOT_NULL(ctx);
-    nmo_session_t *session = nmo_session_create(ctx);
-    ASSERT_NOT_NULL(session);
+    import_api_fixture_t fixture;
+    ASSERT_TRUE(import_api_fixture_init(&fixture));
 
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    ASSERT_NOT_NULL(registry);
+    nmo_type_registry_t *registry = fixture.registry;
+    nmo_session_t *session = fixture.session;
     nmo_status_t status = nmo_type_registry_begin_update(registry);
     ASSERT_EQ(NMO_OK, status);
     ASSERT_TRUE(register_import_raw_array_type(registry));
@@ -357,29 +399,19 @@ TEST(object_import_api, old_value_str_bridge_schema_is_rejected) {
         "{\"objects\":[{\"id\":9001,\"fields\":{\"fields\":["
         "{\"name\":\"item_count\",\"value_str\":\"2\"}]}}]}";
     nmo_import_result_t result;
-    status = nmo_object_import_json(
-        session,
-        registry,
-        nmo_session_get_arena(session),
-        json,
-        0,
-        0,
-        &result);
+    status = nmo_object_edit_import_json(fixture.workspace, json, 0, 0, &result);
 
     ASSERT_EQ(NMO_ERR_INVALID_FORMAT, status);
 
-    nmo_session_destroy(session);
-    nmo_context_release(ctx);
+    import_api_fixture_destroy(&fixture);
 }
 
 TEST(object_import_api, snapshot_raw_pointer_array_imports_all_items) {
-    nmo_context_t *ctx = nmo_context_create(NULL);
-    ASSERT_NOT_NULL(ctx);
-    nmo_session_t *session = nmo_session_create(ctx);
-    ASSERT_NOT_NULL(session);
+    import_api_fixture_t fixture;
+    ASSERT_TRUE(import_api_fixture_init(&fixture));
 
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    ASSERT_NOT_NULL(registry);
+    nmo_type_registry_t *registry = fixture.registry;
+    nmo_session_t *session = fixture.session;
     nmo_status_t status = nmo_type_registry_begin_update(registry);
     ASSERT_EQ(NMO_OK, status);
     ASSERT_TRUE(register_import_raw_array_type(registry));
@@ -394,14 +426,7 @@ TEST(object_import_api, snapshot_raw_pointer_array_imports_all_items) {
         "{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
         "\"count\":3,\"value\":[11,22,33],\"items\":[11,22,33]}]}]}";
     nmo_import_result_t result;
-    status = nmo_object_import_json(
-        session,
-        registry,
-        nmo_session_get_arena(session),
-        json,
-        0,
-        0,
-        &result);
+    status = nmo_object_edit_import_json(fixture.workspace, json, 0, 0, &result);
 
     ASSERT_EQ(NMO_OK, status);
     ASSERT_EQ(1u, result.objects_updated);
@@ -413,18 +438,15 @@ TEST(object_import_api, snapshot_raw_pointer_array_imports_all_items) {
     ASSERT_EQ(22u, state->items[1]);
     ASSERT_EQ(33u, state->items[2]);
 
-    nmo_session_destroy(session);
-    nmo_context_release(ctx);
+    import_api_fixture_destroy(&fixture);
 }
 
 TEST(object_import_api, counted_raw_pointer_array_imports_items_over_raw_hex) {
-    nmo_context_t *ctx = nmo_context_create(NULL);
-    ASSERT_NOT_NULL(ctx);
-    nmo_session_t *session = nmo_session_create(ctx);
-    ASSERT_NOT_NULL(session);
+    import_api_fixture_t fixture;
+    ASSERT_TRUE(import_api_fixture_init(&fixture));
 
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    ASSERT_NOT_NULL(registry);
+    nmo_type_registry_t *registry = fixture.registry;
+    nmo_session_t *session = fixture.session;
     nmo_status_t status = nmo_type_registry_begin_update(registry);
     ASSERT_EQ(NMO_OK, status);
     ASSERT_TRUE(register_import_counted_array_type(registry));
@@ -441,14 +463,7 @@ TEST(object_import_api, counted_raw_pointer_array_imports_items_over_raw_hex) {
         "\"count\":6,\"value\":null,\"items\":[1,2,3,4,5,6],"
         "\"raw_hex\":\"090009000900090009000900\"}]}]}";
     nmo_import_result_t result;
-    status = nmo_object_import_json(
-        session,
-        registry,
-        nmo_session_get_arena(session),
-        json,
-        0,
-        0,
-        &result);
+    status = nmo_object_edit_import_json(fixture.workspace, json, 0, 0, &result);
 
     ASSERT_EQ(NMO_OK, status);
     ASSERT_EQ(1u, result.objects_updated);
@@ -463,18 +478,15 @@ TEST(object_import_api, counted_raw_pointer_array_imports_items_over_raw_hex) {
     ASSERT_EQ(5u, state->indices[4]);
     ASSERT_EQ(6u, state->indices[5]);
 
-    nmo_session_destroy(session);
-    nmo_context_release(ctx);
+    import_api_fixture_destroy(&fixture);
 }
 
 TEST(object_import_api, raw_pointer_array_parse_failure_does_not_mutate) {
-    nmo_context_t *ctx = nmo_context_create(NULL);
-    ASSERT_NOT_NULL(ctx);
-    nmo_session_t *session = nmo_session_create(ctx);
-    ASSERT_NOT_NULL(session);
+    import_api_fixture_t fixture;
+    ASSERT_TRUE(import_api_fixture_init(&fixture));
 
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    ASSERT_NOT_NULL(registry);
+    nmo_type_registry_t *registry = fixture.registry;
+    nmo_session_t *session = fixture.session;
     nmo_status_t status = nmo_type_registry_begin_update(registry);
     ASSERT_EQ(NMO_OK, status);
     ASSERT_TRUE(register_import_raw_array_type(registry));
@@ -491,14 +503,7 @@ TEST(object_import_api, raw_pointer_array_parse_failure_does_not_mutate) {
         "{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
         "\"count\":2,\"value\":[1,\"bad\"],\"items\":[1,\"bad\"]}]}]}";
     nmo_import_result_t result;
-    status = nmo_object_import_json(
-        session,
-        registry,
-        nmo_session_get_arena(session),
-        json,
-        0,
-        0,
-        &result);
+    status = nmo_object_edit_import_json(fixture.workspace, json, 0, 0, &result);
 
     ASSERT_EQ(NMO_ERR_INVALID_FORMAT, status);
     ASSERT_EQ(0u, result.objects_updated);
@@ -507,18 +512,15 @@ TEST(object_import_api, raw_pointer_array_parse_failure_does_not_mutate) {
     ASSERT_EQ(0u, state->item_count);
     ASSERT_NULL(state->items);
 
-    nmo_session_destroy(session);
-    nmo_context_release(ctx);
+    import_api_fixture_destroy(&fixture);
 }
 
 TEST(object_import_api, inline_array_parse_failure_does_not_mutate) {
-    nmo_context_t *ctx = nmo_context_create(NULL);
-    ASSERT_NOT_NULL(ctx);
-    nmo_session_t *session = nmo_session_create(ctx);
-    ASSERT_NOT_NULL(session);
+    import_api_fixture_t fixture;
+    ASSERT_TRUE(import_api_fixture_init(&fixture));
 
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    ASSERT_NOT_NULL(registry);
+    nmo_type_registry_t *registry = fixture.registry;
+    nmo_session_t *session = fixture.session;
     nmo_status_t status = nmo_type_registry_begin_update(registry);
     ASSERT_EQ(NMO_OK, status);
     ASSERT_TRUE(register_import_inline_array_type(registry));
@@ -537,14 +539,7 @@ TEST(object_import_api, inline_array_parse_failure_does_not_mutate) {
         "{\"name\":\"values\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
         "\"count\":2,\"value\":[1,\"bad\"],\"items\":[1,\"bad\"]}]}]}";
     nmo_import_result_t result;
-    status = nmo_object_import_json(
-        session,
-        registry,
-        nmo_session_get_arena(session),
-        json,
-        0,
-        0,
-        &result);
+    status = nmo_object_edit_import_json(fixture.workspace, json, 0, 0, &result);
 
     ASSERT_EQ(NMO_ERR_INVALID_FORMAT, status);
     ASSERT_EQ(0u, result.objects_updated);
@@ -556,18 +551,15 @@ TEST(object_import_api, inline_array_parse_failure_does_not_mutate) {
     ASSERT_EQ(7u, *existing);
 
     nmo_array_dispose(&state->values);
-    nmo_session_destroy(session);
-    nmo_context_release(ctx);
+    import_api_fixture_destroy(&fixture);
 }
 
 TEST(object_import_api, snapshot_inline_array_imports_all_items) {
-    nmo_context_t *ctx = nmo_context_create(NULL);
-    ASSERT_NOT_NULL(ctx);
-    nmo_session_t *session = nmo_session_create(ctx);
-    ASSERT_NOT_NULL(session);
+    import_api_fixture_t fixture;
+    ASSERT_TRUE(import_api_fixture_init(&fixture));
 
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    ASSERT_NOT_NULL(registry);
+    nmo_type_registry_t *registry = fixture.registry;
+    nmo_session_t *session = fixture.session;
     nmo_status_t status = nmo_type_registry_begin_update(registry);
     ASSERT_EQ(NMO_OK, status);
     ASSERT_TRUE(register_import_inline_array_type(registry));
@@ -582,14 +574,7 @@ TEST(object_import_api, snapshot_inline_array_imports_all_items) {
         "{\"name\":\"values\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
         "\"count\":3,\"value\":[3,4,5],\"items\":[3,4,5]}]}]}";
     nmo_import_result_t result;
-    status = nmo_object_import_json(
-        session,
-        registry,
-        nmo_session_get_arena(session),
-        json,
-        0,
-        0,
-        &result);
+    status = nmo_object_edit_import_json(fixture.workspace, json, 0, 0, &result);
 
     ASSERT_EQ(NMO_OK, status);
     ASSERT_EQ(1u, result.objects_updated);
@@ -607,24 +592,15 @@ TEST(object_import_api, snapshot_inline_array_imports_all_items) {
     ASSERT_EQ(5u, *v2);
 
     nmo_array_dispose(&state->values);
-    nmo_session_destroy(session);
-    nmo_context_release(ctx);
+    import_api_fixture_destroy(&fixture);
 }
 
 TEST(object_import_api, object_owner_import_wrapper_imports_snapshot) {
-    nmo_context_t *ctx = nmo_context_create(NULL);
-    ASSERT_NOT_NULL(ctx);
-    nmo_document_t *document = nmo_document_create(ctx);
-    nmo_workspace_t *workspace = NULL;
-    nmo_session_t *session = NULL;
-    ASSERT_NOT_NULL(document);
-    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
-    ASSERT_NOT_NULL(workspace);
-    session = nmo_workspace_session(workspace);
-    ASSERT_NOT_NULL(session);
+    import_api_fixture_t fixture;
+    ASSERT_TRUE(import_api_fixture_init(&fixture));
 
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    ASSERT_NOT_NULL(registry);
+    nmo_type_registry_t *registry = fixture.registry;
+    nmo_session_t *session = fixture.session;
     nmo_status_t status = nmo_type_registry_begin_update(registry);
     ASSERT_EQ(NMO_OK, status);
     ASSERT_TRUE(register_import_inline_array_type(registry));
@@ -639,12 +615,7 @@ TEST(object_import_api, object_owner_import_wrapper_imports_snapshot) {
         "{\"name\":\"values\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
         "\"count\":2,\"value\":[8,9],\"items\":[8,9]}]}]}";
     nmo_import_result_t result;
-    status = nmo_object_edit_import_json(
-        workspace,
-        json,
-        0,
-        0,
-        &result);
+    status = nmo_object_edit_import_json(fixture.workspace, json, 0, 0, &result);
 
     ASSERT_EQ(NMO_OK, status);
     ASSERT_EQ(1u, result.objects_updated);
@@ -655,9 +626,123 @@ TEST(object_import_api, object_owner_import_wrapper_imports_snapshot) {
     ASSERT_EQ(9u, *(uint32_t *)nmo_array_get(&state->values, 1));
 
     nmo_array_dispose(&state->values);
-    nmo_workspace_destroy(workspace);
-    nmo_document_destroy(document);
-    nmo_context_release(ctx);
+    import_api_fixture_destroy(&fixture);
+}
+
+TEST(object_import_api, dry_run_create_missing_does_not_create_object_or_use_session_arena) {
+    import_api_fixture_t fixture;
+    ASSERT_TRUE(import_api_fixture_init(&fixture));
+
+    nmo_type_registry_t *registry = fixture.registry;
+    nmo_session_t *session = fixture.session;
+    nmo_status_t status = nmo_type_registry_begin_update(registry);
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_TRUE(register_import_raw_array_type(registry));
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+    size_t before_count = nmo_object_repository_get_count(repo);
+    size_t before_arena = nmo_arena_bytes_used(nmo_session_get_arena(session));
+
+    const char json[] =
+        "{\"objects\":[{\"id\":9301,\"class_name\":\"ImportRawArrayState\",\"name\":\"dry_run_new\","
+        "\"fields\":[{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
+        "\"count\":3,\"value\":[1,2,3],\"items\":[1,2,3]}]}]}";
+    nmo_import_result_t result;
+    status = nmo_object_edit_import_json(
+        fixture.workspace,
+        json,
+        0,
+        NMO_IMPORT_CREATE_MISSING | NMO_IMPORT_DRY_RUN,
+        &result);
+
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_EQ(1u, result.objects_created);
+    ASSERT_EQ(1u, result.objects_updated);
+    ASSERT_EQ(1u, result.fields_written);
+    ASSERT_EQ(0u, result.errors);
+    ASSERT_EQ(before_count, nmo_object_repository_get_count(repo));
+    ASSERT_NULL(nmo_object_repository_find_by_id(repo, 9301u));
+    ASSERT_EQ(before_arena, nmo_arena_bytes_used(nmo_session_get_arena(session)));
+
+    import_api_fixture_destroy(&fixture);
+}
+
+TEST(object_import_api, failed_create_missing_import_does_not_leave_object_or_use_session_arena) {
+    import_api_fixture_t fixture;
+    ASSERT_TRUE(import_api_fixture_init(&fixture));
+
+    nmo_type_registry_t *registry = fixture.registry;
+    nmo_session_t *session = fixture.session;
+    nmo_status_t status = nmo_type_registry_begin_update(registry);
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_TRUE(register_import_raw_array_type(registry));
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+    size_t before_count = nmo_object_repository_get_count(repo);
+    size_t before_arena = nmo_arena_bytes_used(nmo_session_get_arena(session));
+
+    const char json[] =
+        "{\"objects\":[{\"id\":9302,\"class_name\":\"ImportRawArrayState\",\"name\":\"bad_new\","
+        "\"fields\":[{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
+        "\"count\":2,\"value\":[1,\"bad\"],\"items\":[1,\"bad\"]}]}]}";
+    nmo_import_result_t result;
+    status = nmo_object_edit_import_json(
+        fixture.workspace,
+        json,
+        0,
+        NMO_IMPORT_CREATE_MISSING,
+        &result);
+
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, status);
+    ASSERT_EQ(1u, result.objects_created);
+    ASSERT_EQ(0u, result.objects_updated);
+    ASSERT_EQ(0u, result.fields_written);
+    ASSERT_EQ(1u, result.errors);
+    ASSERT_EQ(before_count, nmo_object_repository_get_count(repo));
+    ASSERT_NULL(nmo_object_repository_find_by_id(repo, 9302u));
+    ASSERT_EQ(before_arena, nmo_arena_bytes_used(nmo_session_get_arena(session)));
+
+    import_api_fixture_destroy(&fixture);
+}
+
+TEST(object_import_api, dry_run_existing_pointer_array_does_not_use_session_arena) {
+    import_api_fixture_t fixture;
+    ASSERT_TRUE(import_api_fixture_init(&fixture));
+
+    nmo_type_registry_t *registry = fixture.registry;
+    nmo_session_t *session = fixture.session;
+    nmo_status_t status = nmo_type_registry_begin_update(registry);
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_TRUE(register_import_raw_array_type(registry));
+
+    nmo_object_t *obj = create_import_test_object(session);
+    ASSERT_NOT_NULL(obj);
+    import_raw_array_state_t *state = (import_raw_array_state_t *)nmo_object_get_state(obj);
+    ASSERT_NOT_NULL(state);
+    ASSERT_EQ(0u, state->item_count);
+    ASSERT_NULL(state->items);
+
+    size_t before_arena = nmo_arena_bytes_used(nmo_session_get_arena(session));
+    const char json[] =
+        "{\"objects\":[{\"id\":9001,\"fields\":["
+        "{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
+        "\"count\":3,\"value\":[11,22,33],\"items\":[11,22,33]}]}]}";
+    nmo_import_result_t result;
+    status = nmo_object_edit_import_json(
+        fixture.workspace,
+        json,
+        0,
+        NMO_IMPORT_DRY_RUN,
+        &result);
+
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_EQ(0u, state->item_count);
+    ASSERT_NULL(state->items);
+    ASSERT_EQ(before_arena, nmo_arena_bytes_used(nmo_session_get_arena(session)));
+
+    import_api_fixture_destroy(&fixture);
 }
 
 TEST_MAIN_BEGIN()
@@ -670,4 +755,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_import_api, inline_array_parse_failure_does_not_mutate);
     REGISTER_TEST(object_import_api, snapshot_inline_array_imports_all_items);
     REGISTER_TEST(object_import_api, object_owner_import_wrapper_imports_snapshot);
+    REGISTER_TEST(object_import_api, dry_run_create_missing_does_not_create_object_or_use_session_arena);
+    REGISTER_TEST(object_import_api, failed_create_missing_import_does_not_leave_object_or_use_session_arena);
+    REGISTER_TEST(object_import_api, dry_run_existing_pointer_array_does_not_use_session_arena);
 TEST_MAIN_END()
+
