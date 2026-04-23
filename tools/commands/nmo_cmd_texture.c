@@ -15,14 +15,14 @@
 
 #include "nmo.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_edit.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_texture_schemas.h"
 #include "format/nmo_stb_adapter.h"
 #include "format/nmo_image.h"
 #include "core/nmo_arena.h"
-#include "app/nmo_save.h"
+#include "document/nmo_document_save.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_edit.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -1431,16 +1431,16 @@ int nmo_cmd_texture_replace(int argc, char **argv, const nmo_cli_global_opts_t *
     int32_t old_h = ts->reader_height;
     CKTEXTURE_BITMAP_KIND old_kind = ts->bitmap_kind;
 
-    nmo_session_edit_t *edit = NULL;
-    nmo_status_t edit_rc = nmo_session_edit_begin(c.session, "texture.replace", &edit);
+    nmo_workspace_edit_t *edit = NULL;
+    nmo_status_t edit_rc = nmo_workspace_edit_begin(c.workspace, "texture.replace", &edit);
     if (edit_rc != NMO_OK) {
         fprintf(stderr, "Error: Failed to begin texture edit: %s\n",
                 nmo_error_string(edit_rc));
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
-    edit_rc = nmo_session_edit_snapshot_bytes(edit, ts, sizeof(*ts));
+    edit_rc = nmo_workspace_edit_snapshot_bytes(edit, ts, sizeof(*ts));
     if (edit_rc != NMO_OK) {
-        nmo_session_edit_rollback(edit);
+        nmo_workspace_edit_rollback(edit);
         fprintf(stderr, "Error: Failed to snapshot texture state: %s\n",
                 nmo_error_string(edit_rc));
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
@@ -1450,14 +1450,14 @@ int nmo_cmd_texture_replace(int argc, char **argv, const nmo_cli_global_opts_t *
     nmo_status_t replace_rc = nmo_texture_replace_bitmap(
         ts, arena, pixels, (uint32_t)img_w, (uint32_t)img_h);
     if (replace_rc != NMO_OK) {
-        nmo_session_edit_rollback(edit);
+        nmo_workspace_edit_rollback(edit);
         fprintf(stderr, "Error: Failed to replace bitmap: %s\n",
                 nmo_error_string(replace_rc));
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
-    nmo_session_edit_mark(
-        edit, NMO_SESSION_EDIT_OBJECT_STATE | NMO_SESSION_EDIT_RESOURCES);
-    edit_rc = nmo_session_edit_commit(edit);
+    nmo_workspace_edit_mark(
+        edit, NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_RESOURCES);
+    edit_rc = nmo_workspace_edit_commit(edit);
     if (edit_rc != NMO_OK) {
         fprintf(stderr, "Error: Failed to commit texture edit: %s\n",
                 nmo_error_string(edit_rc));

@@ -15,9 +15,11 @@
 
 #include "nmo.h"
 #include "session/nmo_session.h"
+#include "session/nmo_runtime_kernel.h"
 #include "session/nmo_context.h"
-#include "app/nmo_save.h"
+#include "document/nmo_document_save.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_edit.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_serialize_context.h"
 #include "object/builtin/nmo_mesh_schemas.h"
@@ -27,7 +29,6 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_string.h"
 #include "type/nmo_type_system.h"
-#include "session/nmo_session_edit.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -1338,17 +1339,17 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
         created_mesh_id = new_id;
     }
 
-    nmo_session_edit_t *edit = NULL;
-    nmo_status_t edit_rc = nmo_session_edit_begin(c.session, "mesh.import", &edit);
+    nmo_workspace_edit_t *edit = NULL;
+    nmo_status_t edit_rc = nmo_workspace_edit_begin(c.workspace, "mesh.import", &edit);
     if (edit_rc != NMO_OK) {
         fprintf(stderr, "Error: Failed to begin mesh edit: %s\n",
                 nmo_error_string(edit_rc));
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
     if (created_mesh_id != 0) {
-        edit_rc = nmo_session_edit_track_created_object(edit, created_mesh_id);
+        edit_rc = nmo_workspace_edit_track_created_object(edit, created_mesh_id);
         if (edit_rc != NMO_OK) {
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             fprintf(stderr, "Error: Failed to track created mesh object: %s\n",
                     nmo_error_string(edit_rc));
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
@@ -1362,22 +1363,22 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
         /* Newly created object -- allocate and zero-init state */
         nmo_status_t alloc_rc = nmo_object_alloc_state(mesh_obj, sizeof(nmo_mesh_state_t));
         if (alloc_rc != NMO_OK) {
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             fprintf(stderr, "Error: Failed to allocate mesh state\n");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
         ms = (nmo_mesh_state_t *)nmo_object_get_state(mesh_obj);
         if (!ms) {
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             fprintf(stderr, "Error: Mesh state allocation failed\n");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
         memset(ms, 0, sizeof(*ms));
     }
 
-    edit_rc = nmo_session_edit_snapshot_bytes(edit, ms, sizeof(*ms));
+    edit_rc = nmo_workspace_edit_snapshot_bytes(edit, ms, sizeof(*ms));
     if (edit_rc != NMO_OK) {
-        nmo_session_edit_rollback(edit);
+        nmo_workspace_edit_rollback(edit);
         fprintf(stderr, "Error: Failed to snapshot mesh state: %s\n",
                 nmo_error_string(edit_rc));
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
@@ -1404,25 +1405,25 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
     /* Update name if requested */
     if (mesh_name) {
         edit_rc =
-            nmo_session_edit_rename_object(edit, nmo_object_get_id(mesh_obj), mesh_name);
+            nmo_object_edit_rename(edit, nmo_object_get_id(mesh_obj), mesh_name);
         if (edit_rc != NMO_OK) {
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             fprintf(stderr, "Error: Failed to rename mesh object: %s\n",
                     nmo_error_string(edit_rc));
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
     }
 
-    uint32_t edit_flags = NMO_SESSION_EDIT_OBJECT_STATE | NMO_SESSION_EDIT_REFERENCES;
+    uint32_t edit_flags = NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES;
     if (mesh_name) {
-        edit_flags |= NMO_SESSION_EDIT_NAMES;
+        edit_flags |= NMO_WORKSPACE_EDIT_NAMES;
     }
-    nmo_session_edit_mark(edit, edit_flags);
+    nmo_workspace_edit_mark(edit, edit_flags);
 
-    edit_rc = nmo_session_edit_snapshot_object_chunk(
+    edit_rc = nmo_workspace_edit_snapshot_object_chunk(
         edit, nmo_object_get_id(mesh_obj));
     if (edit_rc != NMO_OK) {
-        nmo_session_edit_rollback(edit);
+        nmo_workspace_edit_rollback(edit);
         fprintf(stderr, "Error: Failed to snapshot mesh chunk: %s\n",
                 nmo_error_string(edit_rc));
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
@@ -1443,7 +1444,7 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
     if (chunk) {
         st = nmo_chunk_start_write(chunk);
         if (st != NMO_OK) {
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             fprintf(stderr, "Error: Failed to prepare mesh chunk: %s\n",
                     nmo_error_string(st));
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
@@ -1460,7 +1461,7 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
                 0);
             st = nmo_mesh_serialize(ms, chunk, type_desc, &ser_ctx);
             if (st != NMO_OK) {
-                nmo_session_edit_rollback(edit);
+                nmo_workspace_edit_rollback(edit);
                 fprintf(stderr, "Error: Mesh serialization returned %s\n",
                         nmo_error_string(st));
                 return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
@@ -1468,7 +1469,7 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
         }
     }
 
-    edit_rc = nmo_session_edit_commit(edit);
+    edit_rc = nmo_workspace_edit_commit(edit);
     if (edit_rc != NMO_OK) {
         fprintf(stderr, "Error: Failed to commit mesh edit: %s\n",
                 nmo_error_string(edit_rc));

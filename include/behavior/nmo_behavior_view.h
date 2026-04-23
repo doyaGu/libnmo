@@ -1,6 +1,6 @@
 /**
  * @file nmo_behavior_view.h
- * @brief Stable read-only summaries for behavior objects and boundaries
+ * @brief Stable read-only summaries, traces, and parameter presentation.
  */
 
 #ifndef NMO_BEHAVIOR_VIEW_H
@@ -8,7 +8,10 @@
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
+#include "core/nmo_guid.h"
 #include "format/nmo_interface_view.h"
+#include "type/nmo_type_system.h"
+#include "object/builtin/nmo_parameter_schemas.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -18,13 +21,8 @@
 extern "C" {
 #endif
 
-typedef struct nmo_session nmo_session_t;
+typedef struct nmo_workspace nmo_workspace_t;
 
-/*
- * Stable inspect facade over behavior state and graph-boundary analysis.
- * This header is intended for binding-facing consumers and should not expose
- * raw behavior_state layout or graph-owned arrays as the default contract.
- */
 #define NMO_BEHAVIOR_VIEW_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
 #define NMO_BEHAVIOR_VIEW_READ_API_TIER NMO_API_TIER_STABLE_CONSUMER
 
@@ -65,15 +63,85 @@ typedef struct nmo_behavior_boundary_view {
 } nmo_behavior_boundary_view_t;
 
 NMO_API nmo_status_t nmo_behavior_view_from_behavior(
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_object_id_t behavior_id,
     nmo_behavior_view_t *out_view);
 
 NMO_API nmo_status_t nmo_behavior_view_describe_boundary(
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_object_id_t behavior_id,
     uint32_t max_depth,
     nmo_behavior_boundary_view_t *out_view);
+
+typedef enum nmo_behavior_trace_step_kind {
+    NMO_BEHAVIOR_TRACE_STEP_KIND_START = 0,
+    NMO_BEHAVIOR_TRACE_STEP_KIND_SHARED_SOURCE = 1,
+    NMO_BEHAVIOR_TRACE_STEP_KIND_DIRECT_SOURCE = 2,
+} nmo_behavior_trace_step_kind_t;
+
+typedef struct nmo_behavior_trace_step_view {
+    nmo_object_id_t id;
+    nmo_behavior_trace_step_kind_t step_kind;
+    nmo_object_id_t owner_id;
+    nmo_class_id_t class_id;
+} nmo_behavior_trace_step_view_t;
+
+typedef struct nmo_behavior_trace_chain_view {
+    nmo_behavior_trace_step_view_t *steps;
+    size_t step_count;
+} nmo_behavior_trace_chain_view_t;
+
+typedef struct nmo_behavior_tree_node_view {
+    nmo_object_id_t behavior_id;
+    uint32_t depth;
+    bool is_building_block;
+    const char *name;
+    nmo_class_id_t class_id;
+} nmo_behavior_tree_node_view_t;
+
+typedef struct nmo_behavior_tree_view {
+    nmo_behavior_tree_node_view_t *nodes;
+    size_t node_count;
+} nmo_behavior_tree_view_t;
+
+NMO_API nmo_status_t nmo_behavior_trace_parameter_chain(
+    nmo_workspace_t *workspace,
+    nmo_object_id_t parameter_id,
+    uint32_t max_depth,
+    nmo_behavior_trace_chain_view_t *out_view);
+
+NMO_API void nmo_behavior_trace_chain_view_destroy(
+    nmo_behavior_trace_chain_view_t *view);
+
+NMO_API nmo_status_t nmo_behavior_trace_script_tree(
+    nmo_workspace_t *workspace,
+    nmo_object_id_t root_behavior_id,
+    uint32_t max_depth,
+    nmo_behavior_tree_view_t *out_view);
+
+NMO_API void nmo_behavior_tree_view_destroy(
+    nmo_behavior_tree_view_t *view);
+
+NMO_API nmo_status_t nmo_behavior_param_value_to_string(
+    const nmo_parameter_state_t *param,
+    const nmo_type_registry_t *registry,
+    const nmo_workspace_t *workspace,
+    char *buffer,
+    size_t buffer_size);
+
+NMO_API const char *nmo_behavior_param_type_name(
+    const nmo_parameter_state_t *param,
+    const nmo_type_registry_t *registry);
+
+NMO_API const char *nmo_behavior_param_mode_to_string(
+    nmo_parameter_mode_t mode);
+
+NMO_API nmo_status_t nmo_behavior_param_format_summary(
+    const nmo_parameter_state_t *param,
+    const nmo_type_registry_t *registry,
+    const nmo_workspace_t *workspace,
+    char *buffer,
+    size_t buffer_size);
 
 #ifdef __cplusplus
 }

@@ -16,9 +16,10 @@
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
-#include "app/nmo_inspector.h"
-#include "app/nmo_save.h"
+#include "chunk/nmo_chunk_inspect.h"
+#include "document/nmo_document_save.h"
 #include "session/nmo_session.h"
+#include "session/nmo_runtime_kernel.h"
 #include "session/nmo_context.h"
 #include "core/nmo_arena.h"
 #include "format/nmo_chunk_api.h"

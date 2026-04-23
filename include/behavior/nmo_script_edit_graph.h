@@ -6,7 +6,7 @@
 #ifndef NMO_SCRIPT_EDIT_GRAPH_H
 #define NMO_SCRIPT_EDIT_GRAPH_H
 
-#include "behavior/nmo_behavior_index.h"
+#include "behavior/nmo_behavior_analyze.h"
 #include "core/nmo_guid.h"
 #include "nmo_types.h"
 #include "object/nmo_ref_graph.h"

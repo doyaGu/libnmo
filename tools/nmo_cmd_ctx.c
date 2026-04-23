@@ -8,6 +8,7 @@
 #include "nmo_tool_common.h"
 
 #include "session/nmo_context.h"
+#include "session/nmo_session_bridge.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -94,7 +95,7 @@ int nmo_cmd_ctx_init_from_source(nmo_cmd_ctx_t *c,
     }
     c->owns_session = true;
 
-    if (nmo_document_borrow_session(c->session, &c->document) != NMO_OK ||
+    if (nmo_session_borrow_document(c->session, &c->document) != NMO_OK ||
         nmo_workspace_create(c->ctx, c->document, &c->workspace) != NMO_OK) {
         if (c->workspace != NULL) {
             nmo_workspace_destroy(c->workspace);
@@ -165,7 +166,7 @@ int nmo_cmd_ctx_init_with_session(nmo_cmd_ctx_t *c,
     c->registry = ctx ? nmo_context_get_type_registry(ctx) : NULL;
 
     if (session != NULL) {
-        if (nmo_document_borrow_session(session, &c->document) != NMO_OK ||
+        if (nmo_session_borrow_document(session, &c->document) != NMO_OK ||
             nmo_workspace_create(ctx, c->document, &c->workspace) != NMO_OK) {
             if (c->workspace != NULL) {
                 nmo_workspace_destroy(c->workspace);
@@ -227,7 +228,7 @@ void nmo_cmd_ctx_init_from_repl(nmo_cmd_ctx_t *c,
     c->is_json = false;  /* REPL is always text mode */
 
     if (session != NULL) {
-        if (nmo_document_borrow_session(session, &c->document) != NMO_OK ||
+        if (nmo_session_borrow_document(session, &c->document) != NMO_OK ||
             nmo_workspace_create(ctx, c->document, &c->workspace) != NMO_OK) {
             if (c->workspace != NULL) {
                 nmo_workspace_destroy(c->workspace);
@@ -282,3 +283,5 @@ int nmo_cmd_ctx_json_end(nmo_cmd_ctx_t *c, yyjson_mut_doc *doc,
         doc, data, cmd_name, c->file_path, c->out, pretty);
     return ok ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_INTERNAL_ERROR;
 }
+
+

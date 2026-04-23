@@ -13,9 +13,9 @@
 #include "../nmo_opt.h"
 
 #include "nmo.h"
-#include "behavior/nmo_behavior_graph.h"
-#include "behavior/nmo_behavior_index.h"
-#include "behavior/nmo_param_value.h"
+#include "behavior/nmo_behavior_analyze.h"
+#include "behavior/nmo_behavior_analyze.h"
+#include "behavior/nmo_behavior_view.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 #include "format/nmo_interface_chunk.h"
@@ -31,7 +31,7 @@
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_repository.h"
 #include "type/nmo_type_system.h"
-#include "behavior/nmo_bb_registry.h"
+#include "behavior/nmo_behavior_registry.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -203,7 +203,7 @@ static const nmo_parameteroperation_state_t *get_operation_state_for_id(
 static const char *graph_node_display_name(
     nmo_object_repository_t *repo,
     const nmo_type_registry_t *reg,
-    const nmo_bb_registry_t *bb_reg,
+    const nmo_behavior_registry_t *bb_reg,
     const nmo_cli_graph_node_t *node,
     char *buf,
     size_t size)
@@ -232,7 +232,7 @@ static const char *graph_node_display_name(
         const nmo_behavior_state_t *bs = get_behavior_state_for_id(repo, node->id);
         if (bs && (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) &&
             !nmo_guid_is_null(bs->block_guid)) {
-            const char *proto = nmo_bb_registry_get_name(bb_reg, bs->block_guid);
+            const char *proto = nmo_behavior_registry_get_name(bb_reg, bs->block_guid);
             if (proto && proto[0]) {
                 return proto;
             }
@@ -441,7 +441,7 @@ static int behavior_graph_run(nmo_cmd_ctx_t *ctx,
     size_t nodes_dropped = node_count - emit_node_count;
     size_t edges_dropped = edge_count - emit_edge_count;
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    const nmo_bb_registry_t *bb_reg = nmo_context_get_bb_registry(c.ctx);
+    const nmo_behavior_registry_t *bb_reg = nmo_context_get_bb_registry(c.ctx);
 
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
@@ -534,7 +534,7 @@ static int behavior_graph_run(nmo_cmd_ctx_t *ctx,
                     yyjson_mut_obj_add_uint(doc, node, "bb_version",
                                             (uint64_t)bs->block_version);
                     const char *proto =
-                        nmo_bb_registry_get_name(bb_reg, bs->block_guid);
+                        nmo_behavior_registry_get_name(bb_reg, bs->block_guid);
                     if (proto && proto[0]) {
                         nmo_cli_json_add_str_safe(doc, node,
                                                   "bb_proto_name", proto);
@@ -1059,7 +1059,7 @@ static void dump_text_prefix(FILE *out, int depth, bool last_child,
 static bool dump_param_decoded_value(
     nmo_object_t *param_obj,
     const nmo_type_registry_t *reg,
-    nmo_session_t *session,
+    const nmo_workspace_t *workspace,
     char *buf,
     size_t size)
 {
@@ -1080,7 +1080,7 @@ static bool dump_param_decoded_value(
         return false;
     }
 
-    return nmo_param_value_to_string(param, reg, session, buf, size) == NMO_OK &&
+    return nmo_behavior_param_value_to_string(param, reg, workspace, buf, size) == NMO_OK &&
            buf[0] != '\0';
 }
 
@@ -1088,7 +1088,7 @@ static size_t dump_print_decoded_value_group(
     FILE *out,
     nmo_object_repository_t *repo,
     const nmo_type_registry_t *reg,
-    nmo_session_t *session,
+    const nmo_workspace_t *workspace,
     const nmo_array_t *ids,
     const char *kind,
     int depth,
@@ -1105,7 +1105,7 @@ static size_t dump_print_decoded_value_group(
         nmo_object_t *param_obj =
             nmo_object_repository_find_by_id(repo, param_ids[i]);
         char value_buf[256];
-        if (!dump_param_decoded_value(param_obj, reg, session,
+        if (!dump_param_decoded_value(param_obj, reg, workspace,
                                       value_buf, sizeof(value_buf))) {
             continue;
         }
@@ -1125,7 +1125,7 @@ static void dump_print_decoded_values(
     FILE *out,
     nmo_object_repository_t *repo,
     const nmo_type_registry_t *reg,
-    nmo_session_t *session,
+    const nmo_workspace_t *workspace,
     const nmo_behavior_state_t *bs,
     int depth,
     bool last_child,
@@ -1141,14 +1141,14 @@ static void dump_print_decoded_values(
         (const nmo_object_id_t *)bs->local_parameters.data;
     for (size_t i = 0; i < bs->local_parameters.count && !has_any; i++) {
         nmo_object_t *obj = nmo_object_repository_find_by_id(repo, local_ids[i]);
-        has_any = dump_param_decoded_value(obj, reg, session,
+        has_any = dump_param_decoded_value(obj, reg, workspace,
                                            scratch, sizeof(scratch));
     }
     const nmo_object_id_t *out_ids =
         (const nmo_object_id_t *)bs->out_parameters.data;
     for (size_t i = 0; i < bs->out_parameters.count && !has_any; i++) {
         nmo_object_t *obj = nmo_object_repository_find_by_id(repo, out_ids[i]);
-        has_any = dump_param_decoded_value(obj, reg, session,
+        has_any = dump_param_decoded_value(obj, reg, workspace,
                                            scratch, sizeof(scratch));
     }
     if (!has_any) {
@@ -1157,10 +1157,10 @@ static void dump_print_decoded_values(
 
     dump_text_prefix(out, depth, last_child, branch_mask);
     fprintf(out, "  Decoded Values:\n");
-    dump_print_decoded_value_group(out, repo, reg, session,
+    dump_print_decoded_value_group(out, repo, reg, workspace,
                                    &bs->local_parameters, "local",
                                    depth, last_child, branch_mask);
-    dump_print_decoded_value_group(out, repo, reg, session,
+    dump_print_decoded_value_group(out, repo, reg, workspace,
                                    &bs->out_parameters, "pOut",
                                    depth, last_child, branch_mask);
 }
@@ -1170,7 +1170,7 @@ static size_t dump_add_decoded_value_group_json(
     yyjson_mut_val *arr,
     nmo_object_repository_t *repo,
     const nmo_type_registry_t *reg,
-    nmo_session_t *session,
+    const nmo_workspace_t *workspace,
     const nmo_array_t *ids,
     const char *kind)
 {
@@ -1184,7 +1184,7 @@ static size_t dump_add_decoded_value_group_json(
         nmo_object_t *param_obj =
             nmo_object_repository_find_by_id(repo, param_ids[i]);
         char value_buf[256];
-        if (!dump_param_decoded_value(param_obj, reg, session,
+        if (!dump_param_decoded_value(param_obj, reg, workspace,
                                       value_buf, sizeof(value_buf))) {
             continue;
         }
@@ -1214,13 +1214,13 @@ static void dump_add_decoded_values_json(
     yyjson_mut_val *node,
     nmo_object_repository_t *repo,
     const nmo_type_registry_t *reg,
-    nmo_session_t *session,
+    const nmo_workspace_t *workspace,
     const nmo_behavior_state_t *bs)
 {
     yyjson_mut_val *arr = yyjson_mut_arr(doc);
-    dump_add_decoded_value_group_json(doc, arr, repo, reg, session,
+    dump_add_decoded_value_group_json(doc, arr, repo, reg, workspace,
                                       &bs->local_parameters, "local");
-    dump_add_decoded_value_group_json(doc, arr, repo, reg, session,
+    dump_add_decoded_value_group_json(doc, arr, repo, reg, workspace,
                                       &bs->out_parameters, "output");
     yyjson_mut_obj_add_val(doc, node, "decoded_values", arr);
 }
@@ -1573,7 +1573,7 @@ static void dump_add_data_flow_json(
 static void dump_behavior_tree(
     FILE *out, nmo_object_repository_t *repo,
     const nmo_type_registry_t *reg,
-    nmo_session_t *session,
+    const nmo_workspace_t *workspace,
     nmo_object_id_t beh_id, int depth, bool last_child, uint32_t branch_mask,
     bool include_values)
 {
@@ -1641,7 +1641,7 @@ static void dump_behavior_tree(
     }
 
     if (include_values) {
-        dump_print_decoded_values(out, repo, reg, session, bs,
+        dump_print_decoded_values(out, repo, reg, workspace, bs,
                                   depth, last_child, branch_mask);
     }
 
@@ -1654,7 +1654,7 @@ static void dump_behavior_tree(
         }
         for (size_t i = 0; i < bs->sub_behaviors.count; i++) {
             bool is_last = (i == bs->sub_behaviors.count - 1);
-            dump_behavior_tree(out, repo, reg, session, sub_ids[i],
+            dump_behavior_tree(out, repo, reg, workspace, sub_ids[i],
                                depth + 1, is_last, next_mask,
                                include_values);
         }
@@ -1665,8 +1665,8 @@ static void dump_behavior_tree_json(
     yyjson_mut_doc *doc, yyjson_mut_val *arr,
     nmo_object_repository_t *repo,
     const nmo_type_registry_t *reg,
-    const nmo_bb_registry_t *bb_reg,
-    nmo_session_t *session,
+    const nmo_behavior_registry_t *bb_reg,
+    const nmo_workspace_t *workspace,
     nmo_object_id_t beh_id, int depth,
     bool include_values)
 {
@@ -1706,14 +1706,14 @@ static void dump_behavior_tree_json(
         snprintf(guid_buf, sizeof(guid_buf), "%08X-%08X",
                  bs->block_guid.d1, bs->block_guid.d2);
         nmo_cli_json_add_str_safe(doc, node, "bb_guid", guid_buf);
-        const char *proto = nmo_bb_registry_get_name(bb_reg, bs->block_guid);
+        const char *proto = nmo_behavior_registry_get_name(bb_reg, bs->block_guid);
         if (proto) {
             nmo_cli_json_add_str_safe(doc, node, "proto_name", proto);
         }
     }
 
     if (include_values) {
-        dump_add_decoded_values_json(doc, node, repo, reg, session, bs);
+        dump_add_decoded_values_json(doc, node, repo, reg, workspace, bs);
     }
 
     yyjson_mut_arr_add_val(arr, node);
@@ -1724,7 +1724,7 @@ static void dump_behavior_tree_json(
             (const nmo_object_id_t *)bs->sub_behaviors.data;
         for (size_t i = 0; i < bs->sub_behaviors.count; i++) {
             dump_behavior_tree_json(doc, arr, repo, reg, bb_reg,
-                                    session, sub_ids[i], depth + 1,
+                                    workspace, sub_ids[i], depth + 1,
                                     include_values);
         }
     }
@@ -1732,8 +1732,8 @@ static void dump_behavior_tree_json(
 
 typedef struct behavior_dump_all_data {
     nmo_object_repository_t *repo;
-    const nmo_bb_registry_t *bb_reg;
-    nmo_session_t *session;
+    const nmo_behavior_registry_t *bb_reg;
+    const nmo_workspace_t *workspace;
     yyjson_mut_doc *doc;
     yyjson_mut_val *tree;
     FILE *out;
@@ -1765,14 +1765,14 @@ static int behavior_dump_all_object(size_t index, nmo_object_t *obj,
     nmo_object_id_t id = nmo_object_get_id(obj);
     if (data->doc && data->tree) {
         dump_behavior_tree_json(data->doc, data->tree, data->repo,
-                                c->registry, data->bb_reg, data->session,
+                                c->registry, data->bb_reg, data->workspace,
                                 id, 0, data->include_values);
     } else if (data->out) {
         if (data->printed > 0) {
             fprintf(data->out, "\n");
         }
         dump_behavior_tree(data->out, data->repo, c->registry,
-                           data->session, id, 0, true, 0,
+                           data->workspace, id, 0, true, 0,
                            data->include_values);
     }
     data->printed++;
@@ -1839,14 +1839,14 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         yyjson_mut_val *tree = yyjson_mut_arr(doc);
-        const nmo_bb_registry_t *bb_reg =
+        const nmo_behavior_registry_t *bb_reg =
             nmo_context_get_bb_registry(c.ctx);
 
         if (dump_all) {
             behavior_dump_all_data_t dump_data = {
                 .repo = repo,
                 .bb_reg = bb_reg,
-                .session = c.session,
+                .workspace = c.workspace,
                 .doc = doc,
                 .tree = tree,
                 .include_values = include_values,
@@ -1868,7 +1868,7 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 return nmo_cmd_ctx_done(&c, rc);
             }
             dump_behavior_tree_json(doc, tree, repo, c.registry, bb_reg,
-                                    c.session, object_id, 0, include_values);
+                                    c.workspace, object_id, 0, include_values);
             if (include_flows) {
                 nmo_object_t *obj =
                     nmo_object_repository_find_by_id(repo, object_id);
@@ -1887,7 +1887,7 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
     } else if (dump_all) {
         behavior_dump_all_data_t dump_data = {
             .repo = repo,
-            .session = c.session,
+            .workspace = c.workspace,
             .out = c.out,
             .include_values = include_values,
         };
@@ -1909,7 +1909,7 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
             return nmo_cmd_ctx_done(&c, rc);
         }
 
-        dump_behavior_tree(c.out, repo, c.registry, c.session,
+        dump_behavior_tree(c.out, repo, c.registry, c.workspace,
                            object_id, 0, true, 0, include_values);
         if (include_flows) {
             nmo_object_t *obj = nmo_object_repository_find_by_id(repo, object_id);

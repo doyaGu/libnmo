@@ -16,11 +16,15 @@
 #include "../nmo_opt.h"
 
 #include "nmo.h"
-#include "behavior/nmo_behavior_index.h"
+#include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_script_edit.h"
 #include "session/nmo_context.h"
-#include "behavior/nmo_param_value.h"
+#include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
+#include "behavior/nmo_behavior_view.h"
+#include "runtime/nmo_workspace.h"
 #include "object/nmo_object_types.h"
+#include "object/nmo_object_edit.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
@@ -37,6 +41,38 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+
+static nmo_status_t parameter_begin_script_edit(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const char *label,
+    nmo_script_edit_tx_t **out_tx)
+{
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    nmo_status_t rc = NMO_OK;
+
+    if (ctx == NULL || session == NULL || label == NULL || out_tx == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    *out_tx = NULL;
+    rc = nmo_session_borrow_document(session, &document);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = nmo_workspace_create(ctx, document, &workspace);
+    if (rc == NMO_OK) {
+        rc = nmo_script_edit_begin(workspace, label, out_tx);
+    }
+    if (workspace != NULL) {
+        nmo_workspace_destroy(workspace);
+    }
+    if (document != NULL) {
+        nmo_document_destroy(document);
+    }
+    return rc;
+}
 
 static int is_parameter_class(const nmo_type_registry_t *registry, nmo_class_id_t class_id) {
     if (!registry) {
@@ -183,7 +219,7 @@ static int parameter_list_core_visitor(size_t index,
  */
 static char *format_parameter_value(const nmo_parameter_state_t *pstate,
                                      nmo_type_registry_t *registry,
-                                     nmo_session_t *session,
+                                     const nmo_workspace_t *workspace,
                                      size_t *out_len) {
     if (!pstate) {
         return NULL;
@@ -195,23 +231,14 @@ static char *format_parameter_value(const nmo_parameter_state_t *pstate,
         return NULL;
     }
 
-    size_t needed = nmo_param_value_to_string(pstate, registry, session, buffer, buf_size);
-
-    /* If truncated, reallocate and retry */
-    if (needed >= buf_size) {
-        size_t new_size = needed + 1;
-        char *new_buffer = (char *)realloc(buffer, new_size);
-        if (!new_buffer) {
-            free(buffer);
-            return NULL;
-        }
-        buffer = new_buffer;
-        buf_size = new_size;
-        needed = nmo_param_value_to_string(pstate, registry, session, buffer, buf_size);
+    if (nmo_behavior_param_value_to_string(
+            pstate, registry, workspace, buffer, buf_size) != NMO_OK) {
+        free(buffer);
+        return NULL;
     }
 
     if (out_len) {
-        *out_len = needed;
+        *out_len = strlen(buffer);
     }
     return buffer;
 }
@@ -405,7 +432,8 @@ static int parameter_show_run(nmo_cmd_ctx_t *ctx, uint32_t object_id,
     /* Dynamic value buffer - only for classes with valid Parameter state */
     char *value_buf = NULL;
     if (pstate && c.registry && cid != NMO_CID_PARAMETERIN) {
-        value_buf = format_parameter_value(pstate, (nmo_type_registry_t *)c.registry, c.session, NULL);
+        value_buf = format_parameter_value(
+            pstate, (nmo_type_registry_t *)c.registry, c.workspace, NULL);
     }
 
     /* Summary buffer with dynamic allocation */
@@ -420,7 +448,7 @@ static int parameter_show_run(nmo_cmd_ctx_t *ctx, uint32_t object_id,
     summary_buf[0] = '\0';
 
     if (pstate && c.registry && cid != NMO_CID_PARAMETERIN) {
-        nmo_param_value_format_summary(pstate, (nmo_type_registry_t *)c.registry, c.session,
+        nmo_behavior_param_format_summary(pstate, (nmo_type_registry_t *)c.registry, c.workspace,
                                        summary_buf, summary_size);
     }
 
@@ -482,7 +510,7 @@ static int parameter_show_run(nmo_cmd_ctx_t *ctx, uint32_t object_id,
         /* Type information */
         const char *type_name_display = type_name_override;
         if (!type_name_display && pstate && cid != NMO_CID_PARAMETERLOCAL) {
-            type_name_display = nmo_param_value_type_name(pstate, (nmo_type_registry_t *)c.registry);
+            type_name_display = nmo_behavior_param_type_name(pstate, (nmo_type_registry_t *)c.registry);
         }
         if (type_name_display) {
             yyjson_mut_obj_add_str(doc, data, "type", type_name_display);
@@ -490,7 +518,7 @@ static int parameter_show_run(nmo_cmd_ctx_t *ctx, uint32_t object_id,
 
         if (pstate) {
             yyjson_mut_obj_add_str(doc, data, "mode",
-                                   nmo_param_mode_to_string(pstate->mode));
+                                   nmo_behavior_param_mode_to_string(pstate->mode));
             if (value_buf && value_buf[0]) {
                 nmo_cli_json_add_str_safe(doc, data, "value", value_buf);
             }
@@ -524,14 +552,14 @@ static int parameter_show_run(nmo_cmd_ctx_t *ctx, uint32_t object_id,
         /* Type information */
         const char *type_name_display = type_name_override;
         if (!type_name_display && pstate && cid != NMO_CID_PARAMETERLOCAL) {
-            type_name_display = nmo_param_value_type_name(pstate, (nmo_type_registry_t *)c.registry);
+            type_name_display = nmo_behavior_param_type_name(pstate, (nmo_type_registry_t *)c.registry);
         }
         if (type_name_display) {
             fprintf(c.out, "  Type:  %s\n", type_name_display);
         }
 
         if (pstate) {
-            fprintf(c.out, "  Mode:  %s\n", nmo_param_mode_to_string(pstate->mode));
+            fprintf(c.out, "  Mode:  %s\n", nmo_behavior_param_mode_to_string(pstate->mode));
         }
 
         if (owner_id != 0) {
@@ -630,9 +658,10 @@ static int nmo_cmd_parameter_show_in_session(nmo_cmd_ctx_t *ctx, int argc, char 
  * @brief Dump parameter details with decoded value
  */
 static void dump_parameter_details(nmo_object_t *obj,
-                                    nmo_context_t *ctx,
-                                    nmo_session_t *session,
-                                    FILE *out) {
+                                     nmo_context_t *ctx,
+                                     nmo_session_t *session,
+                                     const nmo_workspace_t *workspace,
+                                     FILE *out) {
     if (!obj || !ctx || !out) {
         return;
     }
@@ -674,14 +703,14 @@ static void dump_parameter_details(nmo_object_t *obj,
     } else if (cid != NMO_CID_PARAMETEROPERATION) {
         pstate = (const nmo_parameter_state_t *)state;
         type_guid = pstate->type_guid;
-        mode_str = nmo_param_mode_to_string(pstate->mode);
+        mode_str = nmo_behavior_param_mode_to_string(pstate->mode);
     }
 
     const char *type_name = NULL;
     if (cid == NMO_CID_PARAMETERIN && !nmo_guid_is_null(type_guid)) {
         type_name = nmo_type_registry_guid_to_name(registry, type_guid);
     } else if (pstate) {
-        type_name = nmo_param_value_type_name(pstate, registry);
+        type_name = nmo_behavior_param_type_name(pstate, registry);
     }
 
     if (type_name) {
@@ -740,7 +769,7 @@ static void dump_parameter_details(nmo_object_t *obj,
 
     /* Decoded value - only available for Parameter-derived classes */
     if (pstate) {
-        char *value_buf = format_parameter_value(pstate, registry, session, NULL);
+        char *value_buf = format_parameter_value(pstate, registry, workspace, NULL);
         if (value_buf) {
             fprintf(out, "Value: %s\n", value_buf);
             free(value_buf);
@@ -1010,7 +1039,7 @@ static int parameter_dump_run(nmo_cmd_ctx_t *ctx, const parameter_dump_args_t *a
                 if (class_id == NMO_CID_PARAMETERIN && !nmo_guid_is_null(tg)) {
                     tn = nmo_type_registry_guid_to_name(c.registry, tg);
                 } else if (pstate) {
-                    tn = nmo_param_value_type_name(pstate, c.registry);
+                    tn = nmo_behavior_param_type_name(pstate, c.registry);
                 }
                 if (tn) nmo_cli_json_add_str_safe(doc, item, "type_name", tn);
 
@@ -1022,8 +1051,9 @@ static int parameter_dump_run(nmo_cmd_ctx_t *ctx, const parameter_dump_args_t *a
 
                 if (pstate) {
                     nmo_cli_json_add_str_safe(doc, item, "mode",
-                        nmo_param_mode_to_string(pstate->mode));
-                    char *vbuf = format_parameter_value(pstate, (nmo_type_registry_t *)c.registry, c.session, NULL);
+                        nmo_behavior_param_mode_to_string(pstate->mode));
+                    char *vbuf = format_parameter_value(
+                        pstate, (nmo_type_registry_t *)c.registry, c.workspace, NULL);
                     if (vbuf) {
                         nmo_cli_json_add_str_safe(doc, item, "value", vbuf);
                         free(vbuf);
@@ -1044,7 +1074,7 @@ static int parameter_dump_run(nmo_cmd_ctx_t *ctx, const parameter_dump_args_t *a
 
             yyjson_mut_arr_add_val(jarr, item);
         } else {
-            dump_parameter_details(obj, c.ctx, c.session, c.out);
+            dump_parameter_details(obj, c.ctx, c.session, c.workspace, c.out);
         }
         dump_count++;
     }
@@ -1358,15 +1388,15 @@ static int parameter_set_mutate(
 
     args->param_id = nmo_object_get_id(param_obj);
     args->old_value_str = format_parameter_value(
-        pstate, (nmo_type_registry_t *)c->registry, c->session, NULL);
+        pstate, (nmo_type_registry_t *)c->registry, c->workspace, NULL);
     args->param_name = nmo_object_get_name(param_obj);
-    args->type_name = nmo_param_value_type_name(pstate, (nmo_type_registry_t *)c->registry);
-    args->mode_name = nmo_param_mode_to_string(pstate->mode);
+    args->type_name = nmo_behavior_param_type_name(pstate, (nmo_type_registry_t *)c->registry);
+    args->mode_name = nmo_behavior_param_mode_to_string(pstate->mode);
 
     if (parameter_is_graph_owned(c, args->param_id)) {
         nmo_script_edit_tx_t *tx = NULL;
         nmo_status_t begin_rc =
-            nmo_script_edit_begin(c->ctx, c->session, "parameter set", &tx);
+            parameter_begin_script_edit(c->ctx, c->session, "parameter set", &tx);
         if (begin_rc != NMO_OK) {
             fprintf(stderr, "Error: Failed to begin script edit: %s\n",
                     nmo_error_string(begin_rc));
@@ -1430,12 +1460,12 @@ static int parameter_set_mutate(
         }
 
         args->new_value_str = format_parameter_value(
-            pstate, (nmo_type_registry_t *)c->registry, c->session, NULL);
+            pstate, (nmo_type_registry_t *)c->registry, c->workspace, NULL);
         return parameter_finalize_script_tx(tx, dry_run);
     }
 
-    nmo_session_edit_t *edit = NULL;
-    nmo_status_t begin_rc = nmo_session_edit_begin(c->session, "parameter set", &edit);
+    nmo_workspace_edit_t *edit = NULL;
+    nmo_status_t begin_rc = nmo_workspace_edit_begin(c->workspace, "parameter set", &edit);
     if (begin_rc != NMO_OK) {
         fprintf(stderr, "Error: Failed to begin edit: %s\n", nmo_error_string(begin_rc));
         return NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -1444,7 +1474,7 @@ static int parameter_set_mutate(
     if (args->hex_mode) {
         if (pstate->mode != CKPARAM_MODE_BUFFER) {
             fprintf(stderr, "Error: --hex only supported for MODE_BUFFER parameters\n");
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return NMO_CLI_EXIT_ARG_ERROR;
         }
 
@@ -1452,7 +1482,7 @@ static int parameter_set_mutate(
         uint8_t *hex_buf = (uint8_t *)malloc(max_len);
         if (!hex_buf) {
             fprintf(stderr, "Error: Out of memory\n");
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
 
@@ -1461,24 +1491,24 @@ static int parameter_set_mutate(
             nmo_parse_hex_bytes(args->value_str, hex_buf, max_len, &hex_len);
         if (parse_rc != NMO_OK) {
             fprintf(stderr, "Error: Invalid hex string '%s'\n", args->value_str);
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             free(hex_buf);
             return NMO_CLI_EXIT_ARG_ERROR;
         }
 
         nmo_status_t bytes_rc =
-            nmo_session_edit_set_parameter_bytes(edit, args->param_id, hex_buf, hex_len);
+            nmo_object_edit_set_parameter_bytes(edit, args->param_id, hex_buf, hex_len);
         if (bytes_rc == NMO_ERR_OUT_OF_BOUNDS) {
             fprintf(stderr, "Error: Hex data (%zu bytes) exceeds buffer size (%zu bytes)\n",
                     hex_len, pstate->buffer_data.count);
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             free(hex_buf);
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         if (bytes_rc != NMO_OK) {
             fprintf(stderr, "Error: Failed to set raw parameter bytes: %s\n",
                     nmo_error_string(bytes_rc));
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             free(hex_buf);
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
@@ -1488,23 +1518,23 @@ static int parameter_set_mutate(
             nmo_type_registry_find_by_guid(c->registry, pstate->type_guid);
         if (!type_desc) {
             fprintf(stderr, "Error: Unknown parameter type\n");
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
 
         if (!pstate->buffer_data.data || pstate->buffer_data.count == 0) {
             fprintf(stderr, "Error: Parameter has no buffer data\n");
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
 
         (void)type_desc;
         nmo_status_t parse_rc =
-            nmo_session_edit_set_parameter_value(edit, args->param_id, args->value_str);
+            nmo_object_edit_set_parameter_value(edit, args->param_id, args->value_str);
         if (parse_rc != NMO_OK) {
             if (dry_run && args->owner_str != NULL) {
                 args->new_value_str = nmo_tool_strdup(args->value_str);
-                nmo_session_edit_rollback(edit);
+                nmo_workspace_edit_rollback(edit);
                 return args->new_value_str ? NMO_CLI_EXIT_SUCCESS
                                            : NMO_CLI_EXIT_INTERNAL_ERROR;
             }
@@ -1512,7 +1542,7 @@ static int parameter_set_mutate(
                     args->value_str,
                     args->type_name ? args->type_name : "unknown",
                     nmo_error_string(parse_rc));
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return NMO_CLI_EXIT_ARG_ERROR;
         }
     } else if (pstate->mode == CKPARAM_MODE_OBJECT) {
@@ -1520,7 +1550,7 @@ static int parameter_set_mutate(
         if (args->value_str[0] == '#') {
             if (!nmo_tool_parse_u32(args->value_str + 1, &ref_id)) {
                 fprintf(stderr, "Error: Invalid object ID '%s'\n", args->value_str);
-                nmo_session_edit_rollback(edit);
+                nmo_workspace_edit_rollback(edit);
                 return NMO_CLI_EXIT_ARG_ERROR;
             }
         } else {
@@ -1530,7 +1560,7 @@ static int parameter_set_mutate(
                     /* parsed below */
                 } else {
                     fprintf(stderr, "Error: Object '%s' not found\n", args->value_str);
-                    nmo_session_edit_rollback(edit);
+                    nmo_workspace_edit_rollback(edit);
                     return NMO_CLI_EXIT_NOT_FOUND;
                 }
             } else {
@@ -1540,26 +1570,26 @@ static int parameter_set_mutate(
         char ref_buf[32];
         snprintf(ref_buf, sizeof(ref_buf), "%u", ref_id);
         nmo_status_t ref_rc =
-            nmo_session_edit_set_parameter_value(edit, args->param_id, ref_buf);
+            nmo_object_edit_set_parameter_value(edit, args->param_id, ref_buf);
         if (ref_rc != NMO_OK) {
             fprintf(stderr, "Error: Failed to set object reference: %s\n",
                     nmo_error_string(ref_rc));
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return NMO_CLI_EXIT_ARG_ERROR;
         }
     } else {
         fprintf(stderr, "Error: Unsupported parameter mode '%s'\n", args->mode_name);
-        nmo_session_edit_rollback(edit);
+        nmo_workspace_edit_rollback(edit);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     args->new_value_str = format_parameter_value(
-        pstate, (nmo_type_registry_t *)c->registry, c->session, NULL);
+        pstate, (nmo_type_registry_t *)c->registry, c->workspace, NULL);
 
     if (dry_run) {
-        nmo_session_edit_rollback(edit);
+        nmo_workspace_edit_rollback(edit);
     } else {
-        nmo_status_t commit_rc = nmo_session_edit_commit(edit);
+        nmo_status_t commit_rc = nmo_workspace_edit_commit(edit);
         if (commit_rc != NMO_OK) {
             fprintf(stderr, "Error: Failed to commit edit: %s\n", nmo_error_string(commit_rc));
             return NMO_CLI_EXIT_INTERNAL_ERROR;

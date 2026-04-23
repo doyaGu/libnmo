@@ -13,8 +13,9 @@
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
-#include "app/nmo_stats.h"
+#include "document/nmo_document_stats.h"
 #include "format/nmo_header.h"
+#include "session/nmo_session.h"
 
 #include <inttypes.h>
 #include <stdio.h>

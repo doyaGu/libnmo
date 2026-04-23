@@ -1,13 +1,13 @@
 /**
  * @file param_value.c
- * @brief Parameter value decoding — type-aware buffer interpretation
+ * @brief Parameter value decoding 閳?type-aware buffer interpretation
  *
  * Bridges the type system string converters (nmo_type_value_to_string)
  * with parameter buffer data (nmo_parameter_state_t.buffer_data) to
  * produce human-readable parameter value strings.
  */
 
-#include "behavior/nmo_param_value.h"
+#include "behavior/nmo_behavior_view.h"
 #include "type/nmo_type_string.h"
 #include "type/nmo_type_guids.h"
 #include "core/nmo_guid.h"
@@ -17,6 +17,7 @@
 #include "format/nmo_object.h"
 #include "session/nmo_session.h"
 #include "session/nmo_context.h"
+#include "session/nmo_session_bridge.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -25,7 +26,7 @@
  * Storage mode names
  * ============================================================================ */
 
-const char *nmo_param_mode_to_string(nmo_parameter_mode_t mode)
+const char *nmo_behavior_param_mode_to_string(nmo_parameter_mode_t mode)
 {
     switch (mode) {
     case CKPARAM_MODE_BUFFER:   return "buffer";
@@ -41,7 +42,7 @@ const char *nmo_param_mode_to_string(nmo_parameter_mode_t mode)
  * Type name resolution
  * ============================================================================ */
 
-const char *nmo_param_value_type_name(
+const char *nmo_behavior_param_type_name(
     const nmo_parameter_state_t *param,
     const nmo_type_registry_t *registry)
 {
@@ -161,9 +162,12 @@ static nmo_status_t format_raw_string_buffer(
 
 static nmo_status_t format_object_ref(
     nmo_object_id_t id,
-    const nmo_session_t *session,
+    const nmo_workspace_t *workspace,
     char *buffer, size_t buffer_size)
 {
+    const nmo_session_t *session =
+        workspace ? nmo_session_from_workspace_const(workspace) : NULL;
+
     if (id == 0) {
         snprintf(buffer, buffer_size, "(null)");
         return NMO_OK;
@@ -191,16 +195,16 @@ static nmo_status_t format_object_ref(
  * Core value-to-string conversion
  * ============================================================================ */
 
-nmo_status_t nmo_param_value_to_string(
+nmo_status_t nmo_behavior_param_value_to_string(
     const nmo_parameter_state_t *param,
     const nmo_type_registry_t *registry,
-    const nmo_session_t *session,
+    const nmo_workspace_t *workspace,
     char *buffer,
     size_t buffer_size)
 {
     if (!param || !registry || !buffer || buffer_size == 0) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "NULL argument to nmo_param_value_to_string");
+                         "NULL argument to nmo_behavior_param_value_to_string");
     }
 
     buffer[0] = '\0';
@@ -216,7 +220,7 @@ nmo_status_t nmo_param_value_to_string(
         return NMO_OK;
 
     case CKPARAM_MODE_OBJECT:
-        return format_object_ref(param->object_id, session,
+        return format_object_ref(param->object_id, workspace,
                                  buffer, buffer_size);
 
     case CKPARAM_MODE_MANAGER: {
@@ -262,7 +266,7 @@ nmo_status_t nmo_param_value_to_string(
         nmo_type_registry_find_by_guid(registry, param->type_guid);
 
     if (!type) {
-        /* Unknown type — hex fallback */
+        /* Unknown type 閳?hex fallback */
         return format_hex_preview(data, data_size, buffer, buffer_size);
     }
 
@@ -285,10 +289,10 @@ nmo_status_t nmo_param_value_to_string(
  * Summary formatter
  * ============================================================================ */
 
-nmo_status_t nmo_param_value_format_summary(
+nmo_status_t nmo_behavior_param_format_summary(
     const nmo_parameter_state_t *param,
     const nmo_type_registry_t *registry,
-    const nmo_session_t *session,
+    const nmo_workspace_t *workspace,
     char *buffer,
     size_t buffer_size)
 {
@@ -298,18 +302,18 @@ nmo_status_t nmo_param_value_format_summary(
     }
 
     char guid_fallback[24];
-    const char *type_name = nmo_param_value_type_name(param, registry);
+    const char *type_name = nmo_behavior_param_type_name(param, registry);
     if (!type_name) {
         nmo_guid_format(param->type_guid, guid_fallback, sizeof(guid_fallback));
         type_name = guid_fallback;
     }
 
     char value_buf[512];
-    nmo_param_value_to_string(param, registry, session,
+    nmo_behavior_param_value_to_string(param, registry, workspace,
                               value_buf, sizeof(value_buf));
 
     snprintf(buffer, buffer_size, "%s = %s (%s)",
-             type_name, value_buf, nmo_param_mode_to_string(param->mode));
+             type_name, value_buf, nmo_behavior_param_mode_to_string(param->mode));
 
     return NMO_OK;
 }

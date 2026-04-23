@@ -29,7 +29,7 @@
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
-#include "app/nmo_perf_stats.h"
+#include "document/nmo_document_perf_stats.h"
 
 #define NMO_SERIALIZER_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
 #define NMO_SERIALIZER_API_TIER NMO_API_TIER_ADVANCED_C

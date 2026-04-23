@@ -30,8 +30,8 @@
 #include "commands/nmo_cmd_type.h"
 #include "commands/nmo_cmd_validate.h"
 
-#include "app/nmo_inspector.h"
-#include "behavior/nmo_param_value.h"
+#include "chunk/nmo_chunk_inspect.h"
+#include "behavior/nmo_behavior_view.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_parse.h"
@@ -44,7 +44,7 @@
 #include "object/nmo_object_repository.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_edit.h"
+#include "runtime/nmo_workspace.h"
 #include "type/nmo_type_string.h"
 
 #include "nmo_cli_json.h"
@@ -835,7 +835,7 @@ static int cmd_param(nmo_repl_context_t *repl, int argc, char **argv) {
     }
 
     if (pstate->has_state) {
-        const char *type_name = nmo_param_value_type_name(pstate, registry);
+        const char *type_name = nmo_behavior_param_type_name(pstate, registry);
         if (type_name && type_name[0]) {
             printf("  Type: %s\n", type_name);
         } else {
@@ -844,7 +844,7 @@ static int cmd_param(nmo_repl_context_t *repl, int argc, char **argv) {
             printf("  Type: %s\n", guid_str);
         }
 
-        printf("  Mode: %s\n", nmo_param_mode_to_string(pstate->mode));
+        printf("  Mode: %s\n", nmo_behavior_param_mode_to_string(pstate->mode));
 
         if (pstate->mode == CKPARAM_MODE_BUFFER && pstate->buffer_data.data && pstate->buffer_data.count > 0) {
             printf("  Buffer Size: %zu bytes\n", pstate->buffer_data.count);

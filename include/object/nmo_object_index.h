@@ -7,8 +7,9 @@
  *
  * This header is an advanced index/cache surface. Ordinary consumers should
  * prefer stable query facades such as nmo_object_iter_*(),
- * nmo_object_query_iterate()/collect(), or nmo_session_query_*() when they do
- * not need to manage index lifetimes directly.
+ * nmo_object_query_iterate()/collect(), and the document-owned
+ * nmo_object_query_count()/find_first() helpers when they do not need to
+ * manage index lifetimes directly.
  */
 
 #ifndef NMO_OBJECT_INDEX_H
@@ -236,7 +237,7 @@ NMO_API nmo_object_t *nmo_object_index_find_by_name(
  *         next call to nmo_object_index_get_by_name_all() with a non-zero class_id, or until
  *         the index is destroyed.
  * @note Ordinary consumers should prefer nmo_object_query_iterate()/collect()
- * or nmo_session_query_objects() instead of depending on index-owned arrays.
+ * or document-owned query helpers instead of depending on index-owned arrays.
  * @note Returned array is index-owned; do not free.
  * @ownership borrowed
  */
@@ -290,7 +291,7 @@ NMO_API nmo_object_t *nmo_object_index_find_by_guid(
  * @return Array of object pointers, or NULL if none found
  * @note The returned array is index-owned and may be replaced by later index
  * rebuilds. Ordinary consumers should prefer nmo_object_query_iterate()/
- * collect() or nmo_session_query_objects() for stable query contracts.
+ * collect() or document-owned query helpers for stable query contracts.
  * @note Returned array is index-owned; do not free.
  * @ownership borrowed
  */

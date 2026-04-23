@@ -12,10 +12,8 @@
  * - Core Layer: allocator, arena, error, logger, GUID, math, color, pool, refcount, containers
  * - IO Layer: file, memory, compressed, checksum, mmap, transactional IO
  * - Format Layer: headers, chunks, objects, managers, data, chunk pool, image
- * - Object Layer: class IDs, object types, schemas
- * - Type Layer: type system, dynamic types, operation system, builtin operations, string conversion
- * - Session Layer: repository, ID remapping, object system, object index, parser, builder
- * - App Layer: context, session, plugin, comparison, runtime load, inspector, save pipeline, stats
+ * - Canonical Model: context -> document -> workspace -> object/behavior/chunk -> export
+ * - Type/Extension/Lua Layers: type system, plugins, scripting bindings
  *
  * Basic usage:
  * @code
@@ -28,14 +26,21 @@
  * nmo_context_t *ctx = nmo_context_create(&desc);
  * nmo_context_enable_logging(ctx, 1); // Optional: enable libnmo logs
  *
- * // Load file (creates a session)
- * nmo_session_t *session = nmo_session_load(ctx, "file.nmo");
- * if (!session) {
+ * // Load file into a document
+ * nmo_document_t *document = NULL;
+ * if (nmo_document_load_file(ctx, "file.nmo", &document) != NMO_OK) {
  *     fprintf(stderr, "Error: failed to load file\n");
  * }
  *
+ * // Create a workspace when you need mutation/runtime services
+ * nmo_workspace_t *workspace = NULL;
+ * if (nmo_workspace_create(ctx, document, &workspace) != NMO_OK) {
+ *     fprintf(stderr, "Error: failed to create workspace\n");
+ * }
+ *
  * // Clean up
- * nmo_session_destroy(session);
+ * nmo_workspace_destroy(workspace);
+ * nmo_document_destroy(document);
  * nmo_context_release(ctx);
  * @endcode
  */
@@ -107,9 +112,6 @@
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_summary.h"
 #include "object/nmo_object_diff.h"
-#include "object/nmo_object_index.h"
-#include "object/nmo_shadow_storage.h"
-#include "object/nmo_object_system.h"
 
 // Type layer
 #include "type/nmo_type_system.h"
@@ -127,29 +129,13 @@
 #include "extension/nmo_extension_host.h"
 #include "extension/nmo_extension_diagnostics.h"
 
-// Session layer
-#include "session/nmo_deserializer.h"
-#include "format/nmo_id_remap.h"
-#include "session/nmo_builder.h"
-#include "session/nmo_object_system.h"
-#include "session/nmo_runtime_kernel.h"
-#include "session/nmo_reference_resolver.h"
-#include "session/nmo_runtime_result.h"
-#include "session/nmo_session_edit.h"
-#include "session/nmo_session_pipeline.h"
-
-// Session layer (context, session, serializer)
-#include "session/nmo_context.h"
-#include "session/nmo_session.h"
-#include "session/nmo_session_util.h"
-#include "session/nmo_serializer.h"
-
 // Reorganization owner headers
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 #include "document/nmo_document.h"
 #include "document/nmo_document_load.h"
 #include "document/nmo_document_save.h"
+#include "document/nmo_document_perf_stats.h"
 #include "document/nmo_document_stats.h"
 #include "document/nmo_document_compare.h"
 #include "chunk/nmo_chunk_index.h"
@@ -160,21 +146,16 @@
 #include "behavior/nmo_behavior_registry.h"
 #include "behavior/nmo_behavior_query.h"
 #include "behavior/nmo_behavior_analyze.h"
+#include "behavior/nmo_behavior_view.h"
 #include "behavior/nmo_behavior_edit.h"
 #include "behavior/nmo_behavior_execute.h"
 #include "export/nmo_export_text.h"
 #include "export/nmo_export_json.h"
 #include "export/nmo_export_dot.h"
+#include "export/nmo_ansi.h"
+#include "export/nmo_hexdump.h"
 
-// Behavior layer
-#include "behavior/nmo_behavior_view.h"
-#include "behavior/nmo_behavior_graph.h"
-#include "behavior/nmo_script_executor.h"
-#include "behavior/nmo_script_trace_view.h"
-#include "behavior/nmo_script_view.h"
-
-// App layer
-#include "app/nmo_json_util.h"
+// Additional type helpers
 #include "type/nmo_type_query.h"
 
 // Lua platform layer

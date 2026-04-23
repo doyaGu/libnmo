@@ -2,7 +2,7 @@
 
 #include "nmo_cmd_ctx.h"
 
-#include "app/nmo_save.h"
+#include "document/nmo_document_save.h"
 #include "core/nmo_error.h"
 
 #include <stdio.h>

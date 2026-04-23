@@ -16,6 +16,7 @@
 
 #include "nmo.h"
 #include "session/nmo_context.h"
+#include "session/nmo_session.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -30,7 +31,7 @@
 #include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_system.h"
-#include "behavior/nmo_bb_registry.h"
+#include "behavior/nmo_behavior_registry.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -601,7 +602,7 @@ static nmo_cli_u32_distribution_t compute_u32_distribution(uint32_t *values,
 
 typedef struct behavior_stats_data {
     const nmo_type_registry_t *registry;
-    const nmo_bb_registry_t *bb_reg;
+    const nmo_behavior_registry_t *bb_reg;
     nmo_object_repository_t *repo;
     size_t total_behaviors;
     size_t n_scripts;
@@ -698,7 +699,7 @@ static void behavior_stats_add_proto(behavior_stats_data_t *stats,
 
     stats->protos[stats->proto_count] = (nmo_cli_bb_proto_count_t){
         .guid = guid,
-        .name = nmo_bb_registry_get_name(stats->bb_reg, guid),
+        .name = nmo_behavior_registry_get_name(stats->bb_reg, guid),
         .count = 1,
     };
     stats->proto_count++;
@@ -1024,7 +1025,7 @@ static int behavior_stats_single(const char *file_path,
         nmo_tool_close_session(ctx, session);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    const nmo_bb_registry_t *bb_reg = nmo_context_get_bb_registry(ctx);
+    const nmo_behavior_registry_t *bb_reg = nmo_context_get_bb_registry(ctx);
 
     behavior_stats_data_t stats = {
         .registry = registry,
@@ -1312,7 +1313,7 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
         fprintf(stderr, "Error: Failed to build behavior acceleration\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
-    const nmo_bb_registry_t *bb_reg = nmo_context_get_bb_registry(c.ctx);
+    const nmo_behavior_registry_t *bb_reg = nmo_context_get_bb_registry(c.ctx);
 
     behavior_stats_data_t stats = {
         .registry = c.registry,

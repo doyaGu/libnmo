@@ -4,7 +4,7 @@
  */
 
 #include "nmo_cli_json.h"
-#include "app/nmo_json_util.h"
+#include "../src/export/export_json_util_internal.h"
 
 #include <stdlib.h>
 #include <time.h>

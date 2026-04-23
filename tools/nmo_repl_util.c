@@ -6,6 +6,7 @@
 
 #include "core/nmo_path.h"
 #include "object/nmo_object_repository.h"
+#include "session/nmo_session.h"
 
 #include <ctype.h>
 #include <stdio.h>

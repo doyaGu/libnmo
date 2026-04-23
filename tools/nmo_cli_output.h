@@ -8,7 +8,7 @@
 
 #include "nmo_cli_common.h"
 
-#include "app/nmo_ansi.h"
+#include "export/nmo_ansi.h"
 
 #include <stdbool.h>
 #include <stddef.h>

@@ -327,6 +327,21 @@ static bool query_collect_visitor(size_t object_index, nmo_object_t *object, voi
     return true;
 }
 
+typedef struct query_first_ctx {
+    nmo_object_t *object;
+    size_t index;
+} query_first_ctx_t;
+
+static bool query_first_visitor(size_t object_index, nmo_object_t *object, void *user_data)
+{
+    query_first_ctx_t *ctx = (query_first_ctx_t *)user_data;
+    if (ctx != NULL) {
+        ctx->object = object;
+        ctx->index = object_index;
+    }
+    return false;
+}
+
 nmo_status_t nmo_object_query_matches(
     const nmo_object_t *object,
     const nmo_object_query_t *query,
@@ -787,13 +802,15 @@ nmo_status_t nmo_object_query_count(
         return NMO_OK;
     }
 
+    nmo_object_query_context_t query_ctx = {
+        .repository = nmo_document_get_repository(document),
+        .index = NULL,
+        .registry = nmo_document_get_context(document) != NULL
+            ? nmo_context_get_type_registry(nmo_document_get_context(document))
+            : NULL
+    };
     nmo_object_query_result_t result = {0};
-    nmo_status_t rc = nmo_session_query_objects(
-        nmo_document_session(document),
-        query,
-        NULL,
-        NULL,
-        &result);
+    nmo_status_t rc = nmo_object_query_iterate(&query_ctx, query, NULL, NULL, &result);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -811,12 +828,37 @@ nmo_status_t nmo_object_query_find_first(
     if (document == NULL || out_object == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
+    *out_object = NULL;
+    if (out_index != NULL) {
+        *out_index = 0;
+    }
 
-    return nmo_session_query_first(
-        nmo_document_session(document),
+    nmo_object_query_context_t query_ctx = {
+        .repository = nmo_document_get_repository(document),
+        .index = NULL,
+        .registry = nmo_document_get_context(document) != NULL
+            ? nmo_context_get_type_registry(nmo_document_get_context(document))
+            : NULL
+    };
+    query_first_ctx_t first = {0};
+    nmo_object_query_result_t result = {0};
+    nmo_status_t status = nmo_object_query_iterate(
+        &query_ctx,
         query,
-        out_object,
-        out_index);
+        query_first_visitor,
+        &first,
+        &result);
+    if (status != NMO_OK) {
+        return status;
+    }
+    if (first.object == NULL || result.matched == 0) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    *out_object = first.object;
+    if (out_index != NULL) {
+        *out_index = first.index;
+    }
+    return NMO_OK;
 }
 
 nmo_status_t nmo_object_query_resolve_one(

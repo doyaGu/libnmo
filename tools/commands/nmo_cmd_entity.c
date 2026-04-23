@@ -15,12 +15,12 @@
 #include "nmo.h"
 #include "core/nmo_parse.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_edit.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
 #include "object/builtin/nmo_targetlight_schemas.h"
-#include "session/nmo_session_edit.h"
 #include "type/nmo_type_string.h"
 
 #include <stdio.h>
@@ -698,27 +698,27 @@ static int entity_set_position_mutate(
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_session_edit_t *edit = NULL;
-    nmo_status_t rc = nmo_session_edit_begin(c->session, "entity set-position", &edit);
+    nmo_workspace_edit_t *edit = NULL;
+    nmo_status_t rc = nmo_workspace_edit_begin(c->workspace, "entity set-position", &edit);
     if (rc == NMO_OK) {
         nmo_session_field_edit_t field = {
             .field_name = "world_matrix",
             .value_str = args->matrix_value,
         };
-        rc = nmo_session_edit_set_object_fields(edit, args->object_id, &field, 1, NULL);
+        rc = nmo_object_edit_set_fields(edit, args->object_id, &field, 1, NULL);
     }
     if (rc != NMO_OK) {
         if (edit) {
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
         }
         fprintf(stderr, "Error: Failed to set position: %s\n", nmo_error_string(rc));
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     if (dry_run) {
-        nmo_session_edit_rollback(edit);
+        nmo_workspace_edit_rollback(edit);
     } else {
-        rc = nmo_session_edit_commit(edit);
+        rc = nmo_workspace_edit_commit(edit);
         if (rc != NMO_OK) {
             fprintf(stderr, "Error: Failed to commit edit: %s\n", nmo_error_string(rc));
             return NMO_CLI_EXIT_INTERNAL_ERROR;

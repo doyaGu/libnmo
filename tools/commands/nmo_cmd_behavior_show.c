@@ -15,8 +15,9 @@
 #include "../nmo_opt.h"
 
 #include "nmo.h"
-#include "behavior/nmo_behavior_index.h"
+#include "behavior/nmo_behavior_analyze.h"
 #include "session/nmo_context.h"
+#include "session/nmo_session.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -34,9 +35,9 @@
 #include "object/nmo_object_repository.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_operations.h"
-#include "behavior/nmo_bb_registry.h"
-#include "behavior/nmo_param_value.h"
-#include "behavior/nmo_script_walker.h"
+#include "behavior/nmo_behavior_registry.h"
+#include "behavior/nmo_behavior_view.h"
+#include "behavior/nmo_behavior_analyze.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -55,14 +56,14 @@ static void behavior_show_add_decoded_value_json(
     yyjson_mut_val *item,
     const nmo_parameter_state_t *param,
     const nmo_type_registry_t *registry,
-    nmo_session_t *session)
+    const nmo_workspace_t *workspace)
 {
     if (!doc || !item || !param || !param->has_state) {
         return;
     }
 
     char value_buf[256];
-    if (nmo_param_value_to_string(param, registry, session,
+    if (nmo_behavior_param_value_to_string(param, registry, workspace,
                                   value_buf, sizeof(value_buf)) == NMO_OK &&
         value_buf[0] != '\0') {
         nmo_cli_json_add_str_safe(doc, item, "decoded_value", value_buf);
@@ -83,16 +84,16 @@ static void behavior_show_add_source_chain_json(
     }
 
     nmo_array_t chain;
-    if (nmo_array_init(&chain, sizeof(nmo_param_chain_step_t), 8, NULL) != NMO_OK) {
+    if (nmo_array_init(&chain, sizeof(nmo_behavior_trace_step_t), 8, NULL) != NMO_OK) {
         return;
     }
 
-    if (nmo_script_walker_trace_param_chain(ctx, session, param_id,
+    if (nmo_behavior_analyze_trace_param_chain(ctx, session, param_id,
                                             &chain, 32) == NMO_OK &&
         chain.count > 0) {
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        const nmo_param_chain_step_t *steps =
-            (const nmo_param_chain_step_t *)chain.data;
+        const nmo_behavior_trace_step_t *steps =
+            (const nmo_behavior_trace_step_t *)chain.data;
         for (size_t i = 0; i < chain.count; i++) {
             yyjson_mut_val *step = yyjson_mut_obj(doc);
             yyjson_mut_obj_add_uint(doc, step, "id", steps[i].id);
@@ -457,7 +458,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             nmo_cli_json_add_str_safe(doc, data, "bb_guid", guid_buf);
             yyjson_mut_obj_add_uint(doc, data, "bb_version",
                                     bs->block_version);
-            const char *proto_name = nmo_bb_registry_get_name(
+            const char *proto_name = nmo_behavior_registry_get_name(
                 nmo_context_get_bb_registry(c.ctx), bs->block_guid);
             if (proto_name) {
                 nmo_cli_json_add_str_safe(doc, data, "bb_proto_name",
@@ -562,7 +563,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                     behavior_show_add_decoded_value_json(
                         doc, item,
                         (const nmo_parameter_state_t *)nmo_object_get_state(p),
-                        c.registry, c.session);
+                        c.registry, c.workspace);
                 }
                 yyjson_mut_arr_add_val(arr, item);
             }
@@ -591,7 +592,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                     behavior_show_add_decoded_value_json(
                         doc, item,
                         (const nmo_parameter_state_t *)nmo_object_get_state(p),
-                        c.registry, c.session);
+                        c.registry, c.workspace);
                 }
                 yyjson_mut_arr_add_val(arr, item);
             }
@@ -669,7 +670,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                     nmo_cli_json_add_str_safe(doc, item, "type",
                         sub_script ? "Script" : sub_bb ? "BB" : "Graph");
                     if (sub_bb && !nmo_guid_is_null(sub_bs->block_guid)) {
-                        const char *proto = nmo_bb_registry_get_name(
+                        const char *proto = nmo_behavior_registry_get_name(
                             nmo_context_get_bb_registry(c.ctx),
                             sub_bs->block_guid);
                         if (proto) {
@@ -765,7 +766,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     }
     if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
 
-        const char *proto_name = nmo_bb_registry_get_name(nmo_context_get_bb_registry(c.ctx),bs->block_guid);
+        const char *proto_name = nmo_behavior_registry_get_name(nmo_context_get_bb_registry(c.ctx),bs->block_guid);
         if (proto_name) {
             fprintf(c.out, "  Prototype: %s  {%08X-%08X}  v%u\n",
                     proto_name, bs->block_guid.d1, bs->block_guid.d2, bs->block_version);
@@ -869,7 +870,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                     (const nmo_parameter_state_t *)nmo_object_get_state(p);
                 if (ps && ps->has_state) {
                     char val_buf[256];
-                    if (nmo_param_value_to_string(ps, c.registry, c.session,
+                    if (nmo_behavior_param_value_to_string(ps, c.registry, c.workspace,
                                                   val_buf, sizeof(val_buf)) == NMO_OK
                         && val_buf[0] != '\0') {
                         fprintf(c.out, " = %s", val_buf);
@@ -899,7 +900,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                     (const nmo_parameter_state_t *)nmo_object_get_state(p);
                 if (lps && lps->has_state) {
                     char val_buf[256];
-                    if (nmo_param_value_to_string(lps, c.registry, c.session,
+                    if (nmo_behavior_param_value_to_string(lps, c.registry, c.workspace,
                                                   val_buf, sizeof(val_buf)) == NMO_OK
                         && val_buf[0] != '\0') {
                         fprintf(c.out, " = %s", val_buf);
@@ -974,7 +975,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             if (sub && sub->state) {
                 const nmo_behavior_state_t *sub_bs = (const nmo_behavior_state_t *)sub->state;
                 if ((sub_bs->flags & CKBEHAVIOR_BUILDINGBLOCK) && !nmo_guid_is_null(sub_bs->block_guid)) {
-                    proto_name = nmo_bb_registry_get_name(nmo_context_get_bb_registry(c.ctx),sub_bs->block_guid);
+                    proto_name = nmo_behavior_registry_get_name(nmo_context_get_bb_registry(c.ctx),sub_bs->block_guid);
                 }
             }
             if (proto_name) {

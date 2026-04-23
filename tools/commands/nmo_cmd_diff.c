@@ -10,10 +10,10 @@
 #include "../nmo_tool_common.h"
 #include "nmo.h"
 #include "session/nmo_session.h"
-#include "app/nmo_comparison.h"
+#include "document/nmo_document_compare.h"
 #include "session/nmo_context.h"
-#include "app/nmo_inspector.h"
-#include "app/nmo_object_diff.h"
+#include "chunk/nmo_chunk_inspect.h"
+#include "object/nmo_object_diff.h"
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
 #include <stdio.h>

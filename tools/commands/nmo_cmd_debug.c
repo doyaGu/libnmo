@@ -12,8 +12,9 @@
 #include "../nmo_opt.h"
 
 #include "nmo.h"
-#include "app/nmo_stats.h"
+#include "document/nmo_document_stats.h"
 #include "session/nmo_context.h"
+#include "session/nmo_session.h"
 
 #include <stdio.h>
 #include <string.h>

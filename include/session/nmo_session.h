@@ -34,22 +34,22 @@ typedef struct nmo_save_options nmo_save_options_t;
 typedef struct nmo_runtime_report nmo_runtime_report_t;
 
 /*
- * This header intentionally remains mixed during API refinement:
- * - workflow/session lifecycle families are Tier 1
- * - execution, cached acceleration, and session-internal wiring stay Tier 2
+ * This header is the advanced runtime/session layer:
+ * - canonical consumer workflow lives in document/workspace/object/behavior
+ * - raw runtime execution, cache wiring, and pipeline state stay here
  */
 #define NMO_SESSION_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_MIXED_TIER
-#define NMO_SESSION_WORKFLOW_API_TIER NMO_API_TIER_STABLE_CONSUMER
+#define NMO_SESSION_WORKFLOW_API_TIER NMO_API_TIER_ADVANCED_C
 #define NMO_SESSION_QUERY_API_TIER NMO_API_TIER_ADVANCED_C
 #define NMO_SESSION_EXECUTION_API_TIER NMO_API_TIER_ADVANCED_C
 #define NMO_SESSION_ACCELERATION_CACHE_API_TIER NMO_API_TIER_ADVANCED_C
 #define NMO_SESSION_INTERNAL_STATE_API_TIER NMO_API_TIER_ADVANCED_C
 
 /*
- * Default consumers should treat this header plus nmo_session_query.h as the
- * stable session/workflow entry point. Advanced request shaping, resolver
- * plumbing, and raw pipeline staging now live in nmo_runtime_kernel.h,
- * nmo_reference_resolver.h, and nmo_session_pipeline.h.
+ * Default consumers should treat this header as advanced C plumbing rather
+ * than the primary workflow entry point. Canonical public entry points live in
+ * runtime/document/chunk/object/behavior/export. Request shaping, resolver
+ * plumbing, and raw pipeline staging remain here.
  */
 
 /**
@@ -448,39 +448,6 @@ NMO_API nmo_status_t nmo_session_rebuild_indexes(nmo_session_t *session, uint32_
 NMO_API nmo_status_t nmo_session_get_object_index_stats(
     const nmo_session_t *session,
     nmo_index_stats_t *stats);
-
-/**
- * @brief Run a session-scoped object query.
- *
- * Uses the session-owned query index and refreshes dirty index contents before
- * planning candidates.
- */
-NMO_API nmo_status_t nmo_session_query_objects(
-    nmo_session_t *session,
-    const nmo_object_query_t *query,
-    nmo_object_query_visitor_fn visitor,
-    void *user_data,
-    nmo_object_query_result_t *out_result);
-
-/**
- * @brief Collect session query matches into an arena-allocated pointer array.
- */
-NMO_API nmo_status_t nmo_session_query_collect(
-    nmo_session_t *session,
-    const nmo_object_query_t *query,
-    nmo_arena_t *arena,
-    nmo_object_t ***out_objects,
-    size_t *out_count,
-    nmo_object_query_result_t *out_result);
-
-/**
- * @brief Return the first session object matching a query.
- */
-NMO_API nmo_status_t nmo_session_query_first(
-    nmo_session_t *session,
-    const nmo_object_query_t *query,
-    nmo_object_t **out_object,
-    size_t *out_index);
 
 /**
  * @brief Invalidate the session-owned object query index when low-level state changes.

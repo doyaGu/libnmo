@@ -8,7 +8,7 @@
 #include "type/nmo_type_runtime.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_array.h"
-#include "runtime_internal.h"
+#include "../runtime/runtime_internal.h"
 
 /* ── ID remap lookup ───────────────────────────────────────────── */
 

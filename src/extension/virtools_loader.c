@@ -6,7 +6,7 @@
  */
 
 #include "extension/nmo_virtools_loader.h"
-#include "behavior/nmo_bb_registry.h"
+#include "behavior/nmo_behavior_registry.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_guids.h"
 #include "type/nmo_operation_system.h"
@@ -381,12 +381,12 @@ static uint32_t read_json_string_array(yyjson_val *arr, const char ***out) {
     return n;
 }
 
-static uint32_t read_json_param_array(yyjson_val *arr, nmo_bb_param_desc_t **out) {
+static uint32_t read_json_param_array(yyjson_val *arr, nmo_behavior_param_desc_t **out) {
     *out = NULL;
     if (!arr || !yyjson_is_arr(arr)) return 0;
     uint32_t n = (uint32_t)yyjson_arr_size(arr);
     if (n == 0) return 0;
-    nmo_bb_param_desc_t *descs = (nmo_bb_param_desc_t *)calloc(n, sizeof(*descs));
+    nmo_behavior_param_desc_t *descs = (nmo_behavior_param_desc_t *)calloc(n, sizeof(*descs));
     if (!descs) return 0;
     yyjson_arr_iter iter;
     yyjson_arr_iter_init(arr, &iter);
@@ -399,7 +399,7 @@ static uint32_t read_json_param_array(yyjson_val *arr, nmo_bb_param_desc_t **out
     return n;
 }
 
-nmo_status_t nmo_virtools_load_building_blocks(nmo_bb_registry_t *bb_registry, const char *path) {
+nmo_status_t nmo_virtools_load_building_blocks(nmo_behavior_registry_t *bb_registry, const char *path) {
     if (!bb_registry || !path)
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null arg");
 
@@ -427,13 +427,13 @@ nmo_status_t nmo_virtools_load_building_blocks(nmo_bb_registry_t *bb_registry, c
         uint32_t out_count = read_json_string_array(yyjson_obj_get(item, "outputs"), &outputs);
 
         /* Read parameter descs */
-        nmo_bb_param_desc_t *ip = NULL, *op = NULL, *lp = NULL, *st = NULL;
+        nmo_behavior_param_desc_t *ip = NULL, *op = NULL, *lp = NULL, *st = NULL;
         uint32_t ip_n = read_json_param_array(yyjson_obj_get(item, "input_params"), &ip);
         uint32_t op_n = read_json_param_array(yyjson_obj_get(item, "output_params"), &op);
         uint32_t lp_n = read_json_param_array(yyjson_obj_get(item, "local_params"), &lp);
         uint32_t st_n = read_json_param_array(yyjson_obj_get(item, "settings"), &st);
 
-        nmo_bb_proto_t proto;
+        nmo_behavior_proto_t proto;
         memset(&proto, 0, sizeof(proto));
         proto.guid = guid;
         proto.name = get_str(item, "name");
@@ -456,7 +456,7 @@ nmo_status_t nmo_virtools_load_building_blocks(nmo_bb_registry_t *bb_registry, c
         proto.settings = st;
         proto.setting_count = st_n;
 
-        nmo_bb_registry_add(bb_registry, &proto); /* deep-copies all data */
+        nmo_behavior_registry_add(bb_registry, &proto); /* deep-copies all data */
 
         /* Free temp arrays (strings point into yyjson doc, still valid) */
         free(inputs);
@@ -539,7 +539,7 @@ nmo_status_t nmo_virtools_load_plugins(nmo_extension_registry_t *ext_registry, c
 nmo_status_t nmo_virtools_load_data_dir(
     nmo_type_registry_t *type_registry,
     nmo_operation_registry_t *op_registry,
-    nmo_bb_registry_t *bb_registry,
+    nmo_behavior_registry_t *bb_registry,
     const char *data_dir)
 {
     if (!data_dir)

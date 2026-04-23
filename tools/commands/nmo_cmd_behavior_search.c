@@ -13,8 +13,9 @@
 #include "../nmo_opt.h"
 
 #include "nmo.h"
-#include "behavior/nmo_behavior_index.h"
+#include "behavior/nmo_behavior_analyze.h"
 #include "session/nmo_context.h"
+#include "session/nmo_session.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
@@ -27,7 +28,7 @@
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_repository.h"
 #include "type/nmo_type_system.h"
-#include "behavior/nmo_bb_registry.h"
+#include "behavior/nmo_behavior_registry.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -177,7 +178,7 @@ static int behavior_find_object(size_t index, nmo_object_t *obj,
             snprintf(guid_buf, sizeof(guid_buf), "%08X-%08X",
                      bs->block_guid.d1, bs->block_guid.d2);
             nmo_cli_json_add_str_safe(data->doc, item, "bb_guid", guid_buf);
-            const char *proto_name = nmo_bb_registry_get_name(
+            const char *proto_name = nmo_behavior_registry_get_name(
                 nmo_context_get_bb_registry(c->ctx), bs->block_guid);
             if (proto_name) {
                 nmo_cli_json_add_str_safe(data->doc, item, "proto_name",
@@ -191,7 +192,7 @@ static int behavior_find_object(size_t index, nmo_object_t *obj,
 
         char proto_buf[64] = "-";
         if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
-            const char *proto_name = nmo_bb_registry_get_name(
+            const char *proto_name = nmo_behavior_registry_get_name(
                 nmo_context_get_bb_registry(c->ctx), bs->block_guid);
             if (proto_name) {
                 snprintf(proto_buf, sizeof(proto_buf), "%s", proto_name);
@@ -394,7 +395,7 @@ static const char *trace_bb_proto_name(
         nmo_guid_is_null(bs->block_guid)) {
         return NULL;
     }
-    return nmo_bb_registry_get_name(nmo_context_get_bb_registry(ctx),
+    return nmo_behavior_registry_get_name(nmo_context_get_bb_registry(ctx),
                                     bs->block_guid);
 }
 
@@ -798,7 +799,7 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
                             else if (tgt_bs->flags & CKBEHAVIOR_BUILDINGBLOCK) {
                                 type_label = " [BB]";
                                 if (!nmo_guid_is_null(tgt_bs->block_guid)) {
-                                    proto_name = nmo_bb_registry_get_name(
+                                    proto_name = nmo_behavior_registry_get_name(
                                         nmo_context_get_bb_registry(c.ctx),
                                         tgt_bs->block_guid);
                                 }

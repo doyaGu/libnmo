@@ -1,10 +1,13 @@
 /**
  * @file behavior_index.c
- * @brief Behavior ownership index â€” O(1) reverse lookup for IO/param/sub-behavior IDs
+ * @brief Behavior ownership index â€?O(1) reverse lookup for IO/param/sub-behavior IDs
  */
 
-#include "behavior/nmo_behavior_index.h"
-#include "behavior/nmo_script_walker.h"
+#include "behavior/nmo_behavior_analyze.h"
+#include "behavior/nmo_behavior_query.h"
+#include "session/nmo_session_bridge.h"
+#include "behavior/nmo_behavior_query.h"
+#include "session/nmo_session_bridge.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 #include "core/nmo_arena.h"
@@ -76,7 +79,7 @@ static bool index_insert(
     uint32_t h = id_hash(key) % (uint32_t)idx->capacity;
     while (idx->slots[h].key != 0) {
         if (idx->slots[h].key == key) {
-            /* Already indexed â€” first registration wins (don't overwrite) */
+            /* Already indexed â€?first registration wins (don't overwrite) */
             return true;
         }
         h = (h + 1) % (uint32_t)idx->capacity;
@@ -240,29 +243,39 @@ nmo_status_t nmo_behavior_index_build(
     }
 
     /* Find all scripts and walk each one */
+    nmo_document_t *document = NULL;
     nmo_array_t scripts;
-    nmo_array_init(&scripts, sizeof(nmo_script_entry_t), 32, NULL);
-    nmo_status_t st = nmo_script_walker_find_scripts(ctx, session, &scripts);
+    nmo_array_init(&scripts, sizeof(nmo_behavior_script_view_t), 32, NULL);
+    nmo_status_t st = nmo_session_borrow_document(session, &document);
     if (st != NMO_OK) {
         nmo_array_clear(&scripts);
         return st;
     }
+    st = nmo_behavior_query_collect_scripts(document, &scripts);
+    if (st != NMO_OK) {
+        nmo_array_clear(&scripts);
+            nmo_document_destroy(document);
+            return st;
+    }
 
     build_ctx_t bctx = {index, repo, NMO_OK};
-    const nmo_script_entry_t *entries = (const nmo_script_entry_t *)scripts.data;
+    const nmo_behavior_script_view_t *entries = (const nmo_behavior_script_view_t *)scripts.data;
     for (size_t i = 0; i < scripts.count; i++) {
-        st = nmo_script_walker_walk(ctx, session, entries[i].script_id, build_visitor, &bctx);
+        st = nmo_behavior_walk(ctx, session, entries[i].script_id, build_visitor, &bctx);
         if (st != NMO_OK) {
             nmo_array_clear(&scripts);
+            nmo_document_destroy(document);
             return st;
         }
         if (bctx.status != NMO_OK) {
             nmo_array_clear(&scripts);
+            nmo_document_destroy(document);
             return bctx.status;
         }
     }
 
     nmo_array_clear(&scripts);
+    nmo_document_destroy(document);
     return NMO_OK;
 }
 

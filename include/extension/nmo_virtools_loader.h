@@ -6,9 +6,9 @@
  * into the appropriate registries. Requires yyjson (via nmo_json target).
  *
  * This is the runtime equivalent of CK2's plugin initialization:
- * - Parameter types   â†’ nmo_type_registry_t
- * - Operation types   â†’ nmo_type_registry_t (NMO_TYPE_CATEGORY_OPERATION)
- * - BB prototypes     â†’ nmo_bb_registry_t
+ * - Parameter types   â†?nmo_type_registry_t
+ * - Operation types   â†?nmo_type_registry_t (NMO_TYPE_CATEGORY_OPERATION)
+ * - BB prototypes     â†?nmo_behavior_registry_t
  */
 
 #ifndef NMO_VIRTOOLS_LOADER_H
@@ -23,7 +23,7 @@ extern "C" {
 
 typedef struct nmo_type_registry nmo_type_registry_t;
 typedef struct nmo_operation_registry nmo_operation_registry_t;
-typedef struct nmo_bb_registry nmo_bb_registry_t;
+typedef struct nmo_bb_registry nmo_behavior_registry_t;
 typedef struct nmo_extension_registry nmo_extension_registry_t;
 
 /**
@@ -68,7 +68,7 @@ NMO_API nmo_status_t nmo_virtools_load_operations(
  * @return NMO_OK on success
  */
 NMO_API nmo_status_t nmo_virtools_load_building_blocks(
-    nmo_bb_registry_t *bb_registry, const char *path);
+    nmo_behavior_registry_t *bb_registry, const char *path);
 
 /**
  * @brief Load Virtools plugin metadata from JSON file.
@@ -100,7 +100,7 @@ NMO_API nmo_status_t nmo_virtools_load_plugins(
 NMO_API nmo_status_t nmo_virtools_load_data_dir(
     nmo_type_registry_t *type_registry,
     nmo_operation_registry_t *op_registry,
-    nmo_bb_registry_t *bb_registry,
+    nmo_behavior_registry_t *bb_registry,
     const char *data_dir);
 
 #ifdef __cplusplus

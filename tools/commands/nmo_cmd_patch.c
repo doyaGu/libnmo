@@ -10,11 +10,12 @@
 #include "../nmo_cli_write.h"
 #include "../nmo_opt.h"
 
-#include "behavior/nmo_behavior_rewrite.h"
+#include "behavior/nmo_behavior_edit.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 #include "yyjson.h"
 
 #include <stdbool.h>
@@ -31,7 +32,7 @@ typedef enum patch_operation_kind {
 typedef struct patch_operation {
     patch_operation_kind_t kind;
     nmo_behavior_replace_bb_desc_t replace_bb;
-    nmo_behavior_rewrite_report_t report;
+    nmo_behavior_replace_report_t report;
     nmo_behavior_fold_desc_t fold;
     nmo_object_id_t *fold_nodes;
     nmo_behavior_fold_map_t *fold_input_maps;
@@ -47,6 +48,46 @@ typedef struct patch_plan {
     patch_operation_t *operations;
     size_t operation_count;
 } patch_plan_t;
+
+static nmo_status_t patch_open_workspace(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    nmo_document_t **out_document,
+    nmo_workspace_t **out_workspace)
+{
+    nmo_status_t rc = NMO_OK;
+
+    if (!ctx || !session || !out_document || !out_workspace) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    *out_document = NULL;
+    *out_workspace = NULL;
+
+    rc = nmo_session_borrow_document(session, out_document);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = nmo_workspace_create(ctx, *out_document, out_workspace);
+    if (rc != NMO_OK) {
+        nmo_document_destroy(*out_document);
+        *out_document = NULL;
+        return rc;
+    }
+    return NMO_OK;
+}
+
+static void patch_close_workspace(
+    nmo_document_t *document,
+    nmo_workspace_t *workspace)
+{
+    if (workspace) {
+        nmo_workspace_destroy(workspace);
+    }
+    if (document) {
+        nmo_document_destroy(document);
+    }
+}
 
 static void patch_guid_to_string(nmo_guid_t guid, char *buf, size_t size) {
     if (!buf || size == 0) {
@@ -77,7 +118,7 @@ static void patch_plan_free(patch_plan_t *plan) {
         free(op->fold_input_maps);
         free(op->fold_output_maps);
         free(op->fold_parameter_maps);
-        nmo_behavior_fold_report_free(&op->fold_report);
+        nmo_behavior_edit_fold_report_free(&op->fold_report);
     }
     free(plan->operations);
     if (plan->doc) {
@@ -613,20 +654,30 @@ static int patch_apply_plan(patch_plan_t *plan,
     for (size_t i = 0; i < plan->operation_count; ++i) {
         patch_operation_t *op = &plan->operations[i];
         nmo_status_t st = NMO_OK;
+        nmo_document_t *document = NULL;
+        nmo_workspace_t *workspace = NULL;
+
         if (op->kind == PATCH_OP_REPLACE_BB) {
-            st = nmo_behavior_replace_bb(
-                ctx.ctx, ctx.session, &op->replace_bb, &op->report);
+            st = patch_open_workspace(ctx.ctx, ctx.session, &document, &workspace);
+            if (st == NMO_OK) {
+                st = nmo_behavior_edit_replace_bb(
+                    workspace, &op->replace_bb, &op->report);
+            }
         } else if (op->kind == PATCH_OP_FOLD) {
-            st = dry_run || emit_diff
-                ? nmo_behavior_fold_analyze(ctx.ctx, ctx.session,
-                                            &op->fold,
-                                            &op->fold_report)
-                : nmo_behavior_fold(ctx.ctx, ctx.session,
-                                    &op->fold,
-                                    &op->fold_report);
+            st = patch_open_workspace(ctx.ctx, ctx.session, &document, &workspace);
+            if (st == NMO_OK) {
+                st = dry_run || emit_diff
+                    ? nmo_behavior_edit_fold_analyze(workspace,
+                                                &op->fold,
+                                                &op->fold_report)
+                    : nmo_behavior_edit_fold(workspace,
+                                        &op->fold,
+                                        &op->fold_report);
+            }
         } else {
             return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_ARG_ERROR);
         }
+        patch_close_workspace(document, workspace);
         if (st != NMO_OK) {
             if (op->kind == PATCH_OP_REPLACE_BB) {
                 fprintf(stderr,

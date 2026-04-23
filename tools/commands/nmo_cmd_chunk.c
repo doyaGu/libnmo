@@ -12,9 +12,10 @@
 #include "../nmo_opt.h"
 
 #include "nmo.h"
-#include "app/nmo_chunk_index.h"
+#include "chunk/nmo_chunk_index.h"
 #include "session/nmo_context.h"
-#include "app/nmo_hexdump.h"
+#include "session/nmo_session.h"
+#include "export/nmo_hexdump.h"
 
 #include "format/nmo_chunk_api.h"
 

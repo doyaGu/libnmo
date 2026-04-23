@@ -21,7 +21,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
-#include "app/nmo_export_dot.h"
+#include "export/nmo_export_dot.h"
 
 #include <stdio.h>
 #include <string.h>

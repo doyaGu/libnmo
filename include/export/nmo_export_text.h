@@ -1,8 +1,8 @@
 #ifndef NMO_EXPORT_TEXT_H
 #define NMO_EXPORT_TEXT_H
 
-#include "app/nmo_inspector.h"
-#include "app/nmo_stats.h"
+#include "chunk/nmo_chunk_inspect.h"
+#include "document/nmo_document_stats.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -1,6 +1,5 @@
 #include "behavior/nmo_behavior_view.h"
-
-#include "behavior/nmo_behavior_boundary.h"
+#include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_script_edit_graph.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -8,6 +7,7 @@
 #include "object/nmo_object_repository.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 
 #include <string.h>
 
@@ -34,22 +34,24 @@ static void nmo_behavior_boundary_view_clear(nmo_behavior_boundary_view_t *view)
 }
 
 static nmo_status_t nmo_behavior_view_lookup(
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_object_id_t behavior_id,
     nmo_object_t **out_object,
     nmo_behavior_state_t **out_state)
 {
+    nmo_session_t *session = NULL;
     nmo_object_repository_t *repo = NULL;
     nmo_object_t *object = NULL;
 
-    if (session == NULL || out_object == NULL || out_state == NULL) {
+    if (workspace == NULL || out_object == NULL || out_state == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     *out_object = NULL;
     *out_state = NULL;
 
-    repo = nmo_session_get_repository(session);
+    session = nmo_session_from_workspace(workspace);
+    repo = session != NULL ? nmo_session_get_repository(session) : NULL;
     if (repo == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -72,24 +74,29 @@ static nmo_status_t nmo_behavior_view_lookup(
 }
 
 nmo_status_t nmo_behavior_view_from_behavior(
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_object_id_t behavior_id,
     nmo_behavior_view_t *out_view)
 {
+    nmo_session_t *session = NULL;
     nmo_object_t *object = NULL;
     nmo_behavior_state_t *state = NULL;
     nmo_context_t *ctx = NULL;
     nmo_script_edit_graph_t *edit_graph = NULL;
     nmo_status_t status = NMO_OK;
 
-    if (session == NULL || out_view == NULL) {
+    if (workspace == NULL || out_view == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     nmo_behavior_view_clear(out_view);
+    session = nmo_session_from_workspace(workspace);
+    if (session == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
 
     NMO_RETURN_IF_ERROR(nmo_behavior_view_lookup(
-        session, behavior_id, &object, &state));
+        workspace, behavior_id, &object, &state));
 
     out_view->behavior_id = behavior_id;
     out_view->class_id = nmo_object_get_class_id(object);
@@ -141,21 +148,26 @@ nmo_status_t nmo_behavior_view_from_behavior(
 }
 
 nmo_status_t nmo_behavior_view_describe_boundary(
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_object_id_t behavior_id,
     uint32_t max_depth,
     nmo_behavior_boundary_view_t *out_view)
 {
+    nmo_session_t *session = NULL;
     nmo_context_t *ctx = NULL;
     nmo_behavior_boundary_t boundary = {0};
     bool ok = false;
     nmo_status_t status = NMO_OK;
 
-    if (session == NULL || out_view == NULL) {
+    if (workspace == NULL || out_view == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     nmo_behavior_boundary_view_clear(out_view);
+    session = nmo_session_from_workspace(workspace);
+    if (session == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
 
     ctx = nmo_session_get_context(session);
     if (ctx == NULL) {

@@ -11,7 +11,7 @@
 #include "object/nmo_object_refs.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_edit.h"
+#include "runtime/nmo_workspace.h"
 #include "type/nmo_type_string.h"
 #include "object/nmo_object_repository.h"
 #include "core/nmo_guid.h"

@@ -129,6 +129,17 @@ NMO_API nmo_status_t nmo_object_query_iterate(
     void *user_data,
     nmo_object_query_result_t *out_result);
 
+/**
+ * @ownership borrowed (arena-owned by caller; valid until arena reset/destroy)
+ */
+NMO_API nmo_status_t nmo_object_query_collect(
+    const nmo_object_query_context_t *ctx,
+    const nmo_object_query_t *query,
+    nmo_arena_t *arena,
+    nmo_object_t ***out_objects,
+    size_t *out_count,
+    nmo_object_query_result_t *out_result);
+
 NMO_API nmo_status_t nmo_object_query_count(
     nmo_document_t *document,
     const nmo_object_query_t *query,
@@ -145,17 +156,6 @@ NMO_API nmo_status_t nmo_object_query_resolve_one(
     const nmo_object_selector_t *selector,
     nmo_object_t **out_object,
     nmo_object_id_t *out_id);
-
-/**
- * @ownership borrowed (arena-owned by caller; valid until arena reset/destroy)
- */
-NMO_API nmo_status_t nmo_object_query_collect(
-    const nmo_object_query_context_t *ctx,
-    const nmo_object_query_t *query,
-    nmo_arena_t *arena,
-    nmo_object_t ***out_objects,
-    size_t *out_count,
-    nmo_object_query_result_t *out_result);
 
 #ifdef __cplusplus
 }

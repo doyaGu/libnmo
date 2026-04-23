@@ -15,14 +15,15 @@
 
 #include "nmo.h"
 #include "session/nmo_session.h"
+#include "session/nmo_runtime_kernel.h"
 #include "session/nmo_context.h"
-#include "app/nmo_save.h"
+#include "document/nmo_document_save.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_edit.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_animation_schemas.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_parse.h"
-#include "session/nmo_session_edit.h"
 
 #include <errno.h>
 #include <math.h>
@@ -1424,17 +1425,17 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
         fprintf(stderr, "Created CKObjectAnimation #%u\n", new_id);
     }
 
-    nmo_session_edit_t *edit = NULL;
-    nmo_status_t edit_rc = nmo_session_edit_begin(c.session, "animation.import", &edit);
+    nmo_workspace_edit_t *edit = NULL;
+    nmo_status_t edit_rc = nmo_workspace_edit_begin(c.workspace, "animation.import", &edit);
     if (edit_rc != NMO_OK) {
         fprintf(stderr, "Error: Failed to begin animation edit: %s\n",
                 nmo_error_string(edit_rc));
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
     if (created_target_id != 0) {
-        edit_rc = nmo_session_edit_track_created_object(edit, created_target_id);
+        edit_rc = nmo_workspace_edit_track_created_object(edit, created_target_id);
         if (edit_rc != NMO_OK) {
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             fprintf(stderr, "Error: Failed to track created animation object: %s\n",
                     nmo_error_string(edit_rc));
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
@@ -1448,22 +1449,22 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
         nmo_status_t alloc_rc =
             nmo_object_alloc_state(target, sizeof(nmo_objectanimation_state_t));
         if (alloc_rc != NMO_OK) {
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             fprintf(stderr, "Error: Failed to allocate animation state\n");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
         st = (nmo_objectanimation_state_t *)nmo_object_get_state(target);
         if (!st) {
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             fprintf(stderr, "Error: Animation state allocation failed\n");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
         memset(st, 0, sizeof(*st));
     }
 
-    edit_rc = nmo_session_edit_snapshot_bytes(edit, st, sizeof(*st));
+    edit_rc = nmo_workspace_edit_snapshot_bytes(edit, st, sizeof(*st));
     if (edit_rc != NMO_OK) {
-        nmo_session_edit_rollback(edit);
+        nmo_workspace_edit_rollback(edit);
         fprintf(stderr, "Error: Failed to snapshot animation state: %s\n",
                 nmo_error_string(edit_rc));
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
@@ -1481,9 +1482,9 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
     st->morph_keys = morph_keys;
     st->controller_count = ctrl_count;
     st->controllers = controllers;
-    nmo_session_edit_mark(
-        edit, NMO_SESSION_EDIT_OBJECT_STATE | NMO_SESSION_EDIT_REFERENCES);
-    edit_rc = nmo_session_edit_commit(edit);
+    nmo_workspace_edit_mark(
+        edit, NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
+    edit_rc = nmo_workspace_edit_commit(edit);
     if (edit_rc != NMO_OK) {
         fprintf(stderr, "Error: Failed to commit animation edit: %s\n",
                 nmo_error_string(edit_rc));

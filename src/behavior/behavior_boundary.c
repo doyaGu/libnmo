@@ -1,7 +1,4 @@
-#include "behavior/nmo_behavior_boundary.h"
-
-#include "behavior/nmo_behavior_graph.h"
-#include "behavior/nmo_behavior_index.h"
+#include "behavior/nmo_behavior_analyze.h"
 #include "core/nmo_error.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"

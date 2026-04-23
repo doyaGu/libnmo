@@ -1,7 +1,4 @@
-#include "behavior/nmo_behavior_rewrite.h"
-
-#include "behavior/nmo_behavior_boundary.h"
-#include "behavior/nmo_behavior_graph.h"
+#include "behavior/nmo_behavior_edit.h"
 #include "core/nmo_array.h"
 #include "core/nmo_error.h"
 #include "format/nmo_object.h"
@@ -16,7 +13,10 @@
 #include "session/nmo_context.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_edit.h"
+#include "session/nmo_session_bridge.h"
+#include "runtime/nmo_workspace.h"
+#include "object/nmo_object_edit.h"
+#include "behavior/nmo_behavior_edit.h"
 #include "type/nmo_type_system.h"
 
 #include <stdio.h>
@@ -106,7 +106,57 @@ static bool rewrite_array_ids_equal(const nmo_array_t *a,
                   a->count * sizeof(nmo_object_id_t)) == 0;
 }
 
-static void rewrite_report_reject(nmo_behavior_rewrite_report_t *report,
+typedef struct rewrite_workspace_edit_scope {
+    nmo_document_t *document;
+    nmo_workspace_t *workspace;
+    nmo_workspace_edit_t *edit;
+} rewrite_workspace_edit_scope_t;
+
+static void rewrite_workspace_edit_scope_reset(
+    rewrite_workspace_edit_scope_t *scope) {
+    if (!scope) {
+        return;
+    }
+    if (scope->workspace) {
+        nmo_workspace_destroy(scope->workspace);
+    }
+    if (scope->document) {
+        nmo_document_destroy(scope->document);
+    }
+    memset(scope, 0, sizeof(*scope));
+}
+
+static nmo_status_t rewrite_begin_workspace_edit(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const char *label,
+    rewrite_workspace_edit_scope_t *scope) {
+    nmo_status_t rc = NMO_OK;
+
+    if (!ctx || !session || !label || !scope) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    memset(scope, 0, sizeof(*scope));
+    rc = nmo_session_borrow_document(session, &scope->document);
+    if (rc != NMO_OK) {
+        rewrite_workspace_edit_scope_reset(scope);
+        return rc;
+    }
+    rc = nmo_workspace_create(ctx, scope->document, &scope->workspace);
+    if (rc != NMO_OK) {
+        rewrite_workspace_edit_scope_reset(scope);
+        return rc;
+    }
+    rc = nmo_workspace_edit_begin(scope->workspace, label, &scope->edit);
+    if (rc != NMO_OK) {
+        rewrite_workspace_edit_scope_reset(scope);
+        return rc;
+    }
+    return NMO_OK;
+}
+
+static void rewrite_report_reject(nmo_behavior_replace_report_t *report,
                                   const char *code,
                                   const char *message) {
     if (!report) {
@@ -791,19 +841,21 @@ static nmo_status_t rewrite_fold_transform_anchor(
         return NMO_ERR_INVALID_STATE;
     }
 
-    nmo_session_edit_t *edit = NULL;
+    rewrite_workspace_edit_scope_t scope = {0};
+    nmo_workspace_edit_t *edit = NULL;
     nmo_status_t rc =
-        nmo_session_edit_begin(session, "behavior fold anchor", &edit);
+        rewrite_begin_workspace_edit(ctx, session, "behavior fold anchor", &scope);
     if (rc != NMO_OK) {
         rewrite_fold_report_reject(report, "edit_begin_failed",
                                    "Failed to begin behavior fold edit");
         return rc;
     }
-    rc = nmo_session_edit_snapshot_bytes(edit, state, sizeof(*state));
+    edit = scope.edit;
+    rc = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
     if (rc != NMO_OK) {
         rewrite_fold_report_reject(report, "snapshot_failed",
                                    "Failed to snapshot fold anchor");
-        nmo_session_edit_rollback(edit);
+        nmo_workspace_edit_rollback(edit);
         return rc;
     }
 
@@ -829,27 +881,28 @@ static nmo_status_t rewrite_fold_transform_anchor(
     }
 
     if (desc->name && desc->name[0] != '\0') {
-        rc = nmo_session_edit_rename_object(edit, report->anchor_id,
-                                            desc->name);
+        rc = nmo_object_edit_rename(edit, report->anchor_id, desc->name);
         if (rc != NMO_OK) {
             rewrite_fold_report_reject(report, "rename_failed",
                                        "Failed to rename fold anchor");
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return rc;
         }
     }
 
-    nmo_session_edit_mark(
-        edit, NMO_SESSION_EDIT_OBJECT_STATE |
-              (clear_graph_state ? (NMO_SESSION_EDIT_BEHAVIOR_GRAPH |
-                                    NMO_SESSION_EDIT_REFERENCES)
+    nmo_workspace_edit_mark(
+        edit, NMO_WORKSPACE_EDIT_OBJECT_STATE |
+              (clear_graph_state ? (NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH |
+                                    NMO_WORKSPACE_EDIT_REFERENCES)
                                  : 0u));
-    rc = nmo_session_edit_commit(edit);
+    rc = nmo_workspace_edit_commit(edit);
     if (rc != NMO_OK) {
         rewrite_fold_report_reject(report, "commit_failed",
                                    "Failed to commit behavior fold");
+        rewrite_workspace_edit_scope_reset(&scope);
         return rc;
     }
+    rewrite_workspace_edit_scope_reset(&scope);
     return NMO_OK;
 }
 
@@ -1062,14 +1115,16 @@ static nmo_status_t rewrite_fold_rewire_control_boundary(
         return NMO_ERR_INVALID_STATE;
     }
 
-    nmo_session_edit_t *edit = NULL;
+    rewrite_workspace_edit_scope_t scope = {0};
+    nmo_workspace_edit_t *edit = NULL;
     nmo_status_t rc =
-        nmo_session_edit_begin(session, "behavior fold boundary", &edit);
+        rewrite_begin_workspace_edit(ctx, session, "behavior fold boundary", &scope);
     if (rc != NMO_OK) {
         rewrite_fold_report_reject(report, "edit_begin_failed",
                                    "Failed to begin fold boundary edit");
         return rc;
     }
+    edit = scope.edit;
 
     for (size_t i = 0; i < report->boundary.control_in_count; ++i) {
         const nmo_behavior_boundary_control_edge_t *edge =
@@ -1083,7 +1138,7 @@ static nmo_status_t rewrite_fold_rewire_control_boundary(
             rewrite_fold_report_reject(
                 report, "input_map_target_missing",
                 "Fold input map does not resolve to an anchor input");
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return rc;
         }
 
@@ -1096,16 +1151,16 @@ static nmo_status_t rewrite_fold_rewire_control_boundary(
             rewrite_fold_report_reject(
                 report, "control_link_missing",
                 "Boundary control link was not found");
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return NMO_ERR_NOT_FOUND;
         }
-        rc = nmo_session_edit_snapshot_bytes(edit, link_state,
-                                             sizeof(*link_state));
+        rc = nmo_workspace_edit_snapshot_bytes(edit, link_state,
+                                               sizeof(*link_state));
         if (rc != NMO_OK) {
             rewrite_fold_report_reject(
                 report, "snapshot_failed",
                 "Failed to snapshot boundary control link");
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return rc;
         }
 
@@ -1127,7 +1182,7 @@ static nmo_status_t rewrite_fold_rewire_control_boundary(
             rewrite_fold_report_reject(
                 report, "output_map_target_missing",
                 "Fold output map does not resolve to an anchor output");
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return rc;
         }
 
@@ -1140,16 +1195,16 @@ static nmo_status_t rewrite_fold_rewire_control_boundary(
             rewrite_fold_report_reject(
                 report, "control_link_missing",
                 "Boundary control link was not found");
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return NMO_ERR_NOT_FOUND;
         }
-        rc = nmo_session_edit_snapshot_bytes(edit, link_state,
-                                             sizeof(*link_state));
+        rc = nmo_workspace_edit_snapshot_bytes(edit, link_state,
+                                               sizeof(*link_state));
         if (rc != NMO_OK) {
             rewrite_fold_report_reject(
                 report, "snapshot_failed",
                 "Failed to snapshot boundary control link");
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return rc;
         }
 
@@ -1159,14 +1214,16 @@ static nmo_status_t rewrite_fold_rewire_control_boundary(
         link_state->in_io_id = new_io_id;
     }
 
-    nmo_session_edit_mark(edit, NMO_SESSION_EDIT_BEHAVIOR_GRAPH |
-                                NMO_SESSION_EDIT_REFERENCES);
-    rc = nmo_session_edit_commit(edit);
+    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH |
+                                  NMO_WORKSPACE_EDIT_REFERENCES);
+    rc = nmo_workspace_edit_commit(edit);
     if (rc != NMO_OK) {
         rewrite_fold_report_reject(report, "commit_failed",
                                    "Failed to commit fold boundary edit");
+        rewrite_workspace_edit_scope_reset(&scope);
         return rc;
     }
+    rewrite_workspace_edit_scope_reset(&scope);
     return NMO_OK;
 }
 
@@ -1187,14 +1244,16 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary(
         return NMO_ERR_INVALID_STATE;
     }
 
-    nmo_session_edit_t *edit = NULL;
+    rewrite_workspace_edit_scope_t scope = {0};
+    nmo_workspace_edit_t *edit = NULL;
     nmo_status_t rc =
-        nmo_session_edit_begin(session, "behavior fold parameters", &edit);
+        rewrite_begin_workspace_edit(ctx, session, "behavior fold parameters", &scope);
     if (rc != NMO_OK) {
         rewrite_fold_report_reject(report, "edit_begin_failed",
                                    "Failed to begin fold parameter edit");
         return rc;
     }
+    edit = scope.edit;
 
     for (size_t i = 0; i < report->boundary.parameter_in_count; ++i) {
         const nmo_behavior_boundary_parameter_edge_t *edge =
@@ -1210,7 +1269,7 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary(
                 report, "parameter_map_target_missing",
                 "Fold parameter map does not resolve to an anchor input "
                 "parameter");
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return rc;
         }
 
@@ -1224,16 +1283,16 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary(
             rewrite_fold_report_reject(
                 report, "parameter_target_missing",
                 "Fold anchor input parameter was not found");
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return NMO_ERR_NOT_FOUND;
         }
-        rc = nmo_session_edit_snapshot_bytes(edit, new_target_in,
-                                             sizeof(*new_target_in));
+        rc = nmo_workspace_edit_snapshot_bytes(edit, new_target_in,
+                                               sizeof(*new_target_in));
         if (rc != NMO_OK) {
             rewrite_fold_report_reject(
                 report, "snapshot_failed",
                 "Failed to snapshot fold anchor input parameter");
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return rc;
         }
         new_target_in->source_id = edge->source_parameter_id;
@@ -1246,13 +1305,13 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary(
             ? (nmo_parameterout_state_t *)nmo_object_get_state(source_obj)
             : NULL;
         if (source_out) {
-            rc = nmo_session_edit_snapshot_bytes(edit, source_out,
-                                                 sizeof(*source_out));
+            rc = nmo_workspace_edit_snapshot_bytes(edit, source_out,
+                                                   sizeof(*source_out));
             if (rc != NMO_OK) {
                 rewrite_fold_report_reject(
                     report, "snapshot_failed",
                     "Failed to snapshot fold parameter source output");
-                nmo_session_edit_rollback(edit);
+                nmo_workspace_edit_rollback(edit);
                 return rc;
             }
             rc = rewrite_parameterout_add_destination(source_out,
@@ -1261,7 +1320,7 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary(
                 rewrite_fold_report_reject(
                     report, "out_of_memory",
                     "Failed to update fold source parameter destinations");
-                nmo_session_edit_rollback(edit);
+                nmo_workspace_edit_rollback(edit);
                 return rc;
             }
             rewrite_parameterout_remove_destination(source_out,
@@ -1283,7 +1342,7 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary(
                 report, "parameter_map_target_missing",
                 "Fold parameter map does not resolve to an anchor output "
                 "parameter");
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return rc;
         }
 
@@ -1297,16 +1356,16 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary(
             rewrite_fold_report_reject(
                 report, "parameter_target_missing",
                 "Fold parameter target input was not found");
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return NMO_ERR_NOT_FOUND;
         }
-        rc = nmo_session_edit_snapshot_bytes(edit, target_in,
-                                             sizeof(*target_in));
+        rc = nmo_workspace_edit_snapshot_bytes(edit, target_in,
+                                               sizeof(*target_in));
         if (rc != NMO_OK) {
             rewrite_fold_report_reject(
                 report, "snapshot_failed",
                 "Failed to snapshot fold parameter input");
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return rc;
         }
         target_in->source_id = new_parameter_id;
@@ -1319,13 +1378,13 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary(
             ? (nmo_parameterout_state_t *)nmo_object_get_state(new_source_obj)
             : NULL;
         if (new_source_out) {
-            rc = nmo_session_edit_snapshot_bytes(edit, new_source_out,
-                                                 sizeof(*new_source_out));
+            rc = nmo_workspace_edit_snapshot_bytes(edit, new_source_out,
+                                                   sizeof(*new_source_out));
             if (rc != NMO_OK) {
                 rewrite_fold_report_reject(
                     report, "snapshot_failed",
                     "Failed to snapshot fold parameter output");
-                nmo_session_edit_rollback(edit);
+                nmo_workspace_edit_rollback(edit);
                 return rc;
             }
             rc = rewrite_parameterout_add_destination(
@@ -1334,7 +1393,7 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary(
                 rewrite_fold_report_reject(
                     report, "out_of_memory",
                     "Failed to update fold parameter destinations");
-                nmo_session_edit_rollback(edit);
+                nmo_workspace_edit_rollback(edit);
                 return rc;
             }
         }
@@ -1346,13 +1405,13 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary(
             ? (nmo_parameterout_state_t *)nmo_object_get_state(old_source_obj)
             : NULL;
         if (old_source_out && edge->source_parameter_id != new_parameter_id) {
-            rc = nmo_session_edit_snapshot_bytes(edit, old_source_out,
-                                                 sizeof(*old_source_out));
+            rc = nmo_workspace_edit_snapshot_bytes(edit, old_source_out,
+                                                   sizeof(*old_source_out));
             if (rc != NMO_OK) {
                 rewrite_fold_report_reject(
                     report, "snapshot_failed",
                     "Failed to snapshot old fold parameter output");
-                nmo_session_edit_rollback(edit);
+                nmo_workspace_edit_rollback(edit);
                 return rc;
             }
             rewrite_parameterout_remove_destination(
@@ -1360,13 +1419,15 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary(
         }
     }
 
-    nmo_session_edit_mark(edit, NMO_SESSION_EDIT_REFERENCES);
-    rc = nmo_session_edit_commit(edit);
+    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_REFERENCES);
+    rc = nmo_workspace_edit_commit(edit);
     if (rc != NMO_OK) {
         rewrite_fold_report_reject(report, "commit_failed",
                                    "Failed to commit fold parameter edit");
+        rewrite_workspace_edit_scope_reset(&scope);
         return rc;
     }
+    rewrite_workspace_edit_scope_reset(&scope);
     return NMO_OK;
 }
 
@@ -1407,7 +1468,7 @@ static nmo_status_t rewrite_fold_add_write_blocker(
     return NMO_OK;
 }
 
-nmo_status_t nmo_behavior_fold_analyze(
+static nmo_status_t rewrite_fold_analyze_session(
     nmo_context_t *ctx,
     nmo_session_t *session,
     const nmo_behavior_fold_desc_t *desc,
@@ -1552,16 +1613,16 @@ nmo_status_t nmo_behavior_fold_analyze(
     return NMO_OK;
 
 fail:
-    nmo_behavior_fold_report_free(report);
+    nmo_behavior_edit_fold_report_free(report);
     return rc;
 }
 
-nmo_status_t nmo_behavior_fold_apply(
+static nmo_status_t rewrite_fold_apply_session(
     nmo_context_t *ctx,
     nmo_session_t *session,
     const nmo_behavior_fold_desc_t *desc,
     nmo_behavior_fold_report_t *report) {
-    nmo_status_t rc = nmo_behavior_fold_analyze(ctx, session, desc, report);
+    nmo_status_t rc = rewrite_fold_analyze_session(ctx, session, desc, report);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -1601,20 +1662,22 @@ nmo_status_t nmo_behavior_fold_apply(
             return NMO_ERR_INVALID_ARGUMENT;
         }
 
-        nmo_session_edit_t *edit = NULL;
+        rewrite_workspace_edit_scope_t scope = {0};
+        nmo_workspace_edit_t *edit = NULL;
         nmo_status_t edit_rc =
-            nmo_session_edit_begin(session, "behavior fold anchor", &edit);
+            rewrite_begin_workspace_edit(ctx, session, "behavior fold anchor", &scope);
         if (edit_rc != NMO_OK) {
             rewrite_fold_report_reject(report, "edit_begin_failed",
                                        "Failed to begin behavior fold edit");
             return edit_rc;
         }
-        edit_rc = nmo_session_edit_snapshot_bytes(edit, state,
-                                                  sizeof(*state));
+        edit = scope.edit;
+        edit_rc = nmo_workspace_edit_snapshot_bytes(edit, state,
+                                                    sizeof(*state));
         if (edit_rc != NMO_OK) {
             rewrite_fold_report_reject(report, "snapshot_failed",
                                        "Failed to snapshot fold anchor");
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
             return edit_rc;
         }
 
@@ -1625,22 +1688,24 @@ nmo_status_t nmo_behavior_fold_apply(
         state->block_version =
             desc->block_version != 0 ? desc->block_version : 65536u;
         if (desc->name && desc->name[0] != '\0') {
-            edit_rc = nmo_session_edit_rename_object(
+            edit_rc = nmo_object_edit_rename(
                 edit, report->anchor_id, desc->name);
             if (edit_rc != NMO_OK) {
                 rewrite_fold_report_reject(report, "rename_failed",
                                            "Failed to rename fold anchor");
-                nmo_session_edit_rollback(edit);
+                nmo_workspace_edit_rollback(edit);
                 return edit_rc;
             }
         }
-        nmo_session_edit_mark(edit, NMO_SESSION_EDIT_OBJECT_STATE);
-        edit_rc = nmo_session_edit_commit(edit);
+        nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
+        edit_rc = nmo_workspace_edit_commit(edit);
         if (edit_rc != NMO_OK) {
             rewrite_fold_report_reject(report, "commit_failed",
                                        "Failed to commit behavior fold");
+            rewrite_workspace_edit_scope_reset(&scope);
             return edit_rc;
         }
+        rewrite_workspace_edit_scope_reset(&scope);
 
         rewrite_fold_report_clear_write_blockers(report);
         report->analysis_only = false;
@@ -1711,15 +1776,15 @@ nmo_status_t nmo_behavior_fold_apply(
     return NMO_ERR_NOT_IMPLEMENTED;
 }
 
-nmo_status_t nmo_behavior_fold(
+static nmo_status_t rewrite_fold_session(
     nmo_context_t *ctx,
     nmo_session_t *session,
     const nmo_behavior_fold_desc_t *desc,
     nmo_behavior_fold_report_t *report) {
-    return nmo_behavior_fold_apply(ctx, session, desc, report);
+    return rewrite_fold_apply_session(ctx, session, desc, report);
 }
 
-void nmo_behavior_fold_report_free(nmo_behavior_fold_report_t *report) {
+void nmo_behavior_edit_fold_report_free(nmo_behavior_fold_report_t *report) {
     if (!report) {
         return;
     }
@@ -1734,11 +1799,11 @@ void nmo_behavior_fold_report_free(nmo_behavior_fold_report_t *report) {
     memset(report, 0, sizeof(*report));
 }
 
-nmo_status_t nmo_behavior_replace_bb(
+static nmo_status_t rewrite_replace_bb_session(
     nmo_context_t *ctx,
     nmo_session_t *session,
     const nmo_behavior_replace_bb_desc_t *desc,
-    nmo_behavior_rewrite_report_t *report) {
+    nmo_behavior_replace_report_t *report) {
     if (report) {
         memset(report, 0, sizeof(*report));
     }
@@ -1811,7 +1876,8 @@ nmo_status_t nmo_behavior_replace_bb(
     nmo_behavior_boundary_t before_boundary = {0};
     nmo_behavior_boundary_t after_boundary = {0};
     nmo_behavior_state_t before_state = *state;
-    nmo_session_edit_t *edit = NULL;
+    rewrite_workspace_edit_scope_t scope = {0};
+    nmo_workspace_edit_t *edit = NULL;
     nmo_status_t rc = NMO_OK;
 
     if (!nmo_behavior_boundary_build(ctx, session, desc->behavior_id,
@@ -1821,14 +1887,15 @@ nmo_status_t nmo_behavior_replace_bb(
         return NMO_ERR_INVALID_STATE;
     }
 
-    rc = nmo_session_edit_begin(session, "behavior replace-bb", &edit);
+    rc = rewrite_begin_workspace_edit(ctx, session, "behavior replace-bb", &scope);
     if (rc != NMO_OK) {
         rewrite_report_reject(report, "edit_begin_failed",
                               "Failed to begin behavior rewrite edit");
         goto cleanup;
     }
+    edit = scope.edit;
 
-    rc = nmo_session_edit_snapshot_bytes(edit, state, sizeof(*state));
+    rc = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
     if (rc != NMO_OK) {
         rewrite_report_reject(report, "snapshot_failed",
                               "Failed to snapshot behavior state");
@@ -1843,7 +1910,7 @@ nmo_status_t nmo_behavior_replace_bb(
         desc->block_version != 0 ? desc->block_version : 65536u;
 
     if (desc->name && desc->name[0] != '\0') {
-        rc = nmo_session_edit_rename_object(
+        rc = nmo_object_edit_rename(
             edit, desc->behavior_id, desc->name);
         if (rc != NMO_OK) {
             rewrite_report_reject(report, "rename_failed",
@@ -1852,7 +1919,7 @@ nmo_status_t nmo_behavior_replace_bb(
         }
     }
 
-    nmo_session_edit_mark(edit, NMO_SESSION_EDIT_OBJECT_STATE);
+    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
 
     if (!rewrite_array_ids_equal(&before_state.inputs, &state->inputs) ||
         !rewrite_array_ids_equal(&before_state.outputs, &state->outputs) ||
@@ -1919,7 +1986,7 @@ nmo_status_t nmo_behavior_replace_bb(
         report->preserved_parameter_out = after_boundary.parameter_out_count;
     }
 
-    rc = nmo_session_edit_commit(edit);
+    rc = nmo_workspace_edit_commit(edit);
     edit = NULL;
     if (rc != NMO_OK) {
         rewrite_report_reject(report, "commit_failed",
@@ -1929,9 +1996,81 @@ nmo_status_t nmo_behavior_replace_bb(
 
 cleanup:
     if (edit) {
-        nmo_session_edit_rollback(edit);
+        nmo_workspace_edit_rollback(edit);
     }
+    rewrite_workspace_edit_scope_reset(&scope);
     nmo_behavior_boundary_free(&before_boundary);
     nmo_behavior_boundary_free(&after_boundary);
     return rc;
 }
+
+NMO_API nmo_status_t nmo_behavior_edit_fold_analyze(
+    nmo_workspace_t *workspace,
+    const nmo_behavior_fold_desc_t *desc,
+    nmo_behavior_fold_report_t *report) {
+    nmo_session_t *session = nmo_session_from_workspace(workspace);
+    nmo_context_t *ctx = session ? nmo_session_get_context(session) : NULL;
+    if (!workspace || !ctx || !session) {
+        if (report) {
+            memset(report, 0, sizeof(*report));
+            rewrite_fold_report_reject(report, "invalid_argument",
+                                       "Invalid behavior fold analysis arguments");
+        }
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    return rewrite_fold_analyze_session(ctx, session, desc, report);
+}
+
+NMO_API nmo_status_t nmo_behavior_edit_fold_apply(
+    nmo_workspace_t *workspace,
+    const nmo_behavior_fold_desc_t *desc,
+    nmo_behavior_fold_report_t *report) {
+    nmo_session_t *session = nmo_session_from_workspace(workspace);
+    nmo_context_t *ctx = session ? nmo_session_get_context(session) : NULL;
+    if (!workspace || !ctx || !session) {
+        if (report) {
+            memset(report, 0, sizeof(*report));
+            rewrite_fold_report_reject(report, "invalid_argument",
+                                       "Invalid behavior fold analysis arguments");
+        }
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    return rewrite_fold_apply_session(ctx, session, desc, report);
+}
+
+NMO_API nmo_status_t nmo_behavior_edit_fold(
+    nmo_workspace_t *workspace,
+    const nmo_behavior_fold_desc_t *desc,
+    nmo_behavior_fold_report_t *report) {
+    nmo_session_t *session = nmo_session_from_workspace(workspace);
+    nmo_context_t *ctx = session ? nmo_session_get_context(session) : NULL;
+    if (!workspace || !ctx || !session) {
+        if (report) {
+            memset(report, 0, sizeof(*report));
+            rewrite_fold_report_reject(report, "invalid_argument",
+                                       "Invalid behavior fold analysis arguments");
+        }
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    return rewrite_fold_session(ctx, session, desc, report);
+}
+
+NMO_API nmo_status_t nmo_behavior_edit_replace_bb(
+    nmo_workspace_t *workspace,
+    const nmo_behavior_replace_bb_desc_t *desc,
+    nmo_behavior_replace_report_t *report) {
+    nmo_session_t *session = nmo_session_from_workspace(workspace);
+    nmo_context_t *ctx = session ? nmo_session_get_context(session) : NULL;
+    if (!workspace || !ctx || !session) {
+        if (report) {
+            memset(report, 0, sizeof(*report));
+            rewrite_report_reject(report, "invalid_argument",
+                                  "Invalid behavior replace-bb arguments");
+        }
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    return rewrite_replace_bb_session(ctx, session, desc, report);
+}
+
+
+

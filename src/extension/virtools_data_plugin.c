@@ -34,7 +34,7 @@ static nmo_status_t virtools_data_init(
         nmo_extension_registry_get_type_registry(ctx->registry);
     nmo_operation_registry_t *op_reg =
         nmo_extension_registry_get_operation_registry(ctx->registry);
-    nmo_bb_registry_t *bb_reg =
+    nmo_behavior_registry_t *bb_reg =
         nmo_extension_registry_get_bb_registry(ctx->registry);
 
     nmo_status_t status = nmo_virtools_load_data_dir(type_reg, op_reg, bb_reg, data_dir);

@@ -434,7 +434,7 @@ static void script_run_usage(FILE *out) {
     fprintf(out,
             "Usage: nmo script run [--dry-run] <script.lua> <file> -o <output>\n\n");
     fprintf(out,
-            "Load one Lua file, run it through the shared script executor,\n");
+            "Load one Lua file, run it through the shared behavior execute pipeline,\n");
     fprintf(out,
             "validate once, and either save once or report a dry-run summary.\n");
 }
@@ -1317,3 +1317,4 @@ int nmo_command_registry_dispatch_read_in_session(
 
     return group->repl_session_handler(ctx, argc, argv);
 }
+

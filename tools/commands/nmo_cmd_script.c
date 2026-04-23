@@ -11,12 +11,12 @@
 #include "../nmo_opt.h"
 #include "../nmo_tool_session.h"
 
-#include "behavior/nmo_param_value.h"
-#include "behavior/nmo_behavior_index.h"
+#include "behavior/nmo_behavior_view.h"
+#include "behavior/nmo_behavior_execute.h"
+#include "behavior/nmo_behavior_analyze.h"
+#include "behavior/nmo_behavior_query.h"
 #include "behavior/nmo_script_edit.h"
 #include "behavior/nmo_script_edit_graph.h"
-#include "behavior/nmo_script_executor.h"
-#include "behavior/nmo_script_view.h"
 #include "core/nmo_array.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
@@ -27,6 +27,7 @@
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 #include "type/nmo_operation_system.h"
 #include "type/nmo_type_system.h"
 
@@ -197,15 +198,15 @@ typedef struct script_command_common {
     script_run_validation_t validation;
 } script_command_common_t;
 
-typedef nmo_status_t (*script_executor_cli_action_fn)(
-    nmo_script_executor_t *executor,
+typedef nmo_status_t (*behavior_execute_cli_action_fn)(
+    nmo_behavior_execution_t *execution,
     void *user_data);
 
-typedef struct script_executor_cli_action_state {
-    script_executor_cli_action_fn action;
+typedef struct behavior_execute_cli_action_state {
+    behavior_execute_cli_action_fn action;
     void *action_user_data;
     script_command_common_t *common;
-} script_executor_cli_action_state_t;
+} behavior_execute_cli_action_state_t;
 
 typedef struct script_run_args {
     const char *script_path;
@@ -219,10 +220,18 @@ typedef struct script_run_args {
     uint32_t *result_handles;
     size_t result_handle_count;
     size_t result_handle_capacity;
-    nmo_script_executor_t *executor;
+    nmo_behavior_execution_t *execution;
 } script_run_args_t;
 
 static script_run_args_t *g_script_run_args = NULL;
+
+static nmo_session_t *script_execution_session(
+    nmo_behavior_execution_t *execution)
+{
+    nmo_workspace_t *workspace =
+        nmo_behavior_execution_workspace(execution);
+    return workspace != NULL ? nmo_session_from_workspace(workspace) : NULL;
+}
 
 static char *script_run_strdup(const char *text)
 {
@@ -268,7 +277,7 @@ static void script_run_reset_args(script_run_args_t *args)
     args->result_handles = NULL;
     args->result_handle_count = 0u;
     args->result_handle_capacity = 0u;
-    args->executor = NULL;
+    args->execution = NULL;
 }
 
 static bool script_run_append_result_handle(script_run_args_t *args,
@@ -379,8 +388,8 @@ static bool script_run_append_operation(script_run_args_t *args,
 static script_run_args_t *script_run_current_args(lua_State *state)
 {
     (void)state;
-    if (g_script_run_args == NULL || g_script_run_args->executor == NULL) {
-        luaL_error(state, "script executor state is unavailable");
+    if (g_script_run_args == NULL || g_script_run_args->execution == NULL) {
+        luaL_error(state, "behavior execution state is unavailable");
         return NULL;
     }
     return g_script_run_args;
@@ -409,9 +418,19 @@ static nmo_behavior_state_t *script_run_find_behavior_state(
 static int script_run_lua_root_script_id(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
-    nmo_script_view_t view = {0};
-    nmo_status_t status =
-        nmo_script_view_at(nmo_script_executor_session(args->executor), 0u, &view);
+    nmo_document_t *document = NULL;
+    nmo_behavior_script_view_t view = {0};
+    nmo_status_t status = NMO_OK;
+
+    status = nmo_session_borrow_document(
+        script_execution_session(args->execution), &document);
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to borrow document");
+    }
+    status = nmo_behavior_query_script_at(document, 0u, &view);
     if (status != NMO_OK) {
         return luaL_error(state, "%s",
                           nmo_last_error_message() != NULL
@@ -426,7 +445,7 @@ static int script_run_lua_root_script_id(lua_State *state)
 static int script_run_lua_io_at(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
-    nmo_session_t *session = nmo_script_executor_session(args->executor);
+    nmo_session_t *session = script_execution_session(args->execution);
     nmo_object_id_t behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     const char *kind_text = luaL_checkstring(state, 2);
     lua_Integer lua_index = luaL_checkinteger(state, 3);
@@ -464,7 +483,7 @@ static int script_run_lua_io_at(lua_State *state)
 static int script_run_lua_interface_sub_at(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
-    nmo_session_t *session = nmo_script_executor_session(args->executor);
+    nmo_session_t *session = script_execution_session(args->execution);
     nmo_object_id_t behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     lua_Integer lua_index = luaL_checkinteger(state, 2);
     nmo_behavior_state_t *state_data = NULL;
@@ -508,7 +527,7 @@ static int script_run_lua_add_io(lua_State *state)
         return luaL_error(state, "io kind must be 'input' or 'output'");
     }
 
-    status = nmo_script_edit_add_io(nmo_script_executor_transaction(args->executor),
+    status = nmo_script_edit_add_io(nmo_behavior_execution_transaction(args->execution),
                                     behavior_id,
                                     kind,
                                     name,
@@ -540,8 +559,8 @@ static int script_run_lua_add_io(lua_State *state)
 static int script_run_lua_remove_io(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
-    nmo_script_edit_tx_t *tx = nmo_script_executor_transaction(args->executor);
-    nmo_session_t *session = nmo_script_executor_session(args->executor);
+    nmo_script_edit_tx_t *tx = nmo_behavior_execution_transaction(args->execution);
+    nmo_session_t *session = script_execution_session(args->execution);
     nmo_object_id_t io_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     const char *mode_text = luaL_optstring(state, 2, "preserve");
     nmo_script_edit_interface_mode_t mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE;
@@ -626,8 +645,8 @@ static int script_run_lua_remove_io(lua_State *state)
 static int script_run_lua_remove_node(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
-    nmo_script_edit_tx_t *tx = nmo_script_executor_transaction(args->executor);
-    nmo_session_t *session = nmo_script_executor_session(args->executor);
+    nmo_script_edit_tx_t *tx = nmo_behavior_execution_transaction(args->execution);
+    nmo_session_t *session = script_execution_session(args->execution);
     nmo_object_id_t parent_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     nmo_object_id_t node_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
     const char *mode_text = luaL_optstring(state, 3, "preserve");
@@ -783,7 +802,7 @@ static nmo_status_t script_run_read_file(const char *path,
     NMO_RETURN_OK();
 }
 
-static void script_collect_validation(nmo_script_executor_t *executor,
+static void script_collect_validation(nmo_behavior_execution_t *executor,
                                       script_run_validation_t *validation)
 {
     nmo_session_t *session = NULL;
@@ -796,7 +815,7 @@ static void script_collect_validation(nmo_script_executor_t *executor,
     }
 
     memset(validation, 0, sizeof(*validation));
-    session = nmo_script_executor_session(executor);
+    session = script_execution_session(executor);
     if (session == NULL) {
         return;
     }
@@ -821,26 +840,26 @@ static void script_collect_validation(nmo_script_executor_t *executor,
 
 static void script_run_collect_validation(script_run_args_t *args)
 {
-    if (args == NULL || args->executor == NULL) {
+    if (args == NULL || args->execution == NULL) {
         return;
     }
 
-    script_collect_validation(args->executor, &args->validation);
+    script_collect_validation(args->execution, &args->validation);
 }
 
-static nmo_status_t script_executor_cli_action_trampoline(
-    nmo_script_executor_t *executor,
+static nmo_status_t behavior_execute_cli_action_trampoline(
+    nmo_behavior_execution_t *executor,
     void *user_data)
 {
-    script_executor_cli_action_state_t *state =
-        (script_executor_cli_action_state_t *)user_data;
+    behavior_execute_cli_action_state_t *state =
+        (behavior_execute_cli_action_state_t *)user_data;
     nmo_status_t status = NMO_OK;
     nmo_error_code_t error_code = NMO_OK;
     char error_message[512] = {0};
 
     if (state == NULL || state->action == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Missing script executor CLI action");
+                         "Missing behavior execute CLI action");
     }
 
     status = state->action(executor, state->action_user_data);
@@ -866,7 +885,7 @@ static nmo_status_t script_executor_cli_action_trampoline(
     return status;
 }
 
-static int script_executor_cli_run_write_command(
+static int behavior_execute_cli_run_write_command(
     const char *input_path,
     const char *output_path,
     bool dry_run,
@@ -874,15 +893,15 @@ static int script_executor_cli_run_write_command(
     const nmo_cli_write_spec_t *spec,
     const char *label,
     uint32_t validation_flags,
-    script_executor_cli_action_fn action,
+    behavior_execute_cli_action_fn action,
     nmo_cli_write_report_fn report,
     void *user_data,
     script_command_common_t *common)
 {
     nmo_cmd_ctx_t ctx;
     nmo_context_t *executor_ctx = NULL;
-    nmo_script_executor_options_t options = nmo_script_executor_options_default();
-    script_executor_cli_action_state_t state = {
+    nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
+    behavior_execute_cli_action_state_t state = {
         .action = action,
         .action_user_data = user_data,
         .common = common,
@@ -918,11 +937,11 @@ static int script_executor_cli_run_write_command(
     options.label = label;
     options.dry_run = dry_run;
     options.validation_flags = validation_flags;
-    status = nmo_script_executor_execute(executor_ctx,
+    status = nmo_behavior_execute(executor_ctx,
                                          input_path,
                                          output_path,
                                          &options,
-                                         script_executor_cli_action_trampoline,
+                                         behavior_execute_cli_action_trampoline,
                                          &state,
                                          NULL);
     if (common != NULL) {
@@ -1009,7 +1028,7 @@ static void script_add_validation_json(yyjson_mut_doc *doc,
     yyjson_mut_obj_add_val(doc, data, "result_handles", handles);
 }
 
-static nmo_status_t script_run_executor_action(nmo_script_executor_t *executor,
+static nmo_status_t script_run_executor_action(nmo_behavior_execution_t *executor,
                                                void *user_data)
 {
     static const nmo_lua_module_t executor_module = {
@@ -1031,7 +1050,7 @@ static nmo_status_t script_run_executor_action(nmo_script_executor_t *executor,
         return status;
     }
 
-    runtime = nmo_script_executor_lua_runtime(executor);
+    runtime = nmo_behavior_execution_lua_runtime(executor);
     status = nmo_lua_runtime_register_module(runtime, &executor_module);
     if (status != NMO_OK) {
         free(script_text);
@@ -1041,22 +1060,22 @@ static nmo_status_t script_run_executor_action(nmo_script_executor_t *executor,
     if (g_script_run_args != NULL) {
         free(script_text);
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
-                         "Nested script executor runs are not supported");
+                         "Nested behavior execute runs are not supported");
     }
 
-    args->executor = executor;
+    args->execution = executor;
     g_script_run_args = args;
     status = nmo_lua_runtime_execute_string(runtime, script_text);
     g_script_run_args = NULL;
-    args->executor = NULL;
+    args->execution = NULL;
     free(script_text);
     if (status != NMO_OK) {
         return status;
     }
 
-    args->executor = executor;
+    args->execution = executor;
     script_run_collect_validation(args);
-    args->executor = NULL;
+    args->execution = NULL;
     return NMO_OK;
 }
 
@@ -1076,7 +1095,7 @@ static int script_run_mutate(nmo_cmd_ctx_t *ctx,
                              void *user_data)
 {
     script_run_args_t *args = (script_run_args_t *)user_data;
-    nmo_script_executor_options_t options = nmo_script_executor_options_default();
+    nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
     nmo_status_t status = NMO_OK;
 
     if (ctx == NULL || args == NULL) {
@@ -1090,7 +1109,7 @@ static int script_run_mutate(nmo_cmd_ctx_t *ctx,
     options.label = "cli-script-run";
     options.dry_run = dry_run;
 
-    status = nmo_script_executor_execute(ctx->ctx,
+    status = nmo_behavior_execute(ctx->ctx,
                                          ctx->file_path,
                                          output_path,
                                          &options,
@@ -1659,9 +1678,10 @@ typedef struct script_op_remove_args {
 
 static char *script_format_parameter_value_with_registry(
     const nmo_type_registry_t *registry,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_object_id_t param_id)
 {
+    nmo_session_t *session = NULL;
     nmo_object_repository_t *repo = NULL;
     nmo_object_t *object = NULL;
     const nmo_parameter_state_t *state = NULL;
@@ -1669,10 +1689,11 @@ static char *script_format_parameter_value_with_registry(
     char *buffer = NULL;
     nmo_status_t rc = NMO_OK;
 
-    if (!session || !registry || param_id == 0u) {
+    if (!workspace || !registry || param_id == 0u) {
         return NULL;
     }
 
+    session = nmo_session_from_workspace(workspace);
     repo = nmo_session_get_repository(session);
     object = repo ? nmo_object_repository_find_by_id(repo, param_id) : NULL;
     state = object ? nmo_parameter_get_state(object) : NULL;
@@ -1685,8 +1706,8 @@ static char *script_format_parameter_value_with_registry(
         return NULL;
     }
 
-    rc = nmo_param_value_to_string(state, registry, session, buffer,
-                                   buffer_size);
+    rc = nmo_behavior_param_value_to_string(state, registry, workspace, buffer,
+                                            buffer_size);
     if (rc != NMO_OK) {
         free(buffer);
         return NULL;
@@ -1883,7 +1904,7 @@ static nmo_object_id_t script_interface_root_for_object_session(
 }
 
 static nmo_status_t script_node_add_execute(
-    nmo_script_executor_t *executor,
+    nmo_behavior_execution_t *executor,
     void *user_data)
 {
     script_node_add_args_t *args = (script_node_add_args_t *)user_data;
@@ -1892,7 +1913,7 @@ static nmo_status_t script_node_add_execute(
                          "Missing script node add arguments");
     }
 
-    return nmo_script_edit_add_node(nmo_script_executor_transaction(executor),
+    return nmo_script_edit_add_node(nmo_behavior_execution_transaction(executor),
                                     args->parent_id,
                                     args->bb_guid,
                                     args->name,
@@ -1937,7 +1958,7 @@ static int script_node_add_report(
 }
 
 static nmo_status_t script_node_remove_execute(
-    nmo_script_executor_t *executor,
+    nmo_behavior_execution_t *executor,
     void *user_data)
 {
     script_node_remove_args_t *args = (script_node_remove_args_t *)user_data;
@@ -1949,8 +1970,8 @@ static nmo_status_t script_node_remove_execute(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Missing script node remove arguments");
     }
-    tx = nmo_script_executor_transaction(executor);
-    session = nmo_script_executor_session(executor);
+    tx = nmo_behavior_execution_transaction(executor);
+    session = script_execution_session(executor);
 
     if (args->interface_mode == NMO_SCRIPT_EDIT_INTERFACE_PRESERVE &&
         script_session_interface_references_behavior(session,
@@ -2029,7 +2050,7 @@ static int script_node_remove_report(
 }
 
 static nmo_status_t script_io_add_execute(
-    nmo_script_executor_t *executor,
+    nmo_behavior_execution_t *executor,
     void *user_data)
 {
     script_io_add_args_t *args = (script_io_add_args_t *)user_data;
@@ -2038,7 +2059,7 @@ static nmo_status_t script_io_add_execute(
                          "Missing script io add arguments");
     }
 
-    return nmo_script_edit_add_io(nmo_script_executor_transaction(executor),
+    return nmo_script_edit_add_io(nmo_behavior_execution_transaction(executor),
                                   args->behavior_id,
                                   args->kind,
                                   args->name,
@@ -2081,7 +2102,7 @@ static int script_io_add_report(
 }
 
 static nmo_status_t script_io_rename_execute(
-    nmo_script_executor_t *executor,
+    nmo_behavior_execution_t *executor,
     void *user_data)
 {
     script_io_rename_args_t *args = (script_io_rename_args_t *)user_data;
@@ -2090,7 +2111,7 @@ static nmo_status_t script_io_rename_execute(
                          "Missing script io rename arguments");
     }
 
-    return nmo_script_edit_rename_io(nmo_script_executor_transaction(executor),
+    return nmo_script_edit_rename_io(nmo_behavior_execution_transaction(executor),
                                      args->io_id,
                                      args->name);
 }
@@ -2124,7 +2145,7 @@ static int script_io_rename_report(
 }
 
 static nmo_status_t script_io_remove_execute(
-    nmo_script_executor_t *executor,
+    nmo_behavior_execution_t *executor,
     void *user_data)
 {
     script_io_remove_args_t *args = (script_io_remove_args_t *)user_data;
@@ -2137,8 +2158,8 @@ static nmo_status_t script_io_remove_execute(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Missing script io remove arguments");
     }
-    tx = nmo_script_executor_transaction(executor);
-    session = nmo_script_executor_session(executor);
+    tx = nmo_behavior_execution_transaction(executor);
+    session = script_execution_session(executor);
     interface_behavior_id = script_interface_root_for_object_session(session,
                                                                      args->io_id);
     if (interface_behavior_id == 0u) {
@@ -2214,7 +2235,7 @@ static int script_io_remove_report(
 }
 
 static nmo_status_t script_link_add_execute(
-    nmo_script_executor_t *executor,
+    nmo_behavior_execution_t *executor,
     void *user_data)
 {
     script_link_add_args_t *args = (script_link_add_args_t *)user_data;
@@ -2224,7 +2245,7 @@ static nmo_status_t script_link_add_execute(
     }
 
     return nmo_script_edit_add_behavior_link(
-        nmo_script_executor_transaction(executor),
+        nmo_behavior_execution_transaction(executor),
         args->parent_id,
         args->from_id,
         args->to_id,
@@ -2271,7 +2292,7 @@ static int script_link_add_report(
 }
 
 static nmo_status_t script_link_rewire_execute(
-    nmo_script_executor_t *executor,
+    nmo_behavior_execution_t *executor,
     void *user_data)
 {
     script_link_rewire_args_t *args = (script_link_rewire_args_t *)user_data;
@@ -2281,7 +2302,7 @@ static nmo_status_t script_link_rewire_execute(
     }
 
     return nmo_script_edit_rewire_behavior_link(
-        nmo_script_executor_transaction(executor),
+        nmo_behavior_execution_transaction(executor),
         args->link_id,
         args->from_id,
         args->to_id);
@@ -2322,7 +2343,7 @@ static int script_link_rewire_report(
 }
 
 static nmo_status_t script_link_set_delay_execute(
-    nmo_script_executor_t *executor,
+    nmo_behavior_execution_t *executor,
     void *user_data)
 {
     script_link_set_delay_args_t *args =
@@ -2333,7 +2354,7 @@ static nmo_status_t script_link_set_delay_execute(
     }
 
     return nmo_script_edit_set_behavior_link_delay(
-        nmo_script_executor_transaction(executor),
+        nmo_behavior_execution_transaction(executor),
         args->link_id,
         args->delay);
 }
@@ -2369,7 +2390,7 @@ static int script_link_set_delay_report(
 }
 
 static nmo_status_t script_link_remove_execute(
-    nmo_script_executor_t *executor,
+    nmo_behavior_execution_t *executor,
     void *user_data)
 {
     script_link_remove_args_t *args = (script_link_remove_args_t *)user_data;
@@ -2380,7 +2401,7 @@ static nmo_status_t script_link_remove_execute(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Missing script link remove arguments");
     }
-    tx = nmo_script_executor_transaction(executor);
+    tx = nmo_behavior_execution_transaction(executor);
 
     rc = nmo_script_edit_remove_behavior_link(tx, args->parent_id, args->link_id);
     if (rc != NMO_OK) {
@@ -2482,14 +2503,14 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
         if (nmo_guid_is_null(args.bb_guid)) {
             return NMO_CLI_EXIT_ARG_ERROR;
         }
-        return script_executor_cli_run_write_command(
+        return behavior_execute_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
             "script node add",
-            nmo_script_executor_options_default().validation_flags,
+            nmo_behavior_execute_options_default().validation_flags,
             script_node_add_execute,
             script_node_add_report,
             &args,
@@ -2524,7 +2545,7 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
                                          &args.interface_mode)) {
             return NMO_CLI_EXIT_ARG_ERROR;
         }
-        return script_executor_cli_run_write_command(
+        return behavior_execute_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
@@ -2574,14 +2595,14 @@ int nmo_cmd_script_io(int argc, char **argv, const nmo_cli_global_opts_t *global
             ? NMO_SCRIPT_EDIT_IO_OUTPUT
             : NMO_SCRIPT_EDIT_IO_INPUT;
         args.name = vals[OPT_NAME].val.str;
-        return script_executor_cli_run_write_command(
+        return behavior_execute_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
             "script io add",
-            nmo_script_executor_options_default().validation_flags,
+            nmo_behavior_execute_options_default().validation_flags,
             script_io_add_execute,
             script_io_add_report,
             &args,
@@ -2607,14 +2628,14 @@ int nmo_cmd_script_io(int argc, char **argv, const nmo_cli_global_opts_t *global
         }
         args.io_id = vals[OPT_IO].val.u;
         args.name = vals[OPT_NAME].val.str;
-        return script_executor_cli_run_write_command(
+        return behavior_execute_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
             global,
             &spec,
             "script io rename",
-            nmo_script_executor_options_default().validation_flags,
+            nmo_behavior_execute_options_default().validation_flags,
             script_io_rename_execute,
             script_io_rename_report,
             &args,
@@ -2646,7 +2667,7 @@ int nmo_cmd_script_io(int argc, char **argv, const nmo_cli_global_opts_t *global
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         args.io_id = vals[OPT_IO].val.u;
-        return script_executor_cli_run_write_command(
+        return behavior_execute_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
@@ -2699,7 +2720,7 @@ int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *glob
         args.from_id = vals[OPT_FROM].val.u;
         args.to_id = vals[OPT_TO].val.u;
         args.delay = vals[OPT_DELAY].present ? vals[OPT_DELAY].val.u : 1u;
-        return script_executor_cli_run_write_command(
+        return behavior_execute_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
@@ -2735,7 +2756,7 @@ int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *glob
         args.link_id = vals[OPT_LINK].val.u;
         args.from_id = vals[OPT_FROM].present ? vals[OPT_FROM].val.u : 0u;
         args.to_id = vals[OPT_TO].present ? vals[OPT_TO].val.u : 0u;
-        return script_executor_cli_run_write_command(
+        return behavior_execute_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
@@ -2768,7 +2789,7 @@ int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *glob
         }
         args.link_id = vals[OPT_LINK].val.u;
         args.delay = vals[OPT_DELAY].val.u;
-        return script_executor_cli_run_write_command(
+        return behavior_execute_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
@@ -2810,7 +2831,7 @@ int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *glob
         }
         args.parent_id = vals[OPT_PARENT].val.u;
         args.link_id = vals[OPT_LINK].val.u;
-        return script_executor_cli_run_write_command(
+        return behavior_execute_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
@@ -2828,7 +2849,7 @@ int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *glob
 }
 
 static nmo_status_t script_param_add_execute(
-    nmo_script_executor_t *executor,
+    nmo_behavior_execution_t *executor,
     void *user_data)
 {
     script_param_add_args_t *args = (script_param_add_args_t *)user_data;
@@ -2840,7 +2861,7 @@ static nmo_status_t script_param_add_execute(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Missing script param add arguments");
     }
-    registry = nmo_context_get_type_registry(nmo_script_executor_context(executor));
+    registry = nmo_context_get_type_registry(nmo_behavior_execution_context(executor));
 
     if (!script_try_resolve_parameter_type_name(registry, args->type_name,
                                                 &type_guid)) {
@@ -2848,7 +2869,7 @@ static nmo_status_t script_param_add_execute(
                          "Unknown parameter type '%s'", args->type_name);
     }
 
-    return nmo_script_edit_add_parameter(nmo_script_executor_transaction(executor),
+    return nmo_script_edit_add_parameter(nmo_behavior_execution_transaction(executor),
                                          args->owner_id,
                                          kind,
                                          type_guid,
@@ -2895,24 +2916,23 @@ static int script_param_add_report(
 }
 
 static nmo_status_t script_param_set_execute(
-    nmo_script_executor_t *executor,
+    nmo_behavior_execution_t *executor,
     void *user_data)
 {
     script_param_set_args_t *args = (script_param_set_args_t *)user_data;
     const nmo_type_registry_t *registry = NULL;
-    nmo_session_t *session = NULL;
     nmo_status_t rc = NMO_OK;
 
     if (!args || executor == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Missing script param set arguments");
     }
-    session = nmo_script_executor_session(executor);
-    registry = nmo_context_get_type_registry(nmo_script_executor_context(executor));
+    registry = nmo_context_get_type_registry(nmo_behavior_execution_context(executor));
 
     args->old_value =
-        script_format_parameter_value_with_registry(registry, session, args->param_id);
-    rc = nmo_script_edit_set_parameter_value(nmo_script_executor_transaction(executor),
+        script_format_parameter_value_with_registry(
+            registry, nmo_behavior_execution_workspace(executor), args->param_id);
+    rc = nmo_script_edit_set_parameter_value(nmo_behavior_execution_transaction(executor),
                                              args->param_id,
                                              args->value_str);
     if (rc != NMO_OK) {
@@ -2920,7 +2940,8 @@ static nmo_status_t script_param_set_execute(
     }
 
     args->new_value =
-        script_format_parameter_value_with_registry(registry, session, args->param_id);
+        script_format_parameter_value_with_registry(
+            registry, nmo_behavior_execution_workspace(executor), args->param_id);
     return NMO_OK;
 }
 
@@ -2965,7 +2986,7 @@ static int script_param_set_report(
 }
 
 static nmo_status_t script_param_connect_execute(
-    nmo_script_executor_t *executor,
+    nmo_behavior_execution_t *executor,
     void *user_data)
 {
     script_param_connect_args_t *args = (script_param_connect_args_t *)user_data;
@@ -2974,7 +2995,7 @@ static nmo_status_t script_param_connect_execute(
                          "Missing script param connect arguments");
     }
 
-    return nmo_script_edit_connect_parameter(nmo_script_executor_transaction(executor),
+    return nmo_script_edit_connect_parameter(nmo_behavior_execution_transaction(executor),
                                              args->source_id,
                                              args->target_id);
 }
@@ -3010,7 +3031,7 @@ static int script_param_connect_report(
 }
 
 static nmo_status_t script_param_disconnect_execute(
-    nmo_script_executor_t *executor,
+    nmo_behavior_execution_t *executor,
     void *user_data)
 {
     script_param_disconnect_args_t *args =
@@ -3021,7 +3042,7 @@ static nmo_status_t script_param_disconnect_execute(
     }
 
     return nmo_script_edit_disconnect_parameter(
-        nmo_script_executor_transaction(executor),
+        nmo_behavior_execution_transaction(executor),
         args->target_id);
 }
 
@@ -3055,7 +3076,7 @@ static int script_param_disconnect_report(
 }
 
 static nmo_status_t script_param_remove_execute(
-    nmo_script_executor_t *executor,
+    nmo_behavior_execution_t *executor,
     void *user_data)
 {
     script_param_remove_args_t *args = (script_param_remove_args_t *)user_data;
@@ -3068,8 +3089,8 @@ static nmo_status_t script_param_remove_execute(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Missing script param remove arguments");
     }
-    tx = nmo_script_executor_transaction(executor);
-    session = nmo_script_executor_session(executor);
+    tx = nmo_behavior_execution_transaction(executor);
+    session = script_execution_session(executor);
     interface_behavior_id =
         script_interface_root_for_object_session(session, args->param_id);
     if (interface_behavior_id == 0u) {
@@ -3139,7 +3160,7 @@ static int script_param_remove_report(
 }
 
 static nmo_status_t script_op_add_execute(
-    nmo_script_executor_t *executor,
+    nmo_behavior_execution_t *executor,
     void *user_data)
 {
     script_op_add_args_t *args = (script_op_add_args_t *)user_data;
@@ -3148,7 +3169,7 @@ static nmo_status_t script_op_add_execute(
                          "Missing script op add arguments");
     }
 
-    return nmo_script_edit_add_operation(nmo_script_executor_transaction(executor),
+    return nmo_script_edit_add_operation(nmo_behavior_execution_transaction(executor),
                                          args->parent_id,
                                          args->op_guid,
                                          args->in1_id,
@@ -3199,7 +3220,7 @@ static int script_op_add_report(
 }
 
 static nmo_status_t script_op_rewire_execute(
-    nmo_script_executor_t *executor,
+    nmo_behavior_execution_t *executor,
     void *user_data)
 {
     script_op_rewire_args_t *args = (script_op_rewire_args_t *)user_data;
@@ -3208,7 +3229,7 @@ static nmo_status_t script_op_rewire_execute(
                          "Missing script op rewire arguments");
     }
 
-    return nmo_script_edit_rewire_operation(nmo_script_executor_transaction(executor),
+    return nmo_script_edit_rewire_operation(nmo_behavior_execution_transaction(executor),
                                             args->op_id,
                                             args->slot_flags,
                                             args->in1_id,
@@ -3254,7 +3275,7 @@ static int script_op_rewire_report(
 }
 
 static nmo_status_t script_op_remove_execute(
-    nmo_script_executor_t *executor,
+    nmo_behavior_execution_t *executor,
     void *user_data)
 {
     script_op_remove_args_t *args = (script_op_remove_args_t *)user_data;
@@ -3267,8 +3288,8 @@ static nmo_status_t script_op_remove_execute(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Missing script op remove arguments");
     }
-    tx = nmo_script_executor_transaction(executor);
-    session = nmo_script_executor_session(executor);
+    tx = nmo_behavior_execution_transaction(executor);
+    session = script_execution_session(executor);
     interface_behavior_id = script_interface_root_for_object_session(session, args->op_id);
     if (interface_behavior_id == 0u) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
@@ -3368,7 +3389,7 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         args.kind = vals[OPT_KIND].val.str;
         args.type_name = vals[OPT_TYPE].val.str;
         args.name = vals[OPT_NAME].val.str;
-        return script_executor_cli_run_write_command(
+        return behavior_execute_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
@@ -3402,7 +3423,7 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         args.param_id = vals[OPT_PARAM].val.u;
         args.value_str = vals[OPT_VALUE].val.str;
         {
-            int rc = script_executor_cli_run_write_command(
+            int rc = behavior_execute_cli_run_write_command(
                 r.pos_args[0],
                 vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
                 vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
@@ -3437,7 +3458,7 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         }
         args.source_id = vals[OPT_FROM].val.u;
         args.target_id = vals[OPT_TO].val.u;
-        return script_executor_cli_run_write_command(
+        return behavior_execute_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
@@ -3467,7 +3488,7 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         args.target_id = vals[OPT_TO].val.u;
-        return script_executor_cli_run_write_command(
+        return behavior_execute_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
@@ -3508,7 +3529,7 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         }
         args.param_id = vals[OPT_PARAM].val.u;
         args.detach = vals[OPT_DETACH].present && vals[OPT_DETACH].val.flag;
-        return script_executor_cli_run_write_command(
+        return behavior_execute_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
@@ -3563,7 +3584,7 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
         args.in1_id = vals[OPT_IN1].present ? vals[OPT_IN1].val.u : 0u;
         args.in2_id = vals[OPT_IN2].present ? vals[OPT_IN2].val.u : 0u;
         args.out_id = vals[OPT_OUT].present ? vals[OPT_OUT].val.u : 0u;
-        return script_executor_cli_run_write_command(
+        return behavior_execute_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
@@ -3610,7 +3631,7 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
             args.slot_flags |= NMO_SCRIPT_EDIT_OP_SLOT_OUT;
             args.out_id = vals[OPT_OUT].val.u;
         }
-        return script_executor_cli_run_write_command(
+        return behavior_execute_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
@@ -3649,7 +3670,7 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         args.op_id = vals[OPT_OP].val.u;
-        return script_executor_cli_run_write_command(
+        return behavior_execute_cli_run_write_command(
             r.pos_args[0],
             vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
             vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
@@ -3665,3 +3686,6 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
 
     return NMO_CLI_EXIT_ARG_ERROR;
 }
+
+
+

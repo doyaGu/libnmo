@@ -18,6 +18,7 @@
 #include "session/nmo_session.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_parse.h"
+#include "object/nmo_object_edit.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
@@ -721,15 +722,15 @@ static int data_set_cell_mutate(
         return ref_rc;
     }
 
-    nmo_session_edit_t *edit = NULL;
-    nmo_status_t set_rc = nmo_session_edit_begin(c->session, "data set-cell", &edit);
+    nmo_workspace_edit_t *edit = NULL;
+    nmo_status_t set_rc = nmo_workspace_edit_begin(c->workspace, "data set-cell", &edit);
     if (set_rc == NMO_OK) {
-        set_rc = nmo_session_edit_set_dataarray_cell(
+        set_rc = nmo_object_edit_set_dataarray_cell(
             edit, args->obj_id, args->row, args->col, args->value_str);
     }
     if (set_rc != NMO_OK) {
         if (edit) {
-            nmo_session_edit_rollback(edit);
+            nmo_workspace_edit_rollback(edit);
         }
         fprintf(stderr, "Error: Cannot parse '%s' as %s\n",
                 args->value_str, args->col_type_name);
@@ -740,9 +741,9 @@ static int data_set_cell_mutate(
                 &target_row->cells[args->col], col_type, c);
 
     if (dry_run) {
-        nmo_session_edit_rollback(edit);
+        nmo_workspace_edit_rollback(edit);
     } else {
-        nmo_status_t commit_rc = nmo_session_edit_commit(edit);
+        nmo_status_t commit_rc = nmo_workspace_edit_commit(edit);
         if (commit_rc != NMO_OK) {
             fprintf(stderr, "Error: Failed to commit edit: %s\n",
                     nmo_error_string(commit_rc));

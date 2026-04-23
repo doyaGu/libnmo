@@ -1,11 +1,11 @@
 /**
  * @file bb_registry.c
- * @brief Building block prototype registry â€” pure dynamic, no builtin data
+ * @brief Building block prototype registry â€?pure dynamic, no builtin data
  *
  * All data is loaded at runtime by external loaders (e.g. nmo_json virtools_loader).
  */
 
-#include "behavior/nmo_bb_registry.h"
+#include "behavior/nmo_behavior_registry.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_hash_table.h"
@@ -32,7 +32,7 @@ static int guid_compare_wrapper(const void *key1, const void *key2, size_t key_s
 
 struct nmo_bb_registry {
     nmo_arena_t *arena;
-    nmo_hash_table_t *guid_map; /**< GUID -> nmo_bb_proto_t * */
+    nmo_hash_table_t *guid_map; /**< GUID -> nmo_behavior_proto_t * */
 };
 
 /* ============================================================================
@@ -81,9 +81,9 @@ static nmo_status_t arena_dup_strings(
 
 static nmo_status_t arena_dup_params(
     nmo_arena_t *arena,
-    const nmo_bb_param_desc_t *src,
+    const nmo_behavior_param_desc_t *src,
     uint32_t count,
-    nmo_bb_param_desc_t **out_dst) {
+    nmo_behavior_param_desc_t **out_dst) {
     if (!out_dst) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL out_dst");
     }
@@ -94,8 +94,8 @@ static nmo_status_t arena_dup_params(
                          "Parameter array count is non-zero but source is NULL");
     }
 
-    nmo_bb_param_desc_t *dst = (nmo_bb_param_desc_t *)nmo_arena_alloc(
-        arena, count * sizeof(*dst), _Alignof(nmo_bb_param_desc_t));
+    nmo_behavior_param_desc_t *dst = (nmo_behavior_param_desc_t *)nmo_arena_alloc(
+        arena, count * sizeof(*dst), _Alignof(nmo_behavior_param_desc_t));
     if (!dst) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "arena alloc failed");
     }
@@ -112,7 +112,7 @@ static nmo_status_t arena_dup_params(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t validate_proto_arrays(const nmo_bb_proto_t *proto) {
+static nmo_status_t validate_proto_arrays(const nmo_behavior_proto_t *proto) {
     NMO_RETURN_IF_ERROR(validate_count_ptr(proto->inputs, proto->input_count, "input"));
     NMO_RETURN_IF_ERROR(validate_count_ptr(proto->outputs, proto->output_count, "output"));
     NMO_RETURN_IF_ERROR(validate_count_ptr(proto->input_params, proto->input_param_count,
@@ -127,11 +127,11 @@ static nmo_status_t validate_proto_arrays(const nmo_bb_proto_t *proto) {
 
 static nmo_status_t deep_copy_proto(
     nmo_arena_t *arena,
-    nmo_bb_proto_t *dst,
-    const nmo_bb_proto_t *src) {
+    nmo_behavior_proto_t *dst,
+    const nmo_behavior_proto_t *src) {
     NMO_RETURN_IF_ERROR(validate_proto_arrays(src));
 
-    nmo_bb_proto_t tmp;
+    nmo_behavior_proto_t tmp;
     memset(&tmp, 0, sizeof(tmp));
 
     tmp.guid = src->guid;
@@ -162,22 +162,22 @@ static nmo_status_t deep_copy_proto(
     NMO_RETURN_IF_ERROR(arena_dup_strings(arena, src->outputs, src->output_count, &outputs));
     tmp.outputs = outputs;
     tmp.output_count = src->output_count;
-    nmo_bb_param_desc_t *input_params = NULL;
+    nmo_behavior_param_desc_t *input_params = NULL;
     NMO_RETURN_IF_ERROR(arena_dup_params(arena, src->input_params, src->input_param_count,
                                          &input_params));
     tmp.input_params = input_params;
     tmp.input_param_count = src->input_param_count;
-    nmo_bb_param_desc_t *output_params = NULL;
+    nmo_behavior_param_desc_t *output_params = NULL;
     NMO_RETURN_IF_ERROR(arena_dup_params(arena, src->output_params, src->output_param_count,
                                          &output_params));
     tmp.output_params = output_params;
     tmp.output_param_count = src->output_param_count;
-    nmo_bb_param_desc_t *local_params = NULL;
+    nmo_behavior_param_desc_t *local_params = NULL;
     NMO_RETURN_IF_ERROR(arena_dup_params(arena, src->local_params, src->local_param_count,
                                          &local_params));
     tmp.local_params = local_params;
     tmp.local_param_count = src->local_param_count;
-    nmo_bb_param_desc_t *settings = NULL;
+    nmo_behavior_param_desc_t *settings = NULL;
     NMO_RETURN_IF_ERROR(arena_dup_params(arena, src->settings, src->setting_count, &settings));
     tmp.settings = settings;
     tmp.setting_count = src->setting_count;
@@ -190,17 +190,17 @@ static nmo_status_t deep_copy_proto(
  * API
  * ============================================================================ */
 
-nmo_bb_registry_t *nmo_bb_registry_create(nmo_arena_t *arena) {
+nmo_behavior_registry_t *nmo_behavior_registry_create(nmo_arena_t *arena) {
     if (!arena) return NULL;
-    nmo_bb_registry_t *r = (nmo_bb_registry_t *)nmo_arena_alloc(
-        arena, sizeof(*r), _Alignof(nmo_bb_registry_t));
+    nmo_behavior_registry_t *r = (nmo_behavior_registry_t *)nmo_arena_alloc(
+        arena, sizeof(*r), _Alignof(nmo_behavior_registry_t));
     if (!r) return NULL;
     memset(r, 0, sizeof(*r));
     r->arena = arena;
     r->guid_map = nmo_hash_table_create(
         NULL,
         sizeof(nmo_guid_t),
-        sizeof(nmo_bb_proto_t *),
+        sizeof(nmo_behavior_proto_t *),
         256,
         guid_hash_wrapper,
         guid_compare_wrapper);
@@ -208,42 +208,42 @@ nmo_bb_registry_t *nmo_bb_registry_create(nmo_arena_t *arena) {
     return r;
 }
 
-void nmo_bb_registry_destroy(nmo_bb_registry_t *registry) {
+void nmo_behavior_registry_destroy(nmo_behavior_registry_t *registry) {
     if (registry && registry->guid_map) {
         nmo_hash_table_destroy(registry->guid_map);
         registry->guid_map = NULL;
     }
 }
 
-const nmo_bb_proto_t *nmo_bb_registry_find(const nmo_bb_registry_t *registry, nmo_guid_t guid) {
+const nmo_behavior_proto_t *nmo_behavior_registry_find(const nmo_behavior_registry_t *registry, nmo_guid_t guid) {
     if (!registry || !registry->guid_map) return NULL;
-    nmo_bb_proto_t *proto = NULL;
+    nmo_behavior_proto_t *proto = NULL;
     if (nmo_hash_table_get(registry->guid_map, &guid, &proto) == NMO_OK) {
         return proto;
     }
     return NULL;
 }
 
-const char *nmo_bb_registry_get_name(const nmo_bb_registry_t *registry, nmo_guid_t guid) {
-    const nmo_bb_proto_t *p = nmo_bb_registry_find(registry, guid);
+const char *nmo_behavior_registry_get_name(const nmo_behavior_registry_t *registry, nmo_guid_t guid) {
+    const nmo_behavior_proto_t *p = nmo_behavior_registry_find(registry, guid);
     return p ? p->name : NULL;
 }
 
-nmo_status_t nmo_bb_registry_add(nmo_bb_registry_t *registry, const nmo_bb_proto_t *proto) {
+nmo_status_t nmo_behavior_registry_add(nmo_behavior_registry_t *registry, const nmo_behavior_proto_t *proto) {
     if (!registry || !proto || !registry->guid_map) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "NULL argument to nmo_bb_registry_add");
+                         "NULL argument to nmo_behavior_registry_add");
     }
 
     /* Update existing? */
-    nmo_bb_proto_t *existing = NULL;
+    nmo_behavior_proto_t *existing = NULL;
     if (nmo_hash_table_get(registry->guid_map, &proto->guid, &existing) == NMO_OK) {
         return deep_copy_proto(registry->arena, existing, proto);
     }
 
     /* New entry: arena-allocate proto and deep-copy */
-    nmo_bb_proto_t *entry = (nmo_bb_proto_t *)nmo_arena_alloc(
-        registry->arena, sizeof(*entry), _Alignof(nmo_bb_proto_t));
+    nmo_behavior_proto_t *entry = (nmo_behavior_proto_t *)nmo_arena_alloc(
+        registry->arena, sizeof(*entry), _Alignof(nmo_behavior_proto_t));
     if (!entry) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "arena alloc failed");
     }
@@ -256,19 +256,19 @@ nmo_status_t nmo_bb_registry_add(nmo_bb_registry_t *registry, const nmo_bb_proto
     return NMO_OK;
 }
 
-bool nmo_bb_registry_remove(nmo_bb_registry_t *registry, nmo_guid_t guid) {
+bool nmo_behavior_registry_remove(nmo_behavior_registry_t *registry, nmo_guid_t guid) {
     if (!registry || !registry->guid_map) return false;
     return nmo_hash_table_remove(registry->guid_map, &guid) == NMO_OK;
 }
 
-size_t nmo_bb_registry_count(const nmo_bb_registry_t *registry) {
+size_t nmo_behavior_registry_count(const nmo_behavior_registry_t *registry) {
     if (!registry || !registry->guid_map) return 0;
     return nmo_hash_table_get_count(registry->guid_map);
 }
 
-size_t nmo_bb_registry_builtin_count(const nmo_bb_registry_t *registry) {
+size_t nmo_behavior_registry_builtin_count(const nmo_behavior_registry_t *registry) {
     (void)registry;
-    return 0; /* no builtin data â€” all loaded at runtime */
+    return 0; /* no builtin data â€?all loaded at runtime */
 }
 
 /* ============================================================================
@@ -276,23 +276,23 @@ size_t nmo_bb_registry_builtin_count(const nmo_bb_registry_t *registry) {
  * ============================================================================ */
 
 typedef struct bb_foreach_ctx {
-    nmo_bb_registry_visitor_fn visitor;
+    nmo_behavior_registry_visitor_fn visitor;
     void *user_data;
 } bb_foreach_ctx_t;
 
 static int bb_iterate_adapter(const void *key, void *value, void *user_data) {
     (void)key;
     bb_foreach_ctx_t *ctx = (bb_foreach_ctx_t *)user_data;
-    nmo_bb_proto_t *proto = *(nmo_bb_proto_t **)value;
+    nmo_behavior_proto_t *proto = *(nmo_behavior_proto_t **)value;
     if (proto && ctx->visitor) {
         return ctx->visitor(proto, ctx->user_data) ? 0 : 1;
     }
     return 1;
 }
 
-void nmo_bb_registry_foreach(
-    const nmo_bb_registry_t *registry,
-    nmo_bb_registry_visitor_fn visitor,
+void nmo_behavior_registry_foreach(
+    const nmo_behavior_registry_t *registry,
+    nmo_behavior_registry_visitor_fn visitor,
     void *user_data)
 {
     if (!registry || !registry->guid_map || !visitor) return;
@@ -300,13 +300,13 @@ void nmo_bb_registry_foreach(
     nmo_hash_table_iterate(registry->guid_map, bb_iterate_adapter, &ctx);
 }
 
-/* Static (no-instance) lookups â€” always return NULL in pure-dynamic mode */
+/* Static (no-instance) lookups â€?always return NULL in pure-dynamic mode */
 
-const char *nmo_bb_builtin_get_name(nmo_guid_t guid) {
+const char *nmo_behavior_builtin_get_name(nmo_guid_t guid) {
     (void)guid;
     return NULL; /* no compiled-in data */
 }
 
-size_t nmo_bb_builtin_count(void) {
+size_t nmo_behavior_builtin_count(void) {
     return 0;
 }

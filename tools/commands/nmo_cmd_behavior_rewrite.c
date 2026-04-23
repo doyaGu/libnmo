@@ -11,9 +11,9 @@
 #include "../nmo_cli_write.h"
 #include "../nmo_opt.h"
 
-#include "behavior/nmo_behavior_boundary.h"
-#include "behavior/nmo_behavior_index.h"
-#include "behavior/nmo_behavior_rewrite.h"
+#include "behavior/nmo_behavior_analyze.h"
+#include "behavior/nmo_behavior_analyze.h"
+#include "behavior/nmo_behavior_edit.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_parse.h"
@@ -24,6 +24,7 @@
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_repository.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -34,6 +35,46 @@ static void rewrite_guid_to_string(nmo_guid_t guid, char *buf, size_t size) {
         return;
     }
     snprintf(buf, size, "%08X-%08X", guid.d1, guid.d2);
+}
+
+static nmo_status_t rewrite_open_workspace(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    nmo_document_t **out_document,
+    nmo_workspace_t **out_workspace)
+{
+    nmo_status_t rc = NMO_OK;
+
+    if (!ctx || !session || !out_document || !out_workspace) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    *out_document = NULL;
+    *out_workspace = NULL;
+
+    rc = nmo_session_borrow_document(session, out_document);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = nmo_workspace_create(ctx, *out_document, out_workspace);
+    if (rc != NMO_OK) {
+        nmo_document_destroy(*out_document);
+        *out_document = NULL;
+        return rc;
+    }
+    return NMO_OK;
+}
+
+static void rewrite_close_workspace(
+    nmo_document_t *document,
+    nmo_workspace_t *workspace)
+{
+    if (workspace) {
+        nmo_workspace_destroy(workspace);
+    }
+    if (document) {
+        nmo_document_destroy(document);
+    }
 }
 
 static bool parse_graph_boundary_args(int argc,
@@ -2015,9 +2056,16 @@ int nmo_cmd_behavior_fold(int argc,
         .parameter_map_count = args.parameter_map_count,
         .interface_mode = args.interface_mode,
     };
-    nmo_status_t fold_rc = args.dry_run
-        ? nmo_behavior_fold_analyze(c.ctx, c.session, &desc, &report)
-        : nmo_behavior_fold(c.ctx, c.session, &desc, &report);
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    nmo_status_t fold_rc =
+        rewrite_open_workspace(c.ctx, c.session, &document, &workspace);
+    if (fold_rc == NMO_OK) {
+        fold_rc = args.dry_run
+            ? nmo_behavior_edit_fold_analyze(workspace, &desc, &report)
+            : nmo_behavior_edit_fold(workspace, &desc, &report);
+    }
+    rewrite_close_workspace(document, workspace);
     if (fold_rc != NMO_OK) {
         rc = (fold_rc == NMO_ERR_INVALID_ARGUMENT ||
               fold_rc == NMO_ERR_NOT_FOUND)
@@ -2058,19 +2106,19 @@ int nmo_cmd_behavior_fold(int argc,
     }
 
 cleanup:
-    nmo_behavior_fold_report_free(&report);
+    nmo_behavior_edit_fold_report_free(&report);
     return nmo_cmd_ctx_done(&c, rc);
 }
 
 typedef struct replace_bb_args {
     nmo_behavior_replace_bb_desc_t desc;
-    nmo_behavior_rewrite_report_t report;
+    nmo_behavior_replace_report_t report;
 } replace_bb_args_t;
 
 static void replace_bb_add_report_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *data,
-    const nmo_behavior_rewrite_report_t *report) {
+    const nmo_behavior_replace_report_t *report) {
     char before_guid[24];
     char after_guid[24];
     rewrite_guid_to_string(report->before_guid, before_guid,
@@ -2151,8 +2199,15 @@ static int replace_bb_mutate(nmo_cmd_ctx_t *c,
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_status_t rc = nmo_behavior_replace_bb(
-        c->ctx, c->session, &args->desc, &args->report);
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    nmo_status_t rc =
+        rewrite_open_workspace(c->ctx, c->session, &document, &workspace);
+    if (rc == NMO_OK) {
+        rc = nmo_behavior_edit_replace_bb(
+            workspace, &args->desc, &args->report);
+    }
+    rewrite_close_workspace(document, workspace);
     if (rc != NMO_OK) {
         fprintf(stderr,
                 "Error: behavior %u is not leaf-replaceable "

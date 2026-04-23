@@ -6,6 +6,7 @@
 #ifndef NMO_SCRIPT_EDIT_H
 #define NMO_SCRIPT_EDIT_H
 
+#include "runtime/nmo_workspace.h"
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
@@ -19,8 +20,6 @@ extern "C" {
 #endif
 
 typedef struct nmo_context nmo_context_t;
-typedef struct nmo_session nmo_session_t;
-typedef struct nmo_session_edit nmo_session_edit_t;
 typedef struct nmo_script_edit_tx nmo_script_edit_tx_t;
 
 /*
@@ -71,16 +70,15 @@ typedef struct nmo_script_edit_report {
     size_t errors;
 } nmo_script_edit_report_t;
 
-NMO_API nmo_status_t nmo_script_edit_begin(nmo_context_t *ctx,
-                                           nmo_session_t *session,
+NMO_API nmo_status_t nmo_script_edit_begin(nmo_workspace_t *workspace,
                                            const char *label,
                                            nmo_script_edit_tx_t **out_tx);
 
-NMO_API nmo_session_edit_t *nmo_script_edit_session_edit(
+NMO_API nmo_workspace_edit_t *nmo_script_edit_workspace_edit(
     nmo_script_edit_tx_t *tx);
 
 NMO_API void nmo_script_edit_mark(nmo_script_edit_tx_t *tx,
-                                  uint32_t session_edit_flags);
+                                  uint32_t workspace_edit_flags);
 
 NMO_API const nmo_script_edit_report_t *nmo_script_edit_report(
     const nmo_script_edit_tx_t *tx);

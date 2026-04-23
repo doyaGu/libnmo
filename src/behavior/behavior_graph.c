@@ -1,6 +1,4 @@
-#include "behavior/nmo_behavior_graph.h"
-
-#include "behavior/nmo_behavior_index.h"
+#include "behavior/nmo_behavior_analyze.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 #include "type/nmo_type_query.h"

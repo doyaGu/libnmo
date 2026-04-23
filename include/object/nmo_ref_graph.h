@@ -123,7 +123,8 @@ NMO_API void nmo_ref_graph_destroy(nmo_ref_graph_t *graph);
  * @param count Output edge count
  * @return NMO_OK on success
  * @note Returned array is graph-owned; valid until graph destruction.
- *       Ordinary consumers should prefer nmo_ref_query_visit_all_edges().
+ *       Ordinary consumers should prefer object-owned edge iteration helpers
+ *       from nmo_object_refs.h.
  */
 NMO_API nmo_status_t nmo_ref_graph_get_edges(
     nmo_ref_graph_t *graph,
@@ -142,7 +143,8 @@ NMO_API nmo_status_t nmo_ref_graph_get_edges(
  * @return NMO_OK on success
  * @note Returned array is graph-owned; valid until graph destruction.
  *       Each call allocates graph-arena storage for the filtered view.
- *       Ordinary consumers should prefer nmo_ref_query_visit_object_edges().
+ *       Ordinary consumers should prefer object-owned edge iteration helpers
+ *       from nmo_object_refs.h.
  */
 NMO_API nmo_status_t nmo_ref_graph_get_object_edges(
     nmo_ref_graph_t *graph,

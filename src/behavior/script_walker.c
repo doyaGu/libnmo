@@ -6,9 +6,8 @@
  * walking, parameter source tracing, and text dump output.
  */
 
-#include "behavior/nmo_script_walker.h"
-#include "behavior/nmo_behavior_index.h"
-#include "behavior/nmo_param_value.h"
+#include "behavior/nmo_behavior_analyze.h"
+#include "behavior/nmo_behavior_view.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 #include "object/nmo_class_ids.h"
@@ -22,7 +21,7 @@
 #include "format/nmo_object.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_guid.h"
-#include "behavior/nmo_bb_registry.h"
+#include "behavior/nmo_behavior_registry.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -30,82 +29,6 @@
 /* Behavior flag constants (from ckbehavior_schemas.c) */
 #define CKBEHAVIOR_SCRIPT          0x00000002u
 #define CKBEHAVIOR_BUILDINGBLOCK   0x00008000u
-
-/* ============================================================================
- * Script discovery
- * ============================================================================ */
-
-nmo_status_t nmo_script_walker_find_scripts(
-    nmo_context_t *ctx,
-    nmo_session_t *session,
-    nmo_array_t *out_scripts)
-{
-    if (!ctx || !session || !out_scripts) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "NULL argument to nmo_script_walker_find_scripts");
-    }
-
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(session, &objects, &object_count) != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
-                         "Failed to get objects from session");
-    }
-
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
-
-    for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_t *obj = objects[i];
-        if (!obj) continue;
-
-        nmo_class_id_t cid = nmo_object_get_class_id(obj);
-
-        /* Check if this is a CKBeObject-derived object */
-        if (!registry) continue;
-        if (!nmo_type_registry_is_class_derived_from(
-                registry, (uint32_t)cid, (uint32_t)NMO_CID_BEOBJECT)) {
-            continue;
-        }
-
-        /* Get beobject state to access script_ids */
-        const nmo_beobject_state_t *be_state =
-            (const nmo_beobject_state_t *)nmo_object_get_state(obj);
-        if (!be_state) continue;
-
-        const nmo_object_id_t *script_ids =
-            (const nmo_object_id_t *)be_state->script_ids.data;
-        size_t script_count = be_state->script_ids.count;
-
-        for (size_t s = 0; s < script_count; ++s) {
-            nmo_object_id_t sid = script_ids[s];
-            if (sid == 0) continue;
-
-            nmo_script_entry_t entry;
-            memset(&entry, 0, sizeof(entry));
-            entry.script_id = sid;
-            entry.owner_id = nmo_object_get_id(obj);
-            entry.owner_name = nmo_object_get_name(obj);
-            entry.owner_class = cid;
-
-            /* Resolve script name */
-            if (repo) {
-                nmo_object_t *script_obj =
-                    nmo_object_repository_find_by_id(repo, sid);
-                if (script_obj) {
-                    entry.script_name = nmo_object_get_name(script_obj);
-                }
-            }
-
-            nmo_status_t st = nmo_array_append(out_scripts, &entry);
-            if (st != NMO_OK) {
-                return st;
-            }
-        }
-    }
-
-    return NMO_OK;
-}
 
 /* ============================================================================
  * Behavior tree walking (recursive)
@@ -117,7 +40,7 @@ static nmo_status_t walk_recursive(
     nmo_object_repository_t *repo,
     nmo_object_id_t behavior_id,
     uint32_t depth,
-    nmo_behavior_visitor_fn visitor,
+    nmo_behavior_walk_visitor_fn visitor,
     void *user_data)
 {
     if (depth > 256) {
@@ -154,16 +77,16 @@ static nmo_status_t walk_recursive(
     return NMO_OK;
 }
 
-nmo_status_t nmo_script_walker_walk(
+nmo_status_t nmo_behavior_walk(
     nmo_context_t *ctx,
     nmo_session_t *session,
     nmo_object_id_t root_behavior_id,
-    nmo_behavior_visitor_fn visitor,
+    nmo_behavior_walk_visitor_fn visitor,
     void *user_data)
 {
     if (!ctx || !session || !visitor) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "NULL argument to nmo_script_walker_walk");
+                         "NULL argument to nmo_behavior_walk");
     }
 
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
@@ -180,7 +103,7 @@ nmo_status_t nmo_script_walker_walk(
  * Parameter source tracing
  * ============================================================================ */
 
-nmo_status_t nmo_script_walker_trace_param_chain(
+nmo_status_t nmo_behavior_analyze_trace_param_chain(
     nmo_context_t *ctx,
     nmo_session_t *session,
     nmo_object_id_t param_in_id,
@@ -189,7 +112,7 @@ nmo_status_t nmo_script_walker_trace_param_chain(
 {
     if (!ctx || !session || !out_chain) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "NULL argument to nmo_script_walker_trace_param_chain");
+                         "NULL argument to nmo_behavior_analyze_trace_param_chain");
     }
 
     if (max_depth == 0) max_depth = 32;
@@ -221,16 +144,16 @@ nmo_status_t nmo_script_walker_trace_param_chain(
             const nmo_parameterin_state_t *pin =
                 (const nmo_parameterin_state_t *)nmo_object_get_state(obj);
 
-            nmo_param_chain_step_type_t step_type;
+            nmo_behavior_trace_step_type_t step_type;
             if (step == 0) {
-                step_type = NMO_CHAIN_STEP_START;
+                step_type = NMO_BEHAVIOR_TRACE_STEP_START;
             } else if (pin && pin->is_shared) {
-                step_type = NMO_CHAIN_STEP_SHARED_SOURCE;
+                step_type = NMO_BEHAVIOR_TRACE_STEP_SHARED_SOURCE;
             } else {
-                step_type = NMO_CHAIN_STEP_DIRECT_SOURCE;
+                step_type = NMO_BEHAVIOR_TRACE_STEP_DIRECT_SOURCE;
             }
 
-            nmo_param_chain_step_t chain_step = {
+            nmo_behavior_trace_step_t chain_step = {
                 current_id, step_type, owner_id, cid
             };
             if (nmo_array_append(out_chain, &chain_step) != NMO_OK) {
@@ -242,8 +165,8 @@ nmo_status_t nmo_script_walker_trace_param_chain(
             current_id = pin->source_id;
         } else {
             /* Reached a non-ParameterIn (ParameterOut, ParameterLocal, etc.) */
-            nmo_param_chain_step_t chain_step = {
-                current_id, NMO_CHAIN_STEP_DIRECT_SOURCE, owner_id, cid
+            nmo_behavior_trace_step_t chain_step = {
+                current_id, NMO_BEHAVIOR_TRACE_STEP_DIRECT_SOURCE, owner_id, cid
             };
             if (nmo_array_append(out_chain, &chain_step) != NMO_OK) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
@@ -304,9 +227,9 @@ static void dump_param_array(
                 (const nmo_parameter_state_t *)nmo_object_get_state(pobj);
             if (pstate && dctx->registry) {
                 char val_buf[256];
-                if (nmo_param_value_to_string(pstate, dctx->registry,
-                        dctx->session, val_buf, sizeof(val_buf)) == NMO_OK) {
-                    const char *tname = nmo_param_value_type_name(pstate, dctx->registry);
+                if (nmo_behavior_param_value_to_string(pstate, dctx->registry,
+                        NULL, val_buf, sizeof(val_buf)) == NMO_OK) {
+                    const char *tname = nmo_behavior_param_type_name(pstate, dctx->registry);
                     fprintf(dctx->out, " : %s = %s",
                             tname ? tname : "?", val_buf);
                 }
@@ -346,9 +269,9 @@ static bool dump_visitor(
 
     if (is_building_block && state) {
         const char *proto_name = NULL;
-        nmo_bb_registry_t *bb_reg = nmo_context_get_bb_registry(dctx->ctx);
+        nmo_behavior_registry_t *bb_reg = nmo_context_get_bb_registry(dctx->ctx);
         if (bb_reg) {
-            proto_name = nmo_bb_registry_get_name(bb_reg, state->block_guid);
+            proto_name = nmo_behavior_registry_get_name(bb_reg, state->block_guid);
         }
         if (proto_name) {
             fprintf(dctx->out, "[BB] #%u %s", behavior_id, proto_name);
@@ -408,7 +331,7 @@ static bool dump_visitor(
     return true;
 }
 
-nmo_status_t nmo_script_walker_dump_text(
+nmo_status_t nmo_behavior_analyze_dump_text(
     nmo_context_t *ctx,
     nmo_session_t *session,
     nmo_object_id_t root_behavior_id,
@@ -416,7 +339,7 @@ nmo_status_t nmo_script_walker_dump_text(
 {
     if (!ctx || !session || !out) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "NULL argument to nmo_script_walker_dump_text");
+                         "NULL argument to nmo_behavior_analyze_dump_text");
     }
 
     dump_ctx_t dctx;
@@ -426,6 +349,6 @@ nmo_status_t nmo_script_walker_dump_text(
     dctx.repo = nmo_session_get_repository(session);
     dctx.out = out;
 
-    return nmo_script_walker_walk(ctx, session, root_behavior_id,
+    return nmo_behavior_walk(ctx, session, root_behavior_id,
                                   dump_visitor, &dctx);
 }

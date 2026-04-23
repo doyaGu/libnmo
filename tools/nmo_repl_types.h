@@ -2,7 +2,7 @@
 #define NMO_REPL_TYPES_H
 
 #include "nmo.h"
-#include "app/nmo_inspector.h"
+#include "chunk/nmo_chunk_inspect.h"
 
 #include <stdbool.h>
 #include <stddef.h>

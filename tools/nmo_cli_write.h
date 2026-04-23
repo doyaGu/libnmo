@@ -3,7 +3,7 @@
 
 #include "nmo_cli_common.h"
 
-#include "app/nmo_save.h"
+#include "document/nmo_document_save.h"
 
 #include <stdbool.h>
 

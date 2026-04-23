@@ -14,8 +14,9 @@
 #include "../nmo_opt.h"
 
 #include "nmo.h"
+#include "behavior/nmo_behavior_edit.h"
 #include "session/nmo_context.h"
-#include "session/nmo_session_edit.h"
+#include "session/nmo_session.h"
 #include "core/nmo_array.h"
 #include "core/nmo_parse.h"
 #include "format/nmo_interface_chunk.h"
@@ -565,15 +566,15 @@ static void translate_body(nmo_interface_body_t *body, float dx, float dy);
 
 static int iface_mark_changed(nmo_cmd_ctx_t *c, nmo_object_id_t target_id)
 {
-    nmo_session_edit_t *edit = NULL;
-    nmo_status_t st = nmo_session_edit_begin(c->session, "behavior interface edit", &edit);
+    nmo_workspace_edit_t *edit = NULL;
+    nmo_status_t st = nmo_workspace_edit_begin(c->workspace, "behavior interface edit", &edit);
     if (st == NMO_OK) {
-        st = nmo_session_edit_mark_behavior_interface(edit, target_id);
+        st = nmo_behavior_edit_mark_interface(edit, target_id);
     }
     if (st == NMO_OK) {
-        st = nmo_session_edit_commit(edit);
+        st = nmo_workspace_edit_commit(edit);
     } else if (edit != NULL) {
-        nmo_session_edit_rollback(edit);
+        nmo_workspace_edit_rollback(edit);
     }
     if (st != NMO_OK) {
         fprintf(stderr, "Error: Failed to mark interface edit: %s\n", nmo_error_string(st));
