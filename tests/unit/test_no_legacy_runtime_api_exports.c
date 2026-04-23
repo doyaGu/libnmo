@@ -1346,6 +1346,69 @@ TEST(no_legacy_runtime_api_exports, public_owner_headers_do_not_redeclare_legacy
     assert_file_missing("tests/unit/test_script_executor.c");
 }
 
+TEST(no_legacy_runtime_api_exports, owner_sources_do_not_directly_include_session_headers) {
+    const char *owner_sources[] = {
+        "src/runtime/context.c",
+        "src/runtime/workspace_edit.c",
+        "src/document/document_load.c",
+        "src/document/document_save.c",
+        "src/document/document_stats.c",
+        "src/object/object_refs.c",
+        "src/object/object_summary.c",
+        "src/object/object_summary_view.c",
+        "src/object/object_diff.c",
+        "src/object/object_diff_view.c",
+        "src/object/object_import.c",
+        "src/behavior/behavior_query.c",
+        "src/behavior/behavior_view.c",
+        "src/behavior/behavior_graph.c",
+        "src/behavior/behavior_boundary.c",
+        "src/behavior/behavior_index.c",
+        "src/behavior/script_edit.c",
+        "src/behavior/script_edit_graph.c",
+        "src/behavior/behavior_rewrite.c",
+        "src/behavior/script_walker.c",
+        "src/behavior/script_trace_view.c",
+        "src/behavior/behavior_execute.c",
+        "src/behavior/param_value.c",
+    };
+
+    for (size_t i = 0; i < sizeof(owner_sources) / sizeof(owner_sources[0]); i++) {
+        assert_file_has_no_substring(owner_sources[i], "#include \"session/");
+    }
+}
+
+TEST(no_legacy_runtime_api_exports, behavior_analyze_and_views_are_workspace_first) {
+    assert_file_has_no_substring("include/behavior/nmo_behavior_analyze.h", "nmo_session_t *");
+    assert_file_has_no_substring("include/behavior/nmo_behavior_analyze.h", "nmo_context_t *");
+    assert_file_has_substring("include/behavior/nmo_behavior_analyze.h", "nmo_workspace_t *workspace");
+
+    assert_file_has_no_substring("src/behavior/behavior_view.c", "nmo_session_from_workspace(");
+    assert_file_has_no_substring("src/behavior/script_trace_view.c", "nmo_session_from_workspace(");
+    assert_file_has_no_substring("src/behavior/param_value.c", "nmo_session_from_workspace(");
+    assert_file_has_no_substring("src/object/object_refs.c", "nmo_session_from_document(");
+    assert_file_has_no_substring("src/behavior/script_edit.c", "nmo_session_from_workspace(");
+    assert_file_has_no_substring("src/behavior/script_edit.c", "nmo_session_borrow_document(");
+    assert_file_has_no_substring("src/behavior/script_edit.c", "nmo_session_preview_destroy(");
+    assert_file_has_no_substring("src/behavior/script_edit.c", "nmo_session_destroy_objects(");
+    assert_file_has_no_substring("src/behavior/script_edit.c", "nmo_runtime_kernel_execute(");
+    assert_file_has_no_substring("include/behavior/nmo_script_edit_graph.h", "nmo_session_t *");
+    assert_file_has_no_substring("include/behavior/nmo_script_edit_graph.h", "nmo_context_t *");
+    assert_file_has_substring("include/behavior/nmo_script_edit_graph.h", "nmo_workspace_t *workspace");
+    assert_file_has_no_substring("src/behavior/script_edit_graph.c", "nmo_session_ensure_behavior_acceleration(");
+    assert_file_has_no_substring("src/behavior/script_edit_graph.c", "nmo_session_get_repository(");
+    assert_file_has_no_substring("src/behavior/script_edit_graph.c", "nmo_session_get_behavior_index(");
+    assert_file_has_no_substring("src/behavior/script_edit_graph.c", "nmo_session_borrow_document(");
+    assert_file_has_no_substring("src/behavior/behavior_rewrite.c", "nmo_session_from_workspace(");
+    assert_file_has_no_substring("src/behavior/behavior_rewrite.c", "nmo_session_borrow_document(");
+    assert_file_has_no_substring("src/behavior/behavior_rewrite.c", "nmo_session_destroy_objects(");
+    assert_file_has_no_substring("src/object/object_import.c", "nmo_session_from_workspace(");
+    assert_file_has_no_substring("src/object/object_import.c", "nmo_session_get_repository(");
+    assert_file_has_no_substring("src/object/object_import.c", "nmo_session_create_object(");
+    assert_file_has_no_substring("src/object/object_diff.c", "nmo_session_get_repository(");
+    assert_file_has_no_substring("src/object/object_diff_view.c", "nmo_session_get_context(");
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(no_legacy_runtime_api_exports, builtin_headers_have_no_legacy_runtime_api_exports);
 REGISTER_TEST(no_legacy_runtime_api_exports, migrated_state_sources_do_not_use_data_pointer_state);
@@ -1434,4 +1497,6 @@ REGISTER_TEST(no_legacy_runtime_api_exports, object_summary_uses_reflection_coun
 REGISTER_TEST(no_legacy_runtime_api_exports, umbrella_and_tooling_use_reorganized_public_owners);
 REGISTER_TEST(no_legacy_runtime_api_exports, behavior_and_object_owners_do_not_route_through_legacy_mutator_helpers);
 REGISTER_TEST(no_legacy_runtime_api_exports, public_owner_headers_do_not_redeclare_legacy_query_and_edit_facades);
+REGISTER_TEST(no_legacy_runtime_api_exports, owner_sources_do_not_directly_include_session_headers);
+REGISTER_TEST(no_legacy_runtime_api_exports, behavior_analyze_and_views_are_workspace_first);
 TEST_MAIN_END()
