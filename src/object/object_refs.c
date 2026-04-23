@@ -2,8 +2,7 @@
 
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
-#include "session/nmo_session_bridge.h"
-#include "session/nmo_session.h"
+#include "../runtime/runtime_internal.h"
 
 nmo_status_t nmo_object_refs_iterate(
     nmo_document_t *document,
@@ -17,11 +16,22 @@ nmo_status_t nmo_object_refs_iterate(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_session_t *session = nmo_session_from_document(document);
-    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(session);
-    nmo_object_repository_t *repository = nmo_document_get_repository(document);
+    nmo_object_repository_t *repository = nmo_document_internal_repository(document);
+    nmo_ref_graph_t *graph = NULL;
+    nmo_workspace_t *workspace = NULL;
     if (graph == NULL || repository == NULL) {
-        return NMO_ERR_INVALID_STATE;
+        nmo_context_t *ctx = nmo_document_internal_context(document);
+        if (ctx == NULL) {
+            return NMO_ERR_INVALID_STATE;
+        }
+        if (nmo_workspace_create(ctx, document, &workspace) != NMO_OK) {
+            return NMO_ERR_INVALID_STATE;
+        }
+        graph = nmo_workspace_internal_ref_graph(workspace);
+        if (graph == NULL) {
+            nmo_workspace_destroy(workspace);
+            return NMO_ERR_INVALID_STATE;
+        }
     }
 
     nmo_object_refs_result_t result = {0};
@@ -36,6 +46,7 @@ nmo_status_t nmo_object_refs_iterate(
             &edges,
             &count);
         if (rc != NMO_OK) {
+            nmo_workspace_destroy(workspace);
             return rc;
         }
         result.outgoing = count;
@@ -61,6 +72,7 @@ nmo_status_t nmo_object_refs_iterate(
             &edges,
             &count);
         if (rc != NMO_OK) {
+            nmo_workspace_destroy(workspace);
             return rc;
         }
         result.incoming = count;
@@ -79,6 +91,7 @@ nmo_status_t nmo_object_refs_iterate(
     if (out_result != NULL) {
         *out_result = result;
     }
+    nmo_workspace_destroy(workspace);
     return NMO_OK;
 }
 

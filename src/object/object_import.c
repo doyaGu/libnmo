@@ -8,9 +8,6 @@
 
 #include "object/nmo_object_edit.h"
 
-#include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
-#include "session/nmo_context.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_string.h"
 #include "type/nmo_type_guids.h"
@@ -24,6 +21,8 @@
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_parse.h"
+
+#include "../runtime/runtime_internal.h"
 
 #include "yyjson.h"
 
@@ -1085,8 +1084,7 @@ static nmo_status_t object_edit_import_json_impl(
     }
 
     nmo_document_t *document = nmo_workspace_get_document(workspace);
-    nmo_session_t *session = nmo_session_from_workspace(workspace);
-    if (document == NULL || session == NULL) {
+    if (document == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
 
@@ -1127,11 +1125,11 @@ static nmo_status_t object_edit_import_json_impl(
                          "JSON missing \"objects\" array");
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
     if (!repo) {
         yyjson_doc_free(doc);
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
-                         "Session has no object repository");
+                         "Workspace has no object repository");
     }
 
     /* Iterate each object entry */
@@ -1224,9 +1222,9 @@ static nmo_status_t object_edit_import_json_impl(
 
                     nmo_guid_t null_guid;
                     memset(&null_guid, 0, sizeof(null_guid));
-                    int rc = nmo_session_create_object(
-                        session, pending_create_cid, obj_name, null_guid, &created_id, NULL);
-                    if (rc != NMO_OK || created_id == 0) {
+                    nmo_status_t create_st = nmo_workspace_internal_create_object(
+                        workspace, pending_create_cid, obj_name, null_guid, &created_id);
+                    if (create_st != NMO_OK || created_id == 0) {
                         nmo_workspace_edit_rollback(edit);
                         result->errors++;
                         continue;

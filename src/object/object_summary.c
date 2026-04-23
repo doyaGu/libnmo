@@ -26,8 +26,8 @@
 #include "type/nmo_type_view.h"
 #include "type/nmo_type_guids.h"
 #include "object/nmo_param_guids.h"
+#include "../runtime/runtime_internal.h"
 #include "core/nmo_guid.h"
-#include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_guids.h"
 #include "core/nmo_array.h"
@@ -145,9 +145,6 @@ static bool nmo_summary_emit_reflection_fields(
 static const nmo_type_registry_t *nmo_summary_get_registry(const nmo_summary_output_t *out) {
     if (!out) return NULL;
     nmo_context_t *ctx = out->ctx;
-    if (!ctx && out->session) {
-        ctx = nmo_session_get_context(out->session);
-    }
     if (!ctx) return NULL;
     return nmo_context_get_type_registry(ctx);
 }

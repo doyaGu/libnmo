@@ -1,9 +1,8 @@
 #include "object/nmo_object_summary.h"
 
 #include "format/nmo_object.h"
+#include "../runtime/runtime_internal.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_context.h"
-#include "session/nmo_session.h"
 #include "type/nmo_type_guids.h"
 #include "type/nmo_type_system.h"
 #include "yyjson.h"
@@ -276,7 +275,7 @@ static const nmo_type_descriptor_t *nmo_report_view_find_field_owner(
 
 static nmo_status_t nmo_object_summary_fill_ref_names(
     nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_object_repository_t *repo,
     const nmo_object_t *object,
     nmo_object_summary_view_t *out_view)
 {
@@ -284,7 +283,7 @@ static nmo_status_t nmo_object_summary_fill_ref_names(
     const nmo_type_descriptor_t *descriptor = NULL;
     size_t i = 0u;
 
-    if (ctx == NULL || session == NULL || object == NULL || out_view == NULL) {
+    if (ctx == NULL || repo == NULL || object == NULL || out_view == NULL) {
         return NMO_OK;
     }
 
@@ -341,7 +340,7 @@ static nmo_status_t nmo_object_summary_fill_ref_names(
             continue;
         }
 
-        target = nmo_object_repository_find_by_id(nmo_session_get_repository(session), id);
+        target = nmo_object_repository_find_by_id(repo, id);
         if (target == NULL) {
             continue;
         }
@@ -368,6 +367,7 @@ NMO_API nmo_status_t nmo_object_summary_build_view(
     yyjson_mut_doc *doc = NULL;
     yyjson_mut_val *root = NULL;
     nmo_summary_output_t output;
+    nmo_object_repository_t *repo = NULL;
     nmo_status_t status = NMO_OK;
 
     if (ctx == NULL || object == NULL || out_view == NULL) {
@@ -379,6 +379,7 @@ NMO_API nmo_status_t nmo_object_summary_build_view(
     if (status != NMO_OK) {
         return status;
     }
+    repo = session != NULL ? nmo_session_get_repository(session) : NULL;
 
     doc = yyjson_mut_doc_new(NULL);
     if (doc == NULL) {
@@ -406,7 +407,7 @@ NMO_API nmo_status_t nmo_object_summary_build_view(
 
     status = nmo_object_summary_snapshot_fields(root, out_view);
     if (status == NMO_OK) {
-        status = nmo_object_summary_fill_ref_names(ctx, session, object, out_view);
+        status = nmo_object_summary_fill_ref_names(ctx, repo, object, out_view);
     }
     yyjson_mut_doc_free(doc);
     if (status != NMO_OK) {
