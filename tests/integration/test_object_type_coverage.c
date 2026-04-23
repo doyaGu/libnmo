@@ -8,7 +8,7 @@
 
 #include "../test_framework.h"
 #include "session/nmo_context.h"
-#include "app/nmo_load.h"
+#include "document/nmo_document_load.h"
 #include "session/nmo_session.h"
 #include "format/nmo_object.h"
 #include "object/nmo_class_ids.h"

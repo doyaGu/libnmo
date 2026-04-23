@@ -1,11 +1,13 @@
 #include "test_framework.h"
 
-#include "app/nmo_save.h"
+#include "document/nmo_document_save.h"
 #include "behavior/nmo_script_edit.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
+#include "runtime/nmo_workspace.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 
@@ -27,6 +29,36 @@ static bool save_session_to_path(nmo_session_t *session, const char *path)
     nmo_save_options_t save_opts = nmo_save_options_default();
     remove_file_if_exists(path);
     return nmo_save_file(session, path, &save_opts) == NMO_OK;
+}
+
+static nmo_status_t begin_test_script_edit(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const char *label,
+    nmo_script_edit_tx_t **out_tx)
+{
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    nmo_status_t rc = NMO_OK;
+
+    if (!ctx || !session || !label || !out_tx) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    *out_tx = NULL;
+    rc = nmo_session_borrow_document(session, &document);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = nmo_workspace_create(ctx, document, &workspace);
+    if (rc != NMO_OK) {
+        nmo_document_destroy(document);
+        return rc;
+    }
+    rc = nmo_script_edit_begin(workspace, label, out_tx);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    return rc;
 }
 
 static nmo_behavior_state_t *find_behavior_state(
@@ -247,7 +279,7 @@ TEST(script_edit_interface, remove_io_canonicalize_updates_interface_data_in_mem
     ASSERT_NOT_NULL(session);
     ASSERT_EQ(NMO_OK, nmo_session_load_file(session, NMO_SCRIPT_INTERFACE_FIXTURE, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session));
-    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(ctx, session, "io add", &tx));
+    ASSERT_EQ(NMO_OK, begin_test_script_edit(ctx, session, "io add", &tx));
     ASSERT_EQ(NMO_OK,
               nmo_script_edit_add_io(tx, 229u, NMO_SCRIPT_EDIT_IO_INPUT, "IfaceIo", &io_id));
     ASSERT_TRUE(io_id != 0u);
@@ -282,7 +314,7 @@ TEST(script_edit_interface, remove_io_canonicalize_updates_interface_data_in_mem
     ASSERT_NOT_NULL(session);
     ASSERT_EQ(NMO_OK, nmo_session_load_file(session, iface_io_path, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session));
-    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(ctx, session, "io remove", &tx));
+    ASSERT_EQ(NMO_OK, begin_test_script_edit(ctx, session, "io remove", &tx));
     ASSERT_EQ(NMO_OK, nmo_script_edit_remove_io(tx, io_id, false));
     ASSERT_EQ(NMO_OK, nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY));
     ASSERT_EQ(NMO_OK, nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES));
@@ -332,7 +364,7 @@ TEST(script_edit_interface, remove_node_canonicalize_roundtrips_after_save)
     ASSERT_NOT_NULL(session);
     ASSERT_EQ(NMO_OK, nmo_session_load_file(session, NMO_SCRIPT_INTERFACE_FIXTURE, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session));
-    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(ctx, session, "node add", &tx));
+    ASSERT_EQ(NMO_OK, begin_test_script_edit(ctx, session, "node add", &tx));
     ASSERT_EQ(NMO_OK,
               nmo_script_edit_add_node(tx,
                                        NMO_SCRIPT_INTERFACE_TARGET_ID,
@@ -356,7 +388,7 @@ TEST(script_edit_interface, remove_node_canonicalize_roundtrips_after_save)
     ASSERT_NOT_NULL(session);
     ASSERT_EQ(NMO_OK, nmo_session_load_file(session, iface_node_path, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session));
-    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(ctx, session, "node remove", &tx));
+    ASSERT_EQ(NMO_OK, begin_test_script_edit(ctx, session, "node remove", &tx));
     ASSERT_EQ(NMO_OK, nmo_script_edit_remove_node(tx, NMO_SCRIPT_INTERFACE_TARGET_ID, node_id, 0u));
     ASSERT_EQ(NMO_OK, nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY));
     ASSERT_EQ(NMO_OK, nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES));
@@ -399,9 +431,54 @@ TEST(script_edit_interface, remove_node_canonicalize_roundtrips_after_save)
     nmo_context_release(ctx);
 }
 
+TEST(script_edit_interface, canonicalize_converts_raw_interface_ids_to_runtime_ids)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_behavior_state_t *root_state = NULL;
+
+    ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
+    ASSERT_NOT_NULL(ctx);
+    session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    ASSERT_EQ(NMO_OK, nmo_session_load_file(session, NMO_SCRIPT_INTERFACE_FIXTURE, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session));
+
+    root_state = find_behavior_state(session, NMO_SCRIPT_INTERFACE_TARGET_ID, NULL);
+    ASSERT_NOT_NULL(root_state);
+    ASSERT_NOT_NULL(root_state->interface_data);
+    ASSERT_FALSE(root_state->interface_ids_are_runtime);
+    ASSERT_EQ((nmo_object_id_t)250u, root_state->interface_data->script.behavior_id);
+
+    ASSERT_EQ(NMO_OK, begin_test_script_edit(ctx, session, "raw interface ids", &tx));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_validate_interface_refs(tx, NMO_SCRIPT_INTERFACE_TARGET_ID));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_apply_interface_policy(tx,
+                                                     NMO_SCRIPT_INTERFACE_TARGET_ID,
+                                                     NMO_SCRIPT_EDIT_INTERFACE_CANONICALIZE));
+
+    root_state = find_behavior_state(session, NMO_SCRIPT_INTERFACE_TARGET_ID, NULL);
+    ASSERT_NOT_NULL(root_state);
+    ASSERT_NOT_NULL(root_state->interface_data);
+    ASSERT_TRUE(root_state->interface_ids_are_runtime);
+    ASSERT_EQ(NMO_SCRIPT_INTERFACE_TARGET_ID,
+              root_state->interface_data->script.behavior_id);
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_validate_interface_refs(tx, NMO_SCRIPT_INTERFACE_TARGET_ID));
+
+    nmo_script_edit_rollback(tx);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(script_edit_interface,
                   remove_io_canonicalize_updates_interface_data_in_memory);
     REGISTER_TEST(script_edit_interface,
                   remove_node_canonicalize_roundtrips_after_save);
+    REGISTER_TEST(script_edit_interface,
+                  canonicalize_converts_raw_interface_ids_to_runtime_ids);
 TEST_MAIN_END()
+

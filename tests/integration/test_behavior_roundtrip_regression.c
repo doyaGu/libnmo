@@ -5,8 +5,8 @@
 
 #include "test_framework.h"
 #include "nmo.h"
-#include "app/nmo_load.h"
-#include "app/nmo_comparison.h"
+#include "document/nmo_document_load.h"
+#include "document/nmo_document_compare.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
 #include <stdio.h>

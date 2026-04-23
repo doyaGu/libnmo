@@ -13,7 +13,8 @@
 
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
-#include "app/nmo_save.h"
+#include "session/nmo_runtime_kernel.h"
+#include "document/nmo_document_save.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
 #include "format/nmo_stb_adapter.h"

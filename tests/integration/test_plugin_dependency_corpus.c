@@ -5,7 +5,7 @@
 
 #include "../test_framework.h"
 
-#include "app/nmo_load.h"
+#include "document/nmo_document_load.h"
 #include "core/nmo_guid.h"
 #include "session/nmo_context.h"
 #include "session/nmo_deserializer.h"

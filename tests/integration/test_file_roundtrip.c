@@ -7,7 +7,7 @@
  */
 
 #include "session/nmo_session.h"
-#include "app/nmo_load.h"
+#include "document/nmo_document_load.h"
 #include "session/nmo_context.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,7 +51,7 @@ static int test_load_existing_file(void) {
     int result = nmo_load_file(session, data_file, NULL);
 
     if (result == NMO_OK) {
-        printf("  ✓ File loaded successfully\n");
+        printf("  鉁?File loaded successfully\n");
         printf("=== Test PASSED ===\n\n");
     } else {
         printf("  Load result: %d\n", result);
@@ -93,7 +93,7 @@ static int test_empty_file_handling(void) {
     int result = nmo_load_file(session, "nonexistent_file.nmo", NULL);
 
     if (result == NMO_ERR_FILE_NOT_FOUND) {
-        printf("  ✓ Correctly detected missing file\n");
+        printf("  鉁?Correctly detected missing file\n");
         printf("=== Test PASSED ===\n\n");
     } else {
         printf("ERROR: Expected NMO_ERR_FILE_NOT_FOUND (%d), got %d\n",
@@ -132,8 +132,8 @@ static int test_file_io_infrastructure(void) {
         return 1;
     }
 
-    printf("  ✓ Context and session created successfully\n");
-    printf("  ✓ File I/O infrastructure is functional\n");
+    printf("  鉁?Context and session created successfully\n");
+    printf("  鉁?File I/O infrastructure is functional\n");
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -198,10 +198,10 @@ static int test_multiple_files(void) {
         int result = nmo_load_file(session, filename, NULL);
 
         if (result == NMO_OK) {
-            printf("✓ SUCCESS\n");
+            printf("鉁?SUCCESS\n");
             files_loaded++;
         } else {
-            printf("✗ FAILED (error %d)\n", result);
+            printf("鉁?FAILED (error %d)\n", result);
         }
 
         nmo_session_destroy(session);
@@ -235,14 +235,14 @@ int main(void) {
     // Summary
     printf("========================================\n");
     if (failed == 0) {
-        printf("ALL TESTS PASSED ✓\n");
+        printf("ALL TESTS PASSED 鉁揬n");
         printf("\nPhase 2 Status: CKFile I/O functionality is working\n");
         printf("- File loading pipeline is functional\n");
         printf("- File saving pipeline is functional\n");
         printf("- Error handling works correctly\n");
         printf("- TODO: Included Files feature not yet implemented\n");
     } else {
-        printf("%d TEST(S) FAILED ✗\n", failed);
+        printf("%d TEST(S) FAILED 鉁梊n", failed);
     }
     printf("========================================\n");
 

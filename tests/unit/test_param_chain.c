@@ -4,9 +4,10 @@
  */
 
 #include "../test_framework.h"
-#include "behavior/nmo_script_walker.h"
+#include "behavior/nmo_behavior_analyze.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 #include "session/nmo_session_util.h"
 #include "core/nmo_array.h"
 #include "format/nmo_object.h"
@@ -22,6 +23,20 @@ static bool open_test_file(const char *path,
     char errbuf[256] = {0};
     return nmo_session_open_file_with_context(path, out_ctx, out_session,
                                               errbuf, sizeof(errbuf));
+}
+
+static nmo_status_t collect_scripts_from_session(
+    nmo_session_t *session,
+    nmo_array_t *scripts)
+{
+    nmo_document_t *document = NULL;
+    nmo_status_t st = nmo_session_borrow_document(session, &document);
+    if (st != NMO_OK) {
+        return st;
+    }
+    st = nmo_behavior_query_collect_scripts(document, scripts);
+    nmo_document_destroy(document);
+    return st;
 }
 
 /* Walk behaviors looking for a pIn with source, optionally shared */
@@ -71,13 +86,13 @@ static void find_pins(nmo_context_t *ctx, nmo_session_t *session,
     fctx->found_direct = 0;
 
     nmo_array_t scripts;
-    nmo_array_init(&scripts, sizeof(nmo_script_entry_t), 32, NULL);
-    nmo_script_walker_find_scripts(ctx, session, &scripts);
+    nmo_array_init(&scripts, sizeof(nmo_behavior_script_view_t), 32, NULL);
+    collect_scripts_from_session(session, &scripts);
 
-    const nmo_script_entry_t *entries =
-        (const nmo_script_entry_t *)scripts.data;
+    const nmo_behavior_script_view_t *entries =
+        (const nmo_behavior_script_view_t *)scripts.data;
     for (size_t i = 0; i < scripts.count; ++i) {
-        nmo_script_walker_walk(ctx, session, entries[i].script_id,
+        nmo_behavior_walk(ctx, session, entries[i].script_id,
                                find_pin_visitor, fctx);
         if (fctx->found_shared != 0 && fctx->found_direct != 0) break;
     }
@@ -102,20 +117,20 @@ TEST(param_chain, basic_chain_has_steps)
     }
 
     nmo_array_t chain;
-    nmo_array_init(&chain, sizeof(nmo_param_chain_step_t), 16, NULL);
-    nmo_status_t st = nmo_script_walker_trace_param_chain(
+    nmo_array_init(&chain, sizeof(nmo_behavior_trace_step_t), 16, NULL);
+    nmo_status_t st = nmo_behavior_analyze_trace_param_chain(
         ctx, session, fctx.found_direct, &chain, 32);
     ASSERT_EQ(NMO_OK, st);
     ASSERT_TRUE(chain.count >= 2);
 
-    const nmo_param_chain_step_t *steps =
-        (const nmo_param_chain_step_t *)chain.data;
-    ASSERT_EQ((int)NMO_CHAIN_STEP_START, (int)steps[0].type);
+    const nmo_behavior_trace_step_t *steps =
+        (const nmo_behavior_trace_step_t *)chain.data;
+    ASSERT_EQ((int)NMO_BEHAVIOR_TRACE_STEP_START, (int)steps[0].type);
     ASSERT_EQ((long long)fctx.found_direct, (long long)steps[0].id);
 
     /* Last step should be a non-ParameterIn (DirectSource terminal) */
     ASSERT_TRUE(steps[chain.count - 1].class_id != NMO_CID_PARAMETERIN ||
-                steps[chain.count - 1].type == NMO_CHAIN_STEP_START);
+                steps[chain.count - 1].type == NMO_BEHAVIOR_TRACE_STEP_START);
 
     nmo_array_dispose(&chain);
     nmo_session_close_with_context(ctx, session);
@@ -137,20 +152,20 @@ TEST(param_chain, shared_source_detected)
     }
 
     nmo_array_t chain;
-    nmo_array_init(&chain, sizeof(nmo_param_chain_step_t), 16, NULL);
-    nmo_script_walker_trace_param_chain(ctx, session, fctx.found_shared,
+    nmo_array_init(&chain, sizeof(nmo_behavior_trace_step_t), 16, NULL);
+    nmo_behavior_analyze_trace_param_chain(ctx, session, fctx.found_shared,
                                         &chain, 32);
     ASSERT_TRUE(chain.count >= 2);
 
     /* The starting pIn has is_shared=true. When the chain continues through
      * another pIn that also has is_shared, that step is SHARED_SOURCE.
      * At minimum verify the chain contains a non-START step. */
-    const nmo_param_chain_step_t *steps =
-        (const nmo_param_chain_step_t *)chain.data;
+    const nmo_behavior_trace_step_t *steps =
+        (const nmo_behavior_trace_step_t *)chain.data;
     bool has_shared_or_direct = false;
     for (size_t i = 1; i < chain.count; ++i) {
-        if (steps[i].type == NMO_CHAIN_STEP_SHARED_SOURCE ||
-            steps[i].type == NMO_CHAIN_STEP_DIRECT_SOURCE) {
+        if (steps[i].type == NMO_BEHAVIOR_TRACE_STEP_SHARED_SOURCE ||
+            steps[i].type == NMO_BEHAVIOR_TRACE_STEP_DIRECT_SOURCE) {
             has_shared_or_direct = true;
             break;
         }
@@ -177,12 +192,12 @@ TEST(param_chain, owner_id_populated)
     }
 
     nmo_array_t chain;
-    nmo_array_init(&chain, sizeof(nmo_param_chain_step_t), 16, NULL);
-    nmo_script_walker_trace_param_chain(ctx, session, fctx.found_direct,
+    nmo_array_init(&chain, sizeof(nmo_behavior_trace_step_t), 16, NULL);
+    nmo_behavior_analyze_trace_param_chain(ctx, session, fctx.found_direct,
                                         &chain, 32);
 
-    const nmo_param_chain_step_t *steps =
-        (const nmo_param_chain_step_t *)chain.data;
+    const nmo_behavior_trace_step_t *steps =
+        (const nmo_behavior_trace_step_t *)chain.data;
     bool any_owner = false;
     for (size_t i = 0; i < chain.count; ++i) {
         if (steps[i].owner_id != 0) { any_owner = true; break; }
@@ -209,8 +224,8 @@ TEST(param_chain, max_depth_respected)
     }
 
     nmo_array_t chain;
-    nmo_array_init(&chain, sizeof(nmo_param_chain_step_t), 16, NULL);
-    nmo_script_walker_trace_param_chain(ctx, session, fctx.found_direct,
+    nmo_array_init(&chain, sizeof(nmo_behavior_trace_step_t), 16, NULL);
+    nmo_behavior_analyze_trace_param_chain(ctx, session, fctx.found_direct,
                                         &chain, 1);
     ASSERT_TRUE(chain.count <= 1);
 

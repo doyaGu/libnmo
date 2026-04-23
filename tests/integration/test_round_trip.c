@@ -4,7 +4,7 @@
  */
 
 #include "nmo.h"
-#include "app/nmo_load.h"
+#include "document/nmo_document_load.h"
 #include <stdio.h>
 #include <string.h>
 

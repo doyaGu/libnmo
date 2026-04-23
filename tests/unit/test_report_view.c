@@ -3,10 +3,11 @@
 #include "nmo.h"
 
 #include "document/nmo_document_compare.h"
+#include "document/nmo_document.h"
 #include "object/nmo_object_summary.h"
 #include "object/nmo_object_diff.h"
+#include "object/nmo_object_query.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_session_query.h"
 #include "session/nmo_session_util.h"
 #include "type/nmo_reflection.h"
 
@@ -28,6 +29,7 @@ TEST(report_view, diff_view_preserves_paths_for_renamed_objects)
     nmo_session_t *session1 = NULL;
     nmo_context_t *ctx2 = NULL;
     nmo_session_t *session2 = NULL;
+    nmo_document_t *document2 = NULL;
     nmo_object_t *renamed = NULL;
     nmo_diff_view_t view;
     nmo_status_t status = NMO_OK;
@@ -41,8 +43,14 @@ TEST(report_view, diff_view_preserves_paths_for_renamed_objects)
     ASSERT_TRUE(nmo_session_open_file_with_context(
         NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
         &ctx2, &session2, errbuf, sizeof(errbuf)));
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session2, &document2));
+    ASSERT_NOT_NULL(document2);
 
-    status = nmo_session_query_find_object_by_name(session2, "InGameCam", &renamed);
+    status = nmo_object_query_resolve_one(
+        document2,
+        &(nmo_object_selector_t){.name = "InGameCam"},
+        &renamed,
+        NULL);
     ASSERT_EQ(NMO_OK, status);
     ASSERT_NOT_NULL(renamed);
     ASSERT_EQ(NMO_OK,
@@ -157,3 +165,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(report_view, diff_view_preserves_paths_for_renamed_objects);
     REGISTER_TEST(report_view, object_summary_view_preserves_resolved_reference_names);
 TEST_MAIN_END()
+

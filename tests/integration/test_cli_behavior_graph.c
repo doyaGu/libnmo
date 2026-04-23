@@ -7,7 +7,7 @@
 #include "write_semantic_probe.h"
 
 #include "../../tools/nmo_cli_common.h"
-#include "app/nmo_save.h"
+#include "document/nmo_document_save.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "object/nmo_class_ids.h"

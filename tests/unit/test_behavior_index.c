@@ -4,7 +4,7 @@
  */
 
 #include "../test_framework.h"
-#include "behavior/nmo_behavior_index.h"
+#include "behavior/nmo_behavior_analyze.h"
 #include "session/nmo_context.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
@@ -278,18 +278,18 @@ TEST(beh_idx, invalidated_after_create)
         return;
     }
 
-    /* Get initial index â€” triggers build */
+    /* Get initial index â€?triggers build */
     nmo_behavior_index_t *idx1 = nmo_session_get_behavior_index(session);
     ASSERT_NOT_NULL(idx1);
     size_t count1 = nmo_behavior_index_count(idx1);
 
-    /* Create an object â€” this should invalidate the index */
+    /* Create an object â€?this should invalidate the index */
     nmo_object_id_t new_id = 0;
     ASSERT_EQ(NMO_OK,
         nmo_session_create_object(session, NMO_CID_OBJECT, "test-obj",
             (nmo_guid_t){0, 0}, &new_id, NULL));
 
-    /* Get index again â€” should still be valid after lazy rebuild */
+    /* Get index again â€?should still be valid after lazy rebuild */
     nmo_behavior_index_t *idx2 = nmo_session_get_behavior_index(session);
     ASSERT_NOT_NULL(idx2);
     ASSERT_EQ(count1, nmo_behavior_index_count(idx2));

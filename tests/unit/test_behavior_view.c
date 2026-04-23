@@ -9,8 +9,10 @@
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
+#include "runtime/nmo_workspace.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -117,6 +119,34 @@ static nmo_object_id_t test_create_behavior_link(
     return link_id;
 }
 
+static nmo_status_t test_create_workspace_from_session(
+    nmo_session_t *session,
+    nmo_document_t **out_document,
+    nmo_workspace_t **out_workspace)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_status_t status = NMO_OK;
+
+    if (session == NULL || out_document == NULL || out_workspace == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_document = NULL;
+    *out_workspace = NULL;
+
+    status = nmo_session_borrow_document(session, out_document);
+    if (status != NMO_OK) {
+        return status;
+    }
+    ctx = nmo_session_get_context(session);
+    status = nmo_workspace_create(ctx, *out_document, out_workspace);
+    if (status != NMO_OK) {
+        nmo_document_destroy(*out_document);
+        *out_document = NULL;
+        return status;
+    }
+    return NMO_OK;
+}
+
 TEST(behavior_view, summarizes_behavior_without_exposing_state_layout) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -157,7 +187,12 @@ TEST(behavior_view, summarizes_behavior_without_exposing_state_layout) {
     idata->script.body.link_count = 4;
 
     nmo_behavior_view_t view;
-    ASSERT_EQ(NMO_OK, nmo_behavior_view_from_behavior(session, behavior_id, &view));
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, test_create_workspace_from_session(session, &document, &workspace));
+    ASSERT_NOT_NULL(document);
+    ASSERT_NOT_NULL(workspace);
+    ASSERT_EQ(NMO_OK, nmo_behavior_view_from_behavior(workspace, behavior_id, &view));
     ASSERT_EQ(behavior_id, view.behavior_id);
     ASSERT_EQ(NMO_CID_BEHAVIOR, view.class_id);
     ASSERT_STR_EQ("Graph", view.name);
@@ -180,6 +215,8 @@ TEST(behavior_view, summarizes_behavior_without_exposing_state_layout) {
     ASSERT_EQ(NMO_OK, view.interface_status);
     ASSERT_EQ(4u, view.interface_view.body.link_count);
 
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_session_destroy(session);
     nmo_context_release(ctx);
 }
@@ -231,8 +268,13 @@ TEST(behavior_view, summarizes_boundary_counts_without_exposing_graph_arrays) {
     ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session));
 
     nmo_behavior_boundary_view_t boundary;
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, test_create_workspace_from_session(session, &document, &workspace));
+    ASSERT_NOT_NULL(document);
+    ASSERT_NOT_NULL(workspace);
     ASSERT_EQ(NMO_OK,
-        nmo_behavior_view_describe_boundary(session, anchor, UINT32_MAX, &boundary));
+        nmo_behavior_view_describe_boundary(workspace, anchor, UINT32_MAX, &boundary));
     ASSERT_EQ(anchor, boundary.behavior_id);
     ASSERT_TRUE(boundary.internal_node_count >= 2u);
     ASSERT_EQ(0u, boundary.control_in_count);
@@ -242,6 +284,8 @@ TEST(behavior_view, summarizes_boundary_counts_without_exposing_graph_arrays) {
     ASSERT_EQ(0u, boundary.broken_links);
     ASSERT_EQ(0u, boundary.missing_nodes);
 
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_session_destroy(session);
     nmo_context_release(ctx);
 }

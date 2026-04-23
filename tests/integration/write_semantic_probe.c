@@ -1,6 +1,6 @@
 #include "write_semantic_probe.h"
 
-#include "app/nmo_load.h"
+#include "document/nmo_document_load.h"
 #include "test_framework.h"
 #include "type/nmo_type_query.h"
 

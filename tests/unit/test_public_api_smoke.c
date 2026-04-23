@@ -25,17 +25,13 @@
 #include "behavior/nmo_behavior_view.h"
 #include "behavior/nmo_behavior_edit.h"
 #include "behavior/nmo_behavior_execute.h"
+#include "behavior/nmo_script_edit.h"
+#include "behavior/nmo_script_edit_graph.h"
 #include "export/nmo_export_text.h"
 #include "export/nmo_export_json.h"
 #include "export/nmo_export_dot.h"
-#include "document/nmo_document_compare.h"
-#include "behavior/nmo_bb_registry.h"
-#include "behavior/nmo_behavior_graph.h"
-#include "behavior/nmo_behavior_index.h"
-#include "behavior/nmo_script_edit.h"
-#include "behavior/nmo_script_edit_graph.h"
-#include "behavior/nmo_script_view.h"
-#include "behavior/nmo_script_walker.h"
+#include "export/nmo_ansi.h"
+#include "export/nmo_hexdump.h"
 #include "extension/nmo_extension_registry.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_interface_chunk.h"
@@ -46,11 +42,11 @@
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_iter.h"
 #include "object/nmo_ref_graph.h"
+#include "object/nmo_object_refs.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_object_repository.h"
 #include "session/nmo_context.h"
 #include "session/nmo_reference_resolver.h"
-#include "session/nmo_session_edit.h"
 #include "session/nmo_session_pipeline.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_serializer.h"
@@ -139,7 +135,7 @@ TEST(public_api_smoke, context_create_release) {
 }
 
 TEST(public_api_smoke, preferred_edit_and_query_headers_are_directly_usable) {
-    nmo_session_edit_t *edit = NULL;
+    nmo_workspace_edit_t *edit = NULL;
     nmo_object_query_t query = {0};
     query.name_mode = NMO_OBJECT_QUERY_NAME_EXACT;
 
@@ -151,14 +147,20 @@ TEST(public_api_smoke, reorg_owner_headers_are_directly_usable) {
     ASSERT_TRUE(1);
 }
 
-TEST(public_api_smoke, report_result_headers_are_directly_usable) {
+TEST(public_api_smoke, report_owner_headers_are_directly_usable) {
     nmo_comparison_result_stats_t comparison_stats = {0};
     nmo_diff_result_stats_t diff_stats = {0};
     nmo_object_summary_stats_t summary_stats = {0};
+    nmo_comparison_view_t comparison_view = {0};
+    nmo_diff_view_t diff_view = {0};
+    nmo_object_summary_view_t summary_view = {0};
 
     ASSERT_FALSE(comparison_stats.match);
     ASSERT_EQ(0u, diff_stats.total_field_diffs);
     ASSERT_FALSE(summary_stats.has_reflection);
+    ASSERT_EQ(0u, comparison_view.diff_count);
+    ASSERT_EQ(0u, diff_view.changed_count);
+    ASSERT_EQ(0u, summary_view.field_count);
 }
 
 TEST(public_api_smoke, json_stream_is_not_part_of_public_api_surface) {
@@ -171,14 +173,52 @@ TEST(public_api_smoke, dsl_headers_are_not_part_of_public_api_surface) {
     ASSERT_FALSE(strstr(umbrella, "dsl/nmo_dsl.h") != NULL);
     free(umbrella);
 
-    char *summary = read_source_text("include/app/nmo_object_summary.h");
-    ASSERT_NOT_NULL(summary);
-    ASSERT_FALSE(strstr(summary, "nmo_object_summary_expr(") != NULL);
-    ASSERT_FALSE(strstr(summary, "nmo_object_summary_expr_with_config(") != NULL);
-    free(summary);
+    char *legacy_summary = read_source_text("include/app/nmo_object_summary.h");
+    ASSERT_NULL(legacy_summary);
+
+    char *legacy_edit = read_source_text("include/session/nmo_session_edit.h");
+    ASSERT_NULL(legacy_edit);
 
     char *dsl_json = read_source_text("include/app/nmo_dsl_json.h");
     ASSERT_NULL(dsl_json);
+}
+
+TEST(public_api_smoke, canonical_umbrella_and_headers_exclude_legacy_worldview) {
+    char *umbrella = read_source_text("include/nmo.h");
+    ASSERT_NOT_NULL(umbrella);
+    ASSERT_NULL(strstr(umbrella, "session/"));
+    ASSERT_NULL(strstr(umbrella, "app/"));
+    ASSERT_NULL(strstr(umbrella, "behavior/nmo_script_view.h"));
+    ASSERT_NULL(strstr(umbrella, "behavior/nmo_script_executor.h"));
+    free(umbrella);
+
+    char *document_header = read_source_text("include/document/nmo_document.h");
+    ASSERT_NOT_NULL(document_header);
+    ASSERT_NULL(strstr(document_header, "nmo_document_borrow_session"));
+    ASSERT_NULL(strstr(document_header, "nmo_document_session("));
+    ASSERT_NULL(strstr(document_header, "nmo_document_session_const("));
+    free(document_header);
+
+    char *workspace_header = read_source_text("include/runtime/nmo_workspace.h");
+    ASSERT_NOT_NULL(workspace_header);
+    ASSERT_NULL(strstr(workspace_header, "nmo_workspace_session("));
+    ASSERT_NULL(strstr(workspace_header, "nmo_workspace_session_const("));
+    ASSERT_NULL(strstr(workspace_header, "nmo_session_edit_flags_t"));
+    ASSERT_NULL(strstr(workspace_header, "nmo_session_apply_edit_flags("));
+    free(workspace_header);
+
+    char *session_bridge = read_source_text("include/session/nmo_session_bridge.h");
+    ASSERT_NOT_NULL(session_bridge);
+    ASSERT_TRUE(strstr(session_bridge, "nmo_session_borrow_document") != NULL);
+    ASSERT_TRUE(strstr(session_bridge, "nmo_session_from_document(") != NULL);
+    ASSERT_TRUE(strstr(session_bridge, "nmo_session_from_workspace(") != NULL);
+    free(session_bridge);
+
+    char *script_view = read_source_text("include/behavior/nmo_script_view.h");
+    ASSERT_NULL(script_view);
+
+    char *script_executor = read_source_text("include/behavior/nmo_script_executor.h");
+    ASSERT_NULL(script_executor);
 }
 
 TEST(public_api_smoke, public_api_tier_signals_are_declared) {
@@ -190,7 +230,7 @@ TEST(public_api_smoke, public_api_tier_signals_are_declared) {
     ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_CONTEXT_RUNTIME_VIEW_API_TIER);
 
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_MIXED_TIER, NMO_SESSION_PUBLIC_HEADER_KIND);
-    ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_SESSION_WORKFLOW_API_TIER);
+    ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_SESSION_WORKFLOW_API_TIER);
     ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_SESSION_EXECUTION_API_TIER);
     ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_SESSION_ACCELERATION_CACHE_API_TIER);
 
@@ -206,8 +246,9 @@ TEST(public_api_smoke, public_api_tier_signals_are_declared) {
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_SESSION_PIPELINE_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_SESSION_PIPELINE_API_TIER);
 
-    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_SESSION_EDIT_PUBLIC_HEADER_KIND);
-    ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_SESSION_EDIT_TRANSACTION_API_TIER);
+    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_WORKSPACE_PUBLIC_HEADER_KIND);
+    ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_WORKSPACE_LIFECYCLE_API_TIER);
+    ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_WORKSPACE_EDIT_API_TIER);
 
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_MIXED_TIER, NMO_OBJECT_REPOSITORY_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_OBJECT_REPOSITORY_IDENTITY_API_TIER);
@@ -252,14 +293,14 @@ TEST(public_api_smoke, public_api_tier_signals_are_declared) {
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_TYPE_VIEW_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_TYPE_VIEW_METADATA_API_TIER);
 
-    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_BB_REGISTRY_PUBLIC_HEADER_KIND);
-    ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_BB_REGISTRY_API_TIER);
+    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_BEHAVIOR_REGISTRY_PUBLIC_HEADER_KIND);
+    ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_BEHAVIOR_REGISTRY_API_TIER);
 
-    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_BEHAVIOR_GRAPH_PUBLIC_HEADER_KIND);
-    ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_BEHAVIOR_GRAPH_API_TIER);
+    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_BEHAVIOR_QUERY_PUBLIC_HEADER_KIND);
+    ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_BEHAVIOR_QUERY_API_TIER);
 
-    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_BEHAVIOR_INDEX_PUBLIC_HEADER_KIND);
-    ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_BEHAVIOR_INDEX_API_TIER);
+    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_BEHAVIOR_ANALYZE_PUBLIC_HEADER_KIND);
+    ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_BEHAVIOR_ANALYZE_API_TIER);
 
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_SCRIPT_EDIT_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_SCRIPT_EDIT_TRANSACTION_API_TIER);
@@ -267,14 +308,14 @@ TEST(public_api_smoke, public_api_tier_signals_are_declared) {
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_SCRIPT_EDIT_GRAPH_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_SCRIPT_EDIT_GRAPH_API_TIER);
 
-    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_SCRIPT_WALKER_PUBLIC_HEADER_KIND);
-    ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_SCRIPT_WALKER_API_TIER);
-
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_BEHAVIOR_VIEW_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_BEHAVIOR_VIEW_READ_API_TIER);
 
-    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_SCRIPT_VIEW_PUBLIC_HEADER_KIND);
-    ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_SCRIPT_VIEW_READ_API_TIER);
+    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_BEHAVIOR_EDIT_PUBLIC_HEADER_KIND);
+    ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_BEHAVIOR_EDIT_API_TIER);
+
+    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_BEHAVIOR_EXECUTE_PUBLIC_HEADER_KIND);
+    ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_BEHAVIOR_EXECUTE_API_TIER);
 
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_CHUNK_API_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_PUBLIC_PROTOCOL, NMO_CHUNK_API_COMPAT_API_TIER);
@@ -298,11 +339,23 @@ TEST(public_api_smoke, public_api_tier_signals_are_declared) {
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_SAVE_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_SAVE_WORKFLOW_API_TIER);
 
+    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_STATS_PUBLIC_HEADER_KIND);
+    ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_STATS_API_TIER);
+
+    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_CHUNK_INDEX_PUBLIC_HEADER_KIND);
+    ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_CHUNK_INDEX_API_TIER);
+
+    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_CHUNK_INSPECT_PUBLIC_HEADER_KIND);
+    ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_CHUNK_INSPECT_API_TIER);
+
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_OBJECT_SUMMARY_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_OBJECT_SUMMARY_RENDERING_API_TIER);
 
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_OBJECT_DIFF_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_OBJECT_DIFF_API_TIER);
+
+    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_OBJECT_HIERARCHY_PUBLIC_HEADER_KIND);
+    ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_OBJECT_HIERARCHY_API_TIER);
 
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_COMPARISON_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_COMPARISON_API_TIER);
@@ -310,8 +363,14 @@ TEST(public_api_smoke, public_api_tier_signals_are_declared) {
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_OBJECT_IMPORT_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_OBJECT_IMPORT_API_TIER);
 
-    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_REPORT_RESULT_PUBLIC_HEADER_KIND);
-    ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_REPORT_RESULT_API_TIER);
+    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_EXPORT_DOT_PUBLIC_HEADER_KIND);
+    ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_EXPORT_DOT_API_TIER);
+
+    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_ANSI_PUBLIC_HEADER_KIND);
+    ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_ANSI_API_TIER);
+
+    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_HEXDUMP_PUBLIC_HEADER_KIND);
+    ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_HEXDUMP_API_TIER);
 
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_OBJECT_ITER_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_OBJECT_ITER_READ_API_TIER);
@@ -325,8 +384,9 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(public_api_smoke, context_create_release);
     REGISTER_TEST(public_api_smoke, preferred_edit_and_query_headers_are_directly_usable);
     REGISTER_TEST(public_api_smoke, reorg_owner_headers_are_directly_usable);
-    REGISTER_TEST(public_api_smoke, report_result_headers_are_directly_usable);
+    REGISTER_TEST(public_api_smoke, report_owner_headers_are_directly_usable);
     REGISTER_TEST(public_api_smoke, json_stream_is_not_part_of_public_api_surface);
     REGISTER_TEST(public_api_smoke, dsl_headers_are_not_part_of_public_api_surface);
+    REGISTER_TEST(public_api_smoke, canonical_umbrella_and_headers_exclude_legacy_worldview);
     REGISTER_TEST(public_api_smoke, public_api_tier_signals_are_declared);
 TEST_MAIN_END()

@@ -4,8 +4,8 @@
  */
 
 #include "nmo.h"
-#include "app/nmo_load.h"
-#include "app/nmo_comparison.h"
+#include "document/nmo_document_load.h"
+#include "document/nmo_document_compare.h"
 #include "test_framework.h"  // For NMO_TEST_DATA_FILE macro
 #include <stdio.h>
 #include <string.h>

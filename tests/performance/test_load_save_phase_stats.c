@@ -5,9 +5,9 @@
 
 #include "test_framework.h"
 #include "nmo.h"
-#include "app/nmo_load.h"
-#include "app/nmo_save.h"
-#include "app/nmo_perf_stats.h"
+#include "document/nmo_document_load.h"
+#include "document/nmo_document_save.h"
+#include "document/nmo_document_perf_stats.h"
 
 #include <stdbool.h>
 #include <stdio.h>

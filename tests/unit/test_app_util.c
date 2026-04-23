@@ -6,7 +6,7 @@
 #include "test_framework.h"
 #include "nmo.h"
 
-#include "app/nmo_json_util.h"
+#include "../../src/export/export_json_util_internal.h"
 #include "core/nmo_hex.h"
 #include "core/nmo_path.h"
 #include "session/nmo_session_util.h"

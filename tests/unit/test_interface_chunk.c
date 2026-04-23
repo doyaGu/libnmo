@@ -20,7 +20,7 @@
 #include "object/nmo_serialize_context.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_string.h"
-#include "app/nmo_save.h"
+#include "document/nmo_document_save.h"
 
 #include <string.h>
 

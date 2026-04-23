@@ -1,12 +1,14 @@
 #include "test_framework.h"
 
 #include "../../tools/nmo_cli_common.h"
-#include "app/nmo_load.h"
+#include "behavior/nmo_behavior_query.h"
+#include "document/nmo_document_load.h"
 #include "behavior/nmo_behavior_view.h"
-#include "behavior/nmo_script_view.h"
 #include "format/nmo_interface_view.h"
+#include "runtime/nmo_workspace.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 #include "yyjson.h"
 
 #include <stdio.h>
@@ -207,12 +209,16 @@ static void load_root_behavior_counts(const char *path,
     ASSERT_NOT_NULL(session);
     ASSERT_EQ(NMO_OK, nmo_load_file(session, path, NULL));
 
-    nmo_script_view_t script = {0};
-    ASSERT_EQ(NMO_OK, nmo_script_view_at(session, 0u, &script));
+    nmo_behavior_script_view_t script = {0};
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    ASSERT_EQ(NMO_OK, nmo_behavior_query_script_at(document, 0u, &script));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
 
     nmo_behavior_view_t behavior = {0};
     ASSERT_EQ(NMO_OK,
-              nmo_behavior_view_from_behavior(session, script.script_id, &behavior));
+              nmo_behavior_view_from_behavior(workspace, script.script_id, &behavior));
 
     if (out_behavior_id != NULL) {
         *out_behavior_id = script.script_id;
@@ -224,6 +230,8 @@ static void load_root_behavior_counts(const char *path,
         *out_outputs = behavior.output_count;
     }
 
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_session_destroy(session);
     nmo_context_release(ctx);
 }

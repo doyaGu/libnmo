@@ -1,6 +1,6 @@
 #include "../test_framework.h"
 
-#include "behavior/nmo_behavior_index.h"
+#include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_script_edit_graph.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"

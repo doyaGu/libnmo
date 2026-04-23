@@ -3,7 +3,7 @@
  * @brief Integration test for mmap load strategy on real files
  */
 
-#include "app/nmo_load.h"
+#include "document/nmo_document_load.h"
 #include "session/nmo_session.h"
 #include "session/nmo_context.h"
 #include "format/nmo_header.h"
@@ -108,10 +108,10 @@ static int test_mmap_load_files(void) {
 
         int result = nmo_load_file(session, filename, &opts);
         if (result == NMO_OK) {
-            printf("�?SUCCESS\n");
+            printf("锟?SUCCESS\n");
             files_loaded++;
         } else {
-            printf("�?FAILED (error %d)\n", result);
+            printf("锟?FAILED (error %d)\n", result);
         }
 
         nmo_session_destroy(session);

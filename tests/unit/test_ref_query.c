@@ -1,11 +1,13 @@
 #include "test_framework.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
+#include "document/nmo_document.h"
 #include "object/nmo_object_refs.h"
-#include "object/nmo_ref_query.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/nmo_object_repository.h"
+#include "object/nmo_ref_graph.h"
 #include "format/nmo_object.h"
 #include "core/nmo_array.h"
 
@@ -46,19 +48,19 @@ typedef struct ref_edge_capture {
     uint32_t first_kind;
 } ref_edge_capture_t;
 
-static bool capture_ref_edge(
-    const nmo_ref_query_edge_t *edge,
+static bool capture_object_ref_edge(
+    const nmo_object_refs_edge_t *edge,
     void *user_data)
 {
     ref_edge_capture_t *capture = (ref_edge_capture_t *)user_data;
-    if (capture == NULL || edge == NULL) {
+    if (capture == NULL || edge == NULL || edge->edge == NULL) {
         return false;
     }
 
     if (capture->count == 0) {
-        capture->first_from = edge->from;
-        capture->first_to = edge->to;
-        capture->first_kind = edge->kind;
+        capture->first_from = edge->edge->from;
+        capture->first_to = edge->edge->to;
+        capture->first_kind = (uint32_t)edge->edge->kind;
     }
     capture->count++;
     return true;
@@ -80,7 +82,9 @@ TEST(ref_query, counts_session_references_without_graph_handles) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
 
-    nmo_session_t *session = nmo_session_create(ctx);
+    nmo_document_t *document = nmo_document_create(ctx);
+    ASSERT_NOT_NULL(document);
+    nmo_session_t *session = nmo_session_from_document(document);
     ASSERT_NOT_NULL(session);
 
     nmo_object_id_t member_id = 0;
@@ -96,30 +100,24 @@ TEST(ref_query, counts_session_references_without_graph_handles) {
     set_group_members(session, group_id, &member_id, 1);
     nmo_session_invalidate_ref_graph(session);
 
-    size_t total_edges = 0;
-    ASSERT_EQ(NMO_OK, nmo_ref_query_count_total_edges(session, &total_edges));
-    ASSERT_EQ(1u, total_edges);
+    nmo_object_refs_result_t result = {0};
+    ASSERT_EQ(NMO_OK, nmo_object_refs_iterate(
+        document, group_id, NMO_OBJECT_REFS_BOTH, NULL, NULL, &result));
+    ASSERT_EQ(1u, result.outgoing);
+    ASSERT_EQ(0u, result.incoming);
 
-    size_t outgoing = 0;
-    ASSERT_EQ(NMO_OK, nmo_ref_query_count_object_edges(
-        session, group_id, NMO_REF_QUERY_OUTGOING, &outgoing));
-    ASSERT_EQ(1u, outgoing);
+    ASSERT_EQ(NMO_OK, nmo_object_refs_iterate(
+        document, member_id, NMO_OBJECT_REFS_BOTH, NULL, NULL, &result));
+    ASSERT_EQ(0u, result.outgoing);
+    ASSERT_EQ(1u, result.incoming);
 
-    size_t incoming = 0;
-    ASSERT_EQ(NMO_OK, nmo_ref_query_count_object_edges(
-        session, member_id, NMO_REF_QUERY_INCOMING, &incoming));
-    ASSERT_EQ(1u, incoming);
+    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(session);
+    ASSERT_NOT_NULL(graph);
+    nmo_ref_graph_stats_t stats = {0};
+    ASSERT_EQ(NMO_OK, nmo_ref_graph_get_stats(graph, &stats));
+    ASSERT_EQ(1u, stats.total_edges);
 
-    bool has_edges = false;
-    ASSERT_EQ(NMO_OK, nmo_ref_query_has_object_edges(
-        session, member_id, NMO_REF_QUERY_OUTGOING, &has_edges));
-    ASSERT_FALSE(has_edges);
-
-    size_t broken_edges = 99;
-    ASSERT_EQ(NMO_OK, nmo_ref_query_count_broken_edges(session, &broken_edges));
-    ASSERT_EQ(0u, broken_edges);
-
-    nmo_session_destroy(session);
+    nmo_document_destroy(document);
     nmo_context_release(ctx);
 }
 
@@ -127,7 +125,9 @@ TEST(ref_query, reports_broken_reference_count) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
 
-    nmo_session_t *session = nmo_session_create(ctx);
+    nmo_document_t *document = nmo_document_create(ctx);
+    ASSERT_NOT_NULL(document);
+    nmo_session_t *session = nmo_session_from_document(document);
     ASSERT_NOT_NULL(session);
 
     nmo_object_id_t group_id = 0;
@@ -139,16 +139,19 @@ TEST(ref_query, reports_broken_reference_count) {
     set_group_members(session, group_id, &missing_member, 1);
     nmo_session_invalidate_ref_graph(session);
 
-    size_t outgoing = 0;
-    ASSERT_EQ(NMO_OK, nmo_ref_query_count_object_edges(
-        session, group_id, NMO_REF_QUERY_OUTGOING, &outgoing));
-    ASSERT_EQ(1u, outgoing);
+    nmo_object_refs_result_t result = {0};
+    ASSERT_EQ(NMO_OK, nmo_object_refs_iterate(
+        document, group_id, NMO_OBJECT_REFS_OUTGOING, NULL, NULL, &result));
+    ASSERT_EQ(1u, result.outgoing);
 
+    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(session);
+    ASSERT_NOT_NULL(graph);
+    nmo_ref_edge_t *broken = NULL;
     size_t broken_edges = 0;
-    ASSERT_EQ(NMO_OK, nmo_ref_query_count_broken_edges(session, &broken_edges));
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_ref_graph_validate(graph, &broken, &broken_edges));
     ASSERT_EQ(1u, broken_edges);
 
-    nmo_session_destroy(session);
+    nmo_document_destroy(document);
     nmo_context_release(ctx);
 }
 
@@ -156,56 +159,9 @@ TEST(ref_query, visits_edges_without_exposing_graph_handles) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
 
-    nmo_session_t *session = nmo_session_create(ctx);
-    ASSERT_NOT_NULL(session);
-
-    nmo_object_id_t member_id = 0;
-    ASSERT_EQ(NMO_OK,
-        nmo_session_create_object(session, NMO_CID_OBJECT, "member",
-            (nmo_guid_t){0, 0}, &member_id, NULL));
-
-    nmo_object_id_t group_id = 0;
-    ASSERT_EQ(NMO_OK,
-        nmo_session_create_object(session, NMO_CID_GROUP, "group",
-            (nmo_guid_t){0, 0}, &group_id, NULL));
-
-    set_group_members(session, group_id, &member_id, 1);
-    nmo_session_invalidate_ref_graph(session);
-
-    ref_edge_capture_t all_capture = {0};
-    size_t total_count = 0;
-    ASSERT_EQ(NMO_OK, nmo_ref_query_visit_all_edges(
-        session, capture_ref_edge, &all_capture, &total_count));
-    ASSERT_EQ(1u, total_count);
-    ASSERT_EQ(1u, all_capture.count);
-    ASSERT_EQ(group_id, all_capture.first_from);
-    ASSERT_EQ(member_id, all_capture.first_to);
-
-    ref_edge_capture_t outgoing_capture = {0};
-    size_t outgoing_count = 0;
-    ASSERT_EQ(NMO_OK, nmo_ref_query_visit_object_edges(
-        session,
-        group_id,
-        NMO_REF_QUERY_OUTGOING,
-        capture_ref_edge,
-        &outgoing_capture,
-        &outgoing_count));
-    ASSERT_EQ(1u, outgoing_count);
-    ASSERT_EQ(1u, outgoing_capture.count);
-    ASSERT_EQ(group_id, outgoing_capture.first_from);
-    ASSERT_EQ(member_id, outgoing_capture.first_to);
-
-    nmo_session_destroy(session);
-    nmo_context_release(ctx);
-}
-
-TEST(ref_query, stable_owner_iterates_object_edges) {
-    nmo_context_t *ctx = nmo_context_create(NULL);
-    ASSERT_NOT_NULL(ctx);
-
     nmo_document_t *document = nmo_document_create(ctx);
     ASSERT_NOT_NULL(document);
-    nmo_session_t *session = nmo_document_session(document);
+    nmo_session_t *session = nmo_session_from_document(document);
     ASSERT_NOT_NULL(session);
 
     nmo_object_id_t member_id = 0;
@@ -220,6 +176,21 @@ TEST(ref_query, stable_owner_iterates_object_edges) {
 
     set_group_members(session, group_id, &member_id, 1);
     nmo_session_invalidate_ref_graph(session);
+
+    ref_edge_capture_t capture = {0};
+    nmo_object_refs_result_t result = {0};
+    ASSERT_EQ(NMO_OK, nmo_object_refs_iterate(
+        document,
+        group_id,
+        NMO_OBJECT_REFS_BOTH,
+        capture_object_ref_edge,
+        &capture,
+        &result));
+    ASSERT_EQ(1u, result.outgoing);
+    ASSERT_EQ(0u, result.incoming);
+    ASSERT_EQ(1u, capture.count);
+    ASSERT_EQ(group_id, capture.first_from);
+    ASSERT_EQ(member_id, capture.first_to);
 
     size_t count = 0;
     ASSERT_EQ(NMO_OK, nmo_object_refs_iterate(
@@ -239,5 +210,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(ref_query, counts_session_references_without_graph_handles);
     REGISTER_TEST(ref_query, reports_broken_reference_count);
     REGISTER_TEST(ref_query, visits_edges_without_exposing_graph_handles);
-    REGISTER_TEST(ref_query, stable_owner_iterates_object_edges);
 TEST_MAIN_END()
+

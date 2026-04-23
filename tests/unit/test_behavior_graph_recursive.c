@@ -4,11 +4,12 @@
  */
 
 #include "../test_framework.h"
-#include "behavior/nmo_behavior_graph.h"
+#include "behavior/nmo_behavior_analyze.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 #include "session/nmo_session_util.h"
-#include "behavior/nmo_script_walker.h"
+#include "behavior/nmo_behavior_analyze.h"
 #include "core/nmo_array.h"
 
 #include <stdint.h>
@@ -23,17 +24,31 @@ static bool open_test_file(const char *path,
                                               errbuf, sizeof(errbuf));
 }
 
+static nmo_status_t collect_scripts_from_session(
+    nmo_session_t *session,
+    nmo_array_t *scripts)
+{
+    nmo_document_t *document = NULL;
+    nmo_status_t st = nmo_session_borrow_document(session, &document);
+    if (st != NMO_OK) {
+        return st;
+    }
+    st = nmo_behavior_query_collect_scripts(document, scripts);
+    nmo_document_destroy(document);
+    return st;
+}
+
 /* Find a script that has graph-type sub-behaviors (depth>1 produces more nodes) */
 static nmo_object_id_t find_nested_graph_script(nmo_context_t *ctx,
-                                                 nmo_session_t *session)
+                                                nmo_session_t *session)
 {
     nmo_array_t scripts;
-    nmo_array_init(&scripts, sizeof(nmo_script_entry_t), 32, NULL);
-    nmo_script_walker_find_scripts(ctx, session, &scripts);
+    nmo_array_init(&scripts, sizeof(nmo_behavior_script_view_t), 32, NULL);
+    collect_scripts_from_session(session, &scripts);
 
     nmo_object_id_t result = 0;
-    const nmo_script_entry_t *entries =
-        (const nmo_script_entry_t *)scripts.data;
+    const nmo_behavior_script_view_t *entries =
+        (const nmo_behavior_script_view_t *)scripts.data;
 
     for (size_t i = 0; i < scripts.count && result == 0; ++i) {
         nmo_behavior_graph_t g0 = {0}, g1 = {0};
@@ -59,11 +74,11 @@ TEST(graph_rec, depth0_root_only)
         return;
 
     nmo_array_t scripts;
-    nmo_array_init(&scripts, sizeof(nmo_script_entry_t), 32, NULL);
-    nmo_script_walker_find_scripts(ctx, session, &scripts);
+    nmo_array_init(&scripts, sizeof(nmo_behavior_script_view_t), 32, NULL);
+    collect_scripts_from_session(session, &scripts);
     ASSERT_TRUE(scripts.count > 0);
 
-    const nmo_script_entry_t *e = (const nmo_script_entry_t *)scripts.data;
+    const nmo_behavior_script_view_t *e = (const nmo_behavior_script_view_t *)scripts.data;
     nmo_behavior_graph_t g = {0};
     ASSERT_TRUE(nmo_behavior_graph_build(ctx, session, e[0].script_id, 0, &g));
 
@@ -140,11 +155,11 @@ TEST(graph_rec, unlimited_depth_no_crash)
         return;
 
     nmo_array_t scripts;
-    nmo_array_init(&scripts, sizeof(nmo_script_entry_t), 32, NULL);
-    nmo_script_walker_find_scripts(ctx, session, &scripts);
+    nmo_array_init(&scripts, sizeof(nmo_behavior_script_view_t), 32, NULL);
+    collect_scripts_from_session(session, &scripts);
 
-    const nmo_script_entry_t *entries =
-        (const nmo_script_entry_t *)scripts.data;
+    const nmo_behavior_script_view_t *entries =
+        (const nmo_behavior_script_view_t *)scripts.data;
 
     for (size_t i = 0; i < scripts.count; ++i) {
         nmo_behavior_graph_t g = {0};

@@ -5,8 +5,9 @@
 
 #include "../test_framework.h"
 
-#include "app/nmo_load.h"
-#include "app/nmo_save.h"
+#include "document/nmo_document_load.h"
+#include "document/nmo_document.h"
+#include "document/nmo_document_save.h"
 #include "io/nmo_io_file.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
@@ -14,7 +15,8 @@
 #include "session/nmo_deserializer.h"
 #include "session/nmo_serializer.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_edit.h"
+#include "session/nmo_session_bridge.h"
+#include "runtime/nmo_workspace.h"
 
 #include <stdio.h>
 
@@ -111,10 +113,16 @@ TEST(load_options, metadata_profile_stops_after_header_and_rejects_mutation)
                                         &created_id,
                                         NULL));
 
-    nmo_session_edit_t *edit = NULL;
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
     ASSERT_EQ(NMO_ERR_INVALID_STATE,
-              nmo_session_edit_begin(session, "blocked", &edit));
+              nmo_workspace_edit_begin(workspace, "blocked", &edit));
     ASSERT_NULL(edit);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
 
     destroy_ctx_session(ctx, session);
 }
@@ -338,3 +346,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, header_only_profile_stops_after_header);
     REGISTER_TEST(load_options, full_profile_is_default);
 TEST_MAIN_END()
+

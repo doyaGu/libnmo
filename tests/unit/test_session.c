@@ -9,7 +9,7 @@
 #include "runtime/nmo_workspace.h"
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_query.h"
-#include "session/nmo_session_query.h"
+#include "object/nmo_object_query.h"
 
 static nmo_object_t *create_session_object(
     nmo_session_t *session,
@@ -45,15 +45,19 @@ static size_t count_session_objects_by_class(
     nmo_session_t *session,
     nmo_class_id_t class_id)
 {
+    nmo_document_t *document = NULL;
     nmo_object_query_t query = {
         .class_id = class_id,
         .include_derived_classes = false
     };
-    nmo_object_query_result_t result = {0};
-    if (nmo_session_query_objects(session, &query, NULL, NULL, &result) != NMO_OK) {
+    size_t count = 0;
+    if (nmo_session_borrow_document(session, &document) != NMO_OK) {
         return (size_t)-1;
     }
-    return result.matched;
+    if (nmo_object_query_count(document, &query, &count) != NMO_OK) {
+        return (size_t)-1;
+    }
+    return count;
 }
 
 /**
@@ -112,8 +116,10 @@ TEST(session, index_incremental_updates) {
         .name_mode = NMO_OBJECT_QUERY_NAME_EXACT,
         .name_case_insensitive = false
     };
+    nmo_document_t *document = NULL;
     nmo_object_t *found = NULL;
-    ASSERT_EQ(NMO_OK, nmo_session_query_first(session, &gamma_query, &found, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    ASSERT_EQ(NMO_OK, nmo_object_query_find_first(document, &gamma_query, &found, NULL));
     ASSERT_NOT_NULL(found);
     ASSERT_EQ(12, found->id);
 
@@ -148,7 +154,7 @@ TEST(session, object_index_stats) {
     nmo_context_release(ctx);
 }
 
-TEST(session, stable_query_facade) {
+TEST(session, borrowed_document_query_facade) {
     nmo_context_desc_t desc = {0};
     nmo_context_t *ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
@@ -159,12 +165,19 @@ TEST(session, stable_query_facade) {
     ASSERT_NOT_NULL(create_session_object(session, 21, 100, "Alpha"));
     ASSERT_NOT_NULL(create_session_object(session, 22, 100, "Beta"));
 
+    nmo_document_t *document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+
     size_t count = 0;
-    ASSERT_EQ(NMO_OK, nmo_session_query_count_objects(session, &count));
+    ASSERT_EQ(NMO_OK, nmo_object_query_count(document, NULL, &count));
     ASSERT_EQ(2u, count);
 
+    nmo_object_query_t query = {
+        .name = "Beta",
+        .name_mode = NMO_OBJECT_QUERY_NAME_EXACT
+    };
     nmo_object_t *found = NULL;
-    ASSERT_EQ(NMO_OK, nmo_session_query_find_object_by_name(session, "Beta", &found));
+    ASSERT_EQ(NMO_OK, nmo_object_query_find_first(document, &query, &found, NULL));
     ASSERT_NOT_NULL(found);
     ASSERT_EQ(22, found->id);
 
@@ -183,7 +196,7 @@ TEST(session, stable_object_owner_facade) {
     ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
     ASSERT_NOT_NULL(workspace);
 
-    nmo_session_t *session = nmo_workspace_session(workspace);
+    nmo_session_t *session = nmo_session_from_workspace(workspace);
     ASSERT_NOT_NULL(session);
 
     ASSERT_NOT_NULL(create_session_object(session, 31, 100, "Gamma"));
@@ -211,6 +224,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(session, get_context);
     REGISTER_TEST(session, index_incremental_updates);
     REGISTER_TEST(session, object_index_stats);
-    REGISTER_TEST(session, stable_query_facade);
+    REGISTER_TEST(session, borrowed_document_query_facade);
     REGISTER_TEST(session, stable_object_owner_facade);
 TEST_MAIN_END()
+

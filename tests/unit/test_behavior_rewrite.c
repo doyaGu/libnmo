@@ -5,7 +5,7 @@
 
 #include "../test_framework.h"
 
-#include "behavior/nmo_behavior_rewrite.h"
+#include "behavior/nmo_behavior_edit.h"
 #include "core/nmo_array.h"
 #include "core/nmo_guid.h"
 #include "format/nmo_object.h"
@@ -20,6 +20,7 @@
 #include "session/nmo_context.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 #include "session/nmo_session_util.h"
 
 #include <stdint.h>
@@ -76,6 +77,75 @@ static nmo_object_id_t test_create_object(nmo_session_t *session,
 static void test_append_id(nmo_array_t *array, nmo_object_id_t id)
 {
     ASSERT_EQ(NMO_OK, nmo_array_append(array, &id));
+}
+
+static nmo_status_t test_behavior_fold_analyze(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const nmo_behavior_fold_desc_t *desc,
+    nmo_behavior_fold_report_t *report)
+{
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    nmo_status_t rc = nmo_session_borrow_document(session, &document);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = nmo_workspace_create(ctx, document, &workspace);
+    if (rc == NMO_OK) {
+        rc = nmo_behavior_edit_fold_analyze(workspace, desc, report);
+    }
+    if (workspace) {
+        nmo_workspace_destroy(workspace);
+    }
+    nmo_document_destroy(document);
+    return rc;
+}
+
+static nmo_status_t test_behavior_fold_apply(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const nmo_behavior_fold_desc_t *desc,
+    nmo_behavior_fold_report_t *report)
+{
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    nmo_status_t rc = nmo_session_borrow_document(session, &document);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = nmo_workspace_create(ctx, document, &workspace);
+    if (rc == NMO_OK) {
+        rc = nmo_behavior_edit_fold_apply(workspace, desc, report);
+    }
+    if (workspace) {
+        nmo_workspace_destroy(workspace);
+    }
+    nmo_document_destroy(document);
+    return rc;
+}
+
+static nmo_status_t test_behavior_fold(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const nmo_behavior_fold_desc_t *desc,
+    nmo_behavior_fold_report_t *report)
+{
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    nmo_status_t rc = nmo_session_borrow_document(session, &document);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = nmo_workspace_create(ctx, document, &workspace);
+    if (rc == NMO_OK) {
+        rc = nmo_behavior_edit_fold(workspace, desc, report);
+    }
+    if (workspace) {
+        nmo_workspace_destroy(workspace);
+    }
+    nmo_document_destroy(document);
+    return rc;
 }
 
 static nmo_object_id_t test_create_behavior_link(nmo_session_t *session,
@@ -414,7 +484,7 @@ TEST(beh_rewrite, fold_analyze_reports_selected_boundary_plan)
     };
     nmo_behavior_fold_report_t report = {0};
 
-    nmo_status_t rc = nmo_behavior_fold_analyze(ctx, session, &desc,
+    nmo_status_t rc = test_behavior_fold_analyze(ctx, session, &desc,
                                                 &report);
     ASSERT_EQ(NMO_OK, rc);
     ASSERT_TRUE(report.analysis_only);
@@ -434,7 +504,7 @@ TEST(beh_rewrite, fold_analyze_reports_selected_boundary_plan)
     ASSERT_TRUE(report.boundary.control_in_count > 0);
     ASSERT_TRUE(report.boundary.control_out_count > 0);
 
-    nmo_behavior_fold_report_free(&report);
+    nmo_behavior_edit_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -464,7 +534,7 @@ TEST(beh_rewrite, fold_apply_retargets_control_out_to_anchor_output)
     };
     nmo_behavior_fold_report_t report = {0};
 
-    nmo_status_t rc = nmo_behavior_fold_apply(ctx, session, &desc,
+    nmo_status_t rc = test_behavior_fold_apply(ctx, session, &desc,
                                               &report);
     ASSERT_EQ(NMO_OK, rc);
     ASSERT_EQ(1u, report.boundary.control_out_count);
@@ -475,7 +545,7 @@ TEST(beh_rewrite, fold_apply_retargets_control_out_to_anchor_output)
     ASSERT_EQ(anchor_output, link->in_io_id);
     ASSERT_NULL(test_find_object(session, child));
 
-    nmo_behavior_fold_report_free(&report);
+    nmo_behavior_edit_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -505,7 +575,7 @@ TEST(beh_rewrite, fold_apply_retargets_parameter_out_to_anchor_output_parameter)
     };
     nmo_behavior_fold_report_t report = {0};
 
-    nmo_status_t rc = nmo_behavior_fold_apply(ctx, session, &desc,
+    nmo_status_t rc = test_behavior_fold_apply(ctx, session, &desc,
                                               &report);
     ASSERT_EQ(NMO_OK, rc);
     ASSERT_EQ(1u, report.boundary.parameter_out_count);
@@ -517,7 +587,7 @@ TEST(beh_rewrite, fold_apply_retargets_parameter_out_to_anchor_output_parameter)
     ASSERT_EQ(anchor_output_parameter, external_in->source_id);
     ASSERT_NULL(test_find_object(session, child));
 
-    nmo_behavior_fold_report_free(&report);
+    nmo_behavior_edit_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -547,7 +617,7 @@ TEST(beh_rewrite, fold_apply_retargets_parameter_in_to_anchor_input_parameter)
     };
     nmo_behavior_fold_report_t report = {0};
 
-    nmo_status_t rc = nmo_behavior_fold_apply(ctx, session, &desc,
+    nmo_status_t rc = test_behavior_fold_apply(ctx, session, &desc,
                                               &report);
     ASSERT_EQ(NMO_OK, rc);
     ASSERT_EQ(1u, report.boundary.parameter_in_count);
@@ -559,7 +629,7 @@ TEST(beh_rewrite, fold_apply_retargets_parameter_in_to_anchor_input_parameter)
     ASSERT_EQ(external_output_parameter, anchor_in->source_id);
     ASSERT_NULL(test_find_object(session, child));
 
-    nmo_behavior_fold_report_free(&report);
+    nmo_behavior_edit_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -598,7 +668,7 @@ TEST(beh_rewrite, fold_analyze_blocks_write_for_missing_control_output_target)
     };
     nmo_behavior_fold_report_t report = {0};
 
-    nmo_status_t rc = nmo_behavior_fold_analyze(ctx, session, &desc,
+    nmo_status_t rc = test_behavior_fold_analyze(ctx, session, &desc,
                                                 &report);
     ASSERT_EQ(NMO_OK, rc);
     ASSERT_FALSE(report.rejected);
@@ -606,7 +676,7 @@ TEST(beh_rewrite, fold_analyze_blocks_write_for_missing_control_output_target)
     ASSERT_TRUE(report.analysis_only);
     ASSERT_TRUE(report.write_blocker_count > 0u);
 
-    nmo_behavior_fold_report_free(&report);
+    nmo_behavior_edit_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -659,7 +729,7 @@ TEST(beh_rewrite, fold_write_rejects_until_supported)
     };
     nmo_behavior_fold_report_t report = {0};
 
-    nmo_status_t rc = nmo_behavior_fold(ctx, session, &desc, &report);
+    nmo_status_t rc = test_behavior_fold(ctx, session, &desc, &report);
     ASSERT_EQ(NMO_ERR_INVALID_STATE, rc);
     ASSERT_FALSE(report.can_write);
     ASSERT_EQ(1u, report.write_blocker_count);
@@ -667,7 +737,7 @@ TEST(beh_rewrite, fold_write_rejects_until_supported)
     ASSERT_STR_EQ("analysis_only", report.diagnostic_code);
     ASSERT_NOT_NULL(report.diagnostic_message);
 
-    nmo_behavior_fold_report_free(&report);
+    nmo_behavior_edit_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -720,7 +790,7 @@ TEST(beh_rewrite, fold_apply_rejects_until_supported)
     };
     nmo_behavior_fold_report_t report = {0};
 
-    nmo_status_t rc = nmo_behavior_fold_apply(ctx, session, &desc,
+    nmo_status_t rc = test_behavior_fold_apply(ctx, session, &desc,
                                               &report);
     ASSERT_EQ(NMO_ERR_INVALID_STATE, rc);
     ASSERT_FALSE(report.can_write);
@@ -729,7 +799,7 @@ TEST(beh_rewrite, fold_apply_rejects_until_supported)
     ASSERT_STR_EQ("analysis_only", report.diagnostic_code);
     ASSERT_NOT_NULL(report.diagnostic_message);
 
-    nmo_behavior_fold_report_free(&report);
+    nmo_behavior_edit_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -756,13 +826,13 @@ TEST(beh_rewrite, fold_apply_requires_preserve_boundary)
     };
     nmo_behavior_fold_report_t report = {0};
 
-    nmo_status_t rc = nmo_behavior_fold_apply(ctx, session, &desc,
+    nmo_status_t rc = test_behavior_fold_apply(ctx, session, &desc,
                                               &report);
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, rc);
     ASSERT_TRUE(report.rejected);
     ASSERT_STR_EQ("preserve_boundary_required", report.diagnostic_code);
 
-    nmo_behavior_fold_report_free(&report);
+    nmo_behavior_edit_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -789,7 +859,7 @@ TEST(beh_rewrite, fold_analyze_uses_explicit_anchor)
     };
     nmo_behavior_fold_report_t report = {0};
 
-    nmo_status_t rc = nmo_behavior_fold_analyze(ctx, session, &desc,
+    nmo_status_t rc = test_behavior_fold_analyze(ctx, session, &desc,
                                                 &report);
     ASSERT_EQ(NMO_OK, rc);
     ASSERT_EQ(2208u, report.anchor_id);
@@ -797,7 +867,7 @@ TEST(beh_rewrite, fold_analyze_uses_explicit_anchor)
     ASSERT_EQ(1u, report.nodes_to_delete_count);
     ASSERT_EQ(2364u, report.nodes_to_delete[0]);
 
-    nmo_behavior_fold_report_free(&report);
+    nmo_behavior_edit_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -837,14 +907,14 @@ TEST(beh_rewrite, fold_analyze_preserve_boundary_enables_edges)
     };
     nmo_behavior_fold_report_t report = {0};
 
-    nmo_status_t rc = nmo_behavior_fold_analyze(ctx, session, &desc,
+    nmo_status_t rc = test_behavior_fold_analyze(ctx, session, &desc,
                                                 &report);
     ASSERT_EQ(NMO_OK, rc);
     ASSERT_TRUE(report.preserve_boundary);
     ASSERT_TRUE(report.preserve_links);
     ASSERT_TRUE(report.preserve_params);
 
-    nmo_behavior_fold_report_free(&report);
+    nmo_behavior_edit_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -870,13 +940,13 @@ TEST(beh_rewrite, fold_analyze_rejects_ambiguous_input_without_map)
     };
     nmo_behavior_fold_report_t report = {0};
 
-    nmo_status_t rc = nmo_behavior_fold_analyze(ctx, session, &desc,
+    nmo_status_t rc = test_behavior_fold_analyze(ctx, session, &desc,
                                                 &report);
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, rc);
     ASSERT_TRUE(report.rejected);
     ASSERT_STR_EQ("input_map_required", report.diagnostic_code);
 
-    nmo_behavior_fold_report_free(&report);
+    nmo_behavior_edit_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -928,7 +998,7 @@ TEST(beh_rewrite, fold_analyze_reports_maps)
     };
     nmo_behavior_fold_report_t report = {0};
 
-    nmo_status_t rc = nmo_behavior_fold_analyze(ctx, session, &desc,
+    nmo_status_t rc = test_behavior_fold_analyze(ctx, session, &desc,
                                                 &report);
     ASSERT_EQ(NMO_OK, rc);
     ASSERT_EQ(2u, report.input_map_count);
@@ -943,7 +1013,7 @@ TEST(beh_rewrite, fold_analyze_reports_maps)
     ASSERT_STR_EQ("Out", report.output_maps[0].label);
     ASSERT_EQ(0u, report.parameter_map_count);
 
-    nmo_behavior_fold_report_free(&report);
+    nmo_behavior_edit_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -983,13 +1053,13 @@ TEST(beh_rewrite, fold_analyze_rejects_duplicate_input_map_target)
     };
     nmo_behavior_fold_report_t report = {0};
 
-    nmo_status_t rc = nmo_behavior_fold_analyze(ctx, session, &desc,
+    nmo_status_t rc = test_behavior_fold_analyze(ctx, session, &desc,
                                                 &report);
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, rc);
     ASSERT_TRUE(report.rejected);
     ASSERT_STR_EQ("input_map_invalid", report.diagnostic_code);
 
-    nmo_behavior_fold_report_free(&report);
+    nmo_behavior_edit_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -1030,13 +1100,13 @@ TEST(beh_rewrite, fold_analyze_reports_interface_mode)
     };
     nmo_behavior_fold_report_t report = {0};
 
-    nmo_status_t rc = nmo_behavior_fold_analyze(ctx, session, &desc,
+    nmo_status_t rc = test_behavior_fold_analyze(ctx, session, &desc,
                                                 &report);
     ASSERT_EQ(NMO_OK, rc);
     ASSERT_EQ(NMO_BEHAVIOR_FOLD_INTERFACE_CANONICALIZE,
               report.interface_mode);
 
-    nmo_behavior_fold_report_free(&report);
+    nmo_behavior_edit_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -1063,14 +1133,14 @@ TEST(beh_rewrite, fold_analyze_rejects_anchor_outside_selection)
     };
     nmo_behavior_fold_report_t report = {0};
 
-    nmo_status_t rc = nmo_behavior_fold_analyze(ctx, session, &desc,
+    nmo_status_t rc = test_behavior_fold_analyze(ctx, session, &desc,
                                                 &report);
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, rc);
     ASSERT_TRUE(report.rejected);
     ASSERT_STR_EQ("anchor_not_selected", report.diagnostic_code);
     ASSERT_EQ(2178u, report.anchor_id);
 
-    nmo_behavior_fold_report_free(&report);
+    nmo_behavior_edit_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -1096,14 +1166,14 @@ TEST(beh_rewrite, fold_analyze_rejects_parent_in_selected_nodes)
     };
     nmo_behavior_fold_report_t report = {0};
 
-    nmo_status_t rc = nmo_behavior_fold_analyze(ctx, session, &desc,
+    nmo_status_t rc = test_behavior_fold_analyze(ctx, session, &desc,
                                                 &report);
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, rc);
     ASSERT_TRUE(report.rejected);
     ASSERT_STR_EQ("parent_selected", report.diagnostic_code);
     ASSERT_EQ(4692u, report.parent_id);
 
-    nmo_behavior_fold_report_free(&report);
+    nmo_behavior_edit_fold_report_free(&report);
     nmo_session_close_with_context(ctx, session);
 }
 

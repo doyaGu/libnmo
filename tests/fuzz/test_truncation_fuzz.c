@@ -11,7 +11,7 @@
 
 #include "../test_framework.h"
 #include "session/nmo_context.h"
-#include "app/nmo_load.h"
+#include "document/nmo_document_load.h"
 #include "session/nmo_session.h"
 #include "core/nmo_error.h"
 #include <stdio.h>

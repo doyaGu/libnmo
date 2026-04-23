@@ -1,20 +1,21 @@
 #include "test_framework.h"
 
-#include "app/nmo_save.h"
+#include "document/nmo_document_save.h"
 #include "behavior/nmo_behavior_execute.h"
+#include "behavior/nmo_behavior_query.h"
 #include "behavior/nmo_behavior_view.h"
-#include "behavior/nmo_behavior_index.h"
+#include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_script_edit.h"
-#include "behavior/nmo_script_executor.h"
-#include "behavior/nmo_script_view.h"
 #include "core/nmo_array.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "runtime/nmo_workspace.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -61,6 +62,56 @@ static void remove_file_if_exists(const char *path)
     if (path != NULL) {
         remove(path);
     }
+}
+
+static nmo_session_t *behavior_execution_session(
+    nmo_behavior_execution_t *execution)
+{
+    nmo_workspace_t *workspace =
+        nmo_behavior_execution_workspace(execution);
+    return workspace != NULL ? nmo_session_from_workspace(workspace) : NULL;
+}
+
+static nmo_status_t query_first_script_from_session(
+    nmo_session_t *session,
+    nmo_behavior_script_view_t *out_view)
+{
+    nmo_document_t *document = NULL;
+    nmo_status_t status = nmo_session_borrow_document(session, &document);
+    if (status != NMO_OK) {
+        return status;
+    }
+    status = nmo_behavior_query_script_at(document, 0u, out_view);
+    nmo_document_destroy(document);
+    return status;
+}
+
+static nmo_status_t create_workspace_from_session(
+    nmo_session_t *session,
+    nmo_document_t **out_document,
+    nmo_workspace_t **out_workspace)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_status_t status = NMO_OK;
+
+    if (session == NULL || out_document == NULL || out_workspace == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_document = NULL;
+    *out_workspace = NULL;
+
+    status = nmo_session_borrow_document(session, out_document);
+    if (status != NMO_OK) {
+        return status;
+    }
+    ctx = nmo_session_get_context(session);
+    status = nmo_workspace_create(ctx, *out_document, out_workspace);
+    if (status != NMO_OK) {
+        nmo_document_destroy(*out_document);
+        *out_document = NULL;
+        return status;
+    }
+    return NMO_OK;
 }
 
 static bool save_session_to_path(nmo_session_t *session, const char *path)
@@ -330,16 +381,21 @@ static void load_root_behavior_counts(const char *path,
     nmo_context_t *ctx =
         nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
     nmo_session_t *session = NULL;
-    nmo_script_view_t script_view = {0};
+    nmo_behavior_script_view_t script_view = {0};
     nmo_behavior_view_t behavior_view = {0};
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
 
     ASSERT_NOT_NULL(ctx);
     session = nmo_session_load(ctx, path);
     ASSERT_NOT_NULL(session);
-    ASSERT_EQ(NMO_OK, nmo_script_view_at(session, 0, &script_view));
+    ASSERT_EQ(NMO_OK, query_first_script_from_session(session, &script_view));
+    ASSERT_EQ(NMO_OK, create_workspace_from_session(session, &document, &workspace));
+    ASSERT_NOT_NULL(document);
+    ASSERT_NOT_NULL(workspace);
     ASSERT_EQ(NMO_OK,
               nmo_behavior_view_from_behavior(
-                  session, script_view.script_id, &behavior_view));
+                  workspace, script_view.script_id, &behavior_view));
 
     if (out_behavior_id != NULL) {
         *out_behavior_id = script_view.script_id;
@@ -351,16 +407,18 @@ static void load_root_behavior_counts(const char *path,
         *out_outputs = behavior_view.output_count;
     }
 
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_session_destroy(session);
     nmo_context_release(ctx);
 }
 
-static nmo_status_t add_two_ios_action(nmo_script_executor_t *executor, void *user_data)
+static nmo_status_t add_two_ios_action(nmo_behavior_execution_t *executor, void *user_data)
 {
     executor_add_io_action_t *action = (executor_add_io_action_t *)user_data;
-    nmo_session_t *session = nmo_script_executor_session(executor);
-    nmo_script_edit_tx_t *tx = nmo_script_executor_transaction(executor);
-    nmo_script_view_t script_view = {0};
+    nmo_session_t *session = behavior_execution_session(executor);
+    nmo_script_edit_tx_t *tx = nmo_behavior_execution_transaction(executor);
+    nmo_behavior_script_view_t script_view = {0};
     nmo_object_id_t input_id = 0;
     nmo_object_id_t output_id = 0;
 
@@ -368,7 +426,7 @@ static nmo_status_t add_two_ios_action(nmo_script_executor_t *executor, void *us
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (nmo_script_view_at(session, 0, &script_view) != NMO_OK) {
+    if (query_first_script_from_session(session, &script_view) != NMO_OK) {
         return NMO_ERR_NOT_FOUND;
     }
 
@@ -394,10 +452,10 @@ static nmo_status_t add_two_ios_action(nmo_script_executor_t *executor, void *us
     return NMO_OK;
 }
 
-static nmo_status_t add_io_action(nmo_script_executor_t *executor, void *user_data)
+static nmo_status_t add_io_action(nmo_behavior_execution_t *executor, void *user_data)
 {
     executor_add_io_action_t *action = (executor_add_io_action_t *)user_data;
-    nmo_script_edit_tx_t *tx = nmo_script_executor_transaction(executor);
+    nmo_script_edit_tx_t *tx = nmo_behavior_execution_transaction(executor);
 
     if (executor == NULL || action == NULL || tx == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -410,10 +468,10 @@ static nmo_status_t add_io_action(nmo_script_executor_t *executor, void *user_da
                                   &action->io_id);
 }
 
-static nmo_status_t add_node_action(nmo_script_executor_t *executor, void *user_data)
+static nmo_status_t add_node_action(nmo_behavior_execution_t *executor, void *user_data)
 {
     executor_add_node_action_t *action = (executor_add_node_action_t *)user_data;
-    nmo_script_edit_tx_t *tx = nmo_script_executor_transaction(executor);
+    nmo_script_edit_tx_t *tx = nmo_behavior_execution_transaction(executor);
 
     if (tx == NULL || action == NULL || action->parent_id == 0u) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -426,7 +484,7 @@ static nmo_status_t add_node_action(nmo_script_executor_t *executor, void *user_
                                     &action->node_id);
 }
 
-static nmo_status_t remove_io_canonicalize_action(nmo_script_executor_t *executor,
+static nmo_status_t remove_io_canonicalize_action(nmo_behavior_execution_t *executor,
                                                   void *user_data)
 {
     executor_remove_io_action_t *action = (executor_remove_io_action_t *)user_data;
@@ -438,8 +496,8 @@ static nmo_status_t remove_io_canonicalize_action(nmo_script_executor_t *executo
     if (executor == NULL || action == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    tx = nmo_script_executor_transaction(executor);
-    session = nmo_script_executor_session(executor);
+    tx = nmo_behavior_execution_transaction(executor);
+    session = behavior_execution_session(executor);
     interface_behavior_id = script_interface_root_for_object_session(session, action->io_id);
     if (interface_behavior_id == 0u) {
         return NMO_ERR_INVALID_STATE;
@@ -468,7 +526,7 @@ static nmo_status_t remove_io_canonicalize_action(nmo_script_executor_t *executo
                                                   action->interface_mode);
 }
 
-static nmo_status_t remove_node_canonicalize_action(nmo_script_executor_t *executor,
+static nmo_status_t remove_node_canonicalize_action(nmo_behavior_execution_t *executor,
                                                     void *user_data)
 {
     executor_remove_node_action_t *action = (executor_remove_node_action_t *)user_data;
@@ -478,7 +536,7 @@ static nmo_status_t remove_node_canonicalize_action(nmo_script_executor_t *execu
     if (executor == NULL || action == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    tx = nmo_script_executor_transaction(executor);
+    tx = nmo_behavior_execution_transaction(executor);
     rc = nmo_script_edit_remove_node(tx, action->parent_id, action->node_id, 0u);
     if (rc != NMO_OK) {
         return rc;
@@ -500,12 +558,12 @@ static nmo_status_t remove_node_canonicalize_action(nmo_script_executor_t *execu
                                                   action->interface_mode);
 }
 
-static nmo_status_t failing_after_mutation_action(nmo_script_executor_t *executor,
+static nmo_status_t failing_after_mutation_action(nmo_behavior_execution_t *executor,
                                                   void *user_data)
 {
-    nmo_session_t *session = nmo_script_executor_session(executor);
-    nmo_script_edit_tx_t *tx = nmo_script_executor_transaction(executor);
-    nmo_script_view_t script_view = {0};
+    nmo_session_t *session = behavior_execution_session(executor);
+    nmo_script_edit_tx_t *tx = nmo_behavior_execution_transaction(executor);
+    nmo_behavior_script_view_t script_view = {0};
     nmo_object_id_t input_id = 0;
     (void)user_data;
 
@@ -513,7 +571,7 @@ static nmo_status_t failing_after_mutation_action(nmo_script_executor_t *executo
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (nmo_script_view_at(session, 0, &script_view) != NMO_OK) {
+    if (query_first_script_from_session(session, &script_view) != NMO_OK) {
         return NMO_ERR_NOT_FOUND;
     }
 
@@ -528,12 +586,12 @@ static nmo_status_t failing_after_mutation_action(nmo_script_executor_t *executo
     return NMO_ERR_INVALID_ARGUMENT;
 }
 
-TEST(script_executor, executes_multiple_actions_and_saves_once) {
+TEST(behavior_execute, executes_multiple_actions_and_saves_once) {
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
-    const char *output_path = "test_script_executor_apply.cmo";
+    const char *output_path = "test_behavior_execute_apply.cmo";
     nmo_context_t *ctx =
         nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
-    nmo_script_executor_options_t options = nmo_script_executor_options_default();
+    nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
     nmo_script_edit_report_t report = {0};
     executor_add_io_action_t action = {0};
     nmo_object_id_t behavior_id = 0;
@@ -546,9 +604,9 @@ TEST(script_executor, executes_multiple_actions_and_saves_once) {
     remove(output_path);
     load_root_behavior_counts(input_path, &behavior_id, &input_count, &output_count);
 
-    options.label = "test-script-executor-apply";
+    options.label = "test-behavior-execute-apply";
     ASSERT_EQ(NMO_OK,
-              nmo_script_executor_execute(ctx,
+              nmo_behavior_execute(ctx,
                                           input_path,
                                           output_path,
                                           &options,
@@ -567,19 +625,19 @@ TEST(script_executor, executes_multiple_actions_and_saves_once) {
     nmo_context_release(ctx);
 }
 
-TEST(script_executor, rolls_back_on_action_error_and_skips_output) {
+TEST(behavior_execute, rolls_back_on_action_error_and_skips_output) {
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
-    const char *output_path = "test_script_executor_fail.cmo";
+    const char *output_path = "test_behavior_execute_fail.cmo";
     nmo_context_t *ctx = nmo_context_create(NULL);
-    nmo_script_executor_options_t options = nmo_script_executor_options_default();
+    nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
     nmo_script_edit_report_t report = {0};
 
     ASSERT_NOT_NULL(ctx);
     remove(output_path);
 
-    options.label = "test-script-executor-fail";
+    options.label = "test-behavior-execute-fail";
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
-              nmo_script_executor_execute(ctx,
+              nmo_behavior_execute(ctx,
                                           input_path,
                                           output_path,
                                           &options,
@@ -591,11 +649,11 @@ TEST(script_executor, rolls_back_on_action_error_and_skips_output) {
     nmo_context_release(ctx);
 }
 
-TEST(script_executor, dry_run_rolls_back_after_validation) {
+TEST(behavior_execute, dry_run_rolls_back_after_validation) {
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
-    const char *output_path = "test_script_executor_dry.cmo";
+    const char *output_path = "test_behavior_execute_dry.cmo";
     nmo_context_t *ctx = nmo_context_create(NULL);
-    nmo_script_executor_options_t options = nmo_script_executor_options_default();
+    nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
     nmo_script_edit_report_t report = {0};
     executor_add_io_action_t action = {0};
     nmo_object_id_t behavior_id = 0;
@@ -606,10 +664,10 @@ TEST(script_executor, dry_run_rolls_back_after_validation) {
     remove(output_path);
     load_root_behavior_counts(input_path, &behavior_id, &input_count, &output_count);
 
-    options.label = "test-script-executor-dry";
+    options.label = "test-behavior-execute-dry";
     options.dry_run = true;
     ASSERT_EQ(NMO_OK,
-              nmo_script_executor_execute(ctx,
+              nmo_behavior_execute(ctx,
                                           input_path,
                                           output_path,
                                           &options,
@@ -623,7 +681,7 @@ TEST(script_executor, dry_run_rolls_back_after_validation) {
     nmo_context_release(ctx);
 }
 
-TEST(script_executor, behavior_execute_owner_wraps_script_executor) {
+TEST(behavior_execute, owner_surface_runs_behavior_actions) {
     const char *input_path = NMO_SCRIPT_INTERFACE_FIXTURE;
     const char *output_path = "test_behavior_execute_owner.cmo";
     nmo_context_t *ctx = nmo_context_create(NULL);
@@ -652,13 +710,13 @@ TEST(script_executor, behavior_execute_owner_wraps_script_executor) {
     nmo_context_release(ctx);
 }
 
-TEST(script_executor, executor_remove_io_canonicalize_roundtrips_fixture) {
-    const char *io_add_path = "test_script_executor_interface_io_add.cmo";
-    const char *iface_io_path = "test_script_executor_interface_io_present.cmo";
-    const char *io_remove_path = "test_script_executor_interface_io_remove.cmo";
+TEST(behavior_execute, remove_io_canonicalize_roundtrips_fixture) {
+    const char *io_add_path = "test_behavior_execute_interface_io_add.cmo";
+    const char *iface_io_path = "test_behavior_execute_interface_io_present.cmo";
+    const char *io_remove_path = "test_behavior_execute_interface_io_remove.cmo";
     const uint32_t owner_behavior_id = 229u;
     nmo_context_t *ctx = nmo_context_create(NULL);
-    nmo_script_executor_options_t options = nmo_script_executor_options_default();
+    nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
     executor_add_io_action_t add_action = {0};
     executor_remove_io_action_t remove_action = {
         .interface_mode = NMO_SCRIPT_EDIT_INTERFACE_CANONICALIZE,
@@ -681,7 +739,7 @@ TEST(script_executor, executor_remove_io_canonicalize_roundtrips_fixture) {
     add_action.name = "IfaceIo";
     options.label = "executor io add";
     ASSERT_EQ(NMO_OK,
-              nmo_script_executor_execute(ctx,
+              nmo_behavior_execute(ctx,
                                           NMO_SCRIPT_INTERFACE_FIXTURE,
                                           io_add_path,
                                           &options,
@@ -717,7 +775,7 @@ TEST(script_executor, executor_remove_io_canonicalize_roundtrips_fixture) {
     options.validation_flags = 0u;
     remove_action.io_id = add_action.io_id;
     ASSERT_EQ(NMO_OK,
-              nmo_script_executor_execute(ctx,
+              nmo_behavior_execute(ctx,
                                           iface_io_path,
                                           io_remove_path,
                                           &options,
@@ -745,12 +803,12 @@ TEST(script_executor, executor_remove_io_canonicalize_roundtrips_fixture) {
     nmo_context_release(ctx);
 }
 
-TEST(script_executor, executor_remove_node_canonicalize_roundtrips_fixture) {
-    const char *node_add_path = "test_script_executor_interface_node_add.cmo";
-    const char *iface_node_path = "test_script_executor_interface_node_present.cmo";
-    const char *node_remove_path = "test_script_executor_interface_node_remove.cmo";
+TEST(behavior_execute, remove_node_canonicalize_roundtrips_fixture) {
+    const char *node_add_path = "test_behavior_execute_interface_node_add.cmo";
+    const char *iface_node_path = "test_behavior_execute_interface_node_present.cmo";
+    const char *node_remove_path = "test_behavior_execute_interface_node_remove.cmo";
     nmo_context_t *ctx = nmo_context_create(NULL);
-    nmo_script_executor_options_t options = nmo_script_executor_options_default();
+    nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
     executor_add_node_action_t add_action = {0};
     executor_remove_node_action_t remove_action = {
         .parent_id = NMO_SCRIPT_INTERFACE_TARGET_ID,
@@ -768,9 +826,9 @@ TEST(script_executor, executor_remove_node_canonicalize_roundtrips_fixture) {
 
     add_action.parent_id = NMO_SCRIPT_INTERFACE_TARGET_ID;
     options.label = "executor node add";
-    options.validation_flags = nmo_script_executor_options_default().validation_flags;
+    options.validation_flags = nmo_behavior_execute_options_default().validation_flags;
     ASSERT_EQ(NMO_OK,
-              nmo_script_executor_execute(ctx,
+              nmo_behavior_execute(ctx,
                                           NMO_SCRIPT_INTERFACE_FIXTURE,
                                           node_add_path,
                                           &options,
@@ -800,7 +858,7 @@ TEST(script_executor, executor_remove_node_canonicalize_roundtrips_fixture) {
     nmo_session_destroy(session);
     session = NULL;
     ASSERT_EQ(NMO_OK,
-              nmo_script_executor_execute(ctx,
+              nmo_behavior_execute(ctx,
                                           iface_node_path,
                                           node_remove_path,
                                           &options,
@@ -827,10 +885,11 @@ TEST(script_executor, executor_remove_node_canonicalize_roundtrips_fixture) {
 }
 
 TEST_MAIN_BEGIN()
-    REGISTER_TEST(script_executor, behavior_execute_owner_wraps_script_executor);
-    REGISTER_TEST(script_executor, executes_multiple_actions_and_saves_once);
-    REGISTER_TEST(script_executor, rolls_back_on_action_error_and_skips_output);
-    REGISTER_TEST(script_executor, dry_run_rolls_back_after_validation);
-    REGISTER_TEST(script_executor, executor_remove_io_canonicalize_roundtrips_fixture);
-    REGISTER_TEST(script_executor, executor_remove_node_canonicalize_roundtrips_fixture);
+    REGISTER_TEST(behavior_execute, owner_surface_runs_behavior_actions);
+    REGISTER_TEST(behavior_execute, executes_multiple_actions_and_saves_once);
+    REGISTER_TEST(behavior_execute, rolls_back_on_action_error_and_skips_output);
+    REGISTER_TEST(behavior_execute, dry_run_rolls_back_after_validation);
+    REGISTER_TEST(behavior_execute, remove_io_canonicalize_roundtrips_fixture);
+    REGISTER_TEST(behavior_execute, remove_node_canonicalize_roundtrips_fixture);
 TEST_MAIN_END()
+

@@ -9,9 +9,10 @@
 
 #include "test_framework.h"
 #include "nmo.h"
-#include "behavior/nmo_script_walker.h"
+#include "behavior/nmo_behavior_analyze.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_array.h"
 #include "object/nmo_class_ids.h"
@@ -39,30 +40,44 @@ static void fail_after_free(void *user_data, void *ptr)
     free(ptr);
 }
 
+static nmo_status_t collect_scripts_from_session(
+    nmo_session_t *session,
+    nmo_array_t *scripts)
+{
+    nmo_document_t *document = NULL;
+    nmo_status_t st = nmo_session_borrow_document(session, &document);
+    if (st != NMO_OK) {
+        return st;
+    }
+    st = nmo_behavior_query_collect_scripts(document, scripts);
+    nmo_document_destroy(document);
+    return st;
+}
+
 /* ============================================================================
  * Tests: NULL argument handling
  * ============================================================================ */
 
 TEST(script_walker, find_scripts_null_args) {
     nmo_array_t scripts;
-    nmo_array_init(&scripts, sizeof(nmo_script_entry_t), 4, NULL);
+    nmo_array_init(&scripts, sizeof(nmo_behavior_script_view_t), 4, NULL);
 
-    nmo_status_t st = nmo_script_walker_find_scripts(NULL, NULL, &scripts);
+    nmo_status_t st = nmo_behavior_query_collect_scripts(NULL, &scripts);
     ASSERT_NE(NMO_OK, st);
 
     nmo_array_dispose(&scripts);
 }
 
 TEST(script_walker, walk_null_args) {
-    nmo_status_t st = nmo_script_walker_walk(NULL, NULL, 1, NULL, NULL);
+    nmo_status_t st = nmo_behavior_walk(NULL, NULL, 1, NULL, NULL);
     ASSERT_NE(NMO_OK, st);
 }
 
 TEST(script_walker, trace_null_args) {
     nmo_array_t chain;
-    nmo_array_init(&chain, sizeof(nmo_param_chain_step_t), 4, NULL);
+    nmo_array_init(&chain, sizeof(nmo_behavior_trace_step_t), 4, NULL);
 
-    nmo_status_t st = nmo_script_walker_trace_param_chain(
+    nmo_status_t st = nmo_behavior_analyze_trace_param_chain(
         NULL, NULL, 1, &chain, 32);
     ASSERT_NE(NMO_OK, st);
 
@@ -70,7 +85,7 @@ TEST(script_walker, trace_null_args) {
 }
 
 TEST(script_walker, dump_text_null_args) {
-    nmo_status_t st = nmo_script_walker_dump_text(NULL, NULL, 1, NULL);
+    nmo_status_t st = nmo_behavior_analyze_dump_text(NULL, NULL, 1, NULL);
     ASSERT_NE(NMO_OK, st);
 }
 
@@ -92,16 +107,16 @@ TEST(script_walker, find_scripts_with_file) {
     }
 
     nmo_array_t scripts;
-    nmo_array_init(&scripts, sizeof(nmo_script_entry_t), 4, NULL);
+    nmo_array_init(&scripts, sizeof(nmo_behavior_script_view_t), 4, NULL);
 
-    nmo_status_t st = nmo_script_walker_find_scripts(ctx, session, &scripts);
+    nmo_status_t st = collect_scripts_from_session(session, &scripts);
     ASSERT_EQ(NMO_OK, st);
     /* Nop.cmo should have at least one script */
     ASSERT_TRUE(scripts.count > 0);
 
     /* Verify entry structure */
-    const nmo_script_entry_t *entry =
-        (const nmo_script_entry_t *)nmo_array_get(&scripts, 0);
+    const nmo_behavior_script_view_t *entry =
+        (const nmo_behavior_script_view_t *)nmo_array_get(&scripts, 0);
     ASSERT_NOT_NULL(entry);
     ASSERT_NE(0, (long long)entry->script_id);
     ASSERT_NE(0, (long long)entry->owner_id);
@@ -127,9 +142,9 @@ TEST(script_walker, find_scripts_reports_append_oom) {
         nmo_allocator_custom(fail_after_alloc, fail_after_free, &alloc_ctx);
 
     nmo_array_t scripts;
-    ASSERT_EQ(NMO_OK, nmo_array_init(&scripts, sizeof(nmo_script_entry_t), 0, &fail_alloc));
+    ASSERT_EQ(NMO_OK, nmo_array_init(&scripts, sizeof(nmo_behavior_script_view_t), 0, &fail_alloc));
 
-    nmo_status_t st = nmo_script_walker_find_scripts(ctx, session, &scripts);
+    nmo_status_t st = collect_scripts_from_session(session, &scripts);
     ASSERT_EQ(NMO_ERR_NOMEM, st);
     ASSERT_EQ(0u, scripts.count);
 
@@ -149,8 +164,8 @@ TEST(script_walker, walk_with_file) {
 
     /* Find scripts first */
     nmo_array_t scripts;
-    nmo_array_init(&scripts, sizeof(nmo_script_entry_t), 4, NULL);
-    nmo_script_walker_find_scripts(ctx, session, &scripts);
+    nmo_array_init(&scripts, sizeof(nmo_behavior_script_view_t), 4, NULL);
+    collect_scripts_from_session(session, &scripts);
 
     if (scripts.count == 0) {
         nmo_array_dispose(&scripts);
@@ -158,11 +173,11 @@ TEST(script_walker, walk_with_file) {
         return;
     }
 
-    const nmo_script_entry_t *entry =
-        (const nmo_script_entry_t *)nmo_array_get(&scripts, 0);
+    const nmo_behavior_script_view_t *entry =
+        (const nmo_behavior_script_view_t *)nmo_array_get(&scripts, 0);
 
-    /* Walk the first script — NULL visitor should fail */
-    nmo_status_t st = nmo_script_walker_walk(
+    /* Walk the first script 鈥?NULL visitor should fail */
+    nmo_status_t st = nmo_behavior_walk(
         ctx, session, entry->script_id,
         /* visitor: */ NULL, NULL);
     /* NULL visitor should be caught */
@@ -184,17 +199,17 @@ TEST(script_walker, dump_text_with_file) {
 
     /* Find scripts */
     nmo_array_t scripts;
-    nmo_array_init(&scripts, sizeof(nmo_script_entry_t), 4, NULL);
-    nmo_script_walker_find_scripts(ctx, session, &scripts);
+    nmo_array_init(&scripts, sizeof(nmo_behavior_script_view_t), 4, NULL);
+    collect_scripts_from_session(session, &scripts);
 
     if (scripts.count > 0) {
-        const nmo_script_entry_t *entry =
-            (const nmo_script_entry_t *)nmo_array_get(&scripts, 0);
+        const nmo_behavior_script_view_t *entry =
+            (const nmo_behavior_script_view_t *)nmo_array_get(&scripts, 0);
 
         /* Dump to /dev/null to verify no crashes */
         FILE *devnull = fopen("/dev/null", "w");
         if (devnull) {
-            nmo_status_t st = nmo_script_walker_dump_text(
+            nmo_status_t st = nmo_behavior_analyze_dump_text(
                 ctx, session, entry->script_id, devnull);
             ASSERT_EQ(NMO_OK, st);
             fclose(devnull);

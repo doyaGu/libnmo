@@ -1,13 +1,15 @@
 #include "test_framework.h"
 
+#include "document/nmo_document.h"
 #include "behavior/nmo_behavior_edit.h"
 #include "behavior/nmo_script_edit.h"
-#include "behavior/nmo_behavior_index.h"
+#include "behavior/nmo_behavior_analyze.h"
 #include "runtime/nmo_workspace.h"
 #include "session/nmo_context.h"
-#include "session/nmo_session_edit.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 #include "session/nmo_session_util.h"
+#include "object/nmo_object_edit.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
@@ -33,6 +35,88 @@ static void create_object_or_fail(nmo_session_t *session,
               nmo_session_create_object(
                   session, class_id, name, (nmo_guid_t){0, 0}, out_id, NULL));
     ASSERT_TRUE(*out_id != 0);
+}
+
+typedef struct test_workspace_seed_scope {
+    nmo_document_t *document;
+    nmo_workspace_t *workspace;
+    nmo_workspace_edit_t *edit;
+} test_workspace_seed_scope_t;
+
+static void destroy_test_workspace_seed_scope(
+    test_workspace_seed_scope_t *scope)
+{
+    if (!scope) {
+        return;
+    }
+    if (scope->workspace) {
+        nmo_workspace_destroy(scope->workspace);
+    }
+    if (scope->document) {
+        nmo_document_destroy(scope->document);
+    }
+    memset(scope, 0, sizeof(*scope));
+}
+
+static nmo_status_t begin_test_workspace_seed_edit(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const char *label,
+    test_workspace_seed_scope_t *scope)
+{
+    nmo_status_t rc = NMO_OK;
+
+    if (!ctx || !session || !label || !scope) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    memset(scope, 0, sizeof(*scope));
+    rc = nmo_session_borrow_document(session, &scope->document);
+    if (rc != NMO_OK) {
+        destroy_test_workspace_seed_scope(scope);
+        return rc;
+    }
+    rc = nmo_workspace_create(ctx, scope->document, &scope->workspace);
+    if (rc != NMO_OK) {
+        destroy_test_workspace_seed_scope(scope);
+        return rc;
+    }
+    rc = nmo_workspace_edit_begin(scope->workspace, label, &scope->edit);
+    if (rc != NMO_OK) {
+        destroy_test_workspace_seed_scope(scope);
+        return rc;
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t begin_test_script_edit(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    const char *label,
+    nmo_script_edit_tx_t **out_tx)
+{
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    nmo_status_t rc = NMO_OK;
+
+    if (!ctx || !session || !label || !out_tx) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    *out_tx = NULL;
+    rc = nmo_session_borrow_document(session, &document);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = nmo_workspace_create(ctx, document, &workspace);
+    if (rc != NMO_OK) {
+        nmo_document_destroy(document);
+        return rc;
+    }
+    rc = nmo_script_edit_begin(workspace, label, out_tx);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    return rc;
 }
 
 static void assert_behavior_owner_checks_green(nmo_object_repository_t *repo,
@@ -248,27 +332,27 @@ TEST(script_edit_transaction, rollback_restores_original_state_after_validation_
     ASSERT_EQ(0u, child_state->parent_id);
 
     ASSERT_EQ(NMO_OK,
-              nmo_script_edit_begin(ctx, session, "rollback-test", &tx));
+              begin_test_script_edit(ctx, session, "rollback-test", &tx));
     ASSERT_NOT_NULL(tx);
-    ASSERT_NOT_NULL(nmo_script_edit_session_edit(tx));
+    ASSERT_NOT_NULL(nmo_script_edit_workspace_edit(tx));
 
     snprintf(parent_text, sizeof(parent_text), "%u", parent_id);
     {
         nmo_session_field_edit_t field = {"parent_id", parent_text};
         ASSERT_EQ(NMO_OK,
-                  nmo_session_edit_set_object_fields(
-                      nmo_script_edit_session_edit(tx), child_id, &field, 1, NULL));
+                  nmo_object_edit_set_fields(
+                      nmo_script_edit_workspace_edit(tx), child_id, &field, 1, NULL));
     }
     ASSERT_EQ(parent_id, child_state->parent_id);
 
     ASSERT_EQ(NMO_OK,
-              nmo_session_edit_snapshot_bytes(
-                  nmo_script_edit_session_edit(tx),
+              nmo_workspace_edit_snapshot_bytes(
+                  nmo_script_edit_workspace_edit(tx),
                   &child_state->parent_id,
                   sizeof(child_state->parent_id)));
     child_state->parent_id = 999999u;
     nmo_script_edit_mark(
-        tx, NMO_SESSION_EDIT_OBJECT_STATE | NMO_SESSION_EDIT_REFERENCES);
+        tx, NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
 
     ASSERT_NE(NMO_OK,
               nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES));
@@ -296,7 +380,7 @@ TEST(script_edit_transaction, behavior_edit_add_link_through_workspace_owner)
     ASSERT_NOT_NULL(document);
     ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
     ASSERT_NOT_NULL(workspace);
-    session = nmo_workspace_session(workspace);
+    session = nmo_session_from_workspace(workspace);
     ASSERT_NOT_NULL(session);
 
     setup_script_control_fixture(session, &fixture);
@@ -321,6 +405,8 @@ TEST(script_edit_transaction, add_node_keeps_ballance_script_edit_validation_gre
 {
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
     nmo_script_edit_tx_t *tx = NULL;
     nmo_object_repository_t *repo = NULL;
     nmo_object_t *node_obj = NULL;
@@ -339,7 +425,7 @@ TEST(script_edit_transaction, add_node_keeps_ballance_script_edit_validation_gre
     ASSERT_NOT_NULL(repo);
 
     ASSERT_EQ(NMO_OK,
-              nmo_script_edit_begin(ctx, session, "add-node-test", &tx));
+              begin_test_script_edit(ctx, session, "add-node-test", &tx));
     ASSERT_NOT_NULL(tx);
 
     ASSERT_EQ(NMO_OK,
@@ -357,14 +443,16 @@ TEST(script_edit_transaction, add_node_keeps_ballance_script_edit_validation_gre
 
     ASSERT_EQ(NMO_OK,
               nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY));
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
     ASSERT_EQ(NMO_OK,
-              nmo_session_apply_edit_flags(
-                  session,
-                  NMO_SESSION_EDIT_OBJECT_STATE |
-                      NMO_SESSION_EDIT_REFERENCES |
-                      NMO_SESSION_EDIT_BEHAVIOR_GRAPH |
-                      NMO_SESSION_EDIT_NAMES |
-                      NMO_SESSION_EDIT_RESOURCES));
+              nmo_workspace_apply_edit_flags(
+                  workspace,
+                  NMO_WORKSPACE_EDIT_OBJECT_STATE |
+                      NMO_WORKSPACE_EDIT_REFERENCES |
+                      NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH |
+                      NMO_WORKSPACE_EDIT_NAMES |
+                      NMO_WORKSPACE_EDIT_RESOURCES));
     ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session));
     index = nmo_session_get_behavior_index(session);
     ASSERT_NOT_NULL(index);
@@ -427,6 +515,7 @@ TEST(script_edit_transaction, add_node_keeps_ballance_script_edit_validation_gre
               nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_INTERFACE));
 
     nmo_script_edit_rollback(tx);
+    nmo_workspace_destroy(workspace);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -437,7 +526,7 @@ TEST(script_edit_transaction,
     nmo_session_t *session = NULL;
     nmo_script_edit_tx_t *tx = NULL;
     script_control_fixture_t fixture;
-    nmo_session_edit_t *seed_edit = NULL;
+    test_workspace_seed_scope_t seed_scope = {0};
     nmo_object_id_t original_link_id = 0;
     nmo_object_id_t new_link_id = 0;
 
@@ -447,19 +536,22 @@ TEST(script_edit_transaction,
 
     setup_script_control_fixture(session, &fixture);
 
-    ASSERT_EQ(NMO_OK, nmo_session_edit_begin(session, "seed-link", &seed_edit));
     ASSERT_EQ(NMO_OK,
-              nmo_session_edit_add_behavior_link(seed_edit,
-                                                 fixture.root_behavior_id,
-                                                 fixture.source_output_id,
-                                                 fixture.target_input_id,
-                                                 1,
-                                                 &original_link_id));
+              begin_test_workspace_seed_edit(
+                  ctx, session, "seed-link", &seed_scope));
+    ASSERT_EQ(NMO_OK,
+              nmo_behavior_edit_add_link(seed_scope.edit,
+                                         fixture.root_behavior_id,
+                                         fixture.source_output_id,
+                                         fixture.target_input_id,
+                                         1,
+                                         &original_link_id));
     ASSERT_TRUE(original_link_id != 0u);
-    ASSERT_EQ(NMO_OK, nmo_session_edit_commit(seed_edit));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(seed_scope.edit));
+    destroy_test_workspace_seed_scope(&seed_scope);
 
     ASSERT_EQ(NMO_OK,
-              nmo_script_edit_begin(ctx, session, "remove-add-link", &tx));
+              begin_test_script_edit(ctx, session, "remove-add-link", &tx));
     ASSERT_EQ(NMO_OK,
               nmo_script_edit_remove_behavior_link(tx,
                                                    fixture.root_behavior_id,
@@ -497,7 +589,7 @@ TEST(script_edit_transaction,
     setup_script_control_fixture(session, &fixture);
 
     ASSERT_EQ(NMO_OK,
-              nmo_script_edit_begin(ctx, session, "reject-reversed-link", &tx));
+              begin_test_script_edit(ctx, session, "reject-reversed-link", &tx));
     ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
               nmo_script_edit_add_behavior_link(tx,
                                                 fixture.root_behavior_id,
@@ -518,7 +610,7 @@ TEST(script_edit_transaction,
     nmo_session_t *session = NULL;
     nmo_script_edit_tx_t *tx = NULL;
     script_control_fixture_t fixture;
-    nmo_session_edit_t *seed_edit = NULL;
+    test_workspace_seed_scope_t seed_scope = {0};
     nmo_object_id_t link_id = 0;
 
     ASSERT_NOT_NULL(ctx);
@@ -527,19 +619,22 @@ TEST(script_edit_transaction,
 
     setup_script_control_fixture(session, &fixture);
 
-    ASSERT_EQ(NMO_OK, nmo_session_edit_begin(session, "seed-link", &seed_edit));
     ASSERT_EQ(NMO_OK,
-              nmo_session_edit_add_behavior_link(seed_edit,
-                                                 fixture.root_behavior_id,
-                                                 fixture.source_output_id,
-                                                 fixture.target_input_id,
-                                                 1,
-                                                 &link_id));
+              begin_test_workspace_seed_edit(
+                  ctx, session, "seed-link", &seed_scope));
+    ASSERT_EQ(NMO_OK,
+              nmo_behavior_edit_add_link(seed_scope.edit,
+                                         fixture.root_behavior_id,
+                                         fixture.source_output_id,
+                                         fixture.target_input_id,
+                                         1,
+                                         &link_id));
     ASSERT_TRUE(link_id != 0u);
-    ASSERT_EQ(NMO_OK, nmo_session_edit_commit(seed_edit));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(seed_scope.edit));
+    destroy_test_workspace_seed_scope(&seed_scope);
 
     ASSERT_EQ(NMO_OK,
-              nmo_script_edit_begin(ctx, session, "reject-reversed-rewire", &tx));
+              begin_test_script_edit(ctx, session, "reject-reversed-rewire", &tx));
     ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
               nmo_script_edit_rewire_behavior_link(tx,
                                                    link_id,
@@ -572,7 +667,7 @@ TEST(script_edit_transaction,
               nmo_ref_graph_validate(ref_graph, &broken_edges, &broken_count));
     ASSERT_EQ(2u, broken_count);
 
-    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(ctx, session, "param-edit", &tx));
+    ASSERT_EQ(NMO_OK, begin_test_script_edit(ctx, session, "param-edit", &tx));
     ASSERT_NOT_NULL(tx);
     ASSERT_EQ(NMO_OK, nmo_script_edit_set_parameter_value(tx, 46u, "520"));
     ASSERT_EQ(NMO_OK,
@@ -594,7 +689,7 @@ TEST(script_edit_transaction,
     session = nmo_session_load(ctx, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
     ASSERT_NOT_NULL(session);
 
-    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(ctx, session, "param-edit-invalid", &tx));
+    ASSERT_EQ(NMO_OK, begin_test_script_edit(ctx, session, "param-edit-invalid", &tx));
     ASSERT_NOT_NULL(tx);
     ASSERT_EQ(NMO_OK, nmo_script_edit_set_parameter_value(tx, 46u, "999999"));
     ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
@@ -622,7 +717,7 @@ TEST(script_edit_transaction,
     ASSERT_TRUE(diag.attempted);
     ASSERT_NE(NMO_OK, diag.status);
 
-    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(ctx, session, "param-edit-iface", &tx));
+    ASSERT_EQ(NMO_OK, begin_test_script_edit(ctx, session, "param-edit-iface", &tx));
     ASSERT_NOT_NULL(tx);
     ASSERT_EQ(NMO_OK, nmo_script_edit_set_parameter_value(tx, 46u, "520"));
     ASSERT_EQ(NMO_OK,
@@ -652,3 +747,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(script_edit_transaction,
                   interface_validation_allows_preexisting_diagnostics_for_value_only_parameter_edit);
 TEST_MAIN_END()
+
+
+
+
+

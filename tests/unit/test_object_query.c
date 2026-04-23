@@ -4,6 +4,7 @@
  */
 
 #include "test_framework.h"
+#include "document/nmo_document.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_iter.h"
 #include "object/nmo_class_ids.h"
@@ -11,6 +12,7 @@
 #include "format/nmo_object.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_arena.h"
@@ -327,13 +329,14 @@ TEST(object_query, guid_query_combines_with_class_and_name_filters)
     teardown_objects();
 }
 
-TEST(object_query, session_query_first_filters_by_guid)
+TEST(object_query, owner_find_first_filters_by_guid)
 {
     nmo_allocator_t allocator = nmo_allocator_default();
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
     ASSERT_NOT_NULL(session);
+    nmo_document_t *document = NULL;
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
     ASSERT_NOT_NULL(repo);
 
@@ -348,7 +351,8 @@ TEST(object_query, session_query_first_filters_by_guid)
     };
     nmo_object_t *found = NULL;
     size_t found_index = SIZE_MAX;
-    ASSERT_EQ(NMO_OK, nmo_session_query_first(session, &query, &found, &found_index));
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    ASSERT_EQ(NMO_OK, nmo_object_query_find_first(document, &query, &found, &found_index));
     ASSERT_NOT_NULL(found);
     ASSERT_EQ(10, nmo_object_get_id(found));
     ASSERT_EQ(0, found_index);
@@ -360,7 +364,7 @@ TEST(object_query, session_query_first_filters_by_guid)
     found = (nmo_object_t *)0x1;
     found_index = 42;
     ASSERT_EQ(NMO_ERR_NOT_FOUND,
-              nmo_session_query_first(session, &missing, &found, &found_index));
+              nmo_object_query_find_first(document, &missing, &found, &found_index));
     ASSERT_NULL(found);
 
     nmo_session_destroy(session);
@@ -610,14 +614,16 @@ TEST(object_query, indexed_text_single_trigram_deduplicates_repeated_names)
     nmo_context_release(ctx);
 }
 
-TEST(object_query, session_query_api_tracks_direct_repository_mutation)
+TEST(object_query, owner_query_api_tracks_direct_repository_mutation)
 {
     nmo_allocator_t allocator = nmo_allocator_default();
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
-    nmo_session_t *session = nmo_session_create(ctx);
+    nmo_document_t *document = nmo_document_create(ctx);
+    ASSERT_NOT_NULL(document);
+    nmo_session_t *session = nmo_session_from_document(document);
     ASSERT_NOT_NULL(session);
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo = nmo_document_get_repository(document);
     ASSERT_NOT_NULL(repo);
 
     nmo_object_t *obj = make_object(&allocator, 10, NMO_CID_OBJECT, "SessionObject");
@@ -628,9 +634,9 @@ TEST(object_query, session_query_api_tracks_direct_repository_mutation)
         .name = "SessionObject",
         .name_mode = NMO_OBJECT_QUERY_NAME_EXACT
     };
-    nmo_object_query_result_t result = {0};
-    ASSERT_EQ(NMO_OK, nmo_session_query_objects(session, &query, NULL, NULL, &result));
-    ASSERT_EQ(1, result.matched);
+    size_t count = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_query_count(document, &query, &count));
+    ASSERT_EQ(1u, count);
 
     nmo_object_t *added = make_object(&allocator, 11, NMO_CID_OBJECT, "AddedObject");
     ASSERT_NOT_NULL(added);
@@ -640,35 +646,37 @@ TEST(object_query, session_query_api_tracks_direct_repository_mutation)
         .name = "AddedObject",
         .name_mode = NMO_OBJECT_QUERY_NAME_EXACT
     };
-    ASSERT_EQ(NMO_OK, nmo_session_query_objects(session, &added_query, NULL, NULL, &result));
-    ASSERT_EQ(1, result.matched);
+    ASSERT_EQ(NMO_OK, nmo_object_query_count(document, &added_query, &count));
+    ASSERT_EQ(1u, count);
 
     ASSERT_EQ(NMO_OK, nmo_object_repository_rename(repo, 10, "RenamedSessionObject"));
     nmo_object_query_t renamed_query = {
         .name = "RenamedSessionObject",
         .name_mode = NMO_OBJECT_QUERY_NAME_EXACT
     };
-    ASSERT_EQ(NMO_OK, nmo_session_query_objects(session, &renamed_query, NULL, NULL, &result));
-    ASSERT_EQ(1, result.matched);
-    ASSERT_EQ(NMO_OK, nmo_session_query_objects(session, &query, NULL, NULL, &result));
-    ASSERT_EQ(0, result.matched);
+    ASSERT_EQ(NMO_OK, nmo_object_query_count(document, &renamed_query, &count));
+    ASSERT_EQ(1u, count);
+    ASSERT_EQ(NMO_OK, nmo_object_query_count(document, &query, &count));
+    ASSERT_EQ(0u, count);
 
     ASSERT_EQ(NMO_OK, nmo_object_repository_remove(repo, 10));
-    ASSERT_EQ(NMO_OK, nmo_session_query_objects(session, &renamed_query, NULL, NULL, &result));
-    ASSERT_EQ(0, result.matched);
+    ASSERT_EQ(NMO_OK, nmo_object_query_count(document, &renamed_query, &count));
+    ASSERT_EQ(0u, count);
 
-    nmo_session_destroy(session);
+    nmo_document_destroy(document);
     nmo_context_release(ctx);
 }
 
-TEST(object_query, session_query_api_tracks_type_guid_mutation)
+TEST(object_query, owner_query_api_tracks_type_guid_mutation)
 {
     nmo_allocator_t allocator = nmo_allocator_default();
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
-    nmo_session_t *session = nmo_session_create(ctx);
+    nmo_document_t *document = nmo_document_create(ctx);
+    ASSERT_NOT_NULL(document);
+    nmo_session_t *session = nmo_session_from_document(document);
     ASSERT_NOT_NULL(session);
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo = nmo_document_get_repository(document);
     ASSERT_NOT_NULL(repo);
 
     nmo_object_t *obj = make_object(&allocator, 20, NMO_CID_OBJECT, "GuidObject");
@@ -684,18 +692,18 @@ TEST(object_query, session_query_api_tracks_type_guid_mutation)
         .has_type_guid = true,
         .type_guid = TEST_GUID_MISSING
     };
-    nmo_object_query_result_t result = {0};
-    ASSERT_EQ(NMO_OK, nmo_session_query_objects(session, &old_guid, NULL, NULL, &result));
-    ASSERT_EQ(1, result.matched);
+    size_t count = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_query_count(document, &old_guid, &count));
+    ASSERT_EQ(1u, count);
 
     ASSERT_EQ(NMO_OK, nmo_object_repository_set_type_guid(repo, 20, TEST_GUID_MISSING));
 
-    ASSERT_EQ(NMO_OK, nmo_session_query_objects(session, &old_guid, NULL, NULL, &result));
-    ASSERT_EQ(0, result.matched);
-    ASSERT_EQ(NMO_OK, nmo_session_query_objects(session, &new_guid, NULL, NULL, &result));
-    ASSERT_EQ(1, result.matched);
+    ASSERT_EQ(NMO_OK, nmo_object_query_count(document, &old_guid, &count));
+    ASSERT_EQ(0u, count);
+    ASSERT_EQ(NMO_OK, nmo_object_query_count(document, &new_guid, &count));
+    ASSERT_EQ(1u, count);
 
-    nmo_session_destroy(session);
+    nmo_document_destroy(document);
     nmo_context_release(ctx);
 }
 
@@ -956,7 +964,7 @@ REGISTER_TEST(object_query, name_modes_share_case_rules);
 REGISTER_TEST(object_query, guid_matching_filters_exact_type_guid);
 REGISTER_TEST(object_query, null_guid_query_matches_no_objects);
 REGISTER_TEST(object_query, guid_query_combines_with_class_and_name_filters);
-REGISTER_TEST(object_query, session_query_first_filters_by_guid);
+REGISTER_TEST(object_query, owner_find_first_filters_by_guid);
 REGISTER_TEST(object_query, text_reducer_marks_do_not_poison_later_queries);
 REGISTER_TEST(object_query, predicate_and_collect);
 REGISTER_TEST(object_query, visitor_can_stop_early);
@@ -964,8 +972,8 @@ REGISTER_TEST(object_query, visitor_receives_repository_index);
 REGISTER_TEST(object_query, indexed_query_handles_duplicate_names_and_rename);
 REGISTER_TEST(object_query, indexed_text_reducers_preserve_matches);
 REGISTER_TEST(object_query, indexed_text_single_trigram_deduplicates_repeated_names);
-REGISTER_TEST(object_query, session_query_api_tracks_direct_repository_mutation);
-REGISTER_TEST(object_query, session_query_api_tracks_type_guid_mutation);
+REGISTER_TEST(object_query, owner_query_api_tracks_direct_repository_mutation);
+REGISTER_TEST(object_query, owner_query_api_tracks_type_guid_mutation);
 REGISTER_TEST(object_query, stable_owner_count_and_find_first_facades);
 REGISTER_TEST(object_query, stable_owner_resolve_one_matches_selector);
 REGISTER_TEST(object_query, attached_query_index_tracks_repository_mutation);
@@ -975,3 +983,4 @@ REGISTER_TEST(object_query, stable_object_iterator_facade);
 REGISTER_TEST(object_query, stable_object_iterator_exact_class_facade);
 REGISTER_TEST(object_query, stable_object_iterator_tracks_repository_mutation);
 TEST_MAIN_END()
+
