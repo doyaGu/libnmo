@@ -86,6 +86,46 @@ nmo_status_t nmo_document_internal_save_file(
     nmo_document_t *document,
     const char *path,
     const nmo_save_options_t *opts);
+nmo_ref_graph_t *nmo_document_internal_ref_graph(nmo_document_t *document);
+void nmo_document_internal_invalidate_ref_graph(nmo_document_t *document);
+nmo_behavior_index_t *nmo_document_internal_behavior_index(
+    nmo_document_t *document);
+void nmo_document_internal_invalidate_behavior_index(nmo_document_t *document);
+nmo_status_t nmo_document_internal_ensure_behavior_acceleration(
+    nmo_document_t *document);
+void nmo_document_internal_get_behavior_interface_diagnostics(
+    nmo_document_t *document,
+    nmo_session_behavior_interface_diagnostics_t *out_diag);
+nmo_status_t nmo_document_internal_interface_view_from_behavior(
+    nmo_document_t *document,
+    nmo_object_id_t owner_behavior_id,
+    nmo_interface_view_t *out_view);
+nmo_status_t nmo_document_internal_apply_edit_flags(
+    nmo_document_t *document,
+    uint32_t flags);
+nmo_status_t nmo_document_internal_create_object(
+    nmo_document_t *document,
+    nmo_class_id_t class_id,
+    const char *name,
+    nmo_guid_t type_guid,
+    nmo_object_id_t *out_created_id);
+nmo_status_t nmo_document_internal_preview_destroy(
+    nmo_document_t *document,
+    const nmo_object_id_t *object_ids,
+    size_t object_count,
+    uint32_t flags,
+    nmo_arena_t *arena,
+    nmo_object_id_t **out_destroy_ids,
+    size_t *out_destroy_count);
+nmo_status_t nmo_document_internal_destroy_objects(
+    nmo_document_t *document,
+    const nmo_object_id_t *object_ids,
+    size_t object_count,
+    uint32_t flags);
+nmo_status_t nmo_document_internal_execute_runtime_request(
+    nmo_document_t *document,
+    const nmo_runtime_request_t *request,
+    nmo_runtime_report_t *out_report);
 
 nmo_context_t *nmo_workspace_internal_context(const nmo_workspace_t *workspace);
 nmo_object_repository_t *nmo_workspace_internal_repository(

@@ -31,6 +31,7 @@ TEST(report_view, diff_view_preserves_paths_for_renamed_objects)
     nmo_session_t *session1 = NULL;
     nmo_context_t *ctx2 = NULL;
     nmo_session_t *session2 = NULL;
+    nmo_document_t *document1 = NULL;
     nmo_document_t *document2 = NULL;
     nmo_object_t *renamed = NULL;
     nmo_diff_view_t view;
@@ -45,7 +46,9 @@ TEST(report_view, diff_view_preserves_paths_for_renamed_objects)
     ASSERT_TRUE(nmo_session_open_file_with_context(
         NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
         &ctx2, &session2, errbuf, sizeof(errbuf)));
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session1, &document1));
     ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session2, &document2));
+    ASSERT_NOT_NULL(document1);
     ASSERT_NOT_NULL(document2);
 
     status = nmo_object_query_resolve_one(
@@ -61,7 +64,7 @@ TEST(report_view, diff_view_preserves_paths_for_renamed_objects)
                                            "InGameCam_Renamed"));
 
     memset(&view, 0, sizeof(view));
-    status = nmo_diff_build_view(session1, session2, &view);
+    status = nmo_diff_build_view(document1, document2, &view);
     ASSERT_EQ(NMO_OK, status);
     ASSERT_TRUE(view.renamed_count > 0u);
     for (i = 0u; i < view.renamed_count; ++i) {
@@ -78,6 +81,8 @@ TEST(report_view, diff_view_preserves_paths_for_renamed_objects)
     ASSERT_TRUE(found);
 
     nmo_diff_view_destroy(&view);
+    nmo_document_destroy(document1);
+    nmo_document_destroy(document2);
     nmo_session_close_with_context(ctx1, session1);
     nmo_session_close_with_context(ctx2, session2);
 }

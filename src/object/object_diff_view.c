@@ -219,55 +219,36 @@ static nmo_status_t nmo_diff_object_view_from_changed(
 }
 
 NMO_API nmo_status_t nmo_diff_build_view(
-    nmo_session_t *session1,
-    nmo_session_t *session2,
+    const nmo_document_t *document1,
+    const nmo_document_t *document2,
     nmo_diff_view_t *out_view)
 {
-    nmo_document_t *document1 = NULL;
-    nmo_document_t *document2 = NULL;
     nmo_context_t *ctx1 = NULL;
     nmo_context_t *ctx2 = NULL;
     nmo_diff_result_t result;
     nmo_status_t status = NMO_OK;
     size_t i = 0u;
 
-    if (session1 == NULL || session2 == NULL || out_view == NULL) {
+    if (document1 == NULL || document2 == NULL || out_view == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     memset(out_view, 0, sizeof(*out_view));
-    if (nmo_session_borrow_document(session1, &document1) != NMO_OK ||
-        nmo_session_borrow_document(session2, &document2) != NMO_OK) {
-        if (document1 != NULL) {
-            nmo_document_destroy(document1);
-        }
-        if (document2 != NULL) {
-            nmo_document_destroy(document2);
-        }
-        return NMO_ERR_INVALID_STATE;
-    }
-
     ctx1 = nmo_document_get_context(document1);
     ctx2 = nmo_document_get_context(document2);
     if (ctx1 == NULL || ctx2 == NULL) {
-        nmo_document_destroy(document1);
-        nmo_document_destroy(document2);
         return NMO_ERR_INVALID_STATE;
     }
 
     memset(&result, 0, sizeof(result));
-    status = nmo_diff_objects(ctx1, session1, ctx2, session2, NULL, &result);
+    status = nmo_diff_objects(document1, document2, NULL, &result);
     if (status != NMO_OK) {
-        nmo_document_destroy(document1);
-        nmo_document_destroy(document2);
         return status;
     }
 
     status = nmo_diff_result_collect_stats(&result, &out_view->stats);
     if (status != NMO_OK) {
         nmo_diff_result_destroy(&result);
-        nmo_document_destroy(document1);
-        nmo_document_destroy(document2);
         return status;
     }
 
@@ -282,8 +263,6 @@ NMO_API nmo_status_t nmo_diff_build_view(
         if (out_view->changed == NULL) {
             nmo_diff_result_destroy(&result);
             nmo_diff_view_clear(out_view);
-            nmo_document_destroy(document1);
-            nmo_document_destroy(document2);
             return NMO_ERR_NOMEM;
         }
         for (i = 0u; i < out_view->changed_count; ++i) {
@@ -292,8 +271,6 @@ NMO_API nmo_status_t nmo_diff_build_view(
             if (status != NMO_OK) {
                 nmo_diff_result_destroy(&result);
                 nmo_diff_view_clear(out_view);
-                nmo_document_destroy(document1);
-                nmo_document_destroy(document2);
                 return status;
             }
         }
@@ -305,8 +282,6 @@ NMO_API nmo_status_t nmo_diff_build_view(
         if (out_view->renamed == NULL) {
             nmo_diff_result_destroy(&result);
             nmo_diff_view_clear(out_view);
-            nmo_document_destroy(document1);
-            nmo_document_destroy(document2);
             return NMO_ERR_NOMEM;
         }
         for (i = 0u; i < out_view->renamed_count; ++i) {
@@ -323,8 +298,6 @@ NMO_API nmo_status_t nmo_diff_build_view(
             if (status != NMO_OK) {
                 nmo_diff_result_destroy(&result);
                 nmo_diff_view_clear(out_view);
-                nmo_document_destroy(document1);
-                nmo_document_destroy(document2);
                 return status;
             }
             status = nmo_report_view_copy_string_field(rename->after_name,
@@ -332,8 +305,6 @@ NMO_API nmo_status_t nmo_diff_build_view(
             if (status != NMO_OK) {
                 nmo_diff_result_destroy(&result);
                 nmo_diff_view_clear(out_view);
-                nmo_document_destroy(document1);
-                nmo_document_destroy(document2);
                 return status;
             }
             memset(before_path, 0, sizeof(before_path));
@@ -344,8 +315,6 @@ NMO_API nmo_status_t nmo_diff_build_view(
                 if (status != NMO_OK) {
                     nmo_diff_result_destroy(&result);
                     nmo_diff_view_clear(out_view);
-                    nmo_document_destroy(document1);
-                    nmo_document_destroy(document2);
                     return status;
                 }
             }
@@ -357,8 +326,6 @@ NMO_API nmo_status_t nmo_diff_build_view(
                 if (status != NMO_OK) {
                     nmo_diff_result_destroy(&result);
                     nmo_diff_view_clear(out_view);
-                    nmo_document_destroy(document1);
-                    nmo_document_destroy(document2);
                     return status;
                 }
             }
@@ -371,8 +338,6 @@ NMO_API nmo_status_t nmo_diff_build_view(
         if (out_view->removed == NULL) {
             nmo_diff_result_destroy(&result);
             nmo_diff_view_clear(out_view);
-            nmo_document_destroy(document1);
-            nmo_document_destroy(document2);
             return NMO_ERR_NOMEM;
         }
         for (i = 0u; i < out_view->removed_count; ++i) {
@@ -381,8 +346,6 @@ NMO_API nmo_status_t nmo_diff_build_view(
             if (status != NMO_OK) {
                 nmo_diff_result_destroy(&result);
                 nmo_diff_view_clear(out_view);
-                nmo_document_destroy(document1);
-                nmo_document_destroy(document2);
                 return status;
             }
         }
@@ -394,8 +357,6 @@ NMO_API nmo_status_t nmo_diff_build_view(
         if (out_view->added == NULL) {
             nmo_diff_result_destroy(&result);
             nmo_diff_view_clear(out_view);
-            nmo_document_destroy(document1);
-            nmo_document_destroy(document2);
             return NMO_ERR_NOMEM;
         }
         for (i = 0u; i < out_view->added_count; ++i) {
@@ -404,16 +365,12 @@ NMO_API nmo_status_t nmo_diff_build_view(
             if (status != NMO_OK) {
                 nmo_diff_result_destroy(&result);
                 nmo_diff_view_clear(out_view);
-                nmo_document_destroy(document1);
-                nmo_document_destroy(document2);
                 return status;
             }
         }
     }
 
     nmo_diff_result_destroy(&result);
-    nmo_document_destroy(document1);
-    nmo_document_destroy(document2);
     return NMO_OK;
 }
 

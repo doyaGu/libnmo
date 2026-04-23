@@ -1406,7 +1406,20 @@ TEST(no_legacy_runtime_api_exports, behavior_analyze_and_views_are_workspace_fir
     assert_file_has_no_substring("src/object/object_import.c", "nmo_session_get_repository(");
     assert_file_has_no_substring("src/object/object_import.c", "nmo_session_create_object(");
     assert_file_has_no_substring("src/object/object_diff.c", "nmo_session_get_repository(");
+    assert_file_has_no_substring("src/object/object_diff.c", "nmo_session_borrow_document(");
     assert_file_has_no_substring("src/object/object_diff_view.c", "nmo_session_get_context(");
+    assert_file_has_no_substring("src/object/object_diff_view.c", "nmo_session_borrow_document(");
+}
+
+TEST(no_legacy_runtime_api_exports, object_diff_public_api_is_document_first) {
+    assert_file_has_substring("include/object/nmo_object_diff.h", "const nmo_document_t *document1");
+    assert_file_has_substring("include/object/nmo_object_diff.h", "const nmo_document_t *document2");
+    assert_file_has_no_substring("include/object/nmo_object_diff.h", "nmo_context_t *ctx1");
+    assert_file_has_no_substring("include/object/nmo_object_diff.h", "nmo_context_t *ctx2");
+    assert_file_has_no_substring("include/object/nmo_object_diff.h", "nmo_session_t *ses1");
+    assert_file_has_no_substring("include/object/nmo_object_diff.h", "nmo_session_t *ses2");
+    assert_file_has_no_substring("include/object/nmo_object_diff.h", "nmo_session_t *session1");
+    assert_file_has_no_substring("include/object/nmo_object_diff.h", "nmo_session_t *session2");
 }
 
 TEST_MAIN_BEGIN()
@@ -1499,4 +1512,5 @@ REGISTER_TEST(no_legacy_runtime_api_exports, behavior_and_object_owners_do_not_r
 REGISTER_TEST(no_legacy_runtime_api_exports, public_owner_headers_do_not_redeclare_legacy_query_and_edit_facades);
 REGISTER_TEST(no_legacy_runtime_api_exports, owner_sources_do_not_directly_include_session_headers);
 REGISTER_TEST(no_legacy_runtime_api_exports, behavior_analyze_and_views_are_workspace_first);
+REGISTER_TEST(no_legacy_runtime_api_exports, object_diff_public_api_is_document_first);
 TEST_MAIN_END()

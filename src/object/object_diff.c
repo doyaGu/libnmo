@@ -1757,14 +1757,14 @@ static bool build_lookup(const graph_side_t *g1,
 }
 
 nmo_status_t nmo_diff_objects(
-    nmo_context_t *ctx1, nmo_session_t *ses1,
-    nmo_context_t *ctx2, nmo_session_t *ses2,
+    const nmo_document_t *document1,
+    const nmo_document_t *document2,
     const nmo_diff_config_t *config,
     nmo_diff_result_t *result)
 {
-    nmo_document_t *doc1 = NULL;
-    nmo_document_t *doc2 = NULL;
-    if (!ctx1 || !ctx2 || !ses1 || !ses2 || !result) {
+    nmo_context_t *ctx1 = NULL;
+    nmo_context_t *ctx2 = NULL;
+    if (!document1 || !document2 || !result) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     memset(result, 0, sizeof(*result));
@@ -1775,22 +1775,9 @@ nmo_status_t nmo_diff_objects(
     if (cfg.rename_similarity < 0.0f) cfg.rename_similarity = 0.0f;
     if (cfg.rename_similarity > 1.0f) cfg.rename_similarity = 1.0f;
 
-    if (nmo_session_borrow_document(ses1, &doc1) != NMO_OK ||
-        nmo_session_borrow_document(ses2, &doc2) != NMO_OK) {
-        if (doc1 != NULL) {
-            nmo_document_destroy(doc1);
-        }
-        if (doc2 != NULL) {
-            nmo_document_destroy(doc2);
-        }
-        return NMO_ERR_INVALID_STATE;
-    }
-
-    ctx1 = nmo_document_get_context(doc1);
-    ctx2 = nmo_document_get_context(doc2);
+    ctx1 = nmo_document_get_context(document1);
+    ctx2 = nmo_document_get_context(document2);
     if (!ctx1 || !ctx2) {
-        nmo_document_destroy(doc1);
-        nmo_document_destroy(doc2);
         return NMO_ERR_INVALID_STATE;
     }
 
@@ -1805,8 +1792,6 @@ nmo_status_t nmo_diff_objects(
 
     nmo_arena_t *arena = nmo_arena_create(allocator, 128 * 1024);
     if (!arena) {
-        nmo_document_destroy(doc1);
-        nmo_document_destroy(doc2);
         return NMO_ERR_NOMEM;
     }
     result->arena_ = arena;
@@ -1814,12 +1799,12 @@ nmo_status_t nmo_diff_objects(
     diff_side_t s1 = {
         .ctx = ctx1,
         .registry = nmo_context_get_type_registry(ctx1),
-        .repo = nmo_document_get_repository(doc1),
+        .repo = nmo_document_get_repository(document1),
     };
     diff_side_t s2 = {
         .ctx = ctx2,
         .registry = nmo_context_get_type_registry(ctx2),
-        .repo = nmo_document_get_repository(doc2),
+        .repo = nmo_document_get_repository(document2),
     };
 
     graph_side_t g1, g2;
@@ -1827,8 +1812,6 @@ nmo_status_t nmo_diff_objects(
         graph_side_destroy(&g1);
         graph_side_destroy(&g2);
         nmo_diff_result_destroy(result);
-        nmo_document_destroy(doc1);
-        nmo_document_destroy(doc2);
         return NMO_ERR_NOMEM;
     }
     result->total_objects1 = g1.count;
@@ -1839,8 +1822,6 @@ nmo_status_t nmo_diff_objects(
         graph_side_destroy(&g1);
         graph_side_destroy(&g2);
         nmo_diff_result_destroy(result);
-        nmo_document_destroy(doc1);
-        nmo_document_destroy(doc2);
         return NMO_ERR_NOMEM;
     }
 
@@ -1850,8 +1831,6 @@ nmo_status_t nmo_diff_objects(
         graph_side_destroy(&g1);
         graph_side_destroy(&g2);
         nmo_diff_result_destroy(result);
-        nmo_document_destroy(doc1);
-        nmo_document_destroy(doc2);
         return NMO_ERR_NOMEM;
     }
 
@@ -1869,8 +1848,6 @@ nmo_status_t nmo_diff_objects(
         graph_side_destroy(&g1);
         graph_side_destroy(&g2);
         nmo_diff_result_destroy(result);
-        nmo_document_destroy(doc1);
-        nmo_document_destroy(doc2);
         return NMO_ERR_NOMEM;
     }
 
@@ -1885,8 +1862,6 @@ nmo_status_t nmo_diff_objects(
         graph_side_destroy(&g1);
         graph_side_destroy(&g2);
         nmo_diff_result_destroy(result);
-        nmo_document_destroy(doc1);
-        nmo_document_destroy(doc2);
         return NMO_ERR_NOMEM;
     }
     size_t pw = 0;
@@ -1909,8 +1884,6 @@ nmo_status_t nmo_diff_objects(
         graph_side_destroy(&g1);
         graph_side_destroy(&g2);
         nmo_diff_result_destroy(result);
-        nmo_document_destroy(doc1);
-        nmo_document_destroy(doc2);
         return NMO_ERR_NOMEM;
     }
 
@@ -1928,8 +1901,6 @@ nmo_status_t nmo_diff_objects(
             graph_side_destroy(&g1);
             graph_side_destroy(&g2);
             nmo_diff_result_destroy(result);
-            nmo_document_destroy(doc1);
-            nmo_document_destroy(doc2);
             return NMO_ERR_NOMEM;
         }
         memset(result->changed, 0, changed_cap * sizeof(nmo_object_diff_t));
@@ -1946,8 +1917,6 @@ nmo_status_t nmo_diff_objects(
             graph_side_destroy(&g1);
             graph_side_destroy(&g2);
             nmo_diff_result_destroy(result);
-            nmo_document_destroy(doc1);
-            nmo_document_destroy(doc2);
             return NMO_ERR_NOMEM;
         }
         memset(result->renamed, 0, matched_count * sizeof(nmo_rename_diff_t));
@@ -1964,8 +1933,6 @@ nmo_status_t nmo_diff_objects(
             graph_side_destroy(&g1);
             graph_side_destroy(&g2);
             nmo_diff_result_destroy(result);
-            nmo_document_destroy(doc1);
-            nmo_document_destroy(doc2);
             return NMO_ERR_NOMEM;
         }
     }
@@ -1981,8 +1948,6 @@ nmo_status_t nmo_diff_objects(
             graph_side_destroy(&g1);
             graph_side_destroy(&g2);
             nmo_diff_result_destroy(result);
-            nmo_document_destroy(doc1);
-            nmo_document_destroy(doc2);
             return NMO_ERR_NOMEM;
         }
     }
@@ -2014,8 +1979,6 @@ nmo_status_t nmo_diff_objects(
                 graph_side_destroy(&g1);
                 graph_side_destroy(&g2);
                 nmo_diff_result_destroy(result);
-                nmo_document_destroy(doc1);
-                nmo_document_destroy(doc2);
                 return NMO_ERR_NOMEM;
             }
         }
@@ -2032,8 +1995,6 @@ nmo_status_t nmo_diff_objects(
             graph_side_destroy(&g1);
             graph_side_destroy(&g2);
             nmo_diff_result_destroy(result);
-            nmo_document_destroy(doc1);
-            nmo_document_destroy(doc2);
             return NMO_ERR_NOMEM;
         }
         if (fd_total == 0) {
@@ -2070,8 +2031,6 @@ nmo_status_t nmo_diff_objects(
     buckets_destroy(&buckets);
     graph_side_destroy(&g1);
     graph_side_destroy(&g2);
-    nmo_document_destroy(doc1);
-    nmo_document_destroy(doc2);
     return NMO_OK;
 }
 

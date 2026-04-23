@@ -1,8 +1,10 @@
 #include "test_framework.h"
 
+#include "document/nmo_document.h"
 #include "session/nmo_context.h"
 #include "object/nmo_object_diff.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 #include "core/nmo_guid.h"
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
@@ -55,7 +57,11 @@ typedef struct {
     nmo_context_t *ctx;
     nmo_session_t *ses1;
     nmo_session_t *ses2;
+    nmo_document_t *doc1;
+    nmo_document_t *doc2;
 } diff_fixture_t;
+
+static void fixture_destroy(diff_fixture_t *fx);
 
 static nmo_status_t dummy_serialize(const void *instance,
                                     struct nmo_chunk *chunk,
@@ -224,13 +230,27 @@ static bool fixture_init(diff_fixture_t *fx) {
     nmo_context_desc_t desc = {0};
     fx->ctx = nmo_context_create(&desc);
     if (!fx->ctx) return false;
-    if (!register_test_types(fx->ctx)) return false;
+    if (!register_test_types(fx->ctx)) {
+        fixture_destroy(fx);
+        return false;
+    }
     fx->ses1 = nmo_session_create(fx->ctx);
     fx->ses2 = nmo_session_create(fx->ctx);
-    return fx->ses1 && fx->ses2;
+    if (!fx->ses1 || !fx->ses2) {
+        fixture_destroy(fx);
+        return false;
+    }
+    if (nmo_session_borrow_document(fx->ses1, &fx->doc1) != NMO_OK ||
+        nmo_session_borrow_document(fx->ses2, &fx->doc2) != NMO_OK) {
+        fixture_destroy(fx);
+        return false;
+    }
+    return true;
 }
 
 static void fixture_destroy(diff_fixture_t *fx) {
+    if (fx->doc1) nmo_document_destroy(fx->doc1);
+    if (fx->doc2) nmo_document_destroy(fx->doc2);
     if (fx->ses1) nmo_session_destroy(fx->ses1);
     if (fx->ses2) nmo_session_destroy(fx->ses2);
     if (fx->ctx) nmo_context_release(fx->ctx);
@@ -265,7 +285,7 @@ static nmo_object_t *add_object(nmo_context_t *ctx,
 static nmo_status_t run_diff(diff_fixture_t *fx,
                              const nmo_diff_config_t *cfg,
                              nmo_diff_result_t *out) {
-    return nmo_diff_objects(fx->ctx, fx->ses1, fx->ctx, fx->ses2, cfg, out);
+    return nmo_diff_objects(fx->doc1, fx->doc2, cfg, out);
 }
 
 TEST(object_diff, pure_rename_not_add_remove_not_identical) {

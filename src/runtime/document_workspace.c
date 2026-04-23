@@ -423,6 +423,136 @@ nmo_status_t nmo_document_internal_save_file(
     return session != NULL ? nmo_save_file(session, path, opts) : NMO_ERR_INVALID_STATE;
 }
 
+nmo_ref_graph_t *nmo_document_internal_ref_graph(nmo_document_t *document)
+{
+    nmo_session_t *session = nmo_session_from_document(document);
+    return session != NULL ? nmo_session_get_ref_graph(session) : NULL;
+}
+
+void nmo_document_internal_invalidate_ref_graph(nmo_document_t *document)
+{
+    nmo_session_t *session = nmo_session_from_document(document);
+    if (session != NULL) {
+        nmo_session_invalidate_ref_graph(session);
+    }
+}
+
+nmo_behavior_index_t *nmo_document_internal_behavior_index(
+    nmo_document_t *document)
+{
+    nmo_session_t *session = nmo_session_from_document(document);
+    return session != NULL ? nmo_session_get_behavior_index(session) : NULL;
+}
+
+void nmo_document_internal_invalidate_behavior_index(nmo_document_t *document)
+{
+    nmo_session_t *session = nmo_session_from_document(document);
+    if (session != NULL) {
+        nmo_session_invalidate_behavior_index(session);
+    }
+}
+
+nmo_status_t nmo_document_internal_ensure_behavior_acceleration(
+    nmo_document_t *document)
+{
+    nmo_session_t *session = nmo_session_from_document(document);
+    return session != NULL
+        ? nmo_session_ensure_behavior_acceleration(session)
+        : NMO_ERR_INVALID_STATE;
+}
+
+void nmo_document_internal_get_behavior_interface_diagnostics(
+    nmo_document_t *document,
+    nmo_session_behavior_interface_diagnostics_t *out_diag)
+{
+    nmo_session_t *session = nmo_session_from_document(document);
+    if (out_diag != NULL) {
+        memset(out_diag, 0, sizeof(*out_diag));
+    }
+    if (session != NULL && out_diag != NULL) {
+        nmo_session_get_behavior_interface_diagnostics(session, out_diag);
+    }
+}
+
+nmo_status_t nmo_document_internal_interface_view_from_behavior(
+    nmo_document_t *document,
+    nmo_object_id_t owner_behavior_id,
+    nmo_interface_view_t *out_view)
+{
+    nmo_session_t *session = nmo_session_from_document(document);
+    return session != NULL
+        ? nmo_interface_view_from_behavior(session, owner_behavior_id, out_view)
+        : NMO_ERR_INVALID_STATE;
+}
+
+nmo_status_t nmo_document_internal_apply_edit_flags(
+    nmo_document_t *document,
+    uint32_t flags)
+{
+    nmo_session_t *session = nmo_session_from_document(document);
+    return session != NULL
+        ? nmo_runtime_apply_edit_flags(session, flags)
+        : NMO_ERR_INVALID_STATE;
+}
+
+nmo_status_t nmo_document_internal_create_object(
+    nmo_document_t *document,
+    nmo_class_id_t class_id,
+    const char *name,
+    nmo_guid_t type_guid,
+    nmo_object_id_t *out_created_id)
+{
+    nmo_session_t *session = nmo_session_from_document(document);
+    return session != NULL
+        ? nmo_session_create_object(session, class_id, name, type_guid, out_created_id, NULL)
+        : NMO_ERR_INVALID_STATE;
+}
+
+nmo_status_t nmo_document_internal_preview_destroy(
+    nmo_document_t *document,
+    const nmo_object_id_t *object_ids,
+    size_t object_count,
+    uint32_t flags,
+    nmo_arena_t *arena,
+    nmo_object_id_t **out_destroy_ids,
+    size_t *out_destroy_count)
+{
+    nmo_session_t *session = nmo_session_from_document(document);
+    return session != NULL
+        ? nmo_session_preview_destroy(
+              session,
+              object_ids,
+              object_count,
+              flags,
+              arena,
+              out_destroy_ids,
+              out_destroy_count)
+        : NMO_ERR_INVALID_STATE;
+}
+
+nmo_status_t nmo_document_internal_destroy_objects(
+    nmo_document_t *document,
+    const nmo_object_id_t *object_ids,
+    size_t object_count,
+    uint32_t flags)
+{
+    nmo_session_t *session = nmo_session_from_document(document);
+    return session != NULL
+        ? nmo_session_destroy_objects(session, object_ids, object_count, flags, NULL)
+        : NMO_ERR_INVALID_STATE;
+}
+
+nmo_status_t nmo_document_internal_execute_runtime_request(
+    nmo_document_t *document,
+    const nmo_runtime_request_t *request,
+    nmo_runtime_report_t *out_report)
+{
+    nmo_session_t *session = nmo_session_from_document(document);
+    return session != NULL
+        ? nmo_session_execute(session, request, out_report)
+        : NMO_ERR_INVALID_STATE;
+}
+
 nmo_context_t *nmo_workspace_internal_context(const nmo_workspace_t *workspace)
 {
     return workspace != NULL ? workspace->context : NULL;
@@ -454,39 +584,38 @@ nmo_arena_t *nmo_workspace_internal_document_arena(const nmo_workspace_t *worksp
 
 nmo_ref_graph_t *nmo_workspace_internal_ref_graph(nmo_workspace_t *workspace)
 {
-    nmo_session_t *session = nmo_session_from_workspace(workspace);
-    return session != NULL ? nmo_session_get_ref_graph(session) : NULL;
+    return workspace != NULL
+        ? nmo_document_internal_ref_graph(workspace->document)
+        : NULL;
 }
 
 void nmo_workspace_internal_invalidate_ref_graph(nmo_workspace_t *workspace)
 {
-    nmo_session_t *session = nmo_session_from_workspace(workspace);
-    if (session != NULL) {
-        nmo_session_invalidate_ref_graph(session);
+    if (workspace != NULL) {
+        nmo_document_internal_invalidate_ref_graph(workspace->document);
     }
 }
 
 nmo_behavior_index_t *nmo_workspace_internal_behavior_index(
     nmo_workspace_t *workspace)
 {
-    nmo_session_t *session = nmo_session_from_workspace(workspace);
-    return session != NULL ? nmo_session_get_behavior_index(session) : NULL;
+    return workspace != NULL
+        ? nmo_document_internal_behavior_index(workspace->document)
+        : NULL;
 }
 
 void nmo_workspace_internal_invalidate_behavior_index(nmo_workspace_t *workspace)
 {
-    nmo_session_t *session = nmo_session_from_workspace(workspace);
-    if (session != NULL) {
-        nmo_session_invalidate_behavior_index(session);
+    if (workspace != NULL) {
+        nmo_document_internal_invalidate_behavior_index(workspace->document);
     }
 }
 
 nmo_status_t nmo_workspace_internal_ensure_behavior_acceleration(
     nmo_workspace_t *workspace)
 {
-    nmo_session_t *session = nmo_session_from_workspace(workspace);
-    return session != NULL
-        ? nmo_session_ensure_behavior_acceleration(session)
+    return workspace != NULL
+        ? nmo_document_internal_ensure_behavior_acceleration(workspace->document)
         : NMO_ERR_INVALID_STATE;
 }
 
@@ -494,12 +623,12 @@ void nmo_workspace_internal_get_behavior_interface_diagnostics(
     nmo_workspace_t *workspace,
     nmo_session_behavior_interface_diagnostics_t *out_diag)
 {
-    nmo_session_t *session = nmo_session_from_workspace(workspace);
-    if (out_diag != NULL) {
+    if (workspace != NULL) {
+        nmo_document_internal_get_behavior_interface_diagnostics(
+            workspace->document,
+            out_diag);
+    } else if (out_diag != NULL) {
         memset(out_diag, 0, sizeof(*out_diag));
-    }
-    if (session != NULL && out_diag != NULL) {
-        nmo_session_get_behavior_interface_diagnostics(session, out_diag);
     }
 }
 
@@ -508,9 +637,11 @@ nmo_status_t nmo_workspace_internal_interface_view_from_behavior(
     nmo_object_id_t owner_behavior_id,
     nmo_interface_view_t *out_view)
 {
-    nmo_session_t *session = nmo_session_from_workspace(workspace);
-    return session != NULL
-        ? nmo_interface_view_from_behavior(session, owner_behavior_id, out_view)
+    return workspace != NULL
+        ? nmo_document_internal_interface_view_from_behavior(
+              workspace->document,
+              owner_behavior_id,
+              out_view)
         : NMO_ERR_INVALID_STATE;
 }
 
@@ -529,8 +660,9 @@ nmo_status_t nmo_workspace_internal_apply_edit_flags(
     nmo_workspace_t *workspace,
     uint32_t flags)
 {
-    nmo_session_t *session = nmo_session_from_workspace(workspace);
-    return session != NULL ? nmo_runtime_apply_edit_flags(session, flags) : NMO_ERR_INVALID_STATE;
+    return workspace != NULL
+        ? nmo_document_internal_apply_edit_flags(workspace->document, flags)
+        : NMO_ERR_INVALID_STATE;
 }
 
 nmo_status_t nmo_workspace_internal_borrow_document(
@@ -550,9 +682,13 @@ nmo_status_t nmo_workspace_internal_create_object(
     nmo_guid_t type_guid,
     nmo_object_id_t *out_created_id)
 {
-    nmo_session_t *session = nmo_session_from_workspace(workspace);
-    return session != NULL
-        ? nmo_session_create_object(session, class_id, name, type_guid, out_created_id, NULL)
+    return workspace != NULL
+        ? nmo_document_internal_create_object(
+              workspace->document,
+              class_id,
+              name,
+              type_guid,
+              out_created_id)
         : NMO_ERR_INVALID_STATE;
 }
 
@@ -565,10 +701,9 @@ nmo_status_t nmo_workspace_internal_preview_destroy(
     nmo_object_id_t **out_destroy_ids,
     size_t *out_destroy_count)
 {
-    nmo_session_t *session = nmo_session_from_workspace(workspace);
-    return session != NULL
-        ? nmo_session_preview_destroy(
-              session,
+    return workspace != NULL
+        ? nmo_document_internal_preview_destroy(
+              workspace->document,
               object_ids,
               object_count,
               flags,
@@ -584,9 +719,12 @@ nmo_status_t nmo_workspace_internal_destroy_objects(
     size_t object_count,
     uint32_t flags)
 {
-    nmo_session_t *session = nmo_session_from_workspace(workspace);
-    return session != NULL
-        ? nmo_session_destroy_objects(session, object_ids, object_count, flags, NULL)
+    return workspace != NULL
+        ? nmo_document_internal_destroy_objects(
+              workspace->document,
+              object_ids,
+              object_count,
+              flags)
         : NMO_ERR_INVALID_STATE;
 }
 
@@ -595,9 +733,11 @@ nmo_status_t nmo_workspace_internal_execute_runtime_request(
     const nmo_runtime_request_t *request,
     nmo_runtime_report_t *out_report)
 {
-    nmo_session_t *session = nmo_session_from_workspace(workspace);
-    return session != NULL
-        ? nmo_session_execute(session, request, out_report)
+    return workspace != NULL
+        ? nmo_document_internal_execute_runtime_request(
+              workspace->document,
+              request,
+              out_report)
         : NMO_ERR_INVALID_STATE;
 }
 

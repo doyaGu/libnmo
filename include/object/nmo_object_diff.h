@@ -15,7 +15,7 @@ extern "C" {
 #endif
 
 typedef struct nmo_context nmo_context_t;
-typedef struct nmo_session nmo_session_t;
+typedef struct nmo_document nmo_document_t;
 typedef struct nmo_object nmo_object_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_object_repository nmo_object_repository_t;
@@ -132,8 +132,8 @@ typedef struct nmo_diff_view {
 } nmo_diff_view_t;
 
 NMO_API nmo_status_t nmo_diff_objects(
-    nmo_context_t *ctx1, nmo_session_t *ses1,
-    nmo_context_t *ctx2, nmo_session_t *ses2,
+    const nmo_document_t *document1,
+    const nmo_document_t *document2,
     const nmo_diff_config_t *config,
     nmo_diff_result_t *result);
 
@@ -165,8 +165,8 @@ NMO_API nmo_status_t nmo_diff_result_collect_stats(
     nmo_diff_result_stats_t *out_stats);
 
 NMO_API nmo_status_t nmo_diff_build_view(
-    nmo_session_t *session1,
-    nmo_session_t *session2,
+    const nmo_document_t *document1,
+    const nmo_document_t *document2,
     nmo_diff_view_t *out_view);
 
 NMO_API void nmo_diff_view_destroy(
