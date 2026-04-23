@@ -1277,7 +1277,7 @@ static int script_graph_run(nmo_cmd_ctx_t *ctx,
         goto cleanup;
     }
 
-    rc = (int)nmo_script_edit_graph_build(c.ctx, c.session, behavior_id,
+    rc = (int)nmo_script_edit_graph_build(c.workspace, behavior_id,
                                           depth, &graph);
     if (rc != NMO_OK) {
         char detail[256] = {0};

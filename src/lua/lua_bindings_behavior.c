@@ -370,7 +370,6 @@ static nmo_status_t nmo_lua_behavior_build_graph_from_args(
     nmo_script_edit_graph_t **out_graph)
 {
     nmo_workspace_t *workspace = NULL;
-    nmo_session_t *session = NULL;
     nmo_object_id_t root_behavior_id = 0u;
     uint32_t max_depth = UINT32_MAX;
     nmo_status_t status =
@@ -387,14 +386,7 @@ static nmo_status_t nmo_lua_behavior_build_graph_from_args(
         max_depth = (uint32_t)luaL_checkinteger(state, depth_index);
     }
 
-    session = nmo_session_from_workspace(workspace);
-    if (session == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
-                         "Lua workspace handle has no backing session");
-    }
-
-    return nmo_script_edit_graph_build(nmo_session_get_context(session),
-                                       session,
+    return nmo_script_edit_graph_build(workspace,
                                        root_behavior_id,
                                        max_depth,
                                        out_graph);

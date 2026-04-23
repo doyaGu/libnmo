@@ -1,11 +1,10 @@
 #include "behavior/nmo_behavior_analyze.h"
 #include "core/nmo_error.h"
+#include "../runtime/runtime_internal.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_context.h"
-#include "session/nmo_session.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -257,11 +256,11 @@ static bool boundary_classify_parameter_edge(
 }
 
 static bool boundary_classify_graph_edges(
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     const nmo_behavior_graph_t *graph,
     nmo_behavior_boundary_t *boundary) {
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
-    const nmo_behavior_index_t *index = nmo_session_get_behavior_index(session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
+    const nmo_behavior_index_t *index = nmo_workspace_internal_behavior_index(workspace);
 
     for (size_t i = 0; i < graph->edge_count; ++i) {
         const nmo_behavior_graph_edge_t *edge = &graph->edges[i];
@@ -283,12 +282,11 @@ static bool boundary_classify_graph_edges(
     return true;
 }
 
-bool nmo_behavior_boundary_build(nmo_context_t *ctx,
-                                 nmo_session_t *session,
+bool nmo_behavior_boundary_build(nmo_workspace_t *workspace,
                                  nmo_object_id_t behavior_id,
                                  uint32_t max_depth,
                                  nmo_behavior_boundary_t *out_boundary) {
-    if (!ctx || !session || behavior_id == 0 || !out_boundary) {
+    if (!workspace || behavior_id == 0 || !out_boundary) {
         NMO_SET_LAST_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                            "Invalid behavior boundary arguments");
         return false;
@@ -296,15 +294,14 @@ bool nmo_behavior_boundary_build(nmo_context_t *ctx,
 
     memset(out_boundary, 0, sizeof(*out_boundary));
 
-    if (nmo_session_ensure_behavior_acceleration(session) != NMO_OK) {
+    if (nmo_workspace_internal_ensure_behavior_acceleration(workspace) != NMO_OK) {
         NMO_SET_LAST_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
                            "Failed to build behavior acceleration");
         return false;
     }
 
     nmo_behavior_graph_t graph = {0};
-    if (!nmo_behavior_graph_build(ctx, session, behavior_id,
-                                  max_depth, &graph)) {
+    if (!nmo_behavior_graph_build(workspace, behavior_id, max_depth, &graph)) {
         return false;
     }
 
@@ -320,7 +317,7 @@ bool nmo_behavior_boundary_build(nmo_context_t *ctx,
         return false;
     }
 
-    if (!boundary_classify_graph_edges(session, &graph, out_boundary)) {
+    if (!boundary_classify_graph_edges(workspace, &graph, out_boundary)) {
         nmo_behavior_graph_free(&graph);
         nmo_behavior_boundary_free(out_boundary);
         NMO_SET_LAST_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
@@ -334,13 +331,12 @@ bool nmo_behavior_boundary_build(nmo_context_t *ctx,
 }
 
 bool nmo_behavior_boundary_build_for_nodes(
-    nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_object_id_t parent_behavior_id,
     const nmo_object_id_t *node_ids,
     size_t node_count,
     nmo_behavior_boundary_t *out_boundary) {
-    if (!ctx || !session || parent_behavior_id == 0 || !node_ids ||
+    if (!workspace || parent_behavior_id == 0 || !node_ids ||
         node_count == 0 || !out_boundary) {
         NMO_SET_LAST_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                            "Invalid selected behavior boundary arguments");
@@ -349,15 +345,14 @@ bool nmo_behavior_boundary_build_for_nodes(
 
     memset(out_boundary, 0, sizeof(*out_boundary));
 
-    if (nmo_session_ensure_behavior_acceleration(session) != NMO_OK) {
+    if (nmo_workspace_internal_ensure_behavior_acceleration(workspace) != NMO_OK) {
         NMO_SET_LAST_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
                            "Failed to build behavior acceleration");
         return false;
     }
 
     nmo_behavior_graph_t graph = {0};
-    if (!nmo_behavior_graph_build(ctx, session, parent_behavior_id,
-                                  UINT32_MAX, &graph)) {
+    if (!nmo_behavior_graph_build(workspace, parent_behavior_id, UINT32_MAX, &graph)) {
         return false;
     }
 
@@ -380,7 +375,7 @@ bool nmo_behavior_boundary_build_for_nodes(
         return false;
     }
 
-    if (!boundary_classify_graph_edges(session, &graph, out_boundary)) {
+    if (!boundary_classify_graph_edges(workspace, &graph, out_boundary)) {
         nmo_behavior_graph_free(&graph);
         nmo_behavior_boundary_free(out_boundary);
         NMO_SET_LAST_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,

@@ -2,9 +2,7 @@
 #include "behavior/nmo_behavior_analyze.h"
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_context.h"
-#include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
+#include "../runtime/runtime_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -49,7 +47,6 @@ static nmo_behavior_trace_step_kind_t nmo_script_trace_map_step_kind(
 }
 
 typedef struct nmo_script_tree_collect_ctx {
-    nmo_session_t *session;
     nmo_object_repository_t *repository;
     nmo_behavior_tree_node_view_t *nodes;
     size_t count;
@@ -124,8 +121,6 @@ NMO_API nmo_status_t nmo_behavior_trace_parameter_chain(
     uint32_t max_depth,
     nmo_behavior_trace_chain_view_t *out_view)
 {
-    nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
     nmo_array_t chain;
     const nmo_behavior_trace_step_t *steps = NULL;
     size_t i = 0u;
@@ -140,15 +135,13 @@ NMO_API nmo_status_t nmo_behavior_trace_parameter_chain(
         return NMO_ERR_NOT_FOUND;
     }
 
-    session = nmo_session_from_workspace(workspace);
-    ctx = session != NULL ? nmo_session_get_context(session) : NULL;
-    if (ctx == NULL || session == NULL) {
+    if (nmo_workspace_internal_context(workspace) == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
 
     nmo_array_init(&chain, sizeof(nmo_behavior_trace_step_t), 8u, NULL);
     status = nmo_behavior_analyze_trace_param_chain(
-        ctx, session, parameter_id, &chain, max_depth);
+        workspace, parameter_id, &chain, max_depth);
     if (status != NMO_OK) {
         nmo_array_dispose(&chain);
         return status;
@@ -190,8 +183,6 @@ NMO_API nmo_status_t nmo_behavior_trace_script_tree(
     uint32_t max_depth,
     nmo_behavior_tree_view_t *out_view)
 {
-    nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
     nmo_object_repository_t *repository = NULL;
     nmo_script_tree_collect_ctx_t collect = {0};
     nmo_status_t status = NMO_OK;
@@ -205,26 +196,23 @@ NMO_API nmo_status_t nmo_behavior_trace_script_tree(
         return NMO_ERR_NOT_FOUND;
     }
 
-    session = nmo_session_from_workspace(workspace);
-    ctx = session != NULL ? nmo_session_get_context(session) : NULL;
-    if (ctx == NULL || session == NULL) {
+    if (nmo_workspace_internal_context(workspace) == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
 
-    repository = nmo_session_get_repository(session);
+    repository = nmo_workspace_internal_repository(workspace);
     if (repository == NULL ||
         nmo_object_repository_find_by_id(repository, root_behavior_id) == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
 
-    collect.session = session;
     collect.repository = repository;
     collect.max_depth = max_depth == 0u ? UINT32_MAX : max_depth;
-    status = nmo_behavior_walk(ctx,
-                                    session,
-                                    root_behavior_id,
-                                    nmo_script_trace_collect_tree_node,
-                                    &collect);
+    status = nmo_behavior_walk(
+        workspace,
+        root_behavior_id,
+        nmo_script_trace_collect_tree_node,
+        &collect);
     if (status != NMO_OK) {
         nmo_behavior_tree_view_t cleanup_view = {
             .nodes = collect.nodes,

@@ -1,8 +1,7 @@
 #include "behavior/nmo_behavior_execute.h"
 
 #include "lua/nmo_lua_bindings.h"
-#include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
+#include "../runtime/runtime_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -144,7 +143,6 @@ NMO_API nmo_status_t nmo_behavior_execute(
     nmo_behavior_execution_t *execution = NULL;
     nmo_behavior_execute_options_t resolved_options =
         nmo_behavior_execute_options_default();
-    nmo_session_t *session = NULL;
     nmo_status_t status = NMO_OK;
 
     behavior_execute_clear_report(out_result);
@@ -179,25 +177,20 @@ NMO_API nmo_status_t nmo_behavior_execute(
         return NMO_ERR_NOMEM;
     }
 
-    session = nmo_session_from_document(execution->document);
-    if (session == NULL) {
-        behavior_execute_destroy(execution);
-        return NMO_ERR_INVALID_STATE;
-    }
-
-    status = nmo_load_file(session, input_path, resolved_options.load_options);
-    if (status != NMO_OK) {
-        behavior_execute_destroy(execution);
-        return status;
-    }
-
-    status = nmo_session_ensure_behavior_acceleration(session);
+    status = nmo_document_internal_load_file(
+        execution->document, input_path, resolved_options.load_options);
     if (status != NMO_OK) {
         behavior_execute_destroy(execution);
         return status;
     }
 
     status = nmo_workspace_create(ctx, execution->document, &execution->workspace);
+    if (status != NMO_OK) {
+        behavior_execute_destroy(execution);
+        return status;
+    }
+
+    status = nmo_workspace_internal_ensure_behavior_acceleration(execution->workspace);
     if (status != NMO_OK) {
         behavior_execute_destroy(execution);
         return status;

@@ -1,6 +1,5 @@
 #include "behavior/nmo_behavior_analyze.h"
-#include "session/nmo_context.h"
-#include "session/nmo_session.h"
+#include "../runtime/runtime_internal.h"
 #include "type/nmo_type_query.h"
 #include "core/nmo_error.h"
 #include "core/nmo_array.h"
@@ -20,7 +19,7 @@
 #include <string.h>
 
 /* ============================================================================
- * Build context — holds all mutable state for recursive graph construction
+ * Build context 芒鈧€?holds all mutable state for recursive graph construction
  * ============================================================================ */
 
 typedef struct graph_build_ctx {
@@ -198,7 +197,7 @@ static void free_graph_nodes(nmo_behavior_graph_node_t *nodes, size_t count) {
     free(nodes);
 }
 
-/* Set depth/parent on a node by ID (reverse scan — just-added is at end) */
+/* Set depth/parent on a node by ID (reverse scan 芒鈧€?just-added is at end) */
 static void set_node_depth(nmo_behavior_graph_node_t *nodes, size_t count,
                            nmo_object_id_t id, uint32_t depth, nmo_object_id_t parent_id) {
     for (size_t j = count; j > 0; --j) {
@@ -380,12 +379,15 @@ static bool build_behavior_contents(graph_build_ctx_t *gc,
  * Public API
  * ============================================================================ */
 
-bool nmo_behavior_graph_build(nmo_context_t *ctx,
-                              nmo_session_t *session,
+bool nmo_behavior_graph_build(nmo_workspace_t *workspace,
                               nmo_object_id_t behavior_id,
                               uint32_t max_depth,
                               nmo_behavior_graph_t *out_graph) {
-    if (!ctx || !session || behavior_id == 0 || !out_graph) {
+    nmo_context_t *ctx = NULL;
+    nmo_object_repository_t *repo = NULL;
+    nmo_type_registry_t *registry = NULL;
+
+    if (!workspace || behavior_id == 0 || !out_graph) {
         NMO_SET_LAST_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                            "Invalid behavior graph arguments");
         return false;
@@ -393,8 +395,9 @@ bool nmo_behavior_graph_build(nmo_context_t *ctx,
 
     memset(out_graph, 0, sizeof(*out_graph));
 
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ctx = nmo_workspace_internal_context(workspace);
+    registry = (nmo_type_registry_t *)nmo_workspace_internal_type_registry(workspace);
+    repo = nmo_workspace_internal_repository(workspace);
     if (!registry || !repo) {
         NMO_SET_LAST_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
                            "Missing registry or repository");
@@ -426,7 +429,7 @@ bool nmo_behavior_graph_build(nmo_context_t *ctx,
     gc.ctx = ctx;
     gc.registry = registry;
     gc.repo = repo;
-    gc.beh_index = nmo_session_get_behavior_index(session);
+    gc.beh_index = nmo_workspace_internal_behavior_index(workspace);
     gc.max_depth = max_depth;
 
     /* Root behavior node at depth 0 */

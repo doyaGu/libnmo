@@ -10,10 +10,7 @@
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_statesave_ids.h"
-#include "session/nmo_context.h"
-#include "session/nmo_runtime_kernel.h"
-#include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
+#include "../runtime/runtime_internal.h"
 #include "runtime/nmo_workspace.h"
 #include "object/nmo_object_edit.h"
 #include "behavior/nmo_behavior_edit.h"
@@ -128,17 +125,17 @@ static void rewrite_workspace_edit_scope_reset(
 
 static nmo_status_t rewrite_begin_workspace_edit(
     nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     const char *label,
     rewrite_workspace_edit_scope_t *scope) {
     nmo_status_t rc = NMO_OK;
 
-    if (!ctx || !session || !label || !scope) {
+    if (!ctx || !workspace || !label || !scope) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     memset(scope, 0, sizeof(*scope));
-    rc = nmo_session_borrow_document(session, &scope->document);
+    rc = nmo_workspace_internal_borrow_document(workspace, &scope->document);
     if (rc != NMO_OK) {
         rewrite_workspace_edit_scope_reset(scope);
         return rc;
@@ -343,16 +340,21 @@ static nmo_status_t rewrite_add_delete_control_link(
 
 static nmo_status_t rewrite_build_delete_control_links(
     nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     const nmo_behavior_fold_desc_t *desc,
     nmo_behavior_fold_report_t *report) {
     nmo_behavior_graph_t graph = {0};
-    if (!nmo_behavior_graph_build(ctx, session, desc->parent_id,
+    nmo_status_t rc = NMO_OK;
+
+    if (!ctx || !workspace || !desc || !report) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (!nmo_behavior_graph_build(workspace, desc->parent_id,
                                   UINT32_MAX, &graph)) {
         return NMO_ERR_INVALID_STATE;
     }
 
-    nmo_status_t rc = NMO_OK;
     for (size_t i = 0; i < graph.edge_count; ++i) {
         const nmo_behavior_graph_edge_t *edge = &graph.edges[i];
         if (!edge->kind || strcmp(edge->kind, "behavior_link") != 0) {
@@ -583,23 +585,22 @@ static uint32_t rewrite_fold_mapped_new_index(
 
 static bool rewrite_fold_boundary_targets_are_writable(
     nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_object_repository_t *repo,
     const nmo_behavior_fold_report_t *report);
 
 static bool rewrite_fold_selection_has_unselected_child(
     nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_object_repository_t *repo,
     const nmo_behavior_fold_report_t *report,
     nmo_object_id_t *out_missing_id);
 
 static bool rewrite_fold_report_supports_single_anchor_write(
     nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_object_repository_t *repo,
     const nmo_behavior_fold_report_t *report) {
     if (!rewrite_fold_report_is_single_anchor_only(report)) {
         return false;
     }
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
     nmo_object_t *anchor =
         repo ? nmo_object_repository_find_by_id(repo, report->anchor_id)
              : NULL;
@@ -613,12 +614,11 @@ static bool rewrite_fold_report_supports_single_anchor_write(
 
 static bool rewrite_fold_report_supports_closed_graph_write(
     nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_object_repository_t *repo,
     const nmo_behavior_fold_report_t *report) {
     if (!rewrite_fold_report_is_closed_graph_anchor(report)) {
         return false;
     }
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
     nmo_object_t *anchor =
         repo ? nmo_object_repository_find_by_id(repo, report->anchor_id)
              : NULL;
@@ -645,11 +645,11 @@ static bool rewrite_fold_report_supports_closed_graph_write(
             return false;
         }
     }
-    if (!rewrite_fold_boundary_targets_are_writable(ctx, session, report)) {
+    if (!rewrite_fold_boundary_targets_are_writable(ctx, repo, report)) {
         return false;
     }
     nmo_object_id_t missing_child_id = 0;
-    return !rewrite_fold_selection_has_unselected_child(ctx, session, report,
+    return !rewrite_fold_selection_has_unselected_child(ctx, repo, report,
                                                         &missing_child_id);
 }
 
@@ -695,13 +695,12 @@ static bool rewrite_selected_behavior_has_unselected_child(
 
 static bool rewrite_fold_selection_has_unselected_child(
     nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_object_repository_t *repo,
     const nmo_behavior_fold_report_t *report,
     nmo_object_id_t *out_missing_id) {
     if (!report || !report->selected_nodes) {
         return false;
     }
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
     for (size_t i = 0; i < report->selected_node_count; ++i) {
         nmo_object_t *object = repo
             ? nmo_object_repository_find_by_id(repo, report->selected_nodes[i])
@@ -722,20 +721,15 @@ static bool rewrite_fold_selection_has_unselected_child(
 }
 
 static nmo_status_t rewrite_fold_collect_delete_ids(
-    nmo_session_t *session,
+    nmo_object_repository_t *repo,
     const nmo_behavior_fold_report_t *report,
     nmo_object_id_t **out_ids,
     size_t *out_count) {
-    if (!session || !report || !out_ids || !out_count) {
+    if (!repo || !report || !out_ids || !out_count) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     *out_ids = NULL;
     *out_count = 0;
-
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
-    if (!repo) {
-        return NMO_ERR_INVALID_STATE;
-    }
 
     nmo_object_id_t *ids = NULL;
     size_t count = 0;
@@ -819,11 +813,11 @@ static nmo_status_t rewrite_fold_collect_delete_ids(
 
 static nmo_status_t rewrite_fold_transform_anchor(
     nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     const nmo_behavior_fold_desc_t *desc,
     nmo_behavior_fold_report_t *report,
     bool clear_graph_state) {
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
     nmo_object_t *anchor =
         repo ? nmo_object_repository_find_by_id(repo, report->anchor_id)
              : NULL;
@@ -844,7 +838,7 @@ static nmo_status_t rewrite_fold_transform_anchor(
     rewrite_workspace_edit_scope_t scope = {0};
     nmo_workspace_edit_t *edit = NULL;
     nmo_status_t rc =
-        rewrite_begin_workspace_edit(ctx, session, "behavior fold anchor", &scope);
+        rewrite_begin_workspace_edit(ctx, workspace, "behavior fold anchor", &scope);
     if (rc != NMO_OK) {
         rewrite_fold_report_reject(report, "edit_begin_failed",
                                    "Failed to begin behavior fold edit");
@@ -920,17 +914,15 @@ static uint32_t rewrite_fold_mapped_new_index(
 
 static nmo_status_t rewrite_fold_anchor_io_at(
     nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_object_repository_t *repo,
     nmo_object_id_t anchor_id,
     bool input,
     uint32_t index,
     nmo_object_id_t *out_io_id) {
-    if (!session || !out_io_id) {
+    if (!repo || !out_io_id) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     *out_io_id = 0;
-
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
     nmo_object_t *anchor =
         repo ? nmo_object_repository_find_by_id(repo, anchor_id) : NULL;
     if (!anchor ||
@@ -954,17 +946,15 @@ static nmo_status_t rewrite_fold_anchor_io_at(
 
 static nmo_status_t rewrite_fold_anchor_parameter_at(
     nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_object_repository_t *repo,
     nmo_object_id_t anchor_id,
     bool input,
     uint32_t index,
     nmo_object_id_t *out_parameter_id) {
-    if (!session || !out_parameter_id) {
+    if (!repo || !out_parameter_id) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     *out_parameter_id = 0;
-
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
     nmo_object_t *anchor =
         repo ? nmo_object_repository_find_by_id(repo, anchor_id) : NULL;
     if (!anchor ||
@@ -989,9 +979,9 @@ static nmo_status_t rewrite_fold_anchor_parameter_at(
 
 static bool rewrite_fold_boundary_targets_are_writable(
     nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_object_repository_t *repo,
     const nmo_behavior_fold_report_t *report) {
-    if (!ctx || !session || !report || !report->preserve_boundary) {
+    if (!ctx || !repo || !report || !report->preserve_boundary) {
         return true;
     }
 
@@ -1000,7 +990,7 @@ static bool rewrite_fold_boundary_targets_are_writable(
             report->input_maps, report->input_map_count, (uint32_t)i);
         nmo_object_id_t io_id = 0;
         if (rewrite_fold_anchor_io_at(
-                ctx, session, report->anchor_id, true, new_index, &io_id) !=
+                ctx, repo, report->anchor_id, true, new_index, &io_id) !=
             NMO_OK) {
             return false;
         }
@@ -1011,7 +1001,7 @@ static bool rewrite_fold_boundary_targets_are_writable(
             report->output_maps, report->output_map_count, (uint32_t)i);
         nmo_object_id_t io_id = 0;
         if (rewrite_fold_anchor_io_at(
-                ctx, session, report->anchor_id, false, new_index, &io_id) !=
+                ctx, repo, report->anchor_id, false, new_index, &io_id) !=
             NMO_OK) {
             return false;
         }
@@ -1023,7 +1013,7 @@ static bool rewrite_fold_boundary_targets_are_writable(
             (uint32_t)i);
         nmo_object_id_t parameter_id = 0;
         if (rewrite_fold_anchor_parameter_at(
-                ctx, session, report->anchor_id, true, new_index,
+                ctx, repo, report->anchor_id, true, new_index,
                 &parameter_id) != NMO_OK) {
             return false;
         }
@@ -1036,7 +1026,7 @@ static bool rewrite_fold_boundary_targets_are_writable(
             report->parameter_maps, report->parameter_map_count, old_index);
         nmo_object_id_t parameter_id = 0;
         if (rewrite_fold_anchor_parameter_at(
-                ctx, session, report->anchor_id, false, new_index,
+                ctx, repo, report->anchor_id, false, new_index,
                 &parameter_id) != NMO_OK) {
             return false;
         }
@@ -1100,9 +1090,9 @@ static void rewrite_parameterout_remove_destination(
 
 static nmo_status_t rewrite_fold_rewire_control_boundary(
     nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_behavior_fold_report_t *report) {
-    if (!session || !report) {
+    if (!workspace || !report) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     if (report->boundary.control_in_count == 0 &&
@@ -1110,7 +1100,7 @@ static nmo_status_t rewrite_fold_rewire_control_boundary(
         return NMO_OK;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
     if (!repo) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -1118,7 +1108,7 @@ static nmo_status_t rewrite_fold_rewire_control_boundary(
     rewrite_workspace_edit_scope_t scope = {0};
     nmo_workspace_edit_t *edit = NULL;
     nmo_status_t rc =
-        rewrite_begin_workspace_edit(ctx, session, "behavior fold boundary", &scope);
+        rewrite_begin_workspace_edit(ctx, workspace, "behavior fold boundary", &scope);
     if (rc != NMO_OK) {
         rewrite_fold_report_reject(report, "edit_begin_failed",
                                    "Failed to begin fold boundary edit");
@@ -1132,7 +1122,7 @@ static nmo_status_t rewrite_fold_rewire_control_boundary(
         uint32_t new_index = rewrite_fold_mapped_new_index(
             report->input_maps, report->input_map_count, (uint32_t)i);
         nmo_object_id_t new_io_id = 0;
-        rc = rewrite_fold_anchor_io_at(ctx, session, report->anchor_id,
+        rc = rewrite_fold_anchor_io_at(ctx, repo, report->anchor_id,
                                        true, new_index, &new_io_id);
         if (rc != NMO_OK) {
             rewrite_fold_report_reject(
@@ -1176,7 +1166,7 @@ static nmo_status_t rewrite_fold_rewire_control_boundary(
         uint32_t new_index = rewrite_fold_mapped_new_index(
             report->output_maps, report->output_map_count, (uint32_t)i);
         nmo_object_id_t new_io_id = 0;
-        rc = rewrite_fold_anchor_io_at(ctx, session, report->anchor_id,
+        rc = rewrite_fold_anchor_io_at(ctx, repo, report->anchor_id,
                                        false, new_index, &new_io_id);
         if (rc != NMO_OK) {
             rewrite_fold_report_reject(
@@ -1229,9 +1219,9 @@ static nmo_status_t rewrite_fold_rewire_control_boundary(
 
 static nmo_status_t rewrite_fold_rewire_parameter_boundary(
     nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_behavior_fold_report_t *report) {
-    if (!session || !report) {
+    if (!workspace || !report) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     if (report->boundary.parameter_in_count == 0 &&
@@ -1239,7 +1229,7 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary(
         return NMO_OK;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
     if (!repo) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -1247,7 +1237,7 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary(
     rewrite_workspace_edit_scope_t scope = {0};
     nmo_workspace_edit_t *edit = NULL;
     nmo_status_t rc =
-        rewrite_begin_workspace_edit(ctx, session, "behavior fold parameters", &scope);
+        rewrite_begin_workspace_edit(ctx, workspace, "behavior fold parameters", &scope);
     if (rc != NMO_OK) {
         rewrite_fold_report_reject(report, "edit_begin_failed",
                                    "Failed to begin fold parameter edit");
@@ -1262,7 +1252,7 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary(
             report->parameter_maps, report->parameter_map_count, (uint32_t)i);
         nmo_object_id_t new_parameter_id = 0;
         rc = rewrite_fold_anchor_parameter_at(
-            ctx, session, report->anchor_id, true, new_index,
+            ctx, repo, report->anchor_id, true, new_index,
             &new_parameter_id);
         if (rc != NMO_OK) {
             rewrite_fold_report_reject(
@@ -1335,7 +1325,7 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary(
             report->parameter_maps, report->parameter_map_count, (uint32_t)i);
         nmo_object_id_t new_parameter_id = 0;
         rc = rewrite_fold_anchor_parameter_at(
-            ctx, session, report->anchor_id, false, new_index,
+            ctx, repo, report->anchor_id, false, new_index,
             &new_parameter_id);
         if (rc != NMO_OK) {
             rewrite_fold_report_reject(
@@ -1468,20 +1458,27 @@ static nmo_status_t rewrite_fold_add_write_blocker(
     return NMO_OK;
 }
 
-static nmo_status_t rewrite_fold_analyze_session(
+static nmo_status_t rewrite_fold_analyze_workspace(
     nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     const nmo_behavior_fold_desc_t *desc,
     nmo_behavior_fold_report_t *report) {
+    nmo_object_repository_t *repo = NULL;
     if (report) {
         memset(report, 0, sizeof(*report));
     }
-    if (!ctx || !session || !desc || !report || desc->parent_id == 0 ||
+    if (!ctx || !workspace || !desc || !report || desc->parent_id == 0 ||
         !desc->node_ids || desc->node_count == 0 ||
         nmo_guid_is_null(desc->block_guid)) {
         rewrite_fold_report_reject(report, "invalid_argument",
                                    "Invalid behavior fold analysis arguments");
         return NMO_ERR_INVALID_ARGUMENT;
+    }
+    repo = nmo_workspace_internal_repository(workspace);
+    if (!repo) {
+        rewrite_fold_report_reject(report, "invalid_state",
+                                   "Behavior fold repository is unavailable");
+        return NMO_ERR_INVALID_STATE;
     }
 
     report->analysis_only = true;
@@ -1572,7 +1569,7 @@ static nmo_status_t rewrite_fold_analyze_session(
         goto fail;
     }
 
-    if (!nmo_behavior_boundary_build_for_nodes(ctx, session,
+    if (!nmo_behavior_boundary_build_for_nodes(workspace,
                                                desc->parent_id,
                                                desc->node_ids,
                                                desc->node_count,
@@ -1591,19 +1588,19 @@ static nmo_status_t rewrite_fold_analyze_session(
         return rc;
     }
 
-    rc = rewrite_build_delete_control_links(ctx, session, desc, report);
+    rc = rewrite_build_delete_control_links(ctx, workspace, desc, report);
     if (rc != NMO_OK) {
         rewrite_fold_report_reject(report, "control_plan_failed",
                                    "Failed to build fold control plan");
         goto fail;
     }
 
-    if (rewrite_fold_report_supports_single_anchor_write(ctx, session,
+    if (rewrite_fold_report_supports_single_anchor_write(ctx, repo,
                                                          report)) {
         rewrite_fold_report_clear_write_blockers(report);
         report->analysis_only = false;
         report->can_write = true;
-    } else if (rewrite_fold_report_supports_closed_graph_write(ctx, session,
+    } else if (rewrite_fold_report_supports_closed_graph_write(ctx, repo,
                                                                report)) {
         rewrite_fold_report_clear_write_blockers(report);
         report->analysis_only = false;
@@ -1617,12 +1614,12 @@ fail:
     return rc;
 }
 
-static nmo_status_t rewrite_fold_apply_session(
+static nmo_status_t rewrite_fold_apply_workspace(
     nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     const nmo_behavior_fold_desc_t *desc,
     nmo_behavior_fold_report_t *report) {
-    nmo_status_t rc = rewrite_fold_analyze_session(ctx, session, desc, report);
+    nmo_status_t rc = rewrite_fold_analyze_workspace(ctx, workspace, desc, report);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -1633,7 +1630,8 @@ static nmo_status_t rewrite_fold_apply_session(
         return NMO_ERR_INVALID_ARGUMENT;
     }
     nmo_object_id_t missing_child_id = 0;
-    if (rewrite_fold_selection_has_unselected_child(ctx, session, report,
+    if (rewrite_fold_selection_has_unselected_child(
+            ctx, nmo_workspace_internal_repository(workspace), report,
                                                     &missing_child_id)) {
         (void)missing_child_id;
         rewrite_fold_report_reject(
@@ -1643,7 +1641,7 @@ static nmo_status_t rewrite_fold_apply_session(
         return NMO_ERR_INVALID_ARGUMENT;
     }
     if (rewrite_fold_report_is_single_anchor_only(report)) {
-        nmo_object_repository_t *repo = nmo_session_get_repository(session);
+        nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
         nmo_object_t *anchor =
             repo ? nmo_object_repository_find_by_id(repo, report->anchor_id)
                  : NULL;
@@ -1665,7 +1663,7 @@ static nmo_status_t rewrite_fold_apply_session(
         rewrite_workspace_edit_scope_t scope = {0};
         nmo_workspace_edit_t *edit = NULL;
         nmo_status_t edit_rc =
-            rewrite_begin_workspace_edit(ctx, session, "behavior fold anchor", &scope);
+            rewrite_begin_workspace_edit(ctx, workspace, "behavior fold anchor", &scope);
         if (edit_rc != NMO_OK) {
             rewrite_fold_report_reject(report, "edit_begin_failed",
                                        "Failed to begin behavior fold edit");
@@ -1715,12 +1713,12 @@ static nmo_status_t rewrite_fold_apply_session(
     if (rewrite_fold_report_is_closed_graph_anchor(report) &&
         report->can_write) {
         nmo_status_t rewire_rc = rewrite_fold_rewire_control_boundary(
-            ctx, session, report);
+            ctx, workspace, report);
         if (rewire_rc != NMO_OK) {
             return rewire_rc;
         }
         rewire_rc = rewrite_fold_rewire_parameter_boundary(
-            ctx, session, report);
+            ctx, workspace, report);
         if (rewire_rc != NMO_OK) {
             return rewire_rc;
         }
@@ -1728,18 +1726,19 @@ static nmo_status_t rewrite_fold_apply_session(
         nmo_object_id_t *delete_ids = NULL;
         size_t delete_count = 0;
         nmo_status_t delete_rc = rewrite_fold_collect_delete_ids(
-            session, report, &delete_ids, &delete_count);
+            nmo_workspace_internal_repository(workspace), report,
+            &delete_ids, &delete_count);
         if (delete_rc != NMO_OK) {
             rewrite_fold_report_reject(report, "delete_plan_failed",
                                        "Failed to build fold delete set");
             return delete_rc;
         }
 
-        nmo_runtime_report_t runtime_report = {0};
-        delete_rc = nmo_session_destroy_objects(
-            session, delete_ids, delete_count,
-            NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
-            &runtime_report);
+        delete_rc = nmo_workspace_internal_destroy_objects(
+            workspace,
+            delete_ids,
+            delete_count,
+            NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH);
         free(delete_ids);
         if (delete_rc != NMO_OK) {
             rewrite_fold_report_reject(report, "delete_failed",
@@ -1748,7 +1747,7 @@ static nmo_status_t rewrite_fold_apply_session(
         }
 
         nmo_status_t transform_rc = rewrite_fold_transform_anchor(
-            ctx, session, desc, report, true);
+            ctx, workspace, desc, report, true);
         if (transform_rc != NMO_OK) {
             return transform_rc;
         }
@@ -1776,12 +1775,12 @@ static nmo_status_t rewrite_fold_apply_session(
     return NMO_ERR_NOT_IMPLEMENTED;
 }
 
-static nmo_status_t rewrite_fold_session(
+static nmo_status_t rewrite_fold_workspace(
     nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     const nmo_behavior_fold_desc_t *desc,
     nmo_behavior_fold_report_t *report) {
-    return rewrite_fold_apply_session(ctx, session, desc, report);
+    return rewrite_fold_apply_workspace(ctx, workspace, desc, report);
 }
 
 void nmo_behavior_edit_fold_report_free(nmo_behavior_fold_report_t *report) {
@@ -1799,22 +1798,22 @@ void nmo_behavior_edit_fold_report_free(nmo_behavior_fold_report_t *report) {
     memset(report, 0, sizeof(*report));
 }
 
-static nmo_status_t rewrite_replace_bb_session(
+static nmo_status_t rewrite_replace_bb_workspace(
     nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     const nmo_behavior_replace_bb_desc_t *desc,
     nmo_behavior_replace_report_t *report) {
     if (report) {
         memset(report, 0, sizeof(*report));
     }
-    if (!ctx || !session || !desc || desc->behavior_id == 0 ||
+    if (!ctx || !workspace || !desc || desc->behavior_id == 0 ||
         nmo_guid_is_null(desc->block_guid)) {
         rewrite_report_reject(report, "invalid_argument",
                               "Invalid behavior replace-bb arguments");
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
     if (!repo) {
         rewrite_report_reject(report, "invalid_state",
                               "Object repository is unavailable");
@@ -1880,14 +1879,14 @@ static nmo_status_t rewrite_replace_bb_session(
     nmo_workspace_edit_t *edit = NULL;
     nmo_status_t rc = NMO_OK;
 
-    if (!nmo_behavior_boundary_build(ctx, session, desc->behavior_id,
+    if (!nmo_behavior_boundary_build(workspace, desc->behavior_id,
                                      UINT32_MAX, &before_boundary)) {
         rewrite_report_reject(report, "boundary_failed",
                               "Failed to build original behavior boundary");
         return NMO_ERR_INVALID_STATE;
     }
 
-    rc = rewrite_begin_workspace_edit(ctx, session, "behavior replace-bb", &scope);
+    rc = rewrite_begin_workspace_edit(ctx, workspace, "behavior replace-bb", &scope);
     if (rc != NMO_OK) {
         rewrite_report_reject(report, "edit_begin_failed",
                               "Failed to begin behavior rewrite edit");
@@ -1935,7 +1934,7 @@ static nmo_status_t rewrite_replace_bb_session(
         goto cleanup;
     }
 
-    if (!nmo_behavior_boundary_build(ctx, session, desc->behavior_id,
+    if (!nmo_behavior_boundary_build(scope.workspace, desc->behavior_id,
                                      UINT32_MAX, &after_boundary)) {
         rewrite_report_reject(report, "boundary_failed",
                               "Failed to build rewritten behavior boundary");
@@ -2008,9 +2007,8 @@ NMO_API nmo_status_t nmo_behavior_edit_fold_analyze(
     nmo_workspace_t *workspace,
     const nmo_behavior_fold_desc_t *desc,
     nmo_behavior_fold_report_t *report) {
-    nmo_session_t *session = nmo_session_from_workspace(workspace);
-    nmo_context_t *ctx = session ? nmo_session_get_context(session) : NULL;
-    if (!workspace || !ctx || !session) {
+    nmo_context_t *ctx = nmo_workspace_internal_context(workspace);
+    if (!workspace || !ctx) {
         if (report) {
             memset(report, 0, sizeof(*report));
             rewrite_fold_report_reject(report, "invalid_argument",
@@ -2018,16 +2016,15 @@ NMO_API nmo_status_t nmo_behavior_edit_fold_analyze(
         }
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    return rewrite_fold_analyze_session(ctx, session, desc, report);
+    return rewrite_fold_analyze_workspace(ctx, workspace, desc, report);
 }
 
 NMO_API nmo_status_t nmo_behavior_edit_fold_apply(
     nmo_workspace_t *workspace,
     const nmo_behavior_fold_desc_t *desc,
     nmo_behavior_fold_report_t *report) {
-    nmo_session_t *session = nmo_session_from_workspace(workspace);
-    nmo_context_t *ctx = session ? nmo_session_get_context(session) : NULL;
-    if (!workspace || !ctx || !session) {
+    nmo_context_t *ctx = nmo_workspace_internal_context(workspace);
+    if (!workspace || !ctx) {
         if (report) {
             memset(report, 0, sizeof(*report));
             rewrite_fold_report_reject(report, "invalid_argument",
@@ -2035,16 +2032,15 @@ NMO_API nmo_status_t nmo_behavior_edit_fold_apply(
         }
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    return rewrite_fold_apply_session(ctx, session, desc, report);
+    return rewrite_fold_apply_workspace(ctx, workspace, desc, report);
 }
 
 NMO_API nmo_status_t nmo_behavior_edit_fold(
     nmo_workspace_t *workspace,
     const nmo_behavior_fold_desc_t *desc,
     nmo_behavior_fold_report_t *report) {
-    nmo_session_t *session = nmo_session_from_workspace(workspace);
-    nmo_context_t *ctx = session ? nmo_session_get_context(session) : NULL;
-    if (!workspace || !ctx || !session) {
+    nmo_context_t *ctx = nmo_workspace_internal_context(workspace);
+    if (!workspace || !ctx) {
         if (report) {
             memset(report, 0, sizeof(*report));
             rewrite_fold_report_reject(report, "invalid_argument",
@@ -2052,16 +2048,15 @@ NMO_API nmo_status_t nmo_behavior_edit_fold(
         }
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    return rewrite_fold_session(ctx, session, desc, report);
+    return rewrite_fold_workspace(ctx, workspace, desc, report);
 }
 
 NMO_API nmo_status_t nmo_behavior_edit_replace_bb(
     nmo_workspace_t *workspace,
     const nmo_behavior_replace_bb_desc_t *desc,
     nmo_behavior_replace_report_t *report) {
-    nmo_session_t *session = nmo_session_from_workspace(workspace);
-    nmo_context_t *ctx = session ? nmo_session_get_context(session) : NULL;
-    if (!workspace || !ctx || !session) {
+    nmo_context_t *ctx = nmo_workspace_internal_context(workspace);
+    if (!workspace || !ctx) {
         if (report) {
             memset(report, 0, sizeof(*report));
             rewrite_report_reject(report, "invalid_argument",
@@ -2069,7 +2064,7 @@ NMO_API nmo_status_t nmo_behavior_edit_replace_bb(
         }
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    return rewrite_replace_bb_session(ctx, session, desc, report);
+    return rewrite_replace_bb_workspace(ctx, workspace, desc, report);
 }
 
 

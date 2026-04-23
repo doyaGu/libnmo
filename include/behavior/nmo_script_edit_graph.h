@@ -30,8 +30,7 @@ extern "C" {
 #endif
 
 typedef struct nmo_arena nmo_arena_t;
-typedef struct nmo_context nmo_context_t;
-typedef struct nmo_session nmo_session_t;
+typedef struct nmo_workspace nmo_workspace_t;
 
 typedef enum nmo_script_edit_node_kind {
     NMO_SCRIPT_EDIT_NODE_BEHAVIOR = 0,
@@ -127,8 +126,7 @@ typedef struct nmo_script_edit_node {
 
 typedef struct nmo_script_edit_graph nmo_script_edit_graph_t;
 
-NMO_API nmo_status_t nmo_script_edit_graph_build(nmo_context_t *ctx,
-                                                 nmo_session_t *session,
+NMO_API nmo_status_t nmo_script_edit_graph_build(nmo_workspace_t *workspace,
                                                  nmo_object_id_t root_behavior_id,
                                                  uint32_t max_depth,
                                                  nmo_script_edit_graph_t **out_graph);

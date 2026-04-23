@@ -7,10 +7,7 @@
  */
 
 #include "document/nmo_document_load.h"
-#include "session/nmo_session_bridge.h"
-#include "session/nmo_session.h"
-#include "session/nmo_context.h"
-#include "session/nmo_deserializer.h"
+#include "../runtime/runtime_internal.h"
 #include "io/nmo_io.h"
 #include "io/nmo_io_file.h"
 #include "io/nmo_io_mmap.h"
@@ -197,7 +194,7 @@ nmo_status_t nmo_document_load_file(
         return NMO_ERR_NOMEM;
     }
 
-    status = nmo_load_file(nmo_session_from_document(document), path, NULL);
+    status = nmo_document_internal_load_file(document, path, NULL);
     if (status != NMO_OK) {
         nmo_document_destroy(document);
         return status;

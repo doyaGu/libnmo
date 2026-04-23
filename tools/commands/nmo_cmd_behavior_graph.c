@@ -306,7 +306,7 @@ static int behavior_graph_run(nmo_cmd_ctx_t *ctx,
         goto cleanup;
     }
 
-    if (!nmo_behavior_graph_build(c.ctx, c.session, behavior_id, depth, &graph)) {
+    if (!nmo_behavior_graph_build(c.workspace, behavior_id, depth, &graph)) {
         char detail[256];
         size_t detail_len = nmo_last_error_message_copy(detail, sizeof(detail));
         nmo_error_code_t code = nmo_last_error_code();

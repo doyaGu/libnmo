@@ -271,7 +271,7 @@ static int graph_boundary_run(nmo_cmd_ctx_t *ctx,
         goto cleanup;
     }
 
-    if (!nmo_behavior_boundary_build(c.ctx, c.session,
+    if (!nmo_behavior_boundary_build(c.workspace,
                                      behavior_id, depth, &boundary)) {
         char detail[256];
         size_t detail_len = nmo_last_error_message_copy(detail,
@@ -767,7 +767,7 @@ static int fold_candidates_emit_control_router_groups(
         if (router_count > 1u) {
             nmo_behavior_boundary_t router_boundary = {0};
             if (!nmo_behavior_boundary_build_for_nodes(
-                    ctx->ctx, ctx->session, parent_id,
+                    ctx->workspace, parent_id,
                     router_ids, router_count, &router_boundary)) {
                 char detail[256];
                 size_t detail_len = nmo_last_error_message_copy(
@@ -853,7 +853,7 @@ static int fold_candidates_emit_connected_components(
         if (component_root_count > 1u) {
             nmo_behavior_boundary_t component_boundary = {0};
             if (!nmo_behavior_boundary_build_for_nodes(
-                    ctx->ctx, ctx->session, parent_id,
+                    ctx->workspace, parent_id,
                     component_roots, component_root_count,
                     &component_boundary)) {
                 char detail[256];
@@ -1252,7 +1252,7 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
             fold_find_behavior_state(repo, child_id);
         children[i].root_id = child_id;
         children[i].root_state = child_state;
-        if (!nmo_behavior_boundary_build(ctx->ctx, ctx->session,
+        if (!nmo_behavior_boundary_build(ctx->workspace,
                                          child_id, depth,
                                          &children[i].boundary)) {
             char detail[256];
@@ -1454,7 +1454,7 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
             if (router_count > 1u) {
                 nmo_behavior_boundary_t router_boundary = {0};
                 if (!nmo_behavior_boundary_build_for_nodes(
-                        ctx->ctx, ctx->session, boundary->behavior_id,
+                        ctx->workspace, boundary->behavior_id,
                         router_ids, router_count, &router_boundary)) {
                     char detail[256];
                     size_t detail_len = nmo_last_error_message_copy(
@@ -1507,7 +1507,7 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
             if (root_count > 1u) {
                 nmo_behavior_boundary_t component_boundary = {0};
                 if (!nmo_behavior_boundary_build_for_nodes(
-                        ctx->ctx, ctx->session, boundary->behavior_id,
+                        ctx->workspace, boundary->behavior_id,
                         component_roots, root_count,
                         &component_boundary)) {
                     char detail[256];
@@ -1586,7 +1586,7 @@ static int fold_candidates_run(nmo_cmd_ctx_t *ctx,
         goto cleanup;
     }
 
-    if (!nmo_behavior_boundary_build(c.ctx, c.session,
+    if (!nmo_behavior_boundary_build(c.workspace,
                                      args->parent_id,
                                      args->depth,
                                      &boundary)) {

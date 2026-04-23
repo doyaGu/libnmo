@@ -18,12 +18,9 @@
  *   - Executes manager post-save hooks
  */
 
-#include "session/nmo_serializer.h"
 #include "document/nmo_document_save.h"
-#include "session/nmo_session_bridge.h"
 #include "nmo_save_buffer.h"
-#include "session/nmo_session.h"
-#include "session/nmo_context.h"
+#include "../runtime/runtime_internal.h"
 #include "extension/nmo_extension_registry.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_logger.h"
@@ -43,7 +40,6 @@
 #include "format/nmo_manager.h"
 #include "format/nmo_manager_registry.h"
 #include "object/nmo_serialize_context.h"
-#include "session/nmo_save_id_remap.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_system.h"
 #include "object/nmo_shadow_storage.h"
@@ -1695,7 +1691,7 @@ nmo_status_t nmo_document_save_file(
     if (document == NULL || path == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    return nmo_save_file(nmo_session_from_document(document), path, options);
+    return nmo_document_internal_save_file(document, path, options);
 }
 
 static nmo_chunk_t *serialize_object_with_schema(

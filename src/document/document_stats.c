@@ -6,11 +6,9 @@
  */
 
 #include "document/nmo_document_stats.h"
-#include "session/nmo_session_bridge.h"
 #include "export/nmo_export_json.h"
 #include "export/nmo_export_text.h"
-#include "session/nmo_session.h"
-#include "session/nmo_reference_resolver.h"
+#include "../runtime/runtime_internal.h"
 #include "format/nmo_object.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -132,38 +130,25 @@ static void collect_memory_stats(
  * @brief Collect reference statistics
  */
 static void collect_reference_stats(
-    nmo_session_t *session,
+    nmo_document_t *document,
     nmo_object_repository_t *repo,
     nmo_file_stats_t *stats
 ) {
     (void)repo;
     memset(&stats->references, 0, sizeof(stats->references));
 
-    if (session == NULL) {
+    if (document == NULL) {
         return;
     }
 
     nmo_runtime_load_stats_t finish_stats = {0};
-    if (nmo_session_get_runtime_load_stats(session, &finish_stats) == NMO_OK) {
+    if (nmo_document_internal_get_runtime_load_stats(document, &finish_stats) == NMO_OK) {
         stats->references.total_references = finish_stats.references.total;
         stats->references.resolved = finish_stats.references.resolved;
         stats->references.unresolved = finish_stats.references.unresolved;
         return;
     }
 
-    nmo_reference_resolver_t *resolver = nmo_session_get_reference_resolver(session);
-    if (resolver == NULL) {
-        return;
-    }
-
-    nmo_reference_stats_t resolver_stats = {0};
-    if (nmo_reference_resolver_get_stats(resolver, &resolver_stats) != NMO_OK) {
-        return;
-    }
-
-    stats->references.total_references = resolver_stats.total_count;
-    stats->references.resolved = resolver_stats.resolved_count;
-    stats->references.unresolved = resolver_stats.unresolved_count;
 }
 
 nmo_status_t nmo_stats_collect(
@@ -184,7 +169,12 @@ nmo_status_t nmo_stats_collect(
     /* Collect different categories of statistics */
     collect_object_stats(repo, out_stats);
     collect_memory_stats(repo, out_stats);
-    collect_reference_stats(session, repo, out_stats);
+    nmo_runtime_load_stats_t finish_stats = {0};
+    if (nmo_session_get_runtime_load_stats(session, &finish_stats) == NMO_OK) {
+        out_stats->references.total_references = finish_stats.references.total;
+        out_stats->references.resolved = finish_stats.references.resolved;
+        out_stats->references.unresolved = finish_stats.references.unresolved;
+    }
     
     /* Performance stats would be collected during load/save operations */
     /* For now, leave them at zero */
@@ -196,7 +186,21 @@ nmo_status_t nmo_document_stats_collect(
     nmo_document_t *document,
     nmo_file_stats_t *out_stats
 ) {
-    return nmo_stats_collect(nmo_session_from_document(document), out_stats);
+    if (document == NULL || out_stats == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    memset(out_stats, 0, sizeof(nmo_file_stats_t));
+
+    nmo_object_repository_t *repo = nmo_document_get_repository(document);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    collect_object_stats(repo, out_stats);
+    collect_memory_stats(repo, out_stats);
+    collect_reference_stats(document, repo, out_stats);
+    return NMO_OK;
 }
 
 void nmo_stats_print(

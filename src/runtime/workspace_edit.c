@@ -8,11 +8,8 @@
 #include "behavior/nmo_behavior_edit.h"
 
 #include "runtime_internal.h"
+#include "runtime_internal.h"
 
-#include "session/nmo_context.h"
-#include "session/nmo_session_bridge.h"
-#include "session/nmo_runtime_kernel.h"
-#include "session/nmo_session.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_guids.h"
 #include "object/nmo_object_index.h"
@@ -37,7 +34,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef nmo_status_t (*nmo_workspace_edit_action_fn)(nmo_session_t *session, void *payload);
+typedef nmo_status_t (*nmo_workspace_edit_action_fn)(nmo_workspace_edit_t *edit, void *payload);
 
 typedef struct nmo_workspace_edit_action {
     nmo_workspace_edit_action_fn fn;
@@ -45,7 +42,7 @@ typedef struct nmo_workspace_edit_action {
 } nmo_workspace_edit_action_t;
 
 struct nmo_workspace_edit {
-    nmo_session_t *session;
+    nmo_workspace_t *workspace;
     nmo_arena_t *arena;
     char *label;
     nmo_workspace_edit_action_t *rollback_actions;
@@ -211,13 +208,13 @@ static void workspace_edit_rollback_to(nmo_workspace_edit_t *edit, size_t checkp
     while (edit->rollback_count > checkpoint) {
         edit->rollback_count--;
         nmo_workspace_edit_action_t action = edit->rollback_actions[edit->rollback_count];
-        (void)action.fn(edit->session, action.payload);
+        (void)action.fn(edit, action.payload);
     }
 }
 
-static nmo_status_t rollback_field_bytes(nmo_session_t *session, void *payload)
+static nmo_status_t rollback_field_bytes(nmo_workspace_edit_t *edit, void *payload)
 {
-    (void)session;
+    (void)edit;
     field_bytes_snapshot_t *snapshot = (field_bytes_snapshot_t *)payload;
     if (snapshot == NULL || snapshot->field_ptr == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -226,9 +223,9 @@ static nmo_status_t rollback_field_bytes(nmo_session_t *session, void *payload)
     return NMO_OK;
 }
 
-static nmo_status_t rollback_parameter_buffer(nmo_session_t *session, void *payload)
+static nmo_status_t rollback_parameter_buffer(nmo_workspace_edit_t *edit, void *payload)
 {
-    (void)session;
+    (void)edit;
     parameter_buffer_snapshot_t *snapshot = (parameter_buffer_snapshot_t *)payload;
     if (snapshot == NULL || snapshot->state == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -249,9 +246,9 @@ static nmo_status_t rollback_parameter_buffer(nmo_session_t *session, void *payl
     return NMO_OK;
 }
 
-static nmo_status_t rollback_dataarray_cell(nmo_session_t *session, void *payload)
+static nmo_status_t rollback_dataarray_cell(nmo_workspace_edit_t *edit, void *payload)
 {
-    (void)session;
+    (void)edit;
     dataarray_cell_snapshot_t *snapshot = (dataarray_cell_snapshot_t *)payload;
     if (snapshot == NULL || snapshot->cell == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -260,9 +257,9 @@ static nmo_status_t rollback_dataarray_cell(nmo_session_t *session, void *payloa
     return NMO_OK;
 }
 
-static nmo_status_t rollback_remove_array_id(nmo_session_t *session, void *payload)
+static nmo_status_t rollback_remove_array_id(nmo_workspace_edit_t *edit, void *payload)
 {
-    (void)session;
+    (void)edit;
     array_id_action_t *action = (array_id_action_t *)payload;
     if (action == NULL || action->array == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -274,9 +271,9 @@ static nmo_status_t rollback_remove_array_id(nmo_session_t *session, void *paylo
     return NMO_OK;
 }
 
-static nmo_status_t rollback_insert_array_id(nmo_session_t *session, void *payload)
+static nmo_status_t rollback_insert_array_id(nmo_workspace_edit_t *edit, void *payload)
 {
-    (void)session;
+    (void)edit;
     array_id_action_t *action = (array_id_action_t *)payload;
     if (action == NULL || action->array == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -287,13 +284,13 @@ static nmo_status_t rollback_insert_array_id(nmo_session_t *session, void *paylo
     return nmo_array_append(action->array, &action->id);
 }
 
-static nmo_status_t action_remove_object(nmo_session_t *session, void *payload)
+static nmo_status_t action_remove_object(nmo_workspace_edit_t *edit, void *payload)
 {
     object_id_action_t *action = (object_id_action_t *)payload;
-    if (session == NULL || action == NULL) {
+    if (edit == NULL || action == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
     if (repo == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -303,40 +300,39 @@ static nmo_status_t action_remove_object(nmo_session_t *session, void *payload)
     return nmo_object_repository_remove(repo, action->id);
 }
 
-static nmo_status_t commit_destroy_object(nmo_session_t *session, void *payload)
+static nmo_status_t commit_destroy_object(nmo_workspace_edit_t *edit, void *payload)
 {
     object_id_action_t *action = (object_id_action_t *)payload;
-    if (session == NULL || action == NULL) {
+    if (edit == NULL || action == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    return nmo_session_destroy_objects(
-        session,
+    return nmo_workspace_internal_destroy_objects(
+        edit->workspace,
         &action->id,
         1,
-        NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_DEFER_CACHE_INVALIDATION,
-        NULL);
+        NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_DEFER_CACHE_INVALIDATION);
 }
 
-static nmo_status_t rollback_rename_object(nmo_session_t *session, void *payload)
+static nmo_status_t rollback_rename_object(nmo_workspace_edit_t *edit, void *payload)
 {
     rename_object_action_t *action = (rename_object_action_t *)payload;
-    if (session == NULL || action == NULL) {
+    if (edit == NULL || action == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
     if (repo == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
     return nmo_object_repository_rename(repo, action->id, action->name);
 }
 
-static nmo_status_t rollback_object_chunk(nmo_session_t *session, void *payload)
+static nmo_status_t rollback_object_chunk(nmo_workspace_edit_t *edit, void *payload)
 {
     object_chunk_snapshot_t *snapshot = (object_chunk_snapshot_t *)payload;
-    if (session == NULL || snapshot == NULL) {
+    if (edit == NULL || snapshot == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
     if (repo == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -347,10 +343,12 @@ static nmo_status_t rollback_object_chunk(nmo_session_t *session, void *payload)
     return nmo_object_set_chunk(object, snapshot->chunk);
 }
 
-static const nmo_type_registry_t *session_type_registry(nmo_session_t *session)
+static const nmo_type_registry_t *workspace_edit_type_registry(
+    const nmo_workspace_edit_t *edit)
 {
-    nmo_context_t *ctx = nmo_session_get_context(session);
-    return ctx != NULL ? nmo_context_get_type_registry(ctx) : NULL;
+    return edit != NULL
+        ? nmo_workspace_internal_type_registry(edit->workspace)
+        : NULL;
 }
 
 static bool session_class_derives(
@@ -454,16 +452,16 @@ static nmo_status_t parse_object_id_text(const char *value_str, nmo_object_id_t 
     return nmo_parse_object_id(value_str, out_id);
 }
 
-static nmo_status_t workspace_edit_begin_for_session(
-    nmo_session_t *session,
+static nmo_status_t workspace_edit_begin_for_workspace(
+    nmo_workspace_t *workspace,
     const char *label,
     nmo_workspace_edit_t **out_edit)
 {
-    if (session == NULL || out_edit == NULL) {
+    if (workspace == NULL || out_edit == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     *out_edit = NULL;
-    if (nmo_session_is_partial_load(session)) {
+    if (nmo_document_internal_is_partial_load(nmo_workspace_get_document(workspace))) {
         return NMO_ERR_INVALID_STATE;
     }
 
@@ -476,7 +474,7 @@ static nmo_status_t workspace_edit_begin_for_session(
         free(edit);
         return NMO_ERR_NOMEM;
     }
-    edit->session = session;
+    edit->workspace = workspace;
 
     if (label != NULL) {
         size_t len = strlen(label);
@@ -497,8 +495,8 @@ nmo_status_t nmo_workspace_edit_begin(
     const char *label,
     nmo_workspace_edit_t **out_edit)
 {
-    return workspace_edit_begin_for_session(
-        nmo_session_from_workspace(workspace),
+    return workspace_edit_begin_for_workspace(
+        workspace,
         label,
         out_edit);
 }
@@ -613,7 +611,7 @@ nmo_status_t nmo_workspace_edit_commit(nmo_workspace_edit_t *edit)
 
     for (size_t i = 0; i < edit->commit_count; i++) {
         nmo_status_t action_result =
-            edit->commit_actions[i].fn(edit->session, edit->commit_actions[i].payload);
+            edit->commit_actions[i].fn(edit, edit->commit_actions[i].payload);
         if (action_result != NMO_OK) {
             workspace_edit_rollback_to(edit, 0);
             edit->finished = true;
@@ -622,7 +620,8 @@ nmo_status_t nmo_workspace_edit_commit(nmo_workspace_edit_t *edit)
         }
     }
 
-    nmo_status_t apply_result = nmo_runtime_apply_edit_flags(edit->session, edit->flags);
+    nmo_status_t apply_result =
+        nmo_workspace_internal_apply_edit_flags(edit->workspace, edit->flags);
     edit->finished = true;
     workspace_edit_free(edit);
     return apply_result;
@@ -679,7 +678,7 @@ nmo_status_t nmo_workspace_edit_track_created_object(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(edit->session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
     if (repo == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -716,7 +715,7 @@ nmo_status_t nmo_workspace_edit_snapshot_object_chunk(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(edit->session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
     if (repo == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -728,7 +727,8 @@ nmo_status_t nmo_workspace_edit_snapshot_object_chunk(
     nmo_chunk_t *current = nmo_object_get_chunk(object);
     nmo_chunk_t *snapshot_chunk = NULL;
     if (current != NULL) {
-        snapshot_chunk = nmo_chunk_clone(current, nmo_session_get_arena(edit->session));
+        snapshot_chunk = nmo_chunk_clone(
+            current, nmo_workspace_internal_document_arena(edit->workspace));
         if (snapshot_chunk == NULL) {
             return NMO_ERR_NOMEM;
         }
@@ -818,8 +818,8 @@ nmo_status_t workspace_edit_set_object_fields(
     }
 
     size_t checkpoint = edit->rollback_count;
-    nmo_object_repository_t *repo = nmo_session_get_repository(edit->session);
-    const nmo_type_registry_t *registry = session_type_registry(edit->session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
     if (repo == NULL || registry == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -926,7 +926,7 @@ nmo_status_t workspace_edit_rename_object(
     }
 
     size_t checkpoint = edit->rollback_count;
-    nmo_object_repository_t *repo = nmo_session_get_repository(edit->session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
     if (repo == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -984,8 +984,8 @@ nmo_status_t workspace_edit_set_parameter_value(
     }
 
     size_t checkpoint = edit->rollback_count;
-    nmo_object_repository_t *repo = nmo_session_get_repository(edit->session);
-    const nmo_type_registry_t *registry = session_type_registry(edit->session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
     if (repo == NULL || registry == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -1100,7 +1100,7 @@ nmo_status_t workspace_edit_set_parameter_bytes(
     }
 
     size_t checkpoint = edit->rollback_count;
-    nmo_object_repository_t *repo = nmo_session_get_repository(edit->session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
     if (repo == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -1163,7 +1163,7 @@ nmo_status_t workspace_edit_set_dataarray_cell(
     }
 
     size_t checkpoint = edit->rollback_count;
-    nmo_object_repository_t *repo = nmo_session_get_repository(edit->session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
     if (repo == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -1184,7 +1184,8 @@ nmo_status_t workspace_edit_set_dataarray_cell(
     bool is_ref = false;
     nmo_status_t parse_result =
         parse_dataarray_cell(
-            state, nmo_session_get_arena(edit->session), row, col, value_str, &new_cell, &is_ref);
+            state, nmo_workspace_internal_document_arena(edit->workspace),
+            row, col, value_str, &new_cell, &is_ref);
     if (parse_result != NMO_OK) {
         return parse_result;
     }
@@ -1246,8 +1247,8 @@ nmo_status_t workspace_edit_add_behavior_link(
     }
 
     size_t checkpoint = edit->rollback_count;
-    nmo_object_repository_t *repo = nmo_session_get_repository(edit->session);
-    const nmo_type_registry_t *registry = session_type_registry(edit->session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
     if (repo == NULL || registry == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -1272,7 +1273,8 @@ nmo_status_t workspace_edit_add_behavior_link(
     request.payload.create.class_id = NMO_CID_BEHAVIORLINK;
     request.payload.create.type_guid = (nmo_guid_t){0, 0};
     request.payload.create.out_created_id = &link_id;
-    nmo_status_t create_result = nmo_session_execute(edit->session, &request, NULL);
+    nmo_status_t create_result =
+        nmo_workspace_internal_execute_runtime_request(edit->workspace, &request, NULL);
     if (create_result != NMO_OK) {
         return create_result;
     }
@@ -1354,7 +1356,7 @@ nmo_status_t nmo_workspace_apply_edit_flags(nmo_workspace_t *workspace, uint32_t
     if (workspace == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    return nmo_runtime_apply_edit_flags(nmo_session_from_workspace(workspace), flags);
+    return nmo_workspace_internal_apply_edit_flags(workspace, flags);
 }
 
 nmo_status_t workspace_edit_remove_behavior_link(
@@ -1367,8 +1369,8 @@ nmo_status_t workspace_edit_remove_behavior_link(
     }
 
     size_t checkpoint = edit->rollback_count;
-    nmo_object_repository_t *repo = nmo_session_get_repository(edit->session);
-    const nmo_type_registry_t *registry = session_type_registry(edit->session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
     if (repo == NULL || registry == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -1451,8 +1453,8 @@ nmo_status_t workspace_edit_mark_behavior_interface(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(edit->session);
-    const nmo_type_registry_t *registry = session_type_registry(edit->session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
     if (repo == NULL || registry == NULL) {
         return NMO_ERR_INVALID_STATE;
     }

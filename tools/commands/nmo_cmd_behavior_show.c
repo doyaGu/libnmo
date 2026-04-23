@@ -73,13 +73,12 @@ static void behavior_show_add_decoded_value_json(
 static void behavior_show_add_source_chain_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *item,
-    nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_object_id_t param_id)
 {
-    if (!doc || !item || !ctx || !session || !repo || param_id == 0) {
+    if (!doc || !item || !workspace || !repo || param_id == 0) {
         return;
     }
 
@@ -88,8 +87,8 @@ static void behavior_show_add_source_chain_json(
         return;
     }
 
-    if (nmo_behavior_analyze_trace_param_chain(ctx, session, param_id,
-                                            &chain, 32) == NMO_OK &&
+    if (nmo_behavior_analyze_trace_param_chain(workspace, param_id,
+                                               &chain, 32) == NMO_OK &&
         chain.count > 0) {
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
         const nmo_behavior_trace_step_t *steps =
@@ -533,8 +532,8 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                         }
                     }
                 }
-                behavior_show_add_source_chain_json(doc, item, c.ctx,
-                                                    c.session, c.registry,
+                behavior_show_add_source_chain_json(doc, item, c.workspace,
+                                                    c.registry,
                                                     repo, ids[i]);
                 yyjson_mut_arr_add_val(arr, item);
             }

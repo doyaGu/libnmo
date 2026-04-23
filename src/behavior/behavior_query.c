@@ -4,9 +4,7 @@
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_context.h"
-#include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
+#include "../runtime/runtime_internal.h"
 #include "type/nmo_type_system.h"
 
 #include <string.h>
@@ -33,7 +31,7 @@ static bool nmo_behavior_query_is_script_owner(
 }
 
 static nmo_status_t nmo_behavior_query_lookup(
-    nmo_session_t *session,
+    nmo_document_t *document,
     nmo_object_id_t target_script_id,
     size_t target_index,
     bool use_index,
@@ -43,11 +41,10 @@ static nmo_status_t nmo_behavior_query_lookup(
     nmo_object_t **objects = NULL;
     size_t object_count = 0;
     size_t script_index = 0;
-    nmo_context_t *ctx = NULL;
     nmo_type_registry_t *registry = NULL;
     nmo_object_repository_t *repo = NULL;
 
-    if (session == NULL) {
+    if (document == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
@@ -65,16 +62,15 @@ static nmo_status_t nmo_behavior_query_lookup(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (nmo_session_get_objects(session, &objects, &object_count) != NMO_OK) {
+    if (nmo_document_internal_get_objects(document, &objects, &object_count) != NMO_OK) {
         return NMO_ERR_INVALID_STATE;
     }
 
-    ctx = nmo_session_get_context(session);
-    if (ctx == NULL) {
+    registry = (nmo_type_registry_t *)nmo_document_internal_type_registry(document);
+    repo = nmo_document_internal_repository(document);
+    if (registry == NULL || repo == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
-    registry = nmo_context_get_type_registry(ctx);
-    repo = nmo_session_get_repository(session);
 
     for (size_t i = 0; i < object_count; ++i) {
         nmo_object_t *owner = objects[i];
@@ -143,7 +139,7 @@ nmo_status_t nmo_behavior_query_count_scripts(
 
     *out_count = 0;
     status = nmo_behavior_query_lookup(
-        nmo_session_from_document(document), 0, 0, false, NULL, out_count);
+        document, 0, 0, false, NULL, out_count);
     if (status == NMO_ERR_NOT_FOUND) {
         return NMO_OK;
     }
@@ -187,7 +183,7 @@ nmo_status_t nmo_behavior_query_script_at(
     nmo_behavior_script_view_t *out_view)
 {
     return nmo_behavior_query_lookup(
-        nmo_session_from_document(document), 0, index, true, out_view, NULL);
+        document, 0, index, true, out_view, NULL);
 }
 
 nmo_status_t nmo_behavior_query_script_from_script_id(
@@ -200,6 +196,6 @@ nmo_status_t nmo_behavior_query_script_from_script_id(
     }
 
     return nmo_behavior_query_lookup(
-        nmo_session_from_document(document), script_id, 0, false, out_view, NULL);
+        document, script_id, 0, false, out_view, NULL);
 }
 

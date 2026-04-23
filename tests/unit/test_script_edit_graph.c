@@ -2,8 +2,10 @@
 
 #include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_script_edit_graph.h"
+#include "runtime/nmo_workspace.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 #include "session/nmo_session_util.h"
 
 #include <stdint.h>
@@ -21,13 +23,18 @@ TEST(script_edit_graph, build_reports_edit_ready_graph_for_ballance_root)
 {
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
     if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/base.cmo"),
                         &ctx, &session)) {
         return;
     }
 
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
+
     nmo_script_edit_graph_t *graph = NULL;
-    nmo_status_t rc = nmo_script_edit_graph_build(ctx, session, 237u,
+    nmo_status_t rc = nmo_script_edit_graph_build(workspace, 237u,
                                                   UINT32_MAX, &graph);
     ASSERT_EQ(NMO_OK, rc);
     ASSERT_NOT_NULL(graph);
@@ -68,6 +75,8 @@ TEST(script_edit_graph, build_reports_edit_ready_graph_for_ballance_root)
     ASSERT_EQ(0u, broken_ref_count);
 
     nmo_script_edit_graph_destroy(graph);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_session_close_with_context(ctx, session);
 }
 

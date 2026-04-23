@@ -30,8 +30,7 @@ extern "C" {
 #endif
 
 typedef struct nmo_arena nmo_arena_t;
-typedef struct nmo_context nmo_context_t;
-typedef struct nmo_session nmo_session_t;
+typedef struct nmo_workspace nmo_workspace_t;
 typedef struct nmo_behavior_state nmo_behavior_state_t;
 
 typedef struct nmo_behavior_graph_node {
@@ -72,8 +71,7 @@ typedef struct nmo_behavior_graph {
 } nmo_behavior_graph_t;
 
 NMO_API bool nmo_behavior_graph_build(
-    nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_object_id_t behavior_id,
     uint32_t max_depth,
     nmo_behavior_graph_t *out_graph);
@@ -116,15 +114,13 @@ typedef struct nmo_behavior_boundary {
 } nmo_behavior_boundary_t;
 
 NMO_API bool nmo_behavior_boundary_build(
-    nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_object_id_t behavior_id,
     uint32_t max_depth,
     nmo_behavior_boundary_t *out_boundary);
 
 NMO_API bool nmo_behavior_boundary_build_for_nodes(
-    nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_object_id_t parent_behavior_id,
     const nmo_object_id_t *node_ids,
     size_t node_count,
@@ -156,8 +152,7 @@ NMO_API nmo_behavior_index_t *nmo_behavior_index_create(nmo_arena_t *arena);
 NMO_API void nmo_behavior_index_destroy(nmo_behavior_index_t *index);
 NMO_API nmo_status_t nmo_behavior_index_build(
     nmo_behavior_index_t *index,
-    nmo_context_t *ctx,
-    nmo_session_t *session);
+    nmo_workspace_t *workspace);
 NMO_API const nmo_port_owner_t *nmo_behavior_index_find(
     const nmo_behavior_index_t *index,
     nmo_object_id_t id);
@@ -171,8 +166,7 @@ typedef bool (*nmo_behavior_walk_visitor_fn)(
     void *user_data);
 
 NMO_API nmo_status_t nmo_behavior_walk(
-    nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_object_id_t root_behavior_id,
     nmo_behavior_walk_visitor_fn visitor,
     void *user_data);
@@ -191,15 +185,13 @@ typedef struct nmo_behavior_trace_step {
 } nmo_behavior_trace_step_t;
 
 NMO_API nmo_status_t nmo_behavior_analyze_trace_param_chain(
-    nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_object_id_t param_in_id,
     nmo_array_t *out_chain,
     uint32_t max_depth);
 
 NMO_API nmo_status_t nmo_behavior_analyze_dump_text(
-    nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_object_id_t root_behavior_id,
     FILE *out);
 

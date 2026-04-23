@@ -10,9 +10,10 @@
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
-#include "session/nmo_context.h"
-#include "session/nmo_session.h"
+#include "runtime/nmo_workspace.h"
 #include "type/nmo_type_query.h"
+
+#include "../runtime/runtime_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -964,8 +965,7 @@ static bool node_is_in_graph(const nmo_script_edit_graph_t *graph,
     return find_node(graph, object_id) != NULL;
 }
 
-NMO_API nmo_status_t nmo_script_edit_graph_build(nmo_context_t *ctx,
-                                                 nmo_session_t *session,
+NMO_API nmo_status_t nmo_script_edit_graph_build(nmo_workspace_t *workspace,
                                                  nmo_object_id_t root_behavior_id,
                                                  uint32_t max_depth,
                                                  nmo_script_edit_graph_t **out_graph)
@@ -975,24 +975,26 @@ NMO_API nmo_status_t nmo_script_edit_graph_build(nmo_context_t *ctx,
     nmo_object_repository_t *repo = NULL;
     nmo_arena_t *arena = NULL;
     nmo_ref_graph_t *ref_graph = NULL;
+    const nmo_type_registry_t *type_registry = NULL;
     size_t broken_edge_count = 0;
     nmo_status_t ref_status = NMO_OK;
 
-    if (!ctx || !session || root_behavior_id == 0u || !out_graph) {
+    if (!workspace || root_behavior_id == 0u || !out_graph) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "invalid script edit graph arguments");
     }
 
     *out_graph = NULL;
 
-    if (nmo_session_ensure_behavior_acceleration(session) != NMO_OK) {
+    if (nmo_workspace_internal_ensure_behavior_acceleration(workspace) != NMO_OK) {
         return nmo_last_error_code();
     }
 
-    repo = nmo_session_get_repository(session);
-    if (!repo) {
+    repo = nmo_workspace_internal_repository(workspace);
+    type_registry = nmo_workspace_internal_type_registry(workspace);
+    if (!repo || !type_registry) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
-                         "session repository unavailable");
+                         "workspace behavior graph state unavailable");
     }
 
     graph = (nmo_script_edit_graph_t *)calloc(1u, sizeof(*graph));
@@ -1003,11 +1005,11 @@ NMO_API nmo_status_t nmo_script_edit_graph_build(nmo_context_t *ctx,
 
     graph->root_behavior_id = root_behavior_id;
     graph->repo = repo;
-    graph->behavior_index = nmo_session_get_behavior_index(session);
+    graph->behavior_index = nmo_workspace_internal_behavior_index(workspace);
     graph->owner_index_available = graph->behavior_index != NULL;
     graph->edit_ready = graph->owner_index_available;
 
-    if (!nmo_behavior_graph_build(ctx, session, root_behavior_id,
+    if (!nmo_behavior_graph_build(workspace, root_behavior_id,
                                   max_depth, &behavior_graph)) {
         free(graph);
         return (nmo_status_t)nmo_last_error_code();
@@ -1041,7 +1043,7 @@ NMO_API nmo_status_t nmo_script_edit_graph_build(nmo_context_t *ctx,
                          "failed to allocate reference graph arena");
     }
 
-    ref_graph = nmo_ref_graph_create(repo, nmo_context_get_type_registry(ctx), arena);
+    ref_graph = nmo_ref_graph_create(repo, type_registry, arena);
     if (!ref_graph) {
         nmo_arena_destroy(arena);
         nmo_behavior_graph_free(&behavior_graph);

@@ -1,15 +1,11 @@
 /**
  * @file behavior_index.c
- * @brief Behavior ownership index �?O(1) reverse lookup for IO/param/sub-behavior IDs
+ * @brief Behavior ownership index 芒鈧?O(1) reverse lookup for IO/param/sub-behavior IDs
  */
 
 #include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_behavior_query.h"
-#include "session/nmo_session_bridge.h"
-#include "behavior/nmo_behavior_query.h"
-#include "session/nmo_session_bridge.h"
-#include "session/nmo_context.h"
-#include "session/nmo_session.h"
+#include "../runtime/runtime_internal.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -79,7 +75,7 @@ static bool index_insert(
     uint32_t h = id_hash(key) % (uint32_t)idx->capacity;
     while (idx->slots[h].key != 0) {
         if (idx->slots[h].key == key) {
-            /* Already indexed �?first registration wins (don't overwrite) */
+            /* Already indexed 芒鈧?first registration wins (don't overwrite) */
             return true;
         }
         h = (h + 1) % (uint32_t)idx->capacity;
@@ -230,52 +226,45 @@ void nmo_behavior_index_destroy(nmo_behavior_index_t *index) {
 
 nmo_status_t nmo_behavior_index_build(
     nmo_behavior_index_t *index,
-    nmo_context_t *ctx,
-    nmo_session_t *session)
+    nmo_workspace_t *workspace)
 {
-    if (!index || !ctx || !session) {
+    nmo_document_t *document = NULL;
+    nmo_status_t st = NMO_OK;
+
+    if (!index || !workspace) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null arg");
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
     if (!repo) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "no repository");
     }
 
     /* Find all scripts and walk each one */
-    nmo_document_t *document = NULL;
     nmo_array_t scripts;
     nmo_array_init(&scripts, sizeof(nmo_behavior_script_view_t), 32, NULL);
-    nmo_status_t st = nmo_session_borrow_document(session, &document);
-    if (st != NMO_OK) {
-        nmo_array_clear(&scripts);
-        return st;
-    }
+    document = nmo_workspace_get_document(workspace);
     st = nmo_behavior_query_collect_scripts(document, &scripts);
     if (st != NMO_OK) {
         nmo_array_clear(&scripts);
-            nmo_document_destroy(document);
-            return st;
+        return st;
     }
 
     build_ctx_t bctx = {index, repo, NMO_OK};
     const nmo_behavior_script_view_t *entries = (const nmo_behavior_script_view_t *)scripts.data;
     for (size_t i = 0; i < scripts.count; i++) {
-        st = nmo_behavior_walk(ctx, session, entries[i].script_id, build_visitor, &bctx);
+        st = nmo_behavior_walk(workspace, entries[i].script_id, build_visitor, &bctx);
         if (st != NMO_OK) {
             nmo_array_clear(&scripts);
-            nmo_document_destroy(document);
             return st;
         }
         if (bctx.status != NMO_OK) {
             nmo_array_clear(&scripts);
-            nmo_document_destroy(document);
             return bctx.status;
         }
     }
 
     nmo_array_clear(&scripts);
-    nmo_document_destroy(document);
     return NMO_OK;
 }
 

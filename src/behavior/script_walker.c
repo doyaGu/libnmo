@@ -8,8 +8,7 @@
 
 #include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_behavior_view.h"
-#include "session/nmo_context.h"
-#include "session/nmo_session.h"
+#include "../runtime/runtime_internal.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -35,8 +34,7 @@
  * ============================================================================ */
 
 static nmo_status_t walk_recursive(
-    nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_object_repository_t *repo,
     nmo_object_id_t behavior_id,
     uint32_t depth,
@@ -68,7 +66,7 @@ static nmo_status_t walk_recursive(
         for (size_t i = 0; i < sub_count; ++i) {
             if (sub_ids[i] == 0) continue;
             nmo_status_t st = walk_recursive(
-                ctx, session, repo, sub_ids[i],
+                workspace, repo, sub_ids[i],
                 depth + 1, visitor, user_data);
             if (st != NMO_OK) return st;
         }
@@ -78,24 +76,23 @@ static nmo_status_t walk_recursive(
 }
 
 nmo_status_t nmo_behavior_walk(
-    nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_object_id_t root_behavior_id,
     nmo_behavior_walk_visitor_fn visitor,
     void *user_data)
 {
-    if (!ctx || !session || !visitor) {
+    if (!workspace || !visitor) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "NULL argument to nmo_behavior_walk");
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
     if (!repo) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
-                         "No object repository in session");
+                         "No object repository in workspace");
     }
 
-    return walk_recursive(ctx, session, repo, root_behavior_id,
+    return walk_recursive(workspace, repo, root_behavior_id,
                           0, visitor, user_data);
 }
 
@@ -104,26 +101,26 @@ nmo_status_t nmo_behavior_walk(
  * ============================================================================ */
 
 nmo_status_t nmo_behavior_analyze_trace_param_chain(
-    nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_object_id_t param_in_id,
     nmo_array_t *out_chain,
     uint32_t max_depth)
 {
-    if (!ctx || !session || !out_chain) {
+    if (!workspace || !out_chain) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "NULL argument to nmo_behavior_analyze_trace_param_chain");
     }
 
     if (max_depth == 0) max_depth = 32;
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
     if (!repo) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
-                         "No object repository in session");
+                         "No object repository in workspace");
     }
 
-    const nmo_behavior_index_t *beh_index = nmo_session_get_behavior_index(session);
+    const nmo_behavior_index_t *beh_index =
+        nmo_workspace_internal_behavior_index(workspace);
     nmo_object_id_t current_id = param_in_id;
 
     for (uint32_t step = 0; step < max_depth; ++step) {
@@ -184,8 +181,8 @@ nmo_status_t nmo_behavior_analyze_trace_param_chain(
  * ============================================================================ */
 
 typedef struct dump_ctx {
+    nmo_workspace_t *workspace;
     nmo_context_t *ctx;
-    nmo_session_t *session;
     nmo_type_registry_t *registry;
     nmo_object_repository_t *repo;
     FILE *out;
@@ -332,23 +329,22 @@ static bool dump_visitor(
 }
 
 nmo_status_t nmo_behavior_analyze_dump_text(
-    nmo_context_t *ctx,
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_object_id_t root_behavior_id,
     FILE *out)
 {
-    if (!ctx || !session || !out) {
+    if (!workspace || !out) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "NULL argument to nmo_behavior_analyze_dump_text");
     }
 
     dump_ctx_t dctx;
-    dctx.ctx = ctx;
-    dctx.session = session;
-    dctx.registry = nmo_context_get_type_registry(ctx);
-    dctx.repo = nmo_session_get_repository(session);
+    dctx.workspace = workspace;
+    dctx.ctx = nmo_workspace_internal_context(workspace);
+    dctx.registry = (nmo_type_registry_t *)nmo_workspace_internal_type_registry(workspace);
+    dctx.repo = nmo_workspace_internal_repository(workspace);
     dctx.out = out;
 
-    return nmo_behavior_walk(ctx, session, root_behavior_id,
+    return nmo_behavior_walk(workspace, root_behavior_id,
                                   dump_visitor, &dctx);
 }

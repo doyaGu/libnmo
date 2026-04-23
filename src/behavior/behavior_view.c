@@ -5,9 +5,7 @@
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_context.h"
-#include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
+#include "../runtime/runtime_internal.h"
 
 #include <string.h>
 
@@ -39,7 +37,6 @@ static nmo_status_t nmo_behavior_view_lookup(
     nmo_object_t **out_object,
     nmo_behavior_state_t **out_state)
 {
-    nmo_session_t *session = NULL;
     nmo_object_repository_t *repo = NULL;
     nmo_object_t *object = NULL;
 
@@ -50,8 +47,7 @@ static nmo_status_t nmo_behavior_view_lookup(
     *out_object = NULL;
     *out_state = NULL;
 
-    session = nmo_session_from_workspace(workspace);
-    repo = session != NULL ? nmo_session_get_repository(session) : NULL;
+    repo = nmo_workspace_internal_repository(workspace);
     if (repo == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -78,10 +74,8 @@ nmo_status_t nmo_behavior_view_from_behavior(
     nmo_object_id_t behavior_id,
     nmo_behavior_view_t *out_view)
 {
-    nmo_session_t *session = NULL;
     nmo_object_t *object = NULL;
     nmo_behavior_state_t *state = NULL;
-    nmo_context_t *ctx = NULL;
     nmo_script_edit_graph_t *edit_graph = NULL;
     nmo_status_t status = NMO_OK;
 
@@ -90,11 +84,6 @@ nmo_status_t nmo_behavior_view_from_behavior(
     }
 
     nmo_behavior_view_clear(out_view);
-    session = nmo_session_from_workspace(workspace);
-    if (session == NULL) {
-        return NMO_ERR_INVALID_STATE;
-    }
-
     NMO_RETURN_IF_ERROR(nmo_behavior_view_lookup(
         workspace, behavior_id, &object, &state));
 
@@ -115,19 +104,16 @@ nmo_status_t nmo_behavior_view_from_behavior(
     out_view->out_parameter_count = state->out_parameters.count;
     out_view->local_parameter_count = state->local_parameters.count;
 
-    ctx = nmo_session_get_context(session);
-    if (ctx != NULL) {
-        status = nmo_script_edit_graph_build(
-            ctx, session, behavior_id, UINT32_MAX, &edit_graph);
-        out_view->edit_graph_status = status;
-        if (status == NMO_OK && edit_graph != NULL) {
-            out_view->owner_index_available =
-                nmo_script_edit_graph_owner_index_available(edit_graph);
-            out_view->edit_ready =
-                nmo_script_edit_graph_edit_ready(edit_graph);
-            nmo_script_edit_graph_destroy(edit_graph);
-            edit_graph = NULL;
-        }
+    status = nmo_workspace_internal_script_edit_graph_build(
+        workspace, behavior_id, UINT32_MAX, &edit_graph);
+    out_view->edit_graph_status = status;
+    if (status == NMO_OK && edit_graph != NULL) {
+        out_view->owner_index_available =
+            nmo_script_edit_graph_owner_index_available(edit_graph);
+        out_view->edit_ready =
+            nmo_script_edit_graph_edit_ready(edit_graph);
+        nmo_script_edit_graph_destroy(edit_graph);
+        edit_graph = NULL;
     }
 
     out_view->has_interface = state->has_interface;
@@ -136,8 +122,8 @@ nmo_status_t nmo_behavior_view_from_behavior(
         return NMO_OK;
     }
 
-    status = nmo_interface_view_from_behavior(
-        session, behavior_id, &out_view->interface_view);
+    status = nmo_workspace_internal_interface_view_from_behavior(
+        workspace, behavior_id, &out_view->interface_view);
     out_view->interface_status = status;
     out_view->interface_available = status == NMO_OK;
     if (status == NMO_OK || status == NMO_ERR_NOT_FOUND) {
@@ -153,8 +139,6 @@ nmo_status_t nmo_behavior_view_describe_boundary(
     uint32_t max_depth,
     nmo_behavior_boundary_view_t *out_view)
 {
-    nmo_session_t *session = NULL;
-    nmo_context_t *ctx = NULL;
     nmo_behavior_boundary_t boundary = {0};
     bool ok = false;
     nmo_status_t status = NMO_OK;
@@ -164,18 +148,12 @@ nmo_status_t nmo_behavior_view_describe_boundary(
     }
 
     nmo_behavior_boundary_view_clear(out_view);
-    session = nmo_session_from_workspace(workspace);
-    if (session == NULL) {
-        return NMO_ERR_INVALID_STATE;
-    }
-
-    ctx = nmo_session_get_context(session);
-    if (ctx == NULL) {
+    if (nmo_workspace_internal_context(workspace) == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
 
     ok = nmo_behavior_boundary_build(
-        ctx, session, behavior_id, max_depth, &boundary);
+        workspace, behavior_id, max_depth, &boundary);
     if (!ok) {
         status = nmo_last_error_code();
         return status != NMO_OK ? status : NMO_ERR_INTERNAL;

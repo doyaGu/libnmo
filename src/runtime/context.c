@@ -3,7 +3,7 @@
  * @brief Global context implementation (Phase 8.1)
  */
 
-#include "session/nmo_context.h"
+#include "runtime_internal.h"
 #include "extension/nmo_extension_registry.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_logger.h"
@@ -17,7 +17,6 @@
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
-#include "session/nmo_session.h"
 #include "behavior/nmo_behavior_registry.h"
 #include "extension/nmo_virtools_data_plugin.h"
 #include "format/nmo_interface_chunk.h"
@@ -202,7 +201,7 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
     /* Create BB prototype registry */
     ctx->bb_registry = nmo_behavior_registry_create(ctx->arena);
 
-    /* Create operation registry early ¡ª virtools_load will register
+    /* Create operation registry early éš†é™‹ virtools_load will register
      * Virtools operation signatures (function=NULL) into it. */
     ctx->operation_registry = nmo_operation_registry_create(ctx->arena);
     if (ctx->operation_registry == NULL) {
@@ -236,14 +235,14 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
         return NULL;
     }
 
-    /* Register built-in Virtools data plugin ¡ª loads param types,
+    /* Register built-in Virtools data plugin éš†é™‹ loads param types,
      * operation signatures, and BB prototypes from JSON. */
     {
         const char *data_dir = (desc != NULL) ? desc->data_dir : NULL;
         if (data_dir == NULL)
             data_dir = getenv("NMO_DATA_DIR");
         if (data_dir != NULL) {
-            /* Deep-copy data_dir into arena ¡ª getenv() return is volatile */
+            /* Deep-copy data_dir into arena éš†é™‹ getenv() return is volatile */
             size_t len = strlen(data_dir);
             char *dir_copy = (char *)nmo_arena_alloc(ctx->arena, len + 1, 1);
             if (dir_copy) memcpy(dir_copy, data_dir, len + 1);

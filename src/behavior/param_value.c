@@ -1,6 +1,6 @@
 /**
  * @file param_value.c
- * @brief Parameter value decoding 閳?type-aware buffer interpretation
+ * @brief Parameter value decoding 闁?type-aware buffer interpretation
  *
  * Bridges the type system string converters (nmo_type_value_to_string)
  * with parameter buffer data (nmo_parameter_state_t.buffer_data) to
@@ -15,9 +15,7 @@
 #include "core/nmo_error.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
-#include "session/nmo_session.h"
-#include "session/nmo_context.h"
-#include "session/nmo_session_bridge.h"
+#include "../runtime/runtime_internal.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -165,24 +163,21 @@ static nmo_status_t format_object_ref(
     const nmo_workspace_t *workspace,
     char *buffer, size_t buffer_size)
 {
-    const nmo_session_t *session =
-        workspace ? nmo_session_from_workspace_const(workspace) : NULL;
+    nmo_object_repository_t *repo =
+        workspace ? nmo_workspace_internal_repository(workspace) : NULL;
 
     if (id == 0) {
         snprintf(buffer, buffer_size, "(null)");
         return NMO_OK;
     }
 
-    if (session) {
-        nmo_object_repository_t *repo = nmo_session_get_repository(session);
-        if (repo) {
-            nmo_object_t *obj = nmo_object_repository_find_by_id(repo, id);
-            if (obj) {
-                const char *name = nmo_object_get_name(obj);
-                if (name && name[0] != '\0') {
-                    snprintf(buffer, buffer_size, "#%u (%s)", (unsigned)id, name);
-                    return NMO_OK;
-                }
+    if (repo) {
+        nmo_object_t *obj = nmo_object_repository_find_by_id(repo, id);
+        if (obj) {
+            const char *name = nmo_object_get_name(obj);
+            if (name && name[0] != '\0') {
+                snprintf(buffer, buffer_size, "#%u (%s)", (unsigned)id, name);
+                return NMO_OK;
             }
         }
     }
@@ -266,7 +261,7 @@ nmo_status_t nmo_behavior_param_value_to_string(
         nmo_type_registry_find_by_guid(registry, param->type_guid);
 
     if (!type) {
-        /* Unknown type 閳?hex fallback */
+        /* Unknown type 闁?hex fallback */
         return format_hex_preview(data, data_size, buffer, buffer_size);
     }
 
