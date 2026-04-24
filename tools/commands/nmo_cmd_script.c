@@ -1149,6 +1149,36 @@ static void script_run_add_operation_json(yyjson_mut_doc *doc,
     yyjson_mut_arr_add_val(arr, item);
 }
 
+static void script_run_add_common_report_json(yyjson_mut_doc *doc,
+                                              yyjson_mut_val *data,
+                                              const script_run_args_t *args)
+{
+    yyjson_mut_val *errors = yyjson_mut_arr(doc);
+    yyjson_mut_val *warnings = yyjson_mut_arr(doc);
+    yyjson_mut_val *changed = yyjson_mut_arr(doc);
+    yyjson_mut_val *risks = yyjson_mut_arr(doc);
+
+    yyjson_mut_obj_add_val(doc, data, "errors", errors);
+    yyjson_mut_obj_add_val(doc, data, "warnings", warnings);
+    if (args != NULL) {
+        for (size_t i = 0; i < args->operation_count; ++i) {
+            const script_run_operation_t *op = &args->operations[i];
+            for (size_t j = 0; j < op->result_handle_count; ++j) {
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                yyjson_mut_obj_add_uint(doc, item, "operation_index",
+                                        (uint64_t)(i + 1u));
+                yyjson_mut_obj_add_uint(doc, item, "object_id",
+                                        (uint64_t)op->result_handles[j]);
+                nmo_cli_json_add_str_safe(doc, item, "kind", op->kind);
+                yyjson_mut_arr_add_val(changed, item);
+            }
+        }
+    }
+    yyjson_mut_obj_add_val(doc, data, "changed_objects", changed);
+    nmo_cli_json_add_str_safe(doc, data, "risk_level", "safe");
+    yyjson_mut_obj_add_val(doc, data, "semantic_risks", risks);
+}
+
 static int script_run_report(nmo_cmd_ctx_t *ctx,
                              bool dry_run,
                              const char *output_path,
@@ -1174,6 +1204,7 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
         yyjson_mut_obj_add_bool(doc, data, "ok",
                                 args->validation.final_status == NMO_OK);
         yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        script_run_add_common_report_json(doc, data, args);
         nmo_cli_json_add_str_safe(doc, data, "script_file", args->script_path);
         yyjson_mut_obj_add_uint(doc, data, "op_count", args->operation_count);
         for (i = 0; i < args->operation_count; ++i) {
