@@ -58,15 +58,60 @@ if ($outputDir -and !(Test-Path -LiteralPath $outputDir)) {
 
 $manifestData = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $operations = @()
-foreach ($replacement in $manifestData.replacements) {
-    $operations += [ordered] @{
-        op = "replace_bb"
-        behavior_id = [int] $replacement.behavior_id
-        name = [string] $replacement.name
-        guid = [string] $replacement.guid
-        version = [int] $replacement.version
-        preserve_links = [bool] $replacement.preserve_links
-        preserve_params = [bool] $replacement.preserve_params
+if ($manifestData.PSObject.Properties.Name -contains "replacements") {
+    foreach ($replacement in $manifestData.replacements) {
+        $operations += [ordered] @{
+            op = "replace_bb"
+            behavior_id = [int] $replacement.behavior_id
+            name = [string] $replacement.name
+            guid = [string] $replacement.guid
+            version = [int] $replacement.version
+            preserve_links = [bool] $replacement.preserve_links
+            preserve_params = [bool] $replacement.preserve_params
+        }
+    }
+}
+
+if ($manifestData.PSObject.Properties.Name -contains "folds") {
+    foreach ($fold in $manifestData.folds) {
+        $operation = [ordered] @{
+            op = "fold"
+            parent = [int] $fold.parent
+            nodes = @($fold.nodes | ForEach-Object { [int] $_ })
+            anchor = [int] $fold.anchor
+            name = [string] $fold.name
+            guid = [string] $fold.guid
+            version = [int] $fold.version
+            preserve_boundary = [bool] $fold.preserve_boundary
+        }
+        if ($fold.PSObject.Properties.Name -contains "inputs") {
+            $operation.inputs = @($fold.inputs | ForEach-Object {
+                [ordered] @{
+                    old_index = [int] $_.old_index
+                    new_index = [int] $_.new_index
+                }
+            })
+        }
+        if ($fold.PSObject.Properties.Name -contains "outputs") {
+            $operation.outputs = @($fold.outputs | ForEach-Object {
+                [ordered] @{
+                    old_index = [int] $_.old_index
+                    new_index = [int] $_.new_index
+                }
+            })
+        }
+        if ($fold.PSObject.Properties.Name -contains "parameters") {
+            $operation.parameters = @($fold.parameters | ForEach-Object {
+                [ordered] @{
+                    old_index = [int] $_.old_index
+                    new_index = [int] $_.new_index
+                }
+            })
+        }
+        if ($fold.PSObject.Properties.Name -contains "interface") {
+            $operation.interface = [string] $fold.interface
+        }
+        $operations += $operation
     }
 }
 
@@ -87,8 +132,15 @@ try {
     Invoke-Nmo -Exe $nmo -Arguments @("patch", "apply", $tempPatch)
     Invoke-Nmo -Exe $nmo -Arguments @("validate", "all", $outputPath)
 
-    foreach ($replacement in $manifestData.replacements) {
-        Invoke-Nmo -Exe $nmo -Arguments @("behavior", "show", "--id", ([string] $replacement.behavior_id), $outputPath)
+    if ($manifestData.PSObject.Properties.Name -contains "replacements") {
+        foreach ($replacement in $manifestData.replacements) {
+            Invoke-Nmo -Exe $nmo -Arguments @("behavior", "show", "--id", ([string] $replacement.behavior_id), $outputPath)
+        }
+    }
+    if ($manifestData.PSObject.Properties.Name -contains "folds") {
+        foreach ($fold in $manifestData.folds) {
+            Invoke-Nmo -Exe $nmo -Arguments @("behavior", "show", "--id", ([string] $fold.anchor), $outputPath)
+        }
     }
 } finally {
     Remove-Item -LiteralPath $tempPatch -Force -ErrorAction SilentlyContinue

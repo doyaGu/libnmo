@@ -1,22 +1,42 @@
 {
   "version": 1,
-  "description": "Ballance base.cmo high-level building block rewrite manifest.",
-  "replacements": [
+  "description": "Ballance base.cmo high-level building block rewrite manifest for the original runtime without BMLPlus.",
+  "folds": [
     {
-      "behavior_id": 3516,
-      "name": "Switch On Message",
+      "parent": 4692,
+      "nodes": [
+        3516,
+        2571,
+        2568,
+        3043,
+        3032,
+        2367,
+        2370,
+        2565,
+        3519,
+        3534,
+        3528,
+        3525
+      ],
+      "anchor": 3516,
+      "name": "Ballance Base Event Router",
       "guid": "42414C07-10000007",
       "version": 65536,
-      "preserve_links": true,
-      "preserve_params": true,
-      "reason": "BMLPlus treats the base Event_handler Switch On Message chain as a runtime graph ABI; replace only the leaf implementation."
-    }
-  ],
-  "do_not_fold": [
-    {
-      "behavior_id": 4692,
-      "name": "Event_handler",
-      "reason": "BMLPlus EventHookRegistrar follows the original Switch On Message output chains by behavior name and links during OnCKPlay."
+      "preserve_boundary": true,
+      "outputs": [
+        { "old_index": 0, "new_index": 1 },
+        { "old_index": 1, "new_index": 9 },
+        { "old_index": 2, "new_index": 6 },
+        { "old_index": 3, "new_index": 5 },
+        { "old_index": 4, "new_index": 10 },
+        { "old_index": 5, "new_index": 2 },
+        { "old_index": 6, "new_index": 0 },
+        { "old_index": 7, "new_index": 4 },
+        { "old_index": 8, "new_index": 7 },
+        { "old_index": 9, "new_index": 8 },
+        { "old_index": 10, "new_index": 3 }
+      ],
+      "reason": "Fold the base event message router into a Ballance-specific high-level building block now that BMLPlus graph hooks are absent from the original runtime test installation."
     }
   ]
 }

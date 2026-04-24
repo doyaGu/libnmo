@@ -1,23 +1,26 @@
 # Ballance base.cmo Building Block Rewrite
 
-This document records the current safe workflow for converting Ballance
-`base.cmo` behavior logic to Ballance-specific building blocks with libnmo.
+This document records the current workflow for converting Ballance `base.cmo`
+behavior logic to Ballance-specific high-level building blocks with libnmo.
 
 ## Goal
 
 Generate a `base.cmo` variant that loads in the original Ballance runtime and
-uses selected building blocks from `Ballance.dll`, without breaking the graph
-shape that Ballance Mod Loader Plus and original scripts depend on at runtime.
+replaces selected behavior graph structure with building blocks from
+`Ballance.dll`.
 
-The current reproducible output is:
+The current generated output is:
 
 ```text
 C:\Users\kakut\Games\Ballance\base_ballance_bb.cmo
 ```
 
-## Required Runtime
+## Runtime Assumption
 
-Use the original game installation:
+This flow targets the original Ballance runtime without BMLPlus installed as a
+building block DLL.
+
+The game directory used for validation is:
 
 ```text
 C:\Users\kakut\Games\Ballance
@@ -32,47 +35,40 @@ C:\Users\kakut\Works\Virtools\Virtools-SDK-2.1
 Do not use the Ballanced CK2/VxMath build when testing original Ballance. The
 game runtime must keep the original `CK2.dll` and `VxMath.dll`.
 
-## Current Safe Rewrite
+## Current High-Level Rewrite
 
-The current manifest is:
+The manifest is:
 
 ```text
 tools\ballance\base_ballance_bb_manifest.json
 ```
 
-It performs one safe leaf replacement:
+It folds the base event router:
 
 ```text
-behavior #3516
-runtime name: Switch On Message
-replacement GUID: {42414C07-10000007}
-replacement DLL: Ballance.dll
+parent script: #4692 Event_handler
+anchor node:   #3516 Switch On Message
+target name:   Ballance Base Event Router
+target GUID:   {42414C07-10000007}
 ```
 
-The runtime prototype name must remain `Switch On Message`. BMLPlus searches the
-base event graph by behavior name and then follows the original output chains
-during `OnCKPlay`. Renaming the prototype to `Ballance Base Event Router` causes
-`[Mod Manager] Error : Play`.
+The fold removes the original `Switch On Message` plus eleven event-output Nop
+relay nodes, then retargets the external control edges to the high-level
+`Ballance Base Event Router` outputs.
 
-## Do Not Fold
-
-Do not fold the whole `Event_handler` script into a high-level node.
-
-Known runtime dependency:
+Selected nodes:
 
 ```text
-BallanceModLoaderPlus\src\EventHook.cpp
+3516,2571,2568,3043,3032,2367,2370,2565,3519,3534,3528,3525
 ```
 
-BMLPlus calls `FindFirstBB(script, "Switch On Message", false, 2, 11, 11, 0)`
-and then inserts hooks into the original outgoing chains. Removing those chains
-or changing the runtime prototype name breaks BML initialization.
-
-The safe rule for now:
+The eleven output boundary edges preserve the original external control-flow
+targets, but the fold candidate order is not the same as the runtime output
+port order. The manifest maps candidate output indexes to the verified
+`Ballance Base Event Router` output indexes:
 
 ```text
-Event_handler: leaf replacement only
-Switch On Message: keep graph structure and runtime name
+0:1, 1:9, 2:6, 3:5, 4:10, 5:2, 6:0, 7:4, 8:7, 9:8, 10:3
 ```
 
 ## Generate CMO
@@ -92,14 +88,14 @@ The script:
 3. Runs `nmo patch diff`.
 4. Runs `nmo patch apply`.
 5. Runs `nmo validate all`.
-6. Shows the rewritten behavior signatures.
+6. Shows the rewritten anchor behavior signature.
 
 Expected key output:
 
 ```text
-replace_bb #3516: guid 1BB23F1D-17FF14B9 -> 42414C07-10000007, name -> Switch On Message
+fold #4692: anchor #3516, nodes=12, can_write=yes
 Result: VALID
-Behavior #3516: Switch On Message
+Behavior #3516: Ballance Base Event Router
 GUID: {42414C07-10000007}
 ```
 
@@ -136,7 +132,6 @@ $log = 'Player-base-ballance-bb.log'
 
 Get-Process Player -ErrorAction SilentlyContinue | Stop-Process -Force
 Remove-Item -LiteralPath (Join-Path $game "Bin\$log") -Force -ErrorAction SilentlyContinue
-Remove-Item -LiteralPath (Join-Path $game 'ModLoader\ModLoader.log') -Force -ErrorAction SilentlyContinue
 
 $p = Start-Process `
   -FilePath (Join-Path $game 'Bin\Player.exe') `
@@ -151,51 +146,67 @@ if (!$p.HasExited) {
 }
 
 Select-String -Path (Join-Path $game "Bin\$log") `
-  -Pattern 'Mod Manager|Error : Play|Cam_MenuLevel|frame 300'
-
-Select-String -Path (Join-Path $game 'ModLoader\ModLoader.log') `
-  -Pattern 'Insert message|ERROR|Exception|Loading Mod'
+  -Pattern 'Mod Manager|Error : Play|Cam_MenuLevel|frame 300|Chunk Read|failed|Load failed'
 ```
 
 Expected:
 
 ```text
+LoadNMORange ... done loaded=8
+LoadNMORange ... done loaded=1
 Render frame 300 ... cameraName="Cam_MenuLevel"
-Insert message Start Menu Hook
-Insert message End Level Hook
 ```
+
+The first stable menu camera frame is timing-sensitive in the standalone Player
+test harness. If frame 300 is still blank, rerun with a longer wait and check
+frame 600. Treat `Chunk Read error`, `Load failed`, or `[Mod Manager] Error :
+Play` as failures; a transient blank camera before the menu camera appears is
+not by itself a serialization failure.
 
 Unexpected:
 
 ```text
+Chunk Read error
 [Mod Manager] Error : Play
+Load failed
 ```
 
-If this appears, first check whether the replacement prototype runtime name is
-still `Switch On Message` and whether `Event_handler` output chains were folded.
+## Notes About BMLPlus
+
+Earlier validation with BMLPlus installed showed that BMLPlus treated the base
+`Event_handler` graph as a runtime hook surface. It searched for
+`Switch On Message` by name and followed the original output chains.
+
+That constraint is intentionally not applied to this workflow. The current
+target is the original runtime without BMLPlus, so the correct high-level
+implementation is the `Ballance Base Event Router` fold.
+
+If BMLPlus compatibility is needed again, use a separate manifest that performs
+only a leaf replacement of behavior `#3516` and keeps the runtime prototype name
+`Switch On Message`.
 
 ## Next Rewrite Candidates
 
 Prefer this order:
 
-1. Leaf replacements that keep original graph shape.
-2. Small local folds not referenced by BMLPlus or original managers.
-3. High-level Ballance blocks only after a source/code search proves no runtime
-   component depends on the original behavior names or link topology.
+1. Fold closed event-routing or fixed relay chains into Ballance-specific BBs.
+2. Replace small leaf BB groups whose behavior is now implemented directly in
+   `Ballance.dll`.
+3. Fold larger subsystems only after validating the generated CMO in Player.
 
 Before adding any replacement or fold:
 
 ```powershell
+.\build\tools\nmo.exe behavior fold-candidates --parent <id> <cmo>
 .\build\tools\nmo.exe behavior show --id <id> <cmo>
 .\build\tools\nmo.exe object refs <id> <cmo>
 .\build\tools\nmo.exe behavior graph-boundary --id <parent-or-node> <cmo>
 ```
 
-Also search BMLPlus and Ballanced code for the behavior name:
+Then add the operation to:
 
-```powershell
-rg -n "<Behavior Name>" C:\Users\kakut\Works\Ballance\BallanceModLoaderPlus C:\Users\kakut\Works\Ballanced
+```text
+tools\ballance\base_ballance_bb_manifest.json
 ```
 
-If runtime code searches by name or follows neighboring links, keep the graph
-shape and use leaf replacement only.
+Regenerate the CMO and run the Player smoke test before committing.
