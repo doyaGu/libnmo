@@ -18,9 +18,6 @@
 #include "nmo.h"
 #include "chunk/nmo_chunk_inspect.h"
 #include "document/nmo_document_save.h"
-#include "session/nmo_serializer.h"
-#include "session/nmo_session.h"
-#include "session/nmo_runtime_kernel.h"
 #include "runtime/nmo_context.h"
 #include "core/nmo_arena.h"
 #include "format/nmo_chunk_api.h"
@@ -239,10 +236,12 @@ static int validate_all_single(const char *file_path,
         (const nmo_tool_text_output_ctx_t *)user_data;
 
     nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
     char errbuf[256];
 
-    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
+    if (!nmo_tool_open_document(file_path, &ctx, &document, &workspace,
+                                errbuf, sizeof(errbuf))) {
         fprintf(stderr, "Error: %s\n", errbuf);
         return NMO_CLI_EXIT_IO_ERROR;
     }
@@ -251,11 +250,11 @@ static int validate_all_single(const char *file_path,
     bool colorize = (text_ctx != NULL) ? text_ctx->colorize : nmo_cli_should_colorize(global, out);
 
     nmo_cmd_ctx_t cmd;
-    nmo_cmd_ctx_init_from_repl(&cmd, ctx, session, colorize);
+    nmo_cmd_ctx_init_from_repl_document(&cmd, ctx, document, workspace, colorize);
     cmd.out = out;
 
     int rc = validate_all_run(&cmd, global, doc, data);
-    nmo_tool_close_session(ctx, session);
+    nmo_tool_close_document(ctx, document, workspace);
     return rc;
 }
 
@@ -487,8 +486,8 @@ static int nmo_cmd_validate_references_in_session(nmo_cmd_ctx_t *c, int argc, ch
     bool suggest_fixes = parse_fix_flag(argc, argv);
 
     /* Get reference graph from session cache */
-    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
-    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c->session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c->workspace);
+    nmo_ref_graph_t *graph = nmo_tool_owner_ref_graph(c->workspace);
     if (!graph) {
         fprintf(stderr, "Error: Failed to create reference graph\n");
         return NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -666,7 +665,7 @@ static int nmo_cmd_validate_resources_in_session(nmo_cmd_ctx_t *c, int argc, cha
     (void)argc;
     (void)argv;
 
-    const nmo_session_plugin_diagnostics_t *diag =
+    const nmo_tool_plugin_diagnostics_t *diag =
         nmo_document_get_plugin_diagnostics(c->document);
 
     size_t error_count = 0;
@@ -703,7 +702,7 @@ static int nmo_cmd_validate_resources_in_session(nmo_cmd_ctx_t *c, int argc, cha
         yyjson_mut_val *entries = yyjson_mut_arr(doc);
         if (diag && diag->entries) {
             for (size_t i = 0; i < diag->entry_count; ++i) {
-                const nmo_session_plugin_dependency_status_t *e = &diag->entries[i];
+                const nmo_tool_plugin_dependency_status_t *e = &diag->entries[i];
                 yyjson_mut_val *entry = yyjson_mut_obj(doc);
 
                 char guid_buf[64];
@@ -718,13 +717,13 @@ static int nmo_cmd_validate_resources_in_session(nmo_cmd_ctx_t *c, int argc, cha
                 yyjson_mut_obj_add_uint(doc, entry, "status_flags", e->status_flags);
 
                 yyjson_mut_val *status = yyjson_mut_arr(doc);
-                if (e->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_MISSING) {
+                if (e->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MISSING) {
                     yyjson_mut_arr_add_str(doc, status, "missing");
                 }
-                if (e->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) {
+                if (e->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) {
                     yyjson_mut_arr_add_str(doc, status, "outdated");
                 }
-                if (e->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) {
+                if (e->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) {
                     yyjson_mut_arr_add_str(doc, status, "manager_unavailable");
                 }
                 yyjson_mut_obj_add_val(doc, entry, "status", status);
@@ -756,7 +755,7 @@ static int nmo_cmd_validate_resources_in_session(nmo_cmd_ctx_t *c, int argc, cha
                 c->global && c->global->verbosity > 0) {
                 fprintf(c->out, "\nEntries:\n");
                 for (size_t i = 0; i < diag->entry_count; ++i) {
-                    const nmo_session_plugin_dependency_status_t *e = &diag->entries[i];
+                    const nmo_tool_plugin_dependency_status_t *e = &diag->entries[i];
                     char guid_buf[64];
                     nmo_guid_format(e->guid, guid_buf, sizeof(guid_buf));
                     fprintf(c->out, "  %s", guid_buf);
@@ -951,7 +950,7 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t *c,
     size_t object_count = object_query_result.matched;
 
     /* Get reference graph from session cache */
-    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c->session);
+    nmo_ref_graph_t *graph = nmo_tool_owner_ref_graph(c->workspace);
     if (!graph) {
         fprintf(stderr, "Error: Failed to create reference graph\n");
         return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
@@ -967,7 +966,7 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t *c,
     }
 
     /* Use library API for core orphan detection */
-    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c->workspace);
     nmo_object_id_t *orphan_ids = NULL;
     size_t orphan_id_count = 0;
     {
@@ -1178,12 +1177,12 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t *c,
 
             nmo_runtime_report_t report;
             memset(&report, 0, sizeof(report));
-            nmo_session_destroy_objects(c->session, orphan_ids,
+            nmo_tool_owner_destroy_objects(c->workspace, orphan_ids,
                                         orphan_data.likely_orphans, 0, &report);
             free(orphan_ids);
 
-            nmo_save_options_t save_opts = nmo_save_options_default();
-            int save_rc = nmo_cli_save_session(c->session, output_path, &save_opts);
+            nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
+            int save_rc = nmo_cli_save_document(c->document, output_path, &save_opts);
             if (save_rc != NMO_CLI_EXIT_SUCCESS) {
                 return close_ctx ? nmo_cmd_ctx_done(c, save_rc) : save_rc;
             }

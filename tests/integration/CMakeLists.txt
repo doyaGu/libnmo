@@ -132,6 +132,7 @@ if(TARGET nmo_cli)
         ${PROJECT_SOURCE_DIR}/tools/nmo_cli_output.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_cli_sort.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_cli_write.c
+        ${PROJECT_SOURCE_DIR}/tools/nmo_tool_owner.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_tool_common.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_tool_session.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_file.c

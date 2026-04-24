@@ -14,8 +14,6 @@
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
-#include "session/nmo_session.h"
-#include "session/nmo_runtime_kernel.h"
 #include "runtime/nmo_context.h"
 #include "document/nmo_document_save.h"
 #include "object/nmo_class_ids.h"
@@ -1074,7 +1072,7 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
     int rc = nmo_cli_write_init_ctx(&c, nmo_file_path, global);
     if (rc) { free(obj_buf); return rc; }
 
-    nmo_arena_t *arena = nmo_session_get_arena(c.session);
+    nmo_arena_t *arena = nmo_tool_owner_arena(c.workspace);
 
     /* Parse OBJ */
     nmo_obj_data_t obj_data;
@@ -1142,7 +1140,7 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
         for (uint32_t mi = 0; mi < obj_data.material_name_count; ++mi) {
             uint32_t gi = mi + material_offset;
             if (obj_data.material_names[mi]) {
-                nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+                nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
                 nmo_object_t *mat = nmo_object_repository_find_by_name(
                     repo, obj_data.material_names[mi]);
                 if (mat && nmo_object_get_class_id(mat) == NMO_CID_MATERIAL) {
@@ -1322,8 +1320,8 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
         nmo_object_id_t new_id = 0;
         nmo_runtime_report_t report;
         memset(&report, 0, sizeof(report));
-        int create_rc = nmo_session_create_object(
-            c.session, NMO_CID_MESH, create_name, NMO_GUID_NULL,
+        int create_rc = nmo_tool_owner_create_object(
+            c.workspace, NMO_CID_MESH, create_name, NMO_GUID_NULL,
             &new_id, &report);
         if (create_rc != NMO_OK) {
             fprintf(stderr, "Error: Failed to create mesh object: %s\n",
@@ -1456,7 +1454,7 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
         if (type_desc) {
             nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
                 arena,
-                nmo_session_get_repository(c.session),
+                nmo_tool_owner_repository(c.workspace),
                 NMO_SERIALIZE_FLAG_FILE_MODE,
                 0);
             st = nmo_mesh_serialize(ms, chunk, type_desc, &ser_ctx);
@@ -1477,7 +1475,7 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
     }
 
     if (!dry_run) {
-        int save_rc = nmo_cli_save_session(c.session, output_path, NULL);
+        int save_rc = nmo_cli_save_document(c.document, output_path, NULL);
         if (save_rc != NMO_CLI_EXIT_SUCCESS) {
             return nmo_cmd_ctx_done(&c, save_rc);
         }

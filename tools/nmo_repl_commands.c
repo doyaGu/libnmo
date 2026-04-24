@@ -7,6 +7,7 @@
 #include "nmo_cli_write.h"
 #include "nmo_repl_input.h"
 #include "nmo_repl_util.h"
+#include "nmo_tool_owner.h"
 
 #include "nmo_repl_session.h"
 
@@ -39,14 +40,10 @@
 #include "document/nmo_document_save.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_parameter_schemas.h"
-#include "session/nmo_serializer.h"
 #include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_ref_graph.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_runtime_kernel.h"
-#include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
 #include "runtime/nmo_workspace.h"
 #include "type/nmo_type_string.h"
 
@@ -283,9 +280,10 @@ void nmo_repl_print_banner(const nmo_repl_context_t *repl) {
     const char *label = path && *path ? path : "(no file)";
 
     size_t object_count = 0;
-    if (repl && repl->session) {
+    if (repl && repl->document && repl->workspace) {
         nmo_cmd_ctx_t c;
-        nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, false);
+        nmo_cmd_ctx_init_from_repl_document(
+            &c, repl->ctx, repl->document, repl->workspace, false);
         nmo_core_iter_result_t result = {0};
         if (nmo_core_object_query_run(&c, NULL, NULL, NULL, &result) == NMO_CLI_EXIT_SUCCESS) {
             object_count = result.matched;
@@ -381,20 +379,16 @@ static int cmd_info(nmo_repl_context_t *repl, int argc, char **argv) {
     (void)argc;
     (void)argv;
 
-    if (!repl || !repl->session) {
+    if (!repl || !repl->document || !repl->workspace) {
         fprintf(stderr, "No session loaded.\n");
         return -1;
     }
 
-    nmo_document_t *document = NULL;
-    if (nmo_session_borrow_document(repl->session, &document) != NMO_OK) {
-        fprintf(stderr, "Failed to borrow document.\n");
-        return -1;
-    }
-    nmo_file_info_t info = nmo_document_get_file_info(document);
+    nmo_file_info_t info = nmo_document_get_file_info(repl->document);
     size_t object_count = 0;
     nmo_cmd_ctx_t c;
-    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
+    nmo_cmd_ctx_init_from_repl_document(
+        &c, repl->ctx, repl->document, repl->workspace, repl->colorize);
     nmo_core_object_count(&c, &object_count);
 
     printf("\nSession:\n");
@@ -412,7 +406,6 @@ static int cmd_info(nmo_repl_context_t *repl, int argc, char **argv) {
         printf("  Selected: (none)\n");
     }
     printf("\n");
-    nmo_document_destroy(document);
     return 0;
 }
 
@@ -467,7 +460,8 @@ static int repl_query_set_exact_class(
 
 static int cmd_list(nmo_repl_context_t *repl, int argc, char **argv) {
     nmo_cmd_ctx_t c;
-    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
+    nmo_cmd_ctx_init_from_repl_document(
+        &c, repl->ctx, repl->document, repl->workspace, repl->colorize);
 
     nmo_object_query_t query = {0};
     size_t limit = 0;
@@ -554,7 +548,8 @@ static int cmd_show(nmo_repl_context_t *repl, int argc, char **argv) {
     nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
 
     nmo_cmd_ctx_t c;
-    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, false);
+    nmo_cmd_ctx_init_from_repl_document(
+        &c, repl->ctx, repl->document, repl->workspace, false);
     char class_buf[64];
     const char *class_name = nmo_core_class_name_or(&c, class_id, class_buf, sizeof(class_buf));
 
@@ -689,7 +684,8 @@ static int cmd_find(nmo_repl_context_t *repl, int argc, char **argv) {
     }
 
     nmo_cmd_ctx_t c;
-    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
+    nmo_cmd_ctx_init_from_repl_document(
+        &c, repl->ctx, repl->document, repl->workspace, repl->colorize);
 
     nmo_object_query_t query = {0};
     char regex_buf[256];
@@ -755,7 +751,8 @@ static int cmd_trace(nmo_repl_context_t *repl, int argc, char **argv) {
     const char *obj_name = nmo_object_get_name(obj);
 
     nmo_cmd_ctx_t c;
-    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
+    nmo_cmd_ctx_init_from_repl_document(
+        &c, repl->ctx, repl->document, repl->workspace, repl->colorize);
 
     printf("\nReferences for [%zu] ID=%u %s:\n", index, obj_id,
            (obj_name && obj_name[0]) ? obj_name : "(unnamed)");
@@ -831,7 +828,8 @@ static int cmd_param(nmo_repl_context_t *repl, int argc, char **argv) {
     const char *name = nmo_object_get_name(obj);
     nmo_object_id_t obj_id = nmo_object_get_id(obj);
     nmo_cmd_ctx_t c;
-    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, false);
+    nmo_cmd_ctx_init_from_repl_document(
+        &c, repl->ctx, repl->document, repl->workspace, false);
     char class_buf[64];
     const char *class_name = nmo_core_class_name_or(&c, class_id, class_buf, sizeof(class_buf));
 
@@ -895,7 +893,8 @@ static int cmd_refs(nmo_repl_context_t *repl, int argc, char **argv) {
     nmo_class_id_t class_id = nmo_object_get_class_id(obj);
 
     nmo_cmd_ctx_t c;
-    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
+    nmo_cmd_ctx_init_from_repl_document(
+        &c, repl->ctx, repl->document, repl->workspace, repl->colorize);
     char class_buf[64];
     const char *class_name = nmo_core_class_name_or(&c, class_id, class_buf, sizeof(class_buf));
 
@@ -920,24 +919,24 @@ static int cmd_save(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
-    if (!repl->session) {
+    if (!repl->document) {
         fprintf(stderr, "No session loaded.\n");
         return -1;
     }
 
     const char *output_path = argv[1];
-    nmo_save_options_t opts = nmo_save_options_default();
+    nmo_save_options_t opts = nmo_tool_owner_save_options_default();
 
     /* Parse optional flags */
     for (int i = 2; i < argc; ++i) {
         if (strcmp(argv[i], "--compress") == 0) {
-            opts.flags |= NMO_SAVE_COMPRESSED;
+            nmo_tool_owner_save_options_enable_compressed(&opts);
         } else if (strcmp(argv[i], "--sequential-ids") == 0) {
-            opts.flags |= NMO_SAVE_SEQUENTIAL_IDS;
+            nmo_tool_owner_save_options_enable_sequential_ids(&opts);
         }
     }
 
-    int rc = nmo_cli_save_session(repl->session, output_path, &opts);
+    int rc = nmo_cli_save_document(repl->document, output_path, &opts);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return -1;
     }
@@ -1007,19 +1006,13 @@ static int cmd_stats(nmo_repl_context_t *repl, int argc, char **argv) {
     (void)argc;
     (void)argv;
 
-    if (!repl || !repl->session) {
+    if (!repl || !repl->document) {
         fprintf(stderr, "No session loaded.\n");
         return -1;
     }
 
-    nmo_document_t *document = NULL;
     nmo_runtime_load_stats_t stats;
-    if (nmo_session_borrow_document(repl->session, &document) != NMO_OK) {
-        fprintf(stderr, "Finish loading stats unavailable.\n");
-        return -1;
-    }
-    if (nmo_document_get_runtime_load_stats(document, &stats) != NMO_OK) {
-        nmo_document_destroy(document);
+    if (nmo_document_get_runtime_load_stats(repl->document, &stats) != NMO_OK) {
         fprintf(stderr, "Finish loading stats unavailable.\n");
         return -1;
     }
@@ -1038,7 +1031,6 @@ static int cmd_stats(nmo_repl_context_t *repl, int argc, char **argv) {
            stats.indexes.memory_usage);
     printf("  Manager Errors: %u\n", stats.manager_errors);
     printf("\n");
-    nmo_document_destroy(document);
     return 0;
 }
 
@@ -1477,12 +1469,12 @@ static int repl_dispatch_cli_read_group(nmo_repl_context_t *repl, int argc, char
         fprintf(stderr, "Unsupported or mutating CLI action in REPL read mirror: behavior interface %s\n", argv[2]);
         return -1;
     }
-    bool needs_session = action->repl_policy == NMO_REPL_ACTION_READ_SESSION;
-    if (needs_session && (!repl || !repl->session)) {
+    bool needs_document = action->repl_policy == NMO_REPL_ACTION_READ_SESSION;
+    if (needs_document && (!repl || !repl->document || !repl->workspace)) {
         fprintf(stderr, "No session loaded.\n");
         return -1;
     }
-    if (!repl_streq(group, "diff") && needs_session &&
+    if (!repl_streq(group, "diff") && needs_document &&
         repl_has_explicit_session_file_operand(argc, argv)) {
         fprintf(stderr, "File operands are not accepted in REPL CLI read mirror; use the current session.\n");
         return -1;
@@ -1498,12 +1490,11 @@ static int repl_dispatch_cli_read_group(nmo_repl_context_t *repl, int argc, char
 
     const char *source_label = repl_cli_source_label(repl);
 
-    if (needs_session) {
+    if (needs_document) {
         nmo_cmd_ctx_t cmd;
-        int init_rc = nmo_cmd_ctx_init_with_session(&cmd, repl->ctx,
-                                                    repl->session,
-                                                    source_label,
-                                                    &local_global);
+        int init_rc = nmo_cmd_ctx_init_with_document(
+            &cmd, repl->ctx, repl->document, repl->workspace,
+            source_label, &local_global);
         if (init_rc != NMO_CLI_EXIT_SUCCESS) {
             return -1;
         }
@@ -1589,13 +1580,14 @@ static int repl_dispatch_registry_grouped_command(nmo_repl_context_t *repl,
         return -1;
     }
 
-    if (!repl->session) {
+    if (!repl->document || !repl->workspace) {
         fprintf(stderr, "No session loaded.\n");
         return -1;
     }
 
     nmo_cmd_ctx_t c;
-    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
+    nmo_cmd_ctx_init_from_repl_document(
+        &c, repl->ctx, repl->document, repl->workspace, repl->colorize);
 
     nmo_cmd_in_session_result_t result = {0};
     bool clear_selection = false;

@@ -8,7 +8,6 @@
 #include "../nmo_cli_output.h"
 #include "../nmo_tool_common.h"
 #include "nmo.h"
-#include "session/nmo_session.h"
 #include "runtime/nmo_context.h"
 #include "extension/nmo_extension_registry.h"
 #include "core/nmo_guid.h"
@@ -330,7 +329,7 @@ int nmo_cmd_extension_load(int argc, char **argv, const nmo_cli_global_opts_t *g
 static int extension_info_run(nmo_cmd_ctx_t *c)
 {
     /* Get plugin diagnostics */
-    const nmo_session_plugin_diagnostics_t *diag =
+    const nmo_tool_plugin_diagnostics_t *diag =
         nmo_document_get_plugin_diagnostics(c->document);
     if (!diag) {
         fprintf(stderr, "Error: No plugin diagnostics available\n");
@@ -350,7 +349,7 @@ static int extension_info_run(nmo_cmd_ctx_t *c)
 
         yyjson_mut_val *plugins_arr = yyjson_mut_arr(doc);
         for (size_t i = 0; i < diag->entry_count; ++i) {
-            const nmo_session_plugin_dependency_status_t *p = &diag->entries[i];
+            const nmo_tool_plugin_dependency_status_t *p = &diag->entries[i];
             yyjson_mut_val *plugin_obj = yyjson_mut_obj(doc);
 
             char guid_str[64];
@@ -365,11 +364,11 @@ static int extension_info_run(nmo_cmd_ctx_t *c)
             }
 
             yyjson_mut_obj_add_bool(doc, plugin_obj, "missing",
-                (p->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_MISSING) != 0);
+                (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MISSING) != 0);
             yyjson_mut_obj_add_bool(doc, plugin_obj, "version_too_old",
-                (p->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) != 0);
+                (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) != 0);
             yyjson_mut_obj_add_bool(doc, plugin_obj, "manager_unavailable",
-                (p->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) != 0);
+                (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) != 0);
 
             yyjson_mut_arr_append(plugins_arr, plugin_obj);
         }
@@ -410,7 +409,7 @@ static int extension_info_run(nmo_cmd_ctx_t *c)
             nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
             for (size_t i = 0; i < diag->entry_count; ++i) {
-                const nmo_session_plugin_dependency_status_t *p = &diag->entries[i];
+                const nmo_tool_plugin_dependency_status_t *p = &diag->entries[i];
 
                 char guid_str[64];
                 char req_ver_str[16];
@@ -427,11 +426,11 @@ static int extension_info_run(nmo_cmd_ctx_t *c)
                 }
 
                 status_str[0] = '\0';
-                if (p->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_MISSING) {
+                if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MISSING) {
                     strncat(status_str, "MISSING", sizeof(status_str) - strlen(status_str) - 1);
-                } else if (p->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) {
+                } else if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) {
                     strncat(status_str, "VERSION_TOO_OLD", sizeof(status_str) - strlen(status_str) - 1);
-                } else if (p->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) {
+                } else if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) {
                     strncat(status_str, "MANAGER_UNAVAIL", sizeof(status_str) - strlen(status_str) - 1);
                 } else {
                     strncat(status_str, "OK", sizeof(status_str) - strlen(status_str) - 1);
@@ -477,7 +476,7 @@ int nmo_cmd_extension_info(int argc, char **argv, const nmo_cli_global_opts_t *g
 static int extension_check_run(nmo_cmd_ctx_t *c, bool strict_mode)
 {
     /* Get plugin diagnostics */
-    const nmo_session_plugin_diagnostics_t *diag =
+    const nmo_tool_plugin_diagnostics_t *diag =
         nmo_document_get_plugin_diagnostics(c->document);
     if (!diag) {
         fprintf(stderr, "Error: No plugin diagnostics available\n");
@@ -506,7 +505,7 @@ static int extension_check_run(nmo_cmd_ctx_t *c, bool strict_mode)
         /* List issues */
         yyjson_mut_val *issues_arr = yyjson_mut_arr(doc);
         for (size_t i = 0; i < diag->entry_count; ++i) {
-            const nmo_session_plugin_dependency_status_t *p = &diag->entries[i];
+            const nmo_tool_plugin_dependency_status_t *p = &diag->entries[i];
 
             if (p->status_flags != 0) {
                 yyjson_mut_val *issue_obj = yyjson_mut_obj(doc);
@@ -517,12 +516,12 @@ static int extension_check_run(nmo_cmd_ctx_t *c, bool strict_mode)
                 yyjson_mut_obj_add_str(doc, issue_obj, "category", plugin_category_to_string(p->category));
                 yyjson_mut_obj_add_uint(doc, issue_obj, "required_version", (uint64_t)p->required_version);
 
-                if (p->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_MISSING) {
+                if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MISSING) {
                     yyjson_mut_obj_add_str(doc, issue_obj, "issue", "missing");
-                } else if (p->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) {
+                } else if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) {
                     yyjson_mut_obj_add_str(doc, issue_obj, "issue", "version_too_old");
                     yyjson_mut_obj_add_uint(doc, issue_obj, "resolved_version", (uint64_t)p->resolved_version);
-                } else if (p->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) {
+                } else if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) {
                     yyjson_mut_obj_add_str(doc, issue_obj, "issue", "manager_unavailable");
                 }
 
@@ -552,7 +551,7 @@ static int extension_check_run(nmo_cmd_ctx_t *c, bool strict_mode)
             fprintf(c->out, "\nIssues Found:\n\n");
 
             for (size_t i = 0; i < diag->entry_count; ++i) {
-                const nmo_session_plugin_dependency_status_t *p = &diag->entries[i];
+                const nmo_tool_plugin_dependency_status_t *p = &diag->entries[i];
 
                 if (p->status_flags != 0) {
                     char guid_str[64];
@@ -560,12 +559,12 @@ static int extension_check_run(nmo_cmd_ctx_t *c, bool strict_mode)
 
                     fprintf(c->out, "  - %s (%s)\n", guid_str, plugin_category_to_string(p->category));
 
-                    if (p->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_MISSING) {
+                    if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MISSING) {
                         fprintf(c->out, "    Status: MISSING (required version %u)\n", p->required_version);
-                    } else if (p->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) {
+                    } else if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) {
                         fprintf(c->out, "    Status: VERSION_TOO_OLD (required: %u, found: %u)\n",
                                 p->required_version, p->resolved_version);
-                    } else if (p->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) {
+                    } else if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) {
                         fprintf(c->out, "    Status: MANAGER_UNAVAILABLE\n");
                     }
 

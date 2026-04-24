@@ -13,9 +13,7 @@
 
 #include "nmo.h"
 #include "document/nmo_document_stats.h"
-#include "session/nmo_deserializer.h"
 #include "runtime/nmo_context.h"
-#include "session/nmo_session.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -440,13 +438,13 @@ int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t
     load_opts.perf_stats = &phase_stats;
 
     char errbuf[256];
-    if (!nmo_tool_open_session_opts(c.file_path, &load_opts,
-                                    &c.ctx, &c.session,
-                                    errbuf, sizeof(errbuf))) {
+    if (!nmo_tool_open_document_opts(c.file_path, &load_opts,
+                                     &c.ctx, &c.document, &c.workspace,
+                                     errbuf, sizeof(errbuf))) {
         fprintf(stderr, "Error: %s\n", errbuf);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
     }
-    c.owns_session = true;
+    c.owns_document = true;
     c.registry = nmo_context_get_type_registry(c.ctx);
     return debug_load_phases_run_in_ctx(&c, profile, &phase_stats, true);
 }

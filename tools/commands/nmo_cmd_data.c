@@ -15,7 +15,6 @@
 
 #include "nmo.h"
 #include "runtime/nmo_context.h"
-#include "session/nmo_session.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_parse.h"
 #include "object/nmo_object_edit.h"

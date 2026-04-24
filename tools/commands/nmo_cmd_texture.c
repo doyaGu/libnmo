@@ -18,12 +18,10 @@
 #include "object/nmo_object_edit.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_texture_schemas.h"
-#include "session/nmo_serializer.h"
 #include "format/nmo_stb_adapter.h"
 #include "format/nmo_image.h"
 #include "core/nmo_arena.h"
 #include "document/nmo_document_save.h"
-#include "session/nmo_session.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -970,7 +968,7 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
                          : NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_arena_t *arena = nmo_session_get_arena(c.session);
+    nmo_arena_t *arena = nmo_tool_owner_arena(c.workspace);
 
     uint32_t extracted = 0;
     uint32_t skipped = 0;
@@ -1390,7 +1388,7 @@ int nmo_cmd_texture_replace(int argc, char **argv, const nmo_cli_global_opts_t *
     }
     if (rc) { free(img_data); return rc; }
 
-    nmo_arena_t *arena = nmo_session_get_arena(c.session);
+    nmo_arena_t *arena = nmo_tool_owner_arena(c.workspace);
 
     /* Decode image via stb_image (force RGBA) */
     int img_w = 0, img_h = 0, img_ch = 0;
@@ -1521,8 +1519,8 @@ int nmo_cmd_texture_replace(int argc, char **argv, const nmo_cli_global_opts_t *
 
     /* Save */
     if (!dry_run && output_path) {
-        nmo_save_options_t save_opts = nmo_save_options_default();
-        int save_rc = nmo_cli_save_session(c.session, output_path, &save_opts);
+        nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
+        int save_rc = nmo_cli_save_document(c.document, output_path, &save_opts);
         if (save_rc != NMO_CLI_EXIT_SUCCESS) {
             exit_code = save_rc;
         } else if (!c.is_json) {

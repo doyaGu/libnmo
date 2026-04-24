@@ -16,7 +16,6 @@
 
 #include "nmo.h"
 #include "runtime/nmo_context.h"
-#include "session/nmo_session.h"
 #include "object/nmo_object_hierarchy.h"
 #include "core/nmo_arena.h"
 #include "object/nmo_class_ids.h"
@@ -198,25 +197,24 @@ static int object_list_single(const char *file_path,
     uint32_t top_n               = opts ? opts->top_n : 0;
 
     nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
     char errbuf[256];
 
-    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
+    if (!nmo_tool_open_document(file_path, &ctx, &document, &workspace,
+                                errbuf, sizeof(errbuf))) {
         fprintf(stderr, "Error: %s\n", errbuf);
         return NMO_CLI_EXIT_IO_ERROR;
     }
 
     /* Build a lightweight cmd_ctx for core helpers */
     nmo_cmd_ctx_t c;
-    memset(&c, 0, sizeof(c));
+    nmo_cmd_ctx_init_from_repl_document(&c, ctx, document, workspace,
+                                        text_ctx ? text_ctx->colorize : false);
     c.global = global;
-    c.ctx = ctx;
-    c.session = session;
-    c.registry = nmo_context_get_type_registry(ctx);
     c.is_json = (doc != NULL);
     c.file_path = file_path;
     c.out = (text_ctx && text_ctx->out) ? text_ctx->out : stdout;
-    c.colorize = text_ctx ? text_ctx->colorize : false;
     int rc = NMO_CLI_EXIT_SUCCESS;
 
     /* Build query */
@@ -227,7 +225,7 @@ static int object_list_single(const char *file_path,
     };
     rc = nmo_core_query_build(&c, &query, &query_opts);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
-        nmo_tool_close_session(ctx, session);
+        nmo_tool_close_document(ctx, document, workspace);
         return rc;
     }
 
@@ -308,7 +306,7 @@ static int object_list_single(const char *file_path,
         }
     }
 
-    nmo_tool_close_session(ctx, session);
+    nmo_tool_close_document(ctx, document, workspace);
     return rc;
 }
 
@@ -607,7 +605,7 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
     size_t object_count = col.count;
 
     nmo_object_hierarchy_t hierarchy;
-    if (!nmo_object_hierarchy_build(c.ctx, c.session, &hierarchy)) {
+    if (!nmo_tool_owner_build_hierarchy(c.ctx, c.workspace, &hierarchy)) {
         free(col.objects);
         fprintf(stderr, "Error: Failed to build object hierarchy\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
@@ -625,7 +623,7 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
     }
 
     /* ---- Phase 2: Create tree nodes ---- */
-    nmo_arena_t *tree_arena = nmo_session_get_arena(c.session);
+    nmo_arena_t *tree_arena = nmo_tool_owner_arena(c.workspace);
     for (size_t i = 0; i < object_count; ++i) {
         nmo_object_id_t id = nmo_object_get_id(objects[i]);
         if (id > 0 && id < map_size) {
@@ -856,8 +854,8 @@ static int object_show_run(nmo_cmd_ctx_t *ctx, const object_show_args_t *args,
                 .is_json = true,
                 .colorize = false,
                 .ctx = c.ctx,
-                .session = c.session,
             };
+            nmo_tool_owner_summary_output_bind(&sum_out, c.workspace);
             bool ok = false;
             if (args->select_path_count > 0) {
                 ok |= nmo_object_summary_select_with_config(target, &sum_out, &cfg,
@@ -917,8 +915,8 @@ static int object_show_run(nmo_cmd_ctx_t *ctx, const object_show_args_t *args,
                 .is_json = false,
                 .colorize = c.colorize,
                 .ctx = c.ctx,
-                .session = c.session,
             };
+            nmo_tool_owner_summary_output_bind(&sum_out, c.workspace);
             if (args->select_path_count > 0) {
                 (void)nmo_object_summary_select_with_config(target, &sum_out, &cfg,
                                                             args->select_paths,
@@ -1205,8 +1203,8 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 .is_json = true,
                 .colorize = false,
                 .ctx = c.ctx,
-                .session = c.session,
             };
+            nmo_tool_owner_summary_output_bind(&sum_out, c.workspace);
             if (nmo_object_summary_with_config(obj, &sum_out, &cfg)) {
                 yyjson_mut_val *fields = yyjson_mut_obj_get(fields_holder, "fields");
                 yyjson_mut_obj_add_val(doc, obj_json, "fields",
@@ -1245,8 +1243,8 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 .is_json = false,
                 .colorize = c.colorize,
                 .ctx = c.ctx,
-                .session = c.session,
             };
+            nmo_tool_owner_summary_output_bind(&sum_out, c.workspace);
             (void)nmo_object_summary_with_config(obj, &sum_out, &cfg);
         }
 

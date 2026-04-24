@@ -9,6 +9,7 @@
 #include "../nmo_cli_write.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_opt.h"
+#include "../nmo_tool_owner.h"
 #include "../nmo_tool_session.h"
 
 #include "behavior/nmo_behavior_view.h"
@@ -26,11 +27,8 @@
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "runtime/nmo_context.h"
-#include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
 #include "type/nmo_operation_system.h"
 #include "type/nmo_type_system.h"
-#include "../../src/runtime/runtime_internal.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -45,11 +43,11 @@
  */
 static const char *script_interface_mode_string(
     nmo_script_edit_interface_mode_t mode);
-static nmo_object_id_t script_interface_root_for_object_session(
-    nmo_session_t *session,
+static nmo_object_id_t script_interface_root_for_object_workspace(
+    nmo_workspace_t *workspace,
     nmo_object_id_t object_id);
-static bool script_session_interface_references_behavior(
-    nmo_session_t *session,
+static bool script_workspace_interface_references_behavior(
+    nmo_workspace_t *workspace,
     nmo_object_id_t parent_behavior_id,
     nmo_object_id_t node_id);
 
@@ -226,12 +224,10 @@ typedef struct script_run_args {
 
 static script_run_args_t *g_script_run_args = NULL;
 
-static nmo_session_t *script_execution_session(
+static nmo_workspace_t *script_execution_workspace(
     nmo_behavior_execution_t *execution)
 {
-    nmo_workspace_t *workspace =
-        nmo_behavior_execution_workspace(execution);
-    return workspace != NULL ? nmo_workspace_internal_session(workspace) : NULL;
+    return nmo_behavior_execution_workspace(execution);
 }
 
 static char *script_run_strdup(const char *text)
@@ -397,17 +393,17 @@ static script_run_args_t *script_run_current_args(lua_State *state)
 }
 
 static nmo_behavior_state_t *script_run_find_behavior_state(
-    nmo_session_t *session,
+    nmo_workspace_t *workspace,
     nmo_object_id_t behavior_id)
 {
     nmo_object_repository_t *repo = NULL;
     nmo_object_t *object = NULL;
 
-    if (session == NULL || behavior_id == 0u) {
+    if (workspace == NULL || behavior_id == 0u) {
         return NULL;
     }
 
-    repo = nmo_session_get_repository(session);
+    repo = nmo_tool_owner_repository(workspace);
     object = repo ? nmo_object_repository_find_by_id(repo, behavior_id) : NULL;
     if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
         return NULL;
@@ -419,17 +415,16 @@ static nmo_behavior_state_t *script_run_find_behavior_state(
 static int script_run_lua_root_script_id(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
-    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = script_execution_workspace(args->execution);
+    nmo_document_t *document = nmo_workspace_get_document(workspace);
     nmo_behavior_script_view_t view = {0};
     nmo_status_t status = NMO_OK;
 
-    status = nmo_session_borrow_document(
-        script_execution_session(args->execution), &document);
-    if (status != NMO_OK) {
+    if (document == NULL) {
         return luaL_error(state, "%s",
                           nmo_last_error_message() != NULL
                               ? nmo_last_error_message()
-                              : "failed to borrow document");
+                              : "failed to resolve document");
     }
     status = nmo_behavior_query_script_at(document, 0u, &view);
     if (status != NMO_OK) {
@@ -446,7 +441,7 @@ static int script_run_lua_root_script_id(lua_State *state)
 static int script_run_lua_io_at(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
-    nmo_session_t *session = script_execution_session(args->execution);
+    nmo_workspace_t *workspace = script_execution_workspace(args->execution);
     nmo_object_id_t behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     const char *kind_text = luaL_checkstring(state, 2);
     lua_Integer lua_index = luaL_checkinteger(state, 3);
@@ -458,7 +453,7 @@ static int script_run_lua_io_at(lua_State *state)
         return luaL_error(state, "io index must be 1-based");
     }
 
-    state_data = script_run_find_behavior_state(session, behavior_id);
+    state_data = script_run_find_behavior_state(workspace, behavior_id);
     if (state_data == NULL) {
         return luaL_error(state, "failed to resolve behavior state");
     }
@@ -484,7 +479,7 @@ static int script_run_lua_io_at(lua_State *state)
 static int script_run_lua_interface_sub_at(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
-    nmo_session_t *session = script_execution_session(args->execution);
+    nmo_workspace_t *workspace = script_execution_workspace(args->execution);
     nmo_object_id_t behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     lua_Integer lua_index = luaL_checkinteger(state, 2);
     nmo_behavior_state_t *state_data = NULL;
@@ -493,7 +488,7 @@ static int script_run_lua_interface_sub_at(lua_State *state)
         return luaL_error(state, "sub-behavior index must be 1-based");
     }
 
-    state_data = script_run_find_behavior_state(session, behavior_id);
+    state_data = script_run_find_behavior_state(workspace, behavior_id);
     if (state_data == NULL || state_data->interface_data == NULL) {
         lua_pushnil(state);
         return 1;
@@ -561,7 +556,7 @@ static int script_run_lua_remove_io(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
     nmo_script_edit_tx_t *tx = nmo_behavior_execution_transaction(args->execution);
-    nmo_session_t *session = script_execution_session(args->execution);
+    nmo_workspace_t *workspace = script_execution_workspace(args->execution);
     nmo_object_id_t io_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     const char *mode_text = luaL_optstring(state, 2, "preserve");
     nmo_script_edit_interface_mode_t mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE;
@@ -580,7 +575,7 @@ static int script_run_lua_remove_io(lua_State *state)
                           "interface mode must be 'preserve', 'canonicalize', or 'remove'");
     }
 
-    interface_behavior_id = script_interface_root_for_object_session(session, io_id);
+    interface_behavior_id = script_interface_root_for_object_workspace(workspace, io_id);
     if (mode != NMO_SCRIPT_EDIT_INTERFACE_PRESERVE && interface_behavior_id == 0u) {
         return luaL_error(state, "failed to resolve script interface root");
     }
@@ -647,7 +642,7 @@ static int script_run_lua_remove_node(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
     nmo_script_edit_tx_t *tx = nmo_behavior_execution_transaction(args->execution);
-    nmo_session_t *session = script_execution_session(args->execution);
+    nmo_workspace_t *workspace = script_execution_workspace(args->execution);
     nmo_object_id_t parent_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     nmo_object_id_t node_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
     const char *mode_text = luaL_optstring(state, 3, "preserve");
@@ -667,7 +662,7 @@ static int script_run_lua_remove_node(lua_State *state)
     }
 
     if (mode == NMO_SCRIPT_EDIT_INTERFACE_PRESERVE &&
-        script_session_interface_references_behavior(session, parent_id, node_id)) {
+        script_workspace_interface_references_behavior(workspace, parent_id, node_id)) {
         return luaL_error(state, "Failed to apply script interface policy");
     }
 
@@ -806,22 +801,22 @@ static nmo_status_t script_run_read_file(const char *path,
 static void script_collect_validation(nmo_behavior_execution_t *executor,
                                       script_run_validation_t *validation)
 {
-    nmo_session_t *session = NULL;
+    nmo_workspace_t *workspace = NULL;
     nmo_ref_graph_t *ref_graph = NULL;
     const nmo_behavior_index_t *behavior_index = NULL;
-    nmo_session_behavior_interface_diagnostics_t interface_diag = {0};
+    nmo_tool_behavior_interface_diagnostics_t interface_diag = {0};
 
     if (executor == NULL || validation == NULL) {
         return;
     }
 
     memset(validation, 0, sizeof(*validation));
-    session = script_execution_session(executor);
-    if (session == NULL) {
+    workspace = script_execution_workspace(executor);
+    if (workspace == NULL) {
         return;
     }
 
-    ref_graph = nmo_session_get_ref_graph(session);
+    ref_graph = nmo_tool_owner_ref_graph(workspace);
     validation->references_status = NMO_OK;
     if (ref_graph != NULL) {
         validation->references_status =
@@ -830,10 +825,10 @@ static void script_collect_validation(nmo_behavior_execution_t *executor,
                                    &validation->broken_reference_count);
     }
 
-    behavior_index = nmo_session_get_behavior_index(session);
+    behavior_index = nmo_tool_owner_behavior_index(workspace);
     validation->behavior_index_ok = behavior_index != NULL;
 
-    nmo_session_get_behavior_interface_diagnostics(session, &interface_diag);
+    nmo_tool_owner_behavior_interface_diagnostics(workspace, &interface_diag);
     validation->interface_status = interface_diag.status;
     validation->interface_attempted = interface_diag.attempted != 0;
     validation->interface_available = interface_diag.available != 0;
@@ -1682,7 +1677,6 @@ static char *script_format_parameter_value_with_registry(
     nmo_workspace_t *workspace,
     nmo_object_id_t param_id)
 {
-    nmo_session_t *session = NULL;
     nmo_object_repository_t *repo = NULL;
     nmo_object_t *object = NULL;
     const nmo_parameter_state_t *state = NULL;
@@ -1694,8 +1688,7 @@ static char *script_format_parameter_value_with_registry(
         return NULL;
     }
 
-    session = nmo_workspace_internal_session(workspace);
-    repo = nmo_session_get_repository(session);
+    repo = nmo_tool_owner_repository(workspace);
     object = repo ? nmo_object_repository_find_by_id(repo, param_id) : NULL;
     state = object ? nmo_parameter_get_state(object) : NULL;
     if (!state) {
@@ -1825,30 +1818,22 @@ static bool parse_script_interface_mode(
     return false;
 }
 
-static bool script_session_interface_references_behavior(
-    nmo_session_t *session,
+static bool script_workspace_interface_references_behavior(
+    nmo_workspace_t *workspace,
     nmo_object_id_t parent_behavior_id,
     nmo_object_id_t behavior_id);
 
-static bool script_session_interface_references_behavior(
-    nmo_session_t *session,
+static bool script_workspace_interface_references_behavior(
+    nmo_workspace_t *workspace,
     nmo_object_id_t parent_behavior_id,
     nmo_object_id_t behavior_id)
 {
-    nmo_interface_view_t view = {0};
-
-    if (session == NULL || parent_behavior_id == 0u || behavior_id == 0u) {
-        return false;
-    }
-
-    return nmo_interface_view_find_behavior(session,
-                                            parent_behavior_id,
-                                            behavior_id,
-                                            &view) == NMO_OK;
+    return nmo_tool_owner_interface_references_behavior(
+        workspace, parent_behavior_id, behavior_id);
 }
 
-static nmo_object_id_t script_interface_root_for_object_session(
-    nmo_session_t *session,
+static nmo_object_id_t script_interface_root_for_object_workspace(
+    nmo_workspace_t *workspace,
     nmo_object_id_t object_id)
 {
     const nmo_behavior_index_t *index = NULL;
@@ -1857,21 +1842,21 @@ static nmo_object_id_t script_interface_root_for_object_session(
     nmo_object_id_t behavior_id = 0u;
     bool found_parent = false;
 
-    if (!session || object_id == 0u) {
+    if (!workspace || object_id == 0u) {
         return 0u;
     }
-    if (nmo_session_ensure_behavior_acceleration(session) != NMO_OK) {
+    if (nmo_tool_owner_ensure_behavior_acceleration(workspace) != NMO_OK) {
         return 0u;
     }
 
-    index = nmo_session_get_behavior_index(session);
+    index = nmo_tool_owner_behavior_index(workspace);
     owner = index ? nmo_behavior_index_find(index, object_id) : NULL;
     if (!owner) {
         return 0u;
     }
 
     behavior_id = owner->owner_id;
-    repo = nmo_session_get_repository(session);
+    repo = nmo_tool_owner_repository(workspace);
     if (!repo) {
         return behavior_id;
     }
@@ -1964,7 +1949,7 @@ static nmo_status_t script_node_remove_execute(
 {
     script_node_remove_args_t *args = (script_node_remove_args_t *)user_data;
     nmo_script_edit_tx_t *tx = NULL;
-    nmo_session_t *session = NULL;
+    nmo_workspace_t *workspace = NULL;
     nmo_status_t rc = NMO_OK;
 
     if (!args || executor == NULL) {
@@ -1972,12 +1957,12 @@ static nmo_status_t script_node_remove_execute(
                          "Missing script node remove arguments");
     }
     tx = nmo_behavior_execution_transaction(executor);
-    session = script_execution_session(executor);
+    workspace = script_execution_workspace(executor);
 
     if (args->interface_mode == NMO_SCRIPT_EDIT_INTERFACE_PRESERVE &&
-        script_session_interface_references_behavior(session,
-                                                     args->parent_id,
-                                                     args->node_id)) {
+        script_workspace_interface_references_behavior(workspace,
+                                                       args->parent_id,
+                                                       args->node_id)) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                          "Failed to apply script interface policy");
     }
@@ -2151,7 +2136,7 @@ static nmo_status_t script_io_remove_execute(
 {
     script_io_remove_args_t *args = (script_io_remove_args_t *)user_data;
     nmo_script_edit_tx_t *tx = NULL;
-    nmo_session_t *session = NULL;
+    nmo_workspace_t *workspace = NULL;
     nmo_status_t rc = NMO_OK;
     nmo_object_id_t interface_behavior_id = 0u;
 
@@ -2160,9 +2145,9 @@ static nmo_status_t script_io_remove_execute(
                          "Missing script io remove arguments");
     }
     tx = nmo_behavior_execution_transaction(executor);
-    session = script_execution_session(executor);
-    interface_behavior_id = script_interface_root_for_object_session(session,
-                                                                     args->io_id);
+    workspace = script_execution_workspace(executor);
+    interface_behavior_id = script_interface_root_for_object_workspace(workspace,
+                                                                       args->io_id);
     if (interface_behavior_id == 0u) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
                          "Failed to resolve script interface root");
@@ -3082,7 +3067,7 @@ static nmo_status_t script_param_remove_execute(
 {
     script_param_remove_args_t *args = (script_param_remove_args_t *)user_data;
     nmo_script_edit_tx_t *tx = NULL;
-    nmo_session_t *session = NULL;
+    nmo_workspace_t *workspace = NULL;
     nmo_status_t rc = NMO_OK;
     nmo_object_id_t interface_behavior_id = 0u;
 
@@ -3091,9 +3076,9 @@ static nmo_status_t script_param_remove_execute(
                          "Missing script param remove arguments");
     }
     tx = nmo_behavior_execution_transaction(executor);
-    session = script_execution_session(executor);
+    workspace = script_execution_workspace(executor);
     interface_behavior_id =
-        script_interface_root_for_object_session(session, args->param_id);
+        script_interface_root_for_object_workspace(workspace, args->param_id);
     if (interface_behavior_id == 0u) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
                          "Failed to resolve script interface root");
@@ -3281,7 +3266,7 @@ static nmo_status_t script_op_remove_execute(
 {
     script_op_remove_args_t *args = (script_op_remove_args_t *)user_data;
     nmo_script_edit_tx_t *tx = NULL;
-    nmo_session_t *session = NULL;
+    nmo_workspace_t *workspace = NULL;
     nmo_status_t rc = NMO_OK;
     nmo_object_id_t interface_behavior_id = 0u;
 
@@ -3290,8 +3275,8 @@ static nmo_status_t script_op_remove_execute(
                          "Missing script op remove arguments");
     }
     tx = nmo_behavior_execution_transaction(executor);
-    session = script_execution_session(executor);
-    interface_behavior_id = script_interface_root_for_object_session(session, args->op_id);
+    workspace = script_execution_workspace(executor);
+    interface_behavior_id = script_interface_root_for_object_workspace(workspace, args->op_id);
     if (interface_behavior_id == 0u) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
                          "Failed to resolve script interface root");

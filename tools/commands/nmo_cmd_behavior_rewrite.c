@@ -18,14 +18,11 @@
 #include "core/nmo_guid.h"
 #include "core/nmo_parse.h"
 #include "format/nmo_object.h"
-#include "session/nmo_serializer.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -36,46 +33,6 @@ static void rewrite_guid_to_string(nmo_guid_t guid, char *buf, size_t size) {
         return;
     }
     snprintf(buf, size, "%08X-%08X", guid.d1, guid.d2);
-}
-
-static nmo_status_t rewrite_open_workspace(
-    nmo_context_t *ctx,
-    nmo_session_t *session,
-    nmo_document_t **out_document,
-    nmo_workspace_t **out_workspace)
-{
-    nmo_status_t rc = NMO_OK;
-
-    if (!ctx || !session || !out_document || !out_workspace) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    *out_document = NULL;
-    *out_workspace = NULL;
-
-    rc = nmo_session_borrow_document(session, out_document);
-    if (rc != NMO_OK) {
-        return rc;
-    }
-    rc = nmo_workspace_create(ctx, *out_document, out_workspace);
-    if (rc != NMO_OK) {
-        nmo_document_destroy(*out_document);
-        *out_document = NULL;
-        return rc;
-    }
-    return NMO_OK;
-}
-
-static void rewrite_close_workspace(
-    nmo_document_t *document,
-    nmo_workspace_t *workspace)
-{
-    if (workspace) {
-        nmo_workspace_destroy(workspace);
-    }
-    if (document) {
-        nmo_document_destroy(document);
-    }
 }
 
 static bool parse_graph_boundary_args(int argc,
@@ -639,11 +596,11 @@ static void fold_candidates_union_connected_children(
     }
 
     const nmo_behavior_index_t *index =
-        nmo_session_get_behavior_index(ctx->session);
+        nmo_tool_owner_behavior_index(ctx->workspace);
     const nmo_object_id_t *link_ids = parent
         ? NMO_ARRAY_DATA(nmo_object_id_t, &parent->sub_behavior_links)
         : NULL;
-    nmo_object_repository_t *repo = nmo_session_get_repository(ctx->session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(ctx->workspace);
     for (size_t i = 0; link_ids && i < parent->sub_behavior_links.count; ++i) {
         nmo_object_t *link_obj =
             repo ? nmo_object_repository_find_by_id(repo, link_ids[i]) : NULL;
@@ -688,10 +645,10 @@ static int fold_candidates_emit_control_router_groups(
     }
 
     const nmo_behavior_index_t *index =
-        nmo_session_get_behavior_index(ctx->session);
+        nmo_tool_owner_behavior_index(ctx->workspace);
     const nmo_object_id_t *link_ids =
         NMO_ARRAY_DATA(nmo_object_id_t, &parent->sub_behavior_links);
-    nmo_object_repository_t *repo = nmo_session_get_repository(ctx->session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(ctx->workspace);
 
     for (size_t i = 0; i < child_count; ++i) {
         if (!fold_behavior_is_control_router_root(children[i].root_state)) {
@@ -1234,7 +1191,7 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
                                 const nmo_behavior_state_t *parent,
                                 const nmo_behavior_boundary_t *boundary,
                                 uint32_t depth) {
-    nmo_object_repository_t *repo = nmo_session_get_repository(ctx->session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(ctx->workspace);
     const nmo_object_id_t *sub_ids = parent
         ? NMO_ARRAY_DATA(nmo_object_id_t, &parent->sub_behaviors)
         : NULL;
@@ -1392,7 +1349,7 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
             while (changed) {
                 changed = false;
                 const nmo_behavior_index_t *index =
-                    nmo_session_get_behavior_index(ctx->session);
+                    nmo_tool_owner_behavior_index(ctx->workspace);
                 const nmo_object_id_t *link_ids =
                     NMO_ARRAY_DATA(nmo_object_id_t, &parent->sub_behavior_links);
                 for (size_t link_idx = 0;
@@ -1567,7 +1524,7 @@ static int fold_candidates_run(nmo_cmd_ctx_t *ctx,
     int exit_code = NMO_CLI_EXIT_SUCCESS;
     nmo_behavior_boundary_t boundary = {0};
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
     nmo_object_t *object = repo
         ? nmo_object_repository_find_by_id(repo, args->parent_id)
         : NULL;
@@ -2027,7 +1984,7 @@ int nmo_cmd_behavior_fold(int argc,
     }
 
     nmo_behavior_fold_report_t report = {0};
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
     const nmo_behavior_state_t *parent =
         fold_find_behavior_state(repo, args.parent_id);
     const nmo_behavior_state_t *representative =
@@ -2057,16 +2014,13 @@ int nmo_cmd_behavior_fold(int argc,
         .parameter_map_count = args.parameter_map_count,
         .interface_mode = args.interface_mode,
     };
-    nmo_document_t *document = NULL;
-    nmo_workspace_t *workspace = NULL;
-    nmo_status_t fold_rc =
-        rewrite_open_workspace(c.ctx, c.session, &document, &workspace);
+    nmo_workspace_t *workspace = c.workspace;
+    nmo_status_t fold_rc = NMO_OK;
     if (fold_rc == NMO_OK) {
         fold_rc = args.dry_run
             ? nmo_behavior_edit_fold_analyze(workspace, &desc, &report)
             : nmo_behavior_edit_fold(workspace, &desc, &report);
     }
-    rewrite_close_workspace(document, workspace);
     if (fold_rc != NMO_OK) {
         rc = (fold_rc == NMO_ERR_INVALID_ARGUMENT ||
               fold_rc == NMO_ERR_NOT_FOUND)
@@ -2079,8 +2033,8 @@ int nmo_cmd_behavior_fold(int argc,
     if (args.dry_run) {
         rc = fold_emit_dry_run(&c, parent, representative, &report);
     } else {
-        nmo_save_options_t save_opts = nmo_save_options_default();
-        rc = nmo_cli_save_session(c.session, args.output_path, &save_opts);
+        nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
+        rc = nmo_cli_save_document(c.document, args.output_path, &save_opts);
         if (rc == NMO_CLI_EXIT_SUCCESS) {
             if (c.is_json) {
                 yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
@@ -2200,15 +2154,12 @@ static int replace_bb_mutate(nmo_cmd_ctx_t *c,
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_document_t *document = NULL;
-    nmo_workspace_t *workspace = NULL;
-    nmo_status_t rc =
-        rewrite_open_workspace(c->ctx, c->session, &document, &workspace);
+    nmo_workspace_t *workspace = c->workspace;
+    nmo_status_t rc = NMO_OK;
     if (rc == NMO_OK) {
         rc = nmo_behavior_edit_replace_bb(
             workspace, &args->desc, &args->report);
     }
-    rewrite_close_workspace(document, workspace);
     if (rc != NMO_OK) {
         fprintf(stderr,
                 "Error: behavior %u is not leaf-replaceable "

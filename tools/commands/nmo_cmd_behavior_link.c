@@ -15,8 +15,6 @@
 
 #include "behavior/nmo_script_edit.h"
 #include "nmo.h"
-#include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
 #include "runtime/nmo_workspace.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/nmo_object_repository.h"
@@ -39,38 +37,6 @@ typedef struct behavior_remove_link_args {
     nmo_object_id_t from_id;
     nmo_object_id_t to_id;
 } behavior_remove_link_args_t;
-
-static nmo_status_t behavior_link_begin_script_edit(
-    nmo_context_t *ctx,
-    nmo_session_t *session,
-    const char *label,
-    nmo_script_edit_tx_t **out_tx)
-{
-    nmo_document_t *document = NULL;
-    nmo_workspace_t *workspace = NULL;
-    nmo_status_t rc = NMO_OK;
-
-    if (ctx == NULL || session == NULL || label == NULL || out_tx == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    *out_tx = NULL;
-    rc = nmo_session_borrow_document(session, &document);
-    if (rc != NMO_OK) {
-        return rc;
-    }
-    rc = nmo_workspace_create(ctx, document, &workspace);
-    if (rc == NMO_OK) {
-        rc = nmo_script_edit_begin(workspace, label, out_tx);
-    }
-    if (workspace != NULL) {
-        nmo_workspace_destroy(workspace);
-    }
-    if (document != NULL) {
-        nmo_document_destroy(document);
-    }
-    return rc;
-}
 
 static int behavior_link_finalize_tx(nmo_script_edit_tx_t *tx, bool dry_run)
 {
@@ -137,8 +103,8 @@ static int behavior_add_link_mutate(
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    add_rc = behavior_link_begin_script_edit(
-        c->ctx, c->session, "behavior add-link", &tx);
+    add_rc = nmo_script_edit_begin(
+        c->workspace, "behavior add-link", &tx);
     if (add_rc != NMO_OK) {
         fprintf(stderr, "Error: Failed to begin behavior add-link: %s\n",
                 nmo_error_string(add_rc));
@@ -211,7 +177,7 @@ static int behavior_remove_link_mutate(
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c->workspace);
     nmo_object_t *link_obj = repo ? nmo_object_repository_find_by_id(repo, args->link_id) : NULL;
     if (link_obj != NULL) {
         const nmo_behaviorlink_state_t *link_state =
@@ -224,7 +190,7 @@ static int behavior_remove_link_mutate(
 
     nmo_script_edit_tx_t *tx = NULL;
     nmo_status_t rm_rc =
-        behavior_link_begin_script_edit(c->ctx, c->session, "behavior remove-link", &tx);
+        nmo_script_edit_begin(c->workspace, "behavior remove-link", &tx);
     if (rm_rc != NMO_OK) {
         fprintf(stderr, "Error: Failed to begin behavior remove-link: %s\n",
                 nmo_error_string(rm_rc));

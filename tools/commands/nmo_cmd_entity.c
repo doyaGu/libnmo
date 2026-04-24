@@ -701,7 +701,7 @@ static int entity_set_position_mutate(
     nmo_workspace_edit_t *edit = NULL;
     nmo_status_t rc = nmo_workspace_edit_begin(c->workspace, "entity set-position", &edit);
     if (rc == NMO_OK) {
-        nmo_session_field_edit_t field = {
+        nmo_tool_field_edit_t field = {
             .field_name = "world_matrix",
             .value_str = args->matrix_value,
         };

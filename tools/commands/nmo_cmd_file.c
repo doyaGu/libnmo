@@ -16,9 +16,6 @@
 #include "document/nmo_document_load.h"
 #include "document/nmo_document_stats.h"
 #include "format/nmo_header.h"
-#include "session/nmo_deserializer.h"
-#include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -76,21 +73,16 @@ static int file_info_single(const char *file_path,
         (const nmo_tool_text_output_ctx_t *)user_data;
 
     nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
     nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
     char errbuf[256];
 
     nmo_load_options_t opts = nmo_load_options_default();
     opts.profile = NMO_LOAD_PROFILE_METADATA;
-    if (!nmo_tool_open_session_opts(file_path, &opts, &ctx, &session, errbuf, sizeof(errbuf))) {
+    if (!nmo_tool_open_document_opts(file_path, &opts, &ctx, &document, &workspace,
+                                     errbuf, sizeof(errbuf))) {
         fprintf(stderr, "Error: %s\n", errbuf);
         return NMO_CLI_EXIT_IO_ERROR;
-    }
-
-    if (nmo_session_borrow_document(session, &document) != NMO_OK) {
-        nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: Failed to borrow document view\n");
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     nmo_file_info_t info = nmo_document_get_file_info(document);
@@ -111,8 +103,7 @@ static int file_info_single(const char *file_path,
         nmo_cli_print_kv(out, "CK Version", buf, 14, colorize);
     }
 
-    nmo_document_destroy(document);
-    nmo_tool_close_session(ctx, session);
+    nmo_tool_close_document(ctx, document, workspace);
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -316,7 +307,7 @@ static int nmo_cmd_file_stats_in_session(nmo_cmd_ctx_t *c, int argc, char **argv
     (void)argv;
     /* Collect stats */
     nmo_file_stats_t stats;
-    if (nmo_stats_collect(c->session, &stats) != 0) {
+    if (nmo_tool_owner_stats_collect(c->workspace, &stats) != NMO_OK) {
         fprintf(stderr, "Error: Failed to collect statistics\n");
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
@@ -688,7 +679,7 @@ static int nmo_cmd_file_plugins_in_session(nmo_cmd_ctx_t *c, int argc, char **ar
     (void)argv;
 
     /* Get plugin diagnostics */
-    const nmo_session_plugin_diagnostics_t *diag =
+    const nmo_tool_plugin_diagnostics_t *diag =
         nmo_document_get_plugin_diagnostics(c->document);
 
     if (c->is_json) {
@@ -705,7 +696,7 @@ static int nmo_cmd_file_plugins_in_session(nmo_cmd_ctx_t *c, int argc, char **ar
         yyjson_mut_val *entries = yyjson_mut_arr(doc);
         if (diag && diag->entries) {
             for (size_t i = 0; i < diag->entry_count; ++i) {
-                const nmo_session_plugin_dependency_status_t *e = &diag->entries[i];
+                const nmo_tool_plugin_dependency_status_t *e = &diag->entries[i];
                 yyjson_mut_val *entry = yyjson_mut_obj(doc);
 
                 char guid_buf[64];
@@ -746,7 +737,7 @@ static int nmo_cmd_file_plugins_in_session(nmo_cmd_ctx_t *c, int argc, char **ar
             if (diag->entries && diag->entry_count > 0) {
                 fprintf(c->out, "\nEntries:\n");
                 for (size_t i = 0; i < diag->entry_count; ++i) {
-                    const nmo_session_plugin_dependency_status_t *e = &diag->entries[i];
+                    const nmo_tool_plugin_dependency_status_t *e = &diag->entries[i];
                     char guid_buf[64];
                     nmo_guid_format(e->guid, guid_buf, sizeof(guid_buf));
                     fprintf(c->out, "  %s [%s req=%u resolved=%u]",

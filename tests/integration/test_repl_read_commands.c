@@ -17,7 +17,7 @@
 #include "../../tools/commands/nmo_cmd_parameter.h"
 #include "../../tools/commands/nmo_cmd_validate.h"
 #include "../../tools/nmo_tool_session.h"
-#include "session/nmo_session.h"
+#include "document/nmo_document_file_state.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -157,9 +157,10 @@ static void close_repl(nmo_repl_context_t *repl) {
     if (!repl) {
         return;
     }
-    nmo_tool_close_session(repl->ctx, repl->session);
+    nmo_tool_close_document(repl->ctx, repl->document, repl->workspace);
     repl->ctx = NULL;
-    repl->session = NULL;
+    repl->document = NULL;
+    repl->workspace = NULL;
 }
 
 static void open_repl(nmo_repl_context_t *repl, const char *path) {
@@ -199,8 +200,9 @@ static void assert_in_session_ok(nmo_repl_context_t *repl,
 
     nmo_cmd_ctx_t cmd;
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS,
-              nmo_cmd_ctx_init_with_session(&cmd, repl->ctx, repl->session,
-                                            "(test session)", &global));
+              nmo_cmd_ctx_init_with_document(&cmd, repl->ctx, repl->document,
+                                             repl->workspace,
+                                             "(test document)", &global));
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, handler(&cmd, argc, argv));
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, nmo_cmd_ctx_done(&cmd, NMO_CLI_EXIT_SUCCESS));
     ASSERT_FALSE(repl->dirty);
@@ -224,8 +226,9 @@ static void assert_registry_in_session_ok(nmo_repl_context_t *repl,
 
     nmo_cmd_ctx_t cmd;
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS,
-              nmo_cmd_ctx_init_with_session(&cmd, repl->ctx, repl->session,
-                                            "(test session)", &global));
+              nmo_cmd_ctx_init_with_document(&cmd, repl->ctx, repl->document,
+                                             repl->workspace,
+                                             "(test document)", &global));
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS,
               nmo_command_registry_dispatch_read_in_session(group, action,
                                                             &cmd, argc, argv));
@@ -368,7 +371,7 @@ TEST(repl_read, cli_read_option_values_with_file_suffix_are_not_file_operands) {
 
     const char payload[] = "resource suffix probe";
     ASSERT_EQ(NMO_OK,
-              nmo_session_add_included_file(repl.session,
+              nmo_document_add_included_file(repl.document,
                                             "repl_suffix_probe.bin",
                                             payload,
                                             (uint32_t)sizeof(payload)));
@@ -440,7 +443,7 @@ TEST(repl_read, resource_and_texture_extract_use_session_core) {
 
     const char payload[] = "resource extract probe";
     ASSERT_EQ(NMO_OK,
-              nmo_session_add_included_file(repl.session,
+              nmo_document_add_included_file(repl.document,
                                             "repl_extract_probe.bin",
                                             payload,
                                             (uint32_t)sizeof(payload)));
@@ -648,7 +651,7 @@ TEST(repl_read, domain_cli_read_groups_are_available) {
 
     const char payload[] = "resource probe";
     ASSERT_EQ(NMO_OK,
-              nmo_session_add_included_file(repl.session,
+              nmo_document_add_included_file(repl.document,
                                             "repl_probe.bin",
                                             payload,
                                             (uint32_t)sizeof(payload)));
@@ -1007,17 +1010,18 @@ TEST(repl_read, diff_session_dispatch_does_not_use_ctx_dispatch_helper) {
                                "NMO_CMD_SOURCE_SESSION");
 }
 
-TEST(repl_read, explicit_session_source_initializes_command_context) {
+TEST(repl_read, explicit_document_source_initializes_command_context) {
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
     nmo_cli_global_opts_t global;
     nmo_cli_global_opts_init(&global);
     nmo_cmd_source_t source = {
-        .kind = NMO_CMD_SOURCE_SESSION,
+        .kind = NMO_CMD_SOURCE_DOCUMENT,
         .ctx = repl.ctx,
-        .session = repl.session,
-        .source_label = "(test explicit session)",
+        .document = repl.document,
+        .workspace = repl.workspace,
+        .source_label = "(test explicit document)",
     };
 
     nmo_cmd_ctx_t cmd;
@@ -1032,7 +1036,7 @@ TEST(repl_read, explicit_session_source_initializes_command_context) {
     close_repl(&repl);
 }
 
-TEST(repl_read, registry_dispatches_session_reads) {
+TEST(repl_read, registry_dispatches_document_reads) {
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
@@ -1137,8 +1141,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, chunk_session_dispatch_does_not_use_ctx_dispatch_helper);
     REGISTER_TEST(repl_read, command_source_dispatch_bridge_symbols_are_removed);
     REGISTER_TEST(repl_read, diff_session_dispatch_does_not_use_ctx_dispatch_helper);
-    REGISTER_TEST(repl_read, explicit_session_source_initializes_command_context);
-    REGISTER_TEST(repl_read, registry_dispatches_session_reads);
+    REGISTER_TEST(repl_read, explicit_document_source_initializes_command_context);
+    REGISTER_TEST(repl_read, registry_dispatches_document_reads);
     REGISTER_TEST(repl_read, command_registry_is_shared_repl_policy_source);
     REGISTER_TEST(repl_read, completion_group_does_not_require_session);
     REGISTER_TEST(repl_read, legacy_read_shortcuts_still_work);

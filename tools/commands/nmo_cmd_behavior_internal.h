@@ -77,11 +77,11 @@ const char *interface_color_to_hex(uint32_t color, char *buf, size_t size);
 void nmo_cmd_behavior_add_interface_diagnostics_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *data,
-    nmo_session_t *session);
+    nmo_workspace_t *workspace);
 
 void nmo_cmd_behavior_print_interface_diagnostics(
     FILE *out,
-    nmo_session_t *session);
+    nmo_workspace_t *workspace);
 
 int nmo_cmd_behavior_graph_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 int nmo_cmd_behavior_graph_boundary_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);

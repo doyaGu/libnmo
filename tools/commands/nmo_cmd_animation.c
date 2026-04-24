@@ -14,8 +14,6 @@
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
-#include "session/nmo_session.h"
-#include "session/nmo_runtime_kernel.h"
 #include "runtime/nmo_context.h"
 #include "document/nmo_document_save.h"
 #include "object/nmo_class_ids.h"
@@ -1169,7 +1167,7 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
         return rc;
     }
 
-    nmo_arena_t *arena = nmo_session_get_arena(c.session);
+    nmo_arena_t *arena = nmo_tool_owner_arena(c.workspace);
 
     /* Build controller array */
     nmo_objanim_controller_t *controllers = NULL;
@@ -1409,7 +1407,7 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
         memset(&report, 0, sizeof(report));
         nmo_guid_t zero_guid;
         memset(&zero_guid, 0, sizeof(zero_guid));
-        int cr = nmo_session_create_object(c.session, NMO_CID_OBJECTANIMATION,
+        int cr = nmo_tool_owner_create_object(c.workspace, NMO_CID_OBJECTANIMATION,
                                            "imported_anim", zero_guid,
                                            &new_id, &report);
         if (cr != 0) {
@@ -1492,7 +1490,7 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
     }
 
     if (!dry_run) {
-        int save_rc = nmo_cli_save_session(c.session, output_path, NULL);
+        int save_rc = nmo_cli_save_document(c.document, output_path, NULL);
         if (save_rc != NMO_CLI_EXIT_SUCCESS) {
             return nmo_cmd_ctx_done(&c, save_rc);
         }

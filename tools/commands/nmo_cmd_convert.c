@@ -11,10 +11,6 @@
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
 #include "nmo.h"
-#include "session/nmo_deserializer.h"
-#include "session/nmo_serializer.h"
-#include "session/nmo_session.h"
-#include "session/nmo_runtime_kernel.h"
 #include "document/nmo_document_save.h"
 #include "runtime/nmo_context.h"
 #include "core/nmo_arena.h"
@@ -250,7 +246,7 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
     if (rc) return rc;
 
     /* Build save options */
-    nmo_save_options_t save_opts = nmo_save_options_default();
+    nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
     nmo_save_perf_stats_t save_phase_stats;
     nmo_save_perf_stats_reset(&save_phase_stats);
     save_opts.collect_perf_stats = true;
@@ -287,7 +283,7 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
     }
 
     /* Save file */
-    int result = nmo_cli_save_session(c.session, output_path, &save_opts);
+    int result = nmo_cli_save_document(c.document, output_path, &save_opts);
     if (result != NMO_CLI_EXIT_SUCCESS) {
         return nmo_cmd_ctx_done(&c, result);
     }
@@ -376,11 +372,11 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
     }
 
     /* If output specified, save the file (equivalent to copy) */
-    nmo_save_options_t save_opts = nmo_save_options_default();
+    nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
     if (fast_save) {
         save_opts.durability = NMO_SAVE_DURABILITY_FAST;
     }
-    int result = nmo_cli_save_session(c.session, output_path, &save_opts);
+    int result = nmo_cli_save_document(c.document, output_path, &save_opts);
     if (result != NMO_CLI_EXIT_SUCCESS) {
         return nmo_cmd_ctx_done(&c, result);
     }
@@ -464,7 +460,7 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
         name_filter = &name_query;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
     nmo_convert_strip_collect_t collect = {
         .class_filter = class_filter,
         .name_filter = name_filter,
@@ -490,8 +486,8 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
         bool have_cascade = false;
 
         if (preview_arena && remove_count > 0) {
-            int prev_rc = nmo_session_preview_destroy(
-                c.session, ids_to_remove, remove_count,
+            int prev_rc = nmo_tool_owner_preview_destroy(
+                c.workspace, ids_to_remove, remove_count,
                 NMO_RUNTIME_REQUEST_CASCADE, preview_arena,
                 &expanded_ids, &expanded_count);
             have_cascade = (prev_rc == NMO_OK && expanded_ids != NULL);
@@ -706,7 +702,7 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
     memset(&report, 0, sizeof(report));
 
     if (remove_count > 0) {
-        int result = nmo_session_destroy_objects(c.session, ids_to_remove, remove_count,
+        int result = nmo_tool_owner_destroy_objects(c.workspace, ids_to_remove, remove_count,
                                                  NMO_RUNTIME_REQUEST_CASCADE, &report);
         if (result != NMO_OK) {
             fprintf(stderr, "Error destroying objects: %s\n", nmo_error_string(result));
@@ -718,11 +714,11 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
     free(ids_to_remove);
 
     /* Save file */
-    nmo_save_options_t save_opts = nmo_save_options_default();
+    nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
     if (fast_save) {
         save_opts.durability = NMO_SAVE_DURABILITY_FAST;
     }
-    int result = nmo_cli_save_session(c.session, output_path, &save_opts);
+    int result = nmo_cli_save_document(c.document, output_path, &save_opts);
     if (result != NMO_CLI_EXIT_SUCCESS) {
         return nmo_cmd_ctx_done(&c, result);
     }
@@ -786,40 +782,45 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
     }
     bool fast_save = nmo_tool_has_flag(argc, argv, "--fast-save", NULL);
 
-    /* Use init_no_file since we manage two sessions manually */
+    /* Use init_no_file since we manage two documents manually */
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init_no_file(&c, global);
     if (rc) return rc;
 
     /* Load source file */
     nmo_context_t *src_ctx = NULL;
-    nmo_session_t *src_session = NULL;
+    nmo_document_t *src_document = NULL;
+    nmo_workspace_t *src_workspace = NULL;
     char errbuf[512];
-    if (!nmo_tool_open_session(source_path, &src_ctx, &src_session, errbuf, sizeof(errbuf))) {
+    if (!nmo_tool_open_document(source_path, &src_ctx, &src_document, &src_workspace,
+                                errbuf, sizeof(errbuf))) {
         fprintf(stderr, "Error loading source file: %s\n", errbuf);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
     }
 
     /* Load target file */
     nmo_context_t *tgt_ctx = NULL;
-    nmo_session_t *tgt_session = NULL;
-    if (!nmo_tool_open_session(target_path, &tgt_ctx, &tgt_session, errbuf, sizeof(errbuf))) {
+    nmo_document_t *tgt_document = NULL;
+    nmo_workspace_t *tgt_workspace = NULL;
+    if (!nmo_tool_open_document(target_path, &tgt_ctx, &tgt_document, &tgt_workspace,
+                                errbuf, sizeof(errbuf))) {
         fprintf(stderr, "Error loading target file: %s\n", errbuf);
-        nmo_tool_close_session(src_ctx, src_session);
+        nmo_tool_close_document(src_ctx, src_document, src_workspace);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
     }
 
     /* Get all objects from source */
     nmo_cmd_ctx_t src_cmd;
-    nmo_cmd_ctx_init_from_repl(&src_cmd, src_ctx, src_session, false);
+    nmo_cmd_ctx_init_from_repl_document(
+        &src_cmd, src_ctx, src_document, src_workspace, false);
     nmo_convert_id_collect_t src_collect = {0};
     if (nmo_core_object_query_run(&src_cmd, NULL, convert_collect_id,
                                   &src_collect, NULL) != NMO_CLI_EXIT_SUCCESS ||
         src_collect.oom) {
         fprintf(stderr, "Error: Failed to collect source object IDs\n");
         free(src_collect.ids);
-        nmo_tool_close_session(src_ctx, src_session);
-        nmo_tool_close_session(tgt_ctx, tgt_session);
+        nmo_tool_close_document(src_ctx, src_document, src_workspace);
+        nmo_tool_close_document(tgt_ctx, tgt_document, tgt_workspace);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
     nmo_object_id_t *src_ids = src_collect.ids;
@@ -830,13 +831,13 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
     memset(&report, 0, sizeof(report));
 
     if (src_count > 0) {
-        int result = nmo_session_copy_objects(tgt_session, src_ids, src_count,
-                                              NMO_RUNTIME_REQUEST_DEFAULT, &report);
+        int result = nmo_tool_owner_copy_objects(
+            tgt_workspace, src_ids, src_count, NMO_RUNTIME_REQUEST_DEFAULT, &report);
         if (result != NMO_OK) {
             fprintf(stderr, "Error copying objects: %s\n", nmo_error_string(result));
             free(src_ids);
-            nmo_tool_close_session(src_ctx, src_session);
-            nmo_tool_close_session(tgt_ctx, tgt_session);
+            nmo_tool_close_document(src_ctx, src_document, src_workspace);
+            nmo_tool_close_document(tgt_ctx, tgt_document, tgt_workspace);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
         }
     }
@@ -844,14 +845,14 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
     free(src_ids);
 
     /* Save target to output */
-    nmo_save_options_t save_opts = nmo_save_options_default();
+    nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
     if (fast_save) {
         save_opts.durability = NMO_SAVE_DURABILITY_FAST;
     }
-    int result = nmo_cli_save_session(tgt_session, output_path, &save_opts);
+    int result = nmo_cli_save_document(tgt_document, output_path, &save_opts);
     if (result != NMO_CLI_EXIT_SUCCESS) {
-        nmo_tool_close_session(src_ctx, src_session);
-        nmo_tool_close_session(tgt_ctx, tgt_session);
+        nmo_tool_close_document(src_ctx, src_document, src_workspace);
+        nmo_tool_close_document(tgt_ctx, tgt_document, tgt_workspace);
         return nmo_cmd_ctx_done(&c, result);
     }
 
@@ -859,8 +860,8 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         if (!doc) {
-            nmo_tool_close_session(src_ctx, src_session);
-            nmo_tool_close_session(tgt_ctx, tgt_session);
+            nmo_tool_close_document(src_ctx, src_document, src_workspace);
+            nmo_tool_close_document(tgt_ctx, tgt_document, tgt_workspace);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
@@ -881,8 +882,8 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
         fprintf(c.out, "Durability: %s\n", convert_save_durability_name(save_opts.durability));
     }
 
-    nmo_tool_close_session(src_ctx, src_session);
-    nmo_tool_close_session(tgt_ctx, tgt_session);
+    nmo_tool_close_document(src_ctx, src_document, src_workspace);
+    nmo_tool_close_document(tgt_ctx, tgt_document, tgt_workspace);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
@@ -1012,7 +1013,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     size_t dep_count = 0;
 
     if (include_deps) {
-        nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+        nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
 
         /* Extract and sort seed IDs for membership testing */
         nmo_object_id_t *seed_ids = (nmo_object_id_t *)malloc(seed_count * sizeof(nmo_object_id_t));
@@ -1026,7 +1027,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         qsort(seed_ids, seed_count, sizeof(nmo_object_id_t), id_cmp);
 
         /* Get reference graph from session cache and compute transitive closure */
-        nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
+        nmo_ref_graph_t *graph = nmo_tool_owner_ref_graph(c.workspace);
         if (!graph) {
             fprintf(stderr, "Error: Failed to build reference graph\n");
             free(seed_ids);
@@ -1158,7 +1159,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         include_ids[i] = nmo_object_get_id(final_objects[i]);
 
     /* Save via saver pipeline with object filter */
-    nmo_save_options_t save_opts = nmo_save_options_default();
+    nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
     save_opts.include_ids = include_ids;
     save_opts.include_count = final_count;
     if (fast_save) {
@@ -1169,7 +1170,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         save_opts.flags |= NMO_SAVE_COMPRESSED;
     }
 
-    int save_result = nmo_cli_save_session(c.session, output_path, &save_opts);
+    int save_result = nmo_cli_save_document(c.document, output_path, &save_opts);
     if (save_result != NMO_CLI_EXIT_SUCCESS) {
         free(include_ids);
         free(final_objects);

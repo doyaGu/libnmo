@@ -27,16 +27,19 @@ bool nmo_repl_load_file(nmo_repl_context_t *repl, const char *path, char *errbuf
     }
 
     nmo_context_t *new_ctx = NULL;
-    nmo_session_t *new_session = NULL;
+    nmo_document_t *new_document = NULL;
+    nmo_workspace_t *new_workspace = NULL;
     char local_err[128];
-    if (!nmo_tool_open_session(path, &new_ctx, &new_session, local_err, sizeof(local_err))) {
+    if (!nmo_tool_open_document(path, &new_ctx, &new_document, &new_workspace,
+                                local_err, sizeof(local_err))) {
         set_err(errbuf, errbuf_size, local_err[0] ? local_err : "Failed to open file");
         return false;
     }
 
-    nmo_tool_close_session(repl->ctx, repl->session);
+    nmo_tool_close_document(repl->ctx, repl->document, repl->workspace);
     repl->ctx = new_ctx;
-    repl->session = new_session;
+    repl->document = new_document;
+    repl->workspace = new_workspace;
 
     repl->has_selection = false;
     repl->selected_index = 0;

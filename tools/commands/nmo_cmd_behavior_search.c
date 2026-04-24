@@ -15,7 +15,6 @@
 #include "nmo.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "runtime/nmo_context.h"
-#include "session/nmo_session.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
@@ -242,7 +241,7 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
 
     behavior_find_data_t find_data = {
         .repo = repo,
@@ -447,7 +446,7 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,
         .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
@@ -501,7 +500,7 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
     }
 
     /* Use behavior_index for O(1) IO owner lookups */
-    const nmo_behavior_index_t *beh_index = nmo_session_get_behavior_index(c.session);
+    const nmo_behavior_index_t *beh_index = nmo_tool_owner_behavior_index(c.workspace);
 
     /* Find starting IO */
     nmo_object_id_t start_io = NMO_OBJECT_ID_NONE;

@@ -17,7 +17,6 @@
 #include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_behavior_view.h"
 #include "runtime/nmo_context.h"
-#include "session/nmo_session.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -292,7 +291,7 @@ static int behavior_graph_run(nmo_cmd_ctx_t *ctx,
     nmo_object_id_t *emit_node_ids = NULL;
     size_t *emit_edge_indices = NULL;
 
-    if (nmo_session_ensure_behavior_acceleration(c.session) != NMO_OK) {
+    if (nmo_tool_owner_ensure_behavior_acceleration(c.workspace) != NMO_OK) {
         fprintf(stderr, "Error: Failed to build behavior acceleration\n");
         exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
         goto cleanup;
@@ -440,7 +439,7 @@ static int behavior_graph_run(nmo_cmd_ctx_t *ctx,
     bool edges_truncated = edges_limited || nodes_truncated;
     size_t nodes_dropped = node_count - emit_node_count;
     size_t edges_dropped = edge_count - emit_edge_count;
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
     const nmo_behavior_registry_t *bb_reg = nmo_context_get_bb_registry(c.ctx);
 
     if (c.is_json) {
@@ -448,7 +447,7 @@ static int behavior_graph_run(nmo_cmd_ctx_t *ctx,
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_obj_add_uint(doc, data, "behavior_id", behavior_id);
-        nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, c.session);
+        nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, c.workspace);
 
         const char *behavior_name = graph.behavior_name;
         if (behavior_name && behavior_name[0]) {
@@ -1825,14 +1824,14 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
     const nmo_behavior_index_t *bidx = NULL;
     if (include_flows) {
-        if (nmo_session_ensure_behavior_acceleration(c.session) != NMO_OK) {
+        if (nmo_tool_owner_ensure_behavior_acceleration(c.workspace) != NMO_OK) {
             fprintf(stderr, "Error: Failed to build behavior acceleration\n");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
-        bidx = nmo_session_get_behavior_index(c.session);
+        bidx = nmo_tool_owner_behavior_index(c.workspace);
     }
 
     if (c.is_json) {

@@ -8,7 +8,6 @@
 #include "nmo_cmd_core.h"
 #include "nmo_cmd_ctx.h"
 #include "nmo_repl_commands.h"
-#include "session/nmo_session.h"
 #include "core/nmo_arena.h"
 #include "format/nmo_object.h"
 
@@ -167,7 +166,7 @@ static int collect_object_name_for_completion(
 }
 
 /**
- * Build (or rebuild) the sorted, deduplicated name cache from the session.
+ * Build (or rebuild) the sorted, deduplicated name cache from the document.
  */
 static void rebuild_name_cache(nmo_repl_context_t *repl) {
     /* Destroy old cache */
@@ -179,12 +178,13 @@ static void rebuild_name_cache(nmo_repl_context_t *repl) {
     repl->name_cache_count = 0;
     repl->name_cache_dirty = false;
 
-    if (!repl->session) {
+    if (!repl->document || !repl->workspace) {
         return;
     }
 
     nmo_cmd_ctx_t cmd;
-    nmo_cmd_ctx_init_from_repl(&cmd, repl->ctx, repl->session, false);
+    nmo_cmd_ctx_init_from_repl_document(
+        &cmd, repl->ctx, repl->document, repl->workspace, false);
 
     size_t obj_count = 0;
     if (nmo_core_object_count(&cmd, &obj_count) != NMO_CLI_EXIT_SUCCESS ||

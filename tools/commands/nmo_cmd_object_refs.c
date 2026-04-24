@@ -14,8 +14,6 @@
 
 #include "nmo.h"
 #include "runtime/nmo_context.h"
-#include "session/nmo_session.h"
-#include "session/nmo_runtime_kernel.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_parse.h"
 #include "object/nmo_class_ids.h"
@@ -351,7 +349,7 @@ static int object_impact_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
     const char *obj_class = nmo_core_class_name_or(&c, obj_cid, obj_cbuf, sizeof(obj_cbuf));
 
     /* Get reference graph from session cache */
-    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
+    nmo_ref_graph_t *graph = nmo_tool_owner_ref_graph(c.workspace);
     if (!graph) {
         fprintf(stderr, "Error: Failed to create reference graph\n");
         return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
@@ -366,7 +364,7 @@ static int object_impact_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
                          : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
 
     /* Get direct dependents (incoming refs) */
     nmo_ref_edge_t *in_edges = NULL;
@@ -605,7 +603,7 @@ static int object_orphans_run(nmo_cmd_ctx_t *ctx, const object_orphans_args_t *a
     size_t object_count = object_query_result.matched;
 
     /* Get reference graph from session cache */
-    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
+    nmo_ref_graph_t *graph = nmo_tool_owner_ref_graph(c.workspace);
     if (!graph) {
         fprintf(stderr, "Error: Failed to create reference graph\n");
         return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
@@ -620,7 +618,7 @@ static int object_orphans_run(nmo_cmd_ctx_t *ctx, const object_orphans_args_t *a
     }
 
     /* Use library API for orphan detection */
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
     nmo_object_id_t *orphan_ids = NULL;
     size_t orphan_count = 0;
     nmo_status_t st = nmo_ref_graph_find_orphans(
@@ -747,7 +745,7 @@ static int object_cycles_parse(int argc, char **argv, bool expect_file_operand,
 static int object_cycles_run(nmo_cmd_ctx_t *ctx, bool close_ctx) {
     nmo_cmd_ctx_t c = *ctx;
     /* Get reference graph from session cache */
-    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
+    nmo_ref_graph_t *graph = nmo_tool_owner_ref_graph(c.workspace);
     if (!graph) {
         fprintf(stderr, "Error: Failed to create reference graph\n");
         return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
@@ -762,7 +760,7 @@ static int object_cycles_run(nmo_cmd_ctx_t *ctx, bool close_ctx) {
     }
 
     /* Use library API for cycle detection */
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
     nmo_ref_cycle_t *cycles = NULL;
     size_t cycle_count = 0;
     nmo_status_t st = nmo_ref_graph_find_cycles(graph, repo, arena,
@@ -940,7 +938,7 @@ static int object_graph_run(nmo_cmd_ctx_t *ctx, const object_graph_args_t *args,
                             bool close_ctx) {
     nmo_cmd_ctx_t c = *ctx;
     /* Get reference graph from session cache */
-    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(c.session);
+    nmo_ref_graph_t *graph = nmo_tool_owner_ref_graph(c.workspace);
     if (!graph) {
         fprintf(stderr, "Error: Failed to create reference graph\n");
         return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
@@ -1062,7 +1060,7 @@ static int object_graph_run(nmo_cmd_ctx_t *ctx, const object_graph_args_t *args,
                 }
             }
         }
-        nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+        nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
         nmo_arena_t *dot_arena = nmo_arena_create(NULL, 0);
         nmo_ref_graph_to_dot(graph, repo, c.registry, kind_mask, dot_arena, c.out);
         nmo_arena_destroy(dot_arena);

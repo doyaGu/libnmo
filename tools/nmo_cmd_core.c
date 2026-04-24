@@ -4,13 +4,14 @@
  */
 
 #include "nmo_cmd_core.h"
+
+#include "nmo_tool_owner.h"
 #include "nmo_cli_common.h"
 #include "nmo_tool_common.h"
 #include "document/nmo_document.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_refs.h"
 #include "runtime/nmo_context.h"
-#include "session/nmo_session.h"
 #include "runtime/nmo_workspace.h"
 #include "type/nmo_type_string.h"
 #include "object/nmo_object_repository.h"
@@ -57,7 +58,7 @@ bool nmo_core_class_derives(const nmo_cmd_ctx_t *c, nmo_class_id_t id,
  * ============================================================================ */
 
 nmo_object_t *nmo_core_find_by_id(const nmo_cmd_ctx_t *c, nmo_object_id_t id) {
-    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c->workspace);
     return nmo_object_repository_find_by_id(repo, id);
 }
 
@@ -447,7 +448,7 @@ int nmo_core_set_fields(nmo_cmd_ctx_t *c, nmo_object_id_t object_id,
     nmo_field_set_result_t result = {0, 0};
 
     /* Resolve object -> state + type descriptor once */
-    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c->workspace);
     if (!repo) {
         fprintf(stderr, "Error: No object repository\n");
         if (out_result) *out_result = result;
@@ -498,7 +499,7 @@ int nmo_core_set_fields(nmo_cmd_ctx_t *c, nmo_object_id_t object_id,
         nmo_type_get_field(state, type, c->registry, fname,
                            old_buf, sizeof(old_buf));
 
-        nmo_session_field_edit_t field = {
+        nmo_tool_field_edit_t field = {
             .field_name = fname,
             .value_str = vstr,
         };

@@ -17,7 +17,8 @@ extern "C" {
 
 typedef struct {
     nmo_context_t *ctx;
-    nmo_session_t *session;
+    nmo_document_t *document;
+    nmo_workspace_t *workspace;
     const char *filename;
     char filename_storage[512];
     bool colorize;
@@ -26,7 +27,7 @@ typedef struct {
     bool has_selection;
     size_t page_size;
     bool regex_icase;
-    bool dirty;  /**< True if session modified since last save */
+    bool dirty;  /**< True if document modified since last save */
 
 #ifdef NMO_HAVE_ISOCLINE
     struct nmo_arena *name_cache_arena;

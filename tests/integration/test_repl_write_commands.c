@@ -9,6 +9,7 @@
 #include "../../tools/nmo_repl_commands.h"
 #include "../../tools/nmo_repl_session.h"
 #include "../../tools/nmo_repl_util.h"
+#include "../../tools/nmo_tool_owner.h"
 #include "../../tools/nmo_tool_session.h"
 
 #include "object/builtin/nmo_parameter_schemas.h"
@@ -70,9 +71,10 @@ static void close_repl(nmo_repl_context_t *repl) {
     if (!repl) {
         return;
     }
-    nmo_tool_close_session(repl->ctx, repl->session);
+    nmo_tool_close_document(repl->ctx, repl->document, repl->workspace);
     repl->ctx = NULL;
-    repl->session = NULL;
+    repl->document = NULL;
+    repl->workspace = NULL;
 }
 
 static void assert_probe_open(write_semantic_probe_t *probe, const char *path) {
@@ -93,13 +95,13 @@ static const nmo_parameter_state_t *repl_parameter_state(
     nmo_repl_context_t *repl,
     nmo_object_id_t id)
 {
-    nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(repl->workspace);
     nmo_object_t *obj = repo ? nmo_object_repository_find_by_id(repo, id) : NULL;
     return obj ? nmo_parameter_get_state(obj) : NULL;
 }
 
 static nmo_object_t *repl_object_by_id(nmo_repl_context_t *repl, nmo_object_id_t id) {
-    nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(repl->workspace);
     return repo ? nmo_object_repository_find_by_id(repo, id) : NULL;
 }
 

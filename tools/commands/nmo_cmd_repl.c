@@ -27,12 +27,14 @@ int nmo_cmd_repl_start(int argc, char **argv, const nmo_cli_global_opts_t *globa
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    /* Open session */
+    /* Open document */
     nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
     char errbuf[256];
 
-    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
+    if (!nmo_tool_open_document(file_path, &ctx, &document, &workspace,
+                                errbuf, sizeof(errbuf))) {
         fprintf(stderr, "Error: %s\n", errbuf);
         return NMO_CLI_EXIT_IO_ERROR;
     }
@@ -41,7 +43,8 @@ int nmo_cmd_repl_start(int argc, char **argv, const nmo_cli_global_opts_t *globa
     nmo_repl_context_t repl;
     memset(&repl, 0, sizeof(repl));
     repl.ctx = ctx;
-    repl.session = session;
+    repl.document = document;
+    repl.workspace = workspace;
     repl.filename = file_path;
     repl.colorize = nmo_cli_should_colorize(global, stdout);
     repl.dump_level = NMO_DUMP_NORMAL;
@@ -52,6 +55,6 @@ int nmo_cmd_repl_start(int argc, char **argv, const nmo_cli_global_opts_t *globa
     nmo_repl_loop(&repl);
 
     /* Cleanup */
-    nmo_tool_close_session(ctx, session);
+    nmo_tool_close_document(ctx, document, workspace);
     return NMO_CLI_EXIT_SUCCESS;
 }

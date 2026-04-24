@@ -16,7 +16,6 @@
 
 #include "nmo.h"
 #include "runtime/nmo_context.h"
-#include "session/nmo_session.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -204,14 +203,14 @@ const char *interface_color_to_hex(uint32_t color, char *buf, size_t size) {
 void nmo_cmd_behavior_add_interface_diagnostics_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *data,
-    nmo_session_t *session)
+    nmo_workspace_t *workspace)
 {
-    if (!doc || !data || !session) {
+    if (!doc || !data || !workspace) {
         return;
     }
 
-    nmo_session_behavior_interface_diagnostics_t diag;
-    nmo_session_get_behavior_interface_diagnostics(session, &diag);
+    nmo_tool_behavior_interface_diagnostics_t diag;
+    nmo_tool_owner_behavior_interface_diagnostics(workspace, &diag);
 
     yyjson_mut_obj_add_bool(doc, data, "interface_available",
                             diag.attempted ? diag.available : false);
@@ -251,14 +250,14 @@ void nmo_cmd_behavior_add_interface_diagnostics_json(
 
 void nmo_cmd_behavior_print_interface_diagnostics(
     FILE *out,
-    nmo_session_t *session)
+    nmo_workspace_t *workspace)
 {
-    if (!out || !session) {
+    if (!out || !workspace) {
         return;
     }
 
-    nmo_session_behavior_interface_diagnostics_t diag;
-    nmo_session_get_behavior_interface_diagnostics(session, &diag);
+    nmo_tool_behavior_interface_diagnostics_t diag;
+    nmo_tool_owner_behavior_interface_diagnostics(workspace, &diag);
     if (!diag.attempted || diag.status == NMO_OK) {
         return;
     }
@@ -369,10 +368,12 @@ static int behavior_list_single(const char *file_path,
         (const nmo_tool_text_output_ctx_t *)user_data;
 
     nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
     char errbuf[256];
 
-    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
+    if (!nmo_tool_open_document(file_path, &ctx, &document, &workspace,
+                                errbuf, sizeof(errbuf))) {
         fprintf(stderr, "Error: %s\n", errbuf);
         return NMO_CLI_EXIT_IO_ERROR;
     }
@@ -380,7 +381,7 @@ static int behavior_list_single(const char *file_path,
     const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
     if (!registry) {
         fprintf(stderr, "Error: Type registry unavailable\n");
-        nmo_tool_close_session(ctx, session);
+        nmo_tool_close_document(ctx, document, workspace);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
@@ -390,7 +391,7 @@ static int behavior_list_single(const char *file_path,
     };
 
     nmo_cmd_ctx_t cmd;
-    nmo_cmd_ctx_init_from_repl(&cmd, ctx, session, false);
+    nmo_cmd_ctx_init_from_repl_document(&cmd, ctx, document, workspace, false);
 
     if (doc && data) {
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
@@ -399,7 +400,7 @@ static int behavior_list_single(const char *file_path,
                                       behavior_list_core_visitor, &ld,
                                       NULL) != NMO_CLI_EXIT_SUCCESS) {
             fprintf(stderr, "Error: Failed to query objects\n");
-            nmo_tool_close_session(ctx, session);
+            nmo_tool_close_document(ctx, document, workspace);
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
         yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)ld.count);
@@ -426,7 +427,7 @@ static int behavior_list_single(const char *file_path,
                                       NULL) != NMO_CLI_EXIT_SUCCESS) {
             fprintf(stderr, "Error: Failed to query objects\n");
             nmo_cli_table_free(&table);
-            nmo_tool_close_session(ctx, session);
+            nmo_tool_close_document(ctx, document, workspace);
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
 
@@ -436,7 +437,7 @@ static int behavior_list_single(const char *file_path,
     }
 
     (void)global;
-    nmo_tool_close_session(ctx, session);
+    nmo_tool_close_document(ctx, document, workspace);
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -999,10 +1000,12 @@ static int behavior_stats_single(const char *file_path,
         (const nmo_tool_text_output_ctx_t *)user_data;
 
     nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
     char errbuf[256];
 
-    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
+    if (!nmo_tool_open_document(file_path, &ctx, &document, &workspace,
+                                errbuf, sizeof(errbuf))) {
         fprintf(stderr, "Error: %s\n", errbuf);
         return NMO_CLI_EXIT_IO_ERROR;
     }
@@ -1010,19 +1013,19 @@ static int behavior_stats_single(const char *file_path,
     const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
     if (!registry) {
         fprintf(stderr, "Error: Type registry unavailable\n");
-        nmo_tool_close_session(ctx, session);
+        nmo_tool_close_document(ctx, document, workspace);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(workspace);
     if (!repo) {
         fprintf(stderr, "Error: Failed to get object repository\n");
-        nmo_tool_close_session(ctx, session);
+        nmo_tool_close_document(ctx, document, workspace);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (nmo_session_ensure_behavior_acceleration(session) != NMO_OK) {
+    if (nmo_tool_owner_ensure_behavior_acceleration(workspace) != NMO_OK) {
         fprintf(stderr, "Error: Failed to build behavior acceleration\n");
-        nmo_tool_close_session(ctx, session);
+        nmo_tool_close_document(ctx, document, workspace);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
     const nmo_behavior_registry_t *bb_reg = nmo_context_get_bb_registry(ctx);
@@ -1033,7 +1036,7 @@ static int behavior_stats_single(const char *file_path,
         .repo = repo,
     };
     nmo_cmd_ctx_t cmd;
-    nmo_cmd_ctx_init_from_repl(&cmd, ctx, session, false);
+    nmo_cmd_ctx_init_from_repl_document(&cmd, ctx, document, workspace, false);
     if (nmo_core_object_query_run(&cmd, NULL,
                                   behavior_stats_core_visitor, &stats,
                                   NULL) != NMO_CLI_EXIT_SUCCESS ||
@@ -1044,7 +1047,7 @@ static int behavior_stats_single(const char *file_path,
         free(stats.operation_types);
         free(stats.script_ids);
         free(stats.script_sub_counts);
-        nmo_tool_close_session(ctx, session);
+        nmo_tool_close_document(ctx, document, workspace);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
@@ -1088,7 +1091,7 @@ static int behavior_stats_single(const char *file_path,
             free(stats.operation_types);
             free(stats.script_ids);
             free(stats.script_sub_counts);
-            nmo_tool_close_session(ctx, session);
+            nmo_tool_close_document(ctx, document, workspace);
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
     }
@@ -1152,7 +1155,7 @@ static int behavior_stats_single(const char *file_path,
         yyjson_mut_obj_add_uint(doc, broken, "sub_behaviors",
                                 (uint64_t)stats.broken_sub_behaviors);
         yyjson_mut_obj_add_val(doc, data, "broken_references", broken);
-        nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, session);
+        nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, cmd.workspace);
 
         if (n_with_interface > 0) {
             yyjson_mut_val *iface = yyjson_mut_obj(doc);
@@ -1276,7 +1279,7 @@ static int behavior_stats_single(const char *file_path,
     free(operation_types);
     free(script_ids);
     free(stats.script_sub_counts);
-    nmo_tool_close_session(ctx, session);
+    nmo_tool_close_document(ctx, document, workspace);
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -1304,12 +1307,12 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
     if (!repo) {
         fprintf(stderr, "Error: Failed to get object repository\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
-    if (nmo_session_ensure_behavior_acceleration(c.session) != NMO_OK) {
+    if (nmo_tool_owner_ensure_behavior_acceleration(c.workspace) != NMO_OK) {
         fprintf(stderr, "Error: Failed to build behavior acceleration\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
@@ -1448,7 +1451,7 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
         yyjson_mut_obj_add_uint(doc, broken, "sub_behaviors",
                                 (uint64_t)stats.broken_sub_behaviors);
         yyjson_mut_obj_add_val(doc, data, "broken_references", broken);
-        nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, c.session);
+        nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, c.workspace);
 
         if (n_with_interface > 0) {
             yyjson_mut_val *iface = yyjson_mut_obj(doc);

@@ -16,7 +16,6 @@
 #include "nmo.h"
 #include "behavior/nmo_behavior_edit.h"
 #include "runtime/nmo_context.h"
-#include "session/nmo_session.h"
 #include "core/nmo_array.h"
 #include "core/nmo_parse.h"
 #include "format/nmo_interface_chunk.h"
@@ -351,8 +350,8 @@ static nmo_interface_data_t *iface_edit_get_data(
     nmo_cmd_ctx_t *c, uint32_t target_id,
     nmo_object_t **out_obj)
 {
-    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
-    if (nmo_session_ensure_behavior_acceleration(c->session) != NMO_OK) {
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c->workspace);
+    if (nmo_tool_owner_ensure_behavior_acceleration(c->workspace) != NMO_OK) {
         fprintf(stderr, "Error: Failed to build behavior acceleration\n");
         return NULL;
     }
@@ -368,7 +367,7 @@ static nmo_interface_data_t *iface_edit_get_data(
     nmo_behavior_state_t *bs = (nmo_behavior_state_t *)nmo_object_get_state(beh);
     if (!bs || !bs->interface_data) {
         fprintf(stderr, "Error: Behavior %u has no interface data\n", target_id);
-        nmo_cmd_behavior_print_interface_diagnostics(stderr, c->session);
+        nmo_cmd_behavior_print_interface_diagnostics(stderr, c->workspace);
         return NULL;
     }
     if (out_obj) *out_obj = beh;
@@ -376,7 +375,7 @@ static nmo_interface_data_t *iface_edit_get_data(
 }
 
 static bool iface_validate_behavior_id(nmo_cmd_ctx_t *c, uint32_t beh_id) {
-    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c->workspace);
     nmo_object_t *obj = nmo_object_repository_find_by_id(repo, beh_id);
     if (!obj) {
         fprintf(stderr, "Warning: Behavior %u not found in repository (may have been deleted)\n", beh_id);
@@ -3592,7 +3591,7 @@ static int behavior_iface_show_run(nmo_cmd_ctx_t *ctx,
                                    const char *usage) {
     nmo_cmd_ctx_t c = *ctx;
 
-    if (nmo_session_ensure_behavior_acceleration(c.session) != NMO_OK) {
+    if (nmo_tool_owner_ensure_behavior_acceleration(c.workspace) != NMO_OK) {
         fprintf(stderr, "Error: Failed to build behavior acceleration\n");
         return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
                          : NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -3616,7 +3615,7 @@ static int behavior_iface_show_run(nmo_cmd_ctx_t *ctx,
     const nmo_interface_data_t *idata = bs->interface_data;
     if (!idata) {
         fprintf(stderr, "Error: Behavior %u has no interface data\n", target_id);
-        nmo_cmd_behavior_print_interface_diagnostics(stderr, c.session);
+        nmo_cmd_behavior_print_interface_diagnostics(stderr, c.workspace);
         return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR)
                          : NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -3642,7 +3641,7 @@ static int behavior_iface_show_run(nmo_cmd_ctx_t *ctx,
         nmo_cli_json_add_str_safe(doc, data, "root_kind",
                                   iface_root_kind_name(idata));
         yyjson_mut_obj_add_uint(doc, data, "sub_count", (uint64_t)idata->sub_count);
-        nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, c.session);
+        nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, c.workspace);
 
         /* Script header */
         {

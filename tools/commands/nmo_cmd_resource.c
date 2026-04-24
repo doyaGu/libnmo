@@ -15,7 +15,6 @@
 #include "nmo.h"
 #include "document/nmo_document_file_state.h"
 #include "document/nmo_document_save.h"
-#include "session/nmo_session_bridge.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
 #include "core/nmo_error.h"
@@ -39,26 +38,9 @@
 
 static int nmo_cmd_resource_extract_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
-static nmo_document_t *resource_document_from_ctx(nmo_cmd_ctx_t *ctx)
-{
-    nmo_document_t *document = NULL;
-
-    if (ctx == NULL) {
-        return NULL;
-    }
-    if (ctx->document != NULL) {
-        return ctx->document;
-    }
-    if (ctx->session == NULL ||
-        nmo_session_borrow_document(ctx->session, &document) != NMO_OK) {
-        return NULL;
-    }
-    return document;
-}
-
 static nmo_included_file_t *resource_files_from_ctx(nmo_cmd_ctx_t *ctx, uint32_t *out_count)
 {
-    nmo_document_t *document = resource_document_from_ctx(ctx);
+    nmo_document_t *document = ctx ? ctx->document : NULL;
     if (document == NULL) {
         if (out_count != NULL) {
             *out_count = 0u;
@@ -923,7 +905,7 @@ static int resource_import_mutate(
     }
 
     nmo_included_file_metadata_t meta;
-    nmo_document_t *document = resource_document_from_ctx(c);
+    nmo_document_t *document = c ? c->document : NULL;
     memset(&meta, 0, sizeof(meta));
     meta.owner_ids = args->owner_ids;
     meta.owner_count = args->owner_count;
@@ -1101,7 +1083,7 @@ static int resource_replace_mutate(
     (void)dry_run;
     (void)output_path;
     resource_replace_args_t *args = (resource_replace_args_t *)user_data;
-    nmo_document_t *document = resource_document_from_ctx(c);
+    nmo_document_t *document = c ? c->document : NULL;
     if (args == NULL) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -1308,7 +1290,7 @@ static int resource_remove_mutate(
 {
     (void)output_path;
     resource_remove_args_t *args = (resource_remove_args_t *)user_data;
-    nmo_document_t *document = resource_document_from_ctx(c);
+    nmo_document_t *document = c ? c->document : NULL;
     if (args == NULL) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }

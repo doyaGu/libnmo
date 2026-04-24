@@ -2,11 +2,11 @@
 
 #include "nmo_cmd_ctx.h"
 #include "nmo_cmd_core.h"
+#include "nmo_tool_owner.h"
 #include "nmo_tool_common.h"
 
 #include "core/nmo_path.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_session.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -81,20 +81,21 @@ int nmo_repl_parse_command(char *line, char **argv, int max_args) {
 }
 
 size_t nmo_repl_object_count(nmo_repl_context_t *repl) {
-    if (!repl || !repl->session) {
+    if (!repl || !repl->document || !repl->workspace) {
         return 0;
     }
     nmo_cmd_ctx_t c;
-    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
+    nmo_cmd_ctx_init_from_repl_document(
+        &c, repl->ctx, repl->document, repl->workspace, repl->colorize);
     size_t count = 0;
     return nmo_core_object_count(&c, &count) == NMO_CLI_EXIT_SUCCESS ? count : 0;
 }
 
 nmo_object_t *nmo_repl_object_at(nmo_repl_context_t *repl, size_t index) {
-    if (!repl || !repl->session) {
+    if (!repl || !repl->workspace) {
         return NULL;
     }
-    nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(repl->workspace);
     return repo ? nmo_object_repository_get_by_index(repo, index) : NULL;
 }
 
@@ -104,7 +105,8 @@ void nmo_repl_print_object_summary(const nmo_repl_context_t *repl, size_t index,
     const char *name = nmo_object_get_name(obj);
 
     nmo_cmd_ctx_t c;
-    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, false);
+    nmo_cmd_ctx_init_from_repl_document(
+        &c, repl->ctx, repl->document, repl->workspace, false);
 
     char class_buf[64];
     const char *class_name = nmo_core_class_name_or(&c, class_id, class_buf, sizeof(class_buf));
@@ -126,7 +128,8 @@ void nmo_repl_print_object_summary_marked(const nmo_repl_context_t *repl,
     const char *name = nmo_object_get_name(obj);
 
     nmo_cmd_ctx_t c;
-    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, false);
+    nmo_cmd_ctx_init_from_repl_document(
+        &c, repl->ctx, repl->document, repl->workspace, false);
 
     char class_buf[64];
     const char *class_name = nmo_core_class_name_or(&c, class_id, class_buf, sizeof(class_buf));
@@ -228,7 +231,8 @@ int nmo_repl_resolve_object_index(nmo_repl_context_t *repl,
     uint32_t id = 0;
     if (selector_is_id(selector, &id)) {
         nmo_cmd_ctx_t c;
-        nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
+        nmo_cmd_ctx_init_from_repl_document(
+            &c, repl->ctx, repl->document, repl->workspace, repl->colorize);
         nmo_object_query_t query = {0};
         nmo_core_query_set_object_id(&query, id);
         nmo_object_t *match = NULL;
@@ -243,7 +247,8 @@ int nmo_repl_resolve_object_index(nmo_repl_context_t *repl,
     const char *name = NULL;
     if (selector_is_name(selector, &name)) {
         nmo_cmd_ctx_t c;
-        nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
+        nmo_cmd_ctx_init_from_repl_document(
+            &c, repl->ctx, repl->document, repl->workspace, repl->colorize);
         nmo_object_query_t query = {0};
         nmo_object_t *match = NULL;
 

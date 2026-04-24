@@ -14,9 +14,6 @@
 
 #include "nmo.h"
 #include "runtime/nmo_context.h"
-#include "session/nmo_session.h"
-#include "session/nmo_runtime_kernel.h"
-#include "session/nmo_serializer.h"
 #include "document/nmo_document_save.h"
 #include "object/nmo_object_edit.h"
 #include "core/nmo_arena.h"
@@ -219,7 +216,7 @@ static int object_rename_batch_mutate(
     const nmo_object_query_t *filter_query =
         args->class_filter != NULL ? &class_query : NULL;
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c->workspace);
     rename_collect_data_t rename_data = {
         .repo = repo,
         .filter_query = filter_query,
@@ -449,7 +446,7 @@ static int object_rename_single_mutate(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c->workspace);
     nmo_object_t *obj = nmo_object_repository_find_by_id(repo, args->object_id);
     if (!obj) {
         fprintf(stderr, "Error: Object %u not found\n", args->object_id);
@@ -795,7 +792,7 @@ static int delete_batch_handler(
 
     nmo_runtime_report_t report;
     memset(&report, 0, sizeof(report));
-    int del_rc = nmo_session_destroy_objects(c.session, col.ids, col.count, flags, &report);
+    int del_rc = nmo_tool_owner_destroy_objects(c.workspace, col.ids, col.count, flags, &report);
     free(col.ids);
     if (del_rc != NMO_OK) {
         fprintf(stderr, "Error: Deletion failed: %s\n", nmo_error_string(del_rc));
@@ -803,8 +800,8 @@ static int delete_batch_handler(
     }
 
     /* Save */
-    nmo_save_options_t save_opts = nmo_save_options_default();
-    int save_rc = nmo_cli_save_session(c.session, output_path, &save_opts);
+    nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
+    int save_rc = nmo_cli_save_document(c.document, output_path, &save_opts);
     if (save_rc != NMO_CLI_EXIT_SUCCESS) {
         return nmo_cmd_ctx_done(&c, save_rc);
     }
@@ -961,8 +958,8 @@ static int object_delete_collect_preview(
     size_t expanded_count = args->target_count;
 
     if (args->cascade) {
-        int prev_rc = nmo_session_preview_destroy(
-            c->session,
+        int prev_rc = nmo_tool_owner_preview_destroy(
+            c->workspace,
             args->target_ids,
             args->target_count,
             flags,
@@ -1056,8 +1053,8 @@ static int object_delete_mutate(
     }
 
     memset(&args->report, 0, sizeof(args->report));
-    int del_rc = nmo_session_destroy_objects(
-        c->session,
+    int del_rc = nmo_tool_owner_destroy_objects(
+        c->workspace,
         args->target_ids,
         args->target_count,
         flags,
@@ -1356,8 +1353,8 @@ static int object_create_mutate(
     nmo_runtime_report_t report;
     memset(&report, 0, sizeof(report));
 
-    int create_rc = nmo_session_create_object(
-        c->session,
+    int create_rc = nmo_tool_owner_create_object(
+        c->workspace,
         args->class_id,
         args->name,
         args->type_guid,
@@ -1755,14 +1752,14 @@ static int object_copy_mutate(
         return NMO_CLI_EXIT_SUCCESS;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c->workspace);
     args->count_before = nmo_object_repository_get_count(repo);
 
     uint32_t flags = args->cascade ? NMO_RUNTIME_REQUEST_CASCADE : NMO_RUNTIME_REQUEST_DEFAULT;
     memset(&args->report, 0, sizeof(args->report));
 
-    int copy_rc = nmo_session_copy_objects(
-        c->session, args->target_ids, args->target_count, flags, &args->report);
+    int copy_rc = nmo_tool_owner_copy_objects(
+        c->workspace, args->target_ids, args->target_count, flags, &args->report);
     if (copy_rc != NMO_OK) {
         fprintf(stderr, "Error: Copy failed: %s\n", nmo_error_string(copy_rc));
         return NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -1942,7 +1939,7 @@ int nmo_cmd_object_copy_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
     if (dry_run) {
         rc = object_copy_collect_targets(ctx, &args);
         if (rc == NMO_CLI_EXIT_SUCCESS) {
-            nmo_object_repository_t *repo = nmo_session_get_repository(ctx->session);
+            nmo_object_repository_t *repo = nmo_tool_owner_repository(ctx->workspace);
             args.count_before = repo ? nmo_object_repository_get_count(repo) : 0;
             args.count_after = args.count_before;
             rc = object_copy_report(ctx, true, NULL, &args);

@@ -19,8 +19,6 @@
 #include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_script_edit.h"
 #include "runtime/nmo_context.h"
-#include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
 #include "behavior/nmo_behavior_view.h"
 #include "runtime/nmo_workspace.h"
 #include "object/nmo_object_types.h"
@@ -41,38 +39,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-
-static nmo_status_t parameter_begin_script_edit(
-    nmo_context_t *ctx,
-    nmo_session_t *session,
-    const char *label,
-    nmo_script_edit_tx_t **out_tx)
-{
-    nmo_document_t *document = NULL;
-    nmo_workspace_t *workspace = NULL;
-    nmo_status_t rc = NMO_OK;
-
-    if (ctx == NULL || session == NULL || label == NULL || out_tx == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    *out_tx = NULL;
-    rc = nmo_session_borrow_document(session, &document);
-    if (rc != NMO_OK) {
-        return rc;
-    }
-    rc = nmo_workspace_create(ctx, document, &workspace);
-    if (rc == NMO_OK) {
-        rc = nmo_script_edit_begin(workspace, label, out_tx);
-    }
-    if (workspace != NULL) {
-        nmo_workspace_destroy(workspace);
-    }
-    if (document != NULL) {
-        nmo_document_destroy(document);
-    }
-    return rc;
-}
 
 static int is_parameter_class(const nmo_type_registry_t *registry, nmo_class_id_t class_id) {
     if (!registry) {
@@ -257,10 +223,12 @@ static int parameter_list_single(const char *file_path,
         (const nmo_tool_text_output_ctx_t *)user_data;
 
     nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
     char errbuf[256];
 
-    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
+    if (!nmo_tool_open_document(file_path, &ctx, &document, &workspace,
+                                errbuf, sizeof(errbuf))) {
         fprintf(stderr, "Error: %s\n", errbuf);
         return NMO_CLI_EXIT_IO_ERROR;
     }
@@ -268,7 +236,7 @@ static int parameter_list_single(const char *file_path,
     const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
     if (!registry) {
         fprintf(stderr, "Error: Type registry unavailable\n");
-        nmo_tool_close_session(ctx, session);
+        nmo_tool_close_document(ctx, document, workspace);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
@@ -278,7 +246,7 @@ static int parameter_list_single(const char *file_path,
     };
 
     nmo_cmd_ctx_t cmd;
-    nmo_cmd_ctx_init_from_repl(&cmd, ctx, session, false);
+    nmo_cmd_ctx_init_from_repl_document(&cmd, ctx, document, workspace, false);
 
     if (doc && data) {
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
@@ -287,7 +255,7 @@ static int parameter_list_single(const char *file_path,
                                       parameter_list_core_visitor, &ld,
                                       NULL) != NMO_CLI_EXIT_SUCCESS) {
             fprintf(stderr, "Error: Failed to query objects\n");
-            nmo_tool_close_session(ctx, session);
+            nmo_tool_close_document(ctx, document, workspace);
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
         yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)ld.count);
@@ -310,7 +278,7 @@ static int parameter_list_single(const char *file_path,
                                       NULL) != NMO_CLI_EXIT_SUCCESS) {
             fprintf(stderr, "Error: Failed to query objects\n");
             nmo_cli_table_free(&table);
-            nmo_tool_close_session(ctx, session);
+            nmo_tool_close_document(ctx, document, workspace);
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
 
@@ -320,7 +288,7 @@ static int parameter_list_single(const char *file_path,
     }
 
     (void)global;
-    nmo_tool_close_session(ctx, session);
+    nmo_tool_close_document(ctx, document, workspace);
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -406,7 +374,7 @@ static int parameter_show_run(nmo_cmd_ctx_t *ctx, uint32_t object_id,
                               bool close_ctx)
 {
     nmo_cmd_ctx_t c = *ctx;
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
     nmo_object_t *obj = repo ? nmo_object_repository_find_by_id(repo, object_id) : NULL;
     if (!obj) {
         fprintf(stderr, "Error: Object #%u not found\n", object_id);
@@ -659,7 +627,6 @@ static int nmo_cmd_parameter_show_in_session(nmo_cmd_ctx_t *ctx, int argc, char 
  */
 static void dump_parameter_details(nmo_object_t *obj,
                                      nmo_context_t *ctx,
-                                     nmo_session_t *session,
                                      const nmo_workspace_t *workspace,
                                      FILE *out) {
     if (!obj || !ctx || !out) {
@@ -667,7 +634,8 @@ static void dump_parameter_details(nmo_object_t *obj,
     }
 
     nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo =
+        nmo_tool_owner_repository((nmo_workspace_t *)workspace);
 
     nmo_object_id_t object_id = nmo_object_get_id(obj);
     nmo_class_id_t cid = nmo_object_get_class_id(obj);
@@ -908,7 +876,7 @@ static int parameter_dump_run(nmo_cmd_ctx_t *ctx, const parameter_dump_args_t *a
     nmo_guid_t filter_guid = args->filter_guid;
     uint32_t object_id = args->object_id;
     int rc = NMO_CLI_EXIT_SUCCESS;
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
 
     /* JSON setup */
     yyjson_mut_doc *doc = NULL;
@@ -1074,7 +1042,7 @@ static int parameter_dump_run(nmo_cmd_ctx_t *ctx, const parameter_dump_args_t *a
 
             yyjson_mut_arr_add_val(jarr, item);
         } else {
-            dump_parameter_details(obj, c.ctx, c.session, c.workspace, c.out);
+            dump_parameter_details(obj, c.ctx, c.workspace, c.out);
         }
         dump_count++;
     }
@@ -1236,13 +1204,13 @@ static bool parameter_is_graph_owned(nmo_cmd_ctx_t *c, nmo_object_id_t param_id)
     const nmo_behavior_index_t *index = NULL;
     const nmo_port_owner_t *owner = NULL;
 
-    if (!c || !c->session || param_id == 0u) {
+    if (!c || !c->workspace || param_id == 0u) {
         return false;
     }
-    if (nmo_session_ensure_behavior_acceleration(c->session) != NMO_OK) {
+    if (nmo_tool_owner_ensure_behavior_acceleration(c->workspace) != NMO_OK) {
         return false;
     }
-    index = nmo_session_get_behavior_index(c->session);
+    index = nmo_tool_owner_behavior_index(c->workspace);
     if (!index) {
         return false;
     }
@@ -1317,7 +1285,7 @@ static int parameter_set_mutate(
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c->workspace);
     nmo_object_t *param_obj = NULL;
 
     if (args->owner_str != NULL) {
@@ -1396,7 +1364,7 @@ static int parameter_set_mutate(
     if (parameter_is_graph_owned(c, args->param_id)) {
         nmo_script_edit_tx_t *tx = NULL;
         nmo_status_t begin_rc =
-            parameter_begin_script_edit(c->ctx, c->session, "parameter set", &tx);
+            nmo_script_edit_begin(c->workspace, "parameter set", &tx);
         if (begin_rc != NMO_OK) {
             fprintf(stderr, "Error: Failed to begin script edit: %s\n",
                     nmo_error_string(begin_rc));

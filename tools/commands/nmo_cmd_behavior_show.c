@@ -17,7 +17,6 @@
 #include "nmo.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "runtime/nmo_context.h"
-#include "session/nmo_session.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -393,12 +392,12 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    if (nmo_session_ensure_behavior_acceleration(c.session) != NMO_OK) {
+    if (nmo_tool_owner_ensure_behavior_acceleration(c.workspace) != NMO_OK) {
         fprintf(stderr, "Error: Failed to build behavior acceleration\n");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,
         .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
@@ -448,7 +447,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
         yyjson_mut_obj_add_int(doc, data, "priority", bs->priority);
         yyjson_mut_obj_add_int(doc, data, "compatible_class_id",
                                bs->compatible_class_id);
-        nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, c.session);
+        nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, c.workspace);
 
         if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
             char guid_buf[24];
@@ -686,7 +685,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
         /* Behavior links */
         {
             const nmo_behavior_index_t *bidx =
-                nmo_session_get_behavior_index(c.session);
+                nmo_tool_owner_behavior_index(c.workspace);
             yyjson_mut_val *arr = yyjson_mut_arr(doc);
             const nmo_object_id_t *ids =
                 (const nmo_object_id_t *)bs->sub_behavior_links.data;
@@ -761,7 +760,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     if (bs->interface_data && (bs->interface_data->script.flags & NMO_INTERFACE_FLAG_FOLDED))
         fprintf(c.out, "  Layout: Folded\n");
     if (!bs->interface_data) {
-        nmo_cmd_behavior_print_interface_diagnostics(c.out, c.session);
+        nmo_cmd_behavior_print_interface_diagnostics(c.out, c.workspace);
     }
     if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
 
@@ -1010,7 +1009,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             const nmo_behaviorlink_state_t *ls =
                 (const nmo_behaviorlink_state_t *)link_obj->state;
             /* in_io_id = source (SDK naming is backwards), out_io_id = target */
-            const nmo_behavior_index_t *bidx = nmo_session_get_behavior_index(c.session);
+            const nmo_behavior_index_t *bidx = nmo_tool_owner_behavior_index(c.workspace);
             nmo_object_id_t src_owner = 0, tgt_owner = 0;
             if (bidx) {
                 const nmo_port_owner_t *sp = nmo_behavior_index_find(bidx, ls->in_io_id);

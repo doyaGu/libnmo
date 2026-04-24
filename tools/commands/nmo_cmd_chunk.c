@@ -14,7 +14,6 @@
 #include "nmo.h"
 #include "chunk/nmo_chunk_index.h"
 #include "runtime/nmo_context.h"
-#include "session/nmo_session.h"
 #include "export/nmo_hexdump.h"
 
 #include "format/nmo_chunk_api.h"
@@ -160,12 +159,12 @@ static void chunk_tree_render(FILE *out, const nmo_cli_tree_node_t *node, bool c
     }
 }
 
-static bool collect_all_chunk_entries(nmo_session_t *session,
+static bool collect_all_chunk_entries(nmo_workspace_t *workspace,
                                       nmo_cli_chunk_entry_t **out_entries,
                                       size_t *out_count,
                                       size_t *out_object_count)
 {
-    return nmo_chunk_index_collect_entries(session, out_entries, out_count, out_object_count);
+    return nmo_tool_owner_chunk_entries(workspace, out_entries, out_count, out_object_count);
 }
 
 typedef struct nmo_cli_object_collect {
@@ -310,7 +309,7 @@ static int chunk_list_run(nmo_cmd_ctx_t *ctx, uint32_t top_n)
     nmo_cli_chunk_entry_t *entries = NULL;
     size_t entry_count = 0;
     size_t object_count = 0;
-    if (!collect_all_chunk_entries(c.session, &entries, &entry_count, &object_count)) {
+    if (!collect_all_chunk_entries(c.workspace, &entries, &entry_count, &object_count)) {
         fprintf(stderr, "Error: Failed to collect chunks\n");
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
@@ -477,7 +476,7 @@ static int chunk_tree_run(nmo_cmd_ctx_t *ctx)
     /* Pre-collect flat index map to attach stable indices in JSON */
     nmo_cli_chunk_entry_t *flat_entries = NULL;
     size_t flat_count = 0;
-    (void)collect_all_chunk_entries(c.session, &flat_entries, &flat_count, NULL);
+    (void)collect_all_chunk_entries(c.workspace, &flat_entries, &flat_count, NULL);
     nmo_cli_chunk_ptr_index_t *index_map = NULL;
     size_t index_map_count = 0;
     if (flat_entries) {
@@ -525,7 +524,7 @@ static int chunk_tree_run(nmo_cmd_ctx_t *ctx)
     } else {
         fprintf(c.out, "Chunk Tree (sub-chunks): %zu objects\n\n", object_count);
 
-        nmo_arena_t *arena = nmo_session_get_arena(c.session);
+        nmo_arena_t *arena = nmo_tool_owner_arena(c.workspace);
         for (size_t i = 0; i < object_count; ++i) {
             nmo_object_t *obj = objects[i];
             nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
@@ -675,7 +674,7 @@ static int chunk_show_run(nmo_cmd_ctx_t *ctx, const chunk_show_args_t *args)
     if (args->use_index) {
         nmo_cli_chunk_entry_t *entries = NULL;
         size_t entry_count = 0;
-        if (!collect_all_chunk_entries(c.session, &entries, &entry_count, NULL)) {
+        if (!collect_all_chunk_entries(c.workspace, &entries, &entry_count, NULL)) {
             fprintf(stderr, "Error: Failed to collect chunks\n");
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
@@ -713,7 +712,7 @@ static int chunk_show_run(nmo_cmd_ctx_t *ctx, const chunk_show_args_t *args)
         /* Provide stable index info when possible */
         nmo_cli_chunk_entry_t *entries = NULL;
         size_t entry_count = 0;
-        if (collect_all_chunk_entries(c.session, &entries, &entry_count, NULL) && entries) {
+        if (collect_all_chunk_entries(c.workspace, &entries, &entry_count, NULL) && entries) {
             nmo_cli_chunk_ptr_index_t *map = NULL;
             size_t map_count = 0;
             if (build_chunk_index_map(entries, entry_count, &map, &map_count) && map) {
