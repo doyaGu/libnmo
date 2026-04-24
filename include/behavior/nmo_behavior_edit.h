@@ -185,6 +185,17 @@ NMO_API nmo_status_t nmo_behavior_edit_fold(
     const nmo_behavior_fold_desc_t *desc,
     nmo_behavior_fold_report_t *report);
 
+NMO_API nmo_status_t nmo_behavior_edit_collect_semantic_risks(
+    nmo_workspace_t *workspace,
+    const nmo_behavior_boundary_t *boundary,
+    const nmo_object_id_t *node_ids,
+    size_t node_count,
+    nmo_behavior_semantic_risk_t **out_risks,
+    size_t *out_risk_count);
+
+NMO_API void nmo_behavior_edit_semantic_risks_free(
+    nmo_behavior_semantic_risk_t *risks);
+
 NMO_API void nmo_behavior_edit_fold_report_free(
     nmo_behavior_fold_report_t *report);
 

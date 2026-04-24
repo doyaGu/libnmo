@@ -643,6 +643,48 @@ TEST(cli, behavior_fold_candidates_reports_semantic_risks) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, behavior_fold_candidates_reports_message_semantic_risks) {
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior fold-candidates --parent 2364 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.fold-candidates", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    yyjson_val *groups = get_array_field(data, "candidate_groups");
+    ASSERT_NOT_NULL(groups);
+
+    bool saw_message_candidate = false;
+    size_t idx;
+    size_t max;
+    yyjson_val *group;
+    yyjson_arr_foreach(groups, idx, max, group) {
+        if (!yyjson_is_obj(group) ||
+            strcmp("direct_child", get_string_field(group, "kind")) != 0 ||
+            get_uint_field(group, "root_id") != 2233u) {
+            continue;
+        }
+
+        ASSERT_STR_EQ("warn", get_string_field(group, "risk_level"));
+        yyjson_val *risks = get_array_field(group, "semantic_risks");
+        ASSERT_NOT_NULL(risks);
+        yyjson_val *risk = find_semantic_risk(risks, "message_flow");
+        ASSERT_NOT_NULL(risk);
+        ASSERT_STR_EQ("warn", get_string_field(risk, "severity"));
+        saw_message_candidate = true;
+        break;
+    }
+
+    ASSERT_TRUE(saw_message_candidate);
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, behavior_fold_candidates_reports_control_router_group) {
     static const uint32_t router_ids[] = {
         2367u, 2370u, 2565u, 2568u, 2571u, 3032u,
@@ -824,6 +866,45 @@ TEST(cli, behavior_fold_dry_run_reports_semantic_risks) {
     ASSERT_STR_EQ("warn", get_string_field(risk, "severity"));
 
     yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_fold_dry_run_detects_renamed_message_bb_by_signature) {
+    const char *renamed = "test_behavior_rewrite_tmp/renamed_message.cmo";
+    make_dir("test_behavior_rewrite_tmp");
+    remove(renamed);
+
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "object rename 2233 RenamedMessageBehavior \"%s\" -o \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             renamed);
+    assert_cli_success(args, "Saved to");
+
+    snprintf(args, sizeof(args),
+             "-f json behavior fold --parent 2364 --nodes 2233 "
+             "--anchor 2233 --bb-guid 42414C07-10000007 "
+             "--name \"Message Probe\" "
+             "--preserve-links --preserve-params --dry-run \"%s\"",
+             renamed);
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.fold", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_STR_EQ("warn", get_string_field(data, "risk_level"));
+    yyjson_val *risks = get_array_field(data, "semantic_risks");
+    ASSERT_NOT_NULL(risks);
+    yyjson_val *risk = find_semantic_risk(risks, "message_flow");
+    ASSERT_NOT_NULL(risk);
+    ASSERT_STR_EQ("warn", get_string_field(risk, "severity"));
+
+    yyjson_doc_free(doc);
+    remove(renamed);
 }
 
 TEST(cli, behavior_fold_dry_run_rejects_event_handler_router_without_output_maps) {
@@ -1439,10 +1520,12 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_fold_candidates_reports_direct_child_groups);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_connected_components);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_semantic_risks);
+    REGISTER_TEST(cli, behavior_fold_candidates_reports_message_semantic_risks);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_control_router_group);
     REGISTER_TEST(cli, behavior_fold_candidates_text_reports_connected_component_counts);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_boundary_plan);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_semantic_risks);
+    REGISTER_TEST(cli, behavior_fold_dry_run_detects_renamed_message_bb_by_signature);
     REGISTER_TEST(cli, behavior_fold_dry_run_rejects_event_handler_router_without_output_maps);
     REGISTER_TEST(cli, behavior_fold_dry_run_uses_explicit_node_set);
     REGISTER_TEST(cli, behavior_fold_dry_run_uses_explicit_anchor);

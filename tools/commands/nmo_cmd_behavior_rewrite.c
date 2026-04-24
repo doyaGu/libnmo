@@ -385,6 +385,7 @@ typedef struct fold_candidates_args {
 
 typedef struct fold_candidate_group_desc {
     const char *kind;
+    nmo_workspace_t *workspace;
     nmo_object_id_t root_id;
     const nmo_behavior_state_t *root_state;
     const nmo_object_id_t *roots;
@@ -482,95 +483,21 @@ static void add_id_list_json(yyjson_mut_doc *doc,
                              const nmo_object_id_t *ids,
                              size_t count);
 
-static bool append_boundary_risk(
-    nmo_behavior_semantic_risk_t **risks,
-    size_t *risk_count,
-    nmo_behavior_semantic_risk_severity_t severity,
-    const char *code,
-    const char *message,
-    nmo_object_id_t object_id) {
-    nmo_behavior_semantic_risk_t *new_risks =
-        (nmo_behavior_semantic_risk_t *)realloc(
-            *risks, (*risk_count + 1u) * sizeof(**risks));
-    if (!new_risks) {
-        return false;
-    }
-    new_risks[*risk_count] = (nmo_behavior_semantic_risk_t){
-        .severity = severity,
-        .code = code,
-        .message = message,
-        .object_id = object_id,
-    };
-    *risks = new_risks;
-    ++(*risk_count);
-    return true;
-}
-
-static void append_boundary_delay_risks(
-    nmo_behavior_semantic_risk_t **risks,
-    size_t *risk_count,
-    const nmo_behavior_boundary_control_edge_t *edges,
-    size_t edge_count) {
-    for (size_t i = 0; i < edge_count; ++i) {
-        if (edges[i].activation_delay == 0 &&
-            edges[i].initial_activation_delay == 0) {
-            continue;
-        }
-        (void)append_boundary_risk(
-            risks, risk_count, NMO_BEHAVIOR_SEMANTIC_RISK_WARN,
-            "activation_delay",
-            "Boundary control link preserves activation delay",
-            edges[i].link_id);
-    }
-}
-
-static void append_boundary_shared_parameter_risks(
-    nmo_behavior_semantic_risk_t **risks,
-    size_t *risk_count,
-    const nmo_behavior_boundary_parameter_edge_t *edges,
-    size_t edge_count) {
-    for (size_t i = 0; i < edge_count; ++i) {
-        if (!edges[i].shared) {
-            continue;
-        }
-        nmo_object_id_t object_id = edges[i].target_parameter_id != 0
-            ? edges[i].target_parameter_id
-            : edges[i].source_parameter_id;
-        (void)append_boundary_risk(
-            risks, risk_count, NMO_BEHAVIOR_SEMANTIC_RISK_WARN,
-            "shared_parameter",
-            "Boundary parameter edge uses shared parameter semantics",
-            object_id);
-    }
-}
-
 static void add_boundary_semantic_risks_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *data,
+    nmo_workspace_t *workspace,
     const nmo_behavior_boundary_t *boundary) {
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0;
-    if (boundary->broken_links > 0 || boundary->missing_nodes > 0) {
-        (void)append_boundary_risk(
-            &risks, &risk_count, NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
-            "dangling_boundary",
-            "Boundary contains broken links or missing nodes",
-            boundary->behavior_id);
+    if (workspace && boundary) {
+        (void)nmo_behavior_edit_collect_semantic_risks(
+            workspace, boundary,
+            boundary->internal_nodes, boundary->internal_node_count,
+            &risks, &risk_count);
     }
-    append_boundary_delay_risks(&risks, &risk_count,
-                                boundary->control_in,
-                                boundary->control_in_count);
-    append_boundary_delay_risks(&risks, &risk_count,
-                                boundary->control_out,
-                                boundary->control_out_count);
-    append_boundary_shared_parameter_risks(&risks, &risk_count,
-                                           boundary->parameter_in,
-                                           boundary->parameter_in_count);
-    append_boundary_shared_parameter_risks(&risks, &risk_count,
-                                           boundary->parameter_out,
-                                           boundary->parameter_out_count);
     add_semantic_risks_json(doc, data, risks, risk_count);
-    free(risks);
+    nmo_behavior_edit_semantic_risks_free(risks);
 }
 
 static void add_fold_candidate_group_json(
@@ -621,7 +548,8 @@ static void add_fold_candidate_group_json(
                             (uint64_t)desc->boundary->broken_links);
     yyjson_mut_obj_add_uint(doc, group, "missing_nodes",
                             (uint64_t)desc->boundary->missing_nodes);
-    add_boundary_semantic_risks_json(doc, group, desc->boundary);
+    add_boundary_semantic_risks_json(
+        doc, group, desc->workspace, desc->boundary);
     yyjson_mut_arr_add_val(groups, group);
 }
 
@@ -910,6 +838,7 @@ static int fold_candidates_emit_control_router_groups(
             if (router_boundary.control_out_count > 1u) {
                 fold_candidate_group_desc_t desc = {
                     .kind = "control_router",
+                    .workspace = ctx->workspace,
                     .root_id = children[i].root_id,
                     .root_state = children[i].root_state,
                     .roots = router_ids,
@@ -997,6 +926,7 @@ static int fold_candidates_emit_connected_components(
 
             fold_candidate_group_desc_t desc = {
                 .kind = "connected_component",
+                .workspace = ctx->workspace,
                 .root_id = root_id,
                 .root_state = root_state,
                 .roots = component_roots,
@@ -1432,6 +1362,7 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
         size_t group_count = 0;
         fold_candidate_group_desc_t parent_desc = {
             .kind = "parent_recursive",
+            .workspace = ctx->workspace,
             .root_id = boundary->behavior_id,
             .root_state = parent,
             .roots = &boundary->behavior_id,
@@ -1460,6 +1391,7 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
         for (size_t i = 0; i < child_count; ++i) {
             fold_candidate_group_desc_t child_desc = {
                 .kind = "direct_child",
+                .workspace = ctx->workspace,
                 .root_id = children[i].root_id,
                 .root_state = children[i].root_state,
                 .roots = &children[i].root_id,
