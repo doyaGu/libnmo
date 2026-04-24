@@ -296,6 +296,32 @@ static void write_fold_patch(const char *path, const char *output_path) {
     ASSERT_TRUE(write_text_file(path, json));
 }
 
+static void write_risky_fold_patch(const char *path, const char *output_path) {
+    char json[4096];
+    snprintf(json, sizeof(json),
+             "{\n"
+             "  \"version\": 1,\n"
+             "  \"input\": \"%s\",\n"
+             "  \"output\": \"%s\",\n"
+             "  \"operations\": [\n"
+             "    {\n"
+             "      \"op\": \"fold\",\n"
+             "      \"parent\": 363,\n"
+             "      \"nodes\": [237, 358],\n"
+             "      \"anchor\": 358,\n"
+             "      \"name\": \"Ballance Load NMO Range\",\n"
+             "      \"guid\": \"42414C02-10000002\",\n"
+             "      \"version\": 65536,\n"
+             "      \"preserve_boundary\": false,\n"
+             "      \"interface\": \"preserve\"\n"
+             "    }\n"
+             "  ]\n"
+             "}\n",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output_path);
+    ASSERT_TRUE(write_text_file(path, json));
+}
+
 static void write_closed_graph_fold_patch(const char *path,
                                           const char *output_path) {
     rewrite_manifest_t manifest;
@@ -347,6 +373,25 @@ static bool array_contains_uint(yyjson_val *arr, uint64_t needle) {
         }
     }
     return false;
+}
+
+static yyjson_val *find_object_by_string_field(yyjson_val *arr,
+                                               const char *key,
+                                               const char *needle) {
+    size_t idx;
+    size_t max;
+    yyjson_val *item;
+
+    if (!arr || !needle) {
+        return NULL;
+    }
+    yyjson_arr_foreach(arr, idx, max, item) {
+        if (yyjson_is_obj(item) &&
+            strcmp(needle, get_string_field(item, key)) == 0) {
+            return item;
+        }
+    }
+    return NULL;
 }
 
 TEST(cli, patch_apply_leaf_replace_bb_dry_run_and_apply) {
@@ -460,6 +505,41 @@ TEST(cli, patch_apply_fold_dry_run_reports_analysis) {
     remove(patch);
 }
 
+TEST(cli, patch_apply_fold_dry_run_reports_semantic_risks) {
+    make_dir("test_patch_tmp");
+    const char *patch = "test_patch_tmp/fold_risky.json";
+    const char *output = "test_patch_tmp/fold_risky.cmo";
+    remove(patch);
+    remove(output);
+    write_risky_fold_patch(patch, output);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
+             patch);
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "patch.apply", &doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    yyjson_val *operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    yyjson_val *op = yyjson_arr_get(operations, 0);
+    ASSERT_TRUE(op && yyjson_is_obj(op));
+    ASSERT_STR_EQ("warn", get_string_field(op, "risk_level"));
+    yyjson_val *risks = get_array_field(op, "semantic_risks");
+    ASSERT_NOT_NULL(risks);
+    yyjson_val *risk = find_object_by_string_field(
+        risks, "code", "shared_parameter");
+    ASSERT_NOT_NULL(risk);
+    ASSERT_STR_EQ("warn", get_string_field(risk, "severity"));
+    ASSERT_FALSE(file_exists(output));
+    yyjson_doc_free(doc);
+
+    remove(patch);
+}
+
 TEST(cli, patch_diff_json_reports_fold_delete_plan) {
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/fold_closed_graph.json";
@@ -500,6 +580,7 @@ TEST(cli, patch_diff_json_reports_fold_delete_plan) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, patch_apply_rejects_non_leaf_replace_bb);
     REGISTER_TEST(cli, patch_apply_fold_dry_run_reports_analysis);
+    REGISTER_TEST(cli, patch_apply_fold_dry_run_reports_semantic_risks);
     REGISTER_TEST(cli, patch_diff_json_reports_fold_delete_plan);
     REGISTER_TEST(cli, patch_apply_leaf_replace_bb_dry_run_and_apply);
 TEST_MAIN_END()

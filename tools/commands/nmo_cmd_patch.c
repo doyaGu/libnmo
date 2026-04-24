@@ -66,6 +66,58 @@ static void patch_add_id_array_json(yyjson_mut_doc *doc,
     yyjson_mut_obj_add_val(doc, obj, key, arr);
 }
 
+static const char *patch_semantic_risk_severity_string(
+    nmo_behavior_semantic_risk_severity_t severity) {
+    switch (severity) {
+    case NMO_BEHAVIOR_SEMANTIC_RISK_SAFE:
+        return "safe";
+    case NMO_BEHAVIOR_SEMANTIC_RISK_WARN:
+        return "warn";
+    case NMO_BEHAVIOR_SEMANTIC_RISK_REJECT:
+        return "reject";
+    default:
+        return "warn";
+    }
+}
+
+static const char *patch_semantic_risk_level_string(
+    const nmo_behavior_semantic_risk_t *risks,
+    size_t risk_count) {
+    bool has_warn = false;
+    for (size_t i = 0; i < risk_count; ++i) {
+        if (risks[i].severity == NMO_BEHAVIOR_SEMANTIC_RISK_REJECT) {
+            return "reject";
+        }
+        if (risks[i].severity == NMO_BEHAVIOR_SEMANTIC_RISK_WARN) {
+            has_warn = true;
+        }
+    }
+    return has_warn ? "warn" : "safe";
+}
+
+static void patch_add_semantic_risks_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *obj,
+    const nmo_behavior_semantic_risk_t *risks,
+    size_t risk_count) {
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    for (size_t i = 0; i < risk_count; ++i) {
+        yyjson_mut_val *risk = yyjson_mut_obj(doc);
+        nmo_cli_json_add_str_safe(
+            doc, risk, "severity",
+            patch_semantic_risk_severity_string(risks[i].severity));
+        nmo_cli_json_add_str_safe(doc, risk, "code", risks[i].code);
+        nmo_cli_json_add_str_safe(doc, risk, "message", risks[i].message);
+        yyjson_mut_obj_add_uint(doc, risk, "object_id",
+                                (uint64_t)risks[i].object_id);
+        yyjson_mut_arr_add_val(arr, risk);
+    }
+    nmo_cli_json_add_str_safe(
+        doc, obj, "risk_level",
+        patch_semantic_risk_level_string(risks, risk_count));
+    yyjson_mut_obj_add_val(doc, obj, "semantic_risks", arr);
+}
+
 static void patch_plan_free(patch_plan_t *plan) {
     if (!plan) {
         return;
@@ -692,6 +744,9 @@ static int patch_apply_plan(patch_plan_t *plan,
                     yyjson_mut_obj_add_bool(
                         doc, item, "rejected",
                         op->fold_report.rejected);
+                    patch_add_semantic_risks_json(
+                        doc, item, op->fold_report.semantic_risks,
+                        op->fold_report.semantic_risk_count);
                     patch_add_id_array_json(
                         doc, item, "selected_nodes",
                         op->fold_report.selected_nodes,
@@ -736,6 +791,9 @@ static int patch_apply_plan(patch_plan_t *plan,
                         (uint64_t)op->replace_bb.behavior_id);
                     yyjson_mut_obj_add_bool(doc, item, "changed",
                                             op->report.changed);
+                    patch_add_semantic_risks_json(
+                        doc, item, op->report.semantic_risks,
+                        op->report.semantic_risk_count);
                     nmo_cli_json_add_str_safe(doc, item, "before_guid",
                                               before_guid);
                     nmo_cli_json_add_str_safe(doc, item, "after_guid",
@@ -808,6 +866,9 @@ static int patch_apply_plan(patch_plan_t *plan,
                                         op->fold_report.can_write);
                 yyjson_mut_obj_add_bool(doc, item, "rejected",
                                         op->fold_report.rejected);
+                patch_add_semantic_risks_json(
+                    doc, item, op->fold_report.semantic_risks,
+                    op->fold_report.semantic_risk_count);
                 yyjson_mut_obj_add_uint(
                     doc, item, "selected_node_count",
                     (uint64_t)op->fold_report.selected_node_count);
@@ -818,6 +879,9 @@ static int patch_apply_plan(patch_plan_t *plan,
                     (uint64_t)op->replace_bb.behavior_id);
                 yyjson_mut_obj_add_bool(doc, item, "changed",
                                         op->report.changed);
+                patch_add_semantic_risks_json(
+                    doc, item, op->report.semantic_risks,
+                    op->report.semantic_risk_count);
             }
             yyjson_mut_arr_add_val(ops, item);
         }
