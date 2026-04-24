@@ -812,6 +812,10 @@ TEST(cli, behavior_fold_dry_run_reports_semantic_risks) {
     ASSERT_NOT_NULL(root);
     yyjson_val *data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_NOT_NULL(get_array_field(data, "errors"));
+    ASSERT_NOT_NULL(get_array_field(data, "warnings"));
+    ASSERT_NOT_NULL(get_array_field(data, "changed_objects"));
     ASSERT_STR_EQ("warn", get_string_field(data, "risk_level"));
     yyjson_val *risks = get_array_field(data, "semantic_risks");
     ASSERT_NOT_NULL(risks);

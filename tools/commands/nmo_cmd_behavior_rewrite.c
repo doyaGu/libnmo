@@ -220,6 +220,31 @@ static void add_semantic_risks_json(
     yyjson_mut_obj_add_val(doc, data, "semantic_risks", arr);
 }
 
+static void add_changed_object_ids_json(yyjson_mut_doc *doc,
+                                        yyjson_mut_val *data,
+                                        const nmo_object_id_t *ids,
+                                        size_t count) {
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    for (size_t i = 0; ids && i < count; ++i) {
+        yyjson_mut_val *item = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, item, "object_id",
+                                (uint64_t)ids[i]);
+        yyjson_mut_arr_add_val(arr, item);
+    }
+    yyjson_mut_obj_add_val(doc, data, "changed_objects", arr);
+}
+
+static void add_common_write_report_json(yyjson_mut_doc *doc,
+                                         yyjson_mut_val *data,
+                                         bool ok,
+                                         const nmo_object_id_t *ids,
+                                         size_t count) {
+    yyjson_mut_obj_add_bool(doc, data, "ok", ok);
+    yyjson_mut_obj_add_val(doc, data, "errors", yyjson_mut_arr(doc));
+    yyjson_mut_obj_add_val(doc, data, "warnings", yyjson_mut_arr(doc));
+    add_changed_object_ids_json(doc, data, ids, count);
+}
+
 static int graph_boundary_emit(nmo_cmd_ctx_t *ctx,
                                const nmo_behavior_boundary_t *boundary) {
     if (ctx->is_json) {
@@ -1878,6 +1903,9 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
         yyjson_mut_val *data = yyjson_mut_obj(doc);
+        add_common_write_report_json(doc, data, true,
+                                     report->selected_nodes,
+                                     report->selected_node_count);
         yyjson_mut_obj_add_bool(doc, data, "dry_run", true);
         yyjson_mut_obj_add_bool(doc, data, "can_write",
                                 report->can_write);
@@ -2232,6 +2260,9 @@ static void replace_bb_add_report_json(
 
     yyjson_mut_obj_add_uint(doc, data, "behavior_id",
                             (uint64_t)report->behavior_id);
+    add_common_write_report_json(doc, data,
+                                 report->diagnostic_code == NULL,
+                                 &report->behavior_id, 1u);
     yyjson_mut_obj_add_bool(doc, data, "changed", report->changed);
 
     yyjson_mut_val *before = yyjson_mut_obj(doc);
