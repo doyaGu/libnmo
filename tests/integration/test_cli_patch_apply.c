@@ -522,7 +522,17 @@ TEST(cli, patch_apply_fold_dry_run_reports_semantic_risks) {
     yyjson_val *root = yyjson_doc_get_root(doc);
     yyjson_val *data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    ASSERT_STR_EQ(output, get_string_field(data, "output_path"));
+    ASSERT_NOT_NULL(get_array_field(data, "errors"));
+    ASSERT_NOT_NULL(get_array_field(data, "warnings"));
+    ASSERT_NOT_NULL(get_array_field(data, "changed_objects"));
+    ASSERT_STR_EQ("warn", get_string_field(data, "risk_level"));
+    yyjson_val *root_risks = get_array_field(data, "semantic_risks");
+    ASSERT_NOT_NULL(root_risks);
+    ASSERT_NOT_NULL(find_object_by_string_field(
+        root_risks, "code", "shared_parameter"));
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     yyjson_val *op = yyjson_arr_get(operations, 0);

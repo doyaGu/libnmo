@@ -118,6 +118,128 @@ static void patch_add_semantic_risks_json(
     yyjson_mut_obj_add_val(doc, obj, "semantic_risks", arr);
 }
 
+static const nmo_behavior_semantic_risk_t *patch_operation_risks(
+    const patch_operation_t *op,
+    size_t *out_count) {
+    if (out_count) {
+        *out_count = 0;
+    }
+    if (!op) {
+        return NULL;
+    }
+    if (op->kind == PATCH_OP_FOLD) {
+        if (out_count) {
+            *out_count = op->fold_report.semantic_risk_count;
+        }
+        return op->fold_report.semantic_risks;
+    }
+    if (op->kind == PATCH_OP_REPLACE_BB) {
+        if (out_count) {
+            *out_count = op->report.semantic_risk_count;
+        }
+        return op->report.semantic_risks;
+    }
+    return NULL;
+}
+
+static const char *patch_plan_risk_level_string(const patch_plan_t *plan) {
+    bool has_warn = false;
+    if (!plan) {
+        return "safe";
+    }
+    for (size_t i = 0; i < plan->operation_count; ++i) {
+        size_t risk_count = 0;
+        const nmo_behavior_semantic_risk_t *risks =
+            patch_operation_risks(&plan->operations[i], &risk_count);
+        for (size_t j = 0; j < risk_count; ++j) {
+            if (risks[j].severity == NMO_BEHAVIOR_SEMANTIC_RISK_REJECT) {
+                return "reject";
+            }
+            if (risks[j].severity == NMO_BEHAVIOR_SEMANTIC_RISK_WARN) {
+                has_warn = true;
+            }
+        }
+    }
+    return has_warn ? "warn" : "safe";
+}
+
+static void patch_add_plan_semantic_risks_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *data,
+    const patch_plan_t *plan) {
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    if (plan) {
+        for (size_t i = 0; i < plan->operation_count; ++i) {
+            size_t risk_count = 0;
+            const nmo_behavior_semantic_risk_t *risks =
+                patch_operation_risks(&plan->operations[i], &risk_count);
+            for (size_t j = 0; j < risk_count; ++j) {
+                yyjson_mut_val *risk = yyjson_mut_obj(doc);
+                nmo_cli_json_add_str_safe(
+                    doc, risk, "severity",
+                    patch_semantic_risk_severity_string(risks[j].severity));
+                nmo_cli_json_add_str_safe(doc, risk, "code", risks[j].code);
+                nmo_cli_json_add_str_safe(doc, risk, "message",
+                                          risks[j].message);
+                yyjson_mut_obj_add_uint(doc, risk, "object_id",
+                                        (uint64_t)risks[j].object_id);
+                yyjson_mut_obj_add_uint(doc, risk, "operation_index",
+                                        (uint64_t)(i + 1u));
+                yyjson_mut_arr_add_val(arr, risk);
+            }
+        }
+    }
+    nmo_cli_json_add_str_safe(doc, data, "risk_level",
+                              patch_plan_risk_level_string(plan));
+    yyjson_mut_obj_add_val(doc, data, "semantic_risks", arr);
+}
+
+static void patch_add_changed_objects_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *data,
+    const patch_plan_t *plan) {
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    if (plan) {
+        for (size_t i = 0; i < plan->operation_count; ++i) {
+            const patch_operation_t *op = &plan->operations[i];
+            yyjson_mut_val *item = yyjson_mut_obj(doc);
+            yyjson_mut_obj_add_uint(doc, item, "operation_index",
+                                    (uint64_t)(i + 1u));
+            if (op->kind == PATCH_OP_FOLD) {
+                nmo_cli_json_add_str_safe(doc, item, "op", "fold");
+                yyjson_mut_obj_add_uint(doc, item, "object_id",
+                                        (uint64_t)op->fold.parent_id);
+            } else if (op->kind == PATCH_OP_REPLACE_BB) {
+                nmo_cli_json_add_str_safe(doc, item, "op", "replace_bb");
+                yyjson_mut_obj_add_uint(
+                    doc, item, "object_id",
+                    (uint64_t)op->replace_bb.behavior_id);
+            }
+            yyjson_mut_arr_add_val(arr, item);
+        }
+    }
+    yyjson_mut_obj_add_val(doc, data, "changed_objects", arr);
+}
+
+static void patch_add_empty_report_arrays(yyjson_mut_doc *doc,
+                                          yyjson_mut_val *data) {
+    yyjson_mut_obj_add_val(doc, data, "errors", yyjson_mut_arr(doc));
+    yyjson_mut_obj_add_val(doc, data, "warnings", yyjson_mut_arr(doc));
+}
+
+static void patch_add_common_report_json(yyjson_mut_doc *doc,
+                                         yyjson_mut_val *data,
+                                         const patch_plan_t *plan,
+                                         bool ok) {
+    yyjson_mut_obj_add_bool(doc, data, "ok", ok);
+    patch_add_empty_report_arrays(doc, data);
+    patch_add_changed_objects_json(doc, data, plan);
+    patch_add_plan_semantic_risks_json(doc, data, plan);
+    if (plan && plan->output) {
+        nmo_cli_json_add_str_safe(doc, data, "output_path", plan->output);
+    }
+}
+
 static void patch_plan_free(patch_plan_t *plan) {
     if (!plan) {
         return;
@@ -721,6 +843,7 @@ static int patch_apply_plan(patch_plan_t *plan,
                                         NMO_CLI_EXIT_INTERNAL_ERROR);
             }
             yyjson_mut_val *data = yyjson_mut_obj(doc);
+            patch_add_common_report_json(doc, data, plan, true);
             nmo_cli_json_add_str_safe(doc, data, "input", plan->input);
             nmo_cli_json_add_str_safe(doc, data, "output", plan->output);
             yyjson_mut_obj_add_uint(doc, data, "operation_count",
@@ -847,6 +970,7 @@ static int patch_apply_plan(patch_plan_t *plan,
             return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
         yyjson_mut_val *data = yyjson_mut_obj(doc);
+        patch_add_common_report_json(doc, data, plan, true);
         nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
         nmo_cli_json_add_str_safe(doc, data, "input", plan->input);
         nmo_cli_json_add_str_safe(doc, data, "output", plan->output);
