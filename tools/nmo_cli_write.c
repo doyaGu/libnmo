@@ -3,8 +3,6 @@
 #include "nmo_cmd_ctx.h"
 
 #include "core/nmo_error.h"
-#include "session/nmo_runtime_kernel.h"
-#include "session/nmo_serializer.h"
 
 #include <stdio.h>
 
@@ -19,16 +17,16 @@ int nmo_cli_write_init_ctx(
     return nmo_cmd_ctx_init_with_file(ctx, input_path, global);
 }
 
-int nmo_cli_save_session(
-    nmo_session_t *session,
+int nmo_cli_save_document(
+    nmo_document_t *document,
     const char *output_path,
     const nmo_save_options_t *save_opts)
 {
-    if (session == NULL || output_path == NULL) {
+    if (document == NULL || output_path == NULL) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    int save_rc = nmo_session_save_file(session, output_path, save_opts, NULL);
+    int save_rc = nmo_document_save_file(document, output_path, save_opts);
     if (save_rc != NMO_OK) {
         fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_rc));
         return NMO_CLI_EXIT_IO_ERROR;
@@ -72,8 +70,8 @@ int nmo_cli_run_write_command(
     }
 
     if (should_save) {
-        nmo_save_options_t save_opts = nmo_save_options_default();
-        int save_rc = nmo_cli_save_session(ctx.session, output_path, &save_opts);
+        nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
+        int save_rc = nmo_cli_save_document(ctx.document, output_path, &save_opts);
         if (save_rc != NMO_CLI_EXIT_SUCCESS) {
             return nmo_cmd_ctx_done(&ctx, save_rc);
         }

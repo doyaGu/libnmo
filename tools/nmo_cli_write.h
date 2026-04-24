@@ -8,7 +8,6 @@
 #include <stdbool.h>
 
 typedef struct nmo_cmd_ctx nmo_cmd_ctx_t;
-typedef struct nmo_session nmo_session_t;
 
 typedef int (*nmo_cli_write_mutate_fn)(
     nmo_cmd_ctx_t *ctx,
@@ -48,8 +47,8 @@ int nmo_cli_write_init_ctx(
     const char *input_path,
     const nmo_cli_global_opts_t *global);
 
-int nmo_cli_save_session(
-    nmo_session_t *session,
+int nmo_cli_save_document(
+    nmo_document_t *document,
     const char *output_path,
     const nmo_save_options_t *save_opts);
 

@@ -17,6 +17,7 @@ add_executable(nmo_cli
     nmo_cli_write.c
 
     # Session management
+    nmo_tool_owner.c
     nmo_tool_session.c
     nmo_tool_common.c
 

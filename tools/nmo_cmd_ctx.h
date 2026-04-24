@@ -4,12 +4,12 @@
  *
  * Every CLI command follows the same lifecycle:
  *   1. Find file argument
- *   2. Open session (context + session)
+ *   2. Open document/workspace
  *   3. Open output stream
  *   4. Determine colorize / JSON mode
  *   5. ... command logic ...
  *   6. Close output stream
- *   7. Close session
+ *   7. Close document/workspace
  *
  * nmo_cmd_ctx_t wraps steps 1-4 into nmo_cmd_ctx_init() and
  * steps 6-7 into nmo_cmd_ctx_done().
@@ -20,6 +20,7 @@
 
 #include "nmo_cli_common.h"
 #include "nmo_cli_json.h"
+#include "nmo_tool_owner.h"
 #include "nmo_tool_session.h"
 
 #include "nmo.h"
@@ -39,12 +40,11 @@ typedef struct nmo_cmd_ctx {
     const nmo_cli_global_opts_t *global;
     const char *file_path;
 
-    /* Session (opened by init, closed by done) */
+    /* Document/workspace (opened by init, closed by done) */
     nmo_context_t *ctx;
-    nmo_session_t *session;
     nmo_document_t *document;
     nmo_workspace_t *workspace;
-    bool owns_session;
+    bool owns_document;
 
     /* Output (opened by init, closed by done) */
     FILE *out;
@@ -64,25 +64,26 @@ typedef struct nmo_cmd_in_session_result {
 typedef enum nmo_cmd_source_kind {
     NMO_CMD_SOURCE_FILE_OPERAND = 0,
     NMO_CMD_SOURCE_EXPLICIT_FILE,
-    NMO_CMD_SOURCE_SESSION,
-    NMO_CMD_SOURCE_NO_SESSION
+    NMO_CMD_SOURCE_DOCUMENT,
+    NMO_CMD_SOURCE_NO_DOCUMENT
 } nmo_cmd_source_kind_t;
 
 typedef struct nmo_cmd_source {
     nmo_cmd_source_kind_t kind;
     const char *file_path;
     nmo_context_t *ctx;
-    nmo_session_t *session;
+    nmo_document_t *document;
+    nmo_workspace_t *workspace;
     const char *source_label;
     const nmo_load_options_t *load_options;
 } nmo_cmd_source_t;
 
 /**
- * @brief Initialize command context: find file arg, open session, open output.
+ * @brief Initialize command context: find file arg, open document/workspace, open output.
  *
  * The file argument is found via nmo_tool_find_file_arg_last(argc, argv).
  * On failure, prints an error to stderr and returns an NMO_CLI_EXIT_* code.
- * On success, returns 0 and the caller can use c->session, c->out, etc.
+ * On success, returns 0 and the caller can use c->document, c->workspace, c->out, etc.
  *
  * @param c         Context to initialize (caller-allocated, e.g. on stack)
  * @param argc      Argument count (command-local, after global option stripping)
@@ -120,21 +121,22 @@ int nmo_cmd_ctx_init_with_file(nmo_cmd_ctx_t *c, const char *file_path,
                                const nmo_cli_global_opts_t *global);
 
 /**
- * @brief Initialize context from a borrowed, already-open session.
+ * @brief Initialize context from a borrowed, already-open document/workspace.
  *
  * Opens the output stream from global options, but does not own or close the
- * supplied session/context. source_label is used in reports and JSON envelopes.
+ * supplied owners. source_label is used in reports and JSON envelopes.
  */
-int nmo_cmd_ctx_init_with_session(nmo_cmd_ctx_t *c,
-                                  nmo_context_t *ctx,
-                                  nmo_session_t *session,
-                                  const char *source_label,
-                                  const nmo_cli_global_opts_t *global);
+int nmo_cmd_ctx_init_with_document(nmo_cmd_ctx_t *c,
+                                   nmo_context_t *ctx,
+                                   nmo_document_t *document,
+                                   nmo_workspace_t *workspace,
+                                   const char *source_label,
+                                   const nmo_cli_global_opts_t *global);
 
 /**
  * @brief Initialize context for commands that don't need a file/session.
  *
- * Opens output stream only. c->ctx, c->session, c->registry are NULL.
+ * Opens output stream only. c->ctx, c->document, c->workspace, c->registry are NULL.
  *
  * @param c         Context to initialize
  * @param global    Parsed global options
@@ -144,27 +146,29 @@ int nmo_cmd_ctx_init_no_file(nmo_cmd_ctx_t *c,
                              const nmo_cli_global_opts_t *global);
 
 /**
- * @brief Initialize context from an already-open session (for REPL use).
+ * @brief Initialize context from already-open document owners (for REPL use).
  *
- * Does NOT open or close the session. Output goes to stdout.
+ * Does NOT open or close the document/workspace. Output goes to stdout.
  * This allows REPL commands to build a nmo_cmd_ctx_t that can be passed
  * to nmo_cmd_core functions without duplicating logic.
  *
  * @param c         Context to initialize
  * @param ctx       Existing nmo_context_t (from REPL)
- * @param session   Existing nmo_session_t (from REPL)
+ * @param document  Existing document (from REPL)
+ * @param workspace Existing workspace (from REPL)
  * @param colorize  Whether to use ANSI colors
  */
-void nmo_cmd_ctx_init_from_repl(nmo_cmd_ctx_t *c,
-                                nmo_context_t *ctx,
-                                nmo_session_t *session,
-                                bool colorize);
+void nmo_cmd_ctx_init_from_repl_document(nmo_cmd_ctx_t *c,
+                                         nmo_context_t *ctx,
+                                         nmo_document_t *document,
+                                         nmo_workspace_t *workspace,
+                                         bool colorize);
 
 /**
- * @brief Finalize command context: close output stream, close session.
+ * @brief Finalize command context: close output stream, close document/workspace.
  *
- * Safe to call even if init failed (handles NULL session/output).
- * Does NOT close session/output for contexts created via init_from_repl.
+ * Safe to call even if init failed (handles NULL document/output).
+ * Does NOT close document/output for contexts created from REPL owners.
  *
  * @param c           Context to finalize
  * @param exit_code   Exit code to pass through (returned as-is)

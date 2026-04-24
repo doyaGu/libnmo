@@ -1,7 +1,5 @@
 #include "nmo_tool_session.h"
 
-#include "runtime/nmo_context.h"
-#include "session/nmo_session.h"
 #include "core/nmo_error.h"
 
 #include <stdio.h>
@@ -111,86 +109,81 @@ bool nmo_tool_open_context(nmo_context_t **out_ctx,
     return true;
 }
 
-bool nmo_tool_open_session(const char *path,
-                           nmo_context_t **out_ctx,
-                           nmo_session_t **out_session,
-                           char *errbuf,
-                           size_t errbuf_size) {
-    if (!path || !out_ctx || !out_session) {
-        if (errbuf && errbuf_size > 0)
+bool nmo_tool_open_document(const char *path,
+                            nmo_context_t **out_ctx,
+                            nmo_document_t **out_document,
+                            nmo_workspace_t **out_workspace,
+                            char *errbuf,
+                            size_t errbuf_size)
+{
+    return nmo_tool_open_document_opts(
+        path, NULL, out_ctx, out_document, out_workspace, errbuf, errbuf_size);
+}
+
+bool nmo_tool_open_document_opts(const char *path,
+                                 const nmo_load_options_t *opts,
+                                 nmo_context_t **out_ctx,
+                                 nmo_document_t **out_document,
+                                 nmo_workspace_t **out_workspace,
+                                 char *errbuf,
+                                 size_t errbuf_size)
+{
+    if (!path || !out_ctx || !out_document || !out_workspace) {
+        if (errbuf && errbuf_size > 0) {
             snprintf(errbuf, errbuf_size, "Invalid arguments");
+        }
         return false;
     }
 
     *out_ctx = NULL;
-    *out_session = NULL;
+    *out_document = NULL;
+    *out_workspace = NULL;
 
     nmo_context_t *ctx = NULL;
     if (!nmo_tool_open_context(&ctx, errbuf, errbuf_size)) {
         return false;
     }
 
-    nmo_session_t *session = nmo_session_load(ctx, path);
-    if (!session) {
+    nmo_document_t *document = NULL;
+    nmo_status_t status = nmo_document_load_file(ctx, path, opts, &document);
+    if (status != NMO_OK) {
         const char *last = nmo_last_error_message();
-        if (errbuf && errbuf_size > 0)
-            snprintf(errbuf, errbuf_size, "%s", (last && last[0]) ? last : "Failed to load file");
+        if (errbuf && errbuf_size > 0) {
+            snprintf(errbuf, errbuf_size, "%s",
+                     (last && last[0]) ? last : "Failed to load file");
+        }
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    nmo_workspace_t *workspace = NULL;
+    status = nmo_workspace_create(ctx, document, &workspace);
+    if (status != NMO_OK) {
+        if (errbuf && errbuf_size > 0) {
+            snprintf(errbuf, errbuf_size, "Failed to create workspace");
+        }
+        nmo_document_destroy(document);
         nmo_context_release(ctx);
         return false;
     }
 
     *out_ctx = ctx;
-    *out_session = session;
+    *out_document = document;
+    *out_workspace = workspace;
     return true;
 }
 
-bool nmo_tool_open_session_opts(const char *path,
-                                const nmo_load_options_t *opts,
-                                nmo_context_t **out_ctx,
-                                nmo_session_t **out_session,
-                                char *errbuf,
-                                size_t errbuf_size) {
-    if (!path || !out_ctx || !out_session) {
-        if (errbuf && errbuf_size > 0)
-            snprintf(errbuf, errbuf_size, "Invalid arguments");
-        return false;
+void nmo_tool_close_document(nmo_context_t *ctx,
+                             nmo_document_t *document,
+                             nmo_workspace_t *workspace)
+{
+    if (workspace) {
+        nmo_workspace_destroy(workspace);
     }
-
-    *out_ctx = NULL;
-    *out_session = NULL;
-
-    nmo_context_t *ctx = NULL;
-    if (!nmo_tool_open_context(&ctx, errbuf, errbuf_size)) {
-        return false;
+    if (document) {
+        nmo_document_destroy(document);
     }
-
-    nmo_session_t *session = nmo_session_create(ctx);
-    if (!session) {
-        if (errbuf && errbuf_size > 0)
-            snprintf(errbuf, errbuf_size, "Failed to create session");
+    if (ctx) {
         nmo_context_release(ctx);
-        return false;
     }
-
-    int result = nmo_session_load_file(session, path, opts, NULL);
-    if (result != NMO_OK) {
-        const char *last = nmo_last_error_message();
-        if (errbuf && errbuf_size > 0)
-            snprintf(errbuf, errbuf_size, "%s", (last && last[0]) ? last : "Failed to load file");
-        nmo_session_destroy(session);
-        nmo_context_release(ctx);
-        return false;
-    }
-
-    *out_ctx = ctx;
-    *out_session = session;
-    return true;
 }
-
-void nmo_tool_close_session(nmo_context_t *ctx, nmo_session_t *session) {
-    if (session)
-        nmo_session_destroy(session);
-    if (ctx)
-        nmo_context_release(ctx);
-}
-
