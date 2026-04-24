@@ -27,6 +27,19 @@ typedef struct nmo_behavior_replace_bb_desc {
     bool preserve_params;
 } nmo_behavior_replace_bb_desc_t;
 
+typedef enum nmo_behavior_semantic_risk_severity {
+    NMO_BEHAVIOR_SEMANTIC_RISK_SAFE = 0,
+    NMO_BEHAVIOR_SEMANTIC_RISK_WARN = 1,
+    NMO_BEHAVIOR_SEMANTIC_RISK_REJECT = 2,
+} nmo_behavior_semantic_risk_severity_t;
+
+typedef struct nmo_behavior_semantic_risk {
+    nmo_behavior_semantic_risk_severity_t severity;
+    const char *code;
+    const char *message;
+    nmo_object_id_t object_id;
+} nmo_behavior_semantic_risk_t;
+
 typedef struct nmo_behavior_replace_report {
     bool changed;
     bool eligible_leaf;
@@ -50,6 +63,8 @@ typedef struct nmo_behavior_replace_report {
     const char *diagnostic_code;
     const char *diagnostic_message;
     size_t diagnostics_count;
+    nmo_behavior_semantic_risk_t *semantic_risks;
+    size_t semantic_risk_count;
 } nmo_behavior_replace_report_t;
 
 typedef enum nmo_behavior_fold_map_kind {
@@ -127,6 +142,8 @@ typedef struct nmo_behavior_fold_report {
     size_t control_links_to_delete_count;
     nmo_behavior_fold_write_blocker_t *write_blockers;
     size_t write_blocker_count;
+    nmo_behavior_semantic_risk_t *semantic_risks;
+    size_t semantic_risk_count;
     const char *diagnostic_code;
     const char *diagnostic_message;
 } nmo_behavior_fold_report_t;

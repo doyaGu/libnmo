@@ -249,6 +249,29 @@ static yyjson_val *find_object_by_uint_field(yyjson_val *arr,
     return NULL;
 }
 
+static yyjson_val *find_object_by_string_field(yyjson_val *arr,
+                                               const char *key,
+                                               const char *needle) {
+    size_t idx;
+    size_t max;
+    yyjson_val *item;
+
+    if (!arr || !needle) {
+        return NULL;
+    }
+    yyjson_arr_foreach(arr, idx, max, item) {
+        if (yyjson_is_obj(item) &&
+            strcmp(needle, get_string_field(item, key)) == 0) {
+            return item;
+        }
+    }
+    return NULL;
+}
+
+static yyjson_val *find_semantic_risk(yyjson_val *arr, const char *code) {
+    return find_object_by_string_field(arr, "code", code);
+}
+
 TEST(cli, behavior_graph_boundary_json_smoke) {
     rewrite_manifest_t manifest;
     load_ballance_manifest_or_die(&manifest);
@@ -575,6 +598,51 @@ TEST(cli, behavior_fold_candidates_reports_connected_components) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, behavior_fold_candidates_reports_semantic_risks) {
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior fold-candidates --parent 363 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.fold-candidates", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    yyjson_val *groups = get_array_field(data, "candidate_groups");
+    ASSERT_NOT_NULL(groups);
+
+    bool saw_risky_component = false;
+    size_t idx;
+    size_t max;
+    yyjson_val *group;
+    yyjson_arr_foreach(groups, idx, max, group) {
+        if (!yyjson_is_obj(group) ||
+            strcmp("connected_component", get_string_field(group, "kind")) != 0 ||
+            get_uint_field(group, "root_id") != 237u) {
+            continue;
+        }
+
+        yyjson_val *roots = get_array_field(group, "roots");
+        ASSERT_TRUE(array_contains_uint(roots, 237u));
+        ASSERT_TRUE(array_contains_uint(roots, 358u));
+        ASSERT_STR_EQ("warn", get_string_field(group, "risk_level"));
+        yyjson_val *risks = get_array_field(group, "semantic_risks");
+        ASSERT_NOT_NULL(risks);
+        yyjson_val *risk = find_semantic_risk(risks, "shared_parameter");
+        ASSERT_NOT_NULL(risk);
+        ASSERT_STR_EQ("warn", get_string_field(risk, "severity"));
+        saw_risky_component = true;
+        break;
+    }
+
+    ASSERT_TRUE(saw_risky_component);
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, behavior_fold_candidates_reports_control_router_group) {
     static const uint32_t router_ids[] = {
         2367u, 2370u, 2565u, 2568u, 2571u, 3032u,
@@ -724,6 +792,33 @@ TEST(cli, behavior_fold_dry_run_reports_boundary_plan) {
     ASSERT_NOT_NULL(get_string_field(interface_obj, "action"));
 
     ASSERT_FALSE(file_exists(output));
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_fold_dry_run_reports_semantic_risks) {
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior fold --parent 363 --nodes 237,358 "
+             "--anchor 358 --bb-guid 42414C02-10000002 "
+             "--name \"Ballance Load NMO Range\" "
+             "--preserve-links --preserve-params --dry-run \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.fold", &doc);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_STR_EQ("warn", get_string_field(data, "risk_level"));
+    yyjson_val *risks = get_array_field(data, "semantic_risks");
+    ASSERT_NOT_NULL(risks);
+    yyjson_val *risk = find_semantic_risk(risks, "shared_parameter");
+    ASSERT_NOT_NULL(risk);
+    ASSERT_STR_EQ("warn", get_string_field(risk, "severity"));
+
     yyjson_doc_free(doc);
 }
 
@@ -1339,9 +1434,11 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_fold_candidates_reports_parent_boundary);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_direct_child_groups);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_connected_components);
+    REGISTER_TEST(cli, behavior_fold_candidates_reports_semantic_risks);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_control_router_group);
     REGISTER_TEST(cli, behavior_fold_candidates_text_reports_connected_component_counts);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_boundary_plan);
+    REGISTER_TEST(cli, behavior_fold_dry_run_reports_semantic_risks);
     REGISTER_TEST(cli, behavior_fold_dry_run_rejects_event_handler_router_without_output_maps);
     REGISTER_TEST(cli, behavior_fold_dry_run_uses_explicit_node_set);
     REGISTER_TEST(cli, behavior_fold_dry_run_uses_explicit_anchor);

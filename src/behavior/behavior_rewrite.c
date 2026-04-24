@@ -86,6 +86,166 @@ static bool rewrite_parameter_edge_sets_equal(
     return true;
 }
 
+static nmo_status_t rewrite_add_semantic_risk(
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_behavior_semantic_risk_severity_t severity,
+    const char *code,
+    const char *message,
+    nmo_object_id_t object_id) {
+    if (!risks || !risk_count || !code) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_behavior_semantic_risk_t *new_risks =
+        (nmo_behavior_semantic_risk_t *)realloc(
+            *risks, (*risk_count + 1u) * sizeof(**risks));
+    if (!new_risks) {
+        return NMO_ERR_NOMEM;
+    }
+
+    new_risks[*risk_count] = (nmo_behavior_semantic_risk_t){
+        .severity = severity,
+        .code = code,
+        .message = message,
+        .object_id = object_id,
+    };
+    *risks = new_risks;
+    ++(*risk_count);
+    return NMO_OK;
+}
+
+static nmo_status_t rewrite_add_boundary_delay_risks(
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    const nmo_behavior_boundary_control_edge_t *edges,
+    size_t edge_count) {
+    for (size_t i = 0; i < edge_count; ++i) {
+        if (edges[i].activation_delay == 0 &&
+            edges[i].initial_activation_delay == 0) {
+            continue;
+        }
+        nmo_status_t rc = rewrite_add_semantic_risk(
+            risks, risk_count, NMO_BEHAVIOR_SEMANTIC_RISK_WARN,
+            "activation_delay",
+            "Boundary control link preserves activation delay",
+            edges[i].link_id);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t rewrite_add_boundary_shared_parameter_risks(
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    const nmo_behavior_boundary_parameter_edge_t *edges,
+    size_t edge_count) {
+    for (size_t i = 0; i < edge_count; ++i) {
+        if (!edges[i].shared) {
+            continue;
+        }
+        nmo_object_id_t object_id = edges[i].target_parameter_id != 0
+            ? edges[i].target_parameter_id
+            : edges[i].source_parameter_id;
+        nmo_status_t rc = rewrite_add_semantic_risk(
+            risks, risk_count, NMO_BEHAVIOR_SEMANTIC_RISK_WARN,
+            "shared_parameter",
+            "Boundary parameter edge uses shared parameter semantics",
+            object_id);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+    }
+    return NMO_OK;
+}
+
+static bool rewrite_name_has_message_semantics(const char *name) {
+    return name &&
+           (strstr(name, "Broadcast Message") ||
+            strstr(name, "Send Message") ||
+            strstr(name, "Wait Message"));
+}
+
+static nmo_status_t rewrite_add_message_flow_risks(
+    nmo_object_repository_t *repo,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    const nmo_object_id_t *node_ids,
+    size_t node_count) {
+    if (!repo) {
+        return NMO_OK;
+    }
+    for (size_t i = 0; i < node_count; ++i) {
+        nmo_object_t *object =
+            nmo_object_repository_find_by_id(repo, node_ids[i]);
+        const char *name = object ? nmo_object_get_name(object) : NULL;
+        if (!rewrite_name_has_message_semantics(name)) {
+            continue;
+        }
+        nmo_status_t rc = rewrite_add_semantic_risk(
+            risks, risk_count, NMO_BEHAVIOR_SEMANTIC_RISK_WARN,
+            "message_flow",
+            "Selected behavior participates in message send/wait flow",
+            node_ids[i]);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t rewrite_fold_add_semantic_risks(
+    nmo_object_repository_t *repo,
+    nmo_behavior_fold_report_t *report) {
+    nmo_status_t rc = NMO_OK;
+    if (!report) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (report->boundary.broken_links > 0 ||
+        report->boundary.missing_nodes > 0) {
+        rc = rewrite_add_semantic_risk(
+            &report->semantic_risks, &report->semantic_risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "dangling_boundary",
+            "Boundary contains broken links or missing nodes",
+            report->parent_id);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+    }
+
+    rc = rewrite_add_boundary_delay_risks(
+        &report->semantic_risks, &report->semantic_risk_count,
+        report->boundary.control_in, report->boundary.control_in_count);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = rewrite_add_boundary_delay_risks(
+        &report->semantic_risks, &report->semantic_risk_count,
+        report->boundary.control_out, report->boundary.control_out_count);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = rewrite_add_boundary_shared_parameter_risks(
+        &report->semantic_risks, &report->semantic_risk_count,
+        report->boundary.parameter_in, report->boundary.parameter_in_count);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = rewrite_add_boundary_shared_parameter_risks(
+        &report->semantic_risks, &report->semantic_risk_count,
+        report->boundary.parameter_out, report->boundary.parameter_out_count);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    return rewrite_add_message_flow_risks(
+        repo, &report->semantic_risks, &report->semantic_risk_count,
+        report->selected_nodes, report->selected_node_count);
+}
+
 static bool rewrite_array_ids_equal(const nmo_array_t *a,
                                     const nmo_array_t *b) {
     if (!a || !b || a->count != b->count) {
@@ -1585,6 +1745,13 @@ static nmo_status_t rewrite_fold_analyze_workspace(
         goto fail;
     }
 
+    rc = rewrite_fold_add_semantic_risks(repo, report);
+    if (rc != NMO_OK) {
+        rewrite_fold_report_reject(report, "out_of_memory",
+                                   "Failed to build fold semantic risks");
+        goto fail;
+    }
+
     rc = rewrite_fold_validate_explicit_maps(report);
     if (rc != NMO_OK) {
         return rc;
@@ -1796,6 +1963,7 @@ void nmo_behavior_edit_fold_report_free(nmo_behavior_fold_report_t *report) {
     free(report->parameter_maps);
     free(report->control_links_to_delete);
     free(report->write_blockers);
+    free(report->semantic_risks);
     nmo_behavior_boundary_free(&report->boundary);
     memset(report, 0, sizeof(*report));
 }

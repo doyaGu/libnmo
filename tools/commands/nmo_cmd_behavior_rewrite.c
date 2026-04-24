@@ -26,6 +26,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static void rewrite_guid_to_string(nmo_guid_t guid, char *buf, size_t size) {
@@ -165,6 +166,58 @@ static void add_parameter_edges_json(
         yyjson_mut_arr_add_val(arr, item);
     }
     yyjson_mut_obj_add_val(doc, data, key, arr);
+}
+
+static const char *semantic_risk_severity_string(
+    nmo_behavior_semantic_risk_severity_t severity) {
+    switch (severity) {
+    case NMO_BEHAVIOR_SEMANTIC_RISK_SAFE:
+        return "safe";
+    case NMO_BEHAVIOR_SEMANTIC_RISK_WARN:
+        return "warn";
+    case NMO_BEHAVIOR_SEMANTIC_RISK_REJECT:
+        return "reject";
+    default:
+        return "warn";
+    }
+}
+
+static const char *semantic_risk_level_string(
+    const nmo_behavior_semantic_risk_t *risks,
+    size_t risk_count) {
+    bool has_warn = false;
+    for (size_t i = 0; i < risk_count; ++i) {
+        if (risks[i].severity == NMO_BEHAVIOR_SEMANTIC_RISK_REJECT) {
+            return "reject";
+        }
+        if (risks[i].severity == NMO_BEHAVIOR_SEMANTIC_RISK_WARN) {
+            has_warn = true;
+        }
+    }
+    return has_warn ? "warn" : "safe";
+}
+
+static void add_semantic_risks_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *data,
+    const nmo_behavior_semantic_risk_t *risks,
+    size_t risk_count) {
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    for (size_t i = 0; i < risk_count; ++i) {
+        yyjson_mut_val *risk = yyjson_mut_obj(doc);
+        nmo_cli_json_add_str_safe(
+            doc, risk, "severity",
+            semantic_risk_severity_string(risks[i].severity));
+        nmo_cli_json_add_str_safe(doc, risk, "code", risks[i].code);
+        nmo_cli_json_add_str_safe(doc, risk, "message", risks[i].message);
+        yyjson_mut_obj_add_uint(doc, risk, "object_id",
+                                (uint64_t)risks[i].object_id);
+        yyjson_mut_arr_add_val(arr, risk);
+    }
+    nmo_cli_json_add_str_safe(
+        doc, data, "risk_level",
+        semantic_risk_level_string(risks, risk_count));
+    yyjson_mut_obj_add_val(doc, data, "semantic_risks", arr);
 }
 
 static int graph_boundary_emit(nmo_cmd_ctx_t *ctx,
@@ -404,6 +457,97 @@ static void add_id_list_json(yyjson_mut_doc *doc,
                              const nmo_object_id_t *ids,
                              size_t count);
 
+static bool append_boundary_risk(
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_behavior_semantic_risk_severity_t severity,
+    const char *code,
+    const char *message,
+    nmo_object_id_t object_id) {
+    nmo_behavior_semantic_risk_t *new_risks =
+        (nmo_behavior_semantic_risk_t *)realloc(
+            *risks, (*risk_count + 1u) * sizeof(**risks));
+    if (!new_risks) {
+        return false;
+    }
+    new_risks[*risk_count] = (nmo_behavior_semantic_risk_t){
+        .severity = severity,
+        .code = code,
+        .message = message,
+        .object_id = object_id,
+    };
+    *risks = new_risks;
+    ++(*risk_count);
+    return true;
+}
+
+static void append_boundary_delay_risks(
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    const nmo_behavior_boundary_control_edge_t *edges,
+    size_t edge_count) {
+    for (size_t i = 0; i < edge_count; ++i) {
+        if (edges[i].activation_delay == 0 &&
+            edges[i].initial_activation_delay == 0) {
+            continue;
+        }
+        (void)append_boundary_risk(
+            risks, risk_count, NMO_BEHAVIOR_SEMANTIC_RISK_WARN,
+            "activation_delay",
+            "Boundary control link preserves activation delay",
+            edges[i].link_id);
+    }
+}
+
+static void append_boundary_shared_parameter_risks(
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    const nmo_behavior_boundary_parameter_edge_t *edges,
+    size_t edge_count) {
+    for (size_t i = 0; i < edge_count; ++i) {
+        if (!edges[i].shared) {
+            continue;
+        }
+        nmo_object_id_t object_id = edges[i].target_parameter_id != 0
+            ? edges[i].target_parameter_id
+            : edges[i].source_parameter_id;
+        (void)append_boundary_risk(
+            risks, risk_count, NMO_BEHAVIOR_SEMANTIC_RISK_WARN,
+            "shared_parameter",
+            "Boundary parameter edge uses shared parameter semantics",
+            object_id);
+    }
+}
+
+static void add_boundary_semantic_risks_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *data,
+    const nmo_behavior_boundary_t *boundary) {
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0;
+    if (boundary->broken_links > 0 || boundary->missing_nodes > 0) {
+        (void)append_boundary_risk(
+            &risks, &risk_count, NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "dangling_boundary",
+            "Boundary contains broken links or missing nodes",
+            boundary->behavior_id);
+    }
+    append_boundary_delay_risks(&risks, &risk_count,
+                                boundary->control_in,
+                                boundary->control_in_count);
+    append_boundary_delay_risks(&risks, &risk_count,
+                                boundary->control_out,
+                                boundary->control_out_count);
+    append_boundary_shared_parameter_risks(&risks, &risk_count,
+                                           boundary->parameter_in,
+                                           boundary->parameter_in_count);
+    append_boundary_shared_parameter_risks(&risks, &risk_count,
+                                           boundary->parameter_out,
+                                           boundary->parameter_out_count);
+    add_semantic_risks_json(doc, data, risks, risk_count);
+    free(risks);
+}
+
 static void add_fold_candidate_group_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *groups,
@@ -452,6 +596,7 @@ static void add_fold_candidate_group_json(
                             (uint64_t)desc->boundary->broken_links);
     yyjson_mut_obj_add_uint(doc, group, "missing_nodes",
                             (uint64_t)desc->boundary->missing_nodes);
+    add_boundary_semantic_risks_json(doc, group, desc->boundary);
     yyjson_mut_arr_add_val(groups, group);
 }
 
@@ -1752,6 +1897,8 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
         }
         yyjson_mut_obj_add_val(doc, data, "write_blockers",
                                write_blockers);
+        add_semantic_risks_json(doc, data, report->semantic_risks,
+                                report->semantic_risk_count);
         yyjson_mut_obj_add_uint(doc, data, "parent_id", report->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "anchor_id", report->anchor_id);
         nmo_cli_json_add_str_safe(doc, data, "parent_behavior_type",
@@ -1920,6 +2067,8 @@ static int fold_emit_rejection(nmo_cmd_ctx_t *ctx,
         add_id_list_json(doc, data, "selected_nodes",
                          report->selected_nodes,
                          report->selected_node_count);
+        add_semantic_risks_json(doc, data, report->semantic_risks,
+                                report->semantic_risk_count);
 
         yyjson_mut_val *rejections = yyjson_mut_arr(doc);
         yyjson_mut_val *rejection = yyjson_mut_obj(doc);
@@ -2128,6 +2277,8 @@ static void replace_bb_add_report_json(
     yyjson_mut_obj_add_uint(doc, preserved, "parameter_out",
                             (uint64_t)report->preserved_parameter_out);
     yyjson_mut_obj_add_val(doc, data, "preserved", preserved);
+    add_semantic_risks_json(doc, data, report->semantic_risks,
+                            report->semantic_risk_count);
 
     if (report->diagnostic_code || report->diagnostic_message) {
         yyjson_mut_val *diagnostic = yyjson_mut_obj(doc);
