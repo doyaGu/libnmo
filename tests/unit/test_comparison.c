@@ -6,8 +6,9 @@
 #include "test_framework.h"
 #include "document/nmo_document_compare.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 #include "session/nmo_session_pipeline.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "format/nmo_data.h"
@@ -54,6 +55,35 @@ static int has_diff_type(const nmo_comparison_result_t *result, nmo_diff_type_t 
         }
     }
     return 0;
+}
+
+static int compare_sessions(const nmo_session_t *session1,
+                            const nmo_session_t *session2,
+                            nmo_compare_flags_t flags,
+                            nmo_comparison_result_t *result)
+{
+    nmo_document_t *document1 = NULL;
+    nmo_document_t *document2 = NULL;
+    nmo_status_t status = NMO_OK;
+
+    if (session1 == NULL || session2 == NULL || result == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    status = nmo_session_borrow_document((nmo_session_t *)session1, &document1);
+    if (status != NMO_OK) {
+        return status;
+    }
+    status = nmo_session_borrow_document((nmo_session_t *)session2, &document2);
+    if (status != NMO_OK) {
+        nmo_document_destroy(document1);
+        return status;
+    }
+
+    status = nmo_document_compare(document1, document2, flags, result);
+    nmo_document_destroy(document1);
+    nmo_document_destroy(document2);
+    return status;
 }
 
 /* ============================================================================
@@ -142,7 +172,7 @@ TEST(comparison, identical_empty_sessions) {
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
     
-    int err = nmo_session_compare(session1, session2, NMO_COMPARE_DEFAULT, &result);
+    int err = compare_sessions(session1, session2, NMO_COMPARE_DEFAULT, &result);
     ASSERT_EQ(err, NMO_OK);
     ASSERT_EQ(result.match, 1);
     ASSERT_EQ(result.diff_count, 0);
@@ -167,7 +197,7 @@ TEST(comparison, different_file_versions) {
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
     
-    nmo_session_compare(session1, session2, NMO_COMPARE_FILE_INFO, &result);
+    compare_sessions(session1, session2, NMO_COMPARE_FILE_INFO, &result);
     
     ASSERT_EQ(result.match, 0);
     ASSERT_TRUE(result.diff_count > 0);
@@ -193,7 +223,7 @@ TEST(comparison, different_object_counts) {
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
     
-    nmo_session_compare(session1, session2, NMO_COMPARE_FILE_INFO, &result);
+    compare_sessions(session1, session2, NMO_COMPARE_FILE_INFO, &result);
     
     ASSERT_EQ(result.match, 0);
     
@@ -225,8 +255,8 @@ TEST(comparison, sessions_with_objects) {
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
     
-    nmo_session_compare(session1, session2, 
-                        NMO_COMPARE_NAMES | NMO_COMPARE_CLASS_IDS, &result);
+    compare_sessions(session1, session2,
+                     NMO_COMPARE_NAMES | NMO_COMPARE_CLASS_IDS, &result);
     
     ASSERT_EQ(result.match, 1);
     ASSERT_EQ(result.objects_compared, 1);
@@ -260,7 +290,7 @@ TEST(comparison, different_object_names) {
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
     
-    nmo_session_compare(session1, session2, NMO_COMPARE_NAMES, &result);
+    compare_sessions(session1, session2, NMO_COMPARE_NAMES, &result);
     
     ASSERT_EQ(result.match, 0);
     ASSERT_EQ(result.diffs[0].type, NMO_DIFF_OBJECT_NAME);
@@ -303,7 +333,7 @@ TEST(comparison, ignore_order_matches_by_file_id) {
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
 
-    int err = nmo_session_compare(
+    int err = compare_sessions(
         session1,
         session2,
         NMO_COMPARE_NAMES | NMO_COMPARE_CLASS_IDS | NMO_COMPARE_CHUNKS | NMO_COMPARE_IGNORE_ORDER,
@@ -352,7 +382,7 @@ TEST(comparison, order_mismatch_reported_without_ignore_order) {
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
 
-    int err = nmo_session_compare(
+    int err = compare_sessions(
         session1,
         session2,
         NMO_COMPARE_NAMES | NMO_COMPARE_CLASS_IDS,
@@ -392,7 +422,7 @@ TEST(comparison, managers_match_by_guid_independent_of_order) {
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
 
-    int err = nmo_session_compare(session1, session2, NMO_COMPARE_MANAGERS, &result);
+    int err = compare_sessions(session1, session2, NMO_COMPARE_MANAGERS, &result);
     ASSERT_EQ(err, NMO_OK);
     ASSERT_EQ(result.match, 1);
     ASSERT_EQ(result.diff_count, 0);
@@ -437,7 +467,7 @@ TEST(comparison, compare_null_sessions) {
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
     
-    int err = nmo_session_compare(NULL, NULL, NMO_COMPARE_DEFAULT, &result);
+    int err = compare_sessions(NULL, NULL, NMO_COMPARE_DEFAULT, &result);
     ASSERT_EQ(err, NMO_ERR_INVALID_ARGUMENT);
 }
 
@@ -445,7 +475,7 @@ TEST(comparison, compare_null_result) {
     nmo_context_t *ctx = create_test_context();
     nmo_session_t *session = nmo_session_create(ctx);
     
-    int err = nmo_session_compare(session, session, NMO_COMPARE_DEFAULT, NULL);
+    int err = compare_sessions(session, session, NMO_COMPARE_DEFAULT, NULL);
     ASSERT_EQ(err, NMO_ERR_INVALID_ARGUMENT);
     
     nmo_session_destroy(session);
@@ -484,3 +514,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(comparison, compare_null_sessions);
     REGISTER_TEST(comparison, compare_null_result);
 TEST_MAIN_END()
+

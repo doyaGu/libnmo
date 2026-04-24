@@ -1,5 +1,5 @@
 #include "test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "type/nmo_type_system.h"
 #include "object/nmo_class_ids.h"
 
@@ -78,3 +78,4 @@ TEST(type_runtime_hook_coverage, registered_types_have_explicit_remap_hook) {
 TEST_MAIN_BEGIN()
 REGISTER_TEST(type_runtime_hook_coverage, registered_types_have_explicit_remap_hook);
 TEST_MAIN_END()
+

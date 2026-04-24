@@ -6,7 +6,8 @@
 #include "behavior/nmo_behavior_view.h"
 #include "format/nmo_interface_view.h"
 #include "runtime/nmo_workspace.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
+#include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
 #include "yyjson.h"
@@ -207,7 +208,7 @@ static void load_root_behavior_counts(const char *path,
 
     nmo_session_t *session = nmo_session_create(ctx);
     ASSERT_NOT_NULL(session);
-    ASSERT_EQ(NMO_OK, nmo_load_file(session, path, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_load_file(session, path, NULL, NULL));
 
     nmo_behavior_script_view_t script = {0};
     nmo_document_t *document = NULL;
@@ -464,3 +465,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_run_runtime_error_does_not_write_output);
     REGISTER_TEST(cli, script_run_validation_failure_does_not_write_output);
 TEST_MAIN_END()
+

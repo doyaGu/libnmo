@@ -1,5 +1,5 @@
 #include "test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 
 TEST(runtime_copy_delete, copy_then_delete_roundtrip) {
@@ -33,3 +33,4 @@ TEST(runtime_copy_delete, copy_then_delete_roundtrip) {
 TEST_MAIN_BEGIN()
 REGISTER_TEST(runtime_copy_delete, copy_then_delete_roundtrip);
 TEST_MAIN_END()
+

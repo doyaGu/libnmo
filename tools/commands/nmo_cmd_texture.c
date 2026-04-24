@@ -18,6 +18,7 @@
 #include "object/nmo_object_edit.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_texture_schemas.h"
+#include "session/nmo_serializer.h"
 #include "format/nmo_stb_adapter.h"
 #include "format/nmo_image.h"
 #include "core/nmo_arena.h"

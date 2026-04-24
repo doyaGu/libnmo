@@ -4,7 +4,7 @@
  */
 
 #include "test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "document/nmo_document_load.h"
 #include "object/nmo_ref_graph.h"
@@ -284,3 +284,4 @@ REGISTER_TEST(orphan_reach, empty_root_set);
 REGISTER_TEST(orphan_reach, all_reachable_from_root);
 REGISTER_TEST(orphan_reach, reachable_superset_of_zero_incoming);
 TEST_MAIN_END()
+

@@ -1,6 +1,8 @@
 #include "write_semantic_probe.h"
 
 #include "document/nmo_document_load.h"
+#include "session/nmo_runtime_kernel.h"
+#include "session/nmo_session_bridge.h"
 #include "test_framework.h"
 #include "type/nmo_type_query.h"
 
@@ -22,7 +24,7 @@ nmo_status_t write_probe_open(write_semantic_probe_t *probe, const char *path) {
         return NMO_ERR_NOMEM;
     }
 
-    nmo_status_t status = nmo_load_file(probe->session, path, NULL);
+    nmo_status_t status = nmo_session_load_file(probe->session, path, NULL, NULL);
     if (status != NMO_OK) {
         write_probe_close(probe);
         return status;
@@ -46,6 +48,17 @@ void write_probe_close(write_semantic_probe_t *probe) {
 nmo_object_repository_t *write_probe_repo(const write_semantic_probe_t *probe) {
     if (!probe || !probe->session) return NULL;
     return nmo_session_get_repository(probe->session);
+}
+
+static nmo_document_t *write_probe_document(const write_semantic_probe_t *probe) {
+    nmo_document_t *document = NULL;
+    if (!probe || !probe->session) {
+        return NULL;
+    }
+    if (nmo_session_borrow_document(probe->session, &document) != NMO_OK) {
+        return NULL;
+    }
+    return document;
 }
 
 size_t write_probe_object_count(const write_semantic_probe_t *probe) {
@@ -92,26 +105,30 @@ void *write_probe_state(const write_semantic_probe_t *probe,
 }
 
 uint32_t write_probe_included_count(const write_semantic_probe_t *probe) {
-    if (!probe || !probe->session) return 0u;
+    nmo_document_t *document = write_probe_document(probe);
     uint32_t count = 0u;
-    (void)nmo_session_get_included_files(probe->session, &count);
+    if (document == NULL) return 0u;
+    (void)nmo_document_get_included_files(document, &count);
     return count;
 }
 
 const nmo_included_file_t *write_probe_included_by_index(const write_semantic_probe_t *probe,
                                                          uint32_t index) {
-    if (!probe || !probe->session) return NULL;
+    nmo_document_t *document = write_probe_document(probe);
     uint32_t count = 0u;
-    nmo_included_file_t *files = nmo_session_get_included_files(probe->session, &count);
+    nmo_included_file_t *files = document != NULL
+        ? nmo_document_get_included_files(document, &count)
+        : NULL;
     if (!files || index >= count) return NULL;
     return &files[index];
 }
 
 const nmo_included_file_t *write_probe_included_by_name(const write_semantic_probe_t *probe,
                                                         const char *name) {
-    if (!probe || !probe->session || !name) return NULL;
+    nmo_document_t *document = write_probe_document(probe);
+    if (document == NULL || !name) return NULL;
     uint32_t count = 0u;
-    nmo_included_file_t *files = nmo_session_get_included_files(probe->session, &count);
+    nmo_included_file_t *files = nmo_document_get_included_files(document, &count);
     for (uint32_t i = 0; files && i < count; ++i) {
         if (files[i].name && strcmp(files[i].name, name) == 0) return &files[i];
     }

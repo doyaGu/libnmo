@@ -7,6 +7,8 @@
 #include "nmo.h"
 #include "document/nmo_document_load.h"
 #include "document/nmo_document_compare.h"
+#include "session/nmo_runtime_kernel.h"
+#include "session/nmo_session_bridge.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
 #include <stdio.h>
@@ -164,7 +166,7 @@ static int run_behavior_roundtrip(const char *input_file) {
         return 1;
     }
 
-    if (nmo_load_file(load1, input_file, NULL) != NMO_OK) {
+    if (nmo_session_load_file(load1, input_file, NULL, NULL) != NMO_OK) {
         printf("FAILED: first load (%s)\n", input_file);
         failed = 1;
         goto cleanup;
@@ -177,7 +179,7 @@ static int run_behavior_roundtrip(const char *input_file) {
 
     nmo_save_options_t save_opts = nmo_save_options_default();
     save_opts.flags |= NMO_SAVE_REQUIRE_SCHEMA;
-    if (nmo_save_file(load1, temp_file, &save_opts) != NMO_OK) {
+    if (nmo_session_save_file(load1, temp_file, &save_opts, NULL) != NMO_OK) {
         printf("FAILED: save (%s)\n", temp_file);
         failed = 1;
         goto cleanup;
@@ -190,7 +192,7 @@ static int run_behavior_roundtrip(const char *input_file) {
         goto cleanup;
     }
 
-    if (nmo_load_file(load2, temp_file, NULL) != NMO_OK) {
+    if (nmo_session_load_file(load2, temp_file, NULL, NULL) != NMO_OK) {
         printf("FAILED: second load (%s)\n", temp_file);
         failed = 1;
         goto cleanup;
@@ -208,11 +210,25 @@ static int run_behavior_roundtrip(const char *input_file) {
 
     nmo_comparison_result_t cmp;
     nmo_comparison_result_init(&cmp);
-    int compare_err = nmo_session_compare(
-        load1,
-        load2,
-        NMO_COMPARE_STRICT | NMO_COMPARE_VERBOSE,
-        &cmp);
+    nmo_document_t *doc1 = NULL;
+    nmo_document_t *doc2 = NULL;
+    int compare_err = nmo_session_borrow_document(load1, &doc1);
+    if (compare_err == NMO_OK) {
+        compare_err = nmo_session_borrow_document(load2, &doc2);
+    }
+    if (compare_err == NMO_OK) {
+        compare_err = nmo_document_compare(
+            doc1,
+            doc2,
+            NMO_COMPARE_STRICT | NMO_COMPARE_VERBOSE,
+            &cmp);
+    }
+    if (doc1 != NULL) {
+        nmo_document_destroy(doc1);
+    }
+    if (doc2 != NULL) {
+        nmo_document_destroy(doc2);
+    }
 
     if (compare_err != NMO_OK) {
         printf("FAILED: compare error %d (%s)\n", compare_err, input_file);

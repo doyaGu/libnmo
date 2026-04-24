@@ -89,8 +89,8 @@ static void nmo_comparison_view_clear(nmo_comparison_view_t *view)
 }
 
 NMO_API nmo_status_t nmo_comparison_build_view(
-    const nmo_session_t *session1,
-    const nmo_session_t *session2,
+    const nmo_document_t *document1,
+    const nmo_document_t *document2,
     uint32_t flags,
     nmo_comparison_view_t *out_view)
 {
@@ -98,14 +98,14 @@ NMO_API nmo_status_t nmo_comparison_build_view(
     nmo_status_t status = NMO_OK;
     int i = 0;
 
-    if (session1 == NULL || session2 == NULL || out_view == NULL) {
+    if (document1 == NULL || document2 == NULL || out_view == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     memset(out_view, 0, sizeof(*out_view));
     nmo_comparison_result_init(&result);
-    status = nmo_session_compare(
-        session1, session2, (nmo_compare_flags_t)flags, &result);
+    status = nmo_document_compare(
+        document1, document2, (nmo_compare_flags_t)flags, &result);
     if (status != NMO_OK) {
         return status;
     }

@@ -1,7 +1,6 @@
-#include "session/nmo_runtime_delete.h"
-#include "session/nmo_runtime_ref_remap.h"
+#include "session/nmo_runtime_kernel.h"
 
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
@@ -15,7 +14,7 @@
 #include "../runtime/runtime_internal.h"
 #include <string.h>
 
-/* ── ID set (private) ──────────────────────────────────────────── */
+/* 鈹€鈹€ ID set (private) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 typedef struct runtime_id_set {
     nmo_arena_array_t ids;  /**< Ordered list of member IDs (for iteration) */
@@ -86,7 +85,7 @@ static int runtime_id_set_add(runtime_id_set_t *set, nmo_object_id_t id)
     return NMO_OK;
 }
 
-/* ── Delete-set collection ─────────────────────────────────────── */
+/* 鈹€鈹€ Delete-set collection 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static int runtime_collect_delete_set(
     nmo_object_repository_t *repo,
@@ -168,7 +167,7 @@ static int runtime_collect_delete_set(
     return NMO_OK;
 }
 
-/* ── Safe-detach pre-validation ────────────────────────────────── */
+/* 鈹€鈹€ Safe-detach pre-validation 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 /**
  * @brief Validate that safe-detach remap can succeed.
@@ -234,7 +233,7 @@ static int runtime_validate_safe_detach(
     return result;
 }
 
-/* ── Public API ────────────────────────────────────────────────── */
+/* 鈹€鈹€ Public API 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 nmo_status_t nmo_runtime_preview_delete(
     nmo_object_repository_t *repo,
@@ -411,7 +410,7 @@ nmo_status_t nmo_runtime_execute_delete(
         for (uint32_t fi = file_count; fi > 0; fi--) {
             nmo_included_file_t *f = &files[fi - 1];
             if (f->owner_ids.count == 0) {
-                continue; /* no owners recorded — not managed */
+                continue; /* no owners recorded 鈥?not managed */
             }
             const nmo_object_id_t *owners =
                 (const nmo_object_id_t *)f->owner_ids.data;
@@ -438,3 +437,4 @@ nmo_status_t nmo_runtime_execute_delete(
 
     return NMO_OK;
 }
+

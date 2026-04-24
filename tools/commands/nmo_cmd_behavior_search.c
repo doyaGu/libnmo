@@ -14,7 +14,7 @@
 
 #include "nmo.h"
 #include "behavior/nmo_behavior_analyze.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -878,3 +878,4 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
     free(links);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
+

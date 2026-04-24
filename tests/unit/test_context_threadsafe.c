@@ -4,7 +4,7 @@
  */
 
 #include "../test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include <stdio.h>
 
 #ifdef _WIN32
@@ -137,3 +137,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(context_threadsafe, stress_test);
     REGISTER_TEST(context_threadsafe, refcount_consistency_under_contention);
 TEST_MAIN_END()
+

@@ -1,6 +1,8 @@
 #include "chunk/nmo_chunk_index.h"
 
+#include "../runtime/runtime_internal.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_pipeline.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"
 

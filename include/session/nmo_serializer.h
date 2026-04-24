@@ -42,6 +42,10 @@ extern "C" {
 typedef struct nmo_session nmo_session_t;
 typedef struct nmo_serializer nmo_serializer_t;
 typedef struct nmo_save_buffer nmo_save_buffer_t;
+typedef struct nmo_object_repository nmo_object_repository_t;
+typedef struct nmo_object nmo_object_t;
+typedef struct nmo_id_remap nmo_id_remap_t;
+typedef struct nmo_save_id_remap_plan nmo_save_id_remap_plan_t;
 
 /**
  * @brief Save phase identifiers for progress callbacks
@@ -218,6 +222,17 @@ NMO_API nmo_save_stats_t nmo_serializer_get_stats(const nmo_serializer_t *ctx);
  * @return Performance statistics collected so far, or all-zero stats
  */
 NMO_API nmo_save_perf_stats_t nmo_serializer_get_perf_stats(const nmo_serializer_t *ctx);
+
+NMO_API nmo_save_id_remap_plan_t *nmo_save_id_remap_plan_create(
+    nmo_object_repository_t *repo,
+    nmo_object_t **objects_to_save,
+    size_t object_count);
+NMO_API nmo_id_remap_t *nmo_save_id_remap_plan_get_table(
+    const nmo_save_id_remap_plan_t *plan);
+NMO_API size_t nmo_save_id_remap_plan_get_remapped_count(
+    const nmo_save_id_remap_plan_t *plan);
+NMO_API void nmo_save_id_remap_plan_destroy(
+    nmo_save_id_remap_plan_t *plan);
 
 #ifdef __cplusplus
 }

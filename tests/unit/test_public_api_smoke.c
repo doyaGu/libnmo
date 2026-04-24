@@ -9,6 +9,7 @@
 #include "runtime/nmo_workspace.h"
 #include "document/nmo_document.h"
 #include "document/nmo_document_load.h"
+#include "document/nmo_document_file_state.h"
 #include "document/nmo_document_save.h"
 #include "document/nmo_document_stats.h"
 #include "document/nmo_document_compare.h"
@@ -45,12 +46,16 @@
 #include "object/nmo_object_refs.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_context.h"
 #include "session/nmo_reference_resolver.h"
+#include "session/nmo_deserializer.h"
+#include "session/nmo_builder.h"
+#include "session/nmo_id_mapping.h"
 #include "session/nmo_session_pipeline.h"
 #include "session/nmo_runtime_kernel.h"
+#include "session/nmo_runtime_result.h"
 #include "session/nmo_serializer.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 #include "type/nmo_operation_system.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_query.h"
@@ -210,8 +215,8 @@ TEST(public_api_smoke, canonical_umbrella_and_headers_exclude_legacy_worldview) 
     char *session_bridge = read_source_text("include/session/nmo_session_bridge.h");
     ASSERT_NOT_NULL(session_bridge);
     ASSERT_TRUE(strstr(session_bridge, "nmo_session_borrow_document") != NULL);
-    ASSERT_TRUE(strstr(session_bridge, "nmo_session_from_document(") != NULL);
-    ASSERT_TRUE(strstr(session_bridge, "nmo_session_from_workspace(") != NULL);
+    ASSERT_NULL(strstr(session_bridge, "nmo_session_from_document("));
+    ASSERT_NULL(strstr(session_bridge, "nmo_session_from_workspace("));
     free(session_bridge);
 
     char *script_view = read_source_text("include/behavior/nmo_script_view.h");
@@ -335,6 +340,9 @@ TEST(public_api_smoke, public_api_tier_signals_are_declared) {
 
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_LOAD_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_LOAD_WORKFLOW_API_TIER);
+
+    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_DOCUMENT_FILE_STATE_PUBLIC_HEADER_KIND);
+    ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_DOCUMENT_FILE_STATE_API_TIER);
 
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_SAVE_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_SAVE_WORKFLOW_API_TIER);

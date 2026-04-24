@@ -1,7 +1,9 @@
 #include "object/nmo_object_hierarchy.h"
 
-#include "session/nmo_context.h"
+#include "../runtime/runtime_internal.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_pipeline.h"
 #include "format/nmo_object.h"
 #include "object/nmo_ref_enumerate.h"
 
@@ -165,3 +167,4 @@ void nmo_object_hierarchy_free(nmo_object_hierarchy_t *hierarchy) {
     free(hierarchy->parent_of);
     memset(hierarchy, 0, sizeof(*hierarchy));
 }
+

@@ -8,7 +8,7 @@
 #include "core/nmo_arena.h"
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "type/nmo_type_system.h"
 
@@ -925,3 +925,4 @@ nmo_status_t nmo_object_query_resolve_one(
     }
     return NMO_OK;
 }
+

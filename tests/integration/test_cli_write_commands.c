@@ -21,8 +21,9 @@
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_runtime_kernel.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1498,3 +1499,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli_write, data_entity_material_texture_animation_save_and_validate);
     REGISTER_TEST(cli_write, parameter_set_persists_typed_object_and_raw_values);
 TEST_MAIN_END()
+

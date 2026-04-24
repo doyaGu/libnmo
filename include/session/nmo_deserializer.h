@@ -29,6 +29,7 @@
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "document/nmo_document_perf_stats.h"
+#include "object/nmo_object_system.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,6 +42,15 @@ typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_object nmo_object_t;
 typedef struct nmo_deserializer nmo_deserializer_t;
 typedef struct nmo_io_interface nmo_io_interface_t;
+typedef struct nmo_arena nmo_arena_t;
+typedef struct nmo_logger nmo_logger_t;
+typedef struct nmo_shadow_storage nmo_shadow_storage_t;
+typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
+typedef struct nmo_reference_resolver nmo_reference_resolver_t;
+typedef struct nmo_object_desc nmo_object_desc_t;
+typedef struct nmo_chunk nmo_chunk_t;
+typedef struct nmo_object_data nmo_object_data_t;
+typedef struct nmo_manager_data nmo_manager_data_t;
 
 /* ============================================================================
  * Load options & stats
@@ -187,6 +197,54 @@ NMO_API nmo_load_perf_stats_t nmo_deserializer_get_perf_stats(
  * @param ctx Deserializer context
  */
 NMO_API void nmo_deserializer_destroy(nmo_deserializer_t *ctx);
+
+typedef nmo_status_t (*nmo_id_register_fn)(
+    void *user_data,
+    nmo_object_t *obj,
+    nmo_object_id_t file_index);
+typedef nmo_status_t (*nmo_id_lookup_fn)(
+    void *user_data,
+    nmo_object_id_t file_index,
+    nmo_object_id_t *out_runtime_id);
+
+NMO_API nmo_status_t nmo_object_system_create_objects_from_header1(
+    const nmo_allocator_t *object_allocator,
+    nmo_arena_t *scratch_arena,
+    nmo_object_repository_t *repo,
+    nmo_id_sanitizer_t *id_sanitizer,
+    nmo_id_register_fn id_register_fn,
+    void *id_register_ctx,
+    const nmo_object_desc_t *descs,
+    size_t desc_count,
+    nmo_logger_t *logger,
+    nmo_object_t ***out_created_objects);
+NMO_API nmo_status_t nmo_object_system_prepare_loaded_objects(
+    const nmo_allocator_t *object_allocator,
+    nmo_arena_t *scratch_arena,
+    nmo_object_repository_t *repo,
+    nmo_id_sanitizer_t *id_sanitizer,
+    nmo_id_register_fn id_register_fn,
+    void *id_register_ctx,
+    const nmo_object_desc_t *descs,
+    size_t desc_count,
+    const nmo_object_data_t *object_data,
+    size_t object_data_count,
+    nmo_manager_data_t *manager_data,
+    size_t manager_data_count,
+    nmo_logger_t *logger,
+    size_t *out_remap_errors);
+NMO_API nmo_status_t nmo_object_system_deserialize_loaded_objects(
+    nmo_object_repository_t *repo,
+    const nmo_type_runtime_t *type_rt,
+    nmo_arena_t *arena,
+    nmo_logger_t *logger,
+    nmo_shadow_storage_t *shadow_storage,
+    uint32_t deser_flags,
+    nmo_reference_resolver_t *reference_resolver,
+    nmo_id_lookup_fn id_lookup_fn,
+    void *id_lookup_ctx,
+    size_t file_object_count,
+    nmo_object_system_deserialize_stats_t *out_stats);
 
 #ifdef __cplusplus
 }

@@ -8,6 +8,7 @@
 #include "session/nmo_session_bridge.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_runtime_result.h"
+#include "session/nmo_session_pipeline.h"
 
 #include "lauxlib.h"
 
@@ -524,7 +525,7 @@ static int nmo_lua_object_total_edge_count(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid document handle");
     }
 
-    session = nmo_session_from_document(document);
+    session = nmo_document_internal_session(document);
     graph = session != NULL ? nmo_session_get_ref_graph(session) : NULL;
     if (graph == NULL) {
         return nmo_lua_raise_last_error(state, NMO_ERR_INVALID_STATE, "Reference graph is unavailable");
@@ -551,7 +552,7 @@ static int nmo_lua_object_broken_edge_count(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid document handle");
     }
 
-    session = nmo_session_from_document(document);
+    session = nmo_document_internal_session(document);
     graph = session != NULL ? nmo_session_get_ref_graph(session) : NULL;
     if (graph == NULL) {
         return nmo_lua_raise_last_error(state, NMO_ERR_INVALID_STATE, "Reference graph is unavailable");
@@ -628,7 +629,7 @@ static int nmo_lua_object_collect_edge_list(lua_State *state,
     lua_createtable(state, 0, 0);
     ctx.table_index = lua_absindex(state, -1);
     if (all_edges) {
-        session = nmo_session_from_document(document);
+        session = nmo_document_internal_session(document);
         graph = session != NULL ? nmo_session_get_ref_graph(session) : NULL;
         if (graph == NULL) {
             status = NMO_ERR_INVALID_STATE;
@@ -728,7 +729,7 @@ static int nmo_lua_object_create_object(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid workspace handle");
     }
 
-    session = nmo_session_from_workspace(workspace);
+    session = nmo_workspace_internal_session(workspace);
     if (session == NULL) {
         return nmo_lua_raise_last_error(state, NMO_ERR_INVALID_STATE, "Workspace has no backing session");
     }
@@ -778,7 +779,7 @@ static int nmo_lua_object_copy_objects(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid workspace handle");
     }
 
-    session = nmo_session_from_workspace(workspace);
+    session = nmo_workspace_internal_session(workspace);
     if (session == NULL) {
         return nmo_lua_raise_last_error(state, NMO_ERR_INVALID_STATE, "Workspace has no backing session");
     }
@@ -818,7 +819,7 @@ static int nmo_lua_object_copy_objects_info(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid workspace handle");
     }
 
-    session = nmo_session_from_workspace(workspace);
+    session = nmo_workspace_internal_session(workspace);
     if (session == NULL) {
         return nmo_lua_raise_last_error(state, NMO_ERR_INVALID_STATE, "Workspace has no backing session");
     }
@@ -858,7 +859,7 @@ static int nmo_lua_object_destroy_objects(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid workspace handle");
     }
 
-    session = nmo_session_from_workspace(workspace);
+    session = nmo_workspace_internal_session(workspace);
     if (session == NULL) {
         return nmo_lua_raise_last_error(state, NMO_ERR_INVALID_STATE, "Workspace has no backing session");
     }
@@ -898,7 +899,7 @@ static int nmo_lua_object_destroy_objects_info(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid workspace handle");
     }
 
-    session = nmo_session_from_workspace(workspace);
+    session = nmo_workspace_internal_session(workspace);
     if (session == NULL) {
         return nmo_lua_raise_last_error(state, NMO_ERR_INVALID_STATE, "Workspace has no backing session");
     }
@@ -1020,3 +1021,4 @@ nmo_status_t nmo_lua_register_object_bindings(nmo_lua_runtime_t *runtime)
 
     return nmo_lua_runtime_register_module(runtime, &module);
 }
+

@@ -9,7 +9,7 @@
 #include "../nmo_tool_common.h"
 #include "nmo.h"
 #include "session/nmo_session.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "extension/nmo_extension_registry.h"
 #include "core/nmo_guid.h"
 #include <stdio.h>
@@ -330,7 +330,8 @@ int nmo_cmd_extension_load(int argc, char **argv, const nmo_cli_global_opts_t *g
 static int extension_info_run(nmo_cmd_ctx_t *c)
 {
     /* Get plugin diagnostics */
-    const nmo_session_plugin_diagnostics_t *diag = nmo_session_get_plugin_diagnostics(c->session);
+    const nmo_session_plugin_diagnostics_t *diag =
+        nmo_document_get_plugin_diagnostics(c->document);
     if (!diag) {
         fprintf(stderr, "Error: No plugin diagnostics available\n");
         return NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -476,7 +477,8 @@ int nmo_cmd_extension_info(int argc, char **argv, const nmo_cli_global_opts_t *g
 static int extension_check_run(nmo_cmd_ctx_t *c, bool strict_mode)
 {
     /* Get plugin diagnostics */
-    const nmo_session_plugin_diagnostics_t *diag = nmo_session_get_plugin_diagnostics(c->session);
+    const nmo_session_plugin_diagnostics_t *diag =
+        nmo_document_get_plugin_diagnostics(c->document);
     if (!diag) {
         fprintf(stderr, "Error: No plugin diagnostics available\n");
         return NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -590,3 +592,4 @@ int nmo_cmd_extension_check(int argc, char **argv, const nmo_cli_global_opts_t *
     rc = extension_check_run(&c, global ? global->strict_mode : false);
     return nmo_cmd_ctx_done(&c, rc);
 }
+

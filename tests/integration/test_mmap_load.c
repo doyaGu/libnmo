@@ -5,7 +5,7 @@
 
 #include "document/nmo_document_load.h"
 #include "session/nmo_session.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "format/nmo_header.h"
 #include "io/nmo_io_file.h"
 #include "io/nmo_io_mmap.h"
@@ -108,10 +108,10 @@ static int test_mmap_load_files(void) {
 
         int result = nmo_load_file(session, filename, &opts);
         if (result == NMO_OK) {
-            printf("é”Ÿ?SUCCESS\n");
+            printf("é”?SUCCESS\n");
             files_loaded++;
         } else {
-            printf("é”Ÿ?FAILED (error %d)\n", result);
+            printf("é”?FAILED (error %d)\n", result);
         }
 
         nmo_session_destroy(session);
@@ -132,3 +132,4 @@ static int test_mmap_load_files(void) {
 int main(void) {
     return test_mmap_load_files();
 }
+

@@ -4,10 +4,12 @@
  */
 
 #include "../test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "core/nmo_logger.h"
 #include "document/nmo_document_load.h"
 #include "document/nmo_document_save.h"
+#include "session/nmo_runtime_kernel.h"
+#include "session/nmo_session_bridge.h"
 #include "session/nmo_session.h"
 #include "document/nmo_document_compare.h"
 #include "core/nmo_error.h"
@@ -160,7 +162,7 @@ static int run_round_trip(const char *input_path) {
         return 1;
     }
 
-    int result = nmo_load_file(load1, input_path, NULL);
+    int result = nmo_session_load_file(load1, input_path, NULL, NULL);
     if (result != NMO_OK) {
         printf("  FAILED: Load failed for %s (error %d)\n", input_path, result);
         print_last_error_chain();
@@ -177,7 +179,7 @@ static int run_round_trip(const char *input_path) {
 
     nmo_save_options_t save_opts = nmo_save_options_default();
     save_opts.flags |= NMO_SAVE_REQUIRE_SCHEMA;
-    result = nmo_save_file(load1, temp_file, &save_opts);
+    result = nmo_session_save_file(load1, temp_file, &save_opts, NULL);
     if (result != NMO_OK) {
         printf("  FAILED: Save failed for %s (error %d)\n", temp_file, result);
         print_last_error_chain();
@@ -196,7 +198,7 @@ static int run_round_trip(const char *input_path) {
         return 1;
     }
 
-    result = nmo_load_file(load2, temp_file, NULL);
+    result = nmo_session_load_file(load2, temp_file, NULL, NULL);
     if (result != NMO_OK) {
         printf("  FAILED: Reload failed for %s (error %d)\n", temp_file, result);
         print_last_error_chain();
@@ -225,11 +227,25 @@ static int run_round_trip(const char *input_path) {
 
     nmo_comparison_result_t compare_result;
     nmo_comparison_result_init(&compare_result);
-    int compare_err = nmo_session_compare(
-        load1,
-        load2,
-        NMO_COMPARE_STRICT | NMO_COMPARE_VERBOSE,
-        &compare_result);
+    nmo_document_t *doc1 = NULL;
+    nmo_document_t *doc2 = NULL;
+    int compare_err = nmo_session_borrow_document(load1, &doc1);
+    if (compare_err == NMO_OK) {
+        compare_err = nmo_session_borrow_document(load2, &doc2);
+    }
+    if (compare_err == NMO_OK) {
+        compare_err = nmo_document_compare(
+            doc1,
+            doc2,
+            NMO_COMPARE_STRICT | NMO_COMPARE_VERBOSE,
+            &compare_result);
+    }
+    if (doc1 != NULL) {
+        nmo_document_destroy(doc1);
+    }
+    if (doc2 != NULL) {
+        nmo_document_destroy(doc2);
+    }
 
     int passed = (compare_err == NMO_OK) && compare_result.match;
     if (!passed && compare_err == NMO_OK) {
@@ -570,3 +586,4 @@ TEST_MAIN_BEGIN()
     /* Full-corpus round-trip runs can exceed the default 30s unit timeout. */
     REGISTER_TEST_WITH_TIMEOUT(round_trip, sample_files, 180.0);
 TEST_MAIN_END()
+

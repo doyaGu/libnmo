@@ -11,7 +11,7 @@
 #include "io/nmo_io_file.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_deserializer.h"
 #include "session/nmo_serializer.h"
 #include "session/nmo_session.h"
@@ -346,4 +346,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, header_only_profile_stops_after_header);
     REGISTER_TEST(load_options, full_profile_is_default);
 TEST_MAIN_END()
+
 

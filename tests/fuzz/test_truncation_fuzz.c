@@ -10,7 +10,7 @@
  */
 
 #include "../test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "document/nmo_document_load.h"
 #include "session/nmo_session.h"
 #include "core/nmo_error.h"
@@ -226,3 +226,4 @@ TEST(truncation_fuzz, fuzz_all_nmo_files) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(truncation_fuzz, fuzz_all_nmo_files);
 TEST_MAIN_END()
+

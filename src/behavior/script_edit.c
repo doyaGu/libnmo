@@ -1389,7 +1389,7 @@ NMO_API nmo_status_t nmo_script_edit_begin(nmo_workspace_t *workspace,
         script_edit_tx_destroy(tx);
         return rc;
     }
-    seed_session = nmo_session_from_document(tx->document);
+    seed_session = nmo_document_internal_session(tx->document);
     if (!seed_session) {
         script_edit_tx_destroy(tx);
         return NMO_ERR_INVALID_STATE;
@@ -4230,6 +4230,7 @@ NMO_API void nmo_script_edit_rollback(nmo_script_edit_tx_t *tx)
     }
     script_edit_tx_destroy(tx);
 }
+
 
 
 

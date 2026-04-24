@@ -13,9 +13,10 @@
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_runtime_kernel.h"
+#include "session/nmo_serializer.h"
 #include "document/nmo_document_save.h"
 #include "object/nmo_object_edit.h"
 #include "core/nmo_arena.h"
@@ -2272,3 +2273,4 @@ int nmo_cmd_object_set_field(int argc, char **argv,
         object_set_field_report,
         &args);
 }
+

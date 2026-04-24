@@ -5,10 +5,11 @@
 
 #include "../test_framework.h"
 #include "behavior/nmo_behavior_analyze.h"
-#include "session/nmo_context.h"
+#include "behavior/nmo_behavior_query.h"
+#include "runtime/nmo_context.h"
+#include "runtime/nmo_workspace.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
-#include "session/nmo_session_util.h"
 #include "core/nmo_array.h"
 #include "format/nmo_object.h"
 #include "object/nmo_class_ids.h"
@@ -25,23 +26,9 @@ static bool open_test_file(const char *path,
                                               errbuf, sizeof(errbuf));
 }
 
-static nmo_status_t collect_scripts_from_session(
-    nmo_session_t *session,
-    nmo_array_t *scripts)
-{
-    nmo_document_t *document = NULL;
-    nmo_status_t st = nmo_session_borrow_document(session, &document);
-    if (st != NMO_OK) {
-        return st;
-    }
-    st = nmo_behavior_query_collect_scripts(document, scripts);
-    nmo_document_destroy(document);
-    return st;
-}
-
 /* Walk behaviors looking for a pIn with source, optionally shared */
 typedef struct {
-    nmo_session_t *session;
+    nmo_workspace_t *workspace;
     nmo_object_id_t found_shared;
     nmo_object_id_t found_direct;
 } find_pin_ctx_t;
@@ -54,7 +41,8 @@ static bool find_pin_visitor(nmo_object_id_t behavior_id,
     find_pin_ctx_t *fctx = (find_pin_ctx_t *)user_data;
     if (!state) return true;
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(fctx->session);
+    nmo_document_t *document = nmo_workspace_get_document(fctx->workspace);
+    nmo_object_repository_t *repo = nmo_document_get_repository(document);
     const nmo_object_id_t *pin_ids =
         (const nmo_object_id_t *)state->in_parameters.data;
 
@@ -78,22 +66,51 @@ static bool find_pin_visitor(nmo_object_id_t behavior_id,
     return true;
 }
 
-static void find_pins(nmo_context_t *ctx, nmo_session_t *session,
+static nmo_status_t open_test_workspace(
+    const char *path,
+    nmo_context_t **out_ctx,
+    nmo_session_t **out_session,
+    nmo_document_t **out_document,
+    nmo_workspace_t **out_workspace)
+{
+    if (!open_test_file(path, out_ctx, out_session)) {
+        return NMO_ERR_CANT_OPEN_FILE;
+    }
+    nmo_status_t st = nmo_session_borrow_document(*out_session, out_document);
+    if (st != NMO_OK) {
+        nmo_session_close_with_context(*out_ctx, *out_session);
+        *out_ctx = NULL;
+        *out_session = NULL;
+        return st;
+    }
+    st = nmo_workspace_create(*out_ctx, *out_document, out_workspace);
+    if (st != NMO_OK) {
+        nmo_document_destroy(*out_document);
+        nmo_session_close_with_context(*out_ctx, *out_session);
+        *out_document = NULL;
+        *out_ctx = NULL;
+        *out_session = NULL;
+    }
+    return st;
+}
+
+static void find_pins(nmo_document_t *document, nmo_workspace_t *workspace,
                       find_pin_ctx_t *fctx)
 {
-    fctx->session = session;
+    fctx->workspace = workspace;
     fctx->found_shared = 0;
     fctx->found_direct = 0;
 
     nmo_array_t scripts;
     nmo_array_init(&scripts, sizeof(nmo_behavior_script_view_t), 32, NULL);
-    collect_scripts_from_session(session, &scripts);
+    ASSERT_EQ(NMO_OK, nmo_behavior_query_collect_scripts(document, &scripts));
 
     const nmo_behavior_script_view_t *entries =
         (const nmo_behavior_script_view_t *)scripts.data;
     for (size_t i = 0; i < scripts.count; ++i) {
-        nmo_behavior_walk(ctx, session, entries[i].script_id,
-                               find_pin_visitor, fctx);
+        ASSERT_EQ(
+            NMO_OK,
+            nmo_behavior_walk(workspace, entries[i].script_id, find_pin_visitor, fctx));
         if (fctx->found_shared != 0 && fctx->found_direct != 0) break;
     }
     nmo_array_dispose(&scripts);
@@ -105,13 +122,17 @@ TEST(param_chain, basic_chain_has_steps)
 {
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
-    if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"),
-                        &ctx, &session))
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    if (open_test_workspace(NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"),
+                            &ctx, &session, &document, &workspace) != NMO_OK)
         return;
 
     find_pin_ctx_t fctx = {0};
-    find_pins(ctx, session, &fctx);
+    find_pins(document, workspace, &fctx);
     if (fctx.found_direct == 0) {
+        nmo_workspace_destroy(workspace);
+        nmo_document_destroy(document);
         nmo_session_close_with_context(ctx, session);
         return;
     }
@@ -119,7 +140,7 @@ TEST(param_chain, basic_chain_has_steps)
     nmo_array_t chain;
     nmo_array_init(&chain, sizeof(nmo_behavior_trace_step_t), 16, NULL);
     nmo_status_t st = nmo_behavior_analyze_trace_param_chain(
-        ctx, session, fctx.found_direct, &chain, 32);
+        workspace, fctx.found_direct, &chain, 32);
     ASSERT_EQ(NMO_OK, st);
     ASSERT_TRUE(chain.count >= 2);
 
@@ -133,6 +154,8 @@ TEST(param_chain, basic_chain_has_steps)
                 steps[chain.count - 1].type == NMO_BEHAVIOR_TRACE_STEP_START);
 
     nmo_array_dispose(&chain);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -140,21 +163,27 @@ TEST(param_chain, shared_source_detected)
 {
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
-    if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"),
-                        &ctx, &session))
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    if (open_test_workspace(NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"),
+                            &ctx, &session, &document, &workspace) != NMO_OK)
         return;
 
     find_pin_ctx_t fctx = {0};
-    find_pins(ctx, session, &fctx);
+    find_pins(document, workspace, &fctx);
     if (fctx.found_shared == 0) {
+        nmo_workspace_destroy(workspace);
+        nmo_document_destroy(document);
         nmo_session_close_with_context(ctx, session);
         return;
     }
 
     nmo_array_t chain;
     nmo_array_init(&chain, sizeof(nmo_behavior_trace_step_t), 16, NULL);
-    nmo_behavior_analyze_trace_param_chain(ctx, session, fctx.found_shared,
-                                        &chain, 32);
+    ASSERT_EQ(
+        NMO_OK,
+        nmo_behavior_analyze_trace_param_chain(
+            workspace, fctx.found_shared, &chain, 32));
     ASSERT_TRUE(chain.count >= 2);
 
     /* The starting pIn has is_shared=true. When the chain continues through
@@ -173,6 +202,8 @@ TEST(param_chain, shared_source_detected)
     ASSERT_TRUE(has_shared_or_direct);
 
     nmo_array_dispose(&chain);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -180,21 +211,27 @@ TEST(param_chain, owner_id_populated)
 {
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
-    if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"),
-                        &ctx, &session))
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    if (open_test_workspace(NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"),
+                            &ctx, &session, &document, &workspace) != NMO_OK)
         return;
 
     find_pin_ctx_t fctx = {0};
-    find_pins(ctx, session, &fctx);
+    find_pins(document, workspace, &fctx);
     if (fctx.found_direct == 0) {
+        nmo_workspace_destroy(workspace);
+        nmo_document_destroy(document);
         nmo_session_close_with_context(ctx, session);
         return;
     }
 
     nmo_array_t chain;
     nmo_array_init(&chain, sizeof(nmo_behavior_trace_step_t), 16, NULL);
-    nmo_behavior_analyze_trace_param_chain(ctx, session, fctx.found_direct,
-                                        &chain, 32);
+    ASSERT_EQ(
+        NMO_OK,
+        nmo_behavior_analyze_trace_param_chain(
+            workspace, fctx.found_direct, &chain, 32));
 
     const nmo_behavior_trace_step_t *steps =
         (const nmo_behavior_trace_step_t *)chain.data;
@@ -205,6 +242,8 @@ TEST(param_chain, owner_id_populated)
     ASSERT_TRUE(any_owner);
 
     nmo_array_dispose(&chain);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -212,24 +251,32 @@ TEST(param_chain, max_depth_respected)
 {
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
-    if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"),
-                        &ctx, &session))
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    if (open_test_workspace(NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo"),
+                            &ctx, &session, &document, &workspace) != NMO_OK)
         return;
 
     find_pin_ctx_t fctx = {0};
-    find_pins(ctx, session, &fctx);
+    find_pins(document, workspace, &fctx);
     if (fctx.found_direct == 0) {
+        nmo_workspace_destroy(workspace);
+        nmo_document_destroy(document);
         nmo_session_close_with_context(ctx, session);
         return;
     }
 
     nmo_array_t chain;
     nmo_array_init(&chain, sizeof(nmo_behavior_trace_step_t), 16, NULL);
-    nmo_behavior_analyze_trace_param_chain(ctx, session, fctx.found_direct,
-                                        &chain, 1);
+    ASSERT_EQ(
+        NMO_OK,
+        nmo_behavior_analyze_trace_param_chain(
+            workspace, fctx.found_direct, &chain, 1));
     ASSERT_TRUE(chain.count <= 1);
 
     nmo_array_dispose(&chain);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_session_close_with_context(ctx, session);
 }
 
@@ -239,3 +286,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(param_chain, owner_id_populated);
     REGISTER_TEST(param_chain, max_depth_respected);
 TEST_MAIN_END()
+

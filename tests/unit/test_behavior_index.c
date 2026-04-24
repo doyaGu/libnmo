@@ -5,9 +5,11 @@
 
 #include "../test_framework.h"
 #include "behavior/nmo_behavior_analyze.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
+#include "runtime/nmo_workspace.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_chunk_api.h"
@@ -63,6 +65,8 @@ TEST(beh_idx, build_from_file)
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_TRUE(ctx != NULL);
     nmo_session_t *session = nmo_session_create(ctx);
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
     ASSERT_TRUE(session != NULL);
 
     int load_ok = nmo_session_load_file(session, "data/Ballance/Gameplay.nmo", NULL, NULL);
@@ -77,7 +81,11 @@ TEST(beh_idx, build_from_file)
     nmo_behavior_index_t *idx = nmo_behavior_index_create(arena);
     ASSERT_TRUE(idx != NULL);
 
-    nmo_status_t st = nmo_behavior_index_build(idx, ctx, session);
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
+    ASSERT_NOT_NULL(workspace);
+
+    nmo_status_t st = nmo_behavior_index_build(idx, workspace);
     ASSERT_EQ(st, NMO_OK);
 
     /* Should have indexed many entries */
@@ -87,6 +95,7 @@ TEST(beh_idx, build_from_file)
     /* Find a known IO port or parameter (we don't know exact IDs but
      * verify that at least some lookups succeed from the file's behaviors) */
 
+    nmo_workspace_destroy(workspace);
     nmo_behavior_index_destroy(idx);
     nmo_arena_destroy(arena);
     nmo_session_destroy(session);
@@ -98,6 +107,8 @@ TEST(beh_idx, build_reports_index_insert_oom)
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_TRUE(ctx != NULL);
     nmo_session_t *session = nmo_session_create(ctx);
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
     ASSERT_TRUE(session != NULL);
 
     int load_ok = nmo_session_load_file(session, "data/Ballance/Gameplay.nmo", NULL, NULL);
@@ -116,9 +127,14 @@ TEST(beh_idx, build_reports_index_insert_oom)
     nmo_behavior_index_t *idx = nmo_behavior_index_create(arena);
     ASSERT_TRUE(idx != NULL);
 
-    nmo_status_t st = nmo_behavior_index_build(idx, ctx, session);
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
+    ASSERT_NOT_NULL(workspace);
+
+    nmo_status_t st = nmo_behavior_index_build(idx, workspace);
     ASSERT_EQ(NMO_ERR_NOMEM, st);
 
+    nmo_workspace_destroy(workspace);
     nmo_behavior_index_destroy(idx);
     nmo_arena_destroy(arena);
     nmo_session_destroy(session);
@@ -278,18 +294,18 @@ TEST(beh_idx, invalidated_after_create)
         return;
     }
 
-    /* Get initial index ‚Ä?triggers build */
+    /* Get initial index ÈóÅ?triggers build */
     nmo_behavior_index_t *idx1 = nmo_session_get_behavior_index(session);
     ASSERT_NOT_NULL(idx1);
     size_t count1 = nmo_behavior_index_count(idx1);
 
-    /* Create an object ‚Ä?this should invalidate the index */
+    /* Create an object ÈóÅ?this should invalidate the index */
     nmo_object_id_t new_id = 0;
     ASSERT_EQ(NMO_OK,
         nmo_session_create_object(session, NMO_CID_OBJECT, "test-obj",
             (nmo_guid_t){0, 0}, &new_id, NULL));
 
-    /* Get index again ‚Ä?should still be valid after lazy rebuild */
+    /* Get index again ÈóÅ?should still be valid after lazy rebuild */
     nmo_behavior_index_t *idx2 = nmo_session_get_behavior_index(session);
     ASSERT_NOT_NULL(idx2);
     ASSERT_EQ(count1, nmo_behavior_index_count(idx2));
@@ -356,3 +372,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(beh_idx, invalidated_after_create);
     REGISTER_TEST(beh_idx, invalidated_after_delete);
 TEST_MAIN_END()
+

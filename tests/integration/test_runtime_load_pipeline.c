@@ -4,9 +4,11 @@
 #include "document/nmo_document_save.h"
 #include "object/nmo_object_query.h"
 #include "runtime/nmo_workspace.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
+#include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
+#include "../../src/runtime/runtime_internal.h"
 
 #include <stdio.h>
 
@@ -23,7 +25,7 @@ TEST(runtime_load_pipeline, save_then_load_via_execute_path) {
     ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, writer_document, &writer_workspace));
     ASSERT_NOT_NULL(writer_workspace);
 
-    nmo_session_t *writer = nmo_session_from_workspace(writer_workspace);
+    nmo_session_t *writer = nmo_workspace_internal_session(writer_workspace);
     ASSERT_NOT_NULL(writer);
 
     nmo_object_id_t id = 0;
@@ -36,7 +38,7 @@ TEST(runtime_load_pipeline, save_then_load_via_execute_path) {
 
     nmo_document_t *reader_document = NULL;
     nmo_workspace_t *reader_workspace = NULL;
-    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, temp_file, &reader_document));
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, temp_file, NULL, &reader_document));
     ASSERT_NOT_NULL(reader_document);
     ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, reader_document, &reader_workspace));
     ASSERT_NOT_NULL(reader_workspace);
@@ -56,4 +58,6 @@ TEST(runtime_load_pipeline, save_then_load_via_execute_path) {
 TEST_MAIN_BEGIN()
 REGISTER_TEST(runtime_load_pipeline, save_then_load_via_execute_path);
 TEST_MAIN_END()
+
+
 

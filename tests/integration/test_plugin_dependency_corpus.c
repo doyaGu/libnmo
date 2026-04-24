@@ -7,7 +7,7 @@
 
 #include "document/nmo_document_load.h"
 #include "core/nmo_guid.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_deserializer.h"
 #include "session/nmo_session.h"
 
@@ -218,3 +218,4 @@ TEST(plugin_dependency_corpus, all_reference_files_resolve_plugin_dependencies)
 TEST_MAIN_BEGIN()
     REGISTER_TEST(plugin_dependency_corpus, all_reference_files_resolve_plugin_dependencies);
 TEST_MAIN_END()
+

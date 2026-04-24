@@ -5,7 +5,7 @@
 
 #include "test_framework.h"
 #include "session/nmo_builder.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "format/nmo_object.h"
 #include "object/nmo_class_ids.h"
@@ -162,3 +162,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(builder, add_object_rejects_reserved_ids);
     REGISTER_TEST(builder, add_object_ex_writes_class_and_name);
 TEST_MAIN_END()
+

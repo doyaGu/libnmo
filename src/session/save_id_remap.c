@@ -3,8 +3,9 @@
  * @brief Save-time runtime ID to file ID remap planning.
  */
 
-#include "session/nmo_save_id_remap.h"
+#include "session/nmo_serializer.h"
 
+#include "format/nmo_id_remap.h"
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
 

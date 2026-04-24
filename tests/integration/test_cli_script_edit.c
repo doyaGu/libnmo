@@ -6,7 +6,7 @@
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "yyjson.h"
 
@@ -3675,3 +3675,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_operation_crud_roundtrip);
     REGISTER_TEST(cli, script_operation_rejects_invalid_signature);
 TEST_MAIN_END()
+

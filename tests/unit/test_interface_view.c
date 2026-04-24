@@ -1,5 +1,5 @@
 #include "test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
@@ -187,3 +187,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(interface_view, summarizes_root_and_nested_behaviors_without_layout_access);
     REGISTER_TEST(interface_view, missing_interface_returns_not_found_and_clears_view);
 TEST_MAIN_END()
+

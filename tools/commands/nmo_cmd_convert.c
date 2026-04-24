@@ -11,10 +11,12 @@
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
 #include "nmo.h"
+#include "session/nmo_deserializer.h"
+#include "session/nmo_serializer.h"
 #include "session/nmo_session.h"
 #include "session/nmo_runtime_kernel.h"
 #include "document/nmo_document_save.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_parse.h"
 #include "object/nmo_object_repository.h"
@@ -340,7 +342,7 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
     if (rc) return rc;
 
     /* Get file info */
-    nmo_file_info_t info = nmo_session_get_file_info(c.session);
+    nmo_file_info_t info = nmo_document_get_file_info(c.document);
 
     /* If no output, just show version info */
     if (!output_path) {
@@ -1209,3 +1211,4 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     free(col.objects);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
+

@@ -12,6 +12,8 @@
 #include "runtime/nmo_workspace.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
+#include "session/nmo_session_pipeline.h"
+#include "../../src/runtime/runtime_internal.h"
 #include "type/nmo_reflection.h"
 
 #include <stdalign.h>
@@ -84,7 +86,7 @@ static bool import_api_fixture_init(import_api_fixture_t *fixture)
         memset(fixture, 0, sizeof(*fixture));
         return false;
     }
-    fixture->session = nmo_session_from_workspace(fixture->workspace);
+    fixture->session = nmo_workspace_internal_session(fixture->workspace);
     fixture->registry = nmo_context_get_type_registry(fixture->ctx);
     if (fixture->session == NULL || fixture->registry == NULL) {
         nmo_workspace_destroy(fixture->workspace);
@@ -759,4 +761,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_import_api, failed_create_missing_import_does_not_leave_object_or_use_session_arena);
     REGISTER_TEST(object_import_api, dry_run_existing_pointer_array_does_not_use_session_arena);
 TEST_MAIN_END()
+
 

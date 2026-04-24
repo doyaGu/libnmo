@@ -1,5 +1,5 @@
 #include "test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
@@ -74,7 +74,7 @@ TEST(safe_detach_validation, rejects_missing_remap_hook) {
     ASSERT_NOT_NULL(group_obj);
     set_group_members(group_obj, &member_id, 1);
 
-    /* Delete member with SAFE_DETACH + STRICT â€” should fail validation */
+    /* Delete member with SAFE_DETACH + STRICT â€?should fail validation */
     nmo_runtime_report_t report = {0};
     int result = nmo_session_destroy_objects(
         session, &member_id, 1,
@@ -118,7 +118,7 @@ TEST(safe_detach_validation, accepts_with_remap_hook) {
     ASSERT_NOT_NULL(group_obj);
     set_group_members(group_obj, &member_id, 1);
 
-    /* CKGroup has remap_dependencies by default â€” should succeed */
+    /* CKGroup has remap_dependencies by default â€?should succeed */
     nmo_runtime_report_t report = {0};
     int result = nmo_session_destroy_objects(
         session, &member_id, 1,
@@ -170,3 +170,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(safe_detach_validation, accepts_with_remap_hook);
     REGISTER_TEST(safe_detach_validation, no_referrers_succeeds);
 TEST_MAIN_END()
+

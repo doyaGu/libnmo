@@ -1,5 +1,6 @@
 #include "session/nmo_runtime_result.h"
 
+#include "../runtime/runtime_internal.h"
 #include "core/nmo_arena.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"

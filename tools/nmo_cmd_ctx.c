@@ -7,7 +7,7 @@
 
 #include "nmo_tool_common.h"
 
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session_bridge.h"
 
 #include <stdlib.h>
@@ -283,5 +283,6 @@ int nmo_cmd_ctx_json_end(nmo_cmd_ctx_t *c, yyjson_mut_doc *doc,
         doc, data, cmd_name, c->file_path, c->out, pretty);
     return ok ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_INTERNAL_ERROR;
 }
+
 
 

@@ -9,10 +9,12 @@
 #include "lua/nmo_lua_bindings.h"
 #include "lua/nmo_lua_handles.h"
 #include "lua/nmo_lua_module.h"
+#include "object/nmo_object_query.h"
 #include "object/nmo_object_repository.h"
 #include "runtime/nmo_workspace.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
+#include "../runtime/runtime_internal.h"
 
 typedef struct nmo_lua_object_handle_data {
     nmo_document_t *document;
@@ -100,3 +102,4 @@ void nmo_lua_push_interface_view(lua_State *state,
 lua_State *nmo_lua_runtime_state(nmo_lua_runtime_t *runtime);
 
 #endif /* NMO_LUA_BINDINGS_INTERNAL_H */
+

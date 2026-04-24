@@ -7,7 +7,7 @@
 #include "nmo.h"
 #include "behavior/nmo_behavior_view.h"
 #include "runtime/nmo_workspace.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
 #include "type/nmo_type_system.h"
@@ -285,7 +285,7 @@ TEST(param_value, decode_string) {
 
     char buf[256];
     nmo_status_t st = nmo_behavior_param_value_to_string(&p, reg, NULL, buf, sizeof(buf));
-    /* String type may succeed or fall through to hex éˆ¥?either is acceptable */
+    /* String type may succeed or fall through to hex éˆ?either is acceptable */
     ASSERT_EQ(NMO_OK, st);
     ASSERT_TRUE(buf[0] != '\0');
 
@@ -466,3 +466,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(param_value, type_name_unknown);
     REGISTER_TEST(param_value, null_args);
 TEST_MAIN_END()
+

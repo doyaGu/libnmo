@@ -18,9 +18,10 @@
 #include "nmo.h"
 #include "chunk/nmo_chunk_inspect.h"
 #include "document/nmo_document_save.h"
+#include "session/nmo_serializer.h"
 #include "session/nmo_session.h"
 #include "session/nmo_runtime_kernel.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "core/nmo_arena.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"
@@ -665,7 +666,8 @@ static int nmo_cmd_validate_resources_in_session(nmo_cmd_ctx_t *c, int argc, cha
     (void)argc;
     (void)argv;
 
-    const nmo_session_plugin_diagnostics_t *diag = nmo_session_get_plugin_diagnostics(c->session);
+    const nmo_session_plugin_diagnostics_t *diag =
+        nmo_document_get_plugin_diagnostics(c->document);
 
     size_t error_count = 0;
     size_t warning_count = 0;
@@ -1217,3 +1219,4 @@ static int nmo_cmd_validate_orphans_in_session(nmo_cmd_ctx_t *ctx, int argc, cha
     }
     return validate_orphans_run_in_ctx(ctx, argc, argv, &global, false, false);
 }
+

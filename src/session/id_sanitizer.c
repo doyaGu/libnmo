@@ -1,11 +1,13 @@
-﻿/**
+/**
  * @file id_sanitizer.c
  * @brief ID sanitization pipeline implementation (Phase 1.1)
  */
 
-#include "session/nmo_id_sanitizer.h"
+#include "session/nmo_session_pipeline.h"
+#include "core/nmo_arena.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_hash.h"
+#include "format/nmo_object.h"
 #include <stddef.h>
 #include <stdalign.h>
 
@@ -86,7 +88,7 @@ void nmo_id_sanitizer_reset(nmo_id_sanitizer_t *sanitizer) {
 }
 
 uint32_t nmo_id_sanitize(uint32_t raw_id) {
-    return raw_id & ~NMO_ID_REF_MASK;
+    return raw_id & ~NMO_OBJECT_REFERENCE_FLAG;
 }
 
 nmo_status_t nmo_id_sanitizer_register(nmo_id_sanitizer_t *sanitizer,

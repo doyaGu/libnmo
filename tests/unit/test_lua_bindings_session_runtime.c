@@ -26,22 +26,13 @@ TEST(lua_bindings_session_runtime, session_module_is_advanced_only_and_keeps_run
     assert_lua_ok(
         runtime,
         "local context = require('nmo.context')\n"
-        "local document = require('nmo.document')\n"
         "local session = require('nmo.session')\n"
         "local ctx = context.create()\n"
-        "local doc = document.load_file(ctx, '" NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo") "')\n"
-        "local s = session.from_document(doc)\n"
+        "local s = session.create(ctx)\n"
         "assert(s ~= nil)\n"
         "assert(type(session.index_build_flags.class) == 'number')\n"
         "assert(type(session.query_index_flags.all) == 'number')\n"
-        "assert(session.is_partial_load(s) == false)\n"
-        "assert(session.has_materialized_load_state(s) == true)\n"
-        "local stats = session.runtime_load_stats(s)\n"
-        "assert(type(stats) == 'table')\n"
-        "assert(type(stats.total_objects) == 'number')\n"
-        "assert(type(session.plugin_diagnostics(s)) == 'table' or session.plugin_diagnostics(s) == nil)\n"
-        "assert(type(session.behavior_interface_diagnostics(s)) == 'table')\n"
-        "assert(type(session.included_files(s)) == 'table')\n");
+        "assert(type(session.behavior_interface_diagnostics(s)) == 'table' or session.behavior_interface_diagnostics(s) == nil)\n");
 
     nmo_lua_runtime_destroy(runtime);
 }
@@ -56,11 +47,20 @@ TEST(lua_bindings_session_runtime, removed_canonical_session_helpers_are_absent)
         runtime,
         "local session = require('nmo.session')\n"
         "assert(session.create ~= nil)\n"
-        "assert(session.from_document ~= nil)\n"
-        "assert(session.from_workspace ~= nil)\n"
+        "assert(session.from_document == nil)\n"
+        "assert(session.from_workspace == nil)\n"
         "assert(session.create_context == nil)\n"
         "assert(session.load_file == nil)\n"
         "assert(session.save_file == nil)\n"
+        "assert(session.is_partial_load == nil)\n"
+        "assert(session.has_materialized_load_state == nil)\n"
+        "assert(session.runtime_load_stats == nil)\n"
+        "assert(session.plugin_diagnostics == nil)\n"
+        "assert(session.included_files == nil)\n"
+        "assert(session.add_included_file == nil)\n"
+        "assert(session.replace_included_file == nil)\n"
+        "assert(session.set_included_file_owners == nil)\n"
+        "assert(session.remove_included_file == nil)\n"
         "assert(session.object_count == nil)\n"
         "assert(session.find_object_by_name == nil)\n"
         "assert(session.query_first == nil)\n"
@@ -75,7 +75,7 @@ TEST(lua_bindings_session_runtime, removed_canonical_session_helpers_are_absent)
     nmo_lua_runtime_destroy(runtime);
 }
 
-TEST(lua_bindings_session_runtime, runtime_module_still_accepts_advanced_session_handles)
+TEST(lua_bindings_session_runtime, runtime_module_keeps_advanced_session_entrypoints)
 {
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
@@ -84,17 +84,15 @@ TEST(lua_bindings_session_runtime, runtime_module_still_accepts_advanced_session
     assert_lua_ok(
         runtime,
         "local context = require('nmo.context')\n"
-        "local document = require('nmo.document')\n"
         "local session = require('nmo.session')\n"
-        "local object = require('nmo.object')\n"
         "local runtime_mod = require('nmo.runtime')\n"
         "local ctx = context.create()\n"
-        "local doc = document.load_file(ctx, '" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "')\n"
-        "local s = session.from_document(doc)\n"
-        "local cam = object.find_object_by_name(doc, 'InGameCam')\n"
-        "local ids = runtime_mod.preview_destroy(s, { cam })\n"
-        "assert(type(ids) == 'table')\n"
-        "assert(#ids >= 1)\n");
+        "local s = session.create(ctx)\n"
+        "assert(type(runtime_mod.preview_destroy) == 'function')\n"
+        "assert(type(runtime_mod.preview_destroy_info) == 'function')\n"
+        "assert(type(runtime_mod.preview_destroy_ids) == 'function')\n"
+        "assert(type(runtime_mod.request_flags) == 'table')\n"
+        "assert(s ~= nil)\n");
 
     nmo_lua_runtime_destroy(runtime);
 }
@@ -105,5 +103,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(lua_bindings_session_runtime,
                   removed_canonical_session_helpers_are_absent);
     REGISTER_TEST(lua_bindings_session_runtime,
-                  runtime_module_still_accepts_advanced_session_handles);
+                  runtime_module_keeps_advanced_session_entrypoints);
 TEST_MAIN_END()

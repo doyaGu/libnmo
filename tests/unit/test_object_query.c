@@ -10,9 +10,11 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
+#include "session/nmo_session_pipeline.h"
+#include "../../src/runtime/runtime_internal.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_arena.h"
@@ -621,7 +623,7 @@ TEST(object_query, owner_query_api_tracks_direct_repository_mutation)
     ASSERT_NOT_NULL(ctx);
     nmo_document_t *document = nmo_document_create(ctx);
     ASSERT_NOT_NULL(document);
-    nmo_session_t *session = nmo_session_from_document(document);
+    nmo_session_t *session = nmo_document_internal_session(document);
     ASSERT_NOT_NULL(session);
     nmo_object_repository_t *repo = nmo_document_get_repository(document);
     ASSERT_NOT_NULL(repo);
@@ -674,7 +676,7 @@ TEST(object_query, owner_query_api_tracks_type_guid_mutation)
     ASSERT_NOT_NULL(ctx);
     nmo_document_t *document = nmo_document_create(ctx);
     ASSERT_NOT_NULL(document);
-    nmo_session_t *session = nmo_session_from_document(document);
+    nmo_session_t *session = nmo_document_internal_session(document);
     ASSERT_NOT_NULL(session);
     nmo_object_repository_t *repo = nmo_document_get_repository(document);
     ASSERT_NOT_NULL(repo);
@@ -983,4 +985,6 @@ REGISTER_TEST(object_query, stable_object_iterator_facade);
 REGISTER_TEST(object_query, stable_object_iterator_exact_class_facade);
 REGISTER_TEST(object_query, stable_object_iterator_tracks_repository_mutation);
 TEST_MAIN_END()
+
+
 

@@ -313,6 +313,7 @@ set(NMO_RUNTIME_SOURCES
 
 # Document layer sources
 set(NMO_DOCUMENT_SOURCES
+    src/document/document_file_state.c
     src/document/document_load.c
     src/document/document_save.c
     src/document/document_perf_stats.c
@@ -445,6 +446,13 @@ install(DIRECTORY include/
     PATTERN "*.h"
     PATTERN "app/*" EXCLUDE
     PATTERN "schema" EXCLUDE
+    PATTERN "session/nmo_context.h" EXCLUDE
+    PATTERN "session/nmo_object_system.h" EXCLUDE
+    PATTERN "session/nmo_id_sanitizer.h" EXCLUDE
+    PATTERN "session/nmo_runtime_delete.h" EXCLUDE
+    PATTERN "session/nmo_runtime_ref_remap.h" EXCLUDE
+    PATTERN "session/nmo_save_id_remap.h" EXCLUDE
+    PATTERN "session/nmo_session_util.h" EXCLUDE
     PATTERN "session/nmo_session_internal.h" EXCLUDE
     PATTERN "session/nmo_reference_resolver.h" EXCLUDE
     PATTERN "session/nmo_ref_graph.h" EXCLUDE

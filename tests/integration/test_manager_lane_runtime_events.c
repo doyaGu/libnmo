@@ -1,5 +1,5 @@
 #include "test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -116,3 +116,4 @@ TEST(manager_lane_runtime_events, manager_chunk_roundtrip_and_event_order) {
 TEST_MAIN_BEGIN()
 REGISTER_TEST(manager_lane_runtime_events, manager_chunk_roundtrip_and_event_order);
 TEST_MAIN_END()
+

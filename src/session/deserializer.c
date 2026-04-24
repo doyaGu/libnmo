@@ -5,14 +5,15 @@
 
 #include "session/nmo_deserializer.h"
 #include "session/nmo_id_mapping.h"
+#include "../runtime/runtime_internal.h"
 #include "session_internal.h"
 
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_runtime_kernel.h"
-#include "session/nmo_object_system.h"
-#include "session/nmo_id_sanitizer.h"
+#include "session/nmo_deserializer.h"
+#include "session/nmo_session_pipeline.h"
 #include "session/nmo_reference_resolver.h"
 
 /* Plugin dependency checking uses extension layer (diagnostic only).
@@ -1235,3 +1236,4 @@ void nmo_deserializer_destroy(nmo_deserializer_t *ds)
     /* The deserializer struct itself is arena-allocated (session arena),
      * so it will be freed when the session is destroyed. */
 }
+

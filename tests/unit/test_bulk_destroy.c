@@ -1,5 +1,5 @@
 #include "test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
@@ -106,3 +106,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(bulk_destroy, take_and_destroy_all);
     REGISTER_TEST(bulk_destroy, session_destroy_objects_bulk);
 TEST_MAIN_END()
+

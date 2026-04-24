@@ -14,7 +14,7 @@
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_parse.h"
@@ -886,3 +886,4 @@ int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *gl
         data_set_cell_report,
         &args);
 }
+

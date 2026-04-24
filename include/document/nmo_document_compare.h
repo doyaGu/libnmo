@@ -12,8 +12,6 @@
 #define NMO_COMPARISON_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
 #define NMO_COMPARISON_API_TIER NMO_API_TIER_ADVANCED_C
 
-typedef struct nmo_session nmo_session_t;
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -127,19 +125,19 @@ typedef struct nmo_comparison_view {
 
 NMO_API void nmo_comparison_result_init(nmo_comparison_result_t *result);
 
-NMO_API nmo_status_t nmo_session_compare(const nmo_session_t *session1,
-                                         const nmo_session_t *session2,
-                                         nmo_compare_flags_t flags,
-                                         nmo_comparison_result_t *result);
-
-NMO_API int nmo_session_compare_file_info(const nmo_session_t *session1,
-                                          const nmo_session_t *session2,
+NMO_API nmo_status_t nmo_document_compare(const nmo_document_t *document1,
+                                          const nmo_document_t *document2,
+                                          nmo_compare_flags_t flags,
                                           nmo_comparison_result_t *result);
 
-NMO_API int nmo_session_compare_objects(const nmo_session_t *session1,
-                                        const nmo_session_t *session2,
-                                        nmo_compare_flags_t flags,
-                                        nmo_comparison_result_t *result);
+NMO_API int nmo_document_compare_file_info(const nmo_document_t *document1,
+                                           const nmo_document_t *document2,
+                                           nmo_comparison_result_t *result);
+
+NMO_API int nmo_document_compare_objects(const nmo_document_t *document1,
+                                         const nmo_document_t *document2,
+                                         nmo_compare_flags_t flags,
+                                         nmo_comparison_result_t *result);
 
 NMO_API void nmo_comparison_result_format_report(nmo_comparison_result_t *result);
 
@@ -153,8 +151,8 @@ NMO_API nmo_status_t nmo_comparison_result_collect_stats(
     nmo_comparison_result_stats_t *out_stats);
 
 NMO_API nmo_status_t nmo_comparison_build_view(
-    const nmo_session_t *session1,
-    const nmo_session_t *session2,
+    const nmo_document_t *document1,
+    const nmo_document_t *document2,
     uint32_t flags,
     nmo_comparison_view_t *out_view);
 

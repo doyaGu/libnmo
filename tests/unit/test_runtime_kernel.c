@@ -1,11 +1,11 @@
 #include "test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_group_schemas.h"
-#include "session/nmo_object_system.h"
+#include "session/nmo_deserializer.h"
 #include "session/nmo_id_mapping.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"
@@ -566,3 +566,4 @@ REGISTER_TEST(runtime_kernel, delete_safe_detach_prunes_group_references);
 REGISTER_TEST(runtime_kernel, delete_cascade_removes_referencing_group);
 REGISTER_TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_finalize);
 TEST_MAIN_END()
+

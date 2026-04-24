@@ -1,6 +1,6 @@
 #include "nmo_tool_session.h"
 
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "core/nmo_error.h"
 
@@ -193,3 +193,4 @@ void nmo_tool_close_session(nmo_context_t *ctx, nmo_session_t *session) {
     if (ctx)
         nmo_context_release(ctx);
 }
+

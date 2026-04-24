@@ -4,7 +4,7 @@
 #include "behavior/nmo_script_edit.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
 #include "runtime/nmo_workspace.h"
@@ -481,4 +481,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(script_edit_interface,
                   canonicalize_converts_raw_interface_ids_to_runtime_ids);
 TEST_MAIN_END()
+
 

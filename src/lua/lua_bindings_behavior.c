@@ -101,7 +101,7 @@ static nmo_session_t *nmo_lua_behavior_execution_session(
 {
     nmo_workspace_t *workspace =
         nmo_behavior_execution_workspace(execution);
-    return workspace != NULL ? nmo_session_from_workspace(workspace) : NULL;
+    return workspace != NULL ? nmo_workspace_internal_session(workspace) : NULL;
 }
 
 static void nmo_lua_behavior_push_view(lua_State *state,
@@ -2613,5 +2613,6 @@ nmo_status_t nmo_lua_register_behavior_bindings(nmo_lua_runtime_t *runtime)
 
     return nmo_lua_runtime_register_module(runtime, &module);
 }
+
 
 

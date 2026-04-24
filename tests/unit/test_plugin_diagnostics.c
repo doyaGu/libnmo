@@ -4,7 +4,7 @@
  */
 
 #include "../test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
 #include "app/nmo_plugin.h"
@@ -121,3 +121,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(plugin_diagnostics, missing_plugin_sets_status_flags);
     REGISTER_TEST(plugin_diagnostics, outdated_plugin_marks_version);
 TEST_MAIN_END()
+

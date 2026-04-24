@@ -16,8 +16,10 @@
  */
 
 #include "../test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_runtime_kernel.h"
+#include "session/nmo_session_bridge.h"
 #include "document/nmo_document_compare.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
@@ -592,7 +594,23 @@ TEST(object_layer_acceptance, deep_validation) {
                     /* Compare using comparison API */
                     nmo_comparison_result_t cmp;
                     nmo_comparison_result_init(&cmp);
-                    nmo_session_compare(session1, session2, NMO_COMPARE_CHUNKS, &cmp);
+                    nmo_document_t *doc1 = NULL;
+                    nmo_document_t *doc2 = NULL;
+                    nmo_status_t cmp_status = nmo_session_borrow_document(session1, &doc1);
+                    if (cmp_status == NMO_OK) {
+                        cmp_status = nmo_session_borrow_document(session2, &doc2);
+                    }
+                    if (cmp_status == NMO_OK) {
+                        cmp_status = nmo_document_compare(
+                            doc1, doc2, NMO_COMPARE_CHUNKS, &cmp);
+                    }
+                    if (doc1 != NULL) {
+                        nmo_document_destroy(doc1);
+                    }
+                    if (doc2 != NULL) {
+                        nmo_document_destroy(doc2);
+                    }
+                    ASSERT_EQ(NMO_OK, cmp_status);
 
                     rt_matched = cmp.objects_matched;
                     rt_mismatched = cmp.objects_compared - cmp.objects_matched;
@@ -678,3 +696,4 @@ TEST(object_layer_acceptance, deep_validation) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_layer_acceptance, deep_validation);
 TEST_MAIN_END()
+

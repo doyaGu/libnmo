@@ -2,8 +2,9 @@
 
 #include "nmo_cmd_ctx.h"
 
-#include "document/nmo_document_save.h"
 #include "core/nmo_error.h"
+#include "session/nmo_runtime_kernel.h"
+#include "session/nmo_serializer.h"
 
 #include <stdio.h>
 
@@ -27,7 +28,7 @@ int nmo_cli_save_session(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    int save_rc = nmo_save_file(session, output_path, save_opts);
+    int save_rc = nmo_session_save_file(session, output_path, save_opts, NULL);
     if (save_rc != NMO_OK) {
         fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_rc));
         return NMO_CLI_EXIT_IO_ERROR;

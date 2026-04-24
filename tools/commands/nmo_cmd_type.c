@@ -10,7 +10,7 @@
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "type/nmo_type_system.h"
 
 #include <stdio.h>
@@ -472,3 +472,4 @@ int nmo_cmd_type_class_tree(int argc, char **argv, const nmo_cli_global_opts_t *
     nmo_context_release(ctx);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
+

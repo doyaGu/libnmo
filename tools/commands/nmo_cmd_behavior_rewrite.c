@@ -18,6 +18,7 @@
 #include "core/nmo_guid.h"
 #include "core/nmo_parse.h"
 #include "format/nmo_object.h"
+#include "session/nmo_serializer.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/nmo_class_ids.h"

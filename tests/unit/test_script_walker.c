@@ -10,7 +10,7 @@
 #include "test_framework.h"
 #include "nmo.h"
 #include "behavior/nmo_behavior_analyze.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
 #include "core/nmo_allocator.h"
@@ -176,7 +176,7 @@ TEST(script_walker, walk_with_file) {
     const nmo_behavior_script_view_t *entry =
         (const nmo_behavior_script_view_t *)nmo_array_get(&scripts, 0);
 
-    /* Walk the first script éˆ¥?NULL visitor should fail */
+    /* Walk the first script éˆ?NULL visitor should fail */
     nmo_status_t st = nmo_behavior_walk(
         ctx, session, entry->script_id,
         /* visitor: */ NULL, NULL);
@@ -234,3 +234,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(script_walker, walk_with_file);
     REGISTER_TEST(script_walker, dump_text_with_file);
 TEST_MAIN_END()
+

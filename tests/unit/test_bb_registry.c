@@ -5,7 +5,7 @@
 
 #include "../test_framework.h"
 #include "behavior/nmo_behavior_registry.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_arena.h"
 
@@ -144,3 +144,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(bb_reg, rejects_nonzero_count_with_null_array);
     REGISTER_TEST(bb_reg, remove_entry);
 TEST_MAIN_END()
+

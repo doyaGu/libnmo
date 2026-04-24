@@ -17,11 +17,10 @@
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
-#include "session/nmo_session_util.h"
 
 #include <stdint.h>
 
@@ -1195,3 +1194,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(beh_rewrite, fold_analyze_rejects_anchor_outside_selection);
     REGISTER_TEST(beh_rewrite, fold_analyze_rejects_parent_in_selected_nodes);
 TEST_MAIN_END()
+

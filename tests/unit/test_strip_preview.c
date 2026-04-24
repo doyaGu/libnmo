@@ -1,5 +1,5 @@
 #include "test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "core/nmo_arena.h"
 #include <string.h>
@@ -292,3 +292,4 @@ REGISTER_TEST(strip_preview, multiple_direct_ids);
 REGISTER_TEST(strip_preview, nonexistent_id_skipped_without_strict);
 REGISTER_TEST(strip_preview, nonexistent_id_strict_returns_error);
 TEST_MAIN_END()
+

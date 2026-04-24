@@ -1,5 +1,5 @@
 #include "test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
 #include "object/nmo_class_ids.h"
@@ -89,7 +89,7 @@ TEST(ref_graph_cache, invalidated_after_create) {
     nmo_ref_graph_stats_t stats1 = {0};
     nmo_ref_graph_get_stats(g1, &stats1);
 
-    /* Create a group that references the member â€” invalidates the cache */
+    /* Create a group that references the member â€?invalidates the cache */
     nmo_object_id_t group_id = 0;
     ASSERT_EQ(NMO_OK,
         nmo_session_create_object(session, NMO_CID_GROUP, "group",
@@ -154,7 +154,7 @@ TEST(ref_graph_cache, invalidated_after_delete) {
     nmo_array_extend(&state->object_ids, 1, (void **)&ids);
     ids[0] = member_id;
 
-    /* Force graph build â€” should have at least 1 edge (groupâ†’member) */
+    /* Force graph build â€?should have at least 1 edge (groupâ†’member) */
     nmo_session_invalidate_ref_graph(session);
     nmo_ref_graph_t *g1 = nmo_session_get_ref_graph(session);
     ASSERT_NOT_NULL(g1);
@@ -162,7 +162,7 @@ TEST(ref_graph_cache, invalidated_after_delete) {
     nmo_ref_graph_get_stats(g1, &stats1);
     ASSERT_TRUE(stats1.total_edges > 0);
 
-    /* Delete the group (the edge source) â€” invalidates the cache */
+    /* Delete the group (the edge source) â€?invalidates the cache */
     nmo_runtime_report_t report = {0};
     ASSERT_EQ(NMO_OK,
         nmo_session_destroy_objects(session, &group_id, 1,
@@ -251,3 +251,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(ref_graph_cache, invalidated_after_delete);
     REGISTER_TEST(ref_graph_cache, post_delete_event_sees_invalidated_graph);
 TEST_MAIN_END()
+

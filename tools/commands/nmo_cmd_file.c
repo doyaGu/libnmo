@@ -13,9 +13,12 @@
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
+#include "document/nmo_document_load.h"
 #include "document/nmo_document_stats.h"
 #include "format/nmo_header.h"
+#include "session/nmo_deserializer.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -74,6 +77,7 @@ static int file_info_single(const char *file_path,
 
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
+    nmo_document_t *document = NULL;
     char errbuf[256];
 
     nmo_load_options_t opts = nmo_load_options_default();
@@ -83,7 +87,13 @@ static int file_info_single(const char *file_path,
         return NMO_CLI_EXIT_IO_ERROR;
     }
 
-    nmo_file_info_t info = nmo_session_get_file_info(session);
+    if (nmo_session_borrow_document(session, &document) != NMO_OK) {
+        nmo_tool_close_session(ctx, session);
+        fprintf(stderr, "Error: Failed to borrow document view\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_file_info_t info = nmo_document_get_file_info(document);
 
     if (doc && data) {
         yyjson_mut_obj_add_uint(doc, data, "object_count", info.object_count);
@@ -101,6 +111,7 @@ static int file_info_single(const char *file_path,
         nmo_cli_print_kv(out, "CK Version", buf, 14, colorize);
     }
 
+    nmo_document_destroy(document);
     nmo_tool_close_session(ctx, session);
     return NMO_CLI_EXIT_SUCCESS;
 }
@@ -109,7 +120,7 @@ static int nmo_cmd_file_info_in_session(nmo_cmd_ctx_t *c, int argc, char **argv)
     (void)argc;
     (void)argv;
 
-    nmo_file_info_t info = nmo_session_get_file_info(c->session);
+    nmo_file_info_t info = nmo_document_get_file_info(c->document);
     if (c->is_json) {
         yyjson_mut_doc *doc = NULL;
         yyjson_mut_val *data = NULL;
@@ -204,7 +215,8 @@ static int nmo_cmd_file_header_in_session(nmo_cmd_ctx_t *c, int argc, char **arg
     (void)argv;
 
     /* Get header - cast from opaque nmo_header_t to public nmo_file_header_t */
-    const nmo_file_header_t *header = (const nmo_file_header_t *)nmo_session_get_header(c->session);
+    const nmo_file_header_t *header =
+        (const nmo_file_header_t *)nmo_document_get_header(c->document);
     if (!header) {
         fprintf(stderr, "Error: Failed to get file header\n");
         return NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -676,7 +688,8 @@ static int nmo_cmd_file_plugins_in_session(nmo_cmd_ctx_t *c, int argc, char **ar
     (void)argv;
 
     /* Get plugin diagnostics */
-    const nmo_session_plugin_diagnostics_t *diag = nmo_session_get_plugin_diagnostics(c->session);
+    const nmo_session_plugin_diagnostics_t *diag =
+        nmo_document_get_plugin_diagnostics(c->document);
 
     if (c->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
@@ -906,10 +919,11 @@ static int nmo_cmd_file_space_in_session(nmo_cmd_ctx_t *c, int argc, char **argv
 
     uint32_t top_n = vals[OPT_TOP].present ? vals[OPT_TOP].val.u : 15;
 
-    nmo_file_info_t info = nmo_session_get_file_info(c->session);
+    nmo_file_info_t info = nmo_document_get_file_info(c->document);
 
     file_space_collect_t collect = {0};
-    const nmo_file_header_t *header = (const nmo_file_header_t *)nmo_session_get_header(c->session);
+    const nmo_file_header_t *header =
+        (const nmo_file_header_t *)nmo_document_get_header(c->document);
     if (header != NULL && header->data_pack_size > 0 && header->data_unpack_size > 0) {
         collect.pack_scale_num = header->data_pack_size;
         collect.pack_scale_den = header->data_unpack_size;

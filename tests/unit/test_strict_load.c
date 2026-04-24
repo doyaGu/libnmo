@@ -1,5 +1,5 @@
 #include "test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_deserializer.h"
@@ -128,7 +128,7 @@ TEST(strict_load, unresolved_refs_non_strict_succeeds) {
     nmo_runtime_request_t request;
     memset(&request, 0, sizeof(request));
     request.kind = NMO_RUNTIME_OP_LOAD;
-    /* No STRICT flag â€” options is NULL */
+    /* No STRICT flag â€?options is NULL */
 
     nmo_runtime_report_t report = {0};
     int result = nmo_runtime_kernel_finalize_load(session, &request, &report);
@@ -145,3 +145,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(strict_load, unresolved_refs_fails);
     REGISTER_TEST(strict_load, unresolved_refs_non_strict_succeeds);
 TEST_MAIN_END()
+

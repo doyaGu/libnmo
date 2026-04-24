@@ -9,7 +9,7 @@
 #include "document/nmo_document.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_refs.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "runtime/nmo_workspace.h"
 #include "type/nmo_type_string.h"
@@ -538,3 +538,4 @@ int nmo_core_set_fields(nmo_cmd_ctx_t *c, nmo_object_id_t object_id,
     if (out_result) *out_result = result;
     return result.failed > 0 ? NMO_CLI_EXIT_INTERNAL_ERROR : NMO_CLI_EXIT_SUCCESS;
 }
+

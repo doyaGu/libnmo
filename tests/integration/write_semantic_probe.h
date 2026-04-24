@@ -1,13 +1,14 @@
 #ifndef WRITE_SEMANTIC_PROBE_H
 #define WRITE_SEMANTIC_PROBE_H
 
+#include "document/nmo_document_file_state.h"
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_parameter_schemas.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "type/nmo_type_system.h"
 
@@ -48,3 +49,4 @@ nmo_status_t write_probe_parameter_value(const write_semantic_probe_t *probe,
                                          size_t buf_size);
 
 #endif /* WRITE_SEMANTIC_PROBE_H */
+

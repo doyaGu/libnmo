@@ -7,7 +7,7 @@
 #include "document/nmo_document.h"
 #include "document/nmo_document_load.h"
 #include "runtime/nmo_workspace.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
 #include "type/nmo_type_system.h"
@@ -395,7 +395,7 @@ TEST(context_session, document_and_workspace_are_distinct_handles) {
     nmo_workspace_t *workspace = NULL;
 
     ASSERT_NOT_NULL(ctx);
-    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, path, &document));
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, path, NULL, &document));
     ASSERT_NOT_NULL(document);
     ASSERT_EQ(ctx, nmo_document_get_context(document));
     ASSERT_NOT_NULL(nmo_document_get_repository(document));
@@ -422,3 +422,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(context_session, operation_registry_access);
     REGISTER_TEST(context_session, document_and_workspace_are_distinct_handles);
 TEST_MAIN_END()
+

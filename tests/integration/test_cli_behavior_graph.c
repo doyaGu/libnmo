@@ -17,7 +17,7 @@
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "core/nmo_array.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "yyjson.h"
 
@@ -2351,3 +2351,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_interface_translate_dry_run_does_not_write_output);
     REGISTER_TEST(cli, behavior_interface_set_graph_io_dry_run_does_not_write_output);
 TEST_MAIN_END()
+

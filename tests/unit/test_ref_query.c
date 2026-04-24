@@ -1,7 +1,10 @@
 #include "test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
+#include "session/nmo_runtime_kernel.h"
+#include "session/nmo_session_pipeline.h"
+#include "../../src/runtime/runtime_internal.h"
 #include "document/nmo_document.h"
 #include "object/nmo_object_refs.h"
 #include "object/nmo_class_ids.h"
@@ -84,7 +87,7 @@ TEST(ref_query, counts_session_references_without_graph_handles) {
 
     nmo_document_t *document = nmo_document_create(ctx);
     ASSERT_NOT_NULL(document);
-    nmo_session_t *session = nmo_session_from_document(document);
+    nmo_session_t *session = nmo_document_internal_session(document);
     ASSERT_NOT_NULL(session);
 
     nmo_object_id_t member_id = 0;
@@ -127,7 +130,7 @@ TEST(ref_query, reports_broken_reference_count) {
 
     nmo_document_t *document = nmo_document_create(ctx);
     ASSERT_NOT_NULL(document);
-    nmo_session_t *session = nmo_session_from_document(document);
+    nmo_session_t *session = nmo_document_internal_session(document);
     ASSERT_NOT_NULL(session);
 
     nmo_object_id_t group_id = 0;
@@ -161,7 +164,7 @@ TEST(ref_query, visits_edges_without_exposing_graph_handles) {
 
     nmo_document_t *document = nmo_document_create(ctx);
     ASSERT_NOT_NULL(document);
-    nmo_session_t *session = nmo_session_from_document(document);
+    nmo_session_t *session = nmo_document_internal_session(document);
     ASSERT_NOT_NULL(session);
 
     nmo_object_id_t member_id = 0;
@@ -211,4 +214,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(ref_query, reports_broken_reference_count);
     REGISTER_TEST(ref_query, visits_edges_without_exposing_graph_handles);
 TEST_MAIN_END()
+
+
 

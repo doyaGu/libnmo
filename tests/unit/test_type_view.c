@@ -1,5 +1,5 @@
 #include "test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "type/nmo_type_guids.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_view.h"
@@ -231,3 +231,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_view, from_type_id_hides_invalidated_type);
     REGISTER_TEST(type_view, from_object_falls_back_when_explicit_type_guid_is_not_visible);
 TEST_MAIN_END()
+

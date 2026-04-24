@@ -1,8 +1,6 @@
 #include "session/nmo_runtime_kernel.h"
-#include "session/nmo_runtime_ref_remap.h"
-#include "session/nmo_runtime_delete.h"
 
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
 #include "runtime/nmo_workspace.h"
@@ -762,3 +760,4 @@ nmo_status_t nmo_runtime_kernel_execute(
     }
     return result;
 }
+

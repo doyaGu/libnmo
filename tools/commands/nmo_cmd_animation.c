@@ -16,7 +16,7 @@
 #include "nmo.h"
 #include "session/nmo_session.h"
 #include "session/nmo_runtime_kernel.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "document/nmo_document_save.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_edit.h"
@@ -1505,3 +1505,4 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
     }
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
+

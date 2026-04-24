@@ -13,7 +13,8 @@
 #include "behavior/nmo_behavior_edit.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
-#include "session/nmo_context.h"
+#include "session/nmo_serializer.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
 #include "yyjson.h"
@@ -951,3 +952,4 @@ int nmo_cmd_patch_diff(int argc,
     patch_plan_free(&plan);
     return rc;
 }
+

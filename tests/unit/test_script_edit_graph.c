@@ -3,10 +3,10 @@
 #include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_script_edit_graph.h"
 #include "runtime/nmo_workspace.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
-#include "session/nmo_session_util.h"
+#include "session/nmo_session_pipeline.h"
 
 #include <stdint.h>
 
@@ -83,3 +83,4 @@ TEST(script_edit_graph, build_reports_edit_ready_graph_for_ballance_root)
 TEST_MAIN_BEGIN()
     REGISTER_TEST(script_edit_graph, build_reports_edit_ready_graph_for_ballance_root);
 TEST_MAIN_END()
+

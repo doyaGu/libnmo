@@ -18,7 +18,7 @@
 #include "nmo.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_script_edit.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
 #include "behavior/nmo_behavior_view.h"
@@ -1836,4 +1836,5 @@ int nmo_cmd_parameter_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     fprintf(stderr, "Unsupported parameter read action in session: %s\n", argv[0]);
     return NMO_CLI_EXIT_ARG_ERROR;
 }
+
 

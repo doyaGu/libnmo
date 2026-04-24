@@ -8,7 +8,7 @@
 
 #include "session/nmo_session.h"
 #include "document/nmo_document_load.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -51,7 +51,7 @@ static int test_load_existing_file(void) {
     int result = nmo_load_file(session, data_file, NULL);
 
     if (result == NMO_OK) {
-        printf("  ÈâÅ?File loaded successfully\n");
+        printf("  Èâ?File loaded successfully\n");
         printf("=== Test PASSED ===\n\n");
     } else {
         printf("  Load result: %d\n", result);
@@ -93,7 +93,7 @@ static int test_empty_file_handling(void) {
     int result = nmo_load_file(session, "nonexistent_file.nmo", NULL);
 
     if (result == NMO_ERR_FILE_NOT_FOUND) {
-        printf("  ÈâÅ?Correctly detected missing file\n");
+        printf("  Èâ?Correctly detected missing file\n");
         printf("=== Test PASSED ===\n\n");
     } else {
         printf("ERROR: Expected NMO_ERR_FILE_NOT_FOUND (%d), got %d\n",
@@ -132,8 +132,8 @@ static int test_file_io_infrastructure(void) {
         return 1;
     }
 
-    printf("  ÈâÅ?Context and session created successfully\n");
-    printf("  ÈâÅ?File I/O infrastructure is functional\n");
+    printf("  Èâ?Context and session created successfully\n");
+    printf("  Èâ?File I/O infrastructure is functional\n");
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -198,10 +198,10 @@ static int test_multiple_files(void) {
         int result = nmo_load_file(session, filename, NULL);
 
         if (result == NMO_OK) {
-            printf("ÈâÅ?SUCCESS\n");
+            printf("Èâ?SUCCESS\n");
             files_loaded++;
         } else {
-            printf("ÈâÅ?FAILED (error %d)\n", result);
+            printf("Èâ?FAILED (error %d)\n", result);
         }
 
         nmo_session_destroy(session);
@@ -248,4 +248,5 @@ int main(void) {
 
     return failed;
 }
+
 

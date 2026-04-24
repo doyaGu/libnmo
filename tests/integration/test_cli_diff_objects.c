@@ -1,6 +1,6 @@
 #include "test_framework.h"
 
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -218,3 +218,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli_diff_objects, json_contains_renamed_fields);
     REGISTER_TEST(cli_diff_objects, text_contains_renamed_section);
 TEST_MAIN_END()
+

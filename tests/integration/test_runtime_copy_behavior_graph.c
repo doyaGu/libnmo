@@ -1,5 +1,5 @@
 #include "test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
@@ -105,3 +105,4 @@ TEST(runtime_copy_behavior_graph, copy_behavior_like_object) {
 TEST_MAIN_BEGIN()
 REGISTER_TEST(runtime_copy_behavior_graph, copy_behavior_like_object);
 TEST_MAIN_END()
+

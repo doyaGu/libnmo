@@ -13,7 +13,7 @@
 
 #include "nmo.h"
 #include "chunk/nmo_chunk_index.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "export/nmo_hexdump.h"
 
@@ -1048,3 +1048,4 @@ int nmo_cmd_chunk_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     fprintf(stderr, "Unsupported chunk read action in session: %s\n", argv[0]);
     return NMO_CLI_EXIT_ARG_ERROR;
 }
+

@@ -25,11 +25,12 @@
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
 #include "type/nmo_operation_system.h"
 #include "type/nmo_type_system.h"
+#include "../../src/runtime/runtime_internal.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -230,7 +231,7 @@ static nmo_session_t *script_execution_session(
 {
     nmo_workspace_t *workspace =
         nmo_behavior_execution_workspace(execution);
-    return workspace != NULL ? nmo_session_from_workspace(workspace) : NULL;
+    return workspace != NULL ? nmo_workspace_internal_session(workspace) : NULL;
 }
 
 static char *script_run_strdup(const char *text)
@@ -1693,7 +1694,7 @@ static char *script_format_parameter_value_with_registry(
         return NULL;
     }
 
-    session = nmo_session_from_workspace(workspace);
+    session = nmo_workspace_internal_session(workspace);
     repo = nmo_session_get_repository(session);
     object = repo ? nmo_object_repository_find_by_id(repo, param_id) : NULL;
     state = object ? nmo_parameter_get_state(object) : NULL;
@@ -3686,6 +3687,8 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
 
     return NMO_CLI_EXIT_ARG_ERROR;
 }
+
+
 
 
 

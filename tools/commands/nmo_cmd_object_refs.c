@@ -13,9 +13,9 @@
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
-#include "session/nmo_runtime_delete.h"
+#include "session/nmo_runtime_kernel.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_parse.h"
 #include "object/nmo_class_ids.h"
@@ -1145,3 +1145,4 @@ int nmo_cmd_object_refgraph_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv
             argv[0]);
     return NMO_CLI_EXIT_ARG_ERROR;
 }
+

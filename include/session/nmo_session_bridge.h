@@ -19,14 +19,6 @@ NMO_API nmo_status_t nmo_session_borrow_document(
     nmo_session_t *session,
     nmo_document_t **out_document);
 
-NMO_API nmo_session_t *nmo_session_from_document(nmo_document_t *document);
-NMO_API const nmo_session_t *nmo_session_from_document_const(
-    const nmo_document_t *document);
-
-NMO_API nmo_session_t *nmo_session_from_workspace(nmo_workspace_t *workspace);
-NMO_API const nmo_session_t *nmo_session_from_workspace_const(
-    const nmo_workspace_t *workspace);
-
 #ifdef __cplusplus
 }
 #endif

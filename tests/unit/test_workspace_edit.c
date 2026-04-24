@@ -2,7 +2,7 @@
 
 #include "document/nmo_document.h"
 #include "object/nmo_object_query.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
 #include "runtime/nmo_workspace.h"
@@ -1050,6 +1050,7 @@ REGISTER_TEST(workspace_edit, track_created_object_rollback_removes_and_commit_k
 REGISTER_TEST(workspace_edit, snapshot_object_chunk_rollback_restores_previous_chunk);
 REGISTER_TEST(workspace_edit, snapshot_object_chunk_rollback_restores_null_chunk);
 TEST_MAIN_END()
+
 
 
 

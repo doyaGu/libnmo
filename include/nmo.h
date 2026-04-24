@@ -134,6 +134,7 @@
 #include "runtime/nmo_workspace.h"
 #include "document/nmo_document.h"
 #include "document/nmo_document_load.h"
+#include "document/nmo_document_file_state.h"
 #include "document/nmo_document_save.h"
 #include "document/nmo_document_perf_stats.h"
 #include "document/nmo_document_stats.h"

@@ -5,10 +5,10 @@
 #include "behavior/nmo_script_edit.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "runtime/nmo_workspace.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
-#include "session/nmo_session_util.h"
+#include "../../src/runtime/runtime_internal.h"
 #include "object/nmo_object_edit.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
@@ -380,7 +380,7 @@ TEST(script_edit_transaction, behavior_edit_add_link_through_workspace_owner)
     ASSERT_NOT_NULL(document);
     ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
     ASSERT_NOT_NULL(workspace);
-    session = nmo_session_from_workspace(workspace);
+    session = nmo_workspace_internal_session(workspace);
     ASSERT_NOT_NULL(session);
 
     setup_script_control_fixture(session, &fixture);
@@ -747,6 +747,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(script_edit_transaction,
                   interface_validation_allows_preexisting_diagnostics_for_value_only_parameter_edit);
 TEST_MAIN_END()
+
+
 
 
 

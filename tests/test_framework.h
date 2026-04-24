@@ -21,6 +21,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <time.h>
+#include "../src/runtime/runtime_internal.h"
 
 #ifdef _WIN32
 #include <windows.h>

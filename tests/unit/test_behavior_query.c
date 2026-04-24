@@ -5,7 +5,10 @@
 #include "document/nmo_document_load.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
-#include "session/nmo_context.h"
+#include "session/nmo_runtime_kernel.h"
+#include "session/nmo_session_pipeline.h"
+#include "../../src/runtime/runtime_internal.h"
+#include "runtime/nmo_context.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
@@ -35,7 +38,7 @@ TEST(behavior_query, count_scripts_through_owner_api)
     ASSERT_NOT_NULL(ctx);
     ASSERT_EQ(
         NMO_OK,
-        nmo_document_load_file(ctx, NMO_TEST_DATA_FILE("Ballance/base.cmo"), &document));
+        nmo_document_load_file(ctx, NMO_TEST_DATA_FILE("Ballance/base.cmo"), NULL, &document));
     ASSERT_NOT_NULL(document);
 
     ASSERT_EQ(NMO_OK, nmo_behavior_query_count_scripts(document, &count));
@@ -55,7 +58,7 @@ TEST(behavior_query, script_at_uses_owner_view_type)
     ASSERT_NOT_NULL(ctx);
     ASSERT_EQ(
         NMO_OK,
-        nmo_document_load_file(ctx, NMO_TEST_DATA_FILE("Ballance/base.cmo"), &document));
+        nmo_document_load_file(ctx, NMO_TEST_DATA_FILE("Ballance/base.cmo"), NULL, &document));
     ASSERT_NOT_NULL(document);
 
     ASSERT_EQ(NMO_OK, nmo_behavior_query_script_at(document, 0u, &script));
@@ -85,7 +88,7 @@ TEST(behavior_query, synthetic_document_exposes_owner_and_script_summary)
     ASSERT_NOT_NULL(ctx);
     document = nmo_document_create(ctx);
     ASSERT_NOT_NULL(document);
-    session = nmo_session_from_document(document);
+    session = nmo_document_internal_session(document);
     ASSERT_NOT_NULL(session);
 
     owner_id = create_object_or_zero(session, NMO_CID_BEOBJECT, "Owner");
@@ -144,7 +147,7 @@ TEST(behavior_query, missing_script_returns_not_found_and_clears_view)
     ASSERT_NOT_NULL(ctx);
     ASSERT_EQ(
         NMO_OK,
-        nmo_document_load_file(ctx, NMO_TEST_DATA_FILE("Nop.cmo"), &document));
+        nmo_document_load_file(ctx, NMO_TEST_DATA_FILE("Nop.cmo"), NULL, &document));
     ASSERT_NOT_NULL(document);
 
     ASSERT_EQ(NMO_OK, nmo_behavior_query_count_scripts(document, &count));
@@ -166,3 +169,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(behavior_query, synthetic_document_exposes_owner_and_script_summary);
     REGISTER_TEST(behavior_query, missing_script_returns_not_found_and_clears_view);
 TEST_MAIN_END()
+
+

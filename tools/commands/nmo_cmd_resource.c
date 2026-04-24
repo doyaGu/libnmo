@@ -13,8 +13,9 @@
 #include "../nmo_opt.h"
 
 #include "nmo.h"
-#include "session/nmo_session.h"
+#include "document/nmo_document_file_state.h"
 #include "document/nmo_document_save.h"
+#include "session/nmo_session_bridge.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
 #include "core/nmo_error.h"
@@ -38,6 +39,35 @@
 
 static int nmo_cmd_resource_extract_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 
+static nmo_document_t *resource_document_from_ctx(nmo_cmd_ctx_t *ctx)
+{
+    nmo_document_t *document = NULL;
+
+    if (ctx == NULL) {
+        return NULL;
+    }
+    if (ctx->document != NULL) {
+        return ctx->document;
+    }
+    if (ctx->session == NULL ||
+        nmo_session_borrow_document(ctx->session, &document) != NMO_OK) {
+        return NULL;
+    }
+    return document;
+}
+
+static nmo_included_file_t *resource_files_from_ctx(nmo_cmd_ctx_t *ctx, uint32_t *out_count)
+{
+    nmo_document_t *document = resource_document_from_ctx(ctx);
+    if (document == NULL) {
+        if (out_count != NULL) {
+            *out_count = 0u;
+        }
+        return NULL;
+    }
+    return nmo_document_get_included_files(document, out_count);
+}
+
 int nmo_cmd_resource_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     if (!ctx || argc < 1 || !argv || !argv[0]) {
@@ -47,7 +77,7 @@ int nmo_cmd_resource_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 
     if (strcmp(argv[0], "list") == 0 || strcmp(argv[0], "ls") == 0) {
         uint32_t count = 0;
-        nmo_included_file_t *files = nmo_session_get_included_files(ctx->session, &count);
+        nmo_included_file_t *files = resource_files_from_ctx(ctx, &count);
         fprintf(ctx->out, "Resources: %u\n", count);
         for (uint32_t i = 0; i < count; i++) {
             fprintf(ctx->out, "  [%u] %s (%u bytes)\n", i,
@@ -70,7 +100,7 @@ int nmo_cmd_resource_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         uint32_t count = 0;
-        nmo_included_file_t *files = nmo_session_get_included_files(ctx->session, &count);
+        nmo_included_file_t *files = resource_files_from_ctx(ctx, &count);
         const nmo_included_file_t *selected = NULL;
         uint32_t selected_index = 0;
         if (vals[OPT_INDEX].present) {
@@ -276,7 +306,7 @@ int nmo_cmd_resource_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
     if (rc) return rc;
 
     uint32_t count = 0;
-    nmo_included_file_t *files = nmo_session_get_included_files(c.session, &count);
+    nmo_included_file_t *files = resource_files_from_ctx(&c, &count);
 
     /* Build index array for sorting */
     uint32_t *indices = NULL;
@@ -434,7 +464,7 @@ int nmo_cmd_resource_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     }
 
     uint32_t count = 0;
-    nmo_included_file_t *files = nmo_session_get_included_files(c.session, &count);
+    nmo_included_file_t *files = resource_files_from_ctx(&c, &count);
 
     const nmo_included_file_t *res = NULL;
     uint32_t res_index = 0;
@@ -605,7 +635,7 @@ static int resource_extract_run(nmo_cmd_ctx_t *ctx,
     }
 
     uint32_t count = 0;
-    nmo_included_file_t *files = nmo_session_get_included_files(c.session, &count);
+    nmo_included_file_t *files = resource_files_from_ctx(&c, &count);
 
     uint32_t start = 0;
     uint32_t end = count;
@@ -893,12 +923,18 @@ static int resource_import_mutate(
     }
 
     nmo_included_file_metadata_t meta;
+    nmo_document_t *document = resource_document_from_ctx(c);
     memset(&meta, 0, sizeof(meta));
     meta.owner_ids = args->owner_ids;
     meta.owner_count = args->owner_count;
 
-    int add_rc = nmo_session_add_included_file_ex(
-        c->session,
+    if (document == NULL) {
+        fprintf(stderr, "Error: Resource import requires an attached document\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    int add_rc = nmo_document_add_included_file_ex(
+        document,
         args->res_name,
         args->file_data,
         args->file_size,
@@ -909,7 +945,7 @@ static int resource_import_mutate(
     }
 
     uint32_t count = 0;
-    (void)nmo_session_get_included_files(c->session, &count);
+    (void)nmo_document_get_included_files(document, &count);
     args->new_index = count > 0 ? count - 1 : 0;
     return NMO_CLI_EXIT_SUCCESS;
 }
@@ -1065,12 +1101,17 @@ static int resource_replace_mutate(
     (void)dry_run;
     (void)output_path;
     resource_replace_args_t *args = (resource_replace_args_t *)user_data;
+    nmo_document_t *document = resource_document_from_ctx(c);
     if (args == NULL) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
+    if (document == NULL) {
+        fprintf(stderr, "Error: Resource replace requires an attached document\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
 
     uint32_t count = 0;
-    nmo_included_file_t *files = nmo_session_get_included_files(c->session, &count);
+    nmo_included_file_t *files = nmo_document_get_included_files(document, &count);
 
     uint32_t res_index = 0;
     const nmo_included_file_t *res = NULL;
@@ -1109,8 +1150,8 @@ static int resource_replace_mutate(
         (resource_has_texture_owner(c, res) ||
          resource_name_matches_texture_object(c, args->res_name));
 
-    int rep_rc = nmo_session_replace_included_file(
-        c->session,
+    int rep_rc = nmo_document_replace_included_file(
+        document,
         res_index,
         args->file_data,
         args->file_size);
@@ -1267,12 +1308,17 @@ static int resource_remove_mutate(
 {
     (void)output_path;
     resource_remove_args_t *args = (resource_remove_args_t *)user_data;
+    nmo_document_t *document = resource_document_from_ctx(c);
     if (args == NULL) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
+    if (document == NULL) {
+        fprintf(stderr, "Error: Resource remove requires an attached document\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
 
     uint32_t count = 0;
-    nmo_included_file_t *files = nmo_session_get_included_files(c->session, &count);
+    nmo_included_file_t *files = nmo_document_get_included_files(document, &count);
 
     uint32_t res_index = 0;
     const nmo_included_file_t *res = NULL;
@@ -1314,14 +1360,14 @@ static int resource_remove_mutate(
         return NMO_CLI_EXIT_SUCCESS;
     }
 
-    int rm_rc = nmo_session_remove_included_file(c->session, res_index);
+    int rm_rc = nmo_document_remove_included_file(document, res_index);
     if (rm_rc != NMO_OK) {
         fprintf(stderr, "Error: Failed to remove resource: %s\n", nmo_error_string(rm_rc));
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     uint32_t new_count = 0;
-    (void)nmo_session_get_included_files(c->session, &new_count);
+    (void)nmo_document_get_included_files(document, &new_count);
     args->after_count = new_count;
     return NMO_CLI_EXIT_SUCCESS;
 }
@@ -1503,7 +1549,7 @@ int nmo_cmd_resource_info(int argc, char **argv, const nmo_cli_global_opts_t *gl
         ctx_opened = true;
 
         uint32_t count = 0;
-        nmo_included_file_t *files = nmo_session_get_included_files(c.session, &count);
+        nmo_included_file_t *files = resource_files_from_ctx(&c, &count);
         const nmo_included_file_t *res = NULL;
 
         if (index_str) {

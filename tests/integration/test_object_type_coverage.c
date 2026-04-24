@@ -7,7 +7,7 @@
  */
 
 #include "../test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "document/nmo_document_load.h"
 #include "session/nmo_session.h"
 #include "format/nmo_object.h"
@@ -221,3 +221,4 @@ TEST(coverage, all_core_types_present) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(coverage, all_core_types_present);
 TEST_MAIN_END()
+

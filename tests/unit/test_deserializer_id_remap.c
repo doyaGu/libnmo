@@ -5,7 +5,7 @@
 
 #include "test_framework.h"
 #include "session/nmo_id_mapping.h"
-#include "session/nmo_save_id_remap.h"
+#include "session/nmo_serializer.h"
 #include "format/nmo_id_remap.h"
 #include "core/nmo_arena.h"
 #include "object/nmo_object_repository.h"

@@ -5,7 +5,7 @@
 
 #include "../test_framework.h"
 #include "extension/nmo_virtools_loader.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "type/nmo_operations.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_string.h"
@@ -127,7 +127,7 @@ TEST(vt, signature_only_not_executable) {
     nmo_operation_registry_t *op_reg = nmo_context_get_operation_registry(ctx);
     nmo_type_registry_t *reg = nmo_context_get_type_registry(ctx);
 
-    /* "Get Position" (0x4BC87AEA, 0x6B5B643E) â€” Virtools-only, no C impl.
+    /* "Get Position" (0x4BC87AEA, 0x6B5B643E) â€?Virtools-only, no C impl.
      * Lookup with 3DEntityâ†’Vector should find signature but execute should
      * return NOT_IMPLEMENTED. First find the types. */
     nmo_guid_t op_guid = nmo_guid_create(0x4BC87AEA, 0x6B5B643E);
@@ -138,7 +138,7 @@ TEST(vt, signature_only_not_executable) {
     const nmo_type_descriptor_t *vector_type = nmo_type_registry_find_by_guid(reg, vector_guid);
 
     if (!entity_type || !vector_type) {
-        /* Types not registered â€” skip */
+        /* Types not registered â€?skip */
         nmo_context_release(ctx);
         return;
     }
@@ -572,3 +572,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(vt, json_struct_param_types_parse_fields_with_offsets);
     REGISTER_TEST(vt, json_struct_param_types_roundtrip_zero_values);
 TEST_MAIN_END()
+

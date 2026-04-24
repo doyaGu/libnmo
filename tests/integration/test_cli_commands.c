@@ -11,9 +11,11 @@
 #include "../../tools/nmo_cli_common.h"
 #include "yyjson.h"
 
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_runtime_kernel.h"
+#include "session/nmo_session_pipeline.h"
+#include "session/nmo_serializer.h"
 #include "document/nmo_document_save.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
@@ -979,7 +981,7 @@ static bool create_dangling_reference_fixture(const char *path) {
     ids[0] = 99999u;
 
     nmo_save_options_t save_opts = nmo_save_options_default();
-    ok = (nmo_save_file(session, path, &save_opts) == NMO_OK);
+    ok = (nmo_session_save_file(session, path, &save_opts, NULL) == NMO_OK);
 
 cleanup:
     nmo_session_destroy(session);
@@ -2479,7 +2481,7 @@ static bool create_rename_test_fixture(const char *path) {
     }
 
     nmo_save_options_t save_opts = nmo_save_options_default();
-    int rc = nmo_save_file(session, path, &save_opts);
+    int rc = nmo_session_save_file(session, path, &save_opts, NULL);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -2531,7 +2533,7 @@ static bool create_parameter_hex_fixture(const char *path, nmo_object_id_t *out_
 
     if (ok) {
         nmo_save_options_t save_opts = nmo_save_options_default();
-        ok = nmo_save_file(session, path, &save_opts) == NMO_OK;
+        ok = nmo_session_save_file(session, path, &save_opts, NULL) == NMO_OK;
     }
 
     nmo_session_destroy(session);
@@ -3132,3 +3134,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, debug_help_marks_output_as_diagnostic);
     REGISTER_TEST(cli, unknown_command_error);
 TEST_MAIN_END()
+

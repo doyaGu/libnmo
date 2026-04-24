@@ -12,7 +12,7 @@
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
@@ -2624,3 +2624,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(interface_chunk, serialize_raw_interface_ids_requires_repository_for_file_context);
     REGISTER_TEST(interface_chunk, behavior_copy_deep_copies_interface_data);
 TEST_MAIN_END()
+

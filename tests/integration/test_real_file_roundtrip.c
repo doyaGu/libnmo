@@ -6,6 +6,8 @@
 #include "nmo.h"
 #include "document/nmo_document_load.h"
 #include "document/nmo_document_compare.h"
+#include "session/nmo_runtime_kernel.h"
+#include "session/nmo_session_bridge.h"
 #include "test_framework.h"  // For NMO_TEST_DATA_FILE macro
 #include <stdio.h>
 #include <string.h>
@@ -152,7 +154,7 @@ static int test_file_roundtrip(const char* input_file) {
         return 1;
     }
 
-    int result = nmo_load_file(load1_session, input_file, NULL);
+    int result = nmo_session_load_file(load1_session, input_file, NULL, NULL);
     if (result != NMO_OK) {
         printf("  FAILED: Could not load original file (error %d)\n", result);
         nmo_session_destroy(load1_session);
@@ -177,7 +179,7 @@ static int test_file_roundtrip(const char* input_file) {
     /* === SAVE: Save to temporary file (schema required) === */
     nmo_save_options_t save_opts = nmo_save_options_default();
     save_opts.flags |= NMO_SAVE_REQUIRE_SCHEMA;
-    result = nmo_save_file(load1_session, temp_file, &save_opts);
+    result = nmo_session_save_file(load1_session, temp_file, &save_opts, NULL);
     if (result != NMO_OK) {
         printf("  FAILED: Could not save file (error %d)\n", result);
         nmo_session_destroy(load1_session);
@@ -199,7 +201,7 @@ static int test_file_roundtrip(const char* input_file) {
         return 1;
     }
 
-    result = nmo_load_file(load2_session, temp_file, NULL);
+    result = nmo_session_load_file(load2_session, temp_file, NULL, NULL);
     if (result != NMO_OK) {
         printf("  FAILED: Could not load saved file (error %d)\n", result);
         nmo_session_destroy(load2_session);
@@ -234,11 +236,25 @@ static int test_file_roundtrip(const char* input_file) {
     /* === VERIFICATION === */
     nmo_comparison_result_t compare_result;
     nmo_comparison_result_init(&compare_result);
-    int compare_err = nmo_session_compare(
-        load1_session,
-        load2_session,
-        NMO_COMPARE_STRICT | NMO_COMPARE_VERBOSE,
-        &compare_result);
+    nmo_document_t *doc1 = NULL;
+    nmo_document_t *doc2 = NULL;
+    int compare_err = nmo_session_borrow_document(load1_session, &doc1);
+    if (compare_err == NMO_OK) {
+        compare_err = nmo_session_borrow_document(load2_session, &doc2);
+    }
+    if (compare_err == NMO_OK) {
+        compare_err = nmo_document_compare(
+            doc1,
+            doc2,
+            NMO_COMPARE_STRICT | NMO_COMPARE_VERBOSE,
+            &compare_result);
+    }
+    if (doc1 != NULL) {
+        nmo_document_destroy(doc1);
+    }
+    if (doc2 != NULL) {
+        nmo_document_destroy(doc2);
+    }
 
     int passed = (compare_err == NMO_OK) && compare_result.match;
 

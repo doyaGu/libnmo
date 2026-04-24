@@ -16,7 +16,7 @@
 #include <sys/stat.h>
 #endif
 
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "format/nmo_object.h"
 #include "format/nmo_chunk.h"
@@ -235,3 +235,4 @@ int main(int argc, char **argv) {
     printf("RESULT: PASS\n");
     return 0;
 }
+

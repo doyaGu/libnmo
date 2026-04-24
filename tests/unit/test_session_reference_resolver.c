@@ -1,6 +1,6 @@
 #include "test_framework.h"
 #include "session/nmo_session.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_reference_resolver.h"
 
 TEST(session_reference_resolver, ensure_and_reset) {
@@ -31,3 +31,4 @@ TEST(session_reference_resolver, ensure_and_reset) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(session_reference_resolver, ensure_and_reset);
 TEST_MAIN_END()
+

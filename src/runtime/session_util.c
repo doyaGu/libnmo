@@ -1,6 +1,6 @@
-#include "session/nmo_session_util.h"
-
-#include "session/nmo_context.h"
+#include "runtime_internal.h"
+#include "runtime/nmo_context.h"
+#include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
 #include "core/nmo_error.h"
 
@@ -35,7 +35,7 @@ bool nmo_session_open_file_with_context(const char *path,
     *out_ctx = NULL;
     *out_session = NULL;
 
-    /* Create context — data_dir is resolved by context from NMO_DATA_DIR env,
+    /* Create context 閳?data_dir is resolved by context from NMO_DATA_DIR env,
      * or NULL if not set (graceful degradation without Virtools data). */
     nmo_context_t *ctx = nmo_context_create(NULL);
     if (!ctx) {
@@ -65,3 +65,4 @@ void nmo_session_close_with_context(nmo_context_t *ctx, nmo_session_t *session) 
         nmo_context_release(ctx);
     }
 }
+

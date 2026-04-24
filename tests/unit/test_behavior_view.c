@@ -10,9 +10,11 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "runtime/nmo_workspace.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
+#include "session/nmo_runtime_kernel.h"
+#include "session/nmo_session_pipeline.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -137,7 +139,7 @@ static nmo_status_t test_create_workspace_from_session(
     if (status != NMO_OK) {
         return status;
     }
-    ctx = nmo_session_get_context(session);
+    ctx = nmo_document_get_context(*out_document);
     status = nmo_workspace_create(ctx, *out_document, out_workspace);
     if (status != NMO_OK) {
         nmo_document_destroy(*out_document);
@@ -294,3 +296,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(behavior_view, summarizes_behavior_without_exposing_state_layout);
     REGISTER_TEST(behavior_view, summarizes_boundary_counts_without_exposing_graph_arrays);
 TEST_MAIN_END()
+

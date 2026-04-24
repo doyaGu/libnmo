@@ -1,4 +1,3 @@
-#include "session/nmo_runtime_ref_remap.h"
 #include "session/nmo_runtime_kernel.h"
 
 #include "format/nmo_id_remap.h"
@@ -10,7 +9,7 @@
 #include "core/nmo_array.h"
 #include "../runtime/runtime_internal.h"
 
-/* ── ID remap lookup ───────────────────────────────────────────── */
+/* 鈹€鈹€ ID remap lookup 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static bool runtime_lookup_mapping(
     const nmo_id_remap_t *remap,
@@ -23,7 +22,7 @@ static bool runtime_lookup_mapping(
     return nmo_id_remap_lookup_id(remap, old_id, out_new_id) == NMO_OK;
 }
 
-/* ── Ref-field remap callback ──────────────────────────────────── */
+/* 鈹€鈹€ Ref-field remap callback 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 typedef struct runtime_ref_remap_ctx {
     const nmo_id_remap_t *remap;
@@ -100,7 +99,7 @@ static bool runtime_remap_ref_field(
     return true;
 }
 
-/* ── Base-instance resolution ──────────────────────────────────── */
+/* 鈹€鈹€ Base-instance resolution 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static const void *runtime_get_base_instance(
     const nmo_type_registry_t *types,
@@ -125,7 +124,7 @@ static const void *runtime_get_base_instance(
     return NULL;
 }
 
-/* ── Public API ────────────────────────────────────────────────── */
+/* 鈹€鈹€ Public API 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 nmo_status_t nmo_runtime_remap_copy_refs(
     const nmo_type_runtime_t *type_rt,

@@ -88,7 +88,7 @@ static int nmo_lua_format_interface_view(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid document handle");
     }
 
-    session = nmo_session_from_document(document);
+    session = nmo_document_internal_session(document);
     if (session == NULL) {
         return nmo_lua_raise_last_error(state,
                                         NMO_ERR_INVALID_STATE,
@@ -120,7 +120,7 @@ static int nmo_lua_format_find_interface_behavior(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid document handle");
     }
 
-    session = nmo_session_from_document(document);
+    session = nmo_document_internal_session(document);
     if (session == NULL) {
         return nmo_lua_raise_last_error(state,
                                         NMO_ERR_INVALID_STATE,
@@ -172,3 +172,4 @@ nmo_status_t nmo_lua_register_format_bindings(nmo_lua_runtime_t *runtime)
 
     return nmo_lua_runtime_register_module(runtime, &module);
 }
+

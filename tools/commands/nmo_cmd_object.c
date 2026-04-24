@@ -15,7 +15,7 @@
 #include "object/nmo_object_summary.h"
 
 #include "nmo.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "object/nmo_object_hierarchy.h"
 #include "core/nmo_arena.h"
@@ -1652,3 +1652,4 @@ int nmo_cmd_object_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     fprintf(stderr, "Unsupported object read action in session: %s\n", argv[0]);
     return NMO_CLI_EXIT_ARG_ERROR;
 }
+

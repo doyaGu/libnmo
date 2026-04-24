@@ -1,5 +1,5 @@
 #include "test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
@@ -42,7 +42,7 @@ static nmo_type_vtable_t *get_mutable_vtable(nmo_context_t *ctx, nmo_class_id_t 
 
 /**
  * When pre_delete hook fails on the 2nd object under STRICT mode,
- * no objects should be detached â€” all 3 must remain in the repository.
+ * no objects should be detached â€?all 3 must remain in the repository.
  */
 TEST(delete_rollback, pre_delete_failure_strict_no_detach) {
     nmo_context_desc_t desc = {0};
@@ -208,7 +208,7 @@ TEST(delete_rollback, cascade_removes_orphaned_included_files) {
     nmo_session_get_included_files(session, &file_count);
     ASSERT_EQ(1u, file_count);
 
-    /* Delete the owner with CASCADE â€” should also remove the included file */
+    /* Delete the owner with CASCADE â€?should also remove the included file */
     nmo_runtime_report_t report = {0};
     ASSERT_EQ(NMO_OK,
         nmo_session_destroy_objects(session, &owner_id, 1,
@@ -269,3 +269,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(delete_rollback, cascade_removes_orphaned_included_files);
     REGISTER_TEST(delete_rollback, non_cascade_preserves_included_files);
 TEST_MAIN_END()
+

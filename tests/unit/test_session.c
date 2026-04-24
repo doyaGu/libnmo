@@ -10,6 +10,8 @@
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_query.h"
+#include "session/nmo_session_bridge.h"
+#include "../../src/runtime/runtime_internal.h"
 
 static nmo_object_t *create_session_object(
     nmo_session_t *session,
@@ -196,7 +198,7 @@ TEST(session, stable_object_owner_facade) {
     ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
     ASSERT_NOT_NULL(workspace);
 
-    nmo_session_t *session = nmo_session_from_workspace(workspace);
+    nmo_session_t *session = nmo_workspace_internal_session(workspace);
     ASSERT_NOT_NULL(session);
 
     ASSERT_NOT_NULL(create_session_object(session, 31, 100, "Gamma"));
@@ -227,4 +229,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(session, borrowed_document_query_facade);
     REGISTER_TEST(session, stable_object_owner_facade);
 TEST_MAIN_END()
+
+
 

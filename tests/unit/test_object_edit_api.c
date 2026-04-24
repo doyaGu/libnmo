@@ -6,9 +6,10 @@
 #include "object/nmo_object_query.h"
 #include "format/nmo_object.h"
 #include "runtime/nmo_workspace.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
+#include "../../src/runtime/runtime_internal.h"
 
 TEST(object_edit_api, rename_through_workspace_owner) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
@@ -20,7 +21,7 @@ TEST(object_edit_api, rename_through_workspace_owner) {
     ASSERT_NOT_NULL(document);
     ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
     ASSERT_NOT_NULL(workspace);
-    session = nmo_session_from_workspace(workspace);
+    session = nmo_workspace_internal_session(workspace);
     ASSERT_NOT_NULL(session);
 
     nmo_object_id_t object_id = 0;
@@ -50,4 +51,6 @@ TEST(object_edit_api, rename_through_workspace_owner) {
 TEST_MAIN_BEGIN()
 REGISTER_TEST(object_edit_api, rename_through_workspace_owner);
 TEST_MAIN_END()
+
+
 

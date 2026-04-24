@@ -35,15 +35,18 @@
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_parse.h"
+#include "document/nmo_document_load.h"
 #include "document/nmo_document_save.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_parameter_schemas.h"
+#include "session/nmo_serializer.h"
 #include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_ref_graph.h"
 #include "object/nmo_object_repository.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_bridge.h"
 #include "runtime/nmo_workspace.h"
 #include "type/nmo_type_string.h"
 
@@ -383,7 +386,12 @@ static int cmd_info(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
-    nmo_file_info_t info = nmo_session_get_file_info(repl->session);
+    nmo_document_t *document = NULL;
+    if (nmo_session_borrow_document(repl->session, &document) != NMO_OK) {
+        fprintf(stderr, "Failed to borrow document.\n");
+        return -1;
+    }
+    nmo_file_info_t info = nmo_document_get_file_info(document);
     size_t object_count = 0;
     nmo_cmd_ctx_t c;
     nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
@@ -404,6 +412,7 @@ static int cmd_info(nmo_repl_context_t *repl, int argc, char **argv) {
         printf("  Selected: (none)\n");
     }
     printf("\n");
+    nmo_document_destroy(document);
     return 0;
 }
 
@@ -1003,8 +1012,14 @@ static int cmd_stats(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
+    nmo_document_t *document = NULL;
     nmo_runtime_load_stats_t stats;
-    if (nmo_session_get_runtime_load_stats(repl->session, &stats) != NMO_OK) {
+    if (nmo_session_borrow_document(repl->session, &document) != NMO_OK) {
+        fprintf(stderr, "Finish loading stats unavailable.\n");
+        return -1;
+    }
+    if (nmo_document_get_runtime_load_stats(document, &stats) != NMO_OK) {
+        nmo_document_destroy(document);
         fprintf(stderr, "Finish loading stats unavailable.\n");
         return -1;
     }
@@ -1023,6 +1038,7 @@ static int cmd_stats(nmo_repl_context_t *repl, int argc, char **argv) {
            stats.indexes.memory_usage);
     printf("  Manager Errors: %u\n", stats.manager_errors);
     printf("\n");
+    nmo_document_destroy(document);
     return 0;
 }
 

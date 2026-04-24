@@ -12,7 +12,7 @@
 #endif
 
 #include "document/nmo_document_compare.h"
-#include "session/nmo_session.h"
+#include "../runtime/runtime_internal.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_shadow_storage.h"
 #include "format/nmo_object.h"
@@ -31,6 +31,17 @@ static int object_is_reference_only(const nmo_object_t *obj) {
         return 0;
     }
     return ((obj->flags | obj->save_flags) & NMO_OBJECT_REFERENCE_FLAG) != 0;
+}
+
+static nmo_file_info_t document_file_info(const nmo_document_t *document)
+{
+    const nmo_file_state_t *file_state = nmo_document_internal_file_state(document);
+    nmo_file_info_t info = {0};
+
+    if (file_state != NULL) {
+        info = file_state->info;
+    }
+    return info;
 }
 
 static void format_object_context(const nmo_object_t *obj, char *buffer, size_t buffer_size) {
@@ -190,15 +201,15 @@ void nmo_comparison_add_diff(nmo_comparison_result_t *result,
  * File Info Comparison
  * ============================================================================ */
 
-int nmo_session_compare_file_info(const nmo_session_t *session1,
-                                  const nmo_session_t *session2,
-                                  nmo_comparison_result_t *result) {
-    if (session1 == NULL || session2 == NULL || result == NULL) {
+int nmo_document_compare_file_info(const nmo_document_t *document1,
+                                   const nmo_document_t *document2,
+                                   nmo_comparison_result_t *result) {
+    if (document1 == NULL || document2 == NULL || result == NULL) {
         return 0;
     }
-    
-    nmo_file_info_t info1 = nmo_session_get_file_info(session1);
-    nmo_file_info_t info2 = nmo_session_get_file_info(session2);
+
+    nmo_file_info_t info1 = document_file_info(document1);
+    nmo_file_info_t info2 = document_file_info(document2);
     
     int match = 1;
     
@@ -446,16 +457,16 @@ static int compare_objects(const nmo_object_t *obj1,
     return match;
 }
 
-int nmo_session_compare_objects(const nmo_session_t *session1,
-                                const nmo_session_t *session2,
-                                nmo_compare_flags_t flags,
-                                nmo_comparison_result_t *result) {
-    if (session1 == NULL || session2 == NULL || result == NULL) {
+int nmo_document_compare_objects(const nmo_document_t *document1,
+                                 const nmo_document_t *document2,
+                                 nmo_compare_flags_t flags,
+                                 nmo_comparison_result_t *result) {
+    if (document1 == NULL || document2 == NULL || result == NULL) {
         return 0;
     }
-    
-    nmo_object_repository_t *repo1 = nmo_session_get_repository(session1);
-    nmo_object_repository_t *repo2 = nmo_session_get_repository(session2);
+
+    nmo_object_repository_t *repo1 = nmo_document_get_repository(document1);
+    nmo_object_repository_t *repo2 = nmo_document_get_repository(document2);
     
     if (repo1 == NULL || repo2 == NULL) {
         return 0;
@@ -637,19 +648,19 @@ static int compare_manager_chunks(const nmo_manager_data_t *mgr1,
     return 1;
 }
 
-static int nmo_session_compare_managers(const nmo_session_t *session1,
-                                        const nmo_session_t *session2,
-                                        nmo_compare_flags_t flags,
-                                        nmo_comparison_result_t *result) {
+static int nmo_document_compare_managers(const nmo_document_t *document1,
+                                         const nmo_document_t *document2,
+                                         nmo_compare_flags_t flags,
+                                         nmo_comparison_result_t *result) {
     (void)flags;
-    if (session1 == NULL || session2 == NULL || result == NULL) {
+    if (document1 == NULL || document2 == NULL || result == NULL) {
         return 0;
     }
 
     uint32_t count1 = 0;
     uint32_t count2 = 0;
-    const nmo_file_state_t *mfs1 = nmo_session_get_file_state(session1);
-    const nmo_file_state_t *mfs2 = nmo_session_get_file_state(session2);
+    const nmo_file_state_t *mfs1 = nmo_document_internal_file_state(document1);
+    const nmo_file_state_t *mfs2 = nmo_document_internal_file_state(document2);
     nmo_manager_data_t *managers1 = mfs1 ? mfs1->manager_data : NULL;
     nmo_manager_data_t *managers2 = mfs2 ? mfs2->manager_data : NULL;
     count1 = mfs1 ? mfs1->manager_data_count : 0;
@@ -670,8 +681,8 @@ static int nmo_session_compare_managers(const nmo_session_t *session1,
     nmo_arena_t *arena = nmo_arena_create(NULL, 0);
     nmo_id_remap_t *remap2to1 = NULL;
     if (arena != NULL) {
-        nmo_object_repository_t *repo1 = nmo_session_get_repository(session1);
-        nmo_object_repository_t *repo2 = nmo_session_get_repository(session2);
+        nmo_object_repository_t *repo1 = nmo_document_get_repository(document1);
+        nmo_object_repository_t *repo2 = nmo_document_get_repository(document2);
         if (repo1 != NULL && repo2 != NULL) {
             size_t object_count1 = 0;
             size_t object_count2 = 0;
@@ -840,15 +851,15 @@ static bool nmo_shadow_compare_iter(uint32_t chunk_id,
     return true;
 }
 
-static int nmo_session_compare_shadow(const nmo_session_t *session1,
-                                      const nmo_session_t *session2,
-                                      nmo_comparison_result_t *result) {
-    if (session1 == NULL || session2 == NULL || result == NULL) {
+static int nmo_document_compare_shadow(const nmo_document_t *document1,
+                                       const nmo_document_t *document2,
+                                       nmo_comparison_result_t *result) {
+    if (document1 == NULL || document2 == NULL || result == NULL) {
         return 0;
     }
 
-    const nmo_shadow_storage_t *shadow1 = nmo_session_get_shadow_storage(session1);
-    const nmo_shadow_storage_t *shadow2 = nmo_session_get_shadow_storage(session2);
+    const nmo_shadow_storage_t *shadow1 = nmo_document_internal_get_shadow_storage(document1);
+    const nmo_shadow_storage_t *shadow2 = nmo_document_internal_get_shadow_storage(document2);
 
     if (shadow1 == NULL && shadow2 == NULL) {
         return 1;
@@ -895,8 +906,8 @@ static int nmo_session_compare_shadow(const nmo_session_t *session1,
     const nmo_id_remap_t *remap1to2 = NULL;
     const nmo_id_remap_t *remap2to1 = NULL;
     if (arena != NULL) {
-        nmo_object_repository_t *repo1 = nmo_session_get_repository(session1);
-        nmo_object_repository_t *repo2 = nmo_session_get_repository(session2);
+        nmo_object_repository_t *repo1 = nmo_document_get_repository(document1);
+        nmo_object_repository_t *repo2 = nmo_document_get_repository(document2);
         if (repo1 != NULL && repo2 != NULL) {
             size_t object_count1 = 0;
             size_t object_count2 = 0;
@@ -951,11 +962,11 @@ static int nmo_session_compare_shadow(const nmo_session_t *session1,
  * Full Session Comparison
  * ============================================================================ */
 
-nmo_status_t nmo_session_compare(const nmo_session_t *session1,
-                                 const nmo_session_t *session2,
-                                 nmo_compare_flags_t flags,
-                                 nmo_comparison_result_t *result) {
-    if (session1 == NULL || session2 == NULL || result == NULL) {
+nmo_status_t nmo_document_compare(const nmo_document_t *document1,
+                                  const nmo_document_t *document2,
+                                  nmo_compare_flags_t flags,
+                                  nmo_comparison_result_t *result) {
+    if (document1 == NULL || document2 == NULL || result == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     
@@ -967,23 +978,23 @@ nmo_status_t nmo_session_compare(const nmo_session_t *session1,
     
     /* Compare file info */
     if (flags & NMO_COMPARE_FILE_INFO) {
-        nmo_session_compare_file_info(session1, session2, result);
+        nmo_document_compare_file_info(document1, document2, result);
     }
     
     /* Compare objects */
     if (flags & (NMO_COMPARE_STRUCTURE | NMO_COMPARE_IDS | NMO_COMPARE_NAMES |
                  NMO_COMPARE_CLASS_IDS | NMO_COMPARE_CHUNKS)) {
-        nmo_session_compare_objects(session1, session2, flags, result);
+        nmo_document_compare_objects(document1, document2, flags, result);
     }
 
     /* Compare manager chunks */
     if (flags & NMO_COMPARE_MANAGERS) {
-        nmo_session_compare_managers(session1, session2, flags, result);
+        nmo_document_compare_managers(document1, document2, flags, result);
     }
 
     /* Compare shadow preservation data */
     if (flags & NMO_COMPARE_SHADOW) {
-        nmo_session_compare_shadow(session1, session2, result);
+        nmo_document_compare_shadow(document1, document2, result);
     }
     
     /* Generate report if verbose */

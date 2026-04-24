@@ -15,7 +15,7 @@
 
 #include "nmo.h"
 #include "behavior/nmo_behavior_edit.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "core/nmo_array.h"
 #include "core/nmo_parse.h"
@@ -4034,3 +4034,4 @@ _Static_assert(
     sizeof(nmo_behavior_interface_sub_actions) / sizeof(nmo_behavior_interface_sub_actions[0])
         == NMO_BEHAVIOR_INTERFACE_SUB_ACTION_COUNT,
     "sub-action table size must match NMO_BEHAVIOR_INTERFACE_SUB_ACTION_COUNT");
+

@@ -3,11 +3,11 @@
  * @brief Session-layer object lifecycle orchestration.
  */
 
-#include "session/nmo_object_system.h"
+#include "session/nmo_deserializer.h"
 
 #include "object/nmo_object_repository.h"
 #include "format/nmo_id_remap.h"
-#include "session/nmo_id_sanitizer.h"
+#include "session/nmo_session_pipeline.h"
 #include "object/nmo_shadow_storage.h"
 #include "session/nmo_reference_resolver.h"
 #include "object/nmo_ref_enumerate.h"

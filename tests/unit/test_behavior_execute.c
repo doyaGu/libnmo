@@ -13,9 +13,13 @@
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "runtime/nmo_workspace.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
+#include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
+#include "session/nmo_session_pipeline.h"
+#include "session/nmo_serializer.h"
+#include "../../src/runtime/runtime_internal.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -69,7 +73,7 @@ static nmo_session_t *behavior_execution_session(
 {
     nmo_workspace_t *workspace =
         nmo_behavior_execution_workspace(execution);
-    return workspace != NULL ? nmo_session_from_workspace(workspace) : NULL;
+    return workspace != NULL ? nmo_workspace_internal_session(workspace) : NULL;
 }
 
 static nmo_status_t query_first_script_from_session(
@@ -118,7 +122,7 @@ static bool save_session_to_path(nmo_session_t *session, const char *path)
 {
     nmo_save_options_t save_opts = nmo_save_options_default();
     remove_file_if_exists(path);
-    return nmo_save_file(session, path, &save_opts) == NMO_OK;
+    return nmo_session_save_file(session, path, &save_opts, NULL) == NMO_OK;
 }
 
 static nmo_behavior_state_t *find_behavior_state(
@@ -892,4 +896,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(behavior_execute, remove_io_canonicalize_roundtrips_fixture);
     REGISTER_TEST(behavior_execute, remove_node_canonicalize_roundtrips_fixture);
 TEST_MAIN_END()
+
+
 

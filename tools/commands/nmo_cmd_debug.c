@@ -13,7 +13,8 @@
 
 #include "nmo.h"
 #include "document/nmo_document_stats.h"
-#include "session/nmo_context.h"
+#include "session/nmo_deserializer.h"
+#include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 
 #include <stdio.h>
@@ -336,7 +337,7 @@ static int debug_load_phases_run_in_ctx(nmo_cmd_ctx_t *c,
 
     /* Get finish loading stats */
     nmo_runtime_load_stats_t stats;
-    bool has_stats = (nmo_session_get_runtime_load_stats(c->session, &stats) == NMO_OK);
+    bool has_stats = (nmo_document_get_runtime_load_stats(c->document, &stats) == NMO_OK);
 
     if (c->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
@@ -745,3 +746,4 @@ int nmo_cmd_debug_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     fprintf(stderr, "Unsupported debug read action in session: %s\n", argv[0]);
     return NMO_CLI_EXIT_ARG_ERROR;
 }
+

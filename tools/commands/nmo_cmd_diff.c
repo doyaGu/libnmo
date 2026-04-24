@@ -12,7 +12,7 @@
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
 #include "document/nmo_document_compare.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "chunk/nmo_chunk_inspect.h"
 #include "object/nmo_object_diff.h"
 #include "format/nmo_object.h"
@@ -263,12 +263,17 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
     /* Open both sessions */
     nmo_context_t *ctx1 = NULL, *ctx2 = NULL;
     nmo_session_t *ses1 = NULL, *ses2 = NULL;
+    nmo_document_t *doc1 = NULL, *doc2 = NULL;
     bool owns1 = true, owns2 = true;
     int open_result = open_two_sessions(paths[0], paths[1],
                                         &ctx1, &ses1, &owns1,
                                         &ctx2, &ses2, &owns2);
     if (open_result != 0) {
         return open_result;
+    }
+    if (borrow_two_documents(ses1, ses2, &doc1, &doc2) != NMO_CLI_EXIT_SUCCESS) {
+        close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Compare sessions */
@@ -282,17 +287,19 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
-    nmo_status_t cmp_result = nmo_session_compare(ses1, ses2, flags, &result);
+    nmo_status_t cmp_result = nmo_document_compare(doc1, doc2, flags, &result);
 
     if (cmp_result != NMO_OK) {
         fprintf(stderr, "Error: Comparison failed with code %d\n", cmp_result);
+        nmo_document_destroy(doc1);
+        nmo_document_destroy(doc2);
         close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Get file info from both sessions */
-    nmo_file_info_t info1 = nmo_session_get_file_info(ses1);
-    nmo_file_info_t info2 = nmo_session_get_file_info(ses2);
+    nmo_file_info_t info1 = nmo_document_get_file_info(doc1);
+    nmo_file_info_t info2 = nmo_document_get_file_info(doc2);
 
     /* Build per-class breakdown */
     nmo_object_repository_t *repo1 = nmo_session_get_repository(ses1);
@@ -305,6 +312,8 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_cmd_ctx_t c;
     int out_rc = nmo_cmd_ctx_init_no_file(&c, global);
     if (out_rc) {
+        nmo_document_destroy(doc1);
+        nmo_document_destroy(doc2);
         close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
         return out_rc;
     }
@@ -768,12 +777,17 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
     /* Open both sessions */
     nmo_context_t *ctx1 = NULL, *ctx2 = NULL;
     nmo_session_t *ses1 = NULL, *ses2 = NULL;
+    nmo_document_t *doc1 = NULL, *doc2 = NULL;
     bool owns1 = true, owns2 = true;
     int open_result = open_two_sessions(paths[0], paths[1],
                                         &ctx1, &ses1, &owns1,
                                         &ctx2, &ses2, &owns2);
     if (open_result != 0) {
         return open_result;
+    }
+    if (borrow_two_documents(ses1, ses2, &doc1, &doc2) != NMO_CLI_EXIT_SUCCESS) {
+        close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Compare chunks */
@@ -785,10 +799,12 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
-    nmo_status_t cmp_result = nmo_session_compare(ses1, ses2, flags, &result);
+    nmo_status_t cmp_result = nmo_document_compare(doc1, doc2, flags, &result);
 
     if (cmp_result != NMO_OK) {
         fprintf(stderr, "Error: Comparison failed with code %d\n", cmp_result);
+        nmo_document_destroy(doc1);
+        nmo_document_destroy(doc2);
         close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
@@ -797,6 +813,8 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
     nmo_cmd_ctx_t c;
     int out_rc = nmo_cmd_ctx_init_no_file(&c, global);
     if (out_rc) {
+        nmo_document_destroy(doc1);
+        nmo_document_destroy(doc2);
         close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
         return out_rc;
     }
@@ -928,12 +946,17 @@ int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global
     /* Open both sessions */
     nmo_context_t *ctx1 = NULL, *ctx2 = NULL;
     nmo_session_t *ses1 = NULL, *ses2 = NULL;
+    nmo_document_t *doc1 = NULL, *doc2 = NULL;
     bool owns1 = true, owns2 = true;
     int open_result = open_two_sessions(paths[0], paths[1],
                                         &ctx1, &ses1, &owns1,
                                         &ctx2, &ses2, &owns2);
     if (open_result != 0) {
         return open_result;
+    }
+    if (borrow_two_documents(ses1, ses2, &doc1, &doc2) != NMO_CLI_EXIT_SUCCESS) {
+        close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* Full comparison with all flags */
@@ -948,10 +971,12 @@ int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global
 
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
-    nmo_status_t cmp_result = nmo_session_compare(ses1, ses2, flags, &result);
+    nmo_status_t cmp_result = nmo_document_compare(doc1, doc2, flags, &result);
 
     if (cmp_result != NMO_OK) {
         fprintf(stderr, "Error: Comparison failed with code %d\n", cmp_result);
+        nmo_document_destroy(doc1);
+        nmo_document_destroy(doc2);
         close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
@@ -963,6 +988,8 @@ int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global
     nmo_cmd_ctx_t c;
     int out_rc = nmo_cmd_ctx_init_no_file(&c, global);
     if (out_rc) {
+        nmo_document_destroy(doc1);
+        nmo_document_destroy(doc2);
         close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
         return out_rc;
     }
@@ -1107,15 +1134,17 @@ static int nmo_cmd_diff_summary_in_session(nmo_cmd_ctx_t *ctx, int argc, char **
 
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
-    nmo_status_t cmp_result = nmo_session_compare(ses1, ses2, flags, &result);
+    nmo_status_t cmp_result = nmo_document_compare(doc1, doc2, flags, &result);
     if (cmp_result != NMO_OK) {
         fprintf(stderr, "Error: Comparison failed with code %d\n", cmp_result);
+        nmo_document_destroy(doc1);
+        nmo_document_destroy(doc2);
         close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_file_info_t info1 = nmo_session_get_file_info(ses1);
-    nmo_file_info_t info2 = nmo_session_get_file_info(ses2);
+    nmo_file_info_t info1 = nmo_document_get_file_info(doc1);
+    nmo_file_info_t info2 = nmo_document_get_file_info(doc2);
 
     nmo_object_repository_t *repo1 = nmo_session_get_repository(ses1);
     nmo_object_repository_t *repo2 = nmo_session_get_repository(ses2);
@@ -1312,18 +1341,25 @@ static int nmo_cmd_diff_chunks_in_session(nmo_cmd_ctx_t *ctx, int argc, char **a
 
     nmo_context_t *ctx1 = NULL, *ctx2 = NULL;
     nmo_session_t *ses1 = NULL, *ses2 = NULL;
+    nmo_document_t *doc1 = NULL, *doc2 = NULL;
     bool owns1 = false, owns2 = true;
     int open_result = open_current_left_session(ctx, paths[1],
                                                 &ctx1, &ses1, &owns1,
                                                 &ctx2, &ses2, &owns2);
     if (open_result != 0) return open_result;
+    if (borrow_two_documents(ses1, ses2, &doc1, &doc2) != NMO_CLI_EXIT_SUCCESS) {
+        close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
 
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
-    nmo_status_t cmp_result = nmo_session_compare(
-        ses1, ses2, NMO_COMPARE_CHUNKS | NMO_COMPARE_IDS, &result);
+    nmo_status_t cmp_result = nmo_document_compare(
+        doc1, doc2, NMO_COMPARE_CHUNKS | NMO_COMPARE_IDS, &result);
     if (cmp_result != NMO_OK) {
         fprintf(stderr, "Error: Comparison failed with code %d\n", cmp_result);
+        nmo_document_destroy(doc1);
+        nmo_document_destroy(doc2);
         close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
@@ -1363,6 +1399,8 @@ static int nmo_cmd_diff_chunks_in_session(nmo_cmd_ctx_t *ctx, int argc, char **a
                 chunk_diff_count && c.colorize ? NMO_CLI_COLOR_RESET : "");
     }
 
+    nmo_document_destroy(doc1);
+    nmo_document_destroy(doc2);
     close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
     return NMO_CLI_EXIT_SUCCESS;
 }
@@ -1387,11 +1425,16 @@ static int nmo_cmd_diff_full_in_session(nmo_cmd_ctx_t *ctx, int argc, char **arg
 
     nmo_context_t *ctx1 = NULL, *ctx2 = NULL;
     nmo_session_t *ses1 = NULL, *ses2 = NULL;
+    nmo_document_t *doc1 = NULL, *doc2 = NULL;
     bool owns1 = false, owns2 = true;
     int open_result = open_current_left_session(ctx, paths[1],
                                                 &ctx1, &ses1, &owns1,
                                                 &ctx2, &ses2, &owns2);
     if (open_result != 0) return open_result;
+    if (borrow_two_documents(ses1, ses2, &doc1, &doc2) != NMO_CLI_EXIT_SUCCESS) {
+        close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
 
     nmo_compare_flags_t flags = NMO_COMPARE_STRUCTURE | NMO_COMPARE_IDS |
                                 NMO_COMPARE_NAMES | NMO_COMPARE_CLASS_IDS |
@@ -1402,9 +1445,11 @@ static int nmo_cmd_diff_full_in_session(nmo_cmd_ctx_t *ctx, int argc, char **arg
 
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
-    nmo_status_t cmp_result = nmo_session_compare(ses1, ses2, flags, &result);
+    nmo_status_t cmp_result = nmo_document_compare(doc1, doc2, flags, &result);
     if (cmp_result != NMO_OK) {
         fprintf(stderr, "Error: Comparison failed with code %d\n", cmp_result);
+        nmo_document_destroy(doc1);
+        nmo_document_destroy(doc2);
         close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
@@ -1438,6 +1483,8 @@ static int nmo_cmd_diff_full_in_session(nmo_cmd_ctx_t *ctx, int argc, char **arg
         nmo_cli_print_kv(c.out, "Objects matched", buf, 18, c.colorize);
     }
 
+    nmo_document_destroy(doc1);
+    nmo_document_destroy(doc2);
     close_two_sessions(ctx1, ses1, owns1, ctx2, ses2, owns2);
     return NMO_CLI_EXIT_SUCCESS;
 }
@@ -1463,3 +1510,4 @@ int nmo_cmd_diff_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     fprintf(stderr, "Unsupported diff read action in session: %s\n", argv[0]);
     return NMO_CLI_EXIT_ARG_ERROR;
 }
+

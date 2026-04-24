@@ -1,5 +1,5 @@
 #include "test_framework.h"
-#include "session/nmo_context.h"
+#include "runtime/nmo_context.h"
 #include "type/nmo_type_system.h"
 
 #include <stdio.h>
@@ -123,3 +123,4 @@ TEST(reference_alignment_matrix, batch_samples_have_reference_and_runtime_remap_
 TEST_MAIN_BEGIN()
 REGISTER_TEST(reference_alignment_matrix, batch_samples_have_reference_and_runtime_remap_hooks);
 TEST_MAIN_END()
+

@@ -2,6 +2,9 @@
 #define NMO_TOOL_SESSION_H
 
 #include "nmo.h"
+#include "session/nmo_runtime_kernel.h"
+#include "session/nmo_session_pipeline.h"
+#include "../src/runtime/runtime_internal.h"
 
 #include <stdbool.h>
 #include <stddef.h>

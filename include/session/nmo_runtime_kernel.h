@@ -1,6 +1,7 @@
 #ifndef NMO_SESSION_RUNTIME_KERNEL_H
 #define NMO_SESSION_RUNTIME_KERNEL_H
 
+#include "session/nmo_session.h"
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
@@ -9,9 +10,13 @@
 extern "C" {
 #endif
 
-typedef struct nmo_session nmo_session_t;
 typedef struct nmo_load_options nmo_load_options_t;
 typedef struct nmo_save_options nmo_save_options_t;
+typedef struct nmo_object_repository nmo_object_repository_t;
+typedef struct nmo_type_runtime nmo_type_runtime_t;
+typedef struct nmo_type_descriptor nmo_type_descriptor_t;
+typedef struct nmo_id_remap nmo_id_remap_t;
+typedef struct nmo_arena nmo_arena_t;
 
 /*
  * Runtime kernel request/ops shaping is kept public for advanced C callers,
@@ -91,8 +96,9 @@ typedef struct nmo_runtime_report {
 /**
  * @brief Execute an advanced runtime-kernel request against the session.
  *
- * Ordinary consumers should prefer the high-level workflow wrappers in
- * nmo_session.h such as load/save/create/copy/destroy helpers.
+ * Ordinary consumers should prefer owner-led document/workspace APIs.
+ * This header keeps advanced runtime-kernel entry points and session-shaped
+ * workflow wrappers for low-level callers.
  */
 NMO_API nmo_status_t nmo_session_execute(
     nmo_session_t *session,
@@ -125,6 +131,29 @@ NMO_API nmo_status_t nmo_runtime_kernel_finalize_load(
     nmo_session_t *session,
     const nmo_runtime_request_t *request,
     nmo_runtime_report_t *out_report);
+
+NMO_API nmo_status_t nmo_runtime_execute_delete(
+    nmo_session_t *session,
+    const nmo_runtime_request_t *request,
+    nmo_runtime_report_t *report);
+NMO_API nmo_status_t nmo_runtime_preview_delete(
+    nmo_object_repository_t *repo,
+    const nmo_type_runtime_t *type_rt,
+    nmo_arena_t *arena,
+    const nmo_object_id_t *object_ids,
+    size_t object_count,
+    uint32_t flags,
+    nmo_object_id_t **out_ids,
+    size_t *out_count);
+NMO_API nmo_status_t nmo_runtime_remap_copy_refs(
+    const nmo_type_runtime_t *type_rt,
+    const nmo_type_descriptor_t *type,
+    void *instance,
+    const nmo_id_remap_t *remap);
+NMO_API nmo_status_t nmo_runtime_remap_all_refs(
+    nmo_object_repository_t *repo,
+    const nmo_type_runtime_t *type_rt,
+    uint32_t request_flags);
 
 #ifdef __cplusplus
 }
