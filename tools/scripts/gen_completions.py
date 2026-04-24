@@ -1047,8 +1047,13 @@ def check_completion_semantics(groups: list[Group], rendered: dict[str, str]) ->
     zsh = rendered["_nmo"]
     if "_nmo_action_flags" not in zsh:
         errors.append("completions/_nmo must render action-level option flags")
-    if "object/list/) echo '-c --class -f --filter'" not in zsh:
-        errors.append("completions/_nmo must include object list action options")
+    object_list = find_action(find_group(groups, "object"), "list")
+    if object_list is None:
+        errors.append("completion schema cannot find object list")
+    else:
+        object_list_flags = " ".join(option_flags(object_list.options))
+        if f"object/list/) echo '{object_list_flags}'" not in zsh:
+            errors.append("completions/_nmo must include object list action options")
     if "type/class-tree/) echo ''" not in zsh:
         errors.append("completions/_nmo must keep type class-tree action options empty")
     return errors
