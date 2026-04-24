@@ -375,6 +375,23 @@ static bool array_contains_uint(yyjson_val *arr, uint64_t needle) {
     return false;
 }
 
+static bool array_contains_object_id(yyjson_val *arr, uint64_t needle) {
+    size_t idx;
+    size_t max;
+    yyjson_val *item;
+
+    if (!arr) {
+        return false;
+    }
+    yyjson_arr_foreach(arr, idx, max, item) {
+        if (yyjson_is_obj(item) &&
+            get_uint_field(item, "object_id") == needle) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static yyjson_val *find_object_by_string_field(yyjson_val *arr,
                                                const char *key,
                                                const char *needle) {
@@ -527,7 +544,11 @@ TEST(cli, patch_apply_fold_dry_run_reports_semantic_risks) {
     ASSERT_STR_EQ(output, get_string_field(data, "output_path"));
     ASSERT_NOT_NULL(get_array_field(data, "errors"));
     ASSERT_NOT_NULL(get_array_field(data, "warnings"));
-    ASSERT_NOT_NULL(get_array_field(data, "changed_objects"));
+    yyjson_val *changed_objects = get_array_field(data, "changed_objects");
+    ASSERT_NOT_NULL(changed_objects);
+    ASSERT_TRUE(array_contains_object_id(changed_objects, 363u));
+    ASSERT_TRUE(array_contains_object_id(changed_objects, 237u));
+    ASSERT_TRUE(array_contains_object_id(changed_objects, 358u));
     ASSERT_STR_EQ("warn", get_string_field(data, "risk_level"));
     yyjson_val *root_risks = get_array_field(data, "semantic_risks");
     ASSERT_NOT_NULL(root_risks);

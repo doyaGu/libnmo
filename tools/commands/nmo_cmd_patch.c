@@ -194,6 +194,82 @@ static void patch_add_plan_semantic_risks_json(
     yyjson_mut_obj_add_val(doc, data, "semantic_risks", arr);
 }
 
+static void patch_add_changed_object_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *arr,
+    size_t operation_index,
+    const char *op_name,
+    const char *role,
+    nmo_object_id_t object_id) {
+    if (!doc || !arr || object_id == 0) {
+        return;
+    }
+
+    yyjson_mut_val *item = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_uint(doc, item, "operation_index",
+                            (uint64_t)(operation_index + 1u));
+    nmo_cli_json_add_str_safe(doc, item, "op", op_name);
+    nmo_cli_json_add_str_safe(doc, item, "role", role);
+    yyjson_mut_obj_add_uint(doc, item, "object_id", (uint64_t)object_id);
+    yyjson_mut_arr_add_val(arr, item);
+}
+
+static void patch_add_fold_changed_objects_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *arr,
+    size_t operation_index,
+    const patch_operation_t *op) {
+    const nmo_behavior_fold_report_t *report = &op->fold_report;
+    const nmo_behavior_boundary_t *boundary = &report->boundary;
+
+    patch_add_changed_object_json(
+        doc, arr, operation_index, "fold", "parent", op->fold.parent_id);
+    patch_add_changed_object_json(
+        doc, arr, operation_index, "fold", "anchor", report->anchor_id);
+
+    for (size_t i = 0; i < report->selected_node_count; ++i) {
+        patch_add_changed_object_json(
+            doc, arr, operation_index, "fold", "selected_node",
+            report->selected_nodes[i]);
+    }
+    for (size_t i = 0; i < report->nodes_to_delete_count; ++i) {
+        patch_add_changed_object_json(
+            doc, arr, operation_index, "fold", "deleted_node",
+            report->nodes_to_delete[i]);
+    }
+    for (size_t i = 0; i < report->control_links_to_delete_count; ++i) {
+        patch_add_changed_object_json(
+            doc, arr, operation_index, "fold", "deleted_control_link",
+            report->control_links_to_delete[i].link_id);
+    }
+    for (size_t i = 0; i < boundary->control_in_count; ++i) {
+        patch_add_changed_object_json(
+            doc, arr, operation_index, "fold", "boundary_control_link",
+            boundary->control_in[i].link_id);
+    }
+    for (size_t i = 0; i < boundary->control_out_count; ++i) {
+        patch_add_changed_object_json(
+            doc, arr, operation_index, "fold", "boundary_control_link",
+            boundary->control_out[i].link_id);
+    }
+    for (size_t i = 0; i < boundary->parameter_in_count; ++i) {
+        patch_add_changed_object_json(
+            doc, arr, operation_index, "fold", "boundary_parameter_source",
+            boundary->parameter_in[i].source_parameter_id);
+        patch_add_changed_object_json(
+            doc, arr, operation_index, "fold", "boundary_parameter_target",
+            boundary->parameter_in[i].target_parameter_id);
+    }
+    for (size_t i = 0; i < boundary->parameter_out_count; ++i) {
+        patch_add_changed_object_json(
+            doc, arr, operation_index, "fold", "boundary_parameter_source",
+            boundary->parameter_out[i].source_parameter_id);
+        patch_add_changed_object_json(
+            doc, arr, operation_index, "fold", "boundary_parameter_target",
+            boundary->parameter_out[i].target_parameter_id);
+    }
+}
+
 static void patch_add_changed_objects_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *data,
@@ -202,20 +278,13 @@ static void patch_add_changed_objects_json(
     if (plan) {
         for (size_t i = 0; i < plan->operation_count; ++i) {
             const patch_operation_t *op = &plan->operations[i];
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, item, "operation_index",
-                                    (uint64_t)(i + 1u));
             if (op->kind == PATCH_OP_FOLD) {
-                nmo_cli_json_add_str_safe(doc, item, "op", "fold");
-                yyjson_mut_obj_add_uint(doc, item, "object_id",
-                                        (uint64_t)op->fold.parent_id);
+                patch_add_fold_changed_objects_json(doc, arr, i, op);
             } else if (op->kind == PATCH_OP_REPLACE_BB) {
-                nmo_cli_json_add_str_safe(doc, item, "op", "replace_bb");
-                yyjson_mut_obj_add_uint(
-                    doc, item, "object_id",
-                    (uint64_t)op->replace_bb.behavior_id);
+                patch_add_changed_object_json(
+                    doc, arr, i, "replace_bb", "behavior",
+                    op->replace_bb.behavior_id);
             }
-            yyjson_mut_arr_add_val(arr, item);
         }
     }
     yyjson_mut_obj_add_val(doc, data, "changed_objects", arr);
