@@ -17,7 +17,8 @@
 #endif
 
 #include "runtime/nmo_context.h"
-#include "session/nmo_session.h"
+#include "document/nmo_document.h"
+#include "document/nmo_document_load.h"
 #include "format/nmo_object.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -55,22 +56,15 @@ static void verify_file(const char *path, oracle_stats_t *stats) {
     stats->files_scanned++;
 
     nmo_context_t *ctx = nmo_context_create(NULL);
-    nmo_session_t *session = nmo_session_create(ctx);
-    int load_ok = nmo_session_load_file(session, path, NULL, NULL);
-    if (load_ok != 0) {
-        nmo_session_destroy(session);
+    nmo_document_t *document = NULL;
+    nmo_status_t load_ok = nmo_document_load_file(ctx, path, NULL, &document);
+    if (load_ok != NMO_OK || document == NULL) {
         nmo_context_release(ctx);
         return;
     }
     stats->files_loaded++;
 
-    if (nmo_session_ensure_behavior_acceleration(session) != NMO_OK) {
-        nmo_session_destroy(session);
-        nmo_context_release(ctx);
-        return;
-    }
-
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo = nmo_document_get_repository(document);
     size_t count = 0;
     nmo_object_t **all = nmo_object_repository_get_all(repo, &count);
 
@@ -154,7 +148,7 @@ static void verify_file(const char *path, oracle_stats_t *stats) {
         nmo_arena_destroy(arena);
     }
 
-    nmo_session_destroy(session);
+    nmo_document_destroy(document);
     nmo_context_release(ctx);
 }
 

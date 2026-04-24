@@ -9,6 +9,7 @@
  */
 
 #include "nmo.h"
+#include "document/nmo_document_load.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -54,33 +55,25 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Create session
-    nmo_session_t *session = nmo_session_create(ctx);
-    if (session == NULL) {
-        fprintf(stderr, "Error: Failed to create session\n");
-        nmo_context_release(ctx);
-        return 1;
-    }
-
     // Load file
     printf("Loading file: %s\n\n", filename);
-    int result = nmo_load_file(session, filename, NULL);
+    nmo_document_t *document = NULL;
+    int result = nmo_document_load_file(ctx, filename, NULL, &document);
 
     if (result != NMO_OK) {
         fprintf(stderr, "Error: Failed to load file (%s)\n",
                 nmo_error_string(result));
-        nmo_session_destroy(session);
         nmo_context_release(ctx);
         return 1;
     }
 
     // Get object repository
     nmo_object_repository_t *repo =
-        nmo_session_get_repository(session);
+        nmo_document_get_repository(document);
 
     if (repo == NULL) {
         fprintf(stderr, "Error: No object repository\n");
-        nmo_session_destroy(session);
+        nmo_document_destroy(document);
         nmo_context_release(ctx);
         return 1;
     }
@@ -101,7 +94,7 @@ int main(int argc, char *argv[]) {
 
     // Clean up
     printf("Cleaning up...\n");
-    nmo_session_destroy(session);
+    nmo_document_destroy(document);
     nmo_context_release(ctx);
 
     printf("Done.\n");

@@ -6,7 +6,6 @@
  * It tests file saving and loading with existing data files.
  */
 
-#include "session/nmo_session.h"
 #include "document/nmo_document_load.h"
 #include "runtime/nmo_context.h"
 #include <stdio.h>
@@ -40,19 +39,14 @@ static int test_load_existing_file(void) {
         return 1;
     }
 
-    nmo_session_t *session = nmo_session_create(ctx);
-    if (session == NULL) {
-        printf("ERROR: Failed to create session\n");
-        nmo_context_release(ctx);
-        return 1;
-    }
-
     printf("  Loading file: %s\n", data_file);
-    int result = nmo_load_file(session, data_file, NULL);
+    nmo_document_t *document = NULL;
+    int result = nmo_document_load_file(ctx, data_file, NULL, &document);
 
     if (result == NMO_OK) {
-        printf("  Èâ?File loaded successfully\n");
+        printf("  File loaded successfully\n");
         printf("=== Test PASSED ===\n\n");
+        nmo_document_destroy(document);
     } else {
         printf("  Load result: %d\n", result);
         // Not necessarily an error - file might be in unsupported format
@@ -60,7 +54,6 @@ static int test_load_existing_file(void) {
         printf("=== Test COMPLETED ===\n\n");
     }
 
-    nmo_session_destroy(session);
     nmo_context_release(ctx);
 
     return 0;
@@ -82,28 +75,20 @@ static int test_empty_file_handling(void) {
         return 1;
     }
 
-    nmo_session_t *session = nmo_session_create(ctx);
-    if (session == NULL) {
-        printf("ERROR: Failed to create session\n");
-        nmo_context_release(ctx);
-        return 1;
-    }
-
     // Try to load a non-existent file
-    int result = nmo_load_file(session, "nonexistent_file.nmo", NULL);
+    nmo_document_t *document = NULL;
+    int result = nmo_document_load_file(ctx, "nonexistent_file.nmo", NULL, &document);
 
     if (result == NMO_ERR_FILE_NOT_FOUND) {
-        printf("  Èâ?Correctly detected missing file\n");
+        printf("  Correctly detected missing file\n");
         printf("=== Test PASSED ===\n\n");
     } else {
         printf("ERROR: Expected NMO_ERR_FILE_NOT_FOUND (%d), got %d\n",
                NMO_ERR_FILE_NOT_FOUND, result);
-        nmo_session_destroy(session);
         nmo_context_release(ctx);
         return 1;
     }
 
-    nmo_session_destroy(session);
     nmo_context_release(ctx);
 
     return 0;
@@ -125,17 +110,9 @@ static int test_file_io_infrastructure(void) {
         return 1;
     }
 
-    nmo_session_t *session = nmo_session_create(ctx);
-    if (session == NULL) {
-        printf("ERROR: Failed to create session\n");
-        nmo_context_release(ctx);
-        return 1;
-    }
+    printf("  Context created successfully\n");
+    printf("  File I/O infrastructure is functional\n");
 
-    printf("  Èâ?Context and session created successfully\n");
-    printf("  Èâ?File I/O infrastructure is functional\n");
-
-    nmo_session_destroy(session);
     nmo_context_release(ctx);
 
     printf("=== Test PASSED ===\n\n");
@@ -174,7 +151,7 @@ static int test_multiple_files(void) {
 
         files_tested++;
 
-        // Create context and session
+        // Create context
         nmo_context_desc_t ctx_desc;
         memset(&ctx_desc, 0, sizeof(nmo_context_desc_t));
 
@@ -184,27 +161,21 @@ static int test_multiple_files(void) {
             continue;
         }
 
-        nmo_session_t *session = nmo_session_create(ctx);
-        if (session == NULL) {
-            printf("  ERROR: Failed to create session for %s\n", filename);
-            nmo_context_release(ctx);
-            continue;
-        }
-
         // Try to load
         printf("  Loading: %s... ", filename);
         fflush(stdout);
 
-        int result = nmo_load_file(session, filename, NULL);
+        nmo_document_t *document = NULL;
+        int result = nmo_document_load_file(ctx, filename, NULL, &document);
 
         if (result == NMO_OK) {
-            printf("Èâ?SUCCESS\n");
+            printf("SUCCESS\n");
             files_loaded++;
+            nmo_document_destroy(document);
         } else {
-            printf("Èâ?FAILED (error %d)\n", result);
+            printf("FAILED (error %d)\n", result);
         }
 
-        nmo_session_destroy(session);
         nmo_context_release(ctx);
     }
 
@@ -235,18 +206,16 @@ int main(void) {
     // Summary
     printf("========================================\n");
     if (failed == 0) {
-        printf("ALL TESTS PASSED ÈâÅÊè¨n");
-        printf("\nPhase 2 Status: CKFile I/O functionality is working\n");
+        printf("ALL TESTS PASSED\n");
+        printf("\nPhase 2 Status: File I/O functionality is working\n");
         printf("- File loading pipeline is functional\n");
         printf("- File saving pipeline is functional\n");
         printf("- Error handling works correctly\n");
         printf("- TODO: Included Files feature not yet implemented\n");
     } else {
-        printf("%d TEST(S) FAILED ÈâÅÊ¢än", failed);
+        printf("%d TEST(S) FAILED\n", failed);
     }
     printf("========================================\n");
 
     return failed;
 }
-
-

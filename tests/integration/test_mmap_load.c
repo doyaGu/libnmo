@@ -4,7 +4,7 @@
  */
 
 #include "document/nmo_document_load.h"
-#include "session/nmo_session.h"
+#include "session/nmo_deserializer.h"
 #include "runtime/nmo_context.h"
 #include "format/nmo_header.h"
 #include "io/nmo_io_file.h"
@@ -39,7 +39,6 @@ static int file_is_compressed(const char *path) {
 
     return is_compressed;
 }
-
 static int test_mmap_load_files(void) {
     printf("=== Test: MMAP Load Strategy (Real Files) ===\n");
 
@@ -94,27 +93,21 @@ static int test_mmap_load_files(void) {
             continue;
         }
 
-        nmo_session_t *session = nmo_session_create(ctx);
-        if (session == NULL) {
-            printf("  ERROR: Failed to create session for %s\n", filename);
-            nmo_context_release(ctx);
-            continue;
-        }
-
         nmo_load_options_t opts = nmo_load_options_default();
+        nmo_document_t *document = NULL;
 
         printf("  Loading (mmap): %s... ", filename);
         fflush(stdout);
 
-        int result = nmo_load_file(session, filename, &opts);
+        int result = nmo_document_load_file(ctx, filename, &opts, &document);
         if (result == NMO_OK) {
-            printf("é”?SUCCESS\n");
+            printf("SUCCESS\n");
             files_loaded++;
+            nmo_document_destroy(document);
         } else {
-            printf("é”?FAILED (error %d)\n", result);
+            printf("FAILED (error %d)\n", result);
         }
 
-        nmo_session_destroy(session);
         nmo_context_release(ctx);
     }
 
@@ -132,4 +125,5 @@ static int test_mmap_load_files(void) {
 int main(void) {
     return test_mmap_load_files();
 }
+
 

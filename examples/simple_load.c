@@ -4,6 +4,7 @@
  */
 
 #include "nmo.h"
+#include "document/nmo_document_load.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -33,42 +34,32 @@ int main(int argc, char *argv[]) {
     }
     printf("Context created successfully\n\n");
 
-    // Step 2: Create a session
-    printf("Creating session...\n");
-    nmo_session_t *session = nmo_session_create(ctx);
-    if (session == NULL) {
-        fprintf(stderr, "Error: Failed to create session\n");
-        nmo_context_release(ctx);
-        return 1;
-    }
-    printf("Session created successfully\n\n");
-
-    // Step 3: Load the NMO file
+    // Step 2: Load the NMO file
     printf("Loading file: %s\n", filename);
-    int result = nmo_load_file(session, filename, NULL);
+    nmo_document_t *document = NULL;
+    int result = nmo_document_load_file(ctx, filename, NULL, &document);
 
     if (result != NMO_OK) {
         fprintf(stderr, "Error: Failed to load file (%s)\n",
                 nmo_error_string(result));
-        nmo_session_destroy(session);
         nmo_context_release(ctx);
         return 1;
     }
     printf("File loaded successfully!\n\n");
 
-    // Step 4: Access loaded data
+    // Step 3: Access loaded data
     printf("File contents:\n");
     nmo_object_repository_t *repo =
-        nmo_session_get_repository(session);
+        nmo_document_get_repository(document);
     if (repo != NULL) {
         size_t count = nmo_object_repository_get_count(repo);
         printf("  Total objects: %zu\n", count);
     }
     printf("\n");
 
-    // Step 5: Clean up
+    // Step 4: Clean up
     printf("Cleaning up...\n");
-    nmo_session_destroy(session);
+    nmo_document_destroy(document);
     nmo_context_release(ctx);
     printf("Done.\n");
 
