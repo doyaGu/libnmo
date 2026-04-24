@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "description": "Ballance base.cmo high-level building block rewrite manifest.",
+  "replacements": [
+    {
+      "behavior_id": 3516,
+      "name": "Switch On Message",
+      "guid": "42414C07-10000007",
+      "version": 65536,
+      "preserve_links": true,
+      "preserve_params": true,
+      "reason": "BMLPlus treats the base Event_handler Switch On Message chain as a runtime graph ABI; replace only the leaf implementation."
+    }
+  ],
+  "do_not_fold": [
+    {
+      "behavior_id": 4692,
+      "name": "Event_handler",
+      "reason": "BMLPlus EventHookRegistrar follows the original Switch On Message output chains by behavior name and links during OnCKPlay."
+    }
+  ]
+}
