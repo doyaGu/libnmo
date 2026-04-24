@@ -279,8 +279,8 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     ASSERT_NOT_NULL(get_array_field(data, "errors"));
     ASSERT_NOT_NULL(get_array_field(data, "warnings"));
     ASSERT_NOT_NULL(get_array_field(data, "changed_objects"));
-    ASSERT_STR_EQ("safe", get_string_field(data, "risk_level"));
-    ASSERT_NOT_NULL(get_array_field(data, "semantic_risks"));
+    ASSERT_TRUE(yyjson_obj_get(data, "risk_level") == NULL);
+    ASSERT_TRUE(yyjson_obj_get(data, "semantic_risks") == NULL);
     ASSERT_STR_EQ(script_path, get_string_field(data, "script_file"));
     ASSERT_EQ(3u, get_uint_field(data, "op_count"));
     operations = get_array_field(data, "operations");

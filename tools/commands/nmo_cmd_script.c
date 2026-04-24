@@ -1156,7 +1156,6 @@ static void script_run_add_common_report_json(yyjson_mut_doc *doc,
     yyjson_mut_val *errors = yyjson_mut_arr(doc);
     yyjson_mut_val *warnings = yyjson_mut_arr(doc);
     yyjson_mut_val *changed = yyjson_mut_arr(doc);
-    yyjson_mut_val *risks = yyjson_mut_arr(doc);
 
     yyjson_mut_obj_add_val(doc, data, "errors", errors);
     yyjson_mut_obj_add_val(doc, data, "warnings", warnings);
@@ -1175,8 +1174,6 @@ static void script_run_add_common_report_json(yyjson_mut_doc *doc,
         }
     }
     yyjson_mut_obj_add_val(doc, data, "changed_objects", changed);
-    nmo_cli_json_add_str_safe(doc, data, "risk_level", "safe");
-    yyjson_mut_obj_add_val(doc, data, "semantic_risks", risks);
 }
 
 static int script_run_report(nmo_cmd_ctx_t *ctx,
