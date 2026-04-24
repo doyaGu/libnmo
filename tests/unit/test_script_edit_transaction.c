@@ -7,7 +7,6 @@
 #include "runtime/nmo_workspace.h"
 #include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
 #include "../../src/runtime/runtime_internal.h"
 #include "object/nmo_object_edit.h"
 #include "object/nmo_class_ids.h"

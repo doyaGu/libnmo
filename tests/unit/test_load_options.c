@@ -15,7 +15,6 @@
 #include "session/nmo_deserializer.h"
 #include "session/nmo_serializer.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
 #include "runtime/nmo_workspace.h"
 
 #include <stdio.h>

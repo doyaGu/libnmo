@@ -19,7 +19,6 @@
 #include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_runtime_kernel.h"
-#include "session/nmo_session_bridge.h"
 #include "document/nmo_document_compare.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"

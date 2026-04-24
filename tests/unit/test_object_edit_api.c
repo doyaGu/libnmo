@@ -8,7 +8,6 @@
 #include "runtime/nmo_workspace.h"
 #include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
 #include "../../src/runtime/runtime_internal.h"
 
 TEST(object_edit_api, rename_through_workspace_owner) {

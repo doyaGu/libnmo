@@ -5,7 +5,6 @@
 #include "runtime/nmo_workspace.h"
 #include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
 #include "session/nmo_session_pipeline.h"
 
 #include <stdint.h>

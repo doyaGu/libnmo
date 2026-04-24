@@ -7,7 +7,6 @@
 #include "document/nmo_document_load.h"
 #include "document/nmo_document_compare.h"
 #include "session/nmo_runtime_kernel.h"
-#include "session/nmo_session_bridge.h"
 #include "test_framework.h"  // For NMO_TEST_DATA_FILE macro
 #include <stdio.h>
 #include <string.h>

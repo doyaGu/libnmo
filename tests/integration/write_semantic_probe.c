@@ -2,7 +2,6 @@
 
 #include "document/nmo_document_load.h"
 #include "session/nmo_runtime_kernel.h"
-#include "session/nmo_session_bridge.h"
 #include "test_framework.h"
 #include "type/nmo_type_query.h"
 

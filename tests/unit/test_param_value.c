@@ -9,7 +9,6 @@
 #include "runtime/nmo_workspace.h"
 #include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_guids.h"
 #include "object/nmo_class_ids.h"

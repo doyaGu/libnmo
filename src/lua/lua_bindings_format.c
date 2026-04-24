@@ -1,7 +1,6 @@
 #include "lua_bindings_internal.h"
 
 #include "format/nmo_interface_view.h"
-#include "session/nmo_session_bridge.h"
 
 #include "lauxlib.h"
 

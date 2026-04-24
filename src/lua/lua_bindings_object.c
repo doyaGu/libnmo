@@ -5,7 +5,6 @@
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_refs.h"
 #include "object/nmo_ref_graph.h"
-#include "session/nmo_session_bridge.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_runtime_result.h"
 #include "session/nmo_session_pipeline.h"

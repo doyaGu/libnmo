@@ -7,7 +7,6 @@
 #include "behavior/nmo_script_edit_graph.h"
 #include "behavior/nmo_behavior_view.h"
 #include "core/nmo_guid.h"
-#include "session/nmo_session_bridge.h"
 
 #include "lauxlib.h"
 

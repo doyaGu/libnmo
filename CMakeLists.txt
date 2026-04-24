@@ -452,6 +452,7 @@ install(DIRECTORY include/
     PATTERN "session/nmo_runtime_delete.h" EXCLUDE
     PATTERN "session/nmo_runtime_ref_remap.h" EXCLUDE
     PATTERN "session/nmo_save_id_remap.h" EXCLUDE
+    PATTERN "session/nmo_session_bridge.h" EXCLUDE
     PATTERN "session/nmo_session_util.h" EXCLUDE
     PATTERN "session/nmo_session_internal.h" EXCLUDE
     PATTERN "session/nmo_reference_resolver.h" EXCLUDE

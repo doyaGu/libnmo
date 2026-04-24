@@ -9,7 +9,6 @@
 #include "document/nmo_document_load.h"
 #include "document/nmo_document_save.h"
 #include "session/nmo_runtime_kernel.h"
-#include "session/nmo_session_bridge.h"
 #include "session/nmo_session.h"
 #include "document/nmo_document_compare.h"
 #include "core/nmo_error.h"

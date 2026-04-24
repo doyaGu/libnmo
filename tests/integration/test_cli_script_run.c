@@ -9,7 +9,6 @@
 #include "runtime/nmo_context.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
 #include "yyjson.h"
 
 #include <stdio.h>

@@ -55,7 +55,6 @@
 #include "session/nmo_runtime_result.h"
 #include "session/nmo_serializer.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
 #include "type/nmo_operation_system.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_query.h"
@@ -213,11 +212,7 @@ TEST(public_api_smoke, canonical_umbrella_and_headers_exclude_legacy_worldview) 
     free(workspace_header);
 
     char *session_bridge = read_source_text("include/session/nmo_session_bridge.h");
-    ASSERT_NOT_NULL(session_bridge);
-    ASSERT_TRUE(strstr(session_bridge, "nmo_session_borrow_document") != NULL);
-    ASSERT_NULL(strstr(session_bridge, "nmo_session_from_document("));
-    ASSERT_NULL(strstr(session_bridge, "nmo_session_from_workspace("));
-    free(session_bridge);
+    ASSERT_NULL(session_bridge);
 
     char *script_view = read_source_text("include/behavior/nmo_script_view.h");
     ASSERT_NULL(script_view);

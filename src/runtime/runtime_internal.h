@@ -59,6 +59,9 @@ void nmo_session_close_with_context(
     nmo_session_t *session);
 
 nmo_status_t nmo_runtime_apply_edit_flags(nmo_session_t *session, uint32_t flags);
+nmo_status_t nmo_session_borrow_document(
+    nmo_session_t *session,
+    nmo_document_t **out_document);
 /* Legacy 3-argument runtime-op callbacks kept internal to the session bridge. */
 nmo_status_t nmo_load_file(
     nmo_session_t *session,

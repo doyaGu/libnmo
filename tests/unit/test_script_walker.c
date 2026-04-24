@@ -13,7 +13,6 @@
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_array.h"
 #include "object/nmo_class_ids.h"

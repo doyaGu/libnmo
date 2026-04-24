@@ -9,7 +9,6 @@
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_repository.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
 #include "session/nmo_session_pipeline.h"
 #include "type/nmo_reflection.h"
 

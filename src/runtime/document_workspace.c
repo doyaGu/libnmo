@@ -4,7 +4,6 @@
  */
 
 #include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
 #include "session/nmo_session_pipeline.h"
 #include "runtime/nmo_context.h"
 #include "document/nmo_document.h"

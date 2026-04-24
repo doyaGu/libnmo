@@ -12,7 +12,6 @@
 #include "runtime/nmo_workspace.h"
 #include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_bridge.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session_pipeline.h"
 

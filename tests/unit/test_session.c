@@ -10,7 +10,6 @@
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_query.h"
-#include "session/nmo_session_bridge.h"
 #include "../../src/runtime/runtime_internal.h"
 
 static nmo_object_t *create_session_object(
