@@ -1294,6 +1294,43 @@ TEST(cli, behavior_fold_writes_closed_graph_anchor) {
     remove(output);
 }
 
+TEST(cli, behavior_fold_writes_leaf_component_anchor) {
+    const char *output = "test_behavior_rewrite_tmp/fold_leaf_component.cmo";
+    remove(output);
+    make_dir("test_behavior_rewrite_tmp");
+
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "behavior fold --parent 80 "
+             "--nodes 17,24,31,36,43,47,52,67 "
+             "--anchor 17 "
+             "--bb-guid 42414C03-10000003 "
+             "--name \"Ballance Delete Loaded NMO\" "
+             "--preserve-boundary \"%s\" -o \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output);
+
+    assert_cli_success(args, "Saved to");
+    ASSERT_TRUE(file_exists(output));
+    assert_validate_ok(output);
+
+    snprintf(args, sizeof(args), "-f json behavior show 17 \"%s\"",
+             output);
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.show", &doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_STR_EQ("Ballance Delete Loaded NMO",
+                  get_string_field(data, "name"));
+    ASSERT_STR_EQ("42414C03-10000003",
+                  get_string_field(data, "bb_guid"));
+    ASSERT_STR_EQ("BB", get_string_field(data, "behavior_type"));
+    yyjson_doc_free(doc);
+
+    remove(output);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_graph_boundary_json_smoke);
     REGISTER_TEST(cli, behavior_replace_bb_dry_run_reports_leaf_preservation);
@@ -1321,4 +1358,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_single_leaf_anchor_writable);
     REGISTER_TEST(cli, behavior_fold_writes_single_leaf_anchor);
     REGISTER_TEST(cli, behavior_fold_writes_closed_graph_anchor);
+    REGISTER_TEST(cli, behavior_fold_writes_leaf_component_anchor);
 TEST_MAIN_END()

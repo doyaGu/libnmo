@@ -628,7 +628,9 @@ static bool rewrite_fold_report_supports_closed_graph_write(
     }
     const nmo_behavior_state_t *state =
         (const nmo_behavior_state_t *)nmo_object_get_state(anchor);
-    if (!state || state->sub_behaviors.count == 0) {
+    if (!state ||
+        (state->sub_behaviors.count == 0 &&
+         !rewrite_behavior_state_is_leaf_bb(state))) {
         return false;
     }
     for (size_t i = 0; i < report->boundary.parameter_in_count; ++i) {
