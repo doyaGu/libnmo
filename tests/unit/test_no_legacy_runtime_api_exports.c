@@ -98,6 +98,102 @@ static const char *k_state_only_sources[] = {
     "tools/commands/nmo_cmd_scene.c",
 };
 
+static const char *k_cli_owner_first_sources[] = {
+    "tools/nmo_cli_common.c",
+    "tools/nmo_cli_common.h",
+    "tools/nmo_cli_dispatch.c",
+    "tools/nmo_cli_dispatch.h",
+    "tools/nmo_cli_json.c",
+    "tools/nmo_cli_json.h",
+    "tools/nmo_cli_main.c",
+    "tools/nmo_cli_output.c",
+    "tools/nmo_cli_output.h",
+    "tools/nmo_cli_sort.c",
+    "tools/nmo_cli_sort.h",
+    "tools/nmo_cli_write.c",
+    "tools/nmo_cli_write.h",
+    "tools/nmo_cmd_core.c",
+    "tools/nmo_cmd_core.h",
+    "tools/nmo_cmd_ctx.c",
+    "tools/nmo_cmd_ctx.h",
+    "tools/nmo_command_registry.c",
+    "tools/nmo_command_registry.h",
+    "tools/nmo_opt.c",
+    "tools/nmo_opt.h",
+    "tools/nmo_repl_commands.c",
+    "tools/nmo_repl_commands.h",
+    "tools/nmo_repl_input.c",
+    "tools/nmo_repl_input.h",
+    "tools/nmo_repl_repl.c",
+    "tools/nmo_repl_repl.h",
+    "tools/nmo_repl_session.c",
+    "tools/nmo_repl_session.h",
+    "tools/nmo_repl_types.h",
+    "tools/nmo_repl_util.c",
+    "tools/nmo_repl_util.h",
+    "tools/nmo_tool_common.c",
+    "tools/nmo_tool_common.h",
+    "tools/nmo_tool_session.c",
+    "tools/nmo_tool_session.h",
+    "tools/commands/nmo_cmd_animation.c",
+    "tools/commands/nmo_cmd_animation.h",
+    "tools/commands/nmo_cmd_behavior.c",
+    "tools/commands/nmo_cmd_behavior.h",
+    "tools/commands/nmo_cmd_behavior_graph.c",
+    "tools/commands/nmo_cmd_behavior_internal.h",
+    "tools/commands/nmo_cmd_behavior_interface.c",
+    "tools/commands/nmo_cmd_behavior_link.c",
+    "tools/commands/nmo_cmd_behavior_rewrite.c",
+    "tools/commands/nmo_cmd_behavior_rewrite.h",
+    "tools/commands/nmo_cmd_behavior_search.c",
+    "tools/commands/nmo_cmd_behavior_show.c",
+    "tools/commands/nmo_cmd_chunk.c",
+    "tools/commands/nmo_cmd_chunk.h",
+    "tools/commands/nmo_cmd_completion.c",
+    "tools/commands/nmo_cmd_completion.h",
+    "tools/commands/nmo_cmd_convert.c",
+    "tools/commands/nmo_cmd_convert.h",
+    "tools/commands/nmo_cmd_data.c",
+    "tools/commands/nmo_cmd_data.h",
+    "tools/commands/nmo_cmd_debug.c",
+    "tools/commands/nmo_cmd_debug.h",
+    "tools/commands/nmo_cmd_diff.c",
+    "tools/commands/nmo_cmd_diff.h",
+    "tools/commands/nmo_cmd_entity.c",
+    "tools/commands/nmo_cmd_entity.h",
+    "tools/commands/nmo_cmd_extension.c",
+    "tools/commands/nmo_cmd_extension.h",
+    "tools/commands/nmo_cmd_file.c",
+    "tools/commands/nmo_cmd_file.h",
+    "tools/commands/nmo_cmd_material.c",
+    "tools/commands/nmo_cmd_material.h",
+    "tools/commands/nmo_cmd_mesh.c",
+    "tools/commands/nmo_cmd_mesh.h",
+    "tools/commands/nmo_cmd_object.c",
+    "tools/commands/nmo_cmd_object.h",
+    "tools/commands/nmo_cmd_object_internal.h",
+    "tools/commands/nmo_cmd_object_refs.c",
+    "tools/commands/nmo_cmd_object_write.c",
+    "tools/commands/nmo_cmd_parameter.c",
+    "tools/commands/nmo_cmd_parameter.h",
+    "tools/commands/nmo_cmd_patch.c",
+    "tools/commands/nmo_cmd_patch.h",
+    "tools/commands/nmo_cmd_repl.c",
+    "tools/commands/nmo_cmd_repl.h",
+    "tools/commands/nmo_cmd_resource.c",
+    "tools/commands/nmo_cmd_resource.h",
+    "tools/commands/nmo_cmd_scene.c",
+    "tools/commands/nmo_cmd_scene.h",
+    "tools/commands/nmo_cmd_script.c",
+    "tools/commands/nmo_cmd_script.h",
+    "tools/commands/nmo_cmd_texture.c",
+    "tools/commands/nmo_cmd_texture.h",
+    "tools/commands/nmo_cmd_type.c",
+    "tools/commands/nmo_cmd_type.h",
+    "tools/commands/nmo_cmd_validate.c",
+    "tools/commands/nmo_cmd_validate.h",
+};
+
 static int line_has_legacy_api(const char *line) {
     return strstr(line, "NMO_API") != NULL && strstr(line, "finish_loading") != NULL;
 }
@@ -1523,6 +1619,17 @@ TEST(no_legacy_runtime_api_exports, behavior_analyze_and_views_are_workspace_fir
     assert_file_has_no_substring("src/object/object_diff_view.c", "nmo_session_borrow_document(");
 }
 
+TEST(no_legacy_runtime_api_exports, cli_tools_are_document_workspace_first) {
+    for (size_t i = 0; i < sizeof(k_cli_owner_first_sources) / sizeof(k_cli_owner_first_sources[0]); i++) {
+        assert_file_has_no_substring(k_cli_owner_first_sources[i], "nmo_session_");
+        assert_file_has_no_substring(k_cli_owner_first_sources[i], "nmo_session_t *session");
+        assert_file_has_no_substring(k_cli_owner_first_sources[i], ".session");
+        assert_file_has_no_substring(k_cli_owner_first_sources[i], "->session");
+        assert_file_has_no_substring(k_cli_owner_first_sources[i], "#include \"session/");
+        assert_file_has_no_substring(k_cli_owner_first_sources[i], "runtime_internal.h");
+    }
+}
+
 TEST(no_legacy_runtime_api_exports, object_diff_public_api_is_document_first) {
     assert_file_has_substring("include/object/nmo_object_diff.h", "const nmo_document_t *document1");
     assert_file_has_substring("include/object/nmo_object_diff.h", "const nmo_document_t *document2");
@@ -1562,6 +1669,7 @@ TEST(no_legacy_runtime_api_exports, deprecated_session_headers_are_not_installed
     assert_file_missing("include/session/nmo_runtime_delete.h");
     assert_file_missing("include/session/nmo_runtime_ref_remap.h");
     assert_file_missing("include/session/nmo_save_id_remap.h");
+    assert_file_missing("include/session/nmo_session_bridge.h");
     assert_file_missing("include/session/nmo_session_util.h");
     assert_file_has_no_substring("tests/unit/test_public_api_smoke.c", "#include \"session/nmo_context.h\"");
     assert_file_has_substring("include/runtime/nmo_context.h", "nmo_context_create(");
@@ -1582,7 +1690,6 @@ TEST(no_legacy_runtime_api_exports, public_session_surface_is_frozen_to_low_leve
     assert_file_has_substring("tests/unit/test_public_api_smoke.c", "#include \"session/nmo_runtime_result.h\"");
     assert_file_has_substring("tests/unit/test_public_api_smoke.c", "#include \"session/nmo_serializer.h\"");
     assert_file_has_substring("tests/unit/test_public_api_smoke.c", "#include \"session/nmo_session.h\"");
-    assert_file_has_substring("tests/unit/test_public_api_smoke.c", "#include \"session/nmo_session_bridge.h\"");
     assert_file_has_substring("tests/unit/test_public_api_smoke.c", "#include \"session/nmo_session_pipeline.h\"");
 
     assert_file_has_substring("include/session/nmo_builder.h", "nmo_builder_");
@@ -1594,7 +1701,6 @@ TEST(no_legacy_runtime_api_exports, public_session_surface_is_frozen_to_low_leve
     assert_file_has_substring("include/session/nmo_runtime_result.h", "nmo_session_copy_objects_result(");
     assert_file_has_substring("include/session/nmo_serializer.h", "nmo_serializer_");
     assert_file_has_substring("include/session/nmo_session.h", "nmo_session_create(");
-    assert_file_has_substring("include/session/nmo_session_bridge.h", "nmo_session_borrow_document(");
     assert_file_has_substring("include/session/nmo_session_pipeline.h", "NMO_SESSION_PIPELINE_API_TIER");
 
     assert_file_missing("include/session/nmo_context.h");
@@ -1603,15 +1709,16 @@ TEST(no_legacy_runtime_api_exports, public_session_surface_is_frozen_to_low_leve
     assert_file_missing("include/session/nmo_runtime_delete.h");
     assert_file_missing("include/session/nmo_runtime_ref_remap.h");
     assert_file_missing("include/session/nmo_save_id_remap.h");
+    assert_file_missing("include/session/nmo_session_bridge.h");
     assert_file_missing("include/session/nmo_session_util.h");
 }
 
-TEST(no_legacy_runtime_api_exports, session_bridge_is_advanced_to_owner_only) {
-    assert_file_has_substring("include/session/nmo_session_bridge.h", "nmo_session_borrow_document(");
-    assert_file_has_no_substring("include/session/nmo_session_bridge.h", "nmo_session_from_document(");
-    assert_file_has_no_substring("include/session/nmo_session_bridge.h", "nmo_session_from_document_const(");
-    assert_file_has_no_substring("include/session/nmo_session_bridge.h", "nmo_session_from_workspace(");
-    assert_file_has_no_substring("include/session/nmo_session_bridge.h", "nmo_session_from_workspace_const(");
+TEST(no_legacy_runtime_api_exports, session_bridge_is_internal_only) {
+    assert_file_missing("include/session/nmo_session_bridge.h");
+    assert_file_has_no_substring(
+        "tests/unit/test_public_api_smoke.c",
+        "#include \"session/nmo_session_bridge.h\"");
+    assert_file_has_substring("src/runtime/runtime_internal.h", "nmo_session_borrow_document(");
 }
 
 TEST_MAIN_BEGIN()
@@ -1705,10 +1812,11 @@ REGISTER_TEST(no_legacy_runtime_api_exports, behavior_and_object_owners_do_not_r
 REGISTER_TEST(no_legacy_runtime_api_exports, public_owner_headers_do_not_redeclare_legacy_query_and_edit_facades);
 REGISTER_TEST(no_legacy_runtime_api_exports, owner_sources_do_not_directly_include_session_headers);
 REGISTER_TEST(no_legacy_runtime_api_exports, behavior_analyze_and_views_are_workspace_first);
+REGISTER_TEST(no_legacy_runtime_api_exports, cli_tools_are_document_workspace_first);
 REGISTER_TEST(no_legacy_runtime_api_exports, object_diff_public_api_is_document_first);
 REGISTER_TEST(no_legacy_runtime_api_exports, document_load_save_compare_headers_are_document_first);
 REGISTER_TEST(no_legacy_runtime_api_exports, deprecated_session_headers_are_not_installed_or_smoked);
 REGISTER_TEST(no_legacy_runtime_api_exports, public_session_surface_is_frozen_to_low_level_mechanisms);
-REGISTER_TEST(no_legacy_runtime_api_exports, session_bridge_is_advanced_to_owner_only);
+REGISTER_TEST(no_legacy_runtime_api_exports, session_bridge_is_internal_only);
 TEST_MAIN_END()
 
