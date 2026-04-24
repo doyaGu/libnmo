@@ -11,6 +11,7 @@
 #include "nmo.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "runtime/nmo_context.h"
+#include "runtime/nmo_workspace.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_bridge.h"
 #include "core/nmo_allocator.h"
@@ -54,6 +55,24 @@ static nmo_status_t collect_scripts_from_session(
     return st;
 }
 
+static nmo_status_t open_workspace_from_session(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    nmo_document_t **out_document,
+    nmo_workspace_t **out_workspace)
+{
+    nmo_status_t st = nmo_session_borrow_document(session, out_document);
+    if (st != NMO_OK) {
+        return st;
+    }
+    st = nmo_workspace_create(ctx, *out_document, out_workspace);
+    if (st != NMO_OK) {
+        nmo_document_destroy(*out_document);
+        *out_document = NULL;
+    }
+    return st;
+}
+
 /* ============================================================================
  * Tests: NULL argument handling
  * ============================================================================ */
@@ -69,7 +88,7 @@ TEST(script_walker, find_scripts_null_args) {
 }
 
 TEST(script_walker, walk_null_args) {
-    nmo_status_t st = nmo_behavior_walk(NULL, NULL, 1, NULL, NULL);
+    nmo_status_t st = nmo_behavior_walk(NULL, 1, NULL, NULL);
     ASSERT_NE(NMO_OK, st);
 }
 
@@ -78,14 +97,14 @@ TEST(script_walker, trace_null_args) {
     nmo_array_init(&chain, sizeof(nmo_behavior_trace_step_t), 4, NULL);
 
     nmo_status_t st = nmo_behavior_analyze_trace_param_chain(
-        NULL, NULL, 1, &chain, 32);
+        NULL, 1, &chain, 32);
     ASSERT_NE(NMO_OK, st);
 
     nmo_array_dispose(&chain);
 }
 
 TEST(script_walker, dump_text_null_args) {
-    nmo_status_t st = nmo_behavior_analyze_dump_text(NULL, NULL, 1, NULL);
+    nmo_status_t st = nmo_behavior_analyze_dump_text(NULL, 1, NULL);
     ASSERT_NE(NMO_OK, st);
 }
 
@@ -176,13 +195,18 @@ TEST(script_walker, walk_with_file) {
     const nmo_behavior_script_view_t *entry =
         (const nmo_behavior_script_view_t *)nmo_array_get(&scripts, 0);
 
-    /* Walk the first script éˆ?NULL visitor should fail */
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, open_workspace_from_session(ctx, session, &document, &workspace));
+
+    /* Walk the first script; NULL visitor should fail */
     nmo_status_t st = nmo_behavior_walk(
-        ctx, session, entry->script_id,
-        /* visitor: */ NULL, NULL);
+        workspace, entry->script_id, NULL, NULL);
     /* NULL visitor should be caught */
     ASSERT_NE(NMO_OK, st);
 
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_array_dispose(&scripts);
     nmo_session_close_with_context(ctx, session);
 }
@@ -206,14 +230,21 @@ TEST(script_walker, dump_text_with_file) {
         const nmo_behavior_script_view_t *entry =
             (const nmo_behavior_script_view_t *)nmo_array_get(&scripts, 0);
 
+        nmo_document_t *document = NULL;
+        nmo_workspace_t *workspace = NULL;
+        ASSERT_EQ(NMO_OK, open_workspace_from_session(ctx, session, &document, &workspace));
+
         /* Dump to /dev/null to verify no crashes */
         FILE *devnull = fopen("/dev/null", "w");
         if (devnull) {
             nmo_status_t st = nmo_behavior_analyze_dump_text(
-                ctx, session, entry->script_id, devnull);
+                workspace, entry->script_id, devnull);
             ASSERT_EQ(NMO_OK, st);
             fclose(devnull);
         }
+
+        nmo_workspace_destroy(workspace);
+        nmo_document_destroy(document);
     }
 
     nmo_array_dispose(&scripts);
