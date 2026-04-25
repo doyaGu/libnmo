@@ -31,6 +31,7 @@ typedef enum patch_operation_kind {
     PATCH_OP_INTERFACE_POLICY = 4,
     PATCH_OP_REMOVE_IO = 5,
     PATCH_OP_RENAME_IO = 6,
+    PATCH_OP_ADD_NODE = 7,
 } patch_operation_kind_t;
 
 typedef struct patch_operation {
@@ -46,6 +47,11 @@ typedef struct patch_operation {
         nmo_script_edit_io_kind_t kind;
         const char *name;
     } add_io;
+    struct {
+        nmo_object_id_t behavior_id;
+        nmo_guid_t bb_guid;
+        const char *name;
+    } add_node;
     struct {
         nmo_object_id_t io_id;
         bool detach_links;
@@ -158,6 +164,13 @@ static nmo_status_t patch_operation_add_to_edit_plan(
             op->add_io.behavior_id,
             op->add_io.kind,
             op->add_io.name);
+    }
+    if (op->kind == PATCH_OP_ADD_NODE) {
+        return nmo_edit_plan_add_node(
+            edit_plan,
+            op->add_node.behavior_id,
+            op->add_node.bb_guid,
+            op->add_node.name);
     }
     if (op->kind == PATCH_OP_REMOVE_IO) {
         return nmo_edit_plan_add_remove_io(
@@ -516,6 +529,50 @@ static int patch_parse_add_io(yyjson_val *op_obj,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+static int patch_parse_add_node(yyjson_val *op_obj,
+                                patch_operation_t *out_op) {
+    static const char *const allowed[] = {
+        "op",
+        "behavior_id",
+        "guid",
+        "name",
+    };
+    int rc = patch_reject_unknown_fields(
+        op_obj, "add_node operation",
+        allowed, sizeof(allowed) / sizeof(allowed[0]));
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    yyjson_val *id_val = yyjson_obj_get(op_obj, "behavior_id");
+    if (!id_val || !yyjson_is_uint(id_val) || yyjson_get_uint(id_val) == 0 ||
+        yyjson_get_uint(id_val) > UINT32_MAX) {
+        fprintf(stderr, "Error: Missing or invalid behavior_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *guid_str = patch_required_string(
+        op_obj, "guid", "add_node operation");
+    const char *name = patch_required_string(
+        op_obj, "name", "add_node operation");
+    if (!guid_str || !name) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_guid_t guid = nmo_guid_parse(guid_str);
+    if (nmo_guid_is_null(guid)) {
+        fprintf(stderr, "Error: Invalid GUID '%s'\n", guid_str);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    memset(out_op, 0, sizeof(*out_op));
+    out_op->kind = PATCH_OP_ADD_NODE;
+    out_op->add_node.behavior_id = (nmo_object_id_t)yyjson_get_uint(id_val);
+    out_op->add_node.bb_guid = guid;
+    out_op->add_node.name = name;
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static int patch_parse_remove_io(yyjson_val *op_obj,
                                  patch_operation_t *out_op) {
     static const char *const allowed[] = {
@@ -863,6 +920,8 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
             rc = patch_parse_replace_bb(op_obj, &operations[idx]);
         } else if (strcmp(op, "fold") == 0) {
             rc = patch_parse_fold(op_obj, &operations[idx]);
+        } else if (strcmp(op, "add_node") == 0 && out_plan->version == 2u) {
+            rc = patch_parse_add_node(op_obj, &operations[idx]);
         } else if (strcmp(op, "add_io") == 0 && out_plan->version == 2u) {
             rc = patch_parse_add_io(op_obj, &operations[idx]);
         } else if (strcmp(op, "remove_io") == 0 && out_plan->version == 2u) {
