@@ -325,6 +325,18 @@ static void debug_export_usage(FILE *out) {
     fprintf(out, "  Use -o/--output to write JSON to a file.\n");
 }
 
+static void debug_probe_usage(FILE *out) {
+    fprintf(out, "Usage: nmo debug probe 2d-text --behavior <id> [--name <name>] [--dry-run] <file> -o <output>\n\n");
+    fprintf(out, "Inject a diagnostic probe BB through the unified edit executor.\n\n");
+    fprintf(out, "Probe kinds:\n");
+    fprintf(out, "  2d-text                 Add a 2D Text building block node\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --behavior <id>         Parent behavior receiving the probe\n");
+    fprintf(out, "  --name <name>           Probe node name (default: nmo debug probe)\n");
+    fprintf(out, "  --dry-run               Report the edit without saving\n");
+    fprintf(out, "  -o, --output <path>     Output file (required unless --dry-run)\n");
+}
+
 static void resource_list_usage(FILE *out) {
     fprintf(out, "Usage: nmo resource list <file>\n\n");
     fprintf(out, "List included files/resources embedded in the NMO.\n");
@@ -1201,6 +1213,7 @@ static const nmo_cli_action_t debug_actions[] = {
     ACTION("chunks", "ch", "Show chunk parse details", nmo_cmd_debug_chunks, debug_chunks_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("objects", "obj", "Show object load details", nmo_cmd_debug_objects, debug_objects_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("export", "x", "Export JSON snapshot for debugging", nmo_cmd_debug_export, debug_export_usage, NMO_REPL_ACTION_READ_SESSION),
+    ACTION("probe", NULL, "Inject diagnostic script probes", nmo_cmd_debug_probe, debug_probe_usage, NMO_REPL_ACTION_MUTATE_FILE_ONLY),
 };
 
 static const nmo_cli_action_t repl_actions[] = {

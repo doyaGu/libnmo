@@ -7,13 +7,19 @@
 
 #include "../nmo_cmd_core.h"
 #include "../nmo_cmd_ctx.h"
+#include "../nmo_cli_json.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_write.h"
 #include "../nmo_tool_common.h"
 #include "../nmo_opt.h"
 
+#include "behavior/nmo_edit_plan.h"
 #include "nmo.h"
 #include "document/nmo_document_stats.h"
+#include "document/nmo_document_save.h"
 #include "runtime/nmo_context.h"
+#include "core/nmo_error.h"
+#include "core/nmo_guid.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -25,6 +31,227 @@ typedef struct nmo_debug_chunks_data {
     nmo_cli_table_t *table;
     size_t chunk_count;
 } nmo_debug_chunks_data_t;
+
+typedef struct nmo_debug_probe_args {
+    const char *kind;
+    nmo_object_id_t behavior_id;
+    const char *name;
+    nmo_edit_report_t report;
+} nmo_debug_probe_args_t;
+
+static const char *debug_probe_edit_op_kind_string(nmo_edit_op_kind_t kind) {
+    switch (kind) {
+    case NMO_EDIT_OP_ADD_NODE:
+        return "add_node";
+    default:
+        return "edit";
+    }
+}
+
+static void debug_probe_add_impact_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *obj,
+    const char *name,
+    const nmo_edit_object_impact_t *items,
+    size_t count)
+{
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    for (size_t i = 0; items != NULL && i < count; ++i) {
+        yyjson_mut_val *item = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, item, "object_id",
+                                (uint64_t)items[i].id);
+        yyjson_mut_obj_add_uint(doc, item, "id", (uint64_t)items[i].id);
+        nmo_cli_json_add_str_safe(
+            doc, item, "cause",
+            debug_probe_edit_op_kind_string(items[i].cause));
+        nmo_cli_json_add_str_safe(doc, item, "role", items[i].role);
+        yyjson_mut_arr_add_val(arr, item);
+    }
+    yyjson_mut_obj_add_val(doc, obj, name, arr);
+}
+
+static void debug_probe_add_operations_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *obj,
+    const nmo_edit_report_t *report)
+{
+    yyjson_mut_val *ops = yyjson_mut_arr(doc);
+    for (size_t i = 0; report != NULL && i < report->operation_count; ++i) {
+        const nmo_edit_operation_result_t *op = &report->operations[i];
+        yyjson_mut_val *item = yyjson_mut_obj(doc);
+        yyjson_mut_val *handles = yyjson_mut_arr(doc);
+        yyjson_mut_obj_add_uint(doc, item, "index", (uint64_t)(i + 1u));
+        nmo_cli_json_add_str_safe(
+            doc, item, "op", debug_probe_edit_op_kind_string(op->kind));
+        yyjson_mut_obj_add_uint(doc, item, "primary_id",
+                                (uint64_t)op->primary_id);
+        yyjson_mut_obj_add_uint(doc, item, "result_id",
+                                (uint64_t)op->result_id);
+        yyjson_mut_obj_add_uint(doc, item, "status", (uint64_t)op->status);
+        nmo_cli_json_add_str_safe(doc, item, "status_name",
+                                  nmo_error_string(op->status));
+        for (size_t j = 0; j < op->handle_count; ++j) {
+            yyjson_mut_val *handle = yyjson_mut_obj(doc);
+            nmo_cli_json_add_str_safe(doc, handle, "name",
+                                      op->handles[j].name);
+            yyjson_mut_obj_add_uint(doc, handle, "object_id",
+                                    (uint64_t)op->handles[j].id);
+            yyjson_mut_obj_add_uint(doc, handle, "id",
+                                    (uint64_t)op->handles[j].id);
+            yyjson_mut_arr_add_val(handles, handle);
+        }
+        yyjson_mut_obj_add_val(doc, item, "handles", handles);
+        yyjson_mut_arr_add_val(ops, item);
+    }
+    yyjson_mut_obj_add_val(doc, obj, "operations", ops);
+}
+
+static int debug_probe_parse(int argc,
+                             char **argv,
+                             nmo_debug_probe_args_t *args,
+                             const char **out_input_path,
+                             const char **out_output_path,
+                             bool *out_dry_run)
+{
+    if (argc < 2 || argv == NULL || args == NULL || out_input_path == NULL ||
+        out_output_path == NULL || out_dry_run == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    memset(args, 0, sizeof(*args));
+    args->kind = argv[1];
+    args->name = "nmo debug probe";
+    *out_input_path = NULL;
+    *out_output_path = NULL;
+    *out_dry_run = false;
+
+    for (int i = 2; i < argc; ++i) {
+        if (strcmp(argv[i], "--behavior") == 0 && i + 1 < argc) {
+            args->behavior_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
+        } else if (strcmp(argv[i], "--name") == 0 && i + 1 < argc) {
+            args->name = argv[++i];
+        } else if ((strcmp(argv[i], "-o") == 0 ||
+                    strcmp(argv[i], "--output") == 0) &&
+                   i + 1 < argc) {
+            *out_output_path = argv[++i];
+        } else if (strcmp(argv[i], "--dry-run") == 0) {
+            *out_dry_run = true;
+        } else if (argv[i][0] != '-') {
+            *out_input_path = argv[i];
+        } else {
+            fprintf(stderr, "Error: Unsupported debug probe option '%s'\n",
+                    argv[i]);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    }
+
+    if (strcmp(args->kind, "2d-text") != 0) {
+        fprintf(stderr, "Error: Unsupported debug probe kind '%s'\n",
+                args->kind);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (args->behavior_id == 0u || *out_input_path == NULL) {
+        fprintf(stderr, "Usage: nmo debug probe 2d-text --behavior <id> "
+                        "[--name <name>] [--dry-run] <file> -o <output>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
+                              bool dry_run,
+                              const char *output_path,
+                              void *user_data)
+{
+    (void)output_path;
+    nmo_debug_probe_args_t *args = (nmo_debug_probe_args_t *)user_data;
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = NMO_OK;
+    const nmo_guid_t bb_2d_text = NMO_GUID(0x055B29FEu, 0x662D5CA0u);
+
+    if (ctx == NULL || args == NULL) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_edit_report_init(&args->report);
+    status = nmo_edit_plan_create(&plan);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_node(
+            plan, args->behavior_id, bb_2d_text, args->name);
+    }
+    if (status == NMO_OK) {
+        nmo_edit_executor_options_t options =
+            nmo_edit_executor_options_default();
+        options.dry_run = dry_run;
+        status = nmo_edit_executor_execute(
+            ctx->workspace, plan, &options, &args->report);
+    }
+    nmo_edit_plan_destroy(plan);
+    if (status != NMO_OK) {
+        fprintf(stderr, "Error: debug probe failed: %s\n",
+                nmo_error_string(status));
+        return status == NMO_ERR_INVALID_ARGUMENT || status == NMO_ERR_NOT_FOUND
+            ? NMO_CLI_EXIT_ARG_ERROR
+            : NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int debug_probe_report(nmo_cmd_ctx_t *ctx,
+                              bool dry_run,
+                              const char *output_path,
+                              void *user_data)
+{
+    nmo_debug_probe_args_t *args = (nmo_debug_probe_args_t *)user_data;
+    if (ctx == NULL || args == NULL) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    if (ctx->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
+        if (doc == NULL) {
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_bool(doc, data, "ok", args->report.ok);
+        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        nmo_cli_json_add_str_safe(doc, data, "probe_kind", args->kind);
+        yyjson_mut_obj_add_uint(doc, data, "behavior_id",
+                                (uint64_t)args->behavior_id);
+        yyjson_mut_obj_add_uint(doc, data, "operation_count",
+                                (uint64_t)args->report.operation_count);
+        if (output_path != NULL) {
+            nmo_cli_json_add_str_safe(doc, data, "output_path", output_path);
+        }
+        yyjson_mut_obj_add_val(doc, data, "errors", yyjson_mut_arr(doc));
+        yyjson_mut_obj_add_val(doc, data, "warnings", yyjson_mut_arr(doc));
+        debug_probe_add_operations_json(doc, data, &args->report);
+        debug_probe_add_impact_json(
+            doc, data, "changed_objects",
+            args->report.changed_objects,
+            args->report.changed_object_count);
+        debug_probe_add_impact_json(
+            doc, data, "created_objects",
+            args->report.created_objects,
+            args->report.created_object_count);
+        debug_probe_add_impact_json(
+            doc, data, "deleted_objects",
+            args->report.deleted_objects,
+            args->report.deleted_object_count);
+        int rc = nmo_cmd_ctx_json_end(ctx, doc, data, "debug.probe");
+        nmo_edit_report_dispose(&args->report);
+        return rc;
+    }
+
+    fprintf(ctx->out, "%sInjected %zu debug probe operation(s)\n",
+            dry_run ? "[dry-run] " : "",
+            args->report.operation_count);
+    if (!dry_run && output_path != NULL) {
+        fprintf(ctx->out, "Saved to: %s\n", output_path);
+    }
+    nmo_edit_report_dispose(&args->report);
+    return NMO_CLI_EXIT_SUCCESS;
+}
 
 static void debug_add_load_phase_stats_json(yyjson_mut_doc *doc,
                                             yyjson_mut_val *data,
@@ -707,6 +934,36 @@ int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *glo
     return debug_export_run_in_ctx(&c, include_data, max_bytes, true);
 }
 
+int nmo_cmd_debug_probe(int argc,
+                        char **argv,
+                        const nmo_cli_global_opts_t *global)
+{
+    nmo_debug_probe_args_t args;
+    const char *input_path = NULL;
+    const char *output_path = NULL;
+    bool dry_run = false;
+    int rc = debug_probe_parse(
+        argc, argv, &args, &input_path, &output_path, &dry_run);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    const nmo_cli_write_spec_t spec = {
+        .command_name = "debug.probe",
+        .output_required_unless_dry_run = true,
+        .should_save = NULL,
+    };
+    return nmo_cli_run_write_command(
+        input_path,
+        output_path,
+        dry_run,
+        global,
+        &spec,
+        debug_probe_mutate,
+        debug_probe_report,
+        &args);
+}
+
 static int nmo_cmd_debug_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     if (!ctx) {
@@ -724,7 +981,7 @@ static int nmo_cmd_debug_export_in_session(nmo_cmd_ctx_t *ctx, int argc, char **
 int nmo_cmd_debug_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     if (!ctx || argc < 1 || !argv || !argv[0]) {
-        fprintf(stderr, "Usage: debug load-phases|chunks|objects|export ...\n");
+        fprintf(stderr, "Usage: debug load-phases|chunks|objects|export|probe ...\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 

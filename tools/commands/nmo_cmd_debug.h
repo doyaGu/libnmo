@@ -35,6 +35,11 @@ int nmo_cmd_debug_objects(int argc, char **argv, const nmo_cli_global_opts_t *gl
  */
 int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
+/**
+ * @brief nmo debug probe - Inject diagnostic script probes
+ */
+int nmo_cmd_debug_probe(int argc, char **argv, const nmo_cli_global_opts_t *global);
+
 #ifdef __cplusplus
 }
 #endif
