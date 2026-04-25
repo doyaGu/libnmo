@@ -9,15 +9,16 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_edit_report_json.h"
 #include "../nmo_cli_write.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
+#include "behavior/nmo_edit_plan.h"
 #include "runtime/nmo_context.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_parse.h"
-#include "object/nmo_object_edit.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
@@ -660,7 +661,35 @@ typedef struct data_set_cell_args {
     const char *col_type_name;
     char old_buf[256];
     char new_buf[256];
+    nmo_edit_plan_t *edit_plan;
+    nmo_edit_report_t edit_report;
+    bool edit_report_ready;
 } data_set_cell_args_t;
+
+static void data_set_cell_args_cleanup(data_set_cell_args_t *args)
+{
+    if (args == NULL) {
+        return;
+    }
+    nmo_edit_plan_destroy(args->edit_plan);
+    args->edit_plan = NULL;
+    if (args->edit_report_ready) {
+        nmo_edit_report_dispose(&args->edit_report);
+        args->edit_report_ready = false;
+    }
+}
+
+static int data_set_cell_exit_code(nmo_status_t status)
+{
+    switch (status) {
+    case NMO_ERR_INVALID_ARGUMENT:
+    case NMO_ERR_NOT_FOUND:
+    case NMO_ERR_OUT_OF_BOUNDS:
+        return NMO_CLI_EXIT_ARG_ERROR;
+    default:
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+}
 
 static int data_set_cell_mutate(
     nmo_cmd_ctx_t *c,
@@ -721,33 +750,32 @@ static int data_set_cell_mutate(
         return ref_rc;
     }
 
-    nmo_workspace_edit_t *edit = NULL;
-    nmo_status_t set_rc = nmo_workspace_edit_begin(c->workspace, "data set-cell", &edit);
+    nmo_status_t set_rc = nmo_edit_plan_create(&args->edit_plan);
     if (set_rc == NMO_OK) {
-        set_rc = nmo_object_edit_set_dataarray_cell(
-            edit, args->obj_id, args->row, args->col, args->value_str);
+        set_rc = nmo_edit_plan_add_data_cell(
+            args->edit_plan, args->obj_id, args->row, args->col, args->value_str);
+    }
+    if (set_rc == NMO_OK) {
+        set_rc = nmo_edit_report_init(&args->edit_report);
+    }
+    if (set_rc == NMO_OK) {
+        args->edit_report_ready = true;
+        nmo_edit_executor_options_t options = nmo_edit_executor_options_default();
+        options.dry_run = dry_run;
+        set_rc = nmo_edit_executor_execute(
+            c->workspace, args->edit_plan, &options, &args->edit_report);
     }
     if (set_rc != NMO_OK) {
-        if (edit) {
-            nmo_workspace_edit_rollback(edit);
-        }
         fprintf(stderr, "Error: Cannot parse '%s' as %s\n",
                 args->value_str, args->col_type_name);
-        return NMO_CLI_EXIT_ARG_ERROR;
+        return data_set_cell_exit_code(set_rc);
     }
 
-    format_cell(args->new_buf, sizeof(args->new_buf),
-                &target_row->cells[args->col], col_type, c);
-
     if (dry_run) {
-        nmo_workspace_edit_rollback(edit);
+        snprintf(args->new_buf, sizeof(args->new_buf), "%s", args->value_str);
     } else {
-        nmo_status_t commit_rc = nmo_workspace_edit_commit(edit);
-        if (commit_rc != NMO_OK) {
-            fprintf(stderr, "Error: Failed to commit edit: %s\n",
-                    nmo_error_string(commit_rc));
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
+        format_cell(args->new_buf, sizeof(args->new_buf),
+                    &target_row->cells[args->col], col_type, c);
     }
 
     args->name = nmo_object_get_name(obj);
@@ -770,6 +798,10 @@ static int data_set_cell_report(
         if (!doc) return NMO_CLI_EXIT_INTERNAL_ERROR;
 
         yyjson_mut_val *data = yyjson_mut_obj(doc);
+        nmo_cli_edit_report_add_schema_v2_json(
+            doc, data,
+            args->edit_report_ready ? &args->edit_report : NULL,
+            dry_run);
         yyjson_mut_obj_add_uint(doc, data, "id", args->obj_id);
         nmo_cli_json_add_str_safe(doc, data, "name",
                                   (args->name && args->name[0]) ? args->name : "");
@@ -779,9 +811,10 @@ static int data_set_cell_report(
         yyjson_mut_obj_add_str(doc, data, "column_type", args->col_type_name);
         nmo_cli_json_add_str_safe(doc, data, "old_value", args->old_buf);
         nmo_cli_json_add_str_safe(doc, data, "new_value", args->new_buf);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        if (!dry_run && output_path)
+        if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+            nmo_cli_json_add_str_safe(doc, data, "output_path", output_path);
+        }
 
         nmo_cmd_ctx_json_end(c, doc, data, "data.set-cell");
     } else {
@@ -875,7 +908,7 @@ int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *gl
         .command_name = "data.set-cell",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    int rc = nmo_cli_run_write_command(
         file_path,
         output_path,
         dry_run,
@@ -884,5 +917,7 @@ int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *gl
         data_set_cell_mutate,
         data_set_cell_report,
         &args);
+    data_set_cell_args_cleanup(&args);
+    return rc;
 }
 
