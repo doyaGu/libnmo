@@ -287,7 +287,7 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     ASSERT_NOT_NULL(get_array_field(data, "warnings"));
     changed_objects = get_array_field(data, "changed_objects");
     ASSERT_NOT_NULL(changed_objects);
-    ASSERT_EQ(3u, yyjson_arr_size(changed_objects));
+    ASSERT_EQ(1u, yyjson_arr_size(changed_objects));
     first_changed = yyjson_arr_get(changed_objects, 0);
     ASSERT_NOT_NULL(first_changed);
     ASSERT_STR_EQ("add_io", get_string_field(first_changed, "cause"));
@@ -339,7 +339,7 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     ASSERT_STR_EQ("add_io", get_string_field(first_created, "cause"));
     diff = get_object_field(data, "diff");
     ASSERT_NOT_NULL(diff);
-    ASSERT_EQ(3u, get_uint_field(diff, "changed_object_count"));
+    ASSERT_EQ(1u, get_uint_field(diff, "changed_object_count"));
     ASSERT_EQ(3u, get_uint_field(diff, "created_object_count"));
     ASSERT_EQ(0u, get_uint_field(diff, "deleted_object_count"));
     ASSERT_EQ(0u, get_uint_field(diff, "semantic_risk_count"));
