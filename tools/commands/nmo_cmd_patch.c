@@ -186,9 +186,6 @@ static void patch_add_edit_report_json(
                                       plan->output);
         }
     }
-    yyjson_mut_obj_add_uint(
-        doc, data, "operation_count",
-        (uint64_t)(report ? report->operation_count : 0u));
     nmo_cli_edit_report_add_operations_json(doc, data, report);
     nmo_cli_edit_report_add_impact_array_json(
         doc, data, "changed_objects",

@@ -897,7 +897,7 @@ TEST(cli, patch_apply_leaf_replace_bb_dry_run_and_apply) {
     yyjson_val *data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     ASSERT_FALSE(file_exists(output));
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
@@ -1008,7 +1008,7 @@ TEST(cli, patch_apply_v2_replace_bb_dry_run) {
     yyjson_val *data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1037,7 +1037,7 @@ TEST(cli, patch_apply_v2_add_io_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1069,7 +1069,7 @@ TEST(cli, patch_apply_v2_add_node_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1105,7 +1105,7 @@ TEST(cli, patch_apply_v2_add_behavior_link_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1141,7 +1141,7 @@ TEST(cli, patch_apply_v2_add_parameter_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1180,7 +1180,7 @@ TEST(cli, patch_apply_v2_set_parameter_value_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1215,7 +1215,7 @@ TEST(cli, patch_apply_v2_set_parameter_bytes_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1250,7 +1250,7 @@ TEST(cli, patch_apply_v2_set_data_cell_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1285,7 +1285,7 @@ TEST(cli, patch_apply_v2_remove_parameter_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1320,7 +1320,7 @@ TEST(cli, patch_apply_v2_add_operation_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1356,7 +1356,7 @@ TEST(cli, patch_apply_v2_rewire_operation_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(3u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(3u, (uint32_t)yyjson_arr_size(operations));
@@ -1391,7 +1391,7 @@ TEST(cli, patch_apply_v2_remove_operation_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(2u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(2u, (uint32_t)yyjson_arr_size(operations));
@@ -1426,7 +1426,7 @@ TEST(cli, patch_apply_v2_connect_parameter_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1461,7 +1461,7 @@ TEST(cli, patch_apply_v2_disconnect_parameter_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1496,7 +1496,7 @@ TEST(cli, patch_apply_v2_rewire_behavior_link_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1531,7 +1531,7 @@ TEST(cli, patch_apply_v2_set_behavior_link_delay_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1566,7 +1566,7 @@ TEST(cli, patch_apply_v2_remove_behavior_link_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1601,7 +1601,7 @@ TEST(cli, patch_apply_v2_remove_node_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1636,7 +1636,7 @@ TEST(cli, patch_apply_v2_remove_io_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1671,7 +1671,7 @@ TEST(cli, patch_apply_v2_rename_io_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1706,7 +1706,7 @@ TEST(cli, patch_apply_v2_interface_policy_dry_run) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
@@ -1821,7 +1821,7 @@ TEST(cli, patch_diff_json_reports_fold_delete_plan) {
     yyjson_val *root = yyjson_doc_get_root(doc);
     yyjson_val *data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
