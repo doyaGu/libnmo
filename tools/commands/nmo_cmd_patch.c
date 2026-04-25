@@ -202,11 +202,7 @@ static void patch_add_edit_report_json(
         doc, data, "deleted_objects",
         report ? report->deleted_objects : NULL,
         report ? report->deleted_object_count : 0u);
-    const nmo_cli_edit_report_json_options_t report_options = {
-        .include_risk_level = false,
-    };
-    nmo_cli_edit_report_add_semantic_risks_json(
-        doc, data, report, &report_options);
+    nmo_cli_edit_report_add_semantic_risks_json(doc, data, report);
     nmo_cli_edit_report_add_validation_json(doc, data, report);
     nmo_cli_edit_report_add_diff_json(doc, data, report);
 }

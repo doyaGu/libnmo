@@ -187,8 +187,7 @@ static int debug_probe_report(nmo_cmd_ctx_t *ctx,
             doc, data, "deleted_objects",
             args->report.deleted_objects,
             args->report.deleted_object_count);
-        nmo_cli_edit_report_add_semantic_risks_json(
-            doc, data, &args->report, NULL);
+        nmo_cli_edit_report_add_semantic_risks_json(doc, data, &args->report);
         nmo_cli_edit_report_add_validation_json(doc, data, &args->report);
         nmo_cli_edit_report_add_diff_json(doc, data, &args->report);
         int rc = nmo_cmd_ctx_json_end(ctx, doc, data, "debug.probe");

@@ -1742,9 +1742,6 @@ static void script_add_edit_report_json(yyjson_mut_doc *doc,
 {
     const nmo_edit_report_t *report =
         common != NULL ? &common->edit_report : NULL;
-    const nmo_cli_edit_report_json_options_t risk_options = {
-        .include_risk_level = false,
-    };
 
     if (doc == NULL || data == NULL) {
         return;
@@ -1771,8 +1768,7 @@ static void script_add_edit_report_json(yyjson_mut_doc *doc,
         doc, data, "deleted_objects",
         report != NULL ? report->deleted_objects : NULL,
         report != NULL ? report->deleted_object_count : 0u);
-    nmo_cli_edit_report_add_semantic_risks_json(
-        doc, data, report, &risk_options);
+    nmo_cli_edit_report_add_semantic_risks_json(doc, data, report);
     nmo_cli_edit_report_add_validation_json(doc, data, report);
     nmo_cli_edit_report_add_diff_json(doc, data, report);
 }
@@ -1933,16 +1929,12 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
             args->edit_report_ready ? &args->edit_report : NULL;
         size_t operation_count =
             edit_report != NULL ? edit_report->operation_count : 0u;
-        const nmo_cli_edit_report_json_options_t risk_options = {
-            .include_risk_level = false,
-        };
 
         yyjson_mut_obj_add_bool(doc, data, "ok",
                                 args->validation.final_status == NMO_OK);
         yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
         script_run_add_common_report_json(doc, data, args);
-        nmo_cli_edit_report_add_semantic_risks_json(
-            doc, data, edit_report, &risk_options);
+        nmo_cli_edit_report_add_semantic_risks_json(doc, data, edit_report);
         nmo_cli_json_add_str_safe(doc, data, "script_file", args->script_path);
         yyjson_mut_obj_add_uint(doc, data, "operation_count",
                                 operation_count);

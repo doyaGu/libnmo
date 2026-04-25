@@ -4,12 +4,7 @@
 #include "behavior/nmo_edit_plan.h"
 #include "yyjson.h"
 
-#include <stdbool.h>
 #include <stddef.h>
-
-typedef struct nmo_cli_edit_report_json_options {
-    bool include_risk_level;
-} nmo_cli_edit_report_json_options_t;
 
 const char *nmo_cli_edit_report_op_kind_string(nmo_edit_op_kind_t kind);
 
@@ -28,8 +23,7 @@ void nmo_cli_edit_report_add_impact_array_json(
 void nmo_cli_edit_report_add_semantic_risks_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *obj,
-    const nmo_edit_report_t *report,
-    const nmo_cli_edit_report_json_options_t *options);
+    const nmo_edit_report_t *report);
 
 void nmo_cli_edit_report_add_validation_json(
     yyjson_mut_doc *doc,

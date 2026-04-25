@@ -73,22 +73,6 @@ static const char *semantic_risk_severity_string(
     }
 }
 
-static const char *semantic_risk_level_string(
-    const nmo_behavior_semantic_risk_t *risks,
-    size_t risk_count)
-{
-    bool has_warn = false;
-    for (size_t i = 0; i < risk_count; ++i) {
-        if (risks[i].severity == NMO_BEHAVIOR_SEMANTIC_RISK_REJECT) {
-            return "reject";
-        }
-        if (risks[i].severity == NMO_BEHAVIOR_SEMANTIC_RISK_WARN) {
-            has_warn = true;
-        }
-    }
-    return has_warn ? "warn" : "safe";
-}
-
 void nmo_cli_edit_report_add_operations_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *obj,
@@ -160,8 +144,7 @@ void nmo_cli_edit_report_add_impact_array_json(
 void nmo_cli_edit_report_add_semantic_risks_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *obj,
-    const nmo_edit_report_t *report,
-    const nmo_cli_edit_report_json_options_t *options)
+    const nmo_edit_report_t *report)
 {
     const nmo_behavior_semantic_risk_t *risks =
         report != NULL ? report->semantic_risks : NULL;
@@ -177,11 +160,6 @@ void nmo_cli_edit_report_add_semantic_risks_json(
         yyjson_mut_obj_add_uint(doc, risk, "object_id",
                                 (uint64_t)risks[i].object_id);
         yyjson_mut_arr_add_val(arr, risk);
-    }
-    if (options != NULL && options->include_risk_level) {
-        nmo_cli_json_add_str_safe(
-            doc, obj, "risk_level",
-            semantic_risk_level_string(risks, risk_count));
     }
     yyjson_mut_obj_add_val(doc, obj, "semantic_risks", arr);
 }

@@ -872,6 +872,13 @@ TEST(repl_read, script_run_uses_executor_handles_only) {
                                "script_run_count_report_impacts");
 }
 
+TEST(repl_read, edit_report_json_does_not_emit_legacy_risk_level) {
+    assert_source_not_contains("tools/nmo_edit_report_json.h",
+                               "include_risk_level");
+    assert_source_not_contains("tools/nmo_edit_report_json.c",
+                               "risk_level");
+}
+
 TEST(repl_read, domain_session_dispatchers_do_not_construct_object_argv) {
     assert_source_not_contains("tools/commands/nmo_cmd_entity.c",
                                "nmo_cmd_object_show_in_session(ctx");
@@ -1146,6 +1153,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, no_borrowed_session_adapter_symbols_remain);
     REGISTER_TEST(repl_read, no_remaining_repl_read_placeholder_strings);
     REGISTER_TEST(repl_read, script_run_uses_executor_handles_only);
+    REGISTER_TEST(repl_read, edit_report_json_does_not_emit_legacy_risk_level);
     REGISTER_TEST(repl_read, domain_session_dispatchers_do_not_construct_object_argv);
     REGISTER_TEST(repl_read, read_family_headers_only_export_family_session_entrypoints);
     REGISTER_TEST(repl_read, no_active_session_adapter_symbols_remain);
