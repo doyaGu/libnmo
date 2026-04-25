@@ -538,7 +538,7 @@ nmo_status_t nmo_edit_plan_add_rewire_behavior_link(
     nmo_object_id_t to_io_id)
 {
     nmo_edit_op_t *op = NULL;
-    if (from_io_id == 0 || to_io_id == 0) {
+    if (link_id == 0 || (from_io_id == 0 && to_io_id == 0)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     NMO_RETURN_IF_ERROR(edit_plan_append_blank(
@@ -817,6 +817,11 @@ nmo_status_t nmo_edit_plan_add_replace_bb(
 nmo_edit_executor_options_t nmo_edit_executor_options_default(void)
 {
     nmo_edit_executor_options_t options = {0};
+    options.validation_flags =
+        NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY |
+        NMO_SCRIPT_EDIT_VALIDATE_REFERENCES |
+        NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX |
+        NMO_SCRIPT_EDIT_VALIDATE_INTERFACE;
     return options;
 }
 
@@ -1257,32 +1262,41 @@ static nmo_object_id_t edit_op_changed_id(const nmo_edit_op_t *op)
 
 static nmo_status_t edit_executor_validate(
     nmo_script_edit_tx_t *tx,
-    nmo_edit_report_t *report)
+    nmo_edit_report_t *report,
+    uint32_t validation_flags)
 {
-    report->validation.roundtrip_status =
-        nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
-    if (report->validation.roundtrip_status != NMO_OK) {
-        report->validation.final_status = report->validation.roundtrip_status;
-        return report->validation.final_status;
+    if ((validation_flags & NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY) != 0u) {
+        report->validation.roundtrip_status =
+            nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
+        if (report->validation.roundtrip_status != NMO_OK) {
+            report->validation.final_status = report->validation.roundtrip_status;
+            return report->validation.final_status;
+        }
     }
-    report->validation.reference_status =
-        nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
-    if (report->validation.reference_status != NMO_OK) {
-        report->validation.final_status = report->validation.reference_status;
-        return report->validation.final_status;
+    if ((validation_flags & NMO_SCRIPT_EDIT_VALIDATE_REFERENCES) != 0u) {
+        report->validation.reference_status =
+            nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
+        if (report->validation.reference_status != NMO_OK) {
+            report->validation.final_status = report->validation.reference_status;
+            return report->validation.final_status;
+        }
     }
-    report->validation.behavior_index_status =
-        nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
-    if (report->validation.behavior_index_status != NMO_OK) {
-        report->validation.final_status =
-            report->validation.behavior_index_status;
-        return report->validation.final_status;
+    if ((validation_flags & NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX) != 0u) {
+        report->validation.behavior_index_status =
+            nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
+        if (report->validation.behavior_index_status != NMO_OK) {
+            report->validation.final_status =
+                report->validation.behavior_index_status;
+            return report->validation.final_status;
+        }
     }
-    report->validation.interface_status =
-        nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_INTERFACE);
-    if (report->validation.interface_status != NMO_OK) {
-        report->validation.final_status = report->validation.interface_status;
-        return report->validation.final_status;
+    if ((validation_flags & NMO_SCRIPT_EDIT_VALIDATE_INTERFACE) != 0u) {
+        report->validation.interface_status =
+            nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_INTERFACE);
+        if (report->validation.interface_status != NMO_OK) {
+            report->validation.final_status = report->validation.interface_status;
+            return report->validation.final_status;
+        }
     }
     report->validation.final_status = NMO_OK;
     return NMO_OK;
@@ -1298,16 +1312,48 @@ nmo_status_t nmo_edit_executor_execute(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_edit_executor_options_t effective =
-        options != NULL ? *options : nmo_edit_executor_options_default();
-    NMO_RETURN_IF_ERROR(edit_report_prepare(report, plan, effective.dry_run));
-
     nmo_script_edit_tx_t *tx = NULL;
     nmo_status_t rc = nmo_script_edit_begin(workspace, "edit plan", &tx);
     if (rc != NMO_OK) {
         report->status = rc;
         return rc;
     }
+
+    nmo_edit_executor_options_t effective =
+        options != NULL ? *options : nmo_edit_executor_options_default();
+    rc = nmo_edit_executor_execute_transaction(tx, plan, &effective, report);
+    if (rc != NMO_OK) {
+        nmo_script_edit_rollback(tx);
+        return rc;
+    }
+
+    if (effective.dry_run) {
+        nmo_script_edit_rollback(tx);
+        report->ok = true;
+        report->status = NMO_OK;
+        return NMO_OK;
+    }
+
+    rc = nmo_script_edit_commit(tx);
+    report->ok = rc == NMO_OK;
+    report->status = rc;
+    return rc;
+}
+
+nmo_status_t nmo_edit_executor_execute_transaction(
+    nmo_script_edit_tx_t *tx,
+    const nmo_edit_plan_t *plan,
+    const nmo_edit_executor_options_t *options,
+    nmo_edit_report_t *report)
+{
+    if (tx == NULL || plan == NULL || report == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_edit_executor_options_t effective =
+        options != NULL ? *options : nmo_edit_executor_options_default();
+    nmo_status_t rc = NMO_OK;
+    NMO_RETURN_IF_ERROR(edit_report_prepare(report, plan, effective.dry_run));
 
     for (size_t i = 0; i < plan->count; i++) {
         const nmo_edit_op_t *op = &plan->ops[i];
@@ -1327,7 +1373,6 @@ nmo_status_t nmo_edit_executor_execute(
             .status = op_rc,
         };
         if (op_rc != NMO_OK) {
-            nmo_script_edit_rollback(tx);
             report->ok = false;
             report->status = op_rc;
             return op_rc;
@@ -1339,7 +1384,6 @@ nmo_status_t nmo_edit_executor_execute(
                 edit_op_result_handle_name(op->kind),
                 result_id);
             if (handle_rc != NMO_OK) {
-                nmo_script_edit_rollback(tx);
                 report->ok = false;
                 report->status = handle_rc;
                 return handle_rc;
@@ -1361,7 +1405,6 @@ nmo_status_t nmo_edit_executor_execute(
                     report, result_id, op->kind, "created");
             }
             if (report_rc != NMO_OK) {
-                nmo_script_edit_rollback(tx);
                 report->ok = false;
                 report->status = report_rc;
                 return report_rc;
@@ -1377,23 +1420,14 @@ nmo_status_t nmo_edit_executor_execute(
             report, edit_op_changed_id(op), op->kind, "primary");
     }
 
-    rc = edit_executor_validate(tx, report);
+    rc = edit_executor_validate(tx, report, effective.validation_flags);
     if (rc != NMO_OK) {
-        nmo_script_edit_rollback(tx);
         report->ok = false;
         report->status = rc;
         return rc;
     }
 
-    if (effective.dry_run) {
-        nmo_script_edit_rollback(tx);
-        report->ok = true;
-        report->status = NMO_OK;
-        return NMO_OK;
-    }
-
-    rc = nmo_script_edit_commit(tx);
-    report->ok = rc == NMO_OK;
-    report->status = rc;
-    return rc;
+    report->ok = true;
+    report->status = NMO_OK;
+    return NMO_OK;
 }

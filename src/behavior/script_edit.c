@@ -2185,8 +2185,12 @@ static bool script_edit_apply_removed_io_refs_to_behavior(
         } else {
             for (size_t j = 0; j < idata->sub_count; ++j) {
                 if (idata->subs[j].behavior_id == ref->owner_behavior_id) {
-                    body = &idata->subs[j].body;
-                    break;
+                    if (script_edit_rewrite_interface_body_removed_io(
+                            &idata->subs[j].body,
+                            ref->kind,
+                            ref->removed_index)) {
+                        changed = true;
+                    }
                 }
             }
         }

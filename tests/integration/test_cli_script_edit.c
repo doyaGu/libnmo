@@ -1443,7 +1443,7 @@ TEST(cli, script_node_and_io_crud_roundtrip)
 
     snprintf(args, sizeof(args),
              "-f json script node add --parent %u "
-             "--bb-guid 42414C07-10000007 --name \"Test BB\" "
+             "--bb-guid D0B7ADF3-D3FF3CF6 --name \"Test BB\" "
              "\"%s\" -o \"%s\"",
              manifest.root_behavior_id,
              NMO_TEST_DATA_FILE("Ballance/base.cmo"),
@@ -1621,7 +1621,7 @@ TEST(cli, script_node_remove_canonicalizes_interface_refs)
 
     snprintf(args, sizeof(args),
              "-f json script node add --parent %u "
-             "--bb-guid 42414C07-10000007 --name \"Iface Canon\" "
+             "--bb-guid D0B7ADF3-D3FF3CF6 --name \"Iface Canon\" "
              "\"%s\" -o \"%s\"",
              NMO_SCRIPT_INTERFACE_TARGET_ID,
              NMO_SCRIPT_INTERFACE_FIXTURE,
@@ -1720,7 +1720,7 @@ TEST(cli, script_node_remove_preserve_rejects_stale_interface_refs)
 
     snprintf(args, sizeof(args),
              "-f json script node add --parent %u "
-             "--bb-guid 42414C07-10000007 --name \"Iface Preserve\" "
+             "--bb-guid D0B7ADF3-D3FF3CF6 --name \"Iface Preserve\" "
              "\"%s\" -o \"%s\"",
              NMO_SCRIPT_INTERFACE_TARGET_ID,
              NMO_SCRIPT_INTERFACE_FIXTURE,
@@ -1773,7 +1773,7 @@ TEST(cli, script_node_remove_remove_strips_interface_data)
 
     snprintf(args, sizeof(args),
              "-f json script node add --parent %u "
-             "--bb-guid 42414C07-10000007 --name \"Iface Remove\" "
+             "--bb-guid D0B7ADF3-D3FF3CF6 --name \"Iface Remove\" "
              "\"%s\" -o \"%s\"",
              NMO_SCRIPT_INTERFACE_TARGET_ID,
              NMO_SCRIPT_INTERFACE_FIXTURE,
@@ -1885,7 +1885,7 @@ TEST(cli, script_control_flow_crud_roundtrip)
 
     snprintf(args, sizeof(args),
              "-f json script node add --parent %u "
-             "--bb-guid 42414C07-10000007 --name \"Link A\" "
+             "--bb-guid D0B7ADF3-D3FF3CF6 --name \"Link A\" "
              "\"%s\" -o \"%s\"",
              manifest.root_behavior_id,
              NMO_TEST_DATA_FILE("Ballance/base.cmo"),
@@ -1904,7 +1904,7 @@ TEST(cli, script_control_flow_crud_roundtrip)
 
     snprintf(args, sizeof(args),
              "-f json script node add --parent %u "
-             "--bb-guid 42414C07-10000007 --name \"Link B\" "
+             "--bb-guid D0B7ADF3-D3FF3CF6 --name \"Link B\" "
              "\"%s\" -o \"%s\"",
              manifest.root_behavior_id,
              node_a_path,
@@ -1923,7 +1923,7 @@ TEST(cli, script_control_flow_crud_roundtrip)
 
     snprintf(args, sizeof(args),
              "-f json script node add --parent %u "
-             "--bb-guid 42414C07-10000007 --name \"Link C\" "
+             "--bb-guid D0B7ADF3-D3FF3CF6 --name \"Link C\" "
              "\"%s\" -o \"%s\"",
              manifest.root_behavior_id,
              node_b_path,
@@ -1942,7 +1942,7 @@ TEST(cli, script_control_flow_crud_roundtrip)
 
     snprintf(args, sizeof(args),
              "-f json script node add --parent %u "
-             "--bb-guid 42414C07-10000007 --name \"Link D\" "
+             "--bb-guid D0B7ADF3-D3FF3CF6 --name \"Link D\" "
              "\"%s\" -o \"%s\"",
              manifest.root_behavior_id,
              node_c_path,
@@ -2193,7 +2193,7 @@ TEST(cli, script_link_add_dry_run_reports_executor_validation)
 
     snprintf(args, sizeof(args),
              "-f json script node add --parent %u "
-             "--bb-guid 42414C07-10000007 --name \"Dry Link A\" "
+             "--bb-guid D0B7ADF3-D3FF3CF6 --name \"Dry Link A\" "
              "\"%s\" -o \"%s\"",
              manifest.root_behavior_id,
              NMO_TEST_DATA_FILE("Ballance/base.cmo"),
@@ -2212,7 +2212,7 @@ TEST(cli, script_link_add_dry_run_reports_executor_validation)
 
     snprintf(args, sizeof(args),
              "-f json script node add --parent %u "
-             "--bb-guid 42414C07-10000007 --name \"Dry Link B\" "
+             "--bb-guid D0B7ADF3-D3FF3CF6 --name \"Dry Link B\" "
              "\"%s\" -o \"%s\"",
              manifest.root_behavior_id,
              node_a_path,
@@ -2324,7 +2324,7 @@ TEST(cli, script_link_remove_canonicalizes_interface_refs)
 
     snprintf(args, sizeof(args),
              "-f json script node add --parent %u "
-             "--bb-guid 42414C07-10000007 --name \"Iface Link A\" "
+             "--bb-guid D0B7ADF3-D3FF3CF6 --name \"Iface Link A\" "
              "\"%s\" -o \"%s\"",
              NMO_SCRIPT_INTERFACE_TARGET_ID,
              NMO_SCRIPT_INTERFACE_FIXTURE,
@@ -2343,7 +2343,7 @@ TEST(cli, script_link_remove_canonicalizes_interface_refs)
 
     snprintf(args, sizeof(args),
              "-f json script node add --parent %u "
-             "--bb-guid 42414C07-10000007 --name \"Iface Link B\" "
+             "--bb-guid D0B7ADF3-D3FF3CF6 --name \"Iface Link B\" "
              "\"%s\" -o \"%s\"",
              NMO_SCRIPT_INTERFACE_TARGET_ID,
              node_a_path,
@@ -3032,7 +3032,7 @@ TEST(cli, script_parameter_crud_roundtrip)
 
     snprintf(args, sizeof(args),
              "-f json script node add --parent %u "
-             "--bb-guid 42414C07-10000007 --name \"Param Target\" "
+             "--bb-guid D0B7ADF3-D3FF3CF6 --name \"Param Target\" "
              "\"%s\" -o \"%s\"",
              manifest.root_behavior_id,
              source_set_path,

@@ -164,6 +164,7 @@ typedef struct nmo_edit_op {
 
 typedef struct nmo_edit_executor_options {
     bool dry_run;
+    uint32_t validation_flags;
 } nmo_edit_executor_options_t;
 
 typedef struct nmo_edit_changed_object {
@@ -377,6 +378,12 @@ NMO_API nmo_status_t nmo_edit_report_add_changed_object(
 
 NMO_API nmo_status_t nmo_edit_executor_execute(
     nmo_workspace_t *workspace,
+    const nmo_edit_plan_t *plan,
+    const nmo_edit_executor_options_t *options,
+    nmo_edit_report_t *report);
+
+NMO_API nmo_status_t nmo_edit_executor_execute_transaction(
+    nmo_script_edit_tx_t *tx,
     const nmo_edit_plan_t *plan,
     const nmo_edit_executor_options_t *options,
     nmo_edit_report_t *report);

@@ -16,6 +16,7 @@
 #include "behavior/nmo_behavior_execute.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_behavior_query.h"
+#include "behavior/nmo_edit_plan.h"
 #include "behavior/nmo_script_edit.h"
 #include "behavior/nmo_script_edit_graph.h"
 #include "core/nmo_array.h"
@@ -195,6 +196,8 @@ typedef struct script_run_validation {
 
 typedef struct script_command_common {
     script_run_validation_t validation;
+    bool dry_run;
+    nmo_edit_report_t edit_report;
 } script_command_common_t;
 
 typedef nmo_status_t (*behavior_execute_cli_action_fn)(
@@ -914,6 +917,8 @@ static int behavior_execute_cli_run_write_command(
     }
     if (common != NULL) {
         memset(common, 0, sizeof(*common));
+        common->dry_run = dry_run;
+        (void)nmo_edit_report_init(&common->edit_report);
     }
 
     rc = nmo_cmd_ctx_init_no_file(&ctx, global);
@@ -959,6 +964,9 @@ static int behavior_execute_cli_run_write_command(
     }
 
 cleanup:
+    if (common != NULL) {
+        nmo_edit_report_dispose(&common->edit_report);
+    }
     if (executor_ctx != NULL) {
         nmo_context_release(executor_ctx);
         ctx.ctx = NULL;
@@ -1917,6 +1925,57 @@ static nmo_object_id_t script_interface_root_for_object_workspace(
     return behavior_id;
 }
 
+static void script_common_collect_from_edit_report(
+    script_command_common_t *common,
+    nmo_status_t status)
+{
+    if (!common) {
+        return;
+    }
+    common->validation.final_status = status;
+    common->validation.references_status =
+        common->edit_report.validation.reference_status;
+    common->validation.behavior_index_ok =
+        common->edit_report.validation.behavior_index_status == NMO_OK;
+    common->validation.interface_status =
+        common->edit_report.validation.interface_status;
+    common->validation.interface_attempted =
+        common->edit_report.validation.interface_status != 0 ||
+        common->edit_report.validation.final_status == NMO_OK;
+    common->validation.interface_available = true;
+}
+
+static nmo_status_t script_execute_edit_plan(
+    nmo_behavior_execution_t *executor,
+    script_command_common_t *common,
+    nmo_edit_plan_t *plan)
+{
+    if (!executor || !common || !plan) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_edit_executor_options_t options = nmo_edit_executor_options_default();
+    options.dry_run = common->dry_run;
+    options.validation_flags = 0u;
+    nmo_status_t rc = nmo_edit_executor_execute_transaction(
+        nmo_behavior_execution_transaction(executor),
+        plan,
+        &options,
+        &common->edit_report);
+    script_common_collect_from_edit_report(common, rc);
+    return rc;
+}
+
+static nmo_object_id_t script_common_result_id(
+    const script_command_common_t *common,
+    size_t operation_index)
+{
+    if (!common || !common->edit_report.operations ||
+        operation_index >= common->edit_report.operation_count) {
+        return 0u;
+    }
+    return common->edit_report.operations[operation_index].result_id;
+}
+
 static nmo_status_t script_node_add_execute(
     nmo_behavior_execution_t *executor,
     void *user_data)
@@ -1927,11 +1986,18 @@ static nmo_status_t script_node_add_execute(
                          "Missing script node add arguments");
     }
 
-    return nmo_script_edit_add_node(nmo_behavior_execution_transaction(executor),
-                                    args->parent_id,
-                                    args->bb_guid,
-                                    args->name,
-                                    &args->node_id);
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t rc = nmo_edit_plan_create(&plan);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_node(
+            plan, args->parent_id, args->bb_guid, args->name);
+    }
+    if (rc == NMO_OK) {
+        rc = script_execute_edit_plan(executor, &args->common, plan);
+    }
+    args->node_id = script_common_result_id(&args->common, 0);
+    nmo_edit_plan_destroy(plan);
+    return rc;
 }
 
 static int script_node_add_report(
@@ -1976,15 +2042,14 @@ static nmo_status_t script_node_remove_execute(
     void *user_data)
 {
     script_node_remove_args_t *args = (script_node_remove_args_t *)user_data;
-    nmo_script_edit_tx_t *tx = NULL;
     nmo_workspace_t *workspace = NULL;
+    nmo_edit_plan_t *plan = NULL;
     nmo_status_t rc = NMO_OK;
 
     if (!args || executor == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Missing script node remove arguments");
     }
-    tx = nmo_behavior_execution_transaction(executor);
     workspace = script_execution_workspace(executor);
 
     if (args->interface_mode == NMO_SCRIPT_EDIT_INTERFACE_PRESERVE &&
@@ -1995,36 +2060,21 @@ static nmo_status_t script_node_remove_execute(
                          "Failed to apply script interface policy");
     }
 
-    rc = nmo_script_edit_remove_node(tx, args->parent_id, args->node_id, 0u);
-    if (rc != NMO_OK) {
-        return rc;
+    rc = nmo_edit_plan_create(&plan);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_remove_node(
+            plan, args->parent_id, args->node_id, 0u);
     }
-
-    if (args->interface_mode == NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
-        return NMO_OK;
+    if (rc == NMO_OK &&
+        args->interface_mode != NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
+        rc = nmo_edit_plan_add_interface_policy(
+            plan, args->parent_id, args->interface_mode);
     }
-
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
-    if (rc != NMO_OK) {
-        return rc;
+    if (rc == NMO_OK) {
+        rc = script_execute_edit_plan(executor, &args->common, plan);
     }
-
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
-    if (rc != NMO_OK) {
-        return rc;
-    }
-
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
-    if (rc != NMO_OK) {
-        return rc;
-    }
-
-    rc = nmo_script_edit_apply_interface_policy(tx, args->parent_id,
-                                                args->interface_mode);
-    if (rc != NMO_OK) {
-        return rc;
-    }
-    return NMO_OK;
+    nmo_edit_plan_destroy(plan);
+    return rc;
 }
 
 static int script_node_remove_report(
@@ -2073,11 +2123,18 @@ static nmo_status_t script_io_add_execute(
                          "Missing script io add arguments");
     }
 
-    return nmo_script_edit_add_io(nmo_behavior_execution_transaction(executor),
-                                  args->behavior_id,
-                                  args->kind,
-                                  args->name,
-                                  &args->io_id);
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t rc = nmo_edit_plan_create(&plan);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_io(
+            plan, args->behavior_id, args->kind, args->name);
+    }
+    if (rc == NMO_OK) {
+        rc = script_execute_edit_plan(executor, &args->common, plan);
+    }
+    args->io_id = script_common_result_id(&args->common, 0);
+    nmo_edit_plan_destroy(plan);
+    return rc;
 }
 
 static int script_io_add_report(
@@ -2125,9 +2182,16 @@ static nmo_status_t script_io_rename_execute(
                          "Missing script io rename arguments");
     }
 
-    return nmo_script_edit_rename_io(nmo_behavior_execution_transaction(executor),
-                                     args->io_id,
-                                     args->name);
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t rc = nmo_edit_plan_create(&plan);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_rename_io(plan, args->io_id, args->name);
+    }
+    if (rc == NMO_OK) {
+        rc = script_execute_edit_plan(executor, &args->common, plan);
+    }
+    nmo_edit_plan_destroy(plan);
+    return rc;
 }
 
 static int script_io_rename_report(
@@ -2163,8 +2227,8 @@ static nmo_status_t script_io_remove_execute(
     void *user_data)
 {
     script_io_remove_args_t *args = (script_io_remove_args_t *)user_data;
-    nmo_script_edit_tx_t *tx = NULL;
     nmo_workspace_t *workspace = NULL;
+    nmo_edit_plan_t *plan = NULL;
     nmo_status_t rc = NMO_OK;
     nmo_object_id_t interface_behavior_id = 0u;
 
@@ -2172,7 +2236,6 @@ static nmo_status_t script_io_remove_execute(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Missing script io remove arguments");
     }
-    tx = nmo_behavior_execution_transaction(executor);
     workspace = script_execution_workspace(executor);
     interface_behavior_id = script_interface_root_for_object_workspace(workspace,
                                                                        args->io_id);
@@ -2181,38 +2244,20 @@ static nmo_status_t script_io_remove_execute(
                          "Failed to resolve script interface root");
     }
 
-    rc = nmo_script_edit_remove_io(tx, args->io_id, false);
-    if (rc != NMO_OK) {
-        return rc;
+    rc = nmo_edit_plan_create(&plan);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_remove_io(plan, args->io_id, false);
     }
-
-    if (args->interface_mode == NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
-        return NMO_OK;
+    if (rc == NMO_OK &&
+        args->interface_mode != NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
+        rc = nmo_edit_plan_add_interface_policy(
+            plan, interface_behavior_id, args->interface_mode);
     }
-
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
-    if (rc != NMO_OK) {
-        return rc;
+    if (rc == NMO_OK) {
+        rc = script_execute_edit_plan(executor, &args->common, plan);
     }
-
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
-    if (rc != NMO_OK) {
-        return rc;
-    }
-
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
-    if (rc != NMO_OK) {
-        return rc;
-    }
-
-    rc = nmo_script_edit_apply_interface_policy(tx,
-                                                interface_behavior_id,
-                                                args->interface_mode);
-    if (rc != NMO_OK) {
-        return rc;
-    }
-
-    return NMO_OK;
+    nmo_edit_plan_destroy(plan);
+    return rc;
 }
 
 static int script_io_remove_report(
@@ -2258,13 +2303,18 @@ static nmo_status_t script_link_add_execute(
                          "Missing script link add arguments");
     }
 
-    return nmo_script_edit_add_behavior_link(
-        nmo_behavior_execution_transaction(executor),
-        args->parent_id,
-        args->from_id,
-        args->to_id,
-        args->delay,
-        &args->link_id);
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t rc = nmo_edit_plan_create(&plan);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_behavior_link(
+            plan, args->parent_id, args->from_id, args->to_id, args->delay);
+    }
+    if (rc == NMO_OK) {
+        rc = script_execute_edit_plan(executor, &args->common, plan);
+    }
+    args->link_id = script_common_result_id(&args->common, 0);
+    nmo_edit_plan_destroy(plan);
+    return rc;
 }
 
 static int script_link_add_report(
@@ -2315,11 +2365,17 @@ static nmo_status_t script_link_rewire_execute(
                          "Missing script link rewire arguments");
     }
 
-    return nmo_script_edit_rewire_behavior_link(
-        nmo_behavior_execution_transaction(executor),
-        args->link_id,
-        args->from_id,
-        args->to_id);
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t rc = nmo_edit_plan_create(&plan);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_rewire_behavior_link(
+            plan, args->link_id, args->from_id, args->to_id);
+    }
+    if (rc == NMO_OK) {
+        rc = script_execute_edit_plan(executor, &args->common, plan);
+    }
+    nmo_edit_plan_destroy(plan);
+    return rc;
 }
 
 static int script_link_rewire_report(
@@ -2367,10 +2423,17 @@ static nmo_status_t script_link_set_delay_execute(
                          "Missing script link set-delay arguments");
     }
 
-    return nmo_script_edit_set_behavior_link_delay(
-        nmo_behavior_execution_transaction(executor),
-        args->link_id,
-        args->delay);
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t rc = nmo_edit_plan_create(&plan);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_set_behavior_link_delay(
+            plan, args->link_id, args->delay);
+    }
+    if (rc == NMO_OK) {
+        rc = script_execute_edit_plan(executor, &args->common, plan);
+    }
+    nmo_edit_plan_destroy(plan);
+    return rc;
 }
 
 static int script_link_set_delay_report(
@@ -2408,44 +2471,27 @@ static nmo_status_t script_link_remove_execute(
     void *user_data)
 {
     script_link_remove_args_t *args = (script_link_remove_args_t *)user_data;
-    nmo_script_edit_tx_t *tx = NULL;
+    nmo_edit_plan_t *plan = NULL;
     nmo_status_t rc = NMO_OK;
 
     if (!args || executor == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Missing script link remove arguments");
     }
-    tx = nmo_behavior_execution_transaction(executor);
-
-    rc = nmo_script_edit_remove_behavior_link(tx, args->parent_id, args->link_id);
-    if (rc != NMO_OK) {
-        return rc;
+    rc = nmo_edit_plan_create(&plan);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_remove_behavior_link(
+            plan, args->parent_id, args->link_id);
     }
-
-    if (args->interface_mode == NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
-        return nmo_script_edit_apply_interface_policy(tx,
-                                                      args->parent_id,
-                                                      args->interface_mode);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_interface_policy(
+            plan, args->parent_id, args->interface_mode);
     }
-
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
-    if (rc != NMO_OK) {
-        return rc;
+    if (rc == NMO_OK) {
+        rc = script_execute_edit_plan(executor, &args->common, plan);
     }
-
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
-    if (rc != NMO_OK) {
-        return rc;
-    }
-
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
-    if (rc != NMO_OK) {
-        return rc;
-    }
-
-    return nmo_script_edit_apply_interface_policy(tx,
-                                                  args->parent_id,
-                                                  args->interface_mode);
+    nmo_edit_plan_destroy(plan);
+    return rc;
 }
 
 static int script_link_remove_report(
@@ -2870,6 +2916,8 @@ static nmo_status_t script_param_add_execute(
     nmo_script_edit_parameter_kind_t kind = NMO_SCRIPT_EDIT_PARAM_IN;
     const nmo_type_registry_t *registry = NULL;
     nmo_guid_t type_guid = NMO_GUID_NULL;
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t rc = NMO_OK;
     if (!args || executor == NULL ||
         !script_parse_parameter_kind(args->kind, &kind)) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -2883,12 +2931,17 @@ static nmo_status_t script_param_add_execute(
                          "Unknown parameter type '%s'", args->type_name);
     }
 
-    return nmo_script_edit_add_parameter(nmo_behavior_execution_transaction(executor),
-                                         args->owner_id,
-                                         kind,
-                                         type_guid,
-                                         args->name,
-                                         &args->param_id);
+    rc = nmo_edit_plan_create(&plan);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_parameter(
+            plan, args->owner_id, kind, type_guid, args->name);
+    }
+    if (rc == NMO_OK) {
+        rc = script_execute_edit_plan(executor, &args->common, plan);
+    }
+    args->param_id = script_common_result_id(&args->common, 0);
+    nmo_edit_plan_destroy(plan);
+    return rc;
 }
 
 static int script_param_add_report(
@@ -2946,9 +2999,16 @@ static nmo_status_t script_param_set_execute(
     args->old_value =
         script_format_parameter_value_with_registry(
             registry, nmo_behavior_execution_workspace(executor), args->param_id);
-    rc = nmo_script_edit_set_parameter_value(nmo_behavior_execution_transaction(executor),
-                                             args->param_id,
-                                             args->value_str);
+    nmo_edit_plan_t *plan = NULL;
+    rc = nmo_edit_plan_create(&plan);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_set_parameter_value(
+            plan, args->param_id, args->value_str, NULL);
+    }
+    if (rc == NMO_OK) {
+        rc = script_execute_edit_plan(executor, &args->common, plan);
+    }
+    nmo_edit_plan_destroy(plan);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -3009,9 +3069,17 @@ static nmo_status_t script_param_connect_execute(
                          "Missing script param connect arguments");
     }
 
-    return nmo_script_edit_connect_parameter(nmo_behavior_execution_transaction(executor),
-                                             args->source_id,
-                                             args->target_id);
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t rc = nmo_edit_plan_create(&plan);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_connect_parameter(
+            plan, args->source_id, args->target_id);
+    }
+    if (rc == NMO_OK) {
+        rc = script_execute_edit_plan(executor, &args->common, plan);
+    }
+    nmo_edit_plan_destroy(plan);
+    return rc;
 }
 
 static int script_param_connect_report(
@@ -3055,9 +3123,16 @@ static nmo_status_t script_param_disconnect_execute(
                          "Missing script param disconnect arguments");
     }
 
-    return nmo_script_edit_disconnect_parameter(
-        nmo_behavior_execution_transaction(executor),
-        args->target_id);
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t rc = nmo_edit_plan_create(&plan);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_disconnect_parameter(plan, args->target_id);
+    }
+    if (rc == NMO_OK) {
+        rc = script_execute_edit_plan(executor, &args->common, plan);
+    }
+    nmo_edit_plan_destroy(plan);
+    return rc;
 }
 
 static int script_param_disconnect_report(
@@ -3094,8 +3169,8 @@ static nmo_status_t script_param_remove_execute(
     void *user_data)
 {
     script_param_remove_args_t *args = (script_param_remove_args_t *)user_data;
-    nmo_script_edit_tx_t *tx = NULL;
     nmo_workspace_t *workspace = NULL;
+    nmo_edit_plan_t *plan = NULL;
     nmo_status_t rc = NMO_OK;
     nmo_object_id_t interface_behavior_id = 0u;
 
@@ -3103,7 +3178,6 @@ static nmo_status_t script_param_remove_execute(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Missing script param remove arguments");
     }
-    tx = nmo_behavior_execution_transaction(executor);
     workspace = script_execution_workspace(executor);
     interface_behavior_id =
         script_interface_root_for_object_workspace(workspace, args->param_id);
@@ -3112,31 +3186,20 @@ static nmo_status_t script_param_remove_execute(
                          "Failed to resolve script interface root");
     }
 
-    rc = nmo_script_edit_remove_parameter(tx, args->param_id, args->detach);
-    if (rc != NMO_OK) {
-        return rc;
+    rc = nmo_edit_plan_create(&plan);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_remove_parameter(
+            plan, args->param_id, args->detach);
     }
-    if (args->interface_mode == NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
-        return nmo_script_edit_apply_interface_policy(tx,
-                                                      interface_behavior_id,
-                                                      args->interface_mode);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_interface_policy(
+            plan, interface_behavior_id, args->interface_mode);
     }
-
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
-    if (rc != NMO_OK) {
-        return rc;
+    if (rc == NMO_OK) {
+        rc = script_execute_edit_plan(executor, &args->common, plan);
     }
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
-    if (rc != NMO_OK) {
-        return rc;
-    }
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
-    if (rc != NMO_OK) {
-        return rc;
-    }
-    return nmo_script_edit_apply_interface_policy(tx,
-                                                  interface_behavior_id,
-                                                  args->interface_mode);
+    nmo_edit_plan_destroy(plan);
+    return rc;
 }
 
 static int script_param_remove_report(
@@ -3183,13 +3246,23 @@ static nmo_status_t script_op_add_execute(
                          "Missing script op add arguments");
     }
 
-    return nmo_script_edit_add_operation(nmo_behavior_execution_transaction(executor),
-                                         args->parent_id,
-                                         args->op_guid,
-                                         args->in1_id,
-                                         args->in2_id,
-                                         args->out_id,
-                                         &args->op_id);
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t rc = nmo_edit_plan_create(&plan);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_operation(
+            plan,
+            args->parent_id,
+            args->op_guid,
+            args->in1_id,
+            args->in2_id,
+            args->out_id);
+    }
+    if (rc == NMO_OK) {
+        rc = script_execute_edit_plan(executor, &args->common, plan);
+    }
+    args->op_id = script_common_result_id(&args->common, 0);
+    nmo_edit_plan_destroy(plan);
+    return rc;
 }
 
 static int script_op_add_report(
@@ -3243,12 +3316,22 @@ static nmo_status_t script_op_rewire_execute(
                          "Missing script op rewire arguments");
     }
 
-    return nmo_script_edit_rewire_operation(nmo_behavior_execution_transaction(executor),
-                                            args->op_id,
-                                            args->slot_flags,
-                                            args->in1_id,
-                                            args->in2_id,
-                                            args->out_id);
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t rc = nmo_edit_plan_create(&plan);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_rewire_operation(
+            plan,
+            args->op_id,
+            args->slot_flags,
+            args->in1_id,
+            args->in2_id,
+            args->out_id);
+    }
+    if (rc == NMO_OK) {
+        rc = script_execute_edit_plan(executor, &args->common, plan);
+    }
+    nmo_edit_plan_destroy(plan);
+    return rc;
 }
 
 static int script_op_rewire_report(
@@ -3293,8 +3376,8 @@ static nmo_status_t script_op_remove_execute(
     void *user_data)
 {
     script_op_remove_args_t *args = (script_op_remove_args_t *)user_data;
-    nmo_script_edit_tx_t *tx = NULL;
     nmo_workspace_t *workspace = NULL;
+    nmo_edit_plan_t *plan = NULL;
     nmo_status_t rc = NMO_OK;
     nmo_object_id_t interface_behavior_id = 0u;
 
@@ -3302,7 +3385,6 @@ static nmo_status_t script_op_remove_execute(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Missing script op remove arguments");
     }
-    tx = nmo_behavior_execution_transaction(executor);
     workspace = script_execution_workspace(executor);
     interface_behavior_id = script_interface_root_for_object_workspace(workspace, args->op_id);
     if (interface_behavior_id == 0u) {
@@ -3310,30 +3392,19 @@ static nmo_status_t script_op_remove_execute(
                          "Failed to resolve script interface root");
     }
 
-    rc = nmo_script_edit_remove_operation(tx, args->op_id);
-    if (rc != NMO_OK) {
-        return rc;
+    rc = nmo_edit_plan_create(&plan);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_remove_operation(plan, args->op_id);
     }
-    if (args->interface_mode == NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
-        return nmo_script_edit_apply_interface_policy(tx,
-                                                      interface_behavior_id,
-                                                      args->interface_mode);
+    if (rc == NMO_OK) {
+        rc = nmo_edit_plan_add_interface_policy(
+            plan, interface_behavior_id, args->interface_mode);
     }
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
-    if (rc != NMO_OK) {
-        return rc;
+    if (rc == NMO_OK) {
+        rc = script_execute_edit_plan(executor, &args->common, plan);
     }
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
-    if (rc != NMO_OK) {
-        return rc;
-    }
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
-    if (rc != NMO_OK) {
-        return rc;
-    }
-    return nmo_script_edit_apply_interface_policy(tx,
-                                                  interface_behavior_id,
-                                                  args->interface_mode);
+    nmo_edit_plan_destroy(plan);
+    return rc;
 }
 
 static int script_op_remove_report(
