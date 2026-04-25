@@ -648,7 +648,7 @@ static int patch_parse_replace_bb(yyjson_val *op_obj,
 }
 
 static int patch_parse_add_io(yyjson_val *op_obj,
-                              patch_operation_t *out_op) {
+                              nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "behavior_id",
@@ -687,11 +687,14 @@ static int patch_parse_add_io(yyjson_val *op_obj,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_ADD_IO;
-    out_op->add_io.behavior_id = (nmo_object_id_t)yyjson_get_uint(id_val);
-    out_op->add_io.kind = kind;
-    out_op->add_io.name = name;
+    nmo_status_t st = nmo_edit_plan_add_io(
+        edit_plan, (nmo_object_id_t)yyjson_get_uint(id_val), kind, name);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -982,7 +985,7 @@ static int patch_parse_remove_behavior_link(yyjson_val *op_obj,
 }
 
 static int patch_parse_remove_io(yyjson_val *op_obj,
-                                 patch_operation_t *out_op) {
+                                 nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "io_id",
@@ -1002,16 +1005,21 @@ static int patch_parse_remove_io(yyjson_val *op_obj,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_REMOVE_IO;
-    out_op->remove_io.io_id = (nmo_object_id_t)yyjson_get_uint(id_val);
-    out_op->remove_io.detach_links =
-        patch_optional_bool(op_obj, "detach_links", false);
+    nmo_status_t st = nmo_edit_plan_add_remove_io(
+        edit_plan,
+        (nmo_object_id_t)yyjson_get_uint(id_val),
+        patch_optional_bool(op_obj, "detach_links", false));
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
 static int patch_parse_rename_io(yyjson_val *op_obj,
-                                 patch_operation_t *out_op) {
+                                 nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "io_id",
@@ -1037,10 +1045,14 @@ static int patch_parse_rename_io(yyjson_val *op_obj,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_RENAME_IO;
-    out_op->rename_io.io_id = (nmo_object_id_t)yyjson_get_uint(id_val);
-    out_op->rename_io.name = name;
+    nmo_status_t st = nmo_edit_plan_add_rename_io(
+        edit_plan, (nmo_object_id_t)yyjson_get_uint(id_val), name);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -1906,11 +1918,26 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
             }
             continue;
         } else if (strcmp(op, "add_io") == 0 && out_plan->version == 2u) {
-            rc = patch_parse_add_io(op_obj, &operation);
+            rc = patch_parse_add_io(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "remove_io") == 0 && out_plan->version == 2u) {
-            rc = patch_parse_remove_io(op_obj, &operation);
+            rc = patch_parse_remove_io(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "rename_io") == 0 && out_plan->version == 2u) {
-            rc = patch_parse_rename_io(op_obj, &operation);
+            rc = patch_parse_rename_io(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "interface_policy") == 0 &&
                    out_plan->version == 2u) {
             rc = patch_parse_interface_policy(op_obj, out_plan->edit_plan);
