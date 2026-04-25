@@ -894,6 +894,13 @@ TEST(repl_read, script_run_does_not_keep_script_edit_report) {
                                "&args->report");
 }
 
+TEST(repl_read, script_run_does_not_keep_private_validation) {
+    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+                               "args->validation");
+    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+                               "script_run_collect_validation");
+}
+
 TEST(repl_read, edit_report_json_does_not_emit_legacy_risk_level) {
     assert_source_not_contains("tools/nmo_edit_report_json.h",
                                "include_risk_level");
@@ -1257,6 +1264,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, no_remaining_repl_read_placeholder_strings);
     REGISTER_TEST(repl_read, script_run_uses_executor_handles_only);
     REGISTER_TEST(repl_read, script_run_does_not_keep_script_edit_report);
+    REGISTER_TEST(repl_read, script_run_does_not_keep_private_validation);
     REGISTER_TEST(repl_read, edit_report_json_does_not_emit_legacy_risk_level);
     REGISTER_TEST(repl_read, edit_report_schema_v2_has_single_json_helper);
     REGISTER_TEST(repl_read, behavior_rewrite_reuses_semantic_risk_json_helper);

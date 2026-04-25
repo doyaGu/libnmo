@@ -206,7 +206,6 @@ typedef struct script_run_args {
     const char *script_path;
     const char *input_path;
     bool dry_run;
-    script_run_validation_t validation;
     nmo_behavior_execution_t *execution;
     nmo_edit_plan_t *pending_plan;
     nmo_edit_report_t edit_report;
@@ -251,7 +250,6 @@ static void script_run_reset_args(script_run_args_t *args)
         nmo_edit_report_dispose(&args->edit_report);
     }
 
-    memset(&args->validation, 0, sizeof(args->validation));
     args->execution = NULL;
     args->pending_plan = NULL;
     args->edit_report_ready = false;
@@ -1347,15 +1345,6 @@ static void script_collect_validation(nmo_behavior_execution_t *executor,
     validation->interface_available = interface_diag.available != 0;
 }
 
-static void script_run_collect_validation(script_run_args_t *args)
-{
-    if (args == NULL || args->execution == NULL) {
-        return;
-    }
-
-    script_collect_validation(args->execution, &args->validation);
-}
-
 static nmo_status_t behavior_execute_cli_action_trampoline(
     nmo_behavior_execution_t *executor,
     void *user_data)
@@ -1551,7 +1540,6 @@ static nmo_status_t script_run_executor_action(nmo_behavior_execution_t *executo
         args->execution = NULL;
         return status;
     }
-    script_run_collect_validation(args);
     args->execution = NULL;
     return NMO_OK;
 }
@@ -1593,7 +1581,6 @@ static int script_run_mutate(nmo_cmd_ctx_t *ctx,
                                          script_run_executor_action,
                                          args,
                                          NULL);
-    args->validation.final_status = status;
     if (status != NMO_OK) {
         const char *message = nmo_last_error_message();
         fprintf(stderr, "Error: %s\n",
@@ -1612,6 +1599,7 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
                              void *user_data)
 {
     script_run_args_t *args = (script_run_args_t *)user_data;
+    nmo_status_t final_status = NMO_OK;
 
     if (ctx == NULL || args == NULL) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -1637,8 +1625,14 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
     fprintf(ctx->out, "Script: %s\n", args->script_path);
     fprintf(ctx->out, "Operations: %zu\n",
             args->edit_report_ready ? args->edit_report.operation_count : 0u);
+    if (args->edit_report_ready) {
+        final_status = args->edit_report.validation.final_status;
+        if (final_status == NMO_OK && args->edit_report.status != NMO_OK) {
+            final_status = args->edit_report.status;
+        }
+    }
     fprintf(ctx->out, "Final status: %s\n",
-            nmo_error_string(args->validation.final_status));
+            nmo_error_string(final_status));
     if (dry_run) {
         fprintf(ctx->out, "Dry-run: yes\n");
     } else if (output_path != NULL) {
