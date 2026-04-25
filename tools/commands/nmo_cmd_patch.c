@@ -968,6 +968,26 @@ static int patch_apply_plan(patch_plan_t *plan,
     nmo_status_t st = nmo_edit_executor_execute(
         ctx.workspace, plan->edit_plan, &options, &edit_report);
     if (st != NMO_OK) {
+        int exit_code = (st == NMO_ERR_INVALID_ARGUMENT ||
+                         st == NMO_ERR_NOT_FOUND)
+            ? NMO_CLI_EXIT_ARG_ERROR
+            : NMO_CLI_EXIT_INTERNAL_ERROR;
+        if (ctx.is_json) {
+            yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&ctx);
+            if (!doc) {
+                nmo_edit_report_dispose(&edit_report);
+                return nmo_cmd_ctx_done(&ctx,
+                                        NMO_CLI_EXIT_INTERNAL_ERROR);
+            }
+            yyjson_mut_val *data = yyjson_mut_obj(doc);
+            patch_add_edit_report_json(doc, data, plan, &edit_report,
+                                       dry_run);
+            int json_rc = nmo_cmd_ctx_json_end(&ctx, doc, data,
+                                               "patch.apply");
+            nmo_edit_report_dispose(&edit_report);
+            (void)json_rc;
+            return nmo_cmd_ctx_done(&ctx, exit_code);
+        }
         size_t failed_index = 0;
         for (size_t i = 0; i < edit_report.operation_count; ++i) {
             if (edit_report.operations[i].status != NMO_OK) {
@@ -998,10 +1018,6 @@ static int patch_apply_plan(patch_plan_t *plan,
         }
         fputc('\n', stderr);
         nmo_edit_report_dispose(&edit_report);
-        int exit_code = (st == NMO_ERR_INVALID_ARGUMENT ||
-                         st == NMO_ERR_NOT_FOUND)
-            ? NMO_CLI_EXIT_ARG_ERROR
-            : NMO_CLI_EXIT_INTERNAL_ERROR;
         return nmo_cmd_ctx_done(&ctx, exit_code);
     }
 

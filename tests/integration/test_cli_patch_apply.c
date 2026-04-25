@@ -500,6 +500,51 @@ TEST(cli, patch_apply_rejects_non_leaf_replace_bb) {
     remove(patch);
 }
 
+TEST(cli, patch_apply_json_failure_reports_edit_report) {
+    make_dir("test_patch_tmp");
+    const char *patch = "test_patch_tmp/reject_non_leaf_json.json";
+    const char *output = "test_patch_tmp/reject_non_leaf_json.cmo";
+    remove(patch);
+    remove(output);
+    write_non_leaf_patch(patch, output);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
+             patch);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    yyjson_doc *doc = yyjson_read(result.output, strlen(result.output), 0);
+    if (!doc) {
+        fprintf(stderr, "\nExpected JSON output, got:\n%s\n", result.output);
+    }
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("patch.apply", get_string_field(root, "command"));
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_FALSE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    yyjson_val *operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
+    yyjson_val *op = yyjson_arr_get(operations, 0);
+    ASSERT_TRUE(op && yyjson_is_obj(op));
+    ASSERT_STR_EQ("replace_bb", get_string_field(op, "op"));
+    ASSERT_STR_EQ("not_leaf_replaceable",
+                  get_string_field(op, "diagnostic_code"));
+    ASSERT_STR_CONTAINS(get_string_field(op, "diagnostic_message"),
+                        "not leaf-replaceable");
+    ASSERT_NOT_NULL(get_object_field(data, "validation"));
+    ASSERT_NOT_NULL(get_object_field(data, "diff"));
+    ASSERT_FALSE(file_exists(output));
+
+    yyjson_doc_free(doc);
+    free(result.output);
+    remove(patch);
+}
+
 TEST(cli, patch_apply_v2_replace_bb_dry_run) {
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/replace_bb_v2.json";
@@ -654,6 +699,7 @@ TEST(cli, patch_diff_json_reports_fold_delete_plan) {
 
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, patch_apply_rejects_non_leaf_replace_bb);
+    REGISTER_TEST(cli, patch_apply_json_failure_reports_edit_report);
     REGISTER_TEST(cli, patch_apply_v2_replace_bb_dry_run);
     REGISTER_TEST(cli, patch_apply_fold_dry_run_reports_analysis);
     REGISTER_TEST(cli, patch_apply_fold_dry_run_reports_semantic_risks);
