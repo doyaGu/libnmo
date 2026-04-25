@@ -508,6 +508,36 @@ static int script_run_lua_interface_sub_at(lua_State *state)
     return 1;
 }
 
+static nmo_status_t script_run_execute_edit_plan(
+    script_run_args_t *args,
+    nmo_edit_plan_t *plan,
+    nmo_edit_report_t *report)
+{
+    if (args == NULL || args->execution == NULL || plan == NULL || report == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_edit_executor_options_t options = nmo_edit_executor_options_default();
+    options.dry_run = args->dry_run;
+    options.validation_flags = 0u;
+    return nmo_edit_executor_execute_transaction(
+        nmo_behavior_execution_transaction(args->execution),
+        plan,
+        &options,
+        report);
+}
+
+static nmo_object_id_t script_run_edit_result_id(
+    const nmo_edit_report_t *report,
+    size_t operation_index)
+{
+    if (report == NULL || report->operations == NULL ||
+        operation_index >= report->operation_count) {
+        return 0u;
+    }
+    return report->operations[operation_index].result_id;
+}
+
 static int script_run_lua_add_io(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
@@ -515,6 +545,8 @@ static int script_run_lua_add_io(lua_State *state)
     const char *kind_text = luaL_checkstring(state, 2);
     const char *name = luaL_checkstring(state, 3);
     nmo_script_edit_io_kind_t kind = NMO_SCRIPT_EDIT_IO_INPUT;
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
     nmo_object_id_t io_id = 0u;
     nmo_status_t status = NMO_OK;
 
@@ -526,17 +558,25 @@ static int script_run_lua_add_io(lua_State *state)
         return luaL_error(state, "io kind must be 'input' or 'output'");
     }
 
-    status = nmo_script_edit_add_io(nmo_behavior_execution_transaction(args->execution),
-                                    behavior_id,
-                                    kind,
-                                    name,
-                                    &io_id);
+    nmo_edit_report_init(&report);
+    status = nmo_edit_plan_create(&plan);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_io(plan, behavior_id, kind, name);
+    }
+    if (status == NMO_OK) {
+        status = script_run_execute_edit_plan(args, plan, &report);
+    }
     if (status != NMO_OK) {
+        nmo_edit_plan_destroy(plan);
+        nmo_edit_report_dispose(&report);
         return luaL_error(state, "%s",
                           nmo_last_error_message() != NULL
                               ? nmo_last_error_message()
                               : "failed to add script io");
     }
+    io_id = script_run_edit_result_id(&report, 0);
+    nmo_edit_plan_destroy(plan);
+    nmo_edit_report_dispose(&report);
 
     {
         const uint32_t result_handles[] = {io_id};
@@ -558,12 +598,13 @@ static int script_run_lua_add_io(lua_State *state)
 static int script_run_lua_remove_io(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
-    nmo_script_edit_tx_t *tx = nmo_behavior_execution_transaction(args->execution);
     nmo_workspace_t *workspace = script_execution_workspace(args->execution);
     nmo_object_id_t io_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     const char *mode_text = luaL_optstring(state, 2, "preserve");
     nmo_script_edit_interface_mode_t mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE;
     nmo_object_id_t interface_behavior_id = 0u;
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
     char io_id_text[32];
     nmo_status_t status = NMO_OK;
 
@@ -583,48 +624,25 @@ static int script_run_lua_remove_io(lua_State *state)
         return luaL_error(state, "failed to resolve script interface root");
     }
 
-    status = nmo_script_edit_remove_io(tx, io_id, false);
+    nmo_edit_report_init(&report);
+    status = nmo_edit_plan_create(&plan);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_remove_io(plan, io_id, false);
+    }
+    if (status == NMO_OK && mode != NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
+        status = nmo_edit_plan_add_interface_policy(
+            plan, interface_behavior_id, mode);
+    }
+    if (status == NMO_OK) {
+        status = script_run_execute_edit_plan(args, plan, &report);
+    }
+    nmo_edit_plan_destroy(plan);
+    nmo_edit_report_dispose(&report);
     if (status != NMO_OK) {
         return luaL_error(state, "%s",
                           nmo_last_error_message() != NULL
                               ? nmo_last_error_message()
                               : "failed to remove script io");
-    }
-
-    if (mode != NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
-        status = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
-        if (status != NMO_OK) {
-            return luaL_error(state, "%s",
-                              nmo_last_error_message() != NULL
-                                  ? nmo_last_error_message()
-                                  : "failed to validate roundtrip readiness");
-        }
-
-        status = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
-        if (status != NMO_OK) {
-            return luaL_error(state, "%s",
-                              nmo_last_error_message() != NULL
-                                  ? nmo_last_error_message()
-                                  : "failed to validate references");
-        }
-
-        status = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
-        if (status != NMO_OK) {
-            return luaL_error(state, "%s",
-                              nmo_last_error_message() != NULL
-                                  ? nmo_last_error_message()
-                                  : "failed to validate behavior index");
-        }
-
-        status = nmo_script_edit_apply_interface_policy(tx,
-                                                        interface_behavior_id,
-                                                        mode);
-        if (status != NMO_OK) {
-            return luaL_error(state, "%s",
-                              nmo_last_error_message() != NULL
-                                  ? nmo_last_error_message()
-                                  : "failed to apply interface policy");
-        }
     }
 
     snprintf(io_id_text, sizeof(io_id_text), "%u", io_id);
@@ -644,12 +662,13 @@ static int script_run_lua_remove_io(lua_State *state)
 static int script_run_lua_remove_node(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
-    nmo_script_edit_tx_t *tx = nmo_behavior_execution_transaction(args->execution);
     nmo_workspace_t *workspace = script_execution_workspace(args->execution);
     nmo_object_id_t parent_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     nmo_object_id_t node_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
     const char *mode_text = luaL_optstring(state, 3, "preserve");
     nmo_script_edit_interface_mode_t mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE;
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
     char node_id_text[32];
     nmo_status_t status = NMO_OK;
 
@@ -669,46 +688,24 @@ static int script_run_lua_remove_node(lua_State *state)
         return luaL_error(state, "Failed to apply script interface policy");
     }
 
-    status = nmo_script_edit_remove_node(tx, parent_id, node_id, 0u);
+    nmo_edit_report_init(&report);
+    status = nmo_edit_plan_create(&plan);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_remove_node(plan, parent_id, node_id, 0u);
+    }
+    if (status == NMO_OK && mode != NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
+        status = nmo_edit_plan_add_interface_policy(plan, parent_id, mode);
+    }
+    if (status == NMO_OK) {
+        status = script_run_execute_edit_plan(args, plan, &report);
+    }
+    nmo_edit_plan_destroy(plan);
+    nmo_edit_report_dispose(&report);
     if (status != NMO_OK) {
         return luaL_error(state, "%s",
                           nmo_last_error_message() != NULL
                               ? nmo_last_error_message()
                               : "failed to remove script node");
-    }
-
-    if (mode != NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
-        status = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
-        if (status != NMO_OK) {
-            return luaL_error(state, "%s",
-                              nmo_last_error_message() != NULL
-                                  ? nmo_last_error_message()
-                                  : "failed to validate roundtrip readiness");
-        }
-
-        status = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
-        if (status != NMO_OK) {
-            return luaL_error(state, "%s",
-                              nmo_last_error_message() != NULL
-                                  ? nmo_last_error_message()
-                                  : "failed to validate references");
-        }
-
-        status = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
-        if (status != NMO_OK) {
-            return luaL_error(state, "%s",
-                              nmo_last_error_message() != NULL
-                                  ? nmo_last_error_message()
-                                  : "failed to validate behavior index");
-        }
-
-        status = nmo_script_edit_apply_interface_policy(tx, parent_id, mode);
-        if (status != NMO_OK) {
-            return luaL_error(state, "%s",
-                              nmo_last_error_message() != NULL
-                                  ? nmo_last_error_message()
-                                  : "failed to apply interface policy");
-        }
     }
 
     snprintf(node_id_text, sizeof(node_id_text), "%u", node_id);
