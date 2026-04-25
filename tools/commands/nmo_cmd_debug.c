@@ -83,6 +83,8 @@ static void debug_probe_add_operations_json(
         yyjson_mut_obj_add_uint(doc, item, "index", (uint64_t)(i + 1u));
         nmo_cli_json_add_str_safe(
             doc, item, "op", debug_probe_edit_op_kind_string(op->kind));
+        nmo_cli_json_add_str_safe(
+            doc, item, "kind", debug_probe_edit_op_kind_string(op->kind));
         yyjson_mut_obj_add_uint(doc, item, "primary_id",
                                 (uint64_t)op->primary_id);
         yyjson_mut_obj_add_uint(doc, item, "result_id",
@@ -90,6 +92,14 @@ static void debug_probe_add_operations_json(
         yyjson_mut_obj_add_uint(doc, item, "status", (uint64_t)op->status);
         nmo_cli_json_add_str_safe(doc, item, "status_name",
                                   nmo_error_string(op->status));
+        if (op->diagnostic_code != NULL) {
+            nmo_cli_json_add_str_safe(doc, item, "diagnostic_code",
+                                      op->diagnostic_code);
+        }
+        if (op->diagnostic_message != NULL) {
+            nmo_cli_json_add_str_safe(doc, item, "diagnostic_message",
+                                      op->diagnostic_message);
+        }
         for (size_t j = 0; j < op->handle_count; ++j) {
             yyjson_mut_val *handle = yyjson_mut_obj(doc);
             nmo_cli_json_add_str_safe(doc, handle, "name",
