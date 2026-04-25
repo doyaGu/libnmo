@@ -338,32 +338,23 @@ TEST(cli, behavior_replace_bb_dry_run_reports_leaf_preservation) {
     yyjson_val *data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
 
+    ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_TRUE(get_bool_field(data, "changed"));
-    ASSERT_EQ(343u, (uint32_t)get_uint_field(data, "behavior_id"));
+    yyjson_val *operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
+    yyjson_val *op = yyjson_arr_get(operations, 0);
+    ASSERT_TRUE(op && yyjson_is_obj(op));
+    ASSERT_STR_EQ("replace_bb", get_string_field(op, "op"));
+    ASSERT_EQ(343u, (uint32_t)get_uint_field(op, "primary_id"));
+    ASSERT_EQ(343u, (uint32_t)get_uint_field(op, "result_id"));
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(op, "status"));
 
-    yyjson_val *before = get_object_field(data, "before");
-    yyjson_val *after = get_object_field(data, "after");
-    ASSERT_NOT_NULL(before);
-    ASSERT_NOT_NULL(after);
-    ASSERT_STR_EQ("7BD977D7-26396C0C", get_string_field(before, "guid"));
-    ASSERT_STR_EQ("42414C02-10000002", get_string_field(after, "guid"));
-    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(before, "flags")));
-    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(after, "flags")));
-
-    yyjson_val *eligibility = get_object_field(data, "eligibility");
-    ASSERT_NOT_NULL(eligibility);
-    ASSERT_TRUE(get_bool_field(eligibility, "leaf"));
-    ASSERT_EQ(0u, (uint32_t)get_uint_field(eligibility, "sub_behaviors"));
-    ASSERT_EQ(0u, (uint32_t)get_uint_field(eligibility, "sub_behavior_links"));
-    ASSERT_EQ(0u, (uint32_t)get_uint_field(eligibility, "operations"));
-
-    yyjson_val *preserved = get_object_field(data, "preserved");
-    ASSERT_NOT_NULL(preserved);
-    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(preserved, "control_in")));
-    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(preserved, "control_out")));
-    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(preserved, "parameter_in")));
-    ASSERT_TRUE(yyjson_is_uint(yyjson_obj_get(preserved, "parameter_out")));
+    yyjson_val *changed_objects = get_array_field(data, "changed_objects");
+    ASSERT_NOT_NULL(changed_objects);
+    ASSERT_TRUE(array_contains_object_id(changed_objects, 343u));
+    ASSERT_NOT_NULL(get_array_field(data, "semantic_risks"));
+    ASSERT_NOT_NULL(get_object_field(data, "validation"));
 
     ASSERT_FALSE(file_exists("test_behavior_rewrite_tmp/replace_bb_dry.cmo"));
     yyjson_doc_free(doc);
@@ -395,10 +386,8 @@ TEST(cli, behavior_replace_bb_rejects_non_leaf_script) {
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
-    ASSERT_STR_CONTAINS(result.output, "not leaf-replaceable");
-    ASSERT_STR_CONTAINS(result.output, "sub_behaviors");
-    ASSERT_STR_CONTAINS(result.output, "sub_behavior_links");
-    ASSERT_STR_CONTAINS(result.output, "operations");
+    ASSERT_STR_CONTAINS(result.output, "not_leaf_replaceable");
+    ASSERT_STR_CONTAINS(result.output, "Behavior is not leaf-replaceable");
     ASSERT_FALSE(file_exists("test_behavior_rewrite_tmp/replace_bb_reject.cmo"));
     free(result.output);
 }
