@@ -4,7 +4,9 @@
 #include "core/nmo_array.h"
 #include "document/nmo_document.h"
 #include "object/builtin/nmo_parameter_schemas.h"
+#include "object/builtin/nmo_behavior_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
@@ -36,7 +38,8 @@ typedef struct edit_plan_fixture {
 static void edit_plan_fixture_init(edit_plan_fixture_t *fixture)
 {
     memset(fixture, 0, sizeof(*fixture));
-    fixture->ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    fixture->ctx = nmo_context_create(
+        &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
     ASSERT_NOT_NULL(fixture->ctx);
     fixture->session = nmo_session_create(fixture->ctx);
     ASSERT_NOT_NULL(fixture->session);
@@ -194,9 +197,51 @@ TEST(edit_plan, executor_dry_run_reports_without_persisting) {
     edit_plan_fixture_dispose(&fixture);
 }
 
+TEST(edit_plan, executor_adds_node_with_created_object_report) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t root_id = 0;
+    create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Root", &root_id);
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_node(
+                  plan,
+                  root_id,
+                  nmo_guid_parse("055B29FE-662D5CA0"),
+                  "Plan 2D Text"));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(1u, report.operation_count);
+    ASSERT_EQ(NMO_OK, report.operations[0].status);
+    ASSERT_TRUE(report.operations[0].result_id != 0u);
+    ASSERT_EQ(1u, report.created_object_count);
+    ASSERT_EQ(report.operations[0].result_id, report.created_objects[0]);
+
+    nmo_object_t *node_obj =
+        nmo_object_repository_find_by_id(fixture.repo, report.operations[0].result_id);
+    nmo_behavior_state_t *node_state = node_obj
+        ? (nmo_behavior_state_t *)nmo_object_get_state(node_obj)
+        : NULL;
+    ASSERT_NOT_NULL(node_obj);
+    ASSERT_NOT_NULL(node_state);
+    ASSERT_EQ(NMO_CID_2DENTITY, node_state->compatible_class_id);
+    ASSERT_TRUE(node_state->target_parameter_id != 0u);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(edit_plan, stores_parameter_value_ops);
 REGISTER_TEST(edit_plan, executor_commits_parameter_value_plan);
 REGISTER_TEST(edit_plan, executor_rolls_back_failed_plan);
 REGISTER_TEST(edit_plan, executor_dry_run_reports_without_persisting);
+REGISTER_TEST(edit_plan, executor_adds_node_with_created_object_report);
 TEST_MAIN_END()

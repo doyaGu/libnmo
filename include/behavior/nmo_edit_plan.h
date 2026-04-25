@@ -10,6 +10,7 @@
 #include "runtime/nmo_workspace.h"
 #include "nmo_types.h"
 #include "core/nmo_error.h"
+#include "core/nmo_guid.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -23,7 +24,8 @@ typedef struct nmo_edit_plan nmo_edit_plan_t;
 
 typedef enum nmo_edit_op_kind {
     NMO_EDIT_OP_SET_PARAMETER_VALUE = 1,
-    NMO_EDIT_OP_SET_PARAMETER_BYTES = 2
+    NMO_EDIT_OP_SET_PARAMETER_BYTES = 2,
+    NMO_EDIT_OP_ADD_NODE = 3
 } nmo_edit_op_kind_t;
 
 typedef struct nmo_edit_op {
@@ -41,6 +43,11 @@ typedef struct nmo_edit_op {
             nmo_parameter_write_options_t options;
             bool has_options;
         } set_bytes;
+        struct {
+            nmo_object_id_t parent_behavior_id;
+            nmo_guid_t bb_guid;
+            const char *name;
+        } add_node;
     } data;
 } nmo_edit_op_t;
 
@@ -56,6 +63,7 @@ typedef struct nmo_edit_changed_object {
 typedef struct nmo_edit_operation_result {
     nmo_edit_op_kind_t kind;
     nmo_object_id_t primary_id;
+    nmo_object_id_t result_id;
     nmo_status_t status;
 } nmo_edit_operation_result_t;
 
@@ -67,6 +75,8 @@ typedef struct nmo_edit_report {
     nmo_edit_operation_result_t *operations;
     size_t changed_object_count;
     nmo_edit_changed_object_t *changed_objects;
+    size_t created_object_count;
+    nmo_object_id_t *created_objects;
 } nmo_edit_report_t;
 
 NMO_API nmo_status_t nmo_edit_plan_create(nmo_edit_plan_t **out_plan);
@@ -86,6 +96,12 @@ NMO_API nmo_status_t nmo_edit_plan_add_set_parameter_bytes(
     const uint8_t *bytes,
     size_t byte_count,
     const nmo_parameter_write_options_t *options);
+
+NMO_API nmo_status_t nmo_edit_plan_add_node(
+    nmo_edit_plan_t *plan,
+    nmo_object_id_t parent_behavior_id,
+    nmo_guid_t bb_guid,
+    const char *name);
 
 NMO_API nmo_edit_executor_options_t nmo_edit_executor_options_default(void);
 

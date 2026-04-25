@@ -5,6 +5,7 @@
 
 #include "behavior/nmo_edit_plan.h"
 
+#include "behavior/nmo_script_edit.h"
 #include "object/nmo_value_writer.h"
 
 #include <stdlib.h>
@@ -60,6 +61,8 @@ static void edit_op_dispose(nmo_edit_op_t *op)
         free((void *)op->data.set_value.value);
     } else if (op->kind == NMO_EDIT_OP_SET_PARAMETER_BYTES) {
         free((void *)op->data.set_bytes.bytes);
+    } else if (op->kind == NMO_EDIT_OP_ADD_NODE) {
+        free((void *)op->data.add_node.name);
     }
     memset(op, 0, sizeof(*op));
 }
@@ -156,6 +159,32 @@ nmo_status_t nmo_edit_plan_add_set_parameter_bytes(
     return NMO_OK;
 }
 
+nmo_status_t nmo_edit_plan_add_node(
+    nmo_edit_plan_t *plan,
+    nmo_object_id_t parent_behavior_id,
+    nmo_guid_t bb_guid,
+    const char *name)
+{
+    if (plan == NULL || parent_behavior_id == 0 || nmo_guid_is_null(bb_guid)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    NMO_RETURN_IF_ERROR(edit_plan_reserve(plan, plan->count + 1u));
+    nmo_edit_op_t *op = &plan->ops[plan->count];
+    memset(op, 0, sizeof(*op));
+    op->kind = NMO_EDIT_OP_ADD_NODE;
+    op->primary_id = parent_behavior_id;
+    op->data.add_node.parent_behavior_id = parent_behavior_id;
+    op->data.add_node.bb_guid = bb_guid;
+    if (name != NULL) {
+        op->data.add_node.name = edit_plan_strdup(name);
+        if (op->data.add_node.name == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+    }
+    plan->count++;
+    return NMO_OK;
+}
+
 nmo_edit_executor_options_t nmo_edit_executor_options_default(void)
 {
     nmo_edit_executor_options_t options = {0};
@@ -178,6 +207,7 @@ void nmo_edit_report_dispose(nmo_edit_report_t *report)
     }
     free(report->operations);
     free(report->changed_objects);
+    free(report->created_objects);
     memset(report, 0, sizeof(*report));
 }
 
@@ -198,7 +228,10 @@ static nmo_status_t edit_report_prepare(nmo_edit_report_t *report,
         (nmo_edit_operation_result_t *)calloc(plan->count, sizeof(*report->operations));
     report->changed_objects =
         (nmo_edit_changed_object_t *)calloc(plan->count, sizeof(*report->changed_objects));
-    if (report->operations == NULL || report->changed_objects == NULL) {
+    report->created_objects =
+        (nmo_object_id_t *)calloc(plan->count, sizeof(*report->created_objects));
+    if (report->operations == NULL || report->changed_objects == NULL ||
+        report->created_objects == NULL) {
         nmo_edit_report_dispose(report);
         return NMO_ERR_NOMEM;
     }
@@ -230,12 +263,31 @@ static void edit_report_note_changed_object(
         (nmo_edit_changed_object_t){.id = id, .cause = cause};
 }
 
-static nmo_status_t edit_executor_apply_op(
-    nmo_workspace_edit_t *edit,
-    const nmo_edit_op_t *op)
+static void edit_report_note_created_object(
+    nmo_edit_report_t *report,
+    nmo_object_id_t id)
 {
-    if (edit == NULL || op == NULL) {
+    if (report == NULL || report->created_objects == NULL || id == 0) {
+        return;
+    }
+    report->created_objects[report->created_object_count++] = id;
+}
+
+static nmo_status_t edit_executor_apply_op(
+    nmo_script_edit_tx_t *tx,
+    const nmo_edit_op_t *op,
+    nmo_object_id_t *out_result_id)
+{
+    nmo_workspace_edit_t *edit = NULL;
+    if (tx == NULL || op == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (out_result_id != NULL) {
+        *out_result_id = 0;
+    }
+    edit = nmo_script_edit_workspace_edit(tx);
+    if (edit == NULL) {
+        return NMO_ERR_INVALID_STATE;
     }
 
     switch (op->kind) {
@@ -252,6 +304,13 @@ static nmo_status_t edit_executor_apply_op(
             op->data.set_bytes.bytes,
             op->data.set_bytes.byte_count,
             op->data.set_bytes.has_options ? &op->data.set_bytes.options : NULL);
+    case NMO_EDIT_OP_ADD_NODE:
+        return nmo_script_edit_add_node(
+            tx,
+            op->data.add_node.parent_behavior_id,
+            op->data.add_node.bb_guid,
+            op->data.add_node.name,
+            out_result_id);
     default:
         return NMO_ERR_NOT_SUPPORTED;
     }
@@ -271,8 +330,8 @@ nmo_status_t nmo_edit_executor_execute(
         options != NULL ? *options : nmo_edit_executor_options_default();
     NMO_RETURN_IF_ERROR(edit_report_prepare(report, plan, effective.dry_run));
 
-    nmo_workspace_edit_t *edit = NULL;
-    nmo_status_t rc = nmo_workspace_edit_begin(workspace, "edit plan", &edit);
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_status_t rc = nmo_script_edit_begin(workspace, "edit plan", &tx);
     if (rc != NMO_OK) {
         report->status = rc;
         return rc;
@@ -280,29 +339,39 @@ nmo_status_t nmo_edit_executor_execute(
 
     for (size_t i = 0; i < plan->count; i++) {
         const nmo_edit_op_t *op = &plan->ops[i];
-        nmo_status_t op_rc = edit_executor_apply_op(edit, op);
+        nmo_object_id_t result_id = 0;
+        nmo_status_t op_rc = edit_executor_apply_op(tx, op, &result_id);
         report->operations[i] = (nmo_edit_operation_result_t){
             .kind = op->kind,
             .primary_id = op->primary_id,
+            .result_id = result_id,
             .status = op_rc,
         };
         if (op_rc != NMO_OK) {
-            nmo_workspace_edit_rollback(edit);
+            nmo_script_edit_rollback(tx);
             report->ok = false;
             report->status = op_rc;
             return op_rc;
         }
-        edit_report_note_changed_object(report, op->primary_id, op->kind);
+        if (op->kind == NMO_EDIT_OP_ADD_NODE) {
+            edit_report_note_changed_object(
+                report,
+                op->data.add_node.parent_behavior_id,
+                op->kind);
+            edit_report_note_created_object(report, result_id);
+        } else {
+            edit_report_note_changed_object(report, op->primary_id, op->kind);
+        }
     }
 
     if (effective.dry_run) {
-        nmo_workspace_edit_rollback(edit);
+        nmo_script_edit_rollback(tx);
         report->ok = true;
         report->status = NMO_OK;
         return NMO_OK;
     }
 
-    rc = nmo_workspace_edit_commit(edit);
+    rc = nmo_script_edit_commit(tx);
     report->ok = rc == NMO_OK;
     report->status = rc;
     return rc;
