@@ -1569,7 +1569,7 @@ static int patch_parse_rewire_operation(yyjson_val *op_obj,
 }
 
 static int patch_parse_interface_policy(yyjson_val *op_obj,
-                                        patch_operation_t *out_op) {
+                                        nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "behavior_id",
@@ -1596,11 +1596,14 @@ static int patch_parse_interface_policy(yyjson_val *op_obj,
         return rc;
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_INTERFACE_POLICY;
-    out_op->interface_policy.behavior_id =
-        (nmo_object_id_t)yyjson_get_uint(id_val);
-    out_op->interface_policy.mode = mode;
+    nmo_status_t st = nmo_edit_plan_add_interface_policy(
+        edit_plan, (nmo_object_id_t)yyjson_get_uint(id_val), mode);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -1874,7 +1877,12 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
             rc = patch_parse_rename_io(op_obj, &operation);
         } else if (strcmp(op, "interface_policy") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_interface_policy(op_obj, &operation);
+            rc = patch_parse_interface_policy(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else {
             fprintf(stderr, "Error: Unsupported patch op '%s'\n", op);
             patch_plan_free(out_plan);
