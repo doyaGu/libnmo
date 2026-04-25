@@ -37,6 +37,7 @@ typedef enum patch_operation_kind {
     PATCH_OP_SET_BEHAVIOR_LINK_DELAY = 10,
     PATCH_OP_REMOVE_BEHAVIOR_LINK = 11,
     PATCH_OP_REWIRE_BEHAVIOR_LINK = 12,
+    PATCH_OP_ADD_PARAMETER = 13,
 } patch_operation_kind_t;
 
 typedef struct patch_operation {
@@ -93,6 +94,12 @@ typedef struct patch_operation {
         nmo_object_id_t behavior_id;
         nmo_script_edit_interface_mode_t mode;
     } interface_policy;
+    struct {
+        nmo_object_id_t owner_id;
+        nmo_script_edit_parameter_kind_t kind;
+        nmo_guid_t type_guid;
+        const char *name;
+    } add_parameter;
 } patch_operation_t;
 
 typedef struct patch_plan {
@@ -246,6 +253,14 @@ static nmo_status_t patch_operation_add_to_edit_plan(
             edit_plan,
             op->rename_io.io_id,
             op->rename_io.name);
+    }
+    if (op->kind == PATCH_OP_ADD_PARAMETER) {
+        return nmo_edit_plan_add_parameter(
+            edit_plan,
+            op->add_parameter.owner_id,
+            op->add_parameter.kind,
+            op->add_parameter.type_guid,
+            op->add_parameter.name);
     }
     if (op->kind == PATCH_OP_INTERFACE_POLICY) {
         return nmo_edit_plan_add_interface_policy(
@@ -965,6 +980,88 @@ static int patch_parse_script_interface_mode(
     return NMO_CLI_EXIT_ARG_ERROR;
 }
 
+static bool patch_parse_parameter_kind(
+    const char *text,
+    nmo_script_edit_parameter_kind_t *out_kind) {
+    if (!text || !out_kind) {
+        return false;
+    }
+    if (strcmp(text, "in") == 0 || strcmp(text, "input") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_PARAM_IN;
+        return true;
+    }
+    if (strcmp(text, "out") == 0 || strcmp(text, "output") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_PARAM_OUT;
+        return true;
+    }
+    if (strcmp(text, "local") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_PARAM_LOCAL;
+        return true;
+    }
+    if (strcmp(text, "shared") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_PARAM_SHARED;
+        return true;
+    }
+    return false;
+}
+
+static int patch_parse_add_parameter(yyjson_val *op_obj,
+                                     patch_operation_t *out_op) {
+    static const char *const allowed[] = {
+        "op",
+        "owner_id",
+        "kind",
+        "type_guid",
+        "name",
+    };
+    int rc = patch_reject_unknown_fields(
+        op_obj, "add_parameter operation",
+        allowed, sizeof(allowed) / sizeof(allowed[0]));
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    yyjson_val *owner_val = yyjson_obj_get(op_obj, "owner_id");
+    if (!owner_val || !yyjson_is_uint(owner_val) ||
+        yyjson_get_uint(owner_val) == 0 ||
+        yyjson_get_uint(owner_val) > UINT32_MAX) {
+        fprintf(stderr, "Error: Missing or invalid owner_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *kind_text = patch_required_string(
+        op_obj, "kind", "add_parameter operation");
+    const char *type_guid_text = patch_required_string(
+        op_obj, "type_guid", "add_parameter operation");
+    const char *name = patch_required_string(
+        op_obj, "name", "add_parameter operation");
+    if (!kind_text || !type_guid_text || !name) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_script_edit_parameter_kind_t kind = NMO_SCRIPT_EDIT_PARAM_IN;
+    if (!patch_parse_parameter_kind(kind_text, &kind)) {
+        fprintf(stderr, "Error: Invalid add_parameter kind '%s'\n", kind_text);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_guid_t type_guid = nmo_guid_parse(type_guid_text);
+    if (nmo_guid_is_null(type_guid)) {
+        fprintf(stderr, "Error: Invalid parameter type GUID '%s'\n",
+                type_guid_text);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    memset(out_op, 0, sizeof(*out_op));
+    out_op->kind = PATCH_OP_ADD_PARAMETER;
+    out_op->add_parameter.owner_id =
+        (nmo_object_id_t)yyjson_get_uint(owner_val);
+    out_op->add_parameter.kind = kind;
+    out_op->add_parameter.type_guid = type_guid;
+    out_op->add_parameter.name = name;
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static int patch_parse_interface_policy(yyjson_val *op_obj,
                                         patch_operation_t *out_op) {
     static const char *const allowed[] = {
@@ -1242,6 +1339,9 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
         } else if (strcmp(op, "remove_behavior_link") == 0 &&
                    out_plan->version == 2u) {
             rc = patch_parse_remove_behavior_link(op_obj, &operations[idx]);
+        } else if (strcmp(op, "add_parameter") == 0 &&
+                   out_plan->version == 2u) {
+            rc = patch_parse_add_parameter(op_obj, &operations[idx]);
         } else if (strcmp(op, "add_io") == 0 && out_plan->version == 2u) {
             rc = patch_parse_add_io(op_obj, &operations[idx]);
         } else if (strcmp(op, "remove_io") == 0 && out_plan->version == 2u) {
