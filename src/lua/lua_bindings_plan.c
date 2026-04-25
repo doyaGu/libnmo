@@ -266,6 +266,115 @@ static int nmo_lua_plan_remove_behavior_link(lua_State *state)
     return 0;
 }
 
+static bool nmo_lua_plan_parse_parameter_kind(
+    const char *text,
+    nmo_script_edit_parameter_kind_t *out_kind)
+{
+    if (strcmp(text, "input") == 0 || strcmp(text, "in") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_PARAM_IN;
+        return true;
+    }
+    if (strcmp(text, "output") == 0 || strcmp(text, "out") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_PARAM_OUT;
+        return true;
+    }
+    if (strcmp(text, "local") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_PARAM_LOCAL;
+        return true;
+    }
+    if (strcmp(text, "shared") == 0) {
+        *out_kind = NMO_SCRIPT_EDIT_PARAM_SHARED;
+        return true;
+    }
+    return false;
+}
+
+static int nmo_lua_plan_add_parameter(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t owner_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    const char *kind_text = luaL_checkstring(state, 3);
+    const char *guid_text = luaL_checkstring(state, 4);
+    const char *name = luaL_checkstring(state, 5);
+    nmo_script_edit_parameter_kind_t kind = NMO_SCRIPT_EDIT_PARAM_IN;
+    if (!nmo_lua_plan_parse_parameter_kind(kind_text, &kind)) {
+        return luaL_error(
+            state, "parameter kind must be 'input', 'output', 'local', or 'shared'");
+    }
+    nmo_guid_t type_guid = nmo_guid_parse(guid_text);
+    if (nmo_guid_is_null(type_guid)) {
+        return luaL_error(state, "invalid parameter type GUID");
+    }
+
+    status = nmo_edit_plan_add_parameter(plan, owner_id, kind, type_guid, name);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add parameter op");
+    }
+    return 0;
+}
+
+static int nmo_lua_plan_connect_parameter(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t source_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    nmo_object_id_t target_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
+
+    status = nmo_edit_plan_add_connect_parameter(plan, source_id, target_id);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add connect parameter op");
+    }
+    return 0;
+}
+
+static int nmo_lua_plan_disconnect_parameter(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t target_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+
+    status = nmo_edit_plan_add_disconnect_parameter(plan, target_id);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add disconnect parameter op");
+    }
+    return 0;
+}
+
+static int nmo_lua_plan_remove_parameter(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t parameter_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    bool detach = lua_toboolean(state, 3) != 0;
+
+    status = nmo_edit_plan_add_remove_parameter(plan, parameter_id, detach);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add remove parameter op");
+    }
+    return 0;
+}
+
 static int nmo_lua_plan_set_parameter_value(lua_State *state)
 {
     nmo_edit_plan_t *plan = NULL;
@@ -394,6 +503,14 @@ static const char *nmo_lua_plan_op_kind_string(nmo_edit_op_kind_t kind)
         return "set_behavior_link_delay";
     case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK:
         return "remove_behavior_link";
+    case NMO_EDIT_OP_ADD_PARAMETER:
+        return "add_parameter";
+    case NMO_EDIT_OP_CONNECT_PARAMETER:
+        return "connect_parameter";
+    case NMO_EDIT_OP_DISCONNECT_PARAMETER:
+        return "disconnect_parameter";
+    case NMO_EDIT_OP_REMOVE_PARAMETER:
+        return "remove_parameter";
     case NMO_EDIT_OP_REMOVE_NODE:
         return "remove_node";
     case NMO_EDIT_OP_INTERFACE_POLICY:
@@ -630,6 +747,14 @@ static int nmo_lua_open_plan_module(lua_State *state)
     lua_setfield(state, -2, "set_behavior_link_delay");
     lua_pushcfunction(state, nmo_lua_plan_remove_behavior_link);
     lua_setfield(state, -2, "remove_behavior_link");
+    lua_pushcfunction(state, nmo_lua_plan_add_parameter);
+    lua_setfield(state, -2, "add_parameter");
+    lua_pushcfunction(state, nmo_lua_plan_connect_parameter);
+    lua_setfield(state, -2, "connect_parameter");
+    lua_pushcfunction(state, nmo_lua_plan_disconnect_parameter);
+    lua_setfield(state, -2, "disconnect_parameter");
+    lua_pushcfunction(state, nmo_lua_plan_remove_parameter);
+    lua_setfield(state, -2, "remove_parameter");
     lua_pushcfunction(state, nmo_lua_plan_set_parameter_value);
     lua_setfield(state, -2, "set_parameter_value");
     lua_pushcfunction(state, nmo_lua_plan_set_parameter_bytes);
