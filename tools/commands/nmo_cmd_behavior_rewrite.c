@@ -2439,6 +2439,9 @@ cleanup:
 typedef struct replace_bb_args {
     nmo_behavior_replace_bb_desc_t desc;
     nmo_behavior_replace_report_t report;
+    nmo_edit_plan_t *edit_plan;
+    nmo_edit_report_t edit_report;
+    bool edit_report_ready;
 } replace_bb_args_t;
 
 static void replace_bb_add_report_json(
@@ -2532,22 +2535,61 @@ static int replace_bb_mutate(nmo_cmd_ctx_t *c,
 
     nmo_workspace_t *workspace = c->workspace;
     nmo_status_t rc = NMO_OK;
-    if (rc == NMO_OK) {
+    if (dry_run) {
         rc = nmo_behavior_edit_replace_bb(
             workspace, &args->desc, &args->report);
+    } else {
+        rc = nmo_edit_report_init(&args->edit_report);
+        if (rc == NMO_OK) {
+            args->edit_report_ready = true;
+            rc = nmo_edit_plan_create(&args->edit_plan);
+        }
+        if (rc == NMO_OK) {
+            rc = nmo_edit_plan_add_replace_bb(args->edit_plan,
+                                              &args->desc);
+        }
+        if (rc == NMO_OK) {
+            nmo_edit_executor_options_t options =
+                nmo_edit_executor_options_default();
+            options.dry_run = false;
+            rc = nmo_edit_executor_execute(
+                workspace, args->edit_plan, &options, &args->edit_report);
+        }
     }
     if (rc != NMO_OK) {
-        fprintf(stderr,
-                "Error: behavior %u is not leaf-replaceable "
-                "(sub_behaviors=%zu, sub_behavior_links=%zu, operations=%zu)",
-                args->desc.behavior_id,
-                args->report.sub_behavior_count,
-                args->report.sub_behavior_link_count,
-                args->report.operation_count);
-        if (args->report.diagnostic_message) {
-            fprintf(stderr, ": %s", args->report.diagnostic_message);
+        if (dry_run) {
+            fprintf(stderr,
+                    "Error: behavior %u is not leaf-replaceable "
+                    "(sub_behaviors=%zu, sub_behavior_links=%zu, operations=%zu)",
+                    args->desc.behavior_id,
+                    args->report.sub_behavior_count,
+                    args->report.sub_behavior_link_count,
+                    args->report.operation_count);
+            if (args->report.diagnostic_message) {
+                fprintf(stderr, ": %s", args->report.diagnostic_message);
+            }
+        } else {
+            const nmo_edit_operation_result_t *failed_op =
+                args->edit_report_ready &&
+                        args->edit_report.operation_count > 0u
+                    ? &args->edit_report.operations[0]
+                    : NULL;
+            fprintf(stderr, "Error: behavior replace-bb failed: %s",
+                    nmo_error_string(rc));
+            if (failed_op && failed_op->diagnostic_code) {
+                fprintf(stderr, " (%s)", failed_op->diagnostic_code);
+            }
+            if (failed_op && failed_op->diagnostic_message) {
+                fprintf(stderr, ": %s", failed_op->diagnostic_message);
+            }
         }
         fputc('\n', stderr);
+        if (args->edit_report_ready) {
+            nmo_edit_report_dispose(&args->edit_report);
+            nmo_edit_plan_destroy(args->edit_plan);
+            args->edit_plan = NULL;
+            args->edit_report_ready = false;
+        }
         return (rc == NMO_ERR_INVALID_ARGUMENT || rc == NMO_ERR_NOT_FOUND)
             ? NMO_CLI_EXIT_ARG_ERROR
             : NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -2570,44 +2612,66 @@ static int replace_bb_report(nmo_cmd_ctx_t *c,
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        replace_bb_add_report_json(doc, data, &args->report);
+        if (dry_run) {
+            nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
+            replace_bb_add_report_json(doc, data, &args->report);
+        } else {
+            add_edit_report_json(doc, data, &args->edit_report);
+        }
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+            nmo_cli_json_add_str_safe(doc, data, "output_path",
+                                      output_path);
         }
-        return nmo_cmd_ctx_json_end(c, doc, data,
-                                    "behavior.replace-bb");
+        int json_rc = nmo_cmd_ctx_json_end(c, doc, data,
+                                           "behavior.replace-bb");
+        if (args->edit_report_ready) {
+            nmo_edit_report_dispose(&args->edit_report);
+            nmo_edit_plan_destroy(args->edit_plan);
+            args->edit_plan = NULL;
+            args->edit_report_ready = false;
+        }
+        return json_rc;
     }
 
     if (dry_run) {
         fprintf(c->out, "[dry-run] ");
+        char before_guid[24];
+        char after_guid[24];
+        rewrite_guid_to_string(args->report.before_guid, before_guid,
+                               sizeof(before_guid));
+        rewrite_guid_to_string(args->report.after_guid, after_guid,
+                               sizeof(after_guid));
+        fprintf(c->out,
+                "Replaced leaf BB #%u: %s -> %s\n",
+                args->report.behavior_id,
+                before_guid,
+                after_guid);
+        fprintf(c->out,
+                "Preserved: inputs=%zu outputs=%zu in_params=%zu "
+                "out_params=%zu local_params=%zu control_in=%zu "
+                "control_out=%zu parameter_in=%zu parameter_out=%zu\n",
+                args->report.preserved_inputs,
+                args->report.preserved_outputs,
+                args->report.preserved_in_parameters,
+                args->report.preserved_out_parameters,
+                args->report.preserved_local_parameters,
+                args->report.preserved_control_in,
+                args->report.preserved_control_out,
+                args->report.preserved_parameter_in,
+                args->report.preserved_parameter_out);
+    } else {
+        fprintf(c->out, "Replaced leaf BB #%u\n",
+                args->desc.behavior_id);
     }
-    char before_guid[24];
-    char after_guid[24];
-    rewrite_guid_to_string(args->report.before_guid, before_guid,
-                           sizeof(before_guid));
-    rewrite_guid_to_string(args->report.after_guid, after_guid,
-                           sizeof(after_guid));
-    fprintf(c->out,
-            "Replaced leaf BB #%u: %s -> %s\n",
-            args->report.behavior_id,
-            before_guid,
-            after_guid);
-    fprintf(c->out,
-            "Preserved: inputs=%zu outputs=%zu in_params=%zu "
-            "out_params=%zu local_params=%zu control_in=%zu "
-            "control_out=%zu parameter_in=%zu parameter_out=%zu\n",
-            args->report.preserved_inputs,
-            args->report.preserved_outputs,
-            args->report.preserved_in_parameters,
-            args->report.preserved_out_parameters,
-            args->report.preserved_local_parameters,
-            args->report.preserved_control_in,
-            args->report.preserved_control_out,
-            args->report.preserved_parameter_in,
-            args->report.preserved_parameter_out);
     if (!dry_run && output_path) {
         fprintf(c->out, "Saved to: %s\n", output_path);
+    }
+    if (args->edit_report_ready) {
+        nmo_edit_report_dispose(&args->edit_report);
+        nmo_edit_plan_destroy(args->edit_plan);
+        args->edit_plan = NULL;
+        args->edit_report_ready = false;
     }
     return NMO_CLI_EXIT_SUCCESS;
 }

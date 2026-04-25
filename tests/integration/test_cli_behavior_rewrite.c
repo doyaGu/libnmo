@@ -461,6 +461,62 @@ TEST(cli, behavior_replace_bb_saves_output) {
     remove(output);
 }
 
+TEST(cli, behavior_replace_bb_write_json_reports_edit_plan_schema) {
+    rewrite_manifest_t manifest;
+    char replace_guid[64];
+
+    load_ballance_manifest_or_die(&manifest);
+    rewrite_manifest_cli_guid(manifest.replace_guid, replace_guid,
+                              sizeof(replace_guid));
+
+    const char *output =
+        "test_behavior_rewrite_tmp/replace_bb_save_json.cmo";
+    remove(output);
+    make_dir("test_behavior_rewrite_tmp");
+
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior replace-bb 343 "
+             "--bb-guid %s "
+             "--name \"%s\" "
+             "--preserve-links --preserve-params \"%s\" -o \"%s\"",
+             replace_guid,
+             manifest.replace_name,
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output);
+
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "behavior.replace-bb", &doc);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_FALSE(get_bool_field(data, "dry_run"));
+    ASSERT_STR_EQ(output, get_string_field(data, "output_path"));
+
+    yyjson_val *operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
+    yyjson_val *op = yyjson_arr_get(operations, 0);
+    ASSERT_TRUE(op && yyjson_is_obj(op));
+    ASSERT_STR_EQ("replace_bb", get_string_field(op, "op"));
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(op, "status"));
+    ASSERT_EQ(343u, (uint32_t)get_uint_field(op, "result_id"));
+
+    yyjson_val *changed_objects = get_array_field(data, "changed_objects");
+    ASSERT_NOT_NULL(changed_objects);
+    ASSERT_TRUE(array_contains_object_id(changed_objects, 343u));
+    yyjson_val *validation = get_object_field(data, "validation");
+    ASSERT_NOT_NULL(validation);
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(validation, "final_status"));
+
+    yyjson_doc_free(doc);
+    ASSERT_TRUE(file_exists(output));
+    assert_validate_ok(output);
+    remove(output);
+}
+
 TEST(cli, behavior_fold_candidates_reports_parent_boundary) {
     char args[2048];
     snprintf(args, sizeof(args),
@@ -1565,6 +1621,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_replace_bb_dry_run_reports_leaf_preservation);
     REGISTER_TEST(cli, behavior_replace_bb_rejects_non_leaf_script);
     REGISTER_TEST(cli, behavior_replace_bb_saves_output);
+    REGISTER_TEST(cli, behavior_replace_bb_write_json_reports_edit_plan_schema);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_parent_boundary);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_direct_child_groups);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_connected_components);
