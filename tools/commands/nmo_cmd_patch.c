@@ -32,6 +32,7 @@ typedef enum patch_operation_kind {
     PATCH_OP_REMOVE_IO = 5,
     PATCH_OP_RENAME_IO = 6,
     PATCH_OP_ADD_NODE = 7,
+    PATCH_OP_REMOVE_NODE = 8,
 } patch_operation_kind_t;
 
 typedef struct patch_operation {
@@ -52,6 +53,11 @@ typedef struct patch_operation {
         nmo_guid_t bb_guid;
         const char *name;
     } add_node;
+    struct {
+        nmo_object_id_t parent_id;
+        nmo_object_id_t node_id;
+        uint32_t delete_flags;
+    } remove_node;
     struct {
         nmo_object_id_t io_id;
         bool detach_links;
@@ -171,6 +177,13 @@ static nmo_status_t patch_operation_add_to_edit_plan(
             op->add_node.behavior_id,
             op->add_node.bb_guid,
             op->add_node.name);
+    }
+    if (op->kind == PATCH_OP_REMOVE_NODE) {
+        return nmo_edit_plan_add_remove_node(
+            edit_plan,
+            op->remove_node.parent_id,
+            op->remove_node.node_id,
+            op->remove_node.delete_flags);
     }
     if (op->kind == PATCH_OP_REMOVE_IO) {
         return nmo_edit_plan_add_remove_io(
@@ -573,6 +586,58 @@ static int patch_parse_add_node(yyjson_val *op_obj,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+static int patch_parse_remove_node(yyjson_val *op_obj,
+                                   patch_operation_t *out_op) {
+    static const char *const allowed[] = {
+        "op",
+        "parent_id",
+        "node_id",
+        "delete_flags",
+    };
+    int rc = patch_reject_unknown_fields(
+        op_obj, "remove_node operation",
+        allowed, sizeof(allowed) / sizeof(allowed[0]));
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    yyjson_val *parent_val = yyjson_obj_get(op_obj, "parent_id");
+    if (!parent_val || !yyjson_is_uint(parent_val) ||
+        yyjson_get_uint(parent_val) == 0 ||
+        yyjson_get_uint(parent_val) > UINT32_MAX) {
+        fprintf(stderr, "Error: Missing or invalid parent_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    yyjson_val *node_val = yyjson_obj_get(op_obj, "node_id");
+    if (!node_val || !yyjson_is_uint(node_val) ||
+        yyjson_get_uint(node_val) == 0 ||
+        yyjson_get_uint(node_val) > UINT32_MAX) {
+        fprintf(stderr, "Error: Missing or invalid node_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    uint32_t delete_flags = 0u;
+    yyjson_val *delete_flags_val = yyjson_obj_get(op_obj, "delete_flags");
+    if (delete_flags_val != NULL) {
+        if (!yyjson_is_uint(delete_flags_val) ||
+            yyjson_get_uint(delete_flags_val) > UINT32_MAX) {
+            fprintf(stderr, "Error: Invalid remove_node delete_flags\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        delete_flags = (uint32_t)yyjson_get_uint(delete_flags_val);
+    }
+
+    memset(out_op, 0, sizeof(*out_op));
+    out_op->kind = PATCH_OP_REMOVE_NODE;
+    out_op->remove_node.parent_id =
+        (nmo_object_id_t)yyjson_get_uint(parent_val);
+    out_op->remove_node.node_id =
+        (nmo_object_id_t)yyjson_get_uint(node_val);
+    out_op->remove_node.delete_flags = delete_flags;
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static int patch_parse_remove_io(yyjson_val *op_obj,
                                  patch_operation_t *out_op) {
     static const char *const allowed[] = {
@@ -922,6 +987,9 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
             rc = patch_parse_fold(op_obj, &operations[idx]);
         } else if (strcmp(op, "add_node") == 0 && out_plan->version == 2u) {
             rc = patch_parse_add_node(op_obj, &operations[idx]);
+        } else if (strcmp(op, "remove_node") == 0 &&
+                   out_plan->version == 2u) {
+            rc = patch_parse_remove_node(op_obj, &operations[idx]);
         } else if (strcmp(op, "add_io") == 0 && out_plan->version == 2u) {
             rc = patch_parse_add_io(op_obj, &operations[idx]);
         } else if (strcmp(op, "remove_io") == 0 && out_plan->version == 2u) {
