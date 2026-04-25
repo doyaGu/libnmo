@@ -1621,10 +1621,11 @@ TEST(cli, script_io_add_dry_run_exposes_executor_validation_parity)
     yyjson_doc *doc = NULL;
     yyjson_val *data = NULL;
     yyjson_val *validation = NULL;
-    yyjson_val *references = NULL;
-    yyjson_val *behavior_index = NULL;
-    yyjson_val *interface_obj = NULL;
-    yyjson_val *result_handles = NULL;
+    yyjson_val *operations = NULL;
+    yyjson_val *created_objects = NULL;
+    yyjson_val *semantic_risks = NULL;
+    yyjson_val *diff = NULL;
+    yyjson_val *op = NULL;
 
     snprintf(args, sizeof(args),
              "-f json script io add --behavior 6 --kind input --name DryParity "
@@ -1644,20 +1645,32 @@ TEST(cli, script_io_add_dry_run_exposes_executor_validation_parity)
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
     ASSERT_TRUE(get_uint_field(data, "io_id") != 0u);
+    ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
+    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(1u, yyjson_arr_size(operations));
+    op = yyjson_arr_get(operations, 0);
+    ASSERT_STR_EQ("add_io", get_string_field(op, "op"));
+    ASSERT_EQ(6u, (uint32_t)get_uint_field(op, "primary_id"));
+    ASSERT_TRUE(get_uint_field(op, "result_id") != 0u);
+    ASSERT_TRUE(yyjson_obj_get(op, "result_handles") == NULL);
+    ASSERT_NOT_NULL(get_array_field(op, "handles"));
+    created_objects = get_array_field(data, "created_objects");
+    ASSERT_NOT_NULL(created_objects);
+    ASSERT_EQ(1u, yyjson_arr_size(created_objects));
+    semantic_risks = get_array_field(data, "semantic_risks");
+    ASSERT_NOT_NULL(semantic_risks);
 
     validation = get_object_field(data, "validation");
     ASSERT_NOT_NULL(validation);
-    references = get_object_field(validation, "references");
-    ASSERT_NOT_NULL(references);
-    ASSERT_NOT_NULL(get_string_field(references, "status_name"));
-    behavior_index = get_object_field(validation, "behavior_index");
-    ASSERT_NOT_NULL(behavior_index);
-    interface_obj = get_object_field(validation, "interface");
-    ASSERT_NOT_NULL(interface_obj);
     ASSERT_EQ(0u, get_uint_field(validation, "final_status"));
-    result_handles = get_array_field(data, "result_handles");
-    ASSERT_NOT_NULL(result_handles);
-    ASSERT_EQ(1u, yyjson_arr_size(result_handles));
+    ASSERT_TRUE(yyjson_obj_get(validation, "references") == NULL);
+    ASSERT_TRUE(yyjson_obj_get(validation, "behavior_index") == NULL);
+    ASSERT_TRUE(yyjson_obj_get(validation, "interface") == NULL);
+    diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    ASSERT_EQ(1u, get_uint_field(diff, "created_object_count"));
 
     yyjson_doc_free(doc);
 }

@@ -3216,15 +3216,9 @@ static int script_io_add_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        const uint32_t result_handles[] = {args->io_id};
-        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run);
         yyjson_mut_obj_add_uint(doc, data, "behavior_id", args->behavior_id);
         yyjson_mut_obj_add_uint(doc, data, "io_id", args->io_id);
-        script_add_validation_json(doc,
-                                   data,
-                                   &args->common,
-                                   result_handles,
-                                   1u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
