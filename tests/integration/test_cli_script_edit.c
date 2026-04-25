@@ -1424,6 +1424,10 @@ TEST(cli, script_node_and_io_crud_roundtrip)
     yyjson_doc *doc = NULL;
     yyjson_val *root = NULL;
     yyjson_val *data = NULL;
+    yyjson_val *operations = NULL;
+    yyjson_val *changed_objects = NULL;
+    yyjson_val *deleted_objects = NULL;
+    yyjson_val *validation = NULL;
     uint32_t node_id = 0;
     uint32_t io_id = 0;
     char args[1024];
@@ -1500,6 +1504,22 @@ TEST(cli, script_node_and_io_crud_roundtrip)
     ASSERT_NOT_NULL(doc);
     root = yyjson_doc_get_root(doc);
     ASSERT_STR_EQ("script.io.rename", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
+    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(1u, yyjson_arr_size(operations));
+    ASSERT_STR_EQ("rename_io",
+                  get_string_field(yyjson_arr_get(operations, 0), "op"));
+    changed_objects = get_array_field(data, "changed_objects");
+    ASSERT_NOT_NULL(changed_objects);
+    ASSERT_NOT_NULL(find_array_object_by_id(changed_objects, io_id));
+    validation = get_object_field(data, "validation");
+    ASSERT_NOT_NULL(validation);
+    ASSERT_EQ(0u, get_uint_field(validation, "final_status"));
+    ASSERT_TRUE(yyjson_obj_get(validation, "references") == NULL);
     yyjson_doc_free(doc);
     assert_validate_ok(io_rename);
 
@@ -1531,6 +1551,22 @@ TEST(cli, script_node_and_io_crud_roundtrip)
     ASSERT_NOT_NULL(doc);
     root = yyjson_doc_get_root(doc);
     ASSERT_STR_EQ("script.io.remove", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
+    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(1u, yyjson_arr_size(operations));
+    ASSERT_STR_EQ("remove_io",
+                  get_string_field(yyjson_arr_get(operations, 0), "op"));
+    deleted_objects = get_array_field(data, "deleted_objects");
+    ASSERT_NOT_NULL(deleted_objects);
+    ASSERT_NOT_NULL(find_array_object_by_id(deleted_objects, io_id));
+    validation = get_object_field(data, "validation");
+    ASSERT_NOT_NULL(validation);
+    ASSERT_EQ(0u, get_uint_field(validation, "final_status"));
+    ASSERT_TRUE(yyjson_obj_get(validation, "references") == NULL);
     yyjson_doc_free(doc);
     assert_validate_ok(io_remove);
 
