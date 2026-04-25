@@ -27,6 +27,7 @@
 typedef enum patch_operation_kind {
     PATCH_OP_REPLACE_BB = 1,
     PATCH_OP_FOLD = 2,
+    PATCH_OP_ADD_IO = 3,
 } patch_operation_kind_t;
 
 typedef struct patch_operation {
@@ -37,6 +38,11 @@ typedef struct patch_operation {
     nmo_behavior_fold_map_t *fold_input_maps;
     nmo_behavior_fold_map_t *fold_output_maps;
     nmo_behavior_fold_map_t *fold_parameter_maps;
+    struct {
+        nmo_object_id_t behavior_id;
+        nmo_script_edit_io_kind_t kind;
+        const char *name;
+    } add_io;
 } patch_operation_t;
 
 typedef struct patch_plan {
@@ -130,6 +136,13 @@ static nmo_status_t patch_operation_add_to_edit_plan(
     }
     if (op->kind == PATCH_OP_FOLD) {
         return nmo_edit_plan_add_fold(edit_plan, &op->fold);
+    }
+    if (op->kind == PATCH_OP_ADD_IO) {
+        return nmo_edit_plan_add_io(
+            edit_plan,
+            op->add_io.behavior_id,
+            op->add_io.kind,
+            op->add_io.name);
     }
     return NMO_ERR_NOT_SUPPORTED;
 }
@@ -422,6 +435,54 @@ static int patch_parse_replace_bb(yyjson_val *op_obj,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+static int patch_parse_add_io(yyjson_val *op_obj,
+                              patch_operation_t *out_op) {
+    static const char *const allowed[] = {
+        "op",
+        "behavior_id",
+        "kind",
+        "name",
+    };
+    int rc = patch_reject_unknown_fields(
+        op_obj, "add_io operation",
+        allowed, sizeof(allowed) / sizeof(allowed[0]));
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    yyjson_val *id_val = yyjson_obj_get(op_obj, "behavior_id");
+    if (!id_val || !yyjson_is_uint(id_val) || yyjson_get_uint(id_val) == 0 ||
+        yyjson_get_uint(id_val) > UINT32_MAX) {
+        fprintf(stderr, "Error: Missing or invalid behavior_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *kind_text = patch_required_string(
+        op_obj, "kind", "add_io operation");
+    const char *name = patch_required_string(
+        op_obj, "name", "add_io operation");
+    if (!kind_text || !name) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_script_edit_io_kind_t kind = NMO_SCRIPT_EDIT_IO_INPUT;
+    if (strcmp(kind_text, "input") == 0) {
+        kind = NMO_SCRIPT_EDIT_IO_INPUT;
+    } else if (strcmp(kind_text, "output") == 0) {
+        kind = NMO_SCRIPT_EDIT_IO_OUTPUT;
+    } else {
+        fprintf(stderr, "Error: Invalid add_io kind '%s'\n", kind_text);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    memset(out_op, 0, sizeof(*out_op));
+    out_op->kind = PATCH_OP_ADD_IO;
+    out_op->add_io.behavior_id = (nmo_object_id_t)yyjson_get_uint(id_val);
+    out_op->add_io.kind = kind;
+    out_op->add_io.name = name;
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static int patch_parse_fold(yyjson_val *op_obj,
                             patch_operation_t *out_op) {
     static const char *const allowed[] = {
@@ -646,6 +707,8 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
             rc = patch_parse_replace_bb(op_obj, &operations[idx]);
         } else if (strcmp(op, "fold") == 0) {
             rc = patch_parse_fold(op_obj, &operations[idx]);
+        } else if (strcmp(op, "add_io") == 0 && out_plan->version == 2u) {
+            rc = patch_parse_add_io(op_obj, &operations[idx]);
         } else {
             fprintf(stderr, "Error: Unsupported patch op '%s'\n", op);
             patch_plan_free(out_plan);
