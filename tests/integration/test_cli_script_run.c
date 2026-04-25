@@ -286,6 +286,7 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     ASSERT_TRUE(yyjson_obj_get(data, "semantic_risks") == NULL);
     ASSERT_STR_EQ(script_path, get_string_field(data, "script_file"));
     ASSERT_EQ(3u, get_uint_field(data, "op_count"));
+    ASSERT_EQ(3u, get_uint_field(data, "operation_count"));
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(3u, yyjson_arr_size(operations));
@@ -346,14 +347,25 @@ TEST(cli, script_run_applies_changes_through_executor) {
                               &baseline_outputs);
 
     snprintf(args, sizeof(args),
-             "script run \"%s\" \"%s\" -o \"%s\"",
+             "-f json script run \"%s\" \"%s\" -o \"%s\"",
              script_path,
              input_path,
              output_path);
     result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
     free(result.output);
+    ASSERT_NOT_NULL(doc);
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.run", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_FALSE(get_bool_field(data, "dry_run"));
+    ASSERT_EQ(3u, get_uint_field(data, "operation_count"));
+    ASSERT_STR_EQ(output_path, get_string_field(data, "output_path"));
+    yyjson_doc_free(doc);
 
     ASSERT_TRUE(file_exists(output_path));
     load_root_behavior_counts(output_path, &new_behavior_id, &new_inputs, &new_outputs);

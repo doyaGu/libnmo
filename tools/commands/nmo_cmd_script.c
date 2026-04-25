@@ -1237,6 +1237,8 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
         script_run_add_common_report_json(doc, data, args);
         nmo_cli_json_add_str_safe(doc, data, "script_file", args->script_path);
         yyjson_mut_obj_add_uint(doc, data, "op_count", args->operation_count);
+        yyjson_mut_obj_add_uint(doc, data, "operation_count",
+                                args->operation_count);
         for (i = 0; i < args->operation_count; ++i) {
             script_run_add_operation_json(doc, operations, i, &args->operations[i]);
         }
@@ -1272,6 +1274,8 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
 
         if (!dry_run && output_path != NULL) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+            nmo_cli_json_add_str_safe(doc, data, "output_path",
+                                      output_path);
         }
         return nmo_cmd_ctx_json_end(ctx, doc, data, "script.run");
     }
