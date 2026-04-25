@@ -14,6 +14,7 @@
 #include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_behavior_edit.h"
+#include "behavior/nmo_edit_plan.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_parse.h"
@@ -243,6 +244,206 @@ static void add_common_write_report_json(yyjson_mut_doc *doc,
     yyjson_mut_obj_add_val(doc, data, "errors", yyjson_mut_arr(doc));
     yyjson_mut_obj_add_val(doc, data, "warnings", yyjson_mut_arr(doc));
     add_changed_object_ids_json(doc, data, ids, count);
+}
+
+static const char *rewrite_edit_op_kind_string(nmo_edit_op_kind_t kind) {
+    switch (kind) {
+    case NMO_EDIT_OP_SET_PARAMETER_VALUE:
+        return "set_parameter_value";
+    case NMO_EDIT_OP_SET_PARAMETER_BYTES:
+        return "set_parameter_bytes";
+    case NMO_EDIT_OP_ADD_NODE:
+        return "add_node";
+    case NMO_EDIT_OP_REMOVE_NODE:
+        return "remove_node";
+    case NMO_EDIT_OP_ADD_IO:
+        return "add_io";
+    case NMO_EDIT_OP_RENAME_IO:
+        return "rename_io";
+    case NMO_EDIT_OP_REMOVE_IO:
+        return "remove_io";
+    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
+        return "add_behavior_link";
+    case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK:
+        return "rewire_behavior_link";
+    case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY:
+        return "set_behavior_link_delay";
+    case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK:
+        return "remove_behavior_link";
+    case NMO_EDIT_OP_ADD_PARAMETER:
+        return "add_parameter";
+    case NMO_EDIT_OP_CONNECT_PARAMETER:
+        return "connect_parameter";
+    case NMO_EDIT_OP_DISCONNECT_PARAMETER:
+        return "disconnect_parameter";
+    case NMO_EDIT_OP_REMOVE_PARAMETER:
+        return "remove_parameter";
+    case NMO_EDIT_OP_ADD_OPERATION:
+        return "add_operation";
+    case NMO_EDIT_OP_REWIRE_OPERATION:
+        return "rewire_operation";
+    case NMO_EDIT_OP_REMOVE_OPERATION:
+        return "remove_operation";
+    case NMO_EDIT_OP_INTERFACE_POLICY:
+        return "interface_policy";
+    case NMO_EDIT_OP_SET_DATA_CELL:
+        return "set_data_cell";
+    case NMO_EDIT_OP_FOLD:
+        return "fold";
+    case NMO_EDIT_OP_REPLACE_BB:
+        return "replace_bb";
+    default:
+        return "unknown";
+    }
+}
+
+static void add_edit_operations_json(yyjson_mut_doc *doc,
+                                     yyjson_mut_val *data,
+                                     const nmo_edit_report_t *report) {
+    yyjson_mut_val *ops = yyjson_mut_arr(doc);
+    if (report != NULL) {
+        for (size_t i = 0; i < report->operation_count; ++i) {
+            const nmo_edit_operation_result_t *op = &report->operations[i];
+            yyjson_mut_val *item = yyjson_mut_obj(doc);
+            yyjson_mut_val *handles = yyjson_mut_arr(doc);
+            yyjson_mut_obj_add_uint(doc, item, "index",
+                                    (uint64_t)(i + 1u));
+            nmo_cli_json_add_str_safe(
+                doc, item, "op", rewrite_edit_op_kind_string(op->kind));
+            nmo_cli_json_add_str_safe(
+                doc, item, "kind", rewrite_edit_op_kind_string(op->kind));
+            yyjson_mut_obj_add_uint(doc, item, "primary_id",
+                                    (uint64_t)op->primary_id);
+            yyjson_mut_obj_add_uint(doc, item, "result_id",
+                                    (uint64_t)op->result_id);
+            yyjson_mut_obj_add_uint(doc, item, "status",
+                                    (uint64_t)op->status);
+            nmo_cli_json_add_str_safe(doc, item, "status_name",
+                                      nmo_error_string(op->status));
+            if (op->diagnostic_code != NULL) {
+                nmo_cli_json_add_str_safe(doc, item, "diagnostic_code",
+                                          op->diagnostic_code);
+            }
+            if (op->diagnostic_message != NULL) {
+                nmo_cli_json_add_str_safe(doc, item, "diagnostic_message",
+                                          op->diagnostic_message);
+            }
+            for (size_t j = 0; j < op->handle_count; ++j) {
+                yyjson_mut_val *handle = yyjson_mut_obj(doc);
+                nmo_cli_json_add_str_safe(doc, handle, "name",
+                                          op->handles[j].name);
+                yyjson_mut_obj_add_uint(doc, handle, "object_id",
+                                        (uint64_t)op->handles[j].id);
+                yyjson_mut_obj_add_uint(doc, handle, "id",
+                                        (uint64_t)op->handles[j].id);
+                yyjson_mut_arr_add_val(handles, handle);
+            }
+            yyjson_mut_obj_add_val(doc, item, "handles", handles);
+            yyjson_mut_arr_add_val(ops, item);
+        }
+    }
+    yyjson_mut_obj_add_val(doc, data, "operations", ops);
+}
+
+static void add_edit_impact_array_json(yyjson_mut_doc *doc,
+                                       yyjson_mut_val *data,
+                                       const char *name,
+                                       const nmo_edit_object_impact_t *items,
+                                       size_t count) {
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    for (size_t i = 0; items && i < count; ++i) {
+        yyjson_mut_val *item = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, item, "object_id",
+                                (uint64_t)items[i].id);
+        yyjson_mut_obj_add_uint(doc, item, "id", (uint64_t)items[i].id);
+        nmo_cli_json_add_str_safe(
+            doc, item, "cause",
+            rewrite_edit_op_kind_string(items[i].cause));
+        nmo_cli_json_add_str_safe(doc, item, "role", items[i].role);
+        yyjson_mut_arr_add_val(arr, item);
+    }
+    yyjson_mut_obj_add_val(doc, data, name, arr);
+}
+
+static void add_edit_validation_json(yyjson_mut_doc *doc,
+                                     yyjson_mut_val *data,
+                                     const nmo_edit_report_t *report) {
+    yyjson_mut_val *validation = yyjson_mut_obj(doc);
+    const nmo_edit_validation_report_t zero = {0};
+    const nmo_edit_validation_report_t *v =
+        report ? &report->validation : &zero;
+    yyjson_mut_obj_add_uint(doc, validation, "final_status",
+                            (uint64_t)v->final_status);
+    nmo_cli_json_add_str_safe(doc, validation, "final_status_name",
+                              nmo_error_string(v->final_status));
+    yyjson_mut_obj_add_uint(doc, validation, "roundtrip_status",
+                            (uint64_t)v->roundtrip_status);
+    nmo_cli_json_add_str_safe(doc, validation, "roundtrip_status_name",
+                              nmo_error_string(v->roundtrip_status));
+    yyjson_mut_obj_add_uint(doc, validation, "reference_status",
+                            (uint64_t)v->reference_status);
+    nmo_cli_json_add_str_safe(doc, validation, "reference_status_name",
+                              nmo_error_string(v->reference_status));
+    yyjson_mut_obj_add_uint(doc, validation, "behavior_index_status",
+                            (uint64_t)v->behavior_index_status);
+    nmo_cli_json_add_str_safe(doc, validation, "behavior_index_status_name",
+                              nmo_error_string(v->behavior_index_status));
+    yyjson_mut_obj_add_uint(doc, validation, "interface_status",
+                            (uint64_t)v->interface_status);
+    nmo_cli_json_add_str_safe(doc, validation, "interface_status_name",
+                              nmo_error_string(v->interface_status));
+    yyjson_mut_obj_add_val(doc, data, "validation", validation);
+}
+
+static void add_edit_diff_json(yyjson_mut_doc *doc,
+                               yyjson_mut_val *data,
+                               const nmo_edit_report_t *report) {
+    yyjson_mut_val *diff = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_uint(
+        doc, diff, "changed_object_count",
+        (uint64_t)(report ? report->changed_object_count : 0u));
+    yyjson_mut_obj_add_uint(
+        doc, diff, "created_object_count",
+        (uint64_t)(report ? report->created_object_count : 0u));
+    yyjson_mut_obj_add_uint(
+        doc, diff, "deleted_object_count",
+        (uint64_t)(report ? report->deleted_object_count : 0u));
+    yyjson_mut_obj_add_uint(
+        doc, diff, "semantic_risk_count",
+        (uint64_t)(report ? report->semantic_risk_count : 0u));
+    yyjson_mut_obj_add_val(doc, data, "diff", diff);
+}
+
+static void add_edit_report_json(yyjson_mut_doc *doc,
+                                 yyjson_mut_val *data,
+                                 const nmo_edit_report_t *report) {
+    yyjson_mut_obj_add_bool(doc, data, "ok", report ? report->ok : false);
+    yyjson_mut_obj_add_bool(doc, data, "dry_run",
+                            report ? report->dry_run : false);
+    yyjson_mut_obj_add_val(doc, data, "errors", yyjson_mut_arr(doc));
+    yyjson_mut_obj_add_val(doc, data, "warnings", yyjson_mut_arr(doc));
+    yyjson_mut_obj_add_uint(
+        doc, data, "operation_count",
+        (uint64_t)(report ? report->operation_count : 0u));
+    add_edit_operations_json(doc, data, report);
+    add_edit_impact_array_json(
+        doc, data, "changed_objects",
+        report ? report->changed_objects : NULL,
+        report ? report->changed_object_count : 0u);
+    add_edit_impact_array_json(
+        doc, data, "created_objects",
+        report ? report->created_objects : NULL,
+        report ? report->created_object_count : 0u);
+    add_edit_impact_array_json(
+        doc, data, "deleted_objects",
+        report ? report->deleted_objects : NULL,
+        report ? report->deleted_object_count : 0u);
+    add_semantic_risks_json(
+        doc, data,
+        report ? report->semantic_risks : NULL,
+        report ? report->semantic_risk_count : 0u);
+    add_edit_validation_json(doc, data, report);
+    add_edit_diff_json(doc, data, report);
 }
 
 static int graph_boundary_emit(nmo_cmd_ctx_t *ctx,
@@ -2093,6 +2294,9 @@ int nmo_cmd_behavior_fold(int argc,
     }
 
     nmo_behavior_fold_report_t report = {0};
+    nmo_edit_plan_t *edit_plan = NULL;
+    nmo_edit_report_t edit_report;
+    bool edit_report_ready = false;
     nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
     const nmo_behavior_state_t *parent =
         fold_find_behavior_state(repo, args.parent_id);
@@ -2125,17 +2329,65 @@ int nmo_cmd_behavior_fold(int argc,
     };
     nmo_workspace_t *workspace = c.workspace;
     nmo_status_t fold_rc = NMO_OK;
-    if (fold_rc == NMO_OK) {
-        fold_rc = args.dry_run
-            ? nmo_behavior_edit_fold_analyze(workspace, &desc, &report)
-            : nmo_behavior_edit_fold(workspace, &desc, &report);
+    if (args.dry_run) {
+        fold_rc = nmo_behavior_edit_fold_analyze(workspace, &desc, &report);
+    } else {
+        fold_rc = nmo_edit_report_init(&edit_report);
+        if (fold_rc == NMO_OK) {
+            edit_report_ready = true;
+            fold_rc = nmo_edit_plan_create(&edit_plan);
+        }
+        if (fold_rc == NMO_OK) {
+            fold_rc = nmo_edit_plan_add_fold(edit_plan, &desc);
+        }
+        if (fold_rc == NMO_OK) {
+            nmo_edit_executor_options_t options =
+                nmo_edit_executor_options_default();
+            options.dry_run = false;
+            fold_rc = nmo_edit_executor_execute(
+                workspace, edit_plan, &options, &edit_report);
+        }
     }
     if (fold_rc != NMO_OK) {
         rc = (fold_rc == NMO_ERR_INVALID_ARGUMENT ||
               fold_rc == NMO_ERR_NOT_FOUND)
             ? NMO_CLI_EXIT_ARG_ERROR
             : NMO_CLI_EXIT_INTERNAL_ERROR;
-        rc = fold_emit_rejection(&c, &report, rc);
+        if (args.dry_run) {
+            rc = fold_emit_rejection(&c, &report, rc);
+        } else if (c.is_json) {
+            yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+            if (!doc) {
+                rc = NMO_CLI_EXIT_INTERNAL_ERROR;
+                goto cleanup;
+            }
+            yyjson_mut_val *data = yyjson_mut_obj(doc);
+            add_edit_report_json(
+                doc, data, edit_report_ready ? &edit_report : NULL);
+            yyjson_mut_obj_add_uint(doc, data, "parent_id",
+                                    (uint64_t)args.parent_id);
+            yyjson_mut_obj_add_uint(doc, data, "anchor_id",
+                                    (uint64_t)args.anchor_id);
+            if (args.output_path) {
+                nmo_cli_json_add_str_safe(doc, data, "output_path",
+                                          args.output_path);
+            }
+            rc = nmo_cmd_ctx_json_end(&c, doc, data, "behavior.fold");
+        } else {
+            const nmo_edit_operation_result_t *failed_op =
+                edit_report_ready && edit_report.operation_count > 0u
+                    ? &edit_report.operations[0]
+                    : NULL;
+            fprintf(stderr, "Error: behavior fold rejected: %s",
+                    nmo_error_string(fold_rc));
+            if (failed_op && failed_op->diagnostic_code) {
+                fprintf(stderr, " (%s)", failed_op->diagnostic_code);
+            }
+            if (failed_op && failed_op->diagnostic_message) {
+                fprintf(stderr, ": %s", failed_op->diagnostic_message);
+            }
+            fputc('\n', stderr);
+        }
         goto cleanup;
     }
 
@@ -2152,14 +2404,20 @@ int nmo_cmd_behavior_fold(int argc,
                     goto cleanup;
                 }
                 yyjson_mut_val *data = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_bool(doc, data, "dry_run", false);
+                add_edit_report_json(doc, data, &edit_report);
                 yyjson_mut_obj_add_bool(doc, data, "can_write",
-                                        report.can_write);
+                                        true);
                 yyjson_mut_obj_add_uint(doc, data, "parent_id",
-                                        report.parent_id);
+                                        (uint64_t)args.parent_id);
                 yyjson_mut_obj_add_uint(doc, data, "anchor_id",
-                                        report.anchor_id);
+                                        edit_report.operation_count > 0u
+                                            ? (uint64_t)edit_report
+                                                  .operations[0]
+                                                  .result_id
+                                            : (uint64_t)args.anchor_id);
                 nmo_cli_json_add_str_safe(doc, data, "output",
+                                          args.output_path);
+                nmo_cli_json_add_str_safe(doc, data, "output_path",
                                           args.output_path);
                 rc = nmo_cmd_ctx_json_end(&c, doc, data,
                                           "behavior.fold");
@@ -2170,6 +2428,10 @@ int nmo_cmd_behavior_fold(int argc,
     }
 
 cleanup:
+    if (edit_report_ready) {
+        nmo_edit_report_dispose(&edit_report);
+    }
+    nmo_edit_plan_destroy(edit_plan);
     nmo_behavior_edit_fold_report_free(&report);
     return nmo_cmd_ctx_done(&c, rc);
 }
