@@ -275,195 +275,51 @@ static void patch_add_edit_diff_json(
     yyjson_mut_obj_add_val(doc, obj, "diff", diff);
 }
 
-static const nmo_behavior_semantic_risk_t *patch_operation_risks(
-    const patch_operation_t *op,
-    size_t *out_count) {
-    if (out_count) {
-        *out_count = 0;
-    }
-    if (!op) {
-        return NULL;
-    }
-    if (op->kind == PATCH_OP_FOLD) {
-        if (out_count) {
-            *out_count = op->fold_report.semantic_risk_count;
-        }
-        return op->fold_report.semantic_risks;
-    }
-    if (op->kind == PATCH_OP_REPLACE_BB) {
-        if (out_count) {
-            *out_count = op->report.semantic_risk_count;
-        }
-        return op->report.semantic_risks;
-    }
-    return NULL;
-}
+static void patch_add_empty_report_arrays(yyjson_mut_doc *doc,
+                                          yyjson_mut_val *data);
 
-static const char *patch_plan_risk_level_string(const patch_plan_t *plan) {
-    bool has_warn = false;
-    if (!plan) {
-        return "safe";
-    }
-    for (size_t i = 0; i < plan->operation_count; ++i) {
-        size_t risk_count = 0;
-        const nmo_behavior_semantic_risk_t *risks =
-            patch_operation_risks(&plan->operations[i], &risk_count);
-        for (size_t j = 0; j < risk_count; ++j) {
-            if (risks[j].severity == NMO_BEHAVIOR_SEMANTIC_RISK_REJECT) {
-                return "reject";
-            }
-            if (risks[j].severity == NMO_BEHAVIOR_SEMANTIC_RISK_WARN) {
-                has_warn = true;
-            }
-        }
-    }
-    return has_warn ? "warn" : "safe";
-}
-
-static void patch_add_plan_semantic_risks_json(
+static void patch_add_edit_report_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *data,
-    const patch_plan_t *plan) {
-    yyjson_mut_val *arr = yyjson_mut_arr(doc);
-    if (plan) {
-        for (size_t i = 0; i < plan->operation_count; ++i) {
-            size_t risk_count = 0;
-            const nmo_behavior_semantic_risk_t *risks =
-                patch_operation_risks(&plan->operations[i], &risk_count);
-            for (size_t j = 0; j < risk_count; ++j) {
-                yyjson_mut_val *risk = yyjson_mut_obj(doc);
-                nmo_cli_json_add_str_safe(
-                    doc, risk, "severity",
-                    patch_semantic_risk_severity_string(risks[j].severity));
-                nmo_cli_json_add_str_safe(doc, risk, "code", risks[j].code);
-                nmo_cli_json_add_str_safe(doc, risk, "message",
-                                          risks[j].message);
-                yyjson_mut_obj_add_uint(doc, risk, "object_id",
-                                        (uint64_t)risks[j].object_id);
-                yyjson_mut_obj_add_uint(doc, risk, "operation_index",
-                                        (uint64_t)(i + 1u));
-                yyjson_mut_arr_add_val(arr, risk);
-            }
+    const patch_plan_t *plan,
+    const nmo_edit_report_t *report,
+    bool dry_run) {
+    yyjson_mut_obj_add_bool(doc, data, "ok", report ? report->ok : false);
+    yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+    patch_add_empty_report_arrays(doc, data);
+    if (plan != NULL) {
+        nmo_cli_json_add_str_safe(doc, data, "input", plan->input);
+        nmo_cli_json_add_str_safe(doc, data, "output", plan->output);
+        if (plan->output) {
+            nmo_cli_json_add_str_safe(doc, data, "output_path",
+                                      plan->output);
         }
     }
-    nmo_cli_json_add_str_safe(doc, data, "risk_level",
-                              patch_plan_risk_level_string(plan));
-    yyjson_mut_obj_add_val(doc, data, "semantic_risks", arr);
-}
-
-static void patch_add_changed_object_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *arr,
-    size_t operation_index,
-    const char *op_name,
-    const char *role,
-    nmo_object_id_t object_id) {
-    if (!doc || !arr || object_id == 0) {
-        return;
-    }
-
-    yyjson_mut_val *item = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_uint(doc, item, "operation_index",
-                            (uint64_t)(operation_index + 1u));
-    nmo_cli_json_add_str_safe(doc, item, "op", op_name);
-    nmo_cli_json_add_str_safe(doc, item, "role", role);
-    yyjson_mut_obj_add_uint(doc, item, "object_id", (uint64_t)object_id);
-    yyjson_mut_arr_add_val(arr, item);
-}
-
-static void patch_add_fold_changed_objects_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *arr,
-    size_t operation_index,
-    const patch_operation_t *op) {
-    const nmo_behavior_fold_report_t *report = &op->fold_report;
-    const nmo_behavior_boundary_t *boundary = &report->boundary;
-
-    patch_add_changed_object_json(
-        doc, arr, operation_index, "fold", "parent", op->fold.parent_id);
-    patch_add_changed_object_json(
-        doc, arr, operation_index, "fold", "anchor", report->anchor_id);
-
-    for (size_t i = 0; i < report->selected_node_count; ++i) {
-        patch_add_changed_object_json(
-            doc, arr, operation_index, "fold", "selected_node",
-            report->selected_nodes[i]);
-    }
-    for (size_t i = 0; i < report->nodes_to_delete_count; ++i) {
-        patch_add_changed_object_json(
-            doc, arr, operation_index, "fold", "deleted_node",
-            report->nodes_to_delete[i]);
-    }
-    for (size_t i = 0; i < report->control_links_to_delete_count; ++i) {
-        patch_add_changed_object_json(
-            doc, arr, operation_index, "fold", "deleted_control_link",
-            report->control_links_to_delete[i].link_id);
-    }
-    for (size_t i = 0; i < boundary->control_in_count; ++i) {
-        patch_add_changed_object_json(
-            doc, arr, operation_index, "fold", "boundary_control_link",
-            boundary->control_in[i].link_id);
-    }
-    for (size_t i = 0; i < boundary->control_out_count; ++i) {
-        patch_add_changed_object_json(
-            doc, arr, operation_index, "fold", "boundary_control_link",
-            boundary->control_out[i].link_id);
-    }
-    for (size_t i = 0; i < boundary->parameter_in_count; ++i) {
-        patch_add_changed_object_json(
-            doc, arr, operation_index, "fold", "boundary_parameter_source",
-            boundary->parameter_in[i].source_parameter_id);
-        patch_add_changed_object_json(
-            doc, arr, operation_index, "fold", "boundary_parameter_target",
-            boundary->parameter_in[i].target_parameter_id);
-    }
-    for (size_t i = 0; i < boundary->parameter_out_count; ++i) {
-        patch_add_changed_object_json(
-            doc, arr, operation_index, "fold", "boundary_parameter_source",
-            boundary->parameter_out[i].source_parameter_id);
-        patch_add_changed_object_json(
-            doc, arr, operation_index, "fold", "boundary_parameter_target",
-            boundary->parameter_out[i].target_parameter_id);
-    }
-}
-
-static void patch_add_changed_objects_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *data,
-    const patch_plan_t *plan) {
-    yyjson_mut_val *arr = yyjson_mut_arr(doc);
-    if (plan) {
-        for (size_t i = 0; i < plan->operation_count; ++i) {
-            const patch_operation_t *op = &plan->operations[i];
-            if (op->kind == PATCH_OP_FOLD) {
-                patch_add_fold_changed_objects_json(doc, arr, i, op);
-            } else if (op->kind == PATCH_OP_REPLACE_BB) {
-                patch_add_changed_object_json(
-                    doc, arr, i, "replace_bb", "behavior",
-                    op->replace_bb.behavior_id);
-            }
-        }
-    }
-    yyjson_mut_obj_add_val(doc, data, "changed_objects", arr);
+    yyjson_mut_obj_add_uint(
+        doc, data, "operation_count",
+        (uint64_t)(report ? report->operation_count : 0u));
+    patch_add_edit_operations_json(doc, data, report);
+    patch_add_edit_impact_array_json(
+        doc, data, "changed_objects",
+        report ? report->changed_objects : NULL,
+        report ? report->changed_object_count : 0u);
+    patch_add_edit_impact_array_json(
+        doc, data, "created_objects",
+        report ? report->created_objects : NULL,
+        report ? report->created_object_count : 0u);
+    patch_add_edit_impact_array_json(
+        doc, data, "deleted_objects",
+        report ? report->deleted_objects : NULL,
+        report ? report->deleted_object_count : 0u);
+    patch_add_edit_semantic_risks_json(doc, data, report);
+    patch_add_edit_validation_json(doc, data, report);
+    patch_add_edit_diff_json(doc, data, report);
 }
 
 static void patch_add_empty_report_arrays(yyjson_mut_doc *doc,
                                           yyjson_mut_val *data) {
     yyjson_mut_obj_add_val(doc, data, "errors", yyjson_mut_arr(doc));
     yyjson_mut_obj_add_val(doc, data, "warnings", yyjson_mut_arr(doc));
-}
-
-static void patch_add_common_report_json(yyjson_mut_doc *doc,
-                                         yyjson_mut_val *data,
-                                         const patch_plan_t *plan,
-                                         bool ok) {
-    yyjson_mut_obj_add_bool(doc, data, "ok", ok);
-    patch_add_empty_report_arrays(doc, data);
-    patch_add_changed_objects_json(doc, data, plan);
-    patch_add_plan_semantic_risks_json(doc, data, plan);
-    if (plan && plan->output) {
-        nmo_cli_json_add_str_safe(doc, data, "output_path", plan->output);
-    }
 }
 
 static void patch_plan_free(patch_plan_t *plan) {
@@ -1077,33 +933,7 @@ static int patch_apply_plan(patch_plan_t *plan,
                                         NMO_CLI_EXIT_INTERNAL_ERROR);
             }
             yyjson_mut_val *data = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_bool(doc, data, "ok", edit_report.ok);
-            yyjson_mut_obj_add_bool(doc, data, "dry_run", true);
-            patch_add_empty_report_arrays(doc, data);
-            nmo_cli_json_add_str_safe(doc, data, "input", plan->input);
-            nmo_cli_json_add_str_safe(doc, data, "output", plan->output);
-            if (plan->output) {
-                nmo_cli_json_add_str_safe(doc, data, "output_path",
-                                          plan->output);
-            }
-            yyjson_mut_obj_add_uint(doc, data, "operation_count",
-                                    (uint64_t)edit_report.operation_count);
-            patch_add_edit_operations_json(doc, data, &edit_report);
-            patch_add_edit_impact_array_json(
-                doc, data, "changed_objects",
-                edit_report.changed_objects,
-                edit_report.changed_object_count);
-            patch_add_edit_impact_array_json(
-                doc, data, "created_objects",
-                edit_report.created_objects,
-                edit_report.created_object_count);
-            patch_add_edit_impact_array_json(
-                doc, data, "deleted_objects",
-                edit_report.deleted_objects,
-                edit_report.deleted_object_count);
-            patch_add_edit_semantic_risks_json(doc, data, &edit_report);
-            patch_add_edit_validation_json(doc, data, &edit_report);
-            patch_add_edit_diff_json(doc, data, &edit_report);
+            patch_add_edit_report_json(doc, data, plan, &edit_report, true);
             int json_rc = nmo_cmd_ctx_json_end(&ctx, doc, data,
                                                "patch.diff");
             nmo_edit_report_dispose(&edit_report);
@@ -1122,109 +952,65 @@ static int patch_apply_plan(patch_plan_t *plan,
         return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_SUCCESS);
     }
 
-    if (!emit_diff) {
-        for (size_t i = 0; i < plan->operation_count; ++i) {
-            patch_operation_t *op = &plan->operations[i];
-            const nmo_edit_op_t *edit_op =
-                nmo_edit_plan_get(plan->edit_plan, i);
-            if (!edit_op) {
-                return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_INTERNAL_ERROR);
-            }
-            if (edit_op->kind == NMO_EDIT_OP_FOLD) {
-                nmo_status_t st = nmo_behavior_edit_fold_analyze(
-                    ctx.workspace,
-                    &edit_op->data.fold.desc,
-                    &op->fold_report);
-                if (st != NMO_OK) {
-                    fprintf(stderr, "Error: fold #%u rejected",
-                            edit_op->data.fold.desc.parent_id);
-                    if (op->fold_report.diagnostic_code) {
-                        fprintf(stderr, " (%s)",
-                                op->fold_report.diagnostic_code);
-                    }
-                    if (op->fold_report.diagnostic_message) {
-                        fprintf(stderr, ": %s",
-                                op->fold_report.diagnostic_message);
-                    }
-                    fputc('\n', stderr);
-                    int exit_code = (st == NMO_ERR_INVALID_ARGUMENT ||
-                                     st == NMO_ERR_NOT_FOUND)
-                        ? NMO_CLI_EXIT_ARG_ERROR
-                        : NMO_CLI_EXIT_INTERNAL_ERROR;
-                    return nmo_cmd_ctx_done(&ctx, exit_code);
-                }
+    nmo_edit_report_t edit_report;
+    nmo_status_t report_rc = nmo_edit_report_init(&edit_report);
+    if (report_rc != NMO_OK) {
+        return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+    nmo_edit_executor_options_t options =
+        nmo_edit_executor_options_default();
+    options.dry_run = dry_run;
+    nmo_status_t st = nmo_edit_executor_execute(
+        ctx.workspace, plan->edit_plan, &options, &edit_report);
+    if (st != NMO_OK) {
+        size_t failed_index = 0;
+        for (size_t i = 0; i < edit_report.operation_count; ++i) {
+            if (edit_report.operations[i].status != NMO_OK) {
+                failed_index = i;
+                break;
             }
         }
-
-        nmo_edit_report_t edit_report;
-        nmo_status_t report_rc = nmo_edit_report_init(&edit_report);
-        if (report_rc != NMO_OK) {
-            return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-        nmo_edit_executor_options_t options =
-            nmo_edit_executor_options_default();
-        options.dry_run = dry_run;
-        nmo_status_t st = nmo_edit_executor_execute(
-            ctx.workspace, plan->edit_plan, &options, &edit_report);
-        if (st != NMO_OK) {
-            size_t failed_index = 0;
-            for (size_t i = 0; i < edit_report.operation_count; ++i) {
-                if (edit_report.operations[i].status != NMO_OK) {
-                    failed_index = i;
-                    break;
-                }
+        const nmo_edit_op_t *edit_op =
+            nmo_edit_plan_get(plan->edit_plan, failed_index);
+        if (edit_op && edit_op->kind == NMO_EDIT_OP_REPLACE_BB) {
+            patch_operation_t *op = &plan->operations[failed_index];
+            (void)nmo_behavior_edit_replace_bb(
+                ctx.workspace,
+                &edit_op->data.replace_bb.desc,
+                &op->report);
+            fprintf(stderr,
+                    "Error: replace_bb #%u is not leaf-replaceable "
+                    "(sub_behaviors=%zu, sub_behavior_links=%zu, operations=%zu)",
+                    edit_op->data.replace_bb.desc.behavior_id,
+                    op->report.sub_behavior_count,
+                    op->report.sub_behavior_link_count,
+                    op->report.operation_count);
+            if (op->report.diagnostic_message) {
+                fprintf(stderr, ": %s", op->report.diagnostic_message);
             }
-            const nmo_edit_op_t *edit_op =
-                nmo_edit_plan_get(plan->edit_plan, failed_index);
-            if (edit_op && edit_op->kind == NMO_EDIT_OP_REPLACE_BB) {
-                patch_operation_t *op = &plan->operations[failed_index];
-                (void)nmo_behavior_edit_replace_bb(
-                    ctx.workspace,
-                    &edit_op->data.replace_bb.desc,
-                    &op->report);
-                fprintf(stderr,
-                        "Error: replace_bb #%u is not leaf-replaceable "
-                        "(sub_behaviors=%zu, sub_behavior_links=%zu, operations=%zu)",
-                        edit_op->data.replace_bb.desc.behavior_id,
-                        op->report.sub_behavior_count,
-                        op->report.sub_behavior_link_count,
-                        op->report.operation_count);
-                if (op->report.diagnostic_message) {
-                    fprintf(stderr, ": %s", op->report.diagnostic_message);
-                }
-            } else if (edit_op && edit_op->kind == NMO_EDIT_OP_FOLD) {
-                patch_operation_t *op = &plan->operations[failed_index];
-                fprintf(stderr, "Error: fold #%u rejected",
-                        edit_op->data.fold.desc.parent_id);
-                if (op->fold_report.diagnostic_code) {
-                    fprintf(stderr, " (%s)",
-                            op->fold_report.diagnostic_code);
-                }
-                if (op->fold_report.diagnostic_message) {
-                    fprintf(stderr, ": %s",
-                            op->fold_report.diagnostic_message);
-                }
-            } else {
-                fprintf(stderr, "Error: patch operation failed");
-            }
-            fputc('\n', stderr);
-            nmo_edit_report_dispose(&edit_report);
-            int exit_code = (st == NMO_ERR_INVALID_ARGUMENT ||
-                             st == NMO_ERR_NOT_FOUND)
-                ? NMO_CLI_EXIT_ARG_ERROR
-                : NMO_CLI_EXIT_INTERNAL_ERROR;
-            return nmo_cmd_ctx_done(&ctx, exit_code);
+        } else if (edit_op && edit_op->kind == NMO_EDIT_OP_FOLD) {
+            fprintf(stderr, "Error: fold #%u rejected: %s",
+                    edit_op->data.fold.desc.parent_id,
+                    nmo_error_string(st));
+        } else {
+            fprintf(stderr, "Error: patch operation failed: %s",
+                    nmo_error_string(st));
         }
+        fputc('\n', stderr);
         nmo_edit_report_dispose(&edit_report);
-        goto patch_apply_render;
+        int exit_code = (st == NMO_ERR_INVALID_ARGUMENT ||
+                         st == NMO_ERR_NOT_FOUND)
+            ? NMO_CLI_EXIT_ARG_ERROR
+            : NMO_CLI_EXIT_INTERNAL_ERROR;
+        return nmo_cmd_ctx_done(&ctx, exit_code);
     }
 
-patch_apply_render:
     if (!dry_run) {
         nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
         int save_rc = nmo_cli_save_document(ctx.document, plan->output,
                                            &save_opts);
         if (save_rc != NMO_CLI_EXIT_SUCCESS) {
+            nmo_edit_report_dispose(&edit_report);
             return nmo_cmd_ctx_done(&ctx, save_rc);
         }
     }
@@ -1232,50 +1018,14 @@ patch_apply_render:
     if (ctx.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&ctx);
         if (!doc) {
+            nmo_edit_report_dispose(&edit_report);
             return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        patch_add_common_report_json(doc, data, plan, true);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        nmo_cli_json_add_str_safe(doc, data, "input", plan->input);
-        nmo_cli_json_add_str_safe(doc, data, "output", plan->output);
-        yyjson_mut_obj_add_uint(doc, data, "operation_count",
-                                (uint64_t)plan->operation_count);
-        yyjson_mut_val *ops = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < plan->operation_count; ++i) {
-            patch_operation_t *op = &plan->operations[i];
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            if (op->kind == PATCH_OP_FOLD) {
-                nmo_cli_json_add_str_safe(doc, item, "op", "fold");
-                yyjson_mut_obj_add_uint(doc, item, "parent",
-                                        (uint64_t)op->fold.parent_id);
-                yyjson_mut_obj_add_uint(doc, item, "anchor",
-                                        (uint64_t)op->fold_report.anchor_id);
-                yyjson_mut_obj_add_bool(doc, item, "can_write",
-                                        op->fold_report.can_write);
-                yyjson_mut_obj_add_bool(doc, item, "rejected",
-                                        op->fold_report.rejected);
-                patch_add_semantic_risks_json(
-                    doc, item, op->fold_report.semantic_risks,
-                    op->fold_report.semantic_risk_count);
-                yyjson_mut_obj_add_uint(
-                    doc, item, "selected_node_count",
-                    (uint64_t)op->fold_report.selected_node_count);
-            } else {
-                nmo_cli_json_add_str_safe(doc, item, "op", "replace_bb");
-                yyjson_mut_obj_add_uint(
-                    doc, item, "behavior_id",
-                    (uint64_t)op->replace_bb.behavior_id);
-                yyjson_mut_obj_add_bool(doc, item, "changed",
-                                        op->report.changed);
-                patch_add_semantic_risks_json(
-                    doc, item, op->report.semantic_risks,
-                    op->report.semantic_risk_count);
-            }
-            yyjson_mut_arr_add_val(ops, item);
-        }
-        yyjson_mut_obj_add_val(doc, data, "operations", ops);
-        return nmo_cmd_ctx_json_end(&ctx, doc, data, "patch.apply");
+        patch_add_edit_report_json(doc, data, plan, &edit_report, dry_run);
+        int json_rc = nmo_cmd_ctx_json_end(&ctx, doc, data, "patch.apply");
+        nmo_edit_report_dispose(&edit_report);
+        return json_rc;
     }
 
     if (dry_run) {
@@ -1286,6 +1036,7 @@ patch_apply_render:
                 plan->operation_count);
         fprintf(ctx.out, "Saved to: %s\n", plan->output);
     }
+    nmo_edit_report_dispose(&edit_report);
     return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_SUCCESS);
 }
 

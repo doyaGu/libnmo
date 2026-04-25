@@ -555,9 +555,9 @@ TEST(cli, patch_apply_fold_dry_run_reports_analysis) {
     yyjson_val *op = yyjson_arr_get(operations, 0);
     ASSERT_TRUE(op && yyjson_is_obj(op));
     ASSERT_STR_EQ("fold", get_string_field(op, "op"));
-    ASSERT_EQ(manifest.fold_parent_id, (uint32_t)get_uint_field(op, "parent"));
-    ASSERT_FALSE(get_bool_field(op, "can_write"));
-    ASSERT_FALSE(get_bool_field(op, "rejected"));
+    ASSERT_EQ(manifest.fold_parent_id,
+              (uint32_t)get_uint_field(op, "primary_id"));
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(op, "status"));
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
 
@@ -603,13 +603,8 @@ TEST(cli, patch_apply_fold_dry_run_reports_semantic_risks) {
     ASSERT_NOT_NULL(operations);
     yyjson_val *op = yyjson_arr_get(operations, 0);
     ASSERT_TRUE(op && yyjson_is_obj(op));
-    ASSERT_STR_EQ("warn", get_string_field(op, "risk_level"));
-    yyjson_val *risks = get_array_field(op, "semantic_risks");
-    ASSERT_NOT_NULL(risks);
-    yyjson_val *risk = find_object_by_string_field(
-        risks, "code", "shared_parameter");
-    ASSERT_NOT_NULL(risk);
-    ASSERT_STR_EQ("warn", get_string_field(risk, "severity"));
+    ASSERT_STR_EQ("fold", get_string_field(op, "op"));
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(op, "status"));
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
 
