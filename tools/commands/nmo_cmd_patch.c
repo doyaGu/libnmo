@@ -36,6 +36,7 @@ typedef enum patch_operation_kind {
     PATCH_OP_ADD_BEHAVIOR_LINK = 9,
     PATCH_OP_SET_BEHAVIOR_LINK_DELAY = 10,
     PATCH_OP_REMOVE_BEHAVIOR_LINK = 11,
+    PATCH_OP_REWIRE_BEHAVIOR_LINK = 12,
 } patch_operation_kind_t;
 
 typedef struct patch_operation {
@@ -67,6 +68,11 @@ typedef struct patch_operation {
         nmo_object_id_t to_io_id;
         uint32_t activation_delay;
     } add_link;
+    struct {
+        nmo_object_id_t link_id;
+        nmo_object_id_t from_io_id;
+        nmo_object_id_t to_io_id;
+    } rewire_link;
     struct {
         nmo_object_id_t link_id;
         uint32_t activation_delay;
@@ -209,6 +215,13 @@ static nmo_status_t patch_operation_add_to_edit_plan(
             op->add_link.from_io_id,
             op->add_link.to_io_id,
             op->add_link.activation_delay);
+    }
+    if (op->kind == PATCH_OP_REWIRE_BEHAVIOR_LINK) {
+        return nmo_edit_plan_add_rewire_behavior_link(
+            edit_plan,
+            op->rewire_link.link_id,
+            op->rewire_link.from_io_id,
+            op->rewire_link.to_io_id);
     }
     if (op->kind == PATCH_OP_SET_BEHAVIOR_LINK_DELAY) {
         return nmo_edit_plan_add_set_behavior_link_delay(
@@ -737,6 +750,57 @@ static int patch_parse_add_behavior_link(yyjson_val *op_obj,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+static int patch_parse_rewire_behavior_link(yyjson_val *op_obj,
+                                            patch_operation_t *out_op) {
+    static const char *const allowed[] = {
+        "op",
+        "link_id",
+        "from_io_id",
+        "to_io_id",
+    };
+    int rc = patch_reject_unknown_fields(
+        op_obj, "rewire_behavior_link operation",
+        allowed, sizeof(allowed) / sizeof(allowed[0]));
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    yyjson_val *link_val = yyjson_obj_get(op_obj, "link_id");
+    if (!link_val || !yyjson_is_uint(link_val) ||
+        yyjson_get_uint(link_val) == 0 ||
+        yyjson_get_uint(link_val) > UINT32_MAX) {
+        fprintf(stderr, "Error: Missing or invalid link_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    yyjson_val *from_val = yyjson_obj_get(op_obj, "from_io_id");
+    if (!from_val || !yyjson_is_uint(from_val) ||
+        yyjson_get_uint(from_val) > UINT32_MAX) {
+        fprintf(stderr, "Error: Missing or invalid from_io_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    yyjson_val *to_val = yyjson_obj_get(op_obj, "to_io_id");
+    if (!to_val || !yyjson_is_uint(to_val) ||
+        yyjson_get_uint(to_val) > UINT32_MAX) {
+        fprintf(stderr, "Error: Missing or invalid to_io_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (yyjson_get_uint(from_val) == 0 && yyjson_get_uint(to_val) == 0) {
+        fprintf(stderr,
+                "Error: rewire_behavior_link requires from_io_id or to_io_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    memset(out_op, 0, sizeof(*out_op));
+    out_op->kind = PATCH_OP_REWIRE_BEHAVIOR_LINK;
+    out_op->rewire_link.link_id =
+        (nmo_object_id_t)yyjson_get_uint(link_val);
+    out_op->rewire_link.from_io_id =
+        (nmo_object_id_t)yyjson_get_uint(from_val);
+    out_op->rewire_link.to_io_id =
+        (nmo_object_id_t)yyjson_get_uint(to_val);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static int patch_parse_set_behavior_link_delay(yyjson_val *op_obj,
                                                patch_operation_t *out_op) {
     static const char *const allowed[] = {
@@ -1169,6 +1233,9 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
         } else if (strcmp(op, "add_behavior_link") == 0 &&
                    out_plan->version == 2u) {
             rc = patch_parse_add_behavior_link(op_obj, &operations[idx]);
+        } else if (strcmp(op, "rewire_behavior_link") == 0 &&
+                   out_plan->version == 2u) {
+            rc = patch_parse_rewire_behavior_link(op_obj, &operations[idx]);
         } else if (strcmp(op, "set_behavior_link_delay") == 0 &&
                    out_plan->version == 2u) {
             rc = patch_parse_set_behavior_link_delay(op_obj, &operations[idx]);
