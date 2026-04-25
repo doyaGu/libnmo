@@ -251,6 +251,7 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     yyjson_val *behavior_index = NULL;
     yyjson_val *interface_obj = NULL;
     yyjson_val *created_objects = NULL;
+    yyjson_val *diff = NULL;
     yyjson_val *first_operation = NULL;
     yyjson_val *first_handles = NULL;
 
@@ -310,6 +311,12 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     created_objects = get_array_field(data, "created_objects");
     ASSERT_NOT_NULL(created_objects);
     ASSERT_EQ(3u, yyjson_arr_size(created_objects));
+    diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    ASSERT_EQ(3u, get_uint_field(diff, "changed_object_count"));
+    ASSERT_EQ(3u, get_uint_field(diff, "created_object_count"));
+    ASSERT_EQ(0u, get_uint_field(diff, "deleted_object_count"));
+    ASSERT_EQ(0u, get_uint_field(diff, "semantic_risk_count"));
     ASSERT_FALSE(file_exists(output_path));
 
     yyjson_doc_free(doc);

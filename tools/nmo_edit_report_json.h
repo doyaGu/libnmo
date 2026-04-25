@@ -41,4 +41,12 @@ void nmo_cli_edit_report_add_diff_json(
     yyjson_mut_val *obj,
     const nmo_edit_report_t *report);
 
+void nmo_cli_edit_report_add_diff_counts_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *obj,
+    size_t changed_object_count,
+    size_t created_object_count,
+    size_t deleted_object_count,
+    size_t semantic_risk_count);
+
 #endif /* NMO_EDIT_REPORT_JSON_H */

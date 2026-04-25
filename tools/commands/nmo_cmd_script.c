@@ -6,6 +6,7 @@
 #include "nmo_cmd_script.h"
 
 #include "../nmo_cli_json.h"
+#include "../nmo_edit_report_json.h"
 #include "../nmo_cli_write.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_opt.h"
@@ -1210,6 +1211,31 @@ static void script_run_add_common_report_json(yyjson_mut_doc *doc,
     yyjson_mut_obj_add_val(doc, data, "deleted_objects", deleted);
 }
 
+static void script_run_count_report_impacts(const script_run_args_t *args,
+                                            size_t *out_changed,
+                                            size_t *out_created)
+{
+    size_t changed = 0u;
+    size_t created = 0u;
+
+    if (args != NULL) {
+        for (size_t i = 0; i < args->operation_count; ++i) {
+            const script_run_operation_t *op = &args->operations[i];
+            if (op->behavior_id != 0u) {
+                ++changed;
+            }
+            created += op->result_handle_count;
+        }
+    }
+
+    if (out_changed != NULL) {
+        *out_changed = changed;
+    }
+    if (out_created != NULL) {
+        *out_created = created;
+    }
+}
+
 static int script_run_report(nmo_cmd_ctx_t *ctx,
                              bool dry_run,
                              const char *output_path,
@@ -1229,6 +1255,8 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
         yyjson_mut_val *references = yyjson_mut_obj(doc);
         yyjson_mut_val *behavior_index = yyjson_mut_obj(doc);
         yyjson_mut_val *interface_obj = yyjson_mut_obj(doc);
+        size_t changed_object_count = 0u;
+        size_t created_object_count = 0u;
         size_t i = 0;
 
         yyjson_mut_obj_add_bool(doc, data, "ok",
@@ -1271,6 +1299,10 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
         nmo_cli_json_add_str_safe(doc, validation, "final_status_name",
                                   nmo_error_string(args->validation.final_status));
         yyjson_mut_obj_add_val(doc, data, "validation", validation);
+        script_run_count_report_impacts(
+            args, &changed_object_count, &created_object_count);
+        nmo_cli_edit_report_add_diff_counts_json(
+            doc, data, changed_object_count, created_object_count, 0u, 0u);
 
         if (!dry_run && output_path != NULL) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
