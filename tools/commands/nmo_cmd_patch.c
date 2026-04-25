@@ -892,6 +892,103 @@ static int patch_apply_plan(patch_plan_t *plan,
         return rc;
     }
 
+    if (!emit_diff) {
+        for (size_t i = 0; i < plan->operation_count; ++i) {
+            patch_operation_t *op = &plan->operations[i];
+            const nmo_edit_op_t *edit_op =
+                nmo_edit_plan_get(plan->edit_plan, i);
+            if (!edit_op) {
+                return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_INTERNAL_ERROR);
+            }
+            if (edit_op->kind == NMO_EDIT_OP_FOLD) {
+                nmo_status_t st = nmo_behavior_edit_fold_analyze(
+                    ctx.workspace,
+                    &edit_op->data.fold.desc,
+                    &op->fold_report);
+                if (st != NMO_OK) {
+                    fprintf(stderr, "Error: fold #%u rejected",
+                            edit_op->data.fold.desc.parent_id);
+                    if (op->fold_report.diagnostic_code) {
+                        fprintf(stderr, " (%s)",
+                                op->fold_report.diagnostic_code);
+                    }
+                    if (op->fold_report.diagnostic_message) {
+                        fprintf(stderr, ": %s",
+                                op->fold_report.diagnostic_message);
+                    }
+                    fputc('\n', stderr);
+                    int exit_code = (st == NMO_ERR_INVALID_ARGUMENT ||
+                                     st == NMO_ERR_NOT_FOUND)
+                        ? NMO_CLI_EXIT_ARG_ERROR
+                        : NMO_CLI_EXIT_INTERNAL_ERROR;
+                    return nmo_cmd_ctx_done(&ctx, exit_code);
+                }
+            }
+        }
+
+        nmo_edit_report_t edit_report;
+        nmo_status_t report_rc = nmo_edit_report_init(&edit_report);
+        if (report_rc != NMO_OK) {
+            return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+        nmo_edit_executor_options_t options =
+            nmo_edit_executor_options_default();
+        options.dry_run = dry_run;
+        nmo_status_t st = nmo_edit_executor_execute(
+            ctx.workspace, plan->edit_plan, &options, &edit_report);
+        if (st != NMO_OK) {
+            size_t failed_index = 0;
+            for (size_t i = 0; i < edit_report.operation_count; ++i) {
+                if (edit_report.operations[i].status != NMO_OK) {
+                    failed_index = i;
+                    break;
+                }
+            }
+            const nmo_edit_op_t *edit_op =
+                nmo_edit_plan_get(plan->edit_plan, failed_index);
+            if (edit_op && edit_op->kind == NMO_EDIT_OP_REPLACE_BB) {
+                patch_operation_t *op = &plan->operations[failed_index];
+                (void)nmo_behavior_edit_replace_bb(
+                    ctx.workspace,
+                    &edit_op->data.replace_bb.desc,
+                    &op->report);
+                fprintf(stderr,
+                        "Error: replace_bb #%u is not leaf-replaceable "
+                        "(sub_behaviors=%zu, sub_behavior_links=%zu, operations=%zu)",
+                        edit_op->data.replace_bb.desc.behavior_id,
+                        op->report.sub_behavior_count,
+                        op->report.sub_behavior_link_count,
+                        op->report.operation_count);
+                if (op->report.diagnostic_message) {
+                    fprintf(stderr, ": %s", op->report.diagnostic_message);
+                }
+            } else if (edit_op && edit_op->kind == NMO_EDIT_OP_FOLD) {
+                patch_operation_t *op = &plan->operations[failed_index];
+                fprintf(stderr, "Error: fold #%u rejected",
+                        edit_op->data.fold.desc.parent_id);
+                if (op->fold_report.diagnostic_code) {
+                    fprintf(stderr, " (%s)",
+                            op->fold_report.diagnostic_code);
+                }
+                if (op->fold_report.diagnostic_message) {
+                    fprintf(stderr, ": %s",
+                            op->fold_report.diagnostic_message);
+                }
+            } else {
+                fprintf(stderr, "Error: patch operation failed");
+            }
+            fputc('\n', stderr);
+            nmo_edit_report_dispose(&edit_report);
+            int exit_code = (st == NMO_ERR_INVALID_ARGUMENT ||
+                             st == NMO_ERR_NOT_FOUND)
+                ? NMO_CLI_EXIT_ARG_ERROR
+                : NMO_CLI_EXIT_INTERNAL_ERROR;
+            return nmo_cmd_ctx_done(&ctx, exit_code);
+        }
+        nmo_edit_report_dispose(&edit_report);
+        goto patch_apply_render;
+    }
+
     for (size_t i = 0; i < plan->operation_count; ++i) {
         patch_operation_t *op = &plan->operations[i];
         const nmo_edit_op_t *edit_op =
@@ -1069,6 +1166,7 @@ static int patch_apply_plan(patch_plan_t *plan,
         return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_SUCCESS);
     }
 
+patch_apply_render:
     if (!dry_run) {
         nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
         int save_rc = nmo_cli_save_document(ctx.document, plan->output,

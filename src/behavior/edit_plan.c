@@ -1049,7 +1049,8 @@ static nmo_status_t edit_report_note_created_objects(
 static nmo_status_t edit_executor_apply_op(
     nmo_script_edit_tx_t *tx,
     const nmo_edit_op_t *op,
-    nmo_object_id_t *out_result_id)
+    nmo_object_id_t *out_result_id,
+    bool dry_run)
 {
     nmo_workspace_edit_t *edit = NULL;
     if (tx == NULL || op == NULL) {
@@ -1200,10 +1201,15 @@ static nmo_status_t edit_executor_apply_op(
     }
     case NMO_EDIT_OP_FOLD: {
         nmo_behavior_fold_report_t fold_report = {0};
-        nmo_status_t rc = nmo_behavior_edit_fold_in_script_tx(
-            tx,
-            &op->data.fold.desc,
-            &fold_report);
+        nmo_status_t rc = dry_run
+            ? nmo_behavior_edit_fold_analyze(
+                  nmo_script_edit_workspace(tx),
+                  &op->data.fold.desc,
+                  &fold_report)
+            : nmo_behavior_edit_fold_in_script_tx(
+                  tx,
+                  &op->data.fold.desc,
+                  &fold_report);
         if (rc == NMO_OK && out_result_id != NULL) {
             *out_result_id = fold_report.anchor_id != 0u
                 ? fold_report.anchor_id
@@ -1389,7 +1395,8 @@ nmo_status_t nmo_edit_executor_execute_transaction(
             ? tx_report_before->created_object_id_count
             : 0u;
         nmo_object_id_t result_id = 0;
-        nmo_status_t op_rc = edit_executor_apply_op(tx, op, &result_id);
+        nmo_status_t op_rc = edit_executor_apply_op(
+            tx, op, &result_id, effective.dry_run);
         const nmo_script_edit_report_t *tx_report_after =
             nmo_script_edit_report(tx);
         report->operations[i] = (nmo_edit_operation_result_t){
