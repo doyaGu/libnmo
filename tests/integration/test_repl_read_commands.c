@@ -975,6 +975,13 @@ TEST(repl_read, script_uses_schema_v2_output_path) {
                                "\"output_path\"");
 }
 
+TEST(repl_read, behavior_rewrite_uses_schema_v2_output_path) {
+    assert_source_contains("tools/commands/nmo_cmd_behavior_rewrite.c",
+                           "nmo_edit_report_set_output_path");
+    assert_source_not_contains("tools/commands/nmo_cmd_behavior_rewrite.c",
+                               "\"output_path\"");
+}
+
 TEST(repl_read, behavior_link_commands_use_edit_executor) {
     assert_source_contains("tools/commands/nmo_cmd_behavior_link.c",
                            "nmo_edit_executor_execute");
@@ -1300,6 +1307,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, patch_manifest_does_not_keep_parallel_operation_array);
     REGISTER_TEST(repl_read, patch_uses_schema_v2_output_path);
     REGISTER_TEST(repl_read, script_uses_schema_v2_output_path);
+    REGISTER_TEST(repl_read, behavior_rewrite_uses_schema_v2_output_path);
     REGISTER_TEST(repl_read, behavior_link_commands_use_edit_executor);
     REGISTER_TEST(repl_read, parameter_set_uses_edit_executor);
     REGISTER_TEST(repl_read, data_set_cell_uses_edit_executor);

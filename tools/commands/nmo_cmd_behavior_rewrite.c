@@ -172,7 +172,11 @@ static void add_parameter_edges_json(
 
 static void add_edit_report_json(yyjson_mut_doc *doc,
                                  yyjson_mut_val *data,
-                                 const nmo_edit_report_t *report) {
+                                 nmo_edit_report_t *report,
+                                 const char *output_path) {
+    if (report != NULL && output_path != NULL && report->output_path == NULL) {
+        (void)nmo_edit_report_set_output_path(report, output_path);
+    }
     nmo_cli_edit_report_add_schema_v2_json(
         doc, data, report, report != NULL && report->dry_run);
 }
@@ -1760,7 +1764,7 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
                              const nmo_behavior_state_t *parent,
                              const nmo_behavior_state_t *representative,
                              const nmo_behavior_fold_report_t *report,
-                             const nmo_edit_report_t *edit_report) {
+                             nmo_edit_report_t *edit_report) {
     const nmo_behavior_boundary_t *boundary = &report->boundary;
     nmo_object_id_t representative_id = report->representative_id;
     if (ctx->is_json) {
@@ -1770,7 +1774,7 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
         }
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         if (edit_report != NULL) {
-            add_edit_report_json(doc, data, edit_report);
+            add_edit_report_json(doc, data, edit_report, NULL);
         } else {
             nmo_edit_report_t analysis_report = {0};
             analysis_report.ok = true;
@@ -2120,15 +2124,12 @@ int nmo_cmd_behavior_fold(int argc,
             }
             yyjson_mut_val *data = yyjson_mut_obj(doc);
             add_edit_report_json(
-                doc, data, edit_report_ready ? &edit_report : NULL);
+                doc, data, edit_report_ready ? &edit_report : NULL,
+                args.output_path);
             yyjson_mut_obj_add_uint(doc, data, "parent_id",
                                     (uint64_t)args.parent_id);
             yyjson_mut_obj_add_uint(doc, data, "anchor_id",
                                     (uint64_t)args.anchor_id);
-            if (args.output_path) {
-                nmo_cli_json_add_str_safe(doc, data, "output_path",
-                                          args.output_path);
-            }
             rc = nmo_cmd_ctx_json_end(&c, doc, data, "behavior.fold");
         } else {
             const nmo_edit_operation_result_t *failed_op =
@@ -2162,7 +2163,8 @@ int nmo_cmd_behavior_fold(int argc,
                     goto cleanup;
                 }
                 yyjson_mut_val *data = yyjson_mut_obj(doc);
-                add_edit_report_json(doc, data, &edit_report);
+                add_edit_report_json(doc, data, &edit_report,
+                                     args.output_path);
                 yyjson_mut_obj_add_bool(doc, data, "can_write",
                                         true);
                 yyjson_mut_obj_add_uint(doc, data, "parent_id",
@@ -2174,8 +2176,6 @@ int nmo_cmd_behavior_fold(int argc,
                                                   .result_id
                                             : (uint64_t)args.anchor_id);
                 nmo_cli_json_add_str_safe(doc, data, "output",
-                                          args.output_path);
-                nmo_cli_json_add_str_safe(doc, data, "output_path",
                                           args.output_path);
                 rc = nmo_cmd_ctx_json_end(&c, doc, data,
                                           "behavior.fold");
@@ -2269,11 +2269,9 @@ static int replace_bb_report(nmo_cmd_ctx_t *c,
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        add_edit_report_json(doc, data, &args->edit_report);
+        add_edit_report_json(doc, data, &args->edit_report, output_path);
         if (output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-            nmo_cli_json_add_str_safe(doc, data, "output_path",
-                                      output_path);
         }
         int json_rc = nmo_cmd_ctx_json_end(c, doc, data,
                                            "behavior.replace-bb");
