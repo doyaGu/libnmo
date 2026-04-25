@@ -354,6 +354,46 @@ TEST(edit_plan, executor_adds_node_with_created_object_report) {
     edit_plan_fixture_dispose(&fixture);
 }
 
+TEST(edit_plan, executor_runs_script_ops_and_records_validation) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t root_id = 0;
+    create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Root", &root_id);
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_io(
+        plan, root_id, NMO_SCRIPT_EDIT_IO_INPUT, "In"));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_parameter(
+        plan, root_id, NMO_SCRIPT_EDIT_PARAM_LOCAL, CKPGUID_STRING, "Local"));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(NMO_OK, report.validation.final_status);
+    ASSERT_EQ(NMO_OK, report.validation.reference_status);
+    ASSERT_EQ(NMO_OK, report.validation.behavior_index_status);
+    ASSERT_EQ(NMO_OK, report.validation.interface_status);
+    ASSERT_EQ(2u, report.operation_count);
+    ASSERT_EQ(NMO_OK, report.operations[0].status);
+    ASSERT_EQ(NMO_OK, report.operations[1].status);
+    ASSERT_TRUE(report.operations[0].result_id != 0u);
+    ASSERT_TRUE(report.operations[1].result_id != 0u);
+    ASSERT_EQ(1u, report.operations[0].handle_count);
+    ASSERT_STR_EQ("io", report.operations[0].handles[0].name);
+    ASSERT_EQ(report.operations[0].result_id, report.operations[0].handles[0].id);
+    ASSERT_EQ(1u, report.operations[1].handle_count);
+    ASSERT_STR_EQ("parameter", report.operations[1].handles[0].name);
+    ASSERT_EQ(report.operations[1].result_id, report.operations[1].handles[0].id);
+    ASSERT_TRUE(report.created_object_count >= 2u);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(edit_plan, stores_parameter_value_ops);
 REGISTER_TEST(edit_plan, stores_full_script_edit_ops_and_clones_plan);
@@ -362,4 +402,5 @@ REGISTER_TEST(edit_plan, executor_commits_parameter_value_plan);
 REGISTER_TEST(edit_plan, executor_rolls_back_failed_plan);
 REGISTER_TEST(edit_plan, executor_dry_run_reports_without_persisting);
 REGISTER_TEST(edit_plan, executor_adds_node_with_created_object_report);
+REGISTER_TEST(edit_plan, executor_runs_script_ops_and_records_validation);
 TEST_MAIN_END()

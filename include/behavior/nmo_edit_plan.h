@@ -188,12 +188,21 @@ typedef struct nmo_edit_operation_result {
     size_t handle_count;
 } nmo_edit_operation_result_t;
 
+typedef struct nmo_edit_validation_report {
+    nmo_status_t final_status;
+    nmo_status_t roundtrip_status;
+    nmo_status_t reference_status;
+    nmo_status_t behavior_index_status;
+    nmo_status_t interface_status;
+} nmo_edit_validation_report_t;
+
 typedef struct nmo_edit_report {
     bool ok;
     bool dry_run;
     nmo_status_t status;
     size_t operation_count;
     nmo_edit_operation_result_t *operations;
+    nmo_edit_validation_report_t validation;
     size_t changed_object_count;
     nmo_edit_changed_object_t *changed_objects;
     size_t created_object_count;

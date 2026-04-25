@@ -1079,9 +1079,213 @@ static nmo_status_t edit_executor_apply_op(
             op->data.add_node.bb_guid,
             op->data.add_node.name,
             out_result_id);
+    case NMO_EDIT_OP_REMOVE_NODE:
+        return nmo_script_edit_remove_node(
+            tx,
+            op->data.remove_node.parent_behavior_id,
+            op->data.remove_node.node_id,
+            op->data.remove_node.delete_flags);
+    case NMO_EDIT_OP_ADD_IO:
+        return nmo_script_edit_add_io(
+            tx,
+            op->data.add_io.behavior_id,
+            op->data.add_io.kind,
+            op->data.add_io.name,
+            out_result_id);
+    case NMO_EDIT_OP_RENAME_IO:
+        return nmo_script_edit_rename_io(
+            tx,
+            op->data.rename_io.io_id,
+            op->data.rename_io.name);
+    case NMO_EDIT_OP_REMOVE_IO:
+        return nmo_script_edit_remove_io(
+            tx,
+            op->data.remove_io.io_id,
+            op->data.remove_io.detach_links);
+    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
+        return nmo_script_edit_add_behavior_link(
+            tx,
+            op->data.add_link.parent_behavior_id,
+            op->data.add_link.from_io_id,
+            op->data.add_link.to_io_id,
+            op->data.add_link.activation_delay,
+            out_result_id);
+    case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK:
+        return nmo_script_edit_rewire_behavior_link(
+            tx,
+            op->data.rewire_link.link_id,
+            op->data.rewire_link.from_io_id,
+            op->data.rewire_link.to_io_id);
+    case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY:
+        return nmo_script_edit_set_behavior_link_delay(
+            tx,
+            op->data.set_link_delay.link_id,
+            op->data.set_link_delay.activation_delay);
+    case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK:
+        return nmo_script_edit_remove_behavior_link(
+            tx,
+            op->data.remove_link.parent_behavior_id,
+            op->data.remove_link.link_id);
+    case NMO_EDIT_OP_ADD_PARAMETER:
+        return nmo_script_edit_add_parameter(
+            tx,
+            op->data.add_parameter.owner_behavior_id,
+            op->data.add_parameter.kind,
+            op->data.add_parameter.type_guid,
+            op->data.add_parameter.name,
+            out_result_id);
+    case NMO_EDIT_OP_CONNECT_PARAMETER:
+        return nmo_script_edit_connect_parameter(
+            tx,
+            op->data.connect_parameter.source_parameter_id,
+            op->data.connect_parameter.target_parameter_id);
+    case NMO_EDIT_OP_DISCONNECT_PARAMETER:
+        return nmo_script_edit_disconnect_parameter(
+            tx,
+            op->data.disconnect_parameter.target_parameter_id);
+    case NMO_EDIT_OP_REMOVE_PARAMETER:
+        return nmo_script_edit_remove_parameter(
+            tx,
+            op->data.remove_parameter.parameter_id,
+            op->data.remove_parameter.detach);
+    case NMO_EDIT_OP_ADD_OPERATION:
+        return nmo_script_edit_add_operation(
+            tx,
+            op->data.add_operation.parent_behavior_id,
+            op->data.add_operation.operation_guid,
+            op->data.add_operation.in1_parameter_id,
+            op->data.add_operation.in2_parameter_id,
+            op->data.add_operation.out_parameter_id,
+            out_result_id);
+    case NMO_EDIT_OP_REWIRE_OPERATION:
+        return nmo_script_edit_rewire_operation(
+            tx,
+            op->data.rewire_operation.operation_id,
+            op->data.rewire_operation.slot_flags,
+            op->data.rewire_operation.in1_parameter_id,
+            op->data.rewire_operation.in2_parameter_id,
+            op->data.rewire_operation.out_parameter_id);
+    case NMO_EDIT_OP_REMOVE_OPERATION:
+        return nmo_script_edit_remove_operation(
+            tx,
+            op->data.remove_operation.operation_id);
+    case NMO_EDIT_OP_INTERFACE_POLICY:
+        return nmo_script_edit_apply_interface_policy(
+            tx,
+            op->data.interface_policy.behavior_id,
+            op->data.interface_policy.mode);
+    case NMO_EDIT_OP_SET_DATA_CELL:
+        return nmo_object_edit_set_dataarray_cell(
+            edit,
+            op->data.data_cell.dataarray_id,
+            op->data.data_cell.row,
+            op->data.data_cell.col,
+            op->data.data_cell.value);
     default:
         return NMO_ERR_NOT_SUPPORTED;
     }
+}
+
+static const char *edit_op_result_handle_name(nmo_edit_op_kind_t kind)
+{
+    switch (kind) {
+    case NMO_EDIT_OP_ADD_NODE:
+        return "node";
+    case NMO_EDIT_OP_ADD_IO:
+        return "io";
+    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
+        return "link";
+    case NMO_EDIT_OP_ADD_PARAMETER:
+        return "parameter";
+    case NMO_EDIT_OP_ADD_OPERATION:
+        return "operation";
+    default:
+        return "object";
+    }
+}
+
+static bool edit_op_creates_result(nmo_edit_op_kind_t kind)
+{
+    return kind == NMO_EDIT_OP_ADD_NODE ||
+           kind == NMO_EDIT_OP_ADD_IO ||
+           kind == NMO_EDIT_OP_ADD_BEHAVIOR_LINK ||
+           kind == NMO_EDIT_OP_ADD_PARAMETER ||
+           kind == NMO_EDIT_OP_ADD_OPERATION;
+}
+
+static nmo_object_id_t edit_op_deleted_id(const nmo_edit_op_t *op)
+{
+    switch (op->kind) {
+    case NMO_EDIT_OP_REMOVE_NODE:
+        return op->data.remove_node.node_id;
+    case NMO_EDIT_OP_REMOVE_IO:
+        return op->data.remove_io.io_id;
+    case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK:
+        return op->data.remove_link.link_id;
+    case NMO_EDIT_OP_REMOVE_PARAMETER:
+        return op->data.remove_parameter.parameter_id;
+    case NMO_EDIT_OP_REMOVE_OPERATION:
+        return op->data.remove_operation.operation_id;
+    default:
+        return 0;
+    }
+}
+
+static nmo_object_id_t edit_op_changed_id(const nmo_edit_op_t *op)
+{
+    switch (op->kind) {
+    case NMO_EDIT_OP_ADD_NODE:
+        return op->data.add_node.parent_behavior_id;
+    case NMO_EDIT_OP_REMOVE_NODE:
+        return op->data.remove_node.parent_behavior_id;
+    case NMO_EDIT_OP_ADD_IO:
+        return op->data.add_io.behavior_id;
+    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
+        return op->data.add_link.parent_behavior_id;
+    case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK:
+        return op->data.remove_link.parent_behavior_id;
+    case NMO_EDIT_OP_ADD_PARAMETER:
+        return op->data.add_parameter.owner_behavior_id;
+    case NMO_EDIT_OP_ADD_OPERATION:
+        return op->data.add_operation.parent_behavior_id;
+    case NMO_EDIT_OP_INTERFACE_POLICY:
+        return op->data.interface_policy.behavior_id;
+    default:
+        return op->primary_id;
+    }
+}
+
+static nmo_status_t edit_executor_validate(
+    nmo_script_edit_tx_t *tx,
+    nmo_edit_report_t *report)
+{
+    report->validation.roundtrip_status =
+        nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
+    if (report->validation.roundtrip_status != NMO_OK) {
+        report->validation.final_status = report->validation.roundtrip_status;
+        return report->validation.final_status;
+    }
+    report->validation.reference_status =
+        nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
+    if (report->validation.reference_status != NMO_OK) {
+        report->validation.final_status = report->validation.reference_status;
+        return report->validation.final_status;
+    }
+    report->validation.behavior_index_status =
+        nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
+    if (report->validation.behavior_index_status != NMO_OK) {
+        report->validation.final_status =
+            report->validation.behavior_index_status;
+        return report->validation.final_status;
+    }
+    report->validation.interface_status =
+        nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_INTERFACE);
+    if (report->validation.interface_status != NMO_OK) {
+        report->validation.final_status = report->validation.interface_status;
+        return report->validation.final_status;
+    }
+    report->validation.final_status = NMO_OK;
+    return NMO_OK;
 }
 
 nmo_status_t nmo_edit_executor_execute(
@@ -1128,13 +1332,21 @@ nmo_status_t nmo_edit_executor_execute(
             report->status = op_rc;
             return op_rc;
         }
-        if (op->kind == NMO_EDIT_OP_ADD_NODE) {
-            nmo_status_t report_rc = NMO_OK;
-            (void)nmo_edit_report_add_changed_object(
+        if (result_id != 0u && edit_op_creates_result(op->kind)) {
+            nmo_status_t handle_rc = nmo_edit_report_add_operation_handle(
                 report,
-                op->data.add_node.parent_behavior_id,
-                op->kind,
-                "parent");
+                i,
+                edit_op_result_handle_name(op->kind),
+                result_id);
+            if (handle_rc != NMO_OK) {
+                nmo_script_edit_rollback(tx);
+                report->ok = false;
+                report->status = handle_rc;
+                return handle_rc;
+            }
+        }
+        if (edit_op_creates_result(op->kind)) {
+            nmo_status_t report_rc = NMO_OK;
             if (tx_report_after &&
                 tx_report_after->created_object_ids &&
                 tx_report_after->created_object_id_count > created_start) {
@@ -1155,9 +1367,22 @@ nmo_status_t nmo_edit_executor_execute(
                 return report_rc;
             }
         } else {
-            (void)nmo_edit_report_add_changed_object(
-                report, op->primary_id, op->kind, "primary");
+            nmo_object_id_t deleted_id = edit_op_deleted_id(op);
+            if (deleted_id != 0u) {
+                (void)nmo_edit_report_add_deleted_object(
+                    report, deleted_id, op->kind, "primary");
+            }
         }
+        (void)nmo_edit_report_add_changed_object(
+            report, edit_op_changed_id(op), op->kind, "primary");
+    }
+
+    rc = edit_executor_validate(tx, report);
+    if (rc != NMO_OK) {
+        nmo_script_edit_rollback(tx);
+        report->ok = false;
+        report->status = rc;
+        return rc;
     }
 
     if (effective.dry_run) {
