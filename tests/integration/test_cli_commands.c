@@ -3017,6 +3017,11 @@ TEST(cli, debug_probe_2d_text_dry_run_reports_edit_plan) {
     yyjson_val *operations = yyjson_obj_get(data, "operations");
     ASSERT_TRUE(operations && yyjson_is_arr(operations));
     ASSERT_EQ(1u, yyjson_arr_size(operations));
+    yyjson_val *semantic_risks = yyjson_obj_get(data, "semantic_risks");
+    ASSERT_TRUE(semantic_risks && yyjson_is_arr(semantic_risks));
+    yyjson_val *validation = yyjson_obj_get(data, "validation");
+    ASSERT_TRUE(validation && yyjson_is_obj(validation));
+    ASSERT_TRUE(yyjson_obj_get(validation, "final_status") != NULL);
     yyjson_val *created = yyjson_obj_get(data, "created_objects");
     ASSERT_TRUE(created && yyjson_is_arr(created));
     ASSERT_TRUE(yyjson_arr_size(created) > 1u);

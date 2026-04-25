@@ -106,6 +106,74 @@ static void debug_probe_add_operations_json(
     yyjson_mut_obj_add_val(doc, obj, "operations", ops);
 }
 
+static const char *debug_probe_risk_severity_string(
+    nmo_behavior_semantic_risk_severity_t severity)
+{
+    switch (severity) {
+    case NMO_BEHAVIOR_SEMANTIC_RISK_SAFE:
+        return "safe";
+    case NMO_BEHAVIOR_SEMANTIC_RISK_WARN:
+        return "warn";
+    case NMO_BEHAVIOR_SEMANTIC_RISK_REJECT:
+        return "reject";
+    default:
+        return "warn";
+    }
+}
+
+static void debug_probe_add_semantic_risks_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *obj,
+    const nmo_edit_report_t *report)
+{
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    for (size_t i = 0; report != NULL && i < report->semantic_risk_count; ++i) {
+        const nmo_behavior_semantic_risk_t *risk = &report->semantic_risks[i];
+        yyjson_mut_val *item = yyjson_mut_obj(doc);
+        nmo_cli_json_add_str_safe(
+            doc, item, "severity",
+            debug_probe_risk_severity_string(risk->severity));
+        nmo_cli_json_add_str_safe(doc, item, "code", risk->code);
+        nmo_cli_json_add_str_safe(doc, item, "message", risk->message);
+        yyjson_mut_obj_add_uint(doc, item, "object_id",
+                                (uint64_t)risk->object_id);
+        yyjson_mut_arr_add_val(arr, item);
+    }
+    yyjson_mut_obj_add_val(doc, obj, "semantic_risks", arr);
+}
+
+static void debug_probe_add_validation_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *obj,
+    const nmo_edit_report_t *report)
+{
+    const nmo_edit_validation_report_t zero = {0};
+    const nmo_edit_validation_report_t *validation =
+        report != NULL ? &report->validation : &zero;
+    yyjson_mut_val *item = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_uint(doc, item, "final_status",
+                            (uint64_t)validation->final_status);
+    nmo_cli_json_add_str_safe(doc, item, "final_status_name",
+                              nmo_error_string(validation->final_status));
+    yyjson_mut_obj_add_uint(doc, item, "roundtrip_status",
+                            (uint64_t)validation->roundtrip_status);
+    nmo_cli_json_add_str_safe(doc, item, "roundtrip_status_name",
+                              nmo_error_string(validation->roundtrip_status));
+    yyjson_mut_obj_add_uint(doc, item, "reference_status",
+                            (uint64_t)validation->reference_status);
+    nmo_cli_json_add_str_safe(doc, item, "reference_status_name",
+                              nmo_error_string(validation->reference_status));
+    yyjson_mut_obj_add_uint(doc, item, "behavior_index_status",
+                            (uint64_t)validation->behavior_index_status);
+    nmo_cli_json_add_str_safe(doc, item, "behavior_index_status_name",
+                              nmo_error_string(validation->behavior_index_status));
+    yyjson_mut_obj_add_uint(doc, item, "interface_status",
+                            (uint64_t)validation->interface_status);
+    nmo_cli_json_add_str_safe(doc, item, "interface_status_name",
+                              nmo_error_string(validation->interface_status));
+    yyjson_mut_obj_add_val(doc, obj, "validation", item);
+}
+
 static int debug_probe_parse(int argc,
                              char **argv,
                              nmo_debug_probe_args_t *args,
@@ -238,6 +306,8 @@ static int debug_probe_report(nmo_cmd_ctx_t *ctx,
             doc, data, "deleted_objects",
             args->report.deleted_objects,
             args->report.deleted_object_count);
+        debug_probe_add_semantic_risks_json(doc, data, &args->report);
+        debug_probe_add_validation_json(doc, data, &args->report);
         int rc = nmo_cmd_ctx_json_end(ctx, doc, data, "debug.probe");
         nmo_edit_report_dispose(&args->report);
         return rc;
