@@ -445,6 +445,60 @@ TEST(edit_plan, executor_replaces_leaf_bb_in_transaction) {
     nmo_session_close_with_context(ctx, session);
 }
 
+TEST(edit_plan, executor_replace_bb_dry_run_rolls_back) {
+    nmo_context_t *ctx = nmo_context_create(
+        &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session =
+        nmo_session_load(ctx, NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    ASSERT_NOT_NULL(session);
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, 343u);
+    nmo_behavior_state_t *state = object
+        ? (nmo_behavior_state_t *)nmo_object_get_state(object)
+        : NULL;
+    ASSERT_NOT_NULL(state);
+    nmo_guid_t original_guid = state->block_guid;
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    nmo_guid_t replacement_guid = nmo_guid_parse("D0B7ADF3-D3FF3CF6");
+    nmo_behavior_replace_bb_desc_t replace = {
+        .behavior_id = 343u,
+        .block_guid = replacement_guid,
+        .name = "Plan Dry Replace",
+        .block_version = 65536u,
+        .preserve_links = true,
+        .preserve_params = true,
+    };
+    nmo_edit_executor_options_t options =
+        nmo_edit_executor_options_default();
+    options.dry_run = true;
+
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_replace_bb(plan, &replace));
+
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_executor_execute(workspace, plan, &options, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_TRUE(report.dry_run);
+    ASSERT_EQ(NMO_OK, report.operations[0].status);
+    ASSERT_EQ(343u, report.operations[0].result_id);
+    ASSERT_TRUE(nmo_guid_equals(original_guid, state->block_guid));
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    nmo_session_close_with_context(ctx, session);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(edit_plan, stores_parameter_value_ops);
 REGISTER_TEST(edit_plan, stores_full_script_edit_ops_and_clones_plan);
@@ -455,4 +509,5 @@ REGISTER_TEST(edit_plan, executor_dry_run_reports_without_persisting);
 REGISTER_TEST(edit_plan, executor_adds_node_with_created_object_report);
 REGISTER_TEST(edit_plan, executor_runs_script_ops_and_records_validation);
 REGISTER_TEST(edit_plan, executor_replaces_leaf_bb_in_transaction);
+REGISTER_TEST(edit_plan, executor_replace_bb_dry_run_rolls_back);
 TEST_MAIN_END()
