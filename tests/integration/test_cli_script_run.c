@@ -250,7 +250,10 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     yyjson_val *references = NULL;
     yyjson_val *behavior_index = NULL;
     yyjson_val *interface_obj = NULL;
+    yyjson_val *changed_objects = NULL;
     yyjson_val *created_objects = NULL;
+    yyjson_val *first_changed = NULL;
+    yyjson_val *first_created = NULL;
     yyjson_val *diff = NULL;
     yyjson_val *first_operation = NULL;
     yyjson_val *first_handles = NULL;
@@ -282,7 +285,12 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
     ASSERT_NOT_NULL(get_array_field(data, "errors"));
     ASSERT_NOT_NULL(get_array_field(data, "warnings"));
-    ASSERT_NOT_NULL(get_array_field(data, "changed_objects"));
+    changed_objects = get_array_field(data, "changed_objects");
+    ASSERT_NOT_NULL(changed_objects);
+    ASSERT_EQ(3u, yyjson_arr_size(changed_objects));
+    first_changed = yyjson_arr_get(changed_objects, 0);
+    ASSERT_NOT_NULL(first_changed);
+    ASSERT_STR_EQ("add_io", get_string_field(first_changed, "cause"));
     ASSERT_TRUE(yyjson_obj_get(data, "risk_level") == NULL);
     ASSERT_TRUE(yyjson_obj_get(data, "semantic_risks") == NULL);
     ASSERT_STR_EQ(script_path, get_string_field(data, "script_file"));
@@ -317,6 +325,9 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     created_objects = get_array_field(data, "created_objects");
     ASSERT_NOT_NULL(created_objects);
     ASSERT_EQ(3u, yyjson_arr_size(created_objects));
+    first_created = yyjson_arr_get(created_objects, 0);
+    ASSERT_NOT_NULL(first_created);
+    ASSERT_STR_EQ("add_io", get_string_field(first_created, "cause"));
     diff = get_object_field(data, "diff");
     ASSERT_NOT_NULL(diff);
     ASSERT_EQ(3u, get_uint_field(diff, "changed_object_count"));

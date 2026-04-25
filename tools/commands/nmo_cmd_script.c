@@ -1186,6 +1186,7 @@ static void script_run_add_impact_json(yyjson_mut_doc *doc,
                             (uint64_t)(operation_index + 1u));
     yyjson_mut_obj_add_uint(doc, item, "object_id", (uint64_t)object_id);
     yyjson_mut_obj_add_uint(doc, item, "id", (uint64_t)object_id);
+    nmo_cli_json_add_str_safe(doc, item, "cause", kind);
     nmo_cli_json_add_str_safe(doc, item, "kind", kind);
     nmo_cli_json_add_str_safe(doc, item, "role", role);
     yyjson_mut_arr_add_val(arr, item);
