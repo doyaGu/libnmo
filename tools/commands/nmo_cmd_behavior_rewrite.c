@@ -8,6 +8,7 @@
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_common.h"
 #include "../nmo_cli_json.h"
+#include "../nmo_edit_report_json.h"
 #include "../nmo_cli_write.h"
 #include "../nmo_opt.h"
 
@@ -246,174 +247,6 @@ static void add_common_write_report_json(yyjson_mut_doc *doc,
     add_changed_object_ids_json(doc, data, ids, count);
 }
 
-static const char *rewrite_edit_op_kind_string(nmo_edit_op_kind_t kind) {
-    switch (kind) {
-    case NMO_EDIT_OP_SET_PARAMETER_VALUE:
-        return "set_parameter_value";
-    case NMO_EDIT_OP_SET_PARAMETER_BYTES:
-        return "set_parameter_bytes";
-    case NMO_EDIT_OP_ADD_NODE:
-        return "add_node";
-    case NMO_EDIT_OP_REMOVE_NODE:
-        return "remove_node";
-    case NMO_EDIT_OP_ADD_IO:
-        return "add_io";
-    case NMO_EDIT_OP_RENAME_IO:
-        return "rename_io";
-    case NMO_EDIT_OP_REMOVE_IO:
-        return "remove_io";
-    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
-        return "add_behavior_link";
-    case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK:
-        return "rewire_behavior_link";
-    case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY:
-        return "set_behavior_link_delay";
-    case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK:
-        return "remove_behavior_link";
-    case NMO_EDIT_OP_ADD_PARAMETER:
-        return "add_parameter";
-    case NMO_EDIT_OP_CONNECT_PARAMETER:
-        return "connect_parameter";
-    case NMO_EDIT_OP_DISCONNECT_PARAMETER:
-        return "disconnect_parameter";
-    case NMO_EDIT_OP_REMOVE_PARAMETER:
-        return "remove_parameter";
-    case NMO_EDIT_OP_ADD_OPERATION:
-        return "add_operation";
-    case NMO_EDIT_OP_REWIRE_OPERATION:
-        return "rewire_operation";
-    case NMO_EDIT_OP_REMOVE_OPERATION:
-        return "remove_operation";
-    case NMO_EDIT_OP_INTERFACE_POLICY:
-        return "interface_policy";
-    case NMO_EDIT_OP_SET_DATA_CELL:
-        return "set_data_cell";
-    case NMO_EDIT_OP_FOLD:
-        return "fold";
-    case NMO_EDIT_OP_REPLACE_BB:
-        return "replace_bb";
-    default:
-        return "unknown";
-    }
-}
-
-static void add_edit_operations_json(yyjson_mut_doc *doc,
-                                     yyjson_mut_val *data,
-                                     const nmo_edit_report_t *report) {
-    yyjson_mut_val *ops = yyjson_mut_arr(doc);
-    if (report != NULL) {
-        for (size_t i = 0; i < report->operation_count; ++i) {
-            const nmo_edit_operation_result_t *op = &report->operations[i];
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            yyjson_mut_val *handles = yyjson_mut_arr(doc);
-            yyjson_mut_obj_add_uint(doc, item, "index",
-                                    (uint64_t)(i + 1u));
-            nmo_cli_json_add_str_safe(
-                doc, item, "op", rewrite_edit_op_kind_string(op->kind));
-            nmo_cli_json_add_str_safe(
-                doc, item, "kind", rewrite_edit_op_kind_string(op->kind));
-            yyjson_mut_obj_add_uint(doc, item, "primary_id",
-                                    (uint64_t)op->primary_id);
-            yyjson_mut_obj_add_uint(doc, item, "result_id",
-                                    (uint64_t)op->result_id);
-            yyjson_mut_obj_add_uint(doc, item, "status",
-                                    (uint64_t)op->status);
-            nmo_cli_json_add_str_safe(doc, item, "status_name",
-                                      nmo_error_string(op->status));
-            if (op->diagnostic_code != NULL) {
-                nmo_cli_json_add_str_safe(doc, item, "diagnostic_code",
-                                          op->diagnostic_code);
-            }
-            if (op->diagnostic_message != NULL) {
-                nmo_cli_json_add_str_safe(doc, item, "diagnostic_message",
-                                          op->diagnostic_message);
-            }
-            for (size_t j = 0; j < op->handle_count; ++j) {
-                yyjson_mut_val *handle = yyjson_mut_obj(doc);
-                nmo_cli_json_add_str_safe(doc, handle, "name",
-                                          op->handles[j].name);
-                yyjson_mut_obj_add_uint(doc, handle, "object_id",
-                                        (uint64_t)op->handles[j].id);
-                yyjson_mut_obj_add_uint(doc, handle, "id",
-                                        (uint64_t)op->handles[j].id);
-                yyjson_mut_arr_add_val(handles, handle);
-            }
-            yyjson_mut_obj_add_val(doc, item, "handles", handles);
-            yyjson_mut_arr_add_val(ops, item);
-        }
-    }
-    yyjson_mut_obj_add_val(doc, data, "operations", ops);
-}
-
-static void add_edit_impact_array_json(yyjson_mut_doc *doc,
-                                       yyjson_mut_val *data,
-                                       const char *name,
-                                       const nmo_edit_object_impact_t *items,
-                                       size_t count) {
-    yyjson_mut_val *arr = yyjson_mut_arr(doc);
-    for (size_t i = 0; items && i < count; ++i) {
-        yyjson_mut_val *item = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, item, "object_id",
-                                (uint64_t)items[i].id);
-        yyjson_mut_obj_add_uint(doc, item, "id", (uint64_t)items[i].id);
-        nmo_cli_json_add_str_safe(
-            doc, item, "cause",
-            rewrite_edit_op_kind_string(items[i].cause));
-        nmo_cli_json_add_str_safe(doc, item, "role", items[i].role);
-        yyjson_mut_arr_add_val(arr, item);
-    }
-    yyjson_mut_obj_add_val(doc, data, name, arr);
-}
-
-static void add_edit_validation_json(yyjson_mut_doc *doc,
-                                     yyjson_mut_val *data,
-                                     const nmo_edit_report_t *report) {
-    yyjson_mut_val *validation = yyjson_mut_obj(doc);
-    const nmo_edit_validation_report_t zero = {0};
-    const nmo_edit_validation_report_t *v =
-        report ? &report->validation : &zero;
-    yyjson_mut_obj_add_uint(doc, validation, "final_status",
-                            (uint64_t)v->final_status);
-    nmo_cli_json_add_str_safe(doc, validation, "final_status_name",
-                              nmo_error_string(v->final_status));
-    yyjson_mut_obj_add_uint(doc, validation, "roundtrip_status",
-                            (uint64_t)v->roundtrip_status);
-    nmo_cli_json_add_str_safe(doc, validation, "roundtrip_status_name",
-                              nmo_error_string(v->roundtrip_status));
-    yyjson_mut_obj_add_uint(doc, validation, "reference_status",
-                            (uint64_t)v->reference_status);
-    nmo_cli_json_add_str_safe(doc, validation, "reference_status_name",
-                              nmo_error_string(v->reference_status));
-    yyjson_mut_obj_add_uint(doc, validation, "behavior_index_status",
-                            (uint64_t)v->behavior_index_status);
-    nmo_cli_json_add_str_safe(doc, validation, "behavior_index_status_name",
-                              nmo_error_string(v->behavior_index_status));
-    yyjson_mut_obj_add_uint(doc, validation, "interface_status",
-                            (uint64_t)v->interface_status);
-    nmo_cli_json_add_str_safe(doc, validation, "interface_status_name",
-                              nmo_error_string(v->interface_status));
-    yyjson_mut_obj_add_val(doc, data, "validation", validation);
-}
-
-static void add_edit_diff_json(yyjson_mut_doc *doc,
-                               yyjson_mut_val *data,
-                               const nmo_edit_report_t *report) {
-    yyjson_mut_val *diff = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_uint(
-        doc, diff, "changed_object_count",
-        (uint64_t)(report ? report->changed_object_count : 0u));
-    yyjson_mut_obj_add_uint(
-        doc, diff, "created_object_count",
-        (uint64_t)(report ? report->created_object_count : 0u));
-    yyjson_mut_obj_add_uint(
-        doc, diff, "deleted_object_count",
-        (uint64_t)(report ? report->deleted_object_count : 0u));
-    yyjson_mut_obj_add_uint(
-        doc, diff, "semantic_risk_count",
-        (uint64_t)(report ? report->semantic_risk_count : 0u));
-    yyjson_mut_obj_add_val(doc, data, "diff", diff);
-}
-
 static void add_edit_report_json(yyjson_mut_doc *doc,
                                  yyjson_mut_val *data,
                                  const nmo_edit_report_t *report) {
@@ -425,25 +258,26 @@ static void add_edit_report_json(yyjson_mut_doc *doc,
     yyjson_mut_obj_add_uint(
         doc, data, "operation_count",
         (uint64_t)(report ? report->operation_count : 0u));
-    add_edit_operations_json(doc, data, report);
-    add_edit_impact_array_json(
+    nmo_cli_edit_report_add_operations_json(doc, data, report);
+    nmo_cli_edit_report_add_impact_array_json(
         doc, data, "changed_objects",
         report ? report->changed_objects : NULL,
         report ? report->changed_object_count : 0u);
-    add_edit_impact_array_json(
+    nmo_cli_edit_report_add_impact_array_json(
         doc, data, "created_objects",
         report ? report->created_objects : NULL,
         report ? report->created_object_count : 0u);
-    add_edit_impact_array_json(
+    nmo_cli_edit_report_add_impact_array_json(
         doc, data, "deleted_objects",
         report ? report->deleted_objects : NULL,
         report ? report->deleted_object_count : 0u);
-    add_semantic_risks_json(
-        doc, data,
-        report ? report->semantic_risks : NULL,
-        report ? report->semantic_risk_count : 0u);
-    add_edit_validation_json(doc, data, report);
-    add_edit_diff_json(doc, data, report);
+    const nmo_cli_edit_report_json_options_t report_options = {
+        .include_risk_level = true,
+    };
+    nmo_cli_edit_report_add_semantic_risks_json(
+        doc, data, report, &report_options);
+    nmo_cli_edit_report_add_validation_json(doc, data, report);
+    nmo_cli_edit_report_add_diff_json(doc, data, report);
 }
 
 static int graph_boundary_emit(nmo_cmd_ctx_t *ctx,
