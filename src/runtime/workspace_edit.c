@@ -26,6 +26,7 @@
 #include "core/nmo_array.h"
 #include "core/nmo_parse.h"
 #include "type/nmo_reflection.h"
+#include "type/nmo_type_guids.h"
 #include "type/nmo_type_string.h"
 #include "type/nmo_type_system.h"
 
@@ -106,11 +107,22 @@ nmo_status_t workspace_edit_set_parameter_value(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t parameter_id,
     const char *value_str);
+nmo_status_t workspace_edit_set_parameter_value_ex(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t parameter_id,
+    const char *value_str,
+    const nmo_parameter_write_options_t *options);
 nmo_status_t workspace_edit_set_parameter_bytes(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t parameter_id,
     const uint8_t *bytes,
     size_t byte_count);
+nmo_status_t workspace_edit_set_parameter_bytes_ex(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t parameter_id,
+    const uint8_t *bytes,
+    size_t byte_count,
+    const nmo_parameter_write_options_t *options);
 nmo_status_t workspace_edit_set_dataarray_cell(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t dataarray_id,
@@ -532,10 +544,20 @@ nmo_status_t nmo_object_edit_set_parameter_value(
     nmo_object_id_t parameter_id,
     const char *value_str)
 {
-    return workspace_edit_set_parameter_value(
+    return workspace_edit_set_parameter_value_ex(edit, parameter_id, value_str, NULL);
+}
+
+nmo_status_t nmo_object_edit_set_parameter_value_ex(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t parameter_id,
+    const char *value_str,
+    const nmo_parameter_write_options_t *options)
+{
+    return workspace_edit_set_parameter_value_ex(
         (nmo_workspace_edit_t *)edit,
         parameter_id,
-        value_str);
+        value_str,
+        options);
 }
 
 nmo_status_t nmo_object_edit_set_parameter_bytes(
@@ -544,11 +566,22 @@ nmo_status_t nmo_object_edit_set_parameter_bytes(
     const uint8_t *bytes,
     size_t byte_count)
 {
-    return workspace_edit_set_parameter_bytes(
+    return workspace_edit_set_parameter_bytes_ex(edit, parameter_id, bytes, byte_count, NULL);
+}
+
+nmo_status_t nmo_object_edit_set_parameter_bytes_ex(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t parameter_id,
+    const uint8_t *bytes,
+    size_t byte_count,
+    const nmo_parameter_write_options_t *options)
+{
+    return workspace_edit_set_parameter_bytes_ex(
         (nmo_workspace_edit_t *)edit,
         parameter_id,
         bytes,
-        byte_count);
+        byte_count,
+        options);
 }
 
 nmo_status_t nmo_object_edit_set_dataarray_cell(
@@ -979,6 +1012,47 @@ nmo_status_t workspace_edit_set_parameter_value(
     nmo_object_id_t parameter_id,
     const char *value_str)
 {
+    return workspace_edit_set_parameter_value_ex(edit, parameter_id, value_str, NULL);
+}
+
+static nmo_status_t workspace_edit_snapshot_parameter_buffer(
+    nmo_workspace_edit_t *edit,
+    nmo_parameter_state_t *state,
+    size_t checkpoint)
+{
+    if (edit == NULL || state == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    parameter_buffer_snapshot_t *snapshot =
+        (parameter_buffer_snapshot_t *)nmo_workspace_edit_alloc(
+            edit,
+            sizeof(*snapshot) + state->buffer_data.count,
+            _Alignof(parameter_buffer_snapshot_t));
+    if (snapshot == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    snapshot->state = state;
+    snapshot->count = state->buffer_data.count;
+    if (state->buffer_data.count > 0 && state->buffer_data.data != NULL) {
+        memcpy(snapshot->bytes, state->buffer_data.data, state->buffer_data.count);
+    }
+
+    nmo_status_t push_result =
+        workspace_edit_push_rollback(edit, rollback_parameter_buffer, snapshot);
+    if (push_result != NMO_OK) {
+        workspace_edit_rollback_to(edit, checkpoint);
+        return push_result;
+    }
+    return NMO_OK;
+}
+
+nmo_status_t workspace_edit_set_parameter_value_ex(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t parameter_id,
+    const char *value_str,
+    const nmo_parameter_write_options_t *options)
+{
     if (edit == NULL || edit->finished || value_str == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1035,30 +1109,42 @@ nmo_status_t workspace_edit_set_parameter_value(
         return NMO_ERR_INVALID_STATE;
     }
 
-    parameter_buffer_snapshot_t *snapshot =
-        (parameter_buffer_snapshot_t *)nmo_workspace_edit_alloc(
-            edit,
-            sizeof(*snapshot) + state->buffer_data.count,
-            _Alignof(parameter_buffer_snapshot_t));
-    if (snapshot == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-    snapshot->state = state;
-    snapshot->count = state->buffer_data.count;
-    memcpy(snapshot->bytes, state->buffer_data.data, state->buffer_data.count);
-
-    nmo_status_t push_result =
-        workspace_edit_push_rollback(edit, rollback_parameter_buffer, snapshot);
-    if (push_result != NMO_OK) {
-        workspace_edit_rollback_to(edit, checkpoint);
-        return push_result;
-    }
-
     const nmo_type_descriptor_t *type =
         nmo_type_registry_find_by_guid(registry, state->type_guid);
     if (type == NULL) {
-        workspace_edit_rollback_to(edit, checkpoint);
         return NMO_ERR_NOT_FOUND;
+    }
+
+    if (nmo_guid_equals(state->type_guid, CKPGUID_STRING)) {
+        size_t required_size = strlen(value_str) + 1u;
+        bool allow_resize = (options == NULL) ? true : options->resize;
+        if (required_size > state->buffer_data.count && !allow_resize) {
+            return NMO_ERR_OUT_OF_BOUNDS;
+        }
+
+        nmo_status_t snapshot_result =
+            workspace_edit_snapshot_parameter_buffer(edit, state, checkpoint);
+        if (snapshot_result != NMO_OK) {
+            return snapshot_result;
+        }
+
+        if (required_size != state->buffer_data.count) {
+            nmo_status_t resize_result =
+                nmo_array_resize(&state->buffer_data, required_size);
+            if (resize_result != NMO_OK) {
+                workspace_edit_rollback_to(edit, checkpoint);
+                return resize_result;
+            }
+        }
+        memcpy(state->buffer_data.data, value_str, required_size);
+        nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
+        return NMO_OK;
+    }
+
+    nmo_status_t snapshot_result =
+        workspace_edit_snapshot_parameter_buffer(edit, state, checkpoint);
+    if (snapshot_result != NMO_OK) {
+        return snapshot_result;
     }
 
     size_t buffer_size = type->size > 0 ? type->size : state->buffer_data.count;
@@ -1095,6 +1181,16 @@ nmo_status_t workspace_edit_set_parameter_bytes(
     const uint8_t *bytes,
     size_t byte_count)
 {
+    return workspace_edit_set_parameter_bytes_ex(edit, parameter_id, bytes, byte_count, NULL);
+}
+
+nmo_status_t workspace_edit_set_parameter_bytes_ex(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t parameter_id,
+    const uint8_t *bytes,
+    size_t byte_count,
+    const nmo_parameter_write_options_t *options)
+{
     if (edit == NULL || edit->finished || (bytes == NULL && byte_count > 0)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1116,27 +1212,23 @@ nmo_status_t workspace_edit_set_parameter_bytes(
     if (state->buffer_data.data == NULL || state->buffer_data.count == 0) {
         return NMO_ERR_INVALID_STATE;
     }
-    if (byte_count > state->buffer_data.count) {
+    bool allow_resize = options != NULL && options->resize;
+    if (byte_count > state->buffer_data.count && !allow_resize) {
         return NMO_ERR_OUT_OF_BOUNDS;
     }
 
-    parameter_buffer_snapshot_t *snapshot =
-        (parameter_buffer_snapshot_t *)nmo_workspace_edit_alloc(
-            edit,
-            sizeof(*snapshot) + state->buffer_data.count,
-            _Alignof(parameter_buffer_snapshot_t));
-    if (snapshot == NULL) {
-        return NMO_ERR_NOMEM;
+    nmo_status_t snapshot_result =
+        workspace_edit_snapshot_parameter_buffer(edit, state, checkpoint);
+    if (snapshot_result != NMO_OK) {
+        return snapshot_result;
     }
-    snapshot->state = state;
-    snapshot->count = state->buffer_data.count;
-    memcpy(snapshot->bytes, state->buffer_data.data, state->buffer_data.count);
 
-    nmo_status_t push_result =
-        workspace_edit_push_rollback(edit, rollback_parameter_buffer, snapshot);
-    if (push_result != NMO_OK) {
-        workspace_edit_rollback_to(edit, checkpoint);
-        return push_result;
+    if (byte_count != state->buffer_data.count && allow_resize) {
+        nmo_status_t resize_result = nmo_array_resize(&state->buffer_data, byte_count);
+        if (resize_result != NMO_OK) {
+            workspace_edit_rollback_to(edit, checkpoint);
+            return resize_result;
+        }
     }
 
     if (byte_count > 0) {

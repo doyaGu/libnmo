@@ -6,6 +6,7 @@
 #include "session/nmo_session.h"
 #include "runtime/nmo_workspace.h"
 #include "object/nmo_object_edit.h"
+#include "object/nmo_value_writer.h"
 #include "behavior/nmo_behavior_edit.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "object/nmo_class_ids.h"
@@ -615,6 +616,127 @@ TEST(workspace_edit, parameter_edit_rollback_restores_buffer) {
     nmo_context_release(ctx);
 }
 
+TEST(workspace_edit, value_writer_resizes_string_parameter_and_nul_terminates) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t param_id = 0;
+    create_object_or_fail(session, NMO_CID_PARAMETER, "string-param", &param_id);
+    nmo_object_t *param_obj = nmo_object_repository_find_by_id(repo, param_id);
+    ASSERT_NOT_NULL(param_obj);
+    nmo_parameter_state_t *state = nmo_parameter_get_mutable_state(param_obj);
+    ASSERT_NOT_NULL(state);
+    state->type_guid = CKPGUID_STRING;
+    state->mode = CKPARAM_MODE_BUFFER;
+    state->has_state = true;
+    ASSERT_EQ(NMO_OK, nmo_array_alloc(&state->buffer_data, sizeof(uint8_t), 4, NULL));
+    memset(state->buffer_data.data, 0xCC, state->buffer_data.count);
+
+    const char *text = "LONGER TEXT";
+
+    workspace_edit_scope_t edit_scope = {0};
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(ctx, session, "string resize", &edit_scope, &edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_value_writer_set_parameter_value(edit, param_id, text, NULL));
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&edit_scope));
+
+    ASSERT_EQ(strlen(text) + 1u, state->buffer_data.count);
+    ASSERT_EQ(0, memcmp(state->buffer_data.data, text, strlen(text)));
+    ASSERT_EQ(0, ((const uint8_t *)state->buffer_data.data)[strlen(text)]);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(workspace_edit, value_writer_raw_bytes_requires_explicit_resize) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t param_id = 0;
+    create_object_or_fail(session, NMO_CID_PARAMETER, "raw-param", &param_id);
+    nmo_object_t *param_obj = nmo_object_repository_find_by_id(repo, param_id);
+    ASSERT_NOT_NULL(param_obj);
+    nmo_parameter_state_t *state = nmo_parameter_get_mutable_state(param_obj);
+    ASSERT_NOT_NULL(state);
+    state->type_guid = CKPGUID_VOIDBUF;
+    state->mode = CKPARAM_MODE_BUFFER;
+    state->has_state = true;
+    ASSERT_EQ(NMO_OK, nmo_array_alloc(&state->buffer_data, sizeof(uint8_t), 2, NULL));
+    uint8_t initial[2] = {0xAA, 0xBB};
+    memcpy(state->buffer_data.data, initial, sizeof(initial));
+
+    uint8_t bytes[4] = {1, 2, 3, 4};
+    nmo_value_write_options_t options = nmo_value_write_options_default();
+
+    workspace_edit_scope_t rejected_scope = {0};
+    nmo_workspace_edit_t *rejected_edit = NULL;
+    ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(ctx, session, "raw no resize", &rejected_scope, &rejected_edit));
+    ASSERT_EQ(NMO_ERR_OUT_OF_BOUNDS,
+              nmo_value_writer_set_parameter_bytes(
+                  rejected_edit, param_id, bytes, sizeof(bytes), &options));
+    rollback_workspace_edit_scope(&rejected_scope);
+    ASSERT_EQ(2u, state->buffer_data.count);
+    ASSERT_EQ(0, memcmp(state->buffer_data.data, initial, sizeof(initial)));
+
+    options.resize = true;
+    workspace_edit_scope_t resized_scope = {0};
+    nmo_workspace_edit_t *resized_edit = NULL;
+    ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(ctx, session, "raw resize", &resized_scope, &resized_edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_value_writer_set_parameter_bytes(
+                  resized_edit, param_id, bytes, sizeof(bytes), &options));
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&resized_scope));
+    ASSERT_EQ(sizeof(bytes), state->buffer_data.count);
+    ASSERT_EQ(0, memcmp(state->buffer_data.data, bytes, sizeof(bytes)));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(workspace_edit, value_writer_resize_rollback_restores_buffer_size) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t param_id = 0;
+    create_object_or_fail(session, NMO_CID_PARAMETER, "rollback-string", &param_id);
+    nmo_object_t *param_obj = nmo_object_repository_find_by_id(repo, param_id);
+    ASSERT_NOT_NULL(param_obj);
+    nmo_parameter_state_t *state = nmo_parameter_get_mutable_state(param_obj);
+    ASSERT_NOT_NULL(state);
+    state->type_guid = CKPGUID_STRING;
+    state->mode = CKPARAM_MODE_BUFFER;
+    state->has_state = true;
+    ASSERT_EQ(NMO_OK, nmo_array_alloc(&state->buffer_data, sizeof(uint8_t), 4, NULL));
+    memcpy(state->buffer_data.data, "old", 4);
+
+    workspace_edit_scope_t edit_scope = {0};
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(ctx, session, "string resize rollback", &edit_scope, &edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_value_writer_set_parameter_value(
+                  edit, param_id, "much longer text", NULL));
+    rollback_workspace_edit_scope(&edit_scope);
+
+    ASSERT_EQ(4u, state->buffer_data.count);
+    ASSERT_EQ(0, memcmp(state->buffer_data.data, "old", 4));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(workspace_edit, parameter_bytes_commit_zero_fills_and_rollback_restores) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
@@ -1038,6 +1160,9 @@ REGISTER_TEST(workspace_edit, mark_behavior_interface_requires_interface_data);
 REGISTER_TEST(workspace_edit, rename_object_commit_rebuilds_name_index);
 REGISTER_TEST(workspace_edit, rename_object_rollback_restores_name_without_rebuilding_index);
 REGISTER_TEST(workspace_edit, parameter_edit_rollback_restores_buffer);
+REGISTER_TEST(workspace_edit, value_writer_resizes_string_parameter_and_nul_terminates);
+REGISTER_TEST(workspace_edit, value_writer_raw_bytes_requires_explicit_resize);
+REGISTER_TEST(workspace_edit, value_writer_resize_rollback_restores_buffer_size);
 REGISTER_TEST(workspace_edit, parameter_bytes_commit_zero_fills_and_rollback_restores);
 REGISTER_TEST(workspace_edit, parameterout_object_mode_commit_sets_reference);
 REGISTER_TEST(workspace_edit, dataarray_object_cell_commit_and_rollback);

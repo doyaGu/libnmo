@@ -3,6 +3,9 @@
 
 #include "runtime/nmo_workspace.h"
 
+#include <stdbool.h>
+#include <stdint.h>
+
 #define NMO_OBJECT_IMPORT_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
 #define NMO_OBJECT_IMPORT_API_TIER NMO_API_TIER_ADVANCED_C
 
@@ -34,6 +37,10 @@ typedef struct nmo_import_result {
     size_t errors;
 } nmo_import_result_t;
 
+typedef struct nmo_parameter_write_options {
+    bool resize;
+} nmo_parameter_write_options_t;
+
 NMO_API nmo_status_t nmo_object_edit_set_fields(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,
@@ -51,11 +58,24 @@ NMO_API nmo_status_t nmo_object_edit_set_parameter_value(
     nmo_object_id_t parameter_id,
     const char *value_str);
 
+NMO_API nmo_status_t nmo_object_edit_set_parameter_value_ex(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t parameter_id,
+    const char *value_str,
+    const nmo_parameter_write_options_t *options);
+
 NMO_API nmo_status_t nmo_object_edit_set_parameter_bytes(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t parameter_id,
     const uint8_t *bytes,
     size_t byte_count);
+
+NMO_API nmo_status_t nmo_object_edit_set_parameter_bytes_ex(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t parameter_id,
+    const uint8_t *bytes,
+    size_t byte_count,
+    const nmo_parameter_write_options_t *options);
 
 NMO_API nmo_status_t nmo_object_edit_set_dataarray_cell(
     nmo_workspace_edit_t *edit,
