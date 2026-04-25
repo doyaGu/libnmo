@@ -930,6 +930,112 @@ static int script_run_lua_add_behavior_link(lua_State *state)
     return 1;
 }
 
+static int script_run_lua_rewire_behavior_link(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_object_id_t link_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
+    nmo_object_id_t from_io_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    nmo_object_id_t to_io_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
+    char link_id_text[32];
+    nmo_status_t status = NMO_OK;
+
+    status = script_run_ensure_pending_plan(args);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_rewire_behavior_link(
+            args->pending_plan, link_id, from_io_id, to_io_id);
+    }
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to enqueue script behavior link rewire");
+    }
+
+    snprintf(link_id_text, sizeof(link_id_text), "%u", link_id);
+    if (!script_run_append_operation(args,
+                                     link_id,
+                                     "rewire_behavior_link",
+                                     "behavior_link",
+                                     link_id_text,
+                                     NULL,
+                                     0u)) {
+        return luaL_error(state, "failed to record script operation");
+    }
+
+    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    return 1;
+}
+
+static int script_run_lua_set_behavior_link_delay(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_object_id_t link_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
+    uint32_t activation_delay = (uint32_t)luaL_checkinteger(state, 2);
+    char link_id_text[32];
+    nmo_status_t status = NMO_OK;
+
+    status = script_run_ensure_pending_plan(args);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_set_behavior_link_delay(
+            args->pending_plan, link_id, activation_delay);
+    }
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to enqueue script behavior link delay");
+    }
+
+    snprintf(link_id_text, sizeof(link_id_text), "%u", link_id);
+    if (!script_run_append_operation(args,
+                                     link_id,
+                                     "set_behavior_link_delay",
+                                     "behavior_link",
+                                     link_id_text,
+                                     NULL,
+                                     0u)) {
+        return luaL_error(state, "failed to record script operation");
+    }
+
+    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    return 1;
+}
+
+static int script_run_lua_remove_behavior_link(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_object_id_t parent_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
+    nmo_object_id_t link_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    char link_id_text[32];
+    nmo_status_t status = NMO_OK;
+
+    status = script_run_ensure_pending_plan(args);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_remove_behavior_link(
+            args->pending_plan, parent_id, link_id);
+    }
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to enqueue script behavior link removal");
+    }
+
+    snprintf(link_id_text, sizeof(link_id_text), "%u", link_id);
+    if (!script_run_append_operation(args,
+                                     parent_id,
+                                     "remove_behavior_link",
+                                     "behavior_link",
+                                     link_id_text,
+                                     NULL,
+                                     0u)) {
+        return luaL_error(state, "failed to record script operation");
+    }
+
+    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    return 1;
+}
+
 static bool script_run_parse_parameter_kind(
     const char *text,
     nmo_script_edit_parameter_kind_t *out_kind)
@@ -1192,7 +1298,7 @@ static int script_run_lua_set_data_cell(lua_State *state)
 
 static int script_run_lua_open_executor_module(lua_State *state)
 {
-    lua_createtable(state, 0, 13);
+    lua_createtable(state, 0, 16);
 
     lua_pushcfunction(state, script_run_lua_root_script_id);
     lua_setfield(state, -2, "root_script_id");
@@ -1217,6 +1323,15 @@ static int script_run_lua_open_executor_module(lua_State *state)
 
     lua_pushcfunction(state, script_run_lua_add_behavior_link);
     lua_setfield(state, -2, "add_behavior_link");
+
+    lua_pushcfunction(state, script_run_lua_rewire_behavior_link);
+    lua_setfield(state, -2, "rewire_behavior_link");
+
+    lua_pushcfunction(state, script_run_lua_set_behavior_link_delay);
+    lua_setfield(state, -2, "set_behavior_link_delay");
+
+    lua_pushcfunction(state, script_run_lua_remove_behavior_link);
+    lua_setfield(state, -2, "remove_behavior_link");
 
     lua_pushcfunction(state, script_run_lua_add_parameter);
     lua_setfield(state, -2, "add_parameter");
