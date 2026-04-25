@@ -1148,9 +1148,36 @@ static void script_run_add_operation_json(yyjson_mut_doc *doc,
     yyjson_mut_obj_add_val(doc, item, "options", options);
 
     for (i = 0; i < op->result_handle_count; ++i) {
-        yyjson_mut_arr_add_uint(doc, handles, op->result_handles[i]);
+        yyjson_mut_val *handle = yyjson_mut_obj(doc);
+        nmo_cli_json_add_str_safe(doc, handle, "name", op->kind);
+        yyjson_mut_obj_add_uint(doc, handle, "object_id",
+                                (uint64_t)op->result_handles[i]);
+        yyjson_mut_obj_add_uint(doc, handle, "id",
+                                (uint64_t)op->result_handles[i]);
+        yyjson_mut_arr_add_val(handles, handle);
     }
-    yyjson_mut_obj_add_val(doc, item, "result_handles", handles);
+    yyjson_mut_obj_add_val(doc, item, "handles", handles);
+    yyjson_mut_arr_add_val(arr, item);
+}
+
+static void script_run_add_impact_json(yyjson_mut_doc *doc,
+                                       yyjson_mut_val *arr,
+                                       size_t operation_index,
+                                       const char *kind,
+                                       const char *role,
+                                       nmo_object_id_t object_id)
+{
+    if (object_id == 0u) {
+        return;
+    }
+
+    yyjson_mut_val *item = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_uint(doc, item, "operation_index",
+                            (uint64_t)(operation_index + 1u));
+    yyjson_mut_obj_add_uint(doc, item, "object_id", (uint64_t)object_id);
+    yyjson_mut_obj_add_uint(doc, item, "id", (uint64_t)object_id);
+    nmo_cli_json_add_str_safe(doc, item, "kind", kind);
+    nmo_cli_json_add_str_safe(doc, item, "role", role);
     yyjson_mut_arr_add_val(arr, item);
 }
 
@@ -1161,24 +1188,26 @@ static void script_run_add_common_report_json(yyjson_mut_doc *doc,
     yyjson_mut_val *errors = yyjson_mut_arr(doc);
     yyjson_mut_val *warnings = yyjson_mut_arr(doc);
     yyjson_mut_val *changed = yyjson_mut_arr(doc);
+    yyjson_mut_val *created = yyjson_mut_arr(doc);
+    yyjson_mut_val *deleted = yyjson_mut_arr(doc);
 
     yyjson_mut_obj_add_val(doc, data, "errors", errors);
     yyjson_mut_obj_add_val(doc, data, "warnings", warnings);
     if (args != NULL) {
         for (size_t i = 0; i < args->operation_count; ++i) {
             const script_run_operation_t *op = &args->operations[i];
+            script_run_add_impact_json(doc, changed, i, op->kind, "primary",
+                                       op->behavior_id);
             for (size_t j = 0; j < op->result_handle_count; ++j) {
-                yyjson_mut_val *item = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_uint(doc, item, "operation_index",
-                                        (uint64_t)(i + 1u));
-                yyjson_mut_obj_add_uint(doc, item, "object_id",
-                                        (uint64_t)op->result_handles[j]);
-                nmo_cli_json_add_str_safe(doc, item, "kind", op->kind);
-                yyjson_mut_arr_add_val(changed, item);
+                script_run_add_impact_json(doc, created, i, op->kind,
+                                           "created",
+                                           op->result_handles[j]);
             }
         }
     }
     yyjson_mut_obj_add_val(doc, data, "changed_objects", changed);
+    yyjson_mut_obj_add_val(doc, data, "created_objects", created);
+    yyjson_mut_obj_add_val(doc, data, "deleted_objects", deleted);
 }
 
 static int script_run_report(nmo_cmd_ctx_t *ctx,
@@ -1200,7 +1229,6 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
         yyjson_mut_val *references = yyjson_mut_obj(doc);
         yyjson_mut_val *behavior_index = yyjson_mut_obj(doc);
         yyjson_mut_val *interface_obj = yyjson_mut_obj(doc);
-        yyjson_mut_val *result_handles = yyjson_mut_arr(doc);
         size_t i = 0;
 
         yyjson_mut_obj_add_bool(doc, data, "ok",
@@ -1241,11 +1269,6 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
         nmo_cli_json_add_str_safe(doc, validation, "final_status_name",
                                   nmo_error_string(args->validation.final_status));
         yyjson_mut_obj_add_val(doc, data, "validation", validation);
-
-        for (i = 0; i < args->result_handle_count; ++i) {
-            yyjson_mut_arr_add_uint(doc, result_handles, args->result_handles[i]);
-        }
-        yyjson_mut_obj_add_val(doc, data, "result_handles", result_handles);
 
         if (!dry_run && output_path != NULL) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);

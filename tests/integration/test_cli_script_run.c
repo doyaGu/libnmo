@@ -250,6 +250,9 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     yyjson_val *references = NULL;
     yyjson_val *behavior_index = NULL;
     yyjson_val *interface_obj = NULL;
+    yyjson_val *created_objects = NULL;
+    yyjson_val *first_operation = NULL;
+    yyjson_val *first_handles = NULL;
 
     remove_if_exists(output_path);
     ASSERT_TRUE(build_repo_fixture_path("tests/fixtures/lua/script_run_multi_action.lua",
@@ -286,6 +289,12 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(3u, yyjson_arr_size(operations));
+    first_operation = yyjson_arr_get(operations, 0);
+    ASSERT_NOT_NULL(first_operation);
+    ASSERT_TRUE(yyjson_obj_get(first_operation, "result_handles") == NULL);
+    first_handles = get_array_field(first_operation, "handles");
+    ASSERT_NOT_NULL(first_handles);
+    ASSERT_EQ(1u, yyjson_arr_size(first_handles));
     validation = get_object_field(data, "validation");
     ASSERT_NOT_NULL(validation);
     references = get_object_field(validation, "references");
@@ -296,7 +305,10 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     interface_obj = get_object_field(validation, "interface");
     ASSERT_NOT_NULL(interface_obj);
     ASSERT_EQ(NMO_OK, (nmo_status_t)get_uint_field(validation, "final_status"));
-    ASSERT_EQ(3u, yyjson_arr_size(get_array_field(data, "result_handles")));
+    ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
+    created_objects = get_array_field(data, "created_objects");
+    ASSERT_NOT_NULL(created_objects);
+    ASSERT_EQ(3u, yyjson_arr_size(created_objects));
     ASSERT_FALSE(file_exists(output_path));
 
     yyjson_doc_free(doc);
