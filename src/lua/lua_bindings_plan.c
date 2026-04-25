@@ -288,11 +288,47 @@ static void nmo_lua_plan_push_diff(
     lua_setfield(state, -2, "semantic_risk_count");
 }
 
+static const char *nmo_lua_plan_risk_severity_string(
+    nmo_behavior_semantic_risk_severity_t severity)
+{
+    switch (severity) {
+    case NMO_BEHAVIOR_SEMANTIC_RISK_SAFE:
+        return "safe";
+    case NMO_BEHAVIOR_SEMANTIC_RISK_WARN:
+        return "warn";
+    case NMO_BEHAVIOR_SEMANTIC_RISK_REJECT:
+        return "reject";
+    default:
+        return "warn";
+    }
+}
+
+static void nmo_lua_plan_push_semantic_risks(
+    lua_State *state,
+    const nmo_edit_report_t *report)
+{
+    lua_createtable(state, (int)report->semantic_risk_count, 0);
+    for (size_t i = 0; i < report->semantic_risk_count; ++i) {
+        const nmo_behavior_semantic_risk_t *risk = &report->semantic_risks[i];
+        lua_createtable(state, 0, 4);
+        lua_pushstring(
+            state, nmo_lua_plan_risk_severity_string(risk->severity));
+        lua_setfield(state, -2, "severity");
+        lua_pushstring(state, risk->code != NULL ? risk->code : "");
+        lua_setfield(state, -2, "code");
+        lua_pushstring(state, risk->message != NULL ? risk->message : "");
+        lua_setfield(state, -2, "message");
+        lua_pushinteger(state, (lua_Integer)risk->object_id);
+        lua_setfield(state, -2, "object_id");
+        lua_rawseti(state, -2, (lua_Integer)i + 1);
+    }
+}
+
 static void nmo_lua_plan_push_report(
     lua_State *state,
     const nmo_edit_report_t *report)
 {
-    lua_createtable(state, 0, 10);
+    lua_createtable(state, 0, 11);
     lua_pushboolean(state, report->ok);
     lua_setfield(state, -2, "ok");
     lua_pushboolean(state, report->dry_run);
@@ -314,6 +350,8 @@ static void nmo_lua_plan_push_report(
     lua_setfield(state, -2, "validation");
     nmo_lua_plan_push_diff(state, report);
     lua_setfield(state, -2, "diff");
+    nmo_lua_plan_push_semantic_risks(state, report);
+    lua_setfield(state, -2, "semantic_risks");
 }
 
 static int nmo_lua_plan_execute(lua_State *state)
