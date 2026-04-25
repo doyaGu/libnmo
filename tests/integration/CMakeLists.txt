@@ -129,6 +129,7 @@ if(TARGET nmo_cli)
         ${PROJECT_SOURCE_DIR}/tools/nmo_opt.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_cli_common.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_cli_json.c
+        ${PROJECT_SOURCE_DIR}/tools/nmo_edit_report_json.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_cli_output.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_cli_sort.c
         ${PROJECT_SOURCE_DIR}/tools/nmo_cli_write.c
