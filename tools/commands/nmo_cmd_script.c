@@ -1420,16 +1420,21 @@ cleanup:
 
 static void script_add_edit_report_json(yyjson_mut_doc *doc,
                                         yyjson_mut_val *data,
-                                        const script_command_common_t *common,
-                                        bool dry_run)
+                                        script_command_common_t *common,
+                                        bool dry_run,
+                                        const char *output_path)
 {
-    const nmo_edit_report_t *report =
+    nmo_edit_report_t *report =
         common != NULL ? &common->edit_report : NULL;
 
     if (doc == NULL || data == NULL) {
         return;
     }
 
+    if (!dry_run && output_path != NULL && report != NULL &&
+        report->output_path == NULL) {
+        (void)nmo_edit_report_set_output_path(report, output_path);
+    }
     nmo_cli_edit_report_add_schema_v2_json(doc, data, report, dry_run);
 }
 
@@ -1552,16 +1557,18 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        const nmo_edit_report_t *edit_report =
+        nmo_edit_report_t *edit_report =
             args->edit_report_ready ? &args->edit_report : NULL;
+        if (!dry_run && output_path != NULL && edit_report != NULL &&
+            edit_report->output_path == NULL) {
+            (void)nmo_edit_report_set_output_path(edit_report, output_path);
+        }
         nmo_cli_edit_report_add_schema_v2_json(
             doc, data, edit_report, dry_run);
         nmo_cli_json_add_str_safe(doc, data, "script_file", args->script_path);
 
         if (!dry_run && output_path != NULL) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-            nmo_cli_json_add_str_safe(doc, data, "output_path",
-                                      output_path);
         }
         return nmo_cmd_ctx_json_end(ctx, doc, data, "script.run");
     }
@@ -2309,7 +2316,7 @@ static int script_node_add_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "node_id", args->node_id);
         if (!dry_run && output_path) {
@@ -2379,7 +2386,7 @@ static int script_node_remove_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "node_id", args->node_id);
         nmo_cli_json_add_str_safe(doc, data, "interface_mode",
@@ -2438,7 +2445,7 @@ static int script_io_add_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "behavior_id", args->behavior_id);
         yyjson_mut_obj_add_uint(doc, data, "io_id", args->io_id);
         if (!dry_run && output_path) {
@@ -2489,7 +2496,7 @@ static int script_io_rename_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "io_id", args->io_id);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
@@ -2554,7 +2561,7 @@ static int script_io_remove_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "io_id", args->io_id);
         nmo_cli_json_add_str_safe(doc, data, "interface_mode",
                                   script_interface_mode_string(
@@ -2610,7 +2617,7 @@ static int script_link_add_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "link_id", args->link_id);
         yyjson_mut_obj_add_uint(doc, data, "from_id", args->from_id);
@@ -2665,7 +2672,7 @@ static int script_link_rewire_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "link_id", args->link_id);
         if (args->from_id != 0u) {
             yyjson_mut_obj_add_uint(doc, data, "from_id", args->from_id);
@@ -2723,7 +2730,7 @@ static int script_link_set_delay_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "link_id", args->link_id);
         yyjson_mut_obj_add_uint(doc, data, "delay", args->delay);
         if (!dry_run && output_path) {
@@ -2779,7 +2786,7 @@ static int script_link_remove_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "link_id", args->link_id);
         nmo_cli_json_add_str_safe(doc, data, "interface_mode",
@@ -3228,7 +3235,7 @@ static int script_param_add_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "owner_id", args->owner_id);
         yyjson_mut_obj_add_uint(doc, data, "param_id", args->param_id);
         nmo_cli_json_add_str_safe(doc, data, "kind", args->kind);
@@ -3297,7 +3304,7 @@ static int script_param_set_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "param_id", args->param_id);
         if (args->old_value) {
             nmo_cli_json_add_str_safe(doc, data, "old_value", args->old_value);
@@ -3359,7 +3366,7 @@ static int script_param_connect_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "source_id", args->source_id);
         yyjson_mut_obj_add_uint(doc, data, "target_id", args->target_id);
         if (!dry_run && output_path) {
@@ -3412,7 +3419,7 @@ static int script_param_disconnect_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "target_id", args->target_id);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
@@ -3477,7 +3484,7 @@ static int script_param_remove_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "param_id", args->param_id);
         yyjson_mut_obj_add_bool(doc, data, "detach", args->detach);
         nmo_cli_json_add_str_safe(doc, data, "interface_mode",
@@ -3541,7 +3548,7 @@ static int script_op_add_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "op_id", args->op_id);
         nmo_cli_json_add_str_safe(doc, data, "operation_guid", guid_buf);
@@ -3602,7 +3609,7 @@ static int script_op_rewire_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "op_id", args->op_id);
         if ((args->slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u) {
             yyjson_mut_obj_add_uint(doc, data, "in1_id", args->in1_id);
@@ -3674,7 +3681,7 @@ static int script_op_remove_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "op_id", args->op_id);
         nmo_cli_json_add_str_safe(doc, data, "interface_mode",
                                   script_interface_mode_string(
