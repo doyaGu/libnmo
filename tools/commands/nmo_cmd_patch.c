@@ -42,6 +42,7 @@ typedef enum patch_operation_kind {
     PATCH_OP_CONNECT_PARAMETER = 15,
     PATCH_OP_REMOVE_PARAMETER = 16,
     PATCH_OP_SET_PARAMETER_VALUE = 17,
+    PATCH_OP_ADD_OPERATION = 18,
 } patch_operation_kind_t;
 
 typedef struct patch_operation {
@@ -119,6 +120,13 @@ typedef struct patch_operation {
         nmo_object_id_t parameter_id;
         const char *value;
     } set_parameter_value;
+    struct {
+        nmo_object_id_t parent_id;
+        nmo_guid_t operation_guid;
+        nmo_object_id_t in1_id;
+        nmo_object_id_t in2_id;
+        nmo_object_id_t out_id;
+    } add_operation;
 } patch_operation_t;
 
 typedef struct patch_plan {
@@ -304,6 +312,15 @@ static nmo_status_t patch_operation_add_to_edit_plan(
             op->set_parameter_value.parameter_id,
             op->set_parameter_value.value,
             NULL);
+    }
+    if (op->kind == PATCH_OP_ADD_OPERATION) {
+        return nmo_edit_plan_add_operation(
+            edit_plan,
+            op->add_operation.parent_id,
+            op->add_operation.operation_guid,
+            op->add_operation.in1_id,
+            op->add_operation.in2_id,
+            op->add_operation.out_id);
     }
     if (op->kind == PATCH_OP_INTERFACE_POLICY) {
         return nmo_edit_plan_add_interface_policy(
@@ -1238,6 +1255,93 @@ static int patch_parse_set_parameter_value(yyjson_val *op_obj,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+static int patch_parse_optional_object_id(
+    yyjson_val *obj,
+    const char *key,
+    const char *where,
+    nmo_object_id_t *out_id) {
+    if (!obj || !key || !out_id) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    *out_id = 0u;
+    yyjson_val *val = yyjson_obj_get(obj, key);
+    if (val == NULL) {
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+    if (!yyjson_is_uint(val) || yyjson_get_uint(val) > UINT32_MAX) {
+        fprintf(stderr, "Error: Invalid %s in %s\n", key, where);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    *out_id = (nmo_object_id_t)yyjson_get_uint(val);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int patch_parse_add_operation(yyjson_val *op_obj,
+                                     patch_operation_t *out_op) {
+    static const char *const allowed[] = {
+        "op",
+        "parent_id",
+        "operation_guid",
+        "in1_id",
+        "in2_id",
+        "out_id",
+    };
+    int rc = patch_reject_unknown_fields(
+        op_obj, "add_operation operation",
+        allowed, sizeof(allowed) / sizeof(allowed[0]));
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    yyjson_val *parent_val = yyjson_obj_get(op_obj, "parent_id");
+    if (!parent_val || !yyjson_is_uint(parent_val) ||
+        yyjson_get_uint(parent_val) == 0 ||
+        yyjson_get_uint(parent_val) > UINT32_MAX) {
+        fprintf(stderr, "Error: Missing or invalid parent_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *guid_text = patch_required_string(
+        op_obj, "operation_guid", "add_operation operation");
+    if (!guid_text) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    nmo_guid_t operation_guid = nmo_guid_parse(guid_text);
+    if (nmo_guid_is_null(operation_guid)) {
+        fprintf(stderr, "Error: Invalid operation GUID '%s'\n", guid_text);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_object_id_t in1_id = 0u;
+    nmo_object_id_t in2_id = 0u;
+    nmo_object_id_t out_id = 0u;
+    rc = patch_parse_optional_object_id(
+        op_obj, "in1_id", "add_operation operation", &in1_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+    rc = patch_parse_optional_object_id(
+        op_obj, "in2_id", "add_operation operation", &in2_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+    rc = patch_parse_optional_object_id(
+        op_obj, "out_id", "add_operation operation", &out_id);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    memset(out_op, 0, sizeof(*out_op));
+    out_op->kind = PATCH_OP_ADD_OPERATION;
+    out_op->add_operation.parent_id =
+        (nmo_object_id_t)yyjson_get_uint(parent_val);
+    out_op->add_operation.operation_guid = operation_guid;
+    out_op->add_operation.in1_id = in1_id;
+    out_op->add_operation.in2_id = in2_id;
+    out_op->add_operation.out_id = out_id;
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static int patch_parse_interface_policy(yyjson_val *op_obj,
                                         patch_operation_t *out_op) {
     static const char *const allowed[] = {
@@ -1530,6 +1634,9 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
         } else if (strcmp(op, "set_parameter_value") == 0 &&
                    out_plan->version == 2u) {
             rc = patch_parse_set_parameter_value(op_obj, &operations[idx]);
+        } else if (strcmp(op, "add_operation") == 0 &&
+                   out_plan->version == 2u) {
+            rc = patch_parse_add_operation(op_obj, &operations[idx]);
         } else if (strcmp(op, "add_io") == 0 && out_plan->version == 2u) {
             rc = patch_parse_add_io(op_obj, &operations[idx]);
         } else if (strcmp(op, "remove_io") == 0 && out_plan->version == 2u) {
