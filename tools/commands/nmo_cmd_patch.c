@@ -43,6 +43,7 @@ typedef enum patch_operation_kind {
     PATCH_OP_REMOVE_PARAMETER = 16,
     PATCH_OP_SET_PARAMETER_VALUE = 17,
     PATCH_OP_ADD_OPERATION = 18,
+    PATCH_OP_REMOVE_OPERATION = 19,
 } patch_operation_kind_t;
 
 typedef struct patch_operation {
@@ -127,6 +128,9 @@ typedef struct patch_operation {
         nmo_object_id_t in2_id;
         nmo_object_id_t out_id;
     } add_operation;
+    struct {
+        nmo_object_id_t operation_id;
+    } remove_operation;
 } patch_operation_t;
 
 typedef struct patch_plan {
@@ -321,6 +325,11 @@ static nmo_status_t patch_operation_add_to_edit_plan(
             op->add_operation.in1_id,
             op->add_operation.in2_id,
             op->add_operation.out_id);
+    }
+    if (op->kind == PATCH_OP_REMOVE_OPERATION) {
+        return nmo_edit_plan_add_remove_operation(
+            edit_plan,
+            op->remove_operation.operation_id);
     }
     if (op->kind == PATCH_OP_INTERFACE_POLICY) {
         return nmo_edit_plan_add_interface_policy(
@@ -1342,6 +1351,34 @@ static int patch_parse_add_operation(yyjson_val *op_obj,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+static int patch_parse_remove_operation(yyjson_val *op_obj,
+                                        patch_operation_t *out_op) {
+    static const char *const allowed[] = {
+        "op",
+        "operation_id",
+    };
+    int rc = patch_reject_unknown_fields(
+        op_obj, "remove_operation operation",
+        allowed, sizeof(allowed) / sizeof(allowed[0]));
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    yyjson_val *operation_val = yyjson_obj_get(op_obj, "operation_id");
+    if (!operation_val || !yyjson_is_uint(operation_val) ||
+        yyjson_get_uint(operation_val) == 0 ||
+        yyjson_get_uint(operation_val) > UINT32_MAX) {
+        fprintf(stderr, "Error: Missing or invalid operation_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    memset(out_op, 0, sizeof(*out_op));
+    out_op->kind = PATCH_OP_REMOVE_OPERATION;
+    out_op->remove_operation.operation_id =
+        (nmo_object_id_t)yyjson_get_uint(operation_val);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static int patch_parse_interface_policy(yyjson_val *op_obj,
                                         patch_operation_t *out_op) {
     static const char *const allowed[] = {
@@ -1637,6 +1674,9 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
         } else if (strcmp(op, "add_operation") == 0 &&
                    out_plan->version == 2u) {
             rc = patch_parse_add_operation(op_obj, &operations[idx]);
+        } else if (strcmp(op, "remove_operation") == 0 &&
+                   out_plan->version == 2u) {
+            rc = patch_parse_remove_operation(op_obj, &operations[idx]);
         } else if (strcmp(op, "add_io") == 0 && out_plan->version == 2u) {
             rc = patch_parse_add_io(op_obj, &operations[idx]);
         } else if (strcmp(op, "remove_io") == 0 && out_plan->version == 2u) {
