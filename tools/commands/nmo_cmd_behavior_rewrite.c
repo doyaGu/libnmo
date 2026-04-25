@@ -232,27 +232,8 @@ static void add_common_write_report_json(yyjson_mut_doc *doc,
 static void add_edit_report_json(yyjson_mut_doc *doc,
                                  yyjson_mut_val *data,
                                  const nmo_edit_report_t *report) {
-    yyjson_mut_obj_add_bool(doc, data, "ok", report ? report->ok : false);
-    yyjson_mut_obj_add_bool(doc, data, "dry_run",
-                            report ? report->dry_run : false);
-    yyjson_mut_obj_add_val(doc, data, "errors", yyjson_mut_arr(doc));
-    yyjson_mut_obj_add_val(doc, data, "warnings", yyjson_mut_arr(doc));
-    nmo_cli_edit_report_add_operations_json(doc, data, report);
-    nmo_cli_edit_report_add_impact_array_json(
-        doc, data, "changed_objects",
-        report ? report->changed_objects : NULL,
-        report ? report->changed_object_count : 0u);
-    nmo_cli_edit_report_add_impact_array_json(
-        doc, data, "created_objects",
-        report ? report->created_objects : NULL,
-        report ? report->created_object_count : 0u);
-    nmo_cli_edit_report_add_impact_array_json(
-        doc, data, "deleted_objects",
-        report ? report->deleted_objects : NULL,
-        report ? report->deleted_object_count : 0u);
-    nmo_cli_edit_report_add_semantic_risks_json(doc, data, report);
-    nmo_cli_edit_report_add_validation_json(doc, data, report);
-    nmo_cli_edit_report_add_diff_json(doc, data, report);
+    nmo_cli_edit_report_add_schema_v2_json(
+        doc, data, report, report != NULL && report->dry_run);
 }
 
 static int graph_boundary_emit(nmo_cmd_ctx_t *ctx,

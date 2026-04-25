@@ -58,6 +58,35 @@ const char *nmo_cli_edit_report_op_kind_string(nmo_edit_op_kind_t kind)
     }
 }
 
+void nmo_cli_edit_report_add_schema_v2_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *obj,
+    const nmo_edit_report_t *report,
+    bool dry_run)
+{
+    yyjson_mut_obj_add_bool(doc, obj, "ok",
+                            report != NULL && report->ok);
+    yyjson_mut_obj_add_bool(doc, obj, "dry_run", dry_run);
+    yyjson_mut_obj_add_val(doc, obj, "errors", yyjson_mut_arr(doc));
+    yyjson_mut_obj_add_val(doc, obj, "warnings", yyjson_mut_arr(doc));
+    nmo_cli_edit_report_add_operations_json(doc, obj, report);
+    nmo_cli_edit_report_add_impact_array_json(
+        doc, obj, "changed_objects",
+        report != NULL ? report->changed_objects : NULL,
+        report != NULL ? report->changed_object_count : 0u);
+    nmo_cli_edit_report_add_impact_array_json(
+        doc, obj, "created_objects",
+        report != NULL ? report->created_objects : NULL,
+        report != NULL ? report->created_object_count : 0u);
+    nmo_cli_edit_report_add_impact_array_json(
+        doc, obj, "deleted_objects",
+        report != NULL ? report->deleted_objects : NULL,
+        report != NULL ? report->deleted_object_count : 0u);
+    nmo_cli_edit_report_add_semantic_risks_json(doc, obj, report);
+    nmo_cli_edit_report_add_validation_json(doc, obj, report);
+    nmo_cli_edit_report_add_diff_json(doc, obj, report);
+}
+
 static const char *semantic_risk_severity_string(
     nmo_behavior_semantic_risk_severity_t severity)
 {

@@ -166,18 +166,13 @@ typedef struct patch_plan {
     size_t operation_count;
 } patch_plan_t;
 
-static void patch_add_empty_report_arrays(yyjson_mut_doc *doc,
-                                          yyjson_mut_val *data);
-
 static void patch_add_edit_report_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *data,
     const patch_plan_t *plan,
     const nmo_edit_report_t *report,
     bool dry_run) {
-    yyjson_mut_obj_add_bool(doc, data, "ok", report ? report->ok : false);
-    yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
-    patch_add_empty_report_arrays(doc, data);
+    nmo_cli_edit_report_add_schema_v2_json(doc, data, report, dry_run);
     if (plan != NULL) {
         nmo_cli_json_add_str_safe(doc, data, "input", plan->input);
         nmo_cli_json_add_str_safe(doc, data, "output", plan->output);
@@ -186,28 +181,6 @@ static void patch_add_edit_report_json(
                                       plan->output);
         }
     }
-    nmo_cli_edit_report_add_operations_json(doc, data, report);
-    nmo_cli_edit_report_add_impact_array_json(
-        doc, data, "changed_objects",
-        report ? report->changed_objects : NULL,
-        report ? report->changed_object_count : 0u);
-    nmo_cli_edit_report_add_impact_array_json(
-        doc, data, "created_objects",
-        report ? report->created_objects : NULL,
-        report ? report->created_object_count : 0u);
-    nmo_cli_edit_report_add_impact_array_json(
-        doc, data, "deleted_objects",
-        report ? report->deleted_objects : NULL,
-        report ? report->deleted_object_count : 0u);
-    nmo_cli_edit_report_add_semantic_risks_json(doc, data, report);
-    nmo_cli_edit_report_add_validation_json(doc, data, report);
-    nmo_cli_edit_report_add_diff_json(doc, data, report);
-}
-
-static void patch_add_empty_report_arrays(yyjson_mut_doc *doc,
-                                          yyjson_mut_val *data) {
-    yyjson_mut_obj_add_val(doc, data, "errors", yyjson_mut_arr(doc));
-    yyjson_mut_obj_add_val(doc, data, "warnings", yyjson_mut_arr(doc));
 }
 
 static void patch_plan_free(patch_plan_t *plan) {

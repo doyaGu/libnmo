@@ -146,6 +146,15 @@ static void assert_source_not_contains(const char *relative_path,
     free(source);
 }
 
+static void assert_source_contains(const char *relative_path,
+                                   const char *needle)
+{
+    char *source = read_source_text(relative_path);
+    ASSERT_NOT_NULL(source);
+    ASSERT_TRUE(strstr(source, needle) != NULL);
+    free(source);
+}
+
 static void assert_source_missing(const char *relative_path)
 {
     char path[1024];
@@ -879,6 +888,19 @@ TEST(repl_read, edit_report_json_does_not_emit_legacy_risk_level) {
                                "risk_level");
 }
 
+TEST(repl_read, edit_report_schema_v2_has_single_json_helper) {
+    assert_source_contains("tools/nmo_edit_report_json.h",
+                           "nmo_cli_edit_report_add_schema_v2_json");
+    assert_source_contains("tools/commands/nmo_cmd_behavior_rewrite.c",
+                           "nmo_cli_edit_report_add_schema_v2_json");
+    assert_source_contains("tools/commands/nmo_cmd_patch.c",
+                           "nmo_cli_edit_report_add_schema_v2_json");
+    assert_source_contains("tools/commands/nmo_cmd_script.c",
+                           "nmo_cli_edit_report_add_schema_v2_json");
+    assert_source_contains("tools/commands/nmo_cmd_debug.c",
+                           "nmo_cli_edit_report_add_schema_v2_json");
+}
+
 TEST(repl_read, domain_session_dispatchers_do_not_construct_object_argv) {
     assert_source_not_contains("tools/commands/nmo_cmd_entity.c",
                                "nmo_cmd_object_show_in_session(ctx");
@@ -1154,6 +1176,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, no_remaining_repl_read_placeholder_strings);
     REGISTER_TEST(repl_read, script_run_uses_executor_handles_only);
     REGISTER_TEST(repl_read, edit_report_json_does_not_emit_legacy_risk_level);
+    REGISTER_TEST(repl_read, edit_report_schema_v2_has_single_json_helper);
     REGISTER_TEST(repl_read, domain_session_dispatchers_do_not_construct_object_argv);
     REGISTER_TEST(repl_read, read_family_headers_only_export_family_session_entrypoints);
     REGISTER_TEST(repl_read, no_active_session_adapter_symbols_remain);

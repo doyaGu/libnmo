@@ -4,9 +4,16 @@
 #include "behavior/nmo_edit_plan.h"
 #include "yyjson.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 
 const char *nmo_cli_edit_report_op_kind_string(nmo_edit_op_kind_t kind);
+
+void nmo_cli_edit_report_add_schema_v2_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *obj,
+    const nmo_edit_report_t *report,
+    bool dry_run);
 
 void nmo_cli_edit_report_add_operations_json(
     yyjson_mut_doc *doc,

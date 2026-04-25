@@ -1747,27 +1747,7 @@ static void script_add_edit_report_json(yyjson_mut_doc *doc,
         return;
     }
 
-    yyjson_mut_obj_add_bool(doc, data, "ok",
-                            report != NULL && report->ok);
-    yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
-    yyjson_mut_obj_add_val(doc, data, "errors", yyjson_mut_arr(doc));
-    yyjson_mut_obj_add_val(doc, data, "warnings", yyjson_mut_arr(doc));
-    nmo_cli_edit_report_add_operations_json(doc, data, report);
-    nmo_cli_edit_report_add_impact_array_json(
-        doc, data, "changed_objects",
-        report != NULL ? report->changed_objects : NULL,
-        report != NULL ? report->changed_object_count : 0u);
-    nmo_cli_edit_report_add_impact_array_json(
-        doc, data, "created_objects",
-        report != NULL ? report->created_objects : NULL,
-        report != NULL ? report->created_object_count : 0u);
-    nmo_cli_edit_report_add_impact_array_json(
-        doc, data, "deleted_objects",
-        report != NULL ? report->deleted_objects : NULL,
-        report != NULL ? report->deleted_object_count : 0u);
-    nmo_cli_edit_report_add_semantic_risks_json(doc, data, report);
-    nmo_cli_edit_report_add_validation_json(doc, data, report);
-    nmo_cli_edit_report_add_diff_json(doc, data, report);
+    nmo_cli_edit_report_add_schema_v2_json(doc, data, report, dry_run);
 }
 
 static nmo_status_t script_run_executor_action(nmo_behavior_execution_t *executor,
@@ -1876,38 +1856,6 @@ static int script_run_mutate(nmo_cmd_ctx_t *ctx,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static void script_run_add_common_report_json(yyjson_mut_doc *doc,
-                                              yyjson_mut_val *data,
-                                              const script_run_args_t *args)
-{
-    yyjson_mut_val *errors = yyjson_mut_arr(doc);
-    yyjson_mut_val *warnings = yyjson_mut_arr(doc);
-    yyjson_mut_val *changed = yyjson_mut_arr(doc);
-    yyjson_mut_val *created = yyjson_mut_arr(doc);
-    yyjson_mut_val *deleted = yyjson_mut_arr(doc);
-
-    yyjson_mut_obj_add_val(doc, data, "errors", errors);
-    yyjson_mut_obj_add_val(doc, data, "warnings", warnings);
-    if (args != NULL && args->edit_report_ready) {
-        nmo_cli_edit_report_add_impact_array_json(
-            doc, data, "changed_objects",
-            args->edit_report.changed_objects,
-            args->edit_report.changed_object_count);
-        nmo_cli_edit_report_add_impact_array_json(
-            doc, data, "created_objects",
-            args->edit_report.created_objects,
-            args->edit_report.created_object_count);
-        nmo_cli_edit_report_add_impact_array_json(
-            doc, data, "deleted_objects",
-            args->edit_report.deleted_objects,
-            args->edit_report.deleted_object_count);
-        return;
-    }
-    yyjson_mut_obj_add_val(doc, data, "changed_objects", changed);
-    yyjson_mut_obj_add_val(doc, data, "created_objects", created);
-    yyjson_mut_obj_add_val(doc, data, "deleted_objects", deleted);
-}
-
 static int script_run_report(nmo_cmd_ctx_t *ctx,
                              bool dry_run,
                              const char *output_path,
@@ -1924,15 +1872,9 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         const nmo_edit_report_t *edit_report =
             args->edit_report_ready ? &args->edit_report : NULL;
-        yyjson_mut_obj_add_bool(doc, data, "ok",
-                                args->validation.final_status == NMO_OK);
-        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
-        script_run_add_common_report_json(doc, data, args);
-        nmo_cli_edit_report_add_semantic_risks_json(doc, data, edit_report);
+        nmo_cli_edit_report_add_schema_v2_json(
+            doc, data, edit_report, dry_run);
         nmo_cli_json_add_str_safe(doc, data, "script_file", args->script_path);
-        nmo_cli_edit_report_add_operations_json(doc, data, edit_report);
-        nmo_cli_edit_report_add_validation_json(doc, data, edit_report);
-        nmo_cli_edit_report_add_diff_json(doc, data, edit_report);
 
         if (!dry_run && output_path != NULL) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
