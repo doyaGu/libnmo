@@ -5,6 +5,7 @@
 #include "../runtime/runtime_internal.h"
 #include "runtime/nmo_workspace.h"
 #include "object/nmo_object_edit.h"
+#include "object/nmo_value_writer.h"
 #include "behavior/nmo_behavior_edit.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_statesave_ids.h"
@@ -48,6 +49,9 @@ struct nmo_script_edit_tx {
     nmo_object_id_t *deferred_destroy_ids;
     size_t deferred_destroy_count;
     size_t deferred_destroy_capacity;
+    nmo_object_id_t *created_object_ids;
+    size_t created_object_id_count;
+    size_t created_object_id_capacity;
     nmo_ref_edge_t *baseline_broken_refs;
     size_t baseline_broken_ref_count;
     nmo_session_behavior_interface_diagnostics_t baseline_interface_diag;
@@ -67,6 +71,7 @@ static void script_edit_tx_destroy(nmo_script_edit_tx_t *tx)
             nmo_document_destroy(tx->document);
         }
         free(tx->deferred_destroy_ids);
+        free(tx->created_object_ids);
         free(tx->baseline_broken_refs);
         free(tx->removed_io_refs);
     }
@@ -228,11 +233,35 @@ static void script_edit_note_error(nmo_script_edit_tx_t *tx)
     }
 }
 
-static void script_edit_note_create(nmo_script_edit_tx_t *tx)
+static nmo_status_t script_edit_note_created_id(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t object_id)
 {
-    if (tx && tx->report.created_objects < SIZE_MAX) {
-        tx->report.created_objects++;
+    nmo_object_id_t *next_ids = NULL;
+    size_t next_capacity = 0u;
+
+    if (!tx || object_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
+    if (tx->created_object_id_count == tx->created_object_id_capacity) {
+        next_capacity = tx->created_object_id_capacity == 0u
+                            ? 8u
+                            : tx->created_object_id_capacity * 2u;
+        next_ids = (nmo_object_id_t *)realloc(
+            tx->created_object_ids,
+            next_capacity * sizeof(*next_ids));
+        if (!next_ids) {
+            return NMO_ERR_NOMEM;
+        }
+        tx->created_object_ids = next_ids;
+        tx->created_object_id_capacity = next_capacity;
+    }
+
+    tx->created_object_ids[tx->created_object_id_count++] = object_id;
+    tx->report.created_objects = tx->created_object_id_count;
+    tx->report.created_object_ids = tx->created_object_ids;
+    tx->report.created_object_id_count = tx->created_object_id_count;
+    return NMO_OK;
 }
 
 static void script_edit_note_delete(nmo_script_edit_tx_t *tx)
@@ -325,7 +354,7 @@ static nmo_status_t script_edit_track_created(
 
     rc = nmo_workspace_edit_track_created_object(tx->edit, object_id);
     if (rc == NMO_OK) {
-        script_edit_note_create(tx);
+        rc = script_edit_note_created_id(tx, object_id);
     }
     return rc;
 }
@@ -611,6 +640,7 @@ static nmo_status_t script_edit_create_parameter_object(
     nmo_object_id_t owner_id,
     const char *name,
     nmo_guid_t type_guid,
+    const char *default_value,
     nmo_object_id_t *out_parameter_id)
 {
     nmo_object_repository_t *repo = NULL;
@@ -650,6 +680,22 @@ static nmo_status_t script_edit_create_parameter_object(
         input_state->source_id = 0u;
         input_state->is_shared = 0u;
         input_state->is_disabled = 0u;
+        if (default_value && default_value[0] != '\0') {
+            nmo_object_id_t source_id = 0;
+            rc = script_edit_create_parameter_object(
+                tx, NMO_CID_PARAMETER, owner_id, name, type_guid, NULL,
+                &source_id);
+            if (rc != NMO_OK) {
+                return rc;
+            }
+            rc = nmo_value_writer_set_parameter_value(
+                tx->edit, source_id, default_value, NULL);
+            if (rc != NMO_OK) {
+                return rc;
+            }
+            input_state->source_id = source_id;
+            input_state->is_shared = 0u;
+        }
     } else {
         parameter = nmo_parameter_get_mutable_state(object);
         if (!parameter) {
@@ -693,6 +739,15 @@ static nmo_status_t script_edit_create_parameter_object(
         state->owner_id = owner_id;
         state->is_myself = 0u;
         state->is_setting = 0u;
+    }
+
+    if (class_id != NMO_CID_PARAMETERIN &&
+        default_value && default_value[0] != '\0') {
+        rc = nmo_value_writer_set_parameter_value(
+            tx->edit, *out_parameter_id, default_value, NULL);
+        if (rc != NMO_OK) {
+            return rc;
+        }
     }
 
     nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_OBJECT_STATE);
@@ -2593,6 +2648,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node(
                 tx, NMO_CID_PARAMETERIN, node_id,
                 proto->input_params[i].name,
                 proto->input_params[i].type_guid,
+                proto->input_params[i].default_value,
                 &parameter_id);
             if (rc != NMO_OK) {
                 return rc;
@@ -2608,6 +2664,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node(
                 tx, NMO_CID_PARAMETEROUT, node_id,
                 proto->output_params[i].name,
                 proto->output_params[i].type_guid,
+                proto->output_params[i].default_value,
                 &parameter_id);
             if (rc != NMO_OK) {
                 return rc;
@@ -2617,23 +2674,26 @@ NMO_API nmo_status_t nmo_script_edit_add_node(
                 return rc;
             }
         }
-        if (proto->compatible_class_id != 0 &&
-            proto->compatible_class_id != NMO_CID_BEOBJECT) {
+        if ((proto->behavior_flags & CKBEHAVIOR_TARGETABLE) != 0u) {
             nmo_type_registry_t *registry = nmo_context_get_type_registry(tx->ctx);
             nmo_guid_t target_type_guid = NMO_GUID_NULL;
             nmo_object_id_t target_parameter_id = 0;
+            uint32_t target_class_id = proto->compatible_class_id != 0
+                ? (uint32_t)proto->compatible_class_id
+                : (uint32_t)NMO_CID_BEOBJECT;
             if (!registry) {
                 return NMO_ERR_INVALID_STATE;
             }
             rc = nmo_type_registry_class_id_to_guid(
                 registry,
-                (uint32_t)proto->compatible_class_id,
+                target_class_id,
                 &target_type_guid);
             if (rc != NMO_OK) {
                 return rc;
             }
             rc = script_edit_create_parameter_object(
                 tx, NMO_CID_PARAMETERIN, node_id, "Target", target_type_guid,
+                NULL,
                 &target_parameter_id);
             if (rc != NMO_OK) {
                 return rc;
@@ -2646,6 +2706,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node(
                 tx, NMO_CID_PARAMETERLOCAL, node_id,
                 proto->local_params[i].name,
                 proto->local_params[i].type_guid,
+                proto->local_params[i].default_value,
                 &parameter_id);
             if (rc != NMO_OK) {
                 return rc;
@@ -2663,6 +2724,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node(
                 tx, NMO_CID_PARAMETERLOCAL, node_id,
                 proto->settings[i].name,
                 proto->settings[i].type_guid,
+                proto->settings[i].default_value,
                 &parameter_id);
             if (rc != NMO_OK) {
                 return rc;
@@ -3417,7 +3479,7 @@ NMO_API nmo_status_t nmo_script_edit_add_parameter(
     }
 
     rc = script_edit_create_parameter_object(tx, class_id, owner_behavior_id, name,
-                                             type_guid, &parameter_id);
+                                             type_guid, NULL, &parameter_id);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -4077,7 +4139,10 @@ NMO_API nmo_status_t nmo_script_edit_add_behavior_link(
     }
 
     (void)nmo_behavior_edit_mark_interface(tx->edit, parent_behavior_id);
-    tx->report.created_objects++;
+    rc = script_edit_note_created_id(tx, link_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
     if (out_link_id) {
         *out_link_id = link_id;
     }

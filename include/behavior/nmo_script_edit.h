@@ -61,6 +61,8 @@ typedef enum nmo_script_edit_interface_mode {
 
 typedef struct nmo_script_edit_report {
     size_t created_objects;
+    const nmo_object_id_t *created_object_ids;
+    size_t created_object_id_count;
     size_t deleted_objects;
     size_t changed_objects;
     size_t moved_links;

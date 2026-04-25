@@ -1759,6 +1759,15 @@ static nmo_status_t nmo_parse_rect(
 
     float out[4] = {0};
     nmo_status_t st = parse_float_tuple("Rect", string, out, 4);
+    if (st != NMO_OK) {
+        char tail = '\0';
+        int matched = sscanf(
+            string, " ( %f , %f ) , ( %f , %f ) %c",
+            &out[0], &out[1], &out[2], &out[3], &tail);
+        if (matched == 4) {
+            st = NMO_OK;
+        }
+    }
     if (st != NMO_OK) return st;
 
     nmo_rect_t *r = (nmo_rect_t *)value;

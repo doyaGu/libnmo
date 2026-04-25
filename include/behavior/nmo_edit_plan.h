@@ -76,6 +76,7 @@ typedef struct nmo_edit_report {
     size_t changed_object_count;
     nmo_edit_changed_object_t *changed_objects;
     size_t created_object_count;
+    size_t created_object_capacity;
     nmo_object_id_t *created_objects;
 } nmo_edit_report_t;
 

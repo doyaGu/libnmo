@@ -43,6 +43,24 @@ TEST(bb_reg, loaded_from_data_dir) {
     nmo_context_release(ctx);
 }
 
+TEST(bb_reg, loads_parameter_default_values) {
+    nmo_context_desc_t desc;
+    memset(&desc, 0, sizeof(desc));
+    desc.data_dir = NMO_TEST_DATA_DIR;
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    nmo_behavior_registry_t *reg = nmo_context_get_bb_registry(ctx);
+
+    const nmo_behavior_proto_t *p = nmo_behavior_registry_find(
+        reg,
+        nmo_guid_create(0x055B29FE, 0x662D5CA0));
+    ASSERT_TRUE(p != NULL);
+    ASSERT_TRUE(p->input_param_count > 7u);
+    ASSERT_STR_EQ("Caret Size", p->input_params[7].name);
+    ASSERT_STR_EQ("10", p->input_params[7].default_value);
+
+    nmo_context_release(ctx);
+}
+
 TEST(bb_reg, loads_extended_utf8_data_file) {
     nmo_context_desc_t desc;
     memset(&desc, 0, sizeof(desc));
@@ -75,7 +93,7 @@ TEST(bb_reg, add_and_find) {
     nmo_guid_t guid = nmo_guid_create(0xAAAA0001, 0xBBBB0001);
     const char *inputs[] = {"In", "Reset"};
     nmo_behavior_param_desc_t in_params[] = {
-        {"Position", nmo_guid_create(0x48824eae, 0x2fe47960)},
+        {"Position", nmo_guid_create(0x48824eae, 0x2fe47960), "1,2,3"},
     };
 
     nmo_behavior_proto_t proto;
@@ -95,6 +113,7 @@ TEST(bb_reg, add_and_find) {
     ASSERT_STR_EQ(found->name, "Custom BB");
     ASSERT_EQ(found->input_count, 2u);
     ASSERT_STR_EQ(found->inputs[0], "In");
+    ASSERT_STR_EQ(found->input_params[0].default_value, "1,2,3");
 
     nmo_behavior_registry_destroy(reg);
     nmo_arena_destroy(arena);
@@ -139,6 +158,7 @@ TEST(bb_reg, remove_entry) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(bb_reg, empty_without_data);
     REGISTER_TEST(bb_reg, loaded_from_data_dir);
+    REGISTER_TEST(bb_reg, loads_parameter_default_values);
     REGISTER_TEST(bb_reg, loads_extended_utf8_data_file);
     REGISTER_TEST(bb_reg, add_and_find);
     REGISTER_TEST(bb_reg, rejects_nonzero_count_with_null_array);

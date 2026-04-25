@@ -106,6 +106,10 @@ static nmo_status_t arena_dup_params(
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "arena string alloc failed");
         }
         dst[i].type_guid = src[i].type_guid;
+        dst[i].default_value = nmo_arena_strdup(arena, src[i].default_value);
+        if (src[i].default_value && !dst[i].default_value) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "arena string alloc failed");
+        }
     }
 
     *out_dst = dst;

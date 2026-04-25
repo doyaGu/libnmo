@@ -1433,6 +1433,24 @@ TEST(type_string, type_value_roundtrip_rect) {
     teardown();
 }
 
+TEST(type_string, type_value_from_string_rect_accepts_virtools_margin_pair) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, CKPGUID_RECT);
+    ASSERT_NE(NULL, type);
+
+    nmo_rect_t parsed = {0};
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&parsed, type, registry, "(2,2),(2,2)"));
+    ASSERT_TRUE(fabs(parsed.left - 2.0f) < 0.00001f);
+    ASSERT_TRUE(fabs(parsed.top - 2.0f) < 0.00001f);
+    ASSERT_TRUE(fabs(parsed.right - 2.0f) < 0.00001f);
+    ASSERT_TRUE(fabs(parsed.bottom - 2.0f) < 0.00001f);
+
+    teardown();
+}
+
 TEST(type_string, type_value_roundtrip_box) {
     setup();
 
@@ -2852,6 +2870,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, type_value_from_string_guid);
     REGISTER_TEST(type_string, type_value_from_string_angle_fallback);
     REGISTER_TEST(type_string, type_value_roundtrip_rect);
+    REGISTER_TEST(type_string, type_value_from_string_rect_accepts_virtools_margin_pair);
     REGISTER_TEST(type_string, type_value_roundtrip_box);
     REGISTER_TEST(type_string, type_value_roundtrip_eulerangles);
     REGISTER_TEST(type_string, object_id_to_string_uses_name_resolver);

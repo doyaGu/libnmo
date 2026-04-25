@@ -27,6 +27,7 @@ typedef struct nmo_bb_registry nmo_behavior_registry_t;
 typedef struct nmo_behavior_param_desc {
     const char *name;
     nmo_guid_t type_guid;
+    const char *default_value;
 } nmo_behavior_param_desc_t;
 
 typedef struct nmo_behavior_proto {

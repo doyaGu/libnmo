@@ -228,10 +228,7 @@ static nmo_status_t edit_report_prepare(nmo_edit_report_t *report,
         (nmo_edit_operation_result_t *)calloc(plan->count, sizeof(*report->operations));
     report->changed_objects =
         (nmo_edit_changed_object_t *)calloc(plan->count, sizeof(*report->changed_objects));
-    report->created_objects =
-        (nmo_object_id_t *)calloc(plan->count, sizeof(*report->created_objects));
-    if (report->operations == NULL || report->changed_objects == NULL ||
-        report->created_objects == NULL) {
+    if (report->operations == NULL || report->changed_objects == NULL) {
         nmo_edit_report_dispose(report);
         return NMO_ERR_NOMEM;
     }
@@ -263,14 +260,44 @@ static void edit_report_note_changed_object(
         (nmo_edit_changed_object_t){.id = id, .cause = cause};
 }
 
-static void edit_report_note_created_object(
+static nmo_status_t edit_report_note_created_object(
     nmo_edit_report_t *report,
     nmo_object_id_t id)
 {
-    if (report == NULL || report->created_objects == NULL || id == 0) {
-        return;
+    nmo_object_id_t *next_ids = NULL;
+    size_t next_capacity = 0u;
+    if (report == NULL || id == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (report->created_object_count == report->created_object_capacity) {
+        next_capacity = report->created_object_capacity == 0u
+                            ? 8u
+                            : report->created_object_capacity * 2u;
+        next_ids = (nmo_object_id_t *)realloc(
+            report->created_objects,
+            next_capacity * sizeof(*next_ids));
+        if (next_ids == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        report->created_objects = next_ids;
+        report->created_object_capacity = next_capacity;
     }
     report->created_objects[report->created_object_count++] = id;
+    return NMO_OK;
+}
+
+static nmo_status_t edit_report_note_created_objects(
+    nmo_edit_report_t *report,
+    const nmo_object_id_t *ids,
+    size_t count)
+{
+    if (report == NULL || ids == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        NMO_RETURN_IF_ERROR(edit_report_note_created_object(report, ids[i]));
+    }
+    return NMO_OK;
 }
 
 static nmo_status_t edit_executor_apply_op(
@@ -339,8 +366,15 @@ nmo_status_t nmo_edit_executor_execute(
 
     for (size_t i = 0; i < plan->count; i++) {
         const nmo_edit_op_t *op = &plan->ops[i];
+        const nmo_script_edit_report_t *tx_report_before =
+            nmo_script_edit_report(tx);
+        size_t created_start = tx_report_before
+            ? tx_report_before->created_object_id_count
+            : 0u;
         nmo_object_id_t result_id = 0;
         nmo_status_t op_rc = edit_executor_apply_op(tx, op, &result_id);
+        const nmo_script_edit_report_t *tx_report_after =
+            nmo_script_edit_report(tx);
         report->operations[i] = (nmo_edit_operation_result_t){
             .kind = op->kind,
             .primary_id = op->primary_id,
@@ -354,11 +388,27 @@ nmo_status_t nmo_edit_executor_execute(
             return op_rc;
         }
         if (op->kind == NMO_EDIT_OP_ADD_NODE) {
+            nmo_status_t report_rc = NMO_OK;
             edit_report_note_changed_object(
                 report,
                 op->data.add_node.parent_behavior_id,
                 op->kind);
-            edit_report_note_created_object(report, result_id);
+            if (tx_report_after &&
+                tx_report_after->created_object_ids &&
+                tx_report_after->created_object_id_count > created_start) {
+                report_rc = edit_report_note_created_objects(
+                    report,
+                    tx_report_after->created_object_ids + created_start,
+                    tx_report_after->created_object_id_count - created_start);
+            } else {
+                report_rc = edit_report_note_created_object(report, result_id);
+            }
+            if (report_rc != NMO_OK) {
+                nmo_script_edit_rollback(tx);
+                report->ok = false;
+                report->status = report_rc;
+                return report_rc;
+            }
         } else {
             edit_report_note_changed_object(report, op->primary_id, op->kind);
         }

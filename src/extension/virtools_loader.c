@@ -394,6 +394,7 @@ static uint32_t read_json_param_array(yyjson_val *arr, nmo_behavior_param_desc_t
         yyjson_val *p = yyjson_arr_iter_next(&iter);
         descs[i].name = get_str(p, "name");
         descs[i].type_guid = get_guid(p, "type_guid");
+        descs[i].default_value = get_str(p, "default_value");
     }
     *out = descs;
     return n;

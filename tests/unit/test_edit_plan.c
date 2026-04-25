@@ -220,7 +220,7 @@ TEST(edit_plan, executor_adds_node_with_created_object_report) {
     ASSERT_EQ(1u, report.operation_count);
     ASSERT_EQ(NMO_OK, report.operations[0].status);
     ASSERT_TRUE(report.operations[0].result_id != 0u);
-    ASSERT_EQ(1u, report.created_object_count);
+    ASSERT_TRUE(report.created_object_count > 1u);
     ASSERT_EQ(report.operations[0].result_id, report.created_objects[0]);
 
     nmo_object_t *node_obj =
@@ -232,6 +232,15 @@ TEST(edit_plan, executor_adds_node_with_created_object_report) {
     ASSERT_NOT_NULL(node_state);
     ASSERT_EQ(NMO_CID_2DENTITY, node_state->compatible_class_id);
     ASSERT_TRUE(node_state->target_parameter_id != 0u);
+    {
+        bool found_target = false;
+        for (size_t i = 0; i < report.created_object_count; ++i) {
+            if (report.created_objects[i] == node_state->target_parameter_id) {
+                found_target = true;
+            }
+        }
+        ASSERT_TRUE(found_target);
+    }
 
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
