@@ -1267,6 +1267,10 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
         yyjson_mut_val *interface_obj = yyjson_mut_obj(doc);
         size_t changed_object_count = 0u;
         size_t created_object_count = 0u;
+        nmo_status_t behavior_index_status =
+            args->validation.behavior_index_ok
+                ? NMO_OK
+                : NMO_ERR_VALIDATION_FAILED;
         size_t i = 0;
 
         yyjson_mut_obj_add_bool(doc, data, "ok",
@@ -1308,6 +1312,25 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
                                 (uint64_t)args->validation.final_status);
         nmo_cli_json_add_str_safe(doc, validation, "final_status_name",
                                   nmo_error_string(args->validation.final_status));
+        yyjson_mut_obj_add_uint(doc, validation, "roundtrip_status",
+                                (uint64_t)NMO_OK);
+        nmo_cli_json_add_str_safe(doc, validation, "roundtrip_status_name",
+                                  nmo_error_string(NMO_OK));
+        yyjson_mut_obj_add_uint(doc, validation, "reference_status",
+                                (uint64_t)args->validation.references_status);
+        nmo_cli_json_add_str_safe(
+            doc, validation, "reference_status_name",
+            nmo_error_string(args->validation.references_status));
+        yyjson_mut_obj_add_uint(doc, validation, "behavior_index_status",
+                                (uint64_t)behavior_index_status);
+        nmo_cli_json_add_str_safe(
+            doc, validation, "behavior_index_status_name",
+            nmo_error_string(behavior_index_status));
+        yyjson_mut_obj_add_uint(doc, validation, "interface_status",
+                                (uint64_t)args->validation.interface_status);
+        nmo_cli_json_add_str_safe(
+            doc, validation, "interface_status_name",
+            nmo_error_string(args->validation.interface_status));
         yyjson_mut_obj_add_val(doc, data, "validation", validation);
         script_run_count_report_impacts(
             args, &changed_object_count, &created_object_count);

@@ -321,6 +321,14 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     interface_obj = get_object_field(validation, "interface");
     ASSERT_NOT_NULL(interface_obj);
     ASSERT_EQ(NMO_OK, (nmo_status_t)get_uint_field(validation, "final_status"));
+    ASSERT_TRUE(yyjson_obj_get(validation, "roundtrip_status") != NULL);
+    ASSERT_EQ(NMO_OK, (nmo_status_t)get_uint_field(validation, "roundtrip_status"));
+    ASSERT_TRUE(yyjson_obj_get(validation, "reference_status") != NULL);
+    ASSERT_EQ(NMO_OK, (nmo_status_t)get_uint_field(validation, "reference_status"));
+    ASSERT_TRUE(yyjson_obj_get(validation, "behavior_index_status") != NULL);
+    ASSERT_EQ(NMO_OK, (nmo_status_t)get_uint_field(validation, "behavior_index_status"));
+    ASSERT_TRUE(yyjson_obj_get(validation, "interface_status") != NULL);
+    ASSERT_EQ(NMO_OK, (nmo_status_t)get_uint_field(validation, "interface_status"));
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
     created_objects = get_array_field(data, "created_objects");
     ASSERT_NOT_NULL(created_objects);
