@@ -32,6 +32,12 @@ void nmo_cli_edit_report_add_semantic_risks_json(
     yyjson_mut_val *obj,
     const nmo_edit_report_t *report);
 
+void nmo_cli_edit_report_add_semantic_risk_array_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *obj,
+    const nmo_behavior_semantic_risk_t *risks,
+    size_t risk_count);
+
 void nmo_cli_edit_report_add_validation_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *obj,

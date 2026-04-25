@@ -178,6 +178,16 @@ void nmo_cli_edit_report_add_semantic_risks_json(
     const nmo_behavior_semantic_risk_t *risks =
         report != NULL ? report->semantic_risks : NULL;
     size_t risk_count = report != NULL ? report->semantic_risk_count : 0u;
+    nmo_cli_edit_report_add_semantic_risk_array_json(
+        doc, obj, risks, risk_count);
+}
+
+void nmo_cli_edit_report_add_semantic_risk_array_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *obj,
+    const nmo_behavior_semantic_risk_t *risks,
+    size_t risk_count)
+{
     yyjson_mut_val *arr = yyjson_mut_arr(doc);
     for (size_t i = 0; risks != NULL && i < risk_count; ++i) {
         yyjson_mut_val *risk = yyjson_mut_obj(doc);

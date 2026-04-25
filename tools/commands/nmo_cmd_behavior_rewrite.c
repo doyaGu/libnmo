@@ -170,40 +170,6 @@ static void add_parameter_edges_json(
     yyjson_mut_obj_add_val(doc, data, key, arr);
 }
 
-static const char *semantic_risk_severity_string(
-    nmo_behavior_semantic_risk_severity_t severity) {
-    switch (severity) {
-    case NMO_BEHAVIOR_SEMANTIC_RISK_SAFE:
-        return "safe";
-    case NMO_BEHAVIOR_SEMANTIC_RISK_WARN:
-        return "warn";
-    case NMO_BEHAVIOR_SEMANTIC_RISK_REJECT:
-        return "reject";
-    default:
-        return "warn";
-    }
-}
-
-static void add_semantic_risks_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *data,
-    const nmo_behavior_semantic_risk_t *risks,
-    size_t risk_count) {
-    yyjson_mut_val *arr = yyjson_mut_arr(doc);
-    for (size_t i = 0; i < risk_count; ++i) {
-        yyjson_mut_val *risk = yyjson_mut_obj(doc);
-        nmo_cli_json_add_str_safe(
-            doc, risk, "severity",
-            semantic_risk_severity_string(risks[i].severity));
-        nmo_cli_json_add_str_safe(doc, risk, "code", risks[i].code);
-        nmo_cli_json_add_str_safe(doc, risk, "message", risks[i].message);
-        yyjson_mut_obj_add_uint(doc, risk, "object_id",
-                                (uint64_t)risks[i].object_id);
-        yyjson_mut_arr_add_val(arr, risk);
-    }
-    yyjson_mut_obj_add_val(doc, data, "semantic_risks", arr);
-}
-
 static void add_changed_object_ids_json(yyjson_mut_doc *doc,
                                         yyjson_mut_val *data,
                                         const nmo_object_id_t *ids,
@@ -487,7 +453,8 @@ static void add_boundary_semantic_risks_json(
             boundary->internal_nodes, boundary->internal_node_count,
             &risks, &risk_count);
     }
-    add_semantic_risks_json(doc, data, risks, risk_count);
+    nmo_cli_edit_report_add_semantic_risk_array_json(
+        doc, data, risks, risk_count);
     nmo_behavior_edit_semantic_risks_free(risks);
 }
 
@@ -1854,8 +1821,9 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
         yyjson_mut_obj_add_val(doc, data, "write_blockers",
                                write_blockers);
         if (edit_report == NULL) {
-            add_semantic_risks_json(doc, data, report->semantic_risks,
-                                    report->semantic_risk_count);
+            nmo_cli_edit_report_add_semantic_risk_array_json(
+                doc, data, report->semantic_risks,
+                report->semantic_risk_count);
         }
         yyjson_mut_obj_add_uint(doc, data, "parent_id", report->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "anchor_id", report->anchor_id);
@@ -2025,8 +1993,9 @@ static int fold_emit_rejection(nmo_cmd_ctx_t *ctx,
         add_id_list_json(doc, data, "selected_nodes",
                          report->selected_nodes,
                          report->selected_node_count);
-        add_semantic_risks_json(doc, data, report->semantic_risks,
-                                report->semantic_risk_count);
+        nmo_cli_edit_report_add_semantic_risk_array_json(
+            doc, data, report->semantic_risks,
+            report->semantic_risk_count);
 
         yyjson_mut_val *rejections = yyjson_mut_arr(doc);
         yyjson_mut_val *rejection = yyjson_mut_obj(doc);
