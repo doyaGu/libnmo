@@ -1408,7 +1408,7 @@ static int patch_parse_optional_object_id(
 }
 
 static int patch_parse_add_operation(yyjson_val *op_obj,
-                                     patch_operation_t *out_op) {
+                                     nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "parent_id",
@@ -1462,19 +1462,24 @@ static int patch_parse_add_operation(yyjson_val *op_obj,
         return rc;
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_ADD_OPERATION;
-    out_op->add_operation.parent_id =
-        (nmo_object_id_t)yyjson_get_uint(parent_val);
-    out_op->add_operation.operation_guid = operation_guid;
-    out_op->add_operation.in1_id = in1_id;
-    out_op->add_operation.in2_id = in2_id;
-    out_op->add_operation.out_id = out_id;
+    nmo_status_t st = nmo_edit_plan_add_operation(
+        edit_plan,
+        (nmo_object_id_t)yyjson_get_uint(parent_val),
+        operation_guid,
+        in1_id,
+        in2_id,
+        out_id);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
 static int patch_parse_remove_operation(yyjson_val *op_obj,
-                                        patch_operation_t *out_op) {
+                                        nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "operation_id",
@@ -1494,15 +1499,19 @@ static int patch_parse_remove_operation(yyjson_val *op_obj,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_REMOVE_OPERATION;
-    out_op->remove_operation.operation_id =
-        (nmo_object_id_t)yyjson_get_uint(operation_val);
+    nmo_status_t st = nmo_edit_plan_add_remove_operation(
+        edit_plan, (nmo_object_id_t)yyjson_get_uint(operation_val));
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
 static int patch_parse_rewire_operation(yyjson_val *op_obj,
-                                        patch_operation_t *out_op) {
+                                        nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "operation_id",
@@ -1559,14 +1568,19 @@ static int patch_parse_rewire_operation(yyjson_val *op_obj,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_REWIRE_OPERATION;
-    out_op->rewire_operation.operation_id =
-        (nmo_object_id_t)yyjson_get_uint(operation_val);
-    out_op->rewire_operation.slot_flags = slot_flags;
-    out_op->rewire_operation.in1_id = in1_id;
-    out_op->rewire_operation.in2_id = in2_id;
-    out_op->rewire_operation.out_id = out_id;
+    nmo_status_t st = nmo_edit_plan_add_rewire_operation(
+        edit_plan,
+        (nmo_object_id_t)yyjson_get_uint(operation_val),
+        slot_flags,
+        in1_id,
+        in2_id,
+        out_id);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -1869,13 +1883,28 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
             continue;
         } else if (strcmp(op, "add_operation") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_add_operation(op_obj, &operation);
+            rc = patch_parse_add_operation(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "remove_operation") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_remove_operation(op_obj, &operation);
+            rc = patch_parse_remove_operation(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "rewire_operation") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_rewire_operation(op_obj, &operation);
+            rc = patch_parse_rewire_operation(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "add_io") == 0 && out_plan->version == 2u) {
             rc = patch_parse_add_io(op_obj, &operation);
         } else if (strcmp(op, "remove_io") == 0 && out_plan->version == 2u) {
