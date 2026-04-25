@@ -1553,6 +1553,67 @@ TEST(cli, script_node_and_io_crud_roundtrip)
     assert_validate_ok(node_remove);
 }
 
+TEST(cli, script_node_add_dry_run_reports_schema_v2)
+{
+    rewrite_manifest_t manifest;
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *root = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *operations = NULL;
+    yyjson_val *created_objects = NULL;
+    yyjson_val *semantic_risks = NULL;
+    yyjson_val *validation = NULL;
+    yyjson_val *diff = NULL;
+    yyjson_val *op = NULL;
+    char args[1024];
+
+    ASSERT_TRUE(load_rewrite_manifest(&manifest));
+    snprintf(args, sizeof(args),
+             "-f json script node add --parent %u "
+             "--bb-guid 055B29FE-662D5CA0 --name \"Dry Node\" "
+             "--dry-run \"%s\"",
+             manifest.root_behavior_id,
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.node.add", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    ASSERT_TRUE(get_uint_field(data, "node_id") != 0u);
+    ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
+    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(1u, yyjson_arr_size(operations));
+    op = yyjson_arr_get(operations, 0);
+    ASSERT_STR_EQ("add_node", get_string_field(op, "op"));
+    ASSERT_EQ(manifest.root_behavior_id, (uint32_t)get_uint_field(op, "primary_id"));
+    ASSERT_TRUE(get_uint_field(op, "result_id") != 0u);
+    ASSERT_TRUE(yyjson_obj_get(op, "result_handles") == NULL);
+    ASSERT_NOT_NULL(get_array_field(op, "handles"));
+    created_objects = get_array_field(data, "created_objects");
+    ASSERT_NOT_NULL(created_objects);
+    ASSERT_TRUE(yyjson_arr_size(created_objects) > 1u);
+    semantic_risks = get_array_field(data, "semantic_risks");
+    ASSERT_NOT_NULL(semantic_risks);
+    validation = get_object_field(data, "validation");
+    ASSERT_NOT_NULL(validation);
+    ASSERT_EQ(NMO_OK, (nmo_status_t)get_uint_field(validation, "final_status"));
+    diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    ASSERT_TRUE(get_uint_field(diff, "created_object_count") > 1u);
+
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, script_io_add_dry_run_exposes_executor_validation_parity)
 {
     char args[1024];
@@ -3659,6 +3720,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_edit_report_contract_is_checked_in);
     REGISTER_TEST(cli, script_graph_json_smoke);
     REGISTER_TEST(cli, script_node_and_io_crud_roundtrip);
+    REGISTER_TEST(cli, script_node_add_dry_run_reports_schema_v2);
     REGISTER_TEST(cli, script_io_add_dry_run_exposes_executor_validation_parity);
     REGISTER_TEST(cli, script_node_remove_canonicalizes_interface_refs);
     REGISTER_TEST(cli, script_node_remove_preserve_rejects_stale_interface_refs);

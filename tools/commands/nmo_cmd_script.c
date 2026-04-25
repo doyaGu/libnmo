@@ -1899,6 +1899,48 @@ static void script_add_validation_json(yyjson_mut_doc *doc,
     yyjson_mut_obj_add_val(doc, data, "result_handles", handles);
 }
 
+static void script_add_edit_report_json(yyjson_mut_doc *doc,
+                                        yyjson_mut_val *data,
+                                        const script_command_common_t *common,
+                                        bool dry_run)
+{
+    const nmo_edit_report_t *report =
+        common != NULL ? &common->edit_report : NULL;
+    const nmo_cli_edit_report_json_options_t risk_options = {
+        .include_risk_level = false,
+    };
+
+    if (doc == NULL || data == NULL) {
+        return;
+    }
+
+    yyjson_mut_obj_add_bool(doc, data, "ok",
+                            report != NULL && report->ok);
+    yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+    yyjson_mut_obj_add_val(doc, data, "errors", yyjson_mut_arr(doc));
+    yyjson_mut_obj_add_val(doc, data, "warnings", yyjson_mut_arr(doc));
+    yyjson_mut_obj_add_uint(
+        doc, data, "operation_count",
+        report != NULL ? (uint64_t)report->operation_count : 0u);
+    nmo_cli_edit_report_add_operations_json(doc, data, report);
+    nmo_cli_edit_report_add_impact_array_json(
+        doc, data, "changed_objects",
+        report != NULL ? report->changed_objects : NULL,
+        report != NULL ? report->changed_object_count : 0u);
+    nmo_cli_edit_report_add_impact_array_json(
+        doc, data, "created_objects",
+        report != NULL ? report->created_objects : NULL,
+        report != NULL ? report->created_object_count : 0u);
+    nmo_cli_edit_report_add_impact_array_json(
+        doc, data, "deleted_objects",
+        report != NULL ? report->deleted_objects : NULL,
+        report != NULL ? report->deleted_object_count : 0u);
+    nmo_cli_edit_report_add_semantic_risks_json(
+        doc, data, report, &risk_options);
+    nmo_cli_edit_report_add_validation_json(doc, data, report);
+    nmo_cli_edit_report_add_diff_json(doc, data, report);
+}
+
 static nmo_status_t script_run_executor_action(nmo_behavior_execution_t *executor,
                                                void *user_data)
 {
@@ -3044,15 +3086,9 @@ static int script_node_add_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        const uint32_t result_handles[] = {args->node_id};
-        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run);
         yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "node_id", args->node_id);
-        script_add_validation_json(doc,
-                                   data,
-                                   &args->common,
-                                   result_handles,
-                                   1u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
