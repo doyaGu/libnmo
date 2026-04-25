@@ -3417,6 +3417,8 @@ TEST(cli, script_operation_crud_roundtrip)
     yyjson_val *root = NULL;
     yyjson_val *operations = NULL;
     yyjson_val *op_item = NULL;
+    yyjson_val *changed_objects = NULL;
+    yyjson_val *deleted_objects = NULL;
     uint32_t lhs_id = 0;
     uint32_t rhs_id = 0;
     uint32_t alt_id = 0;
@@ -3614,6 +3616,19 @@ TEST(cli, script_operation_crud_roundtrip)
     ASSERT_NOT_NULL(doc);
     root = yyjson_doc_get_root(doc);
     ASSERT_STR_EQ("script.op.rewire", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
+    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(1u, yyjson_arr_size(operations));
+    op_item = yyjson_arr_get(operations, 0);
+    ASSERT_STR_EQ("rewire_operation", get_string_field(op_item, "op"));
+    ASSERT_EQ(op_id, (uint32_t)get_uint_field(op_item, "primary_id"));
+    changed_objects = get_array_field(data, "changed_objects");
+    ASSERT_NOT_NULL(changed_objects);
+    ASSERT_NOT_NULL(find_array_object_by_id(changed_objects, op_id));
     yyjson_doc_free(doc);
     assert_validate_ok(op_rewire_path);
 
@@ -3652,6 +3667,21 @@ TEST(cli, script_operation_crud_roundtrip)
     ASSERT_NOT_NULL(doc);
     root = yyjson_doc_get_root(doc);
     ASSERT_STR_EQ("script.op.remove", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
+    ASSERT_EQ(2u, get_uint_field(data, "operation_count"));
+    operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(2u, yyjson_arr_size(operations));
+    op_item = yyjson_arr_get(operations, 0);
+    ASSERT_STR_EQ("remove_operation", get_string_field(op_item, "op"));
+    ASSERT_EQ(op_id, (uint32_t)get_uint_field(op_item, "primary_id"));
+    op_item = yyjson_arr_get(operations, 1);
+    ASSERT_STR_EQ("interface_policy", get_string_field(op_item, "op"));
+    deleted_objects = get_array_field(data, "deleted_objects");
+    ASSERT_NOT_NULL(deleted_objects);
+    ASSERT_NOT_NULL(find_array_object_by_id(deleted_objects, op_id));
     yyjson_doc_free(doc);
     assert_validate_ok(op_remove_path);
 
