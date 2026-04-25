@@ -164,6 +164,25 @@ static bool get_bool_field(yyjson_val *obj, const char *key)
     return val && yyjson_is_bool(val) && yyjson_get_bool(val);
 }
 
+static bool array_contains_object_id(yyjson_val *arr, uint64_t object_id)
+{
+    size_t index = 0u;
+    size_t max = 0u;
+    yyjson_val *item = NULL;
+
+    if (arr == NULL || !yyjson_is_arr(arr)) {
+        return false;
+    }
+
+    yyjson_arr_foreach(arr, index, max, item) {
+        if (get_uint_field(item, "object_id") == object_id) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static yyjson_val *find_array_object_by_name(yyjson_val *arr, const char *name)
 {
     size_t index = 0u;
@@ -1109,6 +1128,95 @@ TEST(cli, script_run_executor_remove_parameter_uses_edit_plan) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, script_run_executor_rewire_operation_uses_edit_plan) {
+    char script_path[1024];
+    const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
+    char args[2048];
+    cli_run_result_t result = {0};
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *operations = NULL;
+    yyjson_val *changed_objects = NULL;
+    yyjson_val *op = NULL;
+
+    ASSERT_TRUE(build_repo_fixture_path(
+        "tests/fixtures/lua/script_run_rewire_operation.lua",
+        script_path,
+        sizeof(script_path)));
+
+    snprintf(args, sizeof(args),
+             "-f json script run --dry-run \"%s\" \"%s\"",
+             script_path,
+             input_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    ASSERT_EQ(3u, get_uint_field(data, "operation_count"));
+    operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(3u, yyjson_arr_size(operations));
+    op = yyjson_arr_get(operations, 2);
+    ASSERT_STR_EQ("rewire_operation", get_string_field(op, "op"));
+    ASSERT_EQ(17u, get_uint_field(op, "primary_id"));
+    changed_objects = get_array_field(data, "changed_objects");
+    ASSERT_NOT_NULL(changed_objects);
+    ASSERT_TRUE(array_contains_object_id(changed_objects, 17u));
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, script_run_executor_remove_operation_uses_edit_plan) {
+    char script_path[1024];
+    const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
+    char args[2048];
+    cli_run_result_t result = {0};
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *operations = NULL;
+    yyjson_val *deleted_objects = NULL;
+    yyjson_val *op = NULL;
+
+    ASSERT_TRUE(build_repo_fixture_path(
+        "tests/fixtures/lua/script_run_remove_operation.lua",
+        script_path,
+        sizeof(script_path)));
+
+    snprintf(args, sizeof(args),
+             "-f json script run --dry-run \"%s\" \"%s\"",
+             script_path,
+             input_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    ASSERT_EQ(2u, get_uint_field(data, "operation_count"));
+    operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(2u, yyjson_arr_size(operations));
+    op = yyjson_arr_get(operations, 1);
+    ASSERT_STR_EQ("remove_operation", get_string_field(op, "op"));
+    ASSERT_EQ(16u, get_uint_field(op, "primary_id"));
+    deleted_objects = get_array_field(data, "deleted_objects");
+    ASSERT_NOT_NULL(deleted_objects);
+    ASSERT_EQ(1u, yyjson_arr_size(deleted_objects));
+    ASSERT_EQ(16u, get_uint_field(yyjson_arr_get(deleted_objects, 0), "object_id"));
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, script_run_reports_executor_operations) {
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
@@ -1255,6 +1363,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_run_executor_connect_parameter_uses_edit_plan);
     REGISTER_TEST(cli, script_run_executor_disconnect_parameter_uses_edit_plan);
     REGISTER_TEST(cli, script_run_executor_remove_parameter_uses_edit_plan);
+    REGISTER_TEST(cli, script_run_executor_rewire_operation_uses_edit_plan);
+    REGISTER_TEST(cli, script_run_executor_remove_operation_uses_edit_plan);
     REGISTER_TEST(cli, script_run_reports_executor_operations);
     REGISTER_TEST(cli, script_run_noop_emits_schema_v2_report);
     REGISTER_TEST(cli, script_run_runtime_error_does_not_write_output);

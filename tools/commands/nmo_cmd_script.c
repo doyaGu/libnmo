@@ -1219,6 +1219,21 @@ static nmo_object_id_t script_run_lua_optional_object_id(lua_State *state,
     return (nmo_object_id_t)luaL_checkinteger(state, index);
 }
 
+static nmo_object_id_t script_run_lua_optional_operation_slot(
+    lua_State *state,
+    int index,
+    uint32_t *slot_flags,
+    uint32_t slot_flag)
+{
+    if (lua_isnoneornil(state, index)) {
+        return 0u;
+    }
+    if (slot_flags != NULL) {
+        *slot_flags |= slot_flag;
+    }
+    return (nmo_object_id_t)luaL_checkinteger(state, index);
+}
+
 static int script_run_lua_add_operation(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
@@ -1262,6 +1277,94 @@ static int script_run_lua_add_operation(lua_State *state)
                                      "add_operation",
                                      "operation",
                                      parent_id_text,
+                                     NULL,
+                                     0u)) {
+        return luaL_error(state, "failed to record script operation");
+    }
+
+    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    return 1;
+}
+
+static int script_run_lua_rewire_operation(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_object_id_t operation_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
+    uint32_t slot_flags = 0u;
+    nmo_object_id_t in1_id = 0u;
+    nmo_object_id_t in2_id = 0u;
+    nmo_object_id_t out_id = 0u;
+    char operation_id_text[32];
+    nmo_status_t status = NMO_OK;
+
+    in1_id = script_run_lua_optional_operation_slot(
+        state, 2, &slot_flags, NMO_SCRIPT_EDIT_OP_SLOT_IN1);
+    in2_id = script_run_lua_optional_operation_slot(
+        state, 3, &slot_flags, NMO_SCRIPT_EDIT_OP_SLOT_IN2);
+    out_id = script_run_lua_optional_operation_slot(
+        state, 4, &slot_flags, NMO_SCRIPT_EDIT_OP_SLOT_OUT);
+    if (slot_flags == 0u) {
+        return luaL_error(
+            state, "rewire_operation requires at least one parameter slot");
+    }
+
+    status = script_run_ensure_pending_plan(args);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_rewire_operation(
+            args->pending_plan,
+            operation_id,
+            slot_flags,
+            in1_id,
+            in2_id,
+            out_id);
+    }
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to enqueue script operation rewire");
+    }
+
+    snprintf(operation_id_text, sizeof(operation_id_text), "%u", operation_id);
+    if (!script_run_append_operation(args,
+                                     operation_id,
+                                     "rewire_operation",
+                                     "operation",
+                                     operation_id_text,
+                                     NULL,
+                                     0u)) {
+        return luaL_error(state, "failed to record script operation");
+    }
+
+    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    return 1;
+}
+
+static int script_run_lua_remove_operation(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_object_id_t operation_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
+    char operation_id_text[32];
+    nmo_status_t status = NMO_OK;
+
+    status = script_run_ensure_pending_plan(args);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_remove_operation(
+            args->pending_plan, operation_id);
+    }
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to enqueue script operation removal");
+    }
+
+    snprintf(operation_id_text, sizeof(operation_id_text), "%u", operation_id);
+    if (!script_run_append_operation(args,
+                                     operation_id,
+                                     "remove_operation",
+                                     "operation",
+                                     operation_id_text,
                                      NULL,
                                      0u)) {
         return luaL_error(state, "failed to record script operation");
@@ -1402,7 +1505,7 @@ static int script_run_lua_set_data_cell(lua_State *state)
 
 static int script_run_lua_open_executor_module(lua_State *state)
 {
-    lua_createtable(state, 0, 19);
+    lua_createtable(state, 0, 21);
 
     lua_pushcfunction(state, script_run_lua_root_script_id);
     lua_setfield(state, -2, "root_script_id");
@@ -1451,6 +1554,12 @@ static int script_run_lua_open_executor_module(lua_State *state)
 
     lua_pushcfunction(state, script_run_lua_add_operation);
     lua_setfield(state, -2, "add_operation");
+
+    lua_pushcfunction(state, script_run_lua_rewire_operation);
+    lua_setfield(state, -2, "rewire_operation");
+
+    lua_pushcfunction(state, script_run_lua_remove_operation);
+    lua_setfield(state, -2, "remove_operation");
 
     lua_pushcfunction(state, script_run_lua_set_parameter_value);
     lua_setfield(state, -2, "set_parameter_value");
