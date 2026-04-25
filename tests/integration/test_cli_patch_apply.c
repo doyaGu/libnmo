@@ -305,6 +305,29 @@ static void write_add_node_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
+static void write_add_behavior_link_patch_v2(const char *path,
+                                             const char *output_path) {
+    char json[2048];
+    snprintf(json, sizeof(json),
+             "{\n"
+             "  \"version\": 2,\n"
+             "  \"input\": \"%s\",\n"
+             "  \"output\": \"%s\",\n"
+             "  \"operations\": [\n"
+             "    {\n"
+             "      \"op\": \"add_behavior_link\",\n"
+             "      \"parent_id\": 6,\n"
+             "      \"from_io_id\": 5,\n"
+             "      \"to_io_id\": 2,\n"
+             "      \"activation_delay\": 3\n"
+             "    }\n"
+             "  ]\n"
+             "}\n",
+             NMO_TEST_DATA_FILE("Nop.cmo"),
+             output_path);
+    ASSERT_TRUE(write_text_file(path, json));
+}
+
 static void write_remove_node_patch_v2(const char *path,
                                        const char *output_path) {
     char json[2048];
@@ -769,6 +792,42 @@ TEST(cli, patch_apply_v2_add_node_dry_run) {
     remove(patch);
 }
 
+TEST(cli, patch_apply_v2_add_behavior_link_dry_run) {
+    make_dir("test_patch_tmp");
+    const char *patch = "test_patch_tmp/add_behavior_link_v2.json";
+    const char *output = "test_patch_tmp/add_behavior_link_v2.cmo";
+    remove(patch);
+    remove(output);
+    write_add_behavior_link_patch_v2(patch, output);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
+             patch);
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "patch.apply", &doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    yyjson_val *operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
+    yyjson_val *op = yyjson_arr_get(operations, 0);
+    ASSERT_TRUE(op && yyjson_is_obj(op));
+    ASSERT_STR_EQ("add_behavior_link", get_string_field(op, "op"));
+    ASSERT_EQ(6u, (uint32_t)get_uint_field(op, "primary_id"));
+    ASSERT_TRUE(get_uint_field(op, "result_id") != 0u);
+    yyjson_val *created_objects = get_array_field(data, "created_objects");
+    ASSERT_NOT_NULL(created_objects);
+    ASSERT_TRUE(yyjson_arr_size(created_objects) > 0u);
+    ASSERT_FALSE(file_exists(output));
+    yyjson_doc_free(doc);
+    remove(patch);
+}
+
 TEST(cli, patch_apply_v2_remove_node_dry_run) {
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/remove_node_v2.json";
@@ -1036,6 +1095,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, patch_apply_v2_replace_bb_dry_run);
     REGISTER_TEST(cli, patch_apply_v2_add_node_dry_run);
     REGISTER_TEST(cli, patch_apply_v2_remove_node_dry_run);
+    REGISTER_TEST(cli, patch_apply_v2_add_behavior_link_dry_run);
     REGISTER_TEST(cli, patch_apply_v2_add_io_dry_run);
     REGISTER_TEST(cli, patch_apply_v2_remove_io_dry_run);
     REGISTER_TEST(cli, patch_apply_v2_rename_io_dry_run);
