@@ -224,14 +224,17 @@ static int debug_probe_parse(int argc,
     }
 
     if (strcmp(args->kind, "2d-text") != 0 &&
-        strcmp(args->kind, "console") != 0) {
+        strcmp(args->kind, "console") != 0 &&
+        strcmp(args->kind, "control-marker") != 0) {
         fprintf(stderr, "Error: Unsupported debug probe kind '%s'\n",
                 args->kind);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (args->behavior_id == 0u || *out_input_path == NULL) {
-        fprintf(stderr, "Usage: nmo debug probe 2d-text|console --behavior <id> "
-                        "[--name <name>] [--dry-run] <file> -o <output>\n");
+        fprintf(stderr,
+                "Usage: nmo debug probe 2d-text|console|control-marker "
+                "--behavior <id> [--name <name>] [--dry-run] <file> "
+                "-o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     return NMO_CLI_EXIT_SUCCESS;
@@ -249,6 +252,7 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
     const nmo_guid_t bb_2d_text = NMO_GUID(0x055B29FEu, 0x662D5CA0u);
     const nmo_guid_t bb_output_to_console =
         NMO_GUID(0x18655B3Fu, 0x68291DC3u);
+    const nmo_guid_t bb_nop = NMO_GUID(0x302561C4u, 0x0D282980u);
     nmo_guid_t probe_guid = bb_2d_text;
 
     if (ctx == NULL || args == NULL) {
@@ -258,6 +262,8 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
     nmo_edit_report_init(&args->report);
     if (strcmp(args->kind, "console") == 0) {
         probe_guid = bb_output_to_console;
+    } else if (strcmp(args->kind, "control-marker") == 0) {
+        probe_guid = bb_nop;
     }
     status = nmo_edit_plan_create(&plan);
     if (status == NMO_OK) {
