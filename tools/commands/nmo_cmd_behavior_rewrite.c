@@ -170,31 +170,6 @@ static void add_parameter_edges_json(
     yyjson_mut_obj_add_val(doc, data, key, arr);
 }
 
-static void add_changed_object_ids_json(yyjson_mut_doc *doc,
-                                        yyjson_mut_val *data,
-                                        const nmo_object_id_t *ids,
-                                        size_t count) {
-    yyjson_mut_val *arr = yyjson_mut_arr(doc);
-    for (size_t i = 0; ids && i < count; ++i) {
-        yyjson_mut_val *item = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, item, "object_id",
-                                (uint64_t)ids[i]);
-        yyjson_mut_arr_add_val(arr, item);
-    }
-    yyjson_mut_obj_add_val(doc, data, "changed_objects", arr);
-}
-
-static void add_common_write_report_json(yyjson_mut_doc *doc,
-                                         yyjson_mut_val *data,
-                                         bool ok,
-                                         const nmo_object_id_t *ids,
-                                         size_t count) {
-    yyjson_mut_obj_add_bool(doc, data, "ok", ok);
-    yyjson_mut_obj_add_val(doc, data, "errors", yyjson_mut_arr(doc));
-    yyjson_mut_obj_add_val(doc, data, "warnings", yyjson_mut_arr(doc));
-    add_changed_object_ids_json(doc, data, ids, count);
-}
-
 static void add_edit_report_json(yyjson_mut_doc *doc,
                                  yyjson_mut_val *data,
                                  const nmo_edit_report_t *report) {
@@ -1797,10 +1772,14 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
         if (edit_report != NULL) {
             add_edit_report_json(doc, data, edit_report);
         } else {
-            add_common_write_report_json(doc, data, true,
-                                         report->selected_nodes,
-                                         report->selected_node_count);
-            yyjson_mut_obj_add_bool(doc, data, "dry_run", true);
+            nmo_edit_report_t analysis_report = {0};
+            analysis_report.ok = true;
+            analysis_report.dry_run = true;
+            analysis_report.semantic_risks = report->semantic_risks;
+            analysis_report.semantic_risk_count =
+                report->semantic_risk_count;
+            nmo_cli_edit_report_add_schema_v2_json(
+                doc, data, &analysis_report, true);
         }
         yyjson_mut_obj_add_bool(doc, data, "can_write",
                                 report->can_write);
@@ -1820,11 +1799,6 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
         }
         yyjson_mut_obj_add_val(doc, data, "write_blockers",
                                write_blockers);
-        if (edit_report == NULL) {
-            nmo_cli_edit_report_add_semantic_risk_array_json(
-                doc, data, report->semantic_risks,
-                report->semantic_risk_count);
-        }
         yyjson_mut_obj_add_uint(doc, data, "parent_id", report->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "anchor_id", report->anchor_id);
         nmo_cli_json_add_str_safe(doc, data, "parent_behavior_type",

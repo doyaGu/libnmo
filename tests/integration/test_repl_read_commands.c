@@ -918,6 +918,13 @@ TEST(repl_read, behavior_rewrite_reuses_semantic_risk_json_helper) {
                                "static void add_semantic_risks_json");
 }
 
+TEST(repl_read, behavior_rewrite_does_not_emit_private_write_reports) {
+    assert_source_not_contains("tools/commands/nmo_cmd_behavior_rewrite.c",
+                               "static void add_common_write_report_json");
+    assert_source_not_contains("tools/commands/nmo_cmd_behavior_rewrite.c",
+                               "static void add_changed_object_ids_json");
+}
+
 TEST(repl_read, behavior_link_commands_use_edit_executor) {
     assert_source_contains("tools/commands/nmo_cmd_behavior_link.c",
                            "nmo_edit_executor_execute");
@@ -1236,6 +1243,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, edit_report_json_does_not_emit_legacy_risk_level);
     REGISTER_TEST(repl_read, edit_report_schema_v2_has_single_json_helper);
     REGISTER_TEST(repl_read, behavior_rewrite_reuses_semantic_risk_json_helper);
+    REGISTER_TEST(repl_read, behavior_rewrite_does_not_emit_private_write_reports);
     REGISTER_TEST(repl_read, behavior_link_commands_use_edit_executor);
     REGISTER_TEST(repl_read, parameter_set_uses_edit_executor);
     REGISTER_TEST(repl_read, data_set_cell_uses_edit_executor);
