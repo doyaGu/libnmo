@@ -1421,6 +1421,10 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
         yyjson_mut_val *interface_obj = yyjson_mut_obj(doc);
         size_t changed_object_count = 0u;
         size_t created_object_count = 0u;
+        size_t operation_count =
+            args->edit_report_ready
+                ? args->edit_report.operation_count
+                : args->operation_count;
         nmo_status_t behavior_index_status =
             args->validation.behavior_index_ok
                 ? NMO_OK
@@ -1434,17 +1438,17 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
         nmo_cli_json_add_str_safe(doc, data, "script_file", args->script_path);
         yyjson_mut_obj_add_uint(doc, data, "op_count", args->operation_count);
         yyjson_mut_obj_add_uint(doc, data, "operation_count",
-                                args->operation_count);
-        for (i = 0; i < args->operation_count; ++i) {
-            const nmo_edit_operation_result_t *edit_op =
-                args->edit_report_ready &&
-                        i < args->edit_report.operation_count
-                    ? &args->edit_report.operations[i]
-                    : NULL;
-            script_run_add_operation_json(
-                doc, operations, i, &args->operations[i], edit_op);
+                                operation_count);
+        if (args->edit_report_ready) {
+            nmo_cli_edit_report_add_operations_json(
+                doc, data, &args->edit_report);
+        } else {
+            for (i = 0; i < args->operation_count; ++i) {
+                script_run_add_operation_json(
+                    doc, operations, i, &args->operations[i], NULL);
+            }
+            yyjson_mut_obj_add_val(doc, data, "operations", operations);
         }
-        yyjson_mut_obj_add_val(doc, data, "operations", operations);
 
         yyjson_mut_obj_add_uint(doc, references, "status",
                                 (uint64_t)args->validation.references_status);
@@ -1495,12 +1499,13 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
         if (args->edit_report_ready) {
             changed_object_count = args->edit_report.changed_object_count;
             created_object_count = args->edit_report.created_object_count;
+            nmo_cli_edit_report_add_diff_json(doc, data, &args->edit_report);
         } else {
             script_run_count_report_impacts(
                 args, &changed_object_count, &created_object_count);
+            nmo_cli_edit_report_add_diff_counts_json(
+                doc, data, changed_object_count, created_object_count, 0u, 0u);
         }
-        nmo_cli_edit_report_add_diff_counts_json(
-            doc, data, changed_object_count, created_object_count, 0u, 0u);
 
         if (!dry_run && output_path != NULL) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
