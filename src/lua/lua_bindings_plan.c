@@ -143,6 +143,80 @@ static int nmo_lua_plan_remove_node(lua_State *state)
     return 0;
 }
 
+static int nmo_lua_plan_set_parameter_value(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t parameter_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    const char *value = luaL_checkstring(state, 3);
+
+    status = nmo_edit_plan_add_set_parameter_value(plan, parameter_id, value, NULL);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add set parameter value op");
+    }
+    return 0;
+}
+
+static int nmo_lua_plan_set_parameter_bytes(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t parameter_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    size_t byte_count = 0u;
+    const char *bytes = luaL_checklstring(state, 3, &byte_count);
+    nmo_parameter_write_options_t options = {0};
+    if (lua_istable(state, 4)) {
+        lua_getfield(state, 4, "resize");
+        if (!lua_isnil(state, -1)) {
+            options.resize = lua_toboolean(state, -1) != 0;
+        }
+        lua_pop(state, 1);
+    }
+
+    status = nmo_edit_plan_add_set_parameter_bytes(
+        plan, parameter_id, (const uint8_t *)bytes, byte_count, &options);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add set parameter bytes op");
+    }
+    return 0;
+}
+
+static int nmo_lua_plan_set_data_cell(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t dataarray_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    lua_Integer row_arg = luaL_checkinteger(state, 3);
+    lua_Integer col_arg = luaL_checkinteger(state, 4);
+    const char *value = luaL_checkstring(state, 5);
+    if (row_arg < 0 || col_arg < 0) {
+        return luaL_error(state, "row and col must be non-negative");
+    }
+    uint32_t row = (uint32_t)row_arg;
+    uint32_t col = (uint32_t)col_arg;
+
+    status = nmo_edit_plan_add_data_cell(plan, dataarray_id, row, col, value);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add set data cell op");
+    }
+    return 0;
+}
+
 static int nmo_lua_plan_interface_policy(lua_State *state)
 {
     nmo_edit_plan_t *plan = NULL;
@@ -177,6 +251,10 @@ static int nmo_lua_plan_interface_policy(lua_State *state)
 static const char *nmo_lua_plan_op_kind_string(nmo_edit_op_kind_t kind)
 {
     switch (kind) {
+    case NMO_EDIT_OP_SET_PARAMETER_VALUE:
+        return "set_parameter_value";
+    case NMO_EDIT_OP_SET_PARAMETER_BYTES:
+        return "set_parameter_bytes";
     case NMO_EDIT_OP_ADD_IO:
         return "add_io";
     case NMO_EDIT_OP_REMOVE_IO:
@@ -185,6 +263,8 @@ static const char *nmo_lua_plan_op_kind_string(nmo_edit_op_kind_t kind)
         return "remove_node";
     case NMO_EDIT_OP_INTERFACE_POLICY:
         return "interface_policy";
+    case NMO_EDIT_OP_SET_DATA_CELL:
+        return "set_data_cell";
     default:
         return "unknown";
     }
@@ -403,6 +483,12 @@ static int nmo_lua_open_plan_module(lua_State *state)
     lua_setfield(state, -2, "remove_io");
     lua_pushcfunction(state, nmo_lua_plan_remove_node);
     lua_setfield(state, -2, "remove_node");
+    lua_pushcfunction(state, nmo_lua_plan_set_parameter_value);
+    lua_setfield(state, -2, "set_parameter_value");
+    lua_pushcfunction(state, nmo_lua_plan_set_parameter_bytes);
+    lua_setfield(state, -2, "set_parameter_bytes");
+    lua_pushcfunction(state, nmo_lua_plan_set_data_cell);
+    lua_setfield(state, -2, "set_data_cell");
     lua_pushcfunction(state, nmo_lua_plan_interface_policy);
     lua_setfield(state, -2, "interface_policy");
     lua_pushcfunction(state, nmo_lua_plan_execute);
