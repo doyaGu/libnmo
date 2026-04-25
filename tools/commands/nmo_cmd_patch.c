@@ -30,6 +30,7 @@ typedef enum patch_operation_kind {
     PATCH_OP_ADD_IO = 3,
     PATCH_OP_INTERFACE_POLICY = 4,
     PATCH_OP_REMOVE_IO = 5,
+    PATCH_OP_RENAME_IO = 6,
 } patch_operation_kind_t;
 
 typedef struct patch_operation {
@@ -49,6 +50,10 @@ typedef struct patch_operation {
         nmo_object_id_t io_id;
         bool detach_links;
     } remove_io;
+    struct {
+        nmo_object_id_t io_id;
+        const char *name;
+    } rename_io;
     struct {
         nmo_object_id_t behavior_id;
         nmo_script_edit_interface_mode_t mode;
@@ -159,6 +164,12 @@ static nmo_status_t patch_operation_add_to_edit_plan(
             edit_plan,
             op->remove_io.io_id,
             op->remove_io.detach_links);
+    }
+    if (op->kind == PATCH_OP_RENAME_IO) {
+        return nmo_edit_plan_add_rename_io(
+            edit_plan,
+            op->rename_io.io_id,
+            op->rename_io.name);
     }
     if (op->kind == PATCH_OP_INTERFACE_POLICY) {
         return nmo_edit_plan_add_interface_policy(
@@ -534,6 +545,40 @@ static int patch_parse_remove_io(yyjson_val *op_obj,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+static int patch_parse_rename_io(yyjson_val *op_obj,
+                                 patch_operation_t *out_op) {
+    static const char *const allowed[] = {
+        "op",
+        "io_id",
+        "name",
+    };
+    int rc = patch_reject_unknown_fields(
+        op_obj, "rename_io operation",
+        allowed, sizeof(allowed) / sizeof(allowed[0]));
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    yyjson_val *id_val = yyjson_obj_get(op_obj, "io_id");
+    if (!id_val || !yyjson_is_uint(id_val) || yyjson_get_uint(id_val) == 0 ||
+        yyjson_get_uint(id_val) > UINT32_MAX) {
+        fprintf(stderr, "Error: Missing or invalid io_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *name = patch_required_string(
+        op_obj, "name", "rename_io operation");
+    if (!name) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    memset(out_op, 0, sizeof(*out_op));
+    out_op->kind = PATCH_OP_RENAME_IO;
+    out_op->rename_io.io_id = (nmo_object_id_t)yyjson_get_uint(id_val);
+    out_op->rename_io.name = name;
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static int patch_parse_script_interface_mode(
     yyjson_val *obj,
     nmo_script_edit_interface_mode_t *out_mode) {
@@ -822,6 +867,8 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
             rc = patch_parse_add_io(op_obj, &operations[idx]);
         } else if (strcmp(op, "remove_io") == 0 && out_plan->version == 2u) {
             rc = patch_parse_remove_io(op_obj, &operations[idx]);
+        } else if (strcmp(op, "rename_io") == 0 && out_plan->version == 2u) {
+            rc = patch_parse_rename_io(op_obj, &operations[idx]);
         } else if (strcmp(op, "interface_policy") == 0 &&
                    out_plan->version == 2u) {
             rc = patch_parse_interface_policy(op_obj, &operations[idx]);
