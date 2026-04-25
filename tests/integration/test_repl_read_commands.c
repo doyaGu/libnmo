@@ -879,6 +879,12 @@ TEST(repl_read, script_run_uses_executor_handles_only) {
                                "script_run_add_operation_json");
     assert_source_not_contains("tools/commands/nmo_cmd_script.c",
                                "script_run_count_report_impacts");
+    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+                               "script_run_operation_t");
+    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+                               "script_run_append_operation");
+    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+                               "operation_capacity");
 }
 
 TEST(repl_read, edit_report_json_does_not_emit_legacy_risk_level) {

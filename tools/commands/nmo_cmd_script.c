@@ -176,13 +176,6 @@ static void dot_write_label(FILE *out, const char *label)
     }
 }
 
-typedef struct script_run_operation {
-    nmo_object_id_t behavior_id;
-    char *kind;
-    char *io_kind;
-    char *name;
-} script_run_operation_t;
-
 typedef struct script_run_validation {
     nmo_status_t references_status;
     size_t broken_reference_count;
@@ -215,9 +208,6 @@ typedef struct script_run_args {
     bool dry_run;
     nmo_script_edit_report_t report;
     script_run_validation_t validation;
-    script_run_operation_t *operations;
-    size_t operation_count;
-    size_t operation_capacity;
     nmo_behavior_execution_t *execution;
     nmo_edit_plan_t *pending_plan;
     nmo_edit_report_t edit_report;
@@ -253,18 +243,10 @@ static char *script_run_strdup(const char *text)
 
 static void script_run_reset_args(script_run_args_t *args)
 {
-    size_t i = 0;
-
     if (args == NULL) {
         return;
     }
 
-    for (i = 0; i < args->operation_count; ++i) {
-        free(args->operations[i].kind);
-        free(args->operations[i].io_kind);
-        free(args->operations[i].name);
-    }
-    free(args->operations);
     nmo_edit_plan_destroy(args->pending_plan);
     if (args->edit_report_ready) {
         nmo_edit_report_dispose(&args->edit_report);
@@ -272,58 +254,9 @@ static void script_run_reset_args(script_run_args_t *args)
 
     memset(&args->report, 0, sizeof(args->report));
     memset(&args->validation, 0, sizeof(args->validation));
-    args->operations = NULL;
-    args->operation_count = 0u;
-    args->operation_capacity = 0u;
     args->execution = NULL;
     args->pending_plan = NULL;
     args->edit_report_ready = false;
-}
-
-static bool script_run_append_operation(script_run_args_t *args,
-                                        nmo_object_id_t behavior_id,
-                                        const char *kind,
-                                        const char *io_kind,
-                                        const char *name)
-{
-    script_run_operation_t *new_operations = NULL;
-    size_t new_capacity = 0u;
-    script_run_operation_t *op = NULL;
-
-    if (args == NULL || kind == NULL) {
-        return false;
-    }
-
-    if (args->operation_count == args->operation_capacity) {
-        new_capacity = (args->operation_capacity == 0u)
-                           ? 4u
-                           : args->operation_capacity * 2u;
-        new_operations =
-            (script_run_operation_t *)realloc(args->operations,
-                                              new_capacity * sizeof(*new_operations));
-        if (new_operations == NULL) {
-            return false;
-        }
-        args->operations = new_operations;
-        args->operation_capacity = new_capacity;
-    }
-
-    op = &args->operations[args->operation_count];
-    memset(op, 0, sizeof(*op));
-    op->behavior_id = behavior_id;
-    op->kind = script_run_strdup(kind);
-    op->io_kind = script_run_strdup(io_kind);
-    op->name = script_run_strdup(name);
-    if (op->kind == NULL || op->io_kind == NULL || op->name == NULL) {
-        free(op->kind);
-        free(op->io_kind);
-        free(op->name);
-        memset(op, 0, sizeof(*op));
-        return false;
-    }
-
-    args->operation_count += 1u;
-    return true;
 }
 
 static script_run_args_t *script_run_current_args(lua_State *state)
@@ -629,6 +562,15 @@ static nmo_status_t script_run_execute_pending_plan(script_run_args_t *args)
     return status;
 }
 
+static lua_Integer script_run_pending_operation_index(
+    const script_run_args_t *args)
+{
+    if (args == NULL || args->pending_plan == NULL) {
+        return 0;
+    }
+    return (lua_Integer)nmo_edit_plan_count(args->pending_plan);
+}
+
 static int script_run_lua_add_io(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
@@ -637,7 +579,6 @@ static int script_run_lua_add_io(lua_State *state)
     const char *name = luaL_checkstring(state, 3);
     nmo_script_edit_io_kind_t kind = NMO_SCRIPT_EDIT_IO_INPUT;
     nmo_status_t status = NMO_OK;
-    lua_Integer operation_index = 0;
 
     if (strcmp(kind_text, "input") == 0) {
         kind = NMO_SCRIPT_EDIT_IO_INPUT;
@@ -658,16 +599,7 @@ static int script_run_lua_add_io(lua_State *state)
                               : "failed to enqueue script io");
     }
 
-    if (!script_run_append_operation(args,
-                                     behavior_id,
-                                     "add_io",
-                                     kind_text,
-                                     name)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
-    operation_index = (lua_Integer)args->operation_count;
-    lua_pushinteger(state, operation_index);
+    lua_pushinteger(state, script_run_pending_operation_index(args));
     return 1;
 }
 
@@ -678,7 +610,6 @@ static int script_run_lua_add_node(lua_State *state)
     const char *guid_text = luaL_checkstring(state, 2);
     const char *name = luaL_optstring(state, 3, NULL);
     nmo_guid_t bb_guid = nmo_guid_parse(guid_text);
-    char parent_id_text[32];
     nmo_status_t status = NMO_OK;
 
     if (nmo_guid_is_null(bb_guid)) {
@@ -697,16 +628,7 @@ static int script_run_lua_add_node(lua_State *state)
                               : "failed to enqueue script node");
     }
 
-    snprintf(parent_id_text, sizeof(parent_id_text), "%u", parent_id);
-    if (!script_run_append_operation(args,
-                                     parent_id,
-                                     "add_node",
-                                     "node",
-                                     parent_id_text)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
-    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    lua_pushinteger(state, script_run_pending_operation_index(args));
     return 1;
 }
 
@@ -718,7 +640,6 @@ static int script_run_lua_remove_io(lua_State *state)
     const char *mode_text = luaL_optstring(state, 2, "preserve");
     nmo_script_edit_interface_mode_t mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE;
     nmo_object_id_t interface_behavior_id = 0u;
-    char io_id_text[32];
     nmo_status_t status = NMO_OK;
 
     if (strcmp(mode_text, "preserve") == 0) {
@@ -752,15 +673,6 @@ static int script_run_lua_remove_io(lua_State *state)
                               : "failed to enqueue script io removal");
     }
 
-    snprintf(io_id_text, sizeof(io_id_text), "%u", io_id);
-    if (!script_run_append_operation(args,
-                                     interface_behavior_id,
-                                     "remove_io",
-                                     mode_text,
-                                     io_id_text)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
     return 0;
 }
 
@@ -769,7 +681,6 @@ static int script_run_lua_rename_io(lua_State *state)
     script_run_args_t *args = script_run_current_args(state);
     nmo_object_id_t io_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     const char *name = luaL_checkstring(state, 2);
-    char io_id_text[32];
     nmo_status_t status = NMO_OK;
 
     status = script_run_ensure_pending_plan(args);
@@ -783,16 +694,7 @@ static int script_run_lua_rename_io(lua_State *state)
                               : "failed to enqueue script io rename");
     }
 
-    snprintf(io_id_text, sizeof(io_id_text), "%u", io_id);
-    if (!script_run_append_operation(args,
-                                     io_id,
-                                     "rename_io",
-                                     "io",
-                                     io_id_text)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
-    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    lua_pushinteger(state, script_run_pending_operation_index(args));
     return 1;
 }
 
@@ -804,7 +706,6 @@ static int script_run_lua_remove_node(lua_State *state)
     nmo_object_id_t node_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
     const char *mode_text = luaL_optstring(state, 3, "preserve");
     nmo_script_edit_interface_mode_t mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE;
-    char node_id_text[32];
     nmo_status_t status = NMO_OK;
 
     if (strcmp(mode_text, "preserve") == 0) {
@@ -839,15 +740,6 @@ static int script_run_lua_remove_node(lua_State *state)
                               : "failed to enqueue script node removal");
     }
 
-    snprintf(node_id_text, sizeof(node_id_text), "%u", node_id);
-    if (!script_run_append_operation(args,
-                                     parent_id,
-                                     "remove_node",
-                                     mode_text,
-                                     node_id_text)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
     return 0;
 }
 
@@ -858,7 +750,6 @@ static int script_run_lua_add_behavior_link(lua_State *state)
     nmo_object_id_t from_io_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
     nmo_object_id_t to_io_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
     uint32_t activation_delay = (uint32_t)luaL_optinteger(state, 4, 0);
-    char parent_id_text[32];
     nmo_status_t status = NMO_OK;
 
     status = script_run_ensure_pending_plan(args);
@@ -877,16 +768,7 @@ static int script_run_lua_add_behavior_link(lua_State *state)
                               : "failed to enqueue script behavior link");
     }
 
-    snprintf(parent_id_text, sizeof(parent_id_text), "%u", parent_id);
-    if (!script_run_append_operation(args,
-                                     parent_id,
-                                     "add_behavior_link",
-                                     "behavior_link",
-                                     parent_id_text)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
-    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    lua_pushinteger(state, script_run_pending_operation_index(args));
     return 1;
 }
 
@@ -896,7 +778,6 @@ static int script_run_lua_rewire_behavior_link(lua_State *state)
     nmo_object_id_t link_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     nmo_object_id_t from_io_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
     nmo_object_id_t to_io_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
-    char link_id_text[32];
     nmo_status_t status = NMO_OK;
 
     status = script_run_ensure_pending_plan(args);
@@ -911,16 +792,7 @@ static int script_run_lua_rewire_behavior_link(lua_State *state)
                               : "failed to enqueue script behavior link rewire");
     }
 
-    snprintf(link_id_text, sizeof(link_id_text), "%u", link_id);
-    if (!script_run_append_operation(args,
-                                     link_id,
-                                     "rewire_behavior_link",
-                                     "behavior_link",
-                                     link_id_text)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
-    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    lua_pushinteger(state, script_run_pending_operation_index(args));
     return 1;
 }
 
@@ -929,7 +801,6 @@ static int script_run_lua_set_behavior_link_delay(lua_State *state)
     script_run_args_t *args = script_run_current_args(state);
     nmo_object_id_t link_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     uint32_t activation_delay = (uint32_t)luaL_checkinteger(state, 2);
-    char link_id_text[32];
     nmo_status_t status = NMO_OK;
 
     status = script_run_ensure_pending_plan(args);
@@ -944,16 +815,7 @@ static int script_run_lua_set_behavior_link_delay(lua_State *state)
                               : "failed to enqueue script behavior link delay");
     }
 
-    snprintf(link_id_text, sizeof(link_id_text), "%u", link_id);
-    if (!script_run_append_operation(args,
-                                     link_id,
-                                     "set_behavior_link_delay",
-                                     "behavior_link",
-                                     link_id_text)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
-    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    lua_pushinteger(state, script_run_pending_operation_index(args));
     return 1;
 }
 
@@ -962,7 +824,6 @@ static int script_run_lua_remove_behavior_link(lua_State *state)
     script_run_args_t *args = script_run_current_args(state);
     nmo_object_id_t parent_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     nmo_object_id_t link_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    char link_id_text[32];
     nmo_status_t status = NMO_OK;
 
     status = script_run_ensure_pending_plan(args);
@@ -977,16 +838,7 @@ static int script_run_lua_remove_behavior_link(lua_State *state)
                               : "failed to enqueue script behavior link removal");
     }
 
-    snprintf(link_id_text, sizeof(link_id_text), "%u", link_id);
-    if (!script_run_append_operation(args,
-                                     parent_id,
-                                     "remove_behavior_link",
-                                     "behavior_link",
-                                     link_id_text)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
-    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    lua_pushinteger(state, script_run_pending_operation_index(args));
     return 1;
 }
 
@@ -1022,7 +874,6 @@ static int script_run_lua_add_parameter(lua_State *state)
     const char *name = luaL_checkstring(state, 4);
     nmo_script_edit_parameter_kind_t kind = NMO_SCRIPT_EDIT_PARAM_IN;
     nmo_guid_t type_guid = nmo_guid_parse(type_guid_text);
-    char owner_id_text[32];
     nmo_status_t status = NMO_OK;
 
     if (!script_run_parse_parameter_kind(kind_text, &kind)) {
@@ -1045,16 +896,7 @@ static int script_run_lua_add_parameter(lua_State *state)
                               : "failed to enqueue script parameter");
     }
 
-    snprintf(owner_id_text, sizeof(owner_id_text), "%u", owner_id);
-    if (!script_run_append_operation(args,
-                                     owner_id,
-                                     "add_parameter",
-                                     kind_text,
-                                     owner_id_text)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
-    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    lua_pushinteger(state, script_run_pending_operation_index(args));
     return 1;
 }
 
@@ -1063,7 +905,6 @@ static int script_run_lua_connect_parameter(lua_State *state)
     script_run_args_t *args = script_run_current_args(state);
     nmo_object_id_t source_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     nmo_object_id_t target_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    char target_id_text[32];
     nmo_status_t status = NMO_OK;
 
     status = script_run_ensure_pending_plan(args);
@@ -1078,16 +919,7 @@ static int script_run_lua_connect_parameter(lua_State *state)
                               : "failed to enqueue script parameter connection");
     }
 
-    snprintf(target_id_text, sizeof(target_id_text), "%u", target_id);
-    if (!script_run_append_operation(args,
-                                     target_id,
-                                     "connect_parameter",
-                                     "parameter",
-                                     target_id_text)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
-    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    lua_pushinteger(state, script_run_pending_operation_index(args));
     return 1;
 }
 
@@ -1095,7 +927,6 @@ static int script_run_lua_disconnect_parameter(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
     nmo_object_id_t target_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
-    char target_id_text[32];
     nmo_status_t status = NMO_OK;
 
     status = script_run_ensure_pending_plan(args);
@@ -1110,16 +941,7 @@ static int script_run_lua_disconnect_parameter(lua_State *state)
                               : "failed to enqueue script parameter disconnection");
     }
 
-    snprintf(target_id_text, sizeof(target_id_text), "%u", target_id);
-    if (!script_run_append_operation(args,
-                                     target_id,
-                                     "disconnect_parameter",
-                                     "parameter",
-                                     target_id_text)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
-    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    lua_pushinteger(state, script_run_pending_operation_index(args));
     return 1;
 }
 
@@ -1128,7 +950,6 @@ static int script_run_lua_remove_parameter(lua_State *state)
     script_run_args_t *args = script_run_current_args(state);
     nmo_object_id_t parameter_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     bool detach = lua_toboolean(state, 2) != 0;
-    char parameter_id_text[32];
     nmo_status_t status = NMO_OK;
 
     status = script_run_ensure_pending_plan(args);
@@ -1143,16 +964,7 @@ static int script_run_lua_remove_parameter(lua_State *state)
                               : "failed to enqueue script parameter removal");
     }
 
-    snprintf(parameter_id_text, sizeof(parameter_id_text), "%u", parameter_id);
-    if (!script_run_append_operation(args,
-                                     parameter_id,
-                                     "remove_parameter",
-                                     "parameter",
-                                     parameter_id_text)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
-    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    lua_pushinteger(state, script_run_pending_operation_index(args));
     return 1;
 }
 
@@ -1189,7 +1001,6 @@ static int script_run_lua_add_operation(lua_State *state)
     nmo_object_id_t in1_id = 0u;
     nmo_object_id_t in2_id = 0u;
     nmo_object_id_t out_id = 0u;
-    char parent_id_text[32];
     nmo_status_t status = NMO_OK;
 
     if (nmo_guid_is_null(operation_guid)) {
@@ -1217,16 +1028,7 @@ static int script_run_lua_add_operation(lua_State *state)
                               : "failed to enqueue script operation");
     }
 
-    snprintf(parent_id_text, sizeof(parent_id_text), "%u", parent_id);
-    if (!script_run_append_operation(args,
-                                     parent_id,
-                                     "add_operation",
-                                     "operation",
-                                     parent_id_text)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
-    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    lua_pushinteger(state, script_run_pending_operation_index(args));
     return 1;
 }
 
@@ -1238,7 +1040,6 @@ static int script_run_lua_rewire_operation(lua_State *state)
     nmo_object_id_t in1_id = 0u;
     nmo_object_id_t in2_id = 0u;
     nmo_object_id_t out_id = 0u;
-    char operation_id_text[32];
     nmo_status_t status = NMO_OK;
 
     in1_id = script_run_lua_optional_operation_slot(
@@ -1269,16 +1070,7 @@ static int script_run_lua_rewire_operation(lua_State *state)
                               : "failed to enqueue script operation rewire");
     }
 
-    snprintf(operation_id_text, sizeof(operation_id_text), "%u", operation_id);
-    if (!script_run_append_operation(args,
-                                     operation_id,
-                                     "rewire_operation",
-                                     "operation",
-                                     operation_id_text)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
-    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    lua_pushinteger(state, script_run_pending_operation_index(args));
     return 1;
 }
 
@@ -1286,7 +1078,6 @@ static int script_run_lua_remove_operation(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
     nmo_object_id_t operation_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
-    char operation_id_text[32];
     nmo_status_t status = NMO_OK;
 
     status = script_run_ensure_pending_plan(args);
@@ -1301,16 +1092,7 @@ static int script_run_lua_remove_operation(lua_State *state)
                               : "failed to enqueue script operation removal");
     }
 
-    snprintf(operation_id_text, sizeof(operation_id_text), "%u", operation_id);
-    if (!script_run_append_operation(args,
-                                     operation_id,
-                                     "remove_operation",
-                                     "operation",
-                                     operation_id_text)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
-    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    lua_pushinteger(state, script_run_pending_operation_index(args));
     return 1;
 }
 
@@ -1319,7 +1101,6 @@ static int script_run_lua_set_parameter_value(lua_State *state)
     script_run_args_t *args = script_run_current_args(state);
     nmo_object_id_t parameter_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     const char *value = luaL_checkstring(state, 2);
-    char parameter_id_text[32];
     nmo_status_t status = NMO_OK;
 
     status = script_run_ensure_pending_plan(args);
@@ -1334,16 +1115,7 @@ static int script_run_lua_set_parameter_value(lua_State *state)
                               : "failed to enqueue script parameter value");
     }
 
-    snprintf(parameter_id_text, sizeof(parameter_id_text), "%u", parameter_id);
-    if (!script_run_append_operation(args,
-                                     parameter_id,
-                                     "set_parameter_value",
-                                     "parameter",
-                                     parameter_id_text)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
-    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    lua_pushinteger(state, script_run_pending_operation_index(args));
     return 1;
 }
 
@@ -1354,7 +1126,6 @@ static int script_run_lua_set_parameter_bytes(lua_State *state)
     size_t byte_count = 0u;
     const char *bytes = luaL_checklstring(state, 2, &byte_count);
     nmo_parameter_write_options_t options = {0};
-    char parameter_id_text[32];
     nmo_status_t status = NMO_OK;
 
     if (lua_istable(state, 3)) {
@@ -1381,16 +1152,7 @@ static int script_run_lua_set_parameter_bytes(lua_State *state)
                               : "failed to enqueue script parameter bytes");
     }
 
-    snprintf(parameter_id_text, sizeof(parameter_id_text), "%u", parameter_id);
-    if (!script_run_append_operation(args,
-                                     parameter_id,
-                                     "set_parameter_bytes",
-                                     "parameter",
-                                     parameter_id_text)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
-    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    lua_pushinteger(state, script_run_pending_operation_index(args));
     return 1;
 }
 
@@ -1401,7 +1163,6 @@ static int script_run_lua_set_data_cell(lua_State *state)
     lua_Integer row_arg = luaL_checkinteger(state, 2);
     lua_Integer col_arg = luaL_checkinteger(state, 3);
     const char *value = luaL_checkstring(state, 4);
-    char dataarray_id_text[32];
     nmo_status_t status = NMO_OK;
 
     if (row_arg < 0 || col_arg < 0) {
@@ -1424,16 +1185,7 @@ static int script_run_lua_set_data_cell(lua_State *state)
                               : "failed to enqueue script data cell");
     }
 
-    snprintf(dataarray_id_text, sizeof(dataarray_id_text), "%u", dataarray_id);
-    if (!script_run_append_operation(args,
-                                     dataarray_id,
-                                     "set_data_cell",
-                                     "dataarray",
-                                     dataarray_id_text)) {
-        return luaL_error(state, "failed to record script operation");
-    }
-
-    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    lua_pushinteger(state, script_run_pending_operation_index(args));
     return 1;
 }
 
@@ -1885,7 +1637,8 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
     }
 
     fprintf(ctx->out, "Script: %s\n", args->script_path);
-    fprintf(ctx->out, "Operations: %zu\n", args->operation_count);
+    fprintf(ctx->out, "Operations: %zu\n",
+            args->edit_report_ready ? args->edit_report.operation_count : 0u);
     fprintf(ctx->out, "Final status: %s\n",
             nmo_error_string(args->validation.final_status));
     if (dry_run) {
