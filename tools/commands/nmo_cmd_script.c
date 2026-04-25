@@ -181,8 +181,6 @@ typedef struct script_run_operation {
     char *kind;
     char *io_kind;
     char *name;
-    uint32_t *result_handles;
-    size_t result_handle_count;
 } script_run_operation_t;
 
 typedef struct script_run_validation {
@@ -220,9 +218,6 @@ typedef struct script_run_args {
     script_run_operation_t *operations;
     size_t operation_count;
     size_t operation_capacity;
-    uint32_t *result_handles;
-    size_t result_handle_count;
-    size_t result_handle_capacity;
     nmo_behavior_execution_t *execution;
     nmo_edit_plan_t *pending_plan;
     nmo_edit_report_t edit_report;
@@ -268,10 +263,8 @@ static void script_run_reset_args(script_run_args_t *args)
         free(args->operations[i].kind);
         free(args->operations[i].io_kind);
         free(args->operations[i].name);
-        free(args->operations[i].result_handles);
     }
     free(args->operations);
-    free(args->result_handles);
     nmo_edit_plan_destroy(args->pending_plan);
     if (args->edit_report_ready) {
         nmo_edit_report_dispose(&args->edit_report);
@@ -282,54 +275,20 @@ static void script_run_reset_args(script_run_args_t *args)
     args->operations = NULL;
     args->operation_count = 0u;
     args->operation_capacity = 0u;
-    args->result_handles = NULL;
-    args->result_handle_count = 0u;
-    args->result_handle_capacity = 0u;
     args->execution = NULL;
     args->pending_plan = NULL;
     args->edit_report_ready = false;
-}
-
-static bool script_run_append_result_handle(script_run_args_t *args,
-                                            uint32_t handle_id)
-{
-    uint32_t *new_handles = NULL;
-    size_t new_capacity = 0u;
-
-    if (args == NULL) {
-        return false;
-    }
-
-    if (args->result_handle_count == args->result_handle_capacity) {
-        new_capacity = (args->result_handle_capacity == 0u)
-                           ? 4u
-                           : args->result_handle_capacity * 2u;
-        new_handles =
-            (uint32_t *)realloc(args->result_handles,
-                                new_capacity * sizeof(*new_handles));
-        if (new_handles == NULL) {
-            return false;
-        }
-        args->result_handles = new_handles;
-        args->result_handle_capacity = new_capacity;
-    }
-
-    args->result_handles[args->result_handle_count++] = handle_id;
-    return true;
 }
 
 static bool script_run_append_operation(script_run_args_t *args,
                                         nmo_object_id_t behavior_id,
                                         const char *kind,
                                         const char *io_kind,
-                                        const char *name,
-                                        const uint32_t *result_handles,
-                                        size_t result_handle_count)
+                                        const char *name)
 {
     script_run_operation_t *new_operations = NULL;
     size_t new_capacity = 0u;
     script_run_operation_t *op = NULL;
-    size_t i = 0u;
 
     if (args == NULL || kind == NULL) {
         return false;
@@ -361,34 +320,6 @@ static bool script_run_append_operation(script_run_args_t *args,
         free(op->name);
         memset(op, 0, sizeof(*op));
         return false;
-    }
-
-    if (result_handle_count > 0u) {
-        op->result_handles = (uint32_t *)malloc(result_handle_count *
-                                                sizeof(*op->result_handles));
-        if (op->result_handles == NULL) {
-            free(op->kind);
-            free(op->io_kind);
-            free(op->name);
-            memset(op, 0, sizeof(*op));
-            return false;
-        }
-
-        memcpy(op->result_handles,
-               result_handles,
-               result_handle_count * sizeof(*op->result_handles));
-        op->result_handle_count = result_handle_count;
-
-        for (i = 0u; i < result_handle_count; ++i) {
-            if (!script_run_append_result_handle(args, result_handles[i])) {
-                free(op->kind);
-                free(op->io_kind);
-                free(op->name);
-                free(op->result_handles);
-                memset(op, 0, sizeof(*op));
-                return false;
-            }
-        }
     }
 
     args->operation_count += 1u;
@@ -731,9 +662,7 @@ static int script_run_lua_add_io(lua_State *state)
                                      behavior_id,
                                      "add_io",
                                      kind_text,
-                                     name,
-                                     NULL,
-                                     0u)) {
+                                     name)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -773,9 +702,7 @@ static int script_run_lua_add_node(lua_State *state)
                                      parent_id,
                                      "add_node",
                                      "node",
-                                     parent_id_text,
-                                     NULL,
-                                     0u)) {
+                                     parent_id_text)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -830,9 +757,7 @@ static int script_run_lua_remove_io(lua_State *state)
                                      interface_behavior_id,
                                      "remove_io",
                                      mode_text,
-                                     io_id_text,
-                                     NULL,
-                                     0u)) {
+                                     io_id_text)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -863,9 +788,7 @@ static int script_run_lua_rename_io(lua_State *state)
                                      io_id,
                                      "rename_io",
                                      "io",
-                                     io_id_text,
-                                     NULL,
-                                     0u)) {
+                                     io_id_text)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -921,9 +844,7 @@ static int script_run_lua_remove_node(lua_State *state)
                                      parent_id,
                                      "remove_node",
                                      mode_text,
-                                     node_id_text,
-                                     NULL,
-                                     0u)) {
+                                     node_id_text)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -961,9 +882,7 @@ static int script_run_lua_add_behavior_link(lua_State *state)
                                      parent_id,
                                      "add_behavior_link",
                                      "behavior_link",
-                                     parent_id_text,
-                                     NULL,
-                                     0u)) {
+                                     parent_id_text)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -997,9 +916,7 @@ static int script_run_lua_rewire_behavior_link(lua_State *state)
                                      link_id,
                                      "rewire_behavior_link",
                                      "behavior_link",
-                                     link_id_text,
-                                     NULL,
-                                     0u)) {
+                                     link_id_text)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -1032,9 +949,7 @@ static int script_run_lua_set_behavior_link_delay(lua_State *state)
                                      link_id,
                                      "set_behavior_link_delay",
                                      "behavior_link",
-                                     link_id_text,
-                                     NULL,
-                                     0u)) {
+                                     link_id_text)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -1067,9 +982,7 @@ static int script_run_lua_remove_behavior_link(lua_State *state)
                                      parent_id,
                                      "remove_behavior_link",
                                      "behavior_link",
-                                     link_id_text,
-                                     NULL,
-                                     0u)) {
+                                     link_id_text)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -1137,9 +1050,7 @@ static int script_run_lua_add_parameter(lua_State *state)
                                      owner_id,
                                      "add_parameter",
                                      kind_text,
-                                     owner_id_text,
-                                     NULL,
-                                     0u)) {
+                                     owner_id_text)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -1172,9 +1083,7 @@ static int script_run_lua_connect_parameter(lua_State *state)
                                      target_id,
                                      "connect_parameter",
                                      "parameter",
-                                     target_id_text,
-                                     NULL,
-                                     0u)) {
+                                     target_id_text)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -1206,9 +1115,7 @@ static int script_run_lua_disconnect_parameter(lua_State *state)
                                      target_id,
                                      "disconnect_parameter",
                                      "parameter",
-                                     target_id_text,
-                                     NULL,
-                                     0u)) {
+                                     target_id_text)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -1241,9 +1148,7 @@ static int script_run_lua_remove_parameter(lua_State *state)
                                      parameter_id,
                                      "remove_parameter",
                                      "parameter",
-                                     parameter_id_text,
-                                     NULL,
-                                     0u)) {
+                                     parameter_id_text)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -1317,9 +1222,7 @@ static int script_run_lua_add_operation(lua_State *state)
                                      parent_id,
                                      "add_operation",
                                      "operation",
-                                     parent_id_text,
-                                     NULL,
-                                     0u)) {
+                                     parent_id_text)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -1371,9 +1274,7 @@ static int script_run_lua_rewire_operation(lua_State *state)
                                      operation_id,
                                      "rewire_operation",
                                      "operation",
-                                     operation_id_text,
-                                     NULL,
-                                     0u)) {
+                                     operation_id_text)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -1405,9 +1306,7 @@ static int script_run_lua_remove_operation(lua_State *state)
                                      operation_id,
                                      "remove_operation",
                                      "operation",
-                                     operation_id_text,
-                                     NULL,
-                                     0u)) {
+                                     operation_id_text)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -1440,9 +1339,7 @@ static int script_run_lua_set_parameter_value(lua_State *state)
                                      parameter_id,
                                      "set_parameter_value",
                                      "parameter",
-                                     parameter_id_text,
-                                     NULL,
-                                     0u)) {
+                                     parameter_id_text)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -1489,9 +1386,7 @@ static int script_run_lua_set_parameter_bytes(lua_State *state)
                                      parameter_id,
                                      "set_parameter_bytes",
                                      "parameter",
-                                     parameter_id_text,
-                                     NULL,
-                                     0u)) {
+                                     parameter_id_text)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -1534,9 +1429,7 @@ static int script_run_lua_set_data_cell(lua_State *state)
                                      dataarray_id,
                                      "set_data_cell",
                                      "dataarray",
-                                     dataarray_id_text,
-                                     NULL,
-                                     0u)) {
+                                     dataarray_id_text)) {
         return luaL_error(state, "failed to record script operation");
     }
 
@@ -2001,9 +1894,7 @@ static void script_run_add_operation_json(yyjson_mut_doc *doc,
     yyjson_mut_val *handles = yyjson_mut_arr(doc);
     size_t i = 0;
     nmo_object_id_t result_id =
-        edit_op != NULL
-            ? edit_op->result_id
-            : (op->result_handle_count > 0u ? op->result_handles[0] : 0u);
+        edit_op != NULL ? edit_op->result_id : 0u;
     nmo_status_t status = edit_op != NULL ? edit_op->status : NMO_OK;
     const char *kind =
         edit_op != NULL ? nmo_cli_edit_report_op_kind_string(edit_op->kind)
@@ -2030,15 +1921,6 @@ static void script_run_add_operation_json(yyjson_mut_doc *doc,
                                 (uint64_t)edit_op->handles[i].id);
         yyjson_mut_obj_add_uint(doc, handle, "id",
                                 (uint64_t)edit_op->handles[i].id);
-        yyjson_mut_arr_add_val(handles, handle);
-    }
-    for (i = 0; edit_op == NULL && i < op->result_handle_count; ++i) {
-        yyjson_mut_val *handle = yyjson_mut_obj(doc);
-        nmo_cli_json_add_str_safe(doc, handle, "name", op->kind);
-        yyjson_mut_obj_add_uint(doc, handle, "object_id",
-                                (uint64_t)op->result_handles[i]);
-        yyjson_mut_obj_add_uint(doc, handle, "id",
-                                (uint64_t)op->result_handles[i]);
         yyjson_mut_arr_add_val(handles, handle);
     }
     yyjson_mut_obj_add_val(doc, item, "handles", handles);
@@ -2099,11 +1981,6 @@ static void script_run_add_common_report_json(yyjson_mut_doc *doc,
             const script_run_operation_t *op = &args->operations[i];
             script_run_add_impact_json(doc, changed, i, op->kind, "primary",
                                        op->behavior_id);
-            for (size_t j = 0; j < op->result_handle_count; ++j) {
-                script_run_add_impact_json(doc, created, i, op->kind,
-                                           "created",
-                                           op->result_handles[j]);
-            }
         }
     }
     yyjson_mut_obj_add_val(doc, data, "changed_objects", changed);
@@ -2124,7 +2001,6 @@ static void script_run_count_report_impacts(const script_run_args_t *args,
             if (op->behavior_id != 0u) {
                 ++changed;
             }
-            created += op->result_handle_count;
         }
     }
 
