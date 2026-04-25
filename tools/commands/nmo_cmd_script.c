@@ -4011,18 +4011,12 @@ static int script_param_add_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        const uint32_t result_handles[] = {args->param_id};
-        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run);
         yyjson_mut_obj_add_uint(doc, data, "owner_id", args->owner_id);
         yyjson_mut_obj_add_uint(doc, data, "param_id", args->param_id);
         nmo_cli_json_add_str_safe(doc, data, "kind", args->kind);
         nmo_cli_json_add_str_safe(doc, data, "type", args->type_name);
         nmo_cli_json_add_str_safe(doc, data, "name", args->name);
-        script_add_validation_json(doc,
-                                   data,
-                                   &args->common,
-                                   result_handles,
-                                   1u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -4334,19 +4328,13 @@ static int script_op_add_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        const uint32_t result_handles[] = {args->op_id};
-        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run);
         yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "op_id", args->op_id);
         nmo_cli_json_add_str_safe(doc, data, "operation_guid", guid_buf);
         if (args->in1_id != 0u) yyjson_mut_obj_add_uint(doc, data, "in1_id", args->in1_id);
         if (args->in2_id != 0u) yyjson_mut_obj_add_uint(doc, data, "in2_id", args->in2_id);
         if (args->out_id != 0u) yyjson_mut_obj_add_uint(doc, data, "out_id", args->out_id);
-        script_add_validation_json(doc,
-                                   data,
-                                   &args->common,
-                                   result_handles,
-                                   1u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
