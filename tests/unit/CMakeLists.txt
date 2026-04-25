@@ -190,6 +190,7 @@ add_unit_test(test_script_walker)
 # Script edit graph
 add_unit_test(test_script_edit_graph)
 set_tests_properties(test_script_edit_graph PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+add_unit_test(test_edit_plan)
 add_unit_test(test_script_edit_transaction)
 add_unit_test(test_script_edit_interface)
 add_unit_test(test_behavior_execute)
