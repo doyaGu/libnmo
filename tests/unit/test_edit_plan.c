@@ -109,6 +109,113 @@ TEST(edit_plan, stores_parameter_value_ops) {
     nmo_edit_plan_destroy(plan);
 }
 
+TEST(edit_plan, stores_full_script_edit_ops_and_clones_plan) {
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_plan_t *clone = NULL;
+    nmo_behavior_fold_map_t map = {
+        .kind = NMO_BEHAVIOR_FOLD_MAP_INPUT,
+        .old_index = 0,
+        .new_index = 1,
+        .old_id = 11,
+        .new_id = 22,
+        .label = "In",
+    };
+    nmo_object_id_t fold_nodes[] = {101, 102};
+    nmo_behavior_fold_desc_t fold = {
+        .parent_id = 500,
+        .node_ids = fold_nodes,
+        .node_count = 2,
+        .anchor_id = 101,
+        .block_guid = nmo_guid_parse("11111111-22222222"),
+        .name = "Folded",
+        .preserve_boundary = true,
+        .input_maps = &map,
+        .input_map_count = 1,
+    };
+    nmo_behavior_replace_bb_desc_t replace = {
+        .behavior_id = 600,
+        .block_guid = nmo_guid_parse("33333333-44444444"),
+        .name = "Replacement",
+        .preserve_links = true,
+        .preserve_params = true,
+    };
+
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_node(plan, 1, 2, 3));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_io(
+        plan, 4, NMO_SCRIPT_EDIT_IO_INPUT, "Input"));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_rename_io(plan, 5, "Renamed"));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_io(plan, 6, true));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_behavior_link(plan, 7, 8, 9, 10));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_rewire_behavior_link(plan, 11, 12, 13));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_set_behavior_link_delay(plan, 14, 15));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_behavior_link(plan, 16, 17));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_parameter(
+        plan, 18, NMO_SCRIPT_EDIT_PARAM_IN, CKPGUID_STRING, "Param"));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_connect_parameter(plan, 19, 20));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_disconnect_parameter(plan, 21));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_parameter(plan, 22, true));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_operation(
+        plan, 23, nmo_guid_parse("55555555-66666666"), 24, 25, 26));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_rewire_operation(
+        plan, 27, NMO_SCRIPT_EDIT_OP_SLOT_IN1, 28, 29, 30));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_operation(plan, 31));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_interface_policy(
+        plan, 32, NMO_SCRIPT_EDIT_INTERFACE_CANONICALIZE));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_data_cell(plan, 33, 1, 2, "cell"));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_fold(plan, &fold));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_replace_bb(plan, &replace));
+
+    ASSERT_EQ(19u, nmo_edit_plan_count(plan));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_clone(plan, &clone));
+    ASSERT_EQ(nmo_edit_plan_count(plan), nmo_edit_plan_count(clone));
+
+    const nmo_edit_op_t *op = nmo_edit_plan_get(clone, 17);
+    ASSERT_NOT_NULL(op);
+    ASSERT_EQ(NMO_EDIT_OP_FOLD, op->kind);
+    ASSERT_EQ(500u, op->primary_id);
+    ASSERT_EQ(2u, op->data.fold.desc.node_count);
+    ASSERT_EQ(101u, op->data.fold.node_ids[0]);
+    ASSERT_EQ(102u, op->data.fold.node_ids[1]);
+    ASSERT_EQ(1u, op->data.fold.input_maps[0].new_index);
+    ASSERT_STR_EQ("Folded", op->data.fold.desc.name);
+
+    op = nmo_edit_plan_get(clone, 18);
+    ASSERT_NOT_NULL(op);
+    ASSERT_EQ(NMO_EDIT_OP_REPLACE_BB, op->kind);
+    ASSERT_STR_EQ("Replacement", op->data.replace_bb.desc.name);
+
+    nmo_edit_plan_destroy(clone);
+    nmo_edit_plan_destroy(plan);
+}
+
+TEST(edit_plan, report_dispose_releases_schema_v2_arrays) {
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_report_add_operation_handle(&report, 0, "node", 42));
+    ASSERT_EQ(NMO_OK, nmo_edit_report_add_created_object(
+        &report, 42, NMO_EDIT_OP_ADD_NODE, "behavior"));
+    ASSERT_EQ(NMO_OK, nmo_edit_report_add_deleted_object(
+        &report, 43, NMO_EDIT_OP_REMOVE_NODE, "behavior"));
+    ASSERT_EQ(NMO_OK, nmo_edit_report_add_changed_object(
+        &report, 44, NMO_EDIT_OP_SET_PARAMETER_VALUE, "parameter"));
+
+    ASSERT_EQ(1u, report.created_object_count);
+    ASSERT_EQ(42u, report.created_objects[0].id);
+    ASSERT_STR_EQ("behavior", report.created_objects[0].role);
+    ASSERT_EQ(1u, report.deleted_object_count);
+    ASSERT_EQ(43u, report.deleted_objects[0].id);
+    ASSERT_EQ(1u, report.changed_object_count);
+    ASSERT_EQ(44u, report.changed_objects[0].id);
+
+    nmo_edit_report_dispose(&report);
+    ASSERT_EQ(0u, report.created_object_count);
+    ASSERT_EQ(NULL, report.created_objects);
+    ASSERT_EQ(NULL, report.deleted_objects);
+    ASSERT_EQ(NULL, report.changed_objects);
+}
+
 TEST(edit_plan, executor_commits_parameter_value_plan) {
     edit_plan_fixture_t fixture;
     edit_plan_fixture_init(&fixture);
@@ -221,7 +328,7 @@ TEST(edit_plan, executor_adds_node_with_created_object_report) {
     ASSERT_EQ(NMO_OK, report.operations[0].status);
     ASSERT_TRUE(report.operations[0].result_id != 0u);
     ASSERT_TRUE(report.created_object_count > 1u);
-    ASSERT_EQ(report.operations[0].result_id, report.created_objects[0]);
+    ASSERT_EQ(report.operations[0].result_id, report.created_objects[0].id);
 
     nmo_object_t *node_obj =
         nmo_object_repository_find_by_id(fixture.repo, report.operations[0].result_id);
@@ -235,7 +342,7 @@ TEST(edit_plan, executor_adds_node_with_created_object_report) {
     {
         bool found_target = false;
         for (size_t i = 0; i < report.created_object_count; ++i) {
-            if (report.created_objects[i] == node_state->target_parameter_id) {
+            if (report.created_objects[i].id == node_state->target_parameter_id) {
                 found_target = true;
             }
         }
@@ -249,6 +356,8 @@ TEST(edit_plan, executor_adds_node_with_created_object_report) {
 
 TEST_MAIN_BEGIN()
 REGISTER_TEST(edit_plan, stores_parameter_value_ops);
+REGISTER_TEST(edit_plan, stores_full_script_edit_ops_and_clones_plan);
+REGISTER_TEST(edit_plan, report_dispose_releases_schema_v2_arrays);
 REGISTER_TEST(edit_plan, executor_commits_parameter_value_plan);
 REGISTER_TEST(edit_plan, executor_rolls_back_failed_plan);
 REGISTER_TEST(edit_plan, executor_dry_run_reports_without_persisting);
