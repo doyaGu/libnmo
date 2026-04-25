@@ -1507,7 +1507,7 @@ TEST(cli, script_node_and_io_crud_roundtrip)
     data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -1554,7 +1554,7 @@ TEST(cli, script_node_and_io_crud_roundtrip)
     data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -1625,7 +1625,7 @@ TEST(cli, script_node_add_dry_run_reports_schema_v2)
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
     ASSERT_TRUE(get_uint_field(data, "node_id") != 0u);
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -1682,7 +1682,7 @@ TEST(cli, script_io_add_dry_run_exposes_executor_validation_parity)
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
     ASSERT_TRUE(get_uint_field(data, "io_id") != 0u);
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -1786,7 +1786,7 @@ TEST(cli, script_node_remove_canonicalizes_interface_refs)
     ASSERT_NOT_NULL(data);
     ASSERT_STR_EQ("canonicalize", get_string_field(data, "interface_mode"));
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
-    ASSERT_EQ(2u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(2u, yyjson_arr_size(operations));
@@ -2228,7 +2228,7 @@ TEST(cli, script_control_flow_crud_roundtrip)
     data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -2261,7 +2261,7 @@ TEST(cli, script_control_flow_crud_roundtrip)
     data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -2293,7 +2293,7 @@ TEST(cli, script_control_flow_crud_roundtrip)
     data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -2442,7 +2442,7 @@ TEST(cli, script_link_add_dry_run_reports_executor_validation)
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -2607,7 +2607,7 @@ TEST(cli, script_link_remove_canonicalizes_interface_refs)
     ASSERT_NOT_NULL(data);
     ASSERT_STR_EQ("canonicalize", get_string_field(data, "interface_mode"));
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
-    ASSERT_EQ(2u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(2u, yyjson_arr_size(operations));
@@ -2860,7 +2860,7 @@ TEST(cli, script_param_add_dry_run_reports_executor_validation)
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -3136,7 +3136,7 @@ TEST(cli, script_op_add_dry_run_reports_executor_validation)
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -3237,7 +3237,7 @@ TEST(cli, script_parameter_crud_roundtrip)
     ASSERT_NOT_NULL(data);
     ASSERT_STR_EQ("3", get_string_field(data, "new_value"));
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -3323,7 +3323,7 @@ TEST(cli, script_parameter_crud_roundtrip)
     data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -3371,7 +3371,7 @@ TEST(cli, script_parameter_crud_roundtrip)
     data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -3407,7 +3407,7 @@ TEST(cli, script_parameter_crud_roundtrip)
     data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
-    ASSERT_EQ(2u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(2u, yyjson_arr_size(operations));
@@ -3661,7 +3661,7 @@ TEST(cli, script_operation_crud_roundtrip)
     data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -3712,7 +3712,7 @@ TEST(cli, script_operation_crud_roundtrip)
     data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
-    ASSERT_EQ(2u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(2u, yyjson_arr_size(operations));

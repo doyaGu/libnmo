@@ -314,7 +314,7 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     ASSERT_EQ(0u, yyjson_arr_size(semantic_risks));
     ASSERT_STR_EQ(script_path, get_string_field(data, "script_file"));
     ASSERT_TRUE(yyjson_obj_get(data, "op_count") == NULL);
-    ASSERT_EQ(3u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(3u, yyjson_arr_size(operations));
@@ -411,7 +411,7 @@ TEST(cli, script_run_applies_changes_through_executor) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_FALSE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(3u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     ASSERT_STR_EQ(output_path, get_string_field(data, "output_path"));
     yyjson_doc_free(doc);
 
@@ -512,7 +512,7 @@ TEST(cli, script_run_lua_helpers_enqueue_until_script_end) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(2u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(2u, yyjson_arr_size(operations));
@@ -554,7 +554,7 @@ TEST(cli, script_run_executor_set_parameter_value_uses_edit_plan) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -602,7 +602,7 @@ TEST(cli, script_run_executor_set_parameter_bytes_uses_edit_plan) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -650,7 +650,7 @@ TEST(cli, script_run_executor_set_data_cell_uses_edit_plan) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -698,7 +698,7 @@ TEST(cli, script_run_executor_add_behavior_link_uses_edit_plan) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -746,7 +746,7 @@ TEST(cli, script_run_executor_add_parameter_uses_edit_plan) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -794,7 +794,7 @@ TEST(cli, script_run_executor_add_operation_uses_edit_plan) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -842,7 +842,7 @@ TEST(cli, script_run_executor_rename_io_uses_edit_plan) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -889,7 +889,7 @@ TEST(cli, script_run_executor_add_node_uses_edit_plan) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -934,7 +934,7 @@ TEST(cli, script_run_executor_rewire_behavior_link_uses_edit_plan) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -979,7 +979,7 @@ TEST(cli, script_run_executor_set_behavior_link_delay_uses_edit_plan) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -1024,7 +1024,7 @@ TEST(cli, script_run_executor_remove_behavior_link_uses_edit_plan) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -1069,7 +1069,7 @@ TEST(cli, script_run_executor_connect_parameter_uses_edit_plan) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -1114,7 +1114,7 @@ TEST(cli, script_run_executor_disconnect_parameter_uses_edit_plan) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -1159,7 +1159,7 @@ TEST(cli, script_run_executor_remove_parameter_uses_edit_plan) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, yyjson_arr_size(operations));
@@ -1204,7 +1204,7 @@ TEST(cli, script_run_executor_rewire_operation_uses_edit_plan) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(3u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(3u, yyjson_arr_size(operations));
@@ -1248,7 +1248,7 @@ TEST(cli, script_run_executor_remove_operation_uses_edit_plan) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_EQ(2u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(2u, yyjson_arr_size(operations));
@@ -1289,7 +1289,7 @@ TEST(cli, script_run_reports_executor_operations) {
     data = get_object_field(yyjson_doc_get_root(doc), "data");
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
-    ASSERT_EQ(2u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(2u, yyjson_arr_size(operations));
@@ -1325,7 +1325,7 @@ TEST(cli, script_run_noop_emits_schema_v2_report) {
     data = get_object_field(yyjson_doc_get_root(doc), "data");
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
-    ASSERT_EQ(0u, get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     ASSERT_NOT_NULL(get_array_field(data, "operations"));
     ASSERT_NOT_NULL(get_array_field(data, "changed_objects"));
     ASSERT_NOT_NULL(get_array_field(data, "created_objects"));

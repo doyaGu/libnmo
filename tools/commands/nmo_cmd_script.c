@@ -1752,9 +1752,6 @@ static void script_add_edit_report_json(yyjson_mut_doc *doc,
     yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
     yyjson_mut_obj_add_val(doc, data, "errors", yyjson_mut_arr(doc));
     yyjson_mut_obj_add_val(doc, data, "warnings", yyjson_mut_arr(doc));
-    yyjson_mut_obj_add_uint(
-        doc, data, "operation_count",
-        report != NULL ? (uint64_t)report->operation_count : 0u);
     nmo_cli_edit_report_add_operations_json(doc, data, report);
     nmo_cli_edit_report_add_impact_array_json(
         doc, data, "changed_objects",
@@ -1927,17 +1924,12 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         const nmo_edit_report_t *edit_report =
             args->edit_report_ready ? &args->edit_report : NULL;
-        size_t operation_count =
-            edit_report != NULL ? edit_report->operation_count : 0u;
-
         yyjson_mut_obj_add_bool(doc, data, "ok",
                                 args->validation.final_status == NMO_OK);
         yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
         script_run_add_common_report_json(doc, data, args);
         nmo_cli_edit_report_add_semantic_risks_json(doc, data, edit_report);
         nmo_cli_json_add_str_safe(doc, data, "script_file", args->script_path);
-        yyjson_mut_obj_add_uint(doc, data, "operation_count",
-                                operation_count);
         nmo_cli_edit_report_add_operations_json(doc, data, edit_report);
         nmo_cli_edit_report_add_validation_json(doc, data, edit_report);
         nmo_cli_edit_report_add_diff_json(doc, data, edit_report);
