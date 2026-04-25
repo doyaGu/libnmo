@@ -692,7 +692,7 @@ TEST(cli, patch_apply_fold_dry_run_reports_semantic_risks) {
     ASSERT_TRUE(array_contains_object_id(changed_objects, 363u));
     ASSERT_TRUE(array_contains_object_id(changed_objects, 237u));
     ASSERT_TRUE(array_contains_object_id(changed_objects, 358u));
-    ASSERT_STR_EQ("warn", get_string_field(data, "risk_level"));
+    ASSERT_TRUE(yyjson_obj_get(data, "risk_level") == NULL);
     yyjson_val *root_risks = get_array_field(data, "semantic_risks");
     ASSERT_NOT_NULL(root_risks);
     ASSERT_NOT_NULL(find_object_by_string_field(
