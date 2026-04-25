@@ -1140,9 +1140,18 @@ static void script_run_add_operation_json(yyjson_mut_doc *doc,
     yyjson_mut_val *options = yyjson_mut_obj(doc);
     yyjson_mut_val *handles = yyjson_mut_arr(doc);
     size_t i = 0;
+    nmo_object_id_t result_id =
+        op->result_handle_count > 0u ? op->result_handles[0] : 0u;
 
     yyjson_mut_obj_add_uint(doc, item, "index", (uint64_t)(index + 1u));
+    nmo_cli_json_add_str_safe(doc, item, "op", op->kind);
     nmo_cli_json_add_str_safe(doc, item, "kind", op->kind);
+    yyjson_mut_obj_add_uint(doc, item, "primary_id",
+                            (uint64_t)op->behavior_id);
+    yyjson_mut_obj_add_uint(doc, item, "result_id", (uint64_t)result_id);
+    yyjson_mut_obj_add_uint(doc, item, "status", (uint64_t)NMO_OK);
+    nmo_cli_json_add_str_safe(doc, item, "status_name",
+                              nmo_error_string(NMO_OK));
     yyjson_mut_obj_add_uint(doc, options, "behavior", op->behavior_id);
     nmo_cli_json_add_str_safe(doc, options, "kind", op->io_kind);
     nmo_cli_json_add_str_safe(doc, options, "name", op->name);

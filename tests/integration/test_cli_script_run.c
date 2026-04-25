@@ -293,6 +293,12 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     ASSERT_EQ(3u, yyjson_arr_size(operations));
     first_operation = yyjson_arr_get(operations, 0);
     ASSERT_NOT_NULL(first_operation);
+    ASSERT_STR_EQ("add_io", get_string_field(first_operation, "op"));
+    ASSERT_STR_EQ("add_io", get_string_field(first_operation, "kind"));
+    ASSERT_EQ(3u, get_uint_field(first_operation, "primary_id"));
+    ASSERT_EQ(276u, get_uint_field(first_operation, "result_id"));
+    ASSERT_EQ(0u, get_uint_field(first_operation, "status"));
+    ASSERT_STR_EQ("Success", get_string_field(first_operation, "status_name"));
     ASSERT_TRUE(yyjson_obj_get(first_operation, "result_handles") == NULL);
     first_handles = get_array_field(first_operation, "handles");
     ASSERT_NOT_NULL(first_handles);
