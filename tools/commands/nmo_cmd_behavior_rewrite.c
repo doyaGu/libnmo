@@ -237,9 +237,6 @@ static void add_edit_report_json(yyjson_mut_doc *doc,
                             report ? report->dry_run : false);
     yyjson_mut_obj_add_val(doc, data, "errors", yyjson_mut_arr(doc));
     yyjson_mut_obj_add_val(doc, data, "warnings", yyjson_mut_arr(doc));
-    yyjson_mut_obj_add_uint(
-        doc, data, "operation_count",
-        (uint64_t)(report ? report->operation_count : 0u));
     nmo_cli_edit_report_add_operations_json(doc, data, report);
     nmo_cli_edit_report_add_impact_array_json(
         doc, data, "changed_objects",

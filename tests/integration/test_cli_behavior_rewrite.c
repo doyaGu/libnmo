@@ -1436,7 +1436,7 @@ TEST(cli, behavior_fold_dry_run_reports_single_leaf_anchor_writable) {
     ASSERT_STR_EQ("ready", get_string_field(data, "status"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
     ASSERT_TRUE(yyjson_obj_get(data, "risk_level") == NULL);
-    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
