@@ -125,6 +125,9 @@ static int behavior_add_link_report(
         }
 
         yyjson_mut_val *data = yyjson_mut_obj(doc);
+        if (args->edit_report_ready && !dry_run && output_path != NULL) {
+            (void)nmo_edit_report_set_output_path(&args->edit_report, output_path);
+        }
         nmo_cli_edit_report_add_schema_v2_json(
             doc, data,
             args->edit_report_ready ? &args->edit_report : NULL,
@@ -136,7 +139,6 @@ static int behavior_add_link_report(
         nmo_cli_json_add_uint_safe(doc, data, "delay", (uint64_t)args->delay);
         if (!dry_run && output_path != NULL) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-            nmo_cli_json_add_str_safe(doc, data, "output_path", output_path);
         }
 
         nmo_cmd_ctx_json_end(c, doc, data, "behavior.add-link");
@@ -234,6 +236,9 @@ static int behavior_remove_link_report(
         }
 
         yyjson_mut_val *data = yyjson_mut_obj(doc);
+        if (args->edit_report_ready && !dry_run && output_path != NULL) {
+            (void)nmo_edit_report_set_output_path(&args->edit_report, output_path);
+        }
         nmo_cli_edit_report_add_schema_v2_json(
             doc, data,
             args->edit_report_ready ? &args->edit_report : NULL,
@@ -244,7 +249,6 @@ static int behavior_remove_link_report(
         nmo_cli_json_add_uint_safe(doc, data, "to_id", (uint64_t)args->to_id);
         if (!dry_run && output_path != NULL) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-            nmo_cli_json_add_str_safe(doc, data, "output_path", output_path);
         }
 
         nmo_cmd_ctx_json_end(c, doc, data, "behavior.remove-link");
