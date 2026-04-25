@@ -551,6 +551,54 @@ TEST(cli, script_run_executor_set_parameter_value_uses_edit_plan) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, script_run_executor_set_data_cell_uses_edit_plan) {
+    char script_path[1024];
+    const char *input_path = NMO_TEST_DATA_FILE("Ballance/Balls.nmo");
+    char args[2048];
+    cli_run_result_t result = {0};
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *operations = NULL;
+    yyjson_val *changed_objects = NULL;
+    yyjson_val *op = NULL;
+    yyjson_val *changed = NULL;
+
+    ASSERT_TRUE(build_repo_fixture_path(
+        "tests/fixtures/lua/script_run_set_data_cell.lua",
+        script_path,
+        sizeof(script_path)));
+
+    snprintf(args, sizeof(args),
+             "-f json script run --dry-run \"%s\" \"%s\"",
+             script_path,
+             input_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(1u, yyjson_arr_size(operations));
+    op = yyjson_arr_get(operations, 0);
+    ASSERT_STR_EQ("set_data_cell", get_string_field(op, "op"));
+    ASSERT_EQ(2261u, get_uint_field(op, "primary_id"));
+    changed_objects = get_array_field(data, "changed_objects");
+    ASSERT_NOT_NULL(changed_objects);
+    ASSERT_EQ(1u, yyjson_arr_size(changed_objects));
+    changed = yyjson_arr_get(changed_objects, 0);
+    ASSERT_EQ(2261u, get_uint_field(changed, "object_id"));
+    ASSERT_STR_EQ("set_data_cell", get_string_field(changed, "cause"));
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, script_run_reports_executor_operations) {
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
@@ -685,6 +733,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_run_applies_changes_through_executor);
     REGISTER_TEST(cli, script_run_lua_helpers_enqueue_until_script_end);
     REGISTER_TEST(cli, script_run_executor_set_parameter_value_uses_edit_plan);
+    REGISTER_TEST(cli, script_run_executor_set_data_cell_uses_edit_plan);
     REGISTER_TEST(cli, script_run_reports_executor_operations);
     REGISTER_TEST(cli, script_run_noop_emits_schema_v2_report);
     REGISTER_TEST(cli, script_run_runtime_error_does_not_write_output);

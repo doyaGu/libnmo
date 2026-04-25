@@ -890,9 +890,54 @@ static int script_run_lua_set_parameter_value(lua_State *state)
     return 1;
 }
 
+static int script_run_lua_set_data_cell(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_object_id_t dataarray_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
+    lua_Integer row_arg = luaL_checkinteger(state, 2);
+    lua_Integer col_arg = luaL_checkinteger(state, 3);
+    const char *value = luaL_checkstring(state, 4);
+    char dataarray_id_text[32];
+    nmo_status_t status = NMO_OK;
+
+    if (row_arg < 0 || col_arg < 0) {
+        return luaL_error(state, "row and col must be non-negative");
+    }
+
+    status = script_run_ensure_pending_plan(args);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_data_cell(
+            args->pending_plan,
+            dataarray_id,
+            (uint32_t)row_arg,
+            (uint32_t)col_arg,
+            value);
+    }
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to enqueue script data cell");
+    }
+
+    snprintf(dataarray_id_text, sizeof(dataarray_id_text), "%u", dataarray_id);
+    if (!script_run_append_operation(args,
+                                     dataarray_id,
+                                     "set_data_cell",
+                                     "dataarray",
+                                     dataarray_id_text,
+                                     NULL,
+                                     0u)) {
+        return luaL_error(state, "failed to record script operation");
+    }
+
+    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    return 1;
+}
+
 static int script_run_lua_open_executor_module(lua_State *state)
 {
-    lua_createtable(state, 0, 7);
+    lua_createtable(state, 0, 8);
 
     lua_pushcfunction(state, script_run_lua_root_script_id);
     lua_setfield(state, -2, "root_script_id");
@@ -914,6 +959,9 @@ static int script_run_lua_open_executor_module(lua_State *state)
 
     lua_pushcfunction(state, script_run_lua_set_parameter_value);
     lua_setfield(state, -2, "set_parameter_value");
+
+    lua_pushcfunction(state, script_run_lua_set_data_cell);
+    lua_setfield(state, -2, "set_data_cell");
 
     return 1;
 }
