@@ -1,6 +1,7 @@
 #include "lua_bindings_internal.h"
 
 #include "behavior/nmo_edit_plan.h"
+#include "core/nmo_guid.h"
 #include "lua/nmo_lua_runtime.h"
 
 #include "lauxlib.h"
@@ -78,6 +79,29 @@ static int nmo_lua_plan_count(lua_State *state)
     return 1;
 }
 
+static int nmo_lua_plan_add_node(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    const char *guid_text = luaL_checkstring(state, 3);
+    const char *name = luaL_checkstring(state, 4);
+    nmo_guid_t guid = nmo_guid_parse(guid_text);
+    if (nmo_guid_is_null(guid)) {
+        return luaL_error(state, "invalid building block GUID");
+    }
+
+    status = nmo_edit_plan_add_node(plan, behavior_id, guid, name);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Failed to add node op");
+    }
+    return 0;
+}
+
 static int nmo_lua_plan_add_io(lua_State *state)
 {
     nmo_edit_plan_t *plan = NULL;
@@ -101,6 +125,24 @@ static int nmo_lua_plan_add_io(lua_State *state)
     status = nmo_edit_plan_add_io(plan, behavior_id, kind, name);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to add io op");
+    }
+    return 0;
+}
+
+static int nmo_lua_plan_rename_io(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t io_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    const char *name = luaL_checkstring(state, 3);
+
+    status = nmo_edit_plan_add_rename_io(plan, io_id, name);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Failed to add rename io op");
     }
     return 0;
 }
@@ -255,8 +297,12 @@ static const char *nmo_lua_plan_op_kind_string(nmo_edit_op_kind_t kind)
         return "set_parameter_value";
     case NMO_EDIT_OP_SET_PARAMETER_BYTES:
         return "set_parameter_bytes";
+    case NMO_EDIT_OP_ADD_NODE:
+        return "add_node";
     case NMO_EDIT_OP_ADD_IO:
         return "add_io";
+    case NMO_EDIT_OP_RENAME_IO:
+        return "rename_io";
     case NMO_EDIT_OP_REMOVE_IO:
         return "remove_io";
     case NMO_EDIT_OP_REMOVE_NODE:
@@ -477,8 +523,12 @@ static int nmo_lua_open_plan_module(lua_State *state)
     lua_setfield(state, -2, "new");
     lua_pushcfunction(state, nmo_lua_plan_count);
     lua_setfield(state, -2, "count");
+    lua_pushcfunction(state, nmo_lua_plan_add_node);
+    lua_setfield(state, -2, "add_node");
     lua_pushcfunction(state, nmo_lua_plan_add_io);
     lua_setfield(state, -2, "add_io");
+    lua_pushcfunction(state, nmo_lua_plan_rename_io);
+    lua_setfield(state, -2, "rename_io");
     lua_pushcfunction(state, nmo_lua_plan_remove_io);
     lua_setfield(state, -2, "remove_io");
     lua_pushcfunction(state, nmo_lua_plan_remove_node);
