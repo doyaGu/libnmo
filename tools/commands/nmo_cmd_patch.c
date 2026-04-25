@@ -162,8 +162,6 @@ typedef struct patch_plan {
     const char *input;
     const char *output;
     nmo_edit_plan_t *edit_plan;
-    patch_operation_t *operations;
-    size_t operation_count;
 } patch_plan_t;
 
 static void patch_add_edit_report_json(
@@ -183,19 +181,22 @@ static void patch_add_edit_report_json(
     }
 }
 
+static void patch_operation_dispose(patch_operation_t *op) {
+    if (!op) {
+        return;
+    }
+    free(op->fold_nodes);
+    free(op->fold_input_maps);
+    free(op->fold_output_maps);
+    free(op->fold_parameter_maps);
+    free(op->set_parameter_bytes.bytes);
+    memset(op, 0, sizeof(*op));
+}
+
 static void patch_plan_free(patch_plan_t *plan) {
     if (!plan) {
         return;
     }
-    for (size_t i = 0; i < plan->operation_count; ++i) {
-        patch_operation_t *op = &plan->operations[i];
-        free(op->fold_nodes);
-        free(op->fold_input_maps);
-        free(op->fold_output_maps);
-        free(op->fold_parameter_maps);
-        free(op->set_parameter_bytes.bytes);
-    }
-    free(plan->operations);
     nmo_edit_plan_destroy(plan->edit_plan);
     if (plan->doc) {
         yyjson_doc_free(plan->doc);
@@ -1791,16 +1792,6 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    size_t op_count = yyjson_arr_size(ops);
-    patch_operation_t *operations =
-        (patch_operation_t *)calloc(op_count, sizeof(*operations));
-    if (!operations) {
-        fprintf(stderr, "Error: Out of memory\n");
-        patch_plan_free(out_plan);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    out_plan->operations = operations;
-    out_plan->operation_count = op_count;
     nmo_status_t st = nmo_edit_plan_create(&out_plan->edit_plan);
     if (st != NMO_OK) {
         fprintf(stderr, "Error: Out of memory\n");
@@ -1812,6 +1803,7 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
     size_t max;
     yyjson_val *op_obj;
     yyjson_arr_foreach(ops, idx, max, op_obj) {
+        patch_operation_t operation = {0};
         if (!yyjson_is_obj(op_obj)) {
             fprintf(stderr, "Error: Patch operation must be an object\n");
             patch_plan_free(out_plan);
@@ -1824,76 +1816,78 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         if (strcmp(op, "replace_bb") == 0) {
-            rc = patch_parse_replace_bb(op_obj, &operations[idx]);
+            rc = patch_parse_replace_bb(op_obj, &operation);
         } else if (strcmp(op, "fold") == 0) {
-            rc = patch_parse_fold(op_obj, &operations[idx]);
+            rc = patch_parse_fold(op_obj, &operation);
         } else if (strcmp(op, "add_node") == 0 && out_plan->version == 2u) {
-            rc = patch_parse_add_node(op_obj, &operations[idx]);
+            rc = patch_parse_add_node(op_obj, &operation);
         } else if (strcmp(op, "remove_node") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_remove_node(op_obj, &operations[idx]);
+            rc = patch_parse_remove_node(op_obj, &operation);
         } else if (strcmp(op, "add_behavior_link") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_add_behavior_link(op_obj, &operations[idx]);
+            rc = patch_parse_add_behavior_link(op_obj, &operation);
         } else if (strcmp(op, "rewire_behavior_link") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_rewire_behavior_link(op_obj, &operations[idx]);
+            rc = patch_parse_rewire_behavior_link(op_obj, &operation);
         } else if (strcmp(op, "set_behavior_link_delay") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_set_behavior_link_delay(op_obj, &operations[idx]);
+            rc = patch_parse_set_behavior_link_delay(op_obj, &operation);
         } else if (strcmp(op, "remove_behavior_link") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_remove_behavior_link(op_obj, &operations[idx]);
+            rc = patch_parse_remove_behavior_link(op_obj, &operation);
         } else if (strcmp(op, "add_parameter") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_add_parameter(op_obj, &operations[idx]);
+            rc = patch_parse_add_parameter(op_obj, &operation);
         } else if (strcmp(op, "disconnect_parameter") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_disconnect_parameter(op_obj, &operations[idx]);
+            rc = patch_parse_disconnect_parameter(op_obj, &operation);
         } else if (strcmp(op, "connect_parameter") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_connect_parameter(op_obj, &operations[idx]);
+            rc = patch_parse_connect_parameter(op_obj, &operation);
         } else if (strcmp(op, "remove_parameter") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_remove_parameter(op_obj, &operations[idx]);
+            rc = patch_parse_remove_parameter(op_obj, &operation);
         } else if (strcmp(op, "set_parameter_value") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_set_parameter_value(op_obj, &operations[idx]);
+            rc = patch_parse_set_parameter_value(op_obj, &operation);
         } else if (strcmp(op, "set_parameter_bytes") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_set_parameter_bytes(op_obj, &operations[idx]);
+            rc = patch_parse_set_parameter_bytes(op_obj, &operation);
         } else if (strcmp(op, "set_data_cell") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_set_data_cell(op_obj, &operations[idx]);
+            rc = patch_parse_set_data_cell(op_obj, &operation);
         } else if (strcmp(op, "add_operation") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_add_operation(op_obj, &operations[idx]);
+            rc = patch_parse_add_operation(op_obj, &operation);
         } else if (strcmp(op, "remove_operation") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_remove_operation(op_obj, &operations[idx]);
+            rc = patch_parse_remove_operation(op_obj, &operation);
         } else if (strcmp(op, "rewire_operation") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_rewire_operation(op_obj, &operations[idx]);
+            rc = patch_parse_rewire_operation(op_obj, &operation);
         } else if (strcmp(op, "add_io") == 0 && out_plan->version == 2u) {
-            rc = patch_parse_add_io(op_obj, &operations[idx]);
+            rc = patch_parse_add_io(op_obj, &operation);
         } else if (strcmp(op, "remove_io") == 0 && out_plan->version == 2u) {
-            rc = patch_parse_remove_io(op_obj, &operations[idx]);
+            rc = patch_parse_remove_io(op_obj, &operation);
         } else if (strcmp(op, "rename_io") == 0 && out_plan->version == 2u) {
-            rc = patch_parse_rename_io(op_obj, &operations[idx]);
+            rc = patch_parse_rename_io(op_obj, &operation);
         } else if (strcmp(op, "interface_policy") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_interface_policy(op_obj, &operations[idx]);
+            rc = patch_parse_interface_policy(op_obj, &operation);
         } else {
             fprintf(stderr, "Error: Unsupported patch op '%s'\n", op);
             patch_plan_free(out_plan);
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         if (rc != NMO_CLI_EXIT_SUCCESS) {
+            patch_operation_dispose(&operation);
             patch_plan_free(out_plan);
             return rc;
         }
         st = patch_operation_add_to_edit_plan(
-            out_plan->edit_plan, &operations[idx]);
+            out_plan->edit_plan, &operation);
+        patch_operation_dispose(&operation);
         if (st != NMO_OK) {
             fprintf(stderr, "Error: Failed to build edit plan\n");
             patch_plan_free(out_plan);
@@ -2055,10 +2049,10 @@ static int patch_apply_plan(patch_plan_t *plan,
 
     if (dry_run) {
         fprintf(ctx.out, "[dry-run] Applied %zu operation(s)\n",
-                plan->operation_count);
+                nmo_edit_plan_count(plan->edit_plan));
     } else {
         fprintf(ctx.out, "Applied %zu operation(s)\n",
-                plan->operation_count);
+                nmo_edit_plan_count(plan->edit_plan));
         fprintf(ctx.out, "Saved to: %s\n", plan->output);
     }
     nmo_edit_report_dispose(&edit_report);

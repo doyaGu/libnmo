@@ -925,6 +925,15 @@ TEST(repl_read, behavior_rewrite_does_not_emit_private_write_reports) {
                                "static void add_changed_object_ids_json");
 }
 
+TEST(repl_read, patch_manifest_does_not_keep_parallel_operation_array) {
+    assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
+                               "patch_operation_t *operations");
+    assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
+                               "plan->operations");
+    assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
+                               "plan->operation_count");
+}
+
 TEST(repl_read, behavior_link_commands_use_edit_executor) {
     assert_source_contains("tools/commands/nmo_cmd_behavior_link.c",
                            "nmo_edit_executor_execute");
@@ -1244,6 +1253,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, edit_report_schema_v2_has_single_json_helper);
     REGISTER_TEST(repl_read, behavior_rewrite_reuses_semantic_risk_json_helper);
     REGISTER_TEST(repl_read, behavior_rewrite_does_not_emit_private_write_reports);
+    REGISTER_TEST(repl_read, patch_manifest_does_not_keep_parallel_operation_array);
     REGISTER_TEST(repl_read, behavior_link_commands_use_edit_executor);
     REGISTER_TEST(repl_read, parameter_set_uses_edit_executor);
     REGISTER_TEST(repl_read, data_set_cell_uses_edit_executor);
