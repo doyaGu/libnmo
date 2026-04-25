@@ -1433,6 +1433,28 @@ TEST(cli, behavior_fold_dry_run_reports_single_leaf_anchor_writable) {
     ASSERT_TRUE(get_bool_field(data, "can_write"));
     ASSERT_TRUE(get_bool_field(data, "write_supported"));
     ASSERT_STR_EQ("ready", get_string_field(data, "status"));
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    yyjson_val *operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
+    yyjson_val *op = yyjson_arr_get(operations, 0);
+    ASSERT_TRUE(op && yyjson_is_obj(op));
+    ASSERT_STR_EQ("fold", get_string_field(op, "op"));
+    ASSERT_EQ(2367u, (uint32_t)get_uint_field(op, "result_id"));
+    yyjson_val *changed_objects = get_array_field(data, "changed_objects");
+    ASSERT_NOT_NULL(changed_objects);
+    ASSERT_TRUE(array_contains_object_id(changed_objects, 2367u));
+    yyjson_val *deleted_objects = get_array_field(data, "deleted_objects");
+    ASSERT_NOT_NULL(deleted_objects);
+    ASSERT_EQ(0u, (uint32_t)yyjson_arr_size(deleted_objects));
+    yyjson_val *validation = get_object_field(data, "validation");
+    ASSERT_NOT_NULL(validation);
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(validation, "final_status"));
+    yyjson_val *diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    ASSERT_EQ((uint32_t)yyjson_arr_size(changed_objects),
+              (uint32_t)get_uint_field(diff, "changed_object_count"));
     yyjson_val *write_blockers = get_array_field(data, "write_blockers");
     ASSERT_NOT_NULL(write_blockers);
     ASSERT_EQ(0u, (uint32_t)yyjson_arr_size(write_blockers));

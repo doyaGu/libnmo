@@ -1861,7 +1861,8 @@ static bool parse_fold_args(int argc,
 static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
                              const nmo_behavior_state_t *parent,
                              const nmo_behavior_state_t *representative,
-                             const nmo_behavior_fold_report_t *report) {
+                             const nmo_behavior_fold_report_t *report,
+                             const nmo_edit_report_t *edit_report) {
     const nmo_behavior_boundary_t *boundary = &report->boundary;
     nmo_object_id_t representative_id = report->representative_id;
     if (ctx->is_json) {
@@ -1870,10 +1871,14 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        add_common_write_report_json(doc, data, true,
-                                     report->selected_nodes,
-                                     report->selected_node_count);
-        yyjson_mut_obj_add_bool(doc, data, "dry_run", true);
+        if (edit_report != NULL) {
+            add_edit_report_json(doc, data, edit_report);
+        } else {
+            add_common_write_report_json(doc, data, true,
+                                         report->selected_nodes,
+                                         report->selected_node_count);
+            yyjson_mut_obj_add_bool(doc, data, "dry_run", true);
+        }
         yyjson_mut_obj_add_bool(doc, data, "can_write",
                                 report->can_write);
         yyjson_mut_obj_add_bool(doc, data, "write_supported",
@@ -1892,8 +1897,10 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
         }
         yyjson_mut_obj_add_val(doc, data, "write_blockers",
                                write_blockers);
-        add_semantic_risks_json(doc, data, report->semantic_risks,
-                                report->semantic_risk_count);
+        if (edit_report == NULL) {
+            add_semantic_risks_json(doc, data, report->semantic_risks,
+                                    report->semantic_risk_count);
+        }
         yyjson_mut_obj_add_uint(doc, data, "parent_id", report->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "anchor_id", report->anchor_id);
         nmo_cli_json_add_str_safe(doc, data, "parent_behavior_type",
@@ -2165,6 +2172,23 @@ int nmo_cmd_behavior_fold(int argc,
     nmo_status_t fold_rc = NMO_OK;
     if (args.dry_run) {
         fold_rc = nmo_behavior_edit_fold_analyze(workspace, &desc, &report);
+        if (fold_rc == NMO_OK) {
+            fold_rc = nmo_edit_report_init(&edit_report);
+            if (fold_rc == NMO_OK) {
+                edit_report_ready = true;
+                fold_rc = nmo_edit_plan_create(&edit_plan);
+            }
+        }
+        if (fold_rc == NMO_OK) {
+            fold_rc = nmo_edit_plan_add_fold(edit_plan, &desc);
+        }
+        if (fold_rc == NMO_OK) {
+            nmo_edit_executor_options_t options =
+                nmo_edit_executor_options_default();
+            options.dry_run = true;
+            fold_rc = nmo_edit_executor_execute(
+                workspace, edit_plan, &options, &edit_report);
+        }
     } else {
         fold_rc = nmo_edit_report_init(&edit_report);
         if (fold_rc == NMO_OK) {
@@ -2226,7 +2250,8 @@ int nmo_cmd_behavior_fold(int argc,
     }
 
     if (args.dry_run) {
-        rc = fold_emit_dry_run(&c, parent, representative, &report);
+        rc = fold_emit_dry_run(&c, parent, representative, &report,
+                               edit_report_ready ? &edit_report : NULL);
     } else {
         nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
         rc = nmo_cli_save_document(c.document, args.output_path, &save_opts);
