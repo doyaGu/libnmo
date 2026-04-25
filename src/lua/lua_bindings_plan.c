@@ -105,11 +105,86 @@ static int nmo_lua_plan_add_io(lua_State *state)
     return 0;
 }
 
+static int nmo_lua_plan_remove_io(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t io_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    bool detach_links = lua_toboolean(state, 3) != 0;
+
+    status = nmo_edit_plan_add_remove_io(plan, io_id, detach_links);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Failed to add remove io op");
+    }
+    return 0;
+}
+
+static int nmo_lua_plan_remove_node(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t parent_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    nmo_object_id_t node_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
+    uint32_t delete_flags = (uint32_t)luaL_optinteger(state, 4, 0);
+
+    status = nmo_edit_plan_add_remove_node(
+        plan, parent_id, node_id, delete_flags);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Failed to add remove node op");
+    }
+    return 0;
+}
+
+static int nmo_lua_plan_interface_policy(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    const char *mode_text = luaL_checkstring(state, 3);
+    nmo_script_edit_interface_mode_t mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE;
+    if (strcmp(mode_text, "preserve") == 0) {
+        mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE;
+    } else if (strcmp(mode_text, "canonicalize") == 0) {
+        mode = NMO_SCRIPT_EDIT_INTERFACE_CANONICALIZE;
+    } else if (strcmp(mode_text, "remove") == 0) {
+        mode = NMO_SCRIPT_EDIT_INTERFACE_REMOVE;
+    } else {
+        return luaL_error(
+            state,
+            "interface mode must be 'preserve', 'canonicalize', or 'remove'");
+    }
+
+    status = nmo_edit_plan_add_interface_policy(plan, behavior_id, mode);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add interface policy op");
+    }
+    return 0;
+}
+
 static const char *nmo_lua_plan_op_kind_string(nmo_edit_op_kind_t kind)
 {
     switch (kind) {
     case NMO_EDIT_OP_ADD_IO:
         return "add_io";
+    case NMO_EDIT_OP_REMOVE_IO:
+        return "remove_io";
+    case NMO_EDIT_OP_REMOVE_NODE:
+        return "remove_node";
+    case NMO_EDIT_OP_INTERFACE_POLICY:
+        return "interface_policy";
     default:
         return "unknown";
     }
@@ -250,6 +325,12 @@ static int nmo_lua_open_plan_module(lua_State *state)
     lua_setfield(state, -2, "count");
     lua_pushcfunction(state, nmo_lua_plan_add_io);
     lua_setfield(state, -2, "add_io");
+    lua_pushcfunction(state, nmo_lua_plan_remove_io);
+    lua_setfield(state, -2, "remove_io");
+    lua_pushcfunction(state, nmo_lua_plan_remove_node);
+    lua_setfield(state, -2, "remove_node");
+    lua_pushcfunction(state, nmo_lua_plan_interface_policy);
+    lua_setfield(state, -2, "interface_policy");
     lua_pushcfunction(state, nmo_lua_plan_execute);
     lua_setfield(state, -2, "execute");
     return 1;

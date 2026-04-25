@@ -29,7 +29,11 @@ TEST(lua_bindings_plan, plan_module_builds_edit_plan)
         "local p = plan.new()\n"
         "assert(plan.count(p) == 0)\n"
         "plan.add_io(p, 3, 'input', 'Lua Plan In')\n"
-        "assert(plan.count(p) == 1)\n");
+        "assert(plan.count(p) == 1)\n"
+        "plan.remove_io(p, 42, true)\n"
+        "plan.remove_node(p, 3, 43, 0)\n"
+        "plan.interface_policy(p, 3, 'canonicalize')\n"
+        "assert(plan.count(p) == 4)\n");
 
     nmo_lua_runtime_destroy(runtime);
 }
