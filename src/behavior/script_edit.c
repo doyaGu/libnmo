@@ -2522,17 +2522,21 @@ NMO_API nmo_status_t nmo_script_edit_add_node(
         return NMO_ERR_NOT_FOUND;
     }
 
+    proto = nmo_behavior_registry_find(nmo_context_get_bb_registry(tx->ctx), bb_guid);
+    if (!proto) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
     rc = nmo_workspace_edit_snapshot_bytes(tx->edit, parent_state,
                                          sizeof(*parent_state));
     if (rc != NMO_OK) {
         return rc;
     }
 
-    proto = nmo_behavior_registry_find(nmo_context_get_bb_registry(tx->ctx), bb_guid);
     rc = script_edit_create_runtime_object(
         tx,
         NMO_CID_BEHAVIOR,
-        (name && name[0] != '\0') ? name : (proto ? proto->name : "Behavior"),
+        (name && name[0] != '\0') ? name : proto->name,
         NMO_GUID_NULL,
         &node_id);
     if (rc != NMO_OK) {
@@ -2549,18 +2553,14 @@ NMO_API nmo_status_t nmo_script_edit_add_node(
 
     node_state->flags |= CKBEHAVIOR_BUILDINGBLOCK | CKBEHAVIOR_USEFUNCTION;
     node_state->flags &= ~CKBEHAVIOR_SCRIPT;
-    if (proto) {
-        node_state->flags |= proto->behavior_flags;
-        node_state->compatible_class_id = proto->compatible_class_id;
-        node_state->block_version = proto->version != 0u ? proto->version : 65536u;
-    } else {
-        node_state->block_version = 65536u;
-    }
+    node_state->flags |= proto->behavior_flags;
+    node_state->compatible_class_id = proto->compatible_class_id;
+    node_state->block_version = proto->version != 0u ? proto->version : 65536u;
     node_state->block_guid = bb_guid;
     node_state->priority = 0;
     node_state->owner_id = parent_behavior_id;
 
-    if (proto) {
+    {
         for (uint32_t i = 0; i < proto->input_count; ++i) {
             nmo_object_id_t io_id = 0;
             rc = script_edit_create_io_object(tx, proto->inputs[i],
@@ -2617,6 +2617,29 @@ NMO_API nmo_status_t nmo_script_edit_add_node(
                 return rc;
             }
         }
+        if (proto->compatible_class_id != 0 &&
+            proto->compatible_class_id != NMO_CID_BEOBJECT) {
+            nmo_type_registry_t *registry = nmo_context_get_type_registry(tx->ctx);
+            nmo_guid_t target_type_guid = NMO_GUID_NULL;
+            nmo_object_id_t target_parameter_id = 0;
+            if (!registry) {
+                return NMO_ERR_INVALID_STATE;
+            }
+            rc = nmo_type_registry_class_id_to_guid(
+                registry,
+                (uint32_t)proto->compatible_class_id,
+                &target_type_guid);
+            if (rc != NMO_OK) {
+                return rc;
+            }
+            rc = script_edit_create_parameter_object(
+                tx, NMO_CID_PARAMETERIN, node_id, "Target", target_type_guid,
+                &target_parameter_id);
+            if (rc != NMO_OK) {
+                return rc;
+            }
+            node_state->target_parameter_id = target_parameter_id;
+        }
         for (uint32_t i = 0; i < proto->local_param_count; ++i) {
             nmo_object_id_t parameter_id = 0;
             rc = script_edit_create_parameter_object(
@@ -2627,6 +2650,33 @@ NMO_API nmo_status_t nmo_script_edit_add_node(
             if (rc != NMO_OK) {
                 return rc;
             }
+            rc = nmo_array_append(&node_state->local_parameters, &parameter_id);
+            if (rc != NMO_OK) {
+                return rc;
+            }
+        }
+        for (uint32_t i = 0; i < proto->setting_count; ++i) {
+            nmo_object_id_t parameter_id = 0;
+            nmo_object_t *parameter_obj = NULL;
+            nmo_parameterlocal_state_t *parameter_state = NULL;
+            rc = script_edit_create_parameter_object(
+                tx, NMO_CID_PARAMETERLOCAL, node_id,
+                proto->settings[i].name,
+                proto->settings[i].type_guid,
+                &parameter_id);
+            if (rc != NMO_OK) {
+                return rc;
+            }
+            parameter_obj = nmo_object_repository_find_by_id(
+                nmo_workspace_internal_repository(tx->workspace),
+                parameter_id);
+            parameter_state = parameter_obj
+                ? (nmo_parameterlocal_state_t *)nmo_object_get_state(parameter_obj)
+                : NULL;
+            if (!parameter_state) {
+                return NMO_ERR_INVALID_STATE;
+            }
+            parameter_state->is_setting = 1u;
             rc = nmo_array_append(&node_state->local_parameters, &parameter_id);
             if (rc != NMO_OK) {
                 return rc;
