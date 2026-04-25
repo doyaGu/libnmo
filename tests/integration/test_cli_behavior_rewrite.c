@@ -675,7 +675,7 @@ TEST(cli, behavior_fold_candidates_reports_semantic_risks) {
         yyjson_val *roots = get_array_field(group, "roots");
         ASSERT_TRUE(array_contains_uint(roots, 237u));
         ASSERT_TRUE(array_contains_uint(roots, 358u));
-        ASSERT_STR_EQ("warn", get_string_field(group, "risk_level"));
+        ASSERT_TRUE(yyjson_obj_get(group, "risk_level") == NULL);
         yyjson_val *risks = get_array_field(group, "semantic_risks");
         ASSERT_NOT_NULL(risks);
         yyjson_val *risk = find_semantic_risk(risks, "shared_parameter");
@@ -717,7 +717,7 @@ TEST(cli, behavior_fold_candidates_reports_message_semantic_risks) {
             continue;
         }
 
-        ASSERT_STR_EQ("warn", get_string_field(group, "risk_level"));
+        ASSERT_TRUE(yyjson_obj_get(group, "risk_level") == NULL);
         yyjson_val *risks = get_array_field(group, "semantic_risks");
         ASSERT_NOT_NULL(risks);
         yyjson_val *risk = find_semantic_risk(risks, "message_flow");

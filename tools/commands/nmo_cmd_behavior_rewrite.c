@@ -184,21 +184,6 @@ static const char *semantic_risk_severity_string(
     }
 }
 
-static const char *semantic_risk_level_string(
-    const nmo_behavior_semantic_risk_t *risks,
-    size_t risk_count) {
-    bool has_warn = false;
-    for (size_t i = 0; i < risk_count; ++i) {
-        if (risks[i].severity == NMO_BEHAVIOR_SEMANTIC_RISK_REJECT) {
-            return "reject";
-        }
-        if (risks[i].severity == NMO_BEHAVIOR_SEMANTIC_RISK_WARN) {
-            has_warn = true;
-        }
-    }
-    return has_warn ? "warn" : "safe";
-}
-
 static void add_semantic_risks_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *data,
@@ -216,9 +201,6 @@ static void add_semantic_risks_json(
                                 (uint64_t)risks[i].object_id);
         yyjson_mut_arr_add_val(arr, risk);
     }
-    nmo_cli_json_add_str_safe(
-        doc, data, "risk_level",
-        semantic_risk_level_string(risks, risk_count));
     yyjson_mut_obj_add_val(doc, data, "semantic_risks", arr);
 }
 
