@@ -255,6 +255,7 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     yyjson_val *first_changed = NULL;
     yyjson_val *first_created = NULL;
     yyjson_val *diff = NULL;
+    yyjson_val *semantic_risks = NULL;
     yyjson_val *first_operation = NULL;
     yyjson_val *first_handles = NULL;
 
@@ -292,7 +293,9 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     ASSERT_NOT_NULL(first_changed);
     ASSERT_STR_EQ("add_io", get_string_field(first_changed, "cause"));
     ASSERT_TRUE(yyjson_obj_get(data, "risk_level") == NULL);
-    ASSERT_TRUE(yyjson_obj_get(data, "semantic_risks") == NULL);
+    semantic_risks = get_array_field(data, "semantic_risks");
+    ASSERT_NOT_NULL(semantic_risks);
+    ASSERT_EQ(0u, yyjson_arr_size(semantic_risks));
     ASSERT_STR_EQ(script_path, get_string_field(data, "script_file"));
     ASSERT_EQ(3u, get_uint_field(data, "op_count"));
     ASSERT_EQ(3u, get_uint_field(data, "operation_count"));

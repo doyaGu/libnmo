@@ -1435,6 +1435,13 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
                                 args->validation.final_status == NMO_OK);
         yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
         script_run_add_common_report_json(doc, data, args);
+        if (args->edit_report_ready) {
+            const nmo_cli_edit_report_json_options_t risk_options = {
+                .include_risk_level = false,
+            };
+            nmo_cli_edit_report_add_semantic_risks_json(
+                doc, data, &args->edit_report, &risk_options);
+        }
         nmo_cli_json_add_str_safe(doc, data, "script_file", args->script_path);
         yyjson_mut_obj_add_uint(doc, data, "op_count", args->operation_count);
         yyjson_mut_obj_add_uint(doc, data, "operation_count",
