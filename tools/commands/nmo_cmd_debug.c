@@ -162,14 +162,14 @@ static int debug_probe_report(nmo_cmd_ctx_t *ctx,
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
         yyjson_mut_val *data = yyjson_mut_obj(doc);
+        if (!dry_run && output_path != NULL && args->report.output_path == NULL) {
+            (void)nmo_edit_report_set_output_path(&args->report, output_path);
+        }
         nmo_cli_edit_report_add_schema_v2_json(
             doc, data, &args->report, dry_run);
         nmo_cli_json_add_str_safe(doc, data, "probe_kind", args->kind);
         yyjson_mut_obj_add_uint(doc, data, "behavior_id",
                                 (uint64_t)args->behavior_id);
-        if (output_path != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "output_path", output_path);
-        }
         int rc = nmo_cmd_ctx_json_end(ctx, doc, data, "debug.probe");
         nmo_edit_report_dispose(&args->report);
         return rc;
