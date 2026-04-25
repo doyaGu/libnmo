@@ -855,6 +855,47 @@ static int script_run_lua_remove_node(lua_State *state)
     return 0;
 }
 
+static int script_run_lua_add_behavior_link(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_object_id_t parent_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
+    nmo_object_id_t from_io_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    nmo_object_id_t to_io_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
+    uint32_t activation_delay = (uint32_t)luaL_optinteger(state, 4, 0);
+    char parent_id_text[32];
+    nmo_status_t status = NMO_OK;
+
+    status = script_run_ensure_pending_plan(args);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_behavior_link(
+            args->pending_plan,
+            parent_id,
+            from_io_id,
+            to_io_id,
+            activation_delay);
+    }
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to enqueue script behavior link");
+    }
+
+    snprintf(parent_id_text, sizeof(parent_id_text), "%u", parent_id);
+    if (!script_run_append_operation(args,
+                                     parent_id,
+                                     "add_behavior_link",
+                                     "behavior_link",
+                                     parent_id_text,
+                                     NULL,
+                                     0u)) {
+        return luaL_error(state, "failed to record script operation");
+    }
+
+    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    return 1;
+}
+
 static int script_run_lua_set_parameter_value(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
@@ -986,7 +1027,7 @@ static int script_run_lua_set_data_cell(lua_State *state)
 
 static int script_run_lua_open_executor_module(lua_State *state)
 {
-    lua_createtable(state, 0, 9);
+    lua_createtable(state, 0, 10);
 
     lua_pushcfunction(state, script_run_lua_root_script_id);
     lua_setfield(state, -2, "root_script_id");
@@ -1005,6 +1046,9 @@ static int script_run_lua_open_executor_module(lua_State *state)
 
     lua_pushcfunction(state, script_run_lua_remove_node);
     lua_setfield(state, -2, "remove_node");
+
+    lua_pushcfunction(state, script_run_lua_add_behavior_link);
+    lua_setfield(state, -2, "add_behavior_link");
 
     lua_pushcfunction(state, script_run_lua_set_parameter_value);
     lua_setfield(state, -2, "set_parameter_value");
