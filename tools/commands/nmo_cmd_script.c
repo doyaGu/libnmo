@@ -4076,7 +4076,7 @@ static int script_param_set_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run);
         yyjson_mut_obj_add_uint(doc, data, "param_id", args->param_id);
         if (args->old_value) {
             nmo_cli_json_add_str_safe(doc, data, "old_value", args->old_value);
@@ -4084,7 +4084,6 @@ static int script_param_set_report(
         if (args->new_value) {
             nmo_cli_json_add_str_safe(doc, data, "new_value", args->new_value);
         }
-        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -4139,10 +4138,9 @@ static int script_param_connect_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run);
         yyjson_mut_obj_add_uint(doc, data, "source_id", args->source_id);
         yyjson_mut_obj_add_uint(doc, data, "target_id", args->target_id);
-        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -4193,9 +4191,8 @@ static int script_param_disconnect_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run);
         yyjson_mut_obj_add_uint(doc, data, "target_id", args->target_id);
-        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -4259,13 +4256,12 @@ static int script_param_remove_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run);
         yyjson_mut_obj_add_uint(doc, data, "param_id", args->param_id);
         yyjson_mut_obj_add_bool(doc, data, "detach", args->detach);
         nmo_cli_json_add_str_safe(doc, data, "interface_mode",
                                   script_interface_mode_string(
                                       args->interface_mode));
-        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
