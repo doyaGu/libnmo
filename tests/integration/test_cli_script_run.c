@@ -311,6 +311,7 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     first_handles = get_array_field(first_operation, "handles");
     ASSERT_NOT_NULL(first_handles);
     ASSERT_EQ(1u, yyjson_arr_size(first_handles));
+    ASSERT_STR_EQ("io", get_string_field(yyjson_arr_get(first_handles, 0), "name"));
     validation = get_object_field(data, "validation");
     ASSERT_NOT_NULL(validation);
     references = get_object_field(validation, "references");

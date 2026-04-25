@@ -224,6 +224,8 @@ typedef struct script_run_args {
     size_t result_handle_count;
     size_t result_handle_capacity;
     nmo_behavior_execution_t *execution;
+    nmo_edit_report_t edit_report;
+    bool edit_report_ready;
 } script_run_args_t;
 
 static script_run_args_t *g_script_run_args = NULL;
@@ -269,6 +271,9 @@ static void script_run_reset_args(script_run_args_t *args)
     }
     free(args->operations);
     free(args->result_handles);
+    if (args->edit_report_ready) {
+        nmo_edit_report_dispose(&args->edit_report);
+    }
 
     memset(&args->report, 0, sizeof(args->report));
     memset(&args->validation, 0, sizeof(args->validation));
@@ -279,6 +284,7 @@ static void script_run_reset_args(script_run_args_t *args)
     args->result_handle_count = 0u;
     args->result_handle_capacity = 0u;
     args->execution = NULL;
+    args->edit_report_ready = false;
 }
 
 static bool script_run_append_result_handle(script_run_args_t *args,
@@ -509,6 +515,10 @@ static int script_run_lua_interface_sub_at(lua_State *state)
     return 1;
 }
 
+static nmo_status_t script_run_accumulate_edit_report(
+    script_run_args_t *args,
+    const nmo_edit_report_t *report);
+
 static nmo_status_t script_run_execute_edit_plan(
     script_run_args_t *args,
     nmo_edit_plan_t *plan,
@@ -521,11 +531,127 @@ static nmo_status_t script_run_execute_edit_plan(
     nmo_edit_executor_options_t options = nmo_edit_executor_options_default();
     options.dry_run = args->dry_run;
     options.validation_flags = 0u;
-    return nmo_edit_executor_execute_transaction(
+    nmo_status_t status = nmo_edit_executor_execute_transaction(
         nmo_behavior_execution_transaction(args->execution),
         plan,
         &options,
         report);
+    if (status == NMO_OK) {
+        status = script_run_accumulate_edit_report(args, report);
+    }
+    return status;
+}
+
+static nmo_status_t script_run_copy_operation_result(
+    nmo_edit_operation_result_t *dst,
+    const nmo_edit_operation_result_t *src)
+{
+    if (dst == NULL || src == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    *dst = (nmo_edit_operation_result_t){
+        .kind = src->kind,
+        .primary_id = src->primary_id,
+        .result_id = src->result_id,
+        .status = src->status,
+    };
+    dst->diagnostic_code = script_run_strdup(src->diagnostic_code);
+    if (src->diagnostic_code != NULL && dst->diagnostic_code == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    dst->diagnostic_message = script_run_strdup(src->diagnostic_message);
+    if (src->diagnostic_message != NULL && dst->diagnostic_message == NULL) {
+        free((void *)dst->diagnostic_code);
+        memset(dst, 0, sizeof(*dst));
+        return NMO_ERR_NOMEM;
+    }
+    if (src->handle_count > 0u) {
+        dst->handles = (nmo_edit_operation_handle_t *)calloc(
+            src->handle_count, sizeof(*dst->handles));
+        if (dst->handles == NULL) {
+            free((void *)dst->diagnostic_code);
+            free((void *)dst->diagnostic_message);
+            memset(dst, 0, sizeof(*dst));
+            return NMO_ERR_NOMEM;
+        }
+        dst->handle_count = src->handle_count;
+        for (size_t i = 0; i < src->handle_count; ++i) {
+            dst->handles[i].name = script_run_strdup(src->handles[i].name);
+            if (src->handles[i].name != NULL && dst->handles[i].name == NULL) {
+                for (size_t j = 0; j < i; ++j) {
+                    free((void *)dst->handles[j].name);
+                }
+                free(dst->handles);
+                free((void *)dst->diagnostic_code);
+                free((void *)dst->diagnostic_message);
+                memset(dst, 0, sizeof(*dst));
+                return NMO_ERR_NOMEM;
+            }
+            dst->handles[i].id = src->handles[i].id;
+        }
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t script_run_accumulate_edit_report(
+    script_run_args_t *args,
+    const nmo_edit_report_t *report)
+{
+    if (args == NULL || report == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (!args->edit_report_ready) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_init(&args->edit_report));
+        args->edit_report_ready = true;
+        args->edit_report.dry_run = report->dry_run;
+    }
+
+    size_t old_count = args->edit_report.operation_count;
+    size_t new_count = old_count + report->operation_count;
+    nmo_edit_operation_result_t *ops =
+        (nmo_edit_operation_result_t *)realloc(
+            args->edit_report.operations, new_count * sizeof(*ops));
+    if (ops == NULL && new_count > 0u) {
+        return NMO_ERR_NOMEM;
+    }
+    args->edit_report.operations = ops;
+    memset(args->edit_report.operations + old_count, 0,
+           report->operation_count * sizeof(*args->edit_report.operations));
+    args->edit_report.operation_count = new_count;
+    for (size_t i = 0; i < report->operation_count; ++i) {
+        NMO_RETURN_IF_ERROR(script_run_copy_operation_result(
+            &args->edit_report.operations[old_count + i],
+            &report->operations[i]));
+    }
+    for (size_t i = 0; i < report->changed_object_count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            &args->edit_report,
+            report->changed_objects[i].id,
+            report->changed_objects[i].cause,
+            report->changed_objects[i].role));
+    }
+    for (size_t i = 0; i < report->created_object_count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_created_object(
+            &args->edit_report,
+            report->created_objects[i].id,
+            report->created_objects[i].cause,
+            report->created_objects[i].role));
+    }
+    for (size_t i = 0; i < report->deleted_object_count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_deleted_object(
+            &args->edit_report,
+            report->deleted_objects[i].id,
+            report->deleted_objects[i].cause,
+            report->deleted_objects[i].role));
+    }
+    args->edit_report.validation = report->validation;
+    args->edit_report.ok =
+        (old_count == 0u) ? report->ok : (args->edit_report.ok && report->ok);
+    if (report->status != NMO_OK || old_count == 0u) {
+        args->edit_report.status = report->status;
+    }
+    return NMO_OK;
 }
 
 static nmo_object_id_t script_run_edit_result_id(
@@ -1134,30 +1260,46 @@ static int script_run_mutate(nmo_cmd_ctx_t *ctx,
 static void script_run_add_operation_json(yyjson_mut_doc *doc,
                                           yyjson_mut_val *arr,
                                           size_t index,
-                                          const script_run_operation_t *op)
+                                          const script_run_operation_t *op,
+                                          const nmo_edit_operation_result_t *edit_op)
 {
     yyjson_mut_val *item = yyjson_mut_obj(doc);
     yyjson_mut_val *options = yyjson_mut_obj(doc);
     yyjson_mut_val *handles = yyjson_mut_arr(doc);
     size_t i = 0;
     nmo_object_id_t result_id =
-        op->result_handle_count > 0u ? op->result_handles[0] : 0u;
+        edit_op != NULL
+            ? edit_op->result_id
+            : (op->result_handle_count > 0u ? op->result_handles[0] : 0u);
+    nmo_status_t status = edit_op != NULL ? edit_op->status : NMO_OK;
+    const char *kind =
+        edit_op != NULL ? nmo_cli_edit_report_op_kind_string(edit_op->kind)
+                        : op->kind;
+    nmo_object_id_t primary_id =
+        edit_op != NULL ? edit_op->primary_id : op->behavior_id;
 
     yyjson_mut_obj_add_uint(doc, item, "index", (uint64_t)(index + 1u));
-    nmo_cli_json_add_str_safe(doc, item, "op", op->kind);
-    nmo_cli_json_add_str_safe(doc, item, "kind", op->kind);
-    yyjson_mut_obj_add_uint(doc, item, "primary_id",
-                            (uint64_t)op->behavior_id);
+    nmo_cli_json_add_str_safe(doc, item, "op", kind);
+    nmo_cli_json_add_str_safe(doc, item, "kind", kind);
+    yyjson_mut_obj_add_uint(doc, item, "primary_id", (uint64_t)primary_id);
     yyjson_mut_obj_add_uint(doc, item, "result_id", (uint64_t)result_id);
-    yyjson_mut_obj_add_uint(doc, item, "status", (uint64_t)NMO_OK);
-    nmo_cli_json_add_str_safe(doc, item, "status_name",
-                              nmo_error_string(NMO_OK));
+    yyjson_mut_obj_add_uint(doc, item, "status", (uint64_t)status);
+    nmo_cli_json_add_str_safe(doc, item, "status_name", nmo_error_string(status));
     yyjson_mut_obj_add_uint(doc, options, "behavior", op->behavior_id);
     nmo_cli_json_add_str_safe(doc, options, "kind", op->io_kind);
     nmo_cli_json_add_str_safe(doc, options, "name", op->name);
     yyjson_mut_obj_add_val(doc, item, "options", options);
 
-    for (i = 0; i < op->result_handle_count; ++i) {
+    for (i = 0; edit_op != NULL && i < edit_op->handle_count; ++i) {
+        yyjson_mut_val *handle = yyjson_mut_obj(doc);
+        nmo_cli_json_add_str_safe(doc, handle, "name", edit_op->handles[i].name);
+        yyjson_mut_obj_add_uint(doc, handle, "object_id",
+                                (uint64_t)edit_op->handles[i].id);
+        yyjson_mut_obj_add_uint(doc, handle, "id",
+                                (uint64_t)edit_op->handles[i].id);
+        yyjson_mut_arr_add_val(handles, handle);
+    }
+    for (i = 0; edit_op == NULL && i < op->result_handle_count; ++i) {
         yyjson_mut_val *handle = yyjson_mut_obj(doc);
         nmo_cli_json_add_str_safe(doc, handle, "name", op->kind);
         yyjson_mut_obj_add_uint(doc, handle, "object_id",
@@ -1282,7 +1424,13 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
         yyjson_mut_obj_add_uint(doc, data, "operation_count",
                                 args->operation_count);
         for (i = 0; i < args->operation_count; ++i) {
-            script_run_add_operation_json(doc, operations, i, &args->operations[i]);
+            const nmo_edit_operation_result_t *edit_op =
+                args->edit_report_ready &&
+                        i < args->edit_report.operation_count
+                    ? &args->edit_report.operations[i]
+                    : NULL;
+            script_run_add_operation_json(
+                doc, operations, i, &args->operations[i], edit_op);
         }
         yyjson_mut_obj_add_val(doc, data, "operations", operations);
 
