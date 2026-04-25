@@ -866,6 +866,10 @@ TEST(repl_read, script_run_uses_executor_handles_only) {
                                "result_handles");
     assert_source_not_contains("tools/commands/nmo_cmd_script.c",
                                "result_handle_count");
+    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+                               "script_run_add_operation_json");
+    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+                               "script_run_count_report_impacts");
 }
 
 TEST(repl_read, domain_session_dispatchers_do_not_construct_object_argv) {
