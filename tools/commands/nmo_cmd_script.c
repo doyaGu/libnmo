@@ -673,8 +673,22 @@ static nmo_status_t script_run_execute_pending_plan(script_run_args_t *args)
     nmo_edit_report_t report;
     nmo_status_t status = NMO_OK;
 
-    if (args == NULL || args->pending_plan == NULL ||
+    if (args == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (args->pending_plan == NULL ||
         nmo_edit_plan_count(args->pending_plan) == 0u) {
+        nmo_edit_report_t empty_report;
+        NMO_RETURN_IF_ERROR(nmo_edit_report_init(&empty_report));
+        empty_report.ok = true;
+        empty_report.dry_run = args->dry_run;
+        empty_report.status = NMO_OK;
+        empty_report.validation.final_status = NMO_OK;
+        status = script_run_accumulate_edit_report(args, &empty_report);
+        nmo_edit_report_dispose(&empty_report);
+        return status;
+    }
+    if (args->edit_report_ready) {
         return NMO_OK;
     }
 
