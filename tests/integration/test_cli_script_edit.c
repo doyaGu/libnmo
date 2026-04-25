@@ -2433,6 +2433,9 @@ TEST(cli, script_link_remove_canonicalizes_interface_refs)
     yyjson_val *script = NULL;
     yyjson_val *body = NULL;
     yyjson_val *links = NULL;
+    yyjson_val *operations = NULL;
+    yyjson_val *deleted_objects = NULL;
+    yyjson_val *validation = NULL;
     uint32_t node_a = 0;
     uint32_t node_b = 0;
     uint32_t a_out = 0;
@@ -2561,6 +2564,22 @@ TEST(cli, script_link_remove_canonicalizes_interface_refs)
     data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
     ASSERT_STR_EQ("canonicalize", get_string_field(data, "interface_mode"));
+    ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
+    ASSERT_EQ(2u, get_uint_field(data, "operation_count"));
+    operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(2u, yyjson_arr_size(operations));
+    ASSERT_STR_EQ("remove_behavior_link",
+                  get_string_field(yyjson_arr_get(operations, 0), "op"));
+    ASSERT_STR_EQ("interface_policy",
+                  get_string_field(yyjson_arr_get(operations, 1), "op"));
+    deleted_objects = get_array_field(data, "deleted_objects");
+    ASSERT_NOT_NULL(deleted_objects);
+    ASSERT_NOT_NULL(find_array_object_by_id(deleted_objects, link_id));
+    validation = get_object_field(data, "validation");
+    ASSERT_NOT_NULL(validation);
+    ASSERT_EQ(0u, get_uint_field(validation, "final_status"));
+    ASSERT_TRUE(yyjson_obj_get(validation, "references") == NULL);
     yyjson_doc_free(doc);
 
     assert_validate_ok(link_remove_path);

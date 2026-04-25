@@ -3558,13 +3558,12 @@ static int script_link_remove_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run);
         yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "link_id", args->link_id);
         nmo_cli_json_add_str_safe(doc, data, "interface_mode",
                                   script_interface_mode_string(
                                       args->interface_mode));
-        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
