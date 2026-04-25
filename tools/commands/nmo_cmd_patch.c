@@ -1337,7 +1337,7 @@ static int patch_parse_set_parameter_bytes(yyjson_val *op_obj,
 }
 
 static int patch_parse_set_data_cell(yyjson_val *op_obj,
-                                     patch_operation_t *out_op) {
+                                     nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "dataarray_id",
@@ -1375,12 +1375,14 @@ static int patch_parse_set_data_cell(yyjson_val *op_obj,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_SET_DATA_CELL;
-    out_op->data_cell.dataarray_id = (nmo_object_id_t)dataarray_id;
-    out_op->data_cell.row = row;
-    out_op->data_cell.col = col;
-    out_op->data_cell.value = value;
+    nmo_status_t st = nmo_edit_plan_add_data_cell(
+        edit_plan, (nmo_object_id_t)dataarray_id, row, col, value);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -1859,7 +1861,12 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
             rc = patch_parse_set_parameter_bytes(op_obj, &operation);
         } else if (strcmp(op, "set_data_cell") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_set_data_cell(op_obj, &operation);
+            rc = patch_parse_set_data_cell(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "add_operation") == 0 &&
                    out_plan->version == 2u) {
             rc = patch_parse_add_operation(op_obj, &operation);
