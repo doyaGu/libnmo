@@ -375,6 +375,98 @@ static int nmo_lua_plan_remove_parameter(lua_State *state)
     return 0;
 }
 
+static nmo_object_id_t nmo_lua_plan_optional_object_id(lua_State *state,
+                                                       int index,
+                                                       uint32_t *slot_flags,
+                                                       uint32_t slot_flag)
+{
+    if (lua_isnoneornil(state, index)) {
+        return 0u;
+    }
+    if (slot_flags != NULL) {
+        *slot_flags |= slot_flag;
+    }
+    return (nmo_object_id_t)luaL_checkinteger(state, index);
+}
+
+static int nmo_lua_plan_add_operation(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t parent_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    const char *guid_text = luaL_checkstring(state, 3);
+    nmo_guid_t operation_guid = nmo_guid_parse(guid_text);
+    if (nmo_guid_is_null(operation_guid)) {
+        return luaL_error(state, "invalid operation GUID");
+    }
+    nmo_object_id_t in1_id =
+        nmo_lua_plan_optional_object_id(state, 4, NULL, 0u);
+    nmo_object_id_t in2_id =
+        nmo_lua_plan_optional_object_id(state, 5, NULL, 0u);
+    nmo_object_id_t out_id =
+        nmo_lua_plan_optional_object_id(state, 6, NULL, 0u);
+
+    status = nmo_edit_plan_add_operation(
+        plan, parent_id, operation_guid, in1_id, in2_id, out_id);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add operation op");
+    }
+    return 0;
+}
+
+static int nmo_lua_plan_rewire_operation(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t operation_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    uint32_t slot_flags = 0u;
+    nmo_object_id_t in1_id = nmo_lua_plan_optional_object_id(
+        state, 3, &slot_flags, NMO_SCRIPT_EDIT_OP_SLOT_IN1);
+    nmo_object_id_t in2_id = nmo_lua_plan_optional_object_id(
+        state, 4, &slot_flags, NMO_SCRIPT_EDIT_OP_SLOT_IN2);
+    nmo_object_id_t out_id = nmo_lua_plan_optional_object_id(
+        state, 5, &slot_flags, NMO_SCRIPT_EDIT_OP_SLOT_OUT);
+    if (slot_flags == 0u) {
+        return luaL_error(
+            state, "rewire_operation requires at least one parameter slot");
+    }
+
+    status = nmo_edit_plan_add_rewire_operation(
+        plan, operation_id, slot_flags, in1_id, in2_id, out_id);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add rewire operation op");
+    }
+    return 0;
+}
+
+static int nmo_lua_plan_remove_operation(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t operation_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+
+    status = nmo_edit_plan_add_remove_operation(plan, operation_id);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add remove operation op");
+    }
+    return 0;
+}
+
 static int nmo_lua_plan_set_parameter_value(lua_State *state)
 {
     nmo_edit_plan_t *plan = NULL;
@@ -511,6 +603,12 @@ static const char *nmo_lua_plan_op_kind_string(nmo_edit_op_kind_t kind)
         return "disconnect_parameter";
     case NMO_EDIT_OP_REMOVE_PARAMETER:
         return "remove_parameter";
+    case NMO_EDIT_OP_ADD_OPERATION:
+        return "add_operation";
+    case NMO_EDIT_OP_REWIRE_OPERATION:
+        return "rewire_operation";
+    case NMO_EDIT_OP_REMOVE_OPERATION:
+        return "remove_operation";
     case NMO_EDIT_OP_REMOVE_NODE:
         return "remove_node";
     case NMO_EDIT_OP_INTERFACE_POLICY:
@@ -755,6 +853,12 @@ static int nmo_lua_open_plan_module(lua_State *state)
     lua_setfield(state, -2, "disconnect_parameter");
     lua_pushcfunction(state, nmo_lua_plan_remove_parameter);
     lua_setfield(state, -2, "remove_parameter");
+    lua_pushcfunction(state, nmo_lua_plan_add_operation);
+    lua_setfield(state, -2, "add_operation");
+    lua_pushcfunction(state, nmo_lua_plan_rewire_operation);
+    lua_setfield(state, -2, "rewire_operation");
+    lua_pushcfunction(state, nmo_lua_plan_remove_operation);
+    lua_setfield(state, -2, "remove_operation");
     lua_pushcfunction(state, nmo_lua_plan_set_parameter_value);
     lua_setfield(state, -2, "set_parameter_value");
     lua_pushcfunction(state, nmo_lua_plan_set_parameter_bytes);
