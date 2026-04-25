@@ -15,6 +15,7 @@
 #include "behavior/nmo_edit_plan.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_parse.h"
 #include "runtime/nmo_context.h"
 #include "yyjson.h"
 
@@ -46,6 +47,7 @@ typedef enum patch_operation_kind {
     PATCH_OP_REMOVE_OPERATION = 19,
     PATCH_OP_REWIRE_OPERATION = 20,
     PATCH_OP_SET_DATA_CELL = 21,
+    PATCH_OP_SET_PARAMETER_BYTES = 22,
 } patch_operation_kind_t;
 
 typedef struct patch_operation {
@@ -123,6 +125,12 @@ typedef struct patch_operation {
         nmo_object_id_t parameter_id;
         const char *value;
     } set_parameter_value;
+    struct {
+        nmo_object_id_t parameter_id;
+        uint8_t *bytes;
+        size_t byte_count;
+        bool resize;
+    } set_parameter_bytes;
     struct {
         nmo_object_id_t dataarray_id;
         uint32_t row;
@@ -219,6 +227,7 @@ static void patch_plan_free(patch_plan_t *plan) {
         free(op->fold_input_maps);
         free(op->fold_output_maps);
         free(op->fold_parameter_maps);
+        free(op->set_parameter_bytes.bytes);
     }
     free(plan->operations);
     nmo_edit_plan_destroy(plan->edit_plan);
@@ -331,6 +340,17 @@ static nmo_status_t patch_operation_add_to_edit_plan(
             op->set_parameter_value.parameter_id,
             op->set_parameter_value.value,
             NULL);
+    }
+    if (op->kind == PATCH_OP_SET_PARAMETER_BYTES) {
+        const nmo_parameter_write_options_t options = {
+            .resize = op->set_parameter_bytes.resize,
+        };
+        return nmo_edit_plan_add_set_parameter_bytes(
+            edit_plan,
+            op->set_parameter_bytes.parameter_id,
+            op->set_parameter_bytes.bytes,
+            op->set_parameter_bytes.byte_count,
+            &options);
     }
     if (op->kind == PATCH_OP_SET_DATA_CELL) {
         return nmo_edit_plan_add_data_cell(
@@ -1296,6 +1316,59 @@ static int patch_parse_set_parameter_value(yyjson_val *op_obj,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+static int patch_parse_set_parameter_bytes(yyjson_val *op_obj,
+                                           patch_operation_t *out_op) {
+    static const char *const allowed[] = {
+        "op",
+        "parameter_id",
+        "hex",
+        "resize",
+    };
+    int rc = patch_reject_unknown_fields(
+        op_obj, "set_parameter_bytes operation",
+        allowed, sizeof(allowed) / sizeof(allowed[0]));
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    uint32_t parameter_id = 0u;
+    if (!patch_read_u32(op_obj, "parameter_id", &parameter_id) ||
+        parameter_id == 0u) {
+        fprintf(stderr, "Error: Missing or invalid parameter_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *hex = patch_required_string(
+        op_obj, "hex", "set_parameter_bytes operation");
+    if (!hex) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    size_t byte_capacity = strlen(hex) / 2u + 1u;
+    uint8_t *bytes = (uint8_t *)malloc(byte_capacity);
+    if (bytes == NULL) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    size_t byte_count = 0u;
+    if (nmo_parse_hex_bytes(hex, bytes, byte_capacity, &byte_count) != NMO_OK) {
+        fprintf(stderr, "Error: Invalid hex string '%s'\n", hex);
+        free(bytes);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    memset(out_op, 0, sizeof(*out_op));
+    out_op->kind = PATCH_OP_SET_PARAMETER_BYTES;
+    out_op->set_parameter_bytes.parameter_id =
+        (nmo_object_id_t)parameter_id;
+    out_op->set_parameter_bytes.bytes = bytes;
+    out_op->set_parameter_bytes.byte_count = byte_count;
+    out_op->set_parameter_bytes.resize =
+        patch_optional_bool(op_obj, "resize", false);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static int patch_parse_set_data_cell(yyjson_val *op_obj,
                                      patch_operation_t *out_op) {
     static const char *const allowed[] = {
@@ -1820,6 +1893,9 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
         } else if (strcmp(op, "set_parameter_value") == 0 &&
                    out_plan->version == 2u) {
             rc = patch_parse_set_parameter_value(op_obj, &operations[idx]);
+        } else if (strcmp(op, "set_parameter_bytes") == 0 &&
+                   out_plan->version == 2u) {
+            rc = patch_parse_set_parameter_bytes(op_obj, &operations[idx]);
         } else if (strcmp(op, "set_data_cell") == 0 &&
                    out_plan->version == 2u) {
             rc = patch_parse_set_data_cell(op_obj, &operations[idx]);
