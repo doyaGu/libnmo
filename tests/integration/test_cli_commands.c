@@ -3014,6 +3014,7 @@ TEST(cli, debug_probe_2d_text_dry_run_reports_edit_plan) {
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(data, "ok")));
     ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(data, "dry_run")));
+    ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);
     yyjson_val *operations = yyjson_obj_get(data, "operations");
     ASSERT_TRUE(operations && yyjson_is_arr(operations));
     ASSERT_EQ(1u, yyjson_arr_size(operations));

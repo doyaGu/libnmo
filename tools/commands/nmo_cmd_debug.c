@@ -167,8 +167,6 @@ static int debug_probe_report(nmo_cmd_ctx_t *ctx,
         nmo_cli_json_add_str_safe(doc, data, "probe_kind", args->kind);
         yyjson_mut_obj_add_uint(doc, data, "behavior_id",
                                 (uint64_t)args->behavior_id);
-        yyjson_mut_obj_add_uint(doc, data, "operation_count",
-                                (uint64_t)args->report.operation_count);
         if (output_path != NULL) {
             nmo_cli_json_add_str_safe(doc, data, "output_path", output_path);
         }
