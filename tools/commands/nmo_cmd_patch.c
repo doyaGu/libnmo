@@ -44,6 +44,7 @@ typedef enum patch_operation_kind {
     PATCH_OP_SET_PARAMETER_VALUE = 17,
     PATCH_OP_ADD_OPERATION = 18,
     PATCH_OP_REMOVE_OPERATION = 19,
+    PATCH_OP_REWIRE_OPERATION = 20,
 } patch_operation_kind_t;
 
 typedef struct patch_operation {
@@ -131,6 +132,13 @@ typedef struct patch_operation {
     struct {
         nmo_object_id_t operation_id;
     } remove_operation;
+    struct {
+        nmo_object_id_t operation_id;
+        uint32_t slot_flags;
+        nmo_object_id_t in1_id;
+        nmo_object_id_t in2_id;
+        nmo_object_id_t out_id;
+    } rewire_operation;
 } patch_operation_t;
 
 typedef struct patch_plan {
@@ -330,6 +338,15 @@ static nmo_status_t patch_operation_add_to_edit_plan(
         return nmo_edit_plan_add_remove_operation(
             edit_plan,
             op->remove_operation.operation_id);
+    }
+    if (op->kind == PATCH_OP_REWIRE_OPERATION) {
+        return nmo_edit_plan_add_rewire_operation(
+            edit_plan,
+            op->rewire_operation.operation_id,
+            op->rewire_operation.slot_flags,
+            op->rewire_operation.in1_id,
+            op->rewire_operation.in2_id,
+            op->rewire_operation.out_id);
     }
     if (op->kind == PATCH_OP_INTERFACE_POLICY) {
         return nmo_edit_plan_add_interface_policy(
@@ -1379,6 +1396,75 @@ static int patch_parse_remove_operation(yyjson_val *op_obj,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+static int patch_parse_rewire_operation(yyjson_val *op_obj,
+                                        patch_operation_t *out_op) {
+    static const char *const allowed[] = {
+        "op",
+        "operation_id",
+        "in1_id",
+        "in2_id",
+        "out_id",
+    };
+    int rc = patch_reject_unknown_fields(
+        op_obj, "rewire_operation operation",
+        allowed, sizeof(allowed) / sizeof(allowed[0]));
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    yyjson_val *operation_val = yyjson_obj_get(op_obj, "operation_id");
+    if (!operation_val || !yyjson_is_uint(operation_val) ||
+        yyjson_get_uint(operation_val) == 0 ||
+        yyjson_get_uint(operation_val) > UINT32_MAX) {
+        fprintf(stderr, "Error: Missing or invalid operation_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_object_id_t in1_id = 0u;
+    nmo_object_id_t in2_id = 0u;
+    nmo_object_id_t out_id = 0u;
+    uint32_t slot_flags = 0u;
+    if (yyjson_obj_get(op_obj, "in1_id") != NULL) {
+        rc = patch_parse_optional_object_id(
+            op_obj, "in1_id", "rewire_operation operation", &in1_id);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            return rc;
+        }
+        slot_flags |= NMO_SCRIPT_EDIT_OP_SLOT_IN1;
+    }
+    if (yyjson_obj_get(op_obj, "in2_id") != NULL) {
+        rc = patch_parse_optional_object_id(
+            op_obj, "in2_id", "rewire_operation operation", &in2_id);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            return rc;
+        }
+        slot_flags |= NMO_SCRIPT_EDIT_OP_SLOT_IN2;
+    }
+    if (yyjson_obj_get(op_obj, "out_id") != NULL) {
+        rc = patch_parse_optional_object_id(
+            op_obj, "out_id", "rewire_operation operation", &out_id);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            return rc;
+        }
+        slot_flags |= NMO_SCRIPT_EDIT_OP_SLOT_OUT;
+    }
+    if (slot_flags == 0u) {
+        fprintf(stderr,
+                "Error: rewire_operation requires in1_id, in2_id, or out_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    memset(out_op, 0, sizeof(*out_op));
+    out_op->kind = PATCH_OP_REWIRE_OPERATION;
+    out_op->rewire_operation.operation_id =
+        (nmo_object_id_t)yyjson_get_uint(operation_val);
+    out_op->rewire_operation.slot_flags = slot_flags;
+    out_op->rewire_operation.in1_id = in1_id;
+    out_op->rewire_operation.in2_id = in2_id;
+    out_op->rewire_operation.out_id = out_id;
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static int patch_parse_interface_policy(yyjson_val *op_obj,
                                         patch_operation_t *out_op) {
     static const char *const allowed[] = {
@@ -1677,6 +1763,9 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
         } else if (strcmp(op, "remove_operation") == 0 &&
                    out_plan->version == 2u) {
             rc = patch_parse_remove_operation(op_obj, &operations[idx]);
+        } else if (strcmp(op, "rewire_operation") == 0 &&
+                   out_plan->version == 2u) {
+            rc = patch_parse_rewire_operation(op_obj, &operations[idx]);
         } else if (strcmp(op, "add_io") == 0 && out_plan->version == 2u) {
             rc = patch_parse_add_io(op_obj, &operations[idx]);
         } else if (strcmp(op, "remove_io") == 0 && out_plan->version == 2u) {
