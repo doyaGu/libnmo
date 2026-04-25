@@ -743,6 +743,54 @@ TEST(cli, script_run_executor_add_parameter_uses_edit_plan) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, script_run_executor_add_operation_uses_edit_plan) {
+    char script_path[1024];
+    const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
+    char args[2048];
+    cli_run_result_t result = {0};
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *operations = NULL;
+    yyjson_val *created_objects = NULL;
+    yyjson_val *op = NULL;
+    yyjson_val *created = NULL;
+
+    ASSERT_TRUE(build_repo_fixture_path(
+        "tests/fixtures/lua/script_run_add_operation.lua",
+        script_path,
+        sizeof(script_path)));
+
+    snprintf(args, sizeof(args),
+             "-f json script run --dry-run \"%s\" \"%s\"",
+             script_path,
+             input_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    ASSERT_EQ(1u, get_uint_field(data, "operation_count"));
+    operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(1u, yyjson_arr_size(operations));
+    op = yyjson_arr_get(operations, 0);
+    ASSERT_STR_EQ("add_operation", get_string_field(op, "op"));
+    ASSERT_EQ(6u, get_uint_field(op, "primary_id"));
+    ASSERT_TRUE(get_uint_field(op, "result_id") != 0u);
+    created_objects = get_array_field(data, "created_objects");
+    ASSERT_NOT_NULL(created_objects);
+    ASSERT_EQ(1u, yyjson_arr_size(created_objects));
+    created = yyjson_arr_get(created_objects, 0);
+    ASSERT_STR_EQ("add_operation", get_string_field(created, "cause"));
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, script_run_reports_executor_operations) {
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
@@ -881,6 +929,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_run_executor_set_data_cell_uses_edit_plan);
     REGISTER_TEST(cli, script_run_executor_add_behavior_link_uses_edit_plan);
     REGISTER_TEST(cli, script_run_executor_add_parameter_uses_edit_plan);
+    REGISTER_TEST(cli, script_run_executor_add_operation_uses_edit_plan);
     REGISTER_TEST(cli, script_run_reports_executor_operations);
     REGISTER_TEST(cli, script_run_noop_emits_schema_v2_report);
     REGISTER_TEST(cli, script_run_runtime_error_does_not_write_output);
