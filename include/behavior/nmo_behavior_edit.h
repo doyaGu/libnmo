@@ -191,6 +191,11 @@ NMO_API nmo_status_t nmo_behavior_edit_fold(
     const nmo_behavior_fold_desc_t *desc,
     nmo_behavior_fold_report_t *report);
 
+NMO_API nmo_status_t nmo_behavior_edit_fold_in_script_tx(
+    nmo_script_edit_tx_t *tx,
+    const nmo_behavior_fold_desc_t *desc,
+    nmo_behavior_fold_report_t *report);
+
 NMO_API nmo_status_t nmo_behavior_edit_collect_semantic_risks(
     nmo_workspace_t *workspace,
     const nmo_behavior_boundary_t *boundary,

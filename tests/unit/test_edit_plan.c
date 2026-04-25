@@ -499,6 +499,124 @@ TEST(edit_plan, executor_replace_bb_dry_run_rolls_back) {
     nmo_session_close_with_context(ctx, session);
 }
 
+TEST(edit_plan, executor_folds_closed_graph_in_transaction) {
+    nmo_context_t *ctx = nmo_context_create(
+        &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session =
+        nmo_session_load(ctx, NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    ASSERT_NOT_NULL(session);
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
+
+    nmo_object_id_t fold_nodes[] = {
+        4166u, 4140u, 4147u, 4157u, 4165u,
+        4153u, 4151u, 4155u, 4143u, 4145u,
+    };
+    nmo_guid_t fold_guid = nmo_guid_parse("42414C07-10000007");
+    nmo_behavior_fold_desc_t fold = {
+        .parent_id = 4692u,
+        .node_ids = fold_nodes,
+        .node_count = sizeof(fold_nodes) / sizeof(fold_nodes[0]),
+        .anchor_id = 4166u,
+        .block_guid = fold_guid,
+        .name = "Plan Fold Small Graph",
+        .block_version = 65536u,
+        .preserve_boundary = true,
+        .interface_mode = NMO_BEHAVIOR_FOLD_INTERFACE_PRESERVE,
+    };
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_fold(plan, &fold));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(1u, report.operation_count);
+    ASSERT_EQ(NMO_OK, report.operations[0].status);
+    ASSERT_EQ(4166u, report.operations[0].result_id);
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_t *anchor = nmo_object_repository_find_by_id(repo, 4166u);
+    nmo_behavior_state_t *state = anchor
+        ? (nmo_behavior_state_t *)nmo_object_get_state(anchor)
+        : NULL;
+    ASSERT_NOT_NULL(state);
+    ASSERT_TRUE(nmo_guid_equals(fold_guid, state->block_guid));
+    ASSERT_NULL(nmo_object_repository_find_by_id(repo, 4140u));
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    nmo_session_close_with_context(ctx, session);
+}
+
+TEST(edit_plan, executor_fold_dry_run_rolls_back) {
+    nmo_context_t *ctx = nmo_context_create(
+        &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session =
+        nmo_session_load(ctx, NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    ASSERT_NOT_NULL(session);
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_t *anchor = nmo_object_repository_find_by_id(repo, 4166u);
+    nmo_behavior_state_t *anchor_state = anchor
+        ? (nmo_behavior_state_t *)nmo_object_get_state(anchor)
+        : NULL;
+    ASSERT_NOT_NULL(anchor_state);
+    nmo_guid_t original_guid = anchor_state->block_guid;
+
+    nmo_object_id_t fold_nodes[] = {
+        4166u, 4140u, 4147u, 4157u, 4165u,
+        4153u, 4151u, 4155u, 4143u, 4145u,
+    };
+    nmo_behavior_fold_desc_t fold = {
+        .parent_id = 4692u,
+        .node_ids = fold_nodes,
+        .node_count = sizeof(fold_nodes) / sizeof(fold_nodes[0]),
+        .anchor_id = 4166u,
+        .block_guid = nmo_guid_parse("42414C07-10000007"),
+        .name = "Plan Fold Dry Run",
+        .block_version = 65536u,
+        .preserve_boundary = true,
+        .interface_mode = NMO_BEHAVIOR_FOLD_INTERFACE_PRESERVE,
+    };
+    nmo_edit_executor_options_t options =
+        nmo_edit_executor_options_default();
+    options.dry_run = true;
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_fold(plan, &fold));
+
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_executor_execute(workspace, plan, &options, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_TRUE(report.dry_run);
+    ASSERT_EQ(NMO_OK, report.operations[0].status);
+    ASSERT_EQ(4166u, report.operations[0].result_id);
+    ASSERT_TRUE(nmo_guid_equals(original_guid, anchor_state->block_guid));
+    ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, 4140u));
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    nmo_session_close_with_context(ctx, session);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(edit_plan, stores_parameter_value_ops);
 REGISTER_TEST(edit_plan, stores_full_script_edit_ops_and_clones_plan);
@@ -510,4 +628,6 @@ REGISTER_TEST(edit_plan, executor_adds_node_with_created_object_report);
 REGISTER_TEST(edit_plan, executor_runs_script_ops_and_records_validation);
 REGISTER_TEST(edit_plan, executor_replaces_leaf_bb_in_transaction);
 REGISTER_TEST(edit_plan, executor_replace_bb_dry_run_rolls_back);
+REGISTER_TEST(edit_plan, executor_folds_closed_graph_in_transaction);
+REGISTER_TEST(edit_plan, executor_fold_dry_run_rolls_back);
 TEST_MAIN_END()

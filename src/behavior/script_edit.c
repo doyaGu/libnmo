@@ -1501,6 +1501,32 @@ NMO_API nmo_workspace_t *nmo_script_edit_workspace(
     return tx->workspace;
 }
 
+NMO_API nmo_status_t nmo_script_edit_defer_destroy_objects(
+    nmo_script_edit_tx_t *tx,
+    const nmo_object_id_t *object_ids,
+    size_t object_count)
+{
+    if (!tx || tx->finished || (object_count > 0u && !object_ids)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_status_t rc =
+            script_edit_append_deferred_destroy(tx, object_ids[i]);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+        script_edit_note_delete(tx);
+    }
+    if (object_count > 0u) {
+        nmo_script_edit_mark(
+            tx,
+            NMO_WORKSPACE_EDIT_OBJECT_STATE |
+                NMO_WORKSPACE_EDIT_REFERENCES |
+                NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH);
+    }
+    return NMO_OK;
+}
+
 NMO_API void nmo_script_edit_mark(nmo_script_edit_tx_t *tx,
                                   uint32_t workspace_edit_flags)
 {
@@ -4329,7 +4355,8 @@ NMO_API nmo_status_t nmo_script_edit_commit(nmo_script_edit_tx_t *tx)
             tx->workspace,
             tx->deferred_destroy_ids,
             tx->deferred_destroy_count,
-            NMO_RUNTIME_REQUEST_STRICT);
+            NMO_RUNTIME_REQUEST_STRICT |
+                NMO_RUNTIME_REQUEST_SAFE_DETACH);
         if (rc != NMO_OK) {
             nmo_workspace_edit_rollback(tx->edit);
             tx->edit = NULL;

@@ -82,6 +82,11 @@ NMO_API nmo_workspace_t *nmo_script_edit_workspace(
 NMO_API nmo_workspace_edit_t *nmo_script_edit_workspace_edit(
     nmo_script_edit_tx_t *tx);
 
+NMO_API nmo_status_t nmo_script_edit_defer_destroy_objects(
+    nmo_script_edit_tx_t *tx,
+    const nmo_object_id_t *object_ids,
+    size_t object_count);
+
 NMO_API void nmo_script_edit_mark(nmo_script_edit_tx_t *tx,
                                   uint32_t workspace_edit_flags);
 

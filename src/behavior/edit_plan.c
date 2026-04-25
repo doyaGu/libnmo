@@ -1198,6 +1198,20 @@ static nmo_status_t edit_executor_apply_op(
         }
         return rc;
     }
+    case NMO_EDIT_OP_FOLD: {
+        nmo_behavior_fold_report_t fold_report = {0};
+        nmo_status_t rc = nmo_behavior_edit_fold_in_script_tx(
+            tx,
+            &op->data.fold.desc,
+            &fold_report);
+        if (rc == NMO_OK && out_result_id != NULL) {
+            *out_result_id = fold_report.anchor_id != 0u
+                ? fold_report.anchor_id
+                : op->data.fold.desc.anchor_id;
+        }
+        nmo_behavior_edit_fold_report_free(&fold_report);
+        return rc;
+    }
     default:
         return NMO_ERR_NOT_SUPPORTED;
     }
