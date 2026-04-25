@@ -176,18 +176,7 @@ static void dot_write_label(FILE *out, const char *label)
     }
 }
 
-typedef struct script_run_validation {
-    nmo_status_t references_status;
-    size_t broken_reference_count;
-    bool behavior_index_ok;
-    bool interface_attempted;
-    bool interface_available;
-    nmo_status_t interface_status;
-    nmo_status_t final_status;
-} script_run_validation_t;
-
 typedef struct script_command_common {
-    script_run_validation_t validation;
     bool dry_run;
     nmo_edit_report_t edit_report;
 } script_command_common_t;
@@ -199,7 +188,6 @@ typedef nmo_status_t (*behavior_execute_cli_action_fn)(
 typedef struct behavior_execute_cli_action_state {
     behavior_execute_cli_action_fn action;
     void *action_user_data;
-    script_command_common_t *common;
 } behavior_execute_cli_action_state_t;
 
 typedef struct script_run_args {
@@ -1309,42 +1297,6 @@ static nmo_status_t script_run_read_file(const char *path,
     NMO_RETURN_OK();
 }
 
-static void script_collect_validation(nmo_behavior_execution_t *executor,
-                                      script_run_validation_t *validation)
-{
-    nmo_workspace_t *workspace = NULL;
-    nmo_ref_graph_t *ref_graph = NULL;
-    const nmo_behavior_index_t *behavior_index = NULL;
-    nmo_tool_behavior_interface_diagnostics_t interface_diag = {0};
-
-    if (executor == NULL || validation == NULL) {
-        return;
-    }
-
-    memset(validation, 0, sizeof(*validation));
-    workspace = script_execution_workspace(executor);
-    if (workspace == NULL) {
-        return;
-    }
-
-    ref_graph = nmo_tool_owner_ref_graph(workspace);
-    validation->references_status = NMO_OK;
-    if (ref_graph != NULL) {
-        validation->references_status =
-            nmo_ref_graph_validate(ref_graph,
-                                   NULL,
-                                   &validation->broken_reference_count);
-    }
-
-    behavior_index = nmo_tool_owner_behavior_index(workspace);
-    validation->behavior_index_ok = behavior_index != NULL;
-
-    nmo_tool_owner_behavior_interface_diagnostics(workspace, &interface_diag);
-    validation->interface_status = interface_diag.status;
-    validation->interface_attempted = interface_diag.attempted != 0;
-    validation->interface_available = interface_diag.available != 0;
-}
-
 static nmo_status_t behavior_execute_cli_action_trampoline(
     nmo_behavior_execution_t *executor,
     void *user_data)
@@ -1364,10 +1316,6 @@ static nmo_status_t behavior_execute_cli_action_trampoline(
     if (status != NMO_OK) {
         error_code = nmo_last_error_code();
         (void)nmo_last_error_message_copy(error_message, sizeof(error_message));
-    }
-    if (state->common != NULL) {
-        script_collect_validation(executor, &state->common->validation);
-        state->common->validation.final_status = status;
     }
     if (status != NMO_OK) {
         nmo_last_error_setf(
@@ -1402,7 +1350,6 @@ static int behavior_execute_cli_run_write_command(
     behavior_execute_cli_action_state_t state = {
         .action = action,
         .action_user_data = user_data,
-        .common = common,
     };
     nmo_status_t status = NMO_OK;
     int rc = NMO_CLI_EXIT_SUCCESS;
@@ -1444,9 +1391,6 @@ static int behavior_execute_cli_run_write_command(
                                          behavior_execute_cli_action_trampoline,
                                          &state,
                                          NULL);
-    if (common != NULL) {
-        common->validation.final_status = status;
-    }
     if (status != NMO_OK) {
         const char *message = nmo_last_error_message();
         fprintf(stderr, "Error: %s\n",
@@ -2298,26 +2242,6 @@ static nmo_object_id_t script_interface_root_for_object_workspace(
     return behavior_id;
 }
 
-static void script_common_collect_from_edit_report(
-    script_command_common_t *common,
-    nmo_status_t status)
-{
-    if (!common) {
-        return;
-    }
-    common->validation.final_status = status;
-    common->validation.references_status =
-        common->edit_report.validation.reference_status;
-    common->validation.behavior_index_ok =
-        common->edit_report.validation.behavior_index_status == NMO_OK;
-    common->validation.interface_status =
-        common->edit_report.validation.interface_status;
-    common->validation.interface_attempted =
-        common->edit_report.validation.interface_status != 0 ||
-        common->edit_report.validation.final_status == NMO_OK;
-    common->validation.interface_available = true;
-}
-
 static nmo_status_t script_execute_edit_plan(
     nmo_behavior_execution_t *executor,
     script_command_common_t *common,
@@ -2329,13 +2253,11 @@ static nmo_status_t script_execute_edit_plan(
     nmo_edit_executor_options_t options = nmo_edit_executor_options_default();
     options.dry_run = common->dry_run;
     options.validation_flags = 0u;
-    nmo_status_t rc = nmo_edit_executor_execute_transaction(
+    return nmo_edit_executor_execute_transaction(
         nmo_behavior_execution_transaction(executor),
         plan,
         &options,
         &common->edit_report);
-    script_common_collect_from_edit_report(common, rc);
-    return rc;
 }
 
 static nmo_object_id_t script_common_result_id(
