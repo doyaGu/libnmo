@@ -283,6 +283,27 @@ static void write_add_io_patch_v2(const char *path, const char *output_path) {
     ASSERT_TRUE(write_text_file(path, json));
 }
 
+static void write_remove_io_patch_v2(const char *path,
+                                     const char *output_path) {
+    char json[2048];
+    snprintf(json, sizeof(json),
+             "{\n"
+             "  \"version\": 2,\n"
+             "  \"input\": \"%s\",\n"
+             "  \"output\": \"%s\",\n"
+             "  \"operations\": [\n"
+             "    {\n"
+             "      \"op\": \"remove_io\",\n"
+             "      \"io_id\": 2,\n"
+             "      \"detach_links\": false\n"
+             "    }\n"
+             "  ]\n"
+             "}\n",
+             NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo"),
+             output_path);
+    ASSERT_TRUE(write_text_file(path, json));
+}
+
 static void write_interface_policy_patch_v2(const char *path,
                                             const char *output_path) {
     char json[2048];
@@ -647,6 +668,41 @@ TEST(cli, patch_apply_v2_add_io_dry_run) {
     remove(patch);
 }
 
+TEST(cli, patch_apply_v2_remove_io_dry_run) {
+    make_dir("test_patch_tmp");
+    const char *patch = "test_patch_tmp/remove_io_v2.json";
+    const char *output = "test_patch_tmp/remove_io_v2.cmo";
+    remove(patch);
+    remove(output);
+    write_remove_io_patch_v2(patch, output);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
+             patch);
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "patch.apply", &doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    yyjson_val *operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
+    yyjson_val *op = yyjson_arr_get(operations, 0);
+    ASSERT_TRUE(op && yyjson_is_obj(op));
+    ASSERT_STR_EQ("remove_io", get_string_field(op, "op"));
+    ASSERT_EQ(2u, (uint32_t)get_uint_field(op, "primary_id"));
+    yyjson_val *deleted_objects = get_array_field(data, "deleted_objects");
+    ASSERT_NOT_NULL(deleted_objects);
+    ASSERT_TRUE(array_contains_object_id(deleted_objects, 2u));
+    ASSERT_FALSE(file_exists(output));
+    yyjson_doc_free(doc);
+    remove(patch);
+}
+
 TEST(cli, patch_apply_v2_interface_policy_dry_run) {
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/interface_policy_v2.json";
@@ -808,6 +864,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, patch_apply_json_failure_reports_edit_report);
     REGISTER_TEST(cli, patch_apply_v2_replace_bb_dry_run);
     REGISTER_TEST(cli, patch_apply_v2_add_io_dry_run);
+    REGISTER_TEST(cli, patch_apply_v2_remove_io_dry_run);
     REGISTER_TEST(cli, patch_apply_v2_interface_policy_dry_run);
     REGISTER_TEST(cli, patch_apply_fold_dry_run_reports_analysis);
     REGISTER_TEST(cli, patch_apply_fold_dry_run_reports_semantic_risks);
