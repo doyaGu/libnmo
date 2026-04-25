@@ -901,6 +901,17 @@ TEST(repl_read, edit_report_schema_v2_has_single_json_helper) {
                            "nmo_cli_edit_report_add_schema_v2_json");
 }
 
+TEST(repl_read, behavior_link_commands_use_edit_executor) {
+    assert_source_contains("tools/commands/nmo_cmd_behavior_link.c",
+                           "nmo_edit_executor_execute");
+    assert_source_not_contains("tools/commands/nmo_cmd_behavior_link.c",
+                               "nmo_script_edit_begin");
+    assert_source_not_contains("tools/commands/nmo_cmd_behavior_link.c",
+                               "nmo_script_edit_add_behavior_link");
+    assert_source_not_contains("tools/commands/nmo_cmd_behavior_link.c",
+                               "nmo_script_edit_remove_behavior_link");
+}
+
 TEST(repl_read, domain_session_dispatchers_do_not_construct_object_argv) {
     assert_source_not_contains("tools/commands/nmo_cmd_entity.c",
                                "nmo_cmd_object_show_in_session(ctx");
@@ -1177,6 +1188,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, script_run_uses_executor_handles_only);
     REGISTER_TEST(repl_read, edit_report_json_does_not_emit_legacy_risk_level);
     REGISTER_TEST(repl_read, edit_report_schema_v2_has_single_json_helper);
+    REGISTER_TEST(repl_read, behavior_link_commands_use_edit_executor);
     REGISTER_TEST(repl_read, domain_session_dispatchers_do_not_construct_object_argv);
     REGISTER_TEST(repl_read, read_family_headers_only_export_family_session_entrypoints);
     REGISTER_TEST(repl_read, no_active_session_adapter_symbols_remain);

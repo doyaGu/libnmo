@@ -9,11 +9,12 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_edit_report_json.h"
 #include "../nmo_cli_write.h"
 #include "../nmo_tool_common.h"
 #include "../nmo_opt.h"
 
-#include "behavior/nmo_script_edit.h"
+#include "behavior/nmo_edit_plan.h"
 #include "nmo.h"
 #include "runtime/nmo_workspace.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
@@ -29,6 +30,9 @@ typedef struct behavior_add_link_args {
     uint32_t to_id;
     uint32_t delay;
     nmo_object_id_t link_id;
+    nmo_edit_plan_t *edit_plan;
+    nmo_edit_report_t edit_report;
+    bool edit_report_ready;
 } behavior_add_link_args_t;
 
 typedef struct behavior_remove_link_args {
@@ -36,56 +40,16 @@ typedef struct behavior_remove_link_args {
     uint32_t link_id;
     nmo_object_id_t from_id;
     nmo_object_id_t to_id;
+    nmo_edit_plan_t *edit_plan;
+    nmo_edit_report_t edit_report;
+    bool edit_report_ready;
 } behavior_remove_link_args_t;
 
-static int behavior_link_finalize_tx(nmo_script_edit_tx_t *tx, bool dry_run)
+static int behavior_link_exit_code(nmo_status_t status)
 {
-    nmo_status_t rc = NMO_OK;
-
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Behavior link roundtrip validation failed: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Behavior link reference validation failed: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Behavior link behavior-index validation failed: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    rc = nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_INTERFACE);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Behavior link interface validation failed: %s\n",
-                nmo_error_string(rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    if (dry_run) {
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_SUCCESS;
-    }
-
-    rc = nmo_script_edit_commit(tx);
-    if (rc != NMO_OK) {
-        fprintf(stderr, "Error: Behavior link commit failed: %s\n",
-                nmo_error_string(rc));
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+    return (status == NMO_ERR_INVALID_ARGUMENT || status == NMO_ERR_NOT_FOUND)
+        ? NMO_CLI_EXIT_ARG_ERROR
+        : NMO_CLI_EXIT_INTERNAL_ERROR;
 }
 
 static int behavior_add_link_mutate(
@@ -94,7 +58,6 @@ static int behavior_add_link_mutate(
     const char *output_path,
     void *user_data)
 {
-    nmo_script_edit_tx_t *tx = NULL;
     nmo_status_t add_rc = NMO_OK;
 
     (void)output_path;
@@ -103,25 +66,46 @@ static int behavior_add_link_mutate(
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    add_rc = nmo_script_edit_begin(
-        c->workspace, "behavior add-link", &tx);
+    add_rc = nmo_edit_report_init(&args->edit_report);
     if (add_rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin behavior add-link: %s\n",
+        fprintf(stderr, "Error: Failed to initialize behavior add-link report: %s\n",
                 nmo_error_string(add_rc));
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
+    args->edit_report_ready = true;
 
-    add_rc = nmo_script_edit_add_behavior_link(tx, args->parent_id, args->from_id,
-                                               args->to_id, args->delay,
-                                               &args->link_id);
+    add_rc = nmo_edit_plan_create(&args->edit_plan);
+    if (add_rc == NMO_OK) {
+        add_rc = nmo_edit_plan_add_behavior_link(
+            args->edit_plan,
+            args->parent_id,
+            args->from_id,
+            args->to_id,
+            args->delay);
+    }
+    if (add_rc == NMO_OK) {
+        nmo_edit_executor_options_t options =
+            nmo_edit_executor_options_default();
+        options.dry_run = dry_run;
+        add_rc = nmo_edit_executor_execute(
+            c->workspace, args->edit_plan, &options, &args->edit_report);
+    }
     if (add_rc != NMO_OK) {
         fprintf(stderr, "Error: Failed to add link: %s\n",
                 nmo_error_string(add_rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        nmo_edit_plan_destroy(args->edit_plan);
+        args->edit_plan = NULL;
+        nmo_edit_report_dispose(&args->edit_report);
+        args->edit_report_ready = false;
+        return behavior_link_exit_code(add_rc);
     }
 
-    return behavior_link_finalize_tx(tx, dry_run);
+    if (args->edit_report.operation_count > 0u) {
+        args->link_id = args->edit_report.operations[0].result_id;
+    }
+    nmo_edit_plan_destroy(args->edit_plan);
+    args->edit_plan = NULL;
+    return NMO_CLI_EXIT_SUCCESS;
 }
 
 static int behavior_add_link_report(
@@ -141,7 +125,10 @@ static int behavior_add_link_report(
         }
 
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
+        nmo_cli_edit_report_add_schema_v2_json(
+            doc, data,
+            args->edit_report_ready ? &args->edit_report : NULL,
+            dry_run);
         nmo_cli_json_add_uint_safe(doc, data, "link_id", (uint64_t)args->link_id);
         nmo_cli_json_add_uint_safe(doc, data, "parent_id", (uint64_t)args->parent_id);
         nmo_cli_json_add_uint_safe(doc, data, "from_id", (uint64_t)args->from_id);
@@ -149,6 +136,7 @@ static int behavior_add_link_report(
         nmo_cli_json_add_uint_safe(doc, data, "delay", (uint64_t)args->delay);
         if (!dry_run && output_path != NULL) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+            nmo_cli_json_add_str_safe(doc, data, "output_path", output_path);
         }
 
         nmo_cmd_ctx_json_end(c, doc, data, "behavior.add-link");
@@ -161,6 +149,10 @@ static int behavior_add_link_report(
         if (!dry_run && output_path != NULL) {
             fprintf(c->out, "Saved to: %s\n", output_path);
         }
+    }
+    if (args->edit_report_ready) {
+        nmo_edit_report_dispose(&args->edit_report);
+        args->edit_report_ready = false;
     }
     return NMO_CLI_EXIT_SUCCESS;
 }
@@ -188,24 +180,41 @@ static int behavior_remove_link_mutate(
         }
     }
 
-    nmo_script_edit_tx_t *tx = NULL;
-    nmo_status_t rm_rc =
-        nmo_script_edit_begin(c->workspace, "behavior remove-link", &tx);
+    nmo_status_t rm_rc = nmo_edit_report_init(&args->edit_report);
     if (rm_rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin behavior remove-link: %s\n",
+        fprintf(stderr, "Error: Failed to initialize behavior remove-link report: %s\n",
                 nmo_error_string(rm_rc));
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
+    args->edit_report_ready = true;
 
-    rm_rc = nmo_script_edit_remove_behavior_link(tx, args->parent_id, args->link_id);
+    rm_rc = nmo_edit_plan_create(&args->edit_plan);
+    if (rm_rc == NMO_OK) {
+        rm_rc = nmo_edit_plan_add_remove_behavior_link(
+            args->edit_plan,
+            args->parent_id,
+            args->link_id);
+    }
+    if (rm_rc == NMO_OK) {
+        nmo_edit_executor_options_t options =
+            nmo_edit_executor_options_default();
+        options.dry_run = dry_run;
+        rm_rc = nmo_edit_executor_execute(
+            c->workspace, args->edit_plan, &options, &args->edit_report);
+    }
     if (rm_rc != NMO_OK) {
         fprintf(stderr, "Error: Failed to remove link: %s\n",
                 nmo_error_string(rm_rc));
-        nmo_script_edit_rollback(tx);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        nmo_edit_plan_destroy(args->edit_plan);
+        args->edit_plan = NULL;
+        nmo_edit_report_dispose(&args->edit_report);
+        args->edit_report_ready = false;
+        return behavior_link_exit_code(rm_rc);
     }
 
-    return behavior_link_finalize_tx(tx, dry_run);
+    nmo_edit_plan_destroy(args->edit_plan);
+    args->edit_plan = NULL;
+    return NMO_CLI_EXIT_SUCCESS;
 }
 
 static int behavior_remove_link_report(
@@ -225,13 +234,17 @@ static int behavior_remove_link_report(
         }
 
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
+        nmo_cli_edit_report_add_schema_v2_json(
+            doc, data,
+            args->edit_report_ready ? &args->edit_report : NULL,
+            dry_run);
         nmo_cli_json_add_uint_safe(doc, data, "link_id", (uint64_t)args->link_id);
         nmo_cli_json_add_uint_safe(doc, data, "parent_id", (uint64_t)args->parent_id);
         nmo_cli_json_add_uint_safe(doc, data, "from_id", (uint64_t)args->from_id);
         nmo_cli_json_add_uint_safe(doc, data, "to_id", (uint64_t)args->to_id);
         if (!dry_run && output_path != NULL) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+            nmo_cli_json_add_str_safe(doc, data, "output_path", output_path);
         }
 
         nmo_cmd_ctx_json_end(c, doc, data, "behavior.remove-link");
@@ -244,6 +257,10 @@ static int behavior_remove_link_report(
         if (!dry_run && output_path != NULL) {
             fprintf(c->out, "Saved to: %s\n", output_path);
         }
+    }
+    if (args->edit_report_ready) {
+        nmo_edit_report_dispose(&args->edit_report);
+        args->edit_report_ready = false;
     }
     return NMO_CLI_EXIT_SUCCESS;
 }
