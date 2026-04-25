@@ -1443,7 +1443,6 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
                 doc, data, &args->edit_report, &risk_options);
         }
         nmo_cli_json_add_str_safe(doc, data, "script_file", args->script_path);
-        yyjson_mut_obj_add_uint(doc, data, "op_count", args->operation_count);
         yyjson_mut_obj_add_uint(doc, data, "operation_count",
                                 operation_count);
         if (args->edit_report_ready) {

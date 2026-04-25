@@ -297,7 +297,7 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     ASSERT_NOT_NULL(semantic_risks);
     ASSERT_EQ(0u, yyjson_arr_size(semantic_risks));
     ASSERT_STR_EQ(script_path, get_string_field(data, "script_file"));
-    ASSERT_EQ(3u, get_uint_field(data, "op_count"));
+    ASSERT_TRUE(yyjson_obj_get(data, "op_count") == NULL);
     ASSERT_EQ(3u, get_uint_field(data, "operation_count"));
     operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
