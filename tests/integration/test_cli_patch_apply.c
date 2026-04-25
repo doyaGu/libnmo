@@ -229,6 +229,39 @@ static void write_leaf_patch(const char *path, const char *output_path) {
     ASSERT_TRUE(write_text_file(path, json));
 }
 
+static void write_leaf_patch_v2(const char *path, const char *output_path) {
+    rewrite_manifest_t manifest;
+    char replace_guid[64];
+    char json[2048];
+
+    load_ballance_manifest_or_die(&manifest);
+    rewrite_manifest_cli_guid(manifest.replace_guid, replace_guid,
+                              sizeof(replace_guid));
+
+    snprintf(json, sizeof(json),
+             "{\n"
+             "  \"version\": 2,\n"
+             "  \"input\": \"%s\",\n"
+             "  \"output\": \"%s\",\n"
+             "  \"operations\": [\n"
+             "    {\n"
+             "      \"op\": \"replace_bb\",\n"
+             "      \"behavior_id\": 343,\n"
+             "      \"name\": \"%s\",\n"
+             "      \"guid\": \"%s\",\n"
+             "      \"version\": 65536,\n"
+             "      \"preserve_links\": true,\n"
+             "      \"preserve_params\": true\n"
+             "    }\n"
+             "  ]\n"
+             "}\n",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output_path,
+             manifest.replace_name,
+             replace_guid);
+    ASSERT_TRUE(write_text_file(path, json));
+}
+
 static void write_non_leaf_patch(const char *path, const char *output_path) {
     rewrite_manifest_t manifest;
     char replace_guid[64];
@@ -483,6 +516,34 @@ TEST(cli, patch_apply_rejects_non_leaf_replace_bb) {
     remove(patch);
 }
 
+TEST(cli, patch_apply_v2_replace_bb_dry_run) {
+    make_dir("test_patch_tmp");
+    const char *patch = "test_patch_tmp/replace_bb_v2.json";
+    const char *output = "test_patch_tmp/replace_bb_v2.cmo";
+    remove(patch);
+    remove(output);
+    write_leaf_patch_v2(patch, output);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
+             patch);
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "patch.apply", &doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
+    yyjson_val *operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(operations));
+    ASSERT_FALSE(file_exists(output));
+    yyjson_doc_free(doc);
+
+    remove(patch);
+}
+
 TEST(cli, patch_apply_fold_dry_run_reports_analysis) {
     rewrite_manifest_t manifest;
 
@@ -610,6 +671,7 @@ TEST(cli, patch_diff_json_reports_fold_delete_plan) {
 
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, patch_apply_rejects_non_leaf_replace_bb);
+    REGISTER_TEST(cli, patch_apply_v2_replace_bb_dry_run);
     REGISTER_TEST(cli, patch_apply_fold_dry_run_reports_analysis);
     REGISTER_TEST(cli, patch_apply_fold_dry_run_reports_semantic_risks);
     REGISTER_TEST(cli, patch_diff_json_reports_fold_delete_plan);

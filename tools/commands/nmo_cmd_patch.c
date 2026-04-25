@@ -11,6 +11,7 @@
 #include "../nmo_opt.h"
 
 #include "behavior/nmo_behavior_edit.h"
+#include "behavior/nmo_edit_plan.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "runtime/nmo_context.h"
@@ -41,8 +42,10 @@ typedef struct patch_operation {
 
 typedef struct patch_plan {
     yyjson_doc *doc;
+    uint32_t version;
     const char *input;
     const char *output;
+    nmo_edit_plan_t *edit_plan;
     patch_operation_t *operations;
     size_t operation_count;
 } patch_plan_t;
@@ -322,10 +325,26 @@ static void patch_plan_free(patch_plan_t *plan) {
         nmo_behavior_edit_fold_report_free(&op->fold_report);
     }
     free(plan->operations);
+    nmo_edit_plan_destroy(plan->edit_plan);
     if (plan->doc) {
         yyjson_doc_free(plan->doc);
     }
     memset(plan, 0, sizeof(*plan));
+}
+
+static nmo_status_t patch_operation_add_to_edit_plan(
+    nmo_edit_plan_t *edit_plan,
+    const patch_operation_t *op) {
+    if (!edit_plan || !op) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (op->kind == PATCH_OP_REPLACE_BB) {
+        return nmo_edit_plan_add_replace_bb(edit_plan, &op->replace_bb);
+    }
+    if (op->kind == PATCH_OP_FOLD) {
+        return nmo_edit_plan_add_fold(edit_plan, &op->fold);
+    }
+    return NMO_ERR_NOT_SUPPORTED;
 }
 
 static bool patch_key_allowed(const char *key,
@@ -778,8 +797,14 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
 
     yyjson_val *version = yyjson_obj_get(root, "version");
     if (!version || !yyjson_is_uint(version) ||
-        yyjson_get_uint(version) != 1) {
-        fprintf(stderr, "Error: Patch version must be 1\n");
+        yyjson_get_uint(version) > UINT32_MAX) {
+        fprintf(stderr, "Error: Patch version must be 1 or 2\n");
+        patch_plan_free(out_plan);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    out_plan->version = (uint32_t)yyjson_get_uint(version);
+    if (out_plan->version != 1u && out_plan->version != 2u) {
+        fprintf(stderr, "Error: Patch version must be 1 or 2\n");
         patch_plan_free(out_plan);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -808,6 +833,12 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
     }
     out_plan->operations = operations;
     out_plan->operation_count = op_count;
+    nmo_status_t st = nmo_edit_plan_create(&out_plan->edit_plan);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Out of memory\n");
+        patch_plan_free(out_plan);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
 
     size_t idx;
     size_t max;
@@ -837,6 +868,15 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
             patch_plan_free(out_plan);
             return rc;
         }
+        st = patch_operation_add_to_edit_plan(
+            out_plan->edit_plan, &operations[idx]);
+        if (st != NMO_OK) {
+            fprintf(stderr, "Error: Failed to build edit plan\n");
+            patch_plan_free(out_plan);
+            return st == NMO_ERR_NOMEM
+                ? NMO_CLI_EXIT_INTERNAL_ERROR
+                : NMO_CLI_EXIT_ARG_ERROR;
+        }
     }
 
     return NMO_CLI_EXIT_SUCCESS;
@@ -854,29 +894,34 @@ static int patch_apply_plan(patch_plan_t *plan,
 
     for (size_t i = 0; i < plan->operation_count; ++i) {
         patch_operation_t *op = &plan->operations[i];
+        const nmo_edit_op_t *edit_op =
+            nmo_edit_plan_get(plan->edit_plan, i);
         nmo_status_t st = NMO_OK;
         nmo_workspace_t *workspace = ctx.workspace;
 
-        if (op->kind == PATCH_OP_REPLACE_BB) {
+        if (!edit_op) {
+            return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+        if (edit_op->kind == NMO_EDIT_OP_REPLACE_BB) {
             st = nmo_behavior_edit_replace_bb(
-                workspace, &op->replace_bb, &op->report);
-        } else if (op->kind == PATCH_OP_FOLD) {
+                workspace, &edit_op->data.replace_bb.desc, &op->report);
+        } else if (edit_op->kind == NMO_EDIT_OP_FOLD) {
             st = dry_run || emit_diff
                 ? nmo_behavior_edit_fold_analyze(workspace,
-                                            &op->fold,
+                                            &edit_op->data.fold.desc,
                                             &op->fold_report)
                 : nmo_behavior_edit_fold(workspace,
-                                    &op->fold,
+                                    &edit_op->data.fold.desc,
                                     &op->fold_report);
         } else {
             return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_ARG_ERROR);
         }
         if (st != NMO_OK) {
-            if (op->kind == PATCH_OP_REPLACE_BB) {
+            if (edit_op->kind == NMO_EDIT_OP_REPLACE_BB) {
                 fprintf(stderr,
                         "Error: replace_bb #%u is not leaf-replaceable "
                         "(sub_behaviors=%zu, sub_behavior_links=%zu, operations=%zu)",
-                        op->replace_bb.behavior_id,
+                        edit_op->data.replace_bb.desc.behavior_id,
                         op->report.sub_behavior_count,
                         op->report.sub_behavior_link_count,
                         op->report.operation_count);
@@ -885,7 +930,7 @@ static int patch_apply_plan(patch_plan_t *plan,
                 }
             } else {
                 fprintf(stderr, "Error: fold #%u rejected",
-                        op->fold.parent_id);
+                        edit_op->data.fold.desc.parent_id);
                 if (op->fold_report.diagnostic_code) {
                     fprintf(stderr, " (%s)",
                             op->fold_report.diagnostic_code);
