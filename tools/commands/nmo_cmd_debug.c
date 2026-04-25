@@ -184,6 +184,27 @@ static void debug_probe_add_validation_json(
     yyjson_mut_obj_add_val(doc, obj, "validation", item);
 }
 
+static void debug_probe_add_diff_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *obj,
+    const nmo_edit_report_t *report)
+{
+    yyjson_mut_val *item = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_uint(
+        doc, item, "changed_object_count",
+        (uint64_t)(report != NULL ? report->changed_object_count : 0u));
+    yyjson_mut_obj_add_uint(
+        doc, item, "created_object_count",
+        (uint64_t)(report != NULL ? report->created_object_count : 0u));
+    yyjson_mut_obj_add_uint(
+        doc, item, "deleted_object_count",
+        (uint64_t)(report != NULL ? report->deleted_object_count : 0u));
+    yyjson_mut_obj_add_uint(
+        doc, item, "semantic_risk_count",
+        (uint64_t)(report != NULL ? report->semantic_risk_count : 0u));
+    yyjson_mut_obj_add_val(doc, obj, "diff", item);
+}
+
 static int debug_probe_parse(int argc,
                              char **argv,
                              nmo_debug_probe_args_t *args,
@@ -333,6 +354,7 @@ static int debug_probe_report(nmo_cmd_ctx_t *ctx,
             args->report.deleted_object_count);
         debug_probe_add_semantic_risks_json(doc, data, &args->report);
         debug_probe_add_validation_json(doc, data, &args->report);
+        debug_probe_add_diff_json(doc, data, &args->report);
         int rc = nmo_cmd_ctx_json_end(ctx, doc, data, "debug.probe");
         nmo_edit_report_dispose(&args->report);
         return rc;

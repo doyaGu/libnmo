@@ -3031,6 +3031,12 @@ TEST(cli, debug_probe_2d_text_dry_run_reports_edit_plan) {
     yyjson_val *created = yyjson_obj_get(data, "created_objects");
     ASSERT_TRUE(created && yyjson_is_arr(created));
     ASSERT_TRUE(yyjson_arr_size(created) > 1u);
+    yyjson_val *diff = yyjson_obj_get(data, "diff");
+    ASSERT_TRUE(diff && yyjson_is_obj(diff));
+    ASSERT_TRUE(yyjson_obj_get(diff, "changed_object_count") != NULL);
+    ASSERT_TRUE(yyjson_obj_get(diff, "created_object_count") != NULL);
+    ASSERT_TRUE(yyjson_obj_get(diff, "deleted_object_count") != NULL);
+    ASSERT_TRUE(yyjson_obj_get(diff, "semantic_risk_count") != NULL);
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
 }
