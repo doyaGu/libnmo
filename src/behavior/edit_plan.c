@@ -844,6 +844,8 @@ void nmo_edit_report_dispose(nmo_edit_report_t *report)
             for (size_t j = 0; j < report->operations[i].handle_count; ++j) {
                 free((void *)report->operations[i].handles[j].name);
             }
+            free((void *)report->operations[i].diagnostic_code);
+            free((void *)report->operations[i].diagnostic_message);
             free(report->operations[i].handles);
         }
     }
@@ -1030,6 +1032,34 @@ nmo_status_t nmo_edit_report_add_operation_handle(
     return NMO_OK;
 }
 
+static nmo_status_t edit_report_set_operation_diagnostic(
+    nmo_edit_report_t *report,
+    size_t operation_index,
+    const char *code,
+    const char *message)
+{
+    if (report == NULL || (code == NULL && message == NULL)) {
+        return NMO_OK;
+    }
+    NMO_RETURN_IF_ERROR(edit_report_ensure_operations(
+        report, operation_index + 1u));
+    nmo_edit_operation_result_t *op = &report->operations[operation_index];
+    char *code_copy = edit_plan_strdup(code);
+    if (code && !code_copy) {
+        return NMO_ERR_NOMEM;
+    }
+    char *message_copy = edit_plan_strdup(message);
+    if (message && !message_copy) {
+        free(code_copy);
+        return NMO_ERR_NOMEM;
+    }
+    free((void *)op->diagnostic_code);
+    free((void *)op->diagnostic_message);
+    op->diagnostic_code = code_copy;
+    op->diagnostic_message = message_copy;
+    return NMO_OK;
+}
+
 static nmo_status_t edit_report_note_created_objects(
     nmo_edit_report_t *report,
     const nmo_object_id_t *ids,
@@ -1166,7 +1196,9 @@ static nmo_status_t edit_executor_apply_op(
     const nmo_edit_op_t *op,
     nmo_object_id_t *out_result_id,
     bool dry_run,
-    nmo_edit_report_t *report)
+    nmo_edit_report_t *report,
+    const char **out_diagnostic_code,
+    const char **out_diagnostic_message)
 {
     nmo_workspace_edit_t *edit = NULL;
     if (tx == NULL || op == NULL) {
@@ -1310,6 +1342,12 @@ static nmo_status_t edit_executor_apply_op(
             edit,
             &op->data.replace_bb.desc,
             &replace_report);
+        if (out_diagnostic_code != NULL) {
+            *out_diagnostic_code = replace_report.diagnostic_code;
+        }
+        if (out_diagnostic_message != NULL) {
+            *out_diagnostic_message = replace_report.diagnostic_message;
+        }
         if (rc == NMO_OK && out_result_id != NULL) {
             *out_result_id = op->data.replace_bb.desc.behavior_id;
         }
@@ -1326,6 +1364,12 @@ static nmo_status_t edit_executor_apply_op(
                   tx,
                   &op->data.fold.desc,
                   &fold_report);
+        if (out_diagnostic_code != NULL) {
+            *out_diagnostic_code = fold_report.diagnostic_code;
+        }
+        if (out_diagnostic_message != NULL) {
+            *out_diagnostic_message = fold_report.diagnostic_message;
+        }
         if (rc == NMO_OK && out_result_id != NULL) {
             *out_result_id = fold_report.anchor_id != 0u
                 ? fold_report.anchor_id
@@ -1521,8 +1565,16 @@ nmo_status_t nmo_edit_executor_execute_transaction(
             ? tx_report_before->created_object_id_count
             : 0u;
         nmo_object_id_t result_id = 0;
+        const char *diagnostic_code = NULL;
+        const char *diagnostic_message = NULL;
         nmo_status_t op_rc = edit_executor_apply_op(
-            tx, op, &result_id, effective.dry_run, report);
+            tx,
+            op,
+            &result_id,
+            effective.dry_run,
+            report,
+            &diagnostic_code,
+            &diagnostic_message);
         const nmo_script_edit_report_t *tx_report_after =
             nmo_script_edit_report(tx);
         report->operations[i] = (nmo_edit_operation_result_t){
@@ -1531,6 +1583,13 @@ nmo_status_t nmo_edit_executor_execute_transaction(
             .result_id = result_id,
             .status = op_rc,
         };
+        nmo_status_t diagnostic_rc = edit_report_set_operation_diagnostic(
+            report, i, diagnostic_code, diagnostic_message);
+        if (diagnostic_rc != NMO_OK) {
+            report->ok = false;
+            report->status = diagnostic_rc;
+            return diagnostic_rc;
+        }
         if (op_rc != NMO_OK) {
             report->ok = false;
             report->status = op_rc;

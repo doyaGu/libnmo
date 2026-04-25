@@ -185,6 +185,8 @@ typedef struct nmo_edit_operation_result {
     nmo_object_id_t primary_id;
     nmo_object_id_t result_id;
     nmo_status_t status;
+    const char *diagnostic_code;
+    const char *diagnostic_message;
     nmo_edit_operation_handle_t *handles;
     size_t handle_count;
 } nmo_edit_operation_result_t;

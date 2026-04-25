@@ -671,6 +671,65 @@ TEST(edit_plan, executor_fold_dry_run_reports_semantic_risks) {
     nmo_session_close_with_context(ctx, session);
 }
 
+TEST(edit_plan, executor_fold_failure_reports_operation_diagnostic) {
+    nmo_context_t *ctx = nmo_context_create(
+        &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session =
+        nmo_session_load(ctx, NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    ASSERT_NOT_NULL(session);
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
+
+    nmo_object_id_t fold_nodes[] = {2364u, 2208u};
+    nmo_behavior_fold_map_t input_maps[] = {
+        {
+            .kind = NMO_BEHAVIOR_FOLD_MAP_INPUT,
+            .old_index = 0u,
+            .new_index = 0u,
+        },
+        {
+            .kind = NMO_BEHAVIOR_FOLD_MAP_INPUT,
+            .old_index = 1u,
+            .new_index = 1u,
+        },
+    };
+    nmo_behavior_fold_desc_t fold = {
+        .parent_id = 4692u,
+        .node_ids = fold_nodes,
+        .node_count = sizeof(fold_nodes) / sizeof(fold_nodes[0]),
+        .anchor_id = 2364u,
+        .block_guid = nmo_guid_parse("42414C07-10000007"),
+        .name = "Plan Unclosed Fold",
+        .block_version = 65536u,
+        .preserve_boundary = true,
+        .input_maps = input_maps,
+        .input_map_count = sizeof(input_maps) / sizeof(input_maps[0]),
+        .interface_mode = NMO_BEHAVIOR_FOLD_INTERFACE_PRESERVE,
+    };
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_fold(plan, &fold));
+
+    ASSERT_NE(NMO_OK, nmo_edit_executor_execute(workspace, plan, NULL, &report));
+    ASSERT_FALSE(report.ok);
+    ASSERT_EQ(1u, report.operation_count);
+    ASSERT_STR_EQ("selection_not_closed", report.operations[0].diagnostic_code);
+    ASSERT_STR_CONTAINS(report.operations[0].diagnostic_message,
+                        "must include child behavior");
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    nmo_session_close_with_context(ctx, session);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(edit_plan, stores_parameter_value_ops);
 REGISTER_TEST(edit_plan, stores_full_script_edit_ops_and_clones_plan);
@@ -685,4 +744,5 @@ REGISTER_TEST(edit_plan, executor_replace_bb_dry_run_rolls_back);
 REGISTER_TEST(edit_plan, executor_folds_closed_graph_in_transaction);
 REGISTER_TEST(edit_plan, executor_fold_dry_run_rolls_back);
 REGISTER_TEST(edit_plan, executor_fold_dry_run_reports_semantic_risks);
+REGISTER_TEST(edit_plan, executor_fold_failure_reports_operation_diagnostic);
 TEST_MAIN_END()
