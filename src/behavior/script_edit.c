@@ -1492,6 +1492,15 @@ NMO_API nmo_workspace_edit_t *nmo_script_edit_workspace_edit(
     return tx->edit;
 }
 
+NMO_API nmo_workspace_t *nmo_script_edit_workspace(
+    nmo_script_edit_tx_t *tx)
+{
+    if (!tx || tx->finished) {
+        return NULL;
+    }
+    return tx->workspace;
+}
+
 NMO_API void nmo_script_edit_mark(nmo_script_edit_tx_t *tx,
                                   uint32_t workspace_edit_flags)
 {

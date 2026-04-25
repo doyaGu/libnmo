@@ -170,6 +170,12 @@ NMO_API nmo_status_t nmo_behavior_edit_replace_bb(
     const nmo_behavior_replace_bb_desc_t *desc,
     nmo_behavior_replace_report_t *report);
 
+NMO_API nmo_status_t nmo_behavior_edit_replace_bb_in_edit(
+    nmo_workspace_t *workspace,
+    nmo_workspace_edit_t *edit,
+    const nmo_behavior_replace_bb_desc_t *desc,
+    nmo_behavior_replace_report_t *report);
+
 NMO_API nmo_status_t nmo_behavior_edit_fold_analyze(
     nmo_workspace_t *workspace,
     const nmo_behavior_fold_desc_t *desc,

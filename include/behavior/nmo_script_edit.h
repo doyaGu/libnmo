@@ -76,6 +76,9 @@ NMO_API nmo_status_t nmo_script_edit_begin(nmo_workspace_t *workspace,
                                            const char *label,
                                            nmo_script_edit_tx_t **out_tx);
 
+NMO_API nmo_workspace_t *nmo_script_edit_workspace(
+    nmo_script_edit_tx_t *tx);
+
 NMO_API nmo_workspace_edit_t *nmo_script_edit_workspace_edit(
     nmo_script_edit_tx_t *tx);
 

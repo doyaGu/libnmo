@@ -1186,6 +1186,18 @@ static nmo_status_t edit_executor_apply_op(
             op->data.data_cell.row,
             op->data.data_cell.col,
             op->data.data_cell.value);
+    case NMO_EDIT_OP_REPLACE_BB: {
+        nmo_behavior_replace_report_t replace_report = {0};
+        nmo_status_t rc = nmo_behavior_edit_replace_bb_in_edit(
+            nmo_script_edit_workspace(tx),
+            edit,
+            &op->data.replace_bb.desc,
+            &replace_report);
+        if (rc == NMO_OK && out_result_id != NULL) {
+            *out_result_id = op->data.replace_bb.desc.behavior_id;
+        }
+        return rc;
+    }
     default:
         return NMO_ERR_NOT_SUPPORTED;
     }

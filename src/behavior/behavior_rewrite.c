@@ -2031,16 +2031,17 @@ void nmo_behavior_edit_fold_report_free(nmo_behavior_fold_report_t *report) {
     memset(report, 0, sizeof(*report));
 }
 
-static nmo_status_t rewrite_replace_bb_workspace(
+static nmo_status_t rewrite_replace_bb_in_edit(
     nmo_context_t *ctx,
     nmo_workspace_t *workspace,
+    nmo_workspace_edit_t *edit,
     const nmo_behavior_replace_bb_desc_t *desc,
     nmo_behavior_replace_report_t *report) {
     if (report) {
         memset(report, 0, sizeof(*report));
     }
     if (!ctx || !workspace || !desc || desc->behavior_id == 0 ||
-        nmo_guid_is_null(desc->block_guid)) {
+        nmo_guid_is_null(desc->block_guid) || !edit) {
         rewrite_report_reject(report, "invalid_argument",
                               "Invalid behavior replace-bb arguments");
         return NMO_ERR_INVALID_ARGUMENT;
@@ -2108,8 +2109,6 @@ static nmo_status_t rewrite_replace_bb_workspace(
     nmo_behavior_boundary_t before_boundary = {0};
     nmo_behavior_boundary_t after_boundary = {0};
     nmo_behavior_state_t before_state = *state;
-    rewrite_workspace_edit_scope_t scope = {0};
-    nmo_workspace_edit_t *edit = NULL;
     nmo_status_t rc = NMO_OK;
 
     if (!nmo_behavior_boundary_build(workspace, desc->behavior_id,
@@ -2118,14 +2117,6 @@ static nmo_status_t rewrite_replace_bb_workspace(
                               "Failed to build original behavior boundary");
         return NMO_ERR_INVALID_STATE;
     }
-
-    rc = rewrite_begin_workspace_edit(ctx, workspace, "behavior replace-bb", &scope);
-    if (rc != NMO_OK) {
-        rewrite_report_reject(report, "edit_begin_failed",
-                              "Failed to begin behavior rewrite edit");
-        goto cleanup;
-    }
-    edit = scope.edit;
 
     rc = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
     if (rc != NMO_OK) {
@@ -2167,7 +2158,7 @@ static nmo_status_t rewrite_replace_bb_workspace(
         goto cleanup;
     }
 
-    if (!nmo_behavior_boundary_build(scope.workspace, desc->behavior_id,
+    if (!nmo_behavior_boundary_build(workspace, desc->behavior_id,
                                      UINT32_MAX, &after_boundary)) {
         rewrite_report_reject(report, "boundary_failed",
                               "Failed to build rewritten behavior boundary");
@@ -2218,21 +2209,52 @@ static nmo_status_t rewrite_replace_bb_workspace(
         report->preserved_parameter_out = after_boundary.parameter_out_count;
     }
 
-    rc = nmo_workspace_edit_commit(edit);
-    edit = NULL;
-    if (rc != NMO_OK) {
-        rewrite_report_reject(report, "commit_failed",
-                              "Failed to commit behavior rewrite");
-        goto cleanup;
-    }
-
 cleanup:
-    if (edit) {
-        nmo_workspace_edit_rollback(edit);
-    }
-    rewrite_workspace_edit_scope_reset(&scope);
     nmo_behavior_boundary_free(&before_boundary);
     nmo_behavior_boundary_free(&after_boundary);
+    return rc;
+}
+
+static nmo_status_t rewrite_replace_bb_workspace(
+    nmo_context_t *ctx,
+    nmo_workspace_t *workspace,
+    const nmo_behavior_replace_bb_desc_t *desc,
+    nmo_behavior_replace_report_t *report) {
+    rewrite_workspace_edit_scope_t scope = {0};
+    nmo_status_t rc = NMO_OK;
+    if (!ctx || !workspace) {
+        if (report) {
+            memset(report, 0, sizeof(*report));
+        }
+        rewrite_report_reject(report, "invalid_argument",
+                              "Invalid behavior replace-bb arguments");
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    rc = rewrite_begin_workspace_edit(ctx, workspace, "behavior replace-bb", &scope);
+    if (rc != NMO_OK) {
+        if (report) {
+            memset(report, 0, sizeof(*report));
+        }
+        rewrite_report_reject(report, "edit_begin_failed",
+                              "Failed to begin behavior rewrite edit");
+        return rc;
+    }
+
+    rc = rewrite_replace_bb_in_edit(ctx, scope.workspace, scope.edit, desc, report);
+    if (rc == NMO_OK) {
+        rc = nmo_workspace_edit_commit(scope.edit);
+        if (rc != NMO_OK) {
+            rewrite_report_reject(report, "commit_failed",
+                                  "Failed to commit behavior rewrite");
+        }
+        scope.edit = NULL;
+    }
+    if (scope.edit) {
+        nmo_workspace_edit_rollback(scope.edit);
+        scope.edit = NULL;
+    }
+    rewrite_workspace_edit_scope_reset(&scope);
     return rc;
 }
 
@@ -2300,5 +2322,21 @@ NMO_API nmo_status_t nmo_behavior_edit_replace_bb(
     return rewrite_replace_bb_workspace(ctx, workspace, desc, report);
 }
 
+NMO_API nmo_status_t nmo_behavior_edit_replace_bb_in_edit(
+    nmo_workspace_t *workspace,
+    nmo_workspace_edit_t *edit,
+    const nmo_behavior_replace_bb_desc_t *desc,
+    nmo_behavior_replace_report_t *report) {
+    nmo_context_t *ctx = nmo_workspace_internal_context(workspace);
+    if (!workspace || !ctx || !edit) {
+        if (report) {
+            memset(report, 0, sizeof(*report));
+            rewrite_report_reject(report, "invalid_argument",
+                                  "Invalid behavior replace-bb arguments");
+        }
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    return rewrite_replace_bb_in_edit(ctx, workspace, edit, desc, report);
+}
 
 
