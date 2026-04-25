@@ -392,22 +392,6 @@ static void write_closed_graph_fold_patch(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static bool array_contains_uint(yyjson_val *arr, uint64_t needle) {
-    size_t idx;
-    size_t max;
-    yyjson_val *item;
-
-    if (!arr) {
-        return false;
-    }
-    yyjson_arr_foreach(arr, idx, max, item) {
-        if (yyjson_is_uint(item) && yyjson_get_uint(item) == needle) {
-            return true;
-        }
-    }
-    return false;
-}
-
 static bool array_contains_object_id(yyjson_val *arr, uint64_t needle) {
     size_t idx;
     size_t max;
@@ -633,6 +617,9 @@ TEST(cli, patch_apply_fold_dry_run_reports_semantic_risks) {
 }
 
 TEST(cli, patch_diff_json_reports_fold_delete_plan) {
+    rewrite_manifest_t manifest;
+
+    load_ballance_manifest_or_die(&manifest);
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/fold_closed_graph.json";
     const char *output = "test_patch_tmp/fold_closed_graph.cmo";
@@ -655,14 +642,15 @@ TEST(cli, patch_diff_json_reports_fold_delete_plan) {
     yyjson_val *op = yyjson_arr_get(operations, 0);
     ASSERT_TRUE(op && yyjson_is_obj(op));
     ASSERT_STR_EQ("fold", get_string_field(op, "op"));
-    ASSERT_TRUE(get_bool_field(op, "can_write"));
+    ASSERT_EQ(manifest.fold_parent_id,
+              (uint32_t)get_uint_field(op, "primary_id"));
 
-    yyjson_val *planned = get_object_field(op, "planned");
-    ASSERT_NOT_NULL(planned);
-    yyjson_val *nodes_to_delete = get_array_field(planned,
-                                                  "nodes_to_delete");
-    ASSERT_NOT_NULL(nodes_to_delete);
-    ASSERT_TRUE(array_contains_uint(nodes_to_delete, 4140u));
+    yyjson_val *deleted_objects = get_array_field(data, "deleted_objects");
+    ASSERT_NOT_NULL(deleted_objects);
+    ASSERT_TRUE(array_contains_object_id(deleted_objects, 4140u));
+    yyjson_val *diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    ASSERT_TRUE(get_uint_field(diff, "deleted_object_count") > 0u);
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
 

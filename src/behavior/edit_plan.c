@@ -1083,6 +1083,84 @@ static nmo_status_t edit_report_note_semantic_risks(
     return NMO_OK;
 }
 
+static nmo_status_t edit_report_note_fold_impact(
+    nmo_edit_report_t *report,
+    const nmo_behavior_fold_report_t *fold_report,
+    nmo_object_id_t parent_id)
+{
+    if (report == NULL || fold_report == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+        report, parent_id, NMO_EDIT_OP_FOLD, "parent"));
+    NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+        report, fold_report->anchor_id, NMO_EDIT_OP_FOLD, "anchor"));
+
+    for (size_t i = 0; i < fold_report->selected_node_count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            report,
+            fold_report->selected_nodes[i],
+            NMO_EDIT_OP_FOLD,
+            "selected_node"));
+    }
+    for (size_t i = 0; i < fold_report->nodes_to_delete_count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_deleted_object(
+            report,
+            fold_report->nodes_to_delete[i],
+            NMO_EDIT_OP_FOLD,
+            "folded_node"));
+    }
+    for (size_t i = 0; i < fold_report->control_links_to_delete_count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_deleted_object(
+            report,
+            fold_report->control_links_to_delete[i].link_id,
+            NMO_EDIT_OP_FOLD,
+            "folded_control_link"));
+    }
+
+    const nmo_behavior_boundary_t *boundary = &fold_report->boundary;
+    for (size_t i = 0; i < boundary->control_in_count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            report,
+            boundary->control_in[i].link_id,
+            NMO_EDIT_OP_FOLD,
+            "boundary_control_link"));
+    }
+    for (size_t i = 0; i < boundary->control_out_count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            report,
+            boundary->control_out[i].link_id,
+            NMO_EDIT_OP_FOLD,
+            "boundary_control_link"));
+    }
+    for (size_t i = 0; i < boundary->parameter_in_count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            report,
+            boundary->parameter_in[i].source_parameter_id,
+            NMO_EDIT_OP_FOLD,
+            "boundary_parameter_source"));
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            report,
+            boundary->parameter_in[i].target_parameter_id,
+            NMO_EDIT_OP_FOLD,
+            "boundary_parameter_target"));
+    }
+    for (size_t i = 0; i < boundary->parameter_out_count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            report,
+            boundary->parameter_out[i].source_parameter_id,
+            NMO_EDIT_OP_FOLD,
+            "boundary_parameter_source"));
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            report,
+            boundary->parameter_out[i].target_parameter_id,
+            NMO_EDIT_OP_FOLD,
+            "boundary_parameter_target"));
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t edit_executor_apply_op(
     nmo_script_edit_tx_t *tx,
     const nmo_edit_op_t *op,
@@ -1258,6 +1336,10 @@ static nmo_status_t edit_executor_apply_op(
                 report,
                 fold_report.semantic_risks,
                 fold_report.semantic_risk_count);
+            if (rc == NMO_OK) {
+                rc = edit_report_note_fold_impact(
+                    report, &fold_report, op->data.fold.desc.parent_id);
+            }
         }
         nmo_behavior_edit_fold_report_free(&fold_report);
         return rc;
