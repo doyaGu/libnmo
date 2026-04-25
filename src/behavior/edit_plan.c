@@ -851,6 +851,7 @@ void nmo_edit_report_dispose(nmo_edit_report_t *report)
     free(report->changed_objects);
     free(report->created_objects);
     free(report->deleted_objects);
+    free(report->semantic_risks);
     memset(report, 0, sizeof(*report));
 }
 
@@ -1046,11 +1047,48 @@ static nmo_status_t edit_report_note_created_objects(
     return NMO_OK;
 }
 
+static nmo_status_t edit_report_note_semantic_risks(
+    nmo_edit_report_t *report,
+    const nmo_behavior_semantic_risk_t *risks,
+    size_t risk_count)
+{
+    if (report == NULL || (risk_count > 0u && risks == NULL)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (risk_count == 0u) {
+        return NMO_OK;
+    }
+    if (report->semantic_risk_count + risk_count >
+        report->semantic_risk_capacity) {
+        size_t new_capacity = report->semantic_risk_capacity == 0u
+            ? 8u
+            : report->semantic_risk_capacity * 2u;
+        while (new_capacity < report->semantic_risk_count + risk_count) {
+            new_capacity *= 2u;
+        }
+        nmo_behavior_semantic_risk_t *next =
+            (nmo_behavior_semantic_risk_t *)realloc(
+                report->semantic_risks,
+                new_capacity * sizeof(*next));
+        if (next == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        report->semantic_risks = next;
+        report->semantic_risk_capacity = new_capacity;
+    }
+    memcpy(report->semantic_risks + report->semantic_risk_count,
+           risks,
+           risk_count * sizeof(*risks));
+    report->semantic_risk_count += risk_count;
+    return NMO_OK;
+}
+
 static nmo_status_t edit_executor_apply_op(
     nmo_script_edit_tx_t *tx,
     const nmo_edit_op_t *op,
     nmo_object_id_t *out_result_id,
-    bool dry_run)
+    bool dry_run,
+    nmo_edit_report_t *report)
 {
     nmo_workspace_edit_t *edit = NULL;
     if (tx == NULL || op == NULL) {
@@ -1214,6 +1252,12 @@ static nmo_status_t edit_executor_apply_op(
             *out_result_id = fold_report.anchor_id != 0u
                 ? fold_report.anchor_id
                 : op->data.fold.desc.anchor_id;
+        }
+        if (rc == NMO_OK && report != NULL) {
+            rc = edit_report_note_semantic_risks(
+                report,
+                fold_report.semantic_risks,
+                fold_report.semantic_risk_count);
         }
         nmo_behavior_edit_fold_report_free(&fold_report);
         return rc;
@@ -1396,7 +1440,7 @@ nmo_status_t nmo_edit_executor_execute_transaction(
             : 0u;
         nmo_object_id_t result_id = 0;
         nmo_status_t op_rc = edit_executor_apply_op(
-            tx, op, &result_id, effective.dry_run);
+            tx, op, &result_id, effective.dry_run, report);
         const nmo_script_edit_report_t *tx_report_after =
             nmo_script_edit_report(tx);
         report->operations[i] = (nmo_edit_operation_result_t){

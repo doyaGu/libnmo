@@ -212,6 +212,9 @@ typedef struct nmo_edit_report {
     size_t deleted_object_count;
     size_t deleted_object_capacity;
     nmo_edit_object_impact_t *deleted_objects;
+    nmo_behavior_semantic_risk_t *semantic_risks;
+    size_t semantic_risk_count;
+    size_t semantic_risk_capacity;
 } nmo_edit_report_t;
 
 NMO_API nmo_status_t nmo_edit_plan_create(nmo_edit_plan_t **out_plan);
