@@ -28,6 +28,7 @@ typedef enum patch_operation_kind {
     PATCH_OP_REPLACE_BB = 1,
     PATCH_OP_FOLD = 2,
     PATCH_OP_ADD_IO = 3,
+    PATCH_OP_INTERFACE_POLICY = 4,
 } patch_operation_kind_t;
 
 typedef struct patch_operation {
@@ -43,6 +44,10 @@ typedef struct patch_operation {
         nmo_script_edit_io_kind_t kind;
         const char *name;
     } add_io;
+    struct {
+        nmo_object_id_t behavior_id;
+        nmo_script_edit_interface_mode_t mode;
+    } interface_policy;
 } patch_operation_t;
 
 typedef struct patch_plan {
@@ -143,6 +148,12 @@ static nmo_status_t patch_operation_add_to_edit_plan(
             op->add_io.behavior_id,
             op->add_io.kind,
             op->add_io.name);
+    }
+    if (op->kind == PATCH_OP_INTERFACE_POLICY) {
+        return nmo_edit_plan_add_interface_policy(
+            edit_plan,
+            op->interface_policy.behavior_id,
+            op->interface_policy.mode);
     }
     return NMO_ERR_NOT_SUPPORTED;
 }
@@ -483,6 +494,66 @@ static int patch_parse_add_io(yyjson_val *op_obj,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+static int patch_parse_script_interface_mode(
+    yyjson_val *obj,
+    nmo_script_edit_interface_mode_t *out_mode) {
+    const char *text = patch_required_string(
+        obj, "mode", "interface_policy operation");
+    if (!text) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (strcmp(text, "preserve") == 0) {
+        *out_mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE;
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+    if (strcmp(text, "canonicalize") == 0) {
+        *out_mode = NMO_SCRIPT_EDIT_INTERFACE_CANONICALIZE;
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+    if (strcmp(text, "remove") == 0) {
+        *out_mode = NMO_SCRIPT_EDIT_INTERFACE_REMOVE;
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+    fprintf(stderr, "Error: Invalid interface_policy mode '%s'\n", text);
+    return NMO_CLI_EXIT_ARG_ERROR;
+}
+
+static int patch_parse_interface_policy(yyjson_val *op_obj,
+                                        patch_operation_t *out_op) {
+    static const char *const allowed[] = {
+        "op",
+        "behavior_id",
+        "mode",
+    };
+    int rc = patch_reject_unknown_fields(
+        op_obj, "interface_policy operation",
+        allowed, sizeof(allowed) / sizeof(allowed[0]));
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    yyjson_val *id_val = yyjson_obj_get(op_obj, "behavior_id");
+    if (!id_val || !yyjson_is_uint(id_val) || yyjson_get_uint(id_val) == 0 ||
+        yyjson_get_uint(id_val) > UINT32_MAX) {
+        fprintf(stderr, "Error: Missing or invalid behavior_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_script_edit_interface_mode_t mode =
+        NMO_SCRIPT_EDIT_INTERFACE_PRESERVE;
+    rc = patch_parse_script_interface_mode(op_obj, &mode);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    memset(out_op, 0, sizeof(*out_op));
+    out_op->kind = PATCH_OP_INTERFACE_POLICY;
+    out_op->interface_policy.behavior_id =
+        (nmo_object_id_t)yyjson_get_uint(id_val);
+    out_op->interface_policy.mode = mode;
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static int patch_parse_fold(yyjson_val *op_obj,
                             patch_operation_t *out_op) {
     static const char *const allowed[] = {
@@ -709,6 +780,9 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
             rc = patch_parse_fold(op_obj, &operations[idx]);
         } else if (strcmp(op, "add_io") == 0 && out_plan->version == 2u) {
             rc = patch_parse_add_io(op_obj, &operations[idx]);
+        } else if (strcmp(op, "interface_policy") == 0 &&
+                   out_plan->version == 2u) {
+            rc = patch_parse_interface_policy(op_obj, &operations[idx]);
         } else {
             fprintf(stderr, "Error: Unsupported patch op '%s'\n", op);
             patch_plan_free(out_plan);
