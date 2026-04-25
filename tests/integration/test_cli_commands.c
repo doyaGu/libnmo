@@ -3029,6 +3029,26 @@ TEST(cli, debug_probe_2d_text_dry_run_reports_edit_plan) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, debug_probe_console_dry_run_reports_edit_plan) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json debug probe console --behavior 237 "
+             "--name ConsoleProbe \"%s\" --dry-run",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    ASSERT_STR_EQ(json_envelope_command(doc), "debug.probe");
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(data, "ok")));
+    ASSERT_STR_EQ("console", yyjson_get_str(yyjson_obj_get(data, "probe_kind")));
+    yyjson_val *created = yyjson_obj_get(data, "created_objects");
+    ASSERT_TRUE(created && yyjson_is_arr(created));
+    ASSERT_TRUE(yyjson_arr_size(created) > 1u);
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, unknown_command_error) {
     char *output = run_cli("nonexistent foobar");
     ASSERT_NOT_NULL(output);
@@ -3165,6 +3185,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, resource_replace_help_distinguishes_payload_from_texture_bitmap);
     REGISTER_TEST(cli, debug_help_marks_output_as_diagnostic);
     REGISTER_TEST(cli, debug_probe_2d_text_dry_run_reports_edit_plan);
+    REGISTER_TEST(cli, debug_probe_console_dry_run_reports_edit_plan);
     REGISTER_TEST(cli, unknown_command_error);
 TEST_MAIN_END()
 
