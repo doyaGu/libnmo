@@ -206,7 +206,6 @@ typedef struct script_run_args {
     const char *script_path;
     const char *input_path;
     bool dry_run;
-    nmo_script_edit_report_t report;
     script_run_validation_t validation;
     nmo_behavior_execution_t *execution;
     nmo_edit_plan_t *pending_plan;
@@ -252,7 +251,6 @@ static void script_run_reset_args(script_run_args_t *args)
         nmo_edit_report_dispose(&args->edit_report);
     }
 
-    memset(&args->report, 0, sizeof(args->report));
     memset(&args->validation, 0, sizeof(args->validation));
     args->execution = NULL;
     args->pending_plan = NULL;
@@ -1594,7 +1592,7 @@ static int script_run_mutate(nmo_cmd_ctx_t *ctx,
                                          &options,
                                          script_run_executor_action,
                                          args,
-                                         &args->report);
+                                         NULL);
     args->validation.final_status = status;
     if (status != NMO_OK) {
         const char *message = nmo_last_error_message();
