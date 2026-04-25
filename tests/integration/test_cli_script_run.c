@@ -247,9 +247,6 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     yyjson_val *data = NULL;
     yyjson_val *operations = NULL;
     yyjson_val *validation = NULL;
-    yyjson_val *references = NULL;
-    yyjson_val *behavior_index = NULL;
-    yyjson_val *interface_obj = NULL;
     yyjson_val *changed_objects = NULL;
     yyjson_val *created_objects = NULL;
     yyjson_val *first_changed = NULL;
@@ -317,13 +314,9 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
     ASSERT_STR_EQ("io", get_string_field(yyjson_arr_get(first_handles, 0), "name"));
     validation = get_object_field(data, "validation");
     ASSERT_NOT_NULL(validation);
-    references = get_object_field(validation, "references");
-    ASSERT_NOT_NULL(references);
-    ASSERT_NOT_NULL(get_string_field(references, "status_name"));
-    behavior_index = get_object_field(validation, "behavior_index");
-    ASSERT_NOT_NULL(behavior_index);
-    interface_obj = get_object_field(validation, "interface");
-    ASSERT_NOT_NULL(interface_obj);
+    ASSERT_TRUE(yyjson_obj_get(validation, "references") == NULL);
+    ASSERT_TRUE(yyjson_obj_get(validation, "behavior_index") == NULL);
+    ASSERT_TRUE(yyjson_obj_get(validation, "interface") == NULL);
     ASSERT_EQ(NMO_OK, (nmo_status_t)get_uint_field(validation, "final_status"));
     ASSERT_TRUE(yyjson_obj_get(validation, "roundtrip_status") != NULL);
     ASSERT_EQ(NMO_OK, (nmo_status_t)get_uint_field(validation, "roundtrip_status"));
