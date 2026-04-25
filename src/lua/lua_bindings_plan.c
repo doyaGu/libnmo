@@ -185,6 +185,87 @@ static int nmo_lua_plan_remove_node(lua_State *state)
     return 0;
 }
 
+static int nmo_lua_plan_add_behavior_link(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t parent_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    nmo_object_id_t from_io_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
+    nmo_object_id_t to_io_id = (nmo_object_id_t)luaL_checkinteger(state, 4);
+    uint32_t delay = (uint32_t)luaL_optinteger(state, 5, 0);
+
+    status = nmo_edit_plan_add_behavior_link(
+        plan, parent_id, from_io_id, to_io_id, delay);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add behavior link op");
+    }
+    return 0;
+}
+
+static int nmo_lua_plan_rewire_behavior_link(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t link_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    nmo_object_id_t from_io_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
+    nmo_object_id_t to_io_id = (nmo_object_id_t)luaL_checkinteger(state, 4);
+
+    status = nmo_edit_plan_add_rewire_behavior_link(
+        plan, link_id, from_io_id, to_io_id);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add rewire behavior link op");
+    }
+    return 0;
+}
+
+static int nmo_lua_plan_set_behavior_link_delay(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t link_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    uint32_t delay = (uint32_t)luaL_checkinteger(state, 3);
+
+    status = nmo_edit_plan_add_set_behavior_link_delay(plan, link_id, delay);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add behavior link delay op");
+    }
+    return 0;
+}
+
+static int nmo_lua_plan_remove_behavior_link(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t parent_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    nmo_object_id_t link_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
+
+    status = nmo_edit_plan_add_remove_behavior_link(plan, parent_id, link_id);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add remove behavior link op");
+    }
+    return 0;
+}
+
 static int nmo_lua_plan_set_parameter_value(lua_State *state)
 {
     nmo_edit_plan_t *plan = NULL;
@@ -305,6 +386,14 @@ static const char *nmo_lua_plan_op_kind_string(nmo_edit_op_kind_t kind)
         return "rename_io";
     case NMO_EDIT_OP_REMOVE_IO:
         return "remove_io";
+    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
+        return "add_behavior_link";
+    case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK:
+        return "rewire_behavior_link";
+    case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY:
+        return "set_behavior_link_delay";
+    case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK:
+        return "remove_behavior_link";
     case NMO_EDIT_OP_REMOVE_NODE:
         return "remove_node";
     case NMO_EDIT_OP_INTERFACE_POLICY:
@@ -533,6 +622,14 @@ static int nmo_lua_open_plan_module(lua_State *state)
     lua_setfield(state, -2, "remove_io");
     lua_pushcfunction(state, nmo_lua_plan_remove_node);
     lua_setfield(state, -2, "remove_node");
+    lua_pushcfunction(state, nmo_lua_plan_add_behavior_link);
+    lua_setfield(state, -2, "add_behavior_link");
+    lua_pushcfunction(state, nmo_lua_plan_rewire_behavior_link);
+    lua_setfield(state, -2, "rewire_behavior_link");
+    lua_pushcfunction(state, nmo_lua_plan_set_behavior_link_delay);
+    lua_setfield(state, -2, "set_behavior_link_delay");
+    lua_pushcfunction(state, nmo_lua_plan_remove_behavior_link);
+    lua_setfield(state, -2, "remove_behavior_link");
     lua_pushcfunction(state, nmo_lua_plan_set_parameter_value);
     lua_setfield(state, -2, "set_parameter_value");
     lua_pushcfunction(state, nmo_lua_plan_set_parameter_bytes);
