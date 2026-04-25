@@ -492,8 +492,8 @@ TEST(cli, patch_apply_rejects_non_leaf_replace_bb) {
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
-    ASSERT_STR_CONTAINS(result.output, "not leaf-replaceable");
-    ASSERT_STR_CONTAINS(result.output, "sub_behaviors");
+    ASSERT_STR_CONTAINS(result.output, "not_leaf_replaceable");
+    ASSERT_STR_CONTAINS(result.output, "Behavior is not leaf-replaceable");
     ASSERT_FALSE(file_exists(output));
     free(result.output);
 

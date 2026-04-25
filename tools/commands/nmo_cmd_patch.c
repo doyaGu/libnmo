@@ -31,13 +31,11 @@ typedef enum patch_operation_kind {
 typedef struct patch_operation {
     patch_operation_kind_t kind;
     nmo_behavior_replace_bb_desc_t replace_bb;
-    nmo_behavior_replace_report_t report;
     nmo_behavior_fold_desc_t fold;
     nmo_object_id_t *fold_nodes;
     nmo_behavior_fold_map_t *fold_input_maps;
     nmo_behavior_fold_map_t *fold_output_maps;
     nmo_behavior_fold_map_t *fold_parameter_maps;
-    nmo_behavior_fold_report_t fold_report;
 } patch_operation_t;
 
 typedef struct patch_plan {
@@ -207,6 +205,14 @@ static void patch_add_edit_operations_json(
                                     (uint64_t)op->status);
             nmo_cli_json_add_str_safe(doc, item, "status_name",
                                       nmo_error_string(op->status));
+            if (op->diagnostic_code != NULL) {
+                nmo_cli_json_add_str_safe(doc, item, "diagnostic_code",
+                                          op->diagnostic_code);
+            }
+            if (op->diagnostic_message != NULL) {
+                nmo_cli_json_add_str_safe(doc, item, "diagnostic_message",
+                                          op->diagnostic_message);
+            }
             for (size_t j = 0; j < op->handle_count; ++j) {
                 yyjson_mut_val *handle = yyjson_mut_obj(doc);
                 nmo_cli_json_add_str_safe(doc, handle, "name",
@@ -332,7 +338,6 @@ static void patch_plan_free(patch_plan_t *plan) {
         free(op->fold_input_maps);
         free(op->fold_output_maps);
         free(op->fold_parameter_maps);
-        nmo_behavior_edit_fold_report_free(&op->fold_report);
     }
     free(plan->operations);
     nmo_edit_plan_destroy(plan->edit_plan);
@@ -972,26 +977,21 @@ static int patch_apply_plan(patch_plan_t *plan,
         }
         const nmo_edit_op_t *edit_op =
             nmo_edit_plan_get(plan->edit_plan, failed_index);
-        if (edit_op && edit_op->kind == NMO_EDIT_OP_REPLACE_BB) {
-            patch_operation_t *op = &plan->operations[failed_index];
-            (void)nmo_behavior_edit_replace_bb(
-                ctx.workspace,
-                &edit_op->data.replace_bb.desc,
-                &op->report);
-            fprintf(stderr,
-                    "Error: replace_bb #%u is not leaf-replaceable "
-                    "(sub_behaviors=%zu, sub_behavior_links=%zu, operations=%zu)",
-                    edit_op->data.replace_bb.desc.behavior_id,
-                    op->report.sub_behavior_count,
-                    op->report.sub_behavior_link_count,
-                    op->report.operation_count);
-            if (op->report.diagnostic_message) {
-                fprintf(stderr, ": %s", op->report.diagnostic_message);
-            }
-        } else if (edit_op && edit_op->kind == NMO_EDIT_OP_FOLD) {
-            fprintf(stderr, "Error: fold #%u rejected: %s",
-                    edit_op->data.fold.desc.parent_id,
+        const nmo_edit_operation_result_t *failed_op =
+            failed_index < edit_report.operation_count
+                ? &edit_report.operations[failed_index]
+                : NULL;
+        if (edit_op) {
+            fprintf(stderr, "Error: %s #%u failed: %s",
+                    patch_edit_op_kind_string(edit_op->kind),
+                    edit_op->primary_id,
                     nmo_error_string(st));
+            if (failed_op && failed_op->diagnostic_code) {
+                fprintf(stderr, " (%s)", failed_op->diagnostic_code);
+            }
+            if (failed_op && failed_op->diagnostic_message) {
+                fprintf(stderr, ": %s", failed_op->diagnostic_message);
+            }
         } else {
             fprintf(stderr, "Error: patch operation failed: %s",
                     nmo_error_string(st));
