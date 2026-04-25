@@ -64,7 +64,11 @@ TEST(lua_bindings_plan, plan_module_executes_dry_run)
         "assert(#report.operations == 1)\n"
         "assert(report.operations[1].op == 'add_io')\n"
         "assert(report.operations[1].handles[1].name == 'io')\n"
-        "assert(#report.created_objects == 1)\n");
+        "assert(#report.created_objects == 1)\n"
+        "assert(report.validation.final_status == 0)\n"
+        "assert(report.diff.changed_object_count == 1)\n"
+        "assert(report.diff.created_object_count == 1)\n"
+        "assert(report.diff.deleted_object_count == 0)\n");
 
     nmo_lua_runtime_destroy(runtime);
 }

@@ -256,11 +256,43 @@ static void nmo_lua_plan_push_impacts(
     }
 }
 
+static void nmo_lua_plan_push_validation(
+    lua_State *state,
+    const nmo_edit_validation_report_t *validation)
+{
+    lua_createtable(state, 0, 5);
+    lua_pushinteger(state, (lua_Integer)validation->final_status);
+    lua_setfield(state, -2, "final_status");
+    lua_pushinteger(state, (lua_Integer)validation->roundtrip_status);
+    lua_setfield(state, -2, "roundtrip_status");
+    lua_pushinteger(state, (lua_Integer)validation->reference_status);
+    lua_setfield(state, -2, "reference_status");
+    lua_pushinteger(state, (lua_Integer)validation->behavior_index_status);
+    lua_setfield(state, -2, "behavior_index_status");
+    lua_pushinteger(state, (lua_Integer)validation->interface_status);
+    lua_setfield(state, -2, "interface_status");
+}
+
+static void nmo_lua_plan_push_diff(
+    lua_State *state,
+    const nmo_edit_report_t *report)
+{
+    lua_createtable(state, 0, 4);
+    lua_pushinteger(state, (lua_Integer)report->changed_object_count);
+    lua_setfield(state, -2, "changed_object_count");
+    lua_pushinteger(state, (lua_Integer)report->created_object_count);
+    lua_setfield(state, -2, "created_object_count");
+    lua_pushinteger(state, (lua_Integer)report->deleted_object_count);
+    lua_setfield(state, -2, "deleted_object_count");
+    lua_pushinteger(state, (lua_Integer)report->semantic_risk_count);
+    lua_setfield(state, -2, "semantic_risk_count");
+}
+
 static void nmo_lua_plan_push_report(
     lua_State *state,
     const nmo_edit_report_t *report)
 {
-    lua_createtable(state, 0, 8);
+    lua_createtable(state, 0, 10);
     lua_pushboolean(state, report->ok);
     lua_setfield(state, -2, "ok");
     lua_pushboolean(state, report->dry_run);
@@ -278,6 +310,10 @@ static void nmo_lua_plan_push_report(
     nmo_lua_plan_push_impacts(
         state, report->deleted_objects, report->deleted_object_count);
     lua_setfield(state, -2, "deleted_objects");
+    nmo_lua_plan_push_validation(state, &report->validation);
+    lua_setfield(state, -2, "validation");
+    nmo_lua_plan_push_diff(state, report);
+    lua_setfield(state, -2, "diff");
 }
 
 static int nmo_lua_plan_execute(lua_State *state)
