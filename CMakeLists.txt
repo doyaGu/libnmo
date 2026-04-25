@@ -365,6 +365,7 @@ set(NMO_LUA_SOURCES
     src/lua/lua_bindings_core.c
     src/lua/lua_bindings_context.c
     src/lua/lua_bindings_behavior.c
+    src/lua/lua_bindings_plan.c
     src/lua/lua_bindings_document.c
     src/lua/lua_bindings_format.c
     src/lua/lua_bindings_object.c

@@ -21,6 +21,7 @@ NMO_API nmo_status_t nmo_lua_register_runtime_bindings(nmo_lua_runtime_t *runtim
 NMO_API nmo_status_t nmo_lua_register_object_bindings(nmo_lua_runtime_t *runtime);
 NMO_API nmo_status_t nmo_lua_register_type_bindings(nmo_lua_runtime_t *runtime);
 NMO_API nmo_status_t nmo_lua_register_behavior_bindings(nmo_lua_runtime_t *runtime);
+NMO_API nmo_status_t nmo_lua_register_plan_bindings(nmo_lua_runtime_t *runtime);
 NMO_API nmo_status_t nmo_lua_register_format_bindings(nmo_lua_runtime_t *runtime);
 
 NMO_API nmo_status_t nmo_lua_register_platform_bindings(nmo_lua_runtime_t *runtime);
