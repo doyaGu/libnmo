@@ -1106,6 +1106,110 @@ static int script_run_lua_add_parameter(lua_State *state)
     return 1;
 }
 
+static int script_run_lua_connect_parameter(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_object_id_t source_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
+    nmo_object_id_t target_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    char target_id_text[32];
+    nmo_status_t status = NMO_OK;
+
+    status = script_run_ensure_pending_plan(args);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_connect_parameter(
+            args->pending_plan, source_id, target_id);
+    }
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to enqueue script parameter connection");
+    }
+
+    snprintf(target_id_text, sizeof(target_id_text), "%u", target_id);
+    if (!script_run_append_operation(args,
+                                     target_id,
+                                     "connect_parameter",
+                                     "parameter",
+                                     target_id_text,
+                                     NULL,
+                                     0u)) {
+        return luaL_error(state, "failed to record script operation");
+    }
+
+    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    return 1;
+}
+
+static int script_run_lua_disconnect_parameter(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_object_id_t target_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
+    char target_id_text[32];
+    nmo_status_t status = NMO_OK;
+
+    status = script_run_ensure_pending_plan(args);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_disconnect_parameter(
+            args->pending_plan, target_id);
+    }
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to enqueue script parameter disconnection");
+    }
+
+    snprintf(target_id_text, sizeof(target_id_text), "%u", target_id);
+    if (!script_run_append_operation(args,
+                                     target_id,
+                                     "disconnect_parameter",
+                                     "parameter",
+                                     target_id_text,
+                                     NULL,
+                                     0u)) {
+        return luaL_error(state, "failed to record script operation");
+    }
+
+    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    return 1;
+}
+
+static int script_run_lua_remove_parameter(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_object_id_t parameter_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
+    bool detach = lua_toboolean(state, 2) != 0;
+    char parameter_id_text[32];
+    nmo_status_t status = NMO_OK;
+
+    status = script_run_ensure_pending_plan(args);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_remove_parameter(
+            args->pending_plan, parameter_id, detach);
+    }
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to enqueue script parameter removal");
+    }
+
+    snprintf(parameter_id_text, sizeof(parameter_id_text), "%u", parameter_id);
+    if (!script_run_append_operation(args,
+                                     parameter_id,
+                                     "remove_parameter",
+                                     "parameter",
+                                     parameter_id_text,
+                                     NULL,
+                                     0u)) {
+        return luaL_error(state, "failed to record script operation");
+    }
+
+    lua_pushinteger(state, (lua_Integer)args->operation_count);
+    return 1;
+}
+
 static nmo_object_id_t script_run_lua_optional_object_id(lua_State *state,
                                                          int index)
 {
@@ -1298,7 +1402,7 @@ static int script_run_lua_set_data_cell(lua_State *state)
 
 static int script_run_lua_open_executor_module(lua_State *state)
 {
-    lua_createtable(state, 0, 16);
+    lua_createtable(state, 0, 19);
 
     lua_pushcfunction(state, script_run_lua_root_script_id);
     lua_setfield(state, -2, "root_script_id");
@@ -1335,6 +1439,15 @@ static int script_run_lua_open_executor_module(lua_State *state)
 
     lua_pushcfunction(state, script_run_lua_add_parameter);
     lua_setfield(state, -2, "add_parameter");
+
+    lua_pushcfunction(state, script_run_lua_connect_parameter);
+    lua_setfield(state, -2, "connect_parameter");
+
+    lua_pushcfunction(state, script_run_lua_disconnect_parameter);
+    lua_setfield(state, -2, "disconnect_parameter");
+
+    lua_pushcfunction(state, script_run_lua_remove_parameter);
+    lua_setfield(state, -2, "remove_parameter");
 
     lua_pushcfunction(state, script_run_lua_add_operation);
     lua_setfield(state, -2, "add_operation");
