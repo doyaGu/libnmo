@@ -1842,63 +1842,6 @@ cleanup:
     return nmo_cmd_ctx_done(&ctx, rc);
 }
 
-static void script_add_validation_json(yyjson_mut_doc *doc,
-                                       yyjson_mut_val *data,
-                                       const script_command_common_t *common,
-                                       const uint32_t *result_handles,
-                                       size_t result_handle_count)
-{
-    yyjson_mut_val *validation = NULL;
-    yyjson_mut_val *references = NULL;
-    yyjson_mut_val *behavior_index = NULL;
-    yyjson_mut_val *interface_obj = NULL;
-    yyjson_mut_val *handles = NULL;
-    size_t i = 0;
-
-    if (doc == NULL || data == NULL || common == NULL) {
-        return;
-    }
-
-    validation = yyjson_mut_obj(doc);
-    references = yyjson_mut_obj(doc);
-    behavior_index = yyjson_mut_obj(doc);
-    interface_obj = yyjson_mut_obj(doc);
-    handles = yyjson_mut_arr(doc);
-
-    yyjson_mut_obj_add_uint(doc, references, "status",
-                            (uint64_t)common->validation.references_status);
-    nmo_cli_json_add_str_safe(doc, references, "status_name",
-                              nmo_error_string(common->validation.references_status));
-    yyjson_mut_obj_add_uint(doc, references, "broken_count",
-                            common->validation.broken_reference_count);
-    yyjson_mut_obj_add_val(doc, validation, "references", references);
-
-    yyjson_mut_obj_add_bool(doc, behavior_index, "ok",
-                            common->validation.behavior_index_ok);
-    yyjson_mut_obj_add_val(doc, validation, "behavior_index", behavior_index);
-
-    yyjson_mut_obj_add_bool(doc, interface_obj, "attempted",
-                            common->validation.interface_attempted);
-    yyjson_mut_obj_add_bool(doc, interface_obj, "available",
-                            common->validation.interface_available);
-    yyjson_mut_obj_add_uint(doc, interface_obj, "status",
-                            (uint64_t)common->validation.interface_status);
-    nmo_cli_json_add_str_safe(doc, interface_obj, "status_name",
-                              nmo_error_string(common->validation.interface_status));
-    yyjson_mut_obj_add_val(doc, validation, "interface", interface_obj);
-
-    yyjson_mut_obj_add_uint(doc, validation, "final_status",
-                            (uint64_t)common->validation.final_status);
-    nmo_cli_json_add_str_safe(doc, validation, "final_status_name",
-                              nmo_error_string(common->validation.final_status));
-    yyjson_mut_obj_add_val(doc, data, "validation", validation);
-
-    for (i = 0; i < result_handle_count; ++i) {
-        yyjson_mut_arr_add_uint(doc, handles, result_handles[i]);
-    }
-    yyjson_mut_obj_add_val(doc, data, "result_handles", handles);
-}
-
 static void script_add_edit_report_json(yyjson_mut_doc *doc,
                                         yyjson_mut_val *data,
                                         const script_command_common_t *common,
@@ -3442,7 +3385,7 @@ static int script_link_rewire_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run);
         yyjson_mut_obj_add_uint(doc, data, "link_id", args->link_id);
         if (args->from_id != 0u) {
             yyjson_mut_obj_add_uint(doc, data, "from_id", args->from_id);
@@ -3450,7 +3393,6 @@ static int script_link_rewire_report(
         if (args->to_id != 0u) {
             yyjson_mut_obj_add_uint(doc, data, "to_id", args->to_id);
         }
-        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -3501,10 +3443,9 @@ static int script_link_set_delay_report(
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_bool(doc, data, "dry_run", dry_run);
+        script_add_edit_report_json(doc, data, &args->common, dry_run);
         yyjson_mut_obj_add_uint(doc, data, "link_id", args->link_id);
         yyjson_mut_obj_add_uint(doc, data, "delay", args->delay);
-        script_add_validation_json(doc, data, &args->common, NULL, 0u);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
