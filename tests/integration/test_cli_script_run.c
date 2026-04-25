@@ -467,6 +467,46 @@ TEST(cli, script_run_applies_changes_through_executor) {
     remove_if_exists(output_path);
 }
 
+TEST(cli, script_run_lua_helpers_enqueue_until_script_end) {
+    char script_path[1024];
+    const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
+    const char *output_path = "test_cli_script_run_delayed_out.cmo";
+    char args[2048];
+    cli_run_result_t result = {0};
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *operations = NULL;
+
+    remove_if_exists(output_path);
+    ASSERT_TRUE(build_repo_fixture_path("tests/fixtures/lua/script_run_delayed_plan.lua",
+                                        script_path,
+                                        sizeof(script_path)));
+
+    snprintf(args, sizeof(args),
+             "-f json script run --dry-run \"%s\" \"%s\"",
+             script_path,
+             input_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    ASSERT_EQ(2u, get_uint_field(data, "operation_count"));
+    operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(2u, yyjson_arr_size(operations));
+    ASSERT_STR_EQ("add_io", get_string_field(yyjson_arr_get(operations, 0), "op"));
+    ASSERT_STR_EQ("add_io", get_string_field(yyjson_arr_get(operations, 1), "op"));
+    yyjson_doc_free(doc);
+    ASSERT_FALSE(file_exists(output_path));
+}
+
 TEST(cli, script_run_runtime_error_does_not_write_output)
 {
     char script_path[1024];
@@ -523,6 +563,7 @@ TEST(cli, script_run_validation_failure_does_not_write_output)
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_run_dry_run_emits_frozen_json_contract);
     REGISTER_TEST(cli, script_run_applies_changes_through_executor);
+    REGISTER_TEST(cli, script_run_lua_helpers_enqueue_until_script_end);
     REGISTER_TEST(cli, script_run_runtime_error_does_not_write_output);
     REGISTER_TEST(cli, script_run_validation_failure_does_not_write_output);
 TEST_MAIN_END()

@@ -224,6 +224,7 @@ typedef struct script_run_args {
     size_t result_handle_count;
     size_t result_handle_capacity;
     nmo_behavior_execution_t *execution;
+    nmo_edit_plan_t *pending_plan;
     nmo_edit_report_t edit_report;
     bool edit_report_ready;
 } script_run_args_t;
@@ -271,6 +272,7 @@ static void script_run_reset_args(script_run_args_t *args)
     }
     free(args->operations);
     free(args->result_handles);
+    nmo_edit_plan_destroy(args->pending_plan);
     if (args->edit_report_ready) {
         nmo_edit_report_dispose(&args->edit_report);
     }
@@ -284,6 +286,7 @@ static void script_run_reset_args(script_run_args_t *args)
     args->result_handle_count = 0u;
     args->result_handle_capacity = 0u;
     args->execution = NULL;
+    args->pending_plan = NULL;
     args->edit_report_ready = false;
 }
 
@@ -654,15 +657,31 @@ static nmo_status_t script_run_accumulate_edit_report(
     return NMO_OK;
 }
 
-static nmo_object_id_t script_run_edit_result_id(
-    const nmo_edit_report_t *report,
-    size_t operation_index)
+static nmo_status_t script_run_ensure_pending_plan(script_run_args_t *args)
 {
-    if (report == NULL || report->operations == NULL ||
-        operation_index >= report->operation_count) {
-        return 0u;
+    if (args == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
-    return report->operations[operation_index].result_id;
+    if (args->pending_plan != NULL) {
+        return NMO_OK;
+    }
+    return nmo_edit_plan_create(&args->pending_plan);
+}
+
+static nmo_status_t script_run_execute_pending_plan(script_run_args_t *args)
+{
+    nmo_edit_report_t report;
+    nmo_status_t status = NMO_OK;
+
+    if (args == NULL || args->pending_plan == NULL ||
+        nmo_edit_plan_count(args->pending_plan) == 0u) {
+        return NMO_OK;
+    }
+
+    nmo_edit_report_init(&report);
+    status = script_run_execute_edit_plan(args, args->pending_plan, &report);
+    nmo_edit_report_dispose(&report);
+    return status;
 }
 
 static int script_run_lua_add_io(lua_State *state)
@@ -672,10 +691,8 @@ static int script_run_lua_add_io(lua_State *state)
     const char *kind_text = luaL_checkstring(state, 2);
     const char *name = luaL_checkstring(state, 3);
     nmo_script_edit_io_kind_t kind = NMO_SCRIPT_EDIT_IO_INPUT;
-    nmo_edit_plan_t *plan = NULL;
-    nmo_edit_report_t report;
-    nmo_object_id_t io_id = 0u;
     nmo_status_t status = NMO_OK;
+    lua_Integer operation_index = 0;
 
     if (strcmp(kind_text, "input") == 0) {
         kind = NMO_SCRIPT_EDIT_IO_INPUT;
@@ -685,40 +702,29 @@ static int script_run_lua_add_io(lua_State *state)
         return luaL_error(state, "io kind must be 'input' or 'output'");
     }
 
-    nmo_edit_report_init(&report);
-    status = nmo_edit_plan_create(&plan);
+    status = script_run_ensure_pending_plan(args);
     if (status == NMO_OK) {
-        status = nmo_edit_plan_add_io(plan, behavior_id, kind, name);
-    }
-    if (status == NMO_OK) {
-        status = script_run_execute_edit_plan(args, plan, &report);
+        status = nmo_edit_plan_add_io(args->pending_plan, behavior_id, kind, name);
     }
     if (status != NMO_OK) {
-        nmo_edit_plan_destroy(plan);
-        nmo_edit_report_dispose(&report);
         return luaL_error(state, "%s",
                           nmo_last_error_message() != NULL
                               ? nmo_last_error_message()
-                              : "failed to add script io");
-    }
-    io_id = script_run_edit_result_id(&report, 0);
-    nmo_edit_plan_destroy(plan);
-    nmo_edit_report_dispose(&report);
-
-    {
-        const uint32_t result_handles[] = {io_id};
-        if (!script_run_append_operation(args,
-                                         behavior_id,
-                                         "add_io",
-                                         kind_text,
-                                         name,
-                                         result_handles,
-                                         1u)) {
-            return luaL_error(state, "failed to record script operation");
-        }
+                              : "failed to enqueue script io");
     }
 
-    lua_pushinteger(state, (lua_Integer)io_id);
+    if (!script_run_append_operation(args,
+                                     behavior_id,
+                                     "add_io",
+                                     kind_text,
+                                     name,
+                                     NULL,
+                                     0u)) {
+        return luaL_error(state, "failed to record script operation");
+    }
+
+    operation_index = (lua_Integer)args->operation_count;
+    lua_pushinteger(state, operation_index);
     return 1;
 }
 
@@ -730,8 +736,6 @@ static int script_run_lua_remove_io(lua_State *state)
     const char *mode_text = luaL_optstring(state, 2, "preserve");
     nmo_script_edit_interface_mode_t mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE;
     nmo_object_id_t interface_behavior_id = 0u;
-    nmo_edit_plan_t *plan = NULL;
-    nmo_edit_report_t report;
     char io_id_text[32];
     nmo_status_t status = NMO_OK;
 
@@ -751,25 +755,19 @@ static int script_run_lua_remove_io(lua_State *state)
         return luaL_error(state, "failed to resolve script interface root");
     }
 
-    nmo_edit_report_init(&report);
-    status = nmo_edit_plan_create(&plan);
+    status = script_run_ensure_pending_plan(args);
     if (status == NMO_OK) {
-        status = nmo_edit_plan_add_remove_io(plan, io_id, false);
+        status = nmo_edit_plan_add_remove_io(args->pending_plan, io_id, false);
     }
     if (status == NMO_OK && mode != NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
         status = nmo_edit_plan_add_interface_policy(
-            plan, interface_behavior_id, mode);
+            args->pending_plan, interface_behavior_id, mode);
     }
-    if (status == NMO_OK) {
-        status = script_run_execute_edit_plan(args, plan, &report);
-    }
-    nmo_edit_plan_destroy(plan);
-    nmo_edit_report_dispose(&report);
     if (status != NMO_OK) {
         return luaL_error(state, "%s",
                           nmo_last_error_message() != NULL
                               ? nmo_last_error_message()
-                              : "failed to remove script io");
+                              : "failed to enqueue script io removal");
     }
 
     snprintf(io_id_text, sizeof(io_id_text), "%u", io_id);
@@ -794,8 +792,6 @@ static int script_run_lua_remove_node(lua_State *state)
     nmo_object_id_t node_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
     const char *mode_text = luaL_optstring(state, 3, "preserve");
     nmo_script_edit_interface_mode_t mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE;
-    nmo_edit_plan_t *plan = NULL;
-    nmo_edit_report_t report;
     char node_id_text[32];
     nmo_status_t status = NMO_OK;
 
@@ -815,24 +811,20 @@ static int script_run_lua_remove_node(lua_State *state)
         return luaL_error(state, "Failed to apply script interface policy");
     }
 
-    nmo_edit_report_init(&report);
-    status = nmo_edit_plan_create(&plan);
+    status = script_run_ensure_pending_plan(args);
     if (status == NMO_OK) {
-        status = nmo_edit_plan_add_remove_node(plan, parent_id, node_id, 0u);
+        status = nmo_edit_plan_add_remove_node(
+            args->pending_plan, parent_id, node_id, 0u);
     }
     if (status == NMO_OK && mode != NMO_SCRIPT_EDIT_INTERFACE_PRESERVE) {
-        status = nmo_edit_plan_add_interface_policy(plan, parent_id, mode);
+        status = nmo_edit_plan_add_interface_policy(
+            args->pending_plan, parent_id, mode);
     }
-    if (status == NMO_OK) {
-        status = script_run_execute_edit_plan(args, plan, &report);
-    }
-    nmo_edit_plan_destroy(plan);
-    nmo_edit_report_dispose(&report);
     if (status != NMO_OK) {
         return luaL_error(state, "%s",
                           nmo_last_error_message() != NULL
                               ? nmo_last_error_message()
-                              : "failed to remove script node");
+                              : "failed to enqueue script node removal");
     }
 
     snprintf(node_id_text, sizeof(node_id_text), "%u", node_id);
@@ -1202,6 +1194,11 @@ static nmo_status_t script_run_executor_action(nmo_behavior_execution_t *executo
     }
 
     args->execution = executor;
+    status = script_run_execute_pending_plan(args);
+    if (status != NMO_OK) {
+        args->execution = NULL;
+        return status;
+    }
     script_run_collect_validation(args);
     args->execution = NULL;
     return NMO_OK;
