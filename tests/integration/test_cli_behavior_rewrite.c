@@ -483,6 +483,7 @@ TEST(cli, behavior_replace_bb_write_json_reports_edit_plan_schema) {
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_FALSE(get_bool_field(data, "dry_run"));
     ASSERT_STR_EQ(output, get_string_field(data, "output_path"));
+    ASSERT_TRUE(yyjson_obj_get(data, "risk_level") == NULL);
 
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
@@ -903,7 +904,7 @@ TEST(cli, behavior_fold_dry_run_reports_semantic_risks) {
     ASSERT_NOT_NULL(get_array_field(data, "errors"));
     ASSERT_NOT_NULL(get_array_field(data, "warnings"));
     ASSERT_NOT_NULL(get_array_field(data, "changed_objects"));
-    ASSERT_STR_EQ("warn", get_string_field(data, "risk_level"));
+    ASSERT_TRUE(yyjson_obj_get(data, "risk_level") == NULL);
     yyjson_val *risks = get_array_field(data, "semantic_risks");
     ASSERT_NOT_NULL(risks);
     yyjson_val *risk = find_semantic_risk(risks, "shared_parameter");
@@ -941,7 +942,7 @@ TEST(cli, behavior_fold_dry_run_detects_renamed_message_bb_by_signature) {
     yyjson_val *data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
-    ASSERT_STR_EQ("warn", get_string_field(data, "risk_level"));
+    ASSERT_TRUE(yyjson_obj_get(data, "risk_level") == NULL);
     yyjson_val *risks = get_array_field(data, "semantic_risks");
     ASSERT_NOT_NULL(risks);
     yyjson_val *risk = find_semantic_risk(risks, "message_flow");
@@ -1434,6 +1435,7 @@ TEST(cli, behavior_fold_dry_run_reports_single_leaf_anchor_writable) {
     ASSERT_TRUE(get_bool_field(data, "write_supported"));
     ASSERT_STR_EQ("ready", get_string_field(data, "status"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    ASSERT_TRUE(yyjson_obj_get(data, "risk_level") == NULL);
     ASSERT_EQ(1u, (uint32_t)get_uint_field(data, "operation_count"));
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
@@ -1522,6 +1524,7 @@ TEST(cli, behavior_fold_write_json_reports_edit_plan_schema) {
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_FALSE(get_bool_field(data, "dry_run"));
     ASSERT_STR_EQ(output, get_string_field(data, "output_path"));
+    ASSERT_TRUE(yyjson_obj_get(data, "risk_level") == NULL);
 
     yyjson_val *operations = get_array_field(data, "operations");
     ASSERT_NOT_NULL(operations);
