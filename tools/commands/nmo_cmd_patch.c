@@ -45,6 +45,7 @@ typedef enum patch_operation_kind {
     PATCH_OP_ADD_OPERATION = 18,
     PATCH_OP_REMOVE_OPERATION = 19,
     PATCH_OP_REWIRE_OPERATION = 20,
+    PATCH_OP_SET_DATA_CELL = 21,
 } patch_operation_kind_t;
 
 typedef struct patch_operation {
@@ -122,6 +123,12 @@ typedef struct patch_operation {
         nmo_object_id_t parameter_id;
         const char *value;
     } set_parameter_value;
+    struct {
+        nmo_object_id_t dataarray_id;
+        uint32_t row;
+        uint32_t col;
+        const char *value;
+    } data_cell;
     struct {
         nmo_object_id_t parent_id;
         nmo_guid_t operation_guid;
@@ -324,6 +331,14 @@ static nmo_status_t patch_operation_add_to_edit_plan(
             op->set_parameter_value.parameter_id,
             op->set_parameter_value.value,
             NULL);
+    }
+    if (op->kind == PATCH_OP_SET_DATA_CELL) {
+        return nmo_edit_plan_add_data_cell(
+            edit_plan,
+            op->data_cell.dataarray_id,
+            op->data_cell.row,
+            op->data_cell.col,
+            op->data_cell.value);
     }
     if (op->kind == PATCH_OP_ADD_OPERATION) {
         return nmo_edit_plan_add_operation(
@@ -1281,6 +1296,54 @@ static int patch_parse_set_parameter_value(yyjson_val *op_obj,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+static int patch_parse_set_data_cell(yyjson_val *op_obj,
+                                     patch_operation_t *out_op) {
+    static const char *const allowed[] = {
+        "op",
+        "dataarray_id",
+        "row",
+        "col",
+        "value",
+    };
+    int rc = patch_reject_unknown_fields(
+        op_obj, "set_data_cell operation",
+        allowed, sizeof(allowed) / sizeof(allowed[0]));
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    uint32_t dataarray_id = 0u;
+    uint32_t row = 0u;
+    uint32_t col = 0u;
+    if (!patch_read_u32(op_obj, "dataarray_id", &dataarray_id) ||
+        dataarray_id == 0u) {
+        fprintf(stderr, "Error: Missing or invalid dataarray_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!patch_read_u32(op_obj, "row", &row)) {
+        fprintf(stderr, "Error: Missing or invalid row\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!patch_read_u32(op_obj, "col", &col)) {
+        fprintf(stderr, "Error: Missing or invalid col\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *value = patch_required_string(
+        op_obj, "value", "set_data_cell operation");
+    if (!value) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    memset(out_op, 0, sizeof(*out_op));
+    out_op->kind = PATCH_OP_SET_DATA_CELL;
+    out_op->data_cell.dataarray_id = (nmo_object_id_t)dataarray_id;
+    out_op->data_cell.row = row;
+    out_op->data_cell.col = col;
+    out_op->data_cell.value = value;
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static int patch_parse_optional_object_id(
     yyjson_val *obj,
     const char *key,
@@ -1757,6 +1820,9 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
         } else if (strcmp(op, "set_parameter_value") == 0 &&
                    out_plan->version == 2u) {
             rc = patch_parse_set_parameter_value(op_obj, &operations[idx]);
+        } else if (strcmp(op, "set_data_cell") == 0 &&
+                   out_plan->version == 2u) {
+            rc = patch_parse_set_data_cell(op_obj, &operations[idx]);
         } else if (strcmp(op, "add_operation") == 0 &&
                    out_plan->version == 2u) {
             rc = patch_parse_add_operation(op_obj, &operations[idx]);
