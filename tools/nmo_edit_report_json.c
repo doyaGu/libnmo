@@ -67,6 +67,10 @@ void nmo_cli_edit_report_add_schema_v2_json(
     yyjson_mut_obj_add_bool(doc, obj, "ok",
                             report != NULL && report->ok);
     yyjson_mut_obj_add_bool(doc, obj, "dry_run", dry_run);
+    if (report != NULL && report->output_path != NULL) {
+        nmo_cli_json_add_str_safe(doc, obj, "output_path",
+                                  report->output_path);
+    }
     yyjson_mut_obj_add_val(doc, obj, "errors", yyjson_mut_arr(doc));
     yyjson_mut_obj_add_val(doc, obj, "warnings", yyjson_mut_arr(doc));
     nmo_cli_edit_report_add_operations_json(doc, obj, report);

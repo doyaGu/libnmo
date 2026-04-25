@@ -203,6 +203,7 @@ typedef struct nmo_edit_report {
     bool ok;
     bool dry_run;
     nmo_status_t status;
+    char *output_path;
     size_t operation_count;
     nmo_edit_operation_result_t *operations;
     nmo_edit_validation_report_t validation;
@@ -356,6 +357,10 @@ NMO_API nmo_edit_executor_options_t nmo_edit_executor_options_default(void);
 
 NMO_API nmo_status_t nmo_edit_report_init(nmo_edit_report_t *report);
 NMO_API void nmo_edit_report_dispose(nmo_edit_report_t *report);
+
+NMO_API nmo_status_t nmo_edit_report_set_output_path(
+    nmo_edit_report_t *report,
+    const char *output_path);
 
 NMO_API nmo_status_t nmo_edit_report_add_operation_handle(
     nmo_edit_report_t *report,

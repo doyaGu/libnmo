@@ -216,6 +216,20 @@ TEST(edit_plan, report_dispose_releases_schema_v2_arrays) {
     ASSERT_EQ(NULL, report.changed_objects);
 }
 
+TEST(edit_plan, report_owns_schema_v2_output_path) {
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_report_set_output_path(&report, "first.cmo"));
+    ASSERT_STR_EQ("first.cmo", report.output_path);
+    ASSERT_EQ(NMO_OK, nmo_edit_report_set_output_path(&report, "second.cmo"));
+    ASSERT_STR_EQ("second.cmo", report.output_path);
+    ASSERT_EQ(NMO_OK, nmo_edit_report_set_output_path(&report, NULL));
+    ASSERT_EQ(NULL, report.output_path);
+
+    nmo_edit_report_dispose(&report);
+}
+
 TEST(edit_plan, executor_commits_parameter_value_plan) {
     edit_plan_fixture_t fixture;
     edit_plan_fixture_init(&fixture);
@@ -734,6 +748,7 @@ TEST_MAIN_BEGIN()
 REGISTER_TEST(edit_plan, stores_parameter_value_ops);
 REGISTER_TEST(edit_plan, stores_full_script_edit_ops_and_clones_plan);
 REGISTER_TEST(edit_plan, report_dispose_releases_schema_v2_arrays);
+REGISTER_TEST(edit_plan, report_owns_schema_v2_output_path);
 REGISTER_TEST(edit_plan, executor_commits_parameter_value_plan);
 REGISTER_TEST(edit_plan, executor_rolls_back_failed_plan);
 REGISTER_TEST(edit_plan, executor_dry_run_reports_without_persisting);

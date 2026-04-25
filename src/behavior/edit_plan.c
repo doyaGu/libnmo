@@ -854,7 +854,24 @@ void nmo_edit_report_dispose(nmo_edit_report_t *report)
     free(report->created_objects);
     free(report->deleted_objects);
     free(report->semantic_risks);
+    free(report->output_path);
     memset(report, 0, sizeof(*report));
+}
+
+nmo_status_t nmo_edit_report_set_output_path(
+    nmo_edit_report_t *report,
+    const char *output_path)
+{
+    if (report == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    char *copy = edit_plan_strdup(output_path);
+    if (output_path != NULL && copy == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    free(report->output_path);
+    report->output_path = copy;
+    return NMO_OK;
 }
 
 static nmo_status_t edit_report_ensure_operations(

@@ -168,16 +168,16 @@ static void patch_add_edit_report_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *data,
     const patch_plan_t *plan,
-    const nmo_edit_report_t *report,
+    nmo_edit_report_t *report,
     bool dry_run) {
+    if (plan != NULL && plan->output != NULL && report != NULL &&
+        report->output_path == NULL) {
+        (void)nmo_edit_report_set_output_path(report, plan->output);
+    }
     nmo_cli_edit_report_add_schema_v2_json(doc, data, report, dry_run);
     if (plan != NULL) {
         nmo_cli_json_add_str_safe(doc, data, "input", plan->input);
         nmo_cli_json_add_str_safe(doc, data, "output", plan->output);
-        if (plan->output) {
-            nmo_cli_json_add_str_safe(doc, data, "output_path",
-                                      plan->output);
-        }
     }
 }
 
