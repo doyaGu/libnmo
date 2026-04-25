@@ -39,6 +39,7 @@ typedef enum patch_operation_kind {
     PATCH_OP_REWIRE_BEHAVIOR_LINK = 12,
     PATCH_OP_ADD_PARAMETER = 13,
     PATCH_OP_DISCONNECT_PARAMETER = 14,
+    PATCH_OP_CONNECT_PARAMETER = 15,
 } patch_operation_kind_t;
 
 typedef struct patch_operation {
@@ -104,6 +105,10 @@ typedef struct patch_operation {
     struct {
         nmo_object_id_t target_id;
     } disconnect_parameter;
+    struct {
+        nmo_object_id_t source_id;
+        nmo_object_id_t target_id;
+    } connect_parameter;
 } patch_operation_t;
 
 typedef struct patch_plan {
@@ -270,6 +275,12 @@ static nmo_status_t patch_operation_add_to_edit_plan(
         return nmo_edit_plan_add_disconnect_parameter(
             edit_plan,
             op->disconnect_parameter.target_id);
+    }
+    if (op->kind == PATCH_OP_CONNECT_PARAMETER) {
+        return nmo_edit_plan_add_connect_parameter(
+            edit_plan,
+            op->connect_parameter.source_id,
+            op->connect_parameter.target_id);
     }
     if (op->kind == PATCH_OP_INTERFACE_POLICY) {
         return nmo_edit_plan_add_interface_policy(
@@ -1099,6 +1110,44 @@ static int patch_parse_disconnect_parameter(yyjson_val *op_obj,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+static int patch_parse_connect_parameter(yyjson_val *op_obj,
+                                         patch_operation_t *out_op) {
+    static const char *const allowed[] = {
+        "op",
+        "source_id",
+        "target_id",
+    };
+    int rc = patch_reject_unknown_fields(
+        op_obj, "connect_parameter operation",
+        allowed, sizeof(allowed) / sizeof(allowed[0]));
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    yyjson_val *source_val = yyjson_obj_get(op_obj, "source_id");
+    if (!source_val || !yyjson_is_uint(source_val) ||
+        yyjson_get_uint(source_val) == 0 ||
+        yyjson_get_uint(source_val) > UINT32_MAX) {
+        fprintf(stderr, "Error: Missing or invalid source_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    yyjson_val *target_val = yyjson_obj_get(op_obj, "target_id");
+    if (!target_val || !yyjson_is_uint(target_val) ||
+        yyjson_get_uint(target_val) == 0 ||
+        yyjson_get_uint(target_val) > UINT32_MAX) {
+        fprintf(stderr, "Error: Missing or invalid target_id\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    memset(out_op, 0, sizeof(*out_op));
+    out_op->kind = PATCH_OP_CONNECT_PARAMETER;
+    out_op->connect_parameter.source_id =
+        (nmo_object_id_t)yyjson_get_uint(source_val);
+    out_op->connect_parameter.target_id =
+        (nmo_object_id_t)yyjson_get_uint(target_val);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 static int patch_parse_interface_policy(yyjson_val *op_obj,
                                         patch_operation_t *out_op) {
     static const char *const allowed[] = {
@@ -1382,6 +1431,9 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
         } else if (strcmp(op, "disconnect_parameter") == 0 &&
                    out_plan->version == 2u) {
             rc = patch_parse_disconnect_parameter(op_obj, &operations[idx]);
+        } else if (strcmp(op, "connect_parameter") == 0 &&
+                   out_plan->version == 2u) {
+            rc = patch_parse_connect_parameter(op_obj, &operations[idx]);
         } else if (strcmp(op, "add_io") == 0 && out_plan->version == 2u) {
             rc = patch_parse_add_io(op_obj, &operations[idx]);
         } else if (strcmp(op, "remove_io") == 0 && out_plan->version == 2u) {
