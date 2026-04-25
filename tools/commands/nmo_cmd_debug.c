@@ -225,6 +225,7 @@ static int debug_probe_parse(int argc,
 
     if (strcmp(args->kind, "2d-text") != 0 &&
         strcmp(args->kind, "console") != 0 &&
+        strcmp(args->kind, "debug-output") != 0 &&
         strcmp(args->kind, "control-marker") != 0) {
         fprintf(stderr, "Error: Unsupported debug probe kind '%s'\n",
                 args->kind);
@@ -232,7 +233,7 @@ static int debug_probe_parse(int argc,
     }
     if (args->behavior_id == 0u || *out_input_path == NULL) {
         fprintf(stderr,
-                "Usage: nmo debug probe 2d-text|console|control-marker "
+                "Usage: nmo debug probe 2d-text|console|debug-output|control-marker "
                 "--behavior <id> [--name <name>] [--dry-run] <file> "
                 "-o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -260,7 +261,8 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
     }
 
     nmo_edit_report_init(&args->report);
-    if (strcmp(args->kind, "console") == 0) {
+    if (strcmp(args->kind, "console") == 0 ||
+        strcmp(args->kind, "debug-output") == 0) {
         probe_guid = bb_output_to_console;
     } else if (strcmp(args->kind, "control-marker") == 0) {
         probe_guid = bb_nop;

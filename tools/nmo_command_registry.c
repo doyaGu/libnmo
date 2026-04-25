@@ -326,11 +326,12 @@ static void debug_export_usage(FILE *out) {
 }
 
 static void debug_probe_usage(FILE *out) {
-    fprintf(out, "Usage: nmo debug probe 2d-text|console|control-marker --behavior <id> [--name <name>] [--dry-run] <file> -o <output>\n\n");
+    fprintf(out, "Usage: nmo debug probe 2d-text|console|debug-output|control-marker --behavior <id> [--name <name>] [--dry-run] <file> -o <output>\n\n");
     fprintf(out, "Inject a diagnostic probe BB through the unified edit executor.\n\n");
     fprintf(out, "Probe kinds:\n");
     fprintf(out, "  2d-text                 Add a 2D Text building block node\n\n");
     fprintf(out, "  console                 Add an Output To Console building block node\n\n");
+    fprintf(out, "  debug-output            Add an Output To Console debug output node\n\n");
     fprintf(out, "  control-marker          Add a Nop control-flow marker node\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  --behavior <id>         Parent behavior receiving the probe\n");
