@@ -183,6 +183,26 @@ static bool array_contains_object_id(yyjson_val *arr, uint64_t object_id)
     return false;
 }
 
+static yyjson_val *find_semantic_risk(yyjson_val *arr, const char *code)
+{
+    size_t index = 0u;
+    size_t max = 0u;
+    yyjson_val *item = NULL;
+
+    if (arr == NULL || !yyjson_is_arr(arr) || code == NULL) {
+        return NULL;
+    }
+
+    yyjson_arr_foreach(arr, index, max, item) {
+        const char *item_code = get_string_field(item, "code");
+        if (item_code != NULL && strcmp(item_code, code) == 0) {
+            return item;
+        }
+    }
+
+    return NULL;
+}
+
 static yyjson_val *find_array_object_by_name(yyjson_val *arr, const char *name)
 {
     size_t index = 0u;
@@ -950,6 +970,51 @@ TEST(cli, script_run_executor_replace_bb_uses_edit_plan) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, script_run_carries_executor_semantic_risks) {
+    char script_path[1024];
+    const char *input_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
+    char args[2048];
+    cli_run_result_t result = {0};
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *semantic_risks = NULL;
+    yyjson_val *risk = NULL;
+    yyjson_val *diff = NULL;
+
+    ASSERT_TRUE(build_repo_fixture_path(
+        "tests/fixtures/lua/script_run_replace_bb_message_risk.lua",
+        script_path,
+        sizeof(script_path)));
+
+    snprintf(args, sizeof(args),
+             "-f json script run --dry-run \"%s\" \"%s\"",
+             script_path,
+             input_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    ASSERT_TRUE(yyjson_obj_get(data, "risk_level") == NULL);
+    semantic_risks = get_array_field(data, "semantic_risks");
+    ASSERT_NOT_NULL(semantic_risks);
+    ASSERT_EQ(1u, yyjson_arr_size(semantic_risks));
+    risk = find_semantic_risk(semantic_risks, "message_flow");
+    ASSERT_NOT_NULL(risk);
+    ASSERT_STR_EQ("warn", get_string_field(risk, "severity"));
+    ASSERT_EQ(2233u, get_uint_field(risk, "object_id"));
+    diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    ASSERT_EQ(1u, get_uint_field(diff, "semantic_risk_count"));
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, script_run_executor_rewire_behavior_link_uses_edit_plan) {
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
@@ -1451,6 +1516,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_run_executor_rename_io_uses_edit_plan);
     REGISTER_TEST(cli, script_run_executor_add_node_uses_edit_plan);
     REGISTER_TEST(cli, script_run_executor_replace_bb_uses_edit_plan);
+    REGISTER_TEST(cli, script_run_carries_executor_semantic_risks);
     REGISTER_TEST(cli, script_run_executor_rewire_behavior_link_uses_edit_plan);
     REGISTER_TEST(cli, script_run_executor_set_behavior_link_delay_uses_edit_plan);
     REGISTER_TEST(cli, script_run_executor_remove_behavior_link_uses_edit_plan);

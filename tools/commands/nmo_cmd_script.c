@@ -370,6 +370,42 @@ static nmo_status_t script_run_accumulate_edit_report(
     script_run_args_t *args,
     const nmo_edit_report_t *report);
 
+static nmo_status_t script_run_accumulate_semantic_risks(
+    nmo_edit_report_t *dst,
+    const nmo_behavior_semantic_risk_t *risks,
+    size_t risk_count)
+{
+    if (dst == NULL || (risk_count > 0u && risks == NULL)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (risk_count == 0u) {
+        return NMO_OK;
+    }
+    if (dst->semantic_risk_count + risk_count >
+        dst->semantic_risk_capacity) {
+        size_t next_capacity = dst->semantic_risk_capacity == 0u
+            ? 8u
+            : dst->semantic_risk_capacity * 2u;
+        while (next_capacity < dst->semantic_risk_count + risk_count) {
+            next_capacity *= 2u;
+        }
+        nmo_behavior_semantic_risk_t *next =
+            (nmo_behavior_semantic_risk_t *)realloc(
+                dst->semantic_risks,
+                next_capacity * sizeof(*next));
+        if (next == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        dst->semantic_risks = next;
+        dst->semantic_risk_capacity = next_capacity;
+    }
+    memcpy(dst->semantic_risks + dst->semantic_risk_count,
+           risks,
+           risk_count * sizeof(*risks));
+    dst->semantic_risk_count += risk_count;
+    return NMO_OK;
+}
+
 static nmo_status_t script_run_execute_edit_plan(
     script_run_args_t *args,
     nmo_edit_plan_t *plan,
@@ -496,6 +532,10 @@ static nmo_status_t script_run_accumulate_edit_report(
             report->deleted_objects[i].cause,
             report->deleted_objects[i].role));
     }
+    NMO_RETURN_IF_ERROR(script_run_accumulate_semantic_risks(
+        &args->edit_report,
+        report->semantic_risks,
+        report->semantic_risk_count));
     args->edit_report.validation = report->validation;
     args->edit_report.ok =
         (old_count == 0u) ? report->ok : (args->edit_report.ok && report->ok);
