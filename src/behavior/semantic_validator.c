@@ -908,6 +908,11 @@ static nmo_status_t semantic_validate_basic_edit_op(
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,
             op->data.add_operation.parent_behavior_id));
+        NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
+            repo,
+            risks,
+            risk_count,
+            op->data.add_operation.parent_behavior_id));
         if (op->data.add_operation.has_in1_parameter_ref) {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
                 plan,
