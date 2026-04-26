@@ -275,7 +275,8 @@ nmo_status_t nmo_semantic_validate_edit_plan(
             nmo_object_id_t node_id = op->data.replace_bb.desc.behavior_id;
             if (!nmo_behavior_boundary_build(
                     workspace, node_id, UINT32_MAX, &boundary)) {
-                continue;
+                rc = NMO_ERR_INVALID_STATE;
+                goto fail;
             }
             nmo_behavior_semantic_risk_t *op_risks = NULL;
             size_t op_risk_count = 0u;

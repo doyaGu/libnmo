@@ -1,6 +1,7 @@
 #include "test_framework.h"
 
 #include "behavior/nmo_semantic_validator.h"
+#include "behavior/nmo_edit_plan.h"
 #include "document/nmo_document.h"
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
@@ -142,7 +143,36 @@ TEST(semantic_validator, detects_message_flow_by_signature_metadata)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_rejects_missing_replace_target)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init(&fixture);
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+
+    nmo_behavior_replace_bb_desc_t replace = {
+        .behavior_id = 0x00FFFFFFu,
+        .block_guid = nmo_guid_parse("42414C02-10000002"),
+        .name = "Missing Replace Target",
+        .block_version = 65536u,
+    };
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_replace_bb(plan, &replace));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_NE(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+    ASSERT_EQ(0u, risk_count);
+    ASSERT_TRUE(risks == NULL);
+
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, boundary_reports_dangling_delay_and_shared_risks);
     REGISTER_TEST(semantic_validator, detects_message_flow_by_signature_metadata);
+    REGISTER_TEST(semantic_validator, edit_plan_rejects_missing_replace_target);
 TEST_MAIN_END()
