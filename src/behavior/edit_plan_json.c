@@ -1831,7 +1831,7 @@ static nmo_status_t parse_operations_array(yyjson_val *ops,
         } else {
             nmo_last_error_setf(NMO_ERR_NOT_SUPPORTED, NMO_SEVERITY_ERROR,
                                 __FILE__, __LINE__,
-                                "Unsupported patch op '%s'", op_name);
+                                "Unsupported edit plan op '%s'", op_name);
             st = NMO_ERR_NOT_SUPPORTED;
         }
         if (st != NMO_OK) {

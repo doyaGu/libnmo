@@ -61,6 +61,24 @@ static void assert_manifest_invalid_contains(const char *operations_json,
     nmo_edit_plan_manifest_dispose(&manifest);
 }
 
+static void assert_plan_invalid_contains(const char *operations_json,
+                                         const char *expected_message)
+{
+    char json[2048];
+    nmo_edit_plan_t *plan = NULL;
+    snprintf(json, sizeof(json),
+             "{"
+             "\"version\":2,"
+             "\"operations\":[%s]"
+             "}",
+             operations_json);
+
+    nmo_last_error_clear();
+    ASSERT_NE(NMO_OK, nmo_edit_plan_json_read(json, strlen(json), &plan));
+    ASSERT_STR_CONTAINS(nmo_last_error_message(), expected_message);
+    nmo_edit_plan_destroy(plan);
+}
+
 TEST(edit_plan_json, writes_manifest_with_operation_handle_refs) {
     nmo_edit_plan_t *plan = NULL;
     char *json = NULL;
@@ -478,7 +496,13 @@ TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics) {
 
     assert_manifest_invalid_contains(
         "{\"op\":\"unknown_edit\"}",
-        "Unsupported patch op 'unknown_edit'");
+        "Unsupported edit plan op 'unknown_edit'");
+}
+
+TEST(edit_plan_json, rejects_plan_roots_with_generic_operation_diagnostics) {
+    assert_plan_invalid_contains(
+        "{\"op\":\"unknown_edit\"}",
+        "Unsupported edit plan op 'unknown_edit'");
 }
 
 TEST_MAIN_BEGIN()
@@ -489,4 +513,6 @@ REGISTER_TEST(edit_plan_json, roundtrips_all_current_v2_ops);
 REGISTER_TEST(edit_plan_json, reads_manifest_from_file);
 REGISTER_TEST(edit_plan_json, rejects_incomplete_manifest_roots);
 REGISTER_TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics);
+REGISTER_TEST(edit_plan_json,
+              rejects_plan_roots_with_generic_operation_diagnostics);
 TEST_MAIN_END()

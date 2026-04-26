@@ -2208,7 +2208,7 @@ TEST(cli, patch_apply_v2_rejects_strict_manifest_edges) {
             "    {\n"
             "      \"op\": \"not_a_real_op\"\n"
             "    }",
-            "Unsupported patch op 'not_a_real_op'",
+            "Unsupported edit plan op 'not_a_real_op'",
         },
         {
             "unknown_field",
