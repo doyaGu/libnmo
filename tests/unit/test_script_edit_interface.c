@@ -367,7 +367,7 @@ TEST(script_edit_interface, remove_node_canonicalize_roundtrips_after_save)
     ASSERT_EQ(NMO_OK,
               nmo_script_edit_add_node(tx,
                                        NMO_SCRIPT_INTERFACE_TARGET_ID,
-                                       (nmo_guid_t){ 0x42414C07u, 0x10000007u },
+                                       (nmo_guid_t){ 0x18655B3Fu, 0x68291DC3u },
                                        "Iface Canon",
                                        &node_id));
     ASSERT_TRUE(node_id != 0u);

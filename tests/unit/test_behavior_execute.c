@@ -482,7 +482,7 @@ static nmo_status_t add_node_action(nmo_behavior_execution_t *executor, void *us
 
     return nmo_script_edit_add_node(tx,
                                     action->parent_id,
-                                    (nmo_guid_t){ 0x42414C07u, 0x10000007u },
+                                    (nmo_guid_t){ 0x18655B3Fu, 0x68291DC3u },
                                     "Iface Canon",
                                     &action->node_id);
 }
@@ -631,7 +631,8 @@ TEST(behavior_execute, executes_multiple_actions_and_saves_once) {
 TEST(behavior_execute, rolls_back_on_action_error_and_skips_output) {
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     const char *output_path = "test_behavior_execute_fail.cmo";
-    nmo_context_t *ctx = nmo_context_create(NULL);
+    nmo_context_t *ctx =
+        nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
     nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
     nmo_script_edit_report_t report = {0};
 
@@ -655,7 +656,8 @@ TEST(behavior_execute, rolls_back_on_action_error_and_skips_output) {
 TEST(behavior_execute, dry_run_rolls_back_after_validation) {
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     const char *output_path = "test_behavior_execute_dry.cmo";
-    nmo_context_t *ctx = nmo_context_create(NULL);
+    nmo_context_t *ctx =
+        nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
     nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
     nmo_script_edit_report_t report = {0};
     executor_add_io_action_t action = {0};
@@ -810,7 +812,8 @@ TEST(behavior_execute, remove_node_canonicalize_roundtrips_fixture) {
     const char *node_add_path = "test_behavior_execute_interface_node_add.cmo";
     const char *iface_node_path = "test_behavior_execute_interface_node_present.cmo";
     const char *node_remove_path = "test_behavior_execute_interface_node_remove.cmo";
-    nmo_context_t *ctx = nmo_context_create(NULL);
+    nmo_context_t *ctx =
+        nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
     nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
     executor_add_node_action_t add_action = {0};
     executor_remove_node_action_t remove_action = {
