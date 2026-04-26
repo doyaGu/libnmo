@@ -157,6 +157,7 @@ static void edit_op_dispose(nmo_edit_op_t *op)
         free((void *)op->data.set_value.parameter_ref_handle);
     } else if (op->kind == NMO_EDIT_OP_SET_PARAMETER_BYTES) {
         free((void *)op->data.set_bytes.bytes);
+        free((void *)op->data.set_bytes.parameter_ref_handle);
     } else if (op->kind == NMO_EDIT_OP_ADD_NODE) {
         free((void *)op->data.add_node.name);
     } else if (op->kind == NMO_EDIT_OP_ADD_IO) {
@@ -225,6 +226,13 @@ static nmo_status_t edit_op_copy(
             memcpy(copy, src->data.set_bytes.bytes,
                    src->data.set_bytes.byte_count);
             dst->data.set_bytes.bytes = copy;
+        }
+        dst->data.set_bytes.parameter_ref_handle =
+            edit_plan_strdup(src->data.set_bytes.parameter_ref_handle);
+        if (src->data.set_bytes.parameter_ref_handle &&
+            !dst->data.set_bytes.parameter_ref_handle) {
+            edit_op_dispose(dst);
+            return NMO_ERR_NOMEM;
         }
         break;
     case NMO_EDIT_OP_ADD_NODE:
@@ -479,6 +487,47 @@ nmo_status_t nmo_edit_plan_add_set_parameter_bytes(
         op->data.set_bytes.bytes = copy;
     }
     op->data.set_bytes.byte_count = byte_count;
+    if (options != NULL) {
+        op->data.set_bytes.options = *options;
+        op->data.set_bytes.has_options = true;
+    }
+    plan->count++;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_edit_plan_add_set_parameter_bytes_from_handle(
+    nmo_edit_plan_t *plan,
+    size_t operation_index,
+    const char *handle_name,
+    const uint8_t *bytes,
+    size_t byte_count,
+    const nmo_parameter_write_options_t *options)
+{
+    if (plan == NULL || handle_name == NULL || handle_name[0] == '\0' ||
+        (bytes == NULL && byte_count > 0)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    NMO_RETURN_IF_ERROR(edit_plan_reserve(plan, plan->count + 1u));
+    nmo_edit_op_t *op = &plan->ops[plan->count];
+    memset(op, 0, sizeof(*op));
+    op->kind = NMO_EDIT_OP_SET_PARAMETER_BYTES;
+    op->primary_id = 0u;
+    if (byte_count > 0) {
+        uint8_t *copy = (uint8_t *)malloc(byte_count);
+        if (copy == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        memcpy(copy, bytes, byte_count);
+        op->data.set_bytes.bytes = copy;
+    }
+    op->data.set_bytes.byte_count = byte_count;
+    op->data.set_bytes.parameter_ref_handle = edit_plan_strdup(handle_name);
+    if (op->data.set_bytes.parameter_ref_handle == NULL) {
+        edit_op_dispose(op);
+        return NMO_ERR_NOMEM;
+    }
+    op->data.set_bytes.parameter_ref_operation_index = operation_index;
+    op->data.set_bytes.has_parameter_ref = true;
     if (options != NULL) {
         op->data.set_bytes.options = *options;
         op->data.set_bytes.has_options = true;
@@ -1484,12 +1533,49 @@ static nmo_status_t edit_executor_apply_op(
         return write_rc;
     }
     case NMO_EDIT_OP_SET_PARAMETER_BYTES:
+    {
+        nmo_object_id_t parameter_id = op->primary_id;
+        if (op->data.set_bytes.has_parameter_ref) {
+            nmo_status_t ref_rc = edit_report_resolve_operation_handle(
+                report,
+                op->data.set_bytes.parameter_ref_operation_index,
+                op->data.set_bytes.parameter_ref_handle,
+                &parameter_id);
+            if (ref_rc != NMO_OK) {
+                if (out_diagnostic_code != NULL) {
+                    *out_diagnostic_code = "handle_not_found";
+                }
+                if (out_diagnostic_message != NULL) {
+                    *out_diagnostic_message =
+                        "Referenced edit operation parameter handle was not found";
+                }
+                return ref_rc;
+            }
+            nmo_object_repository_t *repo =
+                nmo_workspace_internal_repository(nmo_script_edit_workspace(tx));
+            nmo_object_t *parameter_obj = repo != NULL
+                ? nmo_object_repository_find_by_id(repo, parameter_id)
+                : NULL;
+            if (parameter_obj != NULL &&
+                nmo_object_get_class_id(parameter_obj) == NMO_CID_PARAMETERIN) {
+                nmo_status_t source_rc =
+                    nmo_script_edit_ensure_input_parameter_source(
+                        tx, parameter_id, &parameter_id);
+                if (source_rc != NMO_OK) {
+                    return source_rc;
+                }
+            }
+        }
+        if (out_result_id != NULL) {
+            *out_result_id = parameter_id;
+        }
         return nmo_value_writer_set_parameter_bytes(
             edit,
-            op->primary_id,
+            parameter_id,
             op->data.set_bytes.bytes,
             op->data.set_bytes.byte_count,
             op->data.set_bytes.has_options ? &op->data.set_bytes.options : NULL);
+    }
     case NMO_EDIT_OP_ADD_NODE:
         return nmo_script_edit_add_node(
             tx,

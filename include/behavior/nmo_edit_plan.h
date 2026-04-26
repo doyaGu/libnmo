@@ -65,6 +65,9 @@ typedef struct nmo_edit_op {
             size_t byte_count;
             nmo_parameter_write_options_t options;
             bool has_options;
+            size_t parameter_ref_operation_index;
+            const char *parameter_ref_handle;
+            bool has_parameter_ref;
         } set_bytes;
         struct {
             nmo_object_id_t parent_behavior_id;
@@ -256,6 +259,14 @@ NMO_API nmo_status_t nmo_edit_plan_add_set_parameter_value_from_handle(
 NMO_API nmo_status_t nmo_edit_plan_add_set_parameter_bytes(
     nmo_edit_plan_t *plan,
     nmo_object_id_t parameter_id,
+    const uint8_t *bytes,
+    size_t byte_count,
+    const nmo_parameter_write_options_t *options);
+
+NMO_API nmo_status_t nmo_edit_plan_add_set_parameter_bytes_from_handle(
+    nmo_edit_plan_t *plan,
+    size_t operation_index,
+    const char *handle_name,
     const uint8_t *bytes,
     size_t byte_count,
     const nmo_parameter_write_options_t *options);

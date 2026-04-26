@@ -1117,6 +1117,8 @@ static int patch_parse_set_parameter_bytes(yyjson_val *op_obj,
     static const char *const allowed[] = {
         "op",
         "parameter_id",
+        "parameter_operation",
+        "parameter_handle",
         "hex",
         "resize",
     };
@@ -1125,13 +1127,6 @@ static int patch_parse_set_parameter_bytes(yyjson_val *op_obj,
         allowed, sizeof(allowed) / sizeof(allowed[0]));
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
-    }
-
-    uint32_t parameter_id = 0u;
-    if (!patch_read_u32(op_obj, "parameter_id", &parameter_id) ||
-        parameter_id == 0u) {
-        fprintf(stderr, "Error: Missing or invalid parameter_id\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     const char *hex = patch_required_string(
@@ -1157,12 +1152,58 @@ static int patch_parse_set_parameter_bytes(yyjson_val *op_obj,
     const nmo_parameter_write_options_t options = {
         .resize = patch_optional_bool(op_obj, "resize", false),
     };
-    nmo_status_t st = nmo_edit_plan_add_set_parameter_bytes(
-        edit_plan,
-        (nmo_object_id_t)parameter_id,
-        bytes,
-        byte_count,
-        &options);
+    yyjson_val *parameter_val = yyjson_obj_get(op_obj, "parameter_id");
+    yyjson_val *parameter_operation_val =
+        yyjson_obj_get(op_obj, "parameter_operation");
+    yyjson_val *parameter_handle_val =
+        yyjson_obj_get(op_obj, "parameter_handle");
+    bool has_parameter_id = parameter_val != NULL;
+    bool has_parameter_ref =
+        parameter_operation_val != NULL || parameter_handle_val != NULL;
+    nmo_status_t st = NMO_OK;
+    if (has_parameter_id == has_parameter_ref) {
+        fprintf(stderr,
+                "Error: set_parameter_bytes requires either parameter_id or "
+                "parameter_operation plus parameter_handle\n");
+        free(bytes);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (has_parameter_id) {
+        if (!yyjson_is_uint(parameter_val) ||
+            yyjson_get_uint(parameter_val) == 0 ||
+            yyjson_get_uint(parameter_val) > UINT32_MAX) {
+            fprintf(stderr, "Error: Missing or invalid parameter_id\n");
+            free(bytes);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        st = nmo_edit_plan_add_set_parameter_bytes(
+            edit_plan,
+            (nmo_object_id_t)yyjson_get_uint(parameter_val),
+            bytes,
+            byte_count,
+            &options);
+    } else {
+        if (!parameter_operation_val ||
+            !yyjson_is_uint(parameter_operation_val) ||
+            yyjson_get_uint(parameter_operation_val) == 0) {
+            fprintf(stderr, "Error: Missing or invalid parameter_operation\n");
+            free(bytes);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        if (!parameter_handle_val || !yyjson_is_str(parameter_handle_val) ||
+            yyjson_get_str(parameter_handle_val)[0] == '\0') {
+            fprintf(stderr, "Error: Missing or invalid parameter_handle\n");
+            free(bytes);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        st = nmo_edit_plan_add_set_parameter_bytes_from_handle(
+            edit_plan,
+            (size_t)(yyjson_get_uint(parameter_operation_val) - 1u),
+            yyjson_get_str(parameter_handle_val),
+            bytes,
+            byte_count,
+            &options);
+    }
     free(bytes);
     if (st != NMO_OK) {
         fprintf(stderr, "Error: Failed to build edit plan\n");
