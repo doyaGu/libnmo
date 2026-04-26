@@ -36,6 +36,7 @@ typedef struct nmo_debug_chunks_data {
 typedef struct nmo_debug_probe_args {
     const char *kind;
     nmo_object_id_t behavior_id;
+    nmo_object_id_t from_io_id;
     const char *name;
     const char *text;
     nmo_edit_report_t report;
@@ -63,6 +64,8 @@ static int debug_probe_parse(int argc,
     for (int i = 2; i < argc; ++i) {
         if (strcmp(argv[i], "--behavior") == 0 && i + 1 < argc) {
             args->behavior_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
+        } else if (strcmp(argv[i], "--from-io") == 0 && i + 1 < argc) {
+            args->from_io_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "--name") == 0 && i + 1 < argc) {
             args->name = argv[++i];
         } else if (strcmp(argv[i], "--text") == 0 && i + 1 < argc) {
@@ -139,6 +142,15 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
         strcmp(args->kind, "2d-text") == 0) {
         status = nmo_edit_plan_add_set_parameter_value_from_handle(
             plan, 0u, "input_param:Text", args->text, NULL);
+    }
+    if (status == NMO_OK && args->from_io_id != 0u) {
+        status = nmo_edit_plan_add_behavior_link_to_handle(
+            plan,
+            args->behavior_id,
+            args->from_io_id,
+            0u,
+            "input:On",
+            0u);
     }
     if (status == NMO_OK) {
         nmo_edit_executor_options_t options =

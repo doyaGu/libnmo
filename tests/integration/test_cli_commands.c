@@ -3069,6 +3069,32 @@ TEST(cli, debug_probe_2d_text_text_option_uses_edit_plan) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, debug_probe_from_io_links_probe_input) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json debug probe 2d-text --behavior 237 --from-io 232 "
+             "--name LinkedProbe --text \"loading trace\" \"%s\" --dry-run",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    ASSERT_STR_EQ(json_envelope_command(doc), "debug.probe");
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(data, "ok")));
+    yyjson_val *operations = yyjson_obj_get(data, "operations");
+    ASSERT_TRUE(operations && yyjson_is_arr(operations));
+    ASSERT_EQ(3u, yyjson_arr_size(operations));
+    yyjson_val *link_op = yyjson_arr_get(operations, 2);
+    ASSERT_TRUE(link_op && yyjson_is_obj(link_op));
+    ASSERT_STR_EQ("add_behavior_link",
+                  yyjson_get_str(yyjson_obj_get(link_op, "op")));
+    ASSERT_EQ(0u, (uint32_t)yyjson_get_uint(
+                      yyjson_obj_get(link_op, "status")));
+    ASSERT_TRUE(yyjson_get_uint(yyjson_obj_get(link_op, "result_id")) != 0u);
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, debug_probe_console_dry_run_reports_edit_plan) {
     char args[1024];
     snprintf(args, sizeof(args),
@@ -3274,6 +3300,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, debug_help_marks_output_as_diagnostic);
     REGISTER_TEST(cli, debug_probe_2d_text_dry_run_reports_edit_plan);
     REGISTER_TEST(cli, debug_probe_2d_text_text_option_uses_edit_plan);
+    REGISTER_TEST(cli, debug_probe_from_io_links_probe_input);
     REGISTER_TEST(cli, debug_probe_console_dry_run_reports_edit_plan);
     REGISTER_TEST(cli, debug_probe_debug_output_dry_run_reports_edit_plan);
     REGISTER_TEST(cli, debug_probe_control_marker_dry_run_reports_edit_plan);

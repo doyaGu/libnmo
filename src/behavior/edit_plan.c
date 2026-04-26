@@ -633,6 +633,35 @@ nmo_status_t nmo_edit_plan_add_behavior_link_from_handles(
     return NMO_OK;
 }
 
+nmo_status_t nmo_edit_plan_add_behavior_link_to_handle(
+    nmo_edit_plan_t *plan,
+    nmo_object_id_t parent_behavior_id,
+    nmo_object_id_t from_io_id,
+    size_t to_operation_index,
+    const char *to_handle_name,
+    uint32_t activation_delay)
+{
+    nmo_edit_op_t *op = NULL;
+    if (parent_behavior_id == 0u || from_io_id == 0u ||
+        to_handle_name == NULL || to_handle_name[0] == '\0') {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    NMO_RETURN_IF_ERROR(edit_plan_append_blank(
+        plan, NMO_EDIT_OP_ADD_BEHAVIOR_LINK, parent_behavior_id, &op));
+    op->data.add_link.parent_behavior_id = parent_behavior_id;
+    op->data.add_link.from_io_id = from_io_id;
+    op->data.add_link.activation_delay = activation_delay;
+    op->data.add_link.to_io_ref_operation_index = to_operation_index;
+    op->data.add_link.to_io_ref_handle = edit_plan_strdup(to_handle_name);
+    op->data.add_link.has_to_io_ref = true;
+    if (op->data.add_link.to_io_ref_handle == NULL) {
+        edit_op_dispose(op);
+        return NMO_ERR_NOMEM;
+    }
+    plan->count++;
+    return NMO_OK;
+}
+
 nmo_status_t nmo_edit_plan_add_rewire_behavior_link(
     nmo_edit_plan_t *plan,
     nmo_object_id_t link_id,

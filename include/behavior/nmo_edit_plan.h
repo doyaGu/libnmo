@@ -301,6 +301,14 @@ NMO_API nmo_status_t nmo_edit_plan_add_behavior_link_from_handles(
     const char *to_handle_name,
     uint32_t activation_delay);
 
+NMO_API nmo_status_t nmo_edit_plan_add_behavior_link_to_handle(
+    nmo_edit_plan_t *plan,
+    nmo_object_id_t parent_behavior_id,
+    nmo_object_id_t from_io_id,
+    size_t to_operation_index,
+    const char *to_handle_name,
+    uint32_t activation_delay);
+
 NMO_API nmo_status_t nmo_edit_plan_add_rewire_behavior_link(
     nmo_edit_plan_t *plan,
     nmo_object_id_t link_id,
