@@ -1080,6 +1080,48 @@ static int script_run_lua_remove_operation(lua_State *state)
     return 1;
 }
 
+static int script_run_lua_replace_bb(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_behavior_replace_bb_desc_t desc = {0};
+    const char *guid_text = luaL_checkstring(state, 2);
+    nmo_status_t status = NMO_OK;
+
+    desc.behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
+    desc.name = luaL_optstring(state, 3, NULL);
+    desc.block_guid = nmo_guid_parse(guid_text);
+    desc.block_version = (uint32_t)luaL_optinteger(state, 4, 65536);
+    if (nmo_guid_is_null(desc.block_guid)) {
+        return luaL_error(state, "invalid building block GUID");
+    }
+    if (lua_istable(state, 5)) {
+        lua_getfield(state, 5, "preserve_links");
+        if (!lua_isnil(state, -1)) {
+            desc.preserve_links = lua_toboolean(state, -1) != 0;
+        }
+        lua_pop(state, 1);
+        lua_getfield(state, 5, "preserve_params");
+        if (!lua_isnil(state, -1)) {
+            desc.preserve_params = lua_toboolean(state, -1) != 0;
+        }
+        lua_pop(state, 1);
+    }
+
+    status = script_run_ensure_pending_plan(args);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_replace_bb(args->pending_plan, &desc);
+    }
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to enqueue script replace-bb");
+    }
+
+    lua_pushinteger(state, script_run_pending_operation_index(args));
+    return 1;
+}
+
 static int script_run_lua_set_parameter_value(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
@@ -1233,6 +1275,9 @@ static int script_run_lua_open_executor_module(lua_State *state)
 
     lua_pushcfunction(state, script_run_lua_remove_operation);
     lua_setfield(state, -2, "remove_operation");
+
+    lua_pushcfunction(state, script_run_lua_replace_bb);
+    lua_setfield(state, -2, "replace_bb");
 
     lua_pushcfunction(state, script_run_lua_set_parameter_value);
     lua_setfield(state, -2, "set_parameter_value");
