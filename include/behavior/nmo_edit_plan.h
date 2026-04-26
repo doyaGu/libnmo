@@ -94,6 +94,12 @@ typedef struct nmo_edit_op {
             nmo_object_id_t from_io_id;
             nmo_object_id_t to_io_id;
             uint32_t activation_delay;
+            size_t from_io_ref_operation_index;
+            const char *from_io_ref_handle;
+            bool has_from_io_ref;
+            size_t to_io_ref_operation_index;
+            const char *to_io_ref_handle;
+            bool has_to_io_ref;
         } add_link;
         struct {
             nmo_object_id_t link_id;
@@ -284,6 +290,15 @@ NMO_API nmo_status_t nmo_edit_plan_add_behavior_link(
     nmo_object_id_t parent_behavior_id,
     nmo_object_id_t from_io_id,
     nmo_object_id_t to_io_id,
+    uint32_t activation_delay);
+
+NMO_API nmo_status_t nmo_edit_plan_add_behavior_link_from_handles(
+    nmo_edit_plan_t *plan,
+    nmo_object_id_t parent_behavior_id,
+    size_t from_operation_index,
+    const char *from_handle_name,
+    size_t to_operation_index,
+    const char *to_handle_name,
     uint32_t activation_delay);
 
 NMO_API nmo_status_t nmo_edit_plan_add_rewire_behavior_link(

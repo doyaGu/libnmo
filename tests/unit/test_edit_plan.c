@@ -3,6 +3,7 @@
 #include "behavior/nmo_edit_plan.h"
 #include "core/nmo_array.h"
 #include "document/nmo_document.h"
+#include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -508,6 +509,91 @@ TEST(edit_plan, executor_materializes_input_source_for_handle_value) {
     edit_plan_fixture_dispose(&fixture);
 }
 
+TEST(edit_plan, executor_resolves_behavior_link_io_handles) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t owner_id = 0;
+    nmo_object_id_t root_id = 0;
+    nmo_object_id_t child_id = 0;
+    create_object_or_fail(fixture.session, NMO_CID_3DENTITY, "Owner", &owner_id);
+    create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Root", &root_id);
+    create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Child", &child_id);
+    nmo_object_t *owner_obj =
+        nmo_object_repository_find_by_id(fixture.repo, owner_id);
+    nmo_object_t *root_obj =
+        nmo_object_repository_find_by_id(fixture.repo, root_id);
+    nmo_object_t *child_obj =
+        nmo_object_repository_find_by_id(fixture.repo, child_id);
+    nmo_beobject_state_t *owner_state = owner_obj
+        ? (nmo_beobject_state_t *)nmo_object_get_state(owner_obj)
+        : NULL;
+    nmo_behavior_state_t *root_state = root_obj
+        ? (nmo_behavior_state_t *)nmo_object_get_state(root_obj)
+        : NULL;
+    nmo_behavior_state_t *child_state = child_obj
+        ? (nmo_behavior_state_t *)nmo_object_get_state(child_obj)
+        : NULL;
+    ASSERT_NOT_NULL(owner_state);
+    ASSERT_NOT_NULL(root_state);
+    ASSERT_NOT_NULL(child_state);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->sub_behaviors, &child_id));
+    root_state->flags |= 0x00000002u;
+    root_state->owner_id = owner_id;
+    child_state->owner_id = root_id;
+    nmo_workspace_destroy(fixture.workspace);
+    fixture.workspace = NULL;
+    ASSERT_EQ(NMO_OK,
+              nmo_workspace_create(
+                  fixture.ctx, fixture.document, &fixture.workspace));
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_io(
+                  plan,
+                  root_id,
+                  NMO_SCRIPT_EDIT_IO_INPUT,
+                  "Enter"));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_io(
+                  plan,
+                  child_id,
+                  NMO_SCRIPT_EDIT_IO_INPUT,
+                  "Child In"));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_behavior_link_from_handles(
+                  plan,
+                  root_id,
+                  0u,
+                  "io",
+                  1u,
+                  "io",
+                  0u));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(3u, report.operation_count);
+    ASSERT_EQ(NMO_EDIT_OP_ADD_BEHAVIOR_LINK, report.operations[2].kind);
+    ASSERT_EQ(NMO_OK, report.operations[2].status);
+    ASSERT_TRUE(report.operations[2].result_id != 0u);
+
+    bool reported_created_link = false;
+    for (size_t i = 0; i < report.created_object_count; ++i) {
+        if (report.created_objects[i].id == report.operations[2].result_id) {
+            reported_created_link = true;
+        }
+    }
+    ASSERT_TRUE(reported_created_link);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+}
+
 TEST(edit_plan, executor_runs_script_ops_and_records_validation) {
     edit_plan_fixture_t fixture;
     edit_plan_fixture_init(&fixture);
@@ -895,6 +981,7 @@ REGISTER_TEST(edit_plan, executor_dry_run_reports_without_persisting);
 REGISTER_TEST(edit_plan, executor_adds_node_with_created_object_report);
 REGISTER_TEST(edit_plan, executor_resolves_parameter_value_from_prior_handle);
 REGISTER_TEST(edit_plan, executor_materializes_input_source_for_handle_value);
+REGISTER_TEST(edit_plan, executor_resolves_behavior_link_io_handles);
 REGISTER_TEST(edit_plan, executor_runs_script_ops_and_records_validation);
 REGISTER_TEST(edit_plan, executor_replaces_leaf_bb_in_transaction);
 REGISTER_TEST(edit_plan, executor_replace_bb_dry_run_rolls_back);

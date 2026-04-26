@@ -163,6 +163,9 @@ static void edit_op_dispose(nmo_edit_op_t *op)
         free((void *)op->data.add_io.name);
     } else if (op->kind == NMO_EDIT_OP_RENAME_IO) {
         free((void *)op->data.rename_io.name);
+    } else if (op->kind == NMO_EDIT_OP_ADD_BEHAVIOR_LINK) {
+        free((void *)op->data.add_link.from_io_ref_handle);
+        free((void *)op->data.add_link.to_io_ref_handle);
     } else if (op->kind == NMO_EDIT_OP_ADD_PARAMETER) {
         free((void *)op->data.add_parameter.name);
     } else if (op->kind == NMO_EDIT_OP_SET_DATA_CELL) {
@@ -237,6 +240,22 @@ static nmo_status_t edit_op_copy(
     case NMO_EDIT_OP_RENAME_IO:
         dst->data.rename_io.name = edit_plan_strdup(src->data.rename_io.name);
         if (src->data.rename_io.name && !dst->data.rename_io.name) {
+            return NMO_ERR_NOMEM;
+        }
+        break;
+    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
+        dst->data.add_link.from_io_ref_handle =
+            edit_plan_strdup(src->data.add_link.from_io_ref_handle);
+        if (src->data.add_link.from_io_ref_handle &&
+            !dst->data.add_link.from_io_ref_handle) {
+            edit_op_dispose(dst);
+            return NMO_ERR_NOMEM;
+        }
+        dst->data.add_link.to_io_ref_handle =
+            edit_plan_strdup(src->data.add_link.to_io_ref_handle);
+        if (src->data.add_link.to_io_ref_handle &&
+            !dst->data.add_link.to_io_ref_handle) {
+            edit_op_dispose(dst);
             return NMO_ERR_NOMEM;
         }
         break;
@@ -576,6 +595,40 @@ nmo_status_t nmo_edit_plan_add_behavior_link(
     op->data.add_link.from_io_id = from_io_id;
     op->data.add_link.to_io_id = to_io_id;
     op->data.add_link.activation_delay = activation_delay;
+    plan->count++;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_edit_plan_add_behavior_link_from_handles(
+    nmo_edit_plan_t *plan,
+    nmo_object_id_t parent_behavior_id,
+    size_t from_operation_index,
+    const char *from_handle_name,
+    size_t to_operation_index,
+    const char *to_handle_name,
+    uint32_t activation_delay)
+{
+    nmo_edit_op_t *op = NULL;
+    if (parent_behavior_id == 0u || from_handle_name == NULL ||
+        from_handle_name[0] == '\0' || to_handle_name == NULL ||
+        to_handle_name[0] == '\0') {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    NMO_RETURN_IF_ERROR(edit_plan_append_blank(
+        plan, NMO_EDIT_OP_ADD_BEHAVIOR_LINK, parent_behavior_id, &op));
+    op->data.add_link.parent_behavior_id = parent_behavior_id;
+    op->data.add_link.activation_delay = activation_delay;
+    op->data.add_link.from_io_ref_operation_index = from_operation_index;
+    op->data.add_link.from_io_ref_handle = edit_plan_strdup(from_handle_name);
+    op->data.add_link.has_from_io_ref = true;
+    op->data.add_link.to_io_ref_operation_index = to_operation_index;
+    op->data.add_link.to_io_ref_handle = edit_plan_strdup(to_handle_name);
+    op->data.add_link.has_to_io_ref = true;
+    if (op->data.add_link.from_io_ref_handle == NULL ||
+        op->data.add_link.to_io_ref_handle == NULL) {
+        edit_op_dispose(op);
+        return NMO_ERR_NOMEM;
+    }
     plan->count++;
     return NMO_OK;
 }
@@ -1371,14 +1424,51 @@ static nmo_status_t edit_executor_apply_op(
             tx,
             op->data.remove_io.io_id,
             op->data.remove_io.detach_links);
-    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
+    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK: {
+        nmo_object_id_t from_io_id = op->data.add_link.from_io_id;
+        nmo_object_id_t to_io_id = op->data.add_link.to_io_id;
+        if (op->data.add_link.has_from_io_ref) {
+            nmo_status_t ref_rc = edit_report_resolve_operation_handle(
+                report,
+                op->data.add_link.from_io_ref_operation_index,
+                op->data.add_link.from_io_ref_handle,
+                &from_io_id);
+            if (ref_rc != NMO_OK) {
+                if (out_diagnostic_code != NULL) {
+                    *out_diagnostic_code = "handle_not_found";
+                }
+                if (out_diagnostic_message != NULL) {
+                    *out_diagnostic_message =
+                        "Referenced edit operation output IO handle was not found";
+                }
+                return ref_rc;
+            }
+        }
+        if (op->data.add_link.has_to_io_ref) {
+            nmo_status_t ref_rc = edit_report_resolve_operation_handle(
+                report,
+                op->data.add_link.to_io_ref_operation_index,
+                op->data.add_link.to_io_ref_handle,
+                &to_io_id);
+            if (ref_rc != NMO_OK) {
+                if (out_diagnostic_code != NULL) {
+                    *out_diagnostic_code = "handle_not_found";
+                }
+                if (out_diagnostic_message != NULL) {
+                    *out_diagnostic_message =
+                        "Referenced edit operation input IO handle was not found";
+                }
+                return ref_rc;
+            }
+        }
         return nmo_script_edit_add_behavior_link(
             tx,
             op->data.add_link.parent_behavior_id,
-            op->data.add_link.from_io_id,
-            op->data.add_link.to_io_id,
+            from_io_id,
+            to_io_id,
             op->data.add_link.activation_delay,
             out_result_id);
+    }
     case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK:
         return nmo_script_edit_rewire_behavior_link(
             tx,
