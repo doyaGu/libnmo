@@ -987,113 +987,51 @@ TEST(repl_read, patch_manifest_does_not_keep_parallel_operation_array) {
                                "plan->operation_count");
 }
 
-TEST(repl_read, patch_interface_policy_parses_into_edit_plan) {
+TEST(repl_read, patch_v2_uses_generic_edit_plan_json_parser) {
     assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_interface_policy(op_obj, out_plan->edit_plan)");
+                           "nmo_edit_plan_manifest_json_read(");
     assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "nmo_edit_plan_add_interface_policy(");
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "edit_plan, (nmo_object_id_t)");
+                           "nmo_edit_plan_manifest_json_write(");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_interface_policy(op_obj, &operation)");
-}
-
-TEST(repl_read, patch_set_data_cell_parses_into_edit_plan) {
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_set_data_cell(op_obj, out_plan->edit_plan)");
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "nmo_edit_plan_add_data_cell(");
+                               "patch_parse_add_node");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_set_data_cell(op_obj, &operation)");
-}
-
-TEST(repl_read, patch_operation_edits_parse_into_edit_plan) {
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_add_operation(op_obj, out_plan->edit_plan)");
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_remove_operation(op_obj, out_plan->edit_plan)");
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_rewire_operation(op_obj, out_plan->edit_plan)");
+                               "patch_parse_remove_node");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_add_operation(op_obj, &operation)");
+                               "patch_parse_add_io");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_remove_operation(op_obj, &operation)");
+                               "patch_parse_remove_io");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_rewire_operation(op_obj, &operation)");
-}
-
-TEST(repl_read, patch_io_edits_parse_into_edit_plan) {
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_add_io(op_obj, out_plan->edit_plan)");
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_remove_io(op_obj, out_plan->edit_plan)");
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_rename_io(op_obj, out_plan->edit_plan)");
+                               "patch_parse_rename_io");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_add_io(op_obj, &operation)");
+                               "patch_parse_add_behavior_link");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_remove_io(op_obj, &operation)");
+                               "patch_parse_rewire_behavior_link");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_rename_io(op_obj, &operation)");
-}
-
-TEST(repl_read, patch_behavior_link_edits_parse_into_edit_plan) {
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_add_behavior_link(op_obj, out_plan->edit_plan)");
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_rewire_behavior_link(op_obj, out_plan->edit_plan)");
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_set_behavior_link_delay(");
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "op_obj, out_plan->edit_plan");
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_remove_behavior_link(op_obj, out_plan->edit_plan)");
+                               "patch_parse_set_behavior_link_delay");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_add_behavior_link(op_obj, &operation)");
+                               "patch_parse_remove_behavior_link");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_rewire_behavior_link(op_obj, &operation)");
+                               "patch_parse_add_parameter");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_set_behavior_link_delay(op_obj, &operation)");
+                               "patch_parse_disconnect_parameter");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_remove_behavior_link(op_obj, &operation)");
-}
-
-TEST(repl_read, patch_parameter_edits_parse_into_edit_plan) {
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_add_parameter(op_obj, out_plan->edit_plan)");
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_disconnect_parameter(op_obj, out_plan->edit_plan)");
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_connect_parameter(op_obj, out_plan->edit_plan)");
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_remove_parameter(op_obj, out_plan->edit_plan)");
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_set_parameter_value(op_obj, out_plan->edit_plan)");
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_set_parameter_bytes(op_obj, out_plan->edit_plan)");
+                               "patch_parse_connect_parameter");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_add_parameter(op_obj, &operation)");
+                               "patch_parse_remove_parameter");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_disconnect_parameter(op_obj, &operation)");
+                               "patch_parse_set_parameter_value");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_connect_parameter(op_obj, &operation)");
+                               "patch_parse_set_parameter_bytes");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_remove_parameter(op_obj, &operation)");
+                               "patch_parse_set_data_cell");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_set_parameter_value(op_obj, &operation)");
+                               "patch_parse_add_operation");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_set_parameter_bytes(op_obj, &operation)");
-}
-
-TEST(repl_read, patch_node_edits_parse_into_edit_plan) {
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_add_node(op_obj, out_plan->edit_plan)");
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_remove_node(op_obj, out_plan->edit_plan)");
+                               "patch_parse_remove_operation");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_add_node(op_obj, &operation)");
+                               "patch_parse_rewire_operation");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_remove_node(op_obj, &operation)");
+                               "patch_parse_interface_policy");
 }
 
 TEST(repl_read, patch_replace_bb_parses_into_edit_plan) {
@@ -1531,13 +1469,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, behavior_rewrite_uses_shared_semantic_validator);
     REGISTER_TEST(repl_read, behavior_rewrite_does_not_emit_private_write_reports);
     REGISTER_TEST(repl_read, patch_manifest_does_not_keep_parallel_operation_array);
-    REGISTER_TEST(repl_read, patch_interface_policy_parses_into_edit_plan);
-    REGISTER_TEST(repl_read, patch_set_data_cell_parses_into_edit_plan);
-    REGISTER_TEST(repl_read, patch_operation_edits_parse_into_edit_plan);
-    REGISTER_TEST(repl_read, patch_io_edits_parse_into_edit_plan);
-    REGISTER_TEST(repl_read, patch_behavior_link_edits_parse_into_edit_plan);
-    REGISTER_TEST(repl_read, patch_parameter_edits_parse_into_edit_plan);
-    REGISTER_TEST(repl_read, patch_node_edits_parse_into_edit_plan);
+    REGISTER_TEST(repl_read, patch_v2_uses_generic_edit_plan_json_parser);
     REGISTER_TEST(repl_read, patch_replace_bb_parses_into_edit_plan);
     REGISTER_TEST(repl_read, patch_fold_parses_into_edit_plan);
     REGISTER_TEST(repl_read, lua_fold_maps_accept_patch_id_aliases);

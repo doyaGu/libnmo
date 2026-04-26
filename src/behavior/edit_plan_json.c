@@ -584,6 +584,46 @@ static char *dup_string(const char *value)
     return copy;
 }
 
+static bool json_key_allowed(const char *key,
+                             const char *const *allowed,
+                             size_t allowed_count)
+{
+    if (key == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < allowed_count; ++i) {
+        if (strcmp(key, allowed[i]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static nmo_status_t reject_unknown_fields(yyjson_val *obj,
+                                          const char *where,
+                                          const char *const *allowed,
+                                          size_t allowed_count)
+{
+    size_t idx = 0u;
+    size_t max = 0u;
+    yyjson_val *key = NULL;
+    yyjson_val *val = NULL;
+    yyjson_obj_foreach(obj, idx, max, key, val) {
+        (void)val;
+        const char *name = yyjson_get_str(key);
+        if (!json_key_allowed(name, allowed, allowed_count)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Unknown field '%s' in %s",
+                             name != NULL ? name : "(null)", where);
+        }
+    }
+    NMO_RETURN_OK();
+}
+
+#define RETURN_IF_UNKNOWN_FIELDS(obj, where, allowed) \
+    NMO_RETURN_IF_ERROR(reject_unknown_fields( \
+        (obj), (where), (allowed), sizeof(allowed) / sizeof((allowed)[0])))
+
 static bool read_required_u32(yyjson_val *obj,
                               const char *key,
                               uint32_t *out_value,
@@ -810,6 +850,10 @@ static nmo_status_t parse_id_array(yyjson_val *arr,
 static nmo_status_t parse_add_parameter(yyjson_val *op_obj,
                                         nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "owner_id", "kind", "type_guid", "name",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "add_parameter operation", allowed);
     uint32_t owner_id = 0u;
     const char *kind_text = NULL;
     const char *type_guid_text = NULL;
@@ -836,6 +880,10 @@ static nmo_status_t parse_add_parameter(yyjson_val *op_obj,
 static nmo_status_t parse_add_node(yyjson_val *op_obj,
                                    nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "behavior_id", "guid", "name",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "add_node operation", allowed);
     uint32_t behavior_id = 0u;
     const char *guid_text = NULL;
     const char *name = NULL;
@@ -859,6 +907,10 @@ static nmo_status_t parse_add_node(yyjson_val *op_obj,
 static nmo_status_t parse_remove_node(yyjson_val *op_obj,
                                       nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "parent_id", "node_id", "delete_flags",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "remove_node operation", allowed);
     uint32_t parent_id = 0u;
     uint32_t node_id = 0u;
     uint32_t delete_flags = 0u;
@@ -873,6 +925,10 @@ static nmo_status_t parse_remove_node(yyjson_val *op_obj,
 static nmo_status_t parse_add_io(yyjson_val *op_obj,
                                  nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "behavior_id", "kind", "name",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "add_io operation", allowed);
     uint32_t behavior_id = 0u;
     const char *kind_text = NULL;
     const char *name = NULL;
@@ -889,6 +945,10 @@ static nmo_status_t parse_add_io(yyjson_val *op_obj,
 static nmo_status_t parse_rename_io(yyjson_val *op_obj,
                                     nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "io_id", "name",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "rename_io operation", allowed);
     uint32_t io_id = 0u;
     const char *name = NULL;
     if (!read_required_u32(op_obj, "io_id", &io_id, false) ||
@@ -901,6 +961,10 @@ static nmo_status_t parse_rename_io(yyjson_val *op_obj,
 static nmo_status_t parse_remove_io(yyjson_val *op_obj,
                                     nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "io_id", "detach_links",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "remove_io operation", allowed);
     uint32_t io_id = 0u;
     bool detach_links = false;
     if (!read_required_u32(op_obj, "io_id", &io_id, false) ||
@@ -913,6 +977,11 @@ static nmo_status_t parse_remove_io(yyjson_val *op_obj,
 static nmo_status_t parse_set_parameter_value(yyjson_val *op_obj,
                                               nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "parameter_id", "parameter_operation", "parameter_handle",
+        "value",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "set_parameter_value operation", allowed);
     const char *value = NULL;
     if (!read_required_string(op_obj, "value", &value)) {
         return NMO_ERR_INVALID_FORMAT;
@@ -931,7 +1000,8 @@ static nmo_status_t parse_set_parameter_value(yyjson_val *op_obj,
         if (!yyjson_is_uint(parameter_id_val) ||
             yyjson_get_uint(parameter_id_val) == 0u ||
             yyjson_get_uint(parameter_id_val) > UINT32_MAX) {
-            return NMO_ERR_INVALID_FORMAT;
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Missing or invalid parameter_id");
         }
         return nmo_edit_plan_add_set_parameter_value(
             plan, (nmo_object_id_t)yyjson_get_uint(parameter_id_val),
@@ -939,10 +1009,14 @@ static nmo_status_t parse_set_parameter_value(yyjson_val *op_obj,
     }
 
     if (operation_val == NULL || !yyjson_is_uint(operation_val) ||
-        yyjson_get_uint(operation_val) == 0u ||
-        handle_val == NULL || !yyjson_is_str(handle_val) ||
+        yyjson_get_uint(operation_val) == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Missing or invalid parameter_operation");
+    }
+    if (handle_val == NULL || !yyjson_is_str(handle_val) ||
         yyjson_get_str(handle_val)[0] == '\0') {
-        return NMO_ERR_INVALID_FORMAT;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Missing or invalid parameter_handle");
     }
     return nmo_edit_plan_add_set_parameter_value_from_handle(
         plan,
@@ -955,6 +1029,11 @@ static nmo_status_t parse_set_parameter_value(yyjson_val *op_obj,
 static nmo_status_t parse_set_parameter_bytes(yyjson_val *op_obj,
                                               nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "parameter_id", "parameter_operation", "parameter_handle",
+        "hex", "resize",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "set_parameter_bytes operation", allowed);
     const char *hex = NULL;
     uint8_t *bytes = NULL;
     size_t byte_count = 0u;
@@ -1030,7 +1109,9 @@ static nmo_status_t parse_optional_parameter_ref(
         return NMO_OK;
     }
     if (has_id && has_ref) {
-        return NMO_ERR_INVALID_FORMAT;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "add_operation operation requires either %s or %s plus %s",
+                         id_key, operation_key, handle_key);
     }
     if (has_id) {
         if (!yyjson_is_uint(id_val) || yyjson_get_uint(id_val) > UINT32_MAX) {
@@ -1040,10 +1121,14 @@ static nmo_status_t parse_optional_parameter_ref(
         return NMO_OK;
     }
     if (operation_val == NULL || !yyjson_is_uint(operation_val) ||
-        yyjson_get_uint(operation_val) == 0u ||
-        handle_val == NULL || !yyjson_is_str(handle_val) ||
+        yyjson_get_uint(operation_val) == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Missing or invalid %s", operation_key);
+    }
+    if (handle_val == NULL || !yyjson_is_str(handle_val) ||
         yyjson_get_str(handle_val)[0] == '\0') {
-        return NMO_ERR_INVALID_FORMAT;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Missing or invalid %s", handle_key);
     }
     *out_operation_index = (size_t)(yyjson_get_uint(operation_val) - 1u);
     *out_handle = yyjson_get_str(handle_val);
@@ -1054,6 +1139,11 @@ static nmo_status_t parse_optional_parameter_ref(
 static nmo_status_t parse_add_behavior_link(yyjson_val *op_obj,
                                             nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "parent_id", "from_io_id", "from_operation", "from_handle",
+        "to_io_id", "to_operation", "to_handle", "activation_delay",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "add_behavior_link operation", allowed);
     uint32_t parent_id = 0u;
     uint32_t activation_delay = 0u;
     if (!read_required_u32(op_obj, "parent_id", &parent_id, false) ||
@@ -1138,6 +1228,10 @@ static nmo_status_t parse_add_behavior_link(yyjson_val *op_obj,
 static nmo_status_t parse_rewire_behavior_link(yyjson_val *op_obj,
                                                nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "link_id", "from_io_id", "to_io_id",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "rewire_behavior_link operation", allowed);
     uint32_t link_id = 0u;
     uint32_t from_io_id = 0u;
     uint32_t to_io_id = 0u;
@@ -1153,6 +1247,10 @@ static nmo_status_t parse_rewire_behavior_link(yyjson_val *op_obj,
 static nmo_status_t parse_set_behavior_link_delay(yyjson_val *op_obj,
                                                   nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "link_id", "activation_delay",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "set_behavior_link_delay operation", allowed);
     uint32_t link_id = 0u;
     uint32_t activation_delay = 0u;
     if (!read_required_u32(op_obj, "link_id", &link_id, false) ||
@@ -1166,6 +1264,10 @@ static nmo_status_t parse_set_behavior_link_delay(yyjson_val *op_obj,
 static nmo_status_t parse_remove_behavior_link(yyjson_val *op_obj,
                                                nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "parent_id", "link_id",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "remove_behavior_link operation", allowed);
     uint32_t parent_id = 0u;
     uint32_t link_id = 0u;
     if (!read_required_u32(op_obj, "parent_id", &parent_id, false) ||
@@ -1178,6 +1280,10 @@ static nmo_status_t parse_remove_behavior_link(yyjson_val *op_obj,
 static nmo_status_t parse_connect_parameter(yyjson_val *op_obj,
                                             nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "source_id", "target_id", "target_operation", "target_handle",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "connect_parameter operation", allowed);
     uint32_t source_id = 0u;
     if (!read_required_u32(op_obj, "source_id", &source_id, false)) {
         return NMO_ERR_INVALID_FORMAT;
@@ -1188,7 +1294,8 @@ static nmo_status_t parse_connect_parameter(yyjson_val *op_obj,
     bool has_id = target_id_val != NULL;
     bool has_ref = operation_val != NULL || handle_val != NULL;
     if (has_id == has_ref) {
-        return NMO_ERR_INVALID_FORMAT;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "connect_parameter requires either target_id or target_operation plus target_handle");
     }
     if (has_id) {
         if (!yyjson_is_uint(target_id_val) ||
@@ -1214,6 +1321,10 @@ static nmo_status_t parse_connect_parameter(yyjson_val *op_obj,
 static nmo_status_t parse_disconnect_parameter(yyjson_val *op_obj,
                                                nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "target_id",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "disconnect_parameter operation", allowed);
     uint32_t target_id = 0u;
     if (!read_required_u32(op_obj, "target_id", &target_id, false)) {
         return NMO_ERR_INVALID_FORMAT;
@@ -1224,6 +1335,10 @@ static nmo_status_t parse_disconnect_parameter(yyjson_val *op_obj,
 static nmo_status_t parse_remove_parameter(yyjson_val *op_obj,
                                            nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "parameter_id", "detach",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "remove_parameter operation", allowed);
     uint32_t parameter_id = 0u;
     bool detach = false;
     if (!read_required_u32(op_obj, "parameter_id", &parameter_id, false) ||
@@ -1236,6 +1351,13 @@ static nmo_status_t parse_remove_parameter(yyjson_val *op_obj,
 static nmo_status_t parse_add_operation(yyjson_val *op_obj,
                                         nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "parent_id", "operation_guid",
+        "in1_id", "in1_operation", "in1_handle",
+        "in2_id", "in2_operation", "in2_handle",
+        "out_id", "out_operation", "out_handle",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "add_operation operation", allowed);
     uint32_t parent_id = 0u;
     const char *operation_guid_text = NULL;
     if (!read_required_u32(op_obj, "parent_id", &parent_id, false) ||
@@ -1303,6 +1425,10 @@ static nmo_status_t parse_add_operation(yyjson_val *op_obj,
 static nmo_status_t parse_rewire_operation(yyjson_val *op_obj,
                                            nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "operation_id", "in1_id", "in2_id", "out_id",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "rewire_operation operation", allowed);
     uint32_t operation_id = 0u;
     uint32_t in1_id = 0u;
     uint32_t in2_id = 0u;
@@ -1336,6 +1462,10 @@ static nmo_status_t parse_rewire_operation(yyjson_val *op_obj,
 static nmo_status_t parse_remove_operation(yyjson_val *op_obj,
                                            nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "operation_id",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "remove_operation operation", allowed);
     uint32_t operation_id = 0u;
     if (!read_required_u32(op_obj, "operation_id", &operation_id, false)) {
         return NMO_ERR_INVALID_FORMAT;
@@ -1346,6 +1476,10 @@ static nmo_status_t parse_remove_operation(yyjson_val *op_obj,
 static nmo_status_t parse_interface_policy(yyjson_val *op_obj,
                                            nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "behavior_id", "mode",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "interface_policy operation", allowed);
     uint32_t behavior_id = 0u;
     const char *mode_text = NULL;
     nmo_script_edit_interface_mode_t mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE;
@@ -1360,6 +1494,10 @@ static nmo_status_t parse_interface_policy(yyjson_val *op_obj,
 static nmo_status_t parse_set_data_cell(yyjson_val *op_obj,
                                         nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "dataarray_id", "row", "col", "value",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "set_data_cell operation", allowed);
     uint32_t dataarray_id = 0u;
     uint32_t row = 0u;
     uint32_t col = 0u;
@@ -1399,11 +1537,19 @@ static nmo_status_t parse_fold_maps(yyjson_val *arr,
     size_t max = 0u;
     yyjson_val *item = NULL;
     yyjson_arr_foreach(arr, idx, max, item) {
+        static const char *const allowed[] = {
+            "old_index", "new_index", "old_id", "new_id",
+            "old_io_id", "new_io_id",
+            "old_parameter_id", "new_parameter_id", "label",
+        };
         uint32_t old_index = 0u;
         uint32_t new_index = 0u;
         uint32_t old_id = 0u;
         uint32_t new_id = 0u;
         if (!yyjson_is_obj(item) ||
+            reject_unknown_fields(
+                item, "fold map", allowed,
+                sizeof(allowed) / sizeof(allowed[0])) != NMO_OK ||
             !read_required_u32(item, "old_index", &old_index, true) ||
             !read_required_u32(item, "new_index", &new_index, true)) {
             free(maps);
@@ -1443,6 +1589,13 @@ static nmo_status_t parse_fold_maps(yyjson_val *arr,
 static nmo_status_t parse_fold(yyjson_val *op_obj,
                                nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "parent_id", "nodes", "anchor_id", "guid", "name",
+        "version", "preserve_boundary", "preserve_links",
+        "preserve_params", "interface", "inputs", "outputs",
+        "parameters",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "fold operation", allowed);
     nmo_behavior_fold_desc_t desc;
     memset(&desc, 0, sizeof(desc));
     nmo_object_id_t *node_ids = NULL;
@@ -1522,6 +1675,11 @@ static nmo_status_t parse_fold(yyjson_val *op_obj,
 static nmo_status_t parse_replace_bb(yyjson_val *op_obj,
                                      nmo_edit_plan_t *plan)
 {
+    static const char *const allowed[] = {
+        "op", "behavior_id", "guid", "name", "version",
+        "preserve_links", "preserve_params",
+    };
+    RETURN_IF_UNKNOWN_FIELDS(op_obj, "replace_bb operation", allowed);
     nmo_behavior_replace_bb_desc_t desc;
     memset(&desc, 0, sizeof(desc));
     const char *guid_text = NULL;
@@ -1570,9 +1728,19 @@ nmo_status_t nmo_edit_plan_manifest_json_read(
         yyjson_doc_free(doc);
         return NMO_ERR_INVALID_FORMAT;
     }
+    static const char *const root_allowed[] = {
+        "version", "input", "output", "operations",
+    };
+    nmo_status_t st = reject_unknown_fields(
+        root, "patch root", root_allowed,
+        sizeof(root_allowed) / sizeof(root_allowed[0]));
+    if (st != NMO_OK) {
+        yyjson_doc_free(doc);
+        return st;
+    }
 
     nmo_edit_plan_t *plan = NULL;
-    nmo_status_t st = nmo_edit_plan_create(&plan);
+    st = nmo_edit_plan_create(&plan);
     if (st != NMO_OK) {
         yyjson_doc_free(doc);
         return st;
@@ -1636,6 +1804,9 @@ nmo_status_t nmo_edit_plan_manifest_json_read(
         } else if (strcmp(op_name, "replace_bb") == 0) {
             st = parse_replace_bb(op_obj, plan);
         } else {
+            nmo_last_error_setf(NMO_ERR_NOT_SUPPORTED, NMO_SEVERITY_ERROR,
+                                __FILE__, __LINE__,
+                                "Unsupported patch op '%s'", op_name);
             st = NMO_ERR_NOT_SUPPORTED;
         }
         if (st != NMO_OK) {
