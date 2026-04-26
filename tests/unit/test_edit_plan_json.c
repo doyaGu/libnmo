@@ -107,6 +107,75 @@ TEST(edit_plan_json, writes_manifest_with_operation_handle_refs) {
     nmo_edit_plan_destroy(plan);
 }
 
+TEST(edit_plan_json, reads_manifest_with_operation_handle_refs) {
+    nmo_edit_plan_t *plan = NULL;
+    char *json = NULL;
+    nmo_edit_plan_manifest_t manifest;
+    memset(&manifest, 0, sizeof(manifest));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_parameter(plan,
+                                          42u,
+                                          NMO_SCRIPT_EDIT_PARAM_IN,
+                                          CKPGUID_STRING,
+                                          "Runtime Text"));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_set_parameter_value_from_handle(
+                  plan, 0u, "parameter", "hello", NULL));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_operation_with_refs(
+                  plan,
+                  42u,
+                  nmo_guid_parse("33CC6B49-3589282B"),
+                  0u,
+                  0u,
+                  "parameter",
+                  0u,
+                  0u,
+                  NULL,
+                  0u,
+                  0u,
+                  NULL));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_manifest_json_write(
+                  plan, "input.cmo", "output.cmo", &json));
+
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_manifest_json_read(
+                  json, strlen(json), &manifest));
+    ASSERT_NOT_NULL(manifest.plan);
+    ASSERT_STR_EQ("input.cmo", manifest.input_path);
+    ASSERT_STR_EQ("output.cmo", manifest.output_path);
+    ASSERT_EQ(3u, nmo_edit_plan_count(manifest.plan));
+
+    const nmo_edit_op_t *set_op = nmo_edit_plan_get(manifest.plan, 1u);
+    ASSERT_NOT_NULL(set_op);
+    ASSERT_EQ(NMO_EDIT_OP_SET_PARAMETER_VALUE, set_op->kind);
+    ASSERT_TRUE(set_op->data.set_value.has_parameter_ref);
+    ASSERT_EQ(0u, set_op->data.set_value.parameter_ref_operation_index);
+    ASSERT_STR_EQ("parameter", set_op->data.set_value.parameter_ref_handle);
+    ASSERT_STR_EQ("hello", set_op->data.set_value.value);
+
+    const nmo_edit_op_t *operation_op = nmo_edit_plan_get(manifest.plan, 2u);
+    ASSERT_NOT_NULL(operation_op);
+    ASSERT_EQ(NMO_EDIT_OP_ADD_OPERATION, operation_op->kind);
+    ASSERT_TRUE(operation_op->data.add_operation.has_in1_parameter_ref);
+    ASSERT_EQ(0u,
+              operation_op->data.add_operation
+                  .in1_parameter_ref_operation_index);
+    ASSERT_STR_EQ("parameter",
+                  operation_op->data.add_operation
+                      .in1_parameter_ref_handle);
+    ASSERT_FALSE(operation_op->data.add_operation.has_in2_parameter_ref);
+    ASSERT_FALSE(operation_op->data.add_operation.has_out_parameter_ref);
+
+    nmo_edit_plan_manifest_dispose(&manifest);
+    nmo_edit_plan_manifest_json_free(json);
+    nmo_edit_plan_destroy(plan);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(edit_plan_json, writes_manifest_with_operation_handle_refs);
+REGISTER_TEST(edit_plan_json, reads_manifest_with_operation_handle_refs);
 TEST_MAIN_END()

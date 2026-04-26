@@ -13,11 +13,25 @@
 extern "C" {
 #endif
 
+typedef struct nmo_edit_plan_manifest {
+    char *input_path;
+    char *output_path;
+    nmo_edit_plan_t *plan;
+} nmo_edit_plan_manifest_t;
+
 NMO_API nmo_status_t nmo_edit_plan_manifest_json_write(
     const nmo_edit_plan_t *plan,
     const char *input_path,
     const char *output_path,
     char **out_json);
+
+NMO_API nmo_status_t nmo_edit_plan_manifest_json_read(
+    const char *json,
+    size_t json_len,
+    nmo_edit_plan_manifest_t *out_manifest);
+
+NMO_API void nmo_edit_plan_manifest_dispose(
+    nmo_edit_plan_manifest_t *manifest);
 
 NMO_API void nmo_edit_plan_manifest_json_free(char *json);
 
