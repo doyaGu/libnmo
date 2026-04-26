@@ -19,6 +19,7 @@
 #include "type/nmo_operation_system.h"
 #include "type/nmo_type_system.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -329,6 +330,100 @@ static const char *semantic_static_result_handle_name(
     }
 }
 
+static bool semantic_named_handle_matches(
+    const char *handle_name,
+    const char *prefix,
+    const char *name)
+{
+    if (handle_name == NULL || prefix == NULL) {
+        return false;
+    }
+    if (name == NULL || name[0] == '\0') {
+        return strcmp(handle_name, prefix) == 0;
+    }
+    char expected[160];
+    snprintf(expected, sizeof(expected), "%s:%s", prefix, name);
+    return strcmp(handle_name, expected) == 0;
+}
+
+static bool semantic_string_array_has_handle(
+    const char *handle_name,
+    const char *prefix,
+    const char *const *names,
+    uint32_t count)
+{
+    for (uint32_t i = 0u; i < count; ++i) {
+        if (semantic_named_handle_matches(handle_name, prefix, names[i])) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool semantic_param_array_has_handle(
+    const char *handle_name,
+    const char *prefix,
+    const nmo_behavior_param_desc_t *params,
+    uint32_t count)
+{
+    for (uint32_t i = 0u; i < count; ++i) {
+        if (semantic_named_handle_matches(handle_name, prefix, params[i].name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool semantic_add_node_has_handle(
+    nmo_context_t *ctx,
+    const nmo_edit_op_t *op,
+    const char *handle_name)
+{
+    if (op == NULL || handle_name == NULL) {
+        return false;
+    }
+    if (strcmp(handle_name, "node") == 0) {
+        return true;
+    }
+    const nmo_behavior_proto_t *proto =
+        ctx != NULL
+            ? nmo_behavior_registry_find(
+                  nmo_context_get_bb_registry(ctx),
+                  op->data.add_node.bb_guid)
+            : NULL;
+    if (proto == NULL) {
+        return true;
+    }
+    if (strcmp(handle_name, "target") == 0) {
+        return (proto->behavior_flags & CKBEHAVIOR_TARGETABLE) != 0u;
+    }
+    if (semantic_string_array_has_handle(
+            handle_name, "input", proto->inputs, proto->input_count) ||
+        semantic_string_array_has_handle(
+            handle_name, "output", proto->outputs, proto->output_count) ||
+        semantic_param_array_has_handle(
+            handle_name, "input_param", proto->input_params,
+            proto->input_param_count) ||
+        semantic_param_array_has_handle(
+            handle_name, "input_param_source", proto->input_params,
+            proto->input_param_count) ||
+        semantic_param_array_has_handle(
+            handle_name, "input_param", proto->settings,
+            proto->setting_count) ||
+        semantic_param_array_has_handle(
+            handle_name, "input_param_source", proto->settings,
+            proto->setting_count) ||
+        semantic_param_array_has_handle(
+            handle_name, "output_param", proto->output_params,
+            proto->output_param_count) ||
+        semantic_param_array_has_handle(
+            handle_name, "local_param", proto->local_params,
+            proto->local_param_count)) {
+        return true;
+    }
+    return false;
+}
+
 static nmo_status_t semantic_add_invalid_handle_ref_risk(
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
@@ -344,6 +439,7 @@ static nmo_status_t semantic_add_invalid_handle_ref_risk(
 }
 
 static nmo_status_t semantic_validate_handle_ref(
+    nmo_context_t *ctx,
     const nmo_edit_plan_t *plan,
     size_t current_index,
     size_t ref_index,
@@ -367,13 +463,12 @@ static nmo_status_t semantic_validate_handle_ref(
             risks, risk_count, object_id);
     }
 
-    if (ref_op->kind == NMO_EDIT_OP_ADD_NODE &&
-        strcmp(handle_name, expected) != 0) {
-        /*
-         * Materialized BB child handles depend on registry metadata and are
-         * validated by the executor after node creation.
-         */
-        return NMO_OK;
+    if (ref_op->kind == NMO_EDIT_OP_ADD_NODE) {
+        if (semantic_add_node_has_handle(ctx, ref_op, handle_name)) {
+            return NMO_OK;
+        }
+        return semantic_add_invalid_handle_ref_risk(
+            risks, risk_count, object_id);
     }
 
     if (strcmp(handle_name, expected) != 0) {
@@ -727,6 +822,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
         if (op->kind == NMO_EDIT_OP_SET_PARAMETER_VALUE &&
             op->data.set_value.has_parameter_ref) {
             return semantic_validate_handle_ref(
+                ctx,
                 plan,
                 op_index,
                 op->data.set_value.parameter_ref_operation_index,
@@ -738,6 +834,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
         if (op->kind == NMO_EDIT_OP_SET_PARAMETER_BYTES &&
             op->data.set_bytes.has_parameter_ref) {
             return semantic_validate_handle_ref(
+                ctx,
                 plan,
                 op_index,
                 op->data.set_bytes.parameter_ref_operation_index,
@@ -814,6 +911,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 "Control-flow link endpoint must be a behavior IO"));
         } else {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
+                ctx,
                 plan,
                 op_index,
                 op->data.add_link.from_io_ref_operation_index,
@@ -835,6 +933,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 "Control-flow link endpoint must be a behavior IO"));
         } else {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
+                ctx,
                 plan,
                 op_index,
                 op->data.add_link.to_io_ref_operation_index,
@@ -929,6 +1028,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             op->data.connect_parameter.source_parameter_id));
         if (op->data.connect_parameter.has_target_parameter_ref) {
             return semantic_validate_handle_ref(
+                ctx,
                 plan,
                 op_index,
                 op->data.connect_parameter.target_parameter_ref_operation_index,
@@ -974,6 +1074,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             op->data.add_operation.parent_behavior_id));
         if (op->data.add_operation.has_in1_parameter_ref) {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
+                ctx,
                 plan,
                 op_index,
                 op->data.add_operation.in1_parameter_ref_operation_index,
@@ -991,6 +1092,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
         }
         if (op->data.add_operation.has_in2_parameter_ref) {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
+                ctx,
                 plan,
                 op_index,
                 op->data.add_operation.in2_parameter_ref_operation_index,
@@ -1008,6 +1110,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
         }
         if (op->data.add_operation.has_out_parameter_ref) {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
+                ctx,
                 plan,
                 op_index,
                 op->data.add_operation.out_parameter_ref_operation_index,
