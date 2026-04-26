@@ -391,6 +391,40 @@ TEST(edit_plan, executor_adds_node_with_created_object_report) {
     edit_plan_fixture_dispose(&fixture);
 }
 
+TEST(edit_plan, executor_resolves_parameter_value_from_prior_handle) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t root_id = 0;
+    create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Root", &root_id);
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_node(
+                  plan,
+                  root_id,
+                  nmo_guid_parse("055B29FE-662D5CA0"),
+                  "Probe 2D Text"));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_set_parameter_value_from_handle(
+                  plan, 0u, "input_param_source:Alignment", "Top-Left", NULL));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(2u, report.operation_count);
+    ASSERT_EQ(NMO_EDIT_OP_SET_PARAMETER_VALUE, report.operations[1].kind);
+    ASSERT_EQ(NMO_OK, report.operations[1].status);
+    ASSERT_TRUE(report.operations[1].result_id != 0u);
+    ASSERT_EQ(report.operations[1].result_id, report.changed_objects[1].id);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+}
+
 TEST(edit_plan, executor_runs_script_ops_and_records_validation) {
     edit_plan_fixture_t fixture;
     edit_plan_fixture_init(&fixture);
@@ -776,6 +810,7 @@ REGISTER_TEST(edit_plan, executor_commits_parameter_value_plan);
 REGISTER_TEST(edit_plan, executor_rolls_back_failed_plan);
 REGISTER_TEST(edit_plan, executor_dry_run_reports_without_persisting);
 REGISTER_TEST(edit_plan, executor_adds_node_with_created_object_report);
+REGISTER_TEST(edit_plan, executor_resolves_parameter_value_from_prior_handle);
 REGISTER_TEST(edit_plan, executor_runs_script_ops_and_records_validation);
 REGISTER_TEST(edit_plan, executor_replaces_leaf_bb_in_transaction);
 REGISTER_TEST(edit_plan, executor_replace_bb_dry_run_rolls_back);

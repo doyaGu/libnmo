@@ -8,6 +8,7 @@
 #include "behavior/nmo_script_edit.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_value_writer.h"
 
@@ -152,6 +153,7 @@ static void edit_op_dispose(nmo_edit_op_t *op)
     }
     if (op->kind == NMO_EDIT_OP_SET_PARAMETER_VALUE) {
         free((void *)op->data.set_value.value);
+        free((void *)op->data.set_value.parameter_ref_handle);
     } else if (op->kind == NMO_EDIT_OP_SET_PARAMETER_BYTES) {
         free((void *)op->data.set_bytes.bytes);
     } else if (op->kind == NMO_EDIT_OP_ADD_NODE) {
@@ -196,6 +198,13 @@ static nmo_status_t edit_op_copy(
         dst->data.set_value.value =
             edit_plan_strdup(src->data.set_value.value);
         if (src->data.set_value.value && !dst->data.set_value.value) {
+            return NMO_ERR_NOMEM;
+        }
+        dst->data.set_value.parameter_ref_handle =
+            edit_plan_strdup(src->data.set_value.parameter_ref_handle);
+        if (src->data.set_value.parameter_ref_handle &&
+            !dst->data.set_value.parameter_ref_handle) {
+            edit_op_dispose(dst);
             return NMO_ERR_NOMEM;
         }
         break;
@@ -373,6 +382,39 @@ nmo_status_t nmo_edit_plan_add_set_parameter_value(
     if (op->data.set_value.value == NULL) {
         return NMO_ERR_NOMEM;
     }
+    if (options != NULL) {
+        op->data.set_value.options = *options;
+        op->data.set_value.has_options = true;
+    }
+    plan->count++;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_edit_plan_add_set_parameter_value_from_handle(
+    nmo_edit_plan_t *plan,
+    size_t operation_index,
+    const char *handle_name,
+    const char *value_str,
+    const nmo_parameter_write_options_t *options)
+{
+    if (plan == NULL || handle_name == NULL || handle_name[0] == '\0' ||
+        value_str == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    NMO_RETURN_IF_ERROR(edit_plan_reserve(plan, plan->count + 1u));
+    nmo_edit_op_t *op = &plan->ops[plan->count];
+    memset(op, 0, sizeof(*op));
+    op->kind = NMO_EDIT_OP_SET_PARAMETER_VALUE;
+    op->primary_id = 0u;
+    op->data.set_value.value = edit_plan_strdup(value_str);
+    op->data.set_value.parameter_ref_handle = edit_plan_strdup(handle_name);
+    if (op->data.set_value.value == NULL ||
+        op->data.set_value.parameter_ref_handle == NULL) {
+        edit_op_dispose(op);
+        return NMO_ERR_NOMEM;
+    }
+    op->data.set_value.parameter_ref_operation_index = operation_index;
+    op->data.set_value.has_parameter_ref = true;
     if (options != NULL) {
         op->data.set_value.options = *options;
         op->data.set_value.has_options = true;
@@ -1214,6 +1256,12 @@ static nmo_status_t edit_report_note_fold_impact(
     return NMO_OK;
 }
 
+static nmo_status_t edit_report_resolve_operation_handle(
+    const nmo_edit_report_t *report,
+    size_t operation_index,
+    const char *handle_name,
+    nmo_object_id_t *out_id);
+
 static nmo_status_t edit_executor_apply_op(
     nmo_script_edit_tx_t *tx,
     const nmo_edit_op_t *op,
@@ -1236,12 +1284,34 @@ static nmo_status_t edit_executor_apply_op(
     }
 
     switch (op->kind) {
-    case NMO_EDIT_OP_SET_PARAMETER_VALUE:
+    case NMO_EDIT_OP_SET_PARAMETER_VALUE: {
+        nmo_object_id_t parameter_id = op->primary_id;
+        if (op->data.set_value.has_parameter_ref) {
+            nmo_status_t ref_rc = edit_report_resolve_operation_handle(
+                report,
+                op->data.set_value.parameter_ref_operation_index,
+                op->data.set_value.parameter_ref_handle,
+                &parameter_id);
+            if (ref_rc != NMO_OK) {
+                if (out_diagnostic_code != NULL) {
+                    *out_diagnostic_code = "handle_not_found";
+                }
+                if (out_diagnostic_message != NULL) {
+                    *out_diagnostic_message =
+                        "Referenced edit operation handle was not found";
+                }
+                return ref_rc;
+            }
+        }
+        if (out_result_id != NULL) {
+            *out_result_id = parameter_id;
+        }
         return nmo_value_writer_set_parameter_value(
             edit,
-            op->primary_id,
+            parameter_id,
             op->data.set_value.value,
             op->data.set_value.has_options ? &op->data.set_value.options : NULL);
+    }
     case NMO_EDIT_OP_SET_PARAMETER_BYTES:
         return nmo_value_writer_set_parameter_bytes(
             edit,
@@ -1496,6 +1566,40 @@ static nmo_status_t edit_report_add_array_handles(
     return NMO_OK;
 }
 
+static nmo_status_t edit_report_add_input_parameter_handles(
+    nmo_edit_report_t *report,
+    size_t operation_index,
+    nmo_object_repository_t *repo,
+    const nmo_array_t *array)
+{
+    if (array == NULL || array->count == 0u) {
+        return NMO_OK;
+    }
+    if (array->element_size != sizeof(nmo_object_id_t) ||
+        array->data == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    const nmo_object_id_t *ids = (const nmo_object_id_t *)array->data;
+    for (size_t i = 0; i < array->count; ++i) {
+        NMO_RETURN_IF_ERROR(edit_report_add_named_handle(
+            report, operation_index, "input_param", repo, ids[i]));
+        nmo_object_t *param_obj =
+            repo != NULL ? nmo_object_repository_find_by_id(repo, ids[i]) : NULL;
+        nmo_parameterin_state_t *param_state = param_obj != NULL
+            ? (nmo_parameterin_state_t *)nmo_object_get_state(param_obj)
+            : NULL;
+        if (param_state != NULL && param_state->source_id != 0u) {
+            NMO_RETURN_IF_ERROR(edit_report_add_named_handle(
+                report,
+                operation_index,
+                "input_param_source",
+                repo,
+                param_state->source_id));
+        }
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t edit_report_add_node_child_handles(
     nmo_script_edit_tx_t *tx,
     nmo_edit_report_t *report,
@@ -1527,13 +1631,35 @@ static nmo_status_t edit_report_add_node_child_handles(
         report, operation_index, "input", repo, &state->inputs));
     NMO_RETURN_IF_ERROR(edit_report_add_array_handles(
         report, operation_index, "output", repo, &state->outputs));
-    NMO_RETURN_IF_ERROR(edit_report_add_array_handles(
-        report, operation_index, "input_param", repo, &state->in_parameters));
+    NMO_RETURN_IF_ERROR(edit_report_add_input_parameter_handles(
+        report, operation_index, repo, &state->in_parameters));
     NMO_RETURN_IF_ERROR(edit_report_add_array_handles(
         report, operation_index, "output_param", repo, &state->out_parameters));
     NMO_RETURN_IF_ERROR(edit_report_add_array_handles(
         report, operation_index, "local_param", repo, &state->local_parameters));
     return NMO_OK;
+}
+
+static nmo_status_t edit_report_resolve_operation_handle(
+    const nmo_edit_report_t *report,
+    size_t operation_index,
+    const char *handle_name,
+    nmo_object_id_t *out_id)
+{
+    if (report == NULL || handle_name == NULL || out_id == NULL ||
+        operation_index >= report->operation_count) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    const nmo_edit_operation_result_t *operation =
+        &report->operations[operation_index];
+    for (size_t i = 0; i < operation->handle_count; ++i) {
+        if (operation->handles[i].name != NULL &&
+            strcmp(operation->handles[i].name, handle_name) == 0) {
+            *out_id = operation->handles[i].id;
+            return NMO_OK;
+        }
+    }
+    return NMO_ERR_NOT_FOUND;
 }
 
 static nmo_object_id_t edit_op_deleted_id(const nmo_edit_op_t *op)
@@ -1759,8 +1885,12 @@ nmo_status_t nmo_edit_executor_execute_transaction(
                     report, deleted_id, op->kind, "primary");
             }
         }
+        nmo_object_id_t changed_id = edit_op_changed_id(op);
+        if (changed_id == 0u && result_id != 0u) {
+            changed_id = result_id;
+        }
         (void)nmo_edit_report_add_changed_object(
-            report, edit_op_changed_id(op), op->kind, "primary");
+            report, changed_id, op->kind, "primary");
     }
 
     rc = edit_executor_validate(tx, report, effective.validation_flags);
