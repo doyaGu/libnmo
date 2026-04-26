@@ -13,7 +13,7 @@ function __nmo_positionals
             continue
         end
         switch $cmd[$i]
-            case '-f' '--format' '--color' '-o' '--output' '--plugin' '-F' '--filter' '--top' '-m' '--max-bytes' '-c' '--class' '--name' '-o' '--output' '-n' '-d' '--depth' '--id' '--type-guid' '--kind' '--max-nodes' '--max-edges' '--bb-guid' '--version' '-p' '--parent' '--nodes' '--guid' '--type' '--from' '--max-depth' '--to' '--delay' '-b' '--owner' '-i' '--index' '-s' '--sort' '-t' '--out-dir' '-f' '--format' '-q' '--quality' '--file' '-r' '--row' '--col' '-v' '--value' '--bg-color' '--ambient' '--fog-color' '--camera' '--fov' '--near' '--far' '--diffuse' '--range' '--specular' '--emissive' '--power' '--replace' '--replace-name' '--strip' '--compress' '--max-objects' '--max-fields' '--min-similarity' '--rename-similarity' '--object'
+            case '-f' '--format' '--color' '-o' '--output' '--plugin' '-F' '--filter' '--top' '-m' '--max-bytes' '-c' '--class' '--name' '-o' '--output' '-n' '-d' '--depth' '--id' '--type-guid' '--kind' '--max-nodes' '--max-edges' '--bb-guid' '--version' '-p' '--parent' '--nodes' '--guid' '--type' '--from' '--max-depth' '--to' '--delay' '-b' '--owner' '-i' '--index' '-s' '--sort' '-t' '--out-dir' '-f' '--format' '-q' '--quality' '--file' '-r' '--row' '--col' '-v' '--value' '--bg-color' '--ambient' '--fog-color' '--camera' '--fov' '--near' '--far' '--diffuse' '--range' '--specular' '--emissive' '--power' '--replace' '--replace-name' '--strip' '--compress' '--max-objects' '--max-fields' '--min-similarity' '--rename-similarity' '--object' '--behavior' '--remove-link' '--from-io' '--to-io' '--parameter' '--dataarray' '--text'
                 set expect_value 1
             case '-*'
             case '*'
@@ -319,6 +319,7 @@ complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = debu
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = debug or test (__nmo_group) = dbg)' -a 'obj' -d 'Alias for objects'
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = debug or test (__nmo_group) = dbg)' -a 'export' -d 'Export JSON snapshot for debugging'
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = debug or test (__nmo_group) = dbg)' -a 'x' -d 'Alias for export'
+complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = debug or test (__nmo_group) = dbg)' -a 'probe' -d 'Inject diagnostic script probes'
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = repl)' -a 'start' -d 'Start interactive REPL'
 
 complete -c nmo -s h -l help -d 'Show help'
@@ -543,5 +544,18 @@ complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = diff
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = diff or test (__nmo_group) = d); and (test (__nmo_action) = chunks or test (__nmo_action) = ch)' -l object -r -d 'Compare a specific object'\''s chunks'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = debug or test (__nmo_group) = dbg); and (test (__nmo_action) = export or test (__nmo_action) = x)' -l data -d 'Include chunk raw bytes as data_hex'
 complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = debug or test (__nmo_group) = dbg); and (test (__nmo_action) = export or test (__nmo_action) = x)' -l max-bytes -r -d 'Limit emitted chunk bytes when --data is set (default 4096)'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = debug or test (__nmo_group) = dbg); and (test (__nmo_action) = probe)' -l behavior -r -d 'Parent behavior receiving the probe'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = debug or test (__nmo_group) = dbg); and (test (__nmo_action) = probe)' -l remove-link -r -d 'Existing link removed before inserting the probe'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = debug or test (__nmo_group) = dbg); and (test (__nmo_action) = probe)' -l from-io -r -d 'Existing source IO linked to the probe input'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = debug or test (__nmo_group) = dbg); and (test (__nmo_action) = probe)' -l to-io -r -d 'Existing target IO linked from the probe output'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = debug or test (__nmo_group) = dbg); and (test (__nmo_action) = probe)' -l parameter -r -d 'Source parameter connected to parameter-logger text input'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = debug or test (__nmo_group) = dbg); and (test (__nmo_action) = probe)' -l dataarray -r -d 'Data array id tagged by data-cell-logger'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = debug or test (__nmo_group) = dbg); and (test (__nmo_action) = probe)' -l row -r -d 'Data array row tagged by data-cell-logger'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = debug or test (__nmo_group) = dbg); and (test (__nmo_action) = probe)' -l col -r -d 'Data array column tagged by data-cell-logger'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = debug or test (__nmo_group) = dbg); and (test (__nmo_action) = probe)' -l delay -r -d 'Activation delay for the first generated probe link'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = debug or test (__nmo_group) = dbg); and (test (__nmo_action) = probe)' -l name -r -d 'Probe node name (default: nmo debug probe)'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = debug or test (__nmo_group) = dbg); and (test (__nmo_action) = probe)' -l text -r -d 'Probe text for 2d-text, console, debug-output, message-logger, or data-cell-logger'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = debug or test (__nmo_group) = dbg); and (test (__nmo_action) = probe)' -l dry-run -d 'Report the edit without saving'
+complete -c nmo -n 'test (__nmo_pos_count) -ge 2; and (test (__nmo_group) = debug or test (__nmo_group) = dbg); and (test (__nmo_action) = probe)' -s o -l output -r -d 'Output file (required unless --dry-run)'
 
 complete -c nmo -F -k -a '(for f in *.nmo *.cmo *.vmo *.json *.obj; test -f $f; and echo $f; end 2>/dev/null)'
