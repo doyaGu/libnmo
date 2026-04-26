@@ -1726,6 +1726,8 @@ nmo_status_t nmo_edit_plan_manifest_json_read(
                          "Patch root must be an object");
     }
     yyjson_val *version = yyjson_obj_get(root, "version");
+    yyjson_val *input = yyjson_obj_get(root, "input");
+    yyjson_val *output = yyjson_obj_get(root, "output");
     yyjson_val *ops = yyjson_obj_get(root, "operations");
     if (version == NULL || !yyjson_is_uint(version) ||
         yyjson_get_uint(version) != 2u) {
@@ -1733,10 +1735,23 @@ nmo_status_t nmo_edit_plan_manifest_json_read(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "Patch manifest version 2 is required");
     }
-    if (ops == NULL || !yyjson_is_arr(ops)) {
+    if (input == NULL || !yyjson_is_str(input) ||
+        yyjson_get_str(input)[0] == '\0') {
         yyjson_doc_free(doc);
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "Patch operations must be an array");
+                         "Patch root requires input");
+    }
+    if (output == NULL || !yyjson_is_str(output) ||
+        yyjson_get_str(output)[0] == '\0') {
+        yyjson_doc_free(doc);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Patch root requires output");
+    }
+    if (ops == NULL || !yyjson_is_arr(ops) ||
+        yyjson_arr_size(ops) == 0u) {
+        yyjson_doc_free(doc);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Patch operations must be a non-empty array");
     }
     static const char *const root_allowed[] = {
         "version", "input", "output", "operations",
@@ -1825,20 +1840,10 @@ nmo_status_t nmo_edit_plan_manifest_json_read(
     }
 
     if (st == NMO_OK) {
-        yyjson_val *input = yyjson_obj_get(root, "input");
-        yyjson_val *output = yyjson_obj_get(root, "output");
-        out_manifest->input_path =
-            input != NULL && yyjson_is_str(input)
-                ? dup_string(yyjson_get_str(input))
-                : NULL;
-        out_manifest->output_path =
-            output != NULL && yyjson_is_str(output)
-                ? dup_string(yyjson_get_str(output))
-                : NULL;
-        if ((input != NULL && yyjson_is_str(input) &&
-             out_manifest->input_path == NULL) ||
-            (output != NULL && yyjson_is_str(output) &&
-             out_manifest->output_path == NULL)) {
+        out_manifest->input_path = dup_string(yyjson_get_str(input));
+        out_manifest->output_path = dup_string(yyjson_get_str(output));
+        if (out_manifest->input_path == NULL ||
+            out_manifest->output_path == NULL) {
             st = NMO_ERR_NOMEM;
         } else {
             out_manifest->plan = plan;

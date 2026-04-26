@@ -345,9 +345,51 @@ TEST(edit_plan_json, reads_manifest_from_file) {
     remove(path);
 }
 
+TEST(edit_plan_json, rejects_incomplete_manifest_roots) {
+    nmo_edit_plan_manifest_t manifest;
+    memset(&manifest, 0, sizeof(manifest));
+
+    const char *missing_input =
+        "{"
+        "\"version\":2,"
+        "\"output\":\"out.cmo\","
+        "\"operations\":[{\"op\":\"add_io\",\"behavior_id\":1,"
+        "\"kind\":\"input\",\"name\":\"In\"}]"
+        "}";
+    ASSERT_NE(NMO_OK,
+              nmo_edit_plan_manifest_json_read(
+                  missing_input, strlen(missing_input), &manifest));
+    nmo_edit_plan_manifest_dispose(&manifest);
+
+    const char *missing_output =
+        "{"
+        "\"version\":2,"
+        "\"input\":\"in.cmo\","
+        "\"operations\":[{\"op\":\"add_io\",\"behavior_id\":1,"
+        "\"kind\":\"input\",\"name\":\"In\"}]"
+        "}";
+    ASSERT_NE(NMO_OK,
+              nmo_edit_plan_manifest_json_read(
+                  missing_output, strlen(missing_output), &manifest));
+    nmo_edit_plan_manifest_dispose(&manifest);
+
+    const char *empty_operations =
+        "{"
+        "\"version\":2,"
+        "\"input\":\"in.cmo\","
+        "\"output\":\"out.cmo\","
+        "\"operations\":[]"
+        "}";
+    ASSERT_NE(NMO_OK,
+              nmo_edit_plan_manifest_json_read(
+                  empty_operations, strlen(empty_operations), &manifest));
+    nmo_edit_plan_manifest_dispose(&manifest);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(edit_plan_json, writes_manifest_with_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, reads_manifest_with_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, roundtrips_all_current_v2_ops);
 REGISTER_TEST(edit_plan_json, reads_manifest_from_file);
+REGISTER_TEST(edit_plan_json, rejects_incomplete_manifest_roots);
 TEST_MAIN_END()
