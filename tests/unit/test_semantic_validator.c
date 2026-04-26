@@ -226,10 +226,44 @@ TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_reports_operation_type_mismatch)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init(&fixture);
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_operation(
+                  plan,
+                  6u,
+                  nmo_guid_parse("33CC6B49-3589282B"),
+                  13u,
+                  0u,
+                  7u));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *mismatch =
+        find_risk(risks, risk_count, "operation_type_mismatch");
+    ASSERT_NOT_NULL(mismatch);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, mismatch->severity);
+    ASSERT_EQ(6u, mismatch->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, boundary_reports_dangling_delay_and_shared_risks);
     REGISTER_TEST(semantic_validator, detects_message_flow_by_signature_metadata);
     REGISTER_TEST(semantic_validator, edit_plan_rejects_missing_replace_target);
     REGISTER_TEST(semantic_validator, edit_plan_reports_generic_op_risks);
     REGISTER_TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_operation_type_mismatch);
 TEST_MAIN_END()

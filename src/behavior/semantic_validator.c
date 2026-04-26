@@ -14,6 +14,8 @@
 #include "object/nmo_object_repository.h"
 #include "../runtime/runtime_internal.h"
 #include "runtime/nmo_context.h"
+#include "type/nmo_operation_system.h"
+#include "type/nmo_type_system.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -279,7 +281,118 @@ static nmo_status_t semantic_add_parameter_type_mismatch_risk(
         target_parameter_id);
 }
 
+static const nmo_type_descriptor_t *semantic_parameter_type_desc(
+    nmo_context_t *ctx,
+    nmo_object_repository_t *repo,
+    nmo_object_id_t parameter_id)
+{
+    nmo_guid_t type_guid = NMO_GUID_NULL;
+    if (ctx == NULL ||
+        !semantic_parameter_type_guid(repo, parameter_id, &type_guid) ||
+        nmo_guid_is_null(type_guid)) {
+        return NULL;
+    }
+
+    nmo_type_registry_t *type_registry = nmo_context_get_type_registry(ctx);
+    return type_registry != NULL
+        ? nmo_type_registry_find_by_guid(type_registry, type_guid)
+        : NULL;
+}
+
+static nmo_status_t semantic_add_operation_type_risk(
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    const char *code,
+    const char *message,
+    nmo_object_id_t object_id)
+{
+    return semantic_add_risk(
+        risks,
+        risk_count,
+        NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+        code,
+        message,
+        object_id);
+}
+
+static nmo_status_t semantic_add_operation_signature_risk(
+    nmo_context_t *ctx,
+    nmo_object_repository_t *repo,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t object_id,
+    nmo_guid_t operation_guid,
+    nmo_object_id_t in1_parameter_id,
+    nmo_object_id_t in2_parameter_id,
+    nmo_object_id_t out_parameter_id)
+{
+    if (nmo_guid_is_null(operation_guid) ||
+        (in1_parameter_id == 0u &&
+         in2_parameter_id == 0u &&
+         out_parameter_id == 0u)) {
+        return NMO_OK;
+    }
+
+    nmo_operation_registry_t *operation_registry =
+        ctx != NULL ? nmo_context_get_operation_registry(ctx) : NULL;
+    nmo_type_registry_t *type_registry =
+        ctx != NULL ? nmo_context_get_type_registry(ctx) : NULL;
+    if (operation_registry == NULL || type_registry == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    const nmo_type_descriptor_t *in1_type =
+        in1_parameter_id != 0u
+            ? semantic_parameter_type_desc(ctx, repo, in1_parameter_id)
+            : NULL;
+    const nmo_type_descriptor_t *in2_type =
+        in2_parameter_id != 0u
+            ? semantic_parameter_type_desc(ctx, repo, in2_parameter_id)
+            : NULL;
+    const nmo_type_descriptor_t *out_type =
+        out_parameter_id != 0u
+            ? semantic_parameter_type_desc(ctx, repo, out_parameter_id)
+            : NULL;
+
+    if ((in1_parameter_id != 0u && in1_type == NULL) ||
+        (in2_parameter_id != 0u && in2_type == NULL) ||
+        (out_parameter_id != 0u && out_type == NULL)) {
+        return NMO_OK;
+    }
+
+    const nmo_operation_tree_cell_t *cell = NULL;
+    nmo_status_t rc = out_type != NULL
+        ? nmo_operation_registry_find_typed(
+              operation_registry,
+              &operation_guid,
+              in1_type,
+              in2_type,
+              out_type,
+              type_registry,
+              &cell)
+        : nmo_operation_registry_find(
+              operation_registry,
+              &operation_guid,
+              in1_type,
+              in2_type,
+              type_registry,
+              &cell);
+    if (rc == NMO_OK) {
+        return NMO_OK;
+    }
+    if (rc == NMO_ERR_NOT_FOUND || rc == NMO_ERR_VALIDATION_FAILED) {
+        return semantic_add_operation_type_risk(
+            risks,
+            risk_count,
+            "operation_type_mismatch",
+            "Parameter operation slots are incompatible with the operation signature",
+            object_id);
+    }
+    return rc;
+}
+
 static nmo_status_t semantic_validate_basic_edit_op(
+    nmo_context_t *ctx,
     nmo_object_repository_t *repo,
     const nmo_edit_op_t *op,
     nmo_behavior_semantic_risk_t **risks,
@@ -392,7 +505,21 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 repo, risks, risk_count,
                 op->data.add_operation.out_parameter_id));
         }
-        return NMO_OK;
+        if (op->data.add_operation.has_in1_parameter_ref ||
+            op->data.add_operation.has_in2_parameter_ref ||
+            op->data.add_operation.has_out_parameter_ref) {
+            return NMO_OK;
+        }
+        return semantic_add_operation_signature_risk(
+            ctx,
+            repo,
+            risks,
+            risk_count,
+            op->data.add_operation.parent_behavior_id,
+            op->data.add_operation.operation_guid,
+            op->data.add_operation.in1_parameter_id,
+            op->data.add_operation.in2_parameter_id,
+            op->data.add_operation.out_parameter_id);
     case NMO_EDIT_OP_REWIRE_OPERATION:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,
@@ -512,6 +639,7 @@ nmo_status_t nmo_semantic_validate_edit_plan(
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
     nmo_status_t rc = NMO_OK;
+    nmo_context_t *ctx = nmo_workspace_internal_context(workspace);
     nmo_object_repository_t *repo =
         nmo_workspace_internal_repository(workspace);
     if (repo == NULL) {
@@ -524,7 +652,7 @@ nmo_status_t nmo_semantic_validate_edit_plan(
             continue;
         }
         rc = semantic_validate_basic_edit_op(
-            repo, op, &risks, &risk_count);
+            ctx, repo, op, &risks, &risk_count);
         if (rc != NMO_OK) {
             goto fail;
         }
