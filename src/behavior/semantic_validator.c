@@ -475,6 +475,48 @@ static nmo_status_t semantic_add_control_handle_ref_risk(
         object_id);
 }
 
+static bool semantic_handle_ref_is_parameter(
+    const nmo_edit_plan_t *plan,
+    size_t ref_index,
+    const char *handle_name)
+{
+    const nmo_edit_op_t *ref_op = nmo_edit_plan_get(plan, ref_index);
+    if (ref_op == NULL || handle_name == NULL) {
+        return false;
+    }
+    if (ref_op->kind == NMO_EDIT_OP_ADD_PARAMETER) {
+        return strcmp(handle_name, "parameter") == 0;
+    }
+    if (ref_op->kind == NMO_EDIT_OP_ADD_NODE) {
+        return strcmp(handle_name, "target") == 0 ||
+               semantic_handle_has_prefix(handle_name, "input_param") ||
+               semantic_handle_has_prefix(handle_name, "input_param_source") ||
+               semantic_handle_has_prefix(handle_name, "output_param") ||
+               semantic_handle_has_prefix(handle_name, "local_param");
+    }
+    return false;
+}
+
+static nmo_status_t semantic_add_parameter_handle_ref_risk(
+    const nmo_edit_plan_t *plan,
+    size_t ref_index,
+    const char *handle_name,
+    nmo_object_id_t object_id,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count)
+{
+    if (semantic_handle_ref_is_parameter(plan, ref_index, handle_name)) {
+        return NMO_OK;
+    }
+    return semantic_add_risk(
+        risks,
+        risk_count,
+        NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+        "parameter_object_type_mismatch",
+        "Parameter handle must resolve to a parameter object",
+        object_id);
+}
+
 static nmo_status_t semantic_add_invalid_handle_ref_risk(
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
@@ -872,10 +914,17 @@ static nmo_status_t semantic_validate_basic_edit_op(
     case NMO_EDIT_OP_SET_PARAMETER_BYTES:
         if (op->kind == NMO_EDIT_OP_SET_PARAMETER_VALUE &&
             op->data.set_value.has_parameter_ref) {
-            return semantic_validate_handle_ref(
+            NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
                 ctx,
                 plan,
                 op_index,
+                op->data.set_value.parameter_ref_operation_index,
+                op->data.set_value.parameter_ref_handle,
+                op->primary_id,
+                risks,
+                risk_count));
+            return semantic_add_parameter_handle_ref_risk(
+                plan,
                 op->data.set_value.parameter_ref_operation_index,
                 op->data.set_value.parameter_ref_handle,
                 op->primary_id,
@@ -884,10 +933,17 @@ static nmo_status_t semantic_validate_basic_edit_op(
         }
         if (op->kind == NMO_EDIT_OP_SET_PARAMETER_BYTES &&
             op->data.set_bytes.has_parameter_ref) {
-            return semantic_validate_handle_ref(
+            NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
                 ctx,
                 plan,
                 op_index,
+                op->data.set_bytes.parameter_ref_operation_index,
+                op->data.set_bytes.parameter_ref_handle,
+                op->primary_id,
+                risks,
+                risk_count));
+            return semantic_add_parameter_handle_ref_risk(
+                plan,
                 op->data.set_bytes.parameter_ref_operation_index,
                 op->data.set_bytes.parameter_ref_handle,
                 op->primary_id,
@@ -1092,10 +1148,17 @@ static nmo_status_t semantic_validate_basic_edit_op(
             repo, risks, risk_count,
             op->data.connect_parameter.source_parameter_id));
         if (op->data.connect_parameter.has_target_parameter_ref) {
-            return semantic_validate_handle_ref(
+            NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
                 ctx,
                 plan,
                 op_index,
+                op->data.connect_parameter.target_parameter_ref_operation_index,
+                op->data.connect_parameter.target_parameter_ref_handle,
+                op->primary_id,
+                risks,
+                risk_count));
+            return semantic_add_parameter_handle_ref_risk(
+                plan,
                 op->data.connect_parameter.target_parameter_ref_operation_index,
                 op->data.connect_parameter.target_parameter_ref_handle,
                 op->primary_id,
@@ -1147,6 +1210,13 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 op->primary_id,
                 risks,
                 risk_count));
+            NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
+                plan,
+                op->data.add_operation.in1_parameter_ref_operation_index,
+                op->data.add_operation.in1_parameter_ref_handle,
+                op->primary_id,
+                risks,
+                risk_count));
         } else {
             NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
                 repo, risks, risk_count,
@@ -1165,6 +1235,13 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 op->primary_id,
                 risks,
                 risk_count));
+            NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
+                plan,
+                op->data.add_operation.in2_parameter_ref_operation_index,
+                op->data.add_operation.in2_parameter_ref_handle,
+                op->primary_id,
+                risks,
+                risk_count));
         } else {
             NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
                 repo, risks, risk_count,
@@ -1178,6 +1255,13 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 ctx,
                 plan,
                 op_index,
+                op->data.add_operation.out_parameter_ref_operation_index,
+                op->data.add_operation.out_parameter_ref_handle,
+                op->primary_id,
+                risks,
+                risk_count));
+            NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
+                plan,
                 op->data.add_operation.out_parameter_ref_operation_index,
                 op->data.add_operation.out_parameter_ref_handle,
                 op->primary_id,
