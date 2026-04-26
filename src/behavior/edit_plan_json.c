@@ -633,9 +633,15 @@ static bool read_required_u32(yyjson_val *obj,
     yyjson_val *value = yyjson_obj_get(obj, key);
     if (value == NULL || !yyjson_is_uint(value) ||
         yyjson_get_uint(value) > UINT32_MAX) {
+        nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                            __FILE__, __LINE__,
+                            "Missing or invalid %s", key);
         return false;
     }
     if (!allow_zero && yyjson_get_uint(value) == 0u) {
+        nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                            __FILE__, __LINE__,
+                            "Missing or invalid %s", key);
         return false;
     }
     *out_value = (uint32_t)yyjson_get_uint(value);
@@ -651,6 +657,9 @@ static bool read_optional_u32(yyjson_val *obj,
         return true;
     }
     if (!yyjson_is_uint(value) || yyjson_get_uint(value) > UINT32_MAX) {
+        nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                            __FILE__, __LINE__,
+                            "Invalid %s", key);
         return false;
     }
     *out_value = (uint32_t)yyjson_get_uint(value);
@@ -668,6 +677,9 @@ static bool read_optional_bool(yyjson_val *obj,
         return true;
     }
     if (!yyjson_is_bool(value)) {
+        nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                            __FILE__, __LINE__,
+                            "Invalid %s", key);
         return false;
     }
     *out_value = yyjson_get_bool(value);
@@ -681,6 +693,9 @@ static bool read_required_string(yyjson_val *obj,
     yyjson_val *value = yyjson_obj_get(obj, key);
     if (value == NULL || !yyjson_is_str(value) ||
         yyjson_get_str(value)[0] == '\0') {
+        nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                            __FILE__, __LINE__,
+                            "Missing or invalid %s", key);
         return false;
     }
     *out_value = yyjson_get_str(value);
@@ -1161,22 +1176,35 @@ static nmo_status_t parse_add_behavior_link(yyjson_val *op_obj,
     bool has_from_ref = from_operation_val != NULL || from_handle_val != NULL;
     bool has_to_id = to_id_val != NULL;
     bool has_to_ref = to_operation_val != NULL || to_handle_val != NULL;
-    if (has_from_id == has_from_ref || has_to_id == has_to_ref) {
-        return NMO_ERR_INVALID_FORMAT;
+    if (has_from_id == has_from_ref) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "add_behavior_link requires either from_io_id or from_operation plus from_handle");
+    }
+    if (has_to_id == has_to_ref) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "add_behavior_link requires either to_io_id or to_operation plus to_handle");
     }
     if (has_from_ref) {
         if (from_operation_val == NULL || !yyjson_is_uint(from_operation_val) ||
-            yyjson_get_uint(from_operation_val) == 0u ||
-            from_handle_val == NULL || !yyjson_is_str(from_handle_val) ||
+            yyjson_get_uint(from_operation_val) == 0u) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Missing or invalid from_operation");
+        }
+        if (from_handle_val == NULL || !yyjson_is_str(from_handle_val) ||
             yyjson_get_str(from_handle_val)[0] == '\0') {
-            return NMO_ERR_INVALID_FORMAT;
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Missing or invalid from_handle");
         }
         if (has_to_ref) {
             if (to_operation_val == NULL || !yyjson_is_uint(to_operation_val) ||
-                yyjson_get_uint(to_operation_val) == 0u ||
-                to_handle_val == NULL || !yyjson_is_str(to_handle_val) ||
+                yyjson_get_uint(to_operation_val) == 0u) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "Missing or invalid to_operation");
+            }
+            if (to_handle_val == NULL || !yyjson_is_str(to_handle_val) ||
                 yyjson_get_str(to_handle_val)[0] == '\0') {
-                return NMO_ERR_INVALID_FORMAT;
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "Missing or invalid to_handle");
             }
             return nmo_edit_plan_add_behavior_link_from_handles(
                 plan, parent_id,
@@ -1188,7 +1216,8 @@ static nmo_status_t parse_add_behavior_link(yyjson_val *op_obj,
         }
         if (!yyjson_is_uint(to_id_val) || yyjson_get_uint(to_id_val) == 0u ||
             yyjson_get_uint(to_id_val) > UINT32_MAX) {
-            return NMO_ERR_INVALID_FORMAT;
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Missing or invalid to_io_id");
         }
         return nmo_edit_plan_add_behavior_link_from_handle(
             plan, parent_id,
@@ -1199,14 +1228,19 @@ static nmo_status_t parse_add_behavior_link(yyjson_val *op_obj,
     }
     if (!yyjson_is_uint(from_id_val) || yyjson_get_uint(from_id_val) == 0u ||
         yyjson_get_uint(from_id_val) > UINT32_MAX) {
-        return NMO_ERR_INVALID_FORMAT;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Missing or invalid from_io_id");
     }
     if (has_to_ref) {
         if (to_operation_val == NULL || !yyjson_is_uint(to_operation_val) ||
-            yyjson_get_uint(to_operation_val) == 0u ||
-            to_handle_val == NULL || !yyjson_is_str(to_handle_val) ||
+            yyjson_get_uint(to_operation_val) == 0u) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Missing or invalid to_operation");
+        }
+        if (to_handle_val == NULL || !yyjson_is_str(to_handle_val) ||
             yyjson_get_str(to_handle_val)[0] == '\0') {
-            return NMO_ERR_INVALID_FORMAT;
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Missing or invalid to_handle");
         }
         return nmo_edit_plan_add_behavior_link_to_handle(
             plan, parent_id,
@@ -1217,7 +1251,8 @@ static nmo_status_t parse_add_behavior_link(yyjson_val *op_obj,
     }
     if (!yyjson_is_uint(to_id_val) || yyjson_get_uint(to_id_val) == 0u ||
         yyjson_get_uint(to_id_val) > UINT32_MAX) {
-        return NMO_ERR_INVALID_FORMAT;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Missing or invalid to_io_id");
     }
     return nmo_edit_plan_add_behavior_link(
         plan, parent_id,
@@ -1455,6 +1490,10 @@ static nmo_status_t parse_rewire_operation(yyjson_val *op_obj,
             return NMO_ERR_INVALID_FORMAT;
         }
         slot_flags |= NMO_SCRIPT_EDIT_OP_SLOT_OUT;
+    }
+    if (slot_flags == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "rewire_operation requires in1_id, in2_id, or out_id");
     }
     return nmo_edit_plan_add_rewire_operation(
         plan, operation_id, slot_flags, in1_id, in2_id, out_id);

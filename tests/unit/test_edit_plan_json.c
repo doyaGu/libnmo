@@ -2,6 +2,7 @@
 
 #include "behavior/nmo_edit_plan.h"
 #include "behavior/nmo_edit_plan_json.h"
+#include "core/nmo_error.h"
 #include "type/nmo_type_guids.h"
 #include "yyjson.h"
 
@@ -35,6 +36,29 @@ static void assert_plan_op_kind(const nmo_edit_plan_t *plan,
     const nmo_edit_op_t *op = nmo_edit_plan_get(plan, index);
     ASSERT_NOT_NULL(op);
     ASSERT_EQ(expected, op->kind);
+}
+
+static void assert_manifest_invalid_contains(const char *operations_json,
+                                             const char *expected_message)
+{
+    char json[2048];
+    nmo_edit_plan_manifest_t manifest;
+    memset(&manifest, 0, sizeof(manifest));
+    snprintf(json, sizeof(json),
+             "{"
+             "\"version\":2,"
+             "\"input\":\"in.cmo\","
+             "\"output\":\"out.cmo\","
+             "\"operations\":[%s]"
+             "}",
+             operations_json);
+
+    nmo_last_error_clear();
+    ASSERT_NE(NMO_OK,
+              nmo_edit_plan_manifest_json_read(
+                  json, strlen(json), &manifest));
+    ASSERT_STR_CONTAINS(nmo_last_error_message(), expected_message);
+    nmo_edit_plan_manifest_dispose(&manifest);
 }
 
 TEST(edit_plan_json, writes_manifest_with_operation_handle_refs) {
@@ -386,10 +410,47 @@ TEST(edit_plan_json, rejects_incomplete_manifest_roots) {
     nmo_edit_plan_manifest_dispose(&manifest);
 }
 
+TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics) {
+    assert_manifest_invalid_contains(
+        "{\"op\":\"add_io\",\"kind\":\"input\",\"name\":\"In\"}",
+        "Missing or invalid behavior_id");
+
+    assert_manifest_invalid_contains(
+        "{\"op\":\"add_io\",\"behavior_id\":1,\"kind\":\"input\","
+        "\"name\":\"In\",\"extra\":true}",
+        "Unknown field 'extra' in add_io operation");
+
+    assert_manifest_invalid_contains(
+        "{\"op\":\"add_behavior_link\",\"parent_id\":1,"
+        "\"from_io_id\":2,\"from_operation\":1,\"from_handle\":\"out\","
+        "\"to_io_id\":3}",
+        "add_behavior_link requires either from_io_id or from_operation plus from_handle");
+
+    assert_manifest_invalid_contains(
+        "{\"op\":\"add_behavior_link\",\"parent_id\":1,"
+        "\"from_operation\":1,\"to_io_id\":3}",
+        "Missing or invalid from_handle");
+
+    assert_manifest_invalid_contains(
+        "{\"op\":\"add_operation\",\"parent_id\":1,"
+        "\"operation_guid\":\"33CC6B49-3589282B\","
+        "\"in1_operation\":0,\"in1_handle\":\"parameter\"}",
+        "Missing or invalid in1_operation");
+
+    assert_manifest_invalid_contains(
+        "{\"op\":\"rewire_operation\",\"operation_id\":1}",
+        "rewire_operation requires in1_id, in2_id, or out_id");
+
+    assert_manifest_invalid_contains(
+        "{\"op\":\"unknown_edit\"}",
+        "Unsupported patch op 'unknown_edit'");
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(edit_plan_json, writes_manifest_with_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, reads_manifest_with_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, roundtrips_all_current_v2_ops);
 REGISTER_TEST(edit_plan_json, reads_manifest_from_file);
 REGISTER_TEST(edit_plan_json, rejects_incomplete_manifest_roots);
+REGISTER_TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics);
 TEST_MAIN_END()
