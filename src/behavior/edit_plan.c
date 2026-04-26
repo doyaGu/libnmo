@@ -2230,7 +2230,8 @@ static nmo_status_t edit_executor_validate(
 static nmo_status_t edit_executor_validate_semantics(
     nmo_script_edit_tx_t *tx,
     const nmo_edit_plan_t *plan,
-    nmo_edit_report_t *report)
+    nmo_edit_report_t *report,
+    bool allow_rewrite_analysis_failure)
 {
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
@@ -2238,11 +2239,30 @@ static nmo_status_t edit_executor_validate_semantics(
         nmo_script_edit_workspace(tx), plan, &risks, &risk_count);
     if (rc != NMO_OK) {
         nmo_semantic_risks_free(risks);
+        if (allow_rewrite_analysis_failure &&
+            (rc == NMO_ERR_INVALID_STATE || rc == NMO_ERR_NOT_FOUND ||
+             rc == NMO_ERR_VALIDATION_FAILED)) {
+            return NMO_OK;
+        }
         return rc;
     }
     rc = nmo_edit_report_merge_semantic_risks(report, risks, risk_count);
     nmo_semantic_risks_free(risks);
     return rc;
+}
+
+static bool edit_plan_contains_rewrite_op(const nmo_edit_plan_t *plan)
+{
+    if (plan == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < plan->count; ++i) {
+        if (plan->ops[i].kind == NMO_EDIT_OP_FOLD ||
+            plan->ops[i].kind == NMO_EDIT_OP_REPLACE_BB) {
+            return true;
+        }
+    }
+    return false;
 }
 
 nmo_status_t nmo_edit_executor_execute(
@@ -2298,13 +2318,13 @@ nmo_status_t nmo_edit_executor_execute_transaction(
     nmo_status_t rc = NMO_OK;
     NMO_RETURN_IF_ERROR(edit_report_prepare(report, plan, effective.dry_run));
 
-    rc = edit_executor_validate_semantics(tx, plan, report);
-    if (rc != NMO_OK && rc != NMO_ERR_INVALID_STATE) {
+    const bool has_rewrite_ops = edit_plan_contains_rewrite_op(plan);
+    rc = edit_executor_validate_semantics(tx, plan, report, has_rewrite_ops);
+    if (rc != NMO_OK) {
         report->ok = false;
         report->status = rc;
         return rc;
     }
-    rc = NMO_OK;
 
     for (size_t i = 0; i < plan->count; i++) {
         const nmo_edit_op_t *op = &plan->ops[i];
@@ -2402,6 +2422,14 @@ nmo_status_t nmo_edit_executor_execute_transaction(
         }
         (void)nmo_edit_report_add_changed_object(
             report, changed_id, op->kind, "primary");
+    }
+
+    rc = edit_executor_validate_semantics(
+        tx, plan, report, has_rewrite_ops);
+    if (rc != NMO_OK) {
+        report->ok = false;
+        report->status = rc;
+        return rc;
     }
 
     rc = edit_executor_validate(tx, report, effective.validation_flags);
