@@ -521,13 +521,19 @@ static yyjson_mut_val *edit_op_to_json(yyjson_mut_doc *doc,
     return obj;
 }
 
-nmo_status_t nmo_edit_plan_manifest_json_write(
+static nmo_status_t edit_plan_json_write_root(
     const nmo_edit_plan_t *plan,
     const char *input_path,
     const char *output_path,
+    bool include_paths,
     char **out_json)
 {
     if (plan == NULL || out_json == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (include_paths &&
+        (input_path == NULL || input_path[0] == '\0' ||
+         output_path == NULL || output_path[0] == '\0')) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     *out_json = NULL;
@@ -545,8 +551,10 @@ nmo_status_t nmo_edit_plan_manifest_json_write(
     yyjson_mut_doc_set_root(doc, root);
 
     yyjson_mut_obj_add_uint(doc, root, "version", 2u);
-    add_str_safe(doc, root, "input", input_path);
-    add_str_safe(doc, root, "output", output_path);
+    if (include_paths) {
+        add_str_safe(doc, root, "input", input_path);
+        add_str_safe(doc, root, "output", output_path);
+    }
 
     size_t count = nmo_edit_plan_count(plan);
     for (size_t i = 0; i < count; ++i) {
@@ -569,6 +577,23 @@ nmo_status_t nmo_edit_plan_manifest_json_write(
 
     *out_json = json;
     return NMO_OK;
+}
+
+nmo_status_t nmo_edit_plan_json_write(
+    const nmo_edit_plan_t *plan,
+    char **out_json)
+{
+    return edit_plan_json_write_root(plan, NULL, NULL, false, out_json);
+}
+
+nmo_status_t nmo_edit_plan_manifest_json_write(
+    const nmo_edit_plan_t *plan,
+    const char *input_path,
+    const char *output_path,
+    char **out_json)
+{
+    return edit_plan_json_write_root(
+        plan, input_path, output_path, true, out_json);
 }
 
 static char *dup_string(const char *value)
@@ -1744,6 +1769,137 @@ static nmo_status_t parse_replace_bb(yyjson_val *op_obj,
     return nmo_edit_plan_add_replace_bb(plan, &desc);
 }
 
+static nmo_status_t parse_operations_array(yyjson_val *ops,
+                                           nmo_edit_plan_t *plan)
+{
+    yyjson_val *op_obj = NULL;
+    yyjson_arr_iter iter;
+    yyjson_arr_iter_init(ops, &iter);
+    while ((op_obj = yyjson_arr_iter_next(&iter)) != NULL) {
+        nmo_status_t st = NMO_OK;
+        if (!yyjson_is_obj(op_obj)) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
+        const char *op_name = NULL;
+        if (!read_required_string(op_obj, "op", &op_name)) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
+        if (strcmp(op_name, "set_parameter_value") == 0) {
+            st = parse_set_parameter_value(op_obj, plan);
+        } else if (strcmp(op_name, "set_parameter_bytes") == 0) {
+            st = parse_set_parameter_bytes(op_obj, plan);
+        } else if (strcmp(op_name, "add_node") == 0) {
+            st = parse_add_node(op_obj, plan);
+        } else if (strcmp(op_name, "remove_node") == 0) {
+            st = parse_remove_node(op_obj, plan);
+        } else if (strcmp(op_name, "add_io") == 0) {
+            st = parse_add_io(op_obj, plan);
+        } else if (strcmp(op_name, "rename_io") == 0) {
+            st = parse_rename_io(op_obj, plan);
+        } else if (strcmp(op_name, "remove_io") == 0) {
+            st = parse_remove_io(op_obj, plan);
+        } else if (strcmp(op_name, "add_behavior_link") == 0) {
+            st = parse_add_behavior_link(op_obj, plan);
+        } else if (strcmp(op_name, "rewire_behavior_link") == 0) {
+            st = parse_rewire_behavior_link(op_obj, plan);
+        } else if (strcmp(op_name, "set_behavior_link_delay") == 0) {
+            st = parse_set_behavior_link_delay(op_obj, plan);
+        } else if (strcmp(op_name, "remove_behavior_link") == 0) {
+            st = parse_remove_behavior_link(op_obj, plan);
+        } else if (strcmp(op_name, "add_parameter") == 0) {
+            st = parse_add_parameter(op_obj, plan);
+        } else if (strcmp(op_name, "connect_parameter") == 0) {
+            st = parse_connect_parameter(op_obj, plan);
+        } else if (strcmp(op_name, "disconnect_parameter") == 0) {
+            st = parse_disconnect_parameter(op_obj, plan);
+        } else if (strcmp(op_name, "remove_parameter") == 0) {
+            st = parse_remove_parameter(op_obj, plan);
+        } else if (strcmp(op_name, "add_operation") == 0) {
+            st = parse_add_operation(op_obj, plan);
+        } else if (strcmp(op_name, "rewire_operation") == 0) {
+            st = parse_rewire_operation(op_obj, plan);
+        } else if (strcmp(op_name, "remove_operation") == 0) {
+            st = parse_remove_operation(op_obj, plan);
+        } else if (strcmp(op_name, "interface_policy") == 0) {
+            st = parse_interface_policy(op_obj, plan);
+        } else if (strcmp(op_name, "set_data_cell") == 0) {
+            st = parse_set_data_cell(op_obj, plan);
+        } else if (strcmp(op_name, "fold") == 0) {
+            st = parse_fold(op_obj, plan);
+        } else if (strcmp(op_name, "replace_bb") == 0) {
+            st = parse_replace_bb(op_obj, plan);
+        } else {
+            nmo_last_error_setf(NMO_ERR_NOT_SUPPORTED, NMO_SEVERITY_ERROR,
+                                __FILE__, __LINE__,
+                                "Unsupported patch op '%s'", op_name);
+            st = NMO_ERR_NOT_SUPPORTED;
+        }
+        if (st != NMO_OK) {
+            return st;
+        }
+    }
+    return NMO_OK;
+}
+
+nmo_status_t nmo_edit_plan_json_read(
+    const char *json,
+    size_t json_len,
+    nmo_edit_plan_t **out_plan)
+{
+    if (json == NULL || out_plan == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_plan = NULL;
+
+    yyjson_doc *doc = yyjson_read(json, json_len, 0);
+    if (doc == NULL) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    if (root == NULL || !yyjson_is_obj(root)) {
+        yyjson_doc_free(doc);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Edit plan root must be an object");
+    }
+    yyjson_val *version = yyjson_obj_get(root, "version");
+    yyjson_val *ops = yyjson_obj_get(root, "operations");
+    if (version == NULL || !yyjson_is_uint(version) ||
+        yyjson_get_uint(version) != 2u) {
+        yyjson_doc_free(doc);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Edit plan version 2 is required");
+    }
+    if (ops == NULL || !yyjson_is_arr(ops) ||
+        yyjson_arr_size(ops) == 0u) {
+        yyjson_doc_free(doc);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Edit plan operations must be a non-empty array");
+    }
+    static const char *const root_allowed[] = {
+        "version", "operations",
+    };
+    nmo_status_t st = reject_unknown_fields(
+        root, "edit plan root", root_allowed,
+        sizeof(root_allowed) / sizeof(root_allowed[0]));
+    if (st != NMO_OK) {
+        yyjson_doc_free(doc);
+        return st;
+    }
+
+    nmo_edit_plan_t *plan = NULL;
+    st = nmo_edit_plan_create(&plan);
+    if (st == NMO_OK) {
+        st = parse_operations_array(ops, plan);
+    }
+    yyjson_doc_free(doc);
+    if (st != NMO_OK) {
+        nmo_edit_plan_destroy(plan);
+        return st;
+    }
+    *out_plan = plan;
+    return NMO_OK;
+}
+
 nmo_status_t nmo_edit_plan_manifest_json_read(
     const char *json,
     size_t json_len,
@@ -1810,73 +1966,7 @@ nmo_status_t nmo_edit_plan_manifest_json_read(
         return st;
     }
 
-    yyjson_val *op_obj = NULL;
-    yyjson_arr_iter iter;
-    yyjson_arr_iter_init(ops, &iter);
-    while ((op_obj = yyjson_arr_iter_next(&iter)) != NULL) {
-        if (!yyjson_is_obj(op_obj)) {
-            st = NMO_ERR_INVALID_FORMAT;
-            break;
-        }
-        const char *op_name = NULL;
-        if (!read_required_string(op_obj, "op", &op_name)) {
-            st = NMO_ERR_INVALID_FORMAT;
-            break;
-        }
-        if (strcmp(op_name, "set_parameter_value") == 0) {
-            st = parse_set_parameter_value(op_obj, plan);
-        } else if (strcmp(op_name, "set_parameter_bytes") == 0) {
-            st = parse_set_parameter_bytes(op_obj, plan);
-        } else if (strcmp(op_name, "add_node") == 0) {
-            st = parse_add_node(op_obj, plan);
-        } else if (strcmp(op_name, "remove_node") == 0) {
-            st = parse_remove_node(op_obj, plan);
-        } else if (strcmp(op_name, "add_io") == 0) {
-            st = parse_add_io(op_obj, plan);
-        } else if (strcmp(op_name, "rename_io") == 0) {
-            st = parse_rename_io(op_obj, plan);
-        } else if (strcmp(op_name, "remove_io") == 0) {
-            st = parse_remove_io(op_obj, plan);
-        } else if (strcmp(op_name, "add_behavior_link") == 0) {
-            st = parse_add_behavior_link(op_obj, plan);
-        } else if (strcmp(op_name, "rewire_behavior_link") == 0) {
-            st = parse_rewire_behavior_link(op_obj, plan);
-        } else if (strcmp(op_name, "set_behavior_link_delay") == 0) {
-            st = parse_set_behavior_link_delay(op_obj, plan);
-        } else if (strcmp(op_name, "remove_behavior_link") == 0) {
-            st = parse_remove_behavior_link(op_obj, plan);
-        } else if (strcmp(op_name, "add_parameter") == 0) {
-            st = parse_add_parameter(op_obj, plan);
-        } else if (strcmp(op_name, "connect_parameter") == 0) {
-            st = parse_connect_parameter(op_obj, plan);
-        } else if (strcmp(op_name, "disconnect_parameter") == 0) {
-            st = parse_disconnect_parameter(op_obj, plan);
-        } else if (strcmp(op_name, "remove_parameter") == 0) {
-            st = parse_remove_parameter(op_obj, plan);
-        } else if (strcmp(op_name, "add_operation") == 0) {
-            st = parse_add_operation(op_obj, plan);
-        } else if (strcmp(op_name, "rewire_operation") == 0) {
-            st = parse_rewire_operation(op_obj, plan);
-        } else if (strcmp(op_name, "remove_operation") == 0) {
-            st = parse_remove_operation(op_obj, plan);
-        } else if (strcmp(op_name, "interface_policy") == 0) {
-            st = parse_interface_policy(op_obj, plan);
-        } else if (strcmp(op_name, "set_data_cell") == 0) {
-            st = parse_set_data_cell(op_obj, plan);
-        } else if (strcmp(op_name, "fold") == 0) {
-            st = parse_fold(op_obj, plan);
-        } else if (strcmp(op_name, "replace_bb") == 0) {
-            st = parse_replace_bb(op_obj, plan);
-        } else {
-            nmo_last_error_setf(NMO_ERR_NOT_SUPPORTED, NMO_SEVERITY_ERROR,
-                                __FILE__, __LINE__,
-                                "Unsupported patch op '%s'", op_name);
-            st = NMO_ERR_NOT_SUPPORTED;
-        }
-        if (st != NMO_OK) {
-            break;
-        }
-    }
+    st = parse_operations_array(ops, plan);
 
     if (st == NMO_OK) {
         out_manifest->input_path = dup_string(yyjson_get_str(input));

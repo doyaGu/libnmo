@@ -209,6 +209,41 @@ TEST(edit_plan_json, reads_manifest_with_operation_handle_refs) {
     nmo_edit_plan_destroy(plan);
 }
 
+TEST(edit_plan_json, roundtrips_plan_without_manifest_paths) {
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_plan_t *parsed = NULL;
+    char *json = NULL;
+    yyjson_doc *doc = NULL;
+
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_io(
+                  plan, 42u, NMO_SCRIPT_EDIT_IO_INPUT, "Entry"));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_json_write(plan, &json));
+    ASSERT_NOT_NULL(json);
+
+    doc = yyjson_read(json, strlen(json), 0);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    ASSERT_TRUE(yyjson_is_obj(root));
+    assert_json_uint(root, "version", 2u);
+    ASSERT_TRUE(yyjson_obj_get(root, "input") == NULL);
+    ASSERT_TRUE(yyjson_obj_get(root, "output") == NULL);
+    ASSERT_NOT_NULL(yyjson_obj_get(root, "operations"));
+    yyjson_doc_free(doc);
+    doc = NULL;
+
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_json_read(json, strlen(json), &parsed));
+    ASSERT_NOT_NULL(parsed);
+    ASSERT_EQ(1u, nmo_edit_plan_count(parsed));
+    assert_plan_op_kind(parsed, 0u, NMO_EDIT_OP_ADD_IO);
+
+    nmo_edit_plan_destroy(parsed);
+    nmo_edit_plan_manifest_json_free(json);
+    nmo_edit_plan_destroy(plan);
+}
+
 TEST(edit_plan_json, roundtrips_all_current_v2_ops) {
     nmo_edit_plan_t *plan = NULL;
     char *json = NULL;
@@ -449,6 +484,7 @@ TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics) {
 TEST_MAIN_BEGIN()
 REGISTER_TEST(edit_plan_json, writes_manifest_with_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, reads_manifest_with_operation_handle_refs);
+REGISTER_TEST(edit_plan_json, roundtrips_plan_without_manifest_paths);
 REGISTER_TEST(edit_plan_json, roundtrips_all_current_v2_ops);
 REGISTER_TEST(edit_plan_json, reads_manifest_from_file);
 REGISTER_TEST(edit_plan_json, rejects_incomplete_manifest_roots);

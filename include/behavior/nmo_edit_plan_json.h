@@ -19,6 +19,15 @@ typedef struct nmo_edit_plan_manifest {
     nmo_edit_plan_t *plan;
 } nmo_edit_plan_manifest_t;
 
+NMO_API nmo_status_t nmo_edit_plan_json_write(
+    const nmo_edit_plan_t *plan,
+    char **out_json);
+
+NMO_API nmo_status_t nmo_edit_plan_json_read(
+    const char *json,
+    size_t json_len,
+    nmo_edit_plan_t **out_plan);
+
 NMO_API nmo_status_t nmo_edit_plan_manifest_json_write(
     const nmo_edit_plan_t *plan,
     const char *input_path,
