@@ -36,6 +36,7 @@ typedef struct nmo_debug_chunks_data {
 typedef struct nmo_debug_probe_args {
     const char *kind;
     nmo_object_id_t behavior_id;
+    nmo_object_id_t remove_link_id;
     nmo_object_id_t from_io_id;
     nmo_object_id_t to_io_id;
     const char *name;
@@ -68,6 +69,8 @@ static int debug_probe_parse(int argc,
     for (int i = 2; i < argc; ++i) {
         if (strcmp(argv[i], "--behavior") == 0 && i + 1 < argc) {
             args->behavior_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
+        } else if (strcmp(argv[i], "--remove-link") == 0 && i + 1 < argc) {
+            args->remove_link_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "--from-io") == 0 && i + 1 < argc) {
             args->from_io_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "--to-io") == 0 && i + 1 < argc) {
@@ -112,7 +115,7 @@ static int debug_probe_parse(int argc,
     if (args->behavior_id == 0u || *out_input_path == NULL) {
         fprintf(stderr,
                 "Usage: nmo debug probe 2d-text|console|debug-output|control-marker "
-                "--behavior <id> [--from-io <id>] [--to-io <id>] "
+                "--behavior <id> [--remove-link <id>] [--from-io <id>] [--to-io <id>] "
                 "[--name <name>] [--text <text>] [--dry-run] <file> "
                 "-o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -162,6 +165,7 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
         NMO_GUID(0x18655B3Fu, 0x68291DC3u);
     const nmo_guid_t bb_nop = NMO_GUID(0x302561C4u, 0x0D282980u);
     nmo_guid_t probe_guid = bb_2d_text;
+    size_t node_op_index = 0u;
 
     if (ctx == NULL || args == NULL) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -175,6 +179,13 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
         probe_guid = bb_nop;
     }
     status = nmo_edit_plan_create(&plan);
+    if (status == NMO_OK && args->remove_link_id != 0u) {
+        status = nmo_edit_plan_add_remove_behavior_link(
+            plan, args->behavior_id, args->remove_link_id);
+    }
+    if (status == NMO_OK) {
+        node_op_index = nmo_edit_plan_count(plan);
+    }
     if (status == NMO_OK) {
         status = nmo_edit_plan_add_node(
             plan, args->behavior_id, probe_guid, args->name);
@@ -182,14 +193,14 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
     if (status == NMO_OK && args->text != NULL &&
         strcmp(args->kind, "2d-text") == 0) {
         status = nmo_edit_plan_add_set_parameter_value_from_handle(
-            plan, 0u, "input_param:Text", args->text, NULL);
+            plan, node_op_index, "input_param:Text", args->text, NULL);
     }
     if (status == NMO_OK && args->from_io_id != 0u) {
         status = nmo_edit_plan_add_behavior_link_to_handle(
             plan,
             args->behavior_id,
             args->from_io_id,
-            0u,
+            node_op_index,
             debug_probe_input_handle(args->kind),
             0u);
     }
@@ -197,7 +208,7 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
         status = nmo_edit_plan_add_behavior_link_from_handle(
             plan,
             args->behavior_id,
-            0u,
+            node_op_index,
             debug_probe_output_handle(args->kind),
             args->to_io_id,
             0u);
