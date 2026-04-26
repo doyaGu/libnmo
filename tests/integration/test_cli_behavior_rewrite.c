@@ -272,6 +272,40 @@ static yyjson_val *find_semantic_risk(yyjson_val *arr, const char *code) {
     return find_object_by_string_field(arr, "code", code);
 }
 
+static bool semantic_risk_arrays_match(yyjson_val *left, yyjson_val *right) {
+    if (!left || !right ||
+        !yyjson_is_arr(left) || !yyjson_is_arr(right) ||
+        yyjson_arr_size(left) != yyjson_arr_size(right)) {
+        return false;
+    }
+
+    size_t idx;
+    size_t max;
+    yyjson_val *risk;
+    yyjson_arr_foreach(left, idx, max, risk) {
+        const char *code = get_string_field(risk, "code");
+        const char *severity = get_string_field(risk, "severity");
+        uint64_t object_id = get_uint_field(risk, "object_id");
+        bool found = false;
+
+        size_t right_idx;
+        size_t right_max;
+        yyjson_val *candidate;
+        yyjson_arr_foreach(right, right_idx, right_max, candidate) {
+            if (strcmp(code, get_string_field(candidate, "code")) == 0 &&
+                strcmp(severity, get_string_field(candidate, "severity")) == 0 &&
+                object_id == get_uint_field(candidate, "object_id")) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            return false;
+        }
+    }
+    return true;
+}
+
 TEST(cli, behavior_graph_boundary_json_smoke) {
     rewrite_manifest_t manifest;
     load_ballance_manifest_or_die(&manifest);
@@ -729,6 +763,66 @@ TEST(cli, behavior_fold_candidates_reports_message_semantic_risks) {
 
     ASSERT_TRUE(saw_message_candidate);
     yyjson_doc_free(doc);
+}
+
+TEST(cli, behavior_fold_candidates_match_fold_dry_run_semantic_risks) {
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "-f json behavior fold-candidates --parent 363 \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *candidate_doc = NULL;
+    run_json_command(args, "behavior.fold-candidates", &candidate_doc);
+    ASSERT_NOT_NULL(candidate_doc);
+
+    yyjson_val *candidate_root = yyjson_doc_get_root(candidate_doc);
+    ASSERT_NOT_NULL(candidate_root);
+    yyjson_val *candidate_data = get_object_field(candidate_root, "data");
+    ASSERT_NOT_NULL(candidate_data);
+    yyjson_val *groups = get_array_field(candidate_data, "candidate_groups");
+    ASSERT_NOT_NULL(groups);
+
+    yyjson_val *candidate_risks = NULL;
+    size_t idx;
+    size_t max;
+    yyjson_val *group;
+    yyjson_arr_foreach(groups, idx, max, group) {
+        if (!yyjson_is_obj(group) ||
+            strcmp("connected_component", get_string_field(group, "kind")) != 0 ||
+            get_uint_field(group, "root_id") != 237u) {
+            continue;
+        }
+        yyjson_val *nodes = get_array_field(group, "nodes");
+        if (array_contains_uint(nodes, 237u) &&
+            array_contains_uint(nodes, 358u)) {
+            candidate_risks = get_array_field(group, "semantic_risks");
+            break;
+        }
+    }
+    ASSERT_NOT_NULL(candidate_risks);
+
+    snprintf(args, sizeof(args),
+             "-f json behavior fold --parent 363 --nodes 237,358 "
+             "--anchor 358 --bb-guid 42414C02-10000002 "
+             "--name \"Ballance Load NMO Range\" "
+             "--preserve-links --preserve-params --dry-run \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+
+    yyjson_doc *dry_run_doc = NULL;
+    run_json_command(args, "behavior.fold", &dry_run_doc);
+    ASSERT_NOT_NULL(dry_run_doc);
+
+    yyjson_val *dry_run_root = yyjson_doc_get_root(dry_run_doc);
+    ASSERT_NOT_NULL(dry_run_root);
+    yyjson_val *dry_run_data = get_object_field(dry_run_root, "data");
+    ASSERT_NOT_NULL(dry_run_data);
+    yyjson_val *dry_run_risks = get_array_field(dry_run_data, "semantic_risks");
+    ASSERT_NOT_NULL(dry_run_risks);
+
+    ASSERT_TRUE(semantic_risk_arrays_match(candidate_risks, dry_run_risks));
+
+    yyjson_doc_free(dry_run_doc);
+    yyjson_doc_free(candidate_doc);
 }
 
 TEST(cli, behavior_fold_candidates_reports_control_router_group) {
@@ -1641,6 +1735,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, behavior_fold_candidates_reports_connected_components);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_semantic_risks);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_message_semantic_risks);
+    REGISTER_TEST(cli, behavior_fold_candidates_match_fold_dry_run_semantic_risks);
     REGISTER_TEST(cli, behavior_fold_candidates_reports_control_router_group);
     REGISTER_TEST(cli, behavior_fold_candidates_text_reports_connected_component_counts);
     REGISTER_TEST(cli, behavior_fold_dry_run_reports_boundary_plan);

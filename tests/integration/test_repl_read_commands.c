@@ -950,6 +950,21 @@ TEST(repl_read, behavior_rewrite_reuses_semantic_risk_json_helper) {
                                "static void add_semantic_risks_json");
 }
 
+TEST(repl_read, behavior_rewrite_uses_shared_semantic_validator) {
+    assert_source_contains("include/behavior/nmo_semantic_validator.h",
+                           "nmo_semantic_validate_boundary");
+    assert_source_contains("src/behavior/semantic_validator.c",
+                           "nmo_behavior_edit_collect_semantic_risks(");
+    assert_source_contains("src/behavior/behavior_rewrite.c",
+                           "nmo_behavior_edit_collect_semantic_risks(");
+    assert_source_not_contains("src/behavior/behavior_rewrite.c",
+                               "rewrite_add_boundary_delay_risks");
+    assert_source_not_contains("src/behavior/behavior_rewrite.c",
+                               "rewrite_add_boundary_shared_parameter_risks");
+    assert_source_not_contains("src/behavior/behavior_rewrite.c",
+                               "rewrite_add_message_flow_risks");
+}
+
 TEST(repl_read, behavior_rewrite_does_not_emit_private_write_reports) {
     assert_source_not_contains("tools/commands/nmo_cmd_behavior_rewrite.c",
                                "static void add_common_write_report_json");
@@ -1117,12 +1132,12 @@ TEST(repl_read, lua_fold_maps_accept_patch_id_aliases) {
 }
 
 TEST(repl_read, replace_bb_semantic_risks_merge_into_edit_report) {
-    assert_source_contains("src/behavior/behavior_rewrite.c",
-                           "nmo_behavior_edit_collect_semantic_risks(");
+    assert_source_contains("src/behavior/semantic_validator.c",
+                           "nmo_semantic_validate_boundary(");
     assert_source_contains("src/behavior/edit_plan.c",
                            "replace_report.semantic_risks");
     assert_source_contains("src/behavior/edit_plan.c",
-                           "edit_report_note_semantic_risks(");
+                           "nmo_edit_report_merge_semantic_risks(");
 }
 
 TEST(repl_read, patch_uses_schema_v2_output_path) {
@@ -1513,6 +1528,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, edit_report_json_does_not_emit_legacy_risk_level);
     REGISTER_TEST(repl_read, edit_report_schema_v2_has_single_json_helper);
     REGISTER_TEST(repl_read, behavior_rewrite_reuses_semantic_risk_json_helper);
+    REGISTER_TEST(repl_read, behavior_rewrite_uses_shared_semantic_validator);
     REGISTER_TEST(repl_read, behavior_rewrite_does_not_emit_private_write_reports);
     REGISTER_TEST(repl_read, patch_manifest_does_not_keep_parallel_operation_array);
     REGISTER_TEST(repl_read, patch_interface_policy_parses_into_edit_plan);
