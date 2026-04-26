@@ -200,6 +200,46 @@ TEST(semantic_validator, edit_plan_reports_generic_op_risks)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_reports_invalid_handle_reference)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init(&fixture);
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_io(
+                  plan,
+                  6u,
+                  NMO_SCRIPT_EDIT_IO_INPUT,
+                  "Entry"));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_behavior_link_from_handles(
+                  plan,
+                  6u,
+                  0u,
+                  "missing_io",
+                  0u,
+                  "io",
+                  0u));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *invalid =
+        find_risk(risks, risk_count, "invalid_handle_reference");
+    ASSERT_NOT_NULL(invalid);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, invalid->severity);
+    ASSERT_EQ(6u, invalid->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch)
 {
     semantic_fixture_t fixture;
@@ -322,6 +362,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, detects_message_flow_by_signature_metadata);
     REGISTER_TEST(semantic_validator, edit_plan_rejects_missing_replace_target);
     REGISTER_TEST(semantic_validator, edit_plan_reports_generic_op_risks);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_invalid_handle_reference);
     REGISTER_TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_data_cell_bounds);
