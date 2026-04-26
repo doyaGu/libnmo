@@ -689,7 +689,9 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 risks,
                 risk_count);
         }
-        return semantic_add_missing_ref_risk(
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->primary_id));
+        return semantic_add_parameter_object_ref_risk(
             repo, risks, risk_count, op->primary_id);
     case NMO_EDIT_OP_ADD_NODE:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(

@@ -483,6 +483,40 @@ TEST(semantic_validator, edit_plan_reports_parameter_object_type_mismatch)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_reports_value_parameter_type_mismatch)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init(&fixture);
+
+    nmo_object_id_t behavior_id = 0u;
+    semantic_create_object(&fixture, NMO_CID_BEHAVIOR, "Not Value Parameter", &behavior_id);
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_set_parameter_value(
+                  plan,
+                  behavior_id,
+                  "value",
+                  NULL));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *mismatch =
+        find_risk(risks, risk_count, "parameter_object_type_mismatch");
+    ASSERT_NOT_NULL(mismatch);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, mismatch->severity);
+    ASSERT_EQ(behavior_id, mismatch->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST(semantic_validator, edit_plan_reports_operation_type_mismatch)
 {
     semantic_fixture_t fixture;
@@ -652,6 +686,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, edit_plan_reports_control_link_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_parameter_object_type_mismatch);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_value_parameter_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_parent_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_object_type_mismatch);
