@@ -181,6 +181,34 @@ static nmo_status_t semantic_add_missing_ref_risk(
         object_id);
 }
 
+static nmo_status_t semantic_add_class_ref_risk(
+    nmo_object_repository_t *repo,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t object_id,
+    nmo_class_id_t expected_class_id,
+    const char *code,
+    const char *message)
+{
+    if (object_id == 0u || repo == NULL) {
+        return NMO_OK;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, object_id);
+    if (object == NULL) {
+        return NMO_OK;
+    }
+    if (nmo_object_get_class_id(object) == expected_class_id) {
+        return NMO_OK;
+    }
+    return semantic_add_risk(
+        risks,
+        risk_count,
+        NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+        code,
+        message,
+        object_id);
+}
+
 static nmo_status_t semantic_add_plan_activation_delay_risk(
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
@@ -604,9 +632,25 @@ static nmo_status_t semantic_validate_basic_edit_op(
     case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.add_link.parent_behavior_id));
+        NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+            repo,
+            risks,
+            risk_count,
+            op->data.add_link.parent_behavior_id,
+            NMO_CID_BEHAVIOR,
+            "behavior_owner_type_mismatch",
+            "Edit operation expects a behavior owner"));
         if (!op->data.add_link.has_from_io_ref) {
             NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
                 repo, risks, risk_count, op->data.add_link.from_io_id));
+            NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+                repo,
+                risks,
+                risk_count,
+                op->data.add_link.from_io_id,
+                NMO_CID_BEHAVIORIO,
+                "control_endpoint_type_mismatch",
+                "Control-flow link endpoint must be a behavior IO"));
         } else {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
                 plan,
@@ -620,6 +664,14 @@ static nmo_status_t semantic_validate_basic_edit_op(
         if (!op->data.add_link.has_to_io_ref) {
             NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
                 repo, risks, risk_count, op->data.add_link.to_io_id));
+            NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+                repo,
+                risks,
+                risk_count,
+                op->data.add_link.to_io_id,
+                NMO_CID_BEHAVIORIO,
+                "control_endpoint_type_mismatch",
+                "Control-flow link endpoint must be a behavior IO"));
         } else {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
                 plan,

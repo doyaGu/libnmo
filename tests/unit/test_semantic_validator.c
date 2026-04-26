@@ -3,6 +3,7 @@
 #include "behavior/nmo_semantic_validator.h"
 #include "behavior/nmo_edit_plan.h"
 #include "document/nmo_document.h"
+#include "object/nmo_class_ids.h"
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 #include "session/nmo_session.h"
@@ -47,6 +48,25 @@ static void semantic_fixture_dispose(semantic_fixture_t *fixture)
         nmo_context_release(fixture->ctx);
     }
     memset(fixture, 0, sizeof(*fixture));
+}
+
+static void semantic_create_object(
+    semantic_fixture_t *fixture,
+    nmo_class_id_t class_id,
+    const char *name,
+    nmo_object_id_t *out_id)
+{
+    ASSERT_NOT_NULL(out_id);
+    *out_id = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_session_create_object(
+                  fixture->session,
+                  class_id,
+                  name,
+                  NMO_GUID_NULL,
+                  out_id,
+                  NULL));
+    ASSERT_TRUE(*out_id != 0u);
 }
 
 static const nmo_behavior_semantic_risk_t *find_risk(
@@ -240,6 +260,43 @@ TEST(semantic_validator, edit_plan_reports_invalid_handle_reference)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_reports_control_endpoint_type_mismatch)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init(&fixture);
+
+    nmo_object_id_t root_id = 0u;
+    nmo_object_id_t parameter_id = 0u;
+    semantic_create_object(&fixture, NMO_CID_BEHAVIOR, "Root", &root_id);
+    semantic_create_object(&fixture, NMO_CID_PARAMETER, "Not IO", &parameter_id);
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_behavior_link(
+                  plan,
+                  root_id,
+                  parameter_id,
+                  parameter_id,
+                  0u));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *mismatch =
+        find_risk(risks, risk_count, "control_endpoint_type_mismatch");
+    ASSERT_NOT_NULL(mismatch);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, mismatch->severity);
+    ASSERT_EQ(parameter_id, mismatch->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch)
 {
     semantic_fixture_t fixture;
@@ -363,6 +420,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, edit_plan_rejects_missing_replace_target);
     REGISTER_TEST(semantic_validator, edit_plan_reports_generic_op_risks);
     REGISTER_TEST(semantic_validator, edit_plan_reports_invalid_handle_reference);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_control_endpoint_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_data_cell_bounds);
