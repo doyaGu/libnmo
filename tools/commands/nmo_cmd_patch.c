@@ -933,6 +933,8 @@ static int patch_parse_connect_parameter(yyjson_val *op_obj,
         "op",
         "source_id",
         "target_id",
+        "target_operation",
+        "target_handle",
     };
     int rc = patch_reject_unknown_fields(
         op_obj, "connect_parameter operation",
@@ -949,17 +951,46 @@ static int patch_parse_connect_parameter(yyjson_val *op_obj,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     yyjson_val *target_val = yyjson_obj_get(op_obj, "target_id");
-    if (!target_val || !yyjson_is_uint(target_val) ||
-        yyjson_get_uint(target_val) == 0 ||
-        yyjson_get_uint(target_val) > UINT32_MAX) {
-        fprintf(stderr, "Error: Missing or invalid target_id\n");
+    yyjson_val *target_operation_val =
+        yyjson_obj_get(op_obj, "target_operation");
+    yyjson_val *target_handle_val = yyjson_obj_get(op_obj, "target_handle");
+    bool has_target_id = target_val != NULL;
+    bool has_target_ref = target_operation_val != NULL || target_handle_val != NULL;
+    nmo_status_t st = NMO_OK;
+    if (has_target_id == has_target_ref) {
+        fprintf(stderr,
+                "Error: connect_parameter requires either target_id or "
+                "target_operation plus target_handle\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-
-    nmo_status_t st = nmo_edit_plan_add_connect_parameter(
-        edit_plan,
-        (nmo_object_id_t)yyjson_get_uint(source_val),
-        (nmo_object_id_t)yyjson_get_uint(target_val));
+    if (has_target_id) {
+        if (!yyjson_is_uint(target_val) ||
+            yyjson_get_uint(target_val) == 0 ||
+            yyjson_get_uint(target_val) > UINT32_MAX) {
+            fprintf(stderr, "Error: Missing or invalid target_id\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        st = nmo_edit_plan_add_connect_parameter(
+            edit_plan,
+            (nmo_object_id_t)yyjson_get_uint(source_val),
+            (nmo_object_id_t)yyjson_get_uint(target_val));
+    } else {
+        if (!target_operation_val || !yyjson_is_uint(target_operation_val) ||
+            yyjson_get_uint(target_operation_val) == 0) {
+            fprintf(stderr, "Error: Missing or invalid target_operation\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        if (!target_handle_val || !yyjson_is_str(target_handle_val) ||
+            yyjson_get_str(target_handle_val)[0] == '\0') {
+            fprintf(stderr, "Error: Missing or invalid target_handle\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        st = nmo_edit_plan_add_connect_parameter_to_handle(
+            edit_plan,
+            (nmo_object_id_t)yyjson_get_uint(source_val),
+            (size_t)(yyjson_get_uint(target_operation_val) - 1u),
+            yyjson_get_str(target_handle_val));
+    }
     if (st != NMO_OK) {
         fprintf(stderr, "Error: Failed to build edit plan\n");
         return st == NMO_ERR_NOMEM
