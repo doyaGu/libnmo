@@ -5,6 +5,11 @@
 #include "behavior/nmo_edit_plan.h"
 #include "core/nmo_error.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameterlocal_schemas.h"
+#include "object/builtin/nmo_parameterout_schemas.h"
+#include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_repository.h"
 #include "../runtime/runtime_internal.h"
@@ -191,6 +196,89 @@ static nmo_status_t semantic_add_plan_activation_delay_risk(
         object_id);
 }
 
+static bool semantic_parameter_type_guid(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t parameter_id,
+    nmo_guid_t *out_guid)
+{
+    if (out_guid == NULL) {
+        return false;
+    }
+    *out_guid = NMO_GUID_NULL;
+    nmo_object_t *object = repo != NULL
+        ? nmo_object_repository_find_by_id(repo, parameter_id)
+        : NULL;
+    if (object == NULL) {
+        return false;
+    }
+    switch (nmo_object_get_class_id(object)) {
+    case NMO_CID_PARAMETERIN: {
+        const nmo_parameterin_state_t *state =
+            (const nmo_parameterin_state_t *)nmo_object_get_state(object);
+        if (state == NULL) {
+            return false;
+        }
+        *out_guid = state->type_guid;
+        return true;
+    }
+    case NMO_CID_PARAMETEROUT: {
+        const nmo_parameterout_state_t *state =
+            (const nmo_parameterout_state_t *)nmo_object_get_state(object);
+        if (state == NULL) {
+            return false;
+        }
+        *out_guid = state->base.type_guid;
+        return true;
+    }
+    case NMO_CID_PARAMETERLOCAL: {
+        const nmo_parameterlocal_state_t *state =
+            (const nmo_parameterlocal_state_t *)nmo_object_get_state(object);
+        if (state == NULL) {
+            return false;
+        }
+        *out_guid = state->base.type_guid;
+        return true;
+    }
+    case NMO_CID_PARAMETER: {
+        const nmo_parameter_state_t *state =
+            (const nmo_parameter_state_t *)nmo_object_get_state(object);
+        if (state == NULL) {
+            return false;
+        }
+        *out_guid = state->type_guid;
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
+static nmo_status_t semantic_add_parameter_type_mismatch_risk(
+    nmo_object_repository_t *repo,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t source_parameter_id,
+    nmo_object_id_t target_parameter_id)
+{
+    nmo_guid_t source_guid = NMO_GUID_NULL;
+    nmo_guid_t target_guid = NMO_GUID_NULL;
+    if (!semantic_parameter_type_guid(repo, source_parameter_id, &source_guid) ||
+        !semantic_parameter_type_guid(repo, target_parameter_id, &target_guid)) {
+        return NMO_OK;
+    }
+    if (nmo_guid_is_null(source_guid) || nmo_guid_is_null(target_guid) ||
+        nmo_guid_equals(source_guid, target_guid)) {
+        return NMO_OK;
+    }
+    return semantic_add_risk(
+        risks,
+        risk_count,
+        NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+        "parameter_type_mismatch",
+        "Parameter connection links incompatible source and target types",
+        target_parameter_id);
+}
+
 static nmo_status_t semantic_validate_basic_edit_op(
     nmo_object_repository_t *repo,
     const nmo_edit_op_t *op,
@@ -270,8 +358,14 @@ static nmo_status_t semantic_validate_basic_edit_op(
         if (op->data.connect_parameter.has_target_parameter_ref) {
             return NMO_OK;
         }
-        return semantic_add_missing_ref_risk(
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,
+            op->data.connect_parameter.target_parameter_id));
+        return semantic_add_parameter_type_mismatch_risk(
+            repo,
+            risks,
+            risk_count,
+            op->data.connect_parameter.source_parameter_id,
             op->data.connect_parameter.target_parameter_id);
     case NMO_EDIT_OP_DISCONNECT_PARAMETER:
         return semantic_add_missing_ref_risk(
