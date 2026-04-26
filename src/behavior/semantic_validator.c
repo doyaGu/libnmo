@@ -209,6 +209,40 @@ static nmo_status_t semantic_add_class_ref_risk(
         object_id);
 }
 
+static bool semantic_is_parameter_object_class(nmo_class_id_t class_id)
+{
+    return class_id == NMO_CID_PARAMETER ||
+           class_id == NMO_CID_PARAMETERIN ||
+           class_id == NMO_CID_PARAMETEROUT ||
+           class_id == NMO_CID_PARAMETERLOCAL ||
+           class_id == NMO_CID_PARAMETEROPERATION;
+}
+
+static nmo_status_t semantic_add_parameter_object_ref_risk(
+    nmo_object_repository_t *repo,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t object_id)
+{
+    if (object_id == 0u || repo == NULL) {
+        return NMO_OK;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, object_id);
+    if (object == NULL) {
+        return NMO_OK;
+    }
+    if (semantic_is_parameter_object_class(nmo_object_get_class_id(object))) {
+        return NMO_OK;
+    }
+    return semantic_add_risk(
+        risks,
+        risk_count,
+        NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+        "parameter_object_type_mismatch",
+        "Edit operation expects a parameter object",
+        object_id);
+}
+
 static nmo_status_t semantic_add_plan_activation_delay_risk(
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
@@ -762,6 +796,9 @@ static nmo_status_t semantic_validate_basic_edit_op(
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,
             op->data.connect_parameter.source_parameter_id));
+        NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
+            repo, risks, risk_count,
+            op->data.connect_parameter.source_parameter_id));
         if (op->data.connect_parameter.has_target_parameter_ref) {
             return semantic_validate_handle_ref(
                 plan,
@@ -775,6 +812,9 @@ static nmo_status_t semantic_validate_basic_edit_op(
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,
             op->data.connect_parameter.target_parameter_id));
+        NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
+            repo, risks, risk_count,
+            op->data.connect_parameter.target_parameter_id));
         return semantic_add_parameter_type_mismatch_risk(
             repo,
             risks,
@@ -782,11 +822,19 @@ static nmo_status_t semantic_validate_basic_edit_op(
             op->data.connect_parameter.source_parameter_id,
             op->data.connect_parameter.target_parameter_id);
     case NMO_EDIT_OP_DISCONNECT_PARAMETER:
-        return semantic_add_missing_ref_risk(
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.disconnect_parameter.target_parameter_id));
+        return semantic_add_parameter_object_ref_risk(
             repo, risks, risk_count,
             op->data.disconnect_parameter.target_parameter_id);
     case NMO_EDIT_OP_REMOVE_PARAMETER:
-        return NMO_OK;
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.remove_parameter.parameter_id));
+        return semantic_add_parameter_object_ref_risk(
+            repo, risks, risk_count,
+            op->data.remove_parameter.parameter_id);
     case NMO_EDIT_OP_ADD_OPERATION:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,
@@ -804,6 +852,9 @@ static nmo_status_t semantic_validate_basic_edit_op(
             NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
                 repo, risks, risk_count,
                 op->data.add_operation.in1_parameter_id));
+            NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
+                repo, risks, risk_count,
+                op->data.add_operation.in1_parameter_id));
         }
         if (op->data.add_operation.has_in2_parameter_ref) {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
@@ -818,6 +869,9 @@ static nmo_status_t semantic_validate_basic_edit_op(
             NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
                 repo, risks, risk_count,
                 op->data.add_operation.in2_parameter_id));
+            NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
+                repo, risks, risk_count,
+                op->data.add_operation.in2_parameter_id));
         }
         if (op->data.add_operation.has_out_parameter_ref) {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
@@ -830,6 +884,9 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 risk_count));
         } else {
             NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+                repo, risks, risk_count,
+                op->data.add_operation.out_parameter_id));
+            NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
                 repo, risks, risk_count,
                 op->data.add_operation.out_parameter_id));
         }
@@ -855,10 +912,19 @@ static nmo_status_t semantic_validate_basic_edit_op(
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,
             op->data.rewire_operation.in1_parameter_id));
+        NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
+            repo, risks, risk_count,
+            op->data.rewire_operation.in1_parameter_id));
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,
             op->data.rewire_operation.in2_parameter_id));
-        return semantic_add_missing_ref_risk(
+        NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
+            repo, risks, risk_count,
+            op->data.rewire_operation.in2_parameter_id));
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.rewire_operation.out_parameter_id));
+        return semantic_add_parameter_object_ref_risk(
             repo, risks, risk_count,
             op->data.rewire_operation.out_parameter_id);
     case NMO_EDIT_OP_REMOVE_OPERATION:
