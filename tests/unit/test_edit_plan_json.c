@@ -422,6 +422,20 @@ TEST(edit_plan_json, reads_manifest_from_file) {
     remove(path);
 }
 
+TEST(edit_plan_json, rejects_missing_manifest_file_with_generic_diagnostic) {
+    nmo_edit_plan_manifest_t manifest;
+    memset(&manifest, 0, sizeof(manifest));
+
+    nmo_last_error_clear();
+    ASSERT_NE(NMO_OK,
+              nmo_edit_plan_manifest_json_read_file(
+                  "test_edit_plan_json_missing_manifest.json", &manifest));
+    ASSERT_STR_CONTAINS(nmo_last_error_message(),
+                        "Failed to open edit plan manifest file");
+
+    nmo_edit_plan_manifest_dispose(&manifest);
+}
+
 TEST(edit_plan_json, rejects_incomplete_manifest_roots) {
     nmo_edit_plan_manifest_t manifest;
     memset(&manifest, 0, sizeof(manifest));
@@ -511,6 +525,8 @@ REGISTER_TEST(edit_plan_json, reads_manifest_with_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, roundtrips_plan_without_manifest_paths);
 REGISTER_TEST(edit_plan_json, roundtrips_all_current_v2_ops);
 REGISTER_TEST(edit_plan_json, reads_manifest_from_file);
+REGISTER_TEST(edit_plan_json,
+              rejects_missing_manifest_file_with_generic_diagnostic);
 REGISTER_TEST(edit_plan_json, rejects_incomplete_manifest_roots);
 REGISTER_TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics);
 REGISTER_TEST(edit_plan_json,

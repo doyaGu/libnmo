@@ -2006,18 +2006,18 @@ nmo_status_t nmo_edit_plan_manifest_json_read_file(
     fp = fopen(path, "rb");
     if (fp == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_CANT_OPEN_FILE, NMO_SEVERITY_ERROR,
-                         "Failed to open patch manifest file: %s", path);
+                         "Failed to open edit plan manifest file: %s", path);
     }
     if (fseek(fp, 0, SEEK_END) != 0) {
         fclose(fp);
         NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR,
-                         "Failed to seek patch manifest file: %s", path);
+                         "Failed to seek edit plan manifest file: %s", path);
     }
     size = ftell(fp);
     if (size < 0) {
         fclose(fp);
         NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR,
-                         "Failed to size patch manifest file: %s", path);
+                         "Failed to size edit plan manifest file: %s", path);
     }
     rewind(fp);
 
@@ -2025,14 +2025,14 @@ nmo_status_t nmo_edit_plan_manifest_json_read_file(
     if (json == NULL) {
         fclose(fp);
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                         "Failed to allocate patch manifest buffer");
+                         "Failed to allocate edit plan manifest buffer");
     }
     bytes_read = fread(json, 1u, (size_t)size, fp);
     fclose(fp);
     if (bytes_read != (size_t)size) {
         free(json);
         NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR,
-                         "Failed to read patch manifest file: %s", path);
+                         "Failed to read edit plan manifest file: %s", path);
     }
     json[bytes_read] = '\0';
 
