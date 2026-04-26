@@ -1183,6 +1183,43 @@ TEST(edit_plan, executor_fold_dry_run_reports_semantic_risks) {
     nmo_session_close_with_context(ctx, session);
 }
 
+TEST(edit_plan, report_semantic_risk_merge_deduplicates) {
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+
+    nmo_behavior_semantic_risk_t risks[] = {
+        {
+            .severity = NMO_BEHAVIOR_SEMANTIC_RISK_WARN,
+            .code = "message_flow",
+            .message = "Selected behavior participates in message send/wait flow",
+            .object_id = 2233u,
+        },
+        {
+            .severity = NMO_BEHAVIOR_SEMANTIC_RISK_WARN,
+            .code = "message_flow",
+            .message = "Selected behavior participates in message send/wait flow",
+            .object_id = 2233u,
+        },
+        {
+            .severity = NMO_BEHAVIOR_SEMANTIC_RISK_WARN,
+            .code = "activation_delay",
+            .message = "Boundary control link preserves activation delay",
+            .object_id = 1001u,
+        },
+    };
+
+    ASSERT_EQ(NMO_OK, nmo_edit_report_merge_semantic_risks(
+                          &report, risks, sizeof(risks) / sizeof(risks[0])));
+    ASSERT_EQ(NMO_OK, nmo_edit_report_merge_semantic_risks(
+                          &report, risks, sizeof(risks) / sizeof(risks[0])));
+
+    ASSERT_EQ(2u, report.semantic_risk_count);
+    ASSERT_STR_EQ("message_flow", report.semantic_risks[0].code);
+    ASSERT_STR_EQ("activation_delay", report.semantic_risks[1].code);
+
+    nmo_edit_report_dispose(&report);
+}
+
 TEST(edit_plan, executor_fold_failure_reports_operation_diagnostic) {
     nmo_context_t *ctx = nmo_context_create(
         &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
@@ -1264,5 +1301,6 @@ REGISTER_TEST(edit_plan, executor_replace_bb_dry_run_rolls_back);
 REGISTER_TEST(edit_plan, executor_folds_closed_graph_in_transaction);
 REGISTER_TEST(edit_plan, executor_fold_dry_run_rolls_back);
 REGISTER_TEST(edit_plan, executor_fold_dry_run_reports_semantic_risks);
+REGISTER_TEST(edit_plan, report_semantic_risk_merge_deduplicates);
 REGISTER_TEST(edit_plan, executor_fold_failure_reports_operation_diagnostic);
 TEST_MAIN_END()

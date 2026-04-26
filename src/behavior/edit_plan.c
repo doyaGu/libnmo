@@ -1430,7 +1430,7 @@ static nmo_status_t edit_report_note_created_objects(
     return NMO_OK;
 }
 
-static nmo_status_t edit_report_note_semantic_risks(
+nmo_status_t nmo_edit_report_merge_semantic_risks(
     nmo_edit_report_t *report,
     const nmo_behavior_semantic_risk_t *risks,
     size_t risk_count)
@@ -1441,28 +1441,40 @@ static nmo_status_t edit_report_note_semantic_risks(
     if (risk_count == 0u) {
         return NMO_OK;
     }
-    if (report->semantic_risk_count + risk_count >
-        report->semantic_risk_capacity) {
-        size_t new_capacity = report->semantic_risk_capacity == 0u
-            ? 8u
-            : report->semantic_risk_capacity * 2u;
-        while (new_capacity < report->semantic_risk_count + risk_count) {
-            new_capacity *= 2u;
+    for (size_t i = 0; i < risk_count; ++i) {
+        bool exists = false;
+        for (size_t j = 0; j < report->semantic_risk_count; ++j) {
+            const nmo_behavior_semantic_risk_t *existing =
+                &report->semantic_risks[j];
+            if (existing->severity == risks[i].severity &&
+                existing->object_id == risks[i].object_id &&
+                ((existing->code == NULL && risks[i].code == NULL) ||
+                 (existing->code != NULL && risks[i].code != NULL &&
+                  strcmp(existing->code, risks[i].code) == 0))) {
+                exists = true;
+                break;
+            }
         }
-        nmo_behavior_semantic_risk_t *next =
-            (nmo_behavior_semantic_risk_t *)realloc(
-                report->semantic_risks,
-                new_capacity * sizeof(*next));
-        if (next == NULL) {
-            return NMO_ERR_NOMEM;
+        if (exists) {
+            continue;
         }
-        report->semantic_risks = next;
-        report->semantic_risk_capacity = new_capacity;
+        if (report->semantic_risk_count + 1u >
+            report->semantic_risk_capacity) {
+            size_t new_capacity = report->semantic_risk_capacity == 0u
+                ? 8u
+                : report->semantic_risk_capacity * 2u;
+            nmo_behavior_semantic_risk_t *next =
+                (nmo_behavior_semantic_risk_t *)realloc(
+                    report->semantic_risks,
+                    new_capacity * sizeof(*next));
+            if (next == NULL) {
+                return NMO_ERR_NOMEM;
+            }
+            report->semantic_risks = next;
+            report->semantic_risk_capacity = new_capacity;
+        }
+        report->semantic_risks[report->semantic_risk_count++] = risks[i];
     }
-    memcpy(report->semantic_risks + report->semantic_risk_count,
-           risks,
-           risk_count * sizeof(*risks));
-    report->semantic_risk_count += risk_count;
     return NMO_OK;
 }
 
@@ -1911,7 +1923,7 @@ static nmo_status_t edit_executor_apply_op(
             *out_result_id = op->data.replace_bb.desc.behavior_id;
         }
         if (rc == NMO_OK && report != NULL) {
-            rc = edit_report_note_semantic_risks(
+            rc = nmo_edit_report_merge_semantic_risks(
                 report,
                 replace_report.semantic_risks,
                 replace_report.semantic_risk_count);
@@ -1942,7 +1954,7 @@ static nmo_status_t edit_executor_apply_op(
                 : op->data.fold.desc.anchor_id;
         }
         if (rc == NMO_OK && report != NULL) {
-            rc = edit_report_note_semantic_risks(
+            rc = nmo_edit_report_merge_semantic_risks(
                 report,
                 fold_report.semantic_risks,
                 fold_report.semantic_risk_count);

@@ -446,6 +446,11 @@ NMO_API nmo_status_t nmo_edit_report_set_output_path(
     nmo_edit_report_t *report,
     const char *output_path);
 
+NMO_API nmo_status_t nmo_edit_report_merge_semantic_risks(
+    nmo_edit_report_t *report,
+    const nmo_behavior_semantic_risk_t *risks,
+    size_t risk_count);
+
 NMO_API nmo_status_t nmo_edit_report_add_operation_handle(
     nmo_edit_report_t *report,
     size_t operation_index,
