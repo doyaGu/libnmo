@@ -1880,32 +1880,36 @@ nmo_status_t nmo_edit_executor_execute_transaction(
                 }
             }
         }
-        if (edit_op_creates_result(op->kind)) {
-            nmo_status_t report_rc = NMO_OK;
-            if (tx_report_after &&
-                tx_report_after->created_object_ids &&
-                tx_report_after->created_object_id_count > created_start) {
-                report_rc = edit_report_note_created_objects(
-                    report,
-                    tx_report_after->created_object_ids + created_start,
-                    tx_report_after->created_object_id_count - created_start,
-                    op->kind,
-                    "created");
-            } else {
-                report_rc = nmo_edit_report_add_created_object(
-                    report, result_id, op->kind, "created");
-            }
+        bool noted_created_objects = false;
+        if (tx_report_after &&
+            tx_report_after->created_object_ids &&
+            tx_report_after->created_object_id_count > created_start) {
+            nmo_status_t report_rc = edit_report_note_created_objects(
+                report,
+                tx_report_after->created_object_ids + created_start,
+                tx_report_after->created_object_id_count - created_start,
+                op->kind,
+                "created");
             if (report_rc != NMO_OK) {
                 report->ok = false;
                 report->status = report_rc;
                 return report_rc;
             }
-        } else {
-            nmo_object_id_t deleted_id = edit_op_deleted_id(op);
-            if (deleted_id != 0u) {
-                (void)nmo_edit_report_add_deleted_object(
-                    report, deleted_id, op->kind, "primary");
+            noted_created_objects = true;
+        }
+        if (edit_op_creates_result(op->kind) && !noted_created_objects) {
+            nmo_status_t report_rc = nmo_edit_report_add_created_object(
+                report, result_id, op->kind, "created");
+            if (report_rc != NMO_OK) {
+                report->ok = false;
+                report->status = report_rc;
+                return report_rc;
             }
+        }
+        nmo_object_id_t deleted_id = edit_op_deleted_id(op);
+        if (deleted_id != 0u) {
+            (void)nmo_edit_report_add_deleted_object(
+                report, deleted_id, op->kind, "primary");
         }
         nmo_object_id_t changed_id = edit_op_changed_id(op);
         if (changed_id == 0u && result_id != 0u) {

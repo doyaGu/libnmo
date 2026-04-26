@@ -467,6 +467,13 @@ TEST(edit_plan, executor_materializes_input_source_for_handle_value) {
     ASSERT_TRUE(report.ok);
     ASSERT_EQ(NMO_OK, report.operations[1].status);
     ASSERT_TRUE(report.operations[1].result_id != 0u);
+    bool reported_created_source = false;
+    for (size_t i = 0; i < report.created_object_count; ++i) {
+        if (report.created_objects[i].id == report.operations[1].result_id) {
+            reported_created_source = true;
+        }
+    }
+    ASSERT_TRUE(reported_created_source);
 
     nmo_object_t *node_obj =
         nmo_object_repository_find_by_id(fixture.repo, report.operations[0].result_id);
