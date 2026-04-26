@@ -341,6 +341,9 @@ TEST(edit_plan, executor_adds_node_with_created_object_report) {
     ASSERT_EQ(1u, report.operation_count);
     ASSERT_EQ(NMO_OK, report.operations[0].status);
     ASSERT_TRUE(report.operations[0].result_id != 0u);
+    ASSERT_TRUE(report.operations[0].handle_count > 1u);
+    ASSERT_STR_EQ("node", report.operations[0].handles[0].name);
+    ASSERT_EQ(report.operations[0].result_id, report.operations[0].handles[0].id);
     ASSERT_TRUE(report.created_object_count > 1u);
     ASSERT_EQ(report.operations[0].result_id, report.created_objects[0].id);
 
@@ -361,6 +364,26 @@ TEST(edit_plan, executor_adds_node_with_created_object_report) {
             }
         }
         ASSERT_TRUE(found_target);
+    }
+    {
+        bool found_target_handle = false;
+        bool found_input_handle = false;
+        bool found_output_handle = false;
+        for (size_t i = 0; i < report.operations[0].handle_count; ++i) {
+            if (strcmp(report.operations[0].handles[i].name, "target") == 0 &&
+                report.operations[0].handles[i].id == node_state->target_parameter_id) {
+                found_target_handle = true;
+            }
+            if (strcmp(report.operations[0].handles[i].name, "input:On") == 0) {
+                found_input_handle = true;
+            }
+            if (strcmp(report.operations[0].handles[i].name, "output:Exit On") == 0) {
+                found_output_handle = true;
+            }
+        }
+        ASSERT_TRUE(found_target_handle);
+        ASSERT_TRUE(found_input_handle);
+        ASSERT_TRUE(found_output_handle);
     }
 
     nmo_edit_report_dispose(&report);

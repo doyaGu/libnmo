@@ -6,8 +6,14 @@
 #include "behavior/nmo_edit_plan.h"
 
 #include "behavior/nmo_script_edit.h"
+#include "format/nmo_object.h"
+#include "object/builtin/nmo_behavior_schemas.h"
+#include "object/nmo_object_repository.h"
 #include "object/nmo_value_writer.h"
 
+#include "../runtime/runtime_internal.h"
+
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1444,6 +1450,92 @@ static bool edit_op_creates_result(nmo_edit_op_kind_t kind)
            kind == NMO_EDIT_OP_ADD_OPERATION;
 }
 
+static nmo_status_t edit_report_add_named_handle(
+    nmo_edit_report_t *report,
+    size_t operation_index,
+    const char *prefix,
+    nmo_object_repository_t *repo,
+    nmo_object_id_t id)
+{
+    if (id == 0u) {
+        return NMO_OK;
+    }
+    nmo_object_t *object = repo != NULL
+        ? nmo_object_repository_find_by_id(repo, id)
+        : NULL;
+    const char *name = object != NULL ? nmo_object_get_name(object) : NULL;
+    char handle_name[160];
+    if (name != NULL && name[0] != '\0') {
+        snprintf(handle_name, sizeof(handle_name), "%s:%s", prefix, name);
+    } else {
+        snprintf(handle_name, sizeof(handle_name), "%s", prefix);
+    }
+    return nmo_edit_report_add_operation_handle(
+        report, operation_index, handle_name, id);
+}
+
+static nmo_status_t edit_report_add_array_handles(
+    nmo_edit_report_t *report,
+    size_t operation_index,
+    const char *prefix,
+    nmo_object_repository_t *repo,
+    const nmo_array_t *array)
+{
+    if (array == NULL || array->count == 0u) {
+        return NMO_OK;
+    }
+    if (array->element_size != sizeof(nmo_object_id_t) ||
+        array->data == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    const nmo_object_id_t *ids = (const nmo_object_id_t *)array->data;
+    for (size_t i = 0; i < array->count; ++i) {
+        NMO_RETURN_IF_ERROR(edit_report_add_named_handle(
+            report, operation_index, prefix, repo, ids[i]));
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t edit_report_add_node_child_handles(
+    nmo_script_edit_tx_t *tx,
+    nmo_edit_report_t *report,
+    size_t operation_index,
+    nmo_object_id_t node_id)
+{
+    if (tx == NULL || report == NULL || node_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_workspace_t *workspace = nmo_script_edit_workspace(tx);
+    nmo_object_repository_t *repo =
+        workspace != NULL ? nmo_workspace_internal_repository(workspace) : NULL;
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_object_t *node_obj = nmo_object_repository_find_by_id(repo, node_id);
+    nmo_behavior_state_t *state = node_obj != NULL
+        ? (nmo_behavior_state_t *)nmo_object_get_state(node_obj)
+        : NULL;
+    if (state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    if (state->target_parameter_id != 0u) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_operation_handle(
+            report, operation_index, "target", state->target_parameter_id));
+    }
+    NMO_RETURN_IF_ERROR(edit_report_add_array_handles(
+        report, operation_index, "input", repo, &state->inputs));
+    NMO_RETURN_IF_ERROR(edit_report_add_array_handles(
+        report, operation_index, "output", repo, &state->outputs));
+    NMO_RETURN_IF_ERROR(edit_report_add_array_handles(
+        report, operation_index, "input_param", repo, &state->in_parameters));
+    NMO_RETURN_IF_ERROR(edit_report_add_array_handles(
+        report, operation_index, "output_param", repo, &state->out_parameters));
+    NMO_RETURN_IF_ERROR(edit_report_add_array_handles(
+        report, operation_index, "local_param", repo, &state->local_parameters));
+    return NMO_OK;
+}
+
 static nmo_object_id_t edit_op_deleted_id(const nmo_edit_op_t *op)
 {
     switch (op->kind) {
@@ -1629,6 +1721,15 @@ nmo_status_t nmo_edit_executor_execute_transaction(
                 report->ok = false;
                 report->status = handle_rc;
                 return handle_rc;
+            }
+            if (op->kind == NMO_EDIT_OP_ADD_NODE) {
+                handle_rc = edit_report_add_node_child_handles(
+                    tx, report, i, result_id);
+                if (handle_rc != NMO_OK) {
+                    report->ok = false;
+                    report->status = handle_rc;
+                    return handle_rc;
+                }
             }
         }
         if (edit_op_creates_result(op->kind)) {
