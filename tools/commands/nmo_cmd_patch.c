@@ -25,137 +25,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef enum patch_operation_kind {
-    PATCH_OP_REPLACE_BB = 1,
-    PATCH_OP_FOLD = 2,
-    PATCH_OP_ADD_IO = 3,
-    PATCH_OP_INTERFACE_POLICY = 4,
-    PATCH_OP_REMOVE_IO = 5,
-    PATCH_OP_RENAME_IO = 6,
-    PATCH_OP_ADD_NODE = 7,
-    PATCH_OP_REMOVE_NODE = 8,
-    PATCH_OP_ADD_BEHAVIOR_LINK = 9,
-    PATCH_OP_SET_BEHAVIOR_LINK_DELAY = 10,
-    PATCH_OP_REMOVE_BEHAVIOR_LINK = 11,
-    PATCH_OP_REWIRE_BEHAVIOR_LINK = 12,
-    PATCH_OP_ADD_PARAMETER = 13,
-    PATCH_OP_DISCONNECT_PARAMETER = 14,
-    PATCH_OP_CONNECT_PARAMETER = 15,
-    PATCH_OP_REMOVE_PARAMETER = 16,
-    PATCH_OP_SET_PARAMETER_VALUE = 17,
-    PATCH_OP_ADD_OPERATION = 18,
-    PATCH_OP_REMOVE_OPERATION = 19,
-    PATCH_OP_REWIRE_OPERATION = 20,
-    PATCH_OP_SET_DATA_CELL = 21,
-    PATCH_OP_SET_PARAMETER_BYTES = 22,
-} patch_operation_kind_t;
-
-typedef struct patch_operation {
-    patch_operation_kind_t kind;
-    nmo_behavior_replace_bb_desc_t replace_bb;
-    nmo_behavior_fold_desc_t fold;
-    nmo_object_id_t *fold_nodes;
-    nmo_behavior_fold_map_t *fold_input_maps;
-    nmo_behavior_fold_map_t *fold_output_maps;
-    nmo_behavior_fold_map_t *fold_parameter_maps;
-    struct {
-        nmo_object_id_t behavior_id;
-        nmo_script_edit_io_kind_t kind;
-        const char *name;
-    } add_io;
-    struct {
-        nmo_object_id_t behavior_id;
-        nmo_guid_t bb_guid;
-        const char *name;
-    } add_node;
-    struct {
-        nmo_object_id_t parent_id;
-        nmo_object_id_t node_id;
-        uint32_t delete_flags;
-    } remove_node;
-    struct {
-        nmo_object_id_t parent_id;
-        nmo_object_id_t from_io_id;
-        nmo_object_id_t to_io_id;
-        uint32_t activation_delay;
-    } add_link;
-    struct {
-        nmo_object_id_t link_id;
-        nmo_object_id_t from_io_id;
-        nmo_object_id_t to_io_id;
-    } rewire_link;
-    struct {
-        nmo_object_id_t link_id;
-        uint32_t activation_delay;
-    } set_link_delay;
-    struct {
-        nmo_object_id_t parent_id;
-        nmo_object_id_t link_id;
-    } remove_link;
-    struct {
-        nmo_object_id_t io_id;
-        bool detach_links;
-    } remove_io;
-    struct {
-        nmo_object_id_t io_id;
-        const char *name;
-    } rename_io;
-    struct {
-        nmo_object_id_t behavior_id;
-        nmo_script_edit_interface_mode_t mode;
-    } interface_policy;
-    struct {
-        nmo_object_id_t owner_id;
-        nmo_script_edit_parameter_kind_t kind;
-        nmo_guid_t type_guid;
-        const char *name;
-    } add_parameter;
-    struct {
-        nmo_object_id_t target_id;
-    } disconnect_parameter;
-    struct {
-        nmo_object_id_t source_id;
-        nmo_object_id_t target_id;
-    } connect_parameter;
-    struct {
-        nmo_object_id_t parameter_id;
-        bool detach;
-    } remove_parameter;
-    struct {
-        nmo_object_id_t parameter_id;
-        const char *value;
-    } set_parameter_value;
-    struct {
-        nmo_object_id_t parameter_id;
-        uint8_t *bytes;
-        size_t byte_count;
-        bool resize;
-    } set_parameter_bytes;
-    struct {
-        nmo_object_id_t dataarray_id;
-        uint32_t row;
-        uint32_t col;
-        const char *value;
-    } data_cell;
-    struct {
-        nmo_object_id_t parent_id;
-        nmo_guid_t operation_guid;
-        nmo_object_id_t in1_id;
-        nmo_object_id_t in2_id;
-        nmo_object_id_t out_id;
-    } add_operation;
-    struct {
-        nmo_object_id_t operation_id;
-    } remove_operation;
-    struct {
-        nmo_object_id_t operation_id;
-        uint32_t slot_flags;
-        nmo_object_id_t in1_id;
-        nmo_object_id_t in2_id;
-        nmo_object_id_t out_id;
-    } rewire_operation;
-} patch_operation_t;
-
 typedef struct patch_plan {
     yyjson_doc *doc;
     uint32_t version;
@@ -181,18 +50,6 @@ static void patch_add_edit_report_json(
     }
 }
 
-static void patch_operation_dispose(patch_operation_t *op) {
-    if (!op) {
-        return;
-    }
-    free(op->fold_nodes);
-    free(op->fold_input_maps);
-    free(op->fold_output_maps);
-    free(op->fold_parameter_maps);
-    free(op->set_parameter_bytes.bytes);
-    memset(op, 0, sizeof(*op));
-}
-
 static void patch_plan_free(patch_plan_t *plan) {
     if (!plan) {
         return;
@@ -202,161 +59,6 @@ static void patch_plan_free(patch_plan_t *plan) {
         yyjson_doc_free(plan->doc);
     }
     memset(plan, 0, sizeof(*plan));
-}
-
-static nmo_status_t patch_operation_add_to_edit_plan(
-    nmo_edit_plan_t *edit_plan,
-    const patch_operation_t *op) {
-    if (!edit_plan || !op) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (op->kind == PATCH_OP_REPLACE_BB) {
-        return nmo_edit_plan_add_replace_bb(edit_plan, &op->replace_bb);
-    }
-    if (op->kind == PATCH_OP_FOLD) {
-        return nmo_edit_plan_add_fold(edit_plan, &op->fold);
-    }
-    if (op->kind == PATCH_OP_ADD_IO) {
-        return nmo_edit_plan_add_io(
-            edit_plan,
-            op->add_io.behavior_id,
-            op->add_io.kind,
-            op->add_io.name);
-    }
-    if (op->kind == PATCH_OP_ADD_NODE) {
-        return nmo_edit_plan_add_node(
-            edit_plan,
-            op->add_node.behavior_id,
-            op->add_node.bb_guid,
-            op->add_node.name);
-    }
-    if (op->kind == PATCH_OP_REMOVE_NODE) {
-        return nmo_edit_plan_add_remove_node(
-            edit_plan,
-            op->remove_node.parent_id,
-            op->remove_node.node_id,
-            op->remove_node.delete_flags);
-    }
-    if (op->kind == PATCH_OP_ADD_BEHAVIOR_LINK) {
-        return nmo_edit_plan_add_behavior_link(
-            edit_plan,
-            op->add_link.parent_id,
-            op->add_link.from_io_id,
-            op->add_link.to_io_id,
-            op->add_link.activation_delay);
-    }
-    if (op->kind == PATCH_OP_REWIRE_BEHAVIOR_LINK) {
-        return nmo_edit_plan_add_rewire_behavior_link(
-            edit_plan,
-            op->rewire_link.link_id,
-            op->rewire_link.from_io_id,
-            op->rewire_link.to_io_id);
-    }
-    if (op->kind == PATCH_OP_SET_BEHAVIOR_LINK_DELAY) {
-        return nmo_edit_plan_add_set_behavior_link_delay(
-            edit_plan,
-            op->set_link_delay.link_id,
-            op->set_link_delay.activation_delay);
-    }
-    if (op->kind == PATCH_OP_REMOVE_BEHAVIOR_LINK) {
-        return nmo_edit_plan_add_remove_behavior_link(
-            edit_plan,
-            op->remove_link.parent_id,
-            op->remove_link.link_id);
-    }
-    if (op->kind == PATCH_OP_REMOVE_IO) {
-        return nmo_edit_plan_add_remove_io(
-            edit_plan,
-            op->remove_io.io_id,
-            op->remove_io.detach_links);
-    }
-    if (op->kind == PATCH_OP_RENAME_IO) {
-        return nmo_edit_plan_add_rename_io(
-            edit_plan,
-            op->rename_io.io_id,
-            op->rename_io.name);
-    }
-    if (op->kind == PATCH_OP_ADD_PARAMETER) {
-        return nmo_edit_plan_add_parameter(
-            edit_plan,
-            op->add_parameter.owner_id,
-            op->add_parameter.kind,
-            op->add_parameter.type_guid,
-            op->add_parameter.name);
-    }
-    if (op->kind == PATCH_OP_DISCONNECT_PARAMETER) {
-        return nmo_edit_plan_add_disconnect_parameter(
-            edit_plan,
-            op->disconnect_parameter.target_id);
-    }
-    if (op->kind == PATCH_OP_CONNECT_PARAMETER) {
-        return nmo_edit_plan_add_connect_parameter(
-            edit_plan,
-            op->connect_parameter.source_id,
-            op->connect_parameter.target_id);
-    }
-    if (op->kind == PATCH_OP_REMOVE_PARAMETER) {
-        return nmo_edit_plan_add_remove_parameter(
-            edit_plan,
-            op->remove_parameter.parameter_id,
-            op->remove_parameter.detach);
-    }
-    if (op->kind == PATCH_OP_SET_PARAMETER_VALUE) {
-        return nmo_edit_plan_add_set_parameter_value(
-            edit_plan,
-            op->set_parameter_value.parameter_id,
-            op->set_parameter_value.value,
-            NULL);
-    }
-    if (op->kind == PATCH_OP_SET_PARAMETER_BYTES) {
-        const nmo_parameter_write_options_t options = {
-            .resize = op->set_parameter_bytes.resize,
-        };
-        return nmo_edit_plan_add_set_parameter_bytes(
-            edit_plan,
-            op->set_parameter_bytes.parameter_id,
-            op->set_parameter_bytes.bytes,
-            op->set_parameter_bytes.byte_count,
-            &options);
-    }
-    if (op->kind == PATCH_OP_SET_DATA_CELL) {
-        return nmo_edit_plan_add_data_cell(
-            edit_plan,
-            op->data_cell.dataarray_id,
-            op->data_cell.row,
-            op->data_cell.col,
-            op->data_cell.value);
-    }
-    if (op->kind == PATCH_OP_ADD_OPERATION) {
-        return nmo_edit_plan_add_operation(
-            edit_plan,
-            op->add_operation.parent_id,
-            op->add_operation.operation_guid,
-            op->add_operation.in1_id,
-            op->add_operation.in2_id,
-            op->add_operation.out_id);
-    }
-    if (op->kind == PATCH_OP_REMOVE_OPERATION) {
-        return nmo_edit_plan_add_remove_operation(
-            edit_plan,
-            op->remove_operation.operation_id);
-    }
-    if (op->kind == PATCH_OP_REWIRE_OPERATION) {
-        return nmo_edit_plan_add_rewire_operation(
-            edit_plan,
-            op->rewire_operation.operation_id,
-            op->rewire_operation.slot_flags,
-            op->rewire_operation.in1_id,
-            op->rewire_operation.in2_id,
-            op->rewire_operation.out_id);
-    }
-    if (op->kind == PATCH_OP_INTERFACE_POLICY) {
-        return nmo_edit_plan_add_interface_policy(
-            edit_plan,
-            op->interface_policy.behavior_id,
-            op->interface_policy.mode);
-    }
-    return NMO_ERR_NOT_SUPPORTED;
 }
 
 static bool patch_key_allowed(const char *key,
@@ -1690,7 +1392,7 @@ static int patch_parse_interface_policy(yyjson_val *op_obj,
 }
 
 static int patch_parse_fold(yyjson_val *op_obj,
-                            patch_operation_t *out_op) {
+                            nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "parent",
@@ -1751,42 +1453,51 @@ static int patch_parse_fold(yyjson_val *op_obj,
         version = (uint32_t)yyjson_get_uint(version_val);
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_FOLD;
+    nmo_object_id_t *node_ids = NULL;
+    size_t node_count = 0;
+    nmo_behavior_fold_map_t *input_maps = NULL;
+    size_t input_map_count = 0;
+    nmo_behavior_fold_map_t *output_maps = NULL;
+    size_t output_map_count = 0;
+    nmo_behavior_fold_map_t *parameter_maps = NULL;
+    size_t parameter_map_count = 0;
+    nmo_behavior_fold_interface_mode_t interface_mode =
+        NMO_BEHAVIOR_FOLD_INTERFACE_PRESERVE;
+
     rc = patch_parse_id_array(yyjson_obj_get(op_obj, "nodes"),
-                              &out_op->fold_nodes,
-                              &out_op->fold.node_count,
+                              &node_ids,
+                              &node_count,
                               "fold operation");
     if (rc != NMO_CLI_EXIT_SUCCESS) {
-        return rc;
+        goto cleanup;
     }
     rc = patch_parse_fold_maps(yyjson_obj_get(op_obj, "inputs"),
                                NMO_BEHAVIOR_FOLD_MAP_INPUT,
-                               &out_op->fold_input_maps,
-                               &out_op->fold.input_map_count,
+                               &input_maps,
+                               &input_map_count,
                                "fold inputs");
     if (rc != NMO_CLI_EXIT_SUCCESS) {
-        return rc;
+        goto cleanup;
     }
     rc = patch_parse_fold_maps(yyjson_obj_get(op_obj, "outputs"),
                                NMO_BEHAVIOR_FOLD_MAP_OUTPUT,
-                               &out_op->fold_output_maps,
-                               &out_op->fold.output_map_count,
+                               &output_maps,
+                               &output_map_count,
                                "fold outputs");
     if (rc != NMO_CLI_EXIT_SUCCESS) {
-        return rc;
+        goto cleanup;
     }
     rc = patch_parse_fold_maps(yyjson_obj_get(op_obj, "parameters"),
                                NMO_BEHAVIOR_FOLD_MAP_PARAMETER,
-                               &out_op->fold_parameter_maps,
-                               &out_op->fold.parameter_map_count,
+                               &parameter_maps,
+                               &parameter_map_count,
                                "fold parameters");
     if (rc != NMO_CLI_EXIT_SUCCESS) {
-        return rc;
+        goto cleanup;
     }
-    rc = patch_parse_interface_mode(op_obj, &out_op->fold.interface_mode);
+    rc = patch_parse_interface_mode(op_obj, &interface_mode);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
-        return rc;
+        goto cleanup;
     }
 
     nmo_object_id_t anchor_id = 0;
@@ -1795,22 +1506,45 @@ static int patch_parse_fold(yyjson_val *op_obj,
         if (!yyjson_is_uint(anchor_val) ||
             yyjson_get_uint(anchor_val) > UINT32_MAX) {
             fprintf(stderr, "Error: Invalid fold anchor\n");
-            return NMO_CLI_EXIT_ARG_ERROR;
+            rc = NMO_CLI_EXIT_ARG_ERROR;
+            goto cleanup;
         }
         anchor_id = (nmo_object_id_t)yyjson_get_uint(anchor_val);
     }
 
-    out_op->fold.parent_id = (nmo_object_id_t)yyjson_get_uint(parent_val);
-    out_op->fold.node_ids = out_op->fold_nodes;
-    out_op->fold.anchor_id = anchor_id;
-    out_op->fold.block_guid = guid;
-    out_op->fold.name = name;
-    out_op->fold.block_version = version;
-    out_op->fold.preserve_boundary = yyjson_get_bool(preserve_val);
-    out_op->fold.input_maps = out_op->fold_input_maps;
-    out_op->fold.output_maps = out_op->fold_output_maps;
-    out_op->fold.parameter_maps = out_op->fold_parameter_maps;
-    return NMO_CLI_EXIT_SUCCESS;
+    nmo_behavior_fold_desc_t desc = {0};
+    desc.parent_id = (nmo_object_id_t)yyjson_get_uint(parent_val);
+    desc.node_ids = node_ids;
+    desc.node_count = node_count;
+    desc.anchor_id = anchor_id;
+    desc.block_guid = guid;
+    desc.name = name;
+    desc.block_version = version;
+    desc.preserve_boundary = yyjson_get_bool(preserve_val);
+    desc.input_maps = input_maps;
+    desc.input_map_count = input_map_count;
+    desc.output_maps = output_maps;
+    desc.output_map_count = output_map_count;
+    desc.parameter_maps = parameter_maps;
+    desc.parameter_map_count = parameter_map_count;
+    desc.interface_mode = interface_mode;
+
+    nmo_status_t st = nmo_edit_plan_add_fold(edit_plan, &desc);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        rc = st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+        goto cleanup;
+    }
+    rc = NMO_CLI_EXIT_SUCCESS;
+
+cleanup:
+    free(node_ids);
+    free(input_maps);
+    free(output_maps);
+    free(parameter_maps);
+    return rc;
 }
 
 static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
@@ -1888,7 +1622,6 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
     size_t max;
     yyjson_val *op_obj;
     yyjson_arr_foreach(ops, idx, max, op_obj) {
-        patch_operation_t operation = {0};
         if (!yyjson_is_obj(op_obj)) {
             fprintf(stderr, "Error: Patch operation must be an object\n");
             patch_plan_free(out_plan);
@@ -1908,7 +1641,12 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
             }
             continue;
         } else if (strcmp(op, "fold") == 0) {
-            rc = patch_parse_fold(op_obj, &operation);
+            rc = patch_parse_fold(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "add_node") == 0 && out_plan->version == 2u) {
             rc = patch_parse_add_node(op_obj, out_plan->edit_plan);
             if (rc != NMO_CLI_EXIT_SUCCESS) {
@@ -2070,21 +1808,6 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
             fprintf(stderr, "Error: Unsupported patch op '%s'\n", op);
             patch_plan_free(out_plan);
             return NMO_CLI_EXIT_ARG_ERROR;
-        }
-        if (rc != NMO_CLI_EXIT_SUCCESS) {
-            patch_operation_dispose(&operation);
-            patch_plan_free(out_plan);
-            return rc;
-        }
-        st = patch_operation_add_to_edit_plan(
-            out_plan->edit_plan, &operation);
-        patch_operation_dispose(&operation);
-        if (st != NMO_OK) {
-            fprintf(stderr, "Error: Failed to build edit plan\n");
-            patch_plan_free(out_plan);
-            return st == NMO_ERR_NOMEM
-                ? NMO_CLI_EXIT_INTERNAL_ERROR
-                : NMO_CLI_EXIT_ARG_ERROR;
         }
     }
 

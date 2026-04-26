@@ -950,6 +950,12 @@ TEST(repl_read, behavior_rewrite_does_not_emit_private_write_reports) {
 
 TEST(repl_read, patch_manifest_does_not_keep_parallel_operation_array) {
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
+                               "patch_operation_t");
+    assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
+                               "PATCH_OP_");
+    assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
+                               "patch_operation_add_to_edit_plan");
+    assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
                                "patch_operation_t *operations");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
                                "plan->operations");
@@ -1071,6 +1077,13 @@ TEST(repl_read, patch_replace_bb_parses_into_edit_plan) {
                            "patch_parse_replace_bb(op_obj, out_plan->edit_plan)");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
                                "patch_parse_replace_bb(op_obj, &operation)");
+}
+
+TEST(repl_read, patch_fold_parses_into_edit_plan) {
+    assert_source_contains("tools/commands/nmo_cmd_patch.c",
+                           "patch_parse_fold(op_obj, out_plan->edit_plan)");
+    assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
+                               "patch_parse_fold(op_obj, &operation)");
 }
 
 TEST(repl_read, patch_uses_schema_v2_output_path) {
@@ -1457,6 +1470,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, patch_parameter_edits_parse_into_edit_plan);
     REGISTER_TEST(repl_read, patch_node_edits_parse_into_edit_plan);
     REGISTER_TEST(repl_read, patch_replace_bb_parses_into_edit_plan);
+    REGISTER_TEST(repl_read, patch_fold_parses_into_edit_plan);
     REGISTER_TEST(repl_read, patch_uses_schema_v2_output_path);
     REGISTER_TEST(repl_read, script_uses_schema_v2_output_path);
     REGISTER_TEST(repl_read, behavior_rewrite_uses_schema_v2_output_path);
