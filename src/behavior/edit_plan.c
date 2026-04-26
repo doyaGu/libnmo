@@ -171,6 +171,10 @@ static void edit_op_dispose(nmo_edit_op_t *op)
         free((void *)op->data.add_parameter.name);
     } else if (op->kind == NMO_EDIT_OP_CONNECT_PARAMETER) {
         free((void *)op->data.connect_parameter.target_parameter_ref_handle);
+    } else if (op->kind == NMO_EDIT_OP_ADD_OPERATION) {
+        free((void *)op->data.add_operation.in1_parameter_ref_handle);
+        free((void *)op->data.add_operation.in2_parameter_ref_handle);
+        free((void *)op->data.add_operation.out_parameter_ref_handle);
     } else if (op->kind == NMO_EDIT_OP_SET_DATA_CELL) {
         free((void *)op->data.data_cell.value);
     } else if (op->kind == NMO_EDIT_OP_FOLD) {
@@ -282,6 +286,29 @@ static nmo_status_t edit_op_copy(
                 src->data.connect_parameter.target_parameter_ref_handle);
         if (src->data.connect_parameter.target_parameter_ref_handle &&
             !dst->data.connect_parameter.target_parameter_ref_handle) {
+            edit_op_dispose(dst);
+            return NMO_ERR_NOMEM;
+        }
+        break;
+    case NMO_EDIT_OP_ADD_OPERATION:
+        dst->data.add_operation.in1_parameter_ref_handle =
+            edit_plan_strdup(src->data.add_operation.in1_parameter_ref_handle);
+        if (src->data.add_operation.in1_parameter_ref_handle &&
+            !dst->data.add_operation.in1_parameter_ref_handle) {
+            edit_op_dispose(dst);
+            return NMO_ERR_NOMEM;
+        }
+        dst->data.add_operation.in2_parameter_ref_handle =
+            edit_plan_strdup(src->data.add_operation.in2_parameter_ref_handle);
+        if (src->data.add_operation.in2_parameter_ref_handle &&
+            !dst->data.add_operation.in2_parameter_ref_handle) {
+            edit_op_dispose(dst);
+            return NMO_ERR_NOMEM;
+        }
+        dst->data.add_operation.out_parameter_ref_handle =
+            edit_plan_strdup(src->data.add_operation.out_parameter_ref_handle);
+        if (src->data.add_operation.out_parameter_ref_handle &&
+            !dst->data.add_operation.out_parameter_ref_handle) {
             edit_op_dispose(dst);
             return NMO_ERR_NOMEM;
         }
@@ -915,6 +942,68 @@ nmo_status_t nmo_edit_plan_add_operation(
     op->data.add_operation.in1_parameter_id = in1_parameter_id;
     op->data.add_operation.in2_parameter_id = in2_parameter_id;
     op->data.add_operation.out_parameter_id = out_parameter_id;
+    plan->count++;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_edit_plan_add_operation_with_refs(
+    nmo_edit_plan_t *plan,
+    nmo_object_id_t parent_behavior_id,
+    nmo_guid_t operation_guid,
+    nmo_object_id_t in1_parameter_id,
+    size_t in1_operation_index,
+    const char *in1_handle_name,
+    nmo_object_id_t in2_parameter_id,
+    size_t in2_operation_index,
+    const char *in2_handle_name,
+    nmo_object_id_t out_parameter_id,
+    size_t out_operation_index,
+    const char *out_handle_name)
+{
+    nmo_edit_op_t *op = NULL;
+    if (nmo_guid_is_null(operation_guid)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    NMO_RETURN_IF_ERROR(edit_plan_append_blank(
+        plan, NMO_EDIT_OP_ADD_OPERATION, parent_behavior_id, &op));
+    op->data.add_operation.parent_behavior_id = parent_behavior_id;
+    op->data.add_operation.operation_guid = operation_guid;
+    op->data.add_operation.in1_parameter_id = in1_parameter_id;
+    op->data.add_operation.in2_parameter_id = in2_parameter_id;
+    op->data.add_operation.out_parameter_id = out_parameter_id;
+    if (in1_handle_name != NULL) {
+        op->data.add_operation.has_in1_parameter_ref = true;
+        op->data.add_operation.in1_parameter_ref_operation_index =
+            in1_operation_index;
+        op->data.add_operation.in1_parameter_ref_handle =
+            edit_plan_strdup(in1_handle_name);
+        if (op->data.add_operation.in1_parameter_ref_handle == NULL) {
+            edit_op_dispose(op);
+            return NMO_ERR_NOMEM;
+        }
+    }
+    if (in2_handle_name != NULL) {
+        op->data.add_operation.has_in2_parameter_ref = true;
+        op->data.add_operation.in2_parameter_ref_operation_index =
+            in2_operation_index;
+        op->data.add_operation.in2_parameter_ref_handle =
+            edit_plan_strdup(in2_handle_name);
+        if (op->data.add_operation.in2_parameter_ref_handle == NULL) {
+            edit_op_dispose(op);
+            return NMO_ERR_NOMEM;
+        }
+    }
+    if (out_handle_name != NULL) {
+        op->data.add_operation.has_out_parameter_ref = true;
+        op->data.add_operation.out_parameter_ref_operation_index =
+            out_operation_index;
+        op->data.add_operation.out_parameter_ref_handle =
+            edit_plan_strdup(out_handle_name);
+        if (op->data.add_operation.out_parameter_ref_handle == NULL) {
+            edit_op_dispose(op);
+            return NMO_ERR_NOMEM;
+        }
+    }
     plan->count++;
     return NMO_OK;
 }
@@ -1714,14 +1803,73 @@ static nmo_status_t edit_executor_apply_op(
             op->data.remove_parameter.parameter_id,
             op->data.remove_parameter.detach);
     case NMO_EDIT_OP_ADD_OPERATION:
+    {
+        nmo_object_id_t in1_parameter_id =
+            op->data.add_operation.in1_parameter_id;
+        nmo_object_id_t in2_parameter_id =
+            op->data.add_operation.in2_parameter_id;
+        nmo_object_id_t out_parameter_id =
+            op->data.add_operation.out_parameter_id;
+        if (op->data.add_operation.has_in1_parameter_ref) {
+            nmo_status_t ref_rc = edit_report_resolve_operation_handle(
+                report,
+                op->data.add_operation.in1_parameter_ref_operation_index,
+                op->data.add_operation.in1_parameter_ref_handle,
+                &in1_parameter_id);
+            if (ref_rc != NMO_OK) {
+                if (out_diagnostic_code != NULL) {
+                    *out_diagnostic_code = "handle_not_found";
+                }
+                if (out_diagnostic_message != NULL) {
+                    *out_diagnostic_message =
+                        "Referenced edit operation input parameter handle was not found";
+                }
+                return ref_rc;
+            }
+        }
+        if (op->data.add_operation.has_in2_parameter_ref) {
+            nmo_status_t ref_rc = edit_report_resolve_operation_handle(
+                report,
+                op->data.add_operation.in2_parameter_ref_operation_index,
+                op->data.add_operation.in2_parameter_ref_handle,
+                &in2_parameter_id);
+            if (ref_rc != NMO_OK) {
+                if (out_diagnostic_code != NULL) {
+                    *out_diagnostic_code = "handle_not_found";
+                }
+                if (out_diagnostic_message != NULL) {
+                    *out_diagnostic_message =
+                        "Referenced edit operation input parameter handle was not found";
+                }
+                return ref_rc;
+            }
+        }
+        if (op->data.add_operation.has_out_parameter_ref) {
+            nmo_status_t ref_rc = edit_report_resolve_operation_handle(
+                report,
+                op->data.add_operation.out_parameter_ref_operation_index,
+                op->data.add_operation.out_parameter_ref_handle,
+                &out_parameter_id);
+            if (ref_rc != NMO_OK) {
+                if (out_diagnostic_code != NULL) {
+                    *out_diagnostic_code = "handle_not_found";
+                }
+                if (out_diagnostic_message != NULL) {
+                    *out_diagnostic_message =
+                        "Referenced edit operation output parameter handle was not found";
+                }
+                return ref_rc;
+            }
+        }
         return nmo_script_edit_add_operation(
             tx,
             op->data.add_operation.parent_behavior_id,
             op->data.add_operation.operation_guid,
-            op->data.add_operation.in1_parameter_id,
-            op->data.add_operation.in2_parameter_id,
-            op->data.add_operation.out_parameter_id,
+            in1_parameter_id,
+            in2_parameter_id,
+            out_parameter_id,
             out_result_id);
+    }
     case NMO_EDIT_OP_REWIRE_OPERATION:
         return nmo_script_edit_rewire_operation(
             tx,

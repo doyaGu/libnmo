@@ -89,8 +89,14 @@ static void nmo_lua_release_script_edit_tx_handle(void *resource, void *user_dat
     if (handle == NULL) {
         return;
     }
-    if (!handle->finished && handle->tx != NULL) {
+    if (!handle->finished && handle->tx != NULL && handle->plan == NULL) {
         nmo_script_edit_rollback(handle->tx);
+    }
+    if (handle->plan != NULL) {
+        nmo_edit_plan_destroy(handle->plan);
+    }
+    if (handle->has_report) {
+        nmo_edit_report_dispose(&handle->report);
     }
     free(handle);
 }
@@ -218,12 +224,14 @@ nmo_status_t nmo_lua_push_object_handle(lua_State *state,
 }
 
 nmo_status_t nmo_lua_push_script_edit_tx_handle(lua_State *state,
-                                                nmo_script_edit_tx_t *tx,
+                                                nmo_workspace_t *workspace,
+                                                nmo_edit_plan_t *plan,
                                                 nmo_lua_handle_scope_t *workspace_scope)
 {
-    if (state == NULL || tx == NULL || workspace_scope == NULL) {
+    if (state == NULL || workspace == NULL || plan == NULL ||
+        workspace_scope == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Script edit transaction handles require state, tx, and workspace scope");
+                         "Script edit transaction handles require state, workspace, plan, and workspace scope");
     }
 
     nmo_lua_script_edit_tx_handle_data_t *data =
@@ -232,7 +240,8 @@ nmo_status_t nmo_lua_push_script_edit_tx_handle(lua_State *state,
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                          "Failed to allocate Lua script edit handle");
     }
-    data->tx = tx;
+    data->workspace = workspace;
+    data->plan = plan;
 
     nmo_lua_handle_scope_t *tx_scope = nmo_lua_handle_scope_create();
     if (tx_scope == NULL) {
@@ -440,7 +449,8 @@ nmo_status_t nmo_lua_check_script_edit_tx_handle(lua_State *state,
 
     nmo_lua_script_edit_tx_handle_data_t *handle =
         (nmo_lua_script_edit_tx_handle_data_t *)resource;
-    if (handle == NULL || handle->finished || handle->tx == NULL) {
+    if (handle == NULL || handle->finished ||
+        (handle->tx == NULL && handle->workspace == NULL)) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
                          "Lua script edit transaction handle is stale");
     }

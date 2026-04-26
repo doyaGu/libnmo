@@ -3,6 +3,7 @@
 
 #include "format/nmo_object.h"
 #include "format/nmo_interface_view.h"
+#include "behavior/nmo_edit_plan.h"
 #include "behavior/nmo_script_edit.h"
 #include "core/nmo_arena.h"
 #include "document/nmo_document.h"
@@ -22,8 +23,13 @@ typedef struct nmo_lua_object_handle_data {
 } nmo_lua_object_handle_data_t;
 
 typedef struct nmo_lua_script_edit_tx_handle_data {
+    nmo_workspace_t *workspace;
     nmo_script_edit_tx_t *tx;
+    nmo_edit_plan_t *plan;
+    nmo_edit_report_t report;
+    bool has_report;
     bool finished;
+    bool executed;
 } nmo_lua_script_edit_tx_handle_data_t;
 
 extern const nmo_lua_handle_descriptor_t NMO_LUA_CONTEXT_HANDLE_DESCRIPTOR;
@@ -50,7 +56,8 @@ nmo_status_t nmo_lua_push_object_handle(lua_State *state,
                                         nmo_lua_handle_scope_t *document_scope,
                                         nmo_object_id_t object_id);
 nmo_status_t nmo_lua_push_script_edit_tx_handle(lua_State *state,
-                                                nmo_script_edit_tx_t *tx,
+                                                nmo_workspace_t *workspace,
+                                                nmo_edit_plan_t *plan,
                                                 nmo_lua_handle_scope_t *workspace_scope);
 
 nmo_status_t nmo_lua_check_context_handle(lua_State *state,
