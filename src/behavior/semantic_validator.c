@@ -1684,6 +1684,11 @@ nmo_status_t nmo_semantic_validate_edit_plan(
         } else if (op->kind == NMO_EDIT_OP_REPLACE_BB) {
             nmo_behavior_boundary_t boundary = {0};
             nmo_object_id_t node_id = op->data.replace_bb.desc.behavior_id;
+            nmo_object_t *target = nmo_object_repository_find_by_id(repo, node_id);
+            if (target != NULL &&
+                nmo_object_get_class_id(target) != NMO_CID_BEHAVIOR) {
+                continue;
+            }
             if (!nmo_behavior_boundary_build(
                     workspace, node_id, UINT32_MAX, &boundary)) {
                 rc = NMO_ERR_INVALID_STATE;
