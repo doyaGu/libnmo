@@ -114,6 +114,7 @@ static int debug_probe_parse(int argc,
     if (strcmp(args->kind, "2d-text") != 0 &&
         strcmp(args->kind, "console") != 0 &&
         strcmp(args->kind, "debug-output") != 0 &&
+        strcmp(args->kind, "message-logger") != 0 &&
         strcmp(args->kind, "control-marker") != 0) {
         fprintf(stderr, "Error: Unsupported debug probe kind '%s'\n",
                 args->kind);
@@ -122,7 +123,7 @@ static int debug_probe_parse(int argc,
     if (args->text != NULL && debug_probe_text_handle(args->kind) == NULL) {
         fprintf(stderr,
                 "Error: --text is only supported for 2d-text, console, and "
-                "debug-output probes\n");
+                "debug-output/message-logger probes\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if ((args->from_io_id != 0u && debug_probe_input_handle(args->kind) == NULL) ||
@@ -133,7 +134,7 @@ static int debug_probe_parse(int argc,
     }
     if (args->behavior_id == 0u || *out_input_path == NULL) {
         fprintf(stderr,
-                "Usage: nmo debug probe 2d-text|console|debug-output|control-marker "
+                "Usage: nmo debug probe 2d-text|console|debug-output|message-logger|control-marker "
                 "--behavior <id> [--remove-link <id>] [--from-io <id>] [--to-io <id>] "
                 "[--delay <n>] [--name <name>] [--text <text>] [--dry-run] <file> "
                 "-o <output>\n");
@@ -150,6 +151,9 @@ static const char *debug_probe_input_handle(const char *kind)
     if (strcmp(kind, "console") == 0 || strcmp(kind, "debug-output") == 0) {
         return "input:In";
     }
+    if (strcmp(kind, "message-logger") == 0) {
+        return "input:In";
+    }
     if (strcmp(kind, "control-marker") == 0) {
         return "input:In 0";
     }
@@ -164,6 +168,9 @@ static const char *debug_probe_output_handle(const char *kind)
     if (strcmp(kind, "console") == 0 || strcmp(kind, "debug-output") == 0) {
         return "output:Out";
     }
+    if (strcmp(kind, "message-logger") == 0) {
+        return "output:Out";
+    }
     if (strcmp(kind, "control-marker") == 0) {
         return "output:Out 0";
     }
@@ -176,6 +183,9 @@ static const char *debug_probe_text_handle(const char *kind)
         return "input_param:Text";
     }
     if (strcmp(kind, "console") == 0 || strcmp(kind, "debug-output") == 0) {
+        return "input_param:String";
+    }
+    if (strcmp(kind, "message-logger") == 0) {
         return "input_param:String";
     }
     return NULL;
@@ -342,7 +352,8 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
 
     nmo_edit_report_init(&args->report);
     if (strcmp(args->kind, "console") == 0 ||
-        strcmp(args->kind, "debug-output") == 0) {
+        strcmp(args->kind, "debug-output") == 0 ||
+        strcmp(args->kind, "message-logger") == 0) {
         probe_guid = bb_output_to_console;
     } else if (strcmp(args->kind, "control-marker") == 0) {
         probe_guid = bb_nop;
