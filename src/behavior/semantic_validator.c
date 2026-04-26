@@ -909,6 +909,14 @@ static nmo_status_t semantic_validate_basic_edit_op(
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,
             op->data.rewire_operation.operation_id));
+        NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+            repo,
+            risks,
+            risk_count,
+            op->data.rewire_operation.operation_id,
+            NMO_CID_PARAMETEROPERATION,
+            "operation_object_type_mismatch",
+            "Edit operation expects a parameter operation"));
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,
             op->data.rewire_operation.in1_parameter_id));
@@ -928,7 +936,17 @@ static nmo_status_t semantic_validate_basic_edit_op(
             repo, risks, risk_count,
             op->data.rewire_operation.out_parameter_id);
     case NMO_EDIT_OP_REMOVE_OPERATION:
-        return NMO_OK;
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.remove_operation.operation_id));
+        return semantic_add_class_ref_risk(
+            repo,
+            risks,
+            risk_count,
+            op->data.remove_operation.operation_id,
+            NMO_CID_PARAMETEROPERATION,
+            "operation_object_type_mismatch",
+            "Edit operation expects a parameter operation");
     case NMO_EDIT_OP_INTERFACE_POLICY:
         return semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.interface_policy.behavior_id);
