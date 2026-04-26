@@ -555,6 +555,54 @@ static void write_set_parameter_value_handle_patch_v2(
     ASSERT_TRUE(write_text_file(path, json));
 }
 
+static void write_add_operation_handle_patch_v2(const char *path,
+                                                const char *output_path) {
+    char json[4096];
+    snprintf(json, sizeof(json),
+             "{\n"
+             "  \"version\": 2,\n"
+             "  \"input\": \"%s\",\n"
+             "  \"output\": \"%s\",\n"
+             "  \"operations\": [\n"
+             "    {\n"
+             "      \"op\": \"add_parameter\",\n"
+             "      \"owner_id\": 6,\n"
+             "      \"kind\": \"local\",\n"
+             "      \"type_guid\": \"47884C3F-432C2C20\",\n"
+             "      \"name\": \"Patch Op A\"\n"
+             "    },\n"
+             "    {\n"
+             "      \"op\": \"add_parameter\",\n"
+             "      \"owner_id\": 6,\n"
+             "      \"kind\": \"local\",\n"
+             "      \"type_guid\": \"47884C3F-432C2C20\",\n"
+             "      \"name\": \"Patch Op B\"\n"
+             "    },\n"
+             "    {\n"
+             "      \"op\": \"add_parameter\",\n"
+             "      \"owner_id\": 6,\n"
+             "      \"kind\": \"local\",\n"
+             "      \"type_guid\": \"47884C3F-432C2C20\",\n"
+             "      \"name\": \"Patch Op Out\"\n"
+             "    },\n"
+             "    {\n"
+             "      \"op\": \"add_operation\",\n"
+             "      \"parent_id\": 6,\n"
+             "      \"operation_guid\": \"33CC6B49-3589282B\",\n"
+             "      \"in1_operation\": 1,\n"
+             "      \"in1_handle\": \"parameter\",\n"
+             "      \"in2_operation\": 2,\n"
+             "      \"in2_handle\": \"parameter\",\n"
+             "      \"out_operation\": 3,\n"
+             "      \"out_handle\": \"parameter\"\n"
+             "    }\n"
+             "  ]\n"
+             "}\n",
+             NMO_TEST_DATA_FILE("Nop.cmo"),
+             output_path);
+    ASSERT_TRUE(write_text_file(path, json));
+}
+
 static void write_set_parameter_bytes_patch_v2(const char *path,
                                                const char *output_path) {
     char json[2048];
@@ -1416,6 +1464,66 @@ TEST(cli, patch_diff_json_emits_normalized_v2_manifest) {
     remove(patch);
 }
 
+TEST(cli, patch_diff_json_roundtrips_operation_handle_refs) {
+    make_dir("test_patch_tmp");
+    const char *patch = "test_patch_tmp/operation_handle_manifest_v2.json";
+    const char *output = "test_patch_tmp/operation_handle_manifest_v2.cmo";
+    remove(patch);
+    remove(output);
+    write_add_operation_handle_patch_v2(patch, output);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "-f json patch diff \"%s\"", patch);
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "patch.diff", &doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    yyjson_val *manifest = get_object_field(data, "manifest");
+    ASSERT_NOT_NULL(manifest);
+    yyjson_val *ops = get_array_field(manifest, "operations");
+    ASSERT_NOT_NULL(ops);
+    ASSERT_EQ(4u, (uint32_t)yyjson_arr_size(ops));
+
+    yyjson_val *op = yyjson_arr_get(ops, 3);
+    ASSERT_TRUE(op && yyjson_is_obj(op));
+    ASSERT_STR_EQ("add_operation", get_string_field(op, "op"));
+    ASSERT_EQ(1u, (uint32_t)get_uint_field(op, "in1_operation"));
+    ASSERT_STR_EQ("parameter", get_string_field(op, "in1_handle"));
+    ASSERT_EQ(2u, (uint32_t)get_uint_field(op, "in2_operation"));
+    ASSERT_STR_EQ("parameter", get_string_field(op, "in2_handle"));
+    ASSERT_EQ(3u, (uint32_t)get_uint_field(op, "out_operation"));
+    ASSERT_STR_EQ("parameter", get_string_field(op, "out_handle"));
+
+    const char *replay = "test_patch_tmp/operation_handle_manifest_replay_v2.json";
+    remove(replay);
+    ASSERT_TRUE(yyjson_val_write_file(replay, manifest,
+                                      YYJSON_WRITE_PRETTY, NULL, NULL));
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
+             replay);
+    yyjson_doc *replay_doc = NULL;
+    run_json_command(args, "patch.apply", &replay_doc);
+    yyjson_val *replay_data =
+        get_object_field(yyjson_doc_get_root(replay_doc), "data");
+    ASSERT_NOT_NULL(replay_data);
+    ASSERT_TRUE(get_bool_field(replay_data, "ok"));
+    ASSERT_TRUE(get_bool_field(replay_data, "dry_run"));
+    yyjson_val *replay_ops = get_array_field(replay_data, "operations");
+    ASSERT_NOT_NULL(replay_ops);
+    ASSERT_EQ(4u, (uint32_t)yyjson_arr_size(replay_ops));
+    ASSERT_STR_EQ("add_operation",
+                  get_string_field(yyjson_arr_get(replay_ops, 3), "op"));
+    yyjson_doc_free(replay_doc);
+
+    ASSERT_FALSE(file_exists(output));
+    remove(replay);
+    remove(patch);
+}
+
 TEST(cli, patch_apply_v2_set_parameter_bytes_dry_run) {
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/set_parameter_bytes_v2.json";
@@ -2224,6 +2332,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, patch_apply_v2_set_parameter_value_dry_run);
     REGISTER_TEST(cli, patch_apply_v2_set_parameter_value_to_handle_dry_run);
     REGISTER_TEST(cli, patch_diff_json_emits_normalized_v2_manifest);
+    REGISTER_TEST(cli, patch_diff_json_roundtrips_operation_handle_refs);
     REGISTER_TEST(cli, patch_apply_v2_set_parameter_bytes_dry_run);
     REGISTER_TEST(cli, patch_apply_v2_set_parameter_bytes_to_handle_dry_run);
     REGISTER_TEST(cli, patch_apply_v2_set_data_cell_dry_run);
