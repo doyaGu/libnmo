@@ -3095,7 +3095,9 @@ TEST(cli, debug_probe_help_lists_probe_kinds) {
     ASSERT_NOT_NULL(output);
     ASSERT_STR_CONTAINS(output, "message-logger");
     ASSERT_STR_CONTAINS(output, "parameter-logger");
+    ASSERT_STR_CONTAINS(output, "data-cell-logger");
     ASSERT_STR_CONTAINS(output, "--parameter <id>");
+    ASSERT_STR_CONTAINS(output, "--dataarray <id>");
     free(output);
 }
 
@@ -3556,6 +3558,36 @@ TEST(cli, debug_probe_parameter_logger_connects_source_parameter) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, debug_probe_data_cell_logger_uses_edit_plan) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json debug probe data-cell-logger --behavior 237 "
+             "--dataarray 2261 --row 0 --col 1 \"%s\" --dry-run",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    ASSERT_STR_EQ(json_envelope_command(doc), "debug.probe");
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(data, "ok")));
+    ASSERT_STR_EQ("data-cell-logger",
+                  yyjson_get_str(yyjson_obj_get(data, "probe_kind")));
+    yyjson_val *operations = yyjson_obj_get(data, "operations");
+    ASSERT_TRUE(operations && yyjson_is_arr(operations));
+    ASSERT_EQ(2u, yyjson_arr_size(operations));
+    ASSERT_STR_EQ("add_node",
+                  yyjson_get_str(yyjson_obj_get(yyjson_arr_get(operations, 0), "op")));
+    yyjson_val *set_op = yyjson_arr_get(operations, 1);
+    ASSERT_TRUE(set_op && yyjson_is_obj(set_op));
+    ASSERT_STR_EQ("set_parameter_value",
+                  yyjson_get_str(yyjson_obj_get(set_op, "op")));
+    ASSERT_EQ(0u, (uint32_t)yyjson_get_uint(
+                      yyjson_obj_get(set_op, "status")));
+    ASSERT_TRUE(yyjson_get_uint(yyjson_obj_get(set_op, "result_id")) != 0u);
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, debug_probe_control_marker_dry_run_reports_edit_plan) {
     char args[1024];
     snprintf(args, sizeof(args),
@@ -3731,6 +3763,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, debug_probe_debug_output_text_option_uses_edit_plan);
     REGISTER_TEST(cli, debug_probe_message_logger_text_option_uses_edit_plan);
     REGISTER_TEST(cli, debug_probe_parameter_logger_connects_source_parameter);
+    REGISTER_TEST(cli, debug_probe_data_cell_logger_uses_edit_plan);
     REGISTER_TEST(cli, debug_probe_control_marker_dry_run_reports_edit_plan);
     REGISTER_TEST(cli, unknown_command_error);
 TEST_MAIN_END()

@@ -44,6 +44,11 @@ typedef struct nmo_debug_probe_args {
     nmo_object_id_t from_io_id;
     nmo_object_id_t to_io_id;
     nmo_object_id_t parameter_id;
+    nmo_object_id_t dataarray_id;
+    uint32_t data_row;
+    uint32_t data_col;
+    bool has_data_row;
+    bool has_data_col;
     uint32_t delay;
     bool has_delay;
     const char *name;
@@ -58,6 +63,7 @@ typedef struct debug_probe_kind_spec {
     const char *output_handle;
     const char *text_handle;
     bool connects_parameter;
+    bool logs_data_cell;
 } debug_probe_kind_spec_t;
 
 static const debug_probe_kind_spec_t debug_probe_kind_specs[] = {
@@ -68,6 +74,7 @@ static const debug_probe_kind_spec_t debug_probe_kind_specs[] = {
         "output:Exit On",
         "input_param:Text",
         false,
+        false,
     },
     {
         "console",
@@ -75,6 +82,7 @@ static const debug_probe_kind_spec_t debug_probe_kind_specs[] = {
         "input:In",
         "output:Out",
         "input_param:String",
+        false,
         false,
     },
     {
@@ -84,6 +92,7 @@ static const debug_probe_kind_spec_t debug_probe_kind_specs[] = {
         "output:Out",
         "input_param:String",
         false,
+        false,
     },
     {
         "message-logger",
@@ -91,6 +100,7 @@ static const debug_probe_kind_spec_t debug_probe_kind_specs[] = {
         "input:In",
         "output:Out",
         "input_param:String",
+        false,
         false,
     },
     {
@@ -100,6 +110,16 @@ static const debug_probe_kind_spec_t debug_probe_kind_specs[] = {
         "output:Out",
         "input_param:String",
         true,
+        false,
+    },
+    {
+        "data-cell-logger",
+        NMO_GUID_INIT(0x18655B3Fu, 0x68291DC3u),
+        "input:In",
+        "output:Out",
+        "input_param:String",
+        false,
+        true,
     },
     {
         "control-marker",
@@ -107,6 +127,7 @@ static const debug_probe_kind_spec_t debug_probe_kind_specs[] = {
         "input:In 0",
         "output:Out 0",
         NULL,
+        false,
         false,
     },
 };
@@ -152,6 +173,16 @@ static int debug_probe_parse(int argc,
                     strcmp(argv[i], "--source-param") == 0) &&
                    i + 1 < argc) {
             args->parameter_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
+        } else if ((strcmp(argv[i], "--dataarray") == 0 ||
+                    strcmp(argv[i], "--data-array") == 0) &&
+                   i + 1 < argc) {
+            args->dataarray_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
+        } else if (strcmp(argv[i], "--row") == 0 && i + 1 < argc) {
+            args->data_row = (uint32_t)strtoul(argv[++i], NULL, 10);
+            args->has_data_row = true;
+        } else if (strcmp(argv[i], "--col") == 0 && i + 1 < argc) {
+            args->data_col = (uint32_t)strtoul(argv[++i], NULL, 10);
+            args->has_data_col = true;
         } else if (strcmp(argv[i], "--delay") == 0 && i + 1 < argc) {
             args->delay = (uint32_t)strtoul(argv[++i], NULL, 10);
             args->has_delay = true;
@@ -183,7 +214,7 @@ static int debug_probe_parse(int argc,
     if (args->text != NULL && spec->text_handle == NULL) {
         fprintf(stderr,
                 "Error: --text is only supported for 2d-text, console, and "
-                "debug-output/message-logger probes\n");
+                "debug-output/message/data-cell logger probes\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (args->parameter_id != 0u && !spec->connects_parameter) {
@@ -201,6 +232,23 @@ static int debug_probe_parse(int argc,
                 "Error: parameter-logger uses --parameter, not --text\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
+    if (args->dataarray_id != 0u && !spec->logs_data_cell) {
+        fprintf(stderr,
+                "Error: --dataarray is only supported for data-cell-logger probes\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if ((args->has_data_row || args->has_data_col) && !spec->logs_data_cell) {
+        fprintf(stderr,
+                "Error: --row/--col are only supported for data-cell-logger probes\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (spec->logs_data_cell &&
+        (args->dataarray_id == 0u || !args->has_data_row ||
+         !args->has_data_col)) {
+        fprintf(stderr,
+                "Error: data-cell-logger requires --dataarray <id> --row <n> --col <n>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
     if ((args->from_io_id != 0u && spec->input_handle == NULL) ||
         (args->to_io_id != 0u && spec->output_handle == NULL)) {
         fprintf(stderr, "Error: Probe kind '%s' has no known control IO handles\n",
@@ -209,9 +257,10 @@ static int debug_probe_parse(int argc,
     }
     if (args->behavior_id == 0u || *out_input_path == NULL) {
         fprintf(stderr,
-                "Usage: nmo debug probe 2d-text|console|debug-output|message-logger|parameter-logger|control-marker "
+                "Usage: nmo debug probe 2d-text|console|debug-output|message-logger|parameter-logger|data-cell-logger|control-marker "
                 "--behavior <id> [--remove-link <id>] [--from-io <id>] [--to-io <id>] "
-                "[--parameter <id>] [--delay <n>] [--name <name>] [--text <text>] [--dry-run] <file> "
+                "[--parameter <id>] [--dataarray <id> --row <n> --col <n>] "
+                "[--delay <n>] [--name <name>] [--text <text>] [--dry-run] <file> "
                 "-o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -382,6 +431,7 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
     nmo_edit_plan_t *plan = NULL;
     nmo_status_t status = NMO_OK;
     size_t node_op_index = 0u;
+    char data_cell_text[128];
 
     if (ctx == NULL || args == NULL) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -408,9 +458,18 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
         status = nmo_edit_plan_add_node(
             plan, args->behavior_id, spec->bb_guid, args->name);
     }
-    if (status == NMO_OK && args->text != NULL && spec->text_handle != NULL) {
+    const char *probe_text = args->text;
+    if (status == NMO_OK && spec->logs_data_cell && probe_text == NULL) {
+        snprintf(data_cell_text, sizeof(data_cell_text),
+                 "dataarray:%u[%u,%u]",
+                 (unsigned)args->dataarray_id,
+                 (unsigned)args->data_row,
+                 (unsigned)args->data_col);
+        probe_text = data_cell_text;
+    }
+    if (status == NMO_OK && probe_text != NULL && spec->text_handle != NULL) {
         status = nmo_edit_plan_add_set_parameter_value_from_handle(
-            plan, node_op_index, spec->text_handle, args->text, NULL);
+            plan, node_op_index, spec->text_handle, probe_text, NULL);
     }
     if (status == NMO_OK && spec->connects_parameter &&
         args->parameter_id != 0u && spec->text_handle != NULL) {
