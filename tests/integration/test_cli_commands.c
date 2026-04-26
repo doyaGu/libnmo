@@ -3090,6 +3090,15 @@ TEST(cli, debug_help_marks_output_as_diagnostic) {
     }
 }
 
+TEST(cli, debug_probe_help_lists_probe_kinds) {
+    char *output = run_cli("debug probe --help");
+    ASSERT_NOT_NULL(output);
+    ASSERT_STR_CONTAINS(output, "message-logger");
+    ASSERT_STR_CONTAINS(output, "parameter-logger");
+    ASSERT_STR_CONTAINS(output, "--parameter <id>");
+    free(output);
+}
+
 TEST(cli, debug_probe_2d_text_dry_run_reports_edit_plan) {
     const char *output = "test_debug_probe_2d_text.cmo";
     remove(output);
@@ -3706,6 +3715,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, help_documents_batch_supported_subset);
     REGISTER_TEST(cli, resource_replace_help_distinguishes_payload_from_texture_bitmap);
     REGISTER_TEST(cli, debug_help_marks_output_as_diagnostic);
+    REGISTER_TEST(cli, debug_probe_help_lists_probe_kinds);
     REGISTER_TEST(cli, debug_probe_2d_text_dry_run_reports_edit_plan);
     REGISTER_TEST(cli, debug_probe_2d_text_text_option_uses_edit_plan);
     REGISTER_TEST(cli, debug_probe_from_io_links_probe_input);
