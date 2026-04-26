@@ -5,6 +5,7 @@
 #include "type/nmo_type_guids.h"
 #include "yyjson.h"
 
+#include <stdio.h>
 #include <string.h>
 
 static void assert_json_string(yyjson_val *obj,
@@ -306,8 +307,47 @@ TEST(edit_plan_json, roundtrips_all_current_v2_ops) {
     nmo_edit_plan_destroy(plan);
 }
 
+TEST(edit_plan_json, reads_manifest_from_file) {
+    nmo_edit_plan_t *plan = NULL;
+    char *json = NULL;
+    nmo_edit_plan_manifest_t manifest;
+    const char *path = "test_edit_plan_json_manifest.json";
+    FILE *fp = NULL;
+    memset(&manifest, 0, sizeof(manifest));
+    remove(path);
+
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_io(
+                  plan, 42u, NMO_SCRIPT_EDIT_IO_INPUT, "Entry"));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_manifest_json_write(
+                  plan, "input.cmo", "output.cmo", &json));
+    ASSERT_NOT_NULL(json);
+
+    fp = fopen(path, "wb");
+    ASSERT_NOT_NULL(fp);
+    ASSERT_EQ(strlen(json), fwrite(json, 1u, strlen(json), fp));
+    ASSERT_EQ(0, fclose(fp));
+    fp = NULL;
+
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_manifest_json_read_file(path, &manifest));
+    ASSERT_STR_EQ("input.cmo", manifest.input_path);
+    ASSERT_STR_EQ("output.cmo", manifest.output_path);
+    ASSERT_NOT_NULL(manifest.plan);
+    ASSERT_EQ(1u, nmo_edit_plan_count(manifest.plan));
+    assert_plan_op_kind(manifest.plan, 0u, NMO_EDIT_OP_ADD_IO);
+
+    nmo_edit_plan_manifest_dispose(&manifest);
+    nmo_edit_plan_manifest_json_free(json);
+    nmo_edit_plan_destroy(plan);
+    remove(path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(edit_plan_json, writes_manifest_with_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, reads_manifest_with_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, roundtrips_all_current_v2_ops);
+REGISTER_TEST(edit_plan_json, reads_manifest_from_file);
 TEST_MAIN_END()

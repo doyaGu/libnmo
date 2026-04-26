@@ -5,6 +5,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1850,6 +1851,59 @@ nmo_status_t nmo_edit_plan_manifest_json_read(
     if (st != NMO_OK) {
         nmo_edit_plan_manifest_dispose(out_manifest);
     }
+    return st;
+}
+
+nmo_status_t nmo_edit_plan_manifest_json_read_file(
+    const char *path,
+    nmo_edit_plan_manifest_t *out_manifest)
+{
+    FILE *fp = NULL;
+    long size = 0;
+    char *json = NULL;
+    size_t bytes_read = 0u;
+    nmo_status_t st = NMO_OK;
+
+    if (path == NULL || out_manifest == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    memset(out_manifest, 0, sizeof(*out_manifest));
+
+    fp = fopen(path, "rb");
+    if (fp == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_CANT_OPEN_FILE, NMO_SEVERITY_ERROR,
+                         "Failed to open patch manifest file: %s", path);
+    }
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR,
+                         "Failed to seek patch manifest file: %s", path);
+    }
+    size = ftell(fp);
+    if (size < 0) {
+        fclose(fp);
+        NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR,
+                         "Failed to size patch manifest file: %s", path);
+    }
+    rewind(fp);
+
+    json = (char *)malloc((size_t)size + 1u);
+    if (json == NULL) {
+        fclose(fp);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate patch manifest buffer");
+    }
+    bytes_read = fread(json, 1u, (size_t)size, fp);
+    fclose(fp);
+    if (bytes_read != (size_t)size) {
+        free(json);
+        NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR,
+                         "Failed to read patch manifest file: %s", path);
+    }
+    json[bytes_read] = '\0';
+
+    st = nmo_edit_plan_manifest_json_read(json, bytes_read, out_manifest);
+    free(json);
     return st;
 }
 

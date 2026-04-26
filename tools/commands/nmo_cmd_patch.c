@@ -90,25 +90,8 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
     }
     memset(out_plan, 0, sizeof(*out_plan));
 
-    yyjson_read_err err;
-    yyjson_doc *doc = yyjson_read_file(path, 0, NULL, &err);
-    if (!doc) {
-        fprintf(stderr, "Error: Failed to read patch JSON '%s': %s\n",
-                path, err.msg ? err.msg : "parse error");
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
-
-    yyjson_val *root = yyjson_doc_get_root(doc);
-    char *manifest_json = yyjson_val_write(root, 0, NULL);
-    yyjson_doc_free(doc);
-    if (manifest_json == NULL) {
-        fprintf(stderr, "Error: Out of memory\n");
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
-    nmo_status_t read_status = nmo_edit_plan_manifest_json_read(
-        manifest_json, strlen(manifest_json), &out_plan->manifest);
-    free(manifest_json);
+    nmo_status_t read_status =
+        nmo_edit_plan_manifest_json_read_file(path, &out_plan->manifest);
     if (read_status != NMO_OK) {
         const char *message = nmo_last_error_message();
         fprintf(stderr, "Error: %s\n",

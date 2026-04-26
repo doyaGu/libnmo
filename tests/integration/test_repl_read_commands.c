@@ -989,9 +989,13 @@ TEST(repl_read, patch_manifest_does_not_keep_parallel_operation_array) {
 
 TEST(repl_read, patch_v2_uses_generic_edit_plan_json_parser) {
     assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "nmo_edit_plan_manifest_json_read(");
+                           "nmo_edit_plan_manifest_json_read_file(");
     assert_source_contains("tools/commands/nmo_cmd_patch.c",
                            "nmo_edit_plan_manifest_json_write(");
+    assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
+                               "yyjson_read_file");
+    assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
+                               "yyjson_val_write");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
                                "patch_parse_add_node");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",

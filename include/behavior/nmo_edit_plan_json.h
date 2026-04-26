@@ -30,6 +30,10 @@ NMO_API nmo_status_t nmo_edit_plan_manifest_json_read(
     size_t json_len,
     nmo_edit_plan_manifest_t *out_manifest);
 
+NMO_API nmo_status_t nmo_edit_plan_manifest_json_read_file(
+    const char *path,
+    nmo_edit_plan_manifest_t *out_manifest);
+
 NMO_API void nmo_edit_plan_manifest_dispose(
     nmo_edit_plan_manifest_t *manifest);
 
