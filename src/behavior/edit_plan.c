@@ -9,6 +9,7 @@
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_value_writer.h"
 
@@ -1303,14 +1304,35 @@ static nmo_status_t edit_executor_apply_op(
                 return ref_rc;
             }
         }
+        {
+            nmo_object_repository_t *repo =
+                nmo_workspace_internal_repository(nmo_script_edit_workspace(tx));
+            nmo_object_t *parameter_obj = repo != NULL
+                ? nmo_object_repository_find_by_id(repo, parameter_id)
+                : NULL;
+            if (parameter_obj != NULL &&
+                nmo_object_get_class_id(parameter_obj) == NMO_CID_PARAMETERIN) {
+                nmo_status_t source_rc =
+                    nmo_script_edit_ensure_input_parameter_source(
+                        tx, parameter_id, &parameter_id);
+                if (source_rc != NMO_OK) {
+                    return source_rc;
+                }
+            }
+        }
         if (out_result_id != NULL) {
             *out_result_id = parameter_id;
         }
-        return nmo_value_writer_set_parameter_value(
+        nmo_status_t write_rc = nmo_value_writer_set_parameter_value(
             edit,
             parameter_id,
             op->data.set_value.value,
             op->data.set_value.has_options ? &op->data.set_value.options : NULL);
+        if (write_rc == NMO_OK) {
+            nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_OBJECT_STATE |
+                                     NMO_WORKSPACE_EDIT_REFERENCES);
+        }
+        return write_rc;
     }
     case NMO_EDIT_OP_SET_PARAMETER_BYTES:
         return nmo_value_writer_set_parameter_bytes(

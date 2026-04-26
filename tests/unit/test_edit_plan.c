@@ -4,6 +4,7 @@
 #include "core/nmo_array.h"
 #include "document/nmo_document.h"
 #include "object/builtin/nmo_parameter_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_guids.h"
@@ -91,6 +92,22 @@ static void create_string_parameter(
                   NULL));
     memcpy(state->buffer_data.data, initial, strlen(initial) + 1u);
     *out_state = state;
+}
+
+static nmo_object_id_t find_named_parameter_in_ids(
+    nmo_object_repository_t *repo,
+    const nmo_array_t *ids,
+    const char *name)
+{
+    const nmo_object_id_t *data = ids ? (const nmo_object_id_t *)ids->data : NULL;
+    for (size_t i = 0; data != NULL && i < ids->count; ++i) {
+        nmo_object_t *param_obj = nmo_object_repository_find_by_id(repo, data[i]);
+        const char *param_name = param_obj ? nmo_object_get_name(param_obj) : NULL;
+        if (param_name != NULL && strcmp(param_name, name) == 0) {
+            return data[i];
+        }
+    }
+    return 0u;
 }
 
 TEST(edit_plan, stores_parameter_value_ops) {
@@ -419,6 +436,65 @@ TEST(edit_plan, executor_resolves_parameter_value_from_prior_handle) {
     ASSERT_EQ(NMO_OK, report.operations[1].status);
     ASSERT_TRUE(report.operations[1].result_id != 0u);
     ASSERT_EQ(report.operations[1].result_id, report.changed_objects[1].id);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+}
+
+TEST(edit_plan, executor_materializes_input_source_for_handle_value) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t root_id = 0;
+    create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Root", &root_id);
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_node(
+                  plan,
+                  root_id,
+                  nmo_guid_parse("055B29FE-662D5CA0"),
+                  "Probe 2D Text"));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_set_parameter_value_from_handle(
+                  plan, 0u, "input_param:Text", "loading trace", NULL));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(NMO_OK, report.operations[1].status);
+    ASSERT_TRUE(report.operations[1].result_id != 0u);
+
+    nmo_object_t *node_obj =
+        nmo_object_repository_find_by_id(fixture.repo, report.operations[0].result_id);
+    nmo_behavior_state_t *node_state = node_obj
+        ? (nmo_behavior_state_t *)nmo_object_get_state(node_obj)
+        : NULL;
+    ASSERT_NOT_NULL(node_state);
+    nmo_object_id_t text_in_id =
+        find_named_parameter_in_ids(fixture.repo, &node_state->in_parameters, "Text");
+    nmo_object_t *text_in_obj =
+        nmo_object_repository_find_by_id(fixture.repo, text_in_id);
+    nmo_parameterin_state_t *text_in_state = text_in_obj
+        ? (nmo_parameterin_state_t *)nmo_object_get_state(text_in_obj)
+        : NULL;
+    ASSERT_NOT_NULL(text_in_state);
+    ASSERT_EQ(report.operations[1].result_id, text_in_state->source_id);
+
+    nmo_object_t *source_obj =
+        nmo_object_repository_find_by_id(fixture.repo, text_in_state->source_id);
+    nmo_parameter_state_t *source_state = source_obj
+        ? nmo_parameter_get_mutable_state(source_obj)
+        : NULL;
+    ASSERT_NOT_NULL(source_state);
+    ASSERT_EQ(CKPARAM_MODE_BUFFER, source_state->mode);
+    ASSERT_TRUE(source_state->buffer_data.count >= strlen("loading trace") + 1u);
+    ASSERT_EQ(0, memcmp(source_state->buffer_data.data,
+                        "loading trace",
+                        strlen("loading trace") + 1u));
 
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
@@ -811,6 +887,7 @@ REGISTER_TEST(edit_plan, executor_rolls_back_failed_plan);
 REGISTER_TEST(edit_plan, executor_dry_run_reports_without_persisting);
 REGISTER_TEST(edit_plan, executor_adds_node_with_created_object_report);
 REGISTER_TEST(edit_plan, executor_resolves_parameter_value_from_prior_handle);
+REGISTER_TEST(edit_plan, executor_materializes_input_source_for_handle_value);
 REGISTER_TEST(edit_plan, executor_runs_script_ops_and_records_validation);
 REGISTER_TEST(edit_plan, executor_replaces_leaf_bb_in_transaction);
 REGISTER_TEST(edit_plan, executor_replace_bb_dry_run_rolls_back);

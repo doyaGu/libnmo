@@ -3639,6 +3639,71 @@ NMO_API nmo_status_t nmo_script_edit_set_parameter_bytes(
     return NMO_OK;
 }
 
+NMO_API nmo_status_t nmo_script_edit_ensure_input_parameter_source(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parameter_in_id,
+    nmo_object_id_t *out_source_parameter_id)
+{
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *input_object = NULL;
+    nmo_parameterin_state_t *input_state = NULL;
+    nmo_object_id_t source_id = 0u;
+    nmo_status_t rc = NMO_OK;
+
+    if (out_source_parameter_id != NULL) {
+        *out_source_parameter_id = 0u;
+    }
+    if (tx == NULL || tx->edit == NULL || parameter_in_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    repo = nmo_workspace_internal_repository(tx->workspace);
+    input_object = repo ? nmo_object_repository_find_by_id(repo, parameter_in_id) : NULL;
+    if (input_object == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (nmo_object_get_class_id(input_object) != NMO_CID_PARAMETERIN) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    input_state = (nmo_parameterin_state_t *)nmo_object_get_state(input_object);
+    if (input_state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    if (input_state->source_id != 0u) {
+        if (out_source_parameter_id != NULL) {
+            *out_source_parameter_id = input_state->source_id;
+        }
+        return NMO_OK;
+    }
+
+    rc = nmo_workspace_edit_snapshot_bytes(tx->edit, input_state, sizeof(*input_state));
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = script_edit_create_parameter_object(
+        tx,
+        NMO_CID_PARAMETER,
+        input_state->owner_id,
+        nmo_object_get_name(input_object),
+        input_state->type_guid,
+        NULL,
+        &source_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    input_state->source_id = source_id;
+    input_state->is_shared = 0u;
+    nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_OBJECT_STATE |
+                               NMO_WORKSPACE_EDIT_REFERENCES);
+
+    if (out_source_parameter_id != NULL) {
+        *out_source_parameter_id = source_id;
+    }
+    return NMO_OK;
+}
+
 NMO_API nmo_status_t nmo_script_edit_connect_parameter(
     nmo_script_edit_tx_t *tx,
     nmo_object_id_t source_parameter_id,

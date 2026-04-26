@@ -154,6 +154,11 @@ NMO_API nmo_status_t nmo_script_edit_set_parameter_bytes(
     const uint8_t *bytes,
     size_t byte_count);
 
+NMO_API nmo_status_t nmo_script_edit_ensure_input_parameter_source(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parameter_in_id,
+    nmo_object_id_t *out_source_parameter_id);
+
 NMO_API nmo_status_t nmo_script_edit_connect_parameter(
     nmo_script_edit_tx_t *tx,
     nmo_object_id_t source_parameter_id,
