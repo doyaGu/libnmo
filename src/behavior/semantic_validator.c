@@ -439,6 +439,35 @@ static nmo_status_t semantic_add_data_cell_risk(
     return NMO_OK;
 }
 
+static nmo_status_t semantic_add_building_block_risk(
+    nmo_context_t *ctx,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t parent_behavior_id,
+    nmo_guid_t bb_guid)
+{
+    if (nmo_guid_is_null(bb_guid)) {
+        return NMO_OK;
+    }
+
+    const nmo_behavior_proto_t *proto =
+        ctx != NULL
+            ? nmo_behavior_registry_find(
+                  nmo_context_get_bb_registry(ctx), bb_guid)
+            : NULL;
+    if (proto != NULL) {
+        return NMO_OK;
+    }
+
+    return semantic_add_risk(
+        risks,
+        risk_count,
+        NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+        "unknown_bb_signature",
+        "Edit operation references an unknown building-block signature",
+        parent_behavior_id);
+}
+
 static nmo_status_t semantic_validate_basic_edit_op(
     nmo_context_t *ctx,
     nmo_object_repository_t *repo,
@@ -464,8 +493,15 @@ static nmo_status_t semantic_validate_basic_edit_op(
         return semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->primary_id);
     case NMO_EDIT_OP_ADD_NODE:
-        return semantic_add_missing_ref_risk(
-            repo, risks, risk_count, op->data.add_node.parent_behavior_id);
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.add_node.parent_behavior_id));
+        return semantic_add_building_block_risk(
+            ctx,
+            risks,
+            risk_count,
+            op->data.add_node.parent_behavior_id,
+            op->data.add_node.bb_guid);
     case NMO_EDIT_OP_REMOVE_NODE:
         return NMO_OK;
     case NMO_EDIT_OP_ADD_IO:
