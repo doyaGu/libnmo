@@ -1044,6 +1044,8 @@ TEST(repl_read, patch_v2_uses_generic_edit_plan_json_parser) {
                                "Patch version must be 1 or 2");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
                                "out_plan->version != 1u");
+    assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
+                               "Patch root requires input and output");
 }
 
 TEST(repl_read, lua_fold_maps_accept_patch_id_aliases) {

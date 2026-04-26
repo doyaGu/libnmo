@@ -109,7 +109,7 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
     out_plan->edit_plan = out_plan->manifest.plan;
     if (out_plan->input == NULL || out_plan->output == NULL ||
         out_plan->edit_plan == NULL) {
-        fprintf(stderr, "Error: Patch root requires input and output\n");
+        fprintf(stderr, "Error: Edit plan manifest requires input and output\n");
         patch_plan_free(out_plan);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
