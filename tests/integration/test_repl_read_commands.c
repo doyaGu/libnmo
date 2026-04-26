@@ -1032,20 +1032,14 @@ TEST(repl_read, patch_v2_uses_generic_edit_plan_json_parser) {
                                "patch_parse_rewire_operation");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
                                "patch_parse_interface_policy");
-}
-
-TEST(repl_read, patch_replace_bb_parses_into_edit_plan) {
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_replace_bb(op_obj, out_plan->edit_plan)");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_replace_bb(op_obj, &operation)");
-}
-
-TEST(repl_read, patch_fold_parses_into_edit_plan) {
-    assert_source_contains("tools/commands/nmo_cmd_patch.c",
-                           "patch_parse_fold(op_obj, out_plan->edit_plan)");
+                               "patch_parse_replace_bb");
     assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
-                               "patch_parse_fold(op_obj, &operation)");
+                               "patch_parse_fold");
+    assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
+                               "Patch version must be 1 or 2");
+    assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
+                               "out_plan->version != 1u");
 }
 
 TEST(repl_read, lua_fold_maps_accept_patch_id_aliases) {
@@ -1470,8 +1464,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, behavior_rewrite_does_not_emit_private_write_reports);
     REGISTER_TEST(repl_read, patch_manifest_does_not_keep_parallel_operation_array);
     REGISTER_TEST(repl_read, patch_v2_uses_generic_edit_plan_json_parser);
-    REGISTER_TEST(repl_read, patch_replace_bb_parses_into_edit_plan);
-    REGISTER_TEST(repl_read, patch_fold_parses_into_edit_plan);
     REGISTER_TEST(repl_read, lua_fold_maps_accept_patch_id_aliases);
     REGISTER_TEST(repl_read, replace_bb_semantic_risks_merge_into_edit_report);
     REGISTER_TEST(repl_read, patch_uses_schema_v2_output_path);

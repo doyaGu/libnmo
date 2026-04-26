@@ -1719,14 +1719,23 @@ nmo_status_t nmo_edit_plan_manifest_json_read(
         return NMO_ERR_INVALID_FORMAT;
     }
     yyjson_val *root = yyjson_doc_get_root(doc);
+    if (root == NULL || !yyjson_is_obj(root)) {
+        yyjson_doc_free(doc);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Patch root must be an object");
+    }
     yyjson_val *version = yyjson_obj_get(root, "version");
     yyjson_val *ops = yyjson_obj_get(root, "operations");
-    if (root == NULL || !yyjson_is_obj(root) ||
-        version == NULL || !yyjson_is_uint(version) ||
-        yyjson_get_uint(version) != 2u ||
-        ops == NULL || !yyjson_is_arr(ops)) {
+    if (version == NULL || !yyjson_is_uint(version) ||
+        yyjson_get_uint(version) != 2u) {
         yyjson_doc_free(doc);
-        return NMO_ERR_INVALID_FORMAT;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Patch manifest version 2 is required");
+    }
+    if (ops == NULL || !yyjson_is_arr(ops)) {
+        yyjson_doc_free(doc);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Patch operations must be an array");
     }
     static const char *const root_allowed[] = {
         "version", "input", "output", "operations",

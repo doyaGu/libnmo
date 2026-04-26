@@ -230,7 +230,7 @@ static void run_json_command(const char *args,
     *out_doc = doc;
 }
 
-static void write_leaf_patch(const char *path, const char *output_path) {
+static void write_legacy_v1_patch(const char *path, const char *output_path) {
     rewrite_manifest_t manifest;
     char replace_guid[64];
     char json[2048];
@@ -887,7 +887,7 @@ static void write_non_leaf_patch(const char *path, const char *output_path) {
 
     snprintf(json, sizeof(json),
              "{\n"
-             "  \"version\": 1,\n"
+             "  \"version\": 2,\n"
              "  \"input\": \"%s\",\n"
              "  \"output\": \"%s\",\n"
              "  \"operations\": [\n"
@@ -914,15 +914,15 @@ static void write_fold_patch(const char *path, const char *output_path) {
     char json[4096];
     snprintf(json, sizeof(json),
              "{\n"
-             "  \"version\": 1,\n"
+             "  \"version\": 2,\n"
              "  \"input\": \"%s\",\n"
              "  \"output\": \"%s\",\n"
              "  \"operations\": [\n"
              "    {\n"
              "      \"op\": \"fold\",\n"
-             "      \"parent\": 4692,\n"
+             "      \"parent_id\": 4692,\n"
              "      \"nodes\": [2364, 2208],\n"
-             "      \"anchor\": 2364,\n"
+             "      \"anchor_id\": 2364,\n"
              "      \"name\": \"Ballance Event Handler\",\n"
              "      \"guid\": \"42414C07-10000007\",\n"
              "      \"version\": 65536,\n"
@@ -947,15 +947,15 @@ static void write_risky_fold_patch(const char *path, const char *output_path) {
     char json[4096];
     snprintf(json, sizeof(json),
              "{\n"
-             "  \"version\": 1,\n"
+             "  \"version\": 2,\n"
              "  \"input\": \"%s\",\n"
              "  \"output\": \"%s\",\n"
              "  \"operations\": [\n"
              "    {\n"
              "      \"op\": \"fold\",\n"
-             "      \"parent\": 363,\n"
+             "      \"parent_id\": 363,\n"
              "      \"nodes\": [237, 358],\n"
-             "      \"anchor\": 358,\n"
+             "      \"anchor_id\": 358,\n"
              "      \"name\": \"Ballance Load NMO Range\",\n"
              "      \"guid\": \"42414C02-10000002\",\n"
              "      \"version\": 65536,\n"
@@ -981,15 +981,15 @@ static void write_closed_graph_fold_patch(const char *path,
 
     snprintf(json, sizeof(json),
              "{\n"
-             "  \"version\": 1,\n"
+             "  \"version\": 2,\n"
              "  \"input\": \"%s\",\n"
              "  \"output\": \"%s\",\n"
              "  \"operations\": [\n"
              "    {\n"
              "      \"op\": \"fold\",\n"
-             "      \"parent\": %u,\n"
+             "      \"parent_id\": %u,\n"
              "      \"nodes\": [%s],\n"
-             "      \"anchor\": %u,\n"
+             "      \"anchor_id\": %u,\n"
              "      \"name\": \"Patch Fold Small Graph\",\n"
              "      \"guid\": \"42414C07-10000007\",\n"
              "      \"version\": 65536,\n"
@@ -1054,7 +1054,7 @@ TEST(cli, patch_apply_leaf_replace_bb_dry_run_and_apply) {
     const char *output = "test_patch_tmp/replace_bb.cmo";
     remove(patch);
     remove(output);
-    write_leaf_patch(patch, output);
+    write_leaf_patch_v2(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -1088,6 +1088,27 @@ TEST(cli, patch_apply_leaf_replace_bb_dry_run_and_apply) {
     ASSERT_NOT_NULL(data);
     ASSERT_STR_EQ(replace_guid, get_string_field(data, "bb_guid"));
     yyjson_doc_free(doc);
+
+    remove(output);
+    remove(patch);
+}
+
+TEST(cli, patch_apply_rejects_legacy_v1_manifest) {
+    make_dir("test_patch_tmp");
+    const char *patch = "test_patch_tmp/legacy_v1.json";
+    const char *output = "test_patch_tmp/legacy_v1.cmo";
+    remove(patch);
+    remove(output);
+    write_legacy_v1_patch(patch, output);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "patch apply \"%s\"", patch);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "version 2");
+    ASSERT_FALSE(file_exists(output));
+    free(result.output);
 
     remove(output);
     remove(patch);
@@ -2378,4 +2399,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, patch_apply_fold_dry_run_reports_semantic_risks);
     REGISTER_TEST(cli, patch_diff_json_reports_fold_delete_plan);
     REGISTER_TEST(cli, patch_apply_leaf_replace_bb_dry_run_and_apply);
+    REGISTER_TEST(cli, patch_apply_rejects_legacy_v1_manifest);
 TEST_MAIN_END()
