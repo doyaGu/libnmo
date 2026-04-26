@@ -1086,6 +1086,15 @@ TEST(repl_read, patch_fold_parses_into_edit_plan) {
                                "patch_parse_fold(op_obj, &operation)");
 }
 
+TEST(repl_read, replace_bb_semantic_risks_merge_into_edit_report) {
+    assert_source_contains("src/behavior/behavior_rewrite.c",
+                           "nmo_behavior_edit_collect_semantic_risks(");
+    assert_source_contains("src/behavior/edit_plan.c",
+                           "replace_report.semantic_risks");
+    assert_source_contains("src/behavior/edit_plan.c",
+                           "edit_report_note_semantic_risks(");
+}
+
 TEST(repl_read, patch_uses_schema_v2_output_path) {
     assert_source_contains("include/behavior/nmo_edit_plan.h",
                            "output_path");
@@ -1471,6 +1480,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, patch_node_edits_parse_into_edit_plan);
     REGISTER_TEST(repl_read, patch_replace_bb_parses_into_edit_plan);
     REGISTER_TEST(repl_read, patch_fold_parses_into_edit_plan);
+    REGISTER_TEST(repl_read, replace_bb_semantic_risks_merge_into_edit_report);
     REGISTER_TEST(repl_read, patch_uses_schema_v2_output_path);
     REGISTER_TEST(repl_read, script_uses_schema_v2_output_path);
     REGISTER_TEST(repl_read, behavior_rewrite_uses_schema_v2_output_path);

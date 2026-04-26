@@ -1368,6 +1368,13 @@ static nmo_status_t edit_executor_apply_op(
         if (rc == NMO_OK && out_result_id != NULL) {
             *out_result_id = op->data.replace_bb.desc.behavior_id;
         }
+        if (rc == NMO_OK && report != NULL) {
+            rc = edit_report_note_semantic_risks(
+                report,
+                replace_report.semantic_risks,
+                replace_report.semantic_risk_count);
+        }
+        free(replace_report.semantic_risks);
         return rc;
     }
     case NMO_EDIT_OP_FOLD: {

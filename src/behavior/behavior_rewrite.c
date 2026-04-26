@@ -2263,6 +2263,18 @@ static nmo_status_t rewrite_replace_bb_in_edit(
         return NMO_ERR_INVALID_STATE;
     }
 
+    if (report) {
+        nmo_object_id_t node_id = desc->behavior_id;
+        rc = nmo_behavior_edit_collect_semantic_risks(
+            workspace, &before_boundary, &node_id, 1u,
+            &report->semantic_risks, &report->semantic_risk_count);
+        if (rc != NMO_OK) {
+            rewrite_report_reject(report, "out_of_memory",
+                                  "Failed to build replace semantic risks");
+            goto cleanup;
+        }
+    }
+
     rc = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
     if (rc != NMO_OK) {
         rewrite_report_reject(report, "snapshot_failed",
