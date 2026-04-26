@@ -5,6 +5,7 @@
 #include "behavior/nmo_edit_plan.h"
 #include "core/nmo_error.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameterlocal_schemas.h"
@@ -391,6 +392,53 @@ static nmo_status_t semantic_add_operation_signature_risk(
     return rc;
 }
 
+static nmo_status_t semantic_add_data_cell_risk(
+    nmo_object_repository_t *repo,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t dataarray_id,
+    uint32_t row,
+    uint32_t col)
+{
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count, dataarray_id));
+
+    nmo_object_t *object =
+        repo != NULL ? nmo_object_repository_find_by_id(repo, dataarray_id)
+                     : NULL;
+    if (object == NULL) {
+        return NMO_OK;
+    }
+    if (nmo_object_get_class_id(object) != NMO_CID_DATAARRAY) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "dataarray_type_mismatch",
+            "Data cell edit target is not a CKDataArray",
+            dataarray_id);
+    }
+
+    const nmo_dataarray_state_t *state =
+        (const nmo_dataarray_state_t *)nmo_object_get_state(object);
+    if (state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    if (row >= state->row_count || col >= state->column_count ||
+        state->rows == NULL || state->column_formats == NULL ||
+        col >= state->rows[row].column_count) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "data_cell_bounds",
+            "Data cell edit is outside the data array shape",
+            dataarray_id);
+    }
+
+    return NMO_OK;
+}
+
 static nmo_status_t semantic_validate_basic_edit_op(
     nmo_context_t *ctx,
     nmo_object_repository_t *repo,
@@ -539,8 +587,13 @@ static nmo_status_t semantic_validate_basic_edit_op(
         return semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.interface_policy.behavior_id);
     case NMO_EDIT_OP_SET_DATA_CELL:
-        return semantic_add_missing_ref_risk(
-            repo, risks, risk_count, op->data.data_cell.dataarray_id);
+        return semantic_add_data_cell_risk(
+            repo,
+            risks,
+            risk_count,
+            op->data.data_cell.dataarray_id,
+            op->data.data_cell.row,
+            op->data.data_cell.col);
     case NMO_EDIT_OP_FOLD:
     case NMO_EDIT_OP_REPLACE_BB:
         return NMO_OK;
