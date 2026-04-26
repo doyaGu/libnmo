@@ -1928,7 +1928,7 @@ nmo_status_t nmo_edit_plan_manifest_json_read(
         yyjson_get_uint(version) != 2u) {
         yyjson_doc_free(doc);
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "Patch manifest version 2 is required");
+                         "Edit plan manifest version 2 is required");
     }
     if (input == NULL || !yyjson_is_str(input) ||
         yyjson_get_str(input)[0] == '\0') {

@@ -477,6 +477,29 @@ TEST(edit_plan_json, rejects_incomplete_manifest_roots) {
     nmo_edit_plan_manifest_dispose(&manifest);
 }
 
+TEST(edit_plan_json, rejects_manifest_version_with_generic_diagnostic) {
+    nmo_edit_plan_manifest_t manifest;
+    memset(&manifest, 0, sizeof(manifest));
+
+    const char *legacy =
+        "{"
+        "\"version\":1,"
+        "\"input\":\"in.cmo\","
+        "\"output\":\"out.cmo\","
+        "\"operations\":[{\"op\":\"add_io\",\"behavior_id\":1,"
+        "\"kind\":\"input\",\"name\":\"In\"}]"
+        "}";
+
+    nmo_last_error_clear();
+    ASSERT_NE(NMO_OK,
+              nmo_edit_plan_manifest_json_read(
+                  legacy, strlen(legacy), &manifest));
+    ASSERT_STR_CONTAINS(nmo_last_error_message(),
+                        "Edit plan manifest version 2 is required");
+
+    nmo_edit_plan_manifest_dispose(&manifest);
+}
+
 TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics) {
     assert_manifest_invalid_contains(
         "{\"op\":\"add_io\",\"kind\":\"input\",\"name\":\"In\"}",
@@ -528,6 +551,8 @@ REGISTER_TEST(edit_plan_json, reads_manifest_from_file);
 REGISTER_TEST(edit_plan_json,
               rejects_missing_manifest_file_with_generic_diagnostic);
 REGISTER_TEST(edit_plan_json, rejects_incomplete_manifest_roots);
+REGISTER_TEST(edit_plan_json,
+              rejects_manifest_version_with_generic_diagnostic);
 REGISTER_TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics);
 REGISTER_TEST(edit_plan_json,
               rejects_plan_roots_with_generic_operation_diagnostics);
