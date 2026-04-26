@@ -241,6 +241,22 @@ static nmo_status_t semantic_add_behavior_io_ref_risk(
         "Edit operation expects a behavior IO");
 }
 
+static nmo_status_t semantic_add_behavior_node_ref_risk(
+    nmo_object_repository_t *repo,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t object_id)
+{
+    return semantic_add_class_ref_risk(
+        repo,
+        risks,
+        risk_count,
+        object_id,
+        NMO_CID_BEHAVIOR,
+        "behavior_node_type_mismatch",
+        "Edit operation expects a behavior node");
+}
+
 static bool semantic_is_parameter_object_class(nmo_class_id_t class_id)
 {
     return class_id == NMO_CID_PARAMETER ||
@@ -691,7 +707,18 @@ static nmo_status_t semantic_validate_basic_edit_op(
             op->data.add_node.parent_behavior_id,
             op->data.add_node.bb_guid);
     case NMO_EDIT_OP_REMOVE_NODE:
-        return NMO_OK;
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.remove_node.parent_behavior_id));
+        NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
+            repo,
+            risks,
+            risk_count,
+            op->data.remove_node.parent_behavior_id));
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->data.remove_node.node_id));
+        return semantic_add_behavior_node_ref_risk(
+            repo, risks, risk_count, op->data.remove_node.node_id);
     case NMO_EDIT_OP_ADD_IO:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.add_io.behavior_id));
