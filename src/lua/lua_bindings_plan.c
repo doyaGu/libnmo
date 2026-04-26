@@ -1028,8 +1028,6 @@ static void nmo_lua_plan_push_report(
     lua_setfield(state, -2, "ok");
     lua_pushboolean(state, report->dry_run);
     lua_setfield(state, -2, "dry_run");
-    lua_pushinteger(state, (lua_Integer)report->operation_count);
-    lua_setfield(state, -2, "operation_count");
     nmo_lua_plan_push_operations(state, report);
     lua_setfield(state, -2, "operations");
     nmo_lua_plan_push_impacts(
