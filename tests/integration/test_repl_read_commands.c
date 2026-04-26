@@ -1007,6 +1007,27 @@ TEST(repl_read, patch_io_edits_parse_into_edit_plan) {
                                "patch_parse_rename_io(op_obj, &operation)");
 }
 
+TEST(repl_read, patch_behavior_link_edits_parse_into_edit_plan) {
+    assert_source_contains("tools/commands/nmo_cmd_patch.c",
+                           "patch_parse_add_behavior_link(op_obj, out_plan->edit_plan)");
+    assert_source_contains("tools/commands/nmo_cmd_patch.c",
+                           "patch_parse_rewire_behavior_link(op_obj, out_plan->edit_plan)");
+    assert_source_contains("tools/commands/nmo_cmd_patch.c",
+                           "patch_parse_set_behavior_link_delay(");
+    assert_source_contains("tools/commands/nmo_cmd_patch.c",
+                           "op_obj, out_plan->edit_plan");
+    assert_source_contains("tools/commands/nmo_cmd_patch.c",
+                           "patch_parse_remove_behavior_link(op_obj, out_plan->edit_plan)");
+    assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
+                               "patch_parse_add_behavior_link(op_obj, &operation)");
+    assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
+                               "patch_parse_rewire_behavior_link(op_obj, &operation)");
+    assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
+                               "patch_parse_set_behavior_link_delay(op_obj, &operation)");
+    assert_source_not_contains("tools/commands/nmo_cmd_patch.c",
+                               "patch_parse_remove_behavior_link(op_obj, &operation)");
+}
+
 TEST(repl_read, patch_uses_schema_v2_output_path) {
     assert_source_contains("include/behavior/nmo_edit_plan.h",
                            "output_path");
@@ -1387,6 +1408,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, patch_set_data_cell_parses_into_edit_plan);
     REGISTER_TEST(repl_read, patch_operation_edits_parse_into_edit_plan);
     REGISTER_TEST(repl_read, patch_io_edits_parse_into_edit_plan);
+    REGISTER_TEST(repl_read, patch_behavior_link_edits_parse_into_edit_plan);
     REGISTER_TEST(repl_read, patch_uses_schema_v2_output_path);
     REGISTER_TEST(repl_read, script_uses_schema_v2_output_path);
     REGISTER_TEST(repl_read, behavior_rewrite_uses_schema_v2_output_path);

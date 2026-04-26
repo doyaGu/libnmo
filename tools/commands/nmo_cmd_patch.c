@@ -795,7 +795,7 @@ static int patch_parse_remove_node(yyjson_val *op_obj,
 }
 
 static int patch_parse_add_behavior_link(yyjson_val *op_obj,
-                                         patch_operation_t *out_op) {
+                                         nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "parent_id",
@@ -844,20 +844,23 @@ static int patch_parse_add_behavior_link(yyjson_val *op_obj,
         activation_delay = (uint32_t)yyjson_get_uint(delay_val);
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_ADD_BEHAVIOR_LINK;
-    out_op->add_link.parent_id =
-        (nmo_object_id_t)yyjson_get_uint(parent_val);
-    out_op->add_link.from_io_id =
-        (nmo_object_id_t)yyjson_get_uint(from_val);
-    out_op->add_link.to_io_id =
-        (nmo_object_id_t)yyjson_get_uint(to_val);
-    out_op->add_link.activation_delay = activation_delay;
+    nmo_status_t st = nmo_edit_plan_add_behavior_link(
+        edit_plan,
+        (nmo_object_id_t)yyjson_get_uint(parent_val),
+        (nmo_object_id_t)yyjson_get_uint(from_val),
+        (nmo_object_id_t)yyjson_get_uint(to_val),
+        activation_delay);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
 static int patch_parse_rewire_behavior_link(yyjson_val *op_obj,
-                                            patch_operation_t *out_op) {
+                                            nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "link_id",
@@ -896,19 +899,22 @@ static int patch_parse_rewire_behavior_link(yyjson_val *op_obj,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_REWIRE_BEHAVIOR_LINK;
-    out_op->rewire_link.link_id =
-        (nmo_object_id_t)yyjson_get_uint(link_val);
-    out_op->rewire_link.from_io_id =
-        (nmo_object_id_t)yyjson_get_uint(from_val);
-    out_op->rewire_link.to_io_id =
-        (nmo_object_id_t)yyjson_get_uint(to_val);
+    nmo_status_t st = nmo_edit_plan_add_rewire_behavior_link(
+        edit_plan,
+        (nmo_object_id_t)yyjson_get_uint(link_val),
+        (nmo_object_id_t)yyjson_get_uint(from_val),
+        (nmo_object_id_t)yyjson_get_uint(to_val));
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
 static int patch_parse_set_behavior_link_delay(yyjson_val *op_obj,
-                                               patch_operation_t *out_op) {
+                                               nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "link_id",
@@ -937,17 +943,21 @@ static int patch_parse_set_behavior_link_delay(yyjson_val *op_obj,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_SET_BEHAVIOR_LINK_DELAY;
-    out_op->set_link_delay.link_id =
-        (nmo_object_id_t)yyjson_get_uint(link_val);
-    out_op->set_link_delay.activation_delay =
-        (uint32_t)yyjson_get_uint(delay_val);
+    nmo_status_t st = nmo_edit_plan_add_set_behavior_link_delay(
+        edit_plan,
+        (nmo_object_id_t)yyjson_get_uint(link_val),
+        (uint32_t)yyjson_get_uint(delay_val));
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
 static int patch_parse_remove_behavior_link(yyjson_val *op_obj,
-                                            patch_operation_t *out_op) {
+                                            nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "parent_id",
@@ -975,12 +985,16 @@ static int patch_parse_remove_behavior_link(yyjson_val *op_obj,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_REMOVE_BEHAVIOR_LINK;
-    out_op->remove_link.parent_id =
-        (nmo_object_id_t)yyjson_get_uint(parent_val);
-    out_op->remove_link.link_id =
-        (nmo_object_id_t)yyjson_get_uint(link_val);
+    nmo_status_t st = nmo_edit_plan_add_remove_behavior_link(
+        edit_plan,
+        (nmo_object_id_t)yyjson_get_uint(parent_val),
+        (nmo_object_id_t)yyjson_get_uint(link_val));
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -1857,16 +1871,37 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
             rc = patch_parse_remove_node(op_obj, &operation);
         } else if (strcmp(op, "add_behavior_link") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_add_behavior_link(op_obj, &operation);
+            rc = patch_parse_add_behavior_link(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "rewire_behavior_link") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_rewire_behavior_link(op_obj, &operation);
+            rc = patch_parse_rewire_behavior_link(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "set_behavior_link_delay") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_set_behavior_link_delay(op_obj, &operation);
+            rc = patch_parse_set_behavior_link_delay(
+                op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "remove_behavior_link") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_remove_behavior_link(op_obj, &operation);
+            rc = patch_parse_remove_behavior_link(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "add_parameter") == 0 &&
                    out_plan->version == 2u) {
             rc = patch_parse_add_parameter(op_obj, &operation);
