@@ -373,6 +373,7 @@ set(NMO_LUA_SOURCES
     src/lua/lua_bindings_session.c
     src/lua/lua_bindings_type.c
     src/lua/lua_bindings_workspace.c
+    src/lua/lua_fold_map_parser.c
     src/lua/lua_handles.c
     src/lua/lua_module.c
     src/lua/lua_runtime.c

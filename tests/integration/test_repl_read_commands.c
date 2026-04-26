@@ -1087,22 +1087,24 @@ TEST(repl_read, patch_fold_parses_into_edit_plan) {
 }
 
 TEST(repl_read, lua_fold_maps_accept_patch_id_aliases) {
-    assert_source_contains("src/lua/lua_bindings_plan.c",
+    assert_source_contains("include/lua/nmo_lua_fold_map_parser.h",
+                           "nmo_lua_fold_map_parse");
+    assert_source_contains("src/lua/lua_fold_map_parser.c",
                            "\"old_io_id\"");
-    assert_source_contains("src/lua/lua_bindings_plan.c",
+    assert_source_contains("src/lua/lua_fold_map_parser.c",
                            "\"new_io_id\"");
-    assert_source_contains("src/lua/lua_bindings_plan.c",
+    assert_source_contains("src/lua/lua_fold_map_parser.c",
                            "\"old_parameter_id\"");
+    assert_source_contains("src/lua/lua_fold_map_parser.c",
+                           "\"new_parameter_id\"");
     assert_source_contains("src/lua/lua_bindings_plan.c",
-                           "\"new_parameter_id\"");
+                           "nmo_lua_fold_map_parse(");
     assert_source_contains("tools/commands/nmo_cmd_script.c",
-                           "\"old_io_id\"");
-    assert_source_contains("tools/commands/nmo_cmd_script.c",
-                           "\"new_io_id\"");
-    assert_source_contains("tools/commands/nmo_cmd_script.c",
-                           "\"old_parameter_id\"");
-    assert_source_contains("tools/commands/nmo_cmd_script.c",
-                           "\"new_parameter_id\"");
+                           "nmo_lua_fold_map_parse(");
+    assert_source_not_contains("src/lua/lua_bindings_plan.c",
+                               "nmo_lua_plan_parse_fold_maps");
+    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+                               "script_run_lua_parse_fold_maps");
 }
 
 TEST(repl_read, replace_bb_semantic_risks_merge_into_edit_report) {
