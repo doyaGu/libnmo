@@ -2,8 +2,11 @@
 
 #include "behavior/nmo_semantic_validator.h"
 #include "behavior/nmo_edit_plan.h"
+#include "behavior/nmo_script_edit.h"
 #include "document/nmo_document.h"
 #include "object/nmo_class_ids.h"
+#include "type/nmo_operations.h"
+#include "type/nmo_type_guids.h"
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 #include "session/nmo_session.h"
@@ -25,6 +28,21 @@ static void semantic_fixture_init(semantic_fixture_t *fixture)
     ASSERT_NOT_NULL(fixture->ctx);
     fixture->session =
         nmo_session_load(fixture->ctx, NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    ASSERT_NOT_NULL(fixture->session);
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(fixture->session,
+                                                  &fixture->document));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(fixture->ctx, fixture->document,
+                                           &fixture->workspace));
+}
+
+static void semantic_fixture_init_path(semantic_fixture_t *fixture,
+                                       const char *path)
+{
+    memset(fixture, 0, sizeof(*fixture));
+    fixture->ctx = nmo_context_create(
+        &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
+    ASSERT_NOT_NULL(fixture->ctx);
+    fixture->session = nmo_session_load(fixture->ctx, path);
     ASSERT_NOT_NULL(fixture->session);
     ASSERT_EQ(NMO_OK, nmo_session_borrow_document(fixture->session,
                                                   &fixture->document));
@@ -615,6 +633,63 @@ TEST(semantic_validator, edit_plan_reports_operation_object_type_mismatch)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_path(&fixture, NMO_TEST_DATA_FILE("Nop.cmo"));
+
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_object_id_t string_parameter_id = 0u;
+    nmo_object_id_t operation_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(
+              fixture.workspace, "semantic rewire setup", &tx));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_parameter(
+                  tx,
+                  6u,
+                  NMO_SCRIPT_EDIT_PARAM_LOCAL,
+                  CKPGUID_STRING,
+                  "String Operand",
+                  &string_parameter_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_operation(
+                  tx,
+                  6u,
+                  NMO_OP_GUID_ADD,
+                  0u,
+                  0u,
+                  0u,
+                  &operation_id));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_commit(tx));
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_rewire_operation(
+                  plan,
+                  operation_id,
+                  NMO_SCRIPT_EDIT_OP_SLOT_IN1,
+                  string_parameter_id,
+                  0u,
+                  0u));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *mismatch =
+        find_risk(risks, risk_count, "operation_type_mismatch");
+    ASSERT_NOT_NULL(mismatch);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, mismatch->severity);
+    ASSERT_EQ(operation_id, mismatch->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST(semantic_validator, edit_plan_reports_data_cell_bounds)
 {
     semantic_fixture_t fixture;
@@ -690,6 +765,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_parent_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_object_type_mismatch);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_data_cell_bounds);
     REGISTER_TEST(semantic_validator, edit_plan_reports_unknown_building_block);
 TEST_MAIN_END()

@@ -9,6 +9,7 @@
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameterlocal_schemas.h"
+#include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
@@ -575,6 +576,62 @@ static nmo_status_t semantic_add_operation_signature_risk(
     return rc;
 }
 
+static const nmo_parameteroperation_state_t *semantic_parameteroperation_state(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t operation_id)
+{
+    nmo_object_t *object = repo != NULL
+        ? nmo_object_repository_find_by_id(repo, operation_id)
+        : NULL;
+    if (object == NULL ||
+        nmo_object_get_class_id(object) != NMO_CID_PARAMETEROPERATION) {
+        return NULL;
+    }
+    return (const nmo_parameteroperation_state_t *)nmo_object_get_state(object);
+}
+
+static nmo_status_t semantic_add_rewire_operation_signature_risk(
+    nmo_context_t *ctx,
+    nmo_object_repository_t *repo,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t operation_id,
+    uint32_t slot_flags,
+    nmo_object_id_t in1_parameter_id,
+    nmo_object_id_t in2_parameter_id,
+    nmo_object_id_t out_parameter_id)
+{
+    const nmo_parameteroperation_state_t *state =
+        semantic_parameteroperation_state(repo, operation_id);
+    if (state == NULL) {
+        return NMO_OK;
+    }
+
+    nmo_object_id_t final_in1_parameter_id =
+        (slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u
+            ? in1_parameter_id
+            : (state->has_in1 ? state->in1_id : 0u);
+    nmo_object_id_t final_in2_parameter_id =
+        (slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u
+            ? in2_parameter_id
+            : (state->has_in2 ? state->in2_id : 0u);
+    nmo_object_id_t final_out_parameter_id =
+        (slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u
+            ? out_parameter_id
+            : (state->has_out ? state->out_id : 0u);
+
+    return semantic_add_operation_signature_risk(
+        ctx,
+        repo,
+        risks,
+        risk_count,
+        operation_id,
+        state->operation_guid,
+        final_in1_parameter_id,
+        final_in2_parameter_id,
+        final_out_parameter_id);
+}
+
 static nmo_status_t semantic_add_data_cell_risk(
     nmo_object_repository_t *repo,
     nmo_behavior_semantic_risk_t **risks,
@@ -1008,8 +1065,18 @@ static nmo_status_t semantic_validate_basic_edit_op(
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,
             op->data.rewire_operation.out_parameter_id));
-        return semantic_add_parameter_object_ref_risk(
+        NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
             repo, risks, risk_count,
+            op->data.rewire_operation.out_parameter_id));
+        return semantic_add_rewire_operation_signature_risk(
+            ctx,
+            repo,
+            risks,
+            risk_count,
+            op->data.rewire_operation.operation_id,
+            op->data.rewire_operation.slot_flags,
+            op->data.rewire_operation.in1_parameter_id,
+            op->data.rewire_operation.in2_parameter_id,
             op->data.rewire_operation.out_parameter_id);
     case NMO_EDIT_OP_REMOVE_OPERATION:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
