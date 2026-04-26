@@ -50,9 +50,53 @@ typedef struct nmo_debug_probe_args {
     nmo_edit_report_t report;
 } nmo_debug_probe_args_t;
 
-static const char *debug_probe_input_handle(const char *kind);
-static const char *debug_probe_output_handle(const char *kind);
-static const char *debug_probe_text_handle(const char *kind);
+typedef struct debug_probe_kind_spec {
+    const char *kind;
+    nmo_guid_t bb_guid;
+    const char *input_handle;
+    const char *output_handle;
+    const char *text_handle;
+} debug_probe_kind_spec_t;
+
+static const debug_probe_kind_spec_t debug_probe_kind_specs[] = {
+    {
+        "2d-text",
+        NMO_GUID_INIT(0x055B29FEu, 0x662D5CA0u),
+        "input:On",
+        "output:Exit On",
+        "input_param:Text",
+    },
+    {
+        "console",
+        NMO_GUID_INIT(0x18655B3Fu, 0x68291DC3u),
+        "input:In",
+        "output:Out",
+        "input_param:String",
+    },
+    {
+        "debug-output",
+        NMO_GUID_INIT(0x18655B3Fu, 0x68291DC3u),
+        "input:In",
+        "output:Out",
+        "input_param:String",
+    },
+    {
+        "message-logger",
+        NMO_GUID_INIT(0x18655B3Fu, 0x68291DC3u),
+        "input:In",
+        "output:Out",
+        "input_param:String",
+    },
+    {
+        "control-marker",
+        NMO_GUID_INIT(0x302561C4u, 0x0D282980u),
+        "input:In 0",
+        "output:Out 0",
+        NULL,
+    },
+};
+
+static const debug_probe_kind_spec_t *debug_probe_find_kind(const char *kind);
 static nmo_status_t debug_probe_infer_removed_link_endpoints(
     nmo_cmd_ctx_t *ctx,
     nmo_debug_probe_args_t *args);
@@ -111,23 +155,20 @@ static int debug_probe_parse(int argc,
         }
     }
 
-    if (strcmp(args->kind, "2d-text") != 0 &&
-        strcmp(args->kind, "console") != 0 &&
-        strcmp(args->kind, "debug-output") != 0 &&
-        strcmp(args->kind, "message-logger") != 0 &&
-        strcmp(args->kind, "control-marker") != 0) {
+    const debug_probe_kind_spec_t *spec = debug_probe_find_kind(args->kind);
+    if (spec == NULL) {
         fprintf(stderr, "Error: Unsupported debug probe kind '%s'\n",
                 args->kind);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (args->text != NULL && debug_probe_text_handle(args->kind) == NULL) {
+    if (args->text != NULL && spec->text_handle == NULL) {
         fprintf(stderr,
                 "Error: --text is only supported for 2d-text, console, and "
                 "debug-output/message-logger probes\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if ((args->from_io_id != 0u && debug_probe_input_handle(args->kind) == NULL) ||
-        (args->to_io_id != 0u && debug_probe_output_handle(args->kind) == NULL)) {
+    if ((args->from_io_id != 0u && spec->input_handle == NULL) ||
+        (args->to_io_id != 0u && spec->output_handle == NULL)) {
         fprintf(stderr, "Error: Probe kind '%s' has no known control IO handles\n",
                 args->kind);
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -143,50 +184,17 @@ static int debug_probe_parse(int argc,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static const char *debug_probe_input_handle(const char *kind)
+static const debug_probe_kind_spec_t *debug_probe_find_kind(const char *kind)
 {
-    if (strcmp(kind, "2d-text") == 0) {
-        return "input:On";
+    if (kind == NULL) {
+        return NULL;
     }
-    if (strcmp(kind, "console") == 0 || strcmp(kind, "debug-output") == 0) {
-        return "input:In";
-    }
-    if (strcmp(kind, "message-logger") == 0) {
-        return "input:In";
-    }
-    if (strcmp(kind, "control-marker") == 0) {
-        return "input:In 0";
-    }
-    return NULL;
-}
-
-static const char *debug_probe_output_handle(const char *kind)
-{
-    if (strcmp(kind, "2d-text") == 0) {
-        return "output:Exit On";
-    }
-    if (strcmp(kind, "console") == 0 || strcmp(kind, "debug-output") == 0) {
-        return "output:Out";
-    }
-    if (strcmp(kind, "message-logger") == 0) {
-        return "output:Out";
-    }
-    if (strcmp(kind, "control-marker") == 0) {
-        return "output:Out 0";
-    }
-    return NULL;
-}
-
-static const char *debug_probe_text_handle(const char *kind)
-{
-    if (strcmp(kind, "2d-text") == 0) {
-        return "input_param:Text";
-    }
-    if (strcmp(kind, "console") == 0 || strcmp(kind, "debug-output") == 0) {
-        return "input_param:String";
-    }
-    if (strcmp(kind, "message-logger") == 0) {
-        return "input_param:String";
+    for (size_t i = 0;
+         i < sizeof(debug_probe_kind_specs) / sizeof(debug_probe_kind_specs[0]);
+         ++i) {
+        if (strcmp(debug_probe_kind_specs[i].kind, kind) == 0) {
+            return &debug_probe_kind_specs[i];
+        }
     }
     return NULL;
 }
@@ -339,25 +347,18 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
     nmo_debug_probe_args_t *args = (nmo_debug_probe_args_t *)user_data;
     nmo_edit_plan_t *plan = NULL;
     nmo_status_t status = NMO_OK;
-    const nmo_guid_t bb_2d_text = NMO_GUID(0x055B29FEu, 0x662D5CA0u);
-    const nmo_guid_t bb_output_to_console =
-        NMO_GUID(0x18655B3Fu, 0x68291DC3u);
-    const nmo_guid_t bb_nop = NMO_GUID(0x302561C4u, 0x0D282980u);
-    nmo_guid_t probe_guid = bb_2d_text;
     size_t node_op_index = 0u;
 
     if (ctx == NULL || args == NULL) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_edit_report_init(&args->report);
-    if (strcmp(args->kind, "console") == 0 ||
-        strcmp(args->kind, "debug-output") == 0 ||
-        strcmp(args->kind, "message-logger") == 0) {
-        probe_guid = bb_output_to_console;
-    } else if (strcmp(args->kind, "control-marker") == 0) {
-        probe_guid = bb_nop;
+    const debug_probe_kind_spec_t *spec = debug_probe_find_kind(args->kind);
+    if (spec == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
     }
+
+    nmo_edit_report_init(&args->report);
     status = debug_probe_infer_removed_link_endpoints(ctx, args);
     if (status == NMO_OK) {
         status = nmo_edit_plan_create(&plan);
@@ -371,12 +372,11 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
     }
     if (status == NMO_OK) {
         status = nmo_edit_plan_add_node(
-            plan, args->behavior_id, probe_guid, args->name);
+            plan, args->behavior_id, spec->bb_guid, args->name);
     }
-    const char *text_handle = debug_probe_text_handle(args->kind);
-    if (status == NMO_OK && args->text != NULL && text_handle != NULL) {
+    if (status == NMO_OK && args->text != NULL && spec->text_handle != NULL) {
         status = nmo_edit_plan_add_set_parameter_value_from_handle(
-            plan, node_op_index, text_handle, args->text, NULL);
+            plan, node_op_index, spec->text_handle, args->text, NULL);
     }
     if (status == NMO_OK && args->from_io_id != 0u) {
         status = nmo_edit_plan_add_behavior_link_to_handle(
@@ -384,7 +384,7 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
             args->behavior_id,
             args->from_io_id,
             node_op_index,
-            debug_probe_input_handle(args->kind),
+            spec->input_handle,
             args->has_delay ? args->delay : 0u);
     }
     if (status == NMO_OK && args->to_io_id != 0u) {
@@ -392,7 +392,7 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
             plan,
             args->behavior_id,
             node_op_index,
-            debug_probe_output_handle(args->kind),
+            spec->output_handle,
             args->to_io_id,
             (args->from_io_id == 0u && args->has_delay) ? args->delay : 0u);
     }
