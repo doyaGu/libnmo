@@ -1120,7 +1120,7 @@ static bool patch_parse_parameter_kind(
 }
 
 static int patch_parse_add_parameter(yyjson_val *op_obj,
-                                     patch_operation_t *out_op) {
+                                     nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "owner_id",
@@ -1166,18 +1166,23 @@ static int patch_parse_add_parameter(yyjson_val *op_obj,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_ADD_PARAMETER;
-    out_op->add_parameter.owner_id =
-        (nmo_object_id_t)yyjson_get_uint(owner_val);
-    out_op->add_parameter.kind = kind;
-    out_op->add_parameter.type_guid = type_guid;
-    out_op->add_parameter.name = name;
+    nmo_status_t st = nmo_edit_plan_add_parameter(
+        edit_plan,
+        (nmo_object_id_t)yyjson_get_uint(owner_val),
+        kind,
+        type_guid,
+        name);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
 static int patch_parse_disconnect_parameter(yyjson_val *op_obj,
-                                            patch_operation_t *out_op) {
+                                            nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "target_id",
@@ -1197,15 +1202,19 @@ static int patch_parse_disconnect_parameter(yyjson_val *op_obj,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_DISCONNECT_PARAMETER;
-    out_op->disconnect_parameter.target_id =
-        (nmo_object_id_t)yyjson_get_uint(target_val);
+    nmo_status_t st = nmo_edit_plan_add_disconnect_parameter(
+        edit_plan, (nmo_object_id_t)yyjson_get_uint(target_val));
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
 static int patch_parse_connect_parameter(yyjson_val *op_obj,
-                                         patch_operation_t *out_op) {
+                                         nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "source_id",
@@ -1233,17 +1242,21 @@ static int patch_parse_connect_parameter(yyjson_val *op_obj,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_CONNECT_PARAMETER;
-    out_op->connect_parameter.source_id =
-        (nmo_object_id_t)yyjson_get_uint(source_val);
-    out_op->connect_parameter.target_id =
-        (nmo_object_id_t)yyjson_get_uint(target_val);
+    nmo_status_t st = nmo_edit_plan_add_connect_parameter(
+        edit_plan,
+        (nmo_object_id_t)yyjson_get_uint(source_val),
+        (nmo_object_id_t)yyjson_get_uint(target_val));
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
 static int patch_parse_remove_parameter(yyjson_val *op_obj,
-                                        patch_operation_t *out_op) {
+                                        nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "parameter_id",
@@ -1264,17 +1277,21 @@ static int patch_parse_remove_parameter(yyjson_val *op_obj,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_REMOVE_PARAMETER;
-    out_op->remove_parameter.parameter_id =
-        (nmo_object_id_t)yyjson_get_uint(parameter_val);
-    out_op->remove_parameter.detach =
-        patch_optional_bool(op_obj, "detach", false);
+    nmo_status_t st = nmo_edit_plan_add_remove_parameter(
+        edit_plan,
+        (nmo_object_id_t)yyjson_get_uint(parameter_val),
+        patch_optional_bool(op_obj, "detach", false));
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
 static int patch_parse_set_parameter_value(yyjson_val *op_obj,
-                                           patch_operation_t *out_op) {
+                                           nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "parameter_id",
@@ -1301,16 +1318,19 @@ static int patch_parse_set_parameter_value(yyjson_val *op_obj,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_SET_PARAMETER_VALUE;
-    out_op->set_parameter_value.parameter_id =
-        (nmo_object_id_t)yyjson_get_uint(parameter_val);
-    out_op->set_parameter_value.value = value;
+    nmo_status_t st = nmo_edit_plan_add_set_parameter_value(
+        edit_plan, (nmo_object_id_t)yyjson_get_uint(parameter_val), value, NULL);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
 static int patch_parse_set_parameter_bytes(yyjson_val *op_obj,
-                                           patch_operation_t *out_op) {
+                                           nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "parameter_id",
@@ -1351,14 +1371,22 @@ static int patch_parse_set_parameter_bytes(yyjson_val *op_obj,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_SET_PARAMETER_BYTES;
-    out_op->set_parameter_bytes.parameter_id =
-        (nmo_object_id_t)parameter_id;
-    out_op->set_parameter_bytes.bytes = bytes;
-    out_op->set_parameter_bytes.byte_count = byte_count;
-    out_op->set_parameter_bytes.resize =
-        patch_optional_bool(op_obj, "resize", false);
+    const nmo_parameter_write_options_t options = {
+        .resize = patch_optional_bool(op_obj, "resize", false),
+    };
+    nmo_status_t st = nmo_edit_plan_add_set_parameter_bytes(
+        edit_plan,
+        (nmo_object_id_t)parameter_id,
+        bytes,
+        byte_count,
+        &options);
+    free(bytes);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -1904,22 +1932,52 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
             continue;
         } else if (strcmp(op, "add_parameter") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_add_parameter(op_obj, &operation);
+            rc = patch_parse_add_parameter(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "disconnect_parameter") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_disconnect_parameter(op_obj, &operation);
+            rc = patch_parse_disconnect_parameter(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "connect_parameter") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_connect_parameter(op_obj, &operation);
+            rc = patch_parse_connect_parameter(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "remove_parameter") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_remove_parameter(op_obj, &operation);
+            rc = patch_parse_remove_parameter(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "set_parameter_value") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_set_parameter_value(op_obj, &operation);
+            rc = patch_parse_set_parameter_value(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "set_parameter_bytes") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_set_parameter_bytes(op_obj, &operation);
+            rc = patch_parse_set_parameter_bytes(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "set_data_cell") == 0 &&
                    out_plan->version == 2u) {
             rc = patch_parse_set_data_cell(op_obj, out_plan->edit_plan);
