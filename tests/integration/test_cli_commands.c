@@ -21,6 +21,7 @@
 #include "core/nmo_array.h"
 #include "format/nmo_stb_adapter.h"
 #include "object/builtin/nmo_group_schemas.h"
+#include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
@@ -274,6 +275,75 @@ static const char *json_envelope_command(yyjson_doc *doc) {
     if (!root) return NULL;
     yyjson_val *cmd = yyjson_obj_get(root, "command");
     return yyjson_get_str(cmd);
+}
+
+static nmo_object_id_t json_operation_handle_id(yyjson_val *operation,
+                                                const char *name) {
+    yyjson_val *handles = operation != NULL
+        ? yyjson_obj_get(operation, "handles")
+        : NULL;
+    if (handles == NULL || !yyjson_is_arr(handles) || name == NULL) {
+        return 0u;
+    }
+    size_t idx, max;
+    yyjson_val *handle;
+    yyjson_arr_foreach(handles, idx, max, handle) {
+        const char *handle_name =
+            yyjson_get_str(yyjson_obj_get(handle, "name"));
+        if (handle_name != NULL && strcmp(handle_name, name) == 0) {
+            return (nmo_object_id_t)yyjson_get_uint(
+                yyjson_obj_get(handle, "object_id"));
+        }
+    }
+    return 0u;
+}
+
+static bool read_behavior_link_delay_by_ios(const char *path,
+                                            nmo_object_id_t from_io_id,
+                                            nmo_object_id_t to_io_id,
+                                            int16_t *out_delay) {
+    if (out_delay == NULL) {
+        return false;
+    }
+    *out_delay = 0;
+    nmo_context_desc_t desc = {0};
+    desc.data_dir = NMO_TEST_DATA_DIR;
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    if (ctx == NULL) {
+        return false;
+    }
+    nmo_session_t *session = nmo_session_create(ctx);
+    if (session == NULL) {
+        nmo_context_release(ctx);
+        return false;
+    }
+    bool ok = false;
+    if (nmo_session_load_file(session, path, NULL, NULL) == NMO_OK) {
+        nmo_object_repository_t *repo = nmo_session_get_repository(session);
+        size_t object_count = 0u;
+        nmo_object_t **objects = repo != NULL
+            ? nmo_object_repository_get_all(repo, &object_count)
+            : NULL;
+        for (size_t i = 0; objects != NULL && i < object_count; ++i) {
+            nmo_object_t *obj = objects[i];
+            if (obj == NULL ||
+                nmo_object_get_class_id(obj) != NMO_CID_BEHAVIORLINK) {
+                continue;
+            }
+            const nmo_behaviorlink_state_t *state =
+                (const nmo_behaviorlink_state_t *)nmo_object_get_state(obj);
+            if (state != NULL &&
+                state->in_io_id == from_io_id &&
+                state->out_io_id == to_io_id) {
+                *out_delay = state->activation_delay;
+                ok = true;
+                break;
+            }
+        }
+    }
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+    return ok;
 }
 
 /* ============================================================================
@@ -3176,6 +3246,99 @@ TEST(cli, debug_probe_remove_link_infers_endpoints) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, debug_probe_delay_applies_to_inserted_input_link) {
+    const char *output = "test_debug_probe_delay_2d_text.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json debug probe 2d-text --behavior 237 --remove-link 213 "
+             "--delay 4 --name InsertedProbe --text \"loading trace\" "
+             "\"%s\" -o \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"), output);
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    ASSERT_STR_EQ(json_envelope_command(doc), "debug.probe");
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(data, "ok")));
+    yyjson_val *operations = yyjson_obj_get(data, "operations");
+    ASSERT_TRUE(operations && yyjson_is_arr(operations));
+    ASSERT_EQ(5u, yyjson_arr_size(operations));
+    yyjson_val *node_op = yyjson_arr_get(operations, 1);
+    nmo_object_id_t input_on_id =
+        json_operation_handle_id(node_op, "input:On");
+    nmo_object_id_t output_exit_on_id =
+        json_operation_handle_id(node_op, "output:Exit On");
+    ASSERT_TRUE(input_on_id != 0u);
+    ASSERT_TRUE(output_exit_on_id != 0u);
+    yyjson_doc_free(doc);
+
+    int16_t input_delay = 0;
+    int16_t output_delay = 0;
+    ASSERT_TRUE(read_behavior_link_delay_by_ios(output, 232u, input_on_id,
+                                                &input_delay));
+    ASSERT_TRUE(read_behavior_link_delay_by_ios(output, output_exit_on_id, 150u,
+                                                &output_delay));
+    ASSERT_EQ(4, input_delay);
+    ASSERT_EQ(0, output_delay);
+    remove(output);
+}
+
+TEST(cli, debug_probe_remove_link_preserves_original_delay) {
+    const char *delayed_input = "test_debug_probe_source_delay.cmo";
+    const char *output = "test_debug_probe_preserve_delay.cmo";
+    remove(delayed_input);
+    remove(output);
+
+    char set_delay_args[1024];
+    snprintf(set_delay_args, sizeof(set_delay_args),
+             "script link set-delay --link 213 --delay 6 \"%s\" -o \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"), delayed_input);
+    yyjson_doc *delay_doc = run_cli_json(set_delay_args);
+    ASSERT_NOT_NULL(delay_doc);
+    ASSERT_STR_EQ(json_envelope_command(delay_doc), "script.link.set-delay");
+    ASSERT_TRUE(yyjson_get_bool(
+        yyjson_obj_get(json_envelope_data(delay_doc), "ok")));
+    yyjson_doc_free(delay_doc);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "debug probe 2d-text --behavior 237 --remove-link 213 "
+             "--name InsertedProbe --text \"loading trace\" \"%s\" -o \"%s\"",
+             delayed_input, output);
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    ASSERT_STR_EQ(json_envelope_command(doc), "debug.probe");
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(data, "ok")));
+    yyjson_val *operations = yyjson_obj_get(data, "operations");
+    ASSERT_TRUE(operations && yyjson_is_arr(operations));
+    ASSERT_EQ(5u, yyjson_arr_size(operations));
+    yyjson_val *node_op = yyjson_arr_get(operations, 1);
+    nmo_object_id_t input_on_id =
+        json_operation_handle_id(node_op, "input:On");
+    nmo_object_id_t output_exit_on_id =
+        json_operation_handle_id(node_op, "output:Exit On");
+    ASSERT_TRUE(input_on_id != 0u);
+    ASSERT_TRUE(output_exit_on_id != 0u);
+    yyjson_doc_free(doc);
+
+    int16_t input_delay = 0;
+    int16_t output_delay = 0;
+    ASSERT_TRUE(read_behavior_link_delay_by_ios(output, 232u, input_on_id,
+                                                &input_delay));
+    ASSERT_TRUE(read_behavior_link_delay_by_ios(output, output_exit_on_id, 150u,
+                                                &output_delay));
+    ASSERT_EQ(6, input_delay);
+    ASSERT_EQ(0, output_delay);
+    remove(delayed_input);
+    remove(output);
+}
+
 TEST(cli, debug_probe_console_dry_run_reports_edit_plan) {
     char args[1024];
     snprintf(args, sizeof(args),
@@ -3385,6 +3548,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, debug_probe_to_io_links_probe_output);
     REGISTER_TEST(cli, debug_probe_remove_link_inserts_probe);
     REGISTER_TEST(cli, debug_probe_remove_link_infers_endpoints);
+    REGISTER_TEST(cli, debug_probe_delay_applies_to_inserted_input_link);
+    REGISTER_TEST(cli, debug_probe_remove_link_preserves_original_delay);
     REGISTER_TEST(cli, debug_probe_console_dry_run_reports_edit_plan);
     REGISTER_TEST(cli, debug_probe_debug_output_dry_run_reports_edit_plan);
     REGISTER_TEST(cli, debug_probe_control_marker_dry_run_reports_edit_plan);

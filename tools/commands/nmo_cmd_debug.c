@@ -42,6 +42,8 @@ typedef struct nmo_debug_probe_args {
     nmo_object_id_t remove_link_id;
     nmo_object_id_t from_io_id;
     nmo_object_id_t to_io_id;
+    uint32_t delay;
+    bool has_delay;
     const char *name;
     const char *text;
     nmo_edit_report_t report;
@@ -81,6 +83,9 @@ static int debug_probe_parse(int argc,
             args->from_io_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "--to-io") == 0 && i + 1 < argc) {
             args->to_io_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
+        } else if (strcmp(argv[i], "--delay") == 0 && i + 1 < argc) {
+            args->delay = (uint32_t)strtoul(argv[++i], NULL, 10);
+            args->has_delay = true;
         } else if (strcmp(argv[i], "--name") == 0 && i + 1 < argc) {
             args->name = argv[++i];
         } else if (strcmp(argv[i], "--text") == 0 && i + 1 < argc) {
@@ -122,7 +127,7 @@ static int debug_probe_parse(int argc,
         fprintf(stderr,
                 "Usage: nmo debug probe 2d-text|console|debug-output|control-marker "
                 "--behavior <id> [--remove-link <id>] [--from-io <id>] [--to-io <id>] "
-                "[--name <name>] [--text <text>] [--dry-run] <file> "
+                "[--delay <n>] [--name <name>] [--text <text>] [--dry-run] <file> "
                 "-o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -182,6 +187,10 @@ static nmo_status_t debug_probe_infer_removed_link_endpoints(
     if (args->to_io_id == 0u) {
         args->to_io_id = link_state->out_io_id;
     }
+    if (!args->has_delay && link_state->activation_delay > 0) {
+        args->delay = (uint32_t)link_state->activation_delay;
+        args->has_delay = true;
+    }
     return NMO_OK;
 }
 
@@ -239,7 +248,7 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
             args->from_io_id,
             node_op_index,
             debug_probe_input_handle(args->kind),
-            0u);
+            args->has_delay ? args->delay : 0u);
     }
     if (status == NMO_OK && args->to_io_id != 0u) {
         status = nmo_edit_plan_add_behavior_link_from_handle(
@@ -248,7 +257,7 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
             node_op_index,
             debug_probe_output_handle(args->kind),
             args->to_io_id,
-            0u);
+            (args->from_io_id == 0u && args->has_delay) ? args->delay : 0u);
     }
     if (status == NMO_OK) {
         nmo_edit_executor_options_t options =

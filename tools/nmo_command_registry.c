@@ -326,7 +326,7 @@ static void debug_export_usage(FILE *out) {
 }
 
 static void debug_probe_usage(FILE *out) {
-    fprintf(out, "Usage: nmo debug probe 2d-text|console|debug-output|control-marker --behavior <id> [--remove-link <id>] [--from-io <id>] [--to-io <id>] [--name <name>] [--text <text>] [--dry-run] <file> -o <output>\n\n");
+    fprintf(out, "Usage: nmo debug probe 2d-text|console|debug-output|control-marker --behavior <id> [--remove-link <id>] [--from-io <id>] [--to-io <id>] [--delay <n>] [--name <name>] [--text <text>] [--dry-run] <file> -o <output>\n\n");
     fprintf(out, "Inject a diagnostic probe BB through the unified edit executor.\n\n");
     fprintf(out, "Probe kinds:\n");
     fprintf(out, "  2d-text                 Add a 2D Text building block node\n\n");
@@ -338,6 +338,7 @@ static void debug_probe_usage(FILE *out) {
     fprintf(out, "  --remove-link <id>      Existing link removed before inserting the probe\n");
     fprintf(out, "  --from-io <id>          Existing source IO linked to the probe input\n");
     fprintf(out, "  --to-io <id>            Existing target IO linked from the probe output\n");
+    fprintf(out, "  --delay <n>             Activation delay for the first generated probe link\n");
     fprintf(out, "  --name <name>           Probe node name (default: nmo debug probe)\n");
     fprintf(out, "  --text <text>           2D Text content for 2d-text probes\n");
     fprintf(out, "  --dry-run               Report the edit without saving\n");
