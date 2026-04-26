@@ -273,6 +273,40 @@ TEST(lua_bindings_plan, plan_module_executes_fold_dry_run)
     nmo_lua_runtime_destroy(runtime);
 }
 
+TEST(lua_bindings_plan, plan_module_executes_fold_with_maps_dry_run)
+{
+    nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
+    ASSERT_NOT_NULL(runtime);
+
+    ASSERT_EQ(NMO_OK, nmo_lua_register_platform_bindings(runtime));
+    assert_lua_ok(
+        runtime,
+        "local context = require('nmo.context')\n"
+        "local document = require('nmo.document')\n"
+        "local workspace_mod = require('nmo.workspace')\n"
+        "local plan = require('nmo.plan')\n"
+        "local ctx = context.create()\n"
+        "local doc = document.load_file(ctx, '" NMO_TEST_DATA_FILE("Ballance/base.cmo") "')\n"
+        "local ws = workspace_mod.create(ctx, doc)\n"
+        "local p = plan.new()\n"
+        "plan.fold(p, 4692, { 2364, 2208 }, '42414C07-10000007', 'Lua Fold Mapped BB', {\n"
+        "    anchor = 2364,\n"
+        "    preserve_boundary = true,\n"
+        "    inputs = {\n"
+        "        { old_index = 0, new_index = 0 },\n"
+        "        { old_index = 1, new_index = 1 },\n"
+        "    },\n"
+        "})\n"
+        "local report = plan.execute(p, ws, { dry_run = true })\n"
+        "assert(report.ok == true)\n"
+        "assert(report.operation_count == 1)\n"
+        "assert(report.operations[1].op == 'fold')\n"
+        "assert(report.operations[1].primary_id == 4692)\n"
+        "assert(report.operations[1].result_id == 2364)\n");
+
+    nmo_lua_runtime_destroy(runtime);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(lua_bindings_plan, plan_module_builds_edit_plan);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_dry_run);
@@ -282,4 +316,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_add_operation_dry_run);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_parameter_value_dry_run);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_fold_dry_run);
+    REGISTER_TEST(lua_bindings_plan, plan_module_executes_fold_with_maps_dry_run);
 TEST_MAIN_END()
