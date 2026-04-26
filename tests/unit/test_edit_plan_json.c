@@ -478,6 +478,24 @@ TEST(edit_plan_json, rejects_incomplete_manifest_roots) {
     ASSERT_NE(NMO_OK,
               nmo_edit_plan_manifest_json_read(
                   empty_operations, strlen(empty_operations), &manifest));
+    ASSERT_STR_CONTAINS(nmo_last_error_message(),
+                        "Edit plan manifest operations must be a non-empty array");
+    nmo_edit_plan_manifest_dispose(&manifest);
+
+    const char *unknown_root_field =
+        "{"
+        "\"version\":2,"
+        "\"input\":\"in.cmo\","
+        "\"output\":\"out.cmo\","
+        "\"operations\":[{\"op\":\"add_io\",\"behavior_id\":1,"
+        "\"kind\":\"input\",\"name\":\"In\"}],"
+        "\"extra\":true"
+        "}";
+    ASSERT_NE(NMO_OK,
+              nmo_edit_plan_manifest_json_read(
+                  unknown_root_field, strlen(unknown_root_field), &manifest));
+    ASSERT_STR_CONTAINS(nmo_last_error_message(),
+                        "Unknown field 'extra' in edit plan manifest root");
     nmo_edit_plan_manifest_dispose(&manifest);
 }
 

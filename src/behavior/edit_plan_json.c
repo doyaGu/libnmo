@@ -1946,13 +1946,13 @@ nmo_status_t nmo_edit_plan_manifest_json_read(
         yyjson_arr_size(ops) == 0u) {
         yyjson_doc_free(doc);
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "Patch operations must be a non-empty array");
+                         "Edit plan manifest operations must be a non-empty array");
     }
     static const char *const root_allowed[] = {
         "version", "input", "output", "operations",
     };
     nmo_status_t st = reject_unknown_fields(
-        root, "patch root", root_allowed,
+        root, "edit plan manifest root", root_allowed,
         sizeof(root_allowed) / sizeof(root_allowed[0]));
     if (st != NMO_OK) {
         yyjson_doc_free(doc);
