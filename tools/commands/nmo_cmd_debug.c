@@ -12,6 +12,7 @@
 #include "../nmo_edit_report_json.h"
 #include "../nmo_cli_write.h"
 #include "../nmo_tool_common.h"
+#include "../nmo_tool_session.h"
 #include "../nmo_opt.h"
 
 #include "behavior/nmo_edit_plan.h"
@@ -53,6 +54,10 @@ static const char *debug_probe_input_handle(const char *kind);
 static const char *debug_probe_output_handle(const char *kind);
 static nmo_status_t debug_probe_infer_removed_link_endpoints(
     nmo_cmd_ctx_t *ctx,
+    nmo_debug_probe_args_t *args);
+static nmo_status_t debug_probe_reconcile_saved_link_ids(
+    nmo_cmd_ctx_t *ctx,
+    const char *output_path,
     nmo_debug_probe_args_t *args);
 
 static int debug_probe_parse(int argc,
@@ -194,6 +199,113 @@ static nmo_status_t debug_probe_infer_removed_link_endpoints(
     return NMO_OK;
 }
 
+static nmo_object_id_t debug_probe_find_matching_link(
+    nmo_object_repository_t *repo,
+    const nmo_behaviorlink_state_t *wanted)
+{
+    if (repo == NULL || wanted == NULL) {
+        return 0u;
+    }
+    size_t object_count = 0u;
+    nmo_object_t **objects = nmo_object_repository_get_all(repo, &object_count);
+    for (size_t i = 0; objects != NULL && i < object_count; ++i) {
+        nmo_object_t *object = objects[i];
+        if (object == NULL ||
+            nmo_object_get_class_id(object) != NMO_CID_BEHAVIORLINK) {
+            continue;
+        }
+        const nmo_behaviorlink_state_t *state =
+            (const nmo_behaviorlink_state_t *)nmo_object_get_state(object);
+        if (state != NULL &&
+            state->in_io_id == wanted->in_io_id &&
+            state->out_io_id == wanted->out_io_id &&
+            state->activation_delay == wanted->activation_delay &&
+            state->initial_activation_delay == wanted->initial_activation_delay) {
+            return nmo_object_get_id(object);
+        }
+    }
+    return 0u;
+}
+
+static void debug_probe_replace_report_id(nmo_edit_report_t *report,
+                                          nmo_object_id_t old_id,
+                                          nmo_object_id_t new_id)
+{
+    if (report == NULL || old_id == 0u || new_id == 0u || old_id == new_id) {
+        return;
+    }
+    for (size_t i = 0; i < report->operation_count; ++i) {
+        nmo_edit_operation_result_t *operation = &report->operations[i];
+        if (operation->result_id == old_id) {
+            operation->result_id = new_id;
+        }
+        for (size_t j = 0; j < operation->handle_count; ++j) {
+            if (operation->handles[j].id == old_id) {
+                operation->handles[j].id = new_id;
+            }
+        }
+    }
+    for (size_t i = 0; i < report->created_object_count; ++i) {
+        if (report->created_objects[i].id == old_id) {
+            report->created_objects[i].id = new_id;
+        }
+    }
+}
+
+static nmo_status_t debug_probe_reconcile_saved_link_ids(
+    nmo_cmd_ctx_t *ctx,
+    const char *output_path,
+    nmo_debug_probe_args_t *args)
+{
+    if (ctx == NULL || output_path == NULL || args == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_context_t *saved_ctx = NULL;
+    nmo_document_t *saved_document = NULL;
+    nmo_workspace_t *saved_workspace = NULL;
+    char errbuf[256];
+    if (!nmo_tool_open_document(output_path,
+                                &saved_ctx,
+                                &saved_document,
+                                &saved_workspace,
+                                errbuf,
+                                sizeof(errbuf))) {
+        return NMO_ERR_CANT_OPEN_FILE;
+    }
+
+    nmo_object_repository_t *runtime_repo =
+        nmo_tool_owner_repository(ctx->workspace);
+    nmo_object_repository_t *saved_repo =
+        nmo_tool_owner_repository(saved_workspace);
+    for (size_t i = 0; i < args->report.operation_count; ++i) {
+        nmo_edit_operation_result_t *operation = &args->report.operations[i];
+        if (operation->kind != NMO_EDIT_OP_ADD_BEHAVIOR_LINK ||
+            operation->result_id == 0u ||
+            (saved_repo != NULL &&
+             nmo_object_repository_find_by_id(saved_repo,
+                                              operation->result_id) != NULL)) {
+            continue;
+        }
+        nmo_object_t *runtime_link = runtime_repo != NULL
+            ? nmo_object_repository_find_by_id(runtime_repo,
+                                               operation->result_id)
+            : NULL;
+        const nmo_behaviorlink_state_t *runtime_state = runtime_link != NULL
+            ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(runtime_link)
+            : NULL;
+        nmo_object_id_t saved_id =
+            debug_probe_find_matching_link(saved_repo, runtime_state);
+        if (saved_id != 0u) {
+            debug_probe_replace_report_id(
+                &args->report, operation->result_id, saved_id);
+        }
+    }
+
+    nmo_tool_close_document(saved_ctx, saved_document, saved_workspace);
+    return NMO_OK;
+}
+
 static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
                               bool dry_run,
                               const char *output_path,
@@ -293,6 +405,10 @@ static int debug_probe_report(nmo_cmd_ctx_t *ctx,
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
         yyjson_mut_val *data = yyjson_mut_obj(doc);
+        if (!dry_run && output_path != NULL) {
+            (void)debug_probe_reconcile_saved_link_ids(
+                ctx, output_path, args);
+        }
         if (!dry_run && output_path != NULL && args->report.output_path == NULL) {
             (void)nmo_edit_report_set_output_path(&args->report, output_path);
         }
