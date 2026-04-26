@@ -424,6 +424,57 @@ static bool semantic_add_node_has_handle(
     return false;
 }
 
+static bool semantic_handle_has_prefix(const char *handle_name,
+                                       const char *prefix)
+{
+    if (handle_name == NULL || prefix == NULL) {
+        return false;
+    }
+    size_t prefix_len = strlen(prefix);
+    return strncmp(handle_name, prefix, prefix_len) == 0 &&
+           handle_name[prefix_len] == ':';
+}
+
+static bool semantic_handle_ref_is_control_endpoint(
+    const nmo_edit_plan_t *plan,
+    size_t ref_index,
+    const char *handle_name)
+{
+    const nmo_edit_op_t *ref_op = nmo_edit_plan_get(plan, ref_index);
+    if (ref_op == NULL || handle_name == NULL) {
+        return false;
+    }
+    if (ref_op->kind == NMO_EDIT_OP_ADD_IO) {
+        return strcmp(handle_name, "io") == 0;
+    }
+    if (ref_op->kind == NMO_EDIT_OP_ADD_NODE) {
+        return semantic_handle_has_prefix(handle_name, "input") ||
+               semantic_handle_has_prefix(handle_name, "output");
+    }
+    return false;
+}
+
+static nmo_status_t semantic_add_control_handle_ref_risk(
+    const nmo_edit_plan_t *plan,
+    size_t ref_index,
+    const char *handle_name,
+    nmo_object_id_t object_id,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count)
+{
+    if (semantic_handle_ref_is_control_endpoint(
+            plan, ref_index, handle_name)) {
+        return NMO_OK;
+    }
+    return semantic_add_risk(
+        risks,
+        risk_count,
+        NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+        "control_endpoint_type_mismatch",
+        "Control-flow link handle must resolve to a behavior IO",
+        object_id);
+}
+
 static nmo_status_t semantic_add_invalid_handle_ref_risk(
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
@@ -919,6 +970,13 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 op->primary_id,
                 risks,
                 risk_count));
+            NMO_RETURN_IF_ERROR(semantic_add_control_handle_ref_risk(
+                plan,
+                op->data.add_link.from_io_ref_operation_index,
+                op->data.add_link.from_io_ref_handle,
+                op->primary_id,
+                risks,
+                risk_count));
         }
         if (!op->data.add_link.has_to_io_ref) {
             NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
@@ -936,6 +994,13 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 ctx,
                 plan,
                 op_index,
+                op->data.add_link.to_io_ref_operation_index,
+                op->data.add_link.to_io_ref_handle,
+                op->primary_id,
+                risks,
+                risk_count));
+            NMO_RETURN_IF_ERROR(semantic_add_control_handle_ref_risk(
+                plan,
                 op->data.add_link.to_io_ref_operation_index,
                 op->data.add_link.to_io_ref_handle,
                 op->primary_id,
