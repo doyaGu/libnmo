@@ -52,6 +52,7 @@ typedef struct nmo_debug_probe_args {
 
 static const char *debug_probe_input_handle(const char *kind);
 static const char *debug_probe_output_handle(const char *kind);
+static const char *debug_probe_text_handle(const char *kind);
 static nmo_status_t debug_probe_infer_removed_link_endpoints(
     nmo_cmd_ctx_t *ctx,
     nmo_debug_probe_args_t *args);
@@ -118,8 +119,10 @@ static int debug_probe_parse(int argc,
                 args->kind);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (args->text != NULL && strcmp(args->kind, "2d-text") != 0) {
-        fprintf(stderr, "Error: --text is only supported for 2d-text probes\n");
+    if (args->text != NULL && debug_probe_text_handle(args->kind) == NULL) {
+        fprintf(stderr,
+                "Error: --text is only supported for 2d-text, console, and "
+                "debug-output probes\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if ((args->from_io_id != 0u && debug_probe_input_handle(args->kind) == NULL) ||
@@ -163,6 +166,17 @@ static const char *debug_probe_output_handle(const char *kind)
     }
     if (strcmp(kind, "control-marker") == 0) {
         return "output:Out 0";
+    }
+    return NULL;
+}
+
+static const char *debug_probe_text_handle(const char *kind)
+{
+    if (strcmp(kind, "2d-text") == 0) {
+        return "input_param:Text";
+    }
+    if (strcmp(kind, "console") == 0 || strcmp(kind, "debug-output") == 0) {
+        return "input_param:String";
     }
     return NULL;
 }
@@ -348,10 +362,10 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
         status = nmo_edit_plan_add_node(
             plan, args->behavior_id, probe_guid, args->name);
     }
-    if (status == NMO_OK && args->text != NULL &&
-        strcmp(args->kind, "2d-text") == 0) {
+    const char *text_handle = debug_probe_text_handle(args->kind);
+    if (status == NMO_OK && args->text != NULL && text_handle != NULL) {
         status = nmo_edit_plan_add_set_parameter_value_from_handle(
-            plan, node_op_index, "input_param:Text", args->text, NULL);
+            plan, node_op_index, text_handle, args->text, NULL);
     }
     if (status == NMO_OK && args->from_io_id != 0u) {
         status = nmo_edit_plan_add_behavior_link_to_handle(

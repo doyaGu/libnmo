@@ -340,7 +340,7 @@ static void debug_probe_usage(FILE *out) {
     fprintf(out, "  --to-io <id>            Existing target IO linked from the probe output\n");
     fprintf(out, "  --delay <n>             Activation delay for the first generated probe link\n");
     fprintf(out, "  --name <name>           Probe node name (default: nmo debug probe)\n");
-    fprintf(out, "  --text <text>           2D Text content for 2d-text probes\n");
+    fprintf(out, "  --text <text>           Probe text for 2d-text, console, or debug-output\n");
     fprintf(out, "  --dry-run               Report the edit without saving\n");
     fprintf(out, "  -o, --output <path>     Output file (required unless --dry-run)\n");
 }
