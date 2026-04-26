@@ -374,6 +374,25 @@ static bool semantic_param_array_has_handle(
     return false;
 }
 
+static bool semantic_param_array_handle_type_guid(
+    const char *handle_name,
+    const char *prefix,
+    const nmo_behavior_param_desc_t *params,
+    uint32_t count,
+    nmo_guid_t *out_type_guid)
+{
+    if (out_type_guid == NULL) {
+        return false;
+    }
+    for (uint32_t i = 0u; i < count; ++i) {
+        if (semantic_named_handle_matches(handle_name, prefix, params[i].name)) {
+            *out_type_guid = params[i].type_guid;
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool semantic_add_node_has_handle(
     nmo_context_t *ctx,
     const nmo_edit_op_t *op,
@@ -699,6 +718,38 @@ static const nmo_type_descriptor_t *semantic_parameter_handle_type_desc(
         strcmp(handle_name, "parameter") == 0) {
         return semantic_type_desc_from_guid(
             ctx, ref_op->data.add_parameter.type_guid);
+    }
+    if (ref_op->kind == NMO_EDIT_OP_ADD_NODE) {
+        const nmo_behavior_proto_t *proto =
+            ctx != NULL
+                ? nmo_behavior_registry_find(
+                      nmo_context_get_bb_registry(ctx),
+                      ref_op->data.add_node.bb_guid)
+                : NULL;
+        nmo_guid_t type_guid = NMO_GUID_NULL;
+        if (proto == NULL) {
+            return NULL;
+        }
+        if (semantic_param_array_handle_type_guid(
+                handle_name, "input_param", proto->input_params,
+                proto->input_param_count, &type_guid) ||
+            semantic_param_array_handle_type_guid(
+                handle_name, "input_param_source", proto->input_params,
+                proto->input_param_count, &type_guid) ||
+            semantic_param_array_handle_type_guid(
+                handle_name, "input_param", proto->settings,
+                proto->setting_count, &type_guid) ||
+            semantic_param_array_handle_type_guid(
+                handle_name, "input_param_source", proto->settings,
+                proto->setting_count, &type_guid) ||
+            semantic_param_array_handle_type_guid(
+                handle_name, "output_param", proto->output_params,
+                proto->output_param_count, &type_guid) ||
+            semantic_param_array_handle_type_guid(
+                handle_name, "local_param", proto->local_params,
+                proto->local_param_count, &type_guid)) {
+            return semantic_type_desc_from_guid(ctx, type_guid);
+        }
     }
     return NULL;
 }

@@ -727,6 +727,50 @@ TEST(semantic_validator, edit_plan_reports_operation_type_mismatch_with_handle_r
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_reports_operation_type_mismatch_with_node_param_handle)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_path(&fixture, NMO_TEST_DATA_FILE("Nop.cmo"));
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_node(
+                  plan,
+                  6u,
+                  nmo_guid_parse("055B29FE-662D5CA0"),
+                  "Operation Source 2D Text"));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_operation_with_refs(
+                  plan,
+                  6u,
+                  nmo_guid_parse("33CC6B49-3589282B"),
+                  0u,
+                  0u,
+                  "input_param:Text",
+                  0u,
+                  0u,
+                  NULL,
+                  0u,
+                  0u,
+                  NULL));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *mismatch =
+        find_risk(risks, risk_count, "operation_type_mismatch");
+    ASSERT_NOT_NULL(mismatch);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, mismatch->severity);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST(semantic_validator, edit_plan_reports_operation_parent_type_mismatch)
 {
     semantic_fixture_t fixture;
@@ -926,6 +970,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, edit_plan_reports_value_parameter_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_type_mismatch_with_handle_refs);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_operation_type_mismatch_with_node_param_handle);
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_parent_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_object_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch);
