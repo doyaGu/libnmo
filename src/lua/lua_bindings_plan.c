@@ -685,6 +685,30 @@ static int nmo_lua_plan_set_parameter_value(lua_State *state)
     return 0;
 }
 
+static int nmo_lua_plan_set_parameter_value_from_handle(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    lua_Integer lua_operation_index = luaL_checkinteger(state, 2);
+    const char *handle_name = luaL_checkstring(state, 3);
+    const char *value = luaL_checkstring(state, 4);
+    if (lua_operation_index <= 0) {
+        return luaL_error(state, "operation index is 1-based and must be positive");
+    }
+
+    status = nmo_edit_plan_add_set_parameter_value_from_handle(
+        plan, (size_t)(lua_operation_index - 1), handle_name, value, NULL);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add set parameter value handle op");
+    }
+    return 0;
+}
+
 static int nmo_lua_plan_set_parameter_bytes(lua_State *state)
 {
     nmo_edit_plan_t *plan = NULL;
@@ -710,6 +734,44 @@ static int nmo_lua_plan_set_parameter_bytes(lua_State *state)
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(
             state, status, "Failed to add set parameter bytes op");
+    }
+    return 0;
+}
+
+static int nmo_lua_plan_set_parameter_bytes_from_handle(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    lua_Integer lua_operation_index = luaL_checkinteger(state, 2);
+    const char *handle_name = luaL_checkstring(state, 3);
+    size_t byte_count = 0u;
+    const char *bytes = luaL_checklstring(state, 4, &byte_count);
+    nmo_parameter_write_options_t options = {0};
+    if (lua_operation_index <= 0) {
+        return luaL_error(state, "operation index is 1-based and must be positive");
+    }
+    if (lua_istable(state, 5)) {
+        lua_getfield(state, 5, "resize");
+        if (!lua_isnil(state, -1)) {
+            options.resize = lua_toboolean(state, -1) != 0;
+        }
+        lua_pop(state, 1);
+    }
+
+    status = nmo_edit_plan_add_set_parameter_bytes_from_handle(
+        plan,
+        (size_t)(lua_operation_index - 1),
+        handle_name,
+        (const uint8_t *)bytes,
+        byte_count,
+        &options);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add set parameter bytes handle op");
     }
     return 0;
 }
@@ -1070,8 +1132,12 @@ static int nmo_lua_open_plan_module(lua_State *state)
     lua_setfield(state, -2, "fold");
     lua_pushcfunction(state, nmo_lua_plan_set_parameter_value);
     lua_setfield(state, -2, "set_parameter_value");
+    lua_pushcfunction(state, nmo_lua_plan_set_parameter_value_from_handle);
+    lua_setfield(state, -2, "set_parameter_value_from_handle");
     lua_pushcfunction(state, nmo_lua_plan_set_parameter_bytes);
     lua_setfield(state, -2, "set_parameter_bytes");
+    lua_pushcfunction(state, nmo_lua_plan_set_parameter_bytes_from_handle);
+    lua_setfield(state, -2, "set_parameter_bytes_from_handle");
     lua_pushcfunction(state, nmo_lua_plan_set_data_cell);
     lua_setfield(state, -2, "set_data_cell");
     lua_pushcfunction(state, nmo_lua_plan_interface_policy);

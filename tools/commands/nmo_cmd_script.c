@@ -1167,6 +1167,38 @@ static int script_run_lua_set_parameter_value(lua_State *state)
     return 1;
 }
 
+static int script_run_lua_set_parameter_value_from_handle(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    lua_Integer operation_index = luaL_checkinteger(state, 1);
+    const char *handle_name = luaL_checkstring(state, 2);
+    const char *value = luaL_checkstring(state, 3);
+    nmo_status_t status = NMO_OK;
+
+    if (operation_index <= 0) {
+        return luaL_error(state, "operation index is 1-based and must be positive");
+    }
+
+    status = script_run_ensure_pending_plan(args);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_set_parameter_value_from_handle(
+            args->pending_plan,
+            (size_t)(operation_index - 1),
+            handle_name,
+            value,
+            NULL);
+    }
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to enqueue script parameter handle value");
+    }
+
+    lua_pushinteger(state, script_run_pending_operation_index(args));
+    return 1;
+}
+
 static int script_run_lua_set_parameter_bytes(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
@@ -1198,6 +1230,48 @@ static int script_run_lua_set_parameter_bytes(lua_State *state)
                           nmo_last_error_message() != NULL
                               ? nmo_last_error_message()
                               : "failed to enqueue script parameter bytes");
+    }
+
+    lua_pushinteger(state, script_run_pending_operation_index(args));
+    return 1;
+}
+
+static int script_run_lua_set_parameter_bytes_from_handle(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    lua_Integer operation_index = luaL_checkinteger(state, 1);
+    const char *handle_name = luaL_checkstring(state, 2);
+    size_t byte_count = 0u;
+    const char *bytes = luaL_checklstring(state, 3, &byte_count);
+    nmo_parameter_write_options_t options = {0};
+    nmo_status_t status = NMO_OK;
+
+    if (operation_index <= 0) {
+        return luaL_error(state, "operation index is 1-based and must be positive");
+    }
+    if (lua_istable(state, 4)) {
+        lua_getfield(state, 4, "resize");
+        if (!lua_isnil(state, -1)) {
+            options.resize = lua_toboolean(state, -1) != 0;
+        }
+        lua_pop(state, 1);
+    }
+
+    status = script_run_ensure_pending_plan(args);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_set_parameter_bytes_from_handle(
+            args->pending_plan,
+            (size_t)(operation_index - 1),
+            handle_name,
+            (const uint8_t *)bytes,
+            byte_count,
+            &options);
+    }
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to enqueue script parameter handle bytes");
     }
 
     lua_pushinteger(state, script_run_pending_operation_index(args));
@@ -1310,8 +1384,14 @@ static int script_run_lua_open_executor_module(lua_State *state)
     lua_pushcfunction(state, script_run_lua_set_parameter_value);
     lua_setfield(state, -2, "set_parameter_value");
 
+    lua_pushcfunction(state, script_run_lua_set_parameter_value_from_handle);
+    lua_setfield(state, -2, "set_parameter_value_from_handle");
+
     lua_pushcfunction(state, script_run_lua_set_parameter_bytes);
     lua_setfield(state, -2, "set_parameter_bytes");
+
+    lua_pushcfunction(state, script_run_lua_set_parameter_bytes_from_handle);
+    lua_setfield(state, -2, "set_parameter_bytes_from_handle");
 
     lua_pushcfunction(state, script_run_lua_set_data_cell);
     lua_setfield(state, -2, "set_data_cell");

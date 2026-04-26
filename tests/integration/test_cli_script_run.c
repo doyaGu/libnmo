@@ -638,6 +638,88 @@ TEST(cli, script_run_executor_set_parameter_bytes_uses_edit_plan) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, script_run_executor_set_parameter_value_to_handle_uses_edit_plan) {
+    char script_path[1024];
+    const char *input_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
+    char args[2048];
+    cli_run_result_t result = {0};
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *operations = NULL;
+    yyjson_val *op = NULL;
+
+    ASSERT_TRUE(build_repo_fixture_path(
+        "tests/fixtures/lua/script_run_set_parameter_value_to_handle.lua",
+        script_path,
+        sizeof(script_path)));
+
+    snprintf(args, sizeof(args),
+             "-f json script run --dry-run \"%s\" \"%s\"",
+             script_path,
+             input_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(2u, yyjson_arr_size(operations));
+    op = yyjson_arr_get(operations, 0);
+    ASSERT_STR_EQ("add_node", get_string_field(op, "op"));
+    op = yyjson_arr_get(operations, 1);
+    ASSERT_STR_EQ("set_parameter_value", get_string_field(op, "op"));
+    ASSERT_TRUE(get_uint_field(op, "result_id") != 0u);
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, script_run_executor_set_parameter_bytes_to_handle_uses_edit_plan) {
+    char script_path[1024];
+    const char *input_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
+    char args[2048];
+    cli_run_result_t result = {0};
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *operations = NULL;
+    yyjson_val *op = NULL;
+
+    ASSERT_TRUE(build_repo_fixture_path(
+        "tests/fixtures/lua/script_run_set_parameter_bytes_to_handle.lua",
+        script_path,
+        sizeof(script_path)));
+
+    snprintf(args, sizeof(args),
+             "-f json script run --dry-run \"%s\" \"%s\"",
+             script_path,
+             input_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(2u, yyjson_arr_size(operations));
+    op = yyjson_arr_get(operations, 0);
+    ASSERT_STR_EQ("add_node", get_string_field(op, "op"));
+    op = yyjson_arr_get(operations, 1);
+    ASSERT_STR_EQ("set_parameter_bytes", get_string_field(op, "op"));
+    ASSERT_TRUE(get_uint_field(op, "result_id") != 0u);
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, script_run_executor_set_data_cell_uses_edit_plan) {
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Ballance/Balls.nmo");
@@ -1633,6 +1715,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_run_lua_helpers_enqueue_until_script_end);
     REGISTER_TEST(cli, script_run_executor_set_parameter_value_uses_edit_plan);
     REGISTER_TEST(cli, script_run_executor_set_parameter_bytes_uses_edit_plan);
+    REGISTER_TEST(cli, script_run_executor_set_parameter_value_to_handle_uses_edit_plan);
+    REGISTER_TEST(cli, script_run_executor_set_parameter_bytes_to_handle_uses_edit_plan);
     REGISTER_TEST(cli, script_run_executor_set_data_cell_uses_edit_plan);
     REGISTER_TEST(cli, script_run_executor_add_behavior_link_uses_edit_plan);
     REGISTER_TEST(cli, script_run_executor_add_parameter_uses_edit_plan);

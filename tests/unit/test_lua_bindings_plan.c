@@ -49,9 +49,11 @@ TEST(lua_bindings_plan, plan_module_builds_edit_plan)
         "plan.fold(p, 4692, { 2367 }, '42414C07-10000007', 'Lua Fold BB', { anchor = 2367, preserve_boundary = true })\n"
         "plan.interface_policy(p, 3, 'canonicalize')\n"
         "plan.set_parameter_value(p, 5, '1.25')\n"
+        "plan.set_parameter_value_from_handle(p, 1, 'input_param:Text', 'Lua Plan Text')\n"
         "plan.set_parameter_bytes(p, 64, string.char(0x2A, 0, 0, 0))\n"
+        "plan.set_parameter_bytes_from_handle(p, 1, 'input_param:Text', string.char(0x41, 0), { resize = true })\n"
         "plan.set_data_cell(p, 2261, 0, 1, '0.75')\n"
-        "assert(plan.count(p) == 22)\n");
+        "assert(plan.count(p) == 24)\n");
 
     nmo_lua_runtime_destroy(runtime);
 }
@@ -274,6 +276,40 @@ TEST(lua_bindings_plan, plan_module_executes_connect_parameter_to_handle_dry_run
     nmo_lua_runtime_destroy(runtime);
 }
 
+TEST(lua_bindings_plan, plan_module_executes_parameter_writes_to_handle_dry_run)
+{
+    nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
+    ASSERT_NOT_NULL(runtime);
+
+    ASSERT_EQ(NMO_OK, nmo_lua_register_platform_bindings(runtime));
+    assert_lua_ok(
+        runtime,
+        "local context = require('nmo.context')\n"
+        "local document = require('nmo.document')\n"
+        "local workspace_mod = require('nmo.workspace')\n"
+        "local plan = require('nmo.plan')\n"
+        "local ctx = context.create({ data_dir = '" NMO_TEST_DATA_DIR "' })\n"
+        "local doc = document.load_file(ctx, '" NMO_TEST_DATA_FILE("Ballance/base.cmo") "')\n"
+        "local ws = workspace_mod.create(ctx, doc)\n"
+        "local p = plan.new()\n"
+        "plan.add_node(p, 237, '055B29FE-662D5CA0', 'Lua Plan 2D Text Logger')\n"
+        "plan.set_parameter_value_from_handle(p, 1, 'input_param:Text', 'lua trace')\n"
+        "plan.set_parameter_bytes_from_handle(p, 1, 'input_param:Text', string.char(0x72, 0x61, 0x77, 0), { resize = true })\n"
+        "local report = plan.execute(p, ws, { dry_run = true })\n"
+        "assert(report.ok == true)\n"
+        "assert(report.dry_run == true)\n"
+        "assert(report.operation_count == 3)\n"
+        "assert(report.operations[1].op == 'add_node')\n"
+        "assert(report.operations[2].op == 'set_parameter_value')\n"
+        "assert(report.operations[3].op == 'set_parameter_bytes')\n"
+        "assert(report.operations[2].result_id ~= 0)\n"
+        "assert(report.operations[3].result_id ~= 0)\n"
+        "assert(#report.created_objects > 1)\n"
+        "assert(report.diff.changed_object_count >= 1)\n");
+
+    nmo_lua_runtime_destroy(runtime);
+}
+
 TEST(lua_bindings_plan, plan_module_executes_fold_dry_run)
 {
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
@@ -347,6 +383,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_add_operation_dry_run);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_parameter_value_dry_run);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_connect_parameter_to_handle_dry_run);
+    REGISTER_TEST(lua_bindings_plan, plan_module_executes_parameter_writes_to_handle_dry_run);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_fold_dry_run);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_fold_with_maps_dry_run);
 TEST_MAIN_END()
