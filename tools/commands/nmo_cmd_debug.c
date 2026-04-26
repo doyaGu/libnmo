@@ -37,6 +37,7 @@ typedef struct nmo_debug_probe_args {
     const char *kind;
     nmo_object_id_t behavior_id;
     const char *name;
+    const char *text;
     nmo_edit_report_t report;
 } nmo_debug_probe_args_t;
 
@@ -64,6 +65,8 @@ static int debug_probe_parse(int argc,
             args->behavior_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "--name") == 0 && i + 1 < argc) {
             args->name = argv[++i];
+        } else if (strcmp(argv[i], "--text") == 0 && i + 1 < argc) {
+            args->text = argv[++i];
         } else if ((strcmp(argv[i], "-o") == 0 ||
                     strcmp(argv[i], "--output") == 0) &&
                    i + 1 < argc) {
@@ -87,10 +90,14 @@ static int debug_probe_parse(int argc,
                 args->kind);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
+    if (args->text != NULL && strcmp(args->kind, "2d-text") != 0) {
+        fprintf(stderr, "Error: --text is only supported for 2d-text probes\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
     if (args->behavior_id == 0u || *out_input_path == NULL) {
         fprintf(stderr,
                 "Usage: nmo debug probe 2d-text|console|debug-output|control-marker "
-                "--behavior <id> [--name <name>] [--dry-run] <file> "
+                "--behavior <id> [--name <name>] [--text <text>] [--dry-run] <file> "
                 "-o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -127,6 +134,11 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
     if (status == NMO_OK) {
         status = nmo_edit_plan_add_node(
             plan, args->behavior_id, probe_guid, args->name);
+    }
+    if (status == NMO_OK && args->text != NULL &&
+        strcmp(args->kind, "2d-text") == 0) {
+        status = nmo_edit_plan_add_set_parameter_value_from_handle(
+            plan, 0u, "input_param:Text", args->text, NULL);
     }
     if (status == NMO_OK) {
         nmo_edit_executor_options_t options =
