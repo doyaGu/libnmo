@@ -584,7 +584,7 @@ static int patch_parse_interface_mode(
 }
 
 static int patch_parse_replace_bb(yyjson_val *op_obj,
-                                  patch_operation_t *out_op) {
+                                  nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "behavior_id",
@@ -633,17 +633,22 @@ static int patch_parse_replace_bb(yyjson_val *op_obj,
         version = (uint32_t)yyjson_get_uint(version_val);
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_REPLACE_BB;
-    out_op->replace_bb.behavior_id =
-        (nmo_object_id_t)yyjson_get_uint(id_val);
-    out_op->replace_bb.name = name;
-    out_op->replace_bb.block_guid = guid;
-    out_op->replace_bb.block_version = version;
-    out_op->replace_bb.preserve_links =
-        patch_optional_bool(op_obj, "preserve_links", false);
-    out_op->replace_bb.preserve_params =
+    nmo_behavior_replace_bb_desc_t desc = {0};
+    desc.behavior_id = (nmo_object_id_t)yyjson_get_uint(id_val);
+    desc.name = name;
+    desc.block_guid = guid;
+    desc.block_version = version;
+    desc.preserve_links = patch_optional_bool(op_obj, "preserve_links", false);
+    desc.preserve_params =
         patch_optional_bool(op_obj, "preserve_params", false);
+
+    nmo_status_t st = nmo_edit_plan_add_replace_bb(edit_plan, &desc);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -1896,7 +1901,12 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         if (strcmp(op, "replace_bb") == 0) {
-            rc = patch_parse_replace_bb(op_obj, &operation);
+            rc = patch_parse_replace_bb(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "fold") == 0) {
             rc = patch_parse_fold(op_obj, &operation);
         } else if (strcmp(op, "add_node") == 0 && out_plan->version == 2u) {
