@@ -690,20 +690,71 @@ static nmo_status_t semantic_validate_basic_edit_op(
     case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.rewire_link.link_id));
+        NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+            repo,
+            risks,
+            risk_count,
+            op->data.rewire_link.link_id,
+            NMO_CID_BEHAVIORLINK,
+            "control_link_type_mismatch",
+            "Control-flow link operation expects a behavior link"));
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.rewire_link.from_io_id));
-        return semantic_add_missing_ref_risk(
-            repo, risks, risk_count, op->data.rewire_link.to_io_id);
+        NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+            repo,
+            risks,
+            risk_count,
+            op->data.rewire_link.from_io_id,
+            NMO_CID_BEHAVIORIO,
+            "control_endpoint_type_mismatch",
+            "Control-flow link endpoint must be a behavior IO"));
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->data.rewire_link.to_io_id));
+        return semantic_add_class_ref_risk(
+            repo,
+            risks,
+            risk_count,
+            op->data.rewire_link.to_io_id,
+            NMO_CID_BEHAVIORIO,
+            "control_endpoint_type_mismatch",
+            "Control-flow link endpoint must be a behavior IO");
     case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.set_link_delay.link_id));
+        NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+            repo,
+            risks,
+            risk_count,
+            op->data.set_link_delay.link_id,
+            NMO_CID_BEHAVIORLINK,
+            "control_link_type_mismatch",
+            "Control-flow link operation expects a behavior link"));
         return semantic_add_plan_activation_delay_risk(
             risks,
             risk_count,
             op->data.set_link_delay.link_id,
             op->data.set_link_delay.activation_delay);
     case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK:
-        return NMO_OK;
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->data.remove_link.parent_behavior_id));
+        NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+            repo,
+            risks,
+            risk_count,
+            op->data.remove_link.parent_behavior_id,
+            NMO_CID_BEHAVIOR,
+            "behavior_owner_type_mismatch",
+            "Edit operation expects a behavior owner"));
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->data.remove_link.link_id));
+        return semantic_add_class_ref_risk(
+            repo,
+            risks,
+            risk_count,
+            op->data.remove_link.link_id,
+            NMO_CID_BEHAVIORLINK,
+            "control_link_type_mismatch",
+            "Control-flow link operation expects a behavior link");
     case NMO_EDIT_OP_ADD_PARAMETER:
         return semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.add_parameter.owner_behavior_id);
