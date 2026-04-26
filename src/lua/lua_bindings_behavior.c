@@ -446,250 +446,6 @@ static void nmo_lua_behavior_push_script_tree_view(
     }
 }
 
-static void nmo_lua_behavior_push_report(lua_State *state,
-                                         const nmo_script_edit_report_t *report)
-{
-    lua_createtable(state, 0, 8);
-    lua_pushinteger(state, (lua_Integer)report->created_objects);
-    lua_setfield(state, -2, "created_objects");
-    lua_pushinteger(state, (lua_Integer)report->deleted_objects);
-    lua_setfield(state, -2, "deleted_objects");
-    lua_pushinteger(state, (lua_Integer)report->changed_objects);
-    lua_setfield(state, -2, "changed_objects");
-    lua_pushinteger(state, (lua_Integer)report->moved_links);
-    lua_setfield(state, -2, "moved_links");
-    lua_pushinteger(state, (lua_Integer)report->rewired_parameters);
-    lua_setfield(state, -2, "rewired_parameters");
-    lua_pushinteger(state, (lua_Integer)report->interface_changes);
-    lua_setfield(state, -2, "interface_changes");
-    lua_pushinteger(state, (lua_Integer)report->warnings);
-    lua_setfield(state, -2, "warnings");
-    lua_pushinteger(state, (lua_Integer)report->errors);
-    lua_setfield(state, -2, "errors");
-}
-
-static const char *nmo_lua_behavior_edit_op_kind_name(nmo_edit_op_kind_t kind)
-{
-    switch (kind) {
-    case NMO_EDIT_OP_SET_PARAMETER_VALUE: return "set_parameter_value";
-    case NMO_EDIT_OP_SET_PARAMETER_BYTES: return "set_parameter_bytes";
-    case NMO_EDIT_OP_ADD_NODE: return "add_node";
-    case NMO_EDIT_OP_REMOVE_NODE: return "remove_node";
-    case NMO_EDIT_OP_ADD_IO: return "add_io";
-    case NMO_EDIT_OP_RENAME_IO: return "rename_io";
-    case NMO_EDIT_OP_REMOVE_IO: return "remove_io";
-    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK: return "add_behavior_link";
-    case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK: return "rewire_behavior_link";
-    case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY: return "set_behavior_link_delay";
-    case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK: return "remove_behavior_link";
-    case NMO_EDIT_OP_ADD_PARAMETER: return "add_parameter";
-    case NMO_EDIT_OP_CONNECT_PARAMETER: return "connect_parameter";
-    case NMO_EDIT_OP_DISCONNECT_PARAMETER: return "disconnect_parameter";
-    case NMO_EDIT_OP_REMOVE_PARAMETER: return "remove_parameter";
-    case NMO_EDIT_OP_ADD_OPERATION: return "add_operation";
-    case NMO_EDIT_OP_REWIRE_OPERATION: return "rewire_operation";
-    case NMO_EDIT_OP_REMOVE_OPERATION: return "remove_operation";
-    case NMO_EDIT_OP_INTERFACE_POLICY: return "interface_policy";
-    case NMO_EDIT_OP_SET_DATA_CELL: return "set_data_cell";
-    case NMO_EDIT_OP_FOLD: return "fold";
-    case NMO_EDIT_OP_REPLACE_BB: return "replace_bb";
-    default: return "unknown";
-    }
-}
-
-static const char *nmo_lua_behavior_edit_op_handle_name(nmo_edit_op_kind_t kind)
-{
-    switch (kind) {
-    case NMO_EDIT_OP_ADD_NODE: return "node";
-    case NMO_EDIT_OP_ADD_IO: return "io";
-    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK: return "link";
-    case NMO_EDIT_OP_ADD_PARAMETER: return "parameter";
-    case NMO_EDIT_OP_ADD_OPERATION: return "operation";
-    default: return NULL;
-    }
-}
-
-static void nmo_lua_behavior_push_edit_impacts(
-    lua_State *state,
-    const nmo_edit_object_impact_t *items,
-    size_t count)
-{
-    lua_createtable(state, (int)count, 0);
-    for (size_t i = 0; i < count; ++i) {
-        lua_createtable(state, 0, 4);
-        lua_pushinteger(state, (lua_Integer)items[i].id);
-        lua_setfield(state, -2, "object_id");
-        lua_pushinteger(state, (lua_Integer)items[i].id);
-        lua_setfield(state, -2, "id");
-        lua_pushstring(state, nmo_lua_behavior_edit_op_kind_name(items[i].cause));
-        lua_setfield(state, -2, "cause");
-        lua_pushstring(state, items[i].role != NULL ? items[i].role : "");
-        lua_setfield(state, -2, "role");
-        lua_rawseti(state, -2, (lua_Integer)i + 1);
-    }
-}
-
-static void nmo_lua_behavior_push_edit_operation_handles(
-    lua_State *state,
-    const nmo_edit_operation_result_t *operation)
-{
-    lua_createtable(state, (int)operation->handle_count, 0);
-    for (size_t i = 0; i < operation->handle_count; ++i) {
-        lua_createtable(state, 0, 3);
-        lua_pushstring(
-            state, operation->handles[i].name != NULL ? operation->handles[i].name : "");
-        lua_setfield(state, -2, "name");
-        lua_pushinteger(state, (lua_Integer)operation->handles[i].id);
-        lua_setfield(state, -2, "object_id");
-        lua_pushinteger(state, (lua_Integer)operation->handles[i].id);
-        lua_setfield(state, -2, "id");
-        lua_rawseti(state, -2, (lua_Integer)i + 1);
-    }
-}
-
-static void nmo_lua_behavior_push_edit_report_operations(
-    lua_State *state,
-    const nmo_edit_report_t *report)
-{
-    lua_createtable(state, (int)report->operation_count, 0);
-    for (size_t i = 0; i < report->operation_count; ++i) {
-        const nmo_edit_operation_result_t *operation = &report->operations[i];
-        const char *kind = nmo_lua_behavior_edit_op_kind_name(operation->kind);
-        lua_createtable(state, 0, 10);
-        lua_pushinteger(state, (lua_Integer)i + 1);
-        lua_setfield(state, -2, "index");
-        lua_pushstring(state, kind);
-        lua_setfield(state, -2, "op");
-        lua_pushstring(state, kind);
-        lua_setfield(state, -2, "kind");
-        lua_pushinteger(state, (lua_Integer)operation->primary_id);
-        lua_setfield(state, -2, "primary_id");
-        lua_pushinteger(state, (lua_Integer)operation->result_id);
-        lua_setfield(state, -2, "result_id");
-        lua_pushinteger(state, (lua_Integer)operation->status);
-        lua_setfield(state, -2, "status");
-        lua_pushstring(state, nmo_error_string(operation->status));
-        lua_setfield(state, -2, "status_name");
-        if (operation->diagnostic_code != NULL) {
-            lua_pushstring(state, operation->diagnostic_code);
-        } else {
-            lua_pushnil(state);
-        }
-        lua_setfield(state, -2, "diagnostic_code");
-        if (operation->diagnostic_message != NULL) {
-            lua_pushstring(state, operation->diagnostic_message);
-        } else {
-            lua_pushnil(state);
-        }
-        lua_setfield(state, -2, "diagnostic_message");
-        nmo_lua_behavior_push_edit_operation_handles(state, operation);
-        lua_setfield(state, -2, "handles");
-        lua_rawseti(state, -2, (lua_Integer)i + 1);
-    }
-}
-
-static void nmo_lua_behavior_push_edit_validation(
-    lua_State *state,
-    const nmo_edit_validation_report_t *validation)
-{
-    lua_createtable(state, 0, 5);
-    lua_pushinteger(state, (lua_Integer)validation->final_status);
-    lua_setfield(state, -2, "final_status");
-    lua_pushinteger(state, (lua_Integer)validation->roundtrip_status);
-    lua_setfield(state, -2, "roundtrip_status");
-    lua_pushinteger(state, (lua_Integer)validation->reference_status);
-    lua_setfield(state, -2, "reference_status");
-    lua_pushinteger(state, (lua_Integer)validation->behavior_index_status);
-    lua_setfield(state, -2, "behavior_index_status");
-    lua_pushinteger(state, (lua_Integer)validation->interface_status);
-    lua_setfield(state, -2, "interface_status");
-}
-
-static void nmo_lua_behavior_push_edit_diff(
-    lua_State *state,
-    const nmo_edit_report_t *report)
-{
-    lua_createtable(state, 0, 4);
-    lua_pushinteger(state, (lua_Integer)report->changed_object_count);
-    lua_setfield(state, -2, "changed_object_count");
-    lua_pushinteger(state, (lua_Integer)report->created_object_count);
-    lua_setfield(state, -2, "created_object_count");
-    lua_pushinteger(state, (lua_Integer)report->deleted_object_count);
-    lua_setfield(state, -2, "deleted_object_count");
-    lua_pushinteger(state, (lua_Integer)report->semantic_risk_count);
-    lua_setfield(state, -2, "semantic_risk_count");
-}
-
-static const char *nmo_lua_behavior_semantic_risk_severity_string(
-    nmo_behavior_semantic_risk_severity_t severity)
-{
-    switch (severity) {
-    case NMO_BEHAVIOR_SEMANTIC_RISK_SAFE:
-        return "safe";
-    case NMO_BEHAVIOR_SEMANTIC_RISK_WARN:
-        return "warn";
-    case NMO_BEHAVIOR_SEMANTIC_RISK_REJECT:
-        return "reject";
-    default:
-        return "warn";
-    }
-}
-
-static void nmo_lua_behavior_push_semantic_risks(
-    lua_State *state,
-    const nmo_edit_report_t *report)
-{
-    lua_createtable(state, (int)report->semantic_risk_count, 0);
-    for (size_t i = 0; i < report->semantic_risk_count; ++i) {
-        const nmo_behavior_semantic_risk_t *risk = &report->semantic_risks[i];
-        lua_createtable(state, 0, 4);
-        lua_pushstring(
-            state, nmo_lua_behavior_semantic_risk_severity_string(risk->severity));
-        lua_setfield(state, -2, "severity");
-        lua_pushstring(state, risk->code != NULL ? risk->code : "");
-        lua_setfield(state, -2, "code");
-        lua_pushstring(state, risk->message != NULL ? risk->message : "");
-        lua_setfield(state, -2, "message");
-        lua_pushinteger(state, (lua_Integer)risk->object_id);
-        lua_setfield(state, -2, "object_id");
-        lua_rawseti(state, -2, (lua_Integer)i + 1);
-    }
-}
-
-static void nmo_lua_behavior_push_edit_report(
-    lua_State *state,
-    const nmo_edit_report_t *report)
-{
-    lua_createtable(state, 0, 10);
-    lua_pushboolean(state, report->ok);
-    lua_setfield(state, -2, "ok");
-    lua_pushboolean(state, report->dry_run);
-    lua_setfield(state, -2, "dry_run");
-    nmo_lua_behavior_push_edit_report_operations(state, report);
-    lua_setfield(state, -2, "operations");
-    nmo_lua_behavior_push_edit_impacts(
-        state, report->changed_objects, report->changed_object_count);
-    lua_setfield(state, -2, "changed_objects");
-    nmo_lua_behavior_push_edit_impacts(
-        state, report->created_objects, report->created_object_count);
-    lua_setfield(state, -2, "created_objects");
-    nmo_lua_behavior_push_edit_impacts(
-        state, report->deleted_objects, report->deleted_object_count);
-    lua_setfield(state, -2, "deleted_objects");
-    nmo_lua_behavior_push_semantic_risks(state, report);
-    lua_setfield(state, -2, "semantic_risks");
-    nmo_lua_behavior_push_edit_validation(state, &report->validation);
-    lua_setfield(state, -2, "validation");
-    nmo_lua_behavior_push_edit_diff(state, report);
-    lua_setfield(state, -2, "diff");
-    if (report->output_path != NULL) {
-        lua_pushstring(state, report->output_path);
-    } else {
-        lua_pushnil(state);
-    }
-    lua_setfield(state, -2, "output_path");
-}
-
 static void nmo_lua_behavior_reset_empty_edit_report(
     nmo_edit_report_t *report,
     bool dry_run)
@@ -717,55 +473,12 @@ static void nmo_lua_behavior_move_edit_report(
     memset(src, 0, sizeof(*src));
 }
 
-static void nmo_lua_behavior_push_pending_plan_report(
-    lua_State *state,
-    const nmo_edit_plan_t *plan)
-{
-    size_t count = nmo_edit_plan_count(plan);
-    lua_createtable(state, 0, 10);
-    lua_pushboolean(state, 0);
-    lua_setfield(state, -2, "ok");
-    lua_pushboolean(state, 0);
-    lua_setfield(state, -2, "dry_run");
-    lua_createtable(state, (int)count, 0);
-    for (size_t i = 0; i < count; ++i) {
-        const nmo_edit_op_t *op = nmo_edit_plan_get(plan, i);
-        lua_createtable(state, 0, 4);
-        lua_pushstring(state, op != NULL
-            ? nmo_lua_behavior_edit_op_kind_name(op->kind)
-            : "unknown");
-        lua_setfield(state, -2, "kind");
-        lua_pushinteger(state, (lua_Integer)(op != NULL ? op->primary_id : 0u));
-        lua_setfield(state, -2, "primary_id");
-        lua_pushinteger(state, 0);
-        lua_setfield(state, -2, "result_id");
-        lua_pushinteger(state, 0);
-        lua_setfield(state, -2, "status");
-        lua_rawseti(state, -2, (lua_Integer)i + 1);
-    }
-    lua_setfield(state, -2, "operations");
-    lua_createtable(state, 0, 0);
-    lua_setfield(state, -2, "changed_objects");
-    lua_createtable(state, 0, 0);
-    lua_setfield(state, -2, "created_objects");
-    lua_createtable(state, 0, 0);
-    lua_setfield(state, -2, "deleted_objects");
-    lua_createtable(state, 0, 0);
-    lua_setfield(state, -2, "semantic_risks");
-    lua_createtable(state, 0, 0);
-    lua_setfield(state, -2, "validation");
-    lua_createtable(state, 0, 0);
-    lua_setfield(state, -2, "diff");
-    lua_pushnil(state);
-    lua_setfield(state, -2, "output_path");
-}
-
 static int nmo_lua_behavior_push_pending_handle(
     lua_State *state,
     const nmo_edit_plan_t *plan,
     nmo_edit_op_kind_t kind)
 {
-    const char *handle_name = nmo_lua_behavior_edit_op_handle_name(kind);
+    const char *handle_name = nmo_lua_edit_op_result_handle_name(kind);
     if (handle_name == NULL) {
         return 0;
     }
@@ -2138,7 +1851,7 @@ static int nmo_lua_behavior_execute(lua_State *state)
         (void)nmo_edit_report_set_output_path(&edit_report, output_path);
     }
 
-    nmo_lua_behavior_push_edit_report(state, &edit_report);
+    nmo_lua_push_edit_report(state, &edit_report);
     nmo_edit_report_dispose(&edit_report);
     return 1;
 }
@@ -2274,19 +1987,11 @@ static int nmo_lua_behavior_report(lua_State *state)
     }
 
     if (handle->has_report) {
-        nmo_lua_behavior_push_edit_report(state, &handle->report);
+        nmo_lua_push_edit_report(state, &handle->report);
         return 1;
     }
     if (handle->plan != NULL) {
-        nmo_lua_behavior_push_pending_plan_report(state, handle->plan);
-        return 1;
-    }
-    if (handle->tx != NULL) {
-        const nmo_script_edit_report_t *report = nmo_script_edit_report(handle->tx);
-        if (report == NULL) {
-            return luaL_error(state, "script edit transaction report is unavailable");
-        }
-        nmo_lua_behavior_push_report(state, report);
+        nmo_lua_push_pending_edit_plan_report(state, handle->plan);
         return 1;
     }
     return luaL_error(state, "script edit transaction report is unavailable");
@@ -2443,7 +2148,7 @@ static int nmo_lua_behavior_commit(lua_State *state)
         handle->plan = NULL;
     }
     handle->executed = true;
-    nmo_lua_behavior_push_edit_report(state, &handle->report);
+    nmo_lua_push_edit_report(state, &handle->report);
     return 1;
 }
 

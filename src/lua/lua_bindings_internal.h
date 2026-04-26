@@ -111,5 +111,11 @@ void nmo_lua_push_interface_view(lua_State *state,
 
 lua_State *nmo_lua_runtime_state(nmo_lua_runtime_t *runtime);
 
+const char *nmo_lua_edit_op_kind_string(nmo_edit_op_kind_t kind);
+const char *nmo_lua_edit_op_result_handle_name(nmo_edit_op_kind_t kind);
+void nmo_lua_push_edit_report(lua_State *state, const nmo_edit_report_t *report);
+void nmo_lua_push_pending_edit_plan_report(lua_State *state,
+                                           const nmo_edit_plan_t *plan);
+
 #endif /* NMO_LUA_BINDINGS_INTERNAL_H */
 
