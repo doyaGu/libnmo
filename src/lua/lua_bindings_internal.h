@@ -30,6 +30,8 @@ typedef struct nmo_lua_script_edit_tx_handle_data {
     bool has_report;
     bool finished;
     bool executed;
+    bool dry_run_report;
+    uint32_t validation_flags;
 } nmo_lua_script_edit_tx_handle_data_t;
 
 extern const nmo_lua_handle_descriptor_t NMO_LUA_CONTEXT_HANDLE_DESCRIPTOR;

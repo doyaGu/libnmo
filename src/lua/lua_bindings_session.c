@@ -242,6 +242,7 @@ nmo_status_t nmo_lua_push_script_edit_tx_handle(lua_State *state,
     }
     data->workspace = workspace;
     data->plan = plan;
+    data->validation_flags = nmo_edit_executor_options_default().validation_flags;
 
     nmo_lua_handle_scope_t *tx_scope = nmo_lua_handle_scope_create();
     if (tx_scope == NULL) {

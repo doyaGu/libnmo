@@ -6,6 +6,7 @@
 #include "behavior/nmo_behavior_view.h"
 #include "behavior/nmo_script_edit_graph.h"
 #include "behavior/nmo_behavior_view.h"
+#include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 
 #include "lauxlib.h"
@@ -22,6 +23,9 @@ typedef struct nmo_lua_dump_buffer {
 typedef struct nmo_lua_behavior_execute_action {
     char *dumped_chunk;
     size_t dumped_size;
+    nmo_edit_report_t *edit_report;
+    bool dry_run;
+    uint32_t validation_flags;
 } nmo_lua_behavior_execute_action_t;
 
 typedef struct nmo_lua_behavior_workspace_scope {
@@ -512,7 +516,9 @@ static void nmo_lua_behavior_push_edit_impacts(
 {
     lua_createtable(state, (int)count, 0);
     for (size_t i = 0; i < count; ++i) {
-        lua_createtable(state, 0, 3);
+        lua_createtable(state, 0, 4);
+        lua_pushinteger(state, (lua_Integer)items[i].id);
+        lua_setfield(state, -2, "object_id");
         lua_pushinteger(state, (lua_Integer)items[i].id);
         lua_setfield(state, -2, "id");
         lua_pushstring(state, nmo_lua_behavior_edit_op_kind_name(items[i].cause));
@@ -529,10 +535,12 @@ static void nmo_lua_behavior_push_edit_operation_handles(
 {
     lua_createtable(state, (int)operation->handle_count, 0);
     for (size_t i = 0; i < operation->handle_count; ++i) {
-        lua_createtable(state, 0, 2);
+        lua_createtable(state, 0, 3);
         lua_pushstring(
             state, operation->handles[i].name != NULL ? operation->handles[i].name : "");
         lua_setfield(state, -2, "name");
+        lua_pushinteger(state, (lua_Integer)operation->handles[i].id);
+        lua_setfield(state, -2, "object_id");
         lua_pushinteger(state, (lua_Integer)operation->handles[i].id);
         lua_setfield(state, -2, "id");
         lua_rawseti(state, -2, (lua_Integer)i + 1);
@@ -546,8 +554,13 @@ static void nmo_lua_behavior_push_edit_report_operations(
     lua_createtable(state, (int)report->operation_count, 0);
     for (size_t i = 0; i < report->operation_count; ++i) {
         const nmo_edit_operation_result_t *operation = &report->operations[i];
-        lua_createtable(state, 0, 7);
-        lua_pushstring(state, nmo_lua_behavior_edit_op_kind_name(operation->kind));
+        const char *kind = nmo_lua_behavior_edit_op_kind_name(operation->kind);
+        lua_createtable(state, 0, 10);
+        lua_pushinteger(state, (lua_Integer)i + 1);
+        lua_setfield(state, -2, "index");
+        lua_pushstring(state, kind);
+        lua_setfield(state, -2, "op");
+        lua_pushstring(state, kind);
         lua_setfield(state, -2, "kind");
         lua_pushinteger(state, (lua_Integer)operation->primary_id);
         lua_setfield(state, -2, "primary_id");
@@ -555,6 +568,8 @@ static void nmo_lua_behavior_push_edit_report_operations(
         lua_setfield(state, -2, "result_id");
         lua_pushinteger(state, (lua_Integer)operation->status);
         lua_setfield(state, -2, "status");
+        lua_pushstring(state, nmo_error_string(operation->status));
+        lua_setfield(state, -2, "status_name");
         if (operation->diagnostic_code != NULL) {
             lua_pushstring(state, operation->diagnostic_code);
         } else {
@@ -590,6 +605,36 @@ static void nmo_lua_behavior_push_edit_validation(
     lua_setfield(state, -2, "interface_status");
 }
 
+static void nmo_lua_behavior_push_edit_diff(
+    lua_State *state,
+    const nmo_edit_report_t *report)
+{
+    lua_createtable(state, 0, 4);
+    lua_pushinteger(state, (lua_Integer)report->changed_object_count);
+    lua_setfield(state, -2, "changed_object_count");
+    lua_pushinteger(state, (lua_Integer)report->created_object_count);
+    lua_setfield(state, -2, "created_object_count");
+    lua_pushinteger(state, (lua_Integer)report->deleted_object_count);
+    lua_setfield(state, -2, "deleted_object_count");
+    lua_pushinteger(state, (lua_Integer)report->semantic_risk_count);
+    lua_setfield(state, -2, "semantic_risk_count");
+}
+
+static const char *nmo_lua_behavior_semantic_risk_severity_string(
+    nmo_behavior_semantic_risk_severity_t severity)
+{
+    switch (severity) {
+    case NMO_BEHAVIOR_SEMANTIC_RISK_SAFE:
+        return "safe";
+    case NMO_BEHAVIOR_SEMANTIC_RISK_WARN:
+        return "warn";
+    case NMO_BEHAVIOR_SEMANTIC_RISK_REJECT:
+        return "reject";
+    default:
+        return "warn";
+    }
+}
+
 static void nmo_lua_behavior_push_semantic_risks(
     lua_State *state,
     const nmo_edit_report_t *report)
@@ -598,7 +643,8 @@ static void nmo_lua_behavior_push_semantic_risks(
     for (size_t i = 0; i < report->semantic_risk_count; ++i) {
         const nmo_behavior_semantic_risk_t *risk = &report->semantic_risks[i];
         lua_createtable(state, 0, 4);
-        lua_pushinteger(state, (lua_Integer)risk->severity);
+        lua_pushstring(
+            state, nmo_lua_behavior_semantic_risk_severity_string(risk->severity));
         lua_setfield(state, -2, "severity");
         lua_pushstring(state, risk->code != NULL ? risk->code : "");
         lua_setfield(state, -2, "code");
@@ -634,7 +680,7 @@ static void nmo_lua_behavior_push_edit_report(
     lua_setfield(state, -2, "semantic_risks");
     nmo_lua_behavior_push_edit_validation(state, &report->validation);
     lua_setfield(state, -2, "validation");
-    lua_createtable(state, 0, 0);
+    nmo_lua_behavior_push_edit_diff(state, report);
     lua_setfield(state, -2, "diff");
     if (report->output_path != NULL) {
         lua_pushstring(state, report->output_path);
@@ -642,6 +688,33 @@ static void nmo_lua_behavior_push_edit_report(
         lua_pushnil(state);
     }
     lua_setfield(state, -2, "output_path");
+}
+
+static void nmo_lua_behavior_reset_empty_edit_report(
+    nmo_edit_report_t *report,
+    bool dry_run)
+{
+    if (report == NULL) {
+        return;
+    }
+    nmo_edit_report_dispose(report);
+    (void)nmo_edit_report_init(report);
+    report->ok = true;
+    report->dry_run = dry_run;
+    report->status = NMO_OK;
+    report->validation.final_status = NMO_OK;
+}
+
+static void nmo_lua_behavior_move_edit_report(
+    nmo_edit_report_t *dst,
+    nmo_edit_report_t *src)
+{
+    if (dst == NULL || src == NULL) {
+        return;
+    }
+    nmo_edit_report_dispose(dst);
+    *dst = *src;
+    memset(src, 0, sizeof(*src));
 }
 
 static void nmo_lua_behavior_push_pending_plan_report(
@@ -784,8 +857,6 @@ static nmo_status_t nmo_lua_behavior_execute_lua_callback(
     nmo_lua_handle_scope_t *tx_scope = NULL;
     nmo_lua_script_edit_tx_handle_data_t tx_data = {0};
     nmo_edit_plan_t *callback_plan = NULL;
-    nmo_edit_report_t callback_report;
-    bool callback_report_init = false;
     nmo_status_t status = NMO_OK;
 
     if (executor == NULL || action == NULL || action->dumped_chunk == NULL ||
@@ -867,17 +938,12 @@ static nmo_status_t nmo_lua_behavior_execute_lua_callback(
         lua_settop(state, 0);
         goto cleanup;
     }
-    status = nmo_edit_report_init(&callback_report);
-    if (status != NMO_OK) {
-        lua_settop(state, 0);
-        goto cleanup;
-    }
-    callback_report_init = true;
-
     tx_data.tx = tx;
     tx_data.workspace = workspace;
     tx_data.plan = callback_plan;
     tx_data.finished = false;
+    tx_data.dry_run_report = action->dry_run;
+    tx_data.validation_flags = action->validation_flags;
     status = nmo_lua_push_borrowed_handle(state,
                                           &NMO_LUA_SCRIPT_EDIT_TX_HANDLE_DESCRIPTOR,
                                           &tx_data,
@@ -900,17 +966,32 @@ static nmo_status_t nmo_lua_behavior_execute_lua_callback(
 
     lua_settop(state, 0);
     if (tx_data.executed) {
+        if (action->edit_report != NULL) {
+            if (tx_data.has_report) {
+                nmo_lua_behavior_move_edit_report(
+                    action->edit_report, &tx_data.report);
+                tx_data.has_report = false;
+            } else {
+                nmo_lua_behavior_reset_empty_edit_report(
+                    action->edit_report, action->dry_run);
+            }
+        }
         status = NMO_OK;
     } else {
+        nmo_edit_executor_options_t edit_options =
+            nmo_edit_executor_options_default();
+        edit_options.dry_run = action->dry_run;
+        edit_options.validation_flags = action->validation_flags;
         status = nmo_edit_executor_execute_transaction(
-            tx, callback_plan, NULL, &callback_report);
+            tx, callback_plan, &edit_options, action->edit_report);
     }
 
 cleanup:
-    if (callback_report_init) {
-        nmo_edit_report_dispose(&callback_report);
+    if (tx_data.has_report) {
+        nmo_edit_report_dispose(&tx_data.report);
+        tx_data.has_report = false;
     }
-    if (callback_plan != NULL) {
+    if (callback_plan != NULL && callback_plan == tx_data.plan) {
         nmo_edit_plan_destroy(callback_plan);
     }
     if (tx_scope != NULL) {
@@ -1968,7 +2049,8 @@ static int nmo_lua_behavior_execute(lua_State *state)
     const char *input_path = NULL;
     const char *output_path = NULL;
     nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
-    nmo_script_edit_report_t report = {0};
+    nmo_edit_report_t edit_report;
+    bool edit_report_init = false;
     nmo_context_t *context = NULL;
     nmo_lua_behavior_execute_action_t action = {0};
     nmo_lua_dump_buffer_t dump_buffer = {0};
@@ -2019,9 +2101,20 @@ static int nmo_lua_behavior_execute(lua_State *state)
 
     action.dumped_chunk = dump_buffer.data;
     action.dumped_size = dump_buffer.size;
+    action.dry_run = options.dry_run;
+    action.validation_flags = options.validation_flags;
+
+    status = nmo_edit_report_init(&edit_report);
+    if (status != NMO_OK) {
+        nmo_lua_behavior_dump_buffer_clear(&dump_buffer);
+        return nmo_lua_raise_last_error(state, status, "Failed to create edit report");
+    }
+    edit_report_init = true;
+    action.edit_report = &edit_report;
 
     context = nmo_context_create(NULL);
     if (context == NULL) {
+        nmo_edit_report_dispose(&edit_report);
         nmo_lua_behavior_dump_buffer_clear(&dump_buffer);
         return nmo_lua_raise_last_error(state, NMO_ERR_NOMEM, "Failed to create executor context");
     }
@@ -2029,17 +2122,24 @@ static int nmo_lua_behavior_execute(lua_State *state)
     status = nmo_behavior_execute(context,
                                          input_path,
                                          output_path,
-                                         &options,
-                                         nmo_lua_behavior_execute_action_fn,
-                                         &action,
-                                         &report);
+                                          &options,
+                                          nmo_lua_behavior_execute_action_fn,
+                                          &action,
+                                          NULL);
     nmo_context_release(context);
     nmo_lua_behavior_dump_buffer_clear(&dump_buffer);
     if (status != NMO_OK) {
+        if (edit_report_init) {
+            nmo_edit_report_dispose(&edit_report);
+        }
         return nmo_lua_raise_last_error(state, status, "Lua behavior executor failed");
     }
+    if (!options.dry_run && output_path != NULL && edit_report.output_path == NULL) {
+        (void)nmo_edit_report_set_output_path(&edit_report, output_path);
+    }
 
-    nmo_lua_behavior_push_report(state, &report);
+    nmo_lua_behavior_push_edit_report(state, &edit_report);
+    nmo_edit_report_dispose(&edit_report);
     return 1;
 }
 
@@ -2200,7 +2300,7 @@ static int nmo_lua_behavior_rollback(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid script edit handle");
     }
 
-    if (handle->plan != NULL && handle->tx == NULL) {
+    if (handle->plan != NULL) {
         nmo_edit_plan_destroy(handle->plan);
         handle->plan = NULL;
     }
@@ -2208,9 +2308,7 @@ static int nmo_lua_behavior_rollback(lua_State *state)
         nmo_edit_report_dispose(&handle->report);
         handle->has_report = false;
     }
-    if (handle->tx != NULL && !handle->executed) {
-        nmo_script_edit_rollback(handle->tx);
-    }
+    handle->executed = true;
     return nmo_lua_behavior_invalidate_tx_handle(state, 1, handle);
 }
 
@@ -2325,12 +2423,17 @@ static int nmo_lua_behavior_commit(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Failed to create edit report");
     }
     handle->has_report = true;
+    nmo_edit_executor_options_t options = nmo_edit_executor_options_default();
+    options.dry_run = handle->dry_run_report;
+    if (handle->validation_flags != 0u) {
+        options.validation_flags = handle->validation_flags;
+    }
     if (handle->tx != NULL) {
         status = nmo_edit_executor_execute_transaction(
-            handle->tx, handle->plan, NULL, &handle->report);
+            handle->tx, handle->plan, &options, &handle->report);
     } else {
         status = nmo_edit_executor_execute(
-            handle->workspace, handle->plan, NULL, &handle->report);
+            handle->workspace, handle->plan, &options, &handle->report);
     }
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to commit script edit");

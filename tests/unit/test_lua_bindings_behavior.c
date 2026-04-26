@@ -144,9 +144,17 @@ TEST(lua_bindings_behavior, behavior_edit_reports_pending_plan_and_commit_schema
         "assert(committed.dry_run == false)\n"
         "assert(type(committed.operations) == 'table')\n"
         "assert(#committed.operations == 1)\n"
+        "assert(committed.operations[1].index == 1)\n"
+        "assert(committed.operations[1].op == 'add_io')\n"
         "assert(committed.operations[1].kind == 'add_io')\n"
+        "assert(committed.operations[1].status_name == 'Success')\n"
+        "assert(committed.operations[1].handles[1].name == 'io')\n"
+        "assert(committed.operations[1].handles[1].object_id ~= nil)\n"
         "assert(type(committed.created_objects) == 'table')\n"
         "assert(#committed.created_objects >= 1)\n"
+        "assert(committed.created_objects[1].object_id ~= nil)\n"
+        "assert(committed.diff.created_object_count >= 1)\n"
+        "assert(#committed.semantic_risks == committed.diff.semantic_risk_count)\n"
         "assert(behavior.view(ws, root).input_count == before + 1)\n"
         "local after = behavior.report(tx)\n"
         "assert(after.ok == true)\n"
@@ -214,7 +222,64 @@ TEST(lua_bindings_behavior, behavior_edit_chains_pending_parameter_handles)
         "local report = behavior.commit(tx)\n"
         "assert(report.ok == true)\n"
         "assert(#report.operations == 6)\n"
+        "assert(report.operations[6].op == 'add_operation')\n"
         "assert(report.operations[6].kind == 'add_operation')\n");
+
+    nmo_lua_runtime_destroy(runtime);
+}
+
+TEST(lua_bindings_behavior, behavior_execute_returns_edit_report_schema_v2)
+{
+    nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
+    ASSERT_NOT_NULL(runtime);
+
+    ASSERT_EQ(NMO_OK, nmo_lua_register_platform_bindings(runtime));
+    assert_lua_ok(
+        runtime,
+        "local behavior = require('nmo.behavior')\n"
+        "local report = behavior.execute('" NMO_TEST_DATA_FILE("Nop.cmo") "', nil, { dry_run = true }, function(ctx, session, runtime, tx)\n"
+        "  local behavior = require('nmo.behavior')\n"
+        "  assert(behavior.add_io(tx, 6, 'input', 'Lua Execute In'))\n"
+        "end)\n"
+        "assert(report.ok == true)\n"
+        "assert(report.dry_run == true)\n"
+        "assert(report.operation_count == nil)\n"
+        "assert(type(report.operations) == 'table')\n"
+        "assert(#report.operations == 1)\n"
+        "assert(report.operations[1].index == 1)\n"
+        "assert(report.operations[1].op == 'add_io')\n"
+        "assert(report.operations[1].kind == 'add_io')\n"
+        "assert(report.operations[1].status_name == 'Success')\n"
+        "assert(report.operations[1].handles[1].object_id ~= nil)\n"
+        "assert(type(report.created_objects) == 'table')\n"
+        "assert(report.created_objects[1].object_id ~= nil)\n"
+        "assert(report.diff.created_object_count == #report.created_objects)\n"
+        "assert(type(report.semantic_risks) == 'table')\n");
+
+    nmo_lua_runtime_destroy(runtime);
+}
+
+TEST(lua_bindings_behavior, behavior_execute_rollback_discards_queued_plan)
+{
+    nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
+    ASSERT_NOT_NULL(runtime);
+
+    ASSERT_EQ(NMO_OK, nmo_lua_register_platform_bindings(runtime));
+    assert_lua_ok(
+        runtime,
+        "local behavior = require('nmo.behavior')\n"
+        "local report = behavior.execute('" NMO_TEST_DATA_FILE("Nop.cmo") "', nil, { dry_run = true }, function(ctx, session, runtime, tx)\n"
+        "  local behavior = require('nmo.behavior')\n"
+        "  assert(behavior.add_io(tx, 6, 'input', 'Lua Execute Rollback In'))\n"
+        "  behavior.rollback(tx)\n"
+        "end)\n"
+        "assert(report.ok == true)\n"
+        "assert(report.dry_run == true)\n"
+        "assert(type(report.operations) == 'table')\n"
+        "assert(#report.operations == 0)\n"
+        "assert(type(report.created_objects) == 'table')\n"
+        "assert(#report.created_objects == 0)\n"
+        "assert(report.diff.created_object_count == 0)\n");
 
     nmo_lua_runtime_destroy(runtime);
 }
@@ -232,4 +297,8 @@ TEST_MAIN_BEGIN()
                   behavior_edit_rollback_discards_pending_plan);
     REGISTER_TEST(lua_bindings_behavior,
                   behavior_edit_chains_pending_parameter_handles);
+    REGISTER_TEST(lua_bindings_behavior,
+                  behavior_execute_returns_edit_report_schema_v2);
+    REGISTER_TEST(lua_bindings_behavior,
+                  behavior_execute_rollback_discards_queued_plan);
 TEST_MAIN_END()
