@@ -672,6 +672,37 @@ static const nmo_type_descriptor_t *semantic_parameter_type_desc(
         : NULL;
 }
 
+static const nmo_type_descriptor_t *semantic_type_desc_from_guid(
+    nmo_context_t *ctx,
+    nmo_guid_t type_guid)
+{
+    if (ctx == NULL || nmo_guid_is_null(type_guid)) {
+        return NULL;
+    }
+    nmo_type_registry_t *type_registry = nmo_context_get_type_registry(ctx);
+    return type_registry != NULL
+        ? nmo_type_registry_find_by_guid(type_registry, type_guid)
+        : NULL;
+}
+
+static const nmo_type_descriptor_t *semantic_parameter_handle_type_desc(
+    nmo_context_t *ctx,
+    const nmo_edit_plan_t *plan,
+    size_t ref_index,
+    const char *handle_name)
+{
+    const nmo_edit_op_t *ref_op = nmo_edit_plan_get(plan, ref_index);
+    if (ref_op == NULL || handle_name == NULL) {
+        return NULL;
+    }
+    if (ref_op->kind == NMO_EDIT_OP_ADD_PARAMETER &&
+        strcmp(handle_name, "parameter") == 0) {
+        return semantic_type_desc_from_guid(
+            ctx, ref_op->data.add_parameter.type_guid);
+    }
+    return NULL;
+}
+
 static nmo_status_t semantic_add_operation_type_risk(
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
@@ -688,21 +719,20 @@ static nmo_status_t semantic_add_operation_type_risk(
         object_id);
 }
 
-static nmo_status_t semantic_add_operation_signature_risk(
+static nmo_status_t semantic_add_operation_signature_type_risk(
     nmo_context_t *ctx,
-    nmo_object_repository_t *repo,
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
     nmo_object_id_t object_id,
     nmo_guid_t operation_guid,
-    nmo_object_id_t in1_parameter_id,
-    nmo_object_id_t in2_parameter_id,
-    nmo_object_id_t out_parameter_id)
+    const nmo_type_descriptor_t *in1_type,
+    bool has_in1,
+    const nmo_type_descriptor_t *in2_type,
+    bool has_in2,
+    const nmo_type_descriptor_t *out_type,
+    bool has_out)
 {
-    if (nmo_guid_is_null(operation_guid) ||
-        (in1_parameter_id == 0u &&
-         in2_parameter_id == 0u &&
-         out_parameter_id == 0u)) {
+    if (nmo_guid_is_null(operation_guid) || (!has_in1 && !has_in2 && !has_out)) {
         return NMO_OK;
     }
 
@@ -714,22 +744,9 @@ static nmo_status_t semantic_add_operation_signature_risk(
         return NMO_ERR_INVALID_STATE;
     }
 
-    const nmo_type_descriptor_t *in1_type =
-        in1_parameter_id != 0u
-            ? semantic_parameter_type_desc(ctx, repo, in1_parameter_id)
-            : NULL;
-    const nmo_type_descriptor_t *in2_type =
-        in2_parameter_id != 0u
-            ? semantic_parameter_type_desc(ctx, repo, in2_parameter_id)
-            : NULL;
-    const nmo_type_descriptor_t *out_type =
-        out_parameter_id != 0u
-            ? semantic_parameter_type_desc(ctx, repo, out_parameter_id)
-            : NULL;
-
-    if ((in1_parameter_id != 0u && in1_type == NULL) ||
-        (in2_parameter_id != 0u && in2_type == NULL) ||
-        (out_parameter_id != 0u && out_type == NULL)) {
+    if ((has_in1 && in1_type == NULL) ||
+        (has_in2 && in2_type == NULL) ||
+        (has_out && out_type == NULL)) {
         return NMO_OK;
     }
 
@@ -762,6 +779,43 @@ static nmo_status_t semantic_add_operation_signature_risk(
             object_id);
     }
     return rc;
+}
+
+static nmo_status_t semantic_add_operation_signature_risk(
+    nmo_context_t *ctx,
+    nmo_object_repository_t *repo,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t object_id,
+    nmo_guid_t operation_guid,
+    nmo_object_id_t in1_parameter_id,
+    nmo_object_id_t in2_parameter_id,
+    nmo_object_id_t out_parameter_id)
+{
+    const nmo_type_descriptor_t *in1_type =
+        in1_parameter_id != 0u
+            ? semantic_parameter_type_desc(ctx, repo, in1_parameter_id)
+            : NULL;
+    const nmo_type_descriptor_t *in2_type =
+        in2_parameter_id != 0u
+            ? semantic_parameter_type_desc(ctx, repo, in2_parameter_id)
+            : NULL;
+    const nmo_type_descriptor_t *out_type =
+        out_parameter_id != 0u
+            ? semantic_parameter_type_desc(ctx, repo, out_parameter_id)
+            : NULL;
+    return semantic_add_operation_signature_type_risk(
+        ctx,
+        risks,
+        risk_count,
+        object_id,
+        operation_guid,
+        in1_type,
+        in1_parameter_id != 0u,
+        in2_type,
+        in2_parameter_id != 0u,
+        out_type,
+        out_parameter_id != 0u);
 }
 
 static const nmo_parameteroperation_state_t *semantic_parameteroperation_state(
@@ -1191,7 +1245,14 @@ static nmo_status_t semantic_validate_basic_edit_op(
         return semantic_add_parameter_object_ref_risk(
             repo, risks, risk_count,
             op->data.remove_parameter.parameter_id);
-    case NMO_EDIT_OP_ADD_OPERATION:
+    case NMO_EDIT_OP_ADD_OPERATION: {
+        const nmo_type_descriptor_t *in1_type = NULL;
+        const nmo_type_descriptor_t *in2_type = NULL;
+        const nmo_type_descriptor_t *out_type = NULL;
+        bool has_in1 = false;
+        bool has_in2 = false;
+        bool has_out = false;
+
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,
             op->data.add_operation.parent_behavior_id));
@@ -1217,6 +1278,12 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 op->primary_id,
                 risks,
                 risk_count));
+            in1_type = semantic_parameter_handle_type_desc(
+                ctx,
+                plan,
+                op->data.add_operation.in1_parameter_ref_operation_index,
+                op->data.add_operation.in1_parameter_ref_handle);
+            has_in1 = true;
         } else {
             NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
                 repo, risks, risk_count,
@@ -1224,6 +1291,9 @@ static nmo_status_t semantic_validate_basic_edit_op(
             NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
                 repo, risks, risk_count,
                 op->data.add_operation.in1_parameter_id));
+            in1_type = semantic_parameter_type_desc(
+                ctx, repo, op->data.add_operation.in1_parameter_id);
+            has_in1 = op->data.add_operation.in1_parameter_id != 0u;
         }
         if (op->data.add_operation.has_in2_parameter_ref) {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
@@ -1242,6 +1312,12 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 op->primary_id,
                 risks,
                 risk_count));
+            in2_type = semantic_parameter_handle_type_desc(
+                ctx,
+                plan,
+                op->data.add_operation.in2_parameter_ref_operation_index,
+                op->data.add_operation.in2_parameter_ref_handle);
+            has_in2 = true;
         } else {
             NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
                 repo, risks, risk_count,
@@ -1249,6 +1325,9 @@ static nmo_status_t semantic_validate_basic_edit_op(
             NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
                 repo, risks, risk_count,
                 op->data.add_operation.in2_parameter_id));
+            in2_type = semantic_parameter_type_desc(
+                ctx, repo, op->data.add_operation.in2_parameter_id);
+            has_in2 = op->data.add_operation.in2_parameter_id != 0u;
         }
         if (op->data.add_operation.has_out_parameter_ref) {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
@@ -1267,6 +1346,12 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 op->primary_id,
                 risks,
                 risk_count));
+            out_type = semantic_parameter_handle_type_desc(
+                ctx,
+                plan,
+                op->data.add_operation.out_parameter_ref_operation_index,
+                op->data.add_operation.out_parameter_ref_handle);
+            has_out = true;
         } else {
             NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
                 repo, risks, risk_count,
@@ -1274,22 +1359,23 @@ static nmo_status_t semantic_validate_basic_edit_op(
             NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
                 repo, risks, risk_count,
                 op->data.add_operation.out_parameter_id));
+            out_type = semantic_parameter_type_desc(
+                ctx, repo, op->data.add_operation.out_parameter_id);
+            has_out = op->data.add_operation.out_parameter_id != 0u;
         }
-        if (op->data.add_operation.has_in1_parameter_ref ||
-            op->data.add_operation.has_in2_parameter_ref ||
-            op->data.add_operation.has_out_parameter_ref) {
-            return NMO_OK;
-        }
-        return semantic_add_operation_signature_risk(
+        return semantic_add_operation_signature_type_risk(
             ctx,
-            repo,
             risks,
             risk_count,
-            op->data.add_operation.parent_behavior_id,
+            op->primary_id,
             op->data.add_operation.operation_guid,
-            op->data.add_operation.in1_parameter_id,
-            op->data.add_operation.in2_parameter_id,
-            op->data.add_operation.out_parameter_id);
+            in1_type,
+            has_in1,
+            in2_type,
+            has_in2,
+            out_type,
+            has_out);
+    }
     case NMO_EDIT_OP_REWIRE_OPERATION:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,
