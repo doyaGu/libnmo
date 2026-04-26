@@ -171,8 +171,38 @@ TEST(semantic_validator, edit_plan_rejects_missing_replace_target)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_reports_generic_op_risks)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init(&fixture);
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_behavior_link(plan, 6u, 5u, 2u, 5u));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_connect_parameter(plan, 0x00FFFFFEu, 0x00FFFFFFu));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    ASSERT_NOT_NULL(find_risk(risks, risk_count, "activation_delay"));
+    const nmo_behavior_semantic_risk_t *dangling =
+        find_risk(risks, risk_count, "dangling_reference");
+    ASSERT_NOT_NULL(dangling);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, dangling->severity);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, boundary_reports_dangling_delay_and_shared_risks);
     REGISTER_TEST(semantic_validator, detects_message_flow_by_signature_metadata);
     REGISTER_TEST(semantic_validator, edit_plan_rejects_missing_replace_target);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_generic_op_risks);
 TEST_MAIN_END()

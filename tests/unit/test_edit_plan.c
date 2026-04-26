@@ -1220,6 +1220,93 @@ TEST(edit_plan, report_semantic_risk_merge_deduplicates) {
     nmo_edit_report_dispose(&report);
 }
 
+TEST(edit_plan, executor_merges_edit_plan_semantic_validation) {
+    nmo_context_t *ctx = nmo_context_create(
+        &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session =
+        nmo_session_load(ctx, NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    ASSERT_NOT_NULL(session);
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    nmo_behavior_replace_bb_desc_t replace = {
+        .behavior_id = 2233u,
+        .block_guid = nmo_guid_parse("42414C07-10000007"),
+        .name = "Semantic Validator Replace",
+        .block_version = 65536u,
+        .preserve_links = true,
+        .preserve_params = true,
+    };
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_replace_bb(plan, &replace));
+
+    nmo_edit_executor_options_t options = nmo_edit_executor_options_default();
+    options.dry_run = true;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_executor_execute(workspace, plan, &options, &report));
+
+    bool saw_message_risk = false;
+    for (size_t i = 0; i < report.semantic_risk_count; ++i) {
+        if (report.semantic_risks[i].code != NULL &&
+            strcmp(report.semantic_risks[i].code, "message_flow") == 0 &&
+            report.semantic_risks[i].object_id == 2233u) {
+            saw_message_risk = true;
+        }
+    }
+    ASSERT_TRUE(saw_message_risk);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    nmo_session_close_with_context(ctx, session);
+}
+
+TEST(edit_plan, executor_reports_generic_activation_delay_risk) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session =
+        nmo_session_load(ctx, NMO_TEST_DATA_FILE("Nop.cmo"));
+    ASSERT_NOT_NULL(session);
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_behavior_link(plan, 6u, 5u, 2u, 7u));
+
+    nmo_edit_executor_options_t options = nmo_edit_executor_options_default();
+    options.dry_run = true;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_executor_execute(workspace, plan, &options, &report));
+
+    bool saw_delay_risk = false;
+    for (size_t i = 0; i < report.semantic_risk_count; ++i) {
+        if (report.semantic_risks[i].code != NULL &&
+            strcmp(report.semantic_risks[i].code, "activation_delay") == 0) {
+            saw_delay_risk = true;
+        }
+    }
+    ASSERT_TRUE(saw_delay_risk);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    nmo_session_close_with_context(ctx, session);
+}
+
 TEST(edit_plan, executor_fold_failure_reports_operation_diagnostic) {
     nmo_context_t *ctx = nmo_context_create(
         &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
@@ -1302,5 +1389,7 @@ REGISTER_TEST(edit_plan, executor_folds_closed_graph_in_transaction);
 REGISTER_TEST(edit_plan, executor_fold_dry_run_rolls_back);
 REGISTER_TEST(edit_plan, executor_fold_dry_run_reports_semantic_risks);
 REGISTER_TEST(edit_plan, report_semantic_risk_merge_deduplicates);
+REGISTER_TEST(edit_plan, executor_merges_edit_plan_semantic_validation);
+REGISTER_TEST(edit_plan, executor_reports_generic_activation_delay_risk);
 REGISTER_TEST(edit_plan, executor_fold_failure_reports_operation_diagnostic);
 TEST_MAIN_END()

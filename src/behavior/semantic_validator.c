@@ -147,6 +147,187 @@ static nmo_status_t semantic_add_message_flow_risks(
     return NMO_OK;
 }
 
+static bool semantic_object_exists(nmo_object_repository_t *repo,
+                                   nmo_object_id_t object_id)
+{
+    return object_id == 0u ||
+           (repo != NULL &&
+            nmo_object_repository_find_by_id(repo, object_id) != NULL);
+}
+
+static nmo_status_t semantic_add_missing_ref_risk(
+    nmo_object_repository_t *repo,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t object_id)
+{
+    if (semantic_object_exists(repo, object_id)) {
+        return NMO_OK;
+    }
+    return semantic_add_risk(
+        risks,
+        risk_count,
+        NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+        "dangling_reference",
+        "Edit operation references a missing object",
+        object_id);
+}
+
+static nmo_status_t semantic_add_plan_activation_delay_risk(
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t object_id,
+    uint32_t activation_delay)
+{
+    if (activation_delay == 0u) {
+        return NMO_OK;
+    }
+    return semantic_add_risk(
+        risks,
+        risk_count,
+        NMO_BEHAVIOR_SEMANTIC_RISK_WARN,
+        "activation_delay",
+        "Edit operation creates or preserves activation delay",
+        object_id);
+}
+
+static nmo_status_t semantic_validate_basic_edit_op(
+    nmo_object_repository_t *repo,
+    const nmo_edit_op_t *op,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count)
+{
+    if (op == NULL) {
+        return NMO_OK;
+    }
+
+    switch (op->kind) {
+    case NMO_EDIT_OP_SET_PARAMETER_VALUE:
+    case NMO_EDIT_OP_SET_PARAMETER_BYTES:
+        if (op->kind == NMO_EDIT_OP_SET_PARAMETER_VALUE &&
+            op->data.set_value.has_parameter_ref) {
+            return NMO_OK;
+        }
+        if (op->kind == NMO_EDIT_OP_SET_PARAMETER_BYTES &&
+            op->data.set_bytes.has_parameter_ref) {
+            return NMO_OK;
+        }
+        return semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->primary_id);
+    case NMO_EDIT_OP_ADD_NODE:
+        return semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->data.add_node.parent_behavior_id);
+    case NMO_EDIT_OP_REMOVE_NODE:
+        return NMO_OK;
+    case NMO_EDIT_OP_ADD_IO:
+        return semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->data.add_io.behavior_id);
+    case NMO_EDIT_OP_RENAME_IO:
+        return semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->data.rename_io.io_id);
+    case NMO_EDIT_OP_REMOVE_IO:
+        return NMO_OK;
+    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->data.add_link.parent_behavior_id));
+        if (!op->data.add_link.has_from_io_ref) {
+            NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+                repo, risks, risk_count, op->data.add_link.from_io_id));
+        }
+        if (!op->data.add_link.has_to_io_ref) {
+            NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+                repo, risks, risk_count, op->data.add_link.to_io_id));
+        }
+        return semantic_add_plan_activation_delay_risk(
+            risks,
+            risk_count,
+            op->data.add_link.parent_behavior_id,
+            op->data.add_link.activation_delay);
+    case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK:
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->data.rewire_link.link_id));
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->data.rewire_link.from_io_id));
+        return semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->data.rewire_link.to_io_id);
+    case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY:
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->data.set_link_delay.link_id));
+        return semantic_add_plan_activation_delay_risk(
+            risks,
+            risk_count,
+            op->data.set_link_delay.link_id,
+            op->data.set_link_delay.activation_delay);
+    case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK:
+        return NMO_OK;
+    case NMO_EDIT_OP_ADD_PARAMETER:
+        return semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->data.add_parameter.owner_behavior_id);
+    case NMO_EDIT_OP_CONNECT_PARAMETER:
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.connect_parameter.source_parameter_id));
+        if (op->data.connect_parameter.has_target_parameter_ref) {
+            return NMO_OK;
+        }
+        return semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.connect_parameter.target_parameter_id);
+    case NMO_EDIT_OP_DISCONNECT_PARAMETER:
+        return semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.disconnect_parameter.target_parameter_id);
+    case NMO_EDIT_OP_REMOVE_PARAMETER:
+        return NMO_OK;
+    case NMO_EDIT_OP_ADD_OPERATION:
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.add_operation.parent_behavior_id));
+        if (!op->data.add_operation.has_in1_parameter_ref) {
+            NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+                repo, risks, risk_count,
+                op->data.add_operation.in1_parameter_id));
+        }
+        if (!op->data.add_operation.has_in2_parameter_ref) {
+            NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+                repo, risks, risk_count,
+                op->data.add_operation.in2_parameter_id));
+        }
+        if (!op->data.add_operation.has_out_parameter_ref) {
+            NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+                repo, risks, risk_count,
+                op->data.add_operation.out_parameter_id));
+        }
+        return NMO_OK;
+    case NMO_EDIT_OP_REWIRE_OPERATION:
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.rewire_operation.operation_id));
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.rewire_operation.in1_parameter_id));
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.rewire_operation.in2_parameter_id));
+        return semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.rewire_operation.out_parameter_id);
+    case NMO_EDIT_OP_REMOVE_OPERATION:
+        return NMO_OK;
+    case NMO_EDIT_OP_INTERFACE_POLICY:
+        return semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->data.interface_policy.behavior_id);
+    case NMO_EDIT_OP_SET_DATA_CELL:
+        return semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->data.data_cell.dataarray_id);
+    case NMO_EDIT_OP_FOLD:
+    case NMO_EDIT_OP_REPLACE_BB:
+        return NMO_OK;
+    default:
+        return NMO_OK;
+    }
+}
+
 nmo_status_t nmo_semantic_validate_boundary(
     nmo_workspace_t *workspace,
     const nmo_behavior_boundary_t *boundary,
@@ -237,11 +418,21 @@ nmo_status_t nmo_semantic_validate_edit_plan(
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
     nmo_status_t rc = NMO_OK;
+    nmo_object_repository_t *repo =
+        nmo_workspace_internal_repository(workspace);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
 
     for (size_t i = 0; i < nmo_edit_plan_count(plan); ++i) {
         const nmo_edit_op_t *op = nmo_edit_plan_get(plan, i);
         if (op == NULL) {
             continue;
+        }
+        rc = semantic_validate_basic_edit_op(
+            repo, op, &risks, &risk_count);
+        if (rc != NMO_OK) {
+            goto fail;
         }
         if (op->kind == NMO_EDIT_OP_FOLD) {
             nmo_behavior_fold_report_t fold_report = {0};

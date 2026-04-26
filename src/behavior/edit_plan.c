@@ -5,6 +5,7 @@
 
 #include "behavior/nmo_edit_plan.h"
 
+#include "behavior/nmo_semantic_validator.h"
 #include "behavior/nmo_script_edit.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -2226,6 +2227,24 @@ static nmo_status_t edit_executor_validate(
     return NMO_OK;
 }
 
+static nmo_status_t edit_executor_validate_semantics(
+    nmo_script_edit_tx_t *tx,
+    const nmo_edit_plan_t *plan,
+    nmo_edit_report_t *report)
+{
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    nmo_status_t rc = nmo_semantic_validate_edit_plan(
+        nmo_script_edit_workspace(tx), plan, &risks, &risk_count);
+    if (rc != NMO_OK) {
+        nmo_semantic_risks_free(risks);
+        return rc;
+    }
+    rc = nmo_edit_report_merge_semantic_risks(report, risks, risk_count);
+    nmo_semantic_risks_free(risks);
+    return rc;
+}
+
 nmo_status_t nmo_edit_executor_execute(
     nmo_workspace_t *workspace,
     const nmo_edit_plan_t *plan,
@@ -2278,6 +2297,14 @@ nmo_status_t nmo_edit_executor_execute_transaction(
         options != NULL ? *options : nmo_edit_executor_options_default();
     nmo_status_t rc = NMO_OK;
     NMO_RETURN_IF_ERROR(edit_report_prepare(report, plan, effective.dry_run));
+
+    rc = edit_executor_validate_semantics(tx, plan, report);
+    if (rc != NMO_OK && rc != NMO_ERR_INVALID_STATE) {
+        report->ok = false;
+        report->status = rc;
+        return rc;
+    }
+    rc = NMO_OK;
 
     for (size_t i = 0; i < plan->count; i++) {
         const nmo_edit_op_t *op = &plan->ops[i];
