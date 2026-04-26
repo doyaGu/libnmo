@@ -467,6 +467,44 @@ static int nmo_lua_plan_remove_operation(lua_State *state)
     return 0;
 }
 
+static int nmo_lua_plan_replace_bb(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_behavior_replace_bb_desc_t desc = {0};
+    desc.behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    const char *guid_text = luaL_checkstring(state, 3);
+    desc.name = luaL_optstring(state, 4, NULL);
+    desc.block_guid = nmo_guid_parse(guid_text);
+    desc.block_version = (uint32_t)luaL_optinteger(state, 5, 65536);
+    if (nmo_guid_is_null(desc.block_guid)) {
+        return luaL_error(state, "invalid building block GUID");
+    }
+    if (lua_istable(state, 6)) {
+        lua_getfield(state, 6, "preserve_links");
+        if (!lua_isnil(state, -1)) {
+            desc.preserve_links = lua_toboolean(state, -1) != 0;
+        }
+        lua_pop(state, 1);
+        lua_getfield(state, 6, "preserve_params");
+        if (!lua_isnil(state, -1)) {
+            desc.preserve_params = lua_toboolean(state, -1) != 0;
+        }
+        lua_pop(state, 1);
+    }
+
+    status = nmo_edit_plan_add_replace_bb(plan, &desc);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add replace-bb op");
+    }
+    return 0;
+}
+
 static int nmo_lua_plan_set_parameter_value(lua_State *state)
 {
     nmo_edit_plan_t *plan = NULL;
@@ -609,6 +647,10 @@ static const char *nmo_lua_plan_op_kind_string(nmo_edit_op_kind_t kind)
         return "rewire_operation";
     case NMO_EDIT_OP_REMOVE_OPERATION:
         return "remove_operation";
+    case NMO_EDIT_OP_REPLACE_BB:
+        return "replace_bb";
+    case NMO_EDIT_OP_FOLD:
+        return "fold";
     case NMO_EDIT_OP_REMOVE_NODE:
         return "remove_node";
     case NMO_EDIT_OP_INTERFACE_POLICY:
@@ -859,6 +901,8 @@ static int nmo_lua_open_plan_module(lua_State *state)
     lua_setfield(state, -2, "rewire_operation");
     lua_pushcfunction(state, nmo_lua_plan_remove_operation);
     lua_setfield(state, -2, "remove_operation");
+    lua_pushcfunction(state, nmo_lua_plan_replace_bb);
+    lua_setfield(state, -2, "replace_bb");
     lua_pushcfunction(state, nmo_lua_plan_set_parameter_value);
     lua_setfield(state, -2, "set_parameter_value");
     lua_pushcfunction(state, nmo_lua_plan_set_parameter_bytes);

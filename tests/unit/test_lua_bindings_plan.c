@@ -45,11 +45,12 @@ TEST(lua_bindings_plan, plan_module_builds_edit_plan)
         "plan.add_operation(p, 6, '33CC6B49-3589282B')\n"
         "plan.rewire_operation(p, 17, 16, nil, nil)\n"
         "plan.remove_operation(p, 16)\n"
+        "plan.replace_bb(p, 21, '0A6BED1B-3D3825A5', 'Lua Replacement BB')\n"
         "plan.interface_policy(p, 3, 'canonicalize')\n"
         "plan.set_parameter_value(p, 5, '1.25')\n"
         "plan.set_parameter_bytes(p, 64, string.char(0x2A, 0, 0, 0))\n"
         "plan.set_data_cell(p, 2261, 0, 1, '0.75')\n"
-        "assert(plan.count(p) == 20)\n");
+        "assert(plan.count(p) == 21)\n");
 
     nmo_lua_runtime_destroy(runtime);
 }
