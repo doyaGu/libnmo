@@ -210,25 +210,6 @@ static nmo_workspace_t *script_execution_workspace(
     return nmo_behavior_execution_workspace(execution);
 }
 
-static char *script_run_strdup(const char *text)
-{
-    size_t len = 0;
-    char *copy = NULL;
-
-    if (text == NULL) {
-        return NULL;
-    }
-
-    len = strlen(text);
-    copy = (char *)malloc(len + 1u);
-    if (copy == NULL) {
-        return NULL;
-    }
-
-    memcpy(copy, text, len + 1u);
-    return copy;
-}
-
 static void script_run_reset_args(script_run_args_t *args)
 {
     if (args == NULL) {
@@ -368,185 +349,6 @@ static int script_run_lua_interface_sub_at(lua_State *state)
     return 1;
 }
 
-static nmo_status_t script_run_accumulate_edit_report(
-    script_run_args_t *args,
-    const nmo_edit_report_t *report);
-
-static nmo_status_t script_run_accumulate_semantic_risks(
-    nmo_edit_report_t *dst,
-    const nmo_behavior_semantic_risk_t *risks,
-    size_t risk_count)
-{
-    if (dst == NULL || (risk_count > 0u && risks == NULL)) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (risk_count == 0u) {
-        return NMO_OK;
-    }
-    if (dst->semantic_risk_count + risk_count >
-        dst->semantic_risk_capacity) {
-        size_t next_capacity = dst->semantic_risk_capacity == 0u
-            ? 8u
-            : dst->semantic_risk_capacity * 2u;
-        while (next_capacity < dst->semantic_risk_count + risk_count) {
-            next_capacity *= 2u;
-        }
-        nmo_behavior_semantic_risk_t *next =
-            (nmo_behavior_semantic_risk_t *)realloc(
-                dst->semantic_risks,
-                next_capacity * sizeof(*next));
-        if (next == NULL) {
-            return NMO_ERR_NOMEM;
-        }
-        dst->semantic_risks = next;
-        dst->semantic_risk_capacity = next_capacity;
-    }
-    memcpy(dst->semantic_risks + dst->semantic_risk_count,
-           risks,
-           risk_count * sizeof(*risks));
-    dst->semantic_risk_count += risk_count;
-    return NMO_OK;
-}
-
-static nmo_status_t script_run_execute_edit_plan(
-    script_run_args_t *args,
-    nmo_edit_plan_t *plan,
-    nmo_edit_report_t *report)
-{
-    if (args == NULL || args->execution == NULL || plan == NULL || report == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    nmo_edit_executor_options_t options = nmo_edit_executor_options_default();
-    options.dry_run = args->dry_run;
-    options.validation_flags = 0u;
-    nmo_status_t status = nmo_edit_executor_execute_transaction(
-        nmo_behavior_execution_transaction(args->execution),
-        plan,
-        &options,
-        report);
-    if (status == NMO_OK) {
-        status = script_run_accumulate_edit_report(args, report);
-    }
-    return status;
-}
-
-static nmo_status_t script_run_copy_operation_result(
-    nmo_edit_operation_result_t *dst,
-    const nmo_edit_operation_result_t *src)
-{
-    if (dst == NULL || src == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    *dst = (nmo_edit_operation_result_t){
-        .kind = src->kind,
-        .primary_id = src->primary_id,
-        .result_id = src->result_id,
-        .status = src->status,
-    };
-    dst->diagnostic_code = script_run_strdup(src->diagnostic_code);
-    if (src->diagnostic_code != NULL && dst->diagnostic_code == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-    dst->diagnostic_message = script_run_strdup(src->diagnostic_message);
-    if (src->diagnostic_message != NULL && dst->diagnostic_message == NULL) {
-        free((void *)dst->diagnostic_code);
-        memset(dst, 0, sizeof(*dst));
-        return NMO_ERR_NOMEM;
-    }
-    if (src->handle_count > 0u) {
-        dst->handles = (nmo_edit_operation_handle_t *)calloc(
-            src->handle_count, sizeof(*dst->handles));
-        if (dst->handles == NULL) {
-            free((void *)dst->diagnostic_code);
-            free((void *)dst->diagnostic_message);
-            memset(dst, 0, sizeof(*dst));
-            return NMO_ERR_NOMEM;
-        }
-        dst->handle_count = src->handle_count;
-        for (size_t i = 0; i < src->handle_count; ++i) {
-            dst->handles[i].name = script_run_strdup(src->handles[i].name);
-            if (src->handles[i].name != NULL && dst->handles[i].name == NULL) {
-                for (size_t j = 0; j < i; ++j) {
-                    free((void *)dst->handles[j].name);
-                }
-                free(dst->handles);
-                free((void *)dst->diagnostic_code);
-                free((void *)dst->diagnostic_message);
-                memset(dst, 0, sizeof(*dst));
-                return NMO_ERR_NOMEM;
-            }
-            dst->handles[i].id = src->handles[i].id;
-        }
-    }
-    return NMO_OK;
-}
-
-static nmo_status_t script_run_accumulate_edit_report(
-    script_run_args_t *args,
-    const nmo_edit_report_t *report)
-{
-    if (args == NULL || report == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (!args->edit_report_ready) {
-        NMO_RETURN_IF_ERROR(nmo_edit_report_init(&args->edit_report));
-        args->edit_report_ready = true;
-        args->edit_report.dry_run = report->dry_run;
-    }
-
-    size_t old_count = args->edit_report.operation_count;
-    size_t new_count = old_count + report->operation_count;
-    nmo_edit_operation_result_t *ops =
-        (nmo_edit_operation_result_t *)realloc(
-            args->edit_report.operations, new_count * sizeof(*ops));
-    if (ops == NULL && new_count > 0u) {
-        return NMO_ERR_NOMEM;
-    }
-    args->edit_report.operations = ops;
-    memset(args->edit_report.operations + old_count, 0,
-           report->operation_count * sizeof(*args->edit_report.operations));
-    args->edit_report.operation_count = new_count;
-    for (size_t i = 0; i < report->operation_count; ++i) {
-        NMO_RETURN_IF_ERROR(script_run_copy_operation_result(
-            &args->edit_report.operations[old_count + i],
-            &report->operations[i]));
-    }
-    for (size_t i = 0; i < report->changed_object_count; ++i) {
-        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
-            &args->edit_report,
-            report->changed_objects[i].id,
-            report->changed_objects[i].cause,
-            report->changed_objects[i].role));
-    }
-    for (size_t i = 0; i < report->created_object_count; ++i) {
-        NMO_RETURN_IF_ERROR(nmo_edit_report_add_created_object(
-            &args->edit_report,
-            report->created_objects[i].id,
-            report->created_objects[i].cause,
-            report->created_objects[i].role));
-    }
-    for (size_t i = 0; i < report->deleted_object_count; ++i) {
-        NMO_RETURN_IF_ERROR(nmo_edit_report_add_deleted_object(
-            &args->edit_report,
-            report->deleted_objects[i].id,
-            report->deleted_objects[i].cause,
-            report->deleted_objects[i].role));
-    }
-    NMO_RETURN_IF_ERROR(script_run_accumulate_semantic_risks(
-        &args->edit_report,
-        report->semantic_risks,
-        report->semantic_risk_count));
-    args->edit_report.validation = report->validation;
-    args->edit_report.ok =
-        (old_count == 0u) ? report->ok : (args->edit_report.ok && report->ok);
-    if (report->status != NMO_OK || old_count == 0u) {
-        args->edit_report.status = report->status;
-    }
-    return NMO_OK;
-}
-
 static nmo_status_t script_run_ensure_pending_plan(script_run_args_t *args)
 {
     if (args == NULL) {
@@ -560,31 +362,41 @@ static nmo_status_t script_run_ensure_pending_plan(script_run_args_t *args)
 
 static nmo_status_t script_run_execute_pending_plan(script_run_args_t *args)
 {
-    nmo_edit_report_t report;
     nmo_status_t status = NMO_OK;
 
     if (args == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    if (args->pending_plan == NULL ||
-        nmo_edit_plan_count(args->pending_plan) == 0u) {
-        nmo_edit_report_t empty_report;
-        NMO_RETURN_IF_ERROR(nmo_edit_report_init(&empty_report));
-        empty_report.ok = true;
-        empty_report.dry_run = args->dry_run;
-        empty_report.status = NMO_OK;
-        empty_report.validation.final_status = NMO_OK;
-        status = script_run_accumulate_edit_report(args, &empty_report);
-        nmo_edit_report_dispose(&empty_report);
-        return status;
-    }
     if (args->edit_report_ready) {
         return NMO_OK;
     }
+    status = nmo_edit_report_init(&args->edit_report);
+    if (status != NMO_OK) {
+        return status;
+    }
+    args->edit_report_ready = true;
 
-    nmo_edit_report_init(&report);
-    status = script_run_execute_edit_plan(args, args->pending_plan, &report);
-    nmo_edit_report_dispose(&report);
+    if (args->pending_plan == NULL ||
+        nmo_edit_plan_count(args->pending_plan) == 0u) {
+        args->edit_report.ok = true;
+        args->edit_report.dry_run = args->dry_run;
+        args->edit_report.status = NMO_OK;
+        args->edit_report.validation.final_status = NMO_OK;
+        return NMO_OK;
+    }
+
+    nmo_edit_executor_options_t options = nmo_edit_executor_options_default();
+    options.dry_run = args->dry_run;
+    options.validation_flags = 0u;
+    status = nmo_edit_executor_execute_transaction(
+        nmo_behavior_execution_transaction(args->execution),
+        args->pending_plan,
+        &options,
+        &args->edit_report);
+    if (status != NMO_OK) {
+        nmo_edit_report_dispose(&args->edit_report);
+        args->edit_report_ready = false;
+    }
     return status;
 }
 

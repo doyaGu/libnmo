@@ -901,6 +901,15 @@ TEST(repl_read, script_run_does_not_keep_private_validation) {
                                "script_run_collect_validation");
 }
 
+TEST(repl_read, script_run_uses_executor_report_directly) {
+    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+                               "script_run_accumulate_edit_report");
+    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+                               "script_run_copy_operation_result");
+    assert_source_not_contains("tools/commands/nmo_cmd_script.c",
+                               "script_run_accumulate_semantic_risks");
+}
+
 TEST(repl_read, script_write_commands_use_edit_report_validation_only) {
     assert_source_not_contains("tools/commands/nmo_cmd_script.c",
                                "script_run_validation_t");
@@ -1486,6 +1495,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, script_run_uses_executor_handles_only);
     REGISTER_TEST(repl_read, script_run_does_not_keep_script_edit_report);
     REGISTER_TEST(repl_read, script_run_does_not_keep_private_validation);
+    REGISTER_TEST(repl_read, script_run_uses_executor_report_directly);
     REGISTER_TEST(repl_read, script_write_commands_use_edit_report_validation_only);
     REGISTER_TEST(repl_read, edit_report_json_does_not_emit_legacy_risk_level);
     REGISTER_TEST(repl_read, edit_report_schema_v2_has_single_json_helper);
