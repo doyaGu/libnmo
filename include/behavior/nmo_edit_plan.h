@@ -123,6 +123,9 @@ typedef struct nmo_edit_op {
         struct {
             nmo_object_id_t source_parameter_id;
             nmo_object_id_t target_parameter_id;
+            size_t target_parameter_ref_operation_index;
+            const char *target_parameter_ref_handle;
+            bool has_target_parameter_ref;
         } connect_parameter;
         struct {
             nmo_object_id_t target_parameter_id;
@@ -344,6 +347,12 @@ NMO_API nmo_status_t nmo_edit_plan_add_connect_parameter(
     nmo_edit_plan_t *plan,
     nmo_object_id_t source_parameter_id,
     nmo_object_id_t target_parameter_id);
+
+NMO_API nmo_status_t nmo_edit_plan_add_connect_parameter_to_handle(
+    nmo_edit_plan_t *plan,
+    nmo_object_id_t source_parameter_id,
+    size_t target_operation_index,
+    const char *target_handle_name);
 
 NMO_API nmo_status_t nmo_edit_plan_add_disconnect_parameter(
     nmo_edit_plan_t *plan,

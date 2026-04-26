@@ -168,6 +168,8 @@ static void edit_op_dispose(nmo_edit_op_t *op)
         free((void *)op->data.add_link.to_io_ref_handle);
     } else if (op->kind == NMO_EDIT_OP_ADD_PARAMETER) {
         free((void *)op->data.add_parameter.name);
+    } else if (op->kind == NMO_EDIT_OP_CONNECT_PARAMETER) {
+        free((void *)op->data.connect_parameter.target_parameter_ref_handle);
     } else if (op->kind == NMO_EDIT_OP_SET_DATA_CELL) {
         free((void *)op->data.data_cell.value);
     } else if (op->kind == NMO_EDIT_OP_FOLD) {
@@ -263,6 +265,16 @@ static nmo_status_t edit_op_copy(
         dst->data.add_parameter.name =
             edit_plan_strdup(src->data.add_parameter.name);
         if (src->data.add_parameter.name && !dst->data.add_parameter.name) {
+            return NMO_ERR_NOMEM;
+        }
+        break;
+    case NMO_EDIT_OP_CONNECT_PARAMETER:
+        dst->data.connect_parameter.target_parameter_ref_handle =
+            edit_plan_strdup(
+                src->data.connect_parameter.target_parameter_ref_handle);
+        if (src->data.connect_parameter.target_parameter_ref_handle &&
+            !dst->data.connect_parameter.target_parameter_ref_handle) {
+            edit_op_dispose(dst);
             return NMO_ERR_NOMEM;
         }
         break;
@@ -772,13 +784,39 @@ nmo_status_t nmo_edit_plan_add_connect_parameter(
     nmo_object_id_t target_parameter_id)
 {
     nmo_edit_op_t *op = NULL;
-    if (target_parameter_id == 0) {
+    if (source_parameter_id == 0 || target_parameter_id == 0) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     NMO_RETURN_IF_ERROR(edit_plan_append_blank(
         plan, NMO_EDIT_OP_CONNECT_PARAMETER, target_parameter_id, &op));
     op->data.connect_parameter.source_parameter_id = source_parameter_id;
     op->data.connect_parameter.target_parameter_id = target_parameter_id;
+    plan->count++;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_edit_plan_add_connect_parameter_to_handle(
+    nmo_edit_plan_t *plan,
+    nmo_object_id_t source_parameter_id,
+    size_t target_operation_index,
+    const char *target_handle_name)
+{
+    nmo_edit_op_t *op = NULL;
+    if (source_parameter_id == 0 || target_handle_name == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    NMO_RETURN_IF_ERROR(edit_plan_append_blank(
+        plan, NMO_EDIT_OP_CONNECT_PARAMETER, source_parameter_id, &op));
+    op->data.connect_parameter.source_parameter_id = source_parameter_id;
+    op->data.connect_parameter.target_parameter_ref_operation_index =
+        target_operation_index;
+    op->data.connect_parameter.target_parameter_ref_handle =
+        edit_plan_strdup(target_handle_name);
+    if (op->data.connect_parameter.target_parameter_ref_handle == NULL) {
+        edit_op_dispose(op);
+        return NMO_ERR_NOMEM;
+    }
+    op->data.connect_parameter.has_target_parameter_ref = true;
     plan->count++;
     return NMO_OK;
 }
@@ -1551,11 +1589,35 @@ static nmo_status_t edit_executor_apply_op(
             op->data.add_parameter.type_guid,
             op->data.add_parameter.name,
             out_result_id);
-    case NMO_EDIT_OP_CONNECT_PARAMETER:
-        return nmo_script_edit_connect_parameter(
+    case NMO_EDIT_OP_CONNECT_PARAMETER: {
+        nmo_object_id_t target_parameter_id =
+            op->data.connect_parameter.target_parameter_id;
+        if (op->data.connect_parameter.has_target_parameter_ref) {
+            nmo_status_t ref_rc = edit_report_resolve_operation_handle(
+                report,
+                op->data.connect_parameter.target_parameter_ref_operation_index,
+                op->data.connect_parameter.target_parameter_ref_handle,
+                &target_parameter_id);
+            if (ref_rc != NMO_OK) {
+                if (out_diagnostic_code != NULL) {
+                    *out_diagnostic_code = "handle_not_found";
+                }
+                if (out_diagnostic_message != NULL) {
+                    *out_diagnostic_message =
+                        "Referenced edit operation parameter handle was not found";
+                }
+                return ref_rc;
+            }
+        }
+        nmo_status_t rc = nmo_script_edit_connect_parameter(
             tx,
             op->data.connect_parameter.source_parameter_id,
-            op->data.connect_parameter.target_parameter_id);
+            target_parameter_id);
+        if (rc == NMO_OK && out_result_id != NULL) {
+            *out_result_id = target_parameter_id;
+        }
+        return rc;
+    }
     case NMO_EDIT_OP_DISCONNECT_PARAMETER:
         return nmo_script_edit_disconnect_parameter(
             tx,
@@ -1865,6 +1927,8 @@ static nmo_object_id_t edit_op_changed_id(const nmo_edit_op_t *op)
         return op->data.remove_link.parent_behavior_id;
     case NMO_EDIT_OP_ADD_PARAMETER:
         return op->data.add_parameter.owner_behavior_id;
+    case NMO_EDIT_OP_CONNECT_PARAMETER:
+        return op->data.connect_parameter.target_parameter_id;
     case NMO_EDIT_OP_ADD_OPERATION:
         return op->data.add_operation.parent_behavior_id;
     case NMO_EDIT_OP_INTERFACE_POLICY:
