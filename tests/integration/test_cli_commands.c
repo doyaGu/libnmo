@@ -3612,6 +3612,47 @@ TEST(cli, debug_probe_control_marker_dry_run_reports_edit_plan) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, debug_probe_rejects_invalid_probe_options) {
+    struct probe_case {
+        const char *args;
+        const char *message;
+    } cases[] = {
+        {
+            "debug probe parameter-logger --behavior 237 "
+            "\"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "parameter-logger requires --parameter",
+        },
+        {
+            "debug probe parameter-logger --behavior 237 --parameter 234 "
+            "--text bad \"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "parameter-logger uses --parameter, not --text",
+        },
+        {
+            "debug probe data-cell-logger --behavior 237 --dataarray 2261 "
+            "--row 0 \"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "data-cell-logger requires --dataarray",
+        },
+        {
+            "debug probe control-marker --behavior 237 --text bad "
+            "\"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "--text is only supported",
+        },
+        {
+            "debug probe 2d-text --behavior 237 --parameter 234 "
+            "\"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "--parameter is only supported",
+        },
+    };
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        cli_run_result_t result = run_cli_capture(cases[i].args);
+        ASSERT_NOT_NULL(result.output);
+        ASSERT_TRUE(result.exit_code != NMO_CLI_EXIT_SUCCESS);
+        ASSERT_STR_CONTAINS(result.output, cases[i].message);
+        free(result.output);
+    }
+}
+
 TEST(cli, unknown_command_error) {
     char *output = run_cli("nonexistent foobar");
     ASSERT_NOT_NULL(output);
@@ -3765,6 +3806,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, debug_probe_parameter_logger_connects_source_parameter);
     REGISTER_TEST(cli, debug_probe_data_cell_logger_uses_edit_plan);
     REGISTER_TEST(cli, debug_probe_control_marker_dry_run_reports_edit_plan);
+    REGISTER_TEST(cli, debug_probe_rejects_invalid_probe_options);
     REGISTER_TEST(cli, unknown_command_error);
 TEST_MAIN_END()
 
