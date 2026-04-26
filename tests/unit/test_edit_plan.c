@@ -15,6 +15,7 @@
 #include "session/nmo_session.h"
 #include "type/nmo_type_guids.h"
 
+#include <math.h>
 #include <string.h>
 
 static void create_object_or_fail(
@@ -403,6 +404,130 @@ TEST(edit_plan, executor_adds_node_with_created_object_report) {
         ASSERT_TRUE(found_input_handle);
         ASSERT_TRUE(found_output_handle);
     }
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+}
+
+TEST(edit_plan, executor_materializes_building_block_defaults) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t root_id = 0;
+    create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Root", &root_id);
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_node(
+                  plan,
+                  root_id,
+                  nmo_guid_parse("055B29FE-662D5CA0"),
+                  "Defaulted 2D Text"));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+
+    nmo_object_t *node_obj =
+        nmo_object_repository_find_by_id(fixture.repo, report.operations[0].result_id);
+    nmo_behavior_state_t *node_state = node_obj
+        ? (nmo_behavior_state_t *)nmo_object_get_state(node_obj)
+        : NULL;
+    ASSERT_NOT_NULL(node_state);
+
+    nmo_object_id_t caret_id =
+        find_named_parameter_in_ids(fixture.repo, &node_state->in_parameters, "Caret Size");
+    nmo_object_t *caret_obj =
+        nmo_object_repository_find_by_id(fixture.repo, caret_id);
+    nmo_parameterin_state_t *caret_state = caret_obj
+        ? (nmo_parameterin_state_t *)nmo_object_get_state(caret_obj)
+        : NULL;
+    ASSERT_NOT_NULL(caret_state);
+    ASSERT_TRUE(caret_state->source_id != 0u);
+
+    nmo_object_t *source_obj =
+        nmo_object_repository_find_by_id(fixture.repo, caret_state->source_id);
+    nmo_parameter_state_t *source_state = source_obj
+        ? nmo_parameter_get_mutable_state(source_obj)
+        : NULL;
+    ASSERT_NOT_NULL(source_state);
+    ASSERT_EQ(CKPARAM_MODE_BUFFER, source_state->mode);
+    ASSERT_TRUE(source_state->buffer_data.count >= sizeof(float));
+
+    float caret_value = 0.0f;
+    memcpy(&caret_value, source_state->buffer_data.data, sizeof(caret_value));
+    ASSERT_TRUE(fabsf(caret_value - 10.0f) < 0.0001f);
+
+    bool reported_created_source = false;
+    for (size_t i = 0; i < report.created_object_count; ++i) {
+        if (report.created_objects[i].id == caret_state->source_id) {
+            reported_created_source = true;
+        }
+    }
+    ASSERT_TRUE(reported_created_source);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+}
+
+TEST(edit_plan, executor_materializes_targetable_beobject_target) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t root_id = 0;
+    create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Root", &root_id);
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_node(
+                  plan,
+                  root_id,
+                  nmo_guid_parse("18655B3F-68291DC3"),
+                  "Plan Output To Console"));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+
+    nmo_object_t *node_obj =
+        nmo_object_repository_find_by_id(fixture.repo, report.operations[0].result_id);
+    nmo_behavior_state_t *node_state = node_obj
+        ? (nmo_behavior_state_t *)nmo_object_get_state(node_obj)
+        : NULL;
+    ASSERT_NOT_NULL(node_state);
+    ASSERT_EQ(NMO_CID_BEOBJECT, node_state->compatible_class_id);
+    ASSERT_TRUE((node_state->flags & CKBEHAVIOR_TARGETABLE) != 0u);
+    ASSERT_TRUE(node_state->target_parameter_id != 0u);
+
+    nmo_object_t *target_obj =
+        nmo_object_repository_find_by_id(fixture.repo, node_state->target_parameter_id);
+    nmo_parameterin_state_t *target_state = target_obj
+        ? (nmo_parameterin_state_t *)nmo_object_get_state(target_obj)
+        : NULL;
+    ASSERT_NOT_NULL(target_state);
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_BEOBJECT, target_state->type_guid));
+
+    bool reported_target = false;
+    bool handle_target = false;
+    for (size_t i = 0; i < report.created_object_count; ++i) {
+        if (report.created_objects[i].id == node_state->target_parameter_id) {
+            reported_target = true;
+        }
+    }
+    for (size_t i = 0; i < report.operations[0].handle_count; ++i) {
+        if (strcmp(report.operations[0].handles[i].name, "target") == 0 &&
+            report.operations[0].handles[i].id == node_state->target_parameter_id) {
+            handle_target = true;
+        }
+    }
+    ASSERT_TRUE(reported_target);
+    ASSERT_TRUE(handle_target);
 
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
@@ -1126,6 +1251,8 @@ REGISTER_TEST(edit_plan, executor_commits_parameter_value_plan);
 REGISTER_TEST(edit_plan, executor_rolls_back_failed_plan);
 REGISTER_TEST(edit_plan, executor_dry_run_reports_without_persisting);
 REGISTER_TEST(edit_plan, executor_adds_node_with_created_object_report);
+REGISTER_TEST(edit_plan, executor_materializes_building_block_defaults);
+REGISTER_TEST(edit_plan, executor_materializes_targetable_beobject_target);
 REGISTER_TEST(edit_plan, executor_resolves_parameter_value_from_prior_handle);
 REGISTER_TEST(edit_plan, executor_materializes_input_source_for_handle_value);
 REGISTER_TEST(edit_plan, executor_materializes_input_source_for_handle_bytes);
