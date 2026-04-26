@@ -21,6 +21,9 @@
 #include "runtime/nmo_context.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
+#include "object/builtin/nmo_behaviorlink_schemas.h"
+#include "object/nmo_object_repository.h"
+#include "format/nmo_object.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -46,6 +49,9 @@ typedef struct nmo_debug_probe_args {
 
 static const char *debug_probe_input_handle(const char *kind);
 static const char *debug_probe_output_handle(const char *kind);
+static nmo_status_t debug_probe_infer_removed_link_endpoints(
+    nmo_cmd_ctx_t *ctx,
+    nmo_debug_probe_args_t *args);
 
 static int debug_probe_parse(int argc,
                              char **argv,
@@ -151,6 +157,34 @@ static const char *debug_probe_output_handle(const char *kind)
     return NULL;
 }
 
+static nmo_status_t debug_probe_infer_removed_link_endpoints(
+    nmo_cmd_ctx_t *ctx,
+    nmo_debug_probe_args_t *args)
+{
+    if (ctx == NULL || args == NULL || args->remove_link_id == 0u ||
+        (args->from_io_id != 0u && args->to_io_id != 0u)) {
+        return NMO_OK;
+    }
+
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(ctx->workspace);
+    nmo_object_t *link_obj = repo != NULL
+        ? nmo_object_repository_find_by_id(repo, args->remove_link_id)
+        : NULL;
+    const nmo_behaviorlink_state_t *link_state = link_obj != NULL
+        ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj)
+        : NULL;
+    if (link_state == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (args->from_io_id == 0u) {
+        args->from_io_id = link_state->in_io_id;
+    }
+    if (args->to_io_id == 0u) {
+        args->to_io_id = link_state->out_io_id;
+    }
+    return NMO_OK;
+}
+
 static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
                               bool dry_run,
                               const char *output_path,
@@ -178,7 +212,10 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
     } else if (strcmp(args->kind, "control-marker") == 0) {
         probe_guid = bb_nop;
     }
-    status = nmo_edit_plan_create(&plan);
+    status = debug_probe_infer_removed_link_endpoints(ctx, args);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_create(&plan);
+    }
     if (status == NMO_OK && args->remove_link_id != 0u) {
         status = nmo_edit_plan_add_remove_behavior_link(
             plan, args->behavior_id, args->remove_link_id);

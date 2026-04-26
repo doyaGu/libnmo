@@ -3151,6 +3151,31 @@ TEST(cli, debug_probe_remove_link_inserts_probe) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, debug_probe_remove_link_infers_endpoints) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json debug probe 2d-text --behavior 237 --remove-link 213 "
+             "--name InsertedProbe --text \"loading trace\" \"%s\" --dry-run",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    ASSERT_STR_EQ(json_envelope_command(doc), "debug.probe");
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(data, "ok")));
+    yyjson_val *operations = yyjson_obj_get(data, "operations");
+    ASSERT_TRUE(operations && yyjson_is_arr(operations));
+    ASSERT_EQ(5u, yyjson_arr_size(operations));
+    ASSERT_STR_EQ("remove_behavior_link",
+                  yyjson_get_str(yyjson_obj_get(yyjson_arr_get(operations, 0), "op")));
+    ASSERT_STR_EQ("add_behavior_link",
+                  yyjson_get_str(yyjson_obj_get(yyjson_arr_get(operations, 3), "op")));
+    ASSERT_STR_EQ("add_behavior_link",
+                  yyjson_get_str(yyjson_obj_get(yyjson_arr_get(operations, 4), "op")));
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, debug_probe_console_dry_run_reports_edit_plan) {
     char args[1024];
     snprintf(args, sizeof(args),
@@ -3359,6 +3384,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, debug_probe_from_io_links_probe_input);
     REGISTER_TEST(cli, debug_probe_to_io_links_probe_output);
     REGISTER_TEST(cli, debug_probe_remove_link_inserts_probe);
+    REGISTER_TEST(cli, debug_probe_remove_link_infers_endpoints);
     REGISTER_TEST(cli, debug_probe_console_dry_run_reports_edit_plan);
     REGISTER_TEST(cli, debug_probe_debug_output_dry_run_reports_edit_plan);
     REGISTER_TEST(cli, debug_probe_control_marker_dry_run_reports_edit_plan);
