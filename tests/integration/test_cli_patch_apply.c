@@ -128,6 +128,40 @@ static int write_text_file(const char *path, const char *text) {
     return ok;
 }
 
+static void write_raw_v2_patch_operation(
+    const char *path,
+    const char *output_path,
+    const char *operation_json)
+{
+    char json[4096];
+    snprintf(json, sizeof(json),
+             "{\n"
+             "  \"version\": 2,\n"
+             "  \"input\": \"%s\",\n"
+             "  \"output\": \"%s\",\n"
+             "  \"operations\": [\n"
+             "%s\n"
+             "  ]\n"
+             "}\n",
+             NMO_TEST_DATA_FILE("Nop.cmo"),
+             output_path,
+             operation_json);
+    ASSERT_TRUE(write_text_file(path, json));
+}
+
+static void assert_patch_apply_fails_with(
+    const char *patch_path,
+    const char *expected_text)
+{
+    char args[1024];
+    snprintf(args, sizeof(args), "patch apply \"%s\"", patch_path);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, expected_text);
+    free(result.output);
+}
+
 static const char *get_string_field(yyjson_val *obj, const char *key) {
     yyjson_val *val = yyjson_obj_get(obj, key);
     return yyjson_get_str(val);
@@ -1905,6 +1939,80 @@ TEST(cli, patch_apply_v2_interface_policy_dry_run) {
     remove(patch);
 }
 
+TEST(cli, patch_apply_v2_rejects_strict_manifest_edges) {
+    struct invalid_case {
+        const char *name;
+        const char *operation_json;
+        const char *expected_text;
+    } cases[] = {
+        {
+            "operation_zero",
+            "    {\n"
+            "      \"op\": \"set_parameter_value\",\n"
+            "      \"parameter_operation\": 0,\n"
+            "      \"parameter_handle\": \"parameter\",\n"
+            "      \"value\": \"x\"\n"
+            "    }",
+            "Missing or invalid parameter_operation",
+        },
+        {
+            "missing_handle",
+            "    {\n"
+            "      \"op\": \"set_parameter_value\",\n"
+            "      \"parameter_operation\": 1,\n"
+            "      \"value\": \"x\"\n"
+            "    }",
+            "Missing or invalid parameter_handle",
+        },
+        {
+            "id_and_handle",
+            "    {\n"
+            "      \"op\": \"connect_parameter\",\n"
+            "      \"source_id\": 1,\n"
+            "      \"target_id\": 2,\n"
+            "      \"target_operation\": 1,\n"
+            "      \"target_handle\": \"input_param:String\"\n"
+            "    }",
+            "connect_parameter requires either target_id or target_operation plus target_handle",
+        },
+        {
+            "unknown_op",
+            "    {\n"
+            "      \"op\": \"not_a_real_op\"\n"
+            "    }",
+            "Unsupported patch op 'not_a_real_op'",
+        },
+        {
+            "unknown_field",
+            "    {\n"
+            "      \"op\": \"add_io\",\n"
+            "      \"behavior_id\": 3,\n"
+            "      \"kind\": \"input\",\n"
+            "      \"name\": \"Patch V2 In\",\n"
+            "      \"unexpected\": true\n"
+            "    }",
+            "Unknown field 'unexpected' in add_io operation",
+        },
+    };
+
+    make_dir("test_patch_tmp");
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        char patch[256];
+        char output[256];
+        snprintf(patch, sizeof(patch),
+                 "test_patch_tmp/invalid_%s.json", cases[i].name);
+        snprintf(output, sizeof(output),
+                 "test_patch_tmp/invalid_%s.cmo", cases[i].name);
+        remove(patch);
+        remove(output);
+        write_raw_v2_patch_operation(
+            patch, output, cases[i].operation_json);
+        assert_patch_apply_fails_with(patch, cases[i].expected_text);
+        ASSERT_FALSE(file_exists(output));
+        remove(patch);
+    }
+}
+
 TEST(cli, patch_apply_fold_dry_run_reports_analysis) {
     rewrite_manifest_t manifest;
 
@@ -2056,6 +2164,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, patch_apply_v2_remove_io_dry_run);
     REGISTER_TEST(cli, patch_apply_v2_rename_io_dry_run);
     REGISTER_TEST(cli, patch_apply_v2_interface_policy_dry_run);
+    REGISTER_TEST(cli, patch_apply_v2_rejects_strict_manifest_edges);
     REGISTER_TEST(cli, patch_apply_fold_dry_run_reports_analysis);
     REGISTER_TEST(cli, patch_apply_fold_dry_run_reports_semantic_risks);
     REGISTER_TEST(cli, patch_diff_json_reports_fold_delete_plan);
