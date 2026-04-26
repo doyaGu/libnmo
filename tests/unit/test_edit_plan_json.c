@@ -450,6 +450,8 @@ TEST(edit_plan_json, rejects_incomplete_manifest_roots) {
     ASSERT_NE(NMO_OK,
               nmo_edit_plan_manifest_json_read(
                   missing_input, strlen(missing_input), &manifest));
+    ASSERT_STR_CONTAINS(nmo_last_error_message(),
+                        "Edit plan manifest requires input");
     nmo_edit_plan_manifest_dispose(&manifest);
 
     const char *missing_output =
@@ -462,6 +464,8 @@ TEST(edit_plan_json, rejects_incomplete_manifest_roots) {
     ASSERT_NE(NMO_OK,
               nmo_edit_plan_manifest_json_read(
                   missing_output, strlen(missing_output), &manifest));
+    ASSERT_STR_CONTAINS(nmo_last_error_message(),
+                        "Edit plan manifest requires output");
     nmo_edit_plan_manifest_dispose(&manifest);
 
     const char *empty_operations =
@@ -496,6 +500,19 @@ TEST(edit_plan_json, rejects_manifest_version_with_generic_diagnostic) {
                   legacy, strlen(legacy), &manifest));
     ASSERT_STR_CONTAINS(nmo_last_error_message(),
                         "Edit plan manifest version 2 is required");
+
+    nmo_edit_plan_manifest_dispose(&manifest);
+}
+
+TEST(edit_plan_json, rejects_non_object_manifest_with_generic_diagnostic) {
+    nmo_edit_plan_manifest_t manifest;
+    memset(&manifest, 0, sizeof(manifest));
+
+    nmo_last_error_clear();
+    ASSERT_NE(NMO_OK,
+              nmo_edit_plan_manifest_json_read("[]", 2u, &manifest));
+    ASSERT_STR_CONTAINS(nmo_last_error_message(),
+                        "Edit plan manifest root must be an object");
 
     nmo_edit_plan_manifest_dispose(&manifest);
 }
@@ -553,6 +570,8 @@ REGISTER_TEST(edit_plan_json,
 REGISTER_TEST(edit_plan_json, rejects_incomplete_manifest_roots);
 REGISTER_TEST(edit_plan_json,
               rejects_manifest_version_with_generic_diagnostic);
+REGISTER_TEST(edit_plan_json,
+              rejects_non_object_manifest_with_generic_diagnostic);
 REGISTER_TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics);
 REGISTER_TEST(edit_plan_json,
               rejects_plan_roots_with_generic_operation_diagnostics);

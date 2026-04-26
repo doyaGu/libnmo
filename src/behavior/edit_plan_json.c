@@ -1918,7 +1918,7 @@ nmo_status_t nmo_edit_plan_manifest_json_read(
     if (root == NULL || !yyjson_is_obj(root)) {
         yyjson_doc_free(doc);
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "Patch root must be an object");
+                         "Edit plan manifest root must be an object");
     }
     yyjson_val *version = yyjson_obj_get(root, "version");
     yyjson_val *input = yyjson_obj_get(root, "input");
@@ -1934,13 +1934,13 @@ nmo_status_t nmo_edit_plan_manifest_json_read(
         yyjson_get_str(input)[0] == '\0') {
         yyjson_doc_free(doc);
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "Patch root requires input");
+                         "Edit plan manifest requires input");
     }
     if (output == NULL || !yyjson_is_str(output) ||
         yyjson_get_str(output)[0] == '\0') {
         yyjson_doc_free(doc);
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "Patch root requires output");
+                         "Edit plan manifest requires output");
     }
     if (ops == NULL || !yyjson_is_arr(ops) ||
         yyjson_arr_size(ops) == 0u) {
