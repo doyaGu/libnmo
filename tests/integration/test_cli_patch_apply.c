@@ -2150,6 +2150,39 @@ TEST(cli, patch_apply_v2_rejects_strict_manifest_edges) {
             "connect_parameter requires either target_id or target_operation plus target_handle",
         },
         {
+            "operation_slot_zero",
+            "    {\n"
+            "      \"op\": \"add_operation\",\n"
+            "      \"parent_id\": 3,\n"
+            "      \"operation_guid\": \"00000002-00000000\",\n"
+            "      \"in1_operation\": 0,\n"
+            "      \"in1_handle\": \"parameter\"\n"
+            "    }",
+            "Missing or invalid in1_operation",
+        },
+        {
+            "operation_slot_missing_handle",
+            "    {\n"
+            "      \"op\": \"add_operation\",\n"
+            "      \"parent_id\": 3,\n"
+            "      \"operation_guid\": \"00000002-00000000\",\n"
+            "      \"in1_operation\": 1\n"
+            "    }",
+            "Missing or invalid in1_handle",
+        },
+        {
+            "operation_slot_id_and_handle",
+            "    {\n"
+            "      \"op\": \"add_operation\",\n"
+            "      \"parent_id\": 3,\n"
+            "      \"operation_guid\": \"00000002-00000000\",\n"
+            "      \"in1_id\": 1,\n"
+            "      \"in1_operation\": 1,\n"
+            "      \"in1_handle\": \"parameter\"\n"
+            "    }",
+            "add_operation operation requires either in1_id or in1_operation plus in1_handle",
+        },
+        {
             "unknown_op",
             "    {\n"
             "      \"op\": \"not_a_real_op\"\n"
