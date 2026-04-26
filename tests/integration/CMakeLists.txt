@@ -91,6 +91,12 @@ if(TARGET nmo_cli)
     target_compile_definitions(test_cli_patch_apply PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_cli_patch_apply COMMAND test_cli_patch_apply)
 
+    add_executable(test_ballance_script_edit_acceptance test_ballance_script_edit_acceptance.c)
+    target_link_libraries(test_ballance_script_edit_acceptance PRIVATE nmo test_framework yyjson)
+    add_dependencies(test_ballance_script_edit_acceptance nmo_cli)
+    target_compile_definitions(test_ballance_script_edit_acceptance PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
+    add_test(NAME test_ballance_script_edit_acceptance COMMAND test_ballance_script_edit_acceptance)
+
     add_executable(test_cli_commands test_cli_commands.c)
     target_link_libraries(test_cli_commands PRIVATE nmo test_framework yyjson)
     add_dependencies(test_cli_commands nmo_cli)
