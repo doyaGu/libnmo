@@ -1526,8 +1526,22 @@ static nmo_status_t semantic_validate_basic_edit_op(
             op->data.data_cell.row,
             op->data.data_cell.col);
     case NMO_EDIT_OP_FOLD:
-    case NMO_EDIT_OP_REPLACE_BB:
         return NMO_OK;
+    case NMO_EDIT_OP_REPLACE_BB:
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.replace_bb.desc.behavior_id));
+        NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
+            repo,
+            risks,
+            risk_count,
+            op->data.replace_bb.desc.behavior_id));
+        return semantic_add_building_block_risk(
+            ctx,
+            risks,
+            risk_count,
+            op->data.replace_bb.desc.behavior_id,
+            op->data.replace_bb.desc.block_guid);
     default:
         return NMO_OK;
     }

@@ -987,6 +987,38 @@ TEST(semantic_validator, edit_plan_reports_unknown_building_block)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_reports_unknown_replace_building_block)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_path(&fixture, NMO_TEST_DATA_FILE("Nop.cmo"));
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    nmo_behavior_replace_bb_desc_t replace = {
+        .behavior_id = 6u,
+        .block_guid = nmo_guid_parse("4E4D4F00-00BAD0BB"),
+        .name = "Unknown Replace BB",
+        .block_version = 65536u,
+    };
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_replace_bb(plan, &replace));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *unknown =
+        find_risk(risks, risk_count, "unknown_bb_signature");
+    ASSERT_NOT_NULL(unknown);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, unknown->severity);
+    ASSERT_EQ(6u, unknown->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, boundary_reports_dangling_delay_and_shared_risks);
     REGISTER_TEST(semantic_validator, detects_message_flow_by_signature_metadata);
@@ -1013,4 +1045,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_data_cell_bounds);
     REGISTER_TEST(semantic_validator, edit_plan_reports_unknown_building_block);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_unknown_replace_building_block);
 TEST_MAIN_END()
