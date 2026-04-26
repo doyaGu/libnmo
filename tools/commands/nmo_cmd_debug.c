@@ -43,6 +43,7 @@ typedef struct nmo_debug_probe_args {
     nmo_object_id_t remove_link_id;
     nmo_object_id_t from_io_id;
     nmo_object_id_t to_io_id;
+    nmo_object_id_t parameter_id;
     uint32_t delay;
     bool has_delay;
     const char *name;
@@ -56,6 +57,7 @@ typedef struct debug_probe_kind_spec {
     const char *input_handle;
     const char *output_handle;
     const char *text_handle;
+    bool connects_parameter;
 } debug_probe_kind_spec_t;
 
 static const debug_probe_kind_spec_t debug_probe_kind_specs[] = {
@@ -65,6 +67,7 @@ static const debug_probe_kind_spec_t debug_probe_kind_specs[] = {
         "input:On",
         "output:Exit On",
         "input_param:Text",
+        false,
     },
     {
         "console",
@@ -72,6 +75,7 @@ static const debug_probe_kind_spec_t debug_probe_kind_specs[] = {
         "input:In",
         "output:Out",
         "input_param:String",
+        false,
     },
     {
         "debug-output",
@@ -79,6 +83,7 @@ static const debug_probe_kind_spec_t debug_probe_kind_specs[] = {
         "input:In",
         "output:Out",
         "input_param:String",
+        false,
     },
     {
         "message-logger",
@@ -86,6 +91,15 @@ static const debug_probe_kind_spec_t debug_probe_kind_specs[] = {
         "input:In",
         "output:Out",
         "input_param:String",
+        false,
+    },
+    {
+        "parameter-logger",
+        NMO_GUID_INIT(0x18655B3Fu, 0x68291DC3u),
+        "input:In",
+        "output:Out",
+        "input_param:String",
+        true,
     },
     {
         "control-marker",
@@ -93,6 +107,7 @@ static const debug_probe_kind_spec_t debug_probe_kind_specs[] = {
         "input:In 0",
         "output:Out 0",
         NULL,
+        false,
     },
 };
 
@@ -133,6 +148,10 @@ static int debug_probe_parse(int argc,
             args->from_io_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "--to-io") == 0 && i + 1 < argc) {
             args->to_io_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
+        } else if ((strcmp(argv[i], "--parameter") == 0 ||
+                    strcmp(argv[i], "--source-param") == 0) &&
+                   i + 1 < argc) {
+            args->parameter_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "--delay") == 0 && i + 1 < argc) {
             args->delay = (uint32_t)strtoul(argv[++i], NULL, 10);
             args->has_delay = true;
@@ -167,6 +186,21 @@ static int debug_probe_parse(int argc,
                 "debug-output/message-logger probes\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
+    if (args->parameter_id != 0u && !spec->connects_parameter) {
+        fprintf(stderr,
+                "Error: --parameter is only supported for parameter-logger probes\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (spec->connects_parameter && args->parameter_id == 0u) {
+        fprintf(stderr,
+                "Error: parameter-logger requires --parameter <id>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (spec->connects_parameter && args->text != NULL) {
+        fprintf(stderr,
+                "Error: parameter-logger uses --parameter, not --text\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
     if ((args->from_io_id != 0u && spec->input_handle == NULL) ||
         (args->to_io_id != 0u && spec->output_handle == NULL)) {
         fprintf(stderr, "Error: Probe kind '%s' has no known control IO handles\n",
@@ -175,9 +209,9 @@ static int debug_probe_parse(int argc,
     }
     if (args->behavior_id == 0u || *out_input_path == NULL) {
         fprintf(stderr,
-                "Usage: nmo debug probe 2d-text|console|debug-output|message-logger|control-marker "
+                "Usage: nmo debug probe 2d-text|console|debug-output|message-logger|parameter-logger|control-marker "
                 "--behavior <id> [--remove-link <id>] [--from-io <id>] [--to-io <id>] "
-                "[--delay <n>] [--name <name>] [--text <text>] [--dry-run] <file> "
+                "[--parameter <id>] [--delay <n>] [--name <name>] [--text <text>] [--dry-run] <file> "
                 "-o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -377,6 +411,11 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
     if (status == NMO_OK && args->text != NULL && spec->text_handle != NULL) {
         status = nmo_edit_plan_add_set_parameter_value_from_handle(
             plan, node_op_index, spec->text_handle, args->text, NULL);
+    }
+    if (status == NMO_OK && spec->connects_parameter &&
+        args->parameter_id != 0u && spec->text_handle != NULL) {
+        status = nmo_edit_plan_add_connect_parameter_to_handle(
+            plan, args->parameter_id, node_op_index, spec->text_handle);
     }
     if (status == NMO_OK && args->from_io_id != 0u) {
         status = nmo_edit_plan_add_behavior_link_to_handle(
