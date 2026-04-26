@@ -243,6 +243,37 @@ TEST(lua_bindings_plan, plan_module_executes_parameter_value_dry_run)
     nmo_lua_runtime_destroy(runtime);
 }
 
+TEST(lua_bindings_plan, plan_module_executes_connect_parameter_to_handle_dry_run)
+{
+    nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
+    ASSERT_NOT_NULL(runtime);
+
+    ASSERT_EQ(NMO_OK, nmo_lua_register_platform_bindings(runtime));
+    assert_lua_ok(
+        runtime,
+        "local context = require('nmo.context')\n"
+        "local document = require('nmo.document')\n"
+        "local workspace_mod = require('nmo.workspace')\n"
+        "local plan = require('nmo.plan')\n"
+        "local ctx = context.create({ data_dir = '" NMO_TEST_DATA_DIR "' })\n"
+        "local doc = document.load_file(ctx, '" NMO_TEST_DATA_FILE("Ballance/base.cmo") "')\n"
+        "local ws = workspace_mod.create(ctx, doc)\n"
+        "local p = plan.new()\n"
+        "plan.add_node(p, 237, '18655B3F-68291DC3', 'Lua Parameter Logger')\n"
+        "plan.connect_parameter_to_handle(p, 234, 1, 'input_param:String')\n"
+        "local report = plan.execute(p, ws, { dry_run = true })\n"
+        "assert(report.ok == true)\n"
+        "assert(report.dry_run == true)\n"
+        "assert(report.operation_count == 2)\n"
+        "assert(report.operations[1].op == 'add_node')\n"
+        "assert(report.operations[2].op == 'connect_parameter')\n"
+        "assert(report.operations[2].result_id ~= 0)\n"
+        "assert(#report.created_objects > 1)\n"
+        "assert(report.diff.changed_object_count >= 1)\n");
+
+    nmo_lua_runtime_destroy(runtime);
+}
+
 TEST(lua_bindings_plan, plan_module_executes_fold_dry_run)
 {
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
@@ -315,6 +346,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_add_parameter_dry_run);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_add_operation_dry_run);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_parameter_value_dry_run);
+    REGISTER_TEST(lua_bindings_plan, plan_module_executes_connect_parameter_to_handle_dry_run);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_fold_dry_run);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_fold_with_maps_dry_run);
 TEST_MAIN_END()

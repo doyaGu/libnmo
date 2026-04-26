@@ -341,6 +341,30 @@ static int nmo_lua_plan_connect_parameter(lua_State *state)
     return 0;
 }
 
+static int nmo_lua_plan_connect_parameter_to_handle(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_object_id_t source_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    lua_Integer lua_operation_index = luaL_checkinteger(state, 3);
+    const char *handle_name = luaL_checkstring(state, 4);
+    if (lua_operation_index <= 0) {
+        return luaL_error(state, "operation index is 1-based and must be positive");
+    }
+
+    status = nmo_edit_plan_add_connect_parameter_to_handle(
+        plan, source_id, (size_t)(lua_operation_index - 1), handle_name);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add connect parameter handle op");
+    }
+    return 0;
+}
+
 static int nmo_lua_plan_disconnect_parameter(lua_State *state)
 {
     nmo_edit_plan_t *plan = NULL;
@@ -1028,6 +1052,8 @@ static int nmo_lua_open_plan_module(lua_State *state)
     lua_setfield(state, -2, "add_parameter");
     lua_pushcfunction(state, nmo_lua_plan_connect_parameter);
     lua_setfield(state, -2, "connect_parameter");
+    lua_pushcfunction(state, nmo_lua_plan_connect_parameter_to_handle);
+    lua_setfield(state, -2, "connect_parameter_to_handle");
     lua_pushcfunction(state, nmo_lua_plan_disconnect_parameter);
     lua_setfield(state, -2, "disconnect_parameter");
     lua_pushcfunction(state, nmo_lua_plan_remove_parameter);
