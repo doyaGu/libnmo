@@ -673,6 +673,26 @@ static nmo_status_t semantic_add_parameter_type_mismatch_risk(
         target_parameter_id);
 }
 
+static nmo_status_t semantic_add_parameter_type_desc_mismatch_risk(
+    const nmo_type_descriptor_t *source_type,
+    const nmo_type_descriptor_t *target_type,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t object_id)
+{
+    if (source_type == NULL || target_type == NULL ||
+        nmo_guid_equals(source_type->guid, target_type->guid)) {
+        return NMO_OK;
+    }
+    return semantic_add_risk(
+        risks,
+        risk_count,
+        NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+        "parameter_type_mismatch",
+        "Parameter connection links incompatible source and target types",
+        object_id);
+}
+
 static const nmo_type_descriptor_t *semantic_parameter_type_desc(
     nmo_context_t *ctx,
     nmo_object_repository_t *repo,
@@ -1262,13 +1282,26 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 op->primary_id,
                 risks,
                 risk_count));
-            return semantic_add_parameter_handle_ref_risk(
+            NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
                 plan,
                 op->data.connect_parameter.target_parameter_ref_operation_index,
                 op->data.connect_parameter.target_parameter_ref_handle,
                 op->primary_id,
                 risks,
-                risk_count);
+                risk_count));
+            return semantic_add_parameter_type_desc_mismatch_risk(
+                semantic_parameter_type_desc(
+                    ctx,
+                    repo,
+                    op->data.connect_parameter.source_parameter_id),
+                semantic_parameter_handle_type_desc(
+                    ctx,
+                    plan,
+                    op->data.connect_parameter.target_parameter_ref_operation_index,
+                    op->data.connect_parameter.target_parameter_ref_handle),
+                risks,
+                risk_count,
+                op->primary_id);
         }
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,

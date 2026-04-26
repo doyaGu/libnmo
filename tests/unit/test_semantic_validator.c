@@ -585,6 +585,42 @@ TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch_with_target_handle)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init(&fixture);
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_node(
+                  plan,
+                  6u,
+                  nmo_guid_parse("055B29FE-662D5CA0"),
+                  "Parameter Target 2D Text"));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_connect_parameter_to_handle(
+                  plan,
+                  13u,
+                  0u,
+                  "input_param:Text"));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *mismatch =
+        find_risk(risks, risk_count, "parameter_type_mismatch");
+    ASSERT_NOT_NULL(mismatch);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, mismatch->severity);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST(semantic_validator, edit_plan_reports_parameter_object_type_mismatch)
 {
     semantic_fixture_t fixture;
@@ -966,6 +1002,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, edit_plan_reports_control_endpoint_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_control_link_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch_with_target_handle);
     REGISTER_TEST(semantic_validator, edit_plan_reports_parameter_object_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_value_parameter_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_type_mismatch);
