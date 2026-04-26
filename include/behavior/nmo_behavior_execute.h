@@ -31,8 +31,6 @@ typedef nmo_status_t (*nmo_behavior_execute_action_fn)(
     nmo_behavior_execution_t *execution,
     void *user_data);
 
-typedef nmo_script_edit_report_t nmo_behavior_execute_result_t;
-
 NMO_API nmo_behavior_execute_options_t nmo_behavior_execute_options_default(void);
 
 NMO_API nmo_context_t *nmo_behavior_execution_context(
@@ -45,15 +43,6 @@ NMO_API nmo_script_edit_tx_t *nmo_behavior_execution_transaction(
     nmo_behavior_execution_t *execution);
 
 NMO_API nmo_status_t nmo_behavior_execute(
-    nmo_context_t *ctx,
-    const char *input_path,
-    const char *output_path,
-    const nmo_behavior_execute_options_t *options,
-    nmo_behavior_execute_action_fn action,
-    void *user_data,
-    nmo_behavior_execute_result_t *out_result);
-
-NMO_API nmo_status_t nmo_behavior_execute_v2(
     nmo_context_t *ctx,
     const char *input_path,
     const char *output_path,

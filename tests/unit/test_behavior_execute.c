@@ -595,7 +595,7 @@ TEST(behavior_execute, executes_multiple_actions_and_saves_once) {
     nmo_context_t *ctx =
         nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
     nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
-    nmo_script_edit_report_t report = {0};
+    nmo_edit_report_t report = {0};
     executor_add_io_action_t action = {0};
     nmo_object_id_t behavior_id = 0;
     size_t input_count = 0;
@@ -618,17 +618,19 @@ TEST(behavior_execute, executes_multiple_actions_and_saves_once) {
                                           &report));
     ASSERT_TRUE(file_exists(output_path));
     ASSERT_EQ(behavior_id, action.root_behavior_id);
-    ASSERT_EQ(0u, report.errors);
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(NMO_OK, report.status);
 
     load_root_behavior_counts(output_path, NULL, &new_input_count, &new_output_count);
     ASSERT_EQ(input_count + 1u, new_input_count);
     ASSERT_EQ(output_count + 1u, new_output_count);
 
     remove(output_path);
+    nmo_edit_report_dispose(&report);
     nmo_context_release(ctx);
 }
 
-TEST(behavior_execute, v2_reports_edit_schema)
+TEST(behavior_execute, reports_edit_schema)
 {
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     const char *output_path = "test_behavior_execute_v2.cmo";
@@ -644,13 +646,13 @@ TEST(behavior_execute, v2_reports_edit_schema)
     options.label = "test-behavior-execute-v2";
     ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
     ASSERT_EQ(NMO_OK,
-              nmo_behavior_execute_v2(ctx,
-                                      input_path,
-                                      output_path,
-                                      &options,
-                                      add_two_ios_action,
-                                      &action,
-                                      &report));
+              nmo_behavior_execute(ctx,
+                                   input_path,
+                                   output_path,
+                                   &options,
+                                   add_two_ios_action,
+                                   &action,
+                                   &report));
 
     ASSERT_TRUE(report.ok);
     ASSERT_FALSE(report.dry_run);
@@ -664,7 +666,7 @@ TEST(behavior_execute, v2_reports_edit_schema)
     nmo_context_release(ctx);
 }
 
-TEST(behavior_execute, v2_failure_report_has_no_output_path)
+TEST(behavior_execute, failure_report_has_no_output_path)
 {
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     const char *output_path = "test_behavior_execute_v2_fail.cmo";
@@ -679,13 +681,13 @@ TEST(behavior_execute, v2_failure_report_has_no_output_path)
     options.label = "test-behavior-execute-v2-fail";
     ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
-              nmo_behavior_execute_v2(ctx,
-                                      input_path,
-                                      output_path,
-                                      &options,
-                                      failing_after_mutation_action,
-                                      NULL,
-                                      &report));
+              nmo_behavior_execute(ctx,
+                                   input_path,
+                                   output_path,
+                                   &options,
+                                   failing_after_mutation_action,
+                                   NULL,
+                                   &report));
 
     ASSERT_FALSE(report.ok);
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, report.status);
@@ -702,7 +704,7 @@ TEST(behavior_execute, rolls_back_on_action_error_and_skips_output) {
     nmo_context_t *ctx =
         nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
     nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
-    nmo_script_edit_report_t report = {0};
+    nmo_edit_report_t report = {0};
 
     ASSERT_NOT_NULL(ctx);
     remove(output_path);
@@ -718,6 +720,7 @@ TEST(behavior_execute, rolls_back_on_action_error_and_skips_output) {
                                           &report));
     ASSERT_FALSE(file_exists(output_path));
 
+    nmo_edit_report_dispose(&report);
     nmo_context_release(ctx);
 }
 
@@ -727,7 +730,7 @@ TEST(behavior_execute, dry_run_rolls_back_after_validation) {
     nmo_context_t *ctx =
         nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
     nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
-    nmo_script_edit_report_t report = {0};
+    nmo_edit_report_t report = {0};
     executor_add_io_action_t action = {0};
     nmo_object_id_t behavior_id = 0;
     size_t input_count = 0;
@@ -749,8 +752,10 @@ TEST(behavior_execute, dry_run_rolls_back_after_validation) {
                                           &report));
     ASSERT_FALSE(file_exists(output_path));
     ASSERT_EQ(behavior_id, action.root_behavior_id);
-    ASSERT_EQ(0u, report.errors);
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(NMO_OK, report.status);
 
+    nmo_edit_report_dispose(&report);
     nmo_context_release(ctx);
 }
 
@@ -759,7 +764,7 @@ TEST(behavior_execute, owner_surface_runs_behavior_actions) {
     const char *output_path = "test_behavior_execute_owner.cmo";
     nmo_context_t *ctx = nmo_context_create(NULL);
     nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
-    nmo_behavior_execute_result_t result = {0};
+    nmo_edit_report_t report = {0};
     executor_add_io_action_t action = {0};
 
     ASSERT_NOT_NULL(ctx);
@@ -775,11 +780,12 @@ TEST(behavior_execute, owner_surface_runs_behavior_actions) {
                                    &options,
                                    add_io_action,
                                    &action,
-                                   &result));
+                                   &report));
     ASSERT_TRUE(action.io_id != 0u);
     ASSERT_TRUE(file_exists(output_path));
     remove_file_if_exists(output_path);
 
+    nmo_edit_report_dispose(&report);
     nmo_context_release(ctx);
 }
 
@@ -794,7 +800,7 @@ TEST(behavior_execute, remove_io_canonicalize_roundtrips_fixture) {
     executor_remove_io_action_t remove_action = {
         .interface_mode = NMO_SCRIPT_EDIT_INTERFACE_CANONICALIZE,
     };
-    nmo_script_edit_report_t report = {0};
+    nmo_edit_report_t report = {0};
     nmo_session_t *session = NULL;
     nmo_behavior_state_t *root_state = NULL;
     nmo_interface_body_t *body = NULL;
@@ -873,6 +879,7 @@ TEST(behavior_execute, remove_io_canonicalize_roundtrips_fixture) {
     ASSERT_FALSE(body_contains_outward_input_index(body, (int32_t)io_index));
 
     nmo_session_destroy(session);
+    nmo_edit_report_dispose(&report);
     nmo_context_release(ctx);
 }
 
@@ -888,7 +895,7 @@ TEST(behavior_execute, remove_node_canonicalize_roundtrips_fixture) {
         .parent_id = NMO_SCRIPT_INTERFACE_TARGET_ID,
         .interface_mode = NMO_SCRIPT_EDIT_INTERFACE_CANONICALIZE,
     };
-    nmo_script_edit_report_t report = {0};
+    nmo_edit_report_t report = {0};
     nmo_session_t *session = NULL;
     nmo_behavior_state_t *root_state = NULL;
     int found_removed_sub = 0;
@@ -955,14 +962,15 @@ TEST(behavior_execute, remove_node_canonicalize_roundtrips_fixture) {
     ASSERT_FALSE(found_removed_sub);
 
     nmo_session_destroy(session);
+    nmo_edit_report_dispose(&report);
     nmo_context_release(ctx);
 }
 
 TEST_MAIN_BEGIN()
     REGISTER_TEST(behavior_execute, owner_surface_runs_behavior_actions);
     REGISTER_TEST(behavior_execute, executes_multiple_actions_and_saves_once);
-    REGISTER_TEST(behavior_execute, v2_reports_edit_schema);
-    REGISTER_TEST(behavior_execute, v2_failure_report_has_no_output_path);
+    REGISTER_TEST(behavior_execute, reports_edit_schema);
+    REGISTER_TEST(behavior_execute, failure_report_has_no_output_path);
     REGISTER_TEST(behavior_execute, rolls_back_on_action_error_and_skips_output);
     REGISTER_TEST(behavior_execute, dry_run_rolls_back_after_validation);
     REGISTER_TEST(behavior_execute, remove_io_canonicalize_roundtrips_fixture);

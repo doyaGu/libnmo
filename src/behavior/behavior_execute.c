@@ -22,33 +22,9 @@ static nmo_status_t nmo_behavior_execute_internal(
     const nmo_behavior_execute_options_t *options,
     nmo_behavior_execute_action_fn action,
     void *user_data,
-    nmo_behavior_execute_result_t *out_result,
     nmo_edit_report_t *out_report);
 
-static void behavior_execute_clear_report(nmo_script_edit_report_t *report)
-{
-    if (report != NULL) {
-        memset(report, 0, sizeof(*report));
-    }
-}
-
-static void behavior_execute_copy_report(
-    const nmo_behavior_execution_t *execution,
-    nmo_script_edit_report_t *out_report)
-{
-    const nmo_script_edit_report_t *report = NULL;
-
-    if (execution == NULL || execution->tx == NULL || out_report == NULL) {
-        return;
-    }
-
-    report = nmo_script_edit_report(execution->tx);
-    if (report != NULL) {
-        *out_report = *report;
-    }
-}
-
-static nmo_status_t behavior_execute_copy_v2_report(
+static nmo_status_t behavior_execute_copy_report(
     const nmo_behavior_execution_t *execution,
     const char *output_path,
     nmo_status_t status,
@@ -188,25 +164,10 @@ NMO_API nmo_status_t nmo_behavior_execute(
     const nmo_behavior_execute_options_t *options,
     nmo_behavior_execute_action_fn action,
     void *user_data,
-    nmo_behavior_execute_result_t *out_result)
-{
-    return nmo_behavior_execute_internal(
-        ctx, input_path, output_path, options, action, user_data, out_result,
-        NULL);
-}
-
-NMO_API nmo_status_t nmo_behavior_execute_v2(
-    nmo_context_t *ctx,
-    const char *input_path,
-    const char *output_path,
-    const nmo_behavior_execute_options_t *options,
-    nmo_behavior_execute_action_fn action,
-    void *user_data,
     nmo_edit_report_t *out_report)
 {
     return nmo_behavior_execute_internal(
-        ctx, input_path, output_path, options, action, user_data, NULL,
-        out_report);
+        ctx, input_path, output_path, options, action, user_data, out_report);
 }
 
 static nmo_status_t nmo_behavior_execute_internal(
@@ -216,7 +177,6 @@ static nmo_status_t nmo_behavior_execute_internal(
     const nmo_behavior_execute_options_t *options,
     nmo_behavior_execute_action_fn action,
     void *user_data,
-    nmo_behavior_execute_result_t *out_result,
     nmo_edit_report_t *out_report)
 {
     nmo_behavior_execution_t *execution = NULL;
@@ -224,7 +184,6 @@ static nmo_status_t nmo_behavior_execute_internal(
         nmo_behavior_execute_options_default();
     nmo_status_t status = NMO_OK;
 
-    behavior_execute_clear_report(out_result);
     if (out_report != NULL) {
         nmo_edit_report_dispose(out_report);
         NMO_RETURN_IF_ERROR(nmo_edit_report_init(out_report));
@@ -300,7 +259,7 @@ static nmo_status_t nmo_behavior_execute_internal(
 
     status = action(execution, user_data);
     if (status != NMO_OK) {
-        (void)behavior_execute_copy_v2_report(
+        (void)behavior_execute_copy_report(
             execution, output_path, status, out_report);
         behavior_execute_destroy(execution);
         return status;
@@ -308,14 +267,13 @@ static nmo_status_t nmo_behavior_execute_internal(
 
     status = behavior_execute_validate(execution, resolved_options.validation_flags);
     if (status != NMO_OK) {
-        (void)behavior_execute_copy_v2_report(
+        (void)behavior_execute_copy_report(
             execution, output_path, status, out_report);
         behavior_execute_destroy(execution);
         return status;
     }
 
-    behavior_execute_copy_report(execution, out_result);
-    status = behavior_execute_copy_v2_report(
+    status = behavior_execute_copy_report(
         execution, output_path, NMO_OK, out_report);
     if (status != NMO_OK) {
         behavior_execute_destroy(execution);
