@@ -699,7 +699,7 @@ static int patch_parse_add_io(yyjson_val *op_obj,
 }
 
 static int patch_parse_add_node(yyjson_val *op_obj,
-                                patch_operation_t *out_op) {
+                                nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "behavior_id",
@@ -734,16 +734,19 @@ static int patch_parse_add_node(yyjson_val *op_obj,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_ADD_NODE;
-    out_op->add_node.behavior_id = (nmo_object_id_t)yyjson_get_uint(id_val);
-    out_op->add_node.bb_guid = guid;
-    out_op->add_node.name = name;
+    nmo_status_t st = nmo_edit_plan_add_node(
+        edit_plan, (nmo_object_id_t)yyjson_get_uint(id_val), guid, name);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
 static int patch_parse_remove_node(yyjson_val *op_obj,
-                                   patch_operation_t *out_op) {
+                                   nmo_edit_plan_t *edit_plan) {
     static const char *const allowed[] = {
         "op",
         "parent_id",
@@ -784,13 +787,17 @@ static int patch_parse_remove_node(yyjson_val *op_obj,
         delete_flags = (uint32_t)yyjson_get_uint(delete_flags_val);
     }
 
-    memset(out_op, 0, sizeof(*out_op));
-    out_op->kind = PATCH_OP_REMOVE_NODE;
-    out_op->remove_node.parent_id =
-        (nmo_object_id_t)yyjson_get_uint(parent_val);
-    out_op->remove_node.node_id =
-        (nmo_object_id_t)yyjson_get_uint(node_val);
-    out_op->remove_node.delete_flags = delete_flags;
+    nmo_status_t st = nmo_edit_plan_add_remove_node(
+        edit_plan,
+        (nmo_object_id_t)yyjson_get_uint(parent_val),
+        (nmo_object_id_t)yyjson_get_uint(node_val),
+        delete_flags);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build edit plan\n");
+        return st == NMO_ERR_NOMEM
+            ? NMO_CLI_EXIT_INTERNAL_ERROR
+            : NMO_CLI_EXIT_ARG_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -1893,10 +1900,20 @@ static int patch_parse_plan(const char *path, patch_plan_t *out_plan) {
         } else if (strcmp(op, "fold") == 0) {
             rc = patch_parse_fold(op_obj, &operation);
         } else if (strcmp(op, "add_node") == 0 && out_plan->version == 2u) {
-            rc = patch_parse_add_node(op_obj, &operation);
+            rc = patch_parse_add_node(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "remove_node") == 0 &&
                    out_plan->version == 2u) {
-            rc = patch_parse_remove_node(op_obj, &operation);
+            rc = patch_parse_remove_node(op_obj, out_plan->edit_plan);
+            if (rc != NMO_CLI_EXIT_SUCCESS) {
+                patch_plan_free(out_plan);
+                return rc;
+            }
+            continue;
         } else if (strcmp(op, "add_behavior_link") == 0 &&
                    out_plan->version == 2u) {
             rc = patch_parse_add_behavior_link(op_obj, out_plan->edit_plan);
