@@ -6,6 +6,7 @@
 
 #include "lauxlib.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 const nmo_lua_handle_descriptor_t NMO_LUA_EDIT_PLAN_HANDLE_DESCRIPTOR = {
@@ -505,6 +506,105 @@ static int nmo_lua_plan_replace_bb(lua_State *state)
     return 0;
 }
 
+static int nmo_lua_plan_fold(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+
+    nmo_behavior_fold_desc_t desc = {0};
+    desc.parent_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
+    luaL_checktype(state, 3, LUA_TTABLE);
+    size_t node_count = lua_rawlen(state, 3);
+    if (node_count == 0u) {
+        return luaL_error(state, "fold requires at least one node id");
+    }
+    nmo_object_id_t *node_ids =
+        (nmo_object_id_t *)calloc(node_count, sizeof(*node_ids));
+    if (node_ids == NULL) {
+        return nmo_lua_raise_last_error(state, NMO_ERR_NOMEM,
+                                        "Failed to allocate fold node ids");
+    }
+    for (size_t i = 0; i < node_count; ++i) {
+        lua_rawgeti(state, 3, (lua_Integer)i + 1);
+        lua_Integer node_id = luaL_checkinteger(state, -1);
+        lua_pop(state, 1);
+        if (node_id <= 0) {
+            free(node_ids);
+            return luaL_error(state, "fold node ids must be positive");
+        }
+        node_ids[i] = (nmo_object_id_t)node_id;
+    }
+    desc.node_ids = node_ids;
+    desc.node_count = node_count;
+
+    const char *guid_text = luaL_checkstring(state, 4);
+    desc.block_guid = nmo_guid_parse(guid_text);
+    desc.name = luaL_checkstring(state, 5);
+    desc.block_version = 65536u;
+    desc.interface_mode = NMO_BEHAVIOR_FOLD_INTERFACE_PRESERVE;
+    if (nmo_guid_is_null(desc.block_guid)) {
+        free(node_ids);
+        return luaL_error(state, "invalid building block GUID");
+    }
+    if (lua_istable(state, 6)) {
+        lua_getfield(state, 6, "anchor");
+        if (!lua_isnil(state, -1)) {
+            desc.anchor_id = (nmo_object_id_t)luaL_checkinteger(state, -1);
+        }
+        lua_pop(state, 1);
+        lua_getfield(state, 6, "version");
+        if (!lua_isnil(state, -1)) {
+            desc.block_version = (uint32_t)luaL_checkinteger(state, -1);
+        }
+        lua_pop(state, 1);
+        lua_getfield(state, 6, "preserve_boundary");
+        if (!lua_isnil(state, -1)) {
+            desc.preserve_boundary = lua_toboolean(state, -1) != 0;
+        }
+        lua_pop(state, 1);
+        lua_getfield(state, 6, "preserve_links");
+        if (!lua_isnil(state, -1)) {
+            desc.preserve_links = lua_toboolean(state, -1) != 0;
+        }
+        lua_pop(state, 1);
+        lua_getfield(state, 6, "preserve_params");
+        if (!lua_isnil(state, -1)) {
+            desc.preserve_params = lua_toboolean(state, -1) != 0;
+        }
+        lua_pop(state, 1);
+        lua_getfield(state, 6, "interface");
+        if (!lua_isnil(state, -1)) {
+            const char *mode = luaL_checkstring(state, -1);
+            if (strcmp(mode, "preserve") == 0) {
+                desc.interface_mode = NMO_BEHAVIOR_FOLD_INTERFACE_PRESERVE;
+            } else if (strcmp(mode, "canonicalize") == 0) {
+                desc.interface_mode = NMO_BEHAVIOR_FOLD_INTERFACE_CANONICALIZE;
+            } else if (strcmp(mode, "remove") == 0) {
+                desc.interface_mode = NMO_BEHAVIOR_FOLD_INTERFACE_REMOVE;
+            } else {
+                free(node_ids);
+                return luaL_error(state, "invalid fold interface mode");
+            }
+        }
+        lua_pop(state, 1);
+    }
+    if (desc.preserve_boundary) {
+        desc.preserve_links = true;
+        desc.preserve_params = true;
+    }
+
+    status = nmo_edit_plan_add_fold(plan, &desc);
+    free(node_ids);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to add fold op");
+    }
+    return 0;
+}
+
 static int nmo_lua_plan_set_parameter_value(lua_State *state)
 {
     nmo_edit_plan_t *plan = NULL;
@@ -903,6 +1003,8 @@ static int nmo_lua_open_plan_module(lua_State *state)
     lua_setfield(state, -2, "remove_operation");
     lua_pushcfunction(state, nmo_lua_plan_replace_bb);
     lua_setfield(state, -2, "replace_bb");
+    lua_pushcfunction(state, nmo_lua_plan_fold);
+    lua_setfield(state, -2, "fold");
     lua_pushcfunction(state, nmo_lua_plan_set_parameter_value);
     lua_setfield(state, -2, "set_parameter_value");
     lua_pushcfunction(state, nmo_lua_plan_set_parameter_bytes);

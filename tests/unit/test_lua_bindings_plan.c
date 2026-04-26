@@ -46,11 +46,12 @@ TEST(lua_bindings_plan, plan_module_builds_edit_plan)
         "plan.rewire_operation(p, 17, 16, nil, nil)\n"
         "plan.remove_operation(p, 16)\n"
         "plan.replace_bb(p, 21, '0A6BED1B-3D3825A5', 'Lua Replacement BB')\n"
+        "plan.fold(p, 4692, { 2367 }, '42414C07-10000007', 'Lua Fold BB', { anchor = 2367, preserve_boundary = true })\n"
         "plan.interface_policy(p, 3, 'canonicalize')\n"
         "plan.set_parameter_value(p, 5, '1.25')\n"
         "plan.set_parameter_bytes(p, 64, string.char(0x2A, 0, 0, 0))\n"
         "plan.set_data_cell(p, 2261, 0, 1, '0.75')\n"
-        "assert(plan.count(p) == 21)\n");
+        "assert(plan.count(p) == 22)\n");
 
     nmo_lua_runtime_destroy(runtime);
 }
@@ -242,6 +243,36 @@ TEST(lua_bindings_plan, plan_module_executes_parameter_value_dry_run)
     nmo_lua_runtime_destroy(runtime);
 }
 
+TEST(lua_bindings_plan, plan_module_executes_fold_dry_run)
+{
+    nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
+    ASSERT_NOT_NULL(runtime);
+
+    ASSERT_EQ(NMO_OK, nmo_lua_register_platform_bindings(runtime));
+    assert_lua_ok(
+        runtime,
+        "local context = require('nmo.context')\n"
+        "local document = require('nmo.document')\n"
+        "local workspace_mod = require('nmo.workspace')\n"
+        "local plan = require('nmo.plan')\n"
+        "local ctx = context.create()\n"
+        "local doc = document.load_file(ctx, '" NMO_TEST_DATA_FILE("Ballance/base.cmo") "')\n"
+        "local ws = workspace_mod.create(ctx, doc)\n"
+        "local p = plan.new()\n"
+        "plan.fold(p, 4692, { 2367 }, '42414C07-10000007', 'Lua Fold BB', { anchor = 2367, preserve_boundary = true })\n"
+        "local report = plan.execute(p, ws, { dry_run = true })\n"
+        "assert(report.ok == true)\n"
+        "assert(report.dry_run == true)\n"
+        "assert(report.operation_count == 1)\n"
+        "assert(report.operations[1].op == 'fold')\n"
+        "assert(report.operations[1].primary_id == 4692)\n"
+        "assert(report.operations[1].result_id == 2367)\n"
+        "assert(#report.changed_objects >= 1)\n"
+        "assert(report.diff.changed_object_count >= 1)\n");
+
+    nmo_lua_runtime_destroy(runtime);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(lua_bindings_plan, plan_module_builds_edit_plan);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_dry_run);
@@ -250,4 +281,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_add_parameter_dry_run);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_add_operation_dry_run);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_parameter_value_dry_run);
+    REGISTER_TEST(lua_bindings_plan, plan_module_executes_fold_dry_run);
 TEST_MAIN_END()
