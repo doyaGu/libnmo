@@ -37,10 +37,14 @@ typedef struct nmo_debug_probe_args {
     const char *kind;
     nmo_object_id_t behavior_id;
     nmo_object_id_t from_io_id;
+    nmo_object_id_t to_io_id;
     const char *name;
     const char *text;
     nmo_edit_report_t report;
 } nmo_debug_probe_args_t;
+
+static const char *debug_probe_input_handle(const char *kind);
+static const char *debug_probe_output_handle(const char *kind);
 
 static int debug_probe_parse(int argc,
                              char **argv,
@@ -66,6 +70,8 @@ static int debug_probe_parse(int argc,
             args->behavior_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "--from-io") == 0 && i + 1 < argc) {
             args->from_io_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
+        } else if (strcmp(argv[i], "--to-io") == 0 && i + 1 < argc) {
+            args->to_io_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "--name") == 0 && i + 1 < argc) {
             args->name = argv[++i];
         } else if (strcmp(argv[i], "--text") == 0 && i + 1 < argc) {
@@ -97,14 +103,49 @@ static int debug_probe_parse(int argc,
         fprintf(stderr, "Error: --text is only supported for 2d-text probes\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
+    if ((args->from_io_id != 0u && debug_probe_input_handle(args->kind) == NULL) ||
+        (args->to_io_id != 0u && debug_probe_output_handle(args->kind) == NULL)) {
+        fprintf(stderr, "Error: Probe kind '%s' has no known control IO handles\n",
+                args->kind);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
     if (args->behavior_id == 0u || *out_input_path == NULL) {
         fprintf(stderr,
                 "Usage: nmo debug probe 2d-text|console|debug-output|control-marker "
-                "--behavior <id> [--name <name>] [--text <text>] [--dry-run] <file> "
+                "--behavior <id> [--from-io <id>] [--to-io <id>] "
+                "[--name <name>] [--text <text>] [--dry-run] <file> "
                 "-o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     return NMO_CLI_EXIT_SUCCESS;
+}
+
+static const char *debug_probe_input_handle(const char *kind)
+{
+    if (strcmp(kind, "2d-text") == 0) {
+        return "input:On";
+    }
+    if (strcmp(kind, "console") == 0 || strcmp(kind, "debug-output") == 0) {
+        return "input:In";
+    }
+    if (strcmp(kind, "control-marker") == 0) {
+        return "input:In 0";
+    }
+    return NULL;
+}
+
+static const char *debug_probe_output_handle(const char *kind)
+{
+    if (strcmp(kind, "2d-text") == 0) {
+        return "output:Exit On";
+    }
+    if (strcmp(kind, "console") == 0 || strcmp(kind, "debug-output") == 0) {
+        return "output:Out";
+    }
+    if (strcmp(kind, "control-marker") == 0) {
+        return "output:Out 0";
+    }
+    return NULL;
 }
 
 static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
@@ -149,7 +190,16 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
             args->behavior_id,
             args->from_io_id,
             0u,
-            "input:On",
+            debug_probe_input_handle(args->kind),
+            0u);
+    }
+    if (status == NMO_OK && args->to_io_id != 0u) {
+        status = nmo_edit_plan_add_behavior_link_from_handle(
+            plan,
+            args->behavior_id,
+            0u,
+            debug_probe_output_handle(args->kind),
+            args->to_io_id,
             0u);
     }
     if (status == NMO_OK) {
