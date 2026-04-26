@@ -1162,6 +1162,107 @@ static int script_run_lua_replace_bb(lua_State *state)
     return 1;
 }
 
+static int script_run_lua_fold(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_behavior_fold_desc_t desc = {0};
+    nmo_status_t status = NMO_OK;
+
+    desc.parent_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
+    luaL_checktype(state, 2, LUA_TTABLE);
+    size_t node_count = lua_rawlen(state, 2);
+    if (node_count == 0u) {
+        return luaL_error(state, "fold requires at least one node id");
+    }
+    nmo_object_id_t *node_ids =
+        (nmo_object_id_t *)calloc(node_count, sizeof(*node_ids));
+    if (node_ids == NULL) {
+        return luaL_error(state, "failed to allocate fold node ids");
+    }
+    for (size_t i = 0; i < node_count; ++i) {
+        lua_rawgeti(state, 2, (lua_Integer)i + 1);
+        lua_Integer node_id = luaL_checkinteger(state, -1);
+        lua_pop(state, 1);
+        if (node_id <= 0) {
+            free(node_ids);
+            return luaL_error(state, "fold node ids must be positive");
+        }
+        node_ids[i] = (nmo_object_id_t)node_id;
+    }
+
+    desc.node_ids = node_ids;
+    desc.node_count = node_count;
+    desc.block_guid = nmo_guid_parse(luaL_checkstring(state, 3));
+    desc.name = luaL_checkstring(state, 4);
+    desc.block_version = 65536u;
+    desc.interface_mode = NMO_BEHAVIOR_FOLD_INTERFACE_PRESERVE;
+    if (nmo_guid_is_null(desc.block_guid)) {
+        free(node_ids);
+        return luaL_error(state, "invalid building block GUID");
+    }
+    if (lua_istable(state, 5)) {
+        lua_getfield(state, 5, "anchor");
+        if (!lua_isnil(state, -1)) {
+            desc.anchor_id = (nmo_object_id_t)luaL_checkinteger(state, -1);
+        }
+        lua_pop(state, 1);
+        lua_getfield(state, 5, "version");
+        if (!lua_isnil(state, -1)) {
+            desc.block_version = (uint32_t)luaL_checkinteger(state, -1);
+        }
+        lua_pop(state, 1);
+        lua_getfield(state, 5, "preserve_boundary");
+        if (!lua_isnil(state, -1)) {
+            desc.preserve_boundary = lua_toboolean(state, -1) != 0;
+        }
+        lua_pop(state, 1);
+        lua_getfield(state, 5, "preserve_links");
+        if (!lua_isnil(state, -1)) {
+            desc.preserve_links = lua_toboolean(state, -1) != 0;
+        }
+        lua_pop(state, 1);
+        lua_getfield(state, 5, "preserve_params");
+        if (!lua_isnil(state, -1)) {
+            desc.preserve_params = lua_toboolean(state, -1) != 0;
+        }
+        lua_pop(state, 1);
+        lua_getfield(state, 5, "interface");
+        if (!lua_isnil(state, -1)) {
+            const char *mode = luaL_checkstring(state, -1);
+            if (strcmp(mode, "preserve") == 0) {
+                desc.interface_mode = NMO_BEHAVIOR_FOLD_INTERFACE_PRESERVE;
+            } else if (strcmp(mode, "canonicalize") == 0) {
+                desc.interface_mode = NMO_BEHAVIOR_FOLD_INTERFACE_CANONICALIZE;
+            } else if (strcmp(mode, "remove") == 0) {
+                desc.interface_mode = NMO_BEHAVIOR_FOLD_INTERFACE_REMOVE;
+            } else {
+                free(node_ids);
+                return luaL_error(state, "invalid fold interface mode");
+            }
+        }
+        lua_pop(state, 1);
+    }
+    if (desc.preserve_boundary) {
+        desc.preserve_links = true;
+        desc.preserve_params = true;
+    }
+
+    status = script_run_ensure_pending_plan(args);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_fold(args->pending_plan, &desc);
+    }
+    free(node_ids);
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to enqueue script fold");
+    }
+
+    lua_pushinteger(state, script_run_pending_operation_index(args));
+    return 1;
+}
+
 static int script_run_lua_set_parameter_value(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
@@ -1257,7 +1358,7 @@ static int script_run_lua_set_data_cell(lua_State *state)
 
 static int script_run_lua_open_executor_module(lua_State *state)
 {
-    lua_createtable(state, 0, 22);
+    lua_createtable(state, 0, 23);
 
     lua_pushcfunction(state, script_run_lua_root_script_id);
     lua_setfield(state, -2, "root_script_id");
@@ -1318,6 +1419,9 @@ static int script_run_lua_open_executor_module(lua_State *state)
 
     lua_pushcfunction(state, script_run_lua_replace_bb);
     lua_setfield(state, -2, "replace_bb");
+
+    lua_pushcfunction(state, script_run_lua_fold);
+    lua_setfield(state, -2, "fold");
 
     lua_pushcfunction(state, script_run_lua_set_parameter_value);
     lua_setfield(state, -2, "set_parameter_value");
