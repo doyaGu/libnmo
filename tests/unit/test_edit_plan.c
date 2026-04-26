@@ -308,6 +308,48 @@ TEST(edit_plan, executor_rolls_back_failed_plan) {
     edit_plan_fixture_dispose(&fixture);
 }
 
+TEST(edit_plan, executor_rolls_back_created_handle_chain_failure) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t root_id = 0;
+    create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Root", &root_id);
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_parameter(
+                  plan,
+                  root_id,
+                  NMO_SCRIPT_EDIT_PARAM_IN,
+                  CKPGUID_STRING,
+                  "Created Before Failure"));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_set_parameter_value_from_handle(
+                  plan,
+                  0u,
+                  "missing-parameter-handle",
+                  "bad",
+                  NULL));
+
+    ASSERT_EQ(NMO_ERR_NOT_FOUND,
+              nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_FALSE(report.ok);
+    ASSERT_EQ(2u, report.operation_count);
+    ASSERT_EQ(NMO_OK, report.operations[0].status);
+    ASSERT_TRUE(report.operations[0].result_id != 0u);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, report.operations[1].status);
+    ASSERT_STR_EQ("handle_not_found", report.operations[1].diagnostic_code);
+    ASSERT_TRUE(nmo_object_repository_find_by_id(
+                    fixture.repo, report.operations[0].result_id) == NULL);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+}
+
 TEST(edit_plan, executor_dry_run_reports_without_persisting) {
     edit_plan_fixture_t fixture;
     edit_plan_fixture_init(&fixture);
@@ -1373,6 +1415,7 @@ REGISTER_TEST(edit_plan, report_dispose_releases_schema_v2_arrays);
 REGISTER_TEST(edit_plan, report_owns_schema_v2_output_path);
 REGISTER_TEST(edit_plan, executor_commits_parameter_value_plan);
 REGISTER_TEST(edit_plan, executor_rolls_back_failed_plan);
+REGISTER_TEST(edit_plan, executor_rolls_back_created_handle_chain_failure);
 REGISTER_TEST(edit_plan, executor_dry_run_reports_without_persisting);
 REGISTER_TEST(edit_plan, executor_adds_node_with_created_object_report);
 REGISTER_TEST(edit_plan, executor_materializes_building_block_defaults);
