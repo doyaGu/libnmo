@@ -1195,6 +1195,41 @@ static bool script_run_lua_read_u32_field(lua_State *state,
     return true;
 }
 
+static bool script_run_lua_read_u32_alias_field(lua_State *state,
+                                                int table_index,
+                                                const char *primary_name,
+                                                const char *alias_name,
+                                                uint32_t *out_value,
+                                                const char **out_error)
+{
+    table_index = lua_absindex(state, table_index);
+    lua_getfield(state, table_index, primary_name);
+    bool has_primary = !lua_isnil(state, -1);
+    lua_pop(state, 1);
+    if (has_primary) {
+        return script_run_lua_read_u32_field(
+            state, table_index, primary_name, false, out_value, out_error);
+    }
+    return script_run_lua_read_u32_field(
+        state, table_index, alias_name, false, out_value, out_error);
+}
+
+static const char *script_run_lua_fold_map_old_id_alias(
+    nmo_behavior_fold_map_kind_t kind)
+{
+    return kind == NMO_BEHAVIOR_FOLD_MAP_PARAMETER
+        ? "old_parameter_id"
+        : "old_io_id";
+}
+
+static const char *script_run_lua_fold_map_new_id_alias(
+    nmo_behavior_fold_map_kind_t kind)
+{
+    return kind == NMO_BEHAVIOR_FOLD_MAP_PARAMETER
+        ? "new_parameter_id"
+        : "new_io_id";
+}
+
 static bool script_run_lua_parse_fold_maps(lua_State *state,
                                            int options_index,
                                            const char *field_name,
@@ -1247,12 +1282,14 @@ static bool script_run_lua_parse_fold_maps(lua_State *state,
             !script_run_lua_read_u32_field(
                 state, item_index, "new_index", true, &maps[i].new_index,
                 out_error) ||
-            !script_run_lua_read_u32_field(
-                state, item_index, "old_id", false, &maps[i].old_id,
-                out_error) ||
-            !script_run_lua_read_u32_field(
-                state, item_index, "new_id", false, &maps[i].new_id,
-                out_error)) {
+            !script_run_lua_read_u32_alias_field(
+                state, item_index, "old_id",
+                script_run_lua_fold_map_old_id_alias(kind),
+                &maps[i].old_id, out_error) ||
+            !script_run_lua_read_u32_alias_field(
+                state, item_index, "new_id",
+                script_run_lua_fold_map_new_id_alias(kind),
+                &maps[i].new_id, out_error)) {
             free(maps);
             lua_pop(state, 2);
             return false;
