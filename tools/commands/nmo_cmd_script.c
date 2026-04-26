@@ -761,6 +761,37 @@ static int script_run_lua_connect_parameter(lua_State *state)
     return 1;
 }
 
+static int script_run_lua_connect_parameter_to_handle(lua_State *state)
+{
+    script_run_args_t *args = script_run_current_args(state);
+    nmo_object_id_t source_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
+    lua_Integer operation_index = luaL_checkinteger(state, 2);
+    const char *handle_name = luaL_checkstring(state, 3);
+    nmo_status_t status = NMO_OK;
+
+    if (operation_index <= 0) {
+        return luaL_error(state, "operation index is 1-based and must be positive");
+    }
+
+    status = script_run_ensure_pending_plan(args);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_connect_parameter_to_handle(
+            args->pending_plan,
+            source_id,
+            (size_t)(operation_index - 1),
+            handle_name);
+    }
+    if (status != NMO_OK) {
+        return luaL_error(state, "%s",
+                          nmo_last_error_message() != NULL
+                              ? nmo_last_error_message()
+                              : "failed to enqueue script parameter handle connection");
+    }
+
+    lua_pushinteger(state, script_run_pending_operation_index(args));
+    return 1;
+}
+
 static int script_run_lua_disconnect_parameter(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
@@ -1208,7 +1239,7 @@ static int script_run_lua_set_data_cell(lua_State *state)
 
 static int script_run_lua_open_executor_module(lua_State *state)
 {
-    lua_createtable(state, 0, 23);
+    lua_createtable(state, 0, 24);
 
     lua_pushcfunction(state, script_run_lua_root_script_id);
     lua_setfield(state, -2, "root_script_id");
@@ -1251,6 +1282,9 @@ static int script_run_lua_open_executor_module(lua_State *state)
 
     lua_pushcfunction(state, script_run_lua_connect_parameter);
     lua_setfield(state, -2, "connect_parameter");
+
+    lua_pushcfunction(state, script_run_lua_connect_parameter_to_handle);
+    lua_setfield(state, -2, "connect_parameter_to_handle");
 
     lua_pushcfunction(state, script_run_lua_disconnect_parameter);
     lua_setfield(state, -2, "disconnect_parameter");
