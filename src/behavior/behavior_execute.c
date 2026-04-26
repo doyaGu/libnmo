@@ -64,7 +64,7 @@ static nmo_status_t behavior_execute_copy_v2_report(
     out_report->status = status;
     out_report->dry_run = execution != NULL && execution->options.dry_run;
     out_report->validation.final_status = status;
-    if (output_path != NULL && !out_report->dry_run) {
+    if (status == NMO_OK && output_path != NULL && !out_report->dry_run) {
         NMO_RETURN_IF_ERROR(nmo_edit_report_set_output_path(
             out_report, output_path));
     }
