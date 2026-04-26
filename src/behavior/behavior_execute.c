@@ -15,6 +15,16 @@ struct nmo_behavior_execution {
     nmo_behavior_execute_options_t options;
 };
 
+static nmo_status_t nmo_behavior_execute_internal(
+    nmo_context_t *ctx,
+    const char *input_path,
+    const char *output_path,
+    const nmo_behavior_execute_options_t *options,
+    nmo_behavior_execute_action_fn action,
+    void *user_data,
+    nmo_behavior_execute_result_t *out_result,
+    nmo_edit_report_t *out_report);
+
 static void behavior_execute_clear_report(nmo_script_edit_report_t *report)
 {
     if (report != NULL) {
@@ -36,6 +46,46 @@ static void behavior_execute_copy_report(
     if (report != NULL) {
         *out_report = *report;
     }
+}
+
+static nmo_status_t behavior_execute_copy_v2_report(
+    const nmo_behavior_execution_t *execution,
+    const char *output_path,
+    nmo_status_t status,
+    nmo_edit_report_t *out_report)
+{
+    const nmo_script_edit_report_t *legacy = NULL;
+
+    if (out_report == NULL) {
+        return NMO_OK;
+    }
+
+    out_report->ok = status == NMO_OK;
+    out_report->status = status;
+    out_report->dry_run = execution != NULL && execution->options.dry_run;
+    out_report->validation.final_status = status;
+    if (output_path != NULL && !out_report->dry_run) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_set_output_path(
+            out_report, output_path));
+    }
+
+    if (execution == NULL || execution->tx == NULL) {
+        return NMO_OK;
+    }
+
+    legacy = nmo_script_edit_report(execution->tx);
+    if (legacy == NULL) {
+        return NMO_OK;
+    }
+
+    for (size_t i = 0; i < legacy->created_object_id_count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_created_object(
+            out_report,
+            legacy->created_object_ids[i],
+            0,
+            "created"));
+    }
+    return NMO_OK;
 }
 
 static void behavior_execute_destroy(nmo_behavior_execution_t *execution)
@@ -140,12 +190,45 @@ NMO_API nmo_status_t nmo_behavior_execute(
     void *user_data,
     nmo_behavior_execute_result_t *out_result)
 {
+    return nmo_behavior_execute_internal(
+        ctx, input_path, output_path, options, action, user_data, out_result,
+        NULL);
+}
+
+NMO_API nmo_status_t nmo_behavior_execute_v2(
+    nmo_context_t *ctx,
+    const char *input_path,
+    const char *output_path,
+    const nmo_behavior_execute_options_t *options,
+    nmo_behavior_execute_action_fn action,
+    void *user_data,
+    nmo_edit_report_t *out_report)
+{
+    return nmo_behavior_execute_internal(
+        ctx, input_path, output_path, options, action, user_data, NULL,
+        out_report);
+}
+
+static nmo_status_t nmo_behavior_execute_internal(
+    nmo_context_t *ctx,
+    const char *input_path,
+    const char *output_path,
+    const nmo_behavior_execute_options_t *options,
+    nmo_behavior_execute_action_fn action,
+    void *user_data,
+    nmo_behavior_execute_result_t *out_result,
+    nmo_edit_report_t *out_report)
+{
     nmo_behavior_execution_t *execution = NULL;
     nmo_behavior_execute_options_t resolved_options =
         nmo_behavior_execute_options_default();
     nmo_status_t status = NMO_OK;
 
     behavior_execute_clear_report(out_result);
+    if (out_report != NULL) {
+        nmo_edit_report_dispose(out_report);
+        NMO_RETURN_IF_ERROR(nmo_edit_report_init(out_report));
+    }
 
     if (ctx == NULL || input_path == NULL || action == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -217,17 +300,27 @@ NMO_API nmo_status_t nmo_behavior_execute(
 
     status = action(execution, user_data);
     if (status != NMO_OK) {
+        (void)behavior_execute_copy_v2_report(
+            execution, output_path, status, out_report);
         behavior_execute_destroy(execution);
         return status;
     }
 
     status = behavior_execute_validate(execution, resolved_options.validation_flags);
     if (status != NMO_OK) {
+        (void)behavior_execute_copy_v2_report(
+            execution, output_path, status, out_report);
         behavior_execute_destroy(execution);
         return status;
     }
 
     behavior_execute_copy_report(execution, out_result);
+    status = behavior_execute_copy_v2_report(
+        execution, output_path, NMO_OK, out_report);
+    if (status != NMO_OK) {
+        behavior_execute_destroy(execution);
+        return status;
+    }
 
     if (resolved_options.dry_run) {
         nmo_script_edit_rollback(execution->tx);

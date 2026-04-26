@@ -628,6 +628,42 @@ TEST(behavior_execute, executes_multiple_actions_and_saves_once) {
     nmo_context_release(ctx);
 }
 
+TEST(behavior_execute, v2_reports_edit_schema)
+{
+    const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
+    const char *output_path = "test_behavior_execute_v2.cmo";
+    nmo_context_t *ctx =
+        nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
+    nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
+    nmo_edit_report_t report = {0};
+    executor_add_io_action_t action = {0};
+
+    ASSERT_NOT_NULL(ctx);
+    remove(output_path);
+
+    options.label = "test-behavior-execute-v2";
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK,
+              nmo_behavior_execute_v2(ctx,
+                                      input_path,
+                                      output_path,
+                                      &options,
+                                      add_two_ios_action,
+                                      &action,
+                                      &report));
+
+    ASSERT_TRUE(report.ok);
+    ASSERT_FALSE(report.dry_run);
+    ASSERT_STR_EQ(output_path, report.output_path);
+    ASSERT_EQ(NMO_OK, report.status);
+    ASSERT_EQ(NMO_OK, report.validation.final_status);
+    ASSERT_TRUE(file_exists(output_path));
+
+    nmo_edit_report_dispose(&report);
+    remove(output_path);
+    nmo_context_release(ctx);
+}
+
 TEST(behavior_execute, rolls_back_on_action_error_and_skips_output) {
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     const char *output_path = "test_behavior_execute_fail.cmo";
@@ -893,6 +929,7 @@ TEST(behavior_execute, remove_node_canonicalize_roundtrips_fixture) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(behavior_execute, owner_surface_runs_behavior_actions);
     REGISTER_TEST(behavior_execute, executes_multiple_actions_and_saves_once);
+    REGISTER_TEST(behavior_execute, v2_reports_edit_schema);
     REGISTER_TEST(behavior_execute, rolls_back_on_action_error_and_skips_output);
     REGISTER_TEST(behavior_execute, dry_run_rolls_back_after_validation);
     REGISTER_TEST(behavior_execute, remove_io_canonicalize_roundtrips_fixture);
