@@ -3,6 +3,7 @@
 
 #include "runtime/nmo_workspace.h"
 #include "behavior/nmo_behavior_analyze.h"
+#include "behavior/nmo_semantic_validator.h"
 #include "behavior/nmo_script_edit.h"
 #include "behavior/nmo_script_edit_graph.h"
 #include "core/nmo_guid.h"
@@ -26,19 +27,6 @@ typedef struct nmo_behavior_replace_bb_desc {
     bool preserve_links;
     bool preserve_params;
 } nmo_behavior_replace_bb_desc_t;
-
-typedef enum nmo_behavior_semantic_risk_severity {
-    NMO_BEHAVIOR_SEMANTIC_RISK_SAFE = 0,
-    NMO_BEHAVIOR_SEMANTIC_RISK_WARN = 1,
-    NMO_BEHAVIOR_SEMANTIC_RISK_REJECT = 2,
-} nmo_behavior_semantic_risk_severity_t;
-
-typedef struct nmo_behavior_semantic_risk {
-    nmo_behavior_semantic_risk_severity_t severity;
-    const char *code;
-    const char *message;
-    nmo_object_id_t object_id;
-} nmo_behavior_semantic_risk_t;
 
 typedef struct nmo_behavior_replace_report {
     bool changed;
