@@ -995,6 +995,55 @@ static nmo_status_t script_edit_remove_links_for_behavior_ios(
     return NMO_OK;
 }
 
+static nmo_status_t script_edit_append_behavior_owned_destroy_objects(
+    nmo_script_edit_tx_t *tx,
+    nmo_behavior_state_t *state)
+{
+    if (!tx || !state) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_array_t *owned_arrays[] = {
+        &state->inputs,
+        &state->outputs,
+        &state->in_parameters,
+        &state->out_parameters,
+        &state->local_parameters,
+        &state->operations,
+        &state->sub_behavior_links,
+    };
+    for (size_t i = 0; i < sizeof(owned_arrays) / sizeof(owned_arrays[0]); ++i) {
+        nmo_object_id_t *ids =
+            owned_arrays[i]->data ? (nmo_object_id_t *)owned_arrays[i]->data : NULL;
+        for (size_t j = 0; ids && j < owned_arrays[i]->count; ++j) {
+            nmo_status_t rc = script_edit_append_deferred_destroy(tx, ids[j]);
+            if (rc != NMO_OK) {
+                return rc;
+            }
+        }
+    }
+
+    nmo_object_id_t *sub_ids = state->sub_behaviors.data
+        ? (nmo_object_id_t *)state->sub_behaviors.data
+        : NULL;
+    for (size_t i = 0; sub_ids && i < state->sub_behaviors.count; ++i) {
+        nmo_behavior_state_t *sub_state = script_edit_find_behavior_state_in_repo(
+            nmo_workspace_internal_repository(tx->workspace),
+            sub_ids[i],
+            NULL);
+        if (sub_state == NULL) {
+            continue;
+        }
+        nmo_status_t rc =
+            script_edit_append_behavior_owned_destroy_objects(tx, sub_state);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+    }
+
+    return NMO_OK;
+}
+
 static bool script_edit_behavior_is_direct_graph_member(
     nmo_session_t *session,
     nmo_object_id_t parent_behavior_id,
@@ -3009,28 +3058,9 @@ NMO_API nmo_status_t nmo_script_edit_remove_node(
         return rc;
     }
 
-    /* Fresh BB nodes also own their direct ports, parameters, operations, and
-     * inner control links. Collect them before preview_destroy invalidates the
-     * node_state pointer.
-     */
-    nmo_array_t *owned_arrays[] = {
-        &node_state->inputs,
-        &node_state->outputs,
-        &node_state->in_parameters,
-        &node_state->out_parameters,
-        &node_state->local_parameters,
-        &node_state->operations,
-        &node_state->sub_behavior_links,
-    };
-    for (size_t i = 0; i < sizeof(owned_arrays) / sizeof(owned_arrays[0]); ++i) {
-        nmo_object_id_t *ids =
-            owned_arrays[i]->data ? (nmo_object_id_t *)owned_arrays[i]->data : NULL;
-        for (size_t j = 0; ids && j < owned_arrays[i]->count; ++j) {
-            rc = script_edit_append_deferred_destroy(tx, ids[j]);
-            if (rc != NMO_OK) {
-                return rc;
-            }
-        }
+    rc = script_edit_append_behavior_owned_destroy_objects(tx, node_state);
+    if (rc != NMO_OK) {
+        return rc;
     }
 
     rc = nmo_workspace_internal_preview_destroy(
