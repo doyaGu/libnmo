@@ -1152,6 +1152,7 @@ static nmo_status_t parse_set_parameter_bytes(yyjson_val *op_obj,
 
 static nmo_status_t parse_optional_parameter_ref(
     yyjson_val *op_obj,
+    const char *op_context,
     const char *id_key,
     const char *operation_key,
     const char *handle_key,
@@ -1175,7 +1176,8 @@ static nmo_status_t parse_optional_parameter_ref(
     }
     if (has_id && has_ref) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "add_operation operation requires either %s or %s plus %s",
+                         "%s operation requires either %s or %s plus %s",
+                         op_context != NULL ? op_context : "edit plan",
                          id_key, operation_key, handle_key);
     }
     if (has_id) {
@@ -1469,19 +1471,19 @@ static nmo_status_t parse_add_operation(yyjson_val *op_obj,
     bool has_out_ref = false;
 
     nmo_status_t st = parse_optional_parameter_ref(
-        op_obj, "in1_id", "in1_operation", "in1_handle",
+        op_obj, "add_operation", "in1_id", "in1_operation", "in1_handle",
         &in1_id, &in1_operation_index, &in1_handle, &has_in1_ref);
     if (st != NMO_OK) {
         return st;
     }
     st = parse_optional_parameter_ref(
-        op_obj, "in2_id", "in2_operation", "in2_handle",
+        op_obj, "add_operation", "in2_id", "in2_operation", "in2_handle",
         &in2_id, &in2_operation_index, &in2_handle, &has_in2_ref);
     if (st != NMO_OK) {
         return st;
     }
     st = parse_optional_parameter_ref(
-        op_obj, "out_id", "out_operation", "out_handle",
+        op_obj, "add_operation", "out_id", "out_operation", "out_handle",
         &out_id, &out_operation_index, &out_handle, &has_out_ref);
     if (st != NMO_OK) {
         return st;
@@ -1535,19 +1537,19 @@ static nmo_status_t parse_rewire_operation(yyjson_val *op_obj,
         return NMO_ERR_INVALID_FORMAT;
     }
     nmo_status_t st = parse_optional_parameter_ref(
-        op_obj, "in1_id", "in1_operation", "in1_handle",
+        op_obj, "rewire_operation", "in1_id", "in1_operation", "in1_handle",
         &in1_id, &in1_operation_index, &in1_handle, &has_in1_ref);
     if (st != NMO_OK) {
         return st;
     }
     st = parse_optional_parameter_ref(
-        op_obj, "in2_id", "in2_operation", "in2_handle",
+        op_obj, "rewire_operation", "in2_id", "in2_operation", "in2_handle",
         &in2_id, &in2_operation_index, &in2_handle, &has_in2_ref);
     if (st != NMO_OK) {
         return st;
     }
     st = parse_optional_parameter_ref(
-        op_obj, "out_id", "out_operation", "out_handle",
+        op_obj, "rewire_operation", "out_id", "out_operation", "out_handle",
         &out_id, &out_operation_index, &out_handle, &has_out_ref);
     if (st != NMO_OK) {
         return st;

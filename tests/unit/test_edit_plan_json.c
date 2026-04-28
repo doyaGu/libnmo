@@ -648,6 +648,11 @@ TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics) {
         "rewire_operation requires in1_id");
 
     assert_manifest_invalid_contains(
+        "{\"op\":\"rewire_operation\",\"operation_id\":1,"
+        "\"in1_id\":2,\"in1_operation\":1,\"in1_handle\":\"parameter\"}",
+        "rewire_operation operation requires either in1_id or in1_operation plus in1_handle");
+
+    assert_manifest_invalid_contains(
         "{\"op\":\"unknown_edit\"}",
         "Unsupported edit plan op 'unknown_edit'");
 }
