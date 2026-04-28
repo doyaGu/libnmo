@@ -1902,6 +1902,60 @@ static nmo_status_t edit_report_note_behavior_io_detach_impacts(
     return NMO_OK;
 }
 
+static nmo_status_t edit_report_note_behavior_parameter_detach_impacts(
+    nmo_script_edit_tx_t *tx,
+    nmo_edit_report_t *report,
+    nmo_edit_op_kind_t cause,
+    nmo_object_id_t behavior_id)
+{
+    if (tx == NULL || report == NULL || behavior_id == 0u) {
+        return NMO_OK;
+    }
+
+    nmo_object_repository_t *repo =
+        nmo_workspace_internal_repository(nmo_script_edit_workspace(tx));
+    nmo_object_t *object = repo
+        ? nmo_object_repository_find_by_id(repo, behavior_id)
+        : NULL;
+    nmo_behavior_state_t *state = object
+        ? (nmo_behavior_state_t *)nmo_object_get_state(object)
+        : NULL;
+    if (state == NULL) {
+        return NMO_OK;
+    }
+
+    const nmo_array_t *param_arrays[] = {
+        &state->in_parameters,
+        &state->out_parameters,
+        &state->local_parameters,
+    };
+    for (size_t i = 0u; i < sizeof(param_arrays) / sizeof(param_arrays[0]); ++i) {
+        const nmo_array_t *array = param_arrays[i];
+        const nmo_object_id_t *ids = array && array->data
+            ? (const nmo_object_id_t *)array->data
+            : NULL;
+        for (size_t j = 0u; ids != NULL && j < array->count; ++j) {
+            nmo_object_id_t source_id =
+                edit_plan_get_parameterin_source(tx, ids[j]);
+            NMO_RETURN_IF_ERROR(edit_report_note_parameter_edge_source(
+                report, cause, source_id));
+            NMO_RETURN_IF_ERROR(edit_report_note_parameter_detach_impacts(
+                tx, report, cause, ids[j]));
+        }
+    }
+
+    if (state->target_parameter_id != 0u) {
+        nmo_object_id_t source_id =
+            edit_plan_get_parameterin_source(tx, state->target_parameter_id);
+        NMO_RETURN_IF_ERROR(edit_report_note_parameter_edge_source(
+            report, cause, source_id));
+        NMO_RETURN_IF_ERROR(edit_report_note_parameter_detach_impacts(
+            tx, report, cause, state->target_parameter_id));
+    }
+
+    return NMO_OK;
+}
+
 nmo_status_t nmo_edit_report_merge_semantic_risks(
     nmo_edit_report_t *report,
     const nmo_behavior_semantic_risk_t *risks,
@@ -2164,6 +2218,11 @@ static nmo_status_t edit_executor_apply_op(
             NMO_EDIT_OP_REMOVE_NODE,
             op->data.remove_node.node_id));
         NMO_RETURN_IF_ERROR(edit_report_note_behavior_io_detach_impacts(
+            tx,
+            report,
+            NMO_EDIT_OP_REMOVE_NODE,
+            op->data.remove_node.node_id));
+        NMO_RETURN_IF_ERROR(edit_report_note_behavior_parameter_detach_impacts(
             tx,
             report,
             NMO_EDIT_OP_REMOVE_NODE,
