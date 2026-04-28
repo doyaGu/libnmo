@@ -2183,15 +2183,26 @@ static nmo_status_t edit_executor_apply_op(
     }
     case NMO_EDIT_OP_REMOVE_PARAMETER:
     {
+        nmo_object_id_t old_source_parameter_id =
+            edit_plan_get_parameterin_source(
+                tx,
+                op->data.remove_parameter.parameter_id);
         NMO_RETURN_IF_ERROR(edit_report_note_parameter_detach_impacts(
             tx,
             report,
             NMO_EDIT_OP_REMOVE_PARAMETER,
             op->data.remove_parameter.parameter_id));
-        return nmo_script_edit_remove_parameter(
+        nmo_status_t rc = nmo_script_edit_remove_parameter(
             tx,
             op->data.remove_parameter.parameter_id,
             op->data.remove_parameter.detach);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+        return edit_report_note_parameter_edge_source(
+            report,
+            NMO_EDIT_OP_REMOVE_PARAMETER,
+            old_source_parameter_id);
     }
     case NMO_EDIT_OP_ADD_OPERATION:
     {

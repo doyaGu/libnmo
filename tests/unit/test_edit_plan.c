@@ -1407,6 +1407,44 @@ TEST(edit_plan, executor_reports_remove_parameter_edge_impact) {
 
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
+
+    nmo_object_id_t source2_id = 0;
+    nmo_object_id_t target2_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(fixture.workspace, "seed target edge", &seed_tx));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_parameter(
+                  seed_tx, root_id, NMO_SCRIPT_EDIT_PARAM_LOCAL,
+                  CKPGUID_INT, "Source2", &source2_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_parameter(
+                  seed_tx, root_id, NMO_SCRIPT_EDIT_PARAM_IN,
+                  CKPGUID_INT, "Target2", &target2_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_connect_parameter(seed_tx, source2_id, target2_id));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_commit(seed_tx));
+
+    plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_parameter(plan, target2_id, true));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(1u, report.operation_count);
+    ASSERT_EQ(NMO_EDIT_OP_REMOVE_PARAMETER, report.operations[0].kind);
+
+    bool reported_source = false;
+    for (size_t i = 0; i < report.changed_object_count; ++i) {
+        if (report.changed_objects[i].id == source2_id &&
+            report.changed_objects[i].role != NULL &&
+            strcmp(report.changed_objects[i].role, "parameter_edge_source") == 0) {
+            reported_source = true;
+        }
+    }
+    ASSERT_TRUE(reported_source);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
     edit_plan_fixture_dispose(&fixture);
 }
 
