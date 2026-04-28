@@ -1060,6 +1060,49 @@ TEST(edit_plan, executor_resolves_behavior_link_io_handles) {
 
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
+    plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_behavior_link(
+                  plan,
+                  root_id,
+                  from_io_id,
+                  to_io_id,
+                  0u));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(1u, report.operation_count);
+    const nmo_object_id_t detach_link_id = report.operations[0].result_id;
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_remove_io(
+                  plan,
+                  from_io_id,
+                  true));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(1u, report.operation_count);
+    ASSERT_EQ(NMO_EDIT_OP_REMOVE_IO, report.operations[0].kind);
+    bool reported_detached_link = false;
+    for (size_t i = 0; i < report.deleted_object_count; ++i) {
+        if (report.deleted_objects[i].id == detach_link_id &&
+            report.deleted_objects[i].role != NULL &&
+            strcmp(report.deleted_objects[i].role, "detached_control_link") == 0) {
+            reported_detached_link = true;
+        }
+    }
+    ASSERT_TRUE(reported_detached_link);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
     edit_plan_fixture_dispose(&fixture);
 }
 

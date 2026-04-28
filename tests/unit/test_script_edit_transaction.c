@@ -796,6 +796,53 @@ TEST(script_edit_transaction,
 }
 
 TEST(script_edit_transaction,
+     remove_io_detaches_behavior_links)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    nmo_session_t *session = NULL;
+    nmo_script_edit_tx_t *tx = NULL;
+    script_control_fixture_t fixture;
+    test_workspace_seed_scope_t seed_scope = {0};
+    nmo_object_id_t link_id = 0;
+
+    ASSERT_NOT_NULL(ctx);
+    session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    setup_script_control_fixture(session, &fixture);
+
+    ASSERT_EQ(NMO_OK,
+              begin_test_workspace_seed_edit(
+                  ctx, session, "seed-link", &seed_scope));
+    ASSERT_EQ(NMO_OK,
+              nmo_behavior_edit_add_link(seed_scope.edit,
+                                         fixture.root_behavior_id,
+                                         fixture.source_output_id,
+                                         fixture.target_input_id,
+                                         0,
+                                         &link_id));
+    ASSERT_TRUE(link_id != 0u);
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(seed_scope.edit));
+    destroy_test_workspace_seed_scope(&seed_scope);
+
+    ASSERT_EQ(NMO_OK,
+              begin_test_script_edit(ctx, session, "remove-linked-io", &tx));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_remove_io(tx, fixture.source_output_id, true));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX));
+
+    nmo_script_edit_commit(tx);
+    ASSERT_NULL(nmo_object_repository_find_by_id(
+        nmo_session_get_repository(session), link_id));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(script_edit_transaction,
      reference_validation_allows_preexisting_broken_refs_for_value_only_parameter_edit)
 {
     nmo_context_t *ctx = NULL;
@@ -893,6 +940,8 @@ TEST_MAIN_BEGIN()
                   add_behavior_link_rejects_reversed_child_endpoint_directions);
     REGISTER_TEST(script_edit_transaction,
                   rewire_behavior_link_rejects_reversed_child_endpoint_directions);
+    REGISTER_TEST(script_edit_transaction,
+                  remove_io_detaches_behavior_links);
     REGISTER_TEST(script_edit_transaction,
                   reference_validation_allows_preexisting_broken_refs_for_value_only_parameter_edit);
     REGISTER_TEST(script_edit_transaction,

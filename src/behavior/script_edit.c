@@ -880,6 +880,93 @@ static bool script_edit_io_is_linked_in_repo(
     return false;
 }
 
+static nmo_status_t script_edit_remove_links_for_io(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t behavior_id,
+    nmo_object_id_t io_id)
+{
+    nmo_object_repository_t *repo = NULL;
+    typedef struct matched_link {
+        nmo_object_id_t parent_behavior_id;
+        nmo_object_id_t link_id;
+    } matched_link_t;
+
+    matched_link_t *matched_links = NULL;
+    size_t matched_count = 0u;
+    size_t matched_capacity = 0u;
+    size_t object_count = 0u;
+    nmo_status_t rc = NMO_OK;
+
+    if (!tx || !tx->workspace || behavior_id == 0u || io_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    (void)behavior_id;
+
+    repo = nmo_workspace_internal_repository(tx->workspace);
+    if (repo == NULL) {
+        return NMO_OK;
+    }
+
+    object_count = nmo_object_repository_get_count(repo);
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_t *behavior_obj = nmo_object_repository_get_by_index(repo, i);
+        nmo_behavior_state_t *behavior_state = behavior_obj &&
+                nmo_object_get_class_id(behavior_obj) == NMO_CID_BEHAVIOR
+            ? (nmo_behavior_state_t *)nmo_object_get_state(behavior_obj)
+            : NULL;
+        nmo_object_id_t *link_ids = behavior_state &&
+                behavior_state->sub_behavior_links.data
+            ? (nmo_object_id_t *)behavior_state->sub_behavior_links.data
+            : NULL;
+        if (link_ids == NULL) {
+            continue;
+        }
+
+        for (size_t j = 0; j < behavior_state->sub_behavior_links.count; ++j) {
+            nmo_object_t *link_obj =
+                nmo_object_repository_find_by_id(repo, link_ids[j]);
+            const nmo_behaviorlink_state_t *link_state = link_obj
+                ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj)
+                : NULL;
+            if (!link_state ||
+                (link_state->in_io_id != io_id && link_state->out_io_id != io_id)) {
+                continue;
+            }
+
+            if (matched_count == matched_capacity) {
+                size_t next_capacity =
+                    matched_capacity == 0u ? 4u : matched_capacity * 2u;
+                matched_link_t *next = (matched_link_t *)realloc(
+                    matched_links, next_capacity * sizeof(*next));
+                if (next == NULL) {
+                    free(matched_links);
+                    return NMO_ERR_NOMEM;
+                }
+                matched_links = next;
+                matched_capacity = next_capacity;
+            }
+            matched_links[matched_count++] = (matched_link_t){
+                .parent_behavior_id = nmo_object_get_id(behavior_obj),
+                .link_id = link_ids[j],
+            };
+        }
+    }
+
+    for (size_t i = 0; i < matched_count; ++i) {
+        rc = nmo_script_edit_remove_behavior_link(
+            tx,
+            matched_links[i].parent_behavior_id,
+            matched_links[i].link_id);
+        if (rc != NMO_OK) {
+            free(matched_links);
+            return rc;
+        }
+    }
+
+    free(matched_links);
+    return NMO_OK;
+}
+
 static bool script_edit_behavior_is_direct_graph_member(
     nmo_session_t *session,
     nmo_object_id_t parent_behavior_id,
@@ -3047,8 +3134,6 @@ NMO_API nmo_status_t nmo_script_edit_remove_io(
     nmo_array_t *array = NULL;
     nmo_status_t rc = NMO_OK;
 
-    (void)detach_links;
-
     if (!tx || !tx->edit || io_id == 0) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -3068,6 +3153,12 @@ NMO_API nmo_status_t nmo_script_edit_remove_io(
             owner->owner_id,
             io_id)) {
         return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (detach_links) {
+        rc = script_edit_remove_links_for_io(tx, owner->owner_id, io_id);
+        if (rc != NMO_OK) {
+            return rc;
+        }
     }
 
     behavior = script_edit_find_behavior_state_in_repo(

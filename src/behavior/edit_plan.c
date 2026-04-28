@@ -1585,6 +1585,60 @@ static nmo_status_t edit_report_note_control_link_endpoints(
     return NMO_OK;
 }
 
+static nmo_status_t edit_report_note_io_detach_impacts(
+    nmo_script_edit_tx_t *tx,
+    nmo_edit_report_t *report,
+    nmo_edit_op_kind_t cause,
+    nmo_object_id_t io_id)
+{
+    if (tx == NULL || report == NULL || io_id == 0u) {
+        return NMO_OK;
+    }
+
+    nmo_object_repository_t *repo =
+        nmo_workspace_internal_repository(nmo_script_edit_workspace(tx));
+    if (repo == NULL) {
+        return NMO_OK;
+    }
+
+    const size_t object_count = nmo_object_repository_get_count(repo);
+    for (size_t i = 0u; i < object_count; ++i) {
+        nmo_object_t *behavior_obj = nmo_object_repository_get_by_index(repo, i);
+        nmo_behavior_state_t *behavior_state = behavior_obj &&
+                nmo_object_get_class_id(behavior_obj) == NMO_CID_BEHAVIOR
+            ? (nmo_behavior_state_t *)nmo_object_get_state(behavior_obj)
+            : NULL;
+        const nmo_object_id_t *link_ids = behavior_state &&
+                behavior_state->sub_behavior_links.data
+            ? (const nmo_object_id_t *)behavior_state->sub_behavior_links.data
+            : NULL;
+        for (size_t j = 0u; link_ids != NULL &&
+                            j < behavior_state->sub_behavior_links.count; ++j) {
+            nmo_object_t *link_obj =
+                nmo_object_repository_find_by_id(repo, link_ids[j]);
+            const nmo_behaviorlink_state_t *link_state = link_obj
+                ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj)
+                : NULL;
+            if (link_state == NULL ||
+                (link_state->in_io_id != io_id && link_state->out_io_id != io_id)) {
+                continue;
+            }
+            NMO_RETURN_IF_ERROR(nmo_edit_report_add_deleted_object(
+                report,
+                link_ids[j],
+                cause,
+                "detached_control_link"));
+            NMO_RETURN_IF_ERROR(edit_report_note_control_link_endpoints(
+                report,
+                cause,
+                link_state->in_io_id,
+                link_state->out_io_id));
+        }
+    }
+
+    return NMO_OK;
+}
+
 static nmo_status_t edit_report_note_parameter_edge_source(
     nmo_edit_report_t *report,
     nmo_edit_op_kind_t cause,
@@ -2088,10 +2142,19 @@ static nmo_status_t edit_executor_apply_op(
             op->data.rename_io.io_id,
             op->data.rename_io.name);
     case NMO_EDIT_OP_REMOVE_IO:
+    {
+        if (op->data.remove_io.detach_links) {
+            NMO_RETURN_IF_ERROR(edit_report_note_io_detach_impacts(
+                tx,
+                report,
+                NMO_EDIT_OP_REMOVE_IO,
+                op->data.remove_io.io_id));
+        }
         return nmo_script_edit_remove_io(
             tx,
             op->data.remove_io.io_id,
             op->data.remove_io.detach_links);
+    }
     case NMO_EDIT_OP_ADD_BEHAVIOR_LINK: {
         nmo_object_id_t from_io_id = op->data.add_link.from_io_id;
         nmo_object_id_t to_io_id = op->data.add_link.to_io_id;
