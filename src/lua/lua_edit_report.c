@@ -154,6 +154,18 @@ static void nmo_lua_push_edit_diff(lua_State *state,
     lua_pushinteger(state, (lua_Integer)report->semantic_risk_count);
     lua_setfield(state, -2, "semantic_risk_count");
 
+    lua_createtable(state, 0, 3);
+    nmo_lua_push_edit_impacts(
+        state, report->changed_objects, report->changed_object_count);
+    lua_setfield(state, -2, "changed");
+    nmo_lua_push_edit_impacts(
+        state, report->created_objects, report->created_object_count);
+    lua_setfield(state, -2, "created");
+    nmo_lua_push_edit_impacts(
+        state, report->deleted_objects, report->deleted_object_count);
+    lua_setfield(state, -2, "deleted");
+    lua_setfield(state, -2, "object_diff");
+
     lua_createtable(state, 0, 5);
     lua_pushinteger(state, (lua_Integer)report->operation_count);
     lua_setfield(state, -2, "operation_count");

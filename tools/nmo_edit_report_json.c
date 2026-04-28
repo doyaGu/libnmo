@@ -174,6 +174,26 @@ void nmo_cli_edit_report_add_impact_array_json(
     yyjson_mut_obj_add_val(doc, obj, name, arr);
 }
 
+static yyjson_mut_val *nmo_cli_edit_report_make_impact_array_json(
+    yyjson_mut_doc *doc,
+    const nmo_edit_object_impact_t *items,
+    size_t count)
+{
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    for (size_t i = 0; items != NULL && i < count; ++i) {
+        yyjson_mut_val *item = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, item, "object_id",
+                                (uint64_t)items[i].id);
+        yyjson_mut_obj_add_uint(doc, item, "id", (uint64_t)items[i].id);
+        nmo_cli_json_add_str_safe(
+            doc, item, "cause",
+            nmo_cli_edit_report_op_kind_string(items[i].cause));
+        nmo_cli_json_add_str_safe(doc, item, "role", items[i].role);
+        yyjson_mut_arr_add_val(arr, item);
+    }
+    return arr;
+}
+
 void nmo_cli_edit_report_add_semantic_risks_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *obj,
@@ -246,6 +266,7 @@ void nmo_cli_edit_report_add_diff_json(
 {
     yyjson_mut_val *diff = yyjson_mut_obj(doc);
     yyjson_mut_val *replay = yyjson_mut_obj(doc);
+    yyjson_mut_val *object_diff = yyjson_mut_obj(doc);
     size_t operation_count = report != NULL ? report->operation_count : 0u;
     size_t changed_object_count =
         report != NULL ? report->changed_object_count : 0u;
@@ -274,6 +295,25 @@ void nmo_cli_edit_report_add_diff_json(
                             (uint64_t)deleted_object_count);
     yyjson_mut_obj_add_uint(doc, replay, "semantic_risk_count",
                             (uint64_t)semantic_risk_count);
+    yyjson_mut_obj_add_val(
+        doc, object_diff, "changed",
+        nmo_cli_edit_report_make_impact_array_json(
+            doc,
+            report != NULL ? report->changed_objects : NULL,
+            changed_object_count));
+    yyjson_mut_obj_add_val(
+        doc, object_diff, "created",
+        nmo_cli_edit_report_make_impact_array_json(
+            doc,
+            report != NULL ? report->created_objects : NULL,
+            created_object_count));
+    yyjson_mut_obj_add_val(
+        doc, object_diff, "deleted",
+        nmo_cli_edit_report_make_impact_array_json(
+            doc,
+            report != NULL ? report->deleted_objects : NULL,
+            deleted_object_count));
+    yyjson_mut_obj_add_val(doc, diff, "object_diff", object_diff);
     yyjson_mut_obj_add_val(doc, diff, "replay_summary", replay);
     yyjson_mut_obj_add_val(doc, obj, "diff", diff);
 }

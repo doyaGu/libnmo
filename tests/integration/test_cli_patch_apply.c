@@ -1502,6 +1502,13 @@ TEST(cli, patch_diff_json_roundtrips_operation_handle_refs) {
     yyjson_val *data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
     ASSERT_TRUE(get_bool_field(data, "ok"));
+    yyjson_val *diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    yyjson_val *object_diff = get_object_field(diff, "object_diff");
+    ASSERT_NOT_NULL(object_diff);
+    yyjson_val *created_diff = get_array_field(object_diff, "created");
+    ASSERT_NOT_NULL(created_diff);
+    ASSERT_TRUE(yyjson_arr_size(created_diff) >= 4u);
     yyjson_val *manifest = get_object_field(data, "manifest");
     ASSERT_NOT_NULL(manifest);
     yyjson_val *ops = get_array_field(manifest, "operations");

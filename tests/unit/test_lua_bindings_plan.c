@@ -89,6 +89,8 @@ TEST(lua_bindings_plan, plan_module_executes_dry_run)
         "assert(report.diff.changed_object_count == 1)\n"
         "assert(report.diff.created_object_count == 1)\n"
         "assert(report.diff.deleted_object_count == 0)\n"
+        "assert(type(report.diff.object_diff) == 'table')\n"
+        "assert(#report.diff.object_diff.created == #report.created_objects)\n"
         "assert(report.diff.replay_summary.operation_count == 1)\n"
         "assert(report.diff.replay_summary.created_object_count == 1)\n"
         "assert(type(report.semantic_risks) == 'table')\n"
