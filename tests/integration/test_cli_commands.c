@@ -3642,6 +3642,21 @@ TEST(cli, debug_probe_rejects_invalid_probe_options) {
             "\"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
             "--parameter is only supported",
         },
+        {
+            "debug probe 2d-text --behavior 999999 "
+            "\"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "debug probe behavior not found",
+        },
+        {
+            "debug probe parameter-logger --behavior 237 --parameter 999999 "
+            "\"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "debug probe parameter not found",
+        },
+        {
+            "debug probe data-cell-logger --behavior 237 --dataarray 999999 "
+            "--row 0 --col 1 \"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "debug probe data array not found",
+        },
     };
 
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {

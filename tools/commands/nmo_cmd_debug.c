@@ -23,6 +23,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
+#include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 
@@ -342,6 +343,66 @@ static nmo_object_id_t debug_probe_find_matching_link(
     return 0u;
 }
 
+static bool debug_probe_is_parameter_reference_class(nmo_class_id_t class_id)
+{
+    return class_id == NMO_CID_PARAMETER ||
+           class_id == NMO_CID_PARAMETERIN ||
+           class_id == NMO_CID_PARAMETEROUT ||
+           class_id == NMO_CID_PARAMETERLOCAL ||
+           class_id == NMO_CID_PARAMETEROPERATION;
+}
+
+static nmo_status_t debug_probe_validate_targets(
+    nmo_cmd_ctx_t *ctx,
+    const nmo_debug_probe_args_t *args,
+    const debug_probe_kind_spec_t *spec)
+{
+    if (ctx == NULL || args == NULL || spec == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(ctx->workspace);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_object_t *behavior =
+        nmo_object_repository_find_by_id(repo, args->behavior_id);
+    if (behavior == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "debug probe behavior not found");
+    }
+    if (nmo_object_get_class_id(behavior) != NMO_CID_BEHAVIOR) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "debug probe behavior target is not a behavior");
+    }
+
+    if (spec->connects_parameter) {
+        nmo_object_t *parameter =
+            nmo_object_repository_find_by_id(repo, args->parameter_id);
+        if (parameter == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                             "debug probe parameter not found");
+        }
+        if (!debug_probe_is_parameter_reference_class(
+                nmo_object_get_class_id(parameter))) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "debug probe parameter target is not a parameter");
+        }
+    }
+
+    if (spec->logs_data_cell) {
+        nmo_object_t *dataarray =
+            nmo_object_repository_find_by_id(repo, args->dataarray_id);
+        if (dataarray == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                             "debug probe data array not found");
+        }
+    }
+
+    NMO_RETURN_OK();
+}
+
 static void debug_probe_replace_report_id(nmo_edit_report_t *report,
                                           nmo_object_id_t old_id,
                                           nmo_object_id_t new_id)
@@ -445,6 +506,9 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
     nmo_edit_report_init(&args->report);
     status = debug_probe_infer_removed_link_endpoints(ctx, args);
     if (status == NMO_OK) {
+        status = debug_probe_validate_targets(ctx, args, spec);
+    }
+    if (status == NMO_OK) {
         status = nmo_edit_plan_create(&plan);
     }
     if (status == NMO_OK && args->remove_link_id != 0u) {
@@ -503,8 +567,11 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
     }
     nmo_edit_plan_destroy(plan);
     if (status != NMO_OK) {
+        const char *message = nmo_last_error_message();
         fprintf(stderr, "Error: debug probe failed: %s\n",
-                nmo_error_string(status));
+                (message != NULL && message[0] != '\0')
+                    ? message
+                    : nmo_error_string(status));
         return status == NMO_ERR_INVALID_ARGUMENT || status == NMO_ERR_NOT_FOUND
             ? NMO_CLI_EXIT_ARG_ERROR
             : NMO_CLI_EXIT_INTERNAL_ERROR;
