@@ -929,6 +929,67 @@ TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch_with_handle_refs)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_path(&fixture, NMO_TEST_DATA_FILE("Nop.cmo"));
+
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_object_id_t operation_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(
+              fixture.workspace, "semantic rewire handle setup", &tx));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_operation(
+                  tx,
+                  6u,
+                  NMO_OP_GUID_ADD,
+                  0u,
+                  0u,
+                  0u,
+                  &operation_id));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_commit(tx));
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_parameter(
+                  plan,
+                  6u,
+                  NMO_SCRIPT_EDIT_PARAM_LOCAL,
+                  CKPGUID_STRING,
+                  "Handle String"));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_rewire_operation_with_refs(
+                  plan,
+                  operation_id,
+                  NMO_SCRIPT_EDIT_OP_SLOT_IN1,
+                  0u,
+                  0u,
+                  "parameter",
+                  0u,
+                  0u,
+                  NULL,
+                  0u,
+                  0u,
+                  NULL));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *mismatch =
+        find_risk(risks, risk_count, "operation_type_mismatch");
+    ASSERT_NOT_NULL(mismatch);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, mismatch->severity);
+    ASSERT_EQ(operation_id, mismatch->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST(semantic_validator, edit_plan_reports_data_cell_bounds)
 {
     semantic_fixture_t fixture;
@@ -1078,6 +1139,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_parent_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_object_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch_with_handle_refs);
     REGISTER_TEST(semantic_validator, edit_plan_reports_data_cell_bounds);
     REGISTER_TEST(semantic_validator, edit_plan_reports_unknown_building_block);
     REGISTER_TEST(semantic_validator, edit_plan_reports_unknown_replace_building_block);
