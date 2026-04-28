@@ -1557,6 +1557,32 @@ static nmo_status_t edit_report_note_operation_slot_parameters(
     return NMO_OK;
 }
 
+static nmo_status_t edit_report_note_control_link_endpoints(
+    nmo_edit_report_t *report,
+    nmo_edit_op_kind_t cause,
+    nmo_object_id_t from_io_id,
+    nmo_object_id_t to_io_id)
+{
+    if (report == NULL) {
+        return NMO_OK;
+    }
+    if (from_io_id != 0u) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            report,
+            from_io_id,
+            cause,
+            "control_link_endpoint"));
+    }
+    if (to_io_id != 0u) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            report,
+            to_io_id,
+            cause,
+            "control_link_endpoint"));
+    }
+    return NMO_OK;
+}
+
 nmo_status_t nmo_edit_report_merge_semantic_risks(
     nmo_edit_report_t *report,
     const nmo_behavior_semantic_risk_t *risks,
@@ -1871,20 +1897,37 @@ static nmo_status_t edit_executor_apply_op(
                 return ref_rc;
             }
         }
-        return nmo_script_edit_add_behavior_link(
+        nmo_status_t rc = nmo_script_edit_add_behavior_link(
             tx,
             op->data.add_link.parent_behavior_id,
             from_io_id,
             to_io_id,
             op->data.add_link.activation_delay,
             out_result_id);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+        return edit_report_note_control_link_endpoints(
+            report,
+            NMO_EDIT_OP_ADD_BEHAVIOR_LINK,
+            from_io_id,
+            to_io_id);
     }
-    case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK:
-        return nmo_script_edit_rewire_behavior_link(
+    case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK: {
+        nmo_status_t rc = nmo_script_edit_rewire_behavior_link(
             tx,
             op->data.rewire_link.link_id,
             op->data.rewire_link.from_io_id,
             op->data.rewire_link.to_io_id);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+        return edit_report_note_control_link_endpoints(
+            report,
+            NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK,
+            op->data.rewire_link.from_io_id,
+            op->data.rewire_link.to_io_id);
+    }
     case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY:
         return nmo_script_edit_set_behavior_link_delay(
             tx,

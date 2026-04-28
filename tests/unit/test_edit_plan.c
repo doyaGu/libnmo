@@ -896,12 +896,63 @@ TEST(edit_plan, executor_resolves_behavior_link_io_handles) {
     ASSERT_TRUE(report.operations[2].result_id != 0u);
 
     bool reported_created_link = false;
+    bool reported_from_endpoint = false;
+    bool reported_to_endpoint = false;
     for (size_t i = 0; i < report.created_object_count; ++i) {
         if (report.created_objects[i].id == report.operations[2].result_id) {
             reported_created_link = true;
         }
     }
+    for (size_t i = 0; i < report.changed_object_count; ++i) {
+        if (report.changed_objects[i].role == NULL ||
+            strcmp(report.changed_objects[i].role, "control_link_endpoint") != 0) {
+            continue;
+        }
+        if (report.changed_objects[i].id == report.operations[0].result_id) {
+            reported_from_endpoint = true;
+        } else if (report.changed_objects[i].id == report.operations[1].result_id) {
+            reported_to_endpoint = true;
+        }
+    }
     ASSERT_TRUE(reported_created_link);
+    ASSERT_TRUE(reported_from_endpoint);
+    ASSERT_TRUE(reported_to_endpoint);
+
+    const nmo_object_id_t link_id = report.operations[2].result_id;
+    const nmo_object_id_t from_io_id = report.operations[0].result_id;
+    const nmo_object_id_t to_io_id = report.operations[1].result_id;
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_rewire_behavior_link(
+                  plan,
+                  link_id,
+                  from_io_id,
+                  to_io_id));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(1u, report.operation_count);
+    ASSERT_EQ(NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK, report.operations[0].kind);
+    reported_from_endpoint = false;
+    reported_to_endpoint = false;
+    for (size_t i = 0; i < report.changed_object_count; ++i) {
+        if (report.changed_objects[i].role == NULL ||
+            strcmp(report.changed_objects[i].role, "control_link_endpoint") != 0) {
+            continue;
+        }
+        if (report.changed_objects[i].id == from_io_id) {
+            reported_from_endpoint = true;
+        } else if (report.changed_objects[i].id == to_io_id) {
+            reported_to_endpoint = true;
+        }
+    }
+    ASSERT_TRUE(reported_from_endpoint);
+    ASSERT_TRUE(reported_to_endpoint);
 
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);

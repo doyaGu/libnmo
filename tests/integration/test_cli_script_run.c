@@ -183,6 +183,31 @@ static bool array_contains_object_id(yyjson_val *arr, uint64_t object_id)
     return false;
 }
 
+static bool array_contains_object_id_with_role(
+    yyjson_val *arr,
+    uint64_t object_id,
+    const char *role)
+{
+    size_t index = 0u;
+    size_t max = 0u;
+    yyjson_val *item = NULL;
+
+    if (arr == NULL || !yyjson_is_arr(arr) || role == NULL) {
+        return false;
+    }
+
+    yyjson_arr_foreach(arr, index, max, item) {
+        const char *item_role = get_string_field(item, "role");
+        if (get_uint_field(item, "object_id") == object_id &&
+            item_role != NULL &&
+            strcmp(item_role, role) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static yyjson_val *find_semantic_risk(yyjson_val *arr, const char *code)
 {
     size_t index = 0u;
@@ -1220,8 +1245,12 @@ TEST(cli, script_run_executor_rewire_behavior_link_uses_edit_plan) {
     ASSERT_EQ(75u, get_uint_field(op, "primary_id"));
     changed_objects = get_array_field(data, "changed_objects");
     ASSERT_NOT_NULL(changed_objects);
-    ASSERT_EQ(1u, yyjson_arr_size(changed_objects));
-    ASSERT_EQ(75u, get_uint_field(yyjson_arr_get(changed_objects, 0), "object_id"));
+    ASSERT_EQ(3u, yyjson_arr_size(changed_objects));
+    ASSERT_TRUE(array_contains_object_id(changed_objects, 75u));
+    ASSERT_TRUE(array_contains_object_id_with_role(
+        changed_objects, 78u, "control_link_endpoint"));
+    ASSERT_TRUE(array_contains_object_id_with_role(
+        changed_objects, 25u, "control_link_endpoint"));
     yyjson_doc_free(doc);
 }
 
