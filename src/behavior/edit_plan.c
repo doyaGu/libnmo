@@ -1695,6 +1695,50 @@ static void edit_plan_get_parameter_operation_slots(
     }
 }
 
+static nmo_status_t edit_report_note_parameter_detach_impacts(
+    nmo_script_edit_tx_t *tx,
+    nmo_edit_report_t *report,
+    nmo_edit_op_kind_t cause,
+    nmo_object_id_t parameter_id)
+{
+    if (tx == NULL || report == NULL || parameter_id == 0u) {
+        return NMO_OK;
+    }
+
+    nmo_object_repository_t *repo =
+        nmo_workspace_internal_repository(nmo_script_edit_workspace(tx));
+    if (repo == NULL) {
+        return NMO_OK;
+    }
+
+    const size_t object_count = nmo_object_repository_get_count(repo);
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        if (object == NULL ||
+            nmo_object_get_class_id(object) != NMO_CID_PARAMETEROPERATION) {
+            continue;
+        }
+
+        const nmo_parameteroperation_state_t *state =
+            (const nmo_parameteroperation_state_t *)nmo_object_get_state(object);
+        if (state == NULL) {
+            continue;
+        }
+
+        if ((state->has_in1 && state->in1_id == parameter_id) ||
+            (state->has_in2 && state->in2_id == parameter_id) ||
+            (state->has_out && state->out_id == parameter_id)) {
+            NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+                report,
+                nmo_object_get_id(object),
+                cause,
+                "operation_slot_owner"));
+        }
+    }
+
+    return NMO_OK;
+}
+
 nmo_status_t nmo_edit_report_merge_semantic_risks(
     nmo_edit_report_t *report,
     const nmo_behavior_semantic_risk_t *risks,
@@ -2127,10 +2171,17 @@ static nmo_status_t edit_executor_apply_op(
             old_source_parameter_id);
     }
     case NMO_EDIT_OP_REMOVE_PARAMETER:
+    {
+        NMO_RETURN_IF_ERROR(edit_report_note_parameter_detach_impacts(
+            tx,
+            report,
+            NMO_EDIT_OP_REMOVE_PARAMETER,
+            op->data.remove_parameter.parameter_id));
         return nmo_script_edit_remove_parameter(
             tx,
             op->data.remove_parameter.parameter_id,
             op->data.remove_parameter.detach);
+    }
     case NMO_EDIT_OP_ADD_OPERATION:
     {
         nmo_object_id_t in1_parameter_id =
