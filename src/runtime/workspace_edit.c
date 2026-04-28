@@ -1268,13 +1268,25 @@ nmo_status_t workspace_edit_set_parameter_value_ex(
         return NMO_OK;
     }
 
+    size_t buffer_size = type->size > 0 ? type->size : state->buffer_data.count;
+    bool allow_resize = options != NULL && options->resize;
+    if (buffer_size > state->buffer_data.count && !allow_resize) {
+        return NMO_ERR_OUT_OF_BOUNDS;
+    }
+
     nmo_status_t snapshot_result =
         workspace_edit_snapshot_parameter_buffer(edit, state, checkpoint);
     if (snapshot_result != NMO_OK) {
         return snapshot_result;
     }
+    if (buffer_size != state->buffer_data.count && allow_resize) {
+        nmo_status_t resize_result = nmo_array_resize(&state->buffer_data, buffer_size);
+        if (resize_result != NMO_OK) {
+            workspace_edit_rollback_to(edit, checkpoint);
+            return resize_result;
+        }
+    }
 
-    size_t buffer_size = type->size > 0 ? type->size : state->buffer_data.count;
     uint8_t *tmp = (uint8_t *)calloc(1, buffer_size);
     if (tmp == NULL) {
         workspace_edit_rollback_to(edit, checkpoint);
