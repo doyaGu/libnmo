@@ -4,6 +4,7 @@
 #include "behavior/nmo_behavior_registry.h"
 #include "behavior/nmo_edit_plan.h"
 #include "core/nmo_error.h"
+#include "core/nmo_parse.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
@@ -19,6 +20,8 @@
 #include "type/nmo_operation_system.h"
 #include "type/nmo_type_system.h"
 
+#include <ctype.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1140,7 +1143,8 @@ static nmo_status_t semantic_add_data_cell_risk(
     size_t *risk_count,
     nmo_object_id_t dataarray_id,
     uint32_t row,
-    uint32_t col)
+    uint32_t col,
+    const char *value)
 {
     NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
         repo, risks, risk_count, dataarray_id));
@@ -1175,6 +1179,77 @@ static nmo_status_t semantic_add_data_cell_risk(
             NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
             "data_cell_bounds",
             "Data cell edit is outside the data array shape",
+            dataarray_id);
+    }
+
+    CK_ARRAYTYPE col_type = state->column_formats[col].type;
+    bool value_matches_type = true;
+    if (value == NULL) {
+        value_matches_type = false;
+    } else {
+        switch (col_type) {
+        case CKARRAYTYPE_INT: {
+            int32_t parsed = 0;
+            value_matches_type =
+                nmo_parse_i32_range_base(
+                    value, 0, INT32_MIN, INT32_MAX, &parsed) == NMO_OK;
+            break;
+        }
+        case CKARRAYTYPE_FLOAT: {
+            float parsed = 0.0f;
+            value_matches_type = nmo_parse_f32(value, &parsed) == NMO_OK;
+            break;
+        }
+        case CKARRAYTYPE_STRING:
+            value_matches_type = true;
+            break;
+        case CKARRAYTYPE_OBJECT:
+        case CKARRAYTYPE_PARAMETER: {
+            nmo_object_id_t parsed = 0u;
+            value_matches_type =
+                nmo_parse_object_id(value, &parsed) == NMO_OK;
+            if (!value_matches_type) {
+                const char *begin = value;
+                while (*begin != '\0' && isspace((unsigned char)*begin)) {
+                    ++begin;
+                }
+                if (strncmp(begin, "object:", strlen("object:")) == 0) {
+                    begin += strlen("object:");
+                } else if (*begin == '#') {
+                    ++begin;
+                }
+                while (*begin != '\0' &&
+                       isspace((unsigned char)*begin)) {
+                    ++begin;
+                }
+                const char *end = begin + strlen(begin);
+                while (end > begin && isspace((unsigned char)end[-1])) {
+                    --end;
+                }
+                char id_buf[64];
+                size_t len = (size_t)(end - begin);
+                if (len > 0u && len < sizeof(id_buf)) {
+                    memcpy(id_buf, begin, len);
+                    id_buf[len] = '\0';
+                    value_matches_type =
+                        nmo_parse_object_id(id_buf, &parsed) == NMO_OK;
+                }
+            }
+            break;
+        }
+        default:
+            value_matches_type = false;
+            break;
+        }
+    }
+
+    if (!value_matches_type) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "data_cell_type_mismatch",
+            "Data cell value is incompatible with the data array column type",
             dataarray_id);
     }
 
@@ -1894,7 +1969,8 @@ static nmo_status_t semantic_validate_basic_edit_op(
             risk_count,
             op->data.data_cell.dataarray_id,
             op->data.data_cell.row,
-            op->data.data_cell.col);
+            op->data.data_cell.col,
+            op->data.data_cell.value);
     case NMO_EDIT_OP_FOLD:
         return NMO_OK;
     case NMO_EDIT_OP_REPLACE_BB:

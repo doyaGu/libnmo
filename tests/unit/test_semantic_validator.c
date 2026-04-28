@@ -1315,6 +1315,33 @@ TEST(semantic_validator, edit_plan_reports_data_cell_bounds)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_reports_data_cell_type_mismatch)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_path(&fixture, NMO_TEST_DATA_FILE("Ballance/Balls.nmo"));
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_data_cell(plan, 2261u, 0u, 1u, "not-a-float"));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *mismatch =
+        find_risk(risks, risk_count, "data_cell_type_mismatch");
+    ASSERT_NOT_NULL(mismatch);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, mismatch->severity);
+    ASSERT_EQ(2261u, mismatch->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST(semantic_validator, edit_plan_reports_unknown_building_block)
 {
     semantic_fixture_t fixture;
@@ -1526,6 +1553,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, edit_plan_reports_rewire_operation_existing_slot_dangling);
     REGISTER_TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch_with_handle_refs);
     REGISTER_TEST(semantic_validator, edit_plan_reports_data_cell_bounds);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_data_cell_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_unknown_building_block);
     REGISTER_TEST(semantic_validator, edit_plan_reports_unknown_replace_building_block);
     REGISTER_TEST(semantic_validator, edit_plan_reports_targetable_behavior_missing_target);
