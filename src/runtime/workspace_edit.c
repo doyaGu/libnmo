@@ -483,7 +483,39 @@ static nmo_status_t parse_dataarray_cell(
 
 static nmo_status_t parse_object_id_text(const char *value_str, nmo_object_id_t *out_id)
 {
-    return nmo_parse_object_id(value_str, out_id);
+    if (value_str == NULL || out_id == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    const char *begin = value_str;
+    while (*begin != '\0' && isspace((unsigned char)*begin)) {
+        ++begin;
+    }
+    if (strncmp(begin, "object:", strlen("object:")) == 0) {
+        begin += strlen("object:");
+    } else if (*begin == '#') {
+        ++begin;
+    }
+    while (*begin != '\0' && isspace((unsigned char)*begin)) {
+        ++begin;
+    }
+
+    const char *end = begin + strlen(begin);
+    while (end > begin && isspace((unsigned char)end[-1])) {
+        --end;
+    }
+    if (begin == end) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    char id_buf[64];
+    size_t len = (size_t)(end - begin);
+    if (len >= sizeof(id_buf)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    memcpy(id_buf, begin, len);
+    id_buf[len] = '\0';
+    return nmo_parse_object_id(id_buf, out_id);
 }
 
 static nmo_status_t parse_manager_parameter_text(
