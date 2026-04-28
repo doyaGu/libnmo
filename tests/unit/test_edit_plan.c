@@ -1872,6 +1872,16 @@ TEST(edit_plan, executor_deletes_nested_removed_node_operations) {
     ASSERT_TRUE(report.ok);
     ASSERT_NULL(nmo_object_repository_find_by_id(fixture.repo, operation_id));
 
+    bool reported_operation = false;
+    for (size_t i = 0; i < report.deleted_object_count; ++i) {
+        if (report.deleted_objects[i].id == operation_id &&
+            report.deleted_objects[i].role != NULL &&
+            strcmp(report.deleted_objects[i].role, "owned_operation") == 0) {
+            reported_operation = true;
+        }
+    }
+    ASSERT_TRUE(reported_operation);
+
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
     edit_plan_fixture_dispose(&fixture);
