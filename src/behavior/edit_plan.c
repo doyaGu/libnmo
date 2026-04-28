@@ -1859,6 +1859,22 @@ static nmo_status_t edit_report_note_behavior_owned_deleted_objects(
         }
     }
 
+    const nmo_object_id_t *sub_ids = state->sub_behaviors.data
+        ? (const nmo_object_id_t *)state->sub_behaviors.data
+        : NULL;
+    for (size_t i = 0u; sub_ids != NULL && i < state->sub_behaviors.count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_deleted_object(
+            report,
+            sub_ids[i],
+            cause,
+            "owned_node"));
+        NMO_RETURN_IF_ERROR(edit_report_note_behavior_owned_deleted_objects(
+            tx,
+            report,
+            cause,
+            sub_ids[i]));
+    }
+
     return NMO_OK;
 }
 
