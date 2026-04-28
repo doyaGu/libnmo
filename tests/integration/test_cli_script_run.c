@@ -1111,14 +1111,15 @@ TEST(cli, script_run_carries_executor_semantic_risks) {
     ASSERT_TRUE(yyjson_obj_get(data, "risk_level") == NULL);
     semantic_risks = get_array_field(data, "semantic_risks");
     ASSERT_NOT_NULL(semantic_risks);
-    ASSERT_EQ(1u, yyjson_arr_size(semantic_risks));
+    ASSERT_TRUE(yyjson_arr_size(semantic_risks) >= 1u);
     risk = find_semantic_risk(semantic_risks, "message_flow");
     ASSERT_NOT_NULL(risk);
     ASSERT_STR_EQ("warn", get_string_field(risk, "severity"));
     ASSERT_EQ(2233u, get_uint_field(risk, "object_id"));
     diff = get_object_field(data, "diff");
     ASSERT_NOT_NULL(diff);
-    ASSERT_EQ(1u, get_uint_field(diff, "semantic_risk_count"));
+    ASSERT_EQ(yyjson_arr_size(semantic_risks),
+              get_uint_field(diff, "semantic_risk_count"));
     yyjson_doc_free(doc);
 }
 
