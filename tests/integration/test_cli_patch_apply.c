@@ -1042,6 +1042,26 @@ static yyjson_val *find_object_by_string_field(yyjson_val *arr,
     return NULL;
 }
 
+static yyjson_val *find_object_by_id_and_role(yyjson_val *arr,
+                                              uint64_t object_id,
+                                              const char *role) {
+    size_t idx;
+    size_t max;
+    yyjson_val *item;
+
+    if (!arr || !role) {
+        return NULL;
+    }
+    yyjson_arr_foreach(arr, idx, max, item) {
+        if (yyjson_is_obj(item) &&
+            get_uint_field(item, "object_id") == object_id &&
+            strcmp(role, get_string_field(item, "role")) == 0) {
+            return item;
+        }
+    }
+    return NULL;
+}
+
 TEST(cli, patch_apply_leaf_replace_bb_dry_run_and_apply) {
     rewrite_manifest_t manifest;
     char replace_guid[64];
@@ -1666,6 +1686,14 @@ TEST(cli, patch_apply_v2_set_data_cell_dry_run) {
     yyjson_val *changed_objects = get_array_field(data, "changed_objects");
     ASSERT_NOT_NULL(changed_objects);
     ASSERT_TRUE(array_contains_object_id(changed_objects, 2261u));
+    ASSERT_NOT_NULL(find_object_by_id_and_role(changed_objects, 2261u, "data_cell"));
+    yyjson_val *diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    yyjson_val *data_cell_diff = get_object_field(diff, "data_cell_diff");
+    ASSERT_NOT_NULL(data_cell_diff);
+    yyjson_val *changed_cells = get_array_field(data_cell_diff, "changed");
+    ASSERT_NOT_NULL(changed_cells);
+    ASSERT_NOT_NULL(find_object_by_id_and_role(changed_cells, 2261u, "data_cell"));
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
     remove(patch);

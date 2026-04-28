@@ -140,6 +140,15 @@ static bool impact_is_interface(const nmo_edit_object_impact_t *impact)
            impact_role_contains(impact, "interface");
 }
 
+static bool impact_is_data_cell(const nmo_edit_object_impact_t *impact)
+{
+    if (impact == NULL) {
+        return false;
+    }
+    return impact->cause == NMO_EDIT_OP_SET_DATA_CELL ||
+           impact_role_contains(impact, "data_cell");
+}
+
 static void nmo_lua_push_filtered_edit_impacts(
     lua_State *state,
     const nmo_edit_object_impact_t *items,
@@ -294,6 +303,8 @@ static void nmo_lua_push_edit_diff(lua_State *state,
     lua_setfield(state, -2, "operation_graph_diff");
     nmo_lua_push_structural_edit_diff(state, report, impact_is_interface);
     lua_setfield(state, -2, "interface_diff");
+    nmo_lua_push_structural_edit_diff(state, report, impact_is_data_cell);
+    lua_setfield(state, -2, "data_cell_diff");
 
     lua_createtable(state, 0, 5);
     lua_pushinteger(state, (lua_Integer)report->operation_count);

@@ -269,6 +269,15 @@ static bool impact_is_interface(const nmo_edit_object_impact_t *impact)
            impact_role_contains(impact, "interface");
 }
 
+static bool impact_is_data_cell(const nmo_edit_object_impact_t *impact)
+{
+    if (impact == NULL) {
+        return false;
+    }
+    return impact->cause == NMO_EDIT_OP_SET_DATA_CELL ||
+           impact_role_contains(impact, "data_cell");
+}
+
 static yyjson_mut_val *nmo_cli_edit_report_make_filtered_impact_array_json(
     yyjson_mut_doc *doc,
     const nmo_edit_object_impact_t *items,
@@ -459,6 +468,10 @@ void nmo_cli_edit_report_add_diff_json(
         doc, diff, "interface_diff",
         nmo_cli_edit_report_make_structural_diff_json(
             doc, report, impact_is_interface));
+    yyjson_mut_obj_add_val(
+        doc, diff, "data_cell_diff",
+        nmo_cli_edit_report_make_structural_diff_json(
+            doc, report, impact_is_data_cell));
     yyjson_mut_obj_add_val(doc, diff, "replay_summary", replay);
     yyjson_mut_obj_add_val(doc, obj, "diff", diff);
 }

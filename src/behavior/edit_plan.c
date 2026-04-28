@@ -2636,12 +2636,22 @@ static nmo_status_t edit_executor_apply_op(
             op->data.interface_policy.behavior_id,
             op->data.interface_policy.mode);
     case NMO_EDIT_OP_SET_DATA_CELL:
-        return nmo_object_edit_set_dataarray_cell(
+    {
+        nmo_status_t rc = nmo_object_edit_set_dataarray_cell(
             edit,
             op->data.data_cell.dataarray_id,
             op->data.data_cell.row,
             op->data.data_cell.col,
             op->data.data_cell.value);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+        return nmo_edit_report_add_changed_object(
+            report,
+            op->data.data_cell.dataarray_id,
+            NMO_EDIT_OP_SET_DATA_CELL,
+            "data_cell");
+    }
     case NMO_EDIT_OP_REPLACE_BB: {
         nmo_behavior_replace_report_t replace_report = {0};
         nmo_status_t rc = nmo_behavior_edit_replace_bb_in_edit(
