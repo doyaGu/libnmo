@@ -26,6 +26,8 @@
 #include "format/nmo_object.h"
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_color.h"
+#include "core/nmo_math.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_guids.h"
 
@@ -737,6 +739,118 @@ TEST(workspace_edit, value_writer_resize_rollback_restores_buffer_size) {
     nmo_context_release(ctx);
 }
 
+TEST(workspace_edit, value_writer_writes_structured_parameter_values) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t vector_param_id = 0;
+    nmo_object_id_t color_param_id = 0;
+    nmo_object_id_t matrix_param_id = 0;
+    create_object_or_fail(session, NMO_CID_PARAMETER, "vector-param", &vector_param_id);
+    create_object_or_fail(session, NMO_CID_PARAMETER, "color-param", &color_param_id);
+    create_object_or_fail(session, NMO_CID_PARAMETER, "matrix-param", &matrix_param_id);
+
+    nmo_object_t *vector_obj = nmo_object_repository_find_by_id(repo, vector_param_id);
+    nmo_object_t *color_obj = nmo_object_repository_find_by_id(repo, color_param_id);
+    nmo_object_t *matrix_obj = nmo_object_repository_find_by_id(repo, matrix_param_id);
+    ASSERT_NOT_NULL(vector_obj);
+    ASSERT_NOT_NULL(color_obj);
+    ASSERT_NOT_NULL(matrix_obj);
+
+    nmo_parameter_state_t *vector_state = nmo_parameter_get_mutable_state(vector_obj);
+    nmo_parameter_state_t *color_state = nmo_parameter_get_mutable_state(color_obj);
+    nmo_parameter_state_t *matrix_state = nmo_parameter_get_mutable_state(matrix_obj);
+    ASSERT_NOT_NULL(vector_state);
+    ASSERT_NOT_NULL(color_state);
+    ASSERT_NOT_NULL(matrix_state);
+
+    vector_state->type_guid = CKPGUID_VECTOR;
+    vector_state->mode = CKPARAM_MODE_BUFFER;
+    vector_state->has_state = true;
+    ASSERT_EQ(NMO_OK,
+              nmo_array_alloc(&vector_state->buffer_data,
+                              sizeof(uint8_t),
+                              sizeof(nmo_vector_t),
+                              NULL));
+    memset(vector_state->buffer_data.data, 0, vector_state->buffer_data.count);
+
+    color_state->type_guid = CKPGUID_COLOR;
+    color_state->mode = CKPARAM_MODE_BUFFER;
+    color_state->has_state = true;
+    ASSERT_EQ(NMO_OK,
+              nmo_array_alloc(&color_state->buffer_data,
+                              sizeof(uint8_t),
+                              sizeof(nmo_color_t),
+                              NULL));
+    memset(color_state->buffer_data.data, 0, color_state->buffer_data.count);
+
+    matrix_state->type_guid = CKPGUID_MATRIX;
+    matrix_state->mode = CKPARAM_MODE_BUFFER;
+    matrix_state->has_state = true;
+    ASSERT_EQ(NMO_OK,
+              nmo_array_alloc(&matrix_state->buffer_data,
+                              sizeof(uint8_t),
+                              sizeof(nmo_matrix_t),
+                              NULL));
+    memset(matrix_state->buffer_data.data, 0, matrix_state->buffer_data.count);
+
+    workspace_edit_scope_t commit_scope = {0};
+    nmo_workspace_edit_t *commit_edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              begin_workspace_edit_for_session(
+                  ctx, session, "structured values", &commit_scope, &commit_edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_set_parameter_value(
+                  commit_edit, vector_param_id, "(1.5, 2.5, 3.5)"));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_set_parameter_value(
+                  commit_edit, color_param_id, "(0.25, 0.5, 0.75, 1)"));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_set_parameter_value(
+                  commit_edit,
+                  matrix_param_id,
+                  "(1, 2, 3, 4; 5, 6, 7, 8; 9, 10, 11, 12; 13, 14, 15, 16)"));
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&commit_scope));
+
+    const nmo_vector_t *vector_value =
+        (const nmo_vector_t *)vector_state->buffer_data.data;
+    const nmo_color_t *color_value =
+        (const nmo_color_t *)color_state->buffer_data.data;
+    const nmo_matrix_t *matrix_value =
+        (const nmo_matrix_t *)matrix_state->buffer_data.data;
+    ASSERT_FLOAT_EQ(1.5f, vector_value->x, 0.001f);
+    ASSERT_FLOAT_EQ(2.5f, vector_value->y, 0.001f);
+    ASSERT_FLOAT_EQ(3.5f, vector_value->z, 0.001f);
+    ASSERT_FLOAT_EQ(0.25f, color_value->r, 0.001f);
+    ASSERT_FLOAT_EQ(0.5f, color_value->g, 0.001f);
+    ASSERT_FLOAT_EQ(0.75f, color_value->b, 0.001f);
+    ASSERT_FLOAT_EQ(1.0f, color_value->a, 0.001f);
+    ASSERT_FLOAT_EQ(1.0f, matrix_value->m[0][0], 0.001f);
+    ASSERT_FLOAT_EQ(16.0f, matrix_value->m[3][3], 0.001f);
+
+    nmo_vector_t before_invalid = *vector_value;
+    workspace_edit_scope_t invalid_scope = {0};
+    nmo_workspace_edit_t *invalid_edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              begin_workspace_edit_for_session(
+                  ctx, session, "invalid structured value", &invalid_scope, &invalid_edit));
+    ASSERT_NE(NMO_OK,
+              nmo_object_edit_set_parameter_value(
+                  invalid_edit, vector_param_id, "(1, 2)"));
+    rollback_workspace_edit_scope(&invalid_scope);
+    vector_value = (const nmo_vector_t *)vector_state->buffer_data.data;
+    ASSERT_FLOAT_EQ(before_invalid.x, vector_value->x, 0.001f);
+    ASSERT_FLOAT_EQ(before_invalid.y, vector_value->y, 0.001f);
+    ASSERT_FLOAT_EQ(before_invalid.z, vector_value->z, 0.001f);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(workspace_edit, parameter_bytes_commit_zero_fills_and_rollback_restores) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
@@ -1163,6 +1277,7 @@ REGISTER_TEST(workspace_edit, parameter_edit_rollback_restores_buffer);
 REGISTER_TEST(workspace_edit, value_writer_resizes_string_parameter_and_nul_terminates);
 REGISTER_TEST(workspace_edit, value_writer_raw_bytes_requires_explicit_resize);
 REGISTER_TEST(workspace_edit, value_writer_resize_rollback_restores_buffer_size);
+REGISTER_TEST(workspace_edit, value_writer_writes_structured_parameter_values);
 REGISTER_TEST(workspace_edit, parameter_bytes_commit_zero_fills_and_rollback_restores);
 REGISTER_TEST(workspace_edit, parameterout_object_mode_commit_sets_reference);
 REGISTER_TEST(workspace_edit, dataarray_object_cell_commit_and_rollback);
