@@ -1829,6 +1829,118 @@ static nmo_status_t parse_replace_bb(yyjson_val *op_obj,
     return nmo_edit_plan_add_replace_bb(plan, &desc);
 }
 
+static nmo_status_t validate_operation_ref_index(
+    const char *key,
+    size_t ref_index,
+    size_t current_index)
+{
+    if (ref_index >= current_index) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_INVALID_FORMAT,
+            NMO_SEVERITY_ERROR,
+            "%s must reference an earlier operation",
+            key != NULL ? key : "operation reference");
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t validate_parsed_op_refs(
+    const nmo_edit_op_t *op,
+    size_t current_index)
+{
+    if (op == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    switch (op->kind) {
+        case NMO_EDIT_OP_SET_PARAMETER_VALUE:
+            if (op->data.set_value.has_parameter_ref) {
+                return validate_operation_ref_index(
+                    "parameter_operation",
+                    op->data.set_value.parameter_ref_operation_index,
+                    current_index);
+            }
+            break;
+        case NMO_EDIT_OP_SET_PARAMETER_BYTES:
+            if (op->data.set_bytes.has_parameter_ref) {
+                return validate_operation_ref_index(
+                    "parameter_operation",
+                    op->data.set_bytes.parameter_ref_operation_index,
+                    current_index);
+            }
+            break;
+        case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
+            if (op->data.add_link.has_from_io_ref) {
+                NMO_RETURN_IF_ERROR(validate_operation_ref_index(
+                    "from_operation",
+                    op->data.add_link.from_io_ref_operation_index,
+                    current_index));
+            }
+            if (op->data.add_link.has_to_io_ref) {
+                NMO_RETURN_IF_ERROR(validate_operation_ref_index(
+                    "to_operation",
+                    op->data.add_link.to_io_ref_operation_index,
+                    current_index));
+            }
+            break;
+        case NMO_EDIT_OP_CONNECT_PARAMETER:
+            if (op->data.connect_parameter.has_target_parameter_ref) {
+                return validate_operation_ref_index(
+                    "target_operation",
+                    op->data.connect_parameter
+                        .target_parameter_ref_operation_index,
+                    current_index);
+            }
+            break;
+        case NMO_EDIT_OP_ADD_OPERATION:
+            if (op->data.add_operation.has_in1_parameter_ref) {
+                NMO_RETURN_IF_ERROR(validate_operation_ref_index(
+                    "in1_operation",
+                    op->data.add_operation.in1_parameter_ref_operation_index,
+                    current_index));
+            }
+            if (op->data.add_operation.has_in2_parameter_ref) {
+                NMO_RETURN_IF_ERROR(validate_operation_ref_index(
+                    "in2_operation",
+                    op->data.add_operation.in2_parameter_ref_operation_index,
+                    current_index));
+            }
+            if (op->data.add_operation.has_out_parameter_ref) {
+                NMO_RETURN_IF_ERROR(validate_operation_ref_index(
+                    "out_operation",
+                    op->data.add_operation.out_parameter_ref_operation_index,
+                    current_index));
+            }
+            break;
+        case NMO_EDIT_OP_REWIRE_OPERATION:
+            if (op->data.rewire_operation.has_in1_parameter_ref) {
+                NMO_RETURN_IF_ERROR(validate_operation_ref_index(
+                    "in1_operation",
+                    op->data.rewire_operation
+                        .in1_parameter_ref_operation_index,
+                    current_index));
+            }
+            if (op->data.rewire_operation.has_in2_parameter_ref) {
+                NMO_RETURN_IF_ERROR(validate_operation_ref_index(
+                    "in2_operation",
+                    op->data.rewire_operation
+                        .in2_parameter_ref_operation_index,
+                    current_index));
+            }
+            if (op->data.rewire_operation.has_out_parameter_ref) {
+                NMO_RETURN_IF_ERROR(validate_operation_ref_index(
+                    "out_operation",
+                    op->data.rewire_operation
+                        .out_parameter_ref_operation_index,
+                    current_index));
+            }
+            break;
+        default:
+            break;
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t parse_operations_array(yyjson_val *ops,
                                            nmo_edit_plan_t *plan)
 {
@@ -1837,6 +1949,7 @@ static nmo_status_t parse_operations_array(yyjson_val *ops,
     yyjson_arr_iter_init(ops, &iter);
     while ((op_obj = yyjson_arr_iter_next(&iter)) != NULL) {
         nmo_status_t st = NMO_OK;
+        size_t op_index = nmo_edit_plan_count(plan);
         if (!yyjson_is_obj(op_obj)) {
             return NMO_ERR_INVALID_FORMAT;
         }
@@ -1894,6 +2007,11 @@ static nmo_status_t parse_operations_array(yyjson_val *ops,
                                 "Unsupported edit plan op '%s'", op_name);
             st = NMO_ERR_NOT_SUPPORTED;
         }
+        if (st != NMO_OK) {
+            return st;
+        }
+        const nmo_edit_op_t *op = nmo_edit_plan_get(plan, op_index);
+        st = validate_parsed_op_refs(op, op_index);
         if (st != NMO_OK) {
             return st;
         }

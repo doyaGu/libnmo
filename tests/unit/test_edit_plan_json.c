@@ -637,6 +637,13 @@ TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics) {
         "Missing or invalid in1_operation");
 
     assert_manifest_invalid_contains(
+        "{\"op\":\"add_parameter\",\"owner_id\":1,\"kind\":\"in\","
+        "\"type_guid\":\"6BD010E2-115617EA\",\"name\":\"Text\"},"
+        "{\"op\":\"set_parameter_value\",\"parameter_operation\":3,"
+        "\"parameter_handle\":\"parameter\",\"value\":\"hello\"}",
+        "parameter_operation must reference an earlier operation");
+
+    assert_manifest_invalid_contains(
         "{\"op\":\"rewire_operation\",\"operation_id\":1}",
         "rewire_operation requires in1_id");
 
