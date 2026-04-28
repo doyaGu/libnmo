@@ -578,17 +578,27 @@ static nmo_status_t parse_manager_parameter_text(
     while (*value_begin != '\0' && isspace((unsigned char)*value_begin)) {
         ++value_begin;
     }
-    char *end = NULL;
-    unsigned long value = strtoul(value_begin, &end, 0);
-    while (end != NULL && *end != '\0' && isspace((unsigned char)*end)) {
-        ++end;
+    const char *value_end = value_begin + strlen(value_begin);
+    while (value_end > value_begin && isspace((unsigned char)value_end[-1])) {
+        --value_end;
     }
-    if (end == value_begin || *end != '\0' || value > UINT32_MAX) {
+    if (value_begin == value_end) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    char value_buf[64];
+    size_t value_len = (size_t)(value_end - value_begin);
+    if (value_len >= sizeof(value_buf)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    memcpy(value_buf, value_begin, value_len);
+    value_buf[value_len] = '\0';
+    uint32_t value = 0;
+    if (nmo_parse_u32_range_base(value_buf, 0, 0, UINT32_MAX, &value) != NMO_OK) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     *out_guid = parsed_guid;
-    *out_value = (uint32_t)value;
+    *out_value = value;
     return NMO_OK;
 }
 
