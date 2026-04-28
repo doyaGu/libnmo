@@ -374,6 +374,55 @@ static nmo_status_t semantic_add_behavior_node_ref_risk(
         "Edit operation expects a behavior node");
 }
 
+static nmo_status_t semantic_add_behavior_target_consistency_risk(
+    nmo_object_repository_t *repo,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t behavior_id)
+{
+    nmo_object_t *object = repo != NULL
+        ? nmo_object_repository_find_by_id(repo, behavior_id)
+        : NULL;
+    if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
+        return NMO_OK;
+    }
+    const nmo_behavior_state_t *state =
+        (const nmo_behavior_state_t *)nmo_object_get_state(object);
+    if (state == NULL || (state->flags & CKBEHAVIOR_TARGETABLE) == 0u) {
+        return NMO_OK;
+    }
+    if (state->target_parameter_id == 0u) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "target_parameter_missing",
+            "Targetable behavior is missing its target parameter",
+            behavior_id);
+    }
+    nmo_object_t *target = nmo_object_repository_find_by_id(
+        repo, state->target_parameter_id);
+    if (target == NULL) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "target_parameter_dangling_reference",
+            "Targetable behavior references a missing target parameter",
+            state->target_parameter_id);
+    }
+    if (nmo_object_get_class_id(target) != NMO_CID_PARAMETERIN) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "target_parameter_type_mismatch",
+            "Targetable behavior target must be a behavior input parameter",
+            state->target_parameter_id);
+    }
+    return NMO_OK;
+}
+
 static bool semantic_is_parameter_object_class(nmo_class_id_t class_id)
 {
     return class_id == NMO_CID_PARAMETER ||
@@ -1799,6 +1848,11 @@ static nmo_status_t semantic_validate_basic_edit_op(
             repo, risks, risk_count,
             op->data.replace_bb.desc.behavior_id));
         NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
+            repo,
+            risks,
+            risk_count,
+            op->data.replace_bb.desc.behavior_id));
+        NMO_RETURN_IF_ERROR(semantic_add_behavior_target_consistency_risk(
             repo,
             risks,
             risk_count,

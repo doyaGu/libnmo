@@ -5,6 +5,7 @@
 #include "behavior/nmo_script_edit.h"
 #include "document/nmo_document.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_defs.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
@@ -1377,6 +1378,55 @@ TEST(semantic_validator, edit_plan_reports_unknown_replace_building_block)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_reports_targetable_behavior_missing_target)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init(&fixture);
+
+    nmo_object_repository_t *repo =
+        nmo_session_get_repository(fixture.session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t behavior_id = 0u;
+    semantic_create_object(
+        &fixture, NMO_CID_BEHAVIOR, "Targetable Without Target", &behavior_id);
+    nmo_object_t *behavior_obj =
+        nmo_object_repository_find_by_id(repo, behavior_id);
+    ASSERT_NOT_NULL(behavior_obj);
+    nmo_behavior_state_t *behavior_state =
+        (nmo_behavior_state_t *)nmo_object_get_state(behavior_obj);
+    ASSERT_NOT_NULL(behavior_state);
+    behavior_state->flags |= CKBEHAVIOR_TARGETABLE;
+    behavior_state->target_parameter_id = 0u;
+
+    nmo_behavior_replace_bb_desc_t replace = {
+        .behavior_id = behavior_id,
+        .block_guid = nmo_guid_parse("055B29FE-662D5CA0"),
+        .name = "Replacement 2D Text",
+        .block_version = 65536u,
+    };
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_replace_bb(plan, &replace));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *missing =
+        find_risk(risks, risk_count, "target_parameter_missing");
+    ASSERT_NOT_NULL(missing);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, missing->severity);
+    ASSERT_EQ(behavior_id, missing->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST(semantic_validator, edit_plan_reports_replace_target_type_mismatch)
 {
     semantic_fixture_t fixture;
@@ -1446,5 +1496,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, edit_plan_reports_data_cell_bounds);
     REGISTER_TEST(semantic_validator, edit_plan_reports_unknown_building_block);
     REGISTER_TEST(semantic_validator, edit_plan_reports_unknown_replace_building_block);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_targetable_behavior_missing_target);
     REGISTER_TEST(semantic_validator, edit_plan_reports_replace_target_type_mismatch);
 TEST_MAIN_END()
