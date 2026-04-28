@@ -1583,6 +1583,39 @@ static nmo_status_t edit_report_note_control_link_endpoints(
     return NMO_OK;
 }
 
+static nmo_status_t edit_report_note_parameter_edge_source(
+    nmo_edit_report_t *report,
+    nmo_edit_op_kind_t cause,
+    nmo_object_id_t source_parameter_id)
+{
+    if (report == NULL || source_parameter_id == 0u) {
+        return NMO_OK;
+    }
+    return nmo_edit_report_add_changed_object(
+        report,
+        source_parameter_id,
+        cause,
+        "parameter_edge_source");
+}
+
+static nmo_object_id_t edit_plan_get_parameterin_source(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t target_parameter_id)
+{
+    if (tx == NULL || target_parameter_id == 0u) {
+        return 0u;
+    }
+    nmo_object_repository_t *repo =
+        nmo_workspace_internal_repository(nmo_script_edit_workspace(tx));
+    nmo_object_t *object = repo
+        ? nmo_object_repository_find_by_id(repo, target_parameter_id)
+        : NULL;
+    nmo_parameterin_state_t *state = object
+        ? (nmo_parameterin_state_t *)nmo_object_get_state(object)
+        : NULL;
+    return state ? state->source_id : 0u;
+}
+
 nmo_status_t nmo_edit_report_merge_semantic_risks(
     nmo_edit_report_t *report,
     const nmo_behavior_semantic_risk_t *risks,
@@ -1970,15 +2003,33 @@ static nmo_status_t edit_executor_apply_op(
             tx,
             op->data.connect_parameter.source_parameter_id,
             target_parameter_id);
-        if (rc == NMO_OK && out_result_id != NULL) {
+        if (rc != NMO_OK) {
+            return rc;
+        }
+        if (out_result_id != NULL) {
             *out_result_id = target_parameter_id;
         }
-        return rc;
+        return edit_report_note_parameter_edge_source(
+            report,
+            NMO_EDIT_OP_CONNECT_PARAMETER,
+            op->data.connect_parameter.source_parameter_id);
     }
-    case NMO_EDIT_OP_DISCONNECT_PARAMETER:
-        return nmo_script_edit_disconnect_parameter(
+    case NMO_EDIT_OP_DISCONNECT_PARAMETER: {
+        nmo_object_id_t old_source_parameter_id =
+            edit_plan_get_parameterin_source(
+                tx,
+                op->data.disconnect_parameter.target_parameter_id);
+        nmo_status_t rc = nmo_script_edit_disconnect_parameter(
             tx,
             op->data.disconnect_parameter.target_parameter_id);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+        return edit_report_note_parameter_edge_source(
+            report,
+            NMO_EDIT_OP_DISCONNECT_PARAMETER,
+            old_source_parameter_id);
+    }
     case NMO_EDIT_OP_REMOVE_PARAMETER:
         return nmo_script_edit_remove_parameter(
             tx,

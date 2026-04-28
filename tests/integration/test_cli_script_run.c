@@ -1384,8 +1384,10 @@ TEST(cli, script_run_executor_connect_parameter_uses_edit_plan) {
     ASSERT_EQ(8u, get_uint_field(op, "primary_id"));
     changed_objects = get_array_field(data, "changed_objects");
     ASSERT_NOT_NULL(changed_objects);
-    ASSERT_EQ(1u, yyjson_arr_size(changed_objects));
-    ASSERT_EQ(8u, get_uint_field(yyjson_arr_get(changed_objects, 0), "object_id"));
+    ASSERT_EQ(2u, yyjson_arr_size(changed_objects));
+    ASSERT_TRUE(array_contains_object_id(changed_objects, 8u));
+    ASSERT_TRUE(array_contains_object_id_with_role(
+        changed_objects, 7u, "parameter_edge_source"));
     yyjson_doc_free(doc);
 }
 
@@ -1470,8 +1472,10 @@ TEST(cli, script_run_executor_disconnect_parameter_uses_edit_plan) {
     ASSERT_EQ(8u, get_uint_field(op, "primary_id"));
     changed_objects = get_array_field(data, "changed_objects");
     ASSERT_NOT_NULL(changed_objects);
-    ASSERT_EQ(1u, yyjson_arr_size(changed_objects));
-    ASSERT_EQ(8u, get_uint_field(yyjson_arr_get(changed_objects, 0), "object_id"));
+    ASSERT_EQ(2u, yyjson_arr_size(changed_objects));
+    ASSERT_TRUE(array_contains_object_id(changed_objects, 8u));
+    ASSERT_TRUE(array_contains_object_id_with_role(
+        changed_objects, 7u, "parameter_edge_source"));
     yyjson_doc_free(doc);
 }
 

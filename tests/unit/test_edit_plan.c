@@ -818,6 +818,42 @@ TEST(edit_plan, executor_connects_parameter_to_prior_node_handle) {
     ASSERT_NOT_NULL(target_state);
     ASSERT_EQ(source_parameter_id, target_state->source_id);
 
+    bool reported_source_endpoint = false;
+    for (size_t i = 0; i < report.changed_object_count; ++i) {
+        if (report.changed_objects[i].id == source_parameter_id &&
+            report.changed_objects[i].role != NULL &&
+            strcmp(report.changed_objects[i].role, "parameter_edge_source") == 0) {
+            reported_source_endpoint = true;
+        }
+    }
+    ASSERT_TRUE(reported_source_endpoint);
+
+    const nmo_object_id_t target_parameter_id = report.operations[1].result_id;
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_disconnect_parameter(
+                  plan,
+                  target_parameter_id));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(1u, report.operation_count);
+    ASSERT_EQ(NMO_EDIT_OP_DISCONNECT_PARAMETER, report.operations[0].kind);
+    reported_source_endpoint = false;
+    for (size_t i = 0; i < report.changed_object_count; ++i) {
+        if (report.changed_objects[i].id == source_parameter_id &&
+            report.changed_objects[i].role != NULL &&
+            strcmp(report.changed_objects[i].role, "parameter_edge_source") == 0) {
+            reported_source_endpoint = true;
+        }
+    }
+    ASSERT_TRUE(reported_source_endpoint);
+
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
     edit_plan_fixture_dispose(&fixture);
