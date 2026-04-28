@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
 
 typedef struct nmo_debug_chunks_data {
     yyjson_mut_doc *doc;
@@ -134,6 +135,7 @@ static const debug_probe_kind_spec_t debug_probe_kind_specs[] = {
 };
 
 static const debug_probe_kind_spec_t *debug_probe_find_kind(const char *kind);
+static bool debug_probe_parse_u32_arg(const char *text, uint32_t *out_value);
 static nmo_status_t debug_probe_infer_removed_link_endpoints(
     nmo_cmd_ctx_t *ctx,
     nmo_debug_probe_args_t *args);
@@ -163,29 +165,77 @@ static int debug_probe_parse(int argc,
 
     for (int i = 2; i < argc; ++i) {
         if (strcmp(argv[i], "--behavior") == 0 && i + 1 < argc) {
-            args->behavior_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
+            uint32_t parsed = 0u;
+            const char *value = argv[++i];
+            if (!debug_probe_parse_u32_arg(value, &parsed)) {
+                fprintf(stderr, "Error: Invalid --behavior '%s'\n", value);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            args->behavior_id = (nmo_object_id_t)parsed;
         } else if (strcmp(argv[i], "--remove-link") == 0 && i + 1 < argc) {
-            args->remove_link_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
+            uint32_t parsed = 0u;
+            const char *value = argv[++i];
+            if (!debug_probe_parse_u32_arg(value, &parsed)) {
+                fprintf(stderr, "Error: Invalid --remove-link '%s'\n", value);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            args->remove_link_id = (nmo_object_id_t)parsed;
         } else if (strcmp(argv[i], "--from-io") == 0 && i + 1 < argc) {
-            args->from_io_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
+            uint32_t parsed = 0u;
+            const char *value = argv[++i];
+            if (!debug_probe_parse_u32_arg(value, &parsed)) {
+                fprintf(stderr, "Error: Invalid --from-io '%s'\n", value);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            args->from_io_id = (nmo_object_id_t)parsed;
         } else if (strcmp(argv[i], "--to-io") == 0 && i + 1 < argc) {
-            args->to_io_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
+            uint32_t parsed = 0u;
+            const char *value = argv[++i];
+            if (!debug_probe_parse_u32_arg(value, &parsed)) {
+                fprintf(stderr, "Error: Invalid --to-io '%s'\n", value);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            args->to_io_id = (nmo_object_id_t)parsed;
         } else if ((strcmp(argv[i], "--parameter") == 0 ||
                     strcmp(argv[i], "--source-param") == 0) &&
                    i + 1 < argc) {
-            args->parameter_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
+            uint32_t parsed = 0u;
+            const char *value = argv[++i];
+            if (!debug_probe_parse_u32_arg(value, &parsed)) {
+                fprintf(stderr, "Error: Invalid --parameter '%s'\n", value);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            args->parameter_id = (nmo_object_id_t)parsed;
         } else if ((strcmp(argv[i], "--dataarray") == 0 ||
                     strcmp(argv[i], "--data-array") == 0) &&
                    i + 1 < argc) {
-            args->dataarray_id = (nmo_object_id_t)strtoul(argv[++i], NULL, 10);
+            uint32_t parsed = 0u;
+            const char *value = argv[++i];
+            if (!debug_probe_parse_u32_arg(value, &parsed)) {
+                fprintf(stderr, "Error: Invalid --dataarray '%s'\n", value);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            args->dataarray_id = (nmo_object_id_t)parsed;
         } else if (strcmp(argv[i], "--row") == 0 && i + 1 < argc) {
-            args->data_row = (uint32_t)strtoul(argv[++i], NULL, 10);
+            const char *value = argv[++i];
+            if (!debug_probe_parse_u32_arg(value, &args->data_row)) {
+                fprintf(stderr, "Error: Invalid --row '%s'\n", value);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
             args->has_data_row = true;
         } else if (strcmp(argv[i], "--col") == 0 && i + 1 < argc) {
-            args->data_col = (uint32_t)strtoul(argv[++i], NULL, 10);
+            const char *value = argv[++i];
+            if (!debug_probe_parse_u32_arg(value, &args->data_col)) {
+                fprintf(stderr, "Error: Invalid --col '%s'\n", value);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
             args->has_data_col = true;
         } else if (strcmp(argv[i], "--delay") == 0 && i + 1 < argc) {
-            args->delay = (uint32_t)strtoul(argv[++i], NULL, 10);
+            const char *value = argv[++i];
+            if (!debug_probe_parse_u32_arg(value, &args->delay)) {
+                fprintf(stderr, "Error: Invalid --delay '%s'\n", value);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
             args->has_delay = true;
         } else if (strcmp(argv[i], "--name") == 0 && i + 1 < argc) {
             args->name = argv[++i];
@@ -266,6 +316,22 @@ static int debug_probe_parse(int argc,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     return NMO_CLI_EXIT_SUCCESS;
+}
+
+static bool debug_probe_parse_u32_arg(const char *text, uint32_t *out_value)
+{
+    if (text == NULL || text[0] == '\0' || out_value == NULL) {
+        return false;
+    }
+    errno = 0;
+    char *end = NULL;
+    unsigned long value = strtoul(text, &end, 10);
+    if (end == text || *end != '\0' || errno == ERANGE ||
+        value > UINT32_MAX) {
+        return false;
+    }
+    *out_value = (uint32_t)value;
+    return true;
 }
 
 static const debug_probe_kind_spec_t *debug_probe_find_kind(const char *kind)

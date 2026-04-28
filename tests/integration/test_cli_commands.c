@@ -3657,6 +3657,11 @@ TEST(cli, debug_probe_rejects_invalid_probe_options) {
             "--row 0 --col 1 \"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
             "debug probe data array not found",
         },
+        {
+            "debug probe data-cell-logger --behavior 237 --dataarray 2261 "
+            "--row nope --col 1 \"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "Invalid --row",
+        },
     };
 
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
