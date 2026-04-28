@@ -71,6 +71,22 @@ static nmo_status_t behavior_execute_copy_report(
     return NMO_OK;
 }
 
+static void behavior_execute_set_final_status(
+    nmo_edit_report_t *report,
+    nmo_status_t status)
+{
+    if (report == NULL) {
+        return;
+    }
+
+    report->ok = status == NMO_OK;
+    report->status = status;
+    if (status != NMO_OK) {
+        free(report->output_path);
+        report->output_path = NULL;
+    }
+}
+
 static void behavior_execute_destroy(nmo_behavior_execution_t *execution)
 {
     if (execution == NULL) {
@@ -303,6 +319,7 @@ static nmo_status_t nmo_behavior_execute_internal(
 
     status = nmo_document_save_file(
         execution->document, output_path, resolved_options.save_options);
+    behavior_execute_set_final_status(out_report, status);
     behavior_execute_destroy(execution);
     return status;
 }

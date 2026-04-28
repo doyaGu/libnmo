@@ -705,6 +705,39 @@ TEST(behavior_execute, failure_report_has_no_output_path)
     nmo_context_release(ctx);
 }
 
+TEST(behavior_execute, save_failure_report_is_not_successful)
+{
+    const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
+    const char *output_path = "missing_behavior_execute_dir\\out.cmo";
+    nmo_context_t *ctx =
+        nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
+    nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
+    nmo_edit_report_t report = {0};
+    executor_add_io_action_t action = {0};
+    nmo_status_t status = NMO_OK;
+
+    ASSERT_NOT_NULL(ctx);
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+
+    options.label = "test-behavior-execute-save-fail";
+    status = nmo_behavior_execute(ctx,
+                                  input_path,
+                                  output_path,
+                                  &options,
+                                  add_two_ios_action,
+                                  &action,
+                                  &report);
+
+    ASSERT_NE(NMO_OK, status);
+    ASSERT_FALSE(report.ok);
+    ASSERT_EQ(status, report.status);
+    ASSERT_TRUE(report.output_path == NULL);
+    ASSERT_FALSE(file_exists(output_path));
+
+    nmo_edit_report_dispose(&report);
+    nmo_context_release(ctx);
+}
+
 TEST(behavior_execute, rolls_back_on_action_error_and_skips_output) {
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     const char *output_path = "test_behavior_execute_fail.cmo";
@@ -978,6 +1011,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(behavior_execute, executes_multiple_actions_and_saves_once);
     REGISTER_TEST(behavior_execute, reports_edit_schema);
     REGISTER_TEST(behavior_execute, failure_report_has_no_output_path);
+    REGISTER_TEST(behavior_execute, save_failure_report_is_not_successful);
     REGISTER_TEST(behavior_execute, rolls_back_on_action_error_and_skips_output);
     REGISTER_TEST(behavior_execute, dry_run_rolls_back_after_validation);
     REGISTER_TEST(behavior_execute, remove_io_canonicalize_roundtrips_fixture);
