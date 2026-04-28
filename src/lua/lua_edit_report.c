@@ -144,7 +144,7 @@ static void nmo_lua_push_edit_validation(
 static void nmo_lua_push_edit_diff(lua_State *state,
                                    const nmo_edit_report_t *report)
 {
-    lua_createtable(state, 0, 4);
+    lua_createtable(state, 0, 5);
     lua_pushinteger(state, (lua_Integer)report->changed_object_count);
     lua_setfield(state, -2, "changed_object_count");
     lua_pushinteger(state, (lua_Integer)report->created_object_count);
@@ -153,6 +153,19 @@ static void nmo_lua_push_edit_diff(lua_State *state,
     lua_setfield(state, -2, "deleted_object_count");
     lua_pushinteger(state, (lua_Integer)report->semantic_risk_count);
     lua_setfield(state, -2, "semantic_risk_count");
+
+    lua_createtable(state, 0, 5);
+    lua_pushinteger(state, (lua_Integer)report->operation_count);
+    lua_setfield(state, -2, "operation_count");
+    lua_pushinteger(state, (lua_Integer)report->changed_object_count);
+    lua_setfield(state, -2, "changed_object_count");
+    lua_pushinteger(state, (lua_Integer)report->created_object_count);
+    lua_setfield(state, -2, "created_object_count");
+    lua_pushinteger(state, (lua_Integer)report->deleted_object_count);
+    lua_setfield(state, -2, "deleted_object_count");
+    lua_pushinteger(state, (lua_Integer)report->semantic_risk_count);
+    lua_setfield(state, -2, "semantic_risk_count");
+    lua_setfield(state, -2, "replay_summary");
 }
 
 static const char *nmo_lua_edit_risk_severity_string(

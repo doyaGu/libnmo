@@ -244,13 +244,38 @@ void nmo_cli_edit_report_add_diff_json(
     yyjson_mut_val *obj,
     const nmo_edit_report_t *report)
 {
-    nmo_cli_edit_report_add_diff_counts_json(
-        doc,
-        obj,
-        report != NULL ? report->changed_object_count : 0u,
-        report != NULL ? report->created_object_count : 0u,
-        report != NULL ? report->deleted_object_count : 0u,
-        report != NULL ? report->semantic_risk_count : 0u);
+    yyjson_mut_val *diff = yyjson_mut_obj(doc);
+    yyjson_mut_val *replay = yyjson_mut_obj(doc);
+    size_t operation_count = report != NULL ? report->operation_count : 0u;
+    size_t changed_object_count =
+        report != NULL ? report->changed_object_count : 0u;
+    size_t created_object_count =
+        report != NULL ? report->created_object_count : 0u;
+    size_t deleted_object_count =
+        report != NULL ? report->deleted_object_count : 0u;
+    size_t semantic_risk_count =
+        report != NULL ? report->semantic_risk_count : 0u;
+
+    yyjson_mut_obj_add_uint(doc, diff, "changed_object_count",
+                            (uint64_t)changed_object_count);
+    yyjson_mut_obj_add_uint(doc, diff, "created_object_count",
+                            (uint64_t)created_object_count);
+    yyjson_mut_obj_add_uint(doc, diff, "deleted_object_count",
+                            (uint64_t)deleted_object_count);
+    yyjson_mut_obj_add_uint(doc, diff, "semantic_risk_count",
+                            (uint64_t)semantic_risk_count);
+    yyjson_mut_obj_add_uint(doc, replay, "operation_count",
+                            (uint64_t)operation_count);
+    yyjson_mut_obj_add_uint(doc, replay, "changed_object_count",
+                            (uint64_t)changed_object_count);
+    yyjson_mut_obj_add_uint(doc, replay, "created_object_count",
+                            (uint64_t)created_object_count);
+    yyjson_mut_obj_add_uint(doc, replay, "deleted_object_count",
+                            (uint64_t)deleted_object_count);
+    yyjson_mut_obj_add_uint(doc, replay, "semantic_risk_count",
+                            (uint64_t)semantic_risk_count);
+    yyjson_mut_obj_add_val(doc, diff, "replay_summary", replay);
+    yyjson_mut_obj_add_val(doc, obj, "diff", diff);
 }
 
 void nmo_cli_edit_report_add_diff_counts_json(

@@ -2359,6 +2359,10 @@ TEST(cli, patch_diff_json_reports_fold_delete_plan) {
     yyjson_val *diff = get_object_field(data, "diff");
     ASSERT_NOT_NULL(diff);
     ASSERT_TRUE(get_uint_field(diff, "deleted_object_count") > 0u);
+    yyjson_val *replay_summary = get_object_field(diff, "replay_summary");
+    ASSERT_NOT_NULL(replay_summary);
+    ASSERT_EQ(1u, (uint32_t)get_uint_field(replay_summary, "operation_count"));
+    ASSERT_TRUE(get_uint_field(replay_summary, "deleted_object_count") > 0u);
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
 
