@@ -3,7 +3,9 @@
 #include "core/nmo_error.h"
 #include "lauxlib.h"
 
+#include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 
 const char *nmo_lua_edit_op_kind_string(nmo_edit_op_kind_t kind)
 {
@@ -63,6 +65,124 @@ static void nmo_lua_push_edit_impacts(lua_State *state,
         lua_setfield(state, -2, "role");
         lua_rawseti(state, -2, (lua_Integer)i + 1);
     }
+}
+
+static bool impact_role_contains(const nmo_edit_object_impact_t *impact,
+                                 const char *needle)
+{
+    return impact != NULL && impact->role != NULL &&
+           strstr(impact->role, needle) != NULL;
+}
+
+static bool impact_is_graph_edge(const nmo_edit_object_impact_t *impact)
+{
+    if (impact == NULL) {
+        return false;
+    }
+    switch (impact->cause) {
+    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
+    case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK:
+    case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY:
+    case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK:
+    case NMO_EDIT_OP_FOLD:
+    case NMO_EDIT_OP_REPLACE_BB:
+        return true;
+    default:
+        return impact_role_contains(impact, "control_link") ||
+               impact_role_contains(impact, "owned_link");
+    }
+}
+
+static bool impact_is_parameter_edge(const nmo_edit_object_impact_t *impact)
+{
+    if (impact == NULL) {
+        return false;
+    }
+    switch (impact->cause) {
+    case NMO_EDIT_OP_SET_PARAMETER_VALUE:
+    case NMO_EDIT_OP_SET_PARAMETER_BYTES:
+    case NMO_EDIT_OP_ADD_PARAMETER:
+    case NMO_EDIT_OP_CONNECT_PARAMETER:
+    case NMO_EDIT_OP_DISCONNECT_PARAMETER:
+    case NMO_EDIT_OP_REMOVE_PARAMETER:
+    case NMO_EDIT_OP_SET_DATA_CELL:
+    case NMO_EDIT_OP_FOLD:
+    case NMO_EDIT_OP_REPLACE_BB:
+        return true;
+    default:
+        return impact_role_contains(impact, "parameter");
+    }
+}
+
+static bool impact_is_operation_graph(const nmo_edit_object_impact_t *impact)
+{
+    if (impact == NULL) {
+        return false;
+    }
+    switch (impact->cause) {
+    case NMO_EDIT_OP_ADD_OPERATION:
+    case NMO_EDIT_OP_REWIRE_OPERATION:
+    case NMO_EDIT_OP_REMOVE_OPERATION:
+    case NMO_EDIT_OP_FOLD:
+    case NMO_EDIT_OP_REPLACE_BB:
+        return true;
+    default:
+        return impact_role_contains(impact, "operation");
+    }
+}
+
+static bool impact_is_interface(const nmo_edit_object_impact_t *impact)
+{
+    if (impact == NULL) {
+        return false;
+    }
+    return impact->cause == NMO_EDIT_OP_INTERFACE_POLICY ||
+           impact_role_contains(impact, "interface");
+}
+
+static void nmo_lua_push_filtered_edit_impacts(
+    lua_State *state,
+    const nmo_edit_object_impact_t *items,
+    size_t count,
+    bool (*predicate)(const nmo_edit_object_impact_t *))
+{
+    lua_newtable(state);
+    lua_Integer out_index = 1;
+    for (size_t i = 0; i < count; ++i) {
+        if (predicate != NULL && !predicate(&items[i])) {
+            continue;
+        }
+        lua_createtable(state, 0, 4);
+        lua_pushinteger(state, (lua_Integer)items[i].id);
+        lua_setfield(state, -2, "object_id");
+        lua_pushinteger(state, (lua_Integer)items[i].id);
+        lua_setfield(state, -2, "id");
+        lua_pushstring(state, nmo_lua_edit_op_kind_string(items[i].cause));
+        lua_setfield(state, -2, "cause");
+        lua_pushstring(state, items[i].role != NULL ? items[i].role : "");
+        lua_setfield(state, -2, "role");
+        lua_rawseti(state, -2, out_index++);
+    }
+}
+
+static void nmo_lua_push_structural_edit_diff(
+    lua_State *state,
+    const nmo_edit_report_t *report,
+    bool (*predicate)(const nmo_edit_object_impact_t *))
+{
+    lua_createtable(state, 0, 3);
+    nmo_lua_push_filtered_edit_impacts(
+        state, report->changed_objects, report->changed_object_count,
+        predicate);
+    lua_setfield(state, -2, "changed");
+    nmo_lua_push_filtered_edit_impacts(
+        state, report->created_objects, report->created_object_count,
+        predicate);
+    lua_setfield(state, -2, "created");
+    nmo_lua_push_filtered_edit_impacts(
+        state, report->deleted_objects, report->deleted_object_count,
+        predicate);
+    lua_setfield(state, -2, "deleted");
 }
 
 static void nmo_lua_push_edit_operation_handles(
@@ -165,6 +285,15 @@ static void nmo_lua_push_edit_diff(lua_State *state,
         state, report->deleted_objects, report->deleted_object_count);
     lua_setfield(state, -2, "deleted");
     lua_setfield(state, -2, "object_diff");
+
+    nmo_lua_push_structural_edit_diff(state, report, impact_is_graph_edge);
+    lua_setfield(state, -2, "graph_edge_diff");
+    nmo_lua_push_structural_edit_diff(state, report, impact_is_parameter_edge);
+    lua_setfield(state, -2, "parameter_edge_diff");
+    nmo_lua_push_structural_edit_diff(state, report, impact_is_operation_graph);
+    lua_setfield(state, -2, "operation_graph_diff");
+    nmo_lua_push_structural_edit_diff(state, report, impact_is_interface);
+    lua_setfield(state, -2, "interface_diff");
 
     lua_createtable(state, 0, 5);
     lua_pushinteger(state, (lua_Integer)report->operation_count);

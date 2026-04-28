@@ -154,7 +154,11 @@ TEST(lua_bindings_plan, plan_module_executes_behavior_link_dry_run)
         "assert(report.operations[1].primary_id == 6)\n"
         "assert(report.operations[1].result_id ~= 0)\n"
         "assert(#report.created_objects == 1)\n"
-        "assert(report.diff.created_object_count == 1)\n");
+        "assert(report.diff.created_object_count == 1)\n"
+        "assert(type(report.diff.graph_edge_diff) == 'table')\n"
+        "assert(#report.diff.graph_edge_diff.created == 1)\n"
+        "assert(type(report.diff.parameter_edge_diff) == 'table')\n"
+        "assert(#report.diff.parameter_edge_diff.created == 0)\n");
 
     nmo_lua_runtime_destroy(runtime);
 }

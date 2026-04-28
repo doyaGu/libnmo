@@ -1307,6 +1307,13 @@ TEST(cli, patch_apply_v2_add_behavior_link_dry_run) {
     yyjson_val *created_objects = get_array_field(data, "created_objects");
     ASSERT_NOT_NULL(created_objects);
     ASSERT_TRUE(yyjson_arr_size(created_objects) > 0u);
+    yyjson_val *diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    yyjson_val *graph_edge_diff = get_object_field(diff, "graph_edge_diff");
+    ASSERT_NOT_NULL(graph_edge_diff);
+    yyjson_val *created_edges = get_array_field(graph_edge_diff, "created");
+    ASSERT_NOT_NULL(created_edges);
+    ASSERT_TRUE(yyjson_arr_size(created_edges) > 0u);
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
     remove(patch);

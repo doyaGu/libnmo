@@ -4,7 +4,9 @@
 
 #include "core/nmo_error.h"
 
+#include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 const char *nmo_cli_edit_report_op_kind_string(nmo_edit_op_kind_t kind)
 {
@@ -194,6 +196,133 @@ static yyjson_mut_val *nmo_cli_edit_report_make_impact_array_json(
     return arr;
 }
 
+static bool impact_role_contains(const nmo_edit_object_impact_t *impact,
+                                 const char *needle)
+{
+    return impact != NULL && impact->role != NULL &&
+           strstr(impact->role, needle) != NULL;
+}
+
+static bool impact_is_graph_edge(const nmo_edit_object_impact_t *impact)
+{
+    if (impact == NULL) {
+        return false;
+    }
+    switch (impact->cause) {
+    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
+    case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK:
+    case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY:
+    case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK:
+    case NMO_EDIT_OP_FOLD:
+    case NMO_EDIT_OP_REPLACE_BB:
+        return true;
+    default:
+        return impact_role_contains(impact, "control_link") ||
+               impact_role_contains(impact, "owned_link");
+    }
+}
+
+static bool impact_is_parameter_edge(const nmo_edit_object_impact_t *impact)
+{
+    if (impact == NULL) {
+        return false;
+    }
+    switch (impact->cause) {
+    case NMO_EDIT_OP_SET_PARAMETER_VALUE:
+    case NMO_EDIT_OP_SET_PARAMETER_BYTES:
+    case NMO_EDIT_OP_ADD_PARAMETER:
+    case NMO_EDIT_OP_CONNECT_PARAMETER:
+    case NMO_EDIT_OP_DISCONNECT_PARAMETER:
+    case NMO_EDIT_OP_REMOVE_PARAMETER:
+    case NMO_EDIT_OP_SET_DATA_CELL:
+    case NMO_EDIT_OP_FOLD:
+    case NMO_EDIT_OP_REPLACE_BB:
+        return true;
+    default:
+        return impact_role_contains(impact, "parameter");
+    }
+}
+
+static bool impact_is_operation_graph(const nmo_edit_object_impact_t *impact)
+{
+    if (impact == NULL) {
+        return false;
+    }
+    switch (impact->cause) {
+    case NMO_EDIT_OP_ADD_OPERATION:
+    case NMO_EDIT_OP_REWIRE_OPERATION:
+    case NMO_EDIT_OP_REMOVE_OPERATION:
+    case NMO_EDIT_OP_FOLD:
+    case NMO_EDIT_OP_REPLACE_BB:
+        return true;
+    default:
+        return impact_role_contains(impact, "operation");
+    }
+}
+
+static bool impact_is_interface(const nmo_edit_object_impact_t *impact)
+{
+    if (impact == NULL) {
+        return false;
+    }
+    return impact->cause == NMO_EDIT_OP_INTERFACE_POLICY ||
+           impact_role_contains(impact, "interface");
+}
+
+static yyjson_mut_val *nmo_cli_edit_report_make_filtered_impact_array_json(
+    yyjson_mut_doc *doc,
+    const nmo_edit_object_impact_t *items,
+    size_t count,
+    bool (*predicate)(const nmo_edit_object_impact_t *))
+{
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    for (size_t i = 0; items != NULL && i < count; ++i) {
+        if (predicate != NULL && !predicate(&items[i])) {
+            continue;
+        }
+        yyjson_mut_val *item = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, item, "object_id",
+                                (uint64_t)items[i].id);
+        yyjson_mut_obj_add_uint(doc, item, "id", (uint64_t)items[i].id);
+        nmo_cli_json_add_str_safe(
+            doc, item, "cause",
+            nmo_cli_edit_report_op_kind_string(items[i].cause));
+        nmo_cli_json_add_str_safe(doc, item, "role", items[i].role);
+        yyjson_mut_arr_add_val(arr, item);
+    }
+    return arr;
+}
+
+static yyjson_mut_val *nmo_cli_edit_report_make_structural_diff_json(
+    yyjson_mut_doc *doc,
+    const nmo_edit_report_t *report,
+    bool (*predicate)(const nmo_edit_object_impact_t *))
+{
+    yyjson_mut_val *diff = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_val(
+        doc, diff, "changed",
+        nmo_cli_edit_report_make_filtered_impact_array_json(
+            doc,
+            report != NULL ? report->changed_objects : NULL,
+            report != NULL ? report->changed_object_count : 0u,
+            predicate));
+    yyjson_mut_obj_add_val(
+        doc, diff, "created",
+        nmo_cli_edit_report_make_filtered_impact_array_json(
+            doc,
+            report != NULL ? report->created_objects : NULL,
+            report != NULL ? report->created_object_count : 0u,
+            predicate));
+    yyjson_mut_obj_add_val(
+        doc, diff, "deleted",
+        nmo_cli_edit_report_make_filtered_impact_array_json(
+            doc,
+            report != NULL ? report->deleted_objects : NULL,
+            report != NULL ? report->deleted_object_count : 0u,
+            predicate));
+    return diff;
+}
+
 void nmo_cli_edit_report_add_semantic_risks_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *obj,
@@ -314,6 +443,22 @@ void nmo_cli_edit_report_add_diff_json(
             report != NULL ? report->deleted_objects : NULL,
             deleted_object_count));
     yyjson_mut_obj_add_val(doc, diff, "object_diff", object_diff);
+    yyjson_mut_obj_add_val(
+        doc, diff, "graph_edge_diff",
+        nmo_cli_edit_report_make_structural_diff_json(
+            doc, report, impact_is_graph_edge));
+    yyjson_mut_obj_add_val(
+        doc, diff, "parameter_edge_diff",
+        nmo_cli_edit_report_make_structural_diff_json(
+            doc, report, impact_is_parameter_edge));
+    yyjson_mut_obj_add_val(
+        doc, diff, "operation_graph_diff",
+        nmo_cli_edit_report_make_structural_diff_json(
+            doc, report, impact_is_operation_graph));
+    yyjson_mut_obj_add_val(
+        doc, diff, "interface_diff",
+        nmo_cli_edit_report_make_structural_diff_json(
+            doc, report, impact_is_interface));
     yyjson_mut_obj_add_val(doc, diff, "replay_summary", replay);
     yyjson_mut_obj_add_val(doc, obj, "diff", diff);
 }
