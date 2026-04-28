@@ -98,6 +98,28 @@ static void create_string_parameter(
     *out_state = state;
 }
 
+static void create_manager_parameter(
+    edit_plan_fixture_t *fixture,
+    nmo_object_id_t *out_param_id,
+    nmo_parameter_state_t **out_state)
+{
+    ASSERT_NOT_NULL(out_state);
+    *out_state = NULL;
+    create_object_or_fail(fixture->session, NMO_CID_PARAMETER,
+                          "manager-param", out_param_id);
+    nmo_object_t *param_obj =
+        nmo_object_repository_find_by_id(fixture->repo, *out_param_id);
+    ASSERT_NOT_NULL(param_obj);
+    nmo_parameter_state_t *state = nmo_parameter_get_mutable_state(param_obj);
+    ASSERT_NOT_NULL(state);
+    state->type_guid = CKPGUID_INT;
+    state->mode = CKPARAM_MODE_MANAGER;
+    state->has_state = true;
+    state->manager_guid = nmo_guid_parse("11111111-22222222");
+    state->manager_value = 7u;
+    *out_state = state;
+}
+
 static nmo_object_id_t find_named_parameter_in_ids(
     nmo_object_repository_t *repo,
     const nmo_array_t *ids,
@@ -375,6 +397,36 @@ TEST(edit_plan, executor_dry_run_reports_without_persisting) {
     ASSERT_TRUE(report.dry_run);
     ASSERT_EQ(1u, report.changed_object_count);
     ASSERT_EQ(0, memcmp(state->buffer_data.data, "old", 4));
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+}
+
+TEST(edit_plan, executor_writes_manager_parameter_values) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t param_id = 0;
+    nmo_parameter_state_t *state = NULL;
+    create_manager_parameter(&fixture, &param_id, &state);
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_set_parameter_value(
+                  plan, param_id, "12345678-9ABCDEF0:77", NULL));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(NMO_OK, report.operations[0].status);
+    ASSERT_TRUE(nmo_guid_equals(
+        nmo_guid_parse("12345678-9ABCDEF0"), state->manager_guid));
+    ASSERT_EQ(77u, state->manager_value);
+    ASSERT_EQ(1u, report.changed_object_count);
+    ASSERT_EQ(param_id, report.changed_objects[0].id);
 
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
@@ -2968,6 +3020,7 @@ REGISTER_TEST(edit_plan, executor_commits_parameter_value_plan);
 REGISTER_TEST(edit_plan, executor_rolls_back_failed_plan);
 REGISTER_TEST(edit_plan, executor_rolls_back_created_handle_chain_failure);
 REGISTER_TEST(edit_plan, executor_dry_run_reports_without_persisting);
+REGISTER_TEST(edit_plan, executor_writes_manager_parameter_values);
 REGISTER_TEST(edit_plan, executor_adds_node_with_created_object_report);
 REGISTER_TEST(edit_plan, executor_materializes_building_block_defaults);
 REGISTER_TEST(edit_plan, executor_materializes_targetable_beobject_target);

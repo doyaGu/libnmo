@@ -24,6 +24,7 @@
 #include "object/nmo_statesave_ids.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
+#include "core/nmo_guid.h"
 #include "core/nmo_parse.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_guids.h"
@@ -67,6 +68,12 @@ typedef struct parameter_buffer_snapshot {
     size_t count;
     uint8_t bytes[];
 } parameter_buffer_snapshot_t;
+
+typedef struct parameter_manager_snapshot {
+    nmo_parameter_state_t *state;
+    nmo_guid_t manager_guid;
+    uint32_t manager_value;
+} parameter_manager_snapshot_t;
 
 typedef struct dataarray_cell_snapshot {
     nmo_dataarray_cell_t *cell;
@@ -255,6 +262,20 @@ static nmo_status_t rollback_parameter_buffer(nmo_workspace_edit_t *edit, void *
     if (snapshot->count > 0 && buffer->data != NULL) {
         memcpy(buffer->data, snapshot->bytes, snapshot->count);
     }
+    return NMO_OK;
+}
+
+static nmo_status_t rollback_parameter_manager(nmo_workspace_edit_t *edit,
+                                               void *payload)
+{
+    (void)edit;
+    parameter_manager_snapshot_t *snapshot =
+        (parameter_manager_snapshot_t *)payload;
+    if (snapshot == NULL || snapshot->state == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    snapshot->state->manager_guid = snapshot->manager_guid;
+    snapshot->state->manager_value = snapshot->manager_value;
     return NMO_OK;
 }
 
@@ -462,6 +483,48 @@ static nmo_status_t parse_dataarray_cell(
 static nmo_status_t parse_object_id_text(const char *value_str, nmo_object_id_t *out_id)
 {
     return nmo_parse_object_id(value_str, out_id);
+}
+
+static nmo_status_t parse_manager_parameter_text(
+    const char *value_str,
+    nmo_guid_t *out_guid,
+    uint32_t *out_value)
+{
+    if (value_str == NULL || out_guid == NULL || out_value == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    const char *separator = strchr(value_str, ':');
+    if (separator == NULL) {
+        separator = strchr(value_str, '=');
+    }
+    if (separator == NULL || separator == value_str ||
+        separator[1] == '\0') {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    char guid_buf[32];
+    size_t guid_len = (size_t)(separator - value_str);
+    if (guid_len >= sizeof(guid_buf)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    memcpy(guid_buf, value_str, guid_len);
+    guid_buf[guid_len] = '\0';
+
+    nmo_guid_t parsed_guid = nmo_guid_parse(guid_buf);
+    if (nmo_guid_is_null(parsed_guid)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    char *end = NULL;
+    unsigned long value = strtoul(separator + 1, &end, 0);
+    if (end == separator + 1 || *end != '\0' || value > UINT32_MAX) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    *out_guid = parsed_guid;
+    *out_value = (uint32_t)value;
+    return NMO_OK;
 }
 
 static nmo_status_t workspace_edit_begin_for_workspace(
@@ -1102,6 +1165,40 @@ nmo_status_t workspace_edit_set_parameter_value_ex(
         state->object_id = new_id;
         nmo_workspace_edit_mark(
             edit, NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
+        return NMO_OK;
+    }
+
+    if (state->mode == CKPARAM_MODE_MANAGER) {
+        nmo_guid_t new_guid = NMO_GUID_NULL;
+        uint32_t new_value = 0u;
+        nmo_status_t parse_result =
+            parse_manager_parameter_text(value_str, &new_guid, &new_value);
+        if (parse_result != NMO_OK) {
+            return parse_result;
+        }
+
+        parameter_manager_snapshot_t *snapshot =
+            (parameter_manager_snapshot_t *)nmo_workspace_edit_alloc(
+                edit, sizeof(*snapshot), _Alignof(parameter_manager_snapshot_t));
+        if (snapshot == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        snapshot->state = state;
+        snapshot->manager_guid = state->manager_guid;
+        snapshot->manager_value = state->manager_value;
+        nmo_status_t push_result =
+            workspace_edit_push_rollback(
+                edit, rollback_parameter_manager, snapshot);
+        if (push_result != NMO_OK) {
+            workspace_edit_rollback_to(edit, checkpoint);
+            return push_result;
+        }
+
+        state->manager_guid = new_guid;
+        state->manager_value = new_value;
+        nmo_workspace_edit_mark(
+            edit, NMO_WORKSPACE_EDIT_OBJECT_STATE |
+                  NMO_WORKSPACE_EDIT_REFERENCES);
         return NMO_OK;
     }
 
