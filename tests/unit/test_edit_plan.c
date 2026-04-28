@@ -908,6 +908,110 @@ TEST(edit_plan, executor_resolves_behavior_link_io_handles) {
     edit_plan_fixture_dispose(&fixture);
 }
 
+TEST(edit_plan, executor_reports_rewire_operation_slot_parameter_impact) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t root_id = 0;
+    nmo_object_id_t owner_id = 0;
+    create_object_or_fail(fixture.session, NMO_CID_3DENTITY, "Owner", &owner_id);
+    create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Root", &root_id);
+    nmo_object_t *owner_obj =
+        nmo_object_repository_find_by_id(fixture.repo, owner_id);
+    nmo_object_t *root_obj =
+        nmo_object_repository_find_by_id(fixture.repo, root_id);
+    nmo_beobject_state_t *owner_state = owner_obj
+        ? (nmo_beobject_state_t *)nmo_object_get_state(owner_obj)
+        : NULL;
+    nmo_behavior_state_t *root_state = root_obj
+        ? (nmo_behavior_state_t *)nmo_object_get_state(root_obj)
+        : NULL;
+    ASSERT_NOT_NULL(owner_state);
+    ASSERT_NOT_NULL(root_state);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
+    root_state->flags |= 0x00000002u;
+    root_state->owner_id = owner_id;
+    nmo_workspace_destroy(fixture.workspace);
+    fixture.workspace = NULL;
+    ASSERT_EQ(NMO_OK,
+              nmo_workspace_create(
+                  fixture.ctx, fixture.document, &fixture.workspace));
+
+    nmo_script_edit_tx_t *seed_tx = NULL;
+    nmo_object_id_t in1_id = 0;
+    nmo_object_id_t in2_id = 0;
+    nmo_object_id_t out_id = 0;
+    nmo_object_id_t operation_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(fixture.workspace, "seed op", &seed_tx));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_parameter(
+                  seed_tx, root_id, NMO_SCRIPT_EDIT_PARAM_LOCAL,
+                  CKPGUID_INT, "A", &in1_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_parameter(
+                  seed_tx, root_id, NMO_SCRIPT_EDIT_PARAM_LOCAL,
+                  CKPGUID_INT, "B", &in2_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_parameter(
+                  seed_tx, root_id, NMO_SCRIPT_EDIT_PARAM_LOCAL,
+                  CKPGUID_INT, "Out", &out_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_operation(
+                  seed_tx,
+                  root_id,
+                  nmo_guid_parse("33CC6B49-3589282B"),
+                  in1_id,
+                  in2_id,
+                  out_id,
+                  &operation_id));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_commit(seed_tx));
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_parameter(
+                  plan,
+                  root_id,
+                  NMO_SCRIPT_EDIT_PARAM_LOCAL,
+                  CKPGUID_INT,
+                  "Replacement A"));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_rewire_operation_with_refs(
+                  plan,
+                  operation_id,
+                  NMO_SCRIPT_EDIT_OP_SLOT_IN1,
+                  0u,
+                  0u,
+                  "parameter",
+                  0u,
+                  0u,
+                  NULL,
+                  0u,
+                  0u,
+                  NULL));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(NMO_OK, report.operations[1].status);
+    ASSERT_TRUE(report.operations[0].result_id != 0u);
+
+    bool reported_slot_parameter = false;
+    for (size_t i = 0; i < report.changed_object_count; ++i) {
+        if (report.changed_objects[i].id == report.operations[0].result_id &&
+            report.changed_objects[i].role != NULL &&
+            strcmp(report.changed_objects[i].role, "operation_slot_parameter") == 0) {
+            reported_slot_parameter = true;
+        }
+    }
+    ASSERT_TRUE(reported_slot_parameter);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+}
+
 TEST(edit_plan, executor_runs_script_ops_and_records_validation) {
     edit_plan_fixture_t fixture;
     edit_plan_fixture_init(&fixture);
@@ -1425,6 +1529,7 @@ REGISTER_TEST(edit_plan, executor_materializes_input_source_for_handle_value);
 REGISTER_TEST(edit_plan, executor_materializes_input_source_for_handle_bytes);
 REGISTER_TEST(edit_plan, executor_connects_parameter_to_prior_node_handle);
 REGISTER_TEST(edit_plan, executor_resolves_behavior_link_io_handles);
+REGISTER_TEST(edit_plan, executor_reports_rewire_operation_slot_parameter_impact);
 REGISTER_TEST(edit_plan, executor_runs_script_ops_and_records_validation);
 REGISTER_TEST(edit_plan, executor_replaces_leaf_bb_in_transaction);
 REGISTER_TEST(edit_plan, executor_replace_bb_dry_run_rolls_back);

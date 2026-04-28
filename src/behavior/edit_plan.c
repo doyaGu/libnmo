@@ -2031,13 +2031,44 @@ static nmo_status_t edit_executor_apply_op(
                 return ref_rc;
             }
         }
-        return nmo_script_edit_rewire_operation(
+        nmo_status_t rc = nmo_script_edit_rewire_operation(
             tx,
             op->data.rewire_operation.operation_id,
             op->data.rewire_operation.slot_flags,
             in1_parameter_id,
             in2_parameter_id,
             out_parameter_id);
+        if (rc != NMO_OK || report == NULL) {
+            return rc;
+        }
+        if ((op->data.rewire_operation.slot_flags &
+             NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u &&
+            in1_parameter_id != 0u) {
+            NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+                report,
+                in1_parameter_id,
+                NMO_EDIT_OP_REWIRE_OPERATION,
+                "operation_slot_parameter"));
+        }
+        if ((op->data.rewire_operation.slot_flags &
+             NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u &&
+            in2_parameter_id != 0u) {
+            NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+                report,
+                in2_parameter_id,
+                NMO_EDIT_OP_REWIRE_OPERATION,
+                "operation_slot_parameter"));
+        }
+        if ((op->data.rewire_operation.slot_flags &
+             NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u &&
+            out_parameter_id != 0u) {
+            NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+                report,
+                out_parameter_id,
+                NMO_EDIT_OP_REWIRE_OPERATION,
+                "operation_slot_parameter"));
+        }
+        return NMO_OK;
     }
     case NMO_EDIT_OP_REMOVE_OPERATION:
         return nmo_script_edit_remove_operation(
