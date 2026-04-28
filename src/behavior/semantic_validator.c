@@ -1006,6 +1006,37 @@ static const nmo_parameteroperation_state_t *semantic_parameteroperation_state(
     return (const nmo_parameteroperation_state_t *)nmo_object_get_state(object);
 }
 
+static nmo_status_t semantic_add_operation_slot_ref_risk(
+    nmo_object_repository_t *repo,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t parameter_id)
+{
+    if (parameter_id == 0u || repo == NULL) {
+        return NMO_OK;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, parameter_id);
+    if (object == NULL) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "operation_slot_dangling_reference",
+            "Parameter operation slot references a missing parameter",
+            parameter_id);
+    }
+    if (!semantic_is_parameter_object_class(nmo_object_get_class_id(object))) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "operation_slot_type_mismatch",
+            "Parameter operation slot must reference a parameter object",
+            parameter_id);
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t semantic_add_data_cell_risk(
     nmo_object_repository_t *repo,
     nmo_behavior_semantic_risk_t **risks,
@@ -1619,6 +1650,11 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 has_in1 = op->data.rewire_operation.in1_parameter_id != 0u;
             }
         } else {
+            NMO_RETURN_IF_ERROR(semantic_add_operation_slot_ref_risk(
+                repo,
+                risks,
+                risk_count,
+                state->has_in1 ? state->in1_id : 0u));
             in1_type = semantic_parameter_type_desc(
                 ctx, repo, state->has_in1 ? state->in1_id : 0u);
             has_in1 = state->has_in1 != 0u;
@@ -1661,6 +1697,11 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 has_in2 = op->data.rewire_operation.in2_parameter_id != 0u;
             }
         } else {
+            NMO_RETURN_IF_ERROR(semantic_add_operation_slot_ref_risk(
+                repo,
+                risks,
+                risk_count,
+                state->has_in2 ? state->in2_id : 0u));
             in2_type = semantic_parameter_type_desc(
                 ctx, repo, state->has_in2 ? state->in2_id : 0u);
             has_in2 = state->has_in2 != 0u;
@@ -1703,6 +1744,11 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 has_out = op->data.rewire_operation.out_parameter_id != 0u;
             }
         } else {
+            NMO_RETURN_IF_ERROR(semantic_add_operation_slot_ref_risk(
+                repo,
+                risks,
+                risk_count,
+                state->has_out ? state->out_id : 0u));
             out_type = semantic_parameter_type_desc(
                 ctx, repo, state->has_out ? state->out_id : 0u);
             has_out = state->has_out != 0u;

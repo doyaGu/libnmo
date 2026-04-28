@@ -7,6 +7,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
+#include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/nmo_object_repository.h"
 #include "type/nmo_operations.h"
 #include "type/nmo_type_guids.h"
@@ -1171,6 +1172,60 @@ TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_reports_rewire_operation_existing_slot_dangling)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init(&fixture);
+
+    nmo_object_repository_t *repo =
+        nmo_session_get_repository(fixture.session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t operation_id = 0u;
+    semantic_create_object(
+        &fixture, NMO_CID_PARAMETEROPERATION, "Dangling Slot Operation",
+        &operation_id);
+    nmo_object_t *operation_obj =
+        nmo_object_repository_find_by_id(repo, operation_id);
+    ASSERT_NOT_NULL(operation_obj);
+    nmo_parameteroperation_state_t *operation_state =
+        (nmo_parameteroperation_state_t *)nmo_object_get_state(operation_obj);
+    ASSERT_NOT_NULL(operation_state);
+    operation_state->operation_guid = NMO_OP_GUID_ADD;
+    operation_state->has_in1 = 1u;
+    operation_state->in1_id = 999999u;
+
+    nmo_object_id_t out_id = 0u;
+    semantic_create_object(&fixture, NMO_CID_PARAMETER, "Out", &out_id);
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_rewire_operation(
+                  plan,
+                  operation_id,
+                  NMO_SCRIPT_EDIT_OP_SLOT_OUT,
+                  0u,
+                  0u,
+                  out_id));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *dangling =
+        find_risk(risks, risk_count, "operation_slot_dangling_reference");
+    ASSERT_NOT_NULL(dangling);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, dangling->severity);
+    ASSERT_EQ(999999u, dangling->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch_with_handle_refs)
 {
     semantic_fixture_t fixture;
@@ -1386,6 +1441,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_parent_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_object_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_rewire_operation_existing_slot_dangling);
     REGISTER_TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch_with_handle_refs);
     REGISTER_TEST(semantic_validator, edit_plan_reports_data_cell_bounds);
     REGISTER_TEST(semantic_validator, edit_plan_reports_unknown_building_block);
