@@ -1353,6 +1353,15 @@ TEST(cli, patch_apply_v2_add_parameter_dry_run) {
     yyjson_val *changed_objects = get_array_field(data, "changed_objects");
     ASSERT_NOT_NULL(changed_objects);
     ASSERT_TRUE(array_contains_object_id(changed_objects, 6u));
+    yyjson_val *diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    yyjson_val *parameter_edge_diff =
+        get_object_field(diff, "parameter_edge_diff");
+    ASSERT_NOT_NULL(parameter_edge_diff);
+    yyjson_val *created_parameters =
+        get_array_field(parameter_edge_diff, "created");
+    ASSERT_NOT_NULL(created_parameters);
+    ASSERT_TRUE(yyjson_arr_size(created_parameters) > 0u);
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
     remove(patch);
@@ -1728,6 +1737,15 @@ TEST(cli, patch_apply_v2_add_operation_dry_run) {
     yyjson_val *created_objects = get_array_field(data, "created_objects");
     ASSERT_NOT_NULL(created_objects);
     ASSERT_TRUE(yyjson_arr_size(created_objects) > 0u);
+    yyjson_val *diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    yyjson_val *operation_graph_diff =
+        get_object_field(diff, "operation_graph_diff");
+    ASSERT_NOT_NULL(operation_graph_diff);
+    yyjson_val *created_operations =
+        get_array_field(operation_graph_diff, "created");
+    ASSERT_NOT_NULL(created_operations);
+    ASSERT_TRUE(yyjson_arr_size(created_operations) > 0u);
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
     remove(patch);
