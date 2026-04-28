@@ -405,7 +405,7 @@ TEST(edit_plan_json, roundtrips_all_current_v2_ops) {
     memset(&manifest, 0, sizeof(manifest));
 
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
-    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_set_parameter_value(plan, 1u, "value", NULL));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_set_parameter_value(plan, 1u, "value", &resize_options));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_set_parameter_bytes(plan, 2u, bytes, sizeof(bytes), &resize_options));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_node(plan, 3u, nmo_guid_parse("AAAA0001-BBBB0002"), "Node"));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_node(plan, 4u, 5u, 6u));
@@ -442,6 +442,10 @@ TEST(edit_plan_json, roundtrips_all_current_v2_ops) {
     ASSERT_EQ(2u, set_bytes->data.set_bytes.byte_count);
     ASSERT_TRUE(set_bytes->data.set_bytes.has_options);
     ASSERT_TRUE(set_bytes->data.set_bytes.options.resize);
+    const nmo_edit_op_t *set_value = nmo_edit_plan_get(manifest.plan, 0u);
+    ASSERT_NOT_NULL(set_value);
+    ASSERT_TRUE(set_value->data.set_value.has_options);
+    ASSERT_TRUE(set_value->data.set_value.options.resize);
     const nmo_edit_op_t *link = nmo_edit_plan_get(manifest.plan, 7u);
     ASSERT_NOT_NULL(link);
     ASSERT_TRUE(link->data.add_link.has_from_io_ref);
