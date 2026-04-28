@@ -137,6 +137,9 @@ nmo_status_t workspace_edit_set_dataarray_cell(
     uint32_t row,
     uint32_t col,
     const char *value_str);
+static nmo_status_t parse_object_id_text(
+    const char *value_str,
+    nmo_object_id_t *out_id);
 nmo_status_t workspace_edit_add_behavior_link(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t parent_behavior_id,
@@ -462,7 +465,7 @@ static nmo_status_t parse_dataarray_cell(
     case CKARRAYTYPE_OBJECT:
     case CKARRAYTYPE_PARAMETER: {
         nmo_object_id_t value = 0;
-        if (nmo_parse_object_id(value_str, &value) != NMO_OK) {
+        if (parse_object_id_text(value_str, &value) != NMO_OK) {
             return NMO_ERR_INVALID_ARGUMENT;
         }
         if (col_type == CKARRAYTYPE_OBJECT) {

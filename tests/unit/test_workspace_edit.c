@@ -893,7 +893,7 @@ TEST(workspace_edit, dataarray_object_cell_commit_and_rollback) {
 
     int before_edges = ref_graph_edge_count(session);
     char target_text[32];
-    snprintf(target_text, sizeof(target_text), "#%u", target_id);
+    snprintf(target_text, sizeof(target_text), "object:%u", target_id);
 
     workspace_edit_scope_t commit_edit_scope = {0};
 
