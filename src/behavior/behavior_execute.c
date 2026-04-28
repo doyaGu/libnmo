@@ -61,6 +61,13 @@ static nmo_status_t behavior_execute_copy_report(
             0,
             "created"));
     }
+    for (size_t i = 0; i < legacy->changed_object_id_count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            out_report,
+            legacy->changed_object_ids[i],
+            0,
+            "changed"));
+    }
     return NMO_OK;
 }
 

@@ -659,6 +659,13 @@ TEST(behavior_execute, reports_edit_schema)
     ASSERT_STR_EQ(output_path, report.output_path);
     ASSERT_EQ(NMO_OK, report.status);
     ASSERT_EQ(NMO_OK, report.validation.final_status);
+    ASSERT_EQ(1u, report.changed_object_count);
+    ASSERT_EQ(action.root_behavior_id, report.changed_objects[0].id);
+    ASSERT_EQ(0u, report.changed_objects[0].cause);
+    ASSERT_STR_EQ("changed", report.changed_objects[0].role);
+    ASSERT_EQ(2u, report.created_object_count);
+    ASSERT_EQ(action.io_id, report.created_objects[0].id);
+    ASSERT_TRUE(report.created_objects[1].id != 0u);
     ASSERT_TRUE(file_exists(output_path));
 
     nmo_edit_report_dispose(&report);

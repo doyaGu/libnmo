@@ -52,6 +52,9 @@ struct nmo_script_edit_tx {
     nmo_object_id_t *created_object_ids;
     size_t created_object_id_count;
     size_t created_object_id_capacity;
+    nmo_object_id_t *changed_object_ids;
+    size_t changed_object_id_count;
+    size_t changed_object_id_capacity;
     nmo_ref_edge_t *baseline_broken_refs;
     size_t baseline_broken_ref_count;
     nmo_session_behavior_interface_diagnostics_t baseline_interface_diag;
@@ -72,6 +75,7 @@ static void script_edit_tx_destroy(nmo_script_edit_tx_t *tx)
         }
         free(tx->deferred_destroy_ids);
         free(tx->created_object_ids);
+        free(tx->changed_object_ids);
         free(tx->baseline_broken_refs);
         free(tx->removed_io_refs);
     }
@@ -231,6 +235,41 @@ static void script_edit_note_error(nmo_script_edit_tx_t *tx)
     if (tx && tx->report.errors < SIZE_MAX) {
         tx->report.errors++;
     }
+}
+
+static nmo_status_t script_edit_note_changed_id(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t object_id)
+{
+    nmo_object_id_t *next_ids = NULL;
+    size_t next_capacity = 0u;
+
+    if (!tx || object_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    for (size_t i = 0; i < tx->changed_object_id_count; ++i) {
+        if (tx->changed_object_ids[i] == object_id) {
+            return NMO_OK;
+        }
+    }
+    if (tx->changed_object_id_count == tx->changed_object_id_capacity) {
+        next_capacity = tx->changed_object_id_capacity == 0u
+                            ? 8u
+                            : tx->changed_object_id_capacity * 2u;
+        next_ids = (nmo_object_id_t *)realloc(
+            tx->changed_object_ids,
+            next_capacity * sizeof(*next_ids));
+        if (!next_ids) {
+            return NMO_ERR_NOMEM;
+        }
+        tx->changed_object_ids = next_ids;
+        tx->changed_object_id_capacity = next_capacity;
+    }
+
+    tx->changed_object_ids[tx->changed_object_id_count++] = object_id;
+    tx->report.changed_object_ids = tx->changed_object_ids;
+    tx->report.changed_object_id_count = tx->changed_object_id_count;
+    return NMO_OK;
 }
 
 static nmo_status_t script_edit_note_created_id(
@@ -1562,6 +1601,7 @@ NMO_API nmo_status_t nmo_script_edit_validate(nmo_script_edit_tx_t *tx,
     nmo_behavior_index_t *index = NULL;
     nmo_ref_graph_t *ref_graph = NULL;
     nmo_session_behavior_interface_diagnostics_t interface_diag;
+    nmo_script_edit_report_t edit_report = {0};
     size_t broken_ref_count = 0;
     nmo_status_t rc = NMO_OK;
 
@@ -1569,7 +1609,18 @@ NMO_API nmo_status_t nmo_script_edit_validate(nmo_script_edit_tx_t *tx,
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
+    edit_report = tx->report;
     memset(&tx->report, 0, sizeof(tx->report));
+    tx->report.created_objects = edit_report.created_objects;
+    tx->report.created_object_ids = edit_report.created_object_ids;
+    tx->report.created_object_id_count = edit_report.created_object_id_count;
+    tx->report.deleted_objects = edit_report.deleted_objects;
+    tx->report.changed_objects = edit_report.changed_objects;
+    tx->report.changed_object_ids = edit_report.changed_object_ids;
+    tx->report.changed_object_id_count = edit_report.changed_object_id_count;
+    tx->report.moved_links = edit_report.moved_links;
+    tx->report.rewired_parameters = edit_report.rewired_parameters;
+    tx->report.interface_changes = edit_report.interface_changes;
     repo = nmo_workspace_internal_repository(tx->workspace);
     if (!repo) {
         script_edit_note_error(tx);
@@ -2943,6 +2994,10 @@ NMO_API nmo_status_t nmo_script_edit_add_io(
             NMO_WORKSPACE_EDIT_REFERENCES |
             NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH |
             NMO_WORKSPACE_EDIT_NAMES);
+    rc = script_edit_note_changed_id(tx, behavior_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
 
     if (out_io_id) {
         *out_io_id = io_id;

@@ -65,6 +65,8 @@ typedef struct nmo_script_edit_report {
     size_t created_object_id_count;
     size_t deleted_objects;
     size_t changed_objects;
+    const nmo_object_id_t *changed_object_ids;
+    size_t changed_object_id_count;
     size_t moved_links;
     size_t rewired_parameters;
     size_t interface_changes;
