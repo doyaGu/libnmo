@@ -455,6 +455,51 @@ static nmo_status_t add_two_ios_action(nmo_behavior_execution_t *executor, void 
     return NMO_OK;
 }
 
+static nmo_status_t execute_plan_add_io_action(
+    nmo_behavior_execution_t *executor,
+    void *user_data)
+{
+    executor_add_io_action_t *action = (executor_add_io_action_t *)user_data;
+    nmo_session_t *session = behavior_execution_session(executor);
+    nmo_behavior_script_view_t script_view = {0};
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = NMO_OK;
+
+    if (session == NULL || action == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    status = query_first_script_from_session(session, &script_view);
+    if (status != NMO_OK) {
+        return status;
+    }
+    action->root_behavior_id = script_view.script_id;
+
+    status = nmo_edit_plan_create(&plan);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_io(
+            plan,
+            script_view.script_id,
+            NMO_SCRIPT_EDIT_IO_INPUT,
+            "Executor Plan In");
+    }
+    if (status == NMO_OK) {
+        status = nmo_behavior_execution_execute_plan(executor, plan, NULL);
+    }
+    if (status == NMO_OK) {
+        const nmo_edit_report_t *report =
+            nmo_behavior_execution_report(executor);
+        if (report == NULL || report->operation_count != 1u ||
+            report->operations[0].kind != NMO_EDIT_OP_ADD_IO ||
+            report->operations[0].result_id == 0u) {
+            status = NMO_ERR_INVALID_STATE;
+        } else {
+            action->io_id = report->operations[0].result_id;
+        }
+    }
+    nmo_edit_plan_destroy(plan);
+    return status;
+}
+
 static nmo_status_t add_io_action(nmo_behavior_execution_t *executor, void *user_data)
 {
     executor_add_io_action_t *action = (executor_add_io_action_t *)user_data;
@@ -670,6 +715,46 @@ TEST(behavior_execute, reports_edit_schema)
 
     nmo_edit_report_dispose(&report);
     remove(output_path);
+    nmo_context_release(ctx);
+}
+
+TEST(behavior_execute, execute_plan_reports_schema_v2_operations)
+{
+    const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
+    nmo_context_t *ctx =
+        nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
+    nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
+    nmo_edit_report_t report = {0};
+    executor_add_io_action_t action = {0};
+
+    ASSERT_NOT_NULL(ctx);
+    options.label = "test-behavior-execute-plan";
+    options.dry_run = true;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK,
+              nmo_behavior_execute(ctx,
+                                   input_path,
+                                   NULL,
+                                   &options,
+                                   execute_plan_add_io_action,
+                                   &action,
+                                   &report));
+
+    ASSERT_TRUE(report.ok);
+    ASSERT_TRUE(report.dry_run);
+    ASSERT_EQ(NMO_OK, report.status);
+    ASSERT_EQ(1u, report.operation_count);
+    ASSERT_EQ(NMO_EDIT_OP_ADD_IO, report.operations[0].kind);
+    ASSERT_EQ(action.root_behavior_id, report.operations[0].primary_id);
+    ASSERT_EQ(action.io_id, report.operations[0].result_id);
+    ASSERT_EQ(1u, report.operations[0].handle_count);
+    ASSERT_STR_EQ("io", report.operations[0].handles[0].name);
+    ASSERT_EQ(action.io_id, report.operations[0].handles[0].id);
+    ASSERT_EQ(1u, report.created_object_count);
+    ASSERT_EQ(action.io_id, report.created_objects[0].id);
+    ASSERT_TRUE(report.output_path == NULL);
+
+    nmo_edit_report_dispose(&report);
     nmo_context_release(ctx);
 }
 
@@ -1010,6 +1095,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(behavior_execute, owner_surface_runs_behavior_actions);
     REGISTER_TEST(behavior_execute, executes_multiple_actions_and_saves_once);
     REGISTER_TEST(behavior_execute, reports_edit_schema);
+    REGISTER_TEST(behavior_execute, execute_plan_reports_schema_v2_operations);
     REGISTER_TEST(behavior_execute, failure_report_has_no_output_path);
     REGISTER_TEST(behavior_execute, save_failure_report_is_not_successful);
     REGISTER_TEST(behavior_execute, rolls_back_on_action_error_and_skips_output);

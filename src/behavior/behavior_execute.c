@@ -13,6 +13,8 @@ struct nmo_behavior_execution {
     nmo_lua_runtime_t *runtime;
     nmo_script_edit_tx_t *tx;
     nmo_behavior_execute_options_t options;
+    nmo_edit_report_t edit_report;
+    bool edit_report_ready;
 };
 
 static nmo_status_t nmo_behavior_execute_internal(
@@ -24,6 +26,44 @@ static nmo_status_t nmo_behavior_execute_internal(
     void *user_data,
     nmo_edit_report_t *out_report);
 
+static void behavior_execute_set_final_status(
+    nmo_edit_report_t *report,
+    nmo_status_t status);
+
+static void behavior_execute_dispose_plan_report(
+    nmo_behavior_execution_t *execution)
+{
+    if (execution != NULL && execution->edit_report_ready) {
+        nmo_edit_report_dispose(&execution->edit_report);
+        execution->edit_report_ready = false;
+    }
+}
+
+static nmo_status_t behavior_execute_move_plan_report(
+    nmo_behavior_execution_t *execution,
+    const char *output_path,
+    nmo_status_t status,
+    nmo_edit_report_t *out_report)
+{
+    if (execution == NULL || !execution->edit_report_ready ||
+        out_report == NULL) {
+        return NMO_OK;
+    }
+
+    nmo_edit_report_dispose(out_report);
+    *out_report = execution->edit_report;
+    memset(&execution->edit_report, 0, sizeof(execution->edit_report));
+    execution->edit_report_ready = false;
+
+    behavior_execute_set_final_status(out_report, status);
+    out_report->dry_run = execution->options.dry_run;
+    if (status == NMO_OK && output_path != NULL && !out_report->dry_run) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_set_output_path(
+            out_report, output_path));
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t behavior_execute_copy_report(
     const nmo_behavior_execution_t *execution,
     const char *output_path,
@@ -34,6 +74,12 @@ static nmo_status_t behavior_execute_copy_report(
 
     if (out_report == NULL) {
         return NMO_OK;
+    }
+
+    if (execution != NULL && execution->edit_report_ready) {
+        return behavior_execute_move_plan_report(
+            (nmo_behavior_execution_t *)execution, output_path, status,
+            out_report);
     }
 
     out_report->ok = status == NMO_OK;
@@ -97,6 +143,7 @@ static void behavior_execute_destroy(nmo_behavior_execution_t *execution)
         nmo_script_edit_rollback(execution->tx);
         execution->tx = NULL;
     }
+    behavior_execute_dispose_plan_report(execution);
     if (execution->runtime != NULL) {
         nmo_lua_runtime_destroy(execution->runtime);
         execution->runtime = NULL;
@@ -178,6 +225,53 @@ NMO_API nmo_script_edit_tx_t *nmo_behavior_execution_transaction(
     nmo_behavior_execution_t *execution)
 {
     return execution != NULL ? execution->tx : NULL;
+}
+
+NMO_API nmo_status_t nmo_behavior_execution_execute_plan(
+    nmo_behavior_execution_t *execution,
+    nmo_edit_plan_t *plan,
+    const nmo_edit_executor_options_t *options)
+{
+    nmo_edit_executor_options_t resolved_options =
+        options != NULL ? *options : nmo_edit_executor_options_default();
+    nmo_status_t status = NMO_OK;
+
+    if (execution == NULL || execution->tx == NULL || plan == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Behavior execution requires an active transaction and edit plan");
+    }
+
+    behavior_execute_dispose_plan_report(execution);
+    status = nmo_edit_report_init(&execution->edit_report);
+    if (status != NMO_OK) {
+        return status;
+    }
+    execution->edit_report_ready = true;
+
+    resolved_options.dry_run =
+        resolved_options.dry_run || execution->options.dry_run;
+    if (options == NULL) {
+        resolved_options.validation_flags = execution->options.validation_flags;
+    }
+
+    status = nmo_edit_executor_execute_transaction(
+        execution->tx, plan, &resolved_options, &execution->edit_report);
+    if (status != NMO_OK) {
+        execution->edit_report.ok = false;
+        execution->edit_report.status = status;
+        if (execution->edit_report.validation.final_status == NMO_OK) {
+            execution->edit_report.validation.final_status = status;
+        }
+    }
+    return status;
+}
+
+NMO_API const nmo_edit_report_t *nmo_behavior_execution_report(
+    nmo_behavior_execution_t *execution)
+{
+    return execution != NULL && execution->edit_report_ready
+        ? &execution->edit_report
+        : NULL;
 }
 
 NMO_API nmo_status_t nmo_behavior_execute(

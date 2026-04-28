@@ -41,6 +41,12 @@ NMO_API nmo_lua_runtime_t *nmo_behavior_execution_lua_runtime(
     nmo_behavior_execution_t *execution);
 NMO_API nmo_script_edit_tx_t *nmo_behavior_execution_transaction(
     nmo_behavior_execution_t *execution);
+NMO_API nmo_status_t nmo_behavior_execution_execute_plan(
+    nmo_behavior_execution_t *execution,
+    nmo_edit_plan_t *plan,
+    const nmo_edit_executor_options_t *options);
+NMO_API const nmo_edit_report_t *nmo_behavior_execution_report(
+    nmo_behavior_execution_t *execution);
 
 NMO_API nmo_status_t nmo_behavior_execute(
     nmo_context_t *ctx,
