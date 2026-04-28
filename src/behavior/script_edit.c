@@ -3047,6 +3047,7 @@ NMO_API nmo_status_t nmo_script_edit_remove_node(
         &node_state->in_parameters,
         &node_state->out_parameters,
         &node_state->local_parameters,
+        &node_state->operations,
     };
     for (size_t i = 0; i < sizeof(owned_arrays) / sizeof(owned_arrays[0]); ++i) {
         nmo_object_id_t *ids =
