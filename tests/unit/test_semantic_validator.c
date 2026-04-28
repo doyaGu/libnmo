@@ -5,6 +5,9 @@
 #include "behavior/nmo_script_edit.h"
 #include "document/nmo_document.h"
 #include "object/nmo_class_ids.h"
+#include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_behaviorlink_schemas.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_operations.h"
 #include "type/nmo_type_guids.h"
 #include "runtime/nmo_context.h"
@@ -553,6 +556,185 @@ TEST(semantic_validator, edit_plan_reports_control_link_type_mismatch)
     ASSERT_NOT_NULL(mismatch);
     ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, mismatch->severity);
     ASSERT_EQ(parameter_id, mismatch->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
+TEST(semantic_validator, edit_plan_reports_nested_control_endpoint_scope)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init(&fixture);
+
+    nmo_object_id_t root_id = 0u;
+    nmo_object_id_t child_id = 0u;
+    nmo_object_id_t grandchild_id = 0u;
+    nmo_object_id_t root_io_id = 0u;
+    nmo_object_id_t nested_io_id = 0u;
+    semantic_create_object(&fixture, NMO_CID_BEHAVIOR, "Root", &root_id);
+    semantic_create_object(&fixture, NMO_CID_BEHAVIOR, "Child", &child_id);
+    semantic_create_object(&fixture, NMO_CID_BEHAVIOR, "Grandchild", &grandchild_id);
+    semantic_create_object(&fixture, NMO_CID_BEHAVIORIO, "Root IO", &root_io_id);
+    semantic_create_object(&fixture, NMO_CID_BEHAVIORIO, "Nested IO", &nested_io_id);
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(fixture.session);
+    nmo_object_t *root_obj = nmo_object_repository_find_by_id(repo, root_id);
+    nmo_object_t *child_obj = nmo_object_repository_find_by_id(repo, child_id);
+    nmo_object_t *grandchild_obj = nmo_object_repository_find_by_id(repo, grandchild_id);
+    ASSERT_NOT_NULL(root_obj);
+    ASSERT_NOT_NULL(child_obj);
+    ASSERT_NOT_NULL(grandchild_obj);
+    nmo_behavior_state_t *root_state = (nmo_behavior_state_t *)nmo_object_get_state(root_obj);
+    nmo_behavior_state_t *child_state = (nmo_behavior_state_t *)nmo_object_get_state(child_obj);
+    nmo_behavior_state_t *grandchild_state = (nmo_behavior_state_t *)nmo_object_get_state(grandchild_obj);
+    ASSERT_NOT_NULL(root_state);
+    ASSERT_NOT_NULL(child_state);
+    ASSERT_NOT_NULL(grandchild_state);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->sub_behaviors, &child_id));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&child_state->sub_behaviors, &grandchild_id));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->inputs, &root_io_id));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&grandchild_state->inputs, &nested_io_id));
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_behavior_link(
+                  plan,
+                  root_id,
+                  root_io_id,
+                  nested_io_id,
+                  0u));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *scope =
+        find_risk(risks, risk_count, "control_endpoint_scope_mismatch");
+    ASSERT_NOT_NULL(scope);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, scope->severity);
+    ASSERT_EQ(nested_io_id, scope->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
+TEST(semantic_validator, edit_plan_reports_unowned_control_endpoint)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init(&fixture);
+
+    nmo_object_id_t root_id = 0u;
+    nmo_object_id_t root_io_id = 0u;
+    nmo_object_id_t unowned_io_id = 0u;
+    semantic_create_object(&fixture, NMO_CID_BEHAVIOR, "Root", &root_id);
+    semantic_create_object(&fixture, NMO_CID_BEHAVIORIO, "Root IO", &root_io_id);
+    semantic_create_object(&fixture, NMO_CID_BEHAVIORIO, "Unowned IO", &unowned_io_id);
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(fixture.session);
+    nmo_object_t *root_obj = nmo_object_repository_find_by_id(repo, root_id);
+    ASSERT_NOT_NULL(root_obj);
+    nmo_behavior_state_t *root_state = (nmo_behavior_state_t *)nmo_object_get_state(root_obj);
+    ASSERT_NOT_NULL(root_state);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->inputs, &root_io_id));
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_behavior_link(
+                  plan,
+                  root_id,
+                  root_io_id,
+                  unowned_io_id,
+                  0u));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *dangling =
+        find_risk(risks, risk_count, "dangling_control_link");
+    ASSERT_NOT_NULL(dangling);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, dangling->severity);
+    ASSERT_EQ(unowned_io_id, dangling->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
+TEST(semantic_validator, edit_plan_reports_rewire_control_endpoint_scope)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init(&fixture);
+
+    nmo_object_id_t root_id = 0u;
+    nmo_object_id_t child_id = 0u;
+    nmo_object_id_t grandchild_id = 0u;
+    nmo_object_id_t root_io_id = 0u;
+    nmo_object_id_t child_io_id = 0u;
+    nmo_object_id_t nested_io_id = 0u;
+    nmo_object_id_t link_id = 0u;
+    semantic_create_object(&fixture, NMO_CID_BEHAVIOR, "Root", &root_id);
+    semantic_create_object(&fixture, NMO_CID_BEHAVIOR, "Child", &child_id);
+    semantic_create_object(&fixture, NMO_CID_BEHAVIOR, "Grandchild", &grandchild_id);
+    semantic_create_object(&fixture, NMO_CID_BEHAVIORIO, "Root IO", &root_io_id);
+    semantic_create_object(&fixture, NMO_CID_BEHAVIORIO, "Child IO", &child_io_id);
+    semantic_create_object(&fixture, NMO_CID_BEHAVIORIO, "Nested IO", &nested_io_id);
+    semantic_create_object(&fixture, NMO_CID_BEHAVIORLINK, "Link", &link_id);
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(fixture.session);
+    nmo_object_t *root_obj = nmo_object_repository_find_by_id(repo, root_id);
+    nmo_object_t *child_obj = nmo_object_repository_find_by_id(repo, child_id);
+    nmo_object_t *grandchild_obj = nmo_object_repository_find_by_id(repo, grandchild_id);
+    nmo_object_t *link_obj = nmo_object_repository_find_by_id(repo, link_id);
+    ASSERT_NOT_NULL(root_obj);
+    ASSERT_NOT_NULL(child_obj);
+    ASSERT_NOT_NULL(grandchild_obj);
+    ASSERT_NOT_NULL(link_obj);
+    nmo_behavior_state_t *root_state = (nmo_behavior_state_t *)nmo_object_get_state(root_obj);
+    nmo_behavior_state_t *child_state = (nmo_behavior_state_t *)nmo_object_get_state(child_obj);
+    nmo_behavior_state_t *grandchild_state = (nmo_behavior_state_t *)nmo_object_get_state(grandchild_obj);
+    nmo_behaviorlink_state_t *link_state = (nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj);
+    ASSERT_NOT_NULL(root_state);
+    ASSERT_NOT_NULL(child_state);
+    ASSERT_NOT_NULL(grandchild_state);
+    ASSERT_NOT_NULL(link_state);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->sub_behaviors, &child_id));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&child_state->sub_behaviors, &grandchild_id));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->inputs, &root_io_id));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&child_state->inputs, &child_io_id));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&grandchild_state->inputs, &nested_io_id));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->sub_behavior_links, &link_id));
+    link_state->in_io_id = child_io_id;
+    link_state->out_io_id = root_io_id;
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_rewire_behavior_link(
+                  plan,
+                  link_id,
+                  root_io_id,
+                  nested_io_id));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *scope =
+        find_risk(risks, risk_count, "control_endpoint_scope_mismatch");
+    ASSERT_NOT_NULL(scope);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, scope->severity);
+    ASSERT_EQ(nested_io_id, scope->object_id);
 
     nmo_semantic_risks_free(risks);
     nmo_edit_plan_destroy(plan);
@@ -1129,6 +1311,9 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, edit_plan_reports_behavior_node_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_control_endpoint_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_control_link_type_mismatch);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_nested_control_endpoint_scope);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_unowned_control_endpoint);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_rewire_control_endpoint_scope);
     REGISTER_TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch_with_target_handle);
     REGISTER_TEST(semantic_validator, edit_plan_reports_parameter_object_type_mismatch);

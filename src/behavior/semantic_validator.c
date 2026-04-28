@@ -243,6 +243,121 @@ static nmo_status_t semantic_add_behavior_io_ref_risk(
         "Edit operation expects a behavior IO");
 }
 
+static bool semantic_behavior_has_direct_child(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t parent_behavior_id,
+    nmo_object_id_t child_behavior_id)
+{
+    nmo_object_t *parent_obj = repo != NULL
+        ? nmo_object_repository_find_by_id(repo, parent_behavior_id)
+        : NULL;
+    const nmo_behavior_state_t *parent = parent_obj != NULL &&
+            nmo_object_get_class_id(parent_obj) == NMO_CID_BEHAVIOR
+        ? (const nmo_behavior_state_t *)nmo_object_get_state(parent_obj)
+        : NULL;
+    if (parent == NULL) {
+        return false;
+    }
+    if (parent_behavior_id == child_behavior_id) {
+        return true;
+    }
+    return nmo_array_find(&parent->sub_behaviors, &child_behavior_id, NULL) != 0;
+}
+
+static bool semantic_find_behavior_io_owner(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t io_id,
+    nmo_object_id_t *out_owner_id)
+{
+    size_t object_count = repo != NULL ? nmo_object_repository_get_count(repo) : 0u;
+    if (out_owner_id != NULL) {
+        *out_owner_id = 0u;
+    }
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        const nmo_behavior_state_t *state = object != NULL &&
+                nmo_object_get_class_id(object) == NMO_CID_BEHAVIOR
+            ? (const nmo_behavior_state_t *)nmo_object_get_state(object)
+            : NULL;
+        if (state == NULL) {
+            continue;
+        }
+        if (nmo_array_find(&state->inputs, &io_id, NULL) != 0 ||
+            nmo_array_find(&state->outputs, &io_id, NULL) != 0) {
+            if (out_owner_id != NULL) {
+                *out_owner_id = nmo_object_get_id(object);
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool semantic_find_behavior_link_owner(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t link_id,
+    nmo_object_id_t *out_owner_id)
+{
+    size_t object_count = repo != NULL ? nmo_object_repository_get_count(repo) : 0u;
+    if (out_owner_id != NULL) {
+        *out_owner_id = 0u;
+    }
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        const nmo_behavior_state_t *state = object != NULL &&
+                nmo_object_get_class_id(object) == NMO_CID_BEHAVIOR
+            ? (const nmo_behavior_state_t *)nmo_object_get_state(object)
+            : NULL;
+        if (state == NULL) {
+            continue;
+        }
+        if (nmo_array_find(&state->sub_behavior_links, &link_id, NULL) != 0) {
+            if (out_owner_id != NULL) {
+                *out_owner_id = nmo_object_get_id(object);
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+static nmo_status_t semantic_add_control_endpoint_scope_risk(
+    nmo_object_repository_t *repo,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t parent_behavior_id,
+    nmo_object_id_t io_id)
+{
+    if (repo == NULL || parent_behavior_id == 0u || io_id == 0u) {
+        return NMO_OK;
+    }
+    nmo_object_t *io_obj = nmo_object_repository_find_by_id(repo, io_id);
+    if (io_obj == NULL || nmo_object_get_class_id(io_obj) != NMO_CID_BEHAVIORIO) {
+        return NMO_OK;
+    }
+
+    nmo_object_id_t owner_id = 0u;
+    if (!semantic_find_behavior_io_owner(repo, io_id, &owner_id)) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "dangling_control_link",
+            "Control-flow link endpoint is not owned by any behavior",
+            io_id);
+    }
+    if (semantic_behavior_has_direct_child(repo, parent_behavior_id, owner_id)) {
+        return NMO_OK;
+    }
+    return semantic_add_risk(
+        risks,
+        risk_count,
+        NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+        "control_endpoint_scope_mismatch",
+        "Control-flow link endpoint is outside the parent behavior graph",
+        io_id);
+}
+
 static nmo_status_t semantic_add_behavior_node_ref_risk(
     nmo_object_repository_t *repo,
     nmo_behavior_semantic_risk_t **risks,
@@ -1062,6 +1177,12 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 NMO_CID_BEHAVIORIO,
                 "control_endpoint_type_mismatch",
                 "Control-flow link endpoint must be a behavior IO"));
+            NMO_RETURN_IF_ERROR(semantic_add_control_endpoint_scope_risk(
+                repo,
+                risks,
+                risk_count,
+                op->data.add_link.parent_behavior_id,
+                op->data.add_link.from_io_id));
         } else {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
                 ctx,
@@ -1091,6 +1212,12 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 NMO_CID_BEHAVIORIO,
                 "control_endpoint_type_mismatch",
                 "Control-flow link endpoint must be a behavior IO"));
+            NMO_RETURN_IF_ERROR(semantic_add_control_endpoint_scope_risk(
+                repo,
+                risks,
+                risk_count,
+                op->data.add_link.parent_behavior_id,
+                op->data.add_link.to_io_id));
         } else {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
                 ctx,
@@ -1115,6 +1242,8 @@ static nmo_status_t semantic_validate_basic_edit_op(
             op->data.add_link.parent_behavior_id,
             op->data.add_link.activation_delay);
     case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK:
+    {
+        nmo_object_id_t link_owner_id = 0u;
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.rewire_link.link_id));
         NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
@@ -1125,6 +1254,8 @@ static nmo_status_t semantic_validate_basic_edit_op(
             NMO_CID_BEHAVIORLINK,
             "control_link_type_mismatch",
             "Control-flow link operation expects a behavior link"));
+        (void)semantic_find_behavior_link_owner(
+            repo, op->data.rewire_link.link_id, &link_owner_id);
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.rewire_link.from_io_id));
         NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
@@ -1135,16 +1266,29 @@ static nmo_status_t semantic_validate_basic_edit_op(
             NMO_CID_BEHAVIORIO,
             "control_endpoint_type_mismatch",
             "Control-flow link endpoint must be a behavior IO"));
+        NMO_RETURN_IF_ERROR(semantic_add_control_endpoint_scope_risk(
+            repo,
+            risks,
+            risk_count,
+            link_owner_id,
+            op->data.rewire_link.from_io_id));
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.rewire_link.to_io_id));
-        return semantic_add_class_ref_risk(
+        NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
             repo,
             risks,
             risk_count,
             op->data.rewire_link.to_io_id,
             NMO_CID_BEHAVIORIO,
             "control_endpoint_type_mismatch",
-            "Control-flow link endpoint must be a behavior IO");
+            "Control-flow link endpoint must be a behavior IO"));
+        return semantic_add_control_endpoint_scope_risk(
+            repo,
+            risks,
+            risk_count,
+            link_owner_id,
+            op->data.rewire_link.to_io_id);
+    }
     case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.set_link_delay.link_id));
