@@ -1,6 +1,7 @@
 #include "test_framework.h"
 
 #include "behavior/nmo_edit_plan.h"
+#include "behavior/nmo_behavior_edit.h"
 #include "core/nmo_array.h"
 #include "document/nmo_document.h"
 #include "object/builtin/nmo_beobject_schemas.h"
@@ -1887,6 +1888,155 @@ TEST(edit_plan, executor_deletes_nested_removed_node_operations) {
     edit_plan_fixture_dispose(&fixture);
 }
 
+TEST(edit_plan, executor_detaches_nested_removed_node_control_links) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t owner_id = 0;
+    nmo_object_id_t root_id = 0;
+    nmo_object_id_t child_id = 0;
+    nmo_object_id_t grandchild_id = 0;
+    create_object_or_fail(fixture.session, NMO_CID_3DENTITY, "Owner", &owner_id);
+    create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Root", &root_id);
+    create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Child", &child_id);
+    create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Grandchild", &grandchild_id);
+    nmo_object_t *owner_obj =
+        nmo_object_repository_find_by_id(fixture.repo, owner_id);
+    nmo_object_t *root_obj =
+        nmo_object_repository_find_by_id(fixture.repo, root_id);
+    nmo_object_t *child_obj =
+        nmo_object_repository_find_by_id(fixture.repo, child_id);
+    nmo_object_t *grandchild_obj =
+        nmo_object_repository_find_by_id(fixture.repo, grandchild_id);
+    nmo_beobject_state_t *owner_state = owner_obj
+        ? (nmo_beobject_state_t *)nmo_object_get_state(owner_obj)
+        : NULL;
+    nmo_behavior_state_t *root_state = root_obj
+        ? (nmo_behavior_state_t *)nmo_object_get_state(root_obj)
+        : NULL;
+    nmo_behavior_state_t *child_state = child_obj
+        ? (nmo_behavior_state_t *)nmo_object_get_state(child_obj)
+        : NULL;
+    nmo_behavior_state_t *grandchild_state = grandchild_obj
+        ? (nmo_behavior_state_t *)nmo_object_get_state(grandchild_obj)
+        : NULL;
+    ASSERT_NOT_NULL(owner_state);
+    ASSERT_NOT_NULL(root_state);
+    ASSERT_NOT_NULL(child_state);
+    ASSERT_NOT_NULL(grandchild_state);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->sub_behaviors, &child_id));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&child_state->sub_behaviors, &grandchild_id));
+    root_state->flags |= 0x00000002u;
+    child_state->flags |= 0x00000002u;
+    root_state->owner_id = owner_id;
+    child_state->owner_id = root_id;
+    grandchild_state->owner_id = child_id;
+    nmo_workspace_destroy(fixture.workspace);
+    fixture.workspace = NULL;
+    ASSERT_EQ(NMO_OK,
+              nmo_workspace_create(
+                  fixture.ctx, fixture.document, &fixture.workspace));
+
+    nmo_script_edit_tx_t *seed_tx = NULL;
+    nmo_object_id_t root_io_id = 0;
+    nmo_object_id_t grandchild_io_id = 0;
+    nmo_object_id_t link_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(fixture.workspace, "seed nested external link", &seed_tx));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_io(
+                  seed_tx, root_id, NMO_SCRIPT_EDIT_IO_INPUT, "Enter", &root_io_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_io(
+                  seed_tx, grandchild_id, NMO_SCRIPT_EDIT_IO_INPUT, "Nested In", &grandchild_io_id));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_commit(seed_tx));
+
+    nmo_workspace_edit_t *raw_edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(fixture.workspace, "seed external nested link", &raw_edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_behavior_edit_add_link(
+                  raw_edit,
+                  root_id,
+                  root_io_id,
+                  grandchild_io_id,
+                  0,
+                  &link_id));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(raw_edit));
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_remove_node(
+                  plan,
+                  root_id,
+                  child_id,
+                  0u));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+
+    root_obj = nmo_object_repository_find_by_id(fixture.repo, root_id);
+    root_state = root_obj
+        ? (nmo_behavior_state_t *)nmo_object_get_state(root_obj)
+        : NULL;
+    ASSERT_NOT_NULL(root_state);
+    const nmo_object_id_t *link_ids = root_state->sub_behavior_links.data
+        ? (const nmo_object_id_t *)root_state->sub_behavior_links.data
+        : NULL;
+    for (size_t i = 0; link_ids != NULL && i < root_state->sub_behavior_links.count; ++i) {
+        ASSERT_NE(link_id, link_ids[i]);
+    }
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+
+    nmo_script_edit_tx_t *follow_tx = NULL;
+    nmo_object_id_t follow_in1 = 0;
+    nmo_object_id_t follow_in2 = 0;
+    nmo_object_id_t follow_out = 0;
+    nmo_object_id_t follow_operation = 0;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(fixture.workspace, "followup create", &follow_tx));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_parameter(
+                  follow_tx,
+                  root_id,
+                  NMO_SCRIPT_EDIT_PARAM_LOCAL,
+                  CKPGUID_INT,
+                  "After Delete A",
+                  &follow_in1));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_parameter(
+                  follow_tx,
+                  root_id,
+                  NMO_SCRIPT_EDIT_PARAM_LOCAL,
+                  CKPGUID_INT,
+                  "After Delete B",
+                  &follow_in2));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_parameter(
+                  follow_tx,
+                  root_id,
+                  NMO_SCRIPT_EDIT_PARAM_LOCAL,
+                  CKPGUID_INT,
+                  "After Delete Out",
+                  &follow_out));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_operation(
+                  follow_tx,
+                  root_id,
+                  nmo_guid_parse("33CC6B49-3589282B"),
+                  follow_in1,
+                  follow_in2,
+                  follow_out,
+                  &follow_operation));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_commit(follow_tx));
+    ASSERT_TRUE(follow_operation != 0u);
+
+    edit_plan_fixture_dispose(&fixture);
+}
+
 TEST(edit_plan, executor_reports_rewire_operation_slot_parameter_impact) {
     edit_plan_fixture_t fixture;
     edit_plan_fixture_init(&fixture);
@@ -2834,6 +2984,7 @@ REGISTER_TEST(edit_plan, executor_reports_nested_removed_node_parameter_impact);
 REGISTER_TEST(edit_plan, executor_reports_removed_node_operation_impact);
 REGISTER_TEST(edit_plan, executor_reports_removed_node_control_link_impact);
 REGISTER_TEST(edit_plan, executor_deletes_nested_removed_node_operations);
+REGISTER_TEST(edit_plan, executor_detaches_nested_removed_node_control_links);
 REGISTER_TEST(edit_plan, executor_reports_add_operation_slot_parameter_impact);
 REGISTER_TEST(edit_plan, executor_reports_rewire_operation_slot_parameter_impact);
 REGISTER_TEST(edit_plan, executor_reports_remove_parameter_operation_slot_impact);

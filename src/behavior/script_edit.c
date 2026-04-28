@@ -880,9 +880,15 @@ static bool script_edit_io_is_linked_in_repo(
     return false;
 }
 
+static bool script_edit_behavior_is_graph_member(
+    nmo_session_t *session,
+    nmo_object_id_t root_behavior_id,
+    nmo_object_id_t behavior_id);
+
 static nmo_status_t script_edit_remove_links_for_io(
     nmo_script_edit_tx_t *tx,
     nmo_object_id_t behavior_id,
+    nmo_object_id_t deleted_root_id,
     nmo_object_id_t io_id)
 {
     nmo_object_repository_t *repo = NULL;
@@ -932,6 +938,13 @@ static nmo_status_t script_edit_remove_links_for_io(
                 (link_state->in_io_id != io_id && link_state->out_io_id != io_id)) {
                 continue;
             }
+            if (deleted_root_id != 0u &&
+                script_edit_behavior_is_graph_member(
+                    tx->session,
+                    deleted_root_id,
+                    nmo_object_get_id(behavior_obj))) {
+                continue;
+            }
 
             if (matched_count == matched_capacity) {
                 size_t next_capacity =
@@ -970,6 +983,7 @@ static nmo_status_t script_edit_remove_links_for_io(
 static nmo_status_t script_edit_remove_links_for_behavior_ios(
     nmo_script_edit_tx_t *tx,
     nmo_object_id_t parent_behavior_id,
+    nmo_object_id_t deleted_root_id,
     const nmo_behavior_state_t *behavior)
 {
     if (!tx || !behavior) {
@@ -989,8 +1003,26 @@ static nmo_status_t script_edit_remove_links_for_behavior_ios(
             NMO_RETURN_IF_ERROR(script_edit_remove_links_for_io(
                 tx,
                 parent_behavior_id,
+                deleted_root_id,
                 ids[j]));
         }
+    }
+    const nmo_object_id_t *sub_ids = behavior->sub_behaviors.data
+        ? (const nmo_object_id_t *)behavior->sub_behaviors.data
+        : NULL;
+    for (size_t i = 0; sub_ids != NULL && i < behavior->sub_behaviors.count; ++i) {
+        nmo_behavior_state_t *sub_state = script_edit_find_behavior_state_in_repo(
+            nmo_workspace_internal_repository(tx->workspace),
+            sub_ids[i],
+            NULL);
+        if (sub_state == NULL) {
+            continue;
+        }
+        NMO_RETURN_IF_ERROR(script_edit_remove_links_for_behavior_ios(
+            tx,
+            parent_behavior_id,
+            deleted_root_id,
+            sub_state));
     }
     return NMO_OK;
 }
@@ -3053,7 +3085,7 @@ NMO_API nmo_status_t nmo_script_edit_remove_node(
     }
 
     rc = script_edit_remove_links_for_behavior_ios(
-        tx, parent_behavior_id, node_state);
+        tx, parent_behavior_id, node_id, node_state);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -3224,7 +3256,7 @@ NMO_API nmo_status_t nmo_script_edit_remove_io(
         return NMO_ERR_VALIDATION_FAILED;
     }
     if (detach_links) {
-        rc = script_edit_remove_links_for_io(tx, owner->owner_id, io_id);
+        rc = script_edit_remove_links_for_io(tx, owner->owner_id, 0u, io_id);
         if (rc != NMO_OK) {
             return rc;
         }

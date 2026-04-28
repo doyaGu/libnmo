@@ -4,6 +4,9 @@
 #include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
+#include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_behaviorio_schemas.h"
+#include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "session/nmo_deserializer.h"
 #include "session/nmo_id_mapping.h"
@@ -435,6 +438,72 @@ TEST(runtime_kernel, delete_safe_detach_prunes_group_references) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, delete_safe_detach_prunes_behavior_links_with_deleted_io) {
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t behavior_id = 0;
+    nmo_object_id_t source_io_id = 0;
+    nmo_object_id_t target_io_id = 0;
+    nmo_object_id_t link_id = 0;
+    ASSERT_EQ(
+        NMO_OK,
+        nmo_session_create_object(session, NMO_CID_BEHAVIOR, "behavior", (nmo_guid_t){0, 0}, &behavior_id, NULL));
+    ASSERT_EQ(
+        NMO_OK,
+        nmo_session_create_object(session, NMO_CID_BEHAVIORIO, "source", (nmo_guid_t){0, 0}, &source_io_id, NULL));
+    ASSERT_EQ(
+        NMO_OK,
+        nmo_session_create_object(session, NMO_CID_BEHAVIORIO, "target", (nmo_guid_t){0, 0}, &target_io_id, NULL));
+    ASSERT_EQ(
+        NMO_OK,
+        nmo_session_create_object(session, NMO_CID_BEHAVIORLINK, "link", (nmo_guid_t){0, 0}, &link_id, NULL));
+
+    nmo_object_t *behavior_obj = nmo_object_repository_find_by_id(repo, behavior_id);
+    nmo_object_t *link_obj = nmo_object_repository_find_by_id(repo, link_id);
+    ASSERT_NOT_NULL(behavior_obj);
+    ASSERT_NOT_NULL(link_obj);
+    nmo_behavior_state_t *behavior_state = (nmo_behavior_state_t *)behavior_obj->state;
+    nmo_behaviorlink_state_t *link_state = (nmo_behaviorlink_state_t *)link_obj->state;
+    ASSERT_NOT_NULL(behavior_state);
+    ASSERT_NOT_NULL(link_state);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&behavior_state->sub_behavior_links, &link_id));
+    link_state->in_io_id = target_io_id;
+    link_state->out_io_id = source_io_id;
+
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(
+        NMO_OK,
+        nmo_session_destroy_objects(
+            session,
+            &target_io_id,
+            1,
+            NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
+            &report));
+    ASSERT_EQ(1u, report.deleted_objects);
+
+    behavior_obj = nmo_object_repository_find_by_id(repo, behavior_id);
+    link_obj = nmo_object_repository_find_by_id(repo, link_id);
+    ASSERT_NOT_NULL(behavior_obj);
+    ASSERT_NOT_NULL(link_obj);
+    behavior_state = (nmo_behavior_state_t *)behavior_obj->state;
+    link_state = (nmo_behaviorlink_state_t *)link_obj->state;
+    ASSERT_NOT_NULL(behavior_state);
+    ASSERT_NOT_NULL(link_state);
+    ASSERT_EQ(0u, behavior_state->sub_behavior_links.count);
+    ASSERT_EQ(0u, link_state->in_io_id);
+    ASSERT_EQ(source_io_id, link_state->out_io_id);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, delete_cascade_removes_referencing_group) {
     nmo_context_desc_t desc = {0};
     nmo_context_t *ctx = nmo_context_create(&desc);
@@ -563,6 +632,7 @@ REGISTER_TEST(runtime_kernel, post_delete_runs_after_remove_non_object_type);
 REGISTER_TEST(runtime_kernel, create_hook_failure_does_not_publish_object);
 REGISTER_TEST(runtime_kernel, copy_preserves_internal_group_references);
 REGISTER_TEST(runtime_kernel, delete_safe_detach_prunes_group_references);
+REGISTER_TEST(runtime_kernel, delete_safe_detach_prunes_behavior_links_with_deleted_io);
 REGISTER_TEST(runtime_kernel, delete_cascade_removes_referencing_group);
 REGISTER_TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_finalize);
 TEST_MAIN_END()

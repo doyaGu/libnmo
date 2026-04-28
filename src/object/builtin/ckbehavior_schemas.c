@@ -18,6 +18,7 @@
  */
 
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
@@ -1294,6 +1295,20 @@ nmo_status_t nmo_behavior_remap_dependencies(
             }
             if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
                 continue;
+            }
+            if (repo) {
+                nmo_object_t *link_obj = nmo_object_repository_find_by_id(repo, id);
+                if (link_obj && nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK) {
+                    const nmo_behaviorlink_state_t *link_state =
+                        (const nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj);
+                    if (!link_state ||
+                        link_state->in_io_id == 0 ||
+                        link_state->out_io_id == 0 ||
+                        nmo_object_repository_find_by_id(repo, link_state->in_io_id) == NULL ||
+                        nmo_object_repository_find_by_id(repo, link_state->out_io_id) == NULL) {
+                        continue;
+                    }
+                }
             }
             bool seen = false;
             for (uint32_t j = 0; j < kept; ++j) {
