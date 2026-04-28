@@ -417,21 +417,45 @@ static yyjson_mut_val *edit_op_to_json(yyjson_mut_doc *doc,
                 (uint64_t)op->data.rewire_operation.operation_id);
             if ((op->data.rewire_operation.slot_flags &
                  NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u) {
-                add_optional_id_json(
-                    doc, obj, "in1_id",
-                    op->data.rewire_operation.in1_parameter_id);
+                if (op->data.rewire_operation.has_in1_parameter_ref) {
+                    add_ref_json(
+                        doc, obj, "in1_operation", "in1_handle",
+                        op->data.rewire_operation
+                            .in1_parameter_ref_operation_index,
+                        op->data.rewire_operation.in1_parameter_ref_handle);
+                } else {
+                    yyjson_mut_obj_add_uint(
+                        doc, obj, "in1_id",
+                        (uint64_t)op->data.rewire_operation.in1_parameter_id);
+                }
             }
             if ((op->data.rewire_operation.slot_flags &
                  NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u) {
-                add_optional_id_json(
-                    doc, obj, "in2_id",
-                    op->data.rewire_operation.in2_parameter_id);
+                if (op->data.rewire_operation.has_in2_parameter_ref) {
+                    add_ref_json(
+                        doc, obj, "in2_operation", "in2_handle",
+                        op->data.rewire_operation
+                            .in2_parameter_ref_operation_index,
+                        op->data.rewire_operation.in2_parameter_ref_handle);
+                } else {
+                    yyjson_mut_obj_add_uint(
+                        doc, obj, "in2_id",
+                        (uint64_t)op->data.rewire_operation.in2_parameter_id);
+                }
             }
             if ((op->data.rewire_operation.slot_flags &
                  NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u) {
-                add_optional_id_json(
-                    doc, obj, "out_id",
-                    op->data.rewire_operation.out_parameter_id);
+                if (op->data.rewire_operation.has_out_parameter_ref) {
+                    add_ref_json(
+                        doc, obj, "out_operation", "out_handle",
+                        op->data.rewire_operation
+                            .out_parameter_ref_operation_index,
+                        op->data.rewire_operation.out_parameter_ref_handle);
+                } else {
+                    yyjson_mut_obj_add_uint(
+                        doc, obj, "out_id",
+                        (uint64_t)op->data.rewire_operation.out_parameter_id);
+                }
             }
             break;
         case NMO_EDIT_OP_REMOVE_OPERATION:
@@ -1487,38 +1511,74 @@ static nmo_status_t parse_rewire_operation(yyjson_val *op_obj,
                                            nmo_edit_plan_t *plan)
 {
     static const char *const allowed[] = {
-        "op", "operation_id", "in1_id", "in2_id", "out_id",
+        "op", "operation_id",
+        "in1_id", "in1_operation", "in1_handle",
+        "in2_id", "in2_operation", "in2_handle",
+        "out_id", "out_operation", "out_handle",
     };
     RETURN_IF_UNKNOWN_FIELDS(op_obj, "rewire_operation operation", allowed);
     uint32_t operation_id = 0u;
-    uint32_t in1_id = 0u;
-    uint32_t in2_id = 0u;
-    uint32_t out_id = 0u;
+    nmo_object_id_t in1_id = 0u;
+    nmo_object_id_t in2_id = 0u;
+    nmo_object_id_t out_id = 0u;
+    size_t in1_operation_index = 0u;
+    size_t in2_operation_index = 0u;
+    size_t out_operation_index = 0u;
+    const char *in1_handle = NULL;
+    const char *in2_handle = NULL;
+    const char *out_handle = NULL;
+    bool has_in1_ref = false;
+    bool has_in2_ref = false;
+    bool has_out_ref = false;
     uint32_t slot_flags = 0u;
     if (!read_required_u32(op_obj, "operation_id", &operation_id, false)) {
         return NMO_ERR_INVALID_FORMAT;
     }
-    if (yyjson_obj_get(op_obj, "in1_id") != NULL) {
-        if (!read_required_u32(op_obj, "in1_id", &in1_id, true)) {
-            return NMO_ERR_INVALID_FORMAT;
-        }
+    nmo_status_t st = parse_optional_parameter_ref(
+        op_obj, "in1_id", "in1_operation", "in1_handle",
+        &in1_id, &in1_operation_index, &in1_handle, &has_in1_ref);
+    if (st != NMO_OK) {
+        return st;
+    }
+    st = parse_optional_parameter_ref(
+        op_obj, "in2_id", "in2_operation", "in2_handle",
+        &in2_id, &in2_operation_index, &in2_handle, &has_in2_ref);
+    if (st != NMO_OK) {
+        return st;
+    }
+    st = parse_optional_parameter_ref(
+        op_obj, "out_id", "out_operation", "out_handle",
+        &out_id, &out_operation_index, &out_handle, &has_out_ref);
+    if (st != NMO_OK) {
+        return st;
+    }
+    if (yyjson_obj_get(op_obj, "in1_id") != NULL || has_in1_ref) {
         slot_flags |= NMO_SCRIPT_EDIT_OP_SLOT_IN1;
     }
-    if (yyjson_obj_get(op_obj, "in2_id") != NULL) {
-        if (!read_required_u32(op_obj, "in2_id", &in2_id, true)) {
-            return NMO_ERR_INVALID_FORMAT;
-        }
+    if (yyjson_obj_get(op_obj, "in2_id") != NULL || has_in2_ref) {
         slot_flags |= NMO_SCRIPT_EDIT_OP_SLOT_IN2;
     }
-    if (yyjson_obj_get(op_obj, "out_id") != NULL) {
-        if (!read_required_u32(op_obj, "out_id", &out_id, true)) {
-            return NMO_ERR_INVALID_FORMAT;
-        }
+    if (yyjson_obj_get(op_obj, "out_id") != NULL || has_out_ref) {
         slot_flags |= NMO_SCRIPT_EDIT_OP_SLOT_OUT;
     }
     if (slot_flags == 0u) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "rewire_operation requires in1_id, in2_id, or out_id");
+                         "rewire_operation requires in1_id, in1_operation, in2_id, in2_operation, out_id, or out_operation");
+    }
+    if (has_in1_ref || has_in2_ref || has_out_ref) {
+        return nmo_edit_plan_add_rewire_operation_with_refs(
+            plan,
+            operation_id,
+            slot_flags,
+            in1_id,
+            in1_operation_index,
+            in1_handle,
+            in2_id,
+            in2_operation_index,
+            in2_handle,
+            out_id,
+            out_operation_index,
+            out_handle);
     }
     return nmo_edit_plan_add_rewire_operation(
         plan, operation_id, slot_flags, in1_id, in2_id, out_id);

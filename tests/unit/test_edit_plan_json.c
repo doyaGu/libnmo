@@ -227,6 +227,80 @@ TEST(edit_plan_json, reads_manifest_with_operation_handle_refs) {
     nmo_edit_plan_destroy(plan);
 }
 
+TEST(edit_plan_json, roundtrips_rewire_operation_handle_refs)
+{
+    nmo_edit_plan_t *plan = NULL;
+    char *json = NULL;
+    yyjson_doc *doc = NULL;
+    nmo_edit_plan_manifest_t manifest;
+    memset(&manifest, 0, sizeof(manifest));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_parameter(plan,
+                                          42u,
+                                          NMO_SCRIPT_EDIT_PARAM_IN,
+                                          CKPGUID_STRING,
+                                          "Runtime Text"));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_rewire_operation_with_refs(
+                  plan,
+                  55u,
+                  NMO_SCRIPT_EDIT_OP_SLOT_IN1 |
+                      NMO_SCRIPT_EDIT_OP_SLOT_OUT,
+                  0u,
+                  0u,
+                  "parameter",
+                  0u,
+                  0u,
+                  NULL,
+                  0u,
+                  0u,
+                  NULL));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_manifest_json_write(
+                  plan, "input.cmo", "output.cmo", &json));
+    ASSERT_NOT_NULL(json);
+
+    doc = yyjson_read(json, strlen(json), 0);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *ops = yyjson_obj_get(yyjson_doc_get_root(doc), "operations");
+    ASSERT_NOT_NULL(ops);
+    yyjson_val *rewire = yyjson_arr_get(ops, 1u);
+    ASSERT_NOT_NULL(rewire);
+    assert_json_string(rewire, "op", "rewire_operation");
+    assert_json_uint(rewire, "operation_id", 55u);
+    assert_json_uint(rewire, "in1_operation", 1u);
+    assert_json_string(rewire, "in1_handle", "parameter");
+    assert_json_uint(rewire, "out_id", 0u);
+    yyjson_doc_free(doc);
+    doc = NULL;
+
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_manifest_json_read(
+                  json, strlen(json), &manifest));
+    ASSERT_NOT_NULL(manifest.plan);
+    ASSERT_EQ(2u, nmo_edit_plan_count(manifest.plan));
+    const nmo_edit_op_t *op = nmo_edit_plan_get(manifest.plan, 1u);
+    ASSERT_NOT_NULL(op);
+    ASSERT_EQ(NMO_EDIT_OP_REWIRE_OPERATION, op->kind);
+    ASSERT_TRUE((op->data.rewire_operation.slot_flags &
+                 NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u);
+    ASSERT_TRUE((op->data.rewire_operation.slot_flags &
+                 NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u);
+    ASSERT_TRUE(op->data.rewire_operation.has_in1_parameter_ref);
+    ASSERT_EQ(0u,
+              op->data.rewire_operation
+                  .in1_parameter_ref_operation_index);
+    ASSERT_STR_EQ("parameter",
+                  op->data.rewire_operation.in1_parameter_ref_handle);
+    ASSERT_EQ(0u, op->data.rewire_operation.out_parameter_id);
+
+    nmo_edit_plan_manifest_dispose(&manifest);
+    nmo_edit_plan_manifest_json_free(json);
+    nmo_edit_plan_destroy(plan);
+}
+
 TEST(edit_plan_json, roundtrips_plan_without_manifest_paths) {
     nmo_edit_plan_t *plan = NULL;
     nmo_edit_plan_t *parsed = NULL;
@@ -564,7 +638,7 @@ TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics) {
 
     assert_manifest_invalid_contains(
         "{\"op\":\"rewire_operation\",\"operation_id\":1}",
-        "rewire_operation requires in1_id, in2_id, or out_id");
+        "rewire_operation requires in1_id");
 
     assert_manifest_invalid_contains(
         "{\"op\":\"unknown_edit\"}",
@@ -580,6 +654,7 @@ TEST(edit_plan_json, rejects_plan_roots_with_generic_operation_diagnostics) {
 TEST_MAIN_BEGIN()
 REGISTER_TEST(edit_plan_json, writes_manifest_with_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, reads_manifest_with_operation_handle_refs);
+REGISTER_TEST(edit_plan_json, roundtrips_rewire_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, roundtrips_plan_without_manifest_paths);
 REGISTER_TEST(edit_plan_json, roundtrips_all_current_v2_ops);
 REGISTER_TEST(edit_plan_json, reads_manifest_from_file);

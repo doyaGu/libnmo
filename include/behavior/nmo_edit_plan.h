@@ -159,6 +159,15 @@ typedef struct nmo_edit_op {
             nmo_object_id_t in1_parameter_id;
             nmo_object_id_t in2_parameter_id;
             nmo_object_id_t out_parameter_id;
+            size_t in1_parameter_ref_operation_index;
+            const char *in1_parameter_ref_handle;
+            bool has_in1_parameter_ref;
+            size_t in2_parameter_ref_operation_index;
+            const char *in2_parameter_ref_handle;
+            bool has_in2_parameter_ref;
+            size_t out_parameter_ref_operation_index;
+            const char *out_parameter_ref_handle;
+            bool has_out_parameter_ref;
         } rewire_operation;
         struct {
             nmo_object_id_t operation_id;
@@ -412,6 +421,20 @@ NMO_API nmo_status_t nmo_edit_plan_add_rewire_operation(
     nmo_object_id_t in1_parameter_id,
     nmo_object_id_t in2_parameter_id,
     nmo_object_id_t out_parameter_id);
+
+NMO_API nmo_status_t nmo_edit_plan_add_rewire_operation_with_refs(
+    nmo_edit_plan_t *plan,
+    nmo_object_id_t operation_id,
+    uint32_t slot_flags,
+    nmo_object_id_t in1_parameter_id,
+    size_t in1_operation_index,
+    const char *in1_handle_name,
+    nmo_object_id_t in2_parameter_id,
+    size_t in2_operation_index,
+    const char *in2_handle_name,
+    nmo_object_id_t out_parameter_id,
+    size_t out_operation_index,
+    const char *out_handle_name);
 
 NMO_API nmo_status_t nmo_edit_plan_add_remove_operation(
     nmo_edit_plan_t *plan,

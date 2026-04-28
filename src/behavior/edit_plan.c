@@ -176,6 +176,10 @@ static void edit_op_dispose(nmo_edit_op_t *op)
         free((void *)op->data.add_operation.in1_parameter_ref_handle);
         free((void *)op->data.add_operation.in2_parameter_ref_handle);
         free((void *)op->data.add_operation.out_parameter_ref_handle);
+    } else if (op->kind == NMO_EDIT_OP_REWIRE_OPERATION) {
+        free((void *)op->data.rewire_operation.in1_parameter_ref_handle);
+        free((void *)op->data.rewire_operation.in2_parameter_ref_handle);
+        free((void *)op->data.rewire_operation.out_parameter_ref_handle);
     } else if (op->kind == NMO_EDIT_OP_SET_DATA_CELL) {
         free((void *)op->data.data_cell.value);
     } else if (op->kind == NMO_EDIT_OP_FOLD) {
@@ -310,6 +314,29 @@ static nmo_status_t edit_op_copy(
             edit_plan_strdup(src->data.add_operation.out_parameter_ref_handle);
         if (src->data.add_operation.out_parameter_ref_handle &&
             !dst->data.add_operation.out_parameter_ref_handle) {
+            edit_op_dispose(dst);
+            return NMO_ERR_NOMEM;
+        }
+        break;
+    case NMO_EDIT_OP_REWIRE_OPERATION:
+        dst->data.rewire_operation.in1_parameter_ref_handle =
+            edit_plan_strdup(src->data.rewire_operation.in1_parameter_ref_handle);
+        if (src->data.rewire_operation.in1_parameter_ref_handle &&
+            !dst->data.rewire_operation.in1_parameter_ref_handle) {
+            edit_op_dispose(dst);
+            return NMO_ERR_NOMEM;
+        }
+        dst->data.rewire_operation.in2_parameter_ref_handle =
+            edit_plan_strdup(src->data.rewire_operation.in2_parameter_ref_handle);
+        if (src->data.rewire_operation.in2_parameter_ref_handle &&
+            !dst->data.rewire_operation.in2_parameter_ref_handle) {
+            edit_op_dispose(dst);
+            return NMO_ERR_NOMEM;
+        }
+        dst->data.rewire_operation.out_parameter_ref_handle =
+            edit_plan_strdup(src->data.rewire_operation.out_parameter_ref_handle);
+        if (src->data.rewire_operation.out_parameter_ref_handle &&
+            !dst->data.rewire_operation.out_parameter_ref_handle) {
             edit_op_dispose(dst);
             return NMO_ERR_NOMEM;
         }
@@ -1025,6 +1052,71 @@ nmo_status_t nmo_edit_plan_add_rewire_operation(
     op->data.rewire_operation.in1_parameter_id = in1_parameter_id;
     op->data.rewire_operation.in2_parameter_id = in2_parameter_id;
     op->data.rewire_operation.out_parameter_id = out_parameter_id;
+    plan->count++;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_edit_plan_add_rewire_operation_with_refs(
+    nmo_edit_plan_t *plan,
+    nmo_object_id_t operation_id,
+    uint32_t slot_flags,
+    nmo_object_id_t in1_parameter_id,
+    size_t in1_operation_index,
+    const char *in1_handle_name,
+    nmo_object_id_t in2_parameter_id,
+    size_t in2_operation_index,
+    const char *in2_handle_name,
+    nmo_object_id_t out_parameter_id,
+    size_t out_operation_index,
+    const char *out_handle_name)
+{
+    nmo_edit_op_t *op = NULL;
+    if (!plan || operation_id == 0u || slot_flags == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    NMO_RETURN_IF_ERROR(edit_plan_append_blank(
+        plan, NMO_EDIT_OP_REWIRE_OPERATION, operation_id, &op));
+    op->data.rewire_operation.operation_id = operation_id;
+    op->data.rewire_operation.slot_flags = slot_flags;
+    op->data.rewire_operation.in1_parameter_id = in1_parameter_id;
+    op->data.rewire_operation.in2_parameter_id = in2_parameter_id;
+    op->data.rewire_operation.out_parameter_id = out_parameter_id;
+    if (in1_handle_name != NULL) {
+        op->data.rewire_operation.has_in1_parameter_ref = true;
+        op->data.rewire_operation.in1_parameter_ref_operation_index =
+            in1_operation_index;
+        op->data.rewire_operation.in1_parameter_ref_handle =
+            edit_plan_strdup(in1_handle_name);
+        if (op->data.rewire_operation.in1_parameter_ref_handle == NULL) {
+            edit_op_dispose(op);
+            return NMO_ERR_NOMEM;
+        }
+        op->data.rewire_operation.slot_flags |= NMO_SCRIPT_EDIT_OP_SLOT_IN1;
+    }
+    if (in2_handle_name != NULL) {
+        op->data.rewire_operation.has_in2_parameter_ref = true;
+        op->data.rewire_operation.in2_parameter_ref_operation_index =
+            in2_operation_index;
+        op->data.rewire_operation.in2_parameter_ref_handle =
+            edit_plan_strdup(in2_handle_name);
+        if (op->data.rewire_operation.in2_parameter_ref_handle == NULL) {
+            edit_op_dispose(op);
+            return NMO_ERR_NOMEM;
+        }
+        op->data.rewire_operation.slot_flags |= NMO_SCRIPT_EDIT_OP_SLOT_IN2;
+    }
+    if (out_handle_name != NULL) {
+        op->data.rewire_operation.has_out_parameter_ref = true;
+        op->data.rewire_operation.out_parameter_ref_operation_index =
+            out_operation_index;
+        op->data.rewire_operation.out_parameter_ref_handle =
+            edit_plan_strdup(out_handle_name);
+        if (op->data.rewire_operation.out_parameter_ref_handle == NULL) {
+            edit_op_dispose(op);
+            return NMO_ERR_NOMEM;
+        }
+        op->data.rewire_operation.slot_flags |= NMO_SCRIPT_EDIT_OP_SLOT_OUT;
+    }
     plan->count++;
     return NMO_OK;
 }
@@ -1884,13 +1976,69 @@ static nmo_status_t edit_executor_apply_op(
             out_result_id);
     }
     case NMO_EDIT_OP_REWIRE_OPERATION:
+    {
+        nmo_object_id_t in1_parameter_id =
+            op->data.rewire_operation.in1_parameter_id;
+        nmo_object_id_t in2_parameter_id =
+            op->data.rewire_operation.in2_parameter_id;
+        nmo_object_id_t out_parameter_id =
+            op->data.rewire_operation.out_parameter_id;
+        if (op->data.rewire_operation.has_in1_parameter_ref) {
+            nmo_status_t ref_rc = edit_report_resolve_operation_handle(
+                report,
+                op->data.rewire_operation.in1_parameter_ref_operation_index,
+                op->data.rewire_operation.in1_parameter_ref_handle,
+                &in1_parameter_id);
+            if (ref_rc != NMO_OK) {
+                if (out_diagnostic_code != NULL) {
+                    *out_diagnostic_code = "missing_in1_handle";
+                }
+                if (out_diagnostic_message != NULL) {
+                    *out_diagnostic_message = "Failed to resolve in1 parameter handle";
+                }
+                return ref_rc;
+            }
+        }
+        if (op->data.rewire_operation.has_in2_parameter_ref) {
+            nmo_status_t ref_rc = edit_report_resolve_operation_handle(
+                report,
+                op->data.rewire_operation.in2_parameter_ref_operation_index,
+                op->data.rewire_operation.in2_parameter_ref_handle,
+                &in2_parameter_id);
+            if (ref_rc != NMO_OK) {
+                if (out_diagnostic_code != NULL) {
+                    *out_diagnostic_code = "missing_in2_handle";
+                }
+                if (out_diagnostic_message != NULL) {
+                    *out_diagnostic_message = "Failed to resolve in2 parameter handle";
+                }
+                return ref_rc;
+            }
+        }
+        if (op->data.rewire_operation.has_out_parameter_ref) {
+            nmo_status_t ref_rc = edit_report_resolve_operation_handle(
+                report,
+                op->data.rewire_operation.out_parameter_ref_operation_index,
+                op->data.rewire_operation.out_parameter_ref_handle,
+                &out_parameter_id);
+            if (ref_rc != NMO_OK) {
+                if (out_diagnostic_code != NULL) {
+                    *out_diagnostic_code = "missing_out_handle";
+                }
+                if (out_diagnostic_message != NULL) {
+                    *out_diagnostic_message = "Failed to resolve out parameter handle";
+                }
+                return ref_rc;
+            }
+        }
         return nmo_script_edit_rewire_operation(
             tx,
             op->data.rewire_operation.operation_id,
             op->data.rewire_operation.slot_flags,
-            op->data.rewire_operation.in1_parameter_id,
-            op->data.rewire_operation.in2_parameter_id,
-            op->data.rewire_operation.out_parameter_id);
+            in1_parameter_id,
+            in2_parameter_id,
+            out_parameter_id);
+    }
     case NMO_EDIT_OP_REMOVE_OPERATION:
         return nmo_script_edit_remove_operation(
             tx,
