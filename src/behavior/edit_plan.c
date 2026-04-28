@@ -1862,6 +1862,46 @@ static nmo_status_t edit_report_note_behavior_owned_deleted_objects(
     return NMO_OK;
 }
 
+static nmo_status_t edit_report_note_behavior_io_detach_impacts(
+    nmo_script_edit_tx_t *tx,
+    nmo_edit_report_t *report,
+    nmo_edit_op_kind_t cause,
+    nmo_object_id_t behavior_id)
+{
+    if (tx == NULL || report == NULL || behavior_id == 0u) {
+        return NMO_OK;
+    }
+
+    nmo_object_repository_t *repo =
+        nmo_workspace_internal_repository(nmo_script_edit_workspace(tx));
+    nmo_object_t *object = repo
+        ? nmo_object_repository_find_by_id(repo, behavior_id)
+        : NULL;
+    nmo_behavior_state_t *state = object
+        ? (nmo_behavior_state_t *)nmo_object_get_state(object)
+        : NULL;
+    if (state == NULL) {
+        return NMO_OK;
+    }
+
+    const nmo_array_t *io_arrays[] = {
+        &state->inputs,
+        &state->outputs,
+    };
+    for (size_t i = 0u; i < sizeof(io_arrays) / sizeof(io_arrays[0]); ++i) {
+        const nmo_array_t *array = io_arrays[i];
+        const nmo_object_id_t *ids = array && array->data
+            ? (const nmo_object_id_t *)array->data
+            : NULL;
+        for (size_t j = 0u; ids != NULL && j < array->count; ++j) {
+            NMO_RETURN_IF_ERROR(edit_report_note_io_detach_impacts(
+                tx, report, cause, ids[j]));
+        }
+    }
+
+    return NMO_OK;
+}
+
 nmo_status_t nmo_edit_report_merge_semantic_risks(
     nmo_edit_report_t *report,
     const nmo_behavior_semantic_risk_t *risks,
@@ -2119,6 +2159,11 @@ static nmo_status_t edit_executor_apply_op(
     case NMO_EDIT_OP_REMOVE_NODE:
     {
         NMO_RETURN_IF_ERROR(edit_report_note_behavior_owned_deleted_objects(
+            tx,
+            report,
+            NMO_EDIT_OP_REMOVE_NODE,
+            op->data.remove_node.node_id));
+        NMO_RETURN_IF_ERROR(edit_report_note_behavior_io_detach_impacts(
             tx,
             report,
             NMO_EDIT_OP_REMOVE_NODE,

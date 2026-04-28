@@ -967,6 +967,34 @@ static nmo_status_t script_edit_remove_links_for_io(
     return NMO_OK;
 }
 
+static nmo_status_t script_edit_remove_links_for_behavior_ios(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parent_behavior_id,
+    const nmo_behavior_state_t *behavior)
+{
+    if (!tx || !behavior) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    const nmo_array_t *io_arrays[] = {
+        &behavior->inputs,
+        &behavior->outputs,
+    };
+    for (size_t i = 0; i < sizeof(io_arrays) / sizeof(io_arrays[0]); ++i) {
+        const nmo_array_t *array = io_arrays[i];
+        const nmo_object_id_t *ids = array && array->data
+            ? (const nmo_object_id_t *)array->data
+            : NULL;
+        for (size_t j = 0; ids != NULL && j < array->count; ++j) {
+            NMO_RETURN_IF_ERROR(script_edit_remove_links_for_io(
+                tx,
+                parent_behavior_id,
+                ids[j]));
+        }
+    }
+    return NMO_OK;
+}
+
 static bool script_edit_behavior_is_direct_graph_member(
     nmo_session_t *session,
     nmo_object_id_t parent_behavior_id,
@@ -2973,6 +3001,12 @@ NMO_API nmo_status_t nmo_script_edit_remove_node(
     }
     if (nmo_array_find(&parent_state->sub_behaviors, &node_id, &node_index) == 0) {
         return NMO_ERR_NOT_FOUND;
+    }
+
+    rc = script_edit_remove_links_for_behavior_ios(
+        tx, parent_behavior_id, node_state);
+    if (rc != NMO_OK) {
+        return rc;
     }
 
     rc = nmo_workspace_internal_preview_destroy(
