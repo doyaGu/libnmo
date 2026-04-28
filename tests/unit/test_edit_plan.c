@@ -433,6 +433,32 @@ TEST(edit_plan, executor_writes_manager_parameter_values) {
     edit_plan_fixture_dispose(&fixture);
 }
 
+TEST(edit_plan, executor_writes_display_formatted_manager_parameter_values) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t param_id = 0;
+    nmo_parameter_state_t *state = NULL;
+    create_manager_parameter(&fixture, &param_id, &state);
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_set_parameter_value(
+                  plan, param_id, "manager{12345678-9ABCDEF0} = 99", NULL));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(nmo_guid_equals(
+        nmo_guid_parse("12345678-9ABCDEF0"), state->manager_guid));
+    ASSERT_EQ(99u, state->manager_value);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+}
+
 TEST(edit_plan, executor_adds_node_with_created_object_report) {
     edit_plan_fixture_t fixture;
     edit_plan_fixture_init(&fixture);
@@ -3021,6 +3047,7 @@ REGISTER_TEST(edit_plan, executor_rolls_back_failed_plan);
 REGISTER_TEST(edit_plan, executor_rolls_back_created_handle_chain_failure);
 REGISTER_TEST(edit_plan, executor_dry_run_reports_without_persisting);
 REGISTER_TEST(edit_plan, executor_writes_manager_parameter_values);
+REGISTER_TEST(edit_plan, executor_writes_display_formatted_manager_parameter_values);
 REGISTER_TEST(edit_plan, executor_adds_node_with_created_object_report);
 REGISTER_TEST(edit_plan, executor_materializes_building_block_defaults);
 REGISTER_TEST(edit_plan, executor_materializes_targetable_beobject_target);

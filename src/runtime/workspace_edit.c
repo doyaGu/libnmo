@@ -32,6 +32,7 @@
 #include "type/nmo_type_system.h"
 
 #include <stdbool.h>
+#include <ctype.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -504,11 +505,33 @@ static nmo_status_t parse_manager_parameter_text(
     }
 
     char guid_buf[32];
-    size_t guid_len = (size_t)(separator - value_str);
+    const char *guid_begin = value_str;
+    const char *guid_end = separator;
+    while (guid_begin < guid_end && isspace((unsigned char)*guid_begin)) {
+        ++guid_begin;
+    }
+    while (guid_end > guid_begin && isspace((unsigned char)guid_end[-1])) {
+        --guid_end;
+    }
+    if ((size_t)(guid_end - guid_begin) > strlen("manager{}") &&
+        strncmp(guid_begin, "manager{", strlen("manager{")) == 0 &&
+        guid_end[-1] == '}') {
+        guid_begin += strlen("manager{");
+        --guid_end;
+    } else if (guid_begin < guid_end && *guid_begin == '{' &&
+               guid_end[-1] == '}') {
+        ++guid_begin;
+        --guid_end;
+    }
+    if (guid_begin >= guid_end) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t guid_len = (size_t)(guid_end - guid_begin);
     if (guid_len >= sizeof(guid_buf)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    memcpy(guid_buf, value_str, guid_len);
+    memcpy(guid_buf, guid_begin, guid_len);
     guid_buf[guid_len] = '\0';
 
     nmo_guid_t parsed_guid = nmo_guid_parse(guid_buf);
@@ -516,9 +539,16 @@ static nmo_status_t parse_manager_parameter_text(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
+    const char *value_begin = separator + 1;
+    while (*value_begin != '\0' && isspace((unsigned char)*value_begin)) {
+        ++value_begin;
+    }
     char *end = NULL;
-    unsigned long value = strtoul(separator + 1, &end, 0);
-    if (end == separator + 1 || *end != '\0' || value > UINT32_MAX) {
+    unsigned long value = strtoul(value_begin, &end, 0);
+    while (end != NULL && *end != '\0' && isspace((unsigned char)*end)) {
+        ++end;
+    }
+    if (end == value_begin || *end != '\0' || value > UINT32_MAX) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
