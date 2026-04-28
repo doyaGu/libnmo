@@ -1214,6 +1214,42 @@ TEST(edit_plan, executor_reports_add_operation_slot_parameter_impact) {
     ASSERT_TRUE(reported_in2);
     ASSERT_TRUE(reported_out);
 
+    const nmo_object_id_t in1_id = report.operations[0].result_id;
+    const nmo_object_id_t in2_id = report.operations[1].result_id;
+    const nmo_object_id_t out_id = report.operations[2].result_id;
+    const nmo_object_id_t operation_id = report.operations[3].result_id;
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_operation(plan, operation_id));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(1u, report.operation_count);
+    ASSERT_EQ(NMO_EDIT_OP_REMOVE_OPERATION, report.operations[0].kind);
+    reported_in1 = false;
+    reported_in2 = false;
+    reported_out = false;
+    for (size_t i = 0; i < report.changed_object_count; ++i) {
+        if (report.changed_objects[i].role == NULL ||
+            strcmp(report.changed_objects[i].role, "operation_slot_parameter") != 0) {
+            continue;
+        }
+        if (report.changed_objects[i].id == in1_id) {
+            reported_in1 = true;
+        } else if (report.changed_objects[i].id == in2_id) {
+            reported_in2 = true;
+        } else if (report.changed_objects[i].id == out_id) {
+            reported_out = true;
+        }
+    }
+    ASSERT_TRUE(reported_in1);
+    ASSERT_TRUE(reported_in2);
+    ASSERT_TRUE(reported_out);
+
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
     edit_plan_fixture_dispose(&fixture);

@@ -11,6 +11,7 @@
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_value_writer.h"
@@ -1652,6 +1653,48 @@ static void edit_plan_get_behavior_link_endpoints(
     }
 }
 
+static void edit_plan_get_parameter_operation_slots(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t operation_id,
+    nmo_object_id_t *out_in1_parameter_id,
+    nmo_object_id_t *out_in2_parameter_id,
+    nmo_object_id_t *out_out_parameter_id)
+{
+    if (out_in1_parameter_id != NULL) {
+        *out_in1_parameter_id = 0u;
+    }
+    if (out_in2_parameter_id != NULL) {
+        *out_in2_parameter_id = 0u;
+    }
+    if (out_out_parameter_id != NULL) {
+        *out_out_parameter_id = 0u;
+    }
+    if (tx == NULL || operation_id == 0u) {
+        return;
+    }
+
+    nmo_object_repository_t *repo =
+        nmo_workspace_internal_repository(nmo_script_edit_workspace(tx));
+    nmo_object_t *object = repo
+        ? nmo_object_repository_find_by_id(repo, operation_id)
+        : NULL;
+    nmo_parameteroperation_state_t *state = object
+        ? (nmo_parameteroperation_state_t *)nmo_object_get_state(object)
+        : NULL;
+    if (state == NULL) {
+        return;
+    }
+    if (out_in1_parameter_id != NULL && state->has_in1) {
+        *out_in1_parameter_id = state->in1_id;
+    }
+    if (out_in2_parameter_id != NULL && state->has_in2) {
+        *out_in2_parameter_id = state->in2_id;
+    }
+    if (out_out_parameter_id != NULL && state->has_out) {
+        *out_out_parameter_id = state->out_id;
+    }
+}
+
 nmo_status_t nmo_edit_report_merge_semantic_risks(
     nmo_edit_report_t *report,
     const nmo_behavior_semantic_risk_t *risks,
@@ -2241,10 +2284,29 @@ static nmo_status_t edit_executor_apply_op(
             (op->data.rewire_operation.slot_flags &
              NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u ? out_parameter_id : 0u);
     }
-    case NMO_EDIT_OP_REMOVE_OPERATION:
-        return nmo_script_edit_remove_operation(
+    case NMO_EDIT_OP_REMOVE_OPERATION: {
+        nmo_object_id_t in1_parameter_id = 0u;
+        nmo_object_id_t in2_parameter_id = 0u;
+        nmo_object_id_t out_parameter_id = 0u;
+        edit_plan_get_parameter_operation_slots(
+            tx,
+            op->data.remove_operation.operation_id,
+            &in1_parameter_id,
+            &in2_parameter_id,
+            &out_parameter_id);
+        nmo_status_t rc = nmo_script_edit_remove_operation(
             tx,
             op->data.remove_operation.operation_id);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+        return edit_report_note_operation_slot_parameters(
+            report,
+            NMO_EDIT_OP_REMOVE_OPERATION,
+            in1_parameter_id,
+            in2_parameter_id,
+            out_parameter_id);
+    }
     case NMO_EDIT_OP_INTERFACE_POLICY:
         return nmo_script_edit_apply_interface_policy(
             tx,
