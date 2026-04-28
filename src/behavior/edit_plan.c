@@ -1523,6 +1523,40 @@ static nmo_status_t edit_report_note_created_objects(
     return NMO_OK;
 }
 
+static nmo_status_t edit_report_note_operation_slot_parameters(
+    nmo_edit_report_t *report,
+    nmo_edit_op_kind_t cause,
+    nmo_object_id_t in1_parameter_id,
+    nmo_object_id_t in2_parameter_id,
+    nmo_object_id_t out_parameter_id)
+{
+    if (report == NULL) {
+        return NMO_OK;
+    }
+    if (in1_parameter_id != 0u) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            report,
+            in1_parameter_id,
+            cause,
+            "operation_slot_parameter"));
+    }
+    if (in2_parameter_id != 0u) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            report,
+            in2_parameter_id,
+            cause,
+            "operation_slot_parameter"));
+    }
+    if (out_parameter_id != 0u) {
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            report,
+            out_parameter_id,
+            cause,
+            "operation_slot_parameter"));
+    }
+    return NMO_OK;
+}
+
 nmo_status_t nmo_edit_report_merge_semantic_risks(
     nmo_edit_report_t *report,
     const nmo_behavior_semantic_risk_t *risks,
@@ -1966,7 +2000,7 @@ static nmo_status_t edit_executor_apply_op(
                 return ref_rc;
             }
         }
-        return nmo_script_edit_add_operation(
+        nmo_status_t rc = nmo_script_edit_add_operation(
             tx,
             op->data.add_operation.parent_behavior_id,
             op->data.add_operation.operation_guid,
@@ -1974,6 +2008,15 @@ static nmo_status_t edit_executor_apply_op(
             in2_parameter_id,
             out_parameter_id,
             out_result_id);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+        return edit_report_note_operation_slot_parameters(
+            report,
+            NMO_EDIT_OP_ADD_OPERATION,
+            in1_parameter_id,
+            in2_parameter_id,
+            out_parameter_id);
     }
     case NMO_EDIT_OP_REWIRE_OPERATION:
     {
@@ -2041,34 +2084,15 @@ static nmo_status_t edit_executor_apply_op(
         if (rc != NMO_OK || report == NULL) {
             return rc;
         }
-        if ((op->data.rewire_operation.slot_flags &
-             NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u &&
-            in1_parameter_id != 0u) {
-            NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
-                report,
-                in1_parameter_id,
-                NMO_EDIT_OP_REWIRE_OPERATION,
-                "operation_slot_parameter"));
-        }
-        if ((op->data.rewire_operation.slot_flags &
-             NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u &&
-            in2_parameter_id != 0u) {
-            NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
-                report,
-                in2_parameter_id,
-                NMO_EDIT_OP_REWIRE_OPERATION,
-                "operation_slot_parameter"));
-        }
-        if ((op->data.rewire_operation.slot_flags &
-             NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u &&
-            out_parameter_id != 0u) {
-            NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
-                report,
-                out_parameter_id,
-                NMO_EDIT_OP_REWIRE_OPERATION,
-                "operation_slot_parameter"));
-        }
-        return NMO_OK;
+        return edit_report_note_operation_slot_parameters(
+            report,
+            NMO_EDIT_OP_REWIRE_OPERATION,
+            (op->data.rewire_operation.slot_flags &
+             NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u ? in1_parameter_id : 0u,
+            (op->data.rewire_operation.slot_flags &
+             NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u ? in2_parameter_id : 0u,
+            (op->data.rewire_operation.slot_flags &
+             NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u ? out_parameter_id : 0u);
     }
     case NMO_EDIT_OP_REMOVE_OPERATION:
         return nmo_script_edit_remove_operation(
