@@ -1307,6 +1307,7 @@ TEST(cli, script_run_executor_remove_behavior_link_uses_edit_plan) {
     yyjson_doc *doc = NULL;
     yyjson_val *data = NULL;
     yyjson_val *operations = NULL;
+    yyjson_val *changed_objects = NULL;
     yyjson_val *deleted_objects = NULL;
     yyjson_val *op = NULL;
 
@@ -1341,6 +1342,12 @@ TEST(cli, script_run_executor_remove_behavior_link_uses_edit_plan) {
     ASSERT_NOT_NULL(deleted_objects);
     ASSERT_EQ(1u, yyjson_arr_size(deleted_objects));
     ASSERT_EQ(75u, get_uint_field(yyjson_arr_get(deleted_objects, 0), "object_id"));
+    changed_objects = get_array_field(data, "changed_objects");
+    ASSERT_NOT_NULL(changed_objects);
+    ASSERT_TRUE(array_contains_object_id_with_role(
+        changed_objects, 78u, "control_link_endpoint"));
+    ASSERT_TRUE(array_contains_object_id_with_role(
+        changed_objects, 4u, "control_link_endpoint"));
     yyjson_doc_free(doc);
 }
 

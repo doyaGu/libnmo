@@ -8,6 +8,7 @@
 #include "behavior/nmo_semantic_validator.h"
 #include "behavior/nmo_script_edit.h"
 #include "format/nmo_object.h"
+#include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/nmo_class_ids.h"
@@ -1616,6 +1617,41 @@ static nmo_object_id_t edit_plan_get_parameterin_source(
     return state ? state->source_id : 0u;
 }
 
+static void edit_plan_get_behavior_link_endpoints(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t link_id,
+    nmo_object_id_t *out_from_io_id,
+    nmo_object_id_t *out_to_io_id)
+{
+    if (out_from_io_id != NULL) {
+        *out_from_io_id = 0u;
+    }
+    if (out_to_io_id != NULL) {
+        *out_to_io_id = 0u;
+    }
+    if (tx == NULL || link_id == 0u) {
+        return;
+    }
+
+    nmo_object_repository_t *repo =
+        nmo_workspace_internal_repository(nmo_script_edit_workspace(tx));
+    nmo_object_t *object = repo
+        ? nmo_object_repository_find_by_id(repo, link_id)
+        : NULL;
+    nmo_behaviorlink_state_t *state = object
+        ? (nmo_behaviorlink_state_t *)nmo_object_get_state(object)
+        : NULL;
+    if (state == NULL) {
+        return;
+    }
+    if (out_from_io_id != NULL) {
+        *out_from_io_id = state->in_io_id;
+    }
+    if (out_to_io_id != NULL) {
+        *out_to_io_id = state->out_io_id;
+    }
+}
+
 nmo_status_t nmo_edit_report_merge_semantic_risks(
     nmo_edit_report_t *report,
     const nmo_behavior_semantic_risk_t *risks,
@@ -1967,10 +2003,27 @@ static nmo_status_t edit_executor_apply_op(
             op->data.set_link_delay.link_id,
             op->data.set_link_delay.activation_delay);
     case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK:
-        return nmo_script_edit_remove_behavior_link(
+    {
+        nmo_object_id_t from_io_id = 0u;
+        nmo_object_id_t to_io_id = 0u;
+        edit_plan_get_behavior_link_endpoints(
+            tx,
+            op->data.remove_link.link_id,
+            &from_io_id,
+            &to_io_id);
+        nmo_status_t rc = nmo_script_edit_remove_behavior_link(
             tx,
             op->data.remove_link.parent_behavior_id,
             op->data.remove_link.link_id);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+        return edit_report_note_control_link_endpoints(
+            report,
+            NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK,
+            from_io_id,
+            to_io_id);
+    }
     case NMO_EDIT_OP_ADD_PARAMETER:
         return nmo_script_edit_add_parameter(
             tx,

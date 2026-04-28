@@ -992,6 +992,37 @@ TEST(edit_plan, executor_resolves_behavior_link_io_handles) {
 
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
+    plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_remove_behavior_link(
+                  plan,
+                  root_id,
+                  link_id));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(1u, report.operation_count);
+    ASSERT_EQ(NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK, report.operations[0].kind);
+    reported_from_endpoint = false;
+    reported_to_endpoint = false;
+    for (size_t i = 0; i < report.changed_object_count; ++i) {
+        if (report.changed_objects[i].role == NULL ||
+            strcmp(report.changed_objects[i].role, "control_link_endpoint") != 0) {
+            continue;
+        }
+        if (report.changed_objects[i].id == from_io_id) {
+            reported_from_endpoint = true;
+        } else if (report.changed_objects[i].id == to_io_id) {
+            reported_to_endpoint = true;
+        }
+    }
+    ASSERT_TRUE(reported_from_endpoint);
+    ASSERT_TRUE(reported_to_endpoint);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
     edit_plan_fixture_dispose(&fixture);
 }
 
