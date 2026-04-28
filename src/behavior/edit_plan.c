@@ -1714,25 +1714,36 @@ static nmo_status_t edit_report_note_parameter_detach_impacts(
     const size_t object_count = nmo_object_repository_get_count(repo);
     for (size_t i = 0; i < object_count; ++i) {
         nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
-        if (object == NULL ||
-            nmo_object_get_class_id(object) != NMO_CID_PARAMETEROPERATION) {
+        if (object == NULL) {
             continue;
         }
 
-        const nmo_parameteroperation_state_t *state =
-            (const nmo_parameteroperation_state_t *)nmo_object_get_state(object);
-        if (state == NULL) {
-            continue;
-        }
+        if (nmo_object_get_class_id(object) == NMO_CID_PARAMETERIN) {
+            const nmo_parameterin_state_t *state =
+                (const nmo_parameterin_state_t *)nmo_object_get_state(object);
+            if (state != NULL && state->source_id == parameter_id) {
+                NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+                    report,
+                    nmo_object_get_id(object),
+                    cause,
+                    "parameter_edge_target"));
+            }
+        } else if (nmo_object_get_class_id(object) == NMO_CID_PARAMETEROPERATION) {
+            const nmo_parameteroperation_state_t *state =
+                (const nmo_parameteroperation_state_t *)nmo_object_get_state(object);
+            if (state == NULL) {
+                continue;
+            }
 
-        if ((state->has_in1 && state->in1_id == parameter_id) ||
-            (state->has_in2 && state->in2_id == parameter_id) ||
-            (state->has_out && state->out_id == parameter_id)) {
-            NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
-                report,
-                nmo_object_get_id(object),
-                cause,
-                "operation_slot_owner"));
+            if ((state->has_in1 && state->in1_id == parameter_id) ||
+                (state->has_in2 && state->in2_id == parameter_id) ||
+                (state->has_out && state->out_id == parameter_id)) {
+                NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+                    report,
+                    nmo_object_get_id(object),
+                    cause,
+                    "operation_slot_owner"));
+            }
         }
     }
 

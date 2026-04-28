@@ -1339,6 +1339,77 @@ TEST(edit_plan, executor_reports_remove_parameter_operation_slot_impact) {
     edit_plan_fixture_dispose(&fixture);
 }
 
+TEST(edit_plan, executor_reports_remove_parameter_edge_impact) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t owner_id = 0;
+    nmo_object_id_t root_id = 0;
+    create_object_or_fail(fixture.session, NMO_CID_3DENTITY, "Owner", &owner_id);
+    create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Root", &root_id);
+    nmo_object_t *owner_obj =
+        nmo_object_repository_find_by_id(fixture.repo, owner_id);
+    nmo_object_t *root_obj =
+        nmo_object_repository_find_by_id(fixture.repo, root_id);
+    nmo_beobject_state_t *owner_state = owner_obj
+        ? (nmo_beobject_state_t *)nmo_object_get_state(owner_obj)
+        : NULL;
+    nmo_behavior_state_t *root_state = root_obj
+        ? (nmo_behavior_state_t *)nmo_object_get_state(root_obj)
+        : NULL;
+    ASSERT_NOT_NULL(owner_state);
+    ASSERT_NOT_NULL(root_state);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
+    root_state->flags |= 0x00000002u;
+    root_state->owner_id = owner_id;
+    nmo_workspace_destroy(fixture.workspace);
+    fixture.workspace = NULL;
+    ASSERT_EQ(NMO_OK,
+              nmo_workspace_create(
+                  fixture.ctx, fixture.document, &fixture.workspace));
+
+    nmo_script_edit_tx_t *seed_tx = NULL;
+    nmo_object_id_t source_id = 0;
+    nmo_object_id_t target_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(fixture.workspace, "seed edge", &seed_tx));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_parameter(
+                  seed_tx, root_id, NMO_SCRIPT_EDIT_PARAM_LOCAL,
+                  CKPGUID_INT, "Source", &source_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_parameter(
+                  seed_tx, root_id, NMO_SCRIPT_EDIT_PARAM_IN,
+                  CKPGUID_INT, "Target", &target_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_connect_parameter(seed_tx, source_id, target_id));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_commit(seed_tx));
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_parameter(plan, source_id, true));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(1u, report.operation_count);
+    ASSERT_EQ(NMO_EDIT_OP_REMOVE_PARAMETER, report.operations[0].kind);
+
+    bool reported_target = false;
+    for (size_t i = 0; i < report.changed_object_count; ++i) {
+        if (report.changed_objects[i].id == target_id &&
+            report.changed_objects[i].role != NULL &&
+            strcmp(report.changed_objects[i].role, "parameter_edge_target") == 0) {
+            reported_target = true;
+        }
+    }
+    ASSERT_TRUE(reported_target);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+}
+
 TEST(edit_plan, executor_runs_script_ops_and_records_validation) {
     edit_plan_fixture_t fixture;
     edit_plan_fixture_init(&fixture);
@@ -1859,6 +1930,7 @@ REGISTER_TEST(edit_plan, executor_resolves_behavior_link_io_handles);
 REGISTER_TEST(edit_plan, executor_reports_add_operation_slot_parameter_impact);
 REGISTER_TEST(edit_plan, executor_reports_rewire_operation_slot_parameter_impact);
 REGISTER_TEST(edit_plan, executor_reports_remove_parameter_operation_slot_impact);
+REGISTER_TEST(edit_plan, executor_reports_remove_parameter_edge_impact);
 REGISTER_TEST(edit_plan, executor_runs_script_ops_and_records_validation);
 REGISTER_TEST(edit_plan, executor_replaces_leaf_bb_in_transaction);
 REGISTER_TEST(edit_plan, executor_replace_bb_dry_run_rolls_back);
