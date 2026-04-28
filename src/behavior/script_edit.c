@@ -3009,6 +3009,30 @@ NMO_API nmo_status_t nmo_script_edit_remove_node(
         return rc;
     }
 
+    /* Fresh BB nodes also own their direct ports, parameters, operations, and
+     * inner control links. Collect them before preview_destroy invalidates the
+     * node_state pointer.
+     */
+    nmo_array_t *owned_arrays[] = {
+        &node_state->inputs,
+        &node_state->outputs,
+        &node_state->in_parameters,
+        &node_state->out_parameters,
+        &node_state->local_parameters,
+        &node_state->operations,
+        &node_state->sub_behavior_links,
+    };
+    for (size_t i = 0; i < sizeof(owned_arrays) / sizeof(owned_arrays[0]); ++i) {
+        nmo_object_id_t *ids =
+            owned_arrays[i]->data ? (nmo_object_id_t *)owned_arrays[i]->data : NULL;
+        for (size_t j = 0; ids && j < owned_arrays[i]->count; ++j) {
+            rc = script_edit_append_deferred_destroy(tx, ids[j]);
+            if (rc != NMO_OK) {
+                return rc;
+            }
+        }
+    }
+
     rc = nmo_workspace_internal_preview_destroy(
         tx->workspace,
         &node_id,
@@ -3038,26 +3062,6 @@ NMO_API nmo_status_t nmo_script_edit_remove_node(
             return rc;
         }
         script_edit_note_delete(tx);
-    }
-
-    /* Fresh BB nodes also own their direct ports and parameters. */
-    nmo_array_t *owned_arrays[] = {
-        &node_state->inputs,
-        &node_state->outputs,
-        &node_state->in_parameters,
-        &node_state->out_parameters,
-        &node_state->local_parameters,
-        &node_state->operations,
-    };
-    for (size_t i = 0; i < sizeof(owned_arrays) / sizeof(owned_arrays[0]); ++i) {
-        nmo_object_id_t *ids =
-            owned_arrays[i]->data ? (nmo_object_id_t *)owned_arrays[i]->data : NULL;
-        for (size_t j = 0; ids && j < owned_arrays[i]->count; ++j) {
-            rc = script_edit_append_deferred_destroy(tx, ids[j]);
-            if (rc != NMO_OK) {
-                return rc;
-            }
-        }
     }
 
     nmo_script_edit_mark(

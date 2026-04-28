@@ -1844,6 +1844,7 @@ static nmo_status_t edit_report_note_behavior_owned_deleted_objects(
         { &state->out_parameters, "owned_parameter" },
         { &state->local_parameters, "owned_parameter" },
         { &state->operations, "owned_operation" },
+        { &state->sub_behavior_links, "owned_link" },
     };
 
     for (size_t i = 0u; i < sizeof(owned_arrays) / sizeof(owned_arrays[0]); ++i) {
