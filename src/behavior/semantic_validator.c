@@ -408,6 +408,31 @@ static nmo_status_t semantic_add_parameter_object_ref_risk(
         object_id);
 }
 
+static nmo_status_t semantic_add_parameterin_ref_risk(
+    nmo_object_repository_t *repo,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t object_id)
+{
+    if (object_id == 0u || repo == NULL) {
+        return NMO_OK;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, object_id);
+    if (object == NULL) {
+        return NMO_OK;
+    }
+    if (nmo_object_get_class_id(object) == NMO_CID_PARAMETERIN) {
+        return NMO_OK;
+    }
+    return semantic_add_risk(
+        risks,
+        risk_count,
+        NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+        "parameter_target_type_mismatch",
+        "Parameter connection target must be a behavior input parameter",
+        object_id);
+}
+
 static nmo_status_t semantic_add_plan_activation_delay_risk(
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
@@ -1374,6 +1399,9 @@ static nmo_status_t semantic_validate_basic_edit_op(
         NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
             repo, risks, risk_count,
             op->data.connect_parameter.target_parameter_id));
+        NMO_RETURN_IF_ERROR(semantic_add_parameterin_ref_risk(
+            repo, risks, risk_count,
+            op->data.connect_parameter.target_parameter_id));
         return semantic_add_parameter_type_mismatch_risk(
             repo,
             risks,
@@ -1384,7 +1412,10 @@ static nmo_status_t semantic_validate_basic_edit_op(
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,
             op->data.disconnect_parameter.target_parameter_id));
-        return semantic_add_parameter_object_ref_risk(
+        NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
+            repo, risks, risk_count,
+            op->data.disconnect_parameter.target_parameter_id));
+        return semantic_add_parameterin_ref_risk(
             repo, risks, risk_count,
             op->data.disconnect_parameter.target_parameter_id);
     case NMO_EDIT_OP_REMOVE_PARAMETER:
