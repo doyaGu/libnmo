@@ -423,6 +423,54 @@ static nmo_status_t semantic_add_behavior_target_consistency_risk(
     return NMO_OK;
 }
 
+static nmo_status_t semantic_add_interface_policy_risks(
+    nmo_object_repository_t *repo,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t behavior_id,
+    nmo_script_edit_interface_mode_t mode)
+{
+    nmo_object_t *object = repo != NULL
+        ? nmo_object_repository_find_by_id(repo, behavior_id)
+        : NULL;
+    const nmo_behavior_state_t *state = object != NULL &&
+            nmo_object_get_class_id(object) == NMO_CID_BEHAVIOR
+        ? (const nmo_behavior_state_t *)nmo_object_get_state(object)
+        : NULL;
+    if (state == NULL) {
+        return NMO_OK;
+    }
+    if (state->has_interface && state->interface_data == NULL) {
+        NMO_RETURN_IF_ERROR(semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_WARN,
+            "interface_chunk_unstructured",
+            "Behavior interface chunk is present but not available as structured data",
+            behavior_id));
+    }
+    if (state->interface_data != NULL && !state->interface_ids_are_runtime) {
+        NMO_RETURN_IF_ERROR(semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_WARN,
+            "interface_chunk_raw_ids",
+            "Behavior interface chunk still uses raw file identifiers",
+            behavior_id));
+    }
+    if (mode != NMO_SCRIPT_EDIT_INTERFACE_PRESERVE &&
+        (state->has_interface || state->interface_data != NULL)) {
+        NMO_RETURN_IF_ERROR(semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_WARN,
+            "interface_chunk_policy",
+            "Interface policy may rewrite or remove behavior interface chunk data",
+            behavior_id));
+    }
+    return NMO_OK;
+}
+
 static bool semantic_is_parameter_object_class(nmo_class_id_t class_id)
 {
     return class_id == NMO_CID_PARAMETER ||
@@ -1831,8 +1879,14 @@ static nmo_status_t semantic_validate_basic_edit_op(
     case NMO_EDIT_OP_INTERFACE_POLICY:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.interface_policy.behavior_id));
-        return semantic_add_behavior_owner_ref_risk(
-            repo, risks, risk_count, op->data.interface_policy.behavior_id);
+        NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
+            repo, risks, risk_count, op->data.interface_policy.behavior_id));
+        return semantic_add_interface_policy_risks(
+            repo,
+            risks,
+            risk_count,
+            op->data.interface_policy.behavior_id,
+            op->data.interface_policy.mode);
     case NMO_EDIT_OP_SET_DATA_CELL:
         return semantic_add_data_cell_risk(
             repo,

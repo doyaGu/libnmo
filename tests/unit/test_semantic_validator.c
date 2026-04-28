@@ -1462,6 +1462,38 @@ TEST(semantic_validator, edit_plan_reports_replace_target_type_mismatch)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_reports_interface_policy_risk)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_path(
+        &fixture,
+        NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo"));
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_interface_policy(
+                  plan,
+                  253u,
+                  NMO_SCRIPT_EDIT_INTERFACE_CANONICALIZE));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *interface_risk =
+        find_risk(risks, risk_count, "interface_chunk_policy");
+    ASSERT_NOT_NULL(interface_risk);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_WARN, interface_risk->severity);
+    ASSERT_EQ(253u, interface_risk->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, boundary_reports_dangling_delay_and_shared_risks);
     REGISTER_TEST(semantic_validator, detects_message_flow_by_signature_metadata);
@@ -1498,4 +1530,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, edit_plan_reports_unknown_replace_building_block);
     REGISTER_TEST(semantic_validator, edit_plan_reports_targetable_behavior_missing_target);
     REGISTER_TEST(semantic_validator, edit_plan_reports_replace_target_type_mismatch);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_interface_policy_risk);
 TEST_MAIN_END()
