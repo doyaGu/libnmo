@@ -408,8 +408,9 @@ TEST(edit_plan, executor_adds_node_with_created_object_report) {
     ASSERT_TRUE(report.created_object_count > 1u);
     ASSERT_EQ(report.operations[0].result_id, report.created_objects[0].id);
 
+    const nmo_object_id_t created_node_id = report.operations[0].result_id;
     nmo_object_t *node_obj =
-        nmo_object_repository_find_by_id(fixture.repo, report.operations[0].result_id);
+        nmo_object_repository_find_by_id(fixture.repo, created_node_id);
     nmo_behavior_state_t *node_state = node_obj
         ? (nmo_behavior_state_t *)nmo_object_get_state(node_obj)
         : NULL;
@@ -446,6 +447,42 @@ TEST(edit_plan, executor_adds_node_with_created_object_report) {
         ASSERT_TRUE(found_input_handle);
         ASSERT_TRUE(found_output_handle);
     }
+
+    const nmo_object_id_t target_parameter_id = node_state->target_parameter_id;
+    const nmo_object_id_t first_input_id =
+        node_state->inputs.count > 0u
+            ? ((const nmo_object_id_t *)node_state->inputs.data)[0]
+            : 0u;
+    ASSERT_TRUE(first_input_id != 0u);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_remove_node(
+                  plan,
+                  root_id,
+                  created_node_id,
+                  0u));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(1u, report.operation_count);
+    ASSERT_EQ(NMO_EDIT_OP_REMOVE_NODE, report.operations[0].kind);
+
+    bool reported_target_deleted = false;
+    bool reported_input_deleted = false;
+    for (size_t i = 0; i < report.deleted_object_count; ++i) {
+        if (report.deleted_objects[i].id == target_parameter_id) {
+            reported_target_deleted = true;
+        } else if (report.deleted_objects[i].id == first_input_id) {
+            reported_input_deleted = true;
+        }
+    }
+    ASSERT_TRUE(reported_target_deleted);
+    ASSERT_TRUE(reported_input_deleted);
 
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
