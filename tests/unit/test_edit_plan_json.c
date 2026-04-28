@@ -626,6 +626,28 @@ TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics) {
         "add_behavior_link requires either from_io_id or from_operation plus from_handle");
 
     assert_manifest_invalid_contains(
+        "{\"op\":\"set_parameter_value\",\"parameter_id\":2,"
+        "\"parameter_operation\":1,\"parameter_handle\":\"parameter\","
+        "\"value\":\"hello\"}",
+        "set_parameter_value requires either parameter_id or parameter_operation plus parameter_handle");
+
+    assert_manifest_invalid_contains(
+        "{\"op\":\"set_parameter_bytes\",\"parameter_id\":2,"
+        "\"parameter_operation\":1,\"parameter_handle\":\"parameter\","
+        "\"hex\":\"CAFE\"}",
+        "set_parameter_bytes requires either parameter_id or parameter_operation plus parameter_handle");
+
+    assert_manifest_invalid_contains(
+        "{\"op\":\"set_parameter_bytes\",\"parameter_operation\":1,"
+        "\"hex\":\"CAFE\"}",
+        "Missing or invalid parameter_handle");
+
+    assert_manifest_invalid_contains(
+        "{\"op\":\"set_parameter_bytes\",\"parameter_operation\":0,"
+        "\"parameter_handle\":\"parameter\",\"hex\":\"CAFE\"}",
+        "Missing or invalid parameter_operation");
+
+    assert_manifest_invalid_contains(
         "{\"op\":\"add_behavior_link\",\"parent_id\":1,"
         "\"from_operation\":1,\"to_io_id\":3}",
         "Missing or invalid from_handle");

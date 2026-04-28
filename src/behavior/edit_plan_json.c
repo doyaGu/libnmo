@@ -1058,7 +1058,9 @@ static nmo_status_t parse_set_parameter_value(yyjson_val *op_obj,
     bool has_id = parameter_id_val != NULL;
     bool has_ref = operation_val != NULL || handle_val != NULL;
     if (has_id == has_ref) {
-        return NMO_ERR_INVALID_FORMAT;
+        NMO_RETURN_ERROR(
+            NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+            "set_parameter_value requires either parameter_id or parameter_operation plus parameter_handle");
     }
 
     if (has_id) {
@@ -1122,7 +1124,9 @@ static nmo_status_t parse_set_parameter_bytes(yyjson_val *op_obj,
     bool has_ref = operation_val != NULL || handle_val != NULL;
     if (has_id == has_ref) {
         free(bytes);
-        return NMO_ERR_INVALID_FORMAT;
+        NMO_RETURN_ERROR(
+            NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+            "set_parameter_bytes requires either parameter_id or parameter_operation plus parameter_handle");
     }
     if (has_id) {
         if (!yyjson_is_uint(parameter_id_val) ||
@@ -1136,11 +1140,16 @@ static nmo_status_t parse_set_parameter_bytes(yyjson_val *op_obj,
             bytes, byte_count, &options);
     } else {
         if (operation_val == NULL || !yyjson_is_uint(operation_val) ||
-            yyjson_get_uint(operation_val) == 0u ||
-            handle_val == NULL || !yyjson_is_str(handle_val) ||
+            yyjson_get_uint(operation_val) == 0u) {
+            free(bytes);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Missing or invalid parameter_operation");
+        }
+        if (handle_val == NULL || !yyjson_is_str(handle_val) ||
             yyjson_get_str(handle_val)[0] == '\0') {
             free(bytes);
-            return NMO_ERR_INVALID_FORMAT;
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Missing or invalid parameter_handle");
         }
         st = nmo_edit_plan_add_set_parameter_bytes_from_handle(
             plan, (size_t)(yyjson_get_uint(operation_val) - 1u),
