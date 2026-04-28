@@ -246,10 +246,10 @@ static yyjson_mut_val *edit_op_to_json(yyjson_mut_doc *doc,
                 yyjson_mut_obj_add_strcpy(doc, obj, "hex", hex);
                 free(hex);
             }
-            yyjson_mut_obj_add_bool(
-                doc, obj, "resize",
-                op->data.set_bytes.has_options &&
-                    op->data.set_bytes.options.resize);
+            if (op->data.set_bytes.has_options) {
+                yyjson_mut_obj_add_bool(doc, obj, "resize",
+                                        op->data.set_bytes.options.resize);
+            }
             break;
         }
         case NMO_EDIT_OP_ADD_NODE:
@@ -1119,6 +1119,7 @@ static nmo_status_t parse_set_parameter_bytes(yyjson_val *op_obj,
     uint8_t *bytes = NULL;
     size_t byte_count = 0u;
     bool resize = false;
+    bool has_options = yyjson_obj_get(op_obj, "resize") != NULL;
     nmo_status_t st = NMO_OK;
     if (!read_required_string(op_obj, "hex", &hex) ||
         !read_optional_bool(op_obj, "resize", false, &resize)) {
@@ -1131,6 +1132,8 @@ static nmo_status_t parse_set_parameter_bytes(yyjson_val *op_obj,
     nmo_parameter_write_options_t options = {
         .resize = resize,
     };
+    const nmo_parameter_write_options_t *options_ptr =
+        has_options ? &options : NULL;
     yyjson_val *parameter_id_val = yyjson_obj_get(op_obj, "parameter_id");
     yyjson_val *operation_val = yyjson_obj_get(op_obj, "parameter_operation");
     yyjson_val *handle_val = yyjson_obj_get(op_obj, "parameter_handle");
@@ -1151,7 +1154,7 @@ static nmo_status_t parse_set_parameter_bytes(yyjson_val *op_obj,
         }
         st = nmo_edit_plan_add_set_parameter_bytes(
             plan, (nmo_object_id_t)yyjson_get_uint(parameter_id_val),
-            bytes, byte_count, &options);
+            bytes, byte_count, options_ptr);
     } else {
         if (operation_val == NULL || !yyjson_is_uint(operation_val) ||
             yyjson_get_uint(operation_val) == 0u) {
@@ -1167,7 +1170,7 @@ static nmo_status_t parse_set_parameter_bytes(yyjson_val *op_obj,
         }
         st = nmo_edit_plan_add_set_parameter_bytes_from_handle(
             plan, (size_t)(yyjson_get_uint(operation_val) - 1u),
-            yyjson_get_str(handle_val), bytes, byte_count, &options);
+            yyjson_get_str(handle_val), bytes, byte_count, options_ptr);
     }
     free(bytes);
     return st;

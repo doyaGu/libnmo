@@ -336,6 +336,34 @@ TEST(edit_plan_json, roundtrips_plan_without_manifest_paths) {
     nmo_edit_plan_destroy(plan);
 }
 
+TEST(edit_plan_json, roundtrips_absent_parameter_bytes_options) {
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_plan_t *parsed = NULL;
+    char *json = NULL;
+    uint8_t bytes[] = {0x01u, 0x02u, 0x03u};
+
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_set_parameter_bytes(
+                  plan, 42u, bytes, sizeof(bytes), NULL));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_json_write(plan, &json));
+    ASSERT_NOT_NULL(json);
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_json_read(json, strlen(json), &parsed));
+    ASSERT_NOT_NULL(parsed);
+    ASSERT_EQ(1u, nmo_edit_plan_count(parsed));
+
+    const nmo_edit_op_t *op = nmo_edit_plan_get(parsed, 0u);
+    ASSERT_NOT_NULL(op);
+    ASSERT_EQ(NMO_EDIT_OP_SET_PARAMETER_BYTES, op->kind);
+    ASSERT_FALSE(op->data.set_bytes.has_options);
+    ASSERT_EQ(3u, op->data.set_bytes.byte_count);
+
+    nmo_edit_plan_destroy(parsed);
+    nmo_edit_plan_manifest_json_free(json);
+    nmo_edit_plan_destroy(plan);
+}
+
 TEST(edit_plan_json, roundtrips_all_current_v2_ops) {
     nmo_edit_plan_t *plan = NULL;
     char *json = NULL;
@@ -694,6 +722,7 @@ REGISTER_TEST(edit_plan_json, writes_manifest_with_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, reads_manifest_with_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, roundtrips_rewire_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, roundtrips_plan_without_manifest_paths);
+REGISTER_TEST(edit_plan_json, roundtrips_absent_parameter_bytes_options);
 REGISTER_TEST(edit_plan_json, roundtrips_all_current_v2_ops);
 REGISTER_TEST(edit_plan_json, reads_manifest_from_file);
 REGISTER_TEST(edit_plan_json,
