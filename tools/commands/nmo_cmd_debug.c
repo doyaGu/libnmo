@@ -468,6 +468,14 @@ static bool debug_probe_is_message_behavior(
            strcmp(proto->category, "Logics/Message") == 0;
 }
 
+static bool debug_probe_behavior_has_io(const nmo_behavior_state_t *state,
+                                        nmo_object_id_t io_id)
+{
+    return state != NULL && io_id != 0u &&
+           (nmo_array_find(&state->inputs, &io_id, NULL) != 0 ||
+            nmo_array_find(&state->outputs, &io_id, NULL) != 0);
+}
+
 static nmo_status_t debug_probe_validate_targets(
     nmo_cmd_ctx_t *ctx,
     const nmo_debug_probe_args_t *args,
@@ -527,6 +535,34 @@ static nmo_status_t debug_probe_validate_targets(
                 NMO_ERR_INVALID_ARGUMENT,
                 NMO_SEVERITY_ERROR,
                 "debug probe message-node target is not a message behavior");
+        }
+        if (args->remove_link_id != 0u) {
+            nmo_object_t *link_obj =
+                nmo_object_repository_find_by_id(repo, args->remove_link_id);
+            const nmo_behaviorlink_state_t *link_state = link_obj != NULL &&
+                nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK
+                    ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
+                          link_obj)
+                    : NULL;
+            if (link_state == NULL ||
+                (!debug_probe_behavior_has_io(message_state,
+                                              link_state->in_io_id) &&
+                 !debug_probe_behavior_has_io(message_state,
+                                              link_state->out_io_id))) {
+                NMO_RETURN_ERROR(
+                    NMO_ERR_INVALID_ARGUMENT,
+                    NMO_SEVERITY_ERROR,
+                    "debug probe remove-link does not touch selected message-node");
+            }
+        } else if ((args->from_io_id != 0u || args->to_io_id != 0u) &&
+                   !debug_probe_behavior_has_io(message_state,
+                                                args->from_io_id) &&
+                   !debug_probe_behavior_has_io(message_state,
+                                                args->to_io_id)) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR,
+                "debug probe IO endpoint does not touch selected message-node");
         }
     }
 
