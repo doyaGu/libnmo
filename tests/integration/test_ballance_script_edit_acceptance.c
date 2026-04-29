@@ -307,9 +307,47 @@ TEST(ballance_acceptance, accepted_patch_save_load_validates)
     remove(output);
 }
 
+TEST(ballance_acceptance, accepted_message_probe_save_load_validates)
+{
+    make_dir("test_ballance_acceptance_tmp");
+    const char *output = "test_ballance_acceptance_tmp/message_probe.cmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json debug probe message-logger --behavior 2172 "
+             "--message-node 1667 --remove-link 2152 "
+             "--text \"message trace\" \"%s\" -o \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output);
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "debug.probe", &doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_FALSE(get_bool_field(data, "dry_run"));
+    ASSERT_TRUE(file_exists(output));
+    yyjson_val *operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(5u, (uint32_t)yyjson_arr_size(operations));
+    ASSERT_NOT_NULL(get_array_field(data, "created_objects"));
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args), "validate all \"%s\"", output);
+    cli_run_result_t validate = run_cli_capture(args);
+    ASSERT_NOT_NULL(validate.output);
+    ASSERT_EQ(0, validate.exit_code);
+    ASSERT_STR_CONTAINS(validate.output, "Result: VALID");
+    free(validate.output);
+
+    remove(output);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(ballance_acceptance, debug_probe_2d_text_dry_run);
 REGISTER_TEST(ballance_acceptance, patch_replay_dry_run);
 REGISTER_TEST(ballance_acceptance, validate_base);
 REGISTER_TEST(ballance_acceptance, accepted_patch_save_load_validates);
+REGISTER_TEST(ballance_acceptance, accepted_message_probe_save_load_validates);
 TEST_MAIN_END()
