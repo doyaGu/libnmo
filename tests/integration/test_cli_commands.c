@@ -383,6 +383,7 @@ TEST(cli, completion_bash_matches_generated_file) {
     char *expected = read_file_text(path);
     ASSERT_NOT_NULL(expected);
     ASSERT_STR_EQ(expected, result.output);
+    ASSERT_STR_CONTAINS(result.output, "--message-node");
 
     free(expected);
     free(result.output);
@@ -398,6 +399,7 @@ TEST(cli, completion_powershell_alias_matches_generated_file) {
     char *expected = read_file_text(path);
     ASSERT_NOT_NULL(expected);
     ASSERT_STR_EQ(expected, result.output);
+    ASSERT_STR_CONTAINS(result.output, "--message-node");
 
     free(expected);
     free(result.output);
@@ -3097,6 +3099,7 @@ TEST(cli, debug_probe_help_lists_probe_kinds) {
     ASSERT_STR_CONTAINS(output, "parameter-logger");
     ASSERT_STR_CONTAINS(output, "data-cell-logger");
     ASSERT_STR_CONTAINS(output, "--parameter <id>");
+    ASSERT_STR_CONTAINS(output, "--message-node <id>");
     ASSERT_STR_CONTAINS(output, "--dataarray <id>");
     free(output);
 }

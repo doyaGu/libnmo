@@ -326,7 +326,7 @@ static void debug_export_usage(FILE *out) {
 }
 
 static void debug_probe_usage(FILE *out) {
-    fprintf(out, "Usage: nmo debug probe 2d-text|console|debug-output|message-logger|parameter-logger|data-cell-logger|control-marker --behavior <id> [--remove-link <id>] [--from-io <id>] [--to-io <id>] [--parameter <id>] [--dataarray <id> --row <n> --col <n>] [--delay <n>] [--name <name>] [--text <text>] [--dry-run] <file> -o <output>\n\n");
+    fprintf(out, "Usage: nmo debug probe 2d-text|console|debug-output|message-logger|parameter-logger|data-cell-logger|control-marker --behavior <id> [--remove-link <id>] [--from-io <id>] [--to-io <id>] [--message-node <id>] [--parameter <id>] [--dataarray <id> --row <n> --col <n>] [--delay <n>] [--name <name>] [--text <text>] [--dry-run] <file> -o <output>\n\n");
     fprintf(out, "Inject a diagnostic probe BB through the unified edit executor.\n\n");
     fprintf(out, "Probe kinds:\n");
     fprintf(out, "  2d-text                 Add a 2D Text building block node\n\n");
@@ -341,6 +341,7 @@ static void debug_probe_usage(FILE *out) {
     fprintf(out, "  --remove-link <id>      Existing link removed before inserting the probe\n");
     fprintf(out, "  --from-io <id>          Existing source IO linked to the probe input\n");
     fprintf(out, "  --to-io <id>            Existing target IO linked from the probe output\n");
+    fprintf(out, "  --message-node <id>     Message BB selected by message-logger probes\n");
     fprintf(out, "  --parameter <id>        Source parameter connected to parameter-logger text input\n");
     fprintf(out, "  --dataarray <id>        Data array id tagged by data-cell-logger\n");
     fprintf(out, "  --row <n>               Data array row tagged by data-cell-logger\n");

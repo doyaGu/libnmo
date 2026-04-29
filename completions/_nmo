@@ -363,7 +363,7 @@ _nmo_action_flags() {
         debug/obj/) echo '' ;;
         debug/export/) echo '--data --max-bytes' ;;
         debug/x/) echo '--data --max-bytes' ;;
-        debug/probe/) echo '--behavior --remove-link --from-io --to-io --parameter --dataarray --row --col --delay --name --text --dry-run -o --output' ;;
+        debug/probe/) echo '--behavior --remove-link --from-io --to-io --message-node --parameter --dataarray --row --col --delay --name --text --dry-run -o --output' ;;
         repl/start/) echo '' ;;
         *) echo "" ;;
     esac
