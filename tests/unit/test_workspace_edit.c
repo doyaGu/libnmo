@@ -898,23 +898,29 @@ TEST(workspace_edit, value_writer_writes_structured_parameter_values) {
     ASSERT_NOT_NULL(repo);
 
     nmo_object_id_t vector_param_id = 0;
+    nmo_object_id_t vector4_param_id = 0;
     nmo_object_id_t color_param_id = 0;
     nmo_object_id_t matrix_param_id = 0;
     create_object_or_fail(session, NMO_CID_PARAMETER, "vector-param", &vector_param_id);
+    create_object_or_fail(session, NMO_CID_PARAMETER, "vector4-param", &vector4_param_id);
     create_object_or_fail(session, NMO_CID_PARAMETER, "color-param", &color_param_id);
     create_object_or_fail(session, NMO_CID_PARAMETER, "matrix-param", &matrix_param_id);
 
     nmo_object_t *vector_obj = nmo_object_repository_find_by_id(repo, vector_param_id);
+    nmo_object_t *vector4_obj = nmo_object_repository_find_by_id(repo, vector4_param_id);
     nmo_object_t *color_obj = nmo_object_repository_find_by_id(repo, color_param_id);
     nmo_object_t *matrix_obj = nmo_object_repository_find_by_id(repo, matrix_param_id);
     ASSERT_NOT_NULL(vector_obj);
+    ASSERT_NOT_NULL(vector4_obj);
     ASSERT_NOT_NULL(color_obj);
     ASSERT_NOT_NULL(matrix_obj);
 
     nmo_parameter_state_t *vector_state = nmo_parameter_get_mutable_state(vector_obj);
+    nmo_parameter_state_t *vector4_state = nmo_parameter_get_mutable_state(vector4_obj);
     nmo_parameter_state_t *color_state = nmo_parameter_get_mutable_state(color_obj);
     nmo_parameter_state_t *matrix_state = nmo_parameter_get_mutable_state(matrix_obj);
     ASSERT_NOT_NULL(vector_state);
+    ASSERT_NOT_NULL(vector4_state);
     ASSERT_NOT_NULL(color_state);
     ASSERT_NOT_NULL(matrix_state);
 
@@ -927,6 +933,16 @@ TEST(workspace_edit, value_writer_writes_structured_parameter_values) {
                               sizeof(nmo_vector_t),
                               NULL));
     memset(vector_state->buffer_data.data, 0, vector_state->buffer_data.count);
+
+    vector4_state->type_guid = CKPGUID_VECTOR4;
+    vector4_state->mode = CKPARAM_MODE_BUFFER;
+    vector4_state->has_state = true;
+    ASSERT_EQ(NMO_OK,
+              nmo_array_alloc(&vector4_state->buffer_data,
+                              sizeof(uint8_t),
+                              sizeof(nmo_vector4_t),
+                              NULL));
+    memset(vector4_state->buffer_data.data, 0, vector4_state->buffer_data.count);
 
     color_state->type_guid = CKPGUID_COLOR;
     color_state->mode = CKPARAM_MODE_BUFFER;
@@ -958,6 +974,9 @@ TEST(workspace_edit, value_writer_writes_structured_parameter_values) {
                   commit_edit, vector_param_id, "(1.5, 2.5, 3.5)"));
     ASSERT_EQ(NMO_OK,
               nmo_object_edit_set_parameter_value(
+                  commit_edit, vector4_param_id, "(4.5, 5.5, 6.5, 7.5)"));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_set_parameter_value(
                   commit_edit, color_param_id, "(0.25, 0.5, 0.75, 1)"));
     ASSERT_EQ(NMO_OK,
               nmo_object_edit_set_parameter_value(
@@ -968,6 +987,8 @@ TEST(workspace_edit, value_writer_writes_structured_parameter_values) {
 
     const nmo_vector_t *vector_value =
         (const nmo_vector_t *)vector_state->buffer_data.data;
+    const nmo_vector4_t *vector4_value =
+        (const nmo_vector4_t *)vector4_state->buffer_data.data;
     const nmo_color_t *color_value =
         (const nmo_color_t *)color_state->buffer_data.data;
     const nmo_matrix_t *matrix_value =
@@ -975,6 +996,10 @@ TEST(workspace_edit, value_writer_writes_structured_parameter_values) {
     ASSERT_FLOAT_EQ(1.5f, vector_value->x, 0.001f);
     ASSERT_FLOAT_EQ(2.5f, vector_value->y, 0.001f);
     ASSERT_FLOAT_EQ(3.5f, vector_value->z, 0.001f);
+    ASSERT_FLOAT_EQ(4.5f, vector4_value->x, 0.001f);
+    ASSERT_FLOAT_EQ(5.5f, vector4_value->y, 0.001f);
+    ASSERT_FLOAT_EQ(6.5f, vector4_value->z, 0.001f);
+    ASSERT_FLOAT_EQ(7.5f, vector4_value->w, 0.001f);
     ASSERT_FLOAT_EQ(0.25f, color_value->r, 0.001f);
     ASSERT_FLOAT_EQ(0.5f, color_value->g, 0.001f);
     ASSERT_FLOAT_EQ(0.75f, color_value->b, 0.001f);
