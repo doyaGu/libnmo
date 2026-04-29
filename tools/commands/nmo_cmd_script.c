@@ -493,6 +493,22 @@ static int script_run_lua_add_node(lua_State *state)
                 }
             }
             lua_pop(state, 1);
+            lua_getfield(state, -1, "manager_guid");
+            if (!lua_isnil(state, -1)) {
+                options.manager_entry.manager_guid =
+                    nmo_guid_parse(luaL_checkstring(state, -1));
+                if (nmo_guid_is_null(options.manager_entry.manager_guid)) {
+                    return luaL_error(
+                        state,
+                        "manager_entry.manager_guid must be a GUID");
+                }
+            }
+            lua_pop(state, 1);
+            lua_getfield(state, -1, "key");
+            if (!lua_isnil(state, -1)) {
+                options.manager_entry.key = luaL_checkstring(state, -1);
+            }
+            lua_pop(state, 1);
         }
         lua_pop(state, 1);
         has_options = true;
@@ -584,6 +600,22 @@ static int script_run_lua_parse_parameter_write_options(
                     state,
                     "manager_entry.manager must be 'auto', 'message', or 'attribute'");
             }
+        }
+        lua_pop(state, 1);
+        lua_getfield(state, -1, "manager_guid");
+        if (!lua_isnil(state, -1)) {
+            out_options->manager_entry.manager_guid =
+                nmo_guid_parse(luaL_checkstring(state, -1));
+            if (nmo_guid_is_null(out_options->manager_entry.manager_guid)) {
+                return luaL_error(
+                    state,
+                    "manager_entry.manager_guid must be a GUID");
+            }
+        }
+        lua_pop(state, 1);
+        lua_getfield(state, -1, "key");
+        if (!lua_isnil(state, -1)) {
+            out_options->manager_entry.key = luaL_checkstring(state, -1);
         }
         lua_pop(state, 1);
     }
@@ -2203,8 +2235,8 @@ typedef struct script_node_add_args {
     uint32_t parent_id;
     nmo_guid_t bb_guid;
     const char *name;
-    nmo_manager_entry_policy_t manager_entry_policy;
-    bool has_manager_entry_policy;
+    nmo_manager_entry_options_t manager_entry;
+    bool has_manager_entry;
     nmo_object_id_t node_id;
 } script_node_add_args_t;
 
@@ -2277,8 +2309,8 @@ typedef struct script_param_set_args {
     script_command_common_t common;
     uint32_t param_id;
     const char *value_str;
-    nmo_manager_entry_policy_t manager_entry_policy;
-    bool has_manager_entry_policy;
+    nmo_manager_entry_options_t manager_entry;
+    bool has_manager_entry;
     char *old_value;
     char *new_value;
 } script_param_set_args_t;
@@ -2325,6 +2357,101 @@ typedef struct script_op_remove_args {
     uint32_t op_id;
     nmo_script_edit_interface_mode_t interface_mode;
 } script_op_remove_args_t;
+
+static const char *script_manager_entry_policy_name(
+    nmo_manager_entry_policy_t policy)
+{
+    return policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING
+               ? "create_missing"
+               : "require_existing";
+}
+
+static const char *script_manager_entry_manager_name(
+    nmo_manager_entry_manager_t manager)
+{
+    switch (manager) {
+        case NMO_MANAGER_ENTRY_MANAGER_MESSAGE:
+            return "message";
+        case NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE:
+            return "attribute";
+        case NMO_MANAGER_ENTRY_MANAGER_GUID:
+            return "guid";
+        case NMO_MANAGER_ENTRY_MANAGER_AUTO:
+        default:
+            return "auto";
+    }
+}
+
+static bool script_parse_manager_entry_policy_cli(
+    const char *text,
+    nmo_manager_entry_policy_t *out_policy)
+{
+    if (text == NULL || out_policy == NULL) {
+        return false;
+    }
+    if (strcmp(text, "require-existing") == 0 ||
+        strcmp(text, "require_existing") == 0) {
+        *out_policy = NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+        return true;
+    }
+    if (strcmp(text, "create-missing") == 0 ||
+        strcmp(text, "create_missing") == 0) {
+        *out_policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING;
+        return true;
+    }
+    return false;
+}
+
+static bool script_parse_manager_entry_manager_cli(
+    const char *text,
+    nmo_manager_entry_manager_t *out_manager)
+{
+    if (text == NULL || out_manager == NULL) {
+        return false;
+    }
+    if (strcmp(text, "auto") == 0) {
+        *out_manager = NMO_MANAGER_ENTRY_MANAGER_AUTO;
+        return true;
+    }
+    if (strcmp(text, "message") == 0) {
+        *out_manager = NMO_MANAGER_ENTRY_MANAGER_MESSAGE;
+        return true;
+    }
+    if (strcmp(text, "attribute") == 0) {
+        *out_manager = NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE;
+        return true;
+    }
+    if (strcmp(text, "guid") == 0) {
+        *out_manager = NMO_MANAGER_ENTRY_MANAGER_GUID;
+        return true;
+    }
+    return false;
+}
+
+static void script_add_manager_entry_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *data,
+    const nmo_manager_entry_options_t *manager_entry)
+{
+    if (doc == NULL || data == NULL || manager_entry == NULL) {
+        return;
+    }
+    yyjson_mut_val *entry = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_str(doc, entry, "policy",
+                           script_manager_entry_policy_name(
+                               manager_entry->policy));
+    yyjson_mut_obj_add_str(doc, entry, "manager",
+                           script_manager_entry_manager_name(
+                               manager_entry->manager));
+    if (!nmo_guid_is_null(manager_entry->manager_guid)) {
+        char guid_text[64];
+        nmo_guid_format(manager_entry->manager_guid, guid_text,
+                        sizeof(guid_text));
+        nmo_cli_json_add_str_safe(doc, entry, "manager_guid", guid_text);
+    }
+    nmo_cli_json_add_str_safe(doc, entry, "key", manager_entry->key);
+    yyjson_mut_obj_add_val(doc, data, "manager_entry", entry);
+}
 
 static char *script_format_parameter_value_with_registry(
     const nmo_type_registry_t *registry,
@@ -2586,11 +2713,11 @@ static nmo_status_t script_node_add_execute(
     nmo_status_t rc = nmo_edit_plan_create(&plan);
     if (rc == NMO_OK) {
         nmo_add_node_options_t options = {
-            .manager_entry.policy = args->manager_entry_policy,
+            .manager_entry = args->manager_entry,
         };
         rc = nmo_edit_plan_add_node_ex(
             plan, args->parent_id, args->bb_guid, args->name,
-            args->has_manager_entry_policy ? &options : NULL);
+            args->has_manager_entry ? &options : NULL);
     }
     if (rc == NMO_OK) {
         rc = script_execute_edit_plan(executor, &args->common, plan);
@@ -2617,15 +2744,8 @@ static int script_node_add_report(
         script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "node_id", args->node_id);
-        if (args->has_manager_entry_policy) {
-            yyjson_mut_val *entry = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_str(
-                doc, entry, "policy",
-                args->manager_entry_policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING
-                    ? "create_missing"
-                    : "require_existing");
-            yyjson_mut_obj_add_str(doc, entry, "manager", "message");
-            yyjson_mut_obj_add_val(doc, data, "manager_entry", entry);
+        if (args->has_manager_entry) {
+            script_add_manager_entry_json(doc, data, &args->manager_entry);
         }
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
@@ -3132,6 +3252,12 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
             {"--name", NULL, NMO_OPT_STRING, "Behavior name"},
             {"--manager-entry", NULL, NMO_OPT_STRING,
              "Manager entry policy: require-existing|create-missing"},
+            {"--manager-entry-manager", NULL, NMO_OPT_STRING,
+             "Manager entry kind: auto|message|attribute|guid"},
+            {"--manager-entry-guid", NULL, NMO_OPT_STRING,
+             "Explicit manager GUID for manager entry lookup"},
+            {"--manager-entry-key", NULL, NMO_OPT_STRING,
+             "Manager entry lookup/create key"},
             {"--output", "-o", NMO_OPT_STRING, "Output file"},
             {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
         };
@@ -3140,6 +3266,9 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
             OPT_BB_GUID,
             OPT_NAME,
             OPT_MANAGER_ENTRY_POLICY,
+            OPT_MANAGER_ENTRY_MANAGER,
+            OPT_MANAGER_ENTRY_GUID,
+            OPT_MANAGER_ENTRY_KEY,
             OPT_OUTPUT,
             OPT_DRY_RUN,
             OPT_COUNT
@@ -3156,21 +3285,33 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
         args.parent_id = vals[OPT_PARENT].val.u;
         args.bb_guid = nmo_guid_parse(vals[OPT_BB_GUID].val.str);
         args.name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
-        args.manager_entry_policy = NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
-        args.has_manager_entry_policy = vals[OPT_MANAGER_ENTRY_POLICY].present;
-        if (args.has_manager_entry_policy) {
-            const char *policy = vals[OPT_MANAGER_ENTRY_POLICY].val.str;
-            if (strcmp(policy, "require-existing") == 0 ||
-                strcmp(policy, "require_existing") == 0) {
-                args.manager_entry_policy =
-                    NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
-            } else if (strcmp(policy, "create-missing") == 0 ||
-                       strcmp(policy, "create_missing") == 0) {
-                args.manager_entry_policy =
-                    NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING;
-            } else {
+        args.manager_entry = nmo_manager_entry_options_default();
+        args.has_manager_entry =
+            vals[OPT_MANAGER_ENTRY_POLICY].present ||
+            vals[OPT_MANAGER_ENTRY_MANAGER].present ||
+            vals[OPT_MANAGER_ENTRY_GUID].present ||
+            vals[OPT_MANAGER_ENTRY_KEY].present;
+        if (vals[OPT_MANAGER_ENTRY_POLICY].present &&
+            !script_parse_manager_entry_policy_cli(
+                vals[OPT_MANAGER_ENTRY_POLICY].val.str,
+                &args.manager_entry.policy)) {
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        if (vals[OPT_MANAGER_ENTRY_MANAGER].present &&
+            !script_parse_manager_entry_manager_cli(
+                vals[OPT_MANAGER_ENTRY_MANAGER].val.str,
+                &args.manager_entry.manager)) {
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        if (vals[OPT_MANAGER_ENTRY_GUID].present) {
+            args.manager_entry.manager_guid =
+                nmo_guid_parse(vals[OPT_MANAGER_ENTRY_GUID].val.str);
+            if (nmo_guid_is_null(args.manager_entry.manager_guid)) {
                 return NMO_CLI_EXIT_ARG_ERROR;
             }
+        }
+        if (vals[OPT_MANAGER_ENTRY_KEY].present) {
+            args.manager_entry.key = vals[OPT_MANAGER_ENTRY_KEY].val.str;
         }
         if (nmo_guid_is_null(args.bb_guid)) {
             return NMO_CLI_EXIT_ARG_ERROR;
@@ -3609,13 +3750,13 @@ static nmo_status_t script_param_set_execute(
     rc = nmo_edit_plan_create(&plan);
     if (rc == NMO_OK) {
         nmo_parameter_write_options_t options = {
-            .manager_entry.policy = args->manager_entry_policy,
+            .manager_entry = args->manager_entry,
         };
         rc = nmo_edit_plan_add_set_parameter_value(
             plan,
             args->param_id,
             args->value_str,
-            args->has_manager_entry_policy ? &options : NULL);
+            args->has_manager_entry ? &options : NULL);
     }
     if (rc == NMO_OK) {
         rc = script_execute_edit_plan(executor, &args->common, plan);
@@ -3646,15 +3787,8 @@ static int script_param_set_report(
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "param_id", args->param_id);
-        if (args->has_manager_entry_policy) {
-            yyjson_mut_val *entry = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_str(
-                doc, entry, "policy",
-                args->manager_entry_policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING
-                    ? "create_missing"
-                    : "require_existing");
-            yyjson_mut_obj_add_str(doc, entry, "manager", "message");
-            yyjson_mut_obj_add_val(doc, data, "manager_entry", entry);
+        if (args->has_manager_entry) {
+            script_add_manager_entry_json(doc, data, &args->manager_entry);
         }
         if (args->old_value) {
             nmo_cli_json_add_str_safe(doc, data, "old_value", args->old_value);
@@ -4104,6 +4238,12 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
             {"--value", NULL, NMO_OPT_STRING, "Typed parameter value"},
             {"--manager-entry", NULL, NMO_OPT_STRING,
              "Manager entry policy: require-existing|create-missing"},
+            {"--manager-entry-manager", NULL, NMO_OPT_STRING,
+             "Manager entry kind: auto|message|attribute|guid"},
+            {"--manager-entry-guid", NULL, NMO_OPT_STRING,
+             "Explicit manager GUID for manager entry lookup"},
+            {"--manager-entry-key", NULL, NMO_OPT_STRING,
+             "Manager entry lookup/create key"},
             {"--output", "-o", NMO_OPT_STRING, "Output file"},
             {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
         };
@@ -4111,6 +4251,9 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
             OPT_PARAM,
             OPT_VALUE,
             OPT_MANAGER_ENTRY_POLICY,
+            OPT_MANAGER_ENTRY_MANAGER,
+            OPT_MANAGER_ENTRY_GUID,
+            OPT_MANAGER_ENTRY_KEY,
             OPT_OUTPUT,
             OPT_DRY_RUN,
             OPT_COUNT
@@ -4126,21 +4269,33 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         }
         args.param_id = vals[OPT_PARAM].val.u;
         args.value_str = vals[OPT_VALUE].val.str;
-        args.manager_entry_policy = NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
-        args.has_manager_entry_policy = vals[OPT_MANAGER_ENTRY_POLICY].present;
-        if (args.has_manager_entry_policy) {
-            const char *policy = vals[OPT_MANAGER_ENTRY_POLICY].val.str;
-            if (strcmp(policy, "require-existing") == 0 ||
-                strcmp(policy, "require_existing") == 0) {
-                args.manager_entry_policy =
-                    NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
-            } else if (strcmp(policy, "create-missing") == 0 ||
-                       strcmp(policy, "create_missing") == 0) {
-                args.manager_entry_policy =
-                    NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING;
-            } else {
+        args.manager_entry = nmo_manager_entry_options_default();
+        args.has_manager_entry =
+            vals[OPT_MANAGER_ENTRY_POLICY].present ||
+            vals[OPT_MANAGER_ENTRY_MANAGER].present ||
+            vals[OPT_MANAGER_ENTRY_GUID].present ||
+            vals[OPT_MANAGER_ENTRY_KEY].present;
+        if (vals[OPT_MANAGER_ENTRY_POLICY].present &&
+            !script_parse_manager_entry_policy_cli(
+                vals[OPT_MANAGER_ENTRY_POLICY].val.str,
+                &args.manager_entry.policy)) {
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        if (vals[OPT_MANAGER_ENTRY_MANAGER].present &&
+            !script_parse_manager_entry_manager_cli(
+                vals[OPT_MANAGER_ENTRY_MANAGER].val.str,
+                &args.manager_entry.manager)) {
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        if (vals[OPT_MANAGER_ENTRY_GUID].present) {
+            args.manager_entry.manager_guid =
+                nmo_guid_parse(vals[OPT_MANAGER_ENTRY_GUID].val.str);
+            if (nmo_guid_is_null(args.manager_entry.manager_guid)) {
                 return NMO_CLI_EXIT_ARG_ERROR;
             }
+        }
+        if (vals[OPT_MANAGER_ENTRY_KEY].present) {
+            args.manager_entry.key = vals[OPT_MANAGER_ENTRY_KEY].val.str;
         }
         {
             int rc = behavior_execute_cli_run_write_command(

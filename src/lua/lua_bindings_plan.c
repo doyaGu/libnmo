@@ -111,6 +111,19 @@ static int nmo_lua_plan_parse_manager_entry_options(
         }
     }
     lua_pop(state, 1);
+    lua_getfield(state, index, "manager_guid");
+    if (!lua_isnil(state, -1)) {
+        out_options->manager_guid = nmo_guid_parse(luaL_checkstring(state, -1));
+        if (nmo_guid_is_null(out_options->manager_guid)) {
+            return luaL_error(state, "manager_entry.manager_guid must be a GUID");
+        }
+    }
+    lua_pop(state, 1);
+    lua_getfield(state, index, "key");
+    if (!lua_isnil(state, -1)) {
+        out_options->key = luaL_checkstring(state, -1);
+    }
+    lua_pop(state, 1);
     return 0;
 }
 
