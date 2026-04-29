@@ -93,12 +93,35 @@ static int nmo_lua_plan_add_node(lua_State *state)
     nmo_object_id_t behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
     const char *guid_text = luaL_checkstring(state, 3);
     const char *name = luaL_checkstring(state, 4);
+    nmo_add_node_options_t options = {0};
+    bool has_options = false;
     nmo_guid_t guid = nmo_guid_parse(guid_text);
     if (nmo_guid_is_null(guid)) {
         return luaL_error(state, "invalid building block GUID");
     }
+    if (!lua_isnoneornil(state, 5)) {
+        luaL_checktype(state, 5, LUA_TTABLE);
+        lua_getfield(state, 5, "manager_entry_policy");
+        if (!lua_isnil(state, -1)) {
+            const char *policy = luaL_checkstring(state, -1);
+            if (strcmp(policy, "require_existing") == 0) {
+                options.manager_entry_policy =
+                    NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+            } else if (strcmp(policy, "create_missing") == 0) {
+                options.manager_entry_policy =
+                    NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING;
+            } else {
+                return luaL_error(
+                    state,
+                    "manager_entry_policy must be 'require_existing' or 'create_missing'");
+            }
+        }
+        lua_pop(state, 1);
+        has_options = true;
+    }
 
-    status = nmo_edit_plan_add_node(plan, behavior_id, guid, name);
+    status = nmo_edit_plan_add_node_ex(
+        plan, behavior_id, guid, name, has_options ? &options : NULL);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to add node op");
     }

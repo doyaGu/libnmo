@@ -28,7 +28,7 @@ TEST(lua_bindings_plan, plan_module_builds_edit_plan)
         "local plan = require('nmo.plan')\n"
         "local p = plan.new()\n"
         "assert(plan.count(p) == 0)\n"
-        "plan.add_node(p, 3, '055B29FE-662D5CA0', 'Lua Plan 2D Text')\n"
+        "plan.add_node(p, 3, '055B29FE-662D5CA0', 'Lua Plan 2D Text', { manager_entry_policy = 'create_missing' })\n"
         "plan.add_io(p, 3, 'input', 'Lua Plan In')\n"
         "assert(plan.count(p) == 2)\n"
         "plan.rename_io(p, 42, 'Lua Renamed IO')\n"

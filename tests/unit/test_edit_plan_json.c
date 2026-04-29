@@ -435,7 +435,16 @@ TEST(edit_plan_json, roundtrips_all_current_v2_ops) {
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_set_parameter_value(plan, 1u, "value", &resize_options));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_set_parameter_bytes(plan, 2u, bytes, sizeof(bytes), &resize_options));
-    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_node(plan, 3u, nmo_guid_parse("AAAA0001-BBBB0002"), "Node"));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_node_ex(
+                  plan,
+                  3u,
+                  nmo_guid_parse("AAAA0001-BBBB0002"),
+                  "Node",
+                  &(nmo_add_node_options_t){
+                      .manager_entry_policy =
+                          NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
+                  }));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_node(plan, 4u, 5u, 6u));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_io(plan, 7u, NMO_SCRIPT_EDIT_IO_OUTPUT, "Out"));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_rename_io(plan, 8u, "Renamed"));
@@ -482,6 +491,9 @@ TEST(edit_plan_json, roundtrips_all_current_v2_ops) {
     ASSERT_TRUE(nmo_guid_equals(nmo_guid_parse("AAAA0001-BBBB0002"),
                                 add_node->data.add_node.bb_guid));
     ASSERT_STR_EQ("Node", add_node->data.add_node.name);
+    ASSERT_TRUE(add_node->data.add_node.has_options);
+    ASSERT_EQ(NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
+              add_node->data.add_node.options.manager_entry_policy);
     const nmo_edit_op_t *remove_node = nmo_edit_plan_get(manifest.plan, 3u);
     ASSERT_NOT_NULL(remove_node);
     ASSERT_EQ(4u, remove_node->data.remove_node.parent_behavior_id);

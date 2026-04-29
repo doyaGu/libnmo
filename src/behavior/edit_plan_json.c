@@ -258,6 +258,14 @@ static yyjson_mut_val *edit_op_to_json(yyjson_mut_doc *doc,
                 (uint64_t)op->data.add_node.parent_behavior_id);
             add_guid_json(doc, obj, "guid", op->data.add_node.bb_guid);
             add_str_safe(doc, obj, "name", op->data.add_node.name);
+            if (op->data.add_node.has_options) {
+                yyjson_mut_obj_add_str(
+                    doc, obj, "manager_entry_policy",
+                    op->data.add_node.options.manager_entry_policy ==
+                            NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING
+                        ? "create_missing"
+                        : "require_existing");
+            }
             break;
         case NMO_EDIT_OP_REMOVE_NODE:
             yyjson_mut_obj_add_uint(
@@ -950,7 +958,7 @@ static nmo_status_t parse_add_node(yyjson_val *op_obj,
                                    nmo_edit_plan_t *plan)
 {
     static const char *const allowed[] = {
-        "op", "behavior_id", "guid", "name",
+        "op", "behavior_id", "guid", "name", "manager_entry_policy",
     };
     RETURN_IF_UNKNOWN_FIELDS(op_obj, "add_node operation", allowed);
     uint32_t behavior_id = 0u;
@@ -970,7 +978,34 @@ static nmo_status_t parse_add_node(yyjson_val *op_obj,
     if (nmo_guid_is_null(guid)) {
         return NMO_ERR_INVALID_FORMAT;
     }
-    return nmo_edit_plan_add_node(plan, behavior_id, guid, name);
+    yyjson_val *policy_val = yyjson_obj_get(op_obj, "manager_entry_policy");
+    bool has_options = policy_val != NULL;
+    nmo_add_node_options_t options = {
+        .manager_entry_policy = NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING,
+    };
+    if (policy_val != NULL) {
+        if (!yyjson_is_str(policy_val)) {
+            nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                __FILE__, __LINE__,
+                                "Invalid manager_entry_policy");
+            return NMO_ERR_INVALID_FORMAT;
+        }
+        const char *policy_text = yyjson_get_str(policy_val);
+        if (strcmp(policy_text, "require_existing") == 0) {
+            options.manager_entry_policy =
+                NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+        } else if (strcmp(policy_text, "create_missing") == 0) {
+            options.manager_entry_policy =
+                NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING;
+        } else {
+            nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                __FILE__, __LINE__,
+                                "Invalid manager_entry_policy");
+            return NMO_ERR_INVALID_FORMAT;
+        }
+    }
+    return nmo_edit_plan_add_node_ex(
+        plan, behavior_id, guid, name, has_options ? &options : NULL);
 }
 
 static nmo_status_t parse_remove_node(yyjson_val *op_obj,

@@ -2066,6 +2066,8 @@ typedef struct script_node_add_args {
     uint32_t parent_id;
     nmo_guid_t bb_guid;
     const char *name;
+    nmo_manager_entry_policy_t manager_entry_policy;
+    bool has_manager_entry_policy;
     nmo_object_id_t node_id;
 } script_node_add_args_t;
 
@@ -2444,8 +2446,12 @@ static nmo_status_t script_node_add_execute(
     nmo_edit_plan_t *plan = NULL;
     nmo_status_t rc = nmo_edit_plan_create(&plan);
     if (rc == NMO_OK) {
-        rc = nmo_edit_plan_add_node(
-            plan, args->parent_id, args->bb_guid, args->name);
+        nmo_add_node_options_t options = {
+            .manager_entry_policy = args->manager_entry_policy,
+        };
+        rc = nmo_edit_plan_add_node_ex(
+            plan, args->parent_id, args->bb_guid, args->name,
+            args->has_manager_entry_policy ? &options : NULL);
     }
     if (rc == NMO_OK) {
         rc = script_execute_edit_plan(executor, &args->common, plan);
@@ -2472,6 +2478,14 @@ static int script_node_add_report(
         script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "node_id", args->node_id);
+        if (args->has_manager_entry_policy) {
+            yyjson_mut_obj_add_str(
+                doc, data, "manager_entry_policy",
+                args->manager_entry_policy ==
+                        NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING
+                    ? "create_missing"
+                    : "require_existing");
+        }
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -2975,10 +2989,20 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
             {"--parent", NULL, NMO_OPT_UINT, "Parent behavior ID"},
             {"--bb-guid", NULL, NMO_OPT_STRING, "Building block GUID"},
             {"--name", NULL, NMO_OPT_STRING, "Behavior name"},
+            {"--manager-entry-policy", NULL, NMO_OPT_STRING,
+             "Manager entry policy: require-existing|create-missing"},
             {"--output", "-o", NMO_OPT_STRING, "Output file"},
             {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
         };
-        enum { OPT_PARENT, OPT_BB_GUID, OPT_NAME, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
+        enum {
+            OPT_PARENT,
+            OPT_BB_GUID,
+            OPT_NAME,
+            OPT_MANAGER_ENTRY_POLICY,
+            OPT_OUTPUT,
+            OPT_DRY_RUN,
+            OPT_COUNT
+        };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
         nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
@@ -2991,6 +3015,22 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
         args.parent_id = vals[OPT_PARENT].val.u;
         args.bb_guid = nmo_guid_parse(vals[OPT_BB_GUID].val.str);
         args.name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
+        args.manager_entry_policy = NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+        args.has_manager_entry_policy = vals[OPT_MANAGER_ENTRY_POLICY].present;
+        if (args.has_manager_entry_policy) {
+            const char *policy = vals[OPT_MANAGER_ENTRY_POLICY].val.str;
+            if (strcmp(policy, "require-existing") == 0 ||
+                strcmp(policy, "require_existing") == 0) {
+                args.manager_entry_policy =
+                    NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+            } else if (strcmp(policy, "create-missing") == 0 ||
+                       strcmp(policy, "create_missing") == 0) {
+                args.manager_entry_policy =
+                    NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING;
+            } else {
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+        }
         if (nmo_guid_is_null(args.bb_guid)) {
             return NMO_CLI_EXIT_ARG_ERROR;
         }

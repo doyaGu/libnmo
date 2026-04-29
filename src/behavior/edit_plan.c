@@ -2625,8 +2625,8 @@ static nmo_status_t edit_executor_apply_op(
             op->data.add_node.name,
             op->data.add_node.has_options
                 ? &(nmo_script_edit_add_node_options_t){
-                      .create_missing_manager_entry =
-                          op->data.add_node.options.create_missing_manager_entry,
+                      .manager_entry_policy =
+                          op->data.add_node.options.manager_entry_policy,
                   }
                 : NULL,
             out_result_id);

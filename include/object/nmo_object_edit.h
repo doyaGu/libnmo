@@ -37,9 +37,14 @@ typedef struct nmo_import_result {
     size_t errors;
 } nmo_import_result_t;
 
+typedef enum nmo_manager_entry_policy {
+    NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING = 0,
+    NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING = 1
+} nmo_manager_entry_policy_t;
+
 typedef struct nmo_parameter_write_options {
     bool resize;
-    bool create_missing_manager_entry;
+    nmo_manager_entry_policy_t manager_entry_policy;
 } nmo_parameter_write_options_t;
 
 NMO_API nmo_status_t nmo_object_edit_set_fields(

@@ -51,7 +51,7 @@ typedef enum nmo_edit_op_kind {
 } nmo_edit_op_kind_t;
 
 typedef struct nmo_add_node_options {
-    bool create_missing_manager_entry;
+    nmo_manager_entry_policy_t manager_entry_policy;
 } nmo_add_node_options_t;
 
 typedef struct nmo_edit_op {

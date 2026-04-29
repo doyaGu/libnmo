@@ -1266,7 +1266,8 @@ TEST(edit_plan, executor_creates_missing_symbolic_message_default_when_opted_in)
                   nmo_guid_parse("A20E8D5B-DF002150"),
                   "Opt In Send Message",
                   &(nmo_add_node_options_t){
-                      .create_missing_manager_entry = true,
+                      .manager_entry_policy =
+                          NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
                   }));
 
     nmo_edit_report_t report;

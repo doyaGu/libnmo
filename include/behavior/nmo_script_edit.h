@@ -7,6 +7,7 @@
 #define NMO_SCRIPT_EDIT_H
 
 #include "runtime/nmo_workspace.h"
+#include "object/nmo_object_edit.h"
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
@@ -75,7 +76,7 @@ typedef struct nmo_script_edit_report {
 } nmo_script_edit_report_t;
 
 typedef struct nmo_script_edit_add_node_options {
-    bool create_missing_manager_entry;
+    nmo_manager_entry_policy_t manager_entry_policy;
 } nmo_script_edit_add_node_options_t;
 
 NMO_API nmo_status_t nmo_script_edit_begin(nmo_workspace_t *workspace,

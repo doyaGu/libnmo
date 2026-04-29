@@ -1650,6 +1650,48 @@ TEST(cli, script_node_add_dry_run_reports_schema_v2)
     yyjson_doc_free(doc);
 }
 
+TEST(cli, script_node_add_creates_missing_manager_entry_when_policy_allows)
+{
+    cli_run_result_t result = {0};
+    yyjson_doc *doc = NULL;
+    yyjson_val *root = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *changed_objects = NULL;
+    bool found_manager_entry = false;
+    char args[1024];
+
+    snprintf(args, sizeof(args),
+             "-f json script node add --parent 6 "
+             "--bb-guid A20E8D5B-DF002150 --name \"Policy Send Message\" "
+             "--manager-entry-policy create-missing --dry-run \"%s\"",
+             NMO_TEST_DATA_FILE("Nop.cmo"));
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+
+    root = yyjson_doc_get_root(doc);
+    ASSERT_STR_EQ("script.node.add", get_string_field(root, "command"));
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_STR_EQ("create_missing", get_string_field(data, "manager_entry_policy"));
+    changed_objects = get_array_field(data, "changed_objects");
+    ASSERT_NOT_NULL(changed_objects);
+    size_t idx = 0;
+    size_t max = 0;
+    yyjson_val *item = NULL;
+    yyjson_arr_foreach(changed_objects, idx, max, item) {
+        if (get_uint_field(item, "id") == NMO_OBJECT_ID_INVALID) {
+            found_manager_entry = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(found_manager_entry);
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, script_io_add_dry_run_exposes_executor_validation_parity)
 {
     char args[1024];
@@ -3965,6 +4007,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_graph_json_smoke);
     REGISTER_TEST(cli, script_node_and_io_crud_roundtrip);
     REGISTER_TEST(cli, script_node_add_dry_run_reports_schema_v2);
+    REGISTER_TEST(cli, script_node_add_creates_missing_manager_entry_when_policy_allows);
     REGISTER_TEST(cli, script_io_add_dry_run_exposes_executor_validation_parity);
     REGISTER_TEST(cli, script_node_remove_canonicalizes_interface_refs);
     REGISTER_TEST(cli, script_node_remove_preserve_rejects_stale_interface_refs);
