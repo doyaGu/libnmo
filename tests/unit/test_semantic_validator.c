@@ -5,6 +5,8 @@
 #include "behavior/nmo_script_edit.h"
 #include "document/nmo_document.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_manager_guids.h"
+#include "object/nmo_param_guids.h"
 #include "object/nmo_statesave_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_guids.h"
@@ -52,6 +54,20 @@ static void semantic_fixture_init_path(semantic_fixture_t *fixture,
         &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
     ASSERT_NOT_NULL(fixture->ctx);
     fixture->session = nmo_session_load(fixture->ctx, path);
+    ASSERT_NOT_NULL(fixture->session);
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(fixture->session,
+                                                  &fixture->document));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(fixture->ctx, fixture->document,
+                                           &fixture->workspace));
+}
+
+static void semantic_fixture_init_empty(semantic_fixture_t *fixture)
+{
+    memset(fixture, 0, sizeof(*fixture));
+    fixture->ctx = nmo_context_create(
+        &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
+    ASSERT_NOT_NULL(fixture->ctx);
+    fixture->session = nmo_session_create(fixture->ctx);
     ASSERT_NOT_NULL(fixture->session);
     ASSERT_EQ(NMO_OK, nmo_session_borrow_document(fixture->session,
                                                   &fixture->document));
@@ -187,6 +203,40 @@ TEST(semantic_validator, detects_message_flow_by_signature_metadata)
     ASSERT_EQ(2233u, message->object_id);
 
     nmo_semantic_risks_free(risks);
+    semantic_fixture_dispose(&fixture);
+}
+
+TEST(semantic_validator, detects_missing_symbolic_message_manager_entry)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_empty(&fixture);
+
+    nmo_object_id_t root_id = 0u;
+    semantic_create_object(&fixture, NMO_CID_BEHAVIOR, "Root", &root_id);
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_node(
+                  plan,
+                  root_id,
+                  nmo_guid_parse("A20E8D5B-DF002150"),
+                  "Send Message"));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *risk =
+        find_risk(risks, risk_count, "missing_manager_entry");
+    ASSERT_NOT_NULL(risk);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, risk->severity);
+    ASSERT_EQ(root_id, risk->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
     semantic_fixture_dispose(&fixture);
 }
 
@@ -1698,6 +1748,7 @@ TEST(semantic_validator, edit_plan_reports_interface_policy_risk)
 TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, boundary_reports_dangling_delay_and_shared_risks);
     REGISTER_TEST(semantic_validator, detects_message_flow_by_signature_metadata);
+    REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_manager_entry);
     REGISTER_TEST(semantic_validator, edit_plan_rejects_missing_replace_target);
     REGISTER_TEST(semantic_validator, edit_plan_reports_generic_op_risks);
     REGISTER_TEST(semantic_validator, edit_plan_reports_invalid_handle_reference);

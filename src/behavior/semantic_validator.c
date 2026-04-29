@@ -5,6 +5,9 @@
 #include "behavior/nmo_edit_plan.h"
 #include "core/nmo_error.h"
 #include "core/nmo_parse.h"
+#include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
+#include "format/nmo_data.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
@@ -13,6 +16,8 @@
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_manager_guids.h"
+#include "object/nmo_param_guids.h"
 #include "object/nmo_statesave_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_guids.h"
@@ -1385,7 +1390,100 @@ static nmo_status_t semantic_add_building_block_risk(
         parent_behavior_id);
 }
 
+static bool semantic_message_manager_has_name(nmo_workspace_t *workspace,
+                                              const char *message_name)
+{
+    if (workspace == NULL || message_name == NULL ||
+        message_name[0] == '\0') {
+        return false;
+    }
+    nmo_session_t *session = nmo_workspace_internal_session(workspace);
+    const nmo_file_state_t *file_state =
+        session != NULL ? nmo_session_get_file_state(session) : NULL;
+    if (session == NULL || file_state == NULL ||
+        file_state->manager_data == NULL) {
+        return false;
+    }
+
+    for (uint32_t i = 0; i < file_state->manager_data_count; ++i) {
+        const nmo_manager_data_t *manager = &file_state->manager_data[i];
+        if (!nmo_guid_equals(manager->guid, NMO_MANAGER_GUID_MESSAGE) ||
+            manager->chunk == NULL) {
+            continue;
+        }
+
+        nmo_chunk_t *chunk =
+            nmo_chunk_clone(manager->chunk, nmo_session_get_arena(session));
+        if (chunk == NULL ||
+            nmo_chunk_start_read(chunk) != NMO_OK ||
+            nmo_chunk_seek_identifier(chunk, 0x53u) !=
+                NMO_OK) {
+            continue;
+        }
+
+        int32_t count = 0;
+        if (nmo_chunk_read_int(chunk, &count) != NMO_OK || count < 0) {
+            continue;
+        }
+        for (int32_t index = 0; index < count; ++index) {
+            char *name = NULL;
+            if (nmo_chunk_read_string(chunk, &name) != NMO_OK) {
+                break;
+            }
+            if (name != NULL && strcmp(name, message_name) == 0) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+static nmo_status_t semantic_add_manager_default_risks(
+    nmo_workspace_t *workspace,
+    nmo_context_t *ctx,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t parent_behavior_id,
+    nmo_guid_t bb_guid,
+    nmo_manager_entry_policy_t manager_entry_policy)
+{
+    if (manager_entry_policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING) {
+        return NMO_OK;
+    }
+
+    const nmo_behavior_proto_t *proto =
+        ctx != NULL
+            ? nmo_behavior_registry_find(
+                  nmo_context_get_bb_registry(ctx), bb_guid)
+            : NULL;
+    if (proto == NULL || proto->input_params == NULL) {
+        return NMO_OK;
+    }
+
+    for (uint32_t i = 0; i < proto->input_param_count; ++i) {
+        const nmo_behavior_param_desc_t *param = &proto->input_params[i];
+        if (param->default_value == NULL || param->default_value[0] == '\0' ||
+            !nmo_guid_equals(param->type_guid, CKPGUID_MESSAGE)) {
+            continue;
+        }
+        if (!semantic_message_manager_has_name(
+                workspace, param->default_value)) {
+            return semantic_add_risk(
+                risks,
+                risk_count,
+                NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+                "missing_manager_entry",
+                "Building-block default references a missing manager entry",
+                parent_behavior_id);
+        }
+    }
+
+    return NMO_OK;
+}
+
 static nmo_status_t semantic_validate_basic_edit_op(
+    nmo_workspace_t *workspace,
     nmo_context_t *ctx,
     nmo_object_repository_t *repo,
     const nmo_edit_plan_t *plan,
@@ -1452,12 +1550,20 @@ static nmo_status_t semantic_validate_basic_edit_op(
             risks,
             risk_count,
             op->data.add_node.parent_behavior_id));
-        return semantic_add_building_block_risk(
+        NMO_RETURN_IF_ERROR(semantic_add_building_block_risk(
             ctx,
             risks,
             risk_count,
             op->data.add_node.parent_behavior_id,
-            op->data.add_node.bb_guid);
+            op->data.add_node.bb_guid));
+        return semantic_add_manager_default_risks(
+            workspace,
+            ctx,
+            risks,
+            risk_count,
+            op->data.add_node.parent_behavior_id,
+            op->data.add_node.bb_guid,
+            op->data.add_node.options.manager_entry_policy);
     case NMO_EDIT_OP_REMOVE_NODE:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,
@@ -2207,7 +2313,7 @@ nmo_status_t nmo_semantic_validate_edit_plan(
             continue;
         }
         rc = semantic_validate_basic_edit_op(
-            ctx, repo, plan, i, op, &risks, &risk_count);
+            workspace, ctx, repo, plan, i, op, &risks, &risk_count);
         if (rc != NMO_OK) {
             goto fail;
         }
