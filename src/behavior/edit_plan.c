@@ -2410,6 +2410,15 @@ static nmo_status_t edit_executor_apply_op(
             to_io_id);
     }
     case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK: {
+        nmo_object_id_t before_from_io_id = 0u;
+        nmo_object_id_t before_to_io_id = 0u;
+        uint32_t before_activation_delay = 0u;
+        edit_plan_get_behavior_link_endpoints(
+            tx,
+            op->data.rewire_link.link_id,
+            &before_from_io_id,
+            &before_to_io_id,
+            &before_activation_delay);
         nmo_status_t rc = nmo_script_edit_rewire_behavior_link(
             tx,
             op->data.rewire_link.link_id,
@@ -2418,17 +2427,95 @@ static nmo_status_t edit_executor_apply_op(
         if (rc != NMO_OK) {
             return rc;
         }
+        nmo_object_id_t after_from_io_id = 0u;
+        nmo_object_id_t after_to_io_id = 0u;
+        uint32_t after_activation_delay = 0u;
+        edit_plan_get_behavior_link_endpoints(
+            tx,
+            op->data.rewire_link.link_id,
+            &after_from_io_id,
+            &after_to_io_id,
+            &after_activation_delay);
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            report,
+            op->data.rewire_link.link_id,
+            NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK,
+            "primary"));
+        edit_report_set_control_link_before(
+            report->changed_objects,
+            report->changed_object_count,
+            op->data.rewire_link.link_id,
+            NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK,
+            "primary",
+            before_from_io_id,
+            before_to_io_id,
+            before_activation_delay);
+        edit_report_set_control_link_after(
+            report->changed_objects,
+            report->changed_object_count,
+            op->data.rewire_link.link_id,
+            NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK,
+            "primary",
+            after_from_io_id,
+            after_to_io_id,
+            after_activation_delay);
         return edit_report_note_control_link_endpoints(
             report,
             NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK,
             op->data.rewire_link.from_io_id,
             op->data.rewire_link.to_io_id);
     }
-    case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY:
-        return nmo_script_edit_set_behavior_link_delay(
+    case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY: {
+        nmo_object_id_t before_from_io_id = 0u;
+        nmo_object_id_t before_to_io_id = 0u;
+        uint32_t before_activation_delay = 0u;
+        edit_plan_get_behavior_link_endpoints(
+            tx,
+            op->data.set_link_delay.link_id,
+            &before_from_io_id,
+            &before_to_io_id,
+            &before_activation_delay);
+        nmo_status_t rc = nmo_script_edit_set_behavior_link_delay(
             tx,
             op->data.set_link_delay.link_id,
             op->data.set_link_delay.activation_delay);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+        nmo_object_id_t after_from_io_id = 0u;
+        nmo_object_id_t after_to_io_id = 0u;
+        uint32_t after_activation_delay = 0u;
+        edit_plan_get_behavior_link_endpoints(
+            tx,
+            op->data.set_link_delay.link_id,
+            &after_from_io_id,
+            &after_to_io_id,
+            &after_activation_delay);
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            report,
+            op->data.set_link_delay.link_id,
+            NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY,
+            "primary"));
+        edit_report_set_control_link_before(
+            report->changed_objects,
+            report->changed_object_count,
+            op->data.set_link_delay.link_id,
+            NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY,
+            "primary",
+            before_from_io_id,
+            before_to_io_id,
+            before_activation_delay);
+        edit_report_set_control_link_after(
+            report->changed_objects,
+            report->changed_object_count,
+            op->data.set_link_delay.link_id,
+            NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY,
+            "primary",
+            after_from_io_id,
+            after_to_io_id,
+            after_activation_delay);
+        return NMO_OK;
+    }
     case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK:
     {
         nmo_object_id_t from_io_id = 0u;
