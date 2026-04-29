@@ -172,7 +172,7 @@ static bool parse_manager_entry_policy_value(
     if (policy_val == NULL || out_policy == NULL || !yyjson_is_str(policy_val)) {
         nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                             __FILE__, __LINE__,
-                            "Invalid manager_entry_policy");
+                            "Invalid manager_entry.policy");
         return false;
     }
     const char *policy_text = yyjson_get_str(policy_val);
@@ -185,7 +185,7 @@ static bool parse_manager_entry_policy_value(
         return true;
     }
     nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                        __FILE__, __LINE__, "Invalid manager_entry_policy");
+                        __FILE__, __LINE__, "Invalid manager_entry.policy");
     return false;
 }
 

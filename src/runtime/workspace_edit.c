@@ -682,17 +682,28 @@ static nmo_status_t workspace_edit_prepare_manager_parameter_value(
     nmo_guid_t *out_guid,
     uint32_t *out_value)
 {
-    nmo_status_t explicit_result =
-        parse_manager_parameter_text(value_str, out_guid, out_value);
+    nmo_manager_entry_options_t manager_entry =
+        options != NULL ? options->manager_entry
+                        : nmo_manager_entry_options_default();
+    const char *entry_text =
+        manager_entry.key != NULL && manager_entry.key[0] != '\0'
+            ? manager_entry.key
+            : value_str;
+    nmo_status_t explicit_result = NMO_ERR_INVALID_ARGUMENT;
+    if (entry_text == value_str) {
+        explicit_result = parse_manager_parameter_text(value_str, out_guid,
+                                                      out_value);
+    }
     if (explicit_result == NMO_OK ||
-        workspace_edit_has_manager_value_separator(value_str) ||
+        (entry_text == value_str &&
+         workspace_edit_has_manager_value_separator(value_str)) ||
         edit == NULL ||
         state == NULL ||
         !nmo_guid_equals(state->manager_guid, NMO_MANAGER_GUID_MESSAGE)) {
         return explicit_result;
     }
 
-    const char *name_begin = value_str;
+    const char *name_begin = entry_text;
     while (name_begin != NULL && *name_begin != '\0' &&
            isspace((unsigned char)*name_begin)) {
         ++name_begin;
@@ -706,9 +717,6 @@ static nmo_status_t workspace_edit_prepare_manager_parameter_value(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_manager_entry_options_t manager_entry =
-        options != NULL ? options->manager_entry
-                        : nmo_manager_entry_options_default();
     if (manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_AUTO &&
         manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_MESSAGE) {
         return NMO_ERR_NOT_SUPPORTED;

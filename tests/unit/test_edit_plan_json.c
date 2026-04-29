@@ -314,6 +314,15 @@ TEST(edit_plan_json, rejects_legacy_manager_entry_policy)
         "Unknown field");
 }
 
+TEST(edit_plan_json, reports_manager_entry_policy_path)
+{
+    assert_plan_invalid_contains(
+        "{\"op\":\"set_parameter_value\",\"parameter_id\":7,"
+        "\"value\":\"CreatedMessage\","
+        "\"manager_entry\":{\"policy\":42}}",
+        "Invalid manager_entry.policy");
+}
+
 TEST(edit_plan_json, roundtrips_rewire_operation_handle_refs)
 {
     nmo_edit_plan_t *plan = NULL;
@@ -968,6 +977,7 @@ REGISTER_TEST(edit_plan_json, reads_manifest_with_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, writes_structured_manager_entry_options);
 REGISTER_TEST(edit_plan_json, reads_structured_manager_entry_options);
 REGISTER_TEST(edit_plan_json, rejects_legacy_manager_entry_policy);
+REGISTER_TEST(edit_plan_json, reports_manager_entry_policy_path);
 REGISTER_TEST(edit_plan_json, roundtrips_rewire_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, roundtrips_plan_without_manifest_paths);
 REGISTER_TEST(edit_plan_json, roundtrips_absent_parameter_bytes_options);

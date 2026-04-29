@@ -531,7 +531,7 @@ static int script_run_lua_parse_manager_entry_policy(
     }
     return luaL_error(
         state,
-        "manager_entry_policy must be 'require_existing' or 'create_missing'");
+        "manager_entry.policy must be 'require_existing' or 'create_missing'");
 }
 
 static int script_run_lua_parse_parameter_write_options(

@@ -620,6 +620,9 @@ static nmo_status_t debug_probe_analyze_message_selector(
 
     nmo_object_id_t selected_id = 0u;
     size_t candidate_count = 0u;
+    char candidate_ids[256];
+    size_t candidate_ids_len = 0u;
+    candidate_ids[0] = '\0';
     for (size_t i = 0; i < behavior->sub_behaviors.count; ++i) {
         nmo_object_id_t child_id =
             ((const nmo_object_id_t *)behavior->sub_behaviors.data)[i];
@@ -633,6 +636,18 @@ static nmo_status_t debug_probe_analyze_message_selector(
         if (!debug_probe_is_message_behavior(ctx, child)) {
             continue;
         }
+        if (candidate_ids_len < sizeof(candidate_ids) - 1u) {
+            int written = snprintf(candidate_ids + candidate_ids_len,
+                                   sizeof(candidate_ids) - candidate_ids_len,
+                                   "%s%u",
+                                   candidate_count == 0u ? "" : ",",
+                                   (unsigned)child_id);
+            if (written > 0) {
+                size_t append = (size_t)written;
+                size_t available = sizeof(candidate_ids) - candidate_ids_len;
+                candidate_ids_len += append < available ? append : available - 1u;
+            }
+        }
         selected_id = child_id;
         ++candidate_count;
     }
@@ -645,12 +660,14 @@ static nmo_status_t debug_probe_analyze_message_selector(
         NMO_RETURN_ERROR(
             NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR,
-            "debug probe message selector found no message candidates");
+            "debug probe message selector found no message candidates "
+            "(candidates: [])");
     }
     NMO_RETURN_ERROR(
         NMO_ERR_INVALID_ARGUMENT,
         NMO_SEVERITY_ERROR,
-        "debug probe message selector is ambiguous");
+        "debug probe message selector is ambiguous (candidates: [%s])",
+        candidate_ids);
 }
 
 static void debug_probe_replace_report_id(nmo_edit_report_t *report,

@@ -17,6 +17,17 @@ static void assert_lua_ok(nmo_lua_runtime_t *runtime, const char *script)
     ASSERT_EQ(NMO_OK, status);
 }
 
+static void assert_lua_error_contains(nmo_lua_runtime_t *runtime,
+                                      const char *script,
+                                      const char *expected)
+{
+    nmo_status_t status = nmo_lua_runtime_execute_string(runtime, script);
+    ASSERT_NE(NMO_OK, status);
+    const char *message = nmo_last_error_message();
+    ASSERT_NOT_NULL(message);
+    ASSERT_STR_CONTAINS(message, expected);
+}
+
 TEST(lua_bindings_behavior, behavior_module_uses_document_and_workspace_handles)
 {
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
@@ -321,6 +332,28 @@ TEST(lua_bindings_behavior, behavior_set_parameter_value_accepts_manager_entry_p
     nmo_lua_runtime_destroy(runtime);
 }
 
+TEST(lua_bindings_behavior, behavior_manager_entry_reports_policy_path)
+{
+    nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
+    ASSERT_NOT_NULL(runtime);
+
+    ASSERT_EQ(NMO_OK, nmo_lua_register_platform_bindings(runtime));
+    assert_lua_error_contains(
+        runtime,
+        "local context = require('nmo.context')\n"
+        "local document = require('nmo.document')\n"
+        "local workspace_mod = require('nmo.workspace')\n"
+        "local behavior = require('nmo.behavior')\n"
+        "local ctx = context.create()\n"
+        "local doc = document.load_file(ctx, '" NMO_TEST_DATA_FILE("Nop.cmo") "')\n"
+        "local ws = workspace_mod.create(ctx, doc)\n"
+        "local tx = behavior.begin_edit(ws, 'bad manager entry')\n"
+        "behavior.set_parameter_value(tx, 5, 'hello', { manager_entry = { policy = 'bad' } })\n",
+        "manager_entry.policy");
+
+    nmo_lua_runtime_destroy(runtime);
+}
+
 TEST(lua_bindings_behavior, behavior_execute_rollback_discards_queued_plan)
 {
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
@@ -365,6 +398,8 @@ TEST_MAIN_BEGIN()
                   behavior_add_node_accepts_manager_entry_policy);
     REGISTER_TEST(lua_bindings_behavior,
                   behavior_set_parameter_value_accepts_manager_entry_policy);
+    REGISTER_TEST(lua_bindings_behavior,
+                  behavior_manager_entry_reports_policy_path);
     REGISTER_TEST(lua_bindings_behavior,
                   behavior_execute_rollback_discards_queued_plan);
 TEST_MAIN_END()

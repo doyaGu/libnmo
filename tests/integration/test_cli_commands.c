@@ -3741,7 +3741,7 @@ TEST(cli, debug_probe_rejects_invalid_probe_options) {
         {
             "debug probe message-logger --behavior 237 --text trace "
             "\"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
-            "debug probe message selector found no message candidates",
+            "candidates: []",
         },
         {
             "debug probe message-logger --behavior 237 --message-node 237 "
