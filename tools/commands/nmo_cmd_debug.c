@@ -16,6 +16,7 @@
 #include "../nmo_opt.h"
 
 #include "behavior/nmo_edit_plan.h"
+#include "behavior/nmo_behavior_registry.h"
 #include "nmo.h"
 #include "document/nmo_document_stats.h"
 #include "document/nmo_document_save.h"
@@ -23,8 +24,10 @@
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
+#include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 
@@ -46,6 +49,7 @@ typedef struct nmo_debug_probe_args {
     nmo_object_id_t remove_link_id;
     nmo_object_id_t from_io_id;
     nmo_object_id_t to_io_id;
+    nmo_object_id_t message_node_id;
     nmo_object_id_t parameter_id;
     nmo_object_id_t dataarray_id;
     uint32_t data_row;
@@ -197,6 +201,14 @@ static int debug_probe_parse(int argc,
                 return NMO_CLI_EXIT_ARG_ERROR;
             }
             args->to_io_id = (nmo_object_id_t)parsed;
+        } else if (strcmp(argv[i], "--message-node") == 0 && i + 1 < argc) {
+            uint32_t parsed = 0u;
+            const char *value = argv[++i];
+            if (!debug_probe_parse_u32_arg(value, &parsed)) {
+                fprintf(stderr, "Error: Invalid --message-node '%s'\n", value);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            args->message_node_id = (nmo_object_id_t)parsed;
         } else if ((strcmp(argv[i], "--parameter") == 0 ||
                     strcmp(argv[i], "--source-param") == 0) &&
                    i + 1 < argc) {
@@ -267,6 +279,12 @@ static int debug_probe_parse(int argc,
         fprintf(stderr,
                 "Error: --text is only supported for 2d-text, console, and "
                 "debug-output/message/data-cell logger probes\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (args->message_node_id != 0u &&
+        strcmp(args->kind, "message-logger") != 0) {
+        fprintf(stderr,
+                "Error: --message-node is only supported for message-logger probes\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
     if (args->parameter_id != 0u && !spec->connects_parameter) {
@@ -425,6 +443,31 @@ static bool debug_probe_is_parameter_reference_class(nmo_class_id_t class_id)
            class_id == NMO_CID_PARAMETEROPERATION;
 }
 
+static bool debug_probe_is_message_behavior(
+    const nmo_cmd_ctx_t *ctx,
+    const nmo_behavior_state_t *state)
+{
+    if (state == NULL ||
+        (state->flags & CKBEHAVIOR_BUILDINGBLOCK) == 0u) {
+        return false;
+    }
+    const uint32_t message_flags =
+        CKBEHAVIOR_WAITSFORMESSAGE |
+        CKBEHAVIOR_MESSAGESENDER |
+        CKBEHAVIOR_MESSAGERECEIVER;
+    if ((state->flags & message_flags) != 0u) {
+        return true;
+    }
+    const nmo_behavior_proto_t *proto =
+        ctx != NULL && ctx->ctx != NULL
+            ? nmo_behavior_registry_find(
+                  nmo_context_get_bb_registry(ctx->ctx),
+                  state->block_guid)
+            : NULL;
+    return proto != NULL && proto->category != NULL &&
+           strcmp(proto->category, "Logics/Message") == 0;
+}
+
 static nmo_status_t debug_probe_validate_targets(
     nmo_cmd_ctx_t *ctx,
     const nmo_debug_probe_args_t *args,
@@ -461,6 +504,29 @@ static nmo_status_t debug_probe_validate_targets(
                 nmo_object_get_class_id(parameter))) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                              "debug probe parameter target is not a parameter");
+        }
+    }
+
+    if (args->message_node_id != 0u) {
+        nmo_object_t *message_node =
+            nmo_object_repository_find_by_id(repo, args->message_node_id);
+        if (message_node == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                             "debug probe message-node not found");
+        }
+        if (nmo_object_get_class_id(message_node) != NMO_CID_BEHAVIOR) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR,
+                "debug probe message-node target is not a behavior");
+        }
+        const nmo_behavior_state_t *message_state =
+            (const nmo_behavior_state_t *)nmo_object_get_state(message_node);
+        if (!debug_probe_is_message_behavior(ctx, message_state)) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR,
+                "debug probe message-node target is not a message behavior");
         }
     }
 
@@ -697,6 +763,12 @@ static int debug_probe_report(nmo_cmd_ctx_t *ctx,
         nmo_cli_json_add_str_safe(doc, data, "probe_kind", args->kind);
         yyjson_mut_obj_add_uint(doc, data, "behavior_id",
                                 (uint64_t)args->behavior_id);
+        if (args->message_node_id != 0u) {
+            yyjson_mut_obj_add_uint(doc, data, "message_node_id",
+                                    (uint64_t)args->message_node_id);
+            nmo_cli_json_add_str_safe(
+                doc, data, "probe_selector", "message_flow");
+        }
         int rc = nmo_cmd_ctx_json_end(ctx, doc, data, "debug.probe");
         nmo_edit_report_dispose(&args->report);
         return rc;

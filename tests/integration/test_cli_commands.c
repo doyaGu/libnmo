@@ -3529,6 +3529,28 @@ TEST(cli, debug_probe_message_logger_text_option_uses_edit_plan) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, debug_probe_message_logger_analyzes_message_node_without_display_name) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json debug probe message-logger --behavior 237 "
+             "--message-node 1667 --name MessageLoggerProbe "
+             "--text \"message trace\" \"%s\" --dry-run",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    ASSERT_STR_EQ(json_envelope_command(doc), "debug.probe");
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(data, "ok")));
+    ASSERT_STR_EQ("message-logger",
+                  yyjson_get_str(yyjson_obj_get(data, "probe_kind")));
+    ASSERT_EQ(1667u, yyjson_get_uint(yyjson_obj_get(data, "message_node_id")));
+    ASSERT_STR_EQ("message_flow",
+                  yyjson_get_str(yyjson_obj_get(data, "probe_selector")));
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, debug_probe_parameter_logger_connects_source_parameter) {
     char args[1024];
     snprintf(args, sizeof(args),
@@ -3676,6 +3698,16 @@ TEST(cli, debug_probe_rejects_invalid_probe_options) {
             "debug probe 2d-text --behavior 237 --delay 10 "
             "\"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
             "--delay requires --from-io, --to-io, or --remove-link",
+        },
+        {
+            "debug probe message-logger --behavior 237 --message-node 237 "
+            "\"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "debug probe message-node target is not a message behavior",
+        },
+        {
+            "debug probe 2d-text --behavior 237 --message-node 1667 "
+            "\"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "--message-node is only supported for message-logger probes",
         },
     };
 
@@ -3838,6 +3870,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, debug_probe_debug_output_dry_run_reports_edit_plan);
     REGISTER_TEST(cli, debug_probe_debug_output_text_option_uses_edit_plan);
     REGISTER_TEST(cli, debug_probe_message_logger_text_option_uses_edit_plan);
+    REGISTER_TEST(cli, debug_probe_message_logger_analyzes_message_node_without_display_name);
     REGISTER_TEST(cli, debug_probe_parameter_logger_connects_source_parameter);
     REGISTER_TEST(cli, debug_probe_data_cell_logger_uses_edit_plan);
     REGISTER_TEST(cli, debug_probe_control_marker_dry_run_reports_edit_plan);
