@@ -50,6 +50,9 @@ typedef struct nmo_debug_probe_args {
     nmo_object_id_t from_io_id;
     nmo_object_id_t to_io_id;
     nmo_object_id_t message_node_id;
+    nmo_object_id_t write_node_id;
+    nmo_object_id_t write_operation_id;
+    nmo_object_id_t write_link_id;
     nmo_object_id_t parameter_id;
     nmo_object_id_t dataarray_id;
     uint32_t data_row;
@@ -65,6 +68,7 @@ typedef struct nmo_debug_probe_args {
     char selector_rejection_code[64];
     nmo_object_id_t selector_selected_node_id;
     nmo_object_id_t selector_selected_link_id;
+    nmo_object_id_t selector_selected_operation_id;
     struct {
         nmo_object_id_t node_id;
         nmo_object_id_t parent_id;
@@ -225,6 +229,30 @@ static int debug_probe_parse(int argc,
                 return NMO_CLI_EXIT_ARG_ERROR;
             }
             args->message_node_id = (nmo_object_id_t)parsed;
+        } else if (strcmp(argv[i], "--write-node") == 0 && i + 1 < argc) {
+            uint32_t parsed = 0u;
+            const char *value = argv[++i];
+            if (!debug_probe_parse_u32_arg(value, &parsed)) {
+                fprintf(stderr, "Error: Invalid --write-node '%s'\n", value);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            args->write_node_id = (nmo_object_id_t)parsed;
+        } else if (strcmp(argv[i], "--write-operation") == 0 && i + 1 < argc) {
+            uint32_t parsed = 0u;
+            const char *value = argv[++i];
+            if (!debug_probe_parse_u32_arg(value, &parsed)) {
+                fprintf(stderr, "Error: Invalid --write-operation '%s'\n", value);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            args->write_operation_id = (nmo_object_id_t)parsed;
+        } else if (strcmp(argv[i], "--write-link") == 0 && i + 1 < argc) {
+            uint32_t parsed = 0u;
+            const char *value = argv[++i];
+            if (!debug_probe_parse_u32_arg(value, &parsed)) {
+                fprintf(stderr, "Error: Invalid --write-link '%s'\n", value);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            args->write_link_id = (nmo_object_id_t)parsed;
         } else if ((strcmp(argv[i], "--parameter") == 0 ||
                     strcmp(argv[i], "--source-param") == 0) &&
                    i + 1 < argc) {
@@ -303,6 +331,14 @@ static int debug_probe_parse(int argc,
                 "Error: --message-node is only supported for message-logger probes\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
+    if ((args->write_node_id != 0u ||
+         args->write_operation_id != 0u ||
+         args->write_link_id != 0u) &&
+        !spec->logs_data_cell) {
+        fprintf(stderr,
+                "Error: --write-node/--write-operation/--write-link are only supported for data-cell-logger probes\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
     if (args->parameter_id != 0u && !spec->connects_parameter) {
         fprintf(stderr,
                 "Error: --parameter is only supported for parameter-logger probes\n");
@@ -352,6 +388,7 @@ static int debug_probe_parse(int argc,
                 "Usage: nmo debug probe 2d-text|console|debug-output|message-logger|parameter-logger|data-cell-logger|control-marker "
                 "--behavior <id> [--remove-link <id>] [--from-io <id>] [--to-io <id>] "
                 "[--parameter <id>] [--dataarray <id> --row <n> --col <n>] "
+                "[--write-node <id>|--write-operation <id>|--write-link <id>] "
                 "[--delay <n>] [--name <name>] [--text <text>] [--dry-run] <file> "
                 "-o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -501,6 +538,66 @@ static const char *debug_probe_message_role(const nmo_behavior_state_t *state)
     return "message";
 }
 
+static bool debug_probe_text_contains_ci(const char *text, const char *needle)
+{
+    if (text == NULL || needle == NULL || needle[0] == '\0') {
+        return false;
+    }
+    size_t needle_len = strlen(needle);
+    for (const char *p = text; *p != '\0'; ++p) {
+        size_t i = 0u;
+        while (i < needle_len && p[i] != '\0') {
+            char a = p[i];
+            char b = needle[i];
+            if (a >= 'A' && a <= 'Z') {
+                a = (char)(a - 'A' + 'a');
+            }
+            if (b >= 'A' && b <= 'Z') {
+                b = (char)(b - 'A' + 'a');
+            }
+            if (a != b) {
+                break;
+            }
+            ++i;
+        }
+        if (i == needle_len) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool debug_probe_is_data_write_behavior(
+    const nmo_cmd_ctx_t *ctx,
+    const nmo_behavior_state_t *state)
+{
+    if (state == NULL ||
+        (state->flags & CKBEHAVIOR_BUILDINGBLOCK) == 0u) {
+        return false;
+    }
+    const nmo_behavior_proto_t *proto =
+        ctx != NULL && ctx->ctx != NULL
+            ? nmo_behavior_registry_find(
+                  nmo_context_get_bb_registry(ctx->ctx),
+                  state->block_guid)
+            : NULL;
+    if (proto == NULL || proto->category == NULL ||
+        strcmp(proto->category, "Logics/Array") != 0 ||
+        proto->name == NULL) {
+        return false;
+    }
+    static const char *const write_verbs[] = {
+        "add", "change", "clear", "insert", "move", "remove",
+        "reverse", "set", "shuffle", "sort", "swap",
+    };
+    for (size_t i = 0; i < sizeof(write_verbs) / sizeof(write_verbs[0]); ++i) {
+        if (debug_probe_text_contains_ci(proto->name, write_verbs[i])) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void debug_probe_selector_set_mode_status(
     nmo_debug_probe_args_t *args,
     const char *mode,
@@ -525,7 +622,8 @@ static void debug_probe_selector_add_candidate(
     nmo_debug_probe_args_t *args,
     nmo_object_id_t parent_id,
     nmo_object_id_t node_id,
-    const nmo_behavior_state_t *state)
+    const nmo_behavior_state_t *state,
+    const char *role_override)
 {
     if (args == NULL ||
         args->selector_candidate_count >=
@@ -551,7 +649,8 @@ static void debug_probe_selector_add_candidate(
     snprintf(args->selector_candidates[index].role,
              sizeof(args->selector_candidates[index].role),
              "%s",
-             debug_probe_message_role(state));
+             role_override != NULL ? role_override
+                                    : debug_probe_message_role(state));
 }
 
 static bool debug_probe_behavior_has_io(const nmo_behavior_state_t *state,
@@ -642,7 +741,8 @@ static nmo_status_t debug_probe_validate_targets(
                 args,
                 args->behavior_id,
                 args->message_node_id,
-                message_state);
+                message_state,
+                NULL);
         }
         if (args->remove_link_id != 0u) {
             nmo_object_t *link_obj =
@@ -749,7 +849,7 @@ static nmo_status_t debug_probe_analyze_message_selector(
             continue;
         }
         debug_probe_selector_add_candidate(
-            ctx, args, args->behavior_id, child_id, child);
+            ctx, args, args->behavior_id, child_id, child, NULL);
         if (candidate_ids_len < sizeof(candidate_ids) - 1u) {
             int written = snprintf(candidate_ids + candidate_ids_len,
                                    sizeof(candidate_ids) - candidate_ids_len,
@@ -788,6 +888,133 @@ static nmo_status_t debug_probe_analyze_message_selector(
         NMO_SEVERITY_ERROR,
         "debug probe message selector is ambiguous (candidates: [%s])",
         candidate_ids);
+}
+
+static nmo_status_t debug_probe_analyze_data_cell_selector(
+    nmo_cmd_ctx_t *ctx,
+    nmo_debug_probe_args_t *args)
+{
+    if (ctx == NULL || args == NULL ||
+        strcmp(args->kind, "data-cell-logger") != 0) {
+        return NMO_OK;
+    }
+
+    unsigned explicit_count = 0u;
+    if (args->write_node_id != 0u) {
+        ++explicit_count;
+    }
+    if (args->write_operation_id != 0u) {
+        ++explicit_count;
+    }
+    if (args->write_link_id != 0u) {
+        ++explicit_count;
+    }
+    if (explicit_count > 1u) {
+        debug_probe_selector_set_mode_status(
+            args, "explicit", "ambiguous", "ambiguous_write_site_selector");
+        NMO_RETURN_ERROR(
+            NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR,
+            "debug probe data-cell write selector is ambiguous");
+    }
+
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(ctx->workspace);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    args->selector_candidate_count = 0u;
+    args->selector_selected_node_id = 0u;
+    args->selector_selected_link_id = 0u;
+    args->selector_selected_operation_id = 0u;
+
+    if (args->write_node_id != 0u) {
+        debug_probe_selector_set_mode_status(
+            args, "explicit_node", "selected", NULL);
+        nmo_object_t *node_obj =
+            nmo_object_repository_find_by_id(repo, args->write_node_id);
+        const nmo_behavior_state_t *node =
+            node_obj != NULL &&
+                    nmo_object_get_class_id(node_obj) == NMO_CID_BEHAVIOR
+                ? (const nmo_behavior_state_t *)nmo_object_get_state(node_obj)
+                : NULL;
+        if (node == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                             "debug probe write-node not found");
+        }
+        if (!debug_probe_is_data_write_behavior(ctx, node)) {
+            debug_probe_selector_set_mode_status(
+                args,
+                "explicit_node",
+                "unsafe",
+                "not_data_write_behavior");
+            NMO_RETURN_ERROR(
+                NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR,
+                "debug probe write-node target is not a data write behavior");
+        }
+        args->selector_selected_node_id = args->write_node_id;
+        debug_probe_selector_add_candidate(
+            ctx,
+            args,
+            args->behavior_id,
+            args->write_node_id,
+            node,
+            "data_writer");
+        return NMO_OK;
+    }
+
+    if (args->write_operation_id != 0u) {
+        debug_probe_selector_set_mode_status(
+            args, "explicit_operation", "selected", NULL);
+        nmo_object_t *op_obj =
+            nmo_object_repository_find_by_id(repo, args->write_operation_id);
+        if (op_obj == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                             "debug probe write-operation not found");
+        }
+        if (nmo_object_get_class_id(op_obj) != NMO_CID_PARAMETEROPERATION) {
+            debug_probe_selector_set_mode_status(
+                args,
+                "explicit_operation",
+                "unsafe",
+                "not_parameter_operation");
+            NMO_RETURN_ERROR(
+                NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR,
+                "debug probe write-operation target is not a parameter operation");
+        }
+        args->selector_selected_operation_id = args->write_operation_id;
+        return NMO_OK;
+    }
+
+    if (args->write_link_id != 0u) {
+        debug_probe_selector_set_mode_status(
+            args, "explicit_link", "selected", NULL);
+        nmo_object_t *link_obj =
+            nmo_object_repository_find_by_id(repo, args->write_link_id);
+        if (link_obj == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                             "debug probe write-link not found");
+        }
+        if (nmo_object_get_class_id(link_obj) != NMO_CID_BEHAVIORLINK) {
+            debug_probe_selector_set_mode_status(
+                args,
+                "explicit_link",
+                "unsafe",
+                "not_behavior_link");
+            NMO_RETURN_ERROR(
+                NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR,
+                "debug probe write-link target is not a behavior link");
+        }
+        args->selector_selected_link_id = args->write_link_id;
+        return NMO_OK;
+    }
+
+    debug_probe_selector_set_mode_status(
+        args, "explicit_data_cell", "selected", NULL);
+    return NMO_OK;
 }
 
 static nmo_status_t debug_probe_select_message_link(
@@ -1041,6 +1268,9 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
         status = debug_probe_analyze_message_selector(ctx, args);
     }
     if (status == NMO_OK) {
+        status = debug_probe_analyze_data_cell_selector(ctx, args);
+    }
+    if (status == NMO_OK) {
         status = debug_probe_validate_targets(ctx, args, spec);
     }
     if (status == NMO_OK) {
@@ -1129,6 +1359,7 @@ static int debug_probe_report(nmo_cmd_ctx_t *ctx,
     if (ctx == NULL || args == NULL) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
+    const debug_probe_kind_spec_t *spec = debug_probe_find_kind(args->kind);
 
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
@@ -1153,6 +1384,9 @@ static int debug_probe_report(nmo_cmd_ctx_t *ctx,
                                     (uint64_t)args->message_node_id);
             nmo_cli_json_add_str_safe(
                 doc, data, "probe_selector", "message_flow");
+        } else if (spec != NULL && spec->logs_data_cell) {
+            nmo_cli_json_add_str_safe(
+                doc, data, "probe_selector", "data_cell_write");
         }
         yyjson_mut_val *selector_diag =
             debug_probe_selector_diagnostics_json(doc, args);
@@ -1223,6 +1457,11 @@ static yyjson_mut_val *debug_probe_selector_diagnostics_json(
         yyjson_mut_obj_add_uint(
             doc, diag, "selected_link_id",
             (uint64_t)args->selector_selected_link_id);
+    }
+    if (args->selector_selected_operation_id != 0u) {
+        yyjson_mut_obj_add_uint(
+            doc, diag, "selected_operation_id",
+            (uint64_t)args->selector_selected_operation_id);
     }
     if (args->selector_rejection_code[0] != '\0') {
         nmo_cli_json_add_str_safe(

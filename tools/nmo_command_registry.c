@@ -346,6 +346,9 @@ static void debug_probe_usage(FILE *out) {
     fprintf(out, "  --dataarray <id>        Data array id tagged by data-cell-logger\n");
     fprintf(out, "  --row <n>               Data array row tagged by data-cell-logger\n");
     fprintf(out, "  --col <n>               Data array column tagged by data-cell-logger\n");
+    fprintf(out, "  --write-node <id>       Explicit data write behavior for data-cell-logger\n");
+    fprintf(out, "  --write-operation <id>  Explicit data write operation for data-cell-logger\n");
+    fprintf(out, "  --write-link <id>       Explicit data write control link for data-cell-logger\n");
     fprintf(out, "  --delay <n>             Activation delay for the first generated probe link\n");
     fprintf(out, "  --name <name>           Probe node name (default: nmo debug probe)\n");
     fprintf(out, "  --text <text>           Probe text for 2d-text, console, debug-output, message-logger, or data-cell-logger\n");

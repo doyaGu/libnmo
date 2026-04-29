@@ -3677,6 +3677,13 @@ TEST(cli, debug_probe_data_cell_logger_uses_edit_plan) {
     ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(data, "ok")));
     ASSERT_STR_EQ("data-cell-logger",
                   yyjson_get_str(yyjson_obj_get(data, "probe_kind")));
+    ASSERT_STR_EQ("data_cell_write",
+                  yyjson_get_str(yyjson_obj_get(data, "probe_selector")));
+    yyjson_val *diag = yyjson_obj_get(data, "probe_selector_diagnostics");
+    ASSERT_NOT_NULL(diag);
+    ASSERT_STR_EQ("explicit_data_cell",
+                  yyjson_get_str(yyjson_obj_get(diag, "mode")));
+    ASSERT_STR_EQ("selected", yyjson_get_str(yyjson_obj_get(diag, "status")));
     yyjson_val *operations = yyjson_obj_get(data, "operations");
     ASSERT_TRUE(operations && yyjson_is_arr(operations));
     ASSERT_EQ(2u, yyjson_arr_size(operations));
@@ -3689,6 +3696,37 @@ TEST(cli, debug_probe_data_cell_logger_uses_edit_plan) {
     ASSERT_EQ(0u, (uint32_t)yyjson_get_uint(
                       yyjson_obj_get(set_op, "status")));
     ASSERT_TRUE(yyjson_get_uint(yyjson_obj_get(set_op, "result_id")) != 0u);
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, debug_probe_data_cell_logger_reports_explicit_write_node) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json debug probe data-cell-logger --behavior 3880 "
+             "--dataarray 6067 --row 0 --col 1 --write-node 3871 "
+             "\"%s\" --dry-run",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    ASSERT_STR_EQ(json_envelope_command(doc), "debug.probe");
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(data, "ok")));
+    ASSERT_STR_EQ("data_cell_write",
+                  yyjson_get_str(yyjson_obj_get(data, "probe_selector")));
+    yyjson_val *diag = yyjson_obj_get(data, "probe_selector_diagnostics");
+    ASSERT_NOT_NULL(diag);
+    ASSERT_STR_EQ("explicit_node", yyjson_get_str(yyjson_obj_get(diag, "mode")));
+    ASSERT_STR_EQ("selected", yyjson_get_str(yyjson_obj_get(diag, "status")));
+    ASSERT_EQ(3871u,
+              yyjson_get_uint(yyjson_obj_get(diag, "selected_node_id")));
+    yyjson_val *candidates = yyjson_obj_get(diag, "candidates");
+    ASSERT_TRUE(candidates && yyjson_is_arr(candidates));
+    ASSERT_EQ(1u, yyjson_arr_size(candidates));
+    yyjson_val *candidate = yyjson_arr_get(candidates, 0);
+    ASSERT_EQ(3871u, yyjson_get_uint(yyjson_obj_get(candidate, "node_id")));
+    ASSERT_STR_EQ("data_writer", yyjson_get_str(yyjson_obj_get(candidate, "role")));
     yyjson_doc_free(doc);
 }
 
@@ -3775,6 +3813,17 @@ TEST(cli, debug_probe_rejects_invalid_probe_options) {
             "debug probe data-cell-logger --behavior 237 --dataarray 6067 "
             "--row nope --col 1 \"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
             "Invalid --row",
+        },
+        {
+            "debug probe data-cell-logger --behavior 3880 --dataarray 6067 "
+            "--row 0 --col 1 --write-node 237 \""
+            NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "debug probe write-node target is not a data write behavior",
+        },
+        {
+            "debug probe 2d-text --behavior 237 --write-node 3871 "
+            "\"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "--write-node/--write-operation/--write-link are only supported",
         },
         {
             "debug probe 2d-text --behavior 237 --delay 10 "
@@ -3967,6 +4016,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, debug_probe_message_logger_inserts_on_selected_message_link);
     REGISTER_TEST(cli, debug_probe_parameter_logger_connects_source_parameter);
     REGISTER_TEST(cli, debug_probe_data_cell_logger_uses_edit_plan);
+    REGISTER_TEST(cli, debug_probe_data_cell_logger_reports_explicit_write_node);
     REGISTER_TEST(cli, debug_probe_control_marker_dry_run_reports_edit_plan);
     REGISTER_TEST(cli, debug_probe_rejects_invalid_probe_options);
     REGISTER_TEST(cli, unknown_command_error);
