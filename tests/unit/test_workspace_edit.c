@@ -1034,6 +1034,49 @@ TEST(workspace_edit, value_writer_rejects_unsupported_manager_entry_kind) {
     nmo_context_release(ctx);
 }
 
+TEST(workspace_edit, value_writer_accepts_message_manager_guid_option) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t param_id = 0;
+    create_object_or_fail(session, NMO_CID_PARAMETER, "message-param", &param_id);
+    nmo_object_t *param_obj =
+        nmo_object_repository_find_by_id(nmo_session_get_repository(session), param_id);
+    ASSERT_NOT_NULL(param_obj);
+    nmo_parameter_state_t *state = nmo_parameter_get_mutable_state(param_obj);
+    ASSERT_NOT_NULL(state);
+    state->type_guid = CKPGUID_MESSAGE;
+    state->mode = CKPARAM_MODE_MANAGER;
+    state->has_state = true;
+    state->manager_guid = NMO_MANAGER_GUID_MESSAGE;
+    state->manager_value = 1u;
+
+    nmo_parameter_write_options_t options = {
+        .manager_entry = {
+            .policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
+            .manager = NMO_MANAGER_ENTRY_MANAGER_GUID,
+            .manager_guid = NMO_MANAGER_GUID_MESSAGE,
+            .key = "GuidMessage",
+        },
+    };
+    workspace_edit_scope_t scope = {0};
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              begin_workspace_edit_for_session(
+                  ctx, session, "message manager guid", &scope, &edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_value_writer_set_parameter_value(
+                  edit, param_id, "IgnoredValue", &options));
+    ASSERT_TRUE(nmo_guid_equals(NMO_MANAGER_GUID_MESSAGE, state->manager_guid));
+    ASSERT_EQ(0u, state->manager_value);
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&scope));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(workspace_edit, value_writer_writes_structured_parameter_values) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
@@ -1694,6 +1737,7 @@ REGISTER_TEST(workspace_edit, value_writer_writes_manager_refs_and_rejects_inval
 REGISTER_TEST(workspace_edit, value_writer_resolves_message_manager_names_with_policy);
 REGISTER_TEST(workspace_edit, value_writer_uses_manager_entry_key_for_lookup);
 REGISTER_TEST(workspace_edit, value_writer_rejects_unsupported_manager_entry_kind);
+REGISTER_TEST(workspace_edit, value_writer_accepts_message_manager_guid_option);
 REGISTER_TEST(workspace_edit, value_writer_writes_structured_parameter_values);
 REGISTER_TEST(workspace_edit, value_writer_writes_enum_and_flag_parameter_values);
 REGISTER_TEST(workspace_edit, parameter_bytes_commit_zero_fills_and_rollback_restores);

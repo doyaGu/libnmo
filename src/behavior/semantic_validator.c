@@ -1446,8 +1446,20 @@ static nmo_status_t semantic_add_manager_default_risks(
     nmo_guid_t bb_guid,
     nmo_manager_entry_options_t manager_entry)
 {
-    if (manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_AUTO &&
-        manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_MESSAGE) {
+    if (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_GUID &&
+        nmo_guid_is_null(manager_entry.manager_guid)) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "missing_manager_guid",
+            "manager_entry.manager='guid' requires manager_entry.manager_guid",
+            parent_behavior_id);
+    }
+    if (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE ||
+        (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_GUID &&
+         !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE) &&
+         manager_entry.policy != NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING)) {
         return semantic_add_risk(
             risks,
             risk_count,
@@ -1456,7 +1468,19 @@ static nmo_status_t semantic_add_manager_default_risks(
             "Manager entry creation is only supported for CKMessageManager values",
             parent_behavior_id);
     }
+    if (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_GUID &&
+        !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE) &&
+        manager_entry.policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "unknown_manager_create_forbidden",
+            "Creating entries for an unknown manager GUID is not supported",
+            parent_behavior_id);
+    }
     if (!nmo_guid_is_null(manager_entry.manager_guid) &&
+        manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_GUID &&
         !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE)) {
         return semantic_add_risk(
             risks,
@@ -1529,8 +1553,20 @@ static nmo_status_t semantic_add_manager_value_risk(
     nmo_manager_entry_options_t manager_entry,
     bool is_message_manager_value)
 {
-    if (manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_AUTO &&
-        manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_MESSAGE) {
+    if (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_GUID &&
+        nmo_guid_is_null(manager_entry.manager_guid)) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "missing_manager_guid",
+            "manager_entry.manager='guid' requires manager_entry.manager_guid",
+            object_id);
+    }
+    if (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE ||
+        (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_GUID &&
+         !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE) &&
+         manager_entry.policy != NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING)) {
         return semantic_add_risk(
             risks,
             risk_count,
@@ -1539,7 +1575,19 @@ static nmo_status_t semantic_add_manager_value_risk(
             "Manager entry creation is only supported for CKMessageManager values",
             object_id);
     }
+    if (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_GUID &&
+        !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE) &&
+        manager_entry.policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "unknown_manager_create_forbidden",
+            "Creating entries for an unknown manager GUID is not supported",
+            object_id);
+    }
     if (!nmo_guid_is_null(manager_entry.manager_guid) &&
+        manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_GUID &&
         !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE)) {
         return semantic_add_risk(
             risks,
@@ -1550,16 +1598,20 @@ static nmo_status_t semantic_add_manager_value_risk(
             object_id);
     }
 
+    const char *entry_value =
+        manager_entry.key != NULL && manager_entry.key[0] != '\0'
+            ? manager_entry.key
+            : value;
     if (manager_entry.policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING ||
-        value == NULL ||
-        value[0] == '\0' ||
-        strchr(value, ':') != NULL ||
-        strchr(value, '=') != NULL ||
+        entry_value == NULL ||
+        entry_value[0] == '\0' ||
+        strchr(entry_value, ':') != NULL ||
+        strchr(entry_value, '=') != NULL ||
         !is_message_manager_value) {
         return NMO_OK;
     }
 
-    const char *begin = value;
+    const char *begin = entry_value;
     while (*begin != '\0' && isspace((unsigned char)*begin)) {
         ++begin;
     }

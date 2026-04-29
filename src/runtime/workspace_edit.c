@@ -717,11 +717,17 @@ static nmo_status_t workspace_edit_prepare_manager_parameter_value(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_AUTO &&
-        manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_MESSAGE) {
+    if (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_GUID &&
+        nmo_guid_is_null(manager_entry.manager_guid)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE ||
+        (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_GUID &&
+         !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE))) {
         return NMO_ERR_NOT_SUPPORTED;
     }
     if (!nmo_guid_is_null(manager_entry.manager_guid) &&
+        manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_GUID &&
         !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE)) {
         return NMO_ERR_NOT_SUPPORTED;
     }
