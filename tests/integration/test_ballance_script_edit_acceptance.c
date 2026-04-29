@@ -150,6 +150,12 @@ static bool get_bool_field(yyjson_val *obj, const char *key)
     return val && yyjson_is_bool(val) && yyjson_get_bool(val);
 }
 
+static uint64_t get_uint_field(yyjson_val *obj, const char *key)
+{
+    yyjson_val *val = yyjson_obj_get(obj, key);
+    return val && yyjson_is_uint(val) ? yyjson_get_uint(val) : 0u;
+}
+
 static void run_json_command(
     const char *args,
     const char *expected_command,
@@ -486,6 +492,31 @@ TEST(ballance_acceptance, accepted_attribute_manager_entry_save_load_validates)
     ASSERT_TRUE(file_exists(output));
     ASSERT_NOT_NULL(get_array_field(data, "operations"));
     ASSERT_NOT_NULL(get_object_field(data, "manifest"));
+    yyjson_val *diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    yyjson_val *manager_diff = get_object_field(diff, "manager_entry_diff");
+    ASSERT_NOT_NULL(manager_diff);
+    yyjson_val *changed = get_array_field(manager_diff, "changed");
+    ASSERT_NOT_NULL(changed);
+    ASSERT_TRUE(yyjson_arr_size(changed) > 0u);
+    yyjson_val *impact = yyjson_arr_get(changed, 0);
+    ASSERT_NOT_NULL(impact);
+    yyjson_val *before = yyjson_obj_get(impact, "before");
+    ASSERT_TRUE(before == NULL || yyjson_is_null(before));
+    yyjson_val *after = get_object_field(impact, "after");
+    ASSERT_NOT_NULL(after);
+    ASSERT_STR_EQ("attribute", get_string_field(after, "schema"));
+    ASSERT_STR_EQ("attribute", get_string_field(after, "manager_kind"));
+    ASSERT_STR_EQ("{3D242466-00000000}",
+                  get_string_field(after, "manager_guid"));
+    ASSERT_STR_EQ("AcceptanceAttribute", get_string_field(after, "key"));
+    ASSERT_STR_EQ("Acceptance", get_string_field(after, "category"));
+    ASSERT_STR_EQ("{5A54D2BD-44E28357}",
+                  get_string_field(after, "type_guid"));
+    ASSERT_EQ(19u, (uint32_t)get_uint_field(after, "compatible_class_id"));
+    ASSERT_EQ(5u, (uint32_t)get_uint_field(after, "flags"));
+    ASSERT_TRUE(get_bool_field(after, "created"));
+    ASSERT_TRUE(get_bool_field(after, "manager_chunk_changed"));
     yyjson_doc_free(doc);
 
     snprintf(args, sizeof(args), "validate all \"%s\"", output);

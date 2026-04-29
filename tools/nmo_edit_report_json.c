@@ -326,12 +326,32 @@ static const char *nmo_cli_edit_report_manager_kind(nmo_guid_t manager_guid)
     return "unknown";
 }
 
+static const char *nmo_cli_edit_report_manager_schema(
+    nmo_manager_entry_schema_t schema,
+    nmo_guid_t manager_guid)
+{
+    switch (schema) {
+    case NMO_MANAGER_ENTRY_SCHEMA_MESSAGE:
+        return "message";
+    case NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE:
+        return "attribute";
+    case NMO_MANAGER_ENTRY_SCHEMA_AUTO:
+    default:
+        return nmo_cli_edit_report_manager_kind(manager_guid);
+    }
+}
+
 static yyjson_mut_val *nmo_cli_edit_report_make_manager_entry_snapshot_json(
     yyjson_mut_doc *doc,
     nmo_guid_t manager_guid,
+    nmo_manager_entry_schema_t schema,
     const char *key,
+    const char *category,
+    nmo_guid_t type_guid,
     uint32_t entry_index,
     uint32_t entry_value,
+    uint32_t compatible_class_id,
+    uint32_t flags,
     bool created,
     bool manager_chunk_changed)
 {
@@ -343,11 +363,28 @@ static yyjson_mut_val *nmo_cli_edit_report_make_manager_entry_snapshot_json(
     nmo_cli_json_add_str_safe(
         doc, snapshot, "manager_kind",
         nmo_cli_edit_report_manager_kind(manager_guid));
+    nmo_cli_json_add_str_safe(
+        doc, snapshot, "schema",
+        nmo_cli_edit_report_manager_schema(schema, manager_guid));
     nmo_cli_json_add_str_safe(doc, snapshot, "key", key);
+    if (category != NULL && category[0] != '\0') {
+        nmo_cli_json_add_str_safe(doc, snapshot, "category", category);
+    }
+    if (!nmo_guid_is_null(type_guid)) {
+        char type_guid_text[32];
+        if (nmo_guid_format(type_guid, type_guid_text,
+                            sizeof(type_guid_text)) > 0) {
+            yyjson_mut_obj_add_strcpy(
+                doc, snapshot, "type_guid", type_guid_text);
+        }
+    }
     yyjson_mut_obj_add_uint(doc, snapshot, "entry_index",
                             (uint64_t)entry_index);
     yyjson_mut_obj_add_uint(doc, snapshot, "entry_value",
                             (uint64_t)entry_value);
+    yyjson_mut_obj_add_uint(doc, snapshot, "compatible_class_id",
+                            (uint64_t)compatible_class_id);
+    yyjson_mut_obj_add_uint(doc, snapshot, "flags", (uint64_t)flags);
     yyjson_mut_obj_add_bool(doc, snapshot, "created", created);
     yyjson_mut_obj_add_bool(doc, snapshot, "manager_chunk_changed",
                             manager_chunk_changed);
@@ -494,9 +531,14 @@ static void nmo_cli_edit_report_add_impact_before_after_json(
             nmo_cli_edit_report_make_manager_entry_snapshot_json(
                 doc,
                 impact->before_manager_guid,
+                impact->before_manager_entry_schema,
                 impact->before_manager_entry_key,
+                impact->before_manager_entry_category,
+                impact->before_manager_entry_type_guid,
                 impact->before_manager_entry_index,
                 impact->before_manager_entry_value,
+                impact->before_manager_entry_compatible_class_id,
+                impact->before_manager_entry_flags,
                 impact->before_manager_entry_created,
                 impact->before_manager_chunk_changed));
     } else if (impact->has_manager_entry_after) {
@@ -508,9 +550,14 @@ static void nmo_cli_edit_report_add_impact_before_after_json(
             nmo_cli_edit_report_make_manager_entry_snapshot_json(
                 doc,
                 impact->after_manager_guid,
+                impact->after_manager_entry_schema,
                 impact->after_manager_entry_key,
+                impact->after_manager_entry_category,
+                impact->after_manager_entry_type_guid,
                 impact->after_manager_entry_index,
                 impact->after_manager_entry_value,
+                impact->after_manager_entry_compatible_class_id,
+                impact->after_manager_entry_flags,
                 impact->after_manager_entry_created,
                 impact->after_manager_chunk_changed));
     } else if (impact->has_manager_entry_before) {

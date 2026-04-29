@@ -14,6 +14,7 @@
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/nmo_class_ids.h"
@@ -37,6 +38,14 @@ typedef struct edit_plan_manager_snapshot {
     bool has_message_manager;
     const char **message_names;
     uint32_t message_name_count;
+    struct edit_plan_attribute_entry {
+        const char *name;
+        const char *category;
+        nmo_guid_t type_guid;
+        uint32_t compatible_class_id;
+        uint32_t flags;
+    } *attribute_entries;
+    uint32_t attribute_entry_count;
 } edit_plan_manager_snapshot_t;
 
 static char *edit_plan_strdup(const char *text)
@@ -140,10 +149,17 @@ static void edit_plan_manager_snapshot_dispose(
         }
         free(snapshot->message_names);
     }
+    if (snapshot->attribute_entries != NULL) {
+        for (uint32_t i = 0; i < snapshot->attribute_entry_count; ++i) {
+            free((void *)snapshot->attribute_entries[i].name);
+            free((void *)snapshot->attribute_entries[i].category);
+        }
+        free(snapshot->attribute_entries);
+    }
     memset(snapshot, 0, sizeof(*snapshot));
 }
 
-static nmo_status_t edit_plan_read_message_manager_snapshot(
+static nmo_status_t edit_plan_read_manager_snapshot(
     nmo_workspace_t *workspace,
     edit_plan_manager_snapshot_t *snapshot)
 {
@@ -195,7 +211,125 @@ static nmo_status_t edit_plan_read_message_manager_snapshot(
                 return NMO_ERR_NOMEM;
             }
         }
-        return NMO_OK;
+        break;
+    }
+
+    for (uint32_t i = 0; i < file_state->manager_data_count; ++i) {
+        const nmo_manager_data_t *manager = &file_state->manager_data[i];
+        if (!nmo_guid_equals(manager->guid, NMO_MANAGER_GUID_ATTRIBUTE) ||
+            manager->chunk == NULL) {
+            continue;
+        }
+        nmo_chunk_t *chunk =
+            nmo_chunk_clone(manager->chunk, nmo_session_get_arena(session));
+        if (chunk == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        if (nmo_chunk_start_read(chunk) != NMO_OK) {
+            return NMO_OK;
+        }
+        if (nmo_chunk_seek_identifier(chunk, 0x52u) != NMO_OK) {
+            if (nmo_chunk_start_read(chunk) != NMO_OK) {
+                return NMO_OK;
+            }
+            uint32_t identifier = 0u;
+            if (nmo_chunk_read_identifier(chunk, &identifier) != NMO_OK ||
+                identifier != 0x52u) {
+                return NMO_OK;
+            }
+        }
+        int32_t category_count = 0;
+        int32_t attribute_count = 0;
+        if (nmo_chunk_read_int(chunk, &category_count) != NMO_OK ||
+            nmo_chunk_read_int(chunk, &attribute_count) != NMO_OK ||
+            category_count < 0 || attribute_count < 0) {
+            return NMO_OK;
+        }
+        const char **categories =
+            (const char **)calloc((size_t)category_count, sizeof(char *));
+        if (category_count > 0 && categories == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        for (int32_t cat = 0; cat < category_count; ++cat) {
+            int32_t present = 0;
+            if (nmo_chunk_read_int(chunk, &present) != NMO_OK) {
+                goto attribute_snapshot_cleanup;
+            }
+            if (present != 0) {
+                char *name = NULL;
+                uint32_t flags = 0u;
+                (void)nmo_chunk_read_string(chunk, &name);
+                (void)nmo_chunk_read_dword(chunk, &flags);
+                categories[cat] = edit_plan_strdup(name ? name : "");
+                if (categories[cat] == NULL) {
+                    free(categories);
+                    return NMO_ERR_NOMEM;
+                }
+            }
+        }
+        snapshot->attribute_entries =
+            (struct edit_plan_attribute_entry *)calloc(
+                (size_t)attribute_count, sizeof(*snapshot->attribute_entries));
+        if (attribute_count > 0 && snapshot->attribute_entries == NULL) {
+            for (int32_t cat = 0; cat < category_count; ++cat) {
+                free((void *)categories[cat]);
+            }
+            free(categories);
+            return NMO_ERR_NOMEM;
+        }
+        snapshot->attribute_entry_count = (uint32_t)attribute_count;
+        for (int32_t attr_index = 0; attr_index < attribute_count; ++attr_index) {
+            int32_t present = 0;
+            if (nmo_chunk_read_int(chunk, &present) != NMO_OK) {
+                break;
+            }
+            if (present == 0) {
+                continue;
+            }
+            char *name = NULL;
+            nmo_guid_t type_guid = {0};
+            int32_t category_index = -1;
+            int32_t compatible_class_id = 0;
+            uint32_t flags = 0u;
+            (void)nmo_chunk_read_string(chunk, &name);
+            if (nmo_chunk_read_guid(chunk, &type_guid) != NMO_OK ||
+                nmo_chunk_read_int(chunk, &category_index) != NMO_OK ||
+                nmo_chunk_read_int(chunk, &compatible_class_id) != NMO_OK ||
+                nmo_chunk_read_dword(chunk, &flags) != NMO_OK) {
+                break;
+            }
+            snapshot->attribute_entries[attr_index].name =
+                edit_plan_strdup(name ? name : "");
+            if (snapshot->attribute_entries[attr_index].name == NULL) {
+                for (int32_t cat = 0; cat < category_count; ++cat) {
+                    free((void *)categories[cat]);
+                }
+                free(categories);
+                return NMO_ERR_NOMEM;
+            }
+            if (category_index >= 0 && category_index < category_count &&
+                categories[category_index] != NULL) {
+                snapshot->attribute_entries[attr_index].category =
+                    edit_plan_strdup(categories[category_index]);
+                if (snapshot->attribute_entries[attr_index].category == NULL) {
+                    for (int32_t cat = 0; cat < category_count; ++cat) {
+                        free((void *)categories[cat]);
+                    }
+                    free(categories);
+                    return NMO_ERR_NOMEM;
+                }
+            }
+            snapshot->attribute_entries[attr_index].type_guid = type_guid;
+            snapshot->attribute_entries[attr_index].compatible_class_id =
+                compatible_class_id < 0 ? 0u : (uint32_t)compatible_class_id;
+            snapshot->attribute_entries[attr_index].flags = flags;
+        }
+attribute_snapshot_cleanup:
+        for (int32_t cat = 0; cat < category_count; ++cat) {
+            free((void *)categories[cat]);
+        }
+        free(categories);
+        break;
     }
 
     return NMO_OK;
@@ -239,6 +373,95 @@ static bool edit_plan_find_created_message_entry(
         }
     }
     return false;
+}
+
+static bool edit_plan_find_created_attribute_entry(
+    const edit_plan_manager_snapshot_t *before,
+    const edit_plan_manager_snapshot_t *after,
+    const char **out_key,
+    const char **out_category,
+    nmo_guid_t *out_type_guid,
+    uint32_t *out_index,
+    uint32_t *out_compatible_class_id,
+    uint32_t *out_flags)
+{
+    if (after == NULL || after->attribute_entries == NULL) {
+        return false;
+    }
+    for (uint32_t i = 0; i < after->attribute_entry_count; ++i) {
+        const struct edit_plan_attribute_entry *entry =
+            &after->attribute_entries[i];
+        if (entry->name == NULL || entry->name[0] == '\0') {
+            continue;
+        }
+        bool existed = false;
+        if (before != NULL && before->attribute_entries != NULL) {
+            for (uint32_t j = 0; j < before->attribute_entry_count; ++j) {
+                const char *before_name = before->attribute_entries[j].name;
+                if (before_name != NULL && strcmp(before_name, entry->name) == 0) {
+                    existed = true;
+                    break;
+                }
+            }
+        }
+        if (existed) {
+            continue;
+        }
+        if (out_key != NULL) {
+            *out_key = entry->name;
+        }
+        if (out_category != NULL) {
+            *out_category = entry->category;
+        }
+        if (out_type_guid != NULL) {
+            *out_type_guid = entry->type_guid;
+        }
+        if (out_index != NULL) {
+            *out_index = i;
+        }
+        if (out_compatible_class_id != NULL) {
+            *out_compatible_class_id = entry->compatible_class_id;
+        }
+        if (out_flags != NULL) {
+            *out_flags = entry->flags;
+        }
+        return true;
+    }
+    return false;
+}
+
+static const nmo_manager_entry_options_t *edit_plan_op_manager_entry(
+    const nmo_edit_op_t *op)
+{
+    if (op == NULL) {
+        return NULL;
+    }
+    switch (op->kind) {
+    case NMO_EDIT_OP_SET_PARAMETER_VALUE:
+        return &op->data.set_value.options.manager_entry;
+    case NMO_EDIT_OP_SET_PARAMETER_BYTES:
+        return &op->data.set_bytes.options.manager_entry;
+    case NMO_EDIT_OP_ADD_NODE:
+        return &op->data.add_node.options.manager_entry;
+    default:
+        return NULL;
+    }
+}
+
+static uint32_t edit_plan_get_parameter_manager_value(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parameter_id)
+{
+    nmo_workspace_t *workspace = nmo_script_edit_workspace(tx);
+    nmo_object_repository_t *repo =
+        workspace != NULL ? nmo_workspace_internal_repository(workspace) : NULL;
+    nmo_object_t *object =
+        repo != NULL ? nmo_object_repository_find_by_id(repo, parameter_id)
+                     : NULL;
+    const nmo_parameter_state_t *state =
+        object != NULL ? (const nmo_parameter_state_t *)nmo_object_get_state(object)
+                       : NULL;
+    return state != NULL ? state->manager_value : 0u;
 }
 
 static nmo_status_t edit_plan_dup_object_ids(
@@ -2021,9 +2244,14 @@ static void edit_report_set_manager_entry_after(
     nmo_edit_op_kind_t cause,
     const char *role,
     nmo_guid_t manager_guid,
+    nmo_manager_entry_schema_t schema,
     const char *key,
+    const char *category,
+    nmo_guid_t type_guid,
     uint32_t entry_index,
     uint32_t entry_value,
+    uint32_t compatible_class_id,
+    uint32_t flags,
     bool created,
     bool manager_chunk_changed)
 {
@@ -2034,14 +2262,24 @@ static void edit_report_set_manager_entry_after(
     }
     impact->has_manager_entry_after = true;
     impact->after_manager_guid = manager_guid;
+    impact->after_manager_entry_schema = schema;
     if (key != NULL) {
         snprintf(impact->after_manager_entry_key,
                  sizeof(impact->after_manager_entry_key),
                  "%s",
                  key);
     }
+    if (category != NULL) {
+        snprintf(impact->after_manager_entry_category,
+                 sizeof(impact->after_manager_entry_category),
+                 "%s",
+                 category);
+    }
+    impact->after_manager_entry_type_guid = type_guid;
     impact->after_manager_entry_index = entry_index;
     impact->after_manager_entry_value = entry_value;
+    impact->after_manager_entry_compatible_class_id = compatible_class_id;
+    impact->after_manager_entry_flags = flags;
     impact->after_manager_entry_created = created;
     impact->after_manager_chunk_changed = manager_chunk_changed;
 }
@@ -2069,9 +2307,14 @@ static nmo_status_t edit_report_note_manager_entry_after(
         cause,
         "manager_entry",
         NMO_MANAGER_GUID_MESSAGE,
+        NMO_MANAGER_ENTRY_SCHEMA_MESSAGE,
         key,
+        NULL,
+        (nmo_guid_t){0},
         entry_index,
         entry_index,
+        0u,
+        0u,
         created,
         manager_chunk_changed);
     return NMO_OK;
@@ -4089,7 +4332,7 @@ nmo_status_t nmo_edit_executor_execute_transaction(
             : 0u;
         edit_plan_manager_snapshot_t manager_before = {0};
         edit_plan_manager_snapshot_t manager_after = {0};
-        rc = edit_plan_read_message_manager_snapshot(
+        rc = edit_plan_read_manager_snapshot(
             nmo_script_edit_workspace(tx), &manager_before);
         if (rc != NMO_OK) {
             report->ok = false;
@@ -4129,7 +4372,7 @@ nmo_status_t nmo_edit_executor_execute_transaction(
             report->status = op_rc;
             return op_rc;
         }
-        rc = edit_plan_read_message_manager_snapshot(
+        rc = edit_plan_read_manager_snapshot(
             nmo_script_edit_workspace(tx), &manager_after);
         if (rc != NMO_OK) {
             edit_plan_manager_snapshot_dispose(&manager_before);
@@ -4144,6 +4387,44 @@ nmo_status_t nmo_edit_executor_execute_transaction(
             &manager_after,
             &created_manager_key,
             &created_manager_index);
+        nmo_guid_t created_attribute_type_guid = {0};
+        const char *created_attribute_category = NULL;
+        uint32_t created_attribute_index = 0u;
+        uint32_t created_attribute_compatible_class_id = 0u;
+        uint32_t created_attribute_flags = 0u;
+        bool created_attribute_entry = edit_plan_find_created_attribute_entry(
+            &manager_before,
+            &manager_after,
+            &created_manager_key,
+            &created_attribute_category,
+            &created_attribute_type_guid,
+            &created_attribute_index,
+            &created_attribute_compatible_class_id,
+            &created_attribute_flags);
+        const nmo_manager_entry_options_t *manager_entry_options =
+            edit_plan_op_manager_entry(op);
+        if (!created_attribute_entry && manager_entry_options != NULL &&
+            manager_entry_options->policy ==
+                NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING &&
+            manager_entry_options->schema == NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE &&
+            manager_entry_options->key != NULL &&
+            manager_entry_options->key[0] != '\0' &&
+            manager_entry_options->create.enabled) {
+            created_attribute_entry = true;
+            created_manager_key = manager_entry_options->key;
+            created_attribute_category =
+                manager_entry_options->create.category;
+            created_attribute_type_guid =
+                manager_entry_options->create.attribute_type_guid;
+            created_attribute_index =
+                edit_plan_get_parameter_manager_value(tx, result_id);
+            created_attribute_compatible_class_id =
+                manager_entry_options->create.compatible_class_id;
+            created_attribute_flags = manager_entry_options->create.flags;
+        }
+        if (created_attribute_entry) {
+            created_manager_index = created_attribute_index;
+        }
         if (result_id != 0u && edit_op_creates_result(op->kind)) {
             nmo_status_t handle_rc = nmo_edit_report_add_operation_handle(
                 report,
@@ -4257,10 +4538,12 @@ nmo_status_t nmo_edit_executor_execute_transaction(
                     return report_rc;
                 }
                 if (changed_ids[changed_i] == NMO_EDIT_MANAGER_ENTRY_IMPACT_ID) {
-                    const char *key = created_manager_entry
+                    const char *key = (created_manager_entry ||
+                                       created_attribute_entry)
                         ? created_manager_key
                         : NULL;
-                    uint32_t index = created_manager_entry
+                    uint32_t index = (created_manager_entry ||
+                                      created_attribute_entry)
                         ? created_manager_index
                         : 0u;
                     edit_report_set_manager_entry_after(
@@ -4269,16 +4552,27 @@ nmo_status_t nmo_edit_executor_execute_transaction(
                         changed_ids[changed_i],
                         op->kind,
                         changed_role,
-                        NMO_MANAGER_GUID_MESSAGE,
+                        created_attribute_entry ? NMO_MANAGER_GUID_ATTRIBUTE
+                                                : NMO_MANAGER_GUID_MESSAGE,
+                        created_attribute_entry
+                            ? NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE
+                            : NMO_MANAGER_ENTRY_SCHEMA_MESSAGE,
                         key,
+                        created_attribute_entry ? created_attribute_category : NULL,
+                        created_attribute_entry ? created_attribute_type_guid
+                                                : (nmo_guid_t){0},
                         index,
                         index,
-                        created_manager_entry,
-                        created_manager_entry);
+                        created_attribute_entry
+                            ? created_attribute_compatible_class_id
+                            : 0u,
+                        created_attribute_entry ? created_attribute_flags : 0u,
+                        created_manager_entry || created_attribute_entry,
+                        created_manager_entry || created_attribute_entry);
                 }
             }
         }
-        if (created_manager_entry) {
+        if (created_manager_entry || created_attribute_entry) {
             nmo_status_t manager_report_rc =
                 edit_report_note_manager_entry_after(
                     report,
@@ -4293,6 +4587,25 @@ nmo_status_t nmo_edit_executor_execute_transaction(
                 report->ok = false;
                 report->status = manager_report_rc;
                 return manager_report_rc;
+            }
+            if (created_attribute_entry) {
+                edit_report_set_manager_entry_after(
+                    report->changed_objects,
+                    report->changed_object_count,
+                    NMO_EDIT_MANAGER_ENTRY_IMPACT_ID,
+                    op->kind,
+                    "manager_entry",
+                    NMO_MANAGER_GUID_ATTRIBUTE,
+                    NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE,
+                    created_manager_key,
+                    created_attribute_category,
+                    created_attribute_type_guid,
+                    created_attribute_index,
+                    created_attribute_index,
+                    created_attribute_compatible_class_id,
+                    created_attribute_flags,
+                    true,
+                    true);
             }
         }
         nmo_object_id_t deleted_id = edit_op_deleted_id(op);
