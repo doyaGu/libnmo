@@ -1502,19 +1502,19 @@ static bool semantic_parameter_is_message_manager(
 
 static nmo_status_t semantic_add_manager_value_risk(
     nmo_workspace_t *workspace,
-    nmo_object_repository_t *repo,
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
-    nmo_object_id_t parameter_id,
+    nmo_object_id_t object_id,
     const char *value,
-    nmo_manager_entry_policy_t manager_entry_policy)
+    nmo_manager_entry_policy_t manager_entry_policy,
+    bool is_message_manager_value)
 {
     if (manager_entry_policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING ||
         value == NULL ||
         value[0] == '\0' ||
         strchr(value, ':') != NULL ||
         strchr(value, '=') != NULL ||
-        !semantic_parameter_is_message_manager(repo, parameter_id)) {
+        !is_message_manager_value) {
         return NMO_OK;
     }
 
@@ -1555,7 +1555,7 @@ static nmo_status_t semantic_add_manager_value_risk(
         NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
         "missing_manager_entry",
         "Parameter value references a missing manager entry",
-        parameter_id);
+        object_id);
 }
 
 static nmo_status_t semantic_validate_basic_edit_op(
@@ -1586,13 +1586,31 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 op->primary_id,
                 risks,
                 risk_count));
-            return semantic_add_parameter_handle_ref_risk(
+            NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
                 plan,
                 op->data.set_value.parameter_ref_operation_index,
                 op->data.set_value.parameter_ref_handle,
                 op->primary_id,
                 risks,
-                risk_count);
+                risk_count));
+            nmo_manager_entry_policy_t policy =
+                op->data.set_value.has_options
+                    ? op->data.set_value.options.manager_entry_policy
+                    : NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+            const nmo_type_descriptor_t *type =
+                semantic_parameter_handle_type_desc(
+                    ctx,
+                    plan,
+                    op->data.set_value.parameter_ref_operation_index,
+                    op->data.set_value.parameter_ref_handle);
+            return semantic_add_manager_value_risk(
+                workspace,
+                risks,
+                risk_count,
+                op->primary_id,
+                op->data.set_value.value,
+                policy,
+                type != NULL && nmo_guid_equals(type->guid, CKPGUID_MESSAGE));
         }
         if (op->kind == NMO_EDIT_OP_SET_PARAMETER_BYTES &&
             op->data.set_bytes.has_parameter_ref) {
@@ -1620,12 +1638,12 @@ static nmo_status_t semantic_validate_basic_edit_op(
                     : NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
             NMO_RETURN_IF_ERROR(semantic_add_manager_value_risk(
                 workspace,
-                repo,
                 risks,
                 risk_count,
                 op->primary_id,
                 op->data.set_value.value,
-                policy));
+                policy,
+                semantic_parameter_is_message_manager(repo, op->primary_id)));
         }
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->primary_id));

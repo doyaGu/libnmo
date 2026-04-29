@@ -302,6 +302,47 @@ TEST(semantic_validator, detects_missing_symbolic_message_parameter_value)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, detects_missing_symbolic_message_handle_value)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_empty(&fixture);
+
+    nmo_object_id_t root_id = 0u;
+    semantic_create_object(&fixture, NMO_CID_BEHAVIOR, "Root", &root_id);
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_node_ex(
+                  plan,
+                  root_id,
+                  nmo_guid_parse("A20E8D5B-DF002150"),
+                  "Send Message",
+                  &(nmo_add_node_options_t){
+                      .manager_entry_policy =
+                          NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
+                  }));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_set_parameter_value_from_handle(
+                  plan, 0u, "input_param:Message",
+                  "MissingHandleMessage", NULL));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *risk =
+        find_risk(risks, risk_count, "missing_manager_entry");
+    ASSERT_NOT_NULL(risk);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, risk->severity);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST(semantic_validator, edit_plan_rejects_missing_replace_target)
 {
     semantic_fixture_t fixture;
@@ -1812,6 +1853,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, detects_message_flow_by_signature_metadata);
     REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_manager_entry);
     REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_parameter_value);
+    REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_handle_value);
     REGISTER_TEST(semantic_validator, edit_plan_rejects_missing_replace_target);
     REGISTER_TEST(semantic_validator, edit_plan_reports_generic_op_risks);
     REGISTER_TEST(semantic_validator, edit_plan_reports_invalid_handle_reference);
