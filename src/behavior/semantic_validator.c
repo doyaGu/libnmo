@@ -1427,9 +1427,7 @@ static bool semantic_message_manager_has_name(nmo_workspace_t *workspace,
         }
         for (int32_t index = 0; index < count; ++index) {
             char *name = NULL;
-            if (nmo_chunk_read_string(chunk, &name) != NMO_OK) {
-                break;
-            }
+            (void)nmo_chunk_read_string(chunk, &name);
             if (name != NULL && strcmp(name, message_name) == 0) {
                 return true;
             }
@@ -1480,6 +1478,84 @@ static nmo_status_t semantic_add_manager_default_risks(
     }
 
     return NMO_OK;
+}
+
+static bool semantic_parameter_is_message_manager(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t parameter_id)
+{
+    nmo_object_t *object = repo != NULL
+        ? nmo_object_repository_find_by_id(repo, parameter_id)
+        : NULL;
+    if (object == NULL ||
+        nmo_object_get_class_id(object) != NMO_CID_PARAMETER) {
+        return false;
+    }
+    const nmo_parameter_state_t *state =
+        (const nmo_parameter_state_t *)nmo_object_get_state(object);
+    return state != NULL &&
+           state->has_state &&
+           state->mode == CKPARAM_MODE_MANAGER &&
+           nmo_guid_equals(state->type_guid, CKPGUID_MESSAGE) &&
+           nmo_guid_equals(state->manager_guid, NMO_MANAGER_GUID_MESSAGE);
+}
+
+static nmo_status_t semantic_add_manager_value_risk(
+    nmo_workspace_t *workspace,
+    nmo_object_repository_t *repo,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t parameter_id,
+    const char *value,
+    nmo_manager_entry_policy_t manager_entry_policy)
+{
+    if (manager_entry_policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING ||
+        value == NULL ||
+        value[0] == '\0' ||
+        strchr(value, ':') != NULL ||
+        strchr(value, '=') != NULL ||
+        !semantic_parameter_is_message_manager(repo, parameter_id)) {
+        return NMO_OK;
+    }
+
+    const char *begin = value;
+    while (*begin != '\0' && isspace((unsigned char)*begin)) {
+        ++begin;
+    }
+    const char *end = begin + strlen(begin);
+    while (end > begin && isspace((unsigned char)end[-1])) {
+        --end;
+    }
+    if (begin == end) {
+        return NMO_OK;
+    }
+
+    char local_name[256];
+    char *name = local_name;
+    size_t name_len = (size_t)(end - begin);
+    if (name_len >= sizeof(local_name)) {
+        name = (char *)malloc(name_len + 1u);
+        if (name == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+    }
+    memcpy(name, begin, name_len);
+    name[name_len] = '\0';
+    bool exists = semantic_message_manager_has_name(workspace, name);
+    if (name != local_name) {
+        free(name);
+    }
+    if (exists) {
+        return NMO_OK;
+    }
+
+    return semantic_add_risk(
+        risks,
+        risk_count,
+        NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+        "missing_manager_entry",
+        "Parameter value references a missing manager entry",
+        parameter_id);
 }
 
 static nmo_status_t semantic_validate_basic_edit_op(
@@ -1536,6 +1612,20 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 op->primary_id,
                 risks,
                 risk_count);
+        }
+        if (op->kind == NMO_EDIT_OP_SET_PARAMETER_VALUE) {
+            nmo_manager_entry_policy_t policy =
+                op->data.set_value.has_options
+                    ? op->data.set_value.options.manager_entry_policy
+                    : NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+            NMO_RETURN_IF_ERROR(semantic_add_manager_value_risk(
+                workspace,
+                repo,
+                risks,
+                risk_count,
+                op->primary_id,
+                op->data.set_value.value,
+                policy));
         }
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->primary_id));
