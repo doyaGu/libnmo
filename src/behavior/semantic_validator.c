@@ -14,6 +14,7 @@
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
 #include "../runtime/runtime_internal.h"
 #include "runtime/nmo_context.h"
@@ -525,16 +526,28 @@ static nmo_status_t semantic_add_parameter_object_ref_risk(
     if (object == NULL) {
         return NMO_OK;
     }
-    if (semantic_is_parameter_object_class(nmo_object_get_class_id(object))) {
-        return NMO_OK;
+    if (!semantic_is_parameter_object_class(nmo_object_get_class_id(object))) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "parameter_object_type_mismatch",
+            "Edit operation expects a parameter object",
+            object_id);
     }
-    return semantic_add_risk(
-        risks,
-        risk_count,
-        NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
-        "parameter_object_type_mismatch",
-        "Edit operation expects a parameter object",
-        object_id);
+    nmo_guid_t type_guid = NMO_GUID_NULL;
+    if (semantic_parameter_type_guid(repo, object_id, &type_guid) &&
+        (nmo_guid_equals(type_guid, CKPGUID_SCENE) ||
+         nmo_guid_equals(type_guid, CKPGUID_SCENEOBJECT))) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_WARN,
+            "scene_sensitive_reference",
+            "Edit operation touches a scene-sensitive parameter reference",
+            object_id);
+    }
+    return NMO_OK;
 }
 
 static nmo_status_t semantic_add_parameterin_ref_risk(
