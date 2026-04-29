@@ -97,17 +97,22 @@ static int nmo_lua_plan_parse_manager_entry_options(
     lua_pop(state, 1);
     lua_getfield(state, index, "manager");
     if (!lua_isnil(state, -1)) {
-        const char *manager = luaL_checkstring(state, -1);
-        if (strcmp(manager, "auto") == 0) {
-            out_options->manager = NMO_MANAGER_ENTRY_MANAGER_AUTO;
-        } else if (strcmp(manager, "message") == 0) {
-            out_options->manager = NMO_MANAGER_ENTRY_MANAGER_MESSAGE;
-        } else if (strcmp(manager, "attribute") == 0) {
-            out_options->manager = NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE;
+        return luaL_error(state, "manager_entry.manager is no longer supported; use manager_entry.schema");
+    }
+    lua_pop(state, 1);
+    lua_getfield(state, index, "schema");
+    if (!lua_isnil(state, -1)) {
+        const char *schema = luaL_checkstring(state, -1);
+        if (strcmp(schema, "auto") == 0) {
+            out_options->schema = NMO_MANAGER_ENTRY_SCHEMA_AUTO;
+        } else if (strcmp(schema, "message") == 0) {
+            out_options->schema = NMO_MANAGER_ENTRY_SCHEMA_MESSAGE;
+        } else if (strcmp(schema, "attribute") == 0) {
+            out_options->schema = NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE;
         } else {
             return luaL_error(
                 state,
-                "manager_entry.manager must be 'auto', 'message', or 'attribute'");
+                "manager_entry.schema must be 'auto', 'message', or 'attribute'");
         }
     }
     lua_pop(state, 1);
@@ -122,6 +127,41 @@ static int nmo_lua_plan_parse_manager_entry_options(
     lua_getfield(state, index, "key");
     if (!lua_isnil(state, -1)) {
         out_options->key = luaL_checkstring(state, -1);
+    }
+    lua_pop(state, 1);
+    lua_getfield(state, index, "create");
+    if (!lua_isnil(state, -1)) {
+        luaL_checktype(state, -1, LUA_TTABLE);
+        out_options->create.enabled = true;
+        lua_getfield(state, -1, "attribute_type_guid");
+        if (!lua_isnil(state, -1)) {
+            out_options->create.attribute_type_guid =
+                nmo_guid_parse(luaL_checkstring(state, -1));
+            if (nmo_guid_is_null(out_options->create.attribute_type_guid)) {
+                return luaL_error(
+                    state,
+                    "manager_entry.create.attribute_type_guid must be a GUID");
+            }
+        }
+        lua_pop(state, 1);
+        lua_getfield(state, -1, "category");
+        if (!lua_isnil(state, -1)) {
+            out_options->create.category = luaL_checkstring(state, -1);
+        }
+        lua_pop(state, 1);
+        lua_getfield(state, -1, "compatible_class_id");
+        if (!lua_isnil(state, -1)) {
+            out_options->create.has_compatible_class_id = true;
+            out_options->create.compatible_class_id =
+                (uint32_t)luaL_checkinteger(state, -1);
+        }
+        lua_pop(state, 1);
+        lua_getfield(state, -1, "flags");
+        if (!lua_isnil(state, -1)) {
+            out_options->create.has_flags = true;
+            out_options->create.flags = (uint32_t)luaL_checkinteger(state, -1);
+        }
+        lua_pop(state, 1);
     }
     lua_pop(state, 1);
     return 0;

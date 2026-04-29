@@ -967,7 +967,7 @@ TEST(workspace_edit, value_writer_uses_manager_entry_key_for_lookup) {
     nmo_parameter_write_options_t create_options = {
         .manager_entry = {
             .policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
-            .manager = NMO_MANAGER_ENTRY_MANAGER_MESSAGE,
+            .schema = NMO_MANAGER_ENTRY_SCHEMA_MESSAGE,
             .key = "EntryKey",
         },
     };
@@ -1016,7 +1016,7 @@ TEST(workspace_edit, value_writer_rejects_unsupported_manager_entry_kind) {
     nmo_parameter_write_options_t options = {
         .manager_entry = {
             .policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
-            .manager = NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE,
+            .schema = NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE,
         },
     };
     workspace_edit_scope_t scope = {0};
@@ -1056,7 +1056,7 @@ TEST(workspace_edit, value_writer_accepts_message_manager_guid_option) {
     nmo_parameter_write_options_t options = {
         .manager_entry = {
             .policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
-            .manager = NMO_MANAGER_ENTRY_MANAGER_GUID,
+            .schema = NMO_MANAGER_ENTRY_SCHEMA_MESSAGE,
             .manager_guid = NMO_MANAGER_GUID_MESSAGE,
             .key = "GuidMessage",
         },

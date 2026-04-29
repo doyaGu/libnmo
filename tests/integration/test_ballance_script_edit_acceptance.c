@@ -360,7 +360,7 @@ TEST(ballance_acceptance, accepted_manager_entry_save_load_validates)
              "--bb-guid A20E8D5B-DF002150 "
              "--name AcceptanceSendMessage "
              "--manager-entry create-missing "
-             "--manager-entry-manager message "
+             "--manager-entry-schema message "
              "--manager-entry-guid {466A0FAC-00000000} "
              "--manager-entry-key AcceptanceMessage "
              "\"%s\" -o \"%s\"",

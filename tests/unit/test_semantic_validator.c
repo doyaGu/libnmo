@@ -353,7 +353,7 @@ TEST(semantic_validator, rejects_unsupported_manager_entry_kinds)
     nmo_parameter_write_options_t options = {
         .manager_entry = {
             .policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
-            .manager = NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE,
+            .schema = NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE,
         },
     };
 
@@ -380,7 +380,7 @@ TEST(semantic_validator, rejects_unsupported_manager_entry_kinds)
     semantic_fixture_dispose(&fixture);
 }
 
-TEST(semantic_validator, rejects_guid_manager_entry_without_guid)
+TEST(semantic_validator, rejects_manager_entry_schema_guid_mismatch)
 {
     semantic_fixture_t fixture;
     semantic_fixture_init_empty(&fixture);
@@ -401,7 +401,8 @@ TEST(semantic_validator, rejects_guid_manager_entry_without_guid)
     nmo_parameter_write_options_t options = {
         .manager_entry = {
             .policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
-            .manager = NMO_MANAGER_ENTRY_MANAGER_GUID,
+            .schema = NMO_MANAGER_ENTRY_SCHEMA_MESSAGE,
+            .manager_guid = NMO_MANAGER_GUID_ATTRIBUTE,
         },
     };
     nmo_edit_plan_t *plan = NULL;
@@ -417,7 +418,7 @@ TEST(semantic_validator, rejects_guid_manager_entry_without_guid)
                   fixture.workspace, plan, &risks, &risk_count));
 
     const nmo_behavior_semantic_risk_t *risk =
-        find_risk(risks, risk_count, "missing_manager_guid");
+        find_risk(risks, risk_count, "unknown_manager_create_forbidden");
     ASSERT_NOT_NULL(risk);
     ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, risk->severity);
     ASSERT_EQ(param_id, risk->object_id);
@@ -448,7 +449,7 @@ TEST(semantic_validator, rejects_unknown_guid_manager_entry_creation)
     nmo_parameter_write_options_t options = {
         .manager_entry = {
             .policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
-            .manager = NMO_MANAGER_ENTRY_MANAGER_GUID,
+            .schema = NMO_MANAGER_ENTRY_SCHEMA_AUTO,
             .manager_guid = NMO_GUID(0x12345678u, 0x90abcdefu),
         },
     };
@@ -498,7 +499,7 @@ TEST(semantic_validator, manager_entry_key_drives_message_lookup)
     nmo_parameter_write_options_t options = {
         .manager_entry = {
             .policy = NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING,
-            .manager = NMO_MANAGER_ENTRY_MANAGER_MESSAGE,
+            .schema = NMO_MANAGER_ENTRY_SCHEMA_MESSAGE,
             .manager_guid = NMO_MANAGER_GUID_MESSAGE,
             .key = "ExistingMessage",
         },
@@ -2074,7 +2075,7 @@ TEST_MAIN_BEGIN()
 REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_manager_entry);
 REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_parameter_value);
 REGISTER_TEST(semantic_validator, rejects_unsupported_manager_entry_kinds);
-REGISTER_TEST(semantic_validator, rejects_guid_manager_entry_without_guid);
+REGISTER_TEST(semantic_validator, rejects_manager_entry_schema_guid_mismatch);
 REGISTER_TEST(semantic_validator, rejects_unknown_guid_manager_entry_creation);
 REGISTER_TEST(semantic_validator, manager_entry_key_drives_message_lookup);
 REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_handle_value);

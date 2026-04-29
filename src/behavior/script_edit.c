@@ -864,15 +864,8 @@ static nmo_status_t script_edit_apply_symbolic_manager_default(
     nmo_manager_entry_options_t effective =
         manager_entry != NULL ? *manager_entry
                               : nmo_manager_entry_options_default();
-    if (effective.manager == NMO_MANAGER_ENTRY_MANAGER_GUID &&
-        nmo_guid_is_null(effective.manager_guid)) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (effective.manager == NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE ||
-        (effective.manager == NMO_MANAGER_ENTRY_MANAGER_GUID &&
-         !nmo_guid_equals(effective.manager_guid, NMO_MANAGER_GUID_MESSAGE)) ||
-        (effective.manager == NMO_MANAGER_ENTRY_MANAGER_MESSAGE &&
-         !nmo_guid_is_null(effective.manager_guid) &&
+    if (effective.schema == NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE ||
+        (!nmo_guid_is_null(effective.manager_guid) &&
          !nmo_guid_equals(effective.manager_guid, NMO_MANAGER_GUID_MESSAGE))) {
         return NMO_ERR_NOT_SUPPORTED;
     }

@@ -1668,7 +1668,7 @@ TEST(cli, script_node_add_creates_missing_manager_entry_when_policy_allows)
     snprintf(args, sizeof(args),
              "-f json script node add --parent 6 "
              "--bb-guid A20E8D5B-DF002150 --name \"Policy Send Message\" "
-             "--manager-entry create-missing --manager-entry-manager message "
+             "--manager-entry create-missing --manager-entry-schema message "
              "--manager-entry-guid {466A0FAC-00000000} "
              "--manager-entry-key PolicyMessage --dry-run \"%s\"",
              NMO_TEST_DATA_FILE("Nop.cmo"));
@@ -1684,7 +1684,7 @@ TEST(cli, script_node_add_creates_missing_manager_entry_when_policy_allows)
     data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
     ASSERT_STR_EQ("create_missing", get_string_field(yyjson_obj_get(data, "manager_entry"), "policy"));
-    ASSERT_STR_EQ("message", get_string_field(yyjson_obj_get(data, "manager_entry"), "manager"));
+    ASSERT_STR_EQ("message", get_string_field(yyjson_obj_get(data, "manager_entry"), "schema"));
     ASSERT_STR_EQ("{466A0FAC-00000000}",
                   get_string_field(yyjson_obj_get(data, "manager_entry"), "manager_guid"));
     ASSERT_STR_EQ("PolicyMessage", get_string_field(yyjson_obj_get(data, "manager_entry"), "key"));
@@ -3296,7 +3296,7 @@ TEST(cli, script_parameter_crud_roundtrip)
 
     snprintf(args, sizeof(args),
              "-f json script param set --param %u --value 3 "
-             "--manager-entry create-missing --manager-entry-manager message "
+             "--manager-entry create-missing --manager-entry-schema message "
              "--manager-entry-key ParamMessage "
              "\"%s\" -o \"%s\"",
              source_param_id,
@@ -3315,7 +3315,7 @@ TEST(cli, script_parameter_crud_roundtrip)
     ASSERT_STR_EQ("create_missing",
                   get_string_field(yyjson_obj_get(data, "manager_entry"), "policy"));
     ASSERT_STR_EQ("message",
-                  get_string_field(yyjson_obj_get(data, "manager_entry"), "manager"));
+                  get_string_field(yyjson_obj_get(data, "manager_entry"), "schema"));
     ASSERT_STR_EQ("ParamMessage",
                   get_string_field(yyjson_obj_get(data, "manager_entry"), "key"));
     ASSERT_STR_EQ("3", get_string_field(data, "new_value"));

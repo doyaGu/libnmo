@@ -44,18 +44,28 @@ typedef enum nmo_manager_entry_policy {
     NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING = 1
 } nmo_manager_entry_policy_t;
 
-typedef enum nmo_manager_entry_manager {
-    NMO_MANAGER_ENTRY_MANAGER_AUTO = 0,
-    NMO_MANAGER_ENTRY_MANAGER_MESSAGE = 1,
-    NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE = 2,
-    NMO_MANAGER_ENTRY_MANAGER_GUID = 3
-} nmo_manager_entry_manager_t;
+typedef enum nmo_manager_entry_schema {
+    NMO_MANAGER_ENTRY_SCHEMA_AUTO = 0,
+    NMO_MANAGER_ENTRY_SCHEMA_MESSAGE = 1,
+    NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE = 2
+} nmo_manager_entry_schema_t;
+
+typedef struct nmo_manager_entry_create_options {
+    bool enabled;
+    nmo_guid_t attribute_type_guid;
+    const char *category;
+    bool has_compatible_class_id;
+    uint32_t compatible_class_id;
+    bool has_flags;
+    uint32_t flags;
+} nmo_manager_entry_create_options_t;
 
 typedef struct nmo_manager_entry_options {
     nmo_manager_entry_policy_t policy;
-    nmo_manager_entry_manager_t manager;
+    nmo_manager_entry_schema_t schema;
     nmo_guid_t manager_guid;
     const char *key;
+    nmo_manager_entry_create_options_t create;
 } nmo_manager_entry_options_t;
 
 typedef struct nmo_parameter_write_options {
@@ -67,7 +77,7 @@ static inline nmo_manager_entry_options_t nmo_manager_entry_options_default(void
 {
     nmo_manager_entry_options_t options = {0};
     options.policy = NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
-    options.manager = NMO_MANAGER_ENTRY_MANAGER_AUTO;
+    options.schema = NMO_MANAGER_ENTRY_SCHEMA_AUTO;
     return options;
 }
 

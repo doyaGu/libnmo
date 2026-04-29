@@ -1446,29 +1446,16 @@ static nmo_status_t semantic_add_manager_default_risks(
     nmo_guid_t bb_guid,
     nmo_manager_entry_options_t manager_entry)
 {
-    if (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_GUID &&
-        nmo_guid_is_null(manager_entry.manager_guid)) {
-        return semantic_add_risk(
-            risks,
-            risk_count,
-            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
-            "missing_manager_guid",
-            "manager_entry.manager='guid' requires manager_entry.manager_guid",
-            parent_behavior_id);
-    }
-    if (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE ||
-        (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_GUID &&
-         !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE) &&
-         manager_entry.policy != NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING)) {
+    if (manager_entry.schema == NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE) {
         return semantic_add_risk(
             risks,
             risk_count,
             NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
             "unsupported_manager_entry",
-            "Manager entry creation is only supported for CKMessageManager values",
+            "Attribute manager entry writes require attribute create semantics",
             parent_behavior_id);
     }
-    if (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_GUID &&
+    if (!nmo_guid_is_null(manager_entry.manager_guid) &&
         !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE) &&
         manager_entry.policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING) {
         return semantic_add_risk(
@@ -1480,7 +1467,6 @@ static nmo_status_t semantic_add_manager_default_risks(
             parent_behavior_id);
     }
     if (!nmo_guid_is_null(manager_entry.manager_guid) &&
-        manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_GUID &&
         !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE)) {
         return semantic_add_risk(
             risks,
@@ -1553,29 +1539,16 @@ static nmo_status_t semantic_add_manager_value_risk(
     nmo_manager_entry_options_t manager_entry,
     bool is_message_manager_value)
 {
-    if (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_GUID &&
-        nmo_guid_is_null(manager_entry.manager_guid)) {
-        return semantic_add_risk(
-            risks,
-            risk_count,
-            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
-            "missing_manager_guid",
-            "manager_entry.manager='guid' requires manager_entry.manager_guid",
-            object_id);
-    }
-    if (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE ||
-        (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_GUID &&
-         !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE) &&
-         manager_entry.policy != NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING)) {
+    if (manager_entry.schema == NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE) {
         return semantic_add_risk(
             risks,
             risk_count,
             NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
             "unsupported_manager_entry",
-            "Manager entry creation is only supported for CKMessageManager values",
+            "Attribute manager entry writes require attribute create semantics",
             object_id);
     }
-    if (manager_entry.manager == NMO_MANAGER_ENTRY_MANAGER_GUID &&
+    if (!nmo_guid_is_null(manager_entry.manager_guid) &&
         !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE) &&
         manager_entry.policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING) {
         return semantic_add_risk(
@@ -1587,7 +1560,6 @@ static nmo_status_t semantic_add_manager_value_risk(
             object_id);
     }
     if (!nmo_guid_is_null(manager_entry.manager_guid) &&
-        manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_GUID &&
         !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE)) {
         return semantic_add_risk(
             risks,

@@ -479,17 +479,24 @@ static int script_run_lua_add_node(lua_State *state)
             lua_pop(state, 1);
             lua_getfield(state, -1, "manager");
             if (!lua_isnil(state, -1)) {
-                const char *manager = luaL_checkstring(state, -1);
-                if (strcmp(manager, "auto") == 0) {
-                    options.manager_entry.manager = NMO_MANAGER_ENTRY_MANAGER_AUTO;
-                } else if (strcmp(manager, "message") == 0) {
-                    options.manager_entry.manager = NMO_MANAGER_ENTRY_MANAGER_MESSAGE;
-                } else if (strcmp(manager, "attribute") == 0) {
-                    options.manager_entry.manager = NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE;
+                return luaL_error(
+                    state,
+                    "manager_entry.manager is no longer supported; use manager_entry.schema");
+            }
+            lua_pop(state, 1);
+            lua_getfield(state, -1, "schema");
+            if (!lua_isnil(state, -1)) {
+                const char *schema = luaL_checkstring(state, -1);
+                if (strcmp(schema, "auto") == 0) {
+                    options.manager_entry.schema = NMO_MANAGER_ENTRY_SCHEMA_AUTO;
+                } else if (strcmp(schema, "message") == 0) {
+                    options.manager_entry.schema = NMO_MANAGER_ENTRY_SCHEMA_MESSAGE;
+                } else if (strcmp(schema, "attribute") == 0) {
+                    options.manager_entry.schema = NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE;
                 } else {
                     return luaL_error(
                         state,
-                        "manager_entry.manager must be 'auto', 'message', or 'attribute'");
+                        "manager_entry.schema must be 'auto', 'message', or 'attribute'");
                 }
             }
             lua_pop(state, 1);
@@ -588,17 +595,24 @@ static int script_run_lua_parse_parameter_write_options(
         lua_pop(state, 1);
         lua_getfield(state, -1, "manager");
         if (!lua_isnil(state, -1)) {
-            const char *manager = luaL_checkstring(state, -1);
-            if (strcmp(manager, "auto") == 0) {
-                out_options->manager_entry.manager = NMO_MANAGER_ENTRY_MANAGER_AUTO;
-            } else if (strcmp(manager, "message") == 0) {
-                out_options->manager_entry.manager = NMO_MANAGER_ENTRY_MANAGER_MESSAGE;
-            } else if (strcmp(manager, "attribute") == 0) {
-                out_options->manager_entry.manager = NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE;
+            return luaL_error(
+                state,
+                "manager_entry.manager is no longer supported; use manager_entry.schema");
+        }
+        lua_pop(state, 1);
+        lua_getfield(state, -1, "schema");
+        if (!lua_isnil(state, -1)) {
+            const char *schema = luaL_checkstring(state, -1);
+            if (strcmp(schema, "auto") == 0) {
+                out_options->manager_entry.schema = NMO_MANAGER_ENTRY_SCHEMA_AUTO;
+            } else if (strcmp(schema, "message") == 0) {
+                out_options->manager_entry.schema = NMO_MANAGER_ENTRY_SCHEMA_MESSAGE;
+            } else if (strcmp(schema, "attribute") == 0) {
+                out_options->manager_entry.schema = NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE;
             } else {
                 return luaL_error(
                     state,
-                    "manager_entry.manager must be 'auto', 'message', or 'attribute'");
+                    "manager_entry.schema must be 'auto', 'message', or 'attribute'");
             }
         }
         lua_pop(state, 1);
@@ -2366,17 +2380,15 @@ static const char *script_manager_entry_policy_name(
                : "require_existing";
 }
 
-static const char *script_manager_entry_manager_name(
-    nmo_manager_entry_manager_t manager)
+static const char *script_manager_entry_schema_name(
+    nmo_manager_entry_schema_t schema)
 {
-    switch (manager) {
-        case NMO_MANAGER_ENTRY_MANAGER_MESSAGE:
+    switch (schema) {
+        case NMO_MANAGER_ENTRY_SCHEMA_MESSAGE:
             return "message";
-        case NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE:
+        case NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE:
             return "attribute";
-        case NMO_MANAGER_ENTRY_MANAGER_GUID:
-            return "guid";
-        case NMO_MANAGER_ENTRY_MANAGER_AUTO:
+        case NMO_MANAGER_ENTRY_SCHEMA_AUTO:
         default:
             return "auto";
     }
@@ -2402,27 +2414,23 @@ static bool script_parse_manager_entry_policy_cli(
     return false;
 }
 
-static bool script_parse_manager_entry_manager_cli(
+static bool script_parse_manager_entry_schema_cli(
     const char *text,
-    nmo_manager_entry_manager_t *out_manager)
+    nmo_manager_entry_schema_t *out_schema)
 {
-    if (text == NULL || out_manager == NULL) {
+    if (text == NULL || out_schema == NULL) {
         return false;
     }
     if (strcmp(text, "auto") == 0) {
-        *out_manager = NMO_MANAGER_ENTRY_MANAGER_AUTO;
+        *out_schema = NMO_MANAGER_ENTRY_SCHEMA_AUTO;
         return true;
     }
     if (strcmp(text, "message") == 0) {
-        *out_manager = NMO_MANAGER_ENTRY_MANAGER_MESSAGE;
+        *out_schema = NMO_MANAGER_ENTRY_SCHEMA_MESSAGE;
         return true;
     }
     if (strcmp(text, "attribute") == 0) {
-        *out_manager = NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE;
-        return true;
-    }
-    if (strcmp(text, "guid") == 0) {
-        *out_manager = NMO_MANAGER_ENTRY_MANAGER_GUID;
+        *out_schema = NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE;
         return true;
     }
     return false;
@@ -2440,9 +2448,9 @@ static void script_add_manager_entry_json(
     yyjson_mut_obj_add_str(doc, entry, "policy",
                            script_manager_entry_policy_name(
                                manager_entry->policy));
-    yyjson_mut_obj_add_str(doc, entry, "manager",
-                           script_manager_entry_manager_name(
-                               manager_entry->manager));
+    yyjson_mut_obj_add_str(doc, entry, "schema",
+                           script_manager_entry_schema_name(
+                               manager_entry->schema));
     if (!nmo_guid_is_null(manager_entry->manager_guid)) {
         char guid_text[64];
         nmo_guid_format(manager_entry->manager_guid, guid_text,
@@ -3252,8 +3260,8 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
             {"--name", NULL, NMO_OPT_STRING, "Behavior name"},
             {"--manager-entry", NULL, NMO_OPT_STRING,
              "Manager entry policy: require-existing|create-missing"},
-            {"--manager-entry-manager", NULL, NMO_OPT_STRING,
-             "Manager entry kind: auto|message|attribute|guid"},
+            {"--manager-entry-schema", NULL, NMO_OPT_STRING,
+             "Manager entry schema: auto|message|attribute"},
             {"--manager-entry-guid", NULL, NMO_OPT_STRING,
              "Explicit manager GUID for manager entry lookup"},
             {"--manager-entry-key", NULL, NMO_OPT_STRING,
@@ -3266,7 +3274,7 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
             OPT_BB_GUID,
             OPT_NAME,
             OPT_MANAGER_ENTRY_POLICY,
-            OPT_MANAGER_ENTRY_MANAGER,
+            OPT_MANAGER_ENTRY_SCHEMA,
             OPT_MANAGER_ENTRY_GUID,
             OPT_MANAGER_ENTRY_KEY,
             OPT_OUTPUT,
@@ -3288,7 +3296,7 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
         args.manager_entry = nmo_manager_entry_options_default();
         args.has_manager_entry =
             vals[OPT_MANAGER_ENTRY_POLICY].present ||
-            vals[OPT_MANAGER_ENTRY_MANAGER].present ||
+            vals[OPT_MANAGER_ENTRY_SCHEMA].present ||
             vals[OPT_MANAGER_ENTRY_GUID].present ||
             vals[OPT_MANAGER_ENTRY_KEY].present;
         if (vals[OPT_MANAGER_ENTRY_POLICY].present &&
@@ -3297,10 +3305,10 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
                 &args.manager_entry.policy)) {
             return NMO_CLI_EXIT_ARG_ERROR;
         }
-        if (vals[OPT_MANAGER_ENTRY_MANAGER].present &&
-            !script_parse_manager_entry_manager_cli(
-                vals[OPT_MANAGER_ENTRY_MANAGER].val.str,
-                &args.manager_entry.manager)) {
+        if (vals[OPT_MANAGER_ENTRY_SCHEMA].present &&
+            !script_parse_manager_entry_schema_cli(
+                vals[OPT_MANAGER_ENTRY_SCHEMA].val.str,
+                &args.manager_entry.schema)) {
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         if (vals[OPT_MANAGER_ENTRY_GUID].present) {
@@ -4238,8 +4246,8 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
             {"--value", NULL, NMO_OPT_STRING, "Typed parameter value"},
             {"--manager-entry", NULL, NMO_OPT_STRING,
              "Manager entry policy: require-existing|create-missing"},
-            {"--manager-entry-manager", NULL, NMO_OPT_STRING,
-             "Manager entry kind: auto|message|attribute|guid"},
+            {"--manager-entry-schema", NULL, NMO_OPT_STRING,
+             "Manager entry schema: auto|message|attribute"},
             {"--manager-entry-guid", NULL, NMO_OPT_STRING,
              "Explicit manager GUID for manager entry lookup"},
             {"--manager-entry-key", NULL, NMO_OPT_STRING,
@@ -4251,7 +4259,7 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
             OPT_PARAM,
             OPT_VALUE,
             OPT_MANAGER_ENTRY_POLICY,
-            OPT_MANAGER_ENTRY_MANAGER,
+            OPT_MANAGER_ENTRY_SCHEMA,
             OPT_MANAGER_ENTRY_GUID,
             OPT_MANAGER_ENTRY_KEY,
             OPT_OUTPUT,
@@ -4272,7 +4280,7 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         args.manager_entry = nmo_manager_entry_options_default();
         args.has_manager_entry =
             vals[OPT_MANAGER_ENTRY_POLICY].present ||
-            vals[OPT_MANAGER_ENTRY_MANAGER].present ||
+            vals[OPT_MANAGER_ENTRY_SCHEMA].present ||
             vals[OPT_MANAGER_ENTRY_GUID].present ||
             vals[OPT_MANAGER_ENTRY_KEY].present;
         if (vals[OPT_MANAGER_ENTRY_POLICY].present &&
@@ -4281,10 +4289,10 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
                 &args.manager_entry.policy)) {
             return NMO_CLI_EXIT_ARG_ERROR;
         }
-        if (vals[OPT_MANAGER_ENTRY_MANAGER].present &&
-            !script_parse_manager_entry_manager_cli(
-                vals[OPT_MANAGER_ENTRY_MANAGER].val.str,
-                &args.manager_entry.manager)) {
+        if (vals[OPT_MANAGER_ENTRY_SCHEMA].present &&
+            !script_parse_manager_entry_schema_cli(
+                vals[OPT_MANAGER_ENTRY_SCHEMA].val.str,
+                &args.manager_entry.schema)) {
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         if (vals[OPT_MANAGER_ENTRY_GUID].present) {

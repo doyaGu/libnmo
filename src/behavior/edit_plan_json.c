@@ -149,17 +149,15 @@ static const char *manager_entry_policy_string(
                : "require_existing";
 }
 
-static const char *manager_entry_manager_string(
-    nmo_manager_entry_manager_t manager)
+static const char *manager_entry_schema_string(
+    nmo_manager_entry_schema_t schema)
 {
-    switch (manager) {
-        case NMO_MANAGER_ENTRY_MANAGER_MESSAGE:
+    switch (schema) {
+        case NMO_MANAGER_ENTRY_SCHEMA_MESSAGE:
             return "message";
-        case NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE:
+        case NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE:
             return "attribute";
-        case NMO_MANAGER_ENTRY_MANAGER_GUID:
-            return "guid";
-        case NMO_MANAGER_ENTRY_MANAGER_AUTO:
+        case NMO_MANAGER_ENTRY_SCHEMA_AUTO:
         default:
             return "auto";
     }
@@ -189,35 +187,153 @@ static bool parse_manager_entry_policy_value(
     return false;
 }
 
-static bool parse_manager_entry_manager_value(
-    yyjson_val *manager_val,
-    nmo_manager_entry_manager_t *out_manager)
+static bool parse_manager_entry_schema_value(
+    yyjson_val *schema_val,
+    nmo_manager_entry_schema_t *out_schema)
 {
-    if (manager_val == NULL || out_manager == NULL || !yyjson_is_str(manager_val)) {
+    if (schema_val == NULL || out_schema == NULL || !yyjson_is_str(schema_val)) {
         nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                            __FILE__, __LINE__, "Invalid manager_entry.manager");
+                            __FILE__, __LINE__, "Invalid manager_entry.schema");
         return false;
     }
-    const char *manager_text = yyjson_get_str(manager_val);
-    if (strcmp(manager_text, "auto") == 0) {
-        *out_manager = NMO_MANAGER_ENTRY_MANAGER_AUTO;
+    const char *schema_text = yyjson_get_str(schema_val);
+    if (strcmp(schema_text, "auto") == 0) {
+        *out_schema = NMO_MANAGER_ENTRY_SCHEMA_AUTO;
         return true;
     }
-    if (strcmp(manager_text, "message") == 0) {
-        *out_manager = NMO_MANAGER_ENTRY_MANAGER_MESSAGE;
+    if (strcmp(schema_text, "message") == 0) {
+        *out_schema = NMO_MANAGER_ENTRY_SCHEMA_MESSAGE;
         return true;
     }
-    if (strcmp(manager_text, "attribute") == 0) {
-        *out_manager = NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE;
-        return true;
-    }
-    if (strcmp(manager_text, "guid") == 0) {
-        *out_manager = NMO_MANAGER_ENTRY_MANAGER_GUID;
+    if (strcmp(schema_text, "attribute") == 0) {
+        *out_schema = NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE;
         return true;
     }
     nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                        __FILE__, __LINE__, "Invalid manager_entry.manager");
+                        __FILE__, __LINE__, "Invalid manager_entry.schema");
     return false;
+}
+
+static bool manager_entry_json_key_allowed(const char *key,
+                                           const char *const *allowed)
+{
+    if (key == NULL || allowed == NULL) {
+        return false;
+    }
+    for (size_t i = 0; allowed[i] != NULL; ++i) {
+        if (strcmp(key, allowed[i]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool reject_unknown_manager_entry_fields(yyjson_val *obj,
+                                                const char *where,
+                                                const char *const *allowed)
+{
+    size_t idx = 0u;
+    size_t max = 0u;
+    yyjson_val *key = NULL;
+    yyjson_val *val = NULL;
+    yyjson_obj_foreach(obj, idx, max, key, val) {
+        (void)val;
+        const char *name = yyjson_get_str(key);
+        if (!manager_entry_json_key_allowed(name, allowed)) {
+            nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                __FILE__, __LINE__,
+                                "Unknown field '%s' in %s",
+                                name != NULL ? name : "(null)", where);
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool parse_manager_entry_create_options_value(
+    yyjson_val *create_val,
+    nmo_manager_entry_create_options_t *out_create)
+{
+    static const char *allowed[] = {
+        "attribute_type_guid", "category", "compatible_class_id", "flags",
+        NULL
+    };
+    if (create_val == NULL || out_create == NULL || !yyjson_is_obj(create_val)) {
+        nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                            __FILE__, __LINE__, "Invalid manager_entry.create");
+        return false;
+    }
+    if (!reject_unknown_manager_entry_fields(
+            create_val, "manager_entry.create", allowed)) {
+        return false;
+    }
+    out_create->enabled = true;
+
+    yyjson_val *type_val = yyjson_obj_get(create_val, "attribute_type_guid");
+    if (type_val != NULL) {
+        if (!yyjson_is_str(type_val)) {
+            nmo_last_error_setf(
+                NMO_ERR_INVALID_FORMAT,
+                NMO_SEVERITY_ERROR,
+                __FILE__,
+                __LINE__,
+                "Invalid manager_entry.create.attribute_type_guid");
+            return false;
+        }
+        out_create->attribute_type_guid =
+            nmo_guid_parse(yyjson_get_str(type_val));
+        if (nmo_guid_is_null(out_create->attribute_type_guid)) {
+            nmo_last_error_setf(
+                NMO_ERR_INVALID_FORMAT,
+                NMO_SEVERITY_ERROR,
+                __FILE__,
+                __LINE__,
+                "Invalid manager_entry.create.attribute_type_guid");
+            return false;
+        }
+    }
+
+    yyjson_val *category_val = yyjson_obj_get(create_val, "category");
+    if (category_val != NULL) {
+        if (!yyjson_is_str(category_val)) {
+            nmo_last_error_setf(
+                NMO_ERR_INVALID_FORMAT,
+                NMO_SEVERITY_ERROR,
+                __FILE__,
+                __LINE__,
+                "Invalid manager_entry.create.category");
+            return false;
+        }
+        out_create->category = yyjson_get_str(category_val);
+    }
+
+    yyjson_val *class_val = yyjson_obj_get(create_val, "compatible_class_id");
+    if (class_val != NULL) {
+        if (!yyjson_is_uint(class_val)) {
+            nmo_last_error_setf(
+                NMO_ERR_INVALID_FORMAT,
+                NMO_SEVERITY_ERROR,
+                __FILE__,
+                __LINE__,
+                "Invalid manager_entry.create.compatible_class_id");
+            return false;
+        }
+        out_create->has_compatible_class_id = true;
+        out_create->compatible_class_id = (uint32_t)yyjson_get_uint(class_val);
+    }
+
+    yyjson_val *flags_val = yyjson_obj_get(create_val, "flags");
+    if (flags_val != NULL) {
+        if (!yyjson_is_uint(flags_val)) {
+            nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                __FILE__, __LINE__,
+                                "Invalid manager_entry.create.flags");
+            return false;
+        }
+        out_create->has_flags = true;
+        out_create->flags = (uint32_t)yyjson_get_uint(flags_val);
+    }
+    return true;
 }
 
 static bool parse_manager_entry_options_value(
@@ -231,14 +347,21 @@ static bool parse_manager_entry_options_value(
     }
 
     *out_options = nmo_manager_entry_options_default();
+    static const char *allowed[] = {
+        "policy", "schema", "manager_guid", "key", "create", NULL
+    };
+    if (!reject_unknown_manager_entry_fields(
+            entry_val, "manager_entry", allowed)) {
+        return false;
+    }
     yyjson_val *policy_val = yyjson_obj_get(entry_val, "policy");
     if (policy_val != NULL &&
         !parse_manager_entry_policy_value(policy_val, &out_options->policy)) {
         return false;
     }
-    yyjson_val *manager_val = yyjson_obj_get(entry_val, "manager");
-    if (manager_val != NULL &&
-        !parse_manager_entry_manager_value(manager_val, &out_options->manager)) {
+    yyjson_val *schema_val = yyjson_obj_get(entry_val, "schema");
+    if (schema_val != NULL &&
+        !parse_manager_entry_schema_value(schema_val, &out_options->schema)) {
         return false;
     }
     yyjson_val *guid_val = yyjson_obj_get(entry_val, "manager_guid");
@@ -256,8 +379,10 @@ static bool parse_manager_entry_options_value(
                                 "Invalid manager_entry.manager_guid");
             return false;
         }
-    } else if (out_options->manager == NMO_MANAGER_ENTRY_MANAGER_MESSAGE) {
+    } else if (out_options->schema == NMO_MANAGER_ENTRY_SCHEMA_MESSAGE) {
         out_options->manager_guid = NMO_MANAGER_GUID_MESSAGE;
+    } else if (out_options->schema == NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE) {
+        out_options->manager_guid = NMO_MANAGER_GUID_ATTRIBUTE;
     }
     yyjson_val *key_val = yyjson_obj_get(entry_val, "key");
     if (key_val != NULL) {
@@ -267,6 +392,12 @@ static bool parse_manager_entry_options_value(
             return false;
         }
         out_options->key = yyjson_get_str(key_val);
+    }
+    yyjson_val *create_val = yyjson_obj_get(entry_val, "create");
+    if (create_val != NULL &&
+        !parse_manager_entry_create_options_value(create_val,
+                                                 &out_options->create)) {
+        return false;
     }
     return true;
 }
@@ -284,17 +415,40 @@ static void add_manager_entry_json(yyjson_mut_doc *doc,
     }
     yyjson_mut_obj_add_str(doc, entry, "policy",
                            manager_entry_policy_string(options->policy));
-    yyjson_mut_obj_add_str(doc, entry, "manager",
-                           manager_entry_manager_string(options->manager));
+    yyjson_mut_obj_add_str(doc, entry, "schema",
+                           manager_entry_schema_string(options->schema));
     nmo_guid_t manager_guid = options->manager_guid;
     if (nmo_guid_is_null(manager_guid) &&
-        options->manager == NMO_MANAGER_ENTRY_MANAGER_MESSAGE) {
+        options->schema == NMO_MANAGER_ENTRY_SCHEMA_MESSAGE) {
         manager_guid = NMO_MANAGER_GUID_MESSAGE;
+    } else if (nmo_guid_is_null(manager_guid) &&
+               options->schema == NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE) {
+        manager_guid = NMO_MANAGER_GUID_ATTRIBUTE;
     }
     if (!nmo_guid_is_null(manager_guid)) {
         add_guid_json(doc, entry, "manager_guid", manager_guid);
     }
     add_str_safe(doc, entry, "key", options->key);
+    if (options->create.enabled) {
+        yyjson_mut_val *create = yyjson_mut_obj(doc);
+        if (create != NULL) {
+            if (!nmo_guid_is_null(options->create.attribute_type_guid)) {
+                add_guid_json(doc, create, "attribute_type_guid",
+                              options->create.attribute_type_guid);
+            }
+            add_str_safe(doc, create, "category", options->create.category);
+            if (options->create.has_compatible_class_id) {
+                yyjson_mut_obj_add_uint(
+                    doc, create, "compatible_class_id",
+                    (uint64_t)options->create.compatible_class_id);
+            }
+            if (options->create.has_flags) {
+                yyjson_mut_obj_add_uint(
+                    doc, create, "flags", (uint64_t)options->create.flags);
+            }
+            yyjson_mut_obj_add_val(doc, entry, "create", create);
+        }
+    }
     yyjson_mut_obj_add_val(doc, obj, "manager_entry", entry);
 }
 
