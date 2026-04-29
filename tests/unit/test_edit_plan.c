@@ -2,9 +2,12 @@
 
 #include "behavior/nmo_edit_plan.h"
 #include "behavior/nmo_behavior_edit.h"
+#include "behavior/nmo_behavior_registry.h"
 #include "core/nmo_array.h"
 #include "document/nmo_document.h"
+#include "format/nmo_object.h"
 #include "object/builtin/nmo_beobject_schemas.h"
+#include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
@@ -183,6 +186,90 @@ static nmo_object_id_t find_named_parameter_in_ids(
         }
     }
     return 0u;
+}
+
+static bool report_contains_object_id(
+    const nmo_edit_object_impact_t *items,
+    size_t count,
+    nmo_object_id_t id)
+{
+    for (size_t i = 0; i < count; ++i) {
+        if (items[i].id == id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void assert_named_ids_match_strings(
+    nmo_object_repository_t *repo,
+    const nmo_array_t *ids,
+    const char *const *names,
+    uint32_t count)
+{
+    const nmo_object_id_t *data = ids ? (const nmo_object_id_t *)ids->data : NULL;
+    ASSERT_EQ((size_t)count, ids->count);
+    if (count == 0u) {
+        return;
+    }
+    ASSERT_NOT_NULL(data);
+    for (uint32_t i = 0; i < count; ++i) {
+        nmo_object_t *obj = nmo_object_repository_find_by_id(repo, data[i]);
+        ASSERT_NOT_NULL(obj);
+        ASSERT_STR_EQ(names[i], nmo_object_get_name(obj));
+    }
+}
+
+static void assert_param_ids_match_proto(
+    edit_plan_fixture_t *fixture,
+    const nmo_array_t *ids,
+    const nmo_behavior_param_desc_t *params,
+    uint32_t count,
+    nmo_class_id_t expected_class,
+    bool expect_settings,
+    const nmo_edit_report_t *report)
+{
+    const nmo_object_id_t *data = ids ? (const nmo_object_id_t *)ids->data : NULL;
+    ASSERT_EQ((size_t)count, ids->count);
+    if (count == 0u) {
+        return;
+    }
+    ASSERT_NOT_NULL(data);
+    for (uint32_t i = 0; i < count; ++i) {
+        nmo_object_t *obj = nmo_object_repository_find_by_id(fixture->repo, data[i]);
+        ASSERT_NOT_NULL(obj);
+        ASSERT_EQ(expected_class, nmo_object_get_class_id(obj));
+        ASSERT_STR_EQ(params[i].name, nmo_object_get_name(obj));
+        ASSERT_TRUE(report_contains_object_id(
+            report->created_objects, report->created_object_count, data[i]));
+
+        if (expected_class == NMO_CID_PARAMETERIN) {
+            nmo_parameterin_state_t *state =
+                (nmo_parameterin_state_t *)nmo_object_get_state(obj);
+            ASSERT_NOT_NULL(state);
+            ASSERT_TRUE(nmo_guid_equals(params[i].type_guid, state->type_guid));
+            if (params[i].default_value != NULL && params[i].default_value[0] != '\0') {
+                ASSERT_TRUE(state->source_id != 0u);
+                ASSERT_NOT_NULL(nmo_object_repository_find_by_id(
+                    fixture->repo, state->source_id));
+                ASSERT_TRUE(report_contains_object_id(
+                    report->created_objects,
+                    report->created_object_count,
+                    state->source_id));
+            }
+        } else if (expected_class == NMO_CID_PARAMETEROUT) {
+            nmo_parameterout_state_t *state =
+                (nmo_parameterout_state_t *)nmo_object_get_state(obj);
+            ASSERT_NOT_NULL(state);
+            ASSERT_TRUE(nmo_guid_equals(params[i].type_guid, state->base.type_guid));
+        } else if (expected_class == NMO_CID_PARAMETERLOCAL) {
+            nmo_parameterlocal_state_t *state =
+                (nmo_parameterlocal_state_t *)nmo_object_get_state(obj);
+            ASSERT_NOT_NULL(state);
+            ASSERT_TRUE(nmo_guid_equals(params[i].type_guid, state->base.type_guid));
+            ASSERT_EQ(expect_settings ? 1u : 0u, (uint32_t)state->is_setting);
+        }
+    }
 }
 
 TEST(edit_plan, stores_parameter_value_ops) {
@@ -865,6 +952,128 @@ TEST(edit_plan, executor_materializes_targetable_beobject_target) {
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
     edit_plan_fixture_dispose(&fixture);
+}
+
+TEST(edit_plan, executor_materializes_common_building_block_prototypes) {
+    static const struct {
+        const char *label;
+        nmo_guid_t guid;
+    } cases[] = {
+        {"2D Text", NMO_GUID_INIT(0x055B29FEu, 0x662D5CA0u)},
+        {"Output To Console", NMO_GUID_INIT(0x18655B3Fu, 0x68291DC3u)},
+        {"Send Message", NMO_GUID_INIT(0xA20E8D5Bu, 0xDF002150u)},
+        {"Wait Message", NMO_GUID_INIT(0x4587FFEEu, 0x4587FFDDu)},
+        {"Show", NMO_GUID_INIT(0xA85A213Au, 0xEF78D52Au)},
+    };
+
+    for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); ++c) {
+        edit_plan_fixture_t fixture;
+        edit_plan_fixture_init(&fixture);
+
+        const nmo_behavior_proto_t *proto = nmo_behavior_registry_find(
+            nmo_context_get_bb_registry(fixture.ctx), cases[c].guid);
+        ASSERT_NOT_NULL(proto);
+        ASSERT_STR_EQ(cases[c].label, proto->name);
+
+        nmo_object_id_t root_id = 0;
+        create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Root", &root_id);
+
+        nmo_edit_plan_t *plan = NULL;
+        nmo_edit_report_t report;
+        ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+        ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+        ASSERT_EQ(NMO_OK,
+                  nmo_edit_plan_add_node(plan, root_id, cases[c].guid, proto->name));
+
+        ASSERT_EQ(NMO_OK,
+                  nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+        ASSERT_TRUE(report.ok);
+        ASSERT_EQ(1u, report.operation_count);
+        ASSERT_TRUE(report.operations[0].result_id != 0u);
+        ASSERT_TRUE(report_contains_object_id(
+            report.created_objects,
+            report.created_object_count,
+            report.operations[0].result_id));
+
+        nmo_object_t *node_obj = nmo_object_repository_find_by_id(
+            fixture.repo, report.operations[0].result_id);
+        nmo_behavior_state_t *node_state = node_obj
+            ? (nmo_behavior_state_t *)nmo_object_get_state(node_obj)
+            : NULL;
+        ASSERT_NOT_NULL(node_state);
+        ASSERT_TRUE((node_state->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0u);
+        ASSERT_TRUE((node_state->flags & CKBEHAVIOR_USEFUNCTION) != 0u);
+        ASSERT_TRUE(nmo_guid_equals(proto->guid, node_state->block_guid));
+        ASSERT_EQ(proto->version != 0u ? proto->version : 65536u,
+                  node_state->block_version);
+        ASSERT_EQ(proto->compatible_class_id, node_state->compatible_class_id);
+
+        assert_named_ids_match_strings(
+            fixture.repo, &node_state->inputs, proto->inputs, proto->input_count);
+        assert_named_ids_match_strings(
+            fixture.repo, &node_state->outputs, proto->outputs, proto->output_count);
+        assert_param_ids_match_proto(
+            &fixture,
+            &node_state->in_parameters,
+            proto->input_params,
+            proto->input_param_count,
+            NMO_CID_PARAMETERIN,
+            false,
+            &report);
+        assert_param_ids_match_proto(
+            &fixture,
+            &node_state->out_parameters,
+            proto->output_params,
+            proto->output_param_count,
+            NMO_CID_PARAMETEROUT,
+            false,
+            &report);
+
+        const nmo_object_id_t *locals =
+            (const nmo_object_id_t *)node_state->local_parameters.data;
+        ASSERT_EQ((size_t)(proto->local_param_count + proto->setting_count),
+                  node_state->local_parameters.count);
+        nmo_array_t local_ids = {0};
+        nmo_array_t setting_ids = {0};
+        local_ids.data = (void *)locals;
+        local_ids.count = proto->local_param_count;
+        setting_ids.data = (void *)(locals + proto->local_param_count);
+        setting_ids.count = proto->setting_count;
+        if (proto->local_param_count > 0u) {
+            assert_param_ids_match_proto(
+                &fixture,
+                &local_ids,
+                proto->local_params,
+                proto->local_param_count,
+                NMO_CID_PARAMETERLOCAL,
+                false,
+                &report);
+        }
+        if (proto->setting_count > 0u) {
+            assert_param_ids_match_proto(
+                &fixture,
+                &setting_ids,
+                proto->settings,
+                proto->setting_count,
+                NMO_CID_PARAMETERLOCAL,
+                true,
+                &report);
+        }
+
+        if ((proto->behavior_flags & CKBEHAVIOR_TARGETABLE) != 0u) {
+            ASSERT_TRUE(node_state->target_parameter_id != 0u);
+            ASSERT_TRUE(report_contains_object_id(
+                report.created_objects,
+                report.created_object_count,
+                node_state->target_parameter_id));
+        } else {
+            ASSERT_EQ(0u, node_state->target_parameter_id);
+        }
+
+        nmo_edit_report_dispose(&report);
+        nmo_edit_plan_destroy(plan);
+        edit_plan_fixture_dispose(&fixture);
+    }
 }
 
 TEST(edit_plan, executor_resolves_parameter_value_from_prior_handle) {
@@ -3229,6 +3438,7 @@ REGISTER_TEST(edit_plan, executor_writes_object_reference_display_values);
 REGISTER_TEST(edit_plan, executor_adds_node_with_created_object_report);
 REGISTER_TEST(edit_plan, executor_materializes_building_block_defaults);
 REGISTER_TEST(edit_plan, executor_materializes_targetable_beobject_target);
+REGISTER_TEST(edit_plan, executor_materializes_common_building_block_prototypes);
 REGISTER_TEST(edit_plan, executor_resolves_parameter_value_from_prior_handle);
 REGISTER_TEST(edit_plan, executor_materializes_input_source_for_handle_value);
 REGISTER_TEST(edit_plan, executor_materializes_input_source_for_handle_bytes);

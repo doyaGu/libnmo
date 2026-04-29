@@ -6,6 +6,8 @@
 #include "runtime/nmo_workspace.h"
 #include "object/nmo_object_edit.h"
 #include "object/nmo_value_writer.h"
+#include "object/nmo_manager_guids.h"
+#include "object/nmo_param_guids.h"
 #include "behavior/nmo_behavior_edit.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_statesave_ids.h"
@@ -673,6 +675,37 @@ static nmo_status_t script_edit_create_io_object(
     return NMO_OK;
 }
 
+static bool script_edit_is_symbolic_manager_default_type(nmo_guid_t type_guid)
+{
+    return nmo_guid_equals(type_guid, CKPGUID_MESSAGE) ||
+           nmo_guid_equals(type_guid, CKPGUID_ATTRIBUTE);
+}
+
+static nmo_status_t script_edit_apply_symbolic_manager_default(
+    nmo_object_t *parameter_obj,
+    nmo_guid_t type_guid)
+{
+    nmo_parameter_state_t *state = parameter_obj
+        ? nmo_parameter_get_mutable_state(parameter_obj)
+        : NULL;
+    if (!state) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_array_dispose(&state->buffer_data);
+    state->mode = CKPARAM_MODE_MANAGER;
+    if (nmo_guid_equals(type_guid, CKPGUID_MESSAGE)) {
+        state->manager_guid = NMO_MANAGER_GUID_MESSAGE;
+    } else if (nmo_guid_equals(type_guid, CKPGUID_ATTRIBUTE)) {
+        state->manager_guid = NMO_MANAGER_GUID_ATTRIBUTE;
+    } else {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    state->manager_value = 0u;
+    state->has_state = true;
+    return NMO_OK;
+}
+
 static nmo_status_t script_edit_create_parameter_object(
     nmo_script_edit_tx_t *tx,
     nmo_class_id_t class_id,
@@ -730,7 +763,16 @@ static nmo_status_t script_edit_create_parameter_object(
             rc = nmo_value_writer_set_parameter_value(
                 tx->edit, source_id, default_value, NULL);
             if (rc != NMO_OK) {
-                return rc;
+                if (!script_edit_is_symbolic_manager_default_type(type_guid)) {
+                    return rc;
+                }
+                nmo_object_t *source_obj =
+                    nmo_object_repository_find_by_id(repo, source_id);
+                rc = script_edit_apply_symbolic_manager_default(
+                    source_obj, type_guid);
+                if (rc != NMO_OK) {
+                    return rc;
+                }
             }
             input_state->source_id = source_id;
             input_state->is_shared = 0u;
@@ -785,7 +827,13 @@ static nmo_status_t script_edit_create_parameter_object(
         rc = nmo_value_writer_set_parameter_value(
             tx->edit, *out_parameter_id, default_value, NULL);
         if (rc != NMO_OK) {
-            return rc;
+            if (!script_edit_is_symbolic_manager_default_type(type_guid)) {
+                return rc;
+            }
+            rc = script_edit_apply_symbolic_manager_default(object, type_guid);
+            if (rc != NMO_OK) {
+                return rc;
+            }
         }
     }
 
