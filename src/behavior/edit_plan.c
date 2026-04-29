@@ -1441,6 +1441,27 @@ static void edit_report_set_control_link_after(
     impact->after_activation_delay = activation_delay;
 }
 
+static void edit_report_set_control_link_before(
+    nmo_edit_object_impact_t *items,
+    size_t count,
+    nmo_object_id_t id,
+    nmo_edit_op_kind_t cause,
+    const char *role,
+    nmo_object_id_t from_io_id,
+    nmo_object_id_t to_io_id,
+    uint32_t activation_delay)
+{
+    nmo_edit_object_impact_t *impact =
+        edit_report_find_impact(items, count, id, cause, role);
+    if (impact == NULL) {
+        return;
+    }
+    impact->has_control_link_before = true;
+    impact->before_from_io_id = from_io_id;
+    impact->before_to_io_id = to_io_id;
+    impact->before_activation_delay = activation_delay;
+}
+
 nmo_status_t nmo_edit_report_add_changed_object(
     nmo_edit_report_t *report,
     nmo_object_id_t id,
@@ -2412,12 +2433,27 @@ static nmo_status_t edit_executor_apply_op(
     {
         nmo_object_id_t from_io_id = 0u;
         nmo_object_id_t to_io_id = 0u;
+        uint32_t activation_delay = 0u;
         edit_plan_get_behavior_link_endpoints(
             tx,
             op->data.remove_link.link_id,
             &from_io_id,
             &to_io_id,
-            NULL);
+            &activation_delay);
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_deleted_object(
+            report,
+            op->data.remove_link.link_id,
+            NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK,
+            "primary"));
+        edit_report_set_control_link_before(
+            report->deleted_objects,
+            report->deleted_object_count,
+            op->data.remove_link.link_id,
+            NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK,
+            "primary",
+            from_io_id,
+            to_io_id,
+            activation_delay);
         nmo_status_t rc = nmo_script_edit_remove_behavior_link(
             tx,
             op->data.remove_link.parent_behavior_id,
@@ -3237,8 +3273,15 @@ nmo_status_t nmo_edit_executor_execute_transaction(
         }
         nmo_object_id_t deleted_id = edit_op_deleted_id(op);
         if (deleted_id != 0u) {
-            (void)nmo_edit_report_add_deleted_object(
-                report, deleted_id, op->kind, "primary");
+            if (edit_report_find_impact(
+                    report->deleted_objects,
+                    report->deleted_object_count,
+                    deleted_id,
+                    op->kind,
+                    "primary") == NULL) {
+                (void)nmo_edit_report_add_deleted_object(
+                    report, deleted_id, op->kind, "primary");
+            }
         }
         nmo_object_id_t changed_id = edit_op_changed_id(op);
         if (changed_id == 0u && result_id != 0u) {
