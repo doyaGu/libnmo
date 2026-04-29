@@ -52,6 +52,82 @@ static char *edit_plan_strdup(const char *text)
     return copy;
 }
 
+static void edit_plan_manager_entry_options_dispose(
+    nmo_manager_entry_options_t *options)
+{
+    if (options == NULL) {
+        return;
+    }
+    free((void *)options->key);
+    free((void *)options->create.category);
+    options->key = NULL;
+    options->create.category = NULL;
+}
+
+static nmo_status_t edit_plan_manager_entry_options_clone(
+    nmo_manager_entry_options_t *dst,
+    const nmo_manager_entry_options_t *src)
+{
+    if (dst == NULL || src == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *dst = *src;
+    dst->key = NULL;
+    dst->create.category = NULL;
+    dst->key = edit_plan_strdup(src->key);
+    if (src->key != NULL && dst->key == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    dst->create.category = edit_plan_strdup(src->create.category);
+    if (src->create.category != NULL && dst->create.category == NULL) {
+        edit_plan_manager_entry_options_dispose(dst);
+        return NMO_ERR_NOMEM;
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t edit_plan_parameter_write_options_clone(
+    nmo_parameter_write_options_t *dst,
+    const nmo_parameter_write_options_t *src)
+{
+    if (dst == NULL || src == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *dst = *src;
+    return edit_plan_manager_entry_options_clone(
+        &dst->manager_entry, &src->manager_entry);
+}
+
+static void edit_plan_parameter_write_options_dispose(
+    nmo_parameter_write_options_t *options)
+{
+    if (options == NULL) {
+        return;
+    }
+    edit_plan_manager_entry_options_dispose(&options->manager_entry);
+}
+
+static nmo_status_t edit_plan_add_node_options_clone(
+    nmo_add_node_options_t *dst,
+    const nmo_add_node_options_t *src)
+{
+    if (dst == NULL || src == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *dst = *src;
+    return edit_plan_manager_entry_options_clone(
+        &dst->manager_entry, &src->manager_entry);
+}
+
+static void edit_plan_add_node_options_dispose(
+    nmo_add_node_options_t *options)
+{
+    if (options == NULL) {
+        return;
+    }
+    edit_plan_manager_entry_options_dispose(&options->manager_entry);
+}
+
 static void edit_plan_manager_snapshot_dispose(
     edit_plan_manager_snapshot_t *snapshot)
 {
@@ -282,11 +358,16 @@ static void edit_op_dispose(nmo_edit_op_t *op)
     if (op->kind == NMO_EDIT_OP_SET_PARAMETER_VALUE) {
         free((void *)op->data.set_value.value);
         free((void *)op->data.set_value.parameter_ref_handle);
+        edit_plan_parameter_write_options_dispose(
+            &op->data.set_value.options);
     } else if (op->kind == NMO_EDIT_OP_SET_PARAMETER_BYTES) {
         free((void *)op->data.set_bytes.bytes);
         free((void *)op->data.set_bytes.parameter_ref_handle);
+        edit_plan_parameter_write_options_dispose(
+            &op->data.set_bytes.options);
     } else if (op->kind == NMO_EDIT_OP_ADD_NODE) {
         free((void *)op->data.add_node.name);
+        edit_plan_add_node_options_dispose(&op->data.add_node.options);
     } else if (op->kind == NMO_EDIT_OP_ADD_IO) {
         free((void *)op->data.add_io.name);
     } else if (op->kind == NMO_EDIT_OP_RENAME_IO) {
@@ -349,6 +430,15 @@ static nmo_status_t edit_op_copy(
             edit_op_dispose(dst);
             return NMO_ERR_NOMEM;
         }
+        if (src->data.set_value.has_options) {
+            nmo_status_t st = edit_plan_parameter_write_options_clone(
+                &dst->data.set_value.options,
+                &src->data.set_value.options);
+            if (st != NMO_OK) {
+                edit_op_dispose(dst);
+                return st;
+            }
+        }
         break;
     case NMO_EDIT_OP_SET_PARAMETER_BYTES:
         dst->data.set_bytes.bytes = NULL;
@@ -369,11 +459,29 @@ static nmo_status_t edit_op_copy(
             edit_op_dispose(dst);
             return NMO_ERR_NOMEM;
         }
+        if (src->data.set_bytes.has_options) {
+            nmo_status_t st = edit_plan_parameter_write_options_clone(
+                &dst->data.set_bytes.options,
+                &src->data.set_bytes.options);
+            if (st != NMO_OK) {
+                edit_op_dispose(dst);
+                return st;
+            }
+        }
         break;
     case NMO_EDIT_OP_ADD_NODE:
         dst->data.add_node.name = edit_plan_strdup(src->data.add_node.name);
         if (src->data.add_node.name && !dst->data.add_node.name) {
             return NMO_ERR_NOMEM;
+        }
+        if (src->data.add_node.has_options) {
+            nmo_status_t st = edit_plan_add_node_options_clone(
+                &dst->data.add_node.options,
+                &src->data.add_node.options);
+            if (st != NMO_OK) {
+                edit_op_dispose(dst);
+                return st;
+            }
         }
         break;
     case NMO_EDIT_OP_ADD_IO:
@@ -604,7 +712,12 @@ nmo_status_t nmo_edit_plan_add_set_parameter_value(
         return NMO_ERR_NOMEM;
     }
     if (options != NULL) {
-        op->data.set_value.options = *options;
+        nmo_status_t st = edit_plan_parameter_write_options_clone(
+            &op->data.set_value.options, options);
+        if (st != NMO_OK) {
+            edit_op_dispose(op);
+            return st;
+        }
         op->data.set_value.has_options = true;
     }
     plan->count++;
@@ -637,7 +750,12 @@ nmo_status_t nmo_edit_plan_add_set_parameter_value_from_handle(
     op->data.set_value.parameter_ref_operation_index = operation_index;
     op->data.set_value.has_parameter_ref = true;
     if (options != NULL) {
-        op->data.set_value.options = *options;
+        nmo_status_t st = edit_plan_parameter_write_options_clone(
+            &op->data.set_value.options, options);
+        if (st != NMO_OK) {
+            edit_op_dispose(op);
+            return st;
+        }
         op->data.set_value.has_options = true;
     }
     plan->count++;
@@ -669,7 +787,12 @@ nmo_status_t nmo_edit_plan_add_set_parameter_bytes(
     }
     op->data.set_bytes.byte_count = byte_count;
     if (options != NULL) {
-        op->data.set_bytes.options = *options;
+        nmo_status_t st = edit_plan_parameter_write_options_clone(
+            &op->data.set_bytes.options, options);
+        if (st != NMO_OK) {
+            edit_op_dispose(op);
+            return st;
+        }
         op->data.set_bytes.has_options = true;
     }
     plan->count++;
@@ -710,7 +833,12 @@ nmo_status_t nmo_edit_plan_add_set_parameter_bytes_from_handle(
     op->data.set_bytes.parameter_ref_operation_index = operation_index;
     op->data.set_bytes.has_parameter_ref = true;
     if (options != NULL) {
-        op->data.set_bytes.options = *options;
+        nmo_status_t st = edit_plan_parameter_write_options_clone(
+            &op->data.set_bytes.options, options);
+        if (st != NMO_OK) {
+            edit_op_dispose(op);
+            return st;
+        }
         op->data.set_bytes.has_options = true;
     }
     plan->count++;
@@ -751,7 +879,12 @@ nmo_status_t nmo_edit_plan_add_node_ex(
         }
     }
     if (options != NULL) {
-        op->data.add_node.options = *options;
+        nmo_status_t st = edit_plan_add_node_options_clone(
+            &op->data.add_node.options, options);
+        if (st != NMO_OK) {
+            edit_op_dispose(op);
+            return st;
+        }
         op->data.add_node.has_options = true;
     }
     plan->count++;
