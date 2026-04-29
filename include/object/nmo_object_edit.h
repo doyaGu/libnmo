@@ -129,6 +129,12 @@ NMO_API nmo_status_t nmo_object_edit_ensure_message_manager_entry(
     const char *name,
     uint32_t *out_value);
 
+NMO_API nmo_status_t nmo_object_edit_ensure_attribute_manager_entry(
+    nmo_workspace_edit_t *edit,
+    const char *name,
+    const nmo_manager_entry_create_options_t *create_options,
+    uint32_t *out_value);
+
 NMO_API nmo_status_t nmo_object_edit_import_json(
     nmo_workspace_t *workspace,
     const char *json_data,

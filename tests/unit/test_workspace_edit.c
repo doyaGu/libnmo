@@ -1077,6 +1077,82 @@ TEST(workspace_edit, value_writer_accepts_message_manager_guid_option) {
     nmo_context_release(ctx);
 }
 
+TEST(workspace_edit, value_writer_creates_attribute_manager_entry_transactionally) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t param_id = 0;
+    create_object_or_fail(session, NMO_CID_PARAMETER, "attribute-param", &param_id);
+    nmo_object_t *param_obj =
+        nmo_object_repository_find_by_id(nmo_session_get_repository(session), param_id);
+    ASSERT_NOT_NULL(param_obj);
+    nmo_parameter_state_t *state = nmo_parameter_get_mutable_state(param_obj);
+    ASSERT_NOT_NULL(state);
+    state->type_guid = CKPGUID_ATTRIBUTE;
+    state->mode = CKPARAM_MODE_MANAGER;
+    state->has_state = true;
+    state->manager_guid = NMO_MANAGER_GUID_ATTRIBUTE;
+    state->manager_value = 77u;
+
+    nmo_parameter_write_options_t options = {
+        .manager_entry = {
+            .policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
+            .schema = NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE,
+            .manager_guid = NMO_MANAGER_GUID_ATTRIBUTE,
+            .key = "CustomAttr",
+            .create = {
+                .enabled = true,
+                .attribute_type_guid = CKPGUID_FLOAT,
+                .category = "Custom",
+                .has_compatible_class_id = true,
+                .compatible_class_id = 19u,
+                .has_flags = true,
+                .flags = 5u,
+            },
+        },
+    };
+
+    workspace_edit_scope_t create_scope = {0};
+    nmo_workspace_edit_t *create_edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              begin_workspace_edit_for_session(
+                  ctx, session, "attribute manager create", &create_scope,
+                  &create_edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_value_writer_set_parameter_value(
+                  create_edit, param_id, "IgnoredValue", &options));
+    ASSERT_TRUE(nmo_guid_equals(NMO_MANAGER_GUID_ATTRIBUTE, state->manager_guid));
+    ASSERT_EQ(0u, state->manager_value);
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&create_scope));
+
+    workspace_edit_scope_t lookup_scope = {0};
+    nmo_workspace_edit_t *lookup_edit = NULL;
+    nmo_parameter_write_options_t lookup_options = {
+        .manager_entry = {
+            .policy = NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING,
+            .schema = NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE,
+            .manager_guid = NMO_MANAGER_GUID_ATTRIBUTE,
+            .key = "CustomAttr",
+        },
+    };
+    ASSERT_EQ(NMO_OK,
+              begin_workspace_edit_for_session(
+                  ctx, session, "attribute manager lookup", &lookup_scope,
+                  &lookup_edit));
+    state->manager_value = 77u;
+    ASSERT_EQ(NMO_OK,
+              nmo_value_writer_set_parameter_value(
+                  lookup_edit, param_id, "IgnoredAgain", &lookup_options));
+    ASSERT_EQ(0u, state->manager_value);
+    rollback_workspace_edit_scope(&lookup_scope);
+    ASSERT_EQ(77u, state->manager_value);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(workspace_edit, value_writer_writes_structured_parameter_values) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
@@ -1738,6 +1814,7 @@ REGISTER_TEST(workspace_edit, value_writer_resolves_message_manager_names_with_p
 REGISTER_TEST(workspace_edit, value_writer_uses_manager_entry_key_for_lookup);
 REGISTER_TEST(workspace_edit, value_writer_rejects_unsupported_manager_entry_kind);
 REGISTER_TEST(workspace_edit, value_writer_accepts_message_manager_guid_option);
+REGISTER_TEST(workspace_edit, value_writer_creates_attribute_manager_entry_transactionally);
 REGISTER_TEST(workspace_edit, value_writer_writes_structured_parameter_values);
 REGISTER_TEST(workspace_edit, value_writer_writes_enum_and_flag_parameter_values);
 REGISTER_TEST(workspace_edit, parameter_bytes_commit_zero_fills_and_rollback_restores);

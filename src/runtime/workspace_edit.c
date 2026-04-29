@@ -17,6 +17,7 @@
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
+#include "object/builtin/nmo_attributemanager_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/nmo_manager_guids.h"
@@ -699,7 +700,8 @@ static nmo_status_t workspace_edit_prepare_manager_parameter_value(
          workspace_edit_has_manager_value_separator(value_str)) ||
         edit == NULL ||
         state == NULL ||
-        !nmo_guid_equals(state->manager_guid, NMO_MANAGER_GUID_MESSAGE)) {
+        (!nmo_guid_equals(state->manager_guid, NMO_MANAGER_GUID_MESSAGE) &&
+         !nmo_guid_equals(state->manager_guid, NMO_MANAGER_GUID_ATTRIBUTE))) {
         return explicit_result;
     }
 
@@ -715,6 +717,50 @@ static nmo_status_t workspace_edit_prepare_manager_parameter_value(
     }
     if (name_begin == NULL || name_begin == name_end) {
         return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (nmo_guid_equals(state->manager_guid, NMO_MANAGER_GUID_ATTRIBUTE)) {
+        if ((manager_entry.schema != NMO_MANAGER_ENTRY_SCHEMA_AUTO &&
+             manager_entry.schema != NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE) ||
+            (!nmo_guid_is_null(manager_entry.manager_guid) &&
+             !nmo_guid_equals(manager_entry.manager_guid,
+                              NMO_MANAGER_GUID_ATTRIBUTE))) {
+            return NMO_ERR_NOT_SUPPORTED;
+        }
+        nmo_session_t *session =
+            nmo_workspace_internal_session(edit->workspace);
+        nmo_status_t status = NMO_ERR_NOT_FOUND;
+        if (manager_entry.policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING) {
+            size_t name_len = (size_t)(name_end - name_begin);
+            char *name_copy =
+                (char *)nmo_workspace_edit_alloc(edit, name_len + 1u, 1u);
+            if (name_copy == NULL) {
+                return NMO_ERR_NOMEM;
+            }
+            memcpy(name_copy, name_begin, name_len);
+            name_copy[name_len] = '\0';
+            status = nmo_object_edit_ensure_attribute_manager_entry(
+                edit, name_copy, &manager_entry.create, out_value);
+        } else {
+            nmo_manager_entry_create_options_t no_create = {0};
+            char *name_copy = NULL;
+            size_t name_len = (size_t)(name_end - name_begin);
+            name_copy =
+                (char *)nmo_workspace_edit_alloc(edit, name_len + 1u, 1u);
+            if (name_copy == NULL) {
+                return NMO_ERR_NOMEM;
+            }
+            memcpy(name_copy, name_begin, name_len);
+            name_copy[name_len] = '\0';
+            (void)session;
+            status = nmo_object_edit_ensure_attribute_manager_entry(
+                edit, name_copy, &no_create, out_value);
+        }
+        if (status != NMO_OK) {
+            return status;
+        }
+        *out_guid = NMO_MANAGER_GUID_ATTRIBUTE;
+        return NMO_OK;
     }
 
     if (manager_entry.schema == NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE ||
@@ -781,6 +827,29 @@ static nmo_status_t workspace_edit_seek_message_manager_identifier(
     uint32_t identifier = 0u;
     if (nmo_chunk_read_identifier(chunk, &identifier) != NMO_OK ||
         identifier != 0x53u) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t workspace_edit_seek_attribute_manager_identifier(
+    nmo_chunk_t *chunk)
+{
+    if (chunk == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (nmo_chunk_start_read(chunk) != NMO_OK) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    if (nmo_chunk_seek_identifier(chunk, 0x52u) == NMO_OK) {
+        return NMO_OK;
+    }
+    if (nmo_chunk_start_read(chunk) != NMO_OK) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    uint32_t identifier = 0u;
+    if (nmo_chunk_read_identifier(chunk, &identifier) != NMO_OK ||
+        identifier != 0x52u) {
         return NMO_ERR_INVALID_STATE;
     }
     return NMO_OK;
@@ -1624,6 +1693,159 @@ static nmo_status_t workspace_edit_write_message_manager_chunk(
     return NMO_OK;
 }
 
+static nmo_status_t workspace_edit_read_attribute_manager_state(
+    nmo_session_t *session,
+    const nmo_manager_data_t *manager,
+    nmo_attributemanager_state_t *out_state)
+{
+    if (session == NULL || manager == NULL || out_state == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    memset(out_state, 0, sizeof(*out_state));
+    if (manager->chunk == NULL) {
+        return NMO_OK;
+    }
+
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    nmo_chunk_t *chunk = nmo_chunk_clone(manager->chunk, arena);
+    if (chunk == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    if (workspace_edit_seek_attribute_manager_identifier(chunk) != NMO_OK) {
+        return NMO_OK;
+    }
+
+    int32_t category_count = 0;
+    int32_t attribute_count = 0;
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &category_count));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &attribute_count));
+    if (category_count < 0 || attribute_count < 0) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    out_state->category_count = (uint32_t)category_count;
+    out_state->attribute_count = (uint32_t)attribute_count;
+    if (category_count > 0) {
+        out_state->categories =
+            (nmo_attribute_category_t *)nmo_arena_alloc(
+                arena,
+                (size_t)category_count * sizeof(*out_state->categories),
+                _Alignof(nmo_attribute_category_t));
+        if (out_state->categories == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        memset(out_state->categories, 0,
+               (size_t)category_count * sizeof(*out_state->categories));
+    }
+    for (int32_t i = 0; i < category_count; ++i) {
+        int32_t present = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &present));
+        out_state->categories[i].present = present != 0;
+        if (present != 0) {
+            char *name = NULL;
+            (void)nmo_chunk_read_string(chunk, &name);
+            if (name == NULL) {
+                return NMO_ERR_INVALID_STATE;
+            }
+            out_state->categories[i].name =
+                nmo_arena_strdup(arena, name != NULL ? name : "");
+            if (out_state->categories[i].name == NULL) {
+                return NMO_ERR_NOMEM;
+            }
+            NMO_RETURN_IF_ERROR(
+                nmo_chunk_read_dword(chunk, &out_state->categories[i].flags));
+        }
+    }
+
+    if (attribute_count > 0) {
+        out_state->attributes =
+            (nmo_attribute_descriptor_t *)nmo_arena_alloc(
+                arena,
+                (size_t)attribute_count * sizeof(*out_state->attributes),
+                _Alignof(nmo_attribute_descriptor_t));
+        if (out_state->attributes == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        memset(out_state->attributes, 0,
+               (size_t)attribute_count * sizeof(*out_state->attributes));
+    }
+    for (int32_t i = 0; i < attribute_count; ++i) {
+        int32_t present = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &present));
+        out_state->attributes[i].present = present != 0;
+        if (present != 0) {
+            char *name = NULL;
+            (void)nmo_chunk_read_string(chunk, &name);
+            if (name == NULL) {
+                return NMO_ERR_INVALID_STATE;
+            }
+            out_state->attributes[i].name =
+                nmo_arena_strdup(arena, name != NULL ? name : "");
+            if (out_state->attributes[i].name == NULL) {
+                return NMO_ERR_NOMEM;
+            }
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(
+                chunk, &out_state->attributes[i].parameter_type_guid));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(
+                chunk, &out_state->attributes[i].category_index));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(
+                chunk, &out_state->attributes[i].compatible_class_id));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                chunk, &out_state->attributes[i].flags));
+        }
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t workspace_edit_write_attribute_manager_chunk(
+    nmo_session_t *session,
+    const nmo_attributemanager_state_t *state,
+    nmo_chunk_t **out_chunk)
+{
+    if (session == NULL || state == NULL || out_chunk == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_chunk_t *chunk = nmo_chunk_create(nmo_session_get_arena(session));
+    if (chunk == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    NMO_RETURN_IF_ERROR(nmo_chunk_start_write(chunk));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(chunk, 0x52u));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(
+        chunk, (int32_t)state->category_count));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(
+        chunk, (int32_t)state->attribute_count));
+    for (uint32_t i = 0; i < state->category_count; ++i) {
+        const nmo_attribute_category_t *cat = &state->categories[i];
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(
+            chunk, cat->present ? 1 : 0));
+        if (cat->present) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_string(
+                chunk, cat->name != NULL ? cat->name : ""));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, cat->flags));
+        }
+    }
+    for (uint32_t i = 0; i < state->attribute_count; ++i) {
+        const nmo_attribute_descriptor_t *attr = &state->attributes[i];
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(
+            chunk, attr->present ? 1 : 0));
+        if (attr->present) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_string(
+                chunk, attr->name != NULL ? attr->name : ""));
+            NMO_RETURN_IF_ERROR(
+                nmo_chunk_write_guid(chunk, attr->parameter_type_guid));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_int(
+                chunk, attr->category_index));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_int(
+                chunk, attr->compatible_class_id));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, attr->flags));
+        }
+    }
+    nmo_chunk_close(chunk);
+    *out_chunk = chunk;
+    return NMO_OK;
+}
+
 nmo_status_t nmo_object_edit_ensure_message_manager_entry(
     nmo_workspace_edit_t *edit,
     const char *name,
@@ -1723,6 +1945,174 @@ nmo_status_t nmo_object_edit_ensure_message_manager_entry(
     nmo_session_set_manager_data(session, new_manager_data, new_manager_count);
     nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_RESOURCES);
     *out_value = name_count;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_object_edit_ensure_attribute_manager_entry(
+    nmo_workspace_edit_t *edit,
+    const char *name,
+    const nmo_manager_entry_create_options_t *create_options,
+    uint32_t *out_value)
+{
+    if (edit == NULL || edit->finished || name == NULL || name[0] == '\0' ||
+        out_value == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_session_t *session = nmo_workspace_internal_session(edit->workspace);
+    const nmo_file_state_t *file_state =
+        session != NULL ? nmo_session_get_file_state(session) : NULL;
+    if (session == NULL || file_state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    uint32_t manager_index = UINT32_MAX;
+    nmo_attributemanager_state_t state = {0};
+    for (uint32_t i = 0; i < file_state->manager_data_count; ++i) {
+        nmo_manager_data_t *manager = &file_state->manager_data[i];
+        if (!nmo_guid_equals(manager->guid, NMO_MANAGER_GUID_ATTRIBUTE)) {
+            continue;
+        }
+        manager_index = i;
+        NMO_RETURN_IF_ERROR(workspace_edit_read_attribute_manager_state(
+            session, manager, &state));
+        break;
+    }
+
+    for (uint32_t i = 0; i < state.attribute_count; ++i) {
+        const nmo_attribute_descriptor_t *attr = &state.attributes[i];
+        if (attr->present && attr->name != NULL &&
+            strcmp(attr->name, name) == 0) {
+            *out_value = i;
+            return NMO_OK;
+        }
+    }
+
+    if (create_options == NULL || !create_options->enabled ||
+        nmo_guid_is_null(create_options->attribute_type_guid) ||
+        create_options->category == NULL ||
+        create_options->category[0] == '\0' ||
+        !create_options->has_compatible_class_id ||
+        !create_options->has_flags) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    uint32_t category_index = UINT32_MAX;
+    for (uint32_t i = 0; i < state.category_count; ++i) {
+        const nmo_attribute_category_t *cat = &state.categories[i];
+        if (cat->present && cat->name != NULL &&
+            strcmp(cat->name, create_options->category) == 0) {
+            category_index = i;
+            break;
+        }
+    }
+
+    uint32_t new_category_count = state.category_count;
+    if (category_index == UINT32_MAX) {
+        category_index = state.category_count;
+        new_category_count = state.category_count + 1u;
+    }
+    uint32_t new_attribute_count = state.attribute_count + 1u;
+
+    nmo_attribute_category_t *categories =
+        (nmo_attribute_category_t *)nmo_arena_alloc(
+            arena,
+            (size_t)new_category_count * sizeof(*categories),
+            _Alignof(nmo_attribute_category_t));
+    nmo_attribute_descriptor_t *attributes =
+        (nmo_attribute_descriptor_t *)nmo_arena_alloc(
+            arena,
+            (size_t)new_attribute_count * sizeof(*attributes),
+            _Alignof(nmo_attribute_descriptor_t));
+    if (categories == NULL || attributes == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    memset(categories, 0, (size_t)new_category_count * sizeof(*categories));
+    memset(attributes, 0, (size_t)new_attribute_count * sizeof(*attributes));
+    if (state.category_count > 0u && state.categories != NULL) {
+        memcpy(categories, state.categories,
+               (size_t)state.category_count * sizeof(*categories));
+    }
+    if (state.attribute_count > 0u && state.attributes != NULL) {
+        memcpy(attributes, state.attributes,
+               (size_t)state.attribute_count * sizeof(*attributes));
+    }
+    if (new_category_count != state.category_count) {
+        categories[category_index].present = true;
+        categories[category_index].name =
+            nmo_arena_strdup(arena, create_options->category);
+        if (categories[category_index].name == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        categories[category_index].flags = 0u;
+    }
+
+    uint32_t new_attribute_index = state.attribute_count;
+    attributes[new_attribute_index].present = true;
+    attributes[new_attribute_index].name = nmo_arena_strdup(arena, name);
+    if (attributes[new_attribute_index].name == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    attributes[new_attribute_index].parameter_type_guid =
+        create_options->attribute_type_guid;
+    attributes[new_attribute_index].category_index = (int32_t)category_index;
+    attributes[new_attribute_index].compatible_class_id =
+        (int32_t)create_options->compatible_class_id;
+    attributes[new_attribute_index].flags = create_options->flags;
+
+    nmo_attributemanager_state_t new_state = {
+        .category_count = new_category_count,
+        .categories = categories,
+        .attribute_count = new_attribute_count,
+        .attributes = attributes,
+    };
+    nmo_chunk_t *new_chunk = NULL;
+    NMO_RETURN_IF_ERROR(workspace_edit_write_attribute_manager_chunk(
+        session, &new_state, &new_chunk));
+
+    uint32_t old_manager_count = file_state->manager_data_count;
+    nmo_manager_data_t *old_manager_data = file_state->manager_data;
+    uint32_t new_manager_count =
+        manager_index == UINT32_MAX ? old_manager_count + 1u : old_manager_count;
+    nmo_manager_data_t *new_manager_data =
+        (nmo_manager_data_t *)nmo_arena_alloc(
+            arena,
+            (size_t)new_manager_count * sizeof(*new_manager_data),
+            _Alignof(nmo_manager_data_t));
+    if (new_manager_data == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    if (old_manager_count > 0u && old_manager_data != NULL) {
+        memcpy(new_manager_data, old_manager_data,
+               (size_t)old_manager_count * sizeof(*new_manager_data));
+    }
+    if (manager_index == UINT32_MAX) {
+        manager_index = old_manager_count;
+        memset(&new_manager_data[manager_index], 0,
+               sizeof(new_manager_data[manager_index]));
+        new_manager_data[manager_index].guid = NMO_MANAGER_GUID_ATTRIBUTE;
+    }
+    new_manager_data[manager_index].chunk = new_chunk;
+    new_manager_data[manager_index].data_size =
+        (uint32_t)nmo_chunk_get_size(new_chunk);
+    new_manager_data[manager_index].flags = 0u;
+
+    manager_data_snapshot_t *snapshot =
+        (manager_data_snapshot_t *)nmo_workspace_edit_alloc(
+            edit, sizeof(*snapshot), _Alignof(manager_data_snapshot_t));
+    if (snapshot == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    snapshot->session = session;
+    snapshot->manager_data = old_manager_data;
+    snapshot->manager_data_count = old_manager_count;
+    NMO_RETURN_IF_ERROR(workspace_edit_push_rollback(
+        edit, rollback_manager_data, snapshot));
+
+    nmo_session_set_manager_data(session, new_manager_data, new_manager_count);
+    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_RESOURCES);
+    *out_value = new_attribute_index;
     return NMO_OK;
 }
 
