@@ -13,6 +13,7 @@
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_statesave_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
@@ -452,6 +453,57 @@ static nmo_status_t semantic_add_behavior_target_consistency_risk(
             "target_parameter_class_mismatch",
             "Targetable behavior target parameter type does not match its compatible class",
             state->target_parameter_id);
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t semantic_add_behavior_prototype_consistency_risk(
+    nmo_object_repository_t *repo,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t behavior_id)
+{
+    nmo_object_t *object = repo != NULL
+        ? nmo_object_repository_find_by_id(repo, behavior_id)
+        : NULL;
+    const nmo_behavior_state_t *state = object != NULL &&
+            nmo_object_get_class_id(object) == NMO_CID_BEHAVIOR
+        ? (const nmo_behavior_state_t *)nmo_object_get_state(object)
+        : NULL;
+    if (state == NULL) {
+        return NMO_OK;
+    }
+
+    const bool has_bb_flag =
+        (state->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0u;
+    const bool has_block_guid = !nmo_guid_is_null(state->block_guid);
+    if (has_block_guid && !has_bb_flag) {
+        NMO_RETURN_IF_ERROR(semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_WARN,
+            "prototype_flag_mismatch",
+            "Behavior has a prototype GUID but is not marked as a building block",
+            behavior_id));
+    }
+    if (has_bb_flag && !has_block_guid) {
+        NMO_RETURN_IF_ERROR(semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "prototype_guid_missing",
+            "Building block behavior is missing its prototype GUID",
+            behavior_id));
+    }
+    if (has_bb_flag && has_block_guid && state->has_save_flags &&
+        (state->save_flags & CK_STATESAVE_BEHAVIORPROTOGUID) == 0u) {
+        NMO_RETURN_IF_ERROR(semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_WARN,
+            "prototype_save_flags_mismatch",
+            "Building block behavior save flags do not include its prototype GUID",
+            behavior_id));
     }
     return NMO_OK;
 }
@@ -2026,6 +2078,11 @@ static nmo_status_t semantic_validate_basic_edit_op(
             op->data.replace_bb.desc.behavior_id));
         NMO_RETURN_IF_ERROR(semantic_add_behavior_target_consistency_risk(
             ctx,
+            repo,
+            risks,
+            risk_count,
+            op->data.replace_bb.desc.behavior_id));
+        NMO_RETURN_IF_ERROR(semantic_add_behavior_prototype_consistency_risk(
             repo,
             risks,
             risk_count,
