@@ -538,34 +538,34 @@ static const char *debug_probe_message_role(const nmo_behavior_state_t *state)
     return "message";
 }
 
-static bool debug_probe_text_contains_ci(const char *text, const char *needle)
+static bool debug_probe_text_starts_with_word_ci(const char *text,
+                                                 const char *needle)
 {
     if (text == NULL || needle == NULL || needle[0] == '\0') {
         return false;
     }
+    while (*text == ' ' || *text == '\t' || *text == '_' || *text == '-') {
+        ++text;
+    }
     size_t needle_len = strlen(needle);
-    for (const char *p = text; *p != '\0'; ++p) {
-        size_t i = 0u;
-        while (i < needle_len && p[i] != '\0') {
-            char a = p[i];
-            char b = needle[i];
-            if (a >= 'A' && a <= 'Z') {
-                a = (char)(a - 'A' + 'a');
-            }
-            if (b >= 'A' && b <= 'Z') {
-                b = (char)(b - 'A' + 'a');
-            }
-            if (a != b) {
-                break;
-            }
-            ++i;
+    for (size_t i = 0; i < needle_len; ++i) {
+        char a = text[i];
+        char b = needle[i];
+        if (a >= 'A' && a <= 'Z') {
+            a = (char)(a - 'A' + 'a');
         }
-        if (i == needle_len) {
-            return true;
+        if (b >= 'A' && b <= 'Z') {
+            b = (char)(b - 'A' + 'a');
+        }
+        if (a != b) {
+            return false;
         }
     }
-    return false;
+    char next = text[needle_len];
+    return next == '\0' || next == ' ' || next == '\t' || next == '_' ||
+           next == '-';
 }
+
 
 static bool debug_probe_is_data_write_behavior(
     const nmo_cmd_ctx_t *ctx,
@@ -591,7 +591,7 @@ static bool debug_probe_is_data_write_behavior(
         "reverse", "set", "shuffle", "sort", "swap",
     };
     for (size_t i = 0; i < sizeof(write_verbs) / sizeof(write_verbs[0]); ++i) {
-        if (debug_probe_text_contains_ci(proto->name, write_verbs[i])) {
+        if (debug_probe_text_starts_with_word_ci(proto->name, write_verbs[i])) {
             return true;
         }
     }
@@ -1032,6 +1032,73 @@ static nmo_status_t debug_probe_analyze_data_cell_selector(
         return NMO_OK;
     }
 
+    nmo_object_t *behavior_obj =
+        nmo_object_repository_find_by_id(repo, args->behavior_id);
+    const nmo_behavior_state_t *behavior =
+        behavior_obj != NULL &&
+                nmo_object_get_class_id(behavior_obj) == NMO_CID_BEHAVIOR
+            ? (const nmo_behavior_state_t *)nmo_object_get_state(behavior_obj)
+            : NULL;
+    if (behavior != NULL) {
+        nmo_object_id_t selected_id = 0u;
+        size_t candidate_count = 0u;
+        char candidate_ids[256];
+        size_t candidate_ids_len = 0u;
+        candidate_ids[0] = '\0';
+        const nmo_object_id_t *child_ids =
+            (const nmo_object_id_t *)behavior->sub_behaviors.data;
+        for (size_t i = 0; child_ids != NULL &&
+                           i < behavior->sub_behaviors.count; ++i) {
+            nmo_object_id_t child_id = child_ids[i];
+            nmo_object_t *child_obj =
+                nmo_object_repository_find_by_id(repo, child_id);
+            const nmo_behavior_state_t *child =
+                child_obj != NULL &&
+                        nmo_object_get_class_id(child_obj) == NMO_CID_BEHAVIOR
+                    ? (const nmo_behavior_state_t *)nmo_object_get_state(
+                          child_obj)
+                    : NULL;
+            if (!debug_probe_is_data_write_behavior(ctx, child)) {
+                continue;
+            }
+            debug_probe_selector_add_candidate(
+                ctx, args, args->behavior_id, child_id, child, "data_writer");
+            if (candidate_ids_len < sizeof(candidate_ids) - 1u) {
+                int written = snprintf(candidate_ids + candidate_ids_len,
+                                       sizeof(candidate_ids) - candidate_ids_len,
+                                       "%s%u",
+                                       candidate_count == 0u ? "" : ",",
+                                       (unsigned)child_id);
+                if (written > 0) {
+                    size_t append = (size_t)written;
+                    size_t available =
+                        sizeof(candidate_ids) - candidate_ids_len;
+                    candidate_ids_len +=
+                        append < available ? append : available - 1u;
+                }
+            }
+            selected_id = child_id;
+            ++candidate_count;
+        }
+        if (candidate_count == 1u) {
+            args->write_node_id = selected_id;
+            args->selector_selected_node_id = selected_id;
+            debug_probe_selector_set_mode_status(
+                args, "auto", "selected", NULL);
+            return NMO_OK;
+        }
+        if (candidate_count > 1u) {
+            debug_probe_selector_set_mode_status(
+                args, "auto", "ambiguous", "ambiguous_data_write_candidates");
+            NMO_RETURN_ERROR(
+                NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR,
+                "debug probe data-cell write selector is ambiguous "
+                "(candidates: [%s])",
+                candidate_ids);
+        }
+    }
+
     debug_probe_selector_set_mode_status(
         args, "explicit_data_cell", "selected", NULL);
     return NMO_OK;
@@ -1118,7 +1185,7 @@ static nmo_status_t debug_probe_select_data_write_link(
         NMO_RETURN_ERROR(
             NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR,
-            "debug probe automatic data write insertion is unsafe (candidate links: [%s])",
+            "unsafe_probe_insertion: debug probe automatic data write insertion is unsafe (candidate links: [%s])",
             candidate_ids);
     }
 

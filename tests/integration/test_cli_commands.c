@@ -3665,7 +3665,7 @@ TEST(cli, debug_probe_parameter_logger_connects_source_parameter) {
 TEST(cli, debug_probe_data_cell_logger_uses_edit_plan) {
     char args[1024];
     snprintf(args, sizeof(args),
-             "-f json debug probe data-cell-logger --behavior 237 "
+             "-f json debug probe data-cell-logger --behavior 5275 "
              "--dataarray 6067 --row 0 --col 1 \"%s\" --dry-run",
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -3743,6 +3743,21 @@ TEST(cli, debug_probe_data_cell_logger_reports_explicit_write_node) {
                   yyjson_get_str(yyjson_obj_get(
                       yyjson_arr_get(operations, 4), "op")));
     yyjson_doc_free(doc);
+}
+
+TEST(cli, debug_probe_data_cell_logger_auto_rejects_multi_link_write_node) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json debug probe data-cell-logger --behavior 3880 "
+             "--dataarray 6067 --row 0 --col 1 "
+             "\"%s\" --dry-run",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_STR_CONTAINS(result.output, "unsafe_probe_insertion");
+    ASSERT_STR_CONTAINS(result.output, "3873,3874");
+    free(result.output);
 }
 
 TEST(cli, debug_probe_control_marker_dry_run_reports_edit_plan) {
@@ -4038,6 +4053,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, debug_probe_parameter_logger_connects_source_parameter);
     REGISTER_TEST(cli, debug_probe_data_cell_logger_uses_edit_plan);
     REGISTER_TEST(cli, debug_probe_data_cell_logger_reports_explicit_write_node);
+    REGISTER_TEST(cli, debug_probe_data_cell_logger_auto_rejects_multi_link_write_node);
     REGISTER_TEST(cli, debug_probe_control_marker_dry_run_reports_edit_plan);
     REGISTER_TEST(cli, debug_probe_rejects_invalid_probe_options);
     REGISTER_TEST(cli, unknown_command_error);
