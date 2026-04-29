@@ -1037,6 +1037,8 @@ TEST(edit_plan, executor_materializes_common_building_block_prototypes) {
     } cases[] = {
         {"2D Text", NMO_GUID_INIT(0x055B29FEu, 0x662D5CA0u)},
         {"Output To Console", NMO_GUID_INIT(0x18655B3Fu, 0x68291DC3u)},
+        {"Send Message", NMO_GUID_INIT(0xA20E8D5Bu, 0xDF002150u)},
+        {"Wait Message", NMO_GUID_INIT(0x4587FFEEu, 0x4587FFDDu)},
         {"Show", NMO_GUID_INIT(0xA85A213Au, 0xEF78D52Au)},
     };
 
@@ -1051,6 +1053,11 @@ TEST(edit_plan, executor_materializes_common_building_block_prototypes) {
 
         nmo_object_id_t root_id = 0;
         create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Root", &root_id);
+        const char *const messages[] = {"", "Start", "OnClick"};
+        install_message_manager_or_fail(
+            fixture.session,
+            messages,
+            (uint32_t)(sizeof(messages) / sizeof(messages[0])));
 
         nmo_edit_plan_t *plan = NULL;
         nmo_edit_report_t report;
