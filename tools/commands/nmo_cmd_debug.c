@@ -307,6 +307,12 @@ static int debug_probe_parse(int argc,
                 args->kind);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
+    if (args->has_delay && args->from_io_id == 0u &&
+        args->to_io_id == 0u && args->remove_link_id == 0u) {
+        fprintf(stderr,
+                "Error: --delay requires --from-io, --to-io, or --remove-link\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
     if (args->behavior_id == 0u || *out_input_path == NULL) {
         fprintf(stderr,
                 "Usage: nmo debug probe 2d-text|console|debug-output|message-logger|parameter-logger|data-cell-logger|control-marker "

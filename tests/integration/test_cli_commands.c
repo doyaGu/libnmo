@@ -3672,6 +3672,11 @@ TEST(cli, debug_probe_rejects_invalid_probe_options) {
             "--row nope --col 1 \"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
             "Invalid --row",
         },
+        {
+            "debug probe 2d-text --behavior 237 --delay 10 "
+            "\"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "--delay requires --from-io, --to-io, or --remove-link",
+        },
     };
 
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
