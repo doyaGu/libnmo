@@ -870,6 +870,62 @@ static nmo_status_t nmo_lua_behavior_parse_object_ref(
     NMO_RETURN_OK();
 }
 
+static int nmo_lua_behavior_parse_manager_entry_policy(
+    lua_State *state,
+    int index,
+    nmo_manager_entry_policy_t *out_policy)
+{
+    const char *policy = luaL_checkstring(state, index);
+    if (strcmp(policy, "require_existing") == 0) {
+        *out_policy = NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+        return 0;
+    }
+    if (strcmp(policy, "create_missing") == 0) {
+        *out_policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING;
+        return 0;
+    }
+    return luaL_error(
+        state,
+        "manager_entry_policy must be 'require_existing' or 'create_missing'");
+}
+
+static int nmo_lua_behavior_parse_parameter_write_options(
+    lua_State *state,
+    int index,
+    nmo_parameter_write_options_t *out_options,
+    bool *out_has_options)
+{
+    if (out_options == NULL || out_has_options == NULL) {
+        return luaL_error(state, "invalid parameter write options output");
+    }
+    memset(out_options, 0, sizeof(*out_options));
+    out_options->manager_entry_policy =
+        NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+    *out_has_options = false;
+    if (lua_isnoneornil(state, index)) {
+        return 0;
+    }
+    luaL_checktype(state, index, LUA_TTABLE);
+    *out_has_options = true;
+
+    lua_getfield(state, index, "resize");
+    if (!lua_isnil(state, -1)) {
+        out_options->resize = lua_toboolean(state, -1) != 0;
+    }
+    lua_pop(state, 1);
+
+    lua_getfield(state, index, "manager_entry_policy");
+    if (!lua_isnil(state, -1)) {
+        int rc = nmo_lua_behavior_parse_manager_entry_policy(
+            state, lua_gettop(state), &out_options->manager_entry_policy);
+        if (rc != 0) {
+            return rc;
+        }
+    }
+    lua_pop(state, 1);
+    return 0;
+}
+
 static int nmo_lua_behavior_invalidate_tx_handle(lua_State *state,
                                                  int index,
                                                  nmo_lua_script_edit_tx_handle_data_t *handle)
@@ -2175,17 +2231,10 @@ static int nmo_lua_behavior_add_node(lua_State *state)
         luaL_checktype(state, 5, LUA_TTABLE);
         lua_getfield(state, 5, "manager_entry_policy");
         if (!lua_isnil(state, -1)) {
-            const char *policy = luaL_checkstring(state, -1);
-            if (strcmp(policy, "require_existing") == 0) {
-                options.manager_entry_policy =
-                    NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
-            } else if (strcmp(policy, "create_missing") == 0) {
-                options.manager_entry_policy =
-                    NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING;
-            } else {
-                return luaL_error(
-                    state,
-                    "manager_entry_policy must be 'require_existing' or 'create_missing'");
+            int rc = nmo_lua_behavior_parse_manager_entry_policy(
+                state, lua_gettop(state), &options.manager_entry_policy);
+            if (rc != 0) {
+                return rc;
             }
         }
         lua_pop(state, 1);
@@ -2333,6 +2382,8 @@ static int nmo_lua_behavior_set_parameter_value(lua_State *state)
     nmo_lua_script_edit_tx_handle_data_t *handle = NULL;
     nmo_lua_behavior_pending_ref_t parameter = {0};
     const char *value_text = NULL;
+    nmo_parameter_write_options_t options;
+    bool has_options = false;
     nmo_status_t status = nmo_lua_behavior_check_active_edit_handle(state, 1, &handle);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Invalid script edit handle");
@@ -2343,16 +2394,24 @@ static int nmo_lua_behavior_set_parameter_value(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid parameter reference");
     }
     value_text = luaL_checkstring(state, 3);
+    int option_rc = nmo_lua_behavior_parse_parameter_write_options(
+        state, 4, &options, &has_options);
+    if (option_rc != 0) {
+        return option_rc;
+    }
     if (parameter.has_ref) {
         status = nmo_edit_plan_add_set_parameter_value_from_handle(
             handle->plan,
             parameter.operation_index,
             parameter.handle_name,
             value_text,
-            NULL);
+            has_options ? &options : NULL);
     } else {
         status = nmo_edit_plan_add_set_parameter_value(
-            handle->plan, parameter.id, value_text, NULL);
+            handle->plan,
+            parameter.id,
+            value_text,
+            has_options ? &options : NULL);
     }
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to set parameter value");
@@ -2366,6 +2425,8 @@ static int nmo_lua_behavior_set_parameter_bytes(lua_State *state)
     nmo_lua_behavior_pending_ref_t parameter = {0};
     size_t byte_count = 0u;
     const char *bytes = NULL;
+    nmo_parameter_write_options_t options;
+    bool has_options = false;
     nmo_status_t status = nmo_lua_behavior_check_active_edit_handle(state, 1, &handle);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Invalid script edit handle");
@@ -2376,6 +2437,11 @@ static int nmo_lua_behavior_set_parameter_bytes(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid parameter reference");
     }
     bytes = luaL_checklstring(state, 3, &byte_count);
+    int option_rc = nmo_lua_behavior_parse_parameter_write_options(
+        state, 4, &options, &has_options);
+    if (option_rc != 0) {
+        return option_rc;
+    }
     if (parameter.has_ref) {
         status = nmo_edit_plan_add_set_parameter_bytes_from_handle(
             handle->plan,
@@ -2383,10 +2449,14 @@ static int nmo_lua_behavior_set_parameter_bytes(lua_State *state)
             parameter.handle_name,
             (const uint8_t *)bytes,
             byte_count,
-            NULL);
+            has_options ? &options : NULL);
     } else {
         status = nmo_edit_plan_add_set_parameter_bytes(
-            handle->plan, parameter.id, (const uint8_t *)bytes, byte_count, NULL);
+            handle->plan,
+            parameter.id,
+            (const uint8_t *)bytes,
+            byte_count,
+            has_options ? &options : NULL);
     }
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to set parameter bytes");

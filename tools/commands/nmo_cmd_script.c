@@ -493,6 +493,62 @@ static int script_run_lua_add_node(lua_State *state)
     return 1;
 }
 
+static int script_run_lua_parse_manager_entry_policy(
+    lua_State *state,
+    int index,
+    nmo_manager_entry_policy_t *out_policy)
+{
+    const char *policy = luaL_checkstring(state, index);
+    if (strcmp(policy, "require_existing") == 0) {
+        *out_policy = NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+        return 0;
+    }
+    if (strcmp(policy, "create_missing") == 0) {
+        *out_policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING;
+        return 0;
+    }
+    return luaL_error(
+        state,
+        "manager_entry_policy must be 'require_existing' or 'create_missing'");
+}
+
+static int script_run_lua_parse_parameter_write_options(
+    lua_State *state,
+    int index,
+    nmo_parameter_write_options_t *out_options,
+    bool *out_has_options)
+{
+    if (out_options == NULL || out_has_options == NULL) {
+        return luaL_error(state, "invalid parameter write options output");
+    }
+    memset(out_options, 0, sizeof(*out_options));
+    out_options->manager_entry_policy =
+        NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+    *out_has_options = false;
+    if (lua_isnoneornil(state, index)) {
+        return 0;
+    }
+    luaL_checktype(state, index, LUA_TTABLE);
+    *out_has_options = true;
+
+    lua_getfield(state, index, "resize");
+    if (!lua_isnil(state, -1)) {
+        out_options->resize = lua_toboolean(state, -1) != 0;
+    }
+    lua_pop(state, 1);
+
+    lua_getfield(state, index, "manager_entry_policy");
+    if (!lua_isnil(state, -1)) {
+        int rc = script_run_lua_parse_manager_entry_policy(
+            state, lua_gettop(state), &out_options->manager_entry_policy);
+        if (rc != 0) {
+            return rc;
+        }
+    }
+    lua_pop(state, 1);
+    return 0;
+}
+
 static int script_run_lua_remove_io(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
@@ -1172,12 +1228,23 @@ static int script_run_lua_set_parameter_value(lua_State *state)
     script_run_args_t *args = script_run_current_args(state);
     nmo_object_id_t parameter_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     const char *value = luaL_checkstring(state, 2);
+    nmo_parameter_write_options_t options;
+    bool has_options = false;
     nmo_status_t status = NMO_OK;
+
+    int option_rc = script_run_lua_parse_parameter_write_options(
+        state, 3, &options, &has_options);
+    if (option_rc != 0) {
+        return option_rc;
+    }
 
     status = script_run_ensure_pending_plan(args);
     if (status == NMO_OK) {
         status = nmo_edit_plan_add_set_parameter_value(
-            args->pending_plan, parameter_id, value, NULL);
+            args->pending_plan,
+            parameter_id,
+            value,
+            has_options ? &options : NULL);
     }
     if (status != NMO_OK) {
         return luaL_error(state, "%s",
@@ -1196,10 +1263,17 @@ static int script_run_lua_set_parameter_value_from_handle(lua_State *state)
     lua_Integer operation_index = luaL_checkinteger(state, 1);
     const char *handle_name = luaL_checkstring(state, 2);
     const char *value = luaL_checkstring(state, 3);
+    nmo_parameter_write_options_t options;
+    bool has_options = false;
     nmo_status_t status = NMO_OK;
 
     if (operation_index <= 0) {
         return luaL_error(state, "operation index is 1-based and must be positive");
+    }
+    int option_rc = script_run_lua_parse_parameter_write_options(
+        state, 4, &options, &has_options);
+    if (option_rc != 0) {
+        return option_rc;
     }
 
     status = script_run_ensure_pending_plan(args);
@@ -1209,7 +1283,7 @@ static int script_run_lua_set_parameter_value_from_handle(lua_State *state)
             (size_t)(operation_index - 1),
             handle_name,
             value,
-            NULL);
+            has_options ? &options : NULL);
     }
     if (status != NMO_OK) {
         return luaL_error(state, "%s",
@@ -1228,15 +1302,14 @@ static int script_run_lua_set_parameter_bytes(lua_State *state)
     nmo_object_id_t parameter_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     size_t byte_count = 0u;
     const char *bytes = luaL_checklstring(state, 2, &byte_count);
-    nmo_parameter_write_options_t options = {0};
+    nmo_parameter_write_options_t options;
+    bool has_options = false;
     nmo_status_t status = NMO_OK;
 
-    if (lua_istable(state, 3)) {
-        lua_getfield(state, 3, "resize");
-        if (!lua_isnil(state, -1)) {
-            options.resize = lua_toboolean(state, -1) != 0;
-        }
-        lua_pop(state, 1);
+    int option_rc = script_run_lua_parse_parameter_write_options(
+        state, 3, &options, &has_options);
+    if (option_rc != 0) {
+        return option_rc;
     }
 
     status = script_run_ensure_pending_plan(args);
@@ -1246,7 +1319,7 @@ static int script_run_lua_set_parameter_bytes(lua_State *state)
             parameter_id,
             (const uint8_t *)bytes,
             byte_count,
-            &options);
+            has_options ? &options : NULL);
     }
     if (status != NMO_OK) {
         return luaL_error(state, "%s",
@@ -1266,18 +1339,17 @@ static int script_run_lua_set_parameter_bytes_from_handle(lua_State *state)
     const char *handle_name = luaL_checkstring(state, 2);
     size_t byte_count = 0u;
     const char *bytes = luaL_checklstring(state, 3, &byte_count);
-    nmo_parameter_write_options_t options = {0};
+    nmo_parameter_write_options_t options;
+    bool has_options = false;
     nmo_status_t status = NMO_OK;
 
     if (operation_index <= 0) {
         return luaL_error(state, "operation index is 1-based and must be positive");
     }
-    if (lua_istable(state, 4)) {
-        lua_getfield(state, 4, "resize");
-        if (!lua_isnil(state, -1)) {
-            options.resize = lua_toboolean(state, -1) != 0;
-        }
-        lua_pop(state, 1);
+    int option_rc = script_run_lua_parse_parameter_write_options(
+        state, 4, &options, &has_options);
+    if (option_rc != 0) {
+        return option_rc;
     }
 
     status = script_run_ensure_pending_plan(args);
@@ -1288,7 +1360,7 @@ static int script_run_lua_set_parameter_bytes_from_handle(lua_State *state)
             handle_name,
             (const uint8_t *)bytes,
             byte_count,
-            &options);
+            has_options ? &options : NULL);
     }
     if (status != NMO_OK) {
         return luaL_error(state, "%s",
@@ -2163,6 +2235,8 @@ typedef struct script_param_set_args {
     script_command_common_t common;
     uint32_t param_id;
     const char *value_str;
+    nmo_manager_entry_policy_t manager_entry_policy;
+    bool has_manager_entry_policy;
     char *old_value;
     char *new_value;
 } script_param_set_args_t;
@@ -3490,8 +3564,14 @@ static nmo_status_t script_param_set_execute(
     nmo_edit_plan_t *plan = NULL;
     rc = nmo_edit_plan_create(&plan);
     if (rc == NMO_OK) {
+        nmo_parameter_write_options_t options = {
+            .manager_entry_policy = args->manager_entry_policy,
+        };
         rc = nmo_edit_plan_add_set_parameter_value(
-            plan, args->param_id, args->value_str, NULL);
+            plan,
+            args->param_id,
+            args->value_str,
+            args->has_manager_entry_policy ? &options : NULL);
     }
     if (rc == NMO_OK) {
         rc = script_execute_edit_plan(executor, &args->common, plan);
@@ -3522,6 +3602,14 @@ static int script_param_set_report(
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "param_id", args->param_id);
+        if (args->has_manager_entry_policy) {
+            yyjson_mut_obj_add_str(
+                doc, data, "manager_entry_policy",
+                args->manager_entry_policy ==
+                        NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING
+                    ? "create_missing"
+                    : "require_existing");
+        }
         if (args->old_value) {
             nmo_cli_json_add_str_safe(doc, data, "old_value", args->old_value);
         }
@@ -3968,10 +4056,19 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         static const nmo_opt_def_t opts[] = {
             {"--param", NULL, NMO_OPT_UINT, "Parameter ID"},
             {"--value", NULL, NMO_OPT_STRING, "Typed parameter value"},
+            {"--manager-entry-policy", NULL, NMO_OPT_STRING,
+             "Manager entry policy: require-existing|create-missing"},
             {"--output", "-o", NMO_OPT_STRING, "Output file"},
             {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
         };
-        enum { OPT_PARAM, OPT_VALUE, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
+        enum {
+            OPT_PARAM,
+            OPT_VALUE,
+            OPT_MANAGER_ENTRY_POLICY,
+            OPT_OUTPUT,
+            OPT_DRY_RUN,
+            OPT_COUNT
+        };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
         nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
@@ -3983,6 +4080,22 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         }
         args.param_id = vals[OPT_PARAM].val.u;
         args.value_str = vals[OPT_VALUE].val.str;
+        args.manager_entry_policy = NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+        args.has_manager_entry_policy = vals[OPT_MANAGER_ENTRY_POLICY].present;
+        if (args.has_manager_entry_policy) {
+            const char *policy = vals[OPT_MANAGER_ENTRY_POLICY].val.str;
+            if (strcmp(policy, "require-existing") == 0 ||
+                strcmp(policy, "require_existing") == 0) {
+                args.manager_entry_policy =
+                    NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+            } else if (strcmp(policy, "create-missing") == 0 ||
+                       strcmp(policy, "create_missing") == 0) {
+                args.manager_entry_policy =
+                    NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING;
+            } else {
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+        }
         {
             int rc = behavior_execute_cli_run_write_command(
                 r.pos_args[0],

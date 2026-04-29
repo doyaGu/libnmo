@@ -334,6 +334,35 @@ TEST(lua_bindings_plan, plan_module_executes_parameter_writes_to_handle_dry_run)
     nmo_lua_runtime_destroy(runtime);
 }
 
+TEST(lua_bindings_plan, plan_parameter_value_accepts_manager_entry_policy)
+{
+    nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
+    ASSERT_NOT_NULL(runtime);
+
+    ASSERT_EQ(NMO_OK, nmo_lua_register_platform_bindings(runtime));
+    assert_lua_ok(
+        runtime,
+        "local context = require('nmo.context')\n"
+        "local document = require('nmo.document')\n"
+        "local workspace_mod = require('nmo.workspace')\n"
+        "local behavior = require('nmo.behavior')\n"
+        "local plan = require('nmo.plan')\n"
+        "local ctx = context.create({ data_dir = '" NMO_TEST_DATA_DIR "' })\n"
+        "local doc = document.load_file(ctx, '" NMO_TEST_DATA_FILE("Nop.cmo") "')\n"
+        "local ws = workspace_mod.create(ctx, doc)\n"
+        "local script = behavior.script_at(doc, 1)\n"
+        "local p = plan.new()\n"
+        "plan.add_node(p, script.script_id, 'A20E8D5B-DF002150', 'Lua Plan Send Message', { manager_entry_policy = 'create_missing' })\n"
+        "plan.set_parameter_value_from_handle(p, 1, 'input_param:Message', 'LuaPlanCreatedMessage', { manager_entry_policy = 'create_missing' })\n"
+        "local report = plan.execute(p, ws, { dry_run = true })\n"
+        "assert(report.ok == true)\n"
+        "assert(report.dry_run == true)\n"
+        "assert(#report.operations == 2)\n"
+        "assert(report.operations[2].op == 'set_parameter_value')\n");
+
+    nmo_lua_runtime_destroy(runtime);
+}
+
 TEST(lua_bindings_plan, plan_module_executes_fold_dry_run)
 {
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
@@ -408,6 +437,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_parameter_value_dry_run);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_connect_parameter_to_handle_dry_run);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_parameter_writes_to_handle_dry_run);
+    REGISTER_TEST(lua_bindings_plan, plan_parameter_value_accepts_manager_entry_policy);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_fold_dry_run);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_fold_with_maps_dry_run);
 TEST_MAIN_END()

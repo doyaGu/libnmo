@@ -3284,6 +3284,7 @@ TEST(cli, script_parameter_crud_roundtrip)
 
     snprintf(args, sizeof(args),
              "-f json script param set --param %u --value 3 "
+             "--manager-entry-policy create-missing "
              "\"%s\" -o \"%s\"",
              source_param_id,
              source_add_path,
@@ -3298,6 +3299,8 @@ TEST(cli, script_parameter_crud_roundtrip)
     ASSERT_STR_EQ("script.param.set", get_string_field(root, "command"));
     data = get_object_field(root, "data");
     ASSERT_NOT_NULL(data);
+    ASSERT_STR_EQ("create_missing",
+                  get_string_field(data, "manager_entry_policy"));
     ASSERT_STR_EQ("3", get_string_field(data, "new_value"));
     ASSERT_TRUE(yyjson_obj_get(data, "result_handles") == NULL);
     ASSERT_TRUE(yyjson_obj_get(data, "operation_count") == NULL);

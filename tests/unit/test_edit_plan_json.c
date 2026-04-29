@@ -371,6 +371,7 @@ TEST(edit_plan_json, roundtrips_all_current_v2_ops) {
     uint8_t bytes[] = {0xCAu, 0xFEu};
     nmo_parameter_write_options_t resize_options = {
         .resize = true,
+        .manager_entry_policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
     };
     nmo_object_id_t fold_nodes[] = {101u, 102u};
     nmo_behavior_fold_map_t input_maps[] = {
@@ -485,6 +486,8 @@ TEST(edit_plan_json, roundtrips_all_current_v2_ops) {
     ASSERT_STR_EQ("value", set_value->data.set_value.value);
     ASSERT_TRUE(set_value->data.set_value.has_options);
     ASSERT_TRUE(set_value->data.set_value.options.resize);
+    ASSERT_EQ(NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
+              set_value->data.set_value.options.manager_entry_policy);
     const nmo_edit_op_t *add_node = nmo_edit_plan_get(manifest.plan, 2u);
     ASSERT_NOT_NULL(add_node);
     ASSERT_EQ(3u, add_node->data.add_node.parent_behavior_id);
