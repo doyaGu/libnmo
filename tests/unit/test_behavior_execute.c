@@ -10,6 +10,7 @@
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_manager_guids.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "runtime/nmo_workspace.h"
@@ -38,6 +39,11 @@ typedef struct executor_add_node_action {
     nmo_object_id_t parent_id;
     nmo_object_id_t node_id;
 } executor_add_node_action_t;
+
+typedef struct executor_manager_node_action {
+    nmo_object_id_t root_behavior_id;
+    nmo_object_id_t node_id;
+} executor_manager_node_action_t;
 
 typedef struct executor_remove_io_action {
     nmo_object_id_t io_id;
@@ -500,6 +506,56 @@ static nmo_status_t execute_plan_add_io_action(
     return status;
 }
 
+static nmo_status_t execute_plan_manager_node_action(
+    nmo_behavior_execution_t *executor,
+    void *user_data)
+{
+    executor_manager_node_action_t *action =
+        (executor_manager_node_action_t *)user_data;
+    nmo_session_t *session = behavior_execution_session(executor);
+    nmo_behavior_script_view_t script_view = {0};
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = NMO_OK;
+
+    if (session == NULL || action == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    status = query_first_script_from_session(session, &script_view);
+    if (status != NMO_OK) {
+        return status;
+    }
+    action->root_behavior_id = script_view.script_id;
+
+    status = nmo_edit_plan_create(&plan);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_node_ex(
+            plan,
+            script_view.script_id,
+            nmo_guid_parse("A20E8D5B-DF002150"),
+            "Executor Send Message",
+            &(nmo_add_node_options_t){
+                .manager_entry_policy =
+                    NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
+            });
+    }
+    if (status == NMO_OK) {
+        status = nmo_behavior_execution_execute_plan(executor, plan, NULL);
+    }
+    if (status == NMO_OK) {
+        const nmo_edit_report_t *report =
+            nmo_behavior_execution_report(executor);
+        if (report == NULL || report->operation_count != 1u ||
+            report->operations[0].kind != NMO_EDIT_OP_ADD_NODE ||
+            report->operations[0].result_id == 0u) {
+            status = NMO_ERR_INVALID_STATE;
+        } else {
+            action->node_id = report->operations[0].result_id;
+        }
+    }
+    nmo_edit_plan_destroy(plan);
+    return status;
+}
+
 static nmo_status_t add_io_action(nmo_behavior_execution_t *executor, void *user_data)
 {
     executor_add_io_action_t *action = (executor_add_io_action_t *)user_data;
@@ -752,6 +808,55 @@ TEST(behavior_execute, execute_plan_reports_schema_v2_operations)
     ASSERT_EQ(action.io_id, report.operations[0].handles[0].id);
     ASSERT_EQ(1u, report.created_object_count);
     ASSERT_EQ(action.io_id, report.created_objects[0].id);
+    ASSERT_TRUE(report.output_path == NULL);
+
+    nmo_edit_report_dispose(&report);
+    nmo_context_release(ctx);
+}
+
+TEST(behavior_execute, execute_plan_reports_manager_entry_impacts)
+{
+    const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
+    nmo_context_t *ctx =
+        nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
+    nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
+    nmo_edit_report_t report = {0};
+    executor_manager_node_action_t action = {0};
+    bool saw_manager_entry = false;
+
+    ASSERT_NOT_NULL(ctx);
+    options.label = "test-behavior-execute-manager-plan";
+    options.dry_run = true;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK,
+              nmo_behavior_execute(ctx,
+                                   input_path,
+                                   NULL,
+                                   &options,
+                                   execute_plan_manager_node_action,
+                                   &action,
+                                   &report));
+
+    ASSERT_TRUE(report.ok);
+    ASSERT_TRUE(report.dry_run);
+    ASSERT_EQ(NMO_OK, report.status);
+    ASSERT_EQ(1u, report.operation_count);
+    ASSERT_EQ(NMO_EDIT_OP_ADD_NODE, report.operations[0].kind);
+    ASSERT_EQ(action.root_behavior_id, report.operations[0].primary_id);
+    ASSERT_EQ(action.node_id, report.operations[0].result_id);
+    ASSERT_TRUE(action.node_id != 0u);
+
+    for (size_t i = 0; i < report.changed_object_count; ++i) {
+        const nmo_edit_object_impact_t *impact = &report.changed_objects[i];
+        if (impact->id == NMO_EDIT_MANAGER_ENTRY_IMPACT_ID) {
+            saw_manager_entry = true;
+            ASSERT_STR_EQ("manager_entry", impact->role);
+            ASSERT_TRUE(impact->has_manager_entry_after);
+            ASSERT_TRUE(nmo_guid_equals(impact->after_manager_guid,
+                                        NMO_MANAGER_GUID_MESSAGE));
+        }
+    }
+    ASSERT_TRUE(saw_manager_entry);
     ASSERT_TRUE(report.output_path == NULL);
 
     nmo_edit_report_dispose(&report);
@@ -1096,6 +1201,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(behavior_execute, executes_multiple_actions_and_saves_once);
     REGISTER_TEST(behavior_execute, reports_edit_schema);
     REGISTER_TEST(behavior_execute, execute_plan_reports_schema_v2_operations);
+    REGISTER_TEST(behavior_execute, execute_plan_reports_manager_entry_impacts);
     REGISTER_TEST(behavior_execute, failure_report_has_no_output_path);
     REGISTER_TEST(behavior_execute, save_failure_report_is_not_successful);
     REGISTER_TEST(behavior_execute, rolls_back_on_action_error_and_skips_output);
