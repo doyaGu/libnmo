@@ -755,7 +755,6 @@ TEST(cli, script_run_executor_set_data_cell_uses_edit_plan) {
     yyjson_val *operations = NULL;
     yyjson_val *changed_objects = NULL;
     yyjson_val *op = NULL;
-    yyjson_val *changed = NULL;
 
     ASSERT_TRUE(build_repo_fixture_path(
         "tests/fixtures/lua/script_run_set_data_cell.lua",
@@ -786,10 +785,11 @@ TEST(cli, script_run_executor_set_data_cell_uses_edit_plan) {
     ASSERT_EQ(2261u, get_uint_field(op, "primary_id"));
     changed_objects = get_array_field(data, "changed_objects");
     ASSERT_NOT_NULL(changed_objects);
-    ASSERT_EQ(1u, yyjson_arr_size(changed_objects));
-    changed = yyjson_arr_get(changed_objects, 0);
-    ASSERT_EQ(2261u, get_uint_field(changed, "object_id"));
-    ASSERT_STR_EQ("set_data_cell", get_string_field(changed, "cause"));
+    ASSERT_EQ(2u, yyjson_arr_size(changed_objects));
+    ASSERT_TRUE(array_contains_object_id_with_role(
+        changed_objects, 2261u, "data_cell"));
+    ASSERT_TRUE(array_contains_object_id_with_role(
+        changed_objects, 2261u, "primary"));
     yyjson_doc_free(doc);
 }
 
