@@ -22,6 +22,9 @@
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
+#include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
+#include "format/nmo_data.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "type/nmo_operation_system.h"
@@ -681,9 +684,172 @@ static bool script_edit_is_symbolic_manager_default_type(nmo_guid_t type_guid)
            nmo_guid_equals(type_guid, CKPGUID_ATTRIBUTE);
 }
 
+static nmo_status_t script_edit_find_message_manager_value(
+    nmo_script_edit_tx_t *tx,
+    const char *name,
+    uint32_t *out_value)
+{
+    const nmo_file_state_t *file_state = NULL;
+    if (!tx || !tx->session || !name || !out_value) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    file_state = nmo_session_get_file_state(tx->session);
+    if (!file_state || !file_state->manager_data) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    for (uint32_t i = 0; i < file_state->manager_data_count; ++i) {
+        nmo_manager_data_t *manager = &file_state->manager_data[i];
+        if (!nmo_guid_equals(manager->guid, NMO_MANAGER_GUID_MESSAGE) ||
+            !manager->chunk) {
+            continue;
+        }
+
+        nmo_chunk_t *chunk =
+            nmo_chunk_clone(manager->chunk, nmo_session_get_arena(tx->session));
+        if (!chunk) {
+            return NMO_ERR_NOMEM;
+        }
+        if (nmo_chunk_start_read(chunk) != NMO_OK ||
+            nmo_chunk_seek_identifier(chunk, 0x53u) != NMO_OK) {
+            continue;
+        }
+
+        int32_t count = 0;
+        if (nmo_chunk_read_int(chunk, &count) != NMO_OK || count < 0) {
+            continue;
+        }
+        for (int32_t index = 0; index < count; ++index) {
+            char *entry_name = NULL;
+            (void)nmo_chunk_read_string(chunk, &entry_name);
+            if (entry_name && strcmp(entry_name, name) == 0) {
+                *out_value = (uint32_t)index;
+                return NMO_OK;
+            }
+        }
+    }
+
+    return NMO_ERR_NOT_FOUND;
+}
+
+static nmo_status_t script_edit_find_attribute_manager_value(
+    nmo_script_edit_tx_t *tx,
+    const char *name,
+    uint32_t *out_value)
+{
+    const nmo_file_state_t *file_state = NULL;
+    if (!tx || !tx->session || !name || !out_value) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    file_state = nmo_session_get_file_state(tx->session);
+    if (!file_state || !file_state->manager_data) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    for (uint32_t i = 0; i < file_state->manager_data_count; ++i) {
+        nmo_manager_data_t *manager = &file_state->manager_data[i];
+        if (!nmo_guid_equals(manager->guid, NMO_MANAGER_GUID_ATTRIBUTE) ||
+            !manager->chunk) {
+            continue;
+        }
+
+        nmo_chunk_t *chunk =
+            nmo_chunk_clone(manager->chunk, nmo_session_get_arena(tx->session));
+        if (!chunk) {
+            return NMO_ERR_NOMEM;
+        }
+        if (nmo_chunk_start_read(chunk) != NMO_OK ||
+            nmo_chunk_seek_identifier(chunk, 0x52u) != NMO_OK) {
+            continue;
+        }
+
+        int32_t category_count = 0;
+        int32_t attribute_count = 0;
+        if (nmo_chunk_read_int(chunk, &category_count) != NMO_OK ||
+            nmo_chunk_read_int(chunk, &attribute_count) != NMO_OK ||
+            category_count < 0 || attribute_count < 0) {
+            continue;
+        }
+
+        for (int32_t category = 0; category < category_count; ++category) {
+            int32_t present = 0;
+            if (nmo_chunk_read_int(chunk, &present) != NMO_OK) {
+                return NMO_ERR_INVALID_STATE;
+            }
+            if (present) {
+                char *category_name = NULL;
+                uint32_t flags = 0;
+                (void)nmo_chunk_read_string(chunk, &category_name);
+                if (nmo_chunk_read_dword(chunk, &flags) != NMO_OK) {
+                    return NMO_ERR_INVALID_STATE;
+                }
+            }
+        }
+
+        for (int32_t attr = 0; attr < attribute_count; ++attr) {
+            int32_t present = 0;
+            if (nmo_chunk_read_int(chunk, &present) != NMO_OK) {
+                return NMO_ERR_INVALID_STATE;
+            }
+            if (!present) {
+                continue;
+            }
+
+            char *attr_name = NULL;
+            nmo_guid_t parameter_type_guid = NMO_GUID_NULL;
+            int32_t category_index = 0;
+            int32_t compatible_class_id = 0;
+            uint32_t flags = 0;
+            (void)nmo_chunk_read_string(chunk, &attr_name);
+            if (nmo_chunk_read_guid(chunk, &parameter_type_guid) != NMO_OK ||
+                nmo_chunk_read_int(chunk, &category_index) != NMO_OK ||
+                nmo_chunk_read_int(chunk, &compatible_class_id) != NMO_OK ||
+                nmo_chunk_read_dword(chunk, &flags) != NMO_OK) {
+                return NMO_ERR_INVALID_STATE;
+            }
+            if (attr_name && strcmp(attr_name, name) == 0) {
+                *out_value = (uint32_t)attr;
+                return NMO_OK;
+            }
+        }
+    }
+
+    return NMO_ERR_NOT_FOUND;
+}
+
+static nmo_status_t script_edit_resolve_symbolic_manager_default(
+    nmo_script_edit_tx_t *tx,
+    nmo_guid_t type_guid,
+    const char *default_value,
+    nmo_guid_t *out_manager_guid,
+    uint32_t *out_manager_value)
+{
+    if (!default_value || default_value[0] == '\0' ||
+        !out_manager_guid || !out_manager_value) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (nmo_guid_equals(type_guid, CKPGUID_MESSAGE)) {
+        *out_manager_guid = NMO_MANAGER_GUID_MESSAGE;
+        return script_edit_find_message_manager_value(
+            tx, default_value, out_manager_value);
+    }
+    if (nmo_guid_equals(type_guid, CKPGUID_ATTRIBUTE)) {
+        *out_manager_guid = NMO_MANAGER_GUID_ATTRIBUTE;
+        return script_edit_find_attribute_manager_value(
+            tx, default_value, out_manager_value);
+    }
+
+    return NMO_ERR_INVALID_ARGUMENT;
+}
+
 static nmo_status_t script_edit_apply_symbolic_manager_default(
+    nmo_script_edit_tx_t *tx,
     nmo_object_t *parameter_obj,
-    nmo_guid_t type_guid)
+    nmo_guid_t type_guid,
+    const char *default_value)
 {
     nmo_parameter_state_t *state = parameter_obj
         ? nmo_parameter_get_mutable_state(parameter_obj)
@@ -692,16 +858,18 @@ static nmo_status_t script_edit_apply_symbolic_manager_default(
         return NMO_ERR_INVALID_STATE;
     }
 
+    nmo_guid_t manager_guid = NMO_GUID_NULL;
+    uint32_t manager_value = 0u;
+    nmo_status_t rc = script_edit_resolve_symbolic_manager_default(
+        tx, type_guid, default_value, &manager_guid, &manager_value);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
     nmo_array_dispose(&state->buffer_data);
     state->mode = CKPARAM_MODE_MANAGER;
-    if (nmo_guid_equals(type_guid, CKPGUID_MESSAGE)) {
-        state->manager_guid = NMO_MANAGER_GUID_MESSAGE;
-    } else if (nmo_guid_equals(type_guid, CKPGUID_ATTRIBUTE)) {
-        state->manager_guid = NMO_MANAGER_GUID_ATTRIBUTE;
-    } else {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    state->manager_value = 0u;
+    state->manager_guid = manager_guid;
+    state->manager_value = manager_value;
     state->has_state = true;
     return NMO_OK;
 }
@@ -769,7 +937,7 @@ static nmo_status_t script_edit_create_parameter_object(
                 nmo_object_t *source_obj =
                     nmo_object_repository_find_by_id(repo, source_id);
                 rc = script_edit_apply_symbolic_manager_default(
-                    source_obj, type_guid);
+                    tx, source_obj, type_guid, default_value);
                 if (rc != NMO_OK) {
                     return rc;
                 }
@@ -830,7 +998,8 @@ static nmo_status_t script_edit_create_parameter_object(
             if (!script_edit_is_symbolic_manager_default_type(type_guid)) {
                 return rc;
             }
-            rc = script_edit_apply_symbolic_manager_default(object, type_guid);
+            rc = script_edit_apply_symbolic_manager_default(
+                tx, object, type_guid, default_value);
             if (rc != NMO_OK) {
                 return rc;
             }

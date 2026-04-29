@@ -4,7 +4,11 @@
 #include "behavior/nmo_behavior_edit.h"
 #include "behavior/nmo_behavior_registry.h"
 #include "core/nmo_array.h"
+#include "core/nmo_arena.h"
 #include "document/nmo_document.h"
+#include "format/nmo_data.h"
+#include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_parameterlocal_schemas.h"
@@ -13,8 +17,10 @@
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_manager_guids.h"
 #include "object/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
+#include "../src/runtime/runtime_internal.h"
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 #include "session/nmo_session.h"
@@ -186,6 +192,76 @@ static nmo_object_id_t find_named_parameter_in_ids(
         }
     }
     return 0u;
+}
+
+static bool find_message_manager_value(
+    nmo_session_t *session,
+    const char *message_name,
+    uint32_t *out_value)
+{
+    const nmo_file_state_t *file_state = nmo_session_get_file_state(session);
+    if (!file_state || !file_state->manager_data || !message_name || !out_value) {
+        return false;
+    }
+
+    for (uint32_t i = 0; i < file_state->manager_data_count; ++i) {
+        nmo_manager_data_t *manager = &file_state->manager_data[i];
+        if (!nmo_guid_equals(manager->guid, NMO_MANAGER_GUID_MESSAGE) ||
+            manager->chunk == NULL) {
+            continue;
+        }
+
+        nmo_chunk_t *chunk =
+            nmo_chunk_clone(manager->chunk, nmo_session_get_arena(session));
+        if (chunk == NULL ||
+            nmo_chunk_start_read(chunk) != NMO_OK ||
+            nmo_chunk_seek_identifier(chunk, 0x53u) != NMO_OK) {
+            continue;
+        }
+
+        int32_t count = 0;
+        if (nmo_chunk_read_int(chunk, &count) != NMO_OK || count < 0) {
+            continue;
+        }
+        for (int32_t index = 0; index < count; ++index) {
+            char *name = NULL;
+            (void)nmo_chunk_read_string(chunk, &name);
+            if (name != NULL && strcmp(name, message_name) == 0) {
+                *out_value = (uint32_t)index;
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+static void install_message_manager_or_fail(
+    nmo_session_t *session,
+    const char *const *names,
+    uint32_t name_count)
+{
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0x53u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, (int32_t)name_count));
+    for (uint32_t i = 0; i < name_count; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_string(chunk, names[i]));
+    }
+    nmo_chunk_close(chunk);
+
+    nmo_manager_data_t *manager_data =
+        (nmo_manager_data_t *)nmo_arena_alloc(
+            arena, sizeof(*manager_data), _Alignof(nmo_manager_data_t));
+    ASSERT_NOT_NULL(manager_data);
+    memset(manager_data, 0, sizeof(*manager_data));
+    manager_data->guid = NMO_MANAGER_GUID_MESSAGE;
+    manager_data->chunk = chunk;
+    manager_data->data_size = (uint32_t)nmo_chunk_get_size(chunk);
+    nmo_session_set_manager_data(session, manager_data, 1u);
 }
 
 static bool report_contains_object_id(
@@ -961,8 +1037,6 @@ TEST(edit_plan, executor_materializes_common_building_block_prototypes) {
     } cases[] = {
         {"2D Text", NMO_GUID_INIT(0x055B29FEu, 0x662D5CA0u)},
         {"Output To Console", NMO_GUID_INIT(0x18655B3Fu, 0x68291DC3u)},
-        {"Send Message", NMO_GUID_INIT(0xA20E8D5Bu, 0xDF002150u)},
-        {"Wait Message", NMO_GUID_INIT(0x4587FFEEu, 0x4587FFDDu)},
         {"Show", NMO_GUID_INIT(0xA85A213Au, 0xEF78D52Au)},
     };
 
@@ -1074,6 +1148,84 @@ TEST(edit_plan, executor_materializes_common_building_block_prototypes) {
         nmo_edit_plan_destroy(plan);
         edit_plan_fixture_dispose(&fixture);
     }
+}
+
+TEST(edit_plan, executor_resolves_symbolic_message_default_from_manager_data) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    const char *const messages[] = {"", "Start", "OnClick"};
+    install_message_manager_or_fail(
+        fixture.session,
+        messages,
+        (uint32_t)(sizeof(messages) / sizeof(messages[0])));
+    uint32_t onclick_value = 0u;
+    ASSERT_TRUE(find_message_manager_value(
+        fixture.session, "OnClick", &onclick_value));
+    ASSERT_TRUE(onclick_value != 0u);
+
+    nmo_object_id_t root_id = 0;
+    create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Root", &root_id);
+
+    static const struct {
+        const char *guid;
+        const char *name;
+    } cases[] = {
+        {"A20E8D5B-DF002150", "Send Message Probe"},
+        {"4587FFEE-4587FFDD", "Wait Message Probe"},
+    };
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        nmo_edit_plan_t *plan = NULL;
+        nmo_edit_report_t report;
+        ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+        ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+        ASSERT_EQ(NMO_OK,
+                  nmo_edit_plan_add_node(
+                      plan,
+                      root_id,
+                      nmo_guid_parse(cases[i].guid),
+                      cases[i].name));
+
+        ASSERT_EQ(NMO_OK,
+                  nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+        ASSERT_TRUE(report.ok);
+
+        nmo_object_repository_t *repo = fixture.repo;
+        ASSERT_NOT_NULL(repo);
+        nmo_object_t *node_obj =
+            nmo_object_repository_find_by_id(repo, report.operations[0].result_id);
+        nmo_behavior_state_t *node_state = node_obj
+            ? (nmo_behavior_state_t *)nmo_object_get_state(node_obj)
+            : NULL;
+        ASSERT_NOT_NULL(node_state);
+        nmo_object_id_t message_input_id =
+            find_named_parameter_in_ids(repo, &node_state->in_parameters, "Message");
+        ASSERT_TRUE(message_input_id != 0u);
+        nmo_object_t *message_input_obj =
+            nmo_object_repository_find_by_id(repo, message_input_id);
+        nmo_parameterin_state_t *message_input =
+            message_input_obj
+                ? (nmo_parameterin_state_t *)nmo_object_get_state(message_input_obj)
+                : NULL;
+        ASSERT_NOT_NULL(message_input);
+        ASSERT_TRUE(message_input->source_id != 0u);
+
+        nmo_object_t *source_obj =
+            nmo_object_repository_find_by_id(repo, message_input->source_id);
+        nmo_parameter_state_t *source_state = source_obj
+            ? nmo_parameter_get_mutable_state(source_obj)
+            : NULL;
+        ASSERT_NOT_NULL(source_state);
+        ASSERT_EQ(CKPARAM_MODE_MANAGER, source_state->mode);
+        ASSERT_TRUE(nmo_guid_equals(NMO_MANAGER_GUID_MESSAGE,
+                                    source_state->manager_guid));
+        ASSERT_EQ(onclick_value, source_state->manager_value);
+
+        nmo_edit_report_dispose(&report);
+        nmo_edit_plan_destroy(plan);
+    }
+    edit_plan_fixture_dispose(&fixture);
 }
 
 TEST(edit_plan, executor_resolves_parameter_value_from_prior_handle) {
@@ -3439,6 +3591,7 @@ REGISTER_TEST(edit_plan, executor_adds_node_with_created_object_report);
 REGISTER_TEST(edit_plan, executor_materializes_building_block_defaults);
 REGISTER_TEST(edit_plan, executor_materializes_targetable_beobject_target);
 REGISTER_TEST(edit_plan, executor_materializes_common_building_block_prototypes);
+REGISTER_TEST(edit_plan, executor_resolves_symbolic_message_default_from_manager_data);
 REGISTER_TEST(edit_plan, executor_resolves_parameter_value_from_prior_handle);
 REGISTER_TEST(edit_plan, executor_materializes_input_source_for_handle_value);
 REGISTER_TEST(edit_plan, executor_materializes_input_source_for_handle_bytes);
