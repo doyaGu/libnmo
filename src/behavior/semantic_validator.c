@@ -1437,6 +1437,173 @@ static bool semantic_message_manager_has_name(nmo_workspace_t *workspace,
     return false;
 }
 
+static bool semantic_attribute_manager_has_name(nmo_workspace_t *workspace,
+                                                const char *attribute_name)
+{
+    if (workspace == NULL || attribute_name == NULL ||
+        attribute_name[0] == '\0') {
+        return false;
+    }
+    nmo_session_t *session = nmo_workspace_internal_session(workspace);
+    const nmo_file_state_t *file_state =
+        session != NULL ? nmo_session_get_file_state(session) : NULL;
+    if (session == NULL || file_state == NULL ||
+        file_state->manager_data == NULL) {
+        return false;
+    }
+
+    for (uint32_t i = 0; i < file_state->manager_data_count; ++i) {
+        const nmo_manager_data_t *manager = &file_state->manager_data[i];
+        if (!nmo_guid_equals(manager->guid, NMO_MANAGER_GUID_ATTRIBUTE) ||
+            manager->chunk == NULL) {
+            continue;
+        }
+
+        nmo_chunk_t *chunk =
+            nmo_chunk_clone(manager->chunk, nmo_session_get_arena(session));
+        if (chunk == NULL ||
+            nmo_chunk_start_read(chunk) != NMO_OK ||
+            nmo_chunk_seek_identifier(chunk, 0x52u) != NMO_OK) {
+            continue;
+        }
+
+        int32_t category_count = 0;
+        int32_t attribute_count = 0;
+        if (nmo_chunk_read_int(chunk, &category_count) != NMO_OK ||
+            nmo_chunk_read_int(chunk, &attribute_count) != NMO_OK ||
+            category_count < 0 ||
+            attribute_count < 0) {
+            continue;
+        }
+        for (int32_t category = 0; category < category_count; ++category) {
+            int32_t present = 0;
+            if (nmo_chunk_read_int(chunk, &present) != NMO_OK) {
+                break;
+            }
+            if (present != 0) {
+                char *name = NULL;
+                (void)nmo_chunk_read_string(chunk, &name);
+                uint32_t flags = 0u;
+                if (nmo_chunk_read_dword(chunk, &flags) != NMO_OK) {
+                    break;
+                }
+            }
+        }
+        for (int32_t attribute = 0; attribute < attribute_count; ++attribute) {
+            int32_t present = 0;
+            if (nmo_chunk_read_int(chunk, &present) != NMO_OK) {
+                break;
+            }
+            if (present == 0) {
+                continue;
+            }
+            char *name = NULL;
+            (void)nmo_chunk_read_string(chunk, &name);
+            nmo_guid_t type_guid = NMO_GUID_NULL;
+            int32_t category_index = 0;
+            int32_t compatible_class_id = 0;
+            uint32_t flags = 0u;
+            if (nmo_chunk_read_guid(chunk, &type_guid) != NMO_OK ||
+                nmo_chunk_read_int(chunk, &category_index) != NMO_OK ||
+                nmo_chunk_read_int(chunk, &compatible_class_id) != NMO_OK ||
+                nmo_chunk_read_dword(chunk, &flags) != NMO_OK) {
+                break;
+            }
+            if (name != NULL && strcmp(name, attribute_name) == 0) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+typedef struct semantic_manager_target {
+    bool has_parameter_state;
+    bool is_manager_parameter;
+    nmo_guid_t type_guid;
+    nmo_guid_t manager_guid;
+} semantic_manager_target_t;
+
+static semantic_manager_target_t semantic_manager_target_for_parameter(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t parameter_id)
+{
+    semantic_manager_target_t target = {0};
+    nmo_object_t *object = repo != NULL
+        ? nmo_object_repository_find_by_id(repo, parameter_id)
+        : NULL;
+    if (object == NULL ||
+        nmo_object_get_class_id(object) != NMO_CID_PARAMETER) {
+        return target;
+    }
+    const nmo_parameter_state_t *state =
+        (const nmo_parameter_state_t *)nmo_object_get_state(object);
+    if (state == NULL || !state->has_state) {
+        return target;
+    }
+    target.has_parameter_state = true;
+    target.type_guid = state->type_guid;
+    target.manager_guid = state->manager_guid;
+    target.is_manager_parameter = state->mode == CKPARAM_MODE_MANAGER;
+    return target;
+}
+
+static semantic_manager_target_t semantic_manager_target_for_type(
+    const nmo_type_descriptor_t *type)
+{
+    semantic_manager_target_t target = {0};
+    if (type == NULL) {
+        return target;
+    }
+    target.has_parameter_state = true;
+    target.type_guid = type->guid;
+    target.is_manager_parameter =
+        nmo_guid_equals(type->guid, CKPGUID_MESSAGE) ||
+        nmo_guid_equals(type->guid, CKPGUID_ATTRIBUTE);
+    if (nmo_guid_equals(type->guid, CKPGUID_MESSAGE)) {
+        target.manager_guid = NMO_MANAGER_GUID_MESSAGE;
+    } else if (nmo_guid_equals(type->guid, CKPGUID_ATTRIBUTE)) {
+        target.manager_guid = NMO_MANAGER_GUID_ATTRIBUTE;
+    }
+    return target;
+}
+
+static nmo_manager_entry_schema_t semantic_resolve_manager_entry_schema(
+    nmo_manager_entry_options_t manager_entry,
+    semantic_manager_target_t target)
+{
+    if (manager_entry.schema != NMO_MANAGER_ENTRY_SCHEMA_AUTO) {
+        return manager_entry.schema;
+    }
+    if (nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE) ||
+        nmo_guid_equals(target.manager_guid, NMO_MANAGER_GUID_MESSAGE) ||
+        nmo_guid_equals(target.type_guid, CKPGUID_MESSAGE)) {
+        return NMO_MANAGER_ENTRY_SCHEMA_MESSAGE;
+    }
+    if (nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_ATTRIBUTE) ||
+        nmo_guid_equals(target.manager_guid, NMO_MANAGER_GUID_ATTRIBUTE) ||
+        nmo_guid_equals(target.type_guid, CKPGUID_ATTRIBUTE)) {
+        return NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE;
+    }
+    return NMO_MANAGER_ENTRY_SCHEMA_AUTO;
+}
+
+static nmo_status_t semantic_add_manager_guid_mismatch_risk(
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count,
+    nmo_object_id_t object_id,
+    const char *message)
+{
+    return semantic_add_risk(
+        risks,
+        risk_count,
+        NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+        "manager_type_mismatch",
+        message,
+        object_id);
+}
+
 static nmo_status_t semantic_add_manager_default_risks(
     nmo_workspace_t *workspace,
     nmo_context_t *ctx,
@@ -1446,13 +1613,22 @@ static nmo_status_t semantic_add_manager_default_risks(
     nmo_guid_t bb_guid,
     nmo_manager_entry_options_t manager_entry)
 {
-    if (manager_entry.schema == NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE) {
+    nmo_manager_entry_schema_t schema =
+        semantic_resolve_manager_entry_schema(
+            manager_entry,
+            (semantic_manager_target_t){
+                .has_parameter_state = true,
+                .is_manager_parameter = true,
+                .type_guid = CKPGUID_MESSAGE,
+                .manager_guid = NMO_MANAGER_GUID_MESSAGE,
+            });
+    if (schema == NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE) {
         return semantic_add_risk(
             risks,
             risk_count,
             NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
-            "unsupported_manager_entry",
-            "Attribute manager entry writes require attribute create semantics",
+            "manager_type_mismatch",
+            "Manager entry schema does not match CKMessageManager default values",
             parent_behavior_id);
     }
     if (!nmo_guid_is_null(manager_entry.manager_guid) &&
@@ -1510,24 +1686,16 @@ static nmo_status_t semantic_add_manager_default_risks(
     return NMO_OK;
 }
 
-static bool semantic_parameter_is_message_manager(
-    nmo_object_repository_t *repo,
-    nmo_object_id_t parameter_id)
+static bool semantic_manager_entry_attribute_create_valid(
+    const nmo_manager_entry_create_options_t *create)
 {
-    nmo_object_t *object = repo != NULL
-        ? nmo_object_repository_find_by_id(repo, parameter_id)
-        : NULL;
-    if (object == NULL ||
-        nmo_object_get_class_id(object) != NMO_CID_PARAMETER) {
-        return false;
-    }
-    const nmo_parameter_state_t *state =
-        (const nmo_parameter_state_t *)nmo_object_get_state(object);
-    return state != NULL &&
-           state->has_state &&
-           state->mode == CKPARAM_MODE_MANAGER &&
-           nmo_guid_equals(state->type_guid, CKPGUID_MESSAGE) &&
-           nmo_guid_equals(state->manager_guid, NMO_MANAGER_GUID_MESSAGE);
+    return create != NULL &&
+           create->enabled &&
+           !nmo_guid_is_null(create->attribute_type_guid) &&
+           create->category != NULL &&
+           create->category[0] != '\0' &&
+           create->has_compatible_class_id &&
+           create->has_flags;
 }
 
 static nmo_status_t semantic_add_manager_value_risk(
@@ -1537,19 +1705,13 @@ static nmo_status_t semantic_add_manager_value_risk(
     nmo_object_id_t object_id,
     const char *value,
     nmo_manager_entry_options_t manager_entry,
-    bool is_message_manager_value)
+    semantic_manager_target_t target)
 {
-    if (manager_entry.schema == NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE) {
-        return semantic_add_risk(
-            risks,
-            risk_count,
-            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
-            "unsupported_manager_entry",
-            "Attribute manager entry writes require attribute create semantics",
-            object_id);
-    }
+    nmo_manager_entry_schema_t schema =
+        semantic_resolve_manager_entry_schema(manager_entry, target);
     if (!nmo_guid_is_null(manager_entry.manager_guid) &&
         !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE) &&
+        !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_ATTRIBUTE) &&
         manager_entry.policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING) {
         return semantic_add_risk(
             risks,
@@ -1559,14 +1721,76 @@ static nmo_status_t semantic_add_manager_value_risk(
             "Creating entries for an unknown manager GUID is not supported",
             object_id);
     }
-    if (!nmo_guid_is_null(manager_entry.manager_guid) &&
-        !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE)) {
+
+    if (schema == NMO_MANAGER_ENTRY_SCHEMA_MESSAGE) {
+        if ((!nmo_guid_is_null(manager_entry.manager_guid) &&
+             !nmo_guid_equals(manager_entry.manager_guid,
+                              NMO_MANAGER_GUID_MESSAGE)) ||
+            (target.has_parameter_state &&
+             target.is_manager_parameter &&
+             !nmo_guid_equals(target.manager_guid, NMO_MANAGER_GUID_MESSAGE))) {
+            return semantic_add_manager_guid_mismatch_risk(
+                risks,
+                risk_count,
+                object_id,
+                "Manager entry schema or GUID does not match CKMessageManager");
+        }
+    } else if (schema == NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE) {
+        if ((!nmo_guid_is_null(manager_entry.manager_guid) &&
+             !nmo_guid_equals(manager_entry.manager_guid,
+                              NMO_MANAGER_GUID_ATTRIBUTE)) ||
+            (target.has_parameter_state &&
+             target.is_manager_parameter &&
+             !nmo_guid_equals(target.manager_guid,
+                              NMO_MANAGER_GUID_ATTRIBUTE))) {
+            return semantic_add_manager_guid_mismatch_risk(
+                risks,
+                risk_count,
+                object_id,
+                "Manager entry schema or GUID does not match CKAttributeManager");
+        }
+        if (manager_entry.policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING) {
+            if (!semantic_manager_entry_attribute_create_valid(
+                    &manager_entry.create)) {
+                return semantic_add_risk(
+                    risks,
+                    risk_count,
+                    NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+                    "invalid_manager_entry_schema",
+                    "Attribute manager create requires type GUID, category, compatible class, and flags",
+                    object_id);
+            }
+            return NMO_OK;
+        }
+
+        const char *entry_value =
+            manager_entry.key != NULL && manager_entry.key[0] != '\0'
+                ? manager_entry.key
+                : value;
+        if (entry_value == NULL ||
+            entry_value[0] == '\0' ||
+            strchr(entry_value, ':') != NULL ||
+            strchr(entry_value, '=') != NULL) {
+            return NMO_OK;
+        }
+        if (semantic_attribute_manager_has_name(workspace, entry_value)) {
+            return NMO_OK;
+        }
         return semantic_add_risk(
             risks,
             risk_count,
             NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
-            "manager_type_mismatch",
-            "Manager entry GUID does not match CKMessageManager",
+            "missing_manager_entry",
+            "Parameter value references a missing manager entry",
+            object_id);
+    } else if (!nmo_guid_is_null(manager_entry.manager_guid) &&
+               manager_entry.policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "unknown_manager_create_forbidden",
+            "Creating entries for an unknown manager GUID is not supported",
             object_id);
     }
 
@@ -1579,7 +1803,8 @@ static nmo_status_t semantic_add_manager_value_risk(
         entry_value[0] == '\0' ||
         strchr(entry_value, ':') != NULL ||
         strchr(entry_value, '=') != NULL ||
-        !is_message_manager_value) {
+        !(target.has_parameter_state &&
+          nmo_guid_equals(target.type_guid, CKPGUID_MESSAGE))) {
         return NMO_OK;
     }
 
@@ -1675,7 +1900,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 op->primary_id,
                 op->data.set_value.value,
                 manager_entry,
-                type != NULL && nmo_guid_equals(type->guid, CKPGUID_MESSAGE));
+                semantic_manager_target_for_type(type));
         }
         if (op->kind == NMO_EDIT_OP_SET_PARAMETER_BYTES &&
             op->data.set_bytes.has_parameter_ref) {
@@ -1708,7 +1933,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 op->primary_id,
                 op->data.set_value.value,
                 manager_entry,
-                semantic_parameter_is_message_manager(repo, op->primary_id)));
+                semantic_manager_target_for_parameter(repo, op->primary_id)));
         }
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->primary_id));

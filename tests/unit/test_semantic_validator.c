@@ -142,6 +142,44 @@ static void semantic_install_message_manager(
     nmo_session_set_manager_data(session, manager_data, 1u);
 }
 
+static void semantic_install_attribute_manager(
+    nmo_session_t *session,
+    const char *category_name,
+    const char *attribute_name,
+    nmo_guid_t attribute_type_guid,
+    uint32_t compatible_class_id,
+    uint32_t flags)
+{
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0x52u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(chunk, category_name));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(chunk, attribute_name));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(chunk, attribute_type_guid));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, (int32_t)compatible_class_id));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, flags));
+    nmo_chunk_close(chunk);
+
+    nmo_manager_data_t *manager_data =
+        (nmo_manager_data_t *)nmo_arena_alloc(
+            arena, sizeof(*manager_data), _Alignof(nmo_manager_data_t));
+    ASSERT_NOT_NULL(manager_data);
+    memset(manager_data, 0, sizeof(*manager_data));
+    manager_data->guid = NMO_MANAGER_GUID_ATTRIBUTE;
+    manager_data->chunk = chunk;
+    manager_data->data_size = (uint32_t)nmo_chunk_get_size(chunk);
+    nmo_session_set_manager_data(session, manager_data, 1u);
+}
+
 static const nmo_behavior_semantic_risk_t *find_risk(
     const nmo_behavior_semantic_risk_t *risks,
     size_t risk_count,
@@ -332,7 +370,7 @@ TEST(semantic_validator, detects_missing_symbolic_message_parameter_value)
     semantic_fixture_dispose(&fixture);
 }
 
-TEST(semantic_validator, rejects_unsupported_manager_entry_kinds)
+TEST(semantic_validator, rejects_manager_entry_schema_type_mismatch)
 {
     semantic_fixture_t fixture;
     semantic_fixture_init_empty(&fixture);
@@ -370,10 +408,169 @@ TEST(semantic_validator, rejects_unsupported_manager_entry_kinds)
                   fixture.workspace, plan, &risks, &risk_count));
 
     const nmo_behavior_semantic_risk_t *risk =
-        find_risk(risks, risk_count, "unsupported_manager_entry");
+        find_risk(risks, risk_count, "manager_type_mismatch");
     ASSERT_NOT_NULL(risk);
     ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, risk->severity);
     ASSERT_EQ(param_id, risk->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
+TEST(semantic_validator, accepts_attribute_manager_create_schema)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_empty(&fixture);
+
+    nmo_object_id_t param_id = 0u;
+    semantic_create_object(&fixture, NMO_CID_PARAMETER, "Attribute Param",
+                           &param_id);
+    nmo_object_t *param_obj = nmo_object_repository_find_by_id(
+        nmo_session_get_repository(fixture.session), param_id);
+    ASSERT_NOT_NULL(param_obj);
+    nmo_parameter_state_t *state = nmo_parameter_get_mutable_state(param_obj);
+    ASSERT_NOT_NULL(state);
+    state->type_guid = CKPGUID_ATTRIBUTE;
+    state->mode = CKPARAM_MODE_MANAGER;
+    state->has_state = true;
+    state->manager_guid = NMO_MANAGER_GUID_ATTRIBUTE;
+
+    nmo_parameter_write_options_t options = {
+        .manager_entry = {
+            .policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
+            .schema = NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE,
+            .manager_guid = NMO_MANAGER_GUID_ATTRIBUTE,
+            .key = "CustomAttr",
+            .create = {
+                .enabled = true,
+                .attribute_type_guid = CKPGUID_FLOAT,
+                .category = "Custom",
+                .has_compatible_class_id = true,
+                .compatible_class_id = 19u,
+                .has_flags = true,
+                .flags = 5u,
+            },
+        },
+    };
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_set_parameter_value(
+                  plan, param_id, "IgnoredValue", &options));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    ASSERT_TRUE(find_risk(risks, risk_count, "unsupported_manager_entry") == NULL);
+    ASSERT_TRUE(find_risk(risks, risk_count, "manager_type_mismatch") == NULL);
+    ASSERT_TRUE(find_risk(risks, risk_count, "invalid_manager_entry_schema") == NULL);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
+TEST(semantic_validator, rejects_incomplete_attribute_manager_create_schema)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_empty(&fixture);
+
+    nmo_object_id_t param_id = 0u;
+    semantic_create_object(&fixture, NMO_CID_PARAMETER, "Attribute Param",
+                           &param_id);
+    nmo_object_t *param_obj = nmo_object_repository_find_by_id(
+        nmo_session_get_repository(fixture.session), param_id);
+    ASSERT_NOT_NULL(param_obj);
+    nmo_parameter_state_t *state = nmo_parameter_get_mutable_state(param_obj);
+    ASSERT_NOT_NULL(state);
+    state->type_guid = CKPGUID_ATTRIBUTE;
+    state->mode = CKPARAM_MODE_MANAGER;
+    state->has_state = true;
+    state->manager_guid = NMO_MANAGER_GUID_ATTRIBUTE;
+
+    nmo_parameter_write_options_t options = {
+        .manager_entry = {
+            .policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
+            .schema = NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE,
+            .manager_guid = NMO_MANAGER_GUID_ATTRIBUTE,
+            .key = "CustomAttr",
+            .create = {
+                .enabled = true,
+                .attribute_type_guid = CKPGUID_FLOAT,
+                .category = "Custom",
+            },
+        },
+    };
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_set_parameter_value(
+                  plan, param_id, "IgnoredValue", &options));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *risk =
+        find_risk(risks, risk_count, "invalid_manager_entry_schema");
+    ASSERT_NOT_NULL(risk);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, risk->severity);
+    ASSERT_EQ(param_id, risk->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
+TEST(semantic_validator, manager_entry_key_drives_attribute_lookup)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_empty(&fixture);
+    semantic_install_attribute_manager(
+        fixture.session, "Custom", "ExistingAttr", CKPGUID_FLOAT, 19u, 5u);
+
+    nmo_object_id_t param_id = 0u;
+    semantic_create_object(&fixture, NMO_CID_PARAMETER, "Attribute Param",
+                           &param_id);
+    nmo_object_t *param_obj = nmo_object_repository_find_by_id(
+        nmo_session_get_repository(fixture.session), param_id);
+    ASSERT_NOT_NULL(param_obj);
+    nmo_parameter_state_t *state = nmo_parameter_get_mutable_state(param_obj);
+    ASSERT_NOT_NULL(state);
+    state->type_guid = CKPGUID_ATTRIBUTE;
+    state->mode = CKPARAM_MODE_MANAGER;
+    state->has_state = true;
+    state->manager_guid = NMO_MANAGER_GUID_ATTRIBUTE;
+
+    nmo_parameter_write_options_t options = {
+        .manager_entry = {
+            .policy = NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING,
+            .schema = NMO_MANAGER_ENTRY_SCHEMA_ATTRIBUTE,
+            .manager_guid = NMO_MANAGER_GUID_ATTRIBUTE,
+            .key = "ExistingAttr",
+        },
+    };
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_set_parameter_value(
+                  plan, param_id, "MissingValueButKeyExists", &options));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    ASSERT_TRUE(find_risk(risks, risk_count, "missing_manager_entry") == NULL);
 
     nmo_semantic_risks_free(risks);
     nmo_edit_plan_destroy(plan);
@@ -418,7 +615,7 @@ TEST(semantic_validator, rejects_manager_entry_schema_guid_mismatch)
                   fixture.workspace, plan, &risks, &risk_count));
 
     const nmo_behavior_semantic_risk_t *risk =
-        find_risk(risks, risk_count, "unknown_manager_create_forbidden");
+        find_risk(risks, risk_count, "manager_type_mismatch");
     ASSERT_NOT_NULL(risk);
     ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, risk->severity);
     ASSERT_EQ(param_id, risk->object_id);
@@ -2074,7 +2271,10 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, detects_message_flow_by_signature_metadata);
 REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_manager_entry);
 REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_parameter_value);
-REGISTER_TEST(semantic_validator, rejects_unsupported_manager_entry_kinds);
+REGISTER_TEST(semantic_validator, rejects_manager_entry_schema_type_mismatch);
+REGISTER_TEST(semantic_validator, accepts_attribute_manager_create_schema);
+REGISTER_TEST(semantic_validator, rejects_incomplete_attribute_manager_create_schema);
+REGISTER_TEST(semantic_validator, manager_entry_key_drives_attribute_lookup);
 REGISTER_TEST(semantic_validator, rejects_manager_entry_schema_guid_mismatch);
 REGISTER_TEST(semantic_validator, rejects_unknown_guid_manager_entry_creation);
 REGISTER_TEST(semantic_validator, manager_entry_key_drives_message_lookup);
