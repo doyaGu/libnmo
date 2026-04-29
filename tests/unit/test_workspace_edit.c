@@ -10,6 +10,7 @@
 #include "behavior/nmo_behavior_edit.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_guids.h"
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
@@ -851,6 +852,98 @@ TEST(workspace_edit, value_writer_writes_structured_parameter_values) {
     nmo_context_release(ctx);
 }
 
+TEST(workspace_edit, value_writer_writes_enum_and_flag_parameter_values) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+    nmo_guid_t enum_guid = NMO_GUID_ENUM_CK_BEHAVIOR_TYPE;
+    nmo_guid_t flags_guid = NMO_GUID_ENUM_CK_BEHAVIOR_FLAGS;
+
+    nmo_object_id_t enum_param_id = 0;
+    nmo_object_id_t flags_param_id = 0;
+    create_object_or_fail(session, NMO_CID_PARAMETER, "enum-param", &enum_param_id);
+    create_object_or_fail(session, NMO_CID_PARAMETER, "flags-param", &flags_param_id);
+
+    nmo_object_t *enum_obj = nmo_object_repository_find_by_id(repo, enum_param_id);
+    nmo_object_t *flags_obj = nmo_object_repository_find_by_id(repo, flags_param_id);
+    ASSERT_NOT_NULL(enum_obj);
+    ASSERT_NOT_NULL(flags_obj);
+
+    nmo_parameter_state_t *enum_state = nmo_parameter_get_mutable_state(enum_obj);
+    nmo_parameter_state_t *flags_state = nmo_parameter_get_mutable_state(flags_obj);
+    ASSERT_NOT_NULL(enum_state);
+    ASSERT_NOT_NULL(flags_state);
+
+    enum_state->type_guid = enum_guid;
+    enum_state->mode = CKPARAM_MODE_BUFFER;
+    enum_state->has_state = true;
+    ASSERT_EQ(NMO_OK,
+              nmo_array_alloc(&enum_state->buffer_data,
+                              sizeof(uint8_t),
+                              sizeof(int32_t),
+                              NULL));
+    memset(enum_state->buffer_data.data, 0, enum_state->buffer_data.count);
+
+    flags_state->type_guid = flags_guid;
+    flags_state->mode = CKPARAM_MODE_BUFFER;
+    flags_state->has_state = true;
+    ASSERT_EQ(NMO_OK,
+              nmo_array_alloc(&flags_state->buffer_data,
+                              sizeof(uint8_t),
+                              sizeof(uint32_t),
+                              NULL));
+    memset(flags_state->buffer_data.data, 0, flags_state->buffer_data.count);
+
+    workspace_edit_scope_t commit_scope = {0};
+    nmo_workspace_edit_t *commit_edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              begin_workspace_edit_for_session(
+                  ctx, session, "enum flag values", &commit_scope, &commit_edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_set_parameter_value(
+                  commit_edit, enum_param_id, "CKBEHAVIORTYPE_BEHAVIOR"));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_set_parameter_value(
+                  commit_edit, flags_param_id, "CKBEHAVIOR_ACTIVE|CKBEHAVIOR_TARGETABLE"));
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&commit_scope));
+
+    ASSERT_EQ(4, *(const int32_t *)enum_state->buffer_data.data);
+    ASSERT_EQ(0x00040001u, *(const uint32_t *)flags_state->buffer_data.data);
+
+    workspace_edit_scope_t numeric_scope = {0};
+    nmo_workspace_edit_t *numeric_edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              begin_workspace_edit_for_session(
+                  ctx, session, "numeric enum flag values", &numeric_scope, &numeric_edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_set_parameter_value(
+                  numeric_edit, enum_param_id, "1"));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_set_parameter_value(
+                  numeric_edit, flags_param_id, "0x3"));
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&numeric_scope));
+
+    ASSERT_EQ(1, *(const int32_t *)enum_state->buffer_data.data);
+    ASSERT_EQ(3u, *(const uint32_t *)flags_state->buffer_data.data);
+
+    workspace_edit_scope_t invalid_scope = {0};
+    nmo_workspace_edit_t *invalid_edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              begin_workspace_edit_for_session(
+                  ctx, session, "invalid enum value", &invalid_scope, &invalid_edit));
+    ASSERT_NE(NMO_OK,
+              nmo_object_edit_set_parameter_value(
+                  invalid_edit, enum_param_id, "MissingName"));
+    rollback_workspace_edit_scope(&invalid_scope);
+    ASSERT_EQ(1, *(const int32_t *)enum_state->buffer_data.data);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(workspace_edit, parameter_bytes_commit_zero_fills_and_rollback_restores) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
@@ -1278,6 +1371,7 @@ REGISTER_TEST(workspace_edit, value_writer_resizes_string_parameter_and_nul_term
 REGISTER_TEST(workspace_edit, value_writer_raw_bytes_requires_explicit_resize);
 REGISTER_TEST(workspace_edit, value_writer_resize_rollback_restores_buffer_size);
 REGISTER_TEST(workspace_edit, value_writer_writes_structured_parameter_values);
+REGISTER_TEST(workspace_edit, value_writer_writes_enum_and_flag_parameter_values);
 REGISTER_TEST(workspace_edit, parameter_bytes_commit_zero_fills_and_rollback_restores);
 REGISTER_TEST(workspace_edit, parameterout_object_mode_commit_sets_reference);
 REGISTER_TEST(workspace_edit, dataarray_object_cell_commit_and_rollback);
