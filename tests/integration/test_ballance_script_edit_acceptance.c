@@ -316,7 +316,6 @@ TEST(ballance_acceptance, accepted_message_probe_save_load_validates)
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe message-logger --behavior 2172 "
-             "--message-node 1667 --remove-link 2152 "
              "--text \"message trace\" \"%s\" -o \"%s\"",
              NMO_TEST_DATA_FILE("Ballance/base.cmo"),
              output);
@@ -332,6 +331,56 @@ TEST(ballance_acceptance, accepted_message_probe_save_load_validates)
     ASSERT_NOT_NULL(operations);
     ASSERT_EQ(5u, (uint32_t)yyjson_arr_size(operations));
     ASSERT_NOT_NULL(get_array_field(data, "created_objects"));
+    yyjson_val *diagnostics =
+        get_object_field(data, "probe_selector_diagnostics");
+    ASSERT_NOT_NULL(diagnostics);
+    ASSERT_STR_EQ("auto", get_string_field(diagnostics, "mode"));
+    ASSERT_STR_EQ("selected", get_string_field(diagnostics, "status"));
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args), "validate all \"%s\"", output);
+    cli_run_result_t validate = run_cli_capture(args);
+    ASSERT_NOT_NULL(validate.output);
+    ASSERT_EQ(0, validate.exit_code);
+    ASSERT_STR_CONTAINS(validate.output, "Result: VALID");
+    free(validate.output);
+
+    remove(output);
+}
+
+TEST(ballance_acceptance, accepted_manager_entry_save_load_validates)
+{
+    make_dir("test_ballance_acceptance_tmp");
+    const char *output = "test_ballance_acceptance_tmp/manager_entry.cmo";
+    remove(output);
+
+    char args[1536];
+    snprintf(args, sizeof(args),
+             "-f json script node add --parent 237 "
+             "--bb-guid A20E8D5B-DF002150 "
+             "--name AcceptanceSendMessage "
+             "--manager-entry create-missing "
+             "--manager-entry-manager message "
+             "--manager-entry-guid {466A0FAC-00000000} "
+             "--manager-entry-key AcceptanceMessage "
+             "\"%s\" -o \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output);
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "script.node.add", &doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_FALSE(get_bool_field(data, "dry_run"));
+    ASSERT_TRUE(file_exists(output));
+    yyjson_val *diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    yyjson_val *manager_diff = get_object_field(diff, "manager_entry_diff");
+    ASSERT_NOT_NULL(manager_diff);
+    yyjson_val *changed = get_array_field(manager_diff, "changed");
+    ASSERT_NOT_NULL(changed);
+    ASSERT_TRUE(yyjson_arr_size(changed) > 0u);
     yyjson_doc_free(doc);
 
     snprintf(args, sizeof(args), "validate all \"%s\"", output);
@@ -350,4 +399,5 @@ REGISTER_TEST(ballance_acceptance, patch_replay_dry_run);
 REGISTER_TEST(ballance_acceptance, validate_base);
 REGISTER_TEST(ballance_acceptance, accepted_patch_save_load_validates);
 REGISTER_TEST(ballance_acceptance, accepted_message_probe_save_load_validates);
+REGISTER_TEST(ballance_acceptance, accepted_manager_entry_save_load_validates);
 TEST_MAIN_END()
