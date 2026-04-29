@@ -3096,7 +3096,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
     nmo_status_t rc = NMO_OK;
     nmo_object_id_t node_id = 0;
     nmo_manager_entry_policy_t manager_entry_policy =
-        options != NULL ? options->manager_entry_policy
+        options != NULL ? options->manager_entry.policy
                         : NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
 
     if (!tx || !tx->edit || parent_behavior_id == 0 || nmo_guid_is_null(bb_guid)) {

@@ -448,6 +448,7 @@ static int script_run_lua_add_node(lua_State *state)
     const char *guid_text = luaL_checkstring(state, 2);
     const char *name = luaL_optstring(state, 3, NULL);
     nmo_add_node_options_t options = {0};
+    options.manager_entry = nmo_manager_entry_options_default();
     bool has_options = false;
     nmo_guid_t bb_guid = nmo_guid_parse(guid_text);
     nmo_status_t status = NMO_OK;
@@ -457,20 +458,41 @@ static int script_run_lua_add_node(lua_State *state)
     }
     if (!lua_isnoneornil(state, 4)) {
         luaL_checktype(state, 4, LUA_TTABLE);
-        lua_getfield(state, 4, "manager_entry_policy");
+        lua_getfield(state, 4, "manager_entry");
         if (!lua_isnil(state, -1)) {
-            const char *policy = luaL_checkstring(state, -1);
-            if (strcmp(policy, "require_existing") == 0) {
-                options.manager_entry_policy =
-                    NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
-            } else if (strcmp(policy, "create_missing") == 0) {
-                options.manager_entry_policy =
-                    NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING;
-            } else {
-                return luaL_error(
-                    state,
-                    "manager_entry_policy must be 'require_existing' or 'create_missing'");
+            luaL_checktype(state, lua_gettop(state), LUA_TTABLE);
+            lua_getfield(state, -1, "policy");
+            if (!lua_isnil(state, -1)) {
+                const char *policy = luaL_checkstring(state, -1);
+                if (strcmp(policy, "require_existing") == 0) {
+                    options.manager_entry.policy =
+                        NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+                } else if (strcmp(policy, "create_missing") == 0) {
+                    options.manager_entry.policy =
+                        NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING;
+                } else {
+                    return luaL_error(
+                        state,
+                        "manager_entry.policy must be 'require_existing' or 'create_missing'");
+                }
             }
+            lua_pop(state, 1);
+            lua_getfield(state, -1, "manager");
+            if (!lua_isnil(state, -1)) {
+                const char *manager = luaL_checkstring(state, -1);
+                if (strcmp(manager, "auto") == 0) {
+                    options.manager_entry.manager = NMO_MANAGER_ENTRY_MANAGER_AUTO;
+                } else if (strcmp(manager, "message") == 0) {
+                    options.manager_entry.manager = NMO_MANAGER_ENTRY_MANAGER_MESSAGE;
+                } else if (strcmp(manager, "attribute") == 0) {
+                    options.manager_entry.manager = NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE;
+                } else {
+                    return luaL_error(
+                        state,
+                        "manager_entry.manager must be 'auto', 'message', or 'attribute'");
+                }
+            }
+            lua_pop(state, 1);
         }
         lua_pop(state, 1);
         has_options = true;
@@ -522,8 +544,7 @@ static int script_run_lua_parse_parameter_write_options(
         return luaL_error(state, "invalid parameter write options output");
     }
     memset(out_options, 0, sizeof(*out_options));
-    out_options->manager_entry_policy =
-        NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+    out_options->manager_entry = nmo_manager_entry_options_default();
     *out_has_options = false;
     if (lua_isnoneornil(state, index)) {
         return 0;
@@ -537,13 +558,34 @@ static int script_run_lua_parse_parameter_write_options(
     }
     lua_pop(state, 1);
 
-    lua_getfield(state, index, "manager_entry_policy");
+    lua_getfield(state, index, "manager_entry");
     if (!lua_isnil(state, -1)) {
-        int rc = script_run_lua_parse_manager_entry_policy(
-            state, lua_gettop(state), &out_options->manager_entry_policy);
-        if (rc != 0) {
-            return rc;
+        luaL_checktype(state, lua_gettop(state), LUA_TTABLE);
+        lua_getfield(state, -1, "policy");
+        if (!lua_isnil(state, -1)) {
+            int rc = script_run_lua_parse_manager_entry_policy(
+                state, lua_gettop(state), &out_options->manager_entry.policy);
+            if (rc != 0) {
+                return rc;
+            }
         }
+        lua_pop(state, 1);
+        lua_getfield(state, -1, "manager");
+        if (!lua_isnil(state, -1)) {
+            const char *manager = luaL_checkstring(state, -1);
+            if (strcmp(manager, "auto") == 0) {
+                out_options->manager_entry.manager = NMO_MANAGER_ENTRY_MANAGER_AUTO;
+            } else if (strcmp(manager, "message") == 0) {
+                out_options->manager_entry.manager = NMO_MANAGER_ENTRY_MANAGER_MESSAGE;
+            } else if (strcmp(manager, "attribute") == 0) {
+                out_options->manager_entry.manager = NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE;
+            } else {
+                return luaL_error(
+                    state,
+                    "manager_entry.manager must be 'auto', 'message', or 'attribute'");
+            }
+        }
+        lua_pop(state, 1);
     }
     lua_pop(state, 1);
     return 0;
@@ -2544,7 +2586,7 @@ static nmo_status_t script_node_add_execute(
     nmo_status_t rc = nmo_edit_plan_create(&plan);
     if (rc == NMO_OK) {
         nmo_add_node_options_t options = {
-            .manager_entry_policy = args->manager_entry_policy,
+            .manager_entry.policy = args->manager_entry_policy,
         };
         rc = nmo_edit_plan_add_node_ex(
             plan, args->parent_id, args->bb_guid, args->name,
@@ -2576,12 +2618,14 @@ static int script_node_add_report(
         yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "node_id", args->node_id);
         if (args->has_manager_entry_policy) {
+            yyjson_mut_val *entry = yyjson_mut_obj(doc);
             yyjson_mut_obj_add_str(
-                doc, data, "manager_entry_policy",
-                args->manager_entry_policy ==
-                        NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING
+                doc, entry, "policy",
+                args->manager_entry_policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING
                     ? "create_missing"
                     : "require_existing");
+            yyjson_mut_obj_add_str(doc, entry, "manager", "message");
+            yyjson_mut_obj_add_val(doc, data, "manager_entry", entry);
         }
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
@@ -3086,7 +3130,7 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
             {"--parent", NULL, NMO_OPT_UINT, "Parent behavior ID"},
             {"--bb-guid", NULL, NMO_OPT_STRING, "Building block GUID"},
             {"--name", NULL, NMO_OPT_STRING, "Behavior name"},
-            {"--manager-entry-policy", NULL, NMO_OPT_STRING,
+            {"--manager-entry", NULL, NMO_OPT_STRING,
              "Manager entry policy: require-existing|create-missing"},
             {"--output", "-o", NMO_OPT_STRING, "Output file"},
             {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
@@ -3565,7 +3609,7 @@ static nmo_status_t script_param_set_execute(
     rc = nmo_edit_plan_create(&plan);
     if (rc == NMO_OK) {
         nmo_parameter_write_options_t options = {
-            .manager_entry_policy = args->manager_entry_policy,
+            .manager_entry.policy = args->manager_entry_policy,
         };
         rc = nmo_edit_plan_add_set_parameter_value(
             plan,
@@ -3603,12 +3647,14 @@ static int script_param_set_report(
         script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "param_id", args->param_id);
         if (args->has_manager_entry_policy) {
+            yyjson_mut_val *entry = yyjson_mut_obj(doc);
             yyjson_mut_obj_add_str(
-                doc, data, "manager_entry_policy",
-                args->manager_entry_policy ==
-                        NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING
+                doc, entry, "policy",
+                args->manager_entry_policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING
                     ? "create_missing"
                     : "require_existing");
+            yyjson_mut_obj_add_str(doc, entry, "manager", "message");
+            yyjson_mut_obj_add_val(doc, data, "manager_entry", entry);
         }
         if (args->old_value) {
             nmo_cli_json_add_str_safe(doc, data, "old_value", args->old_value);
@@ -4056,7 +4102,7 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         static const nmo_opt_def_t opts[] = {
             {"--param", NULL, NMO_OPT_UINT, "Parameter ID"},
             {"--value", NULL, NMO_OPT_STRING, "Typed parameter value"},
-            {"--manager-entry-policy", NULL, NMO_OPT_STRING,
+            {"--manager-entry", NULL, NMO_OPT_STRING,
              "Manager entry policy: require-existing|create-missing"},
             {"--output", "-o", NMO_OPT_STRING, "Output file"},
             {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},

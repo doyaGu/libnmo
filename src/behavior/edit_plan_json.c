@@ -1,6 +1,7 @@
 #include "behavior/nmo_edit_plan_json.h"
 
 #include "core/nmo_guid.h"
+#include "object/nmo_manager_guids.h"
 #include "yyjson.h"
 
 #include <stddef.h>
@@ -148,6 +149,22 @@ static const char *manager_entry_policy_string(
                : "require_existing";
 }
 
+static const char *manager_entry_manager_string(
+    nmo_manager_entry_manager_t manager)
+{
+    switch (manager) {
+        case NMO_MANAGER_ENTRY_MANAGER_MESSAGE:
+            return "message";
+        case NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE:
+            return "attribute";
+        case NMO_MANAGER_ENTRY_MANAGER_GUID:
+            return "guid";
+        case NMO_MANAGER_ENTRY_MANAGER_AUTO:
+        default:
+            return "auto";
+    }
+}
+
 static bool parse_manager_entry_policy_value(
     yyjson_val *policy_val,
     nmo_manager_entry_policy_t *out_policy)
@@ -170,6 +187,115 @@ static bool parse_manager_entry_policy_value(
     nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                         __FILE__, __LINE__, "Invalid manager_entry_policy");
     return false;
+}
+
+static bool parse_manager_entry_manager_value(
+    yyjson_val *manager_val,
+    nmo_manager_entry_manager_t *out_manager)
+{
+    if (manager_val == NULL || out_manager == NULL || !yyjson_is_str(manager_val)) {
+        nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                            __FILE__, __LINE__, "Invalid manager_entry.manager");
+        return false;
+    }
+    const char *manager_text = yyjson_get_str(manager_val);
+    if (strcmp(manager_text, "auto") == 0) {
+        *out_manager = NMO_MANAGER_ENTRY_MANAGER_AUTO;
+        return true;
+    }
+    if (strcmp(manager_text, "message") == 0) {
+        *out_manager = NMO_MANAGER_ENTRY_MANAGER_MESSAGE;
+        return true;
+    }
+    if (strcmp(manager_text, "attribute") == 0) {
+        *out_manager = NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE;
+        return true;
+    }
+    if (strcmp(manager_text, "guid") == 0) {
+        *out_manager = NMO_MANAGER_ENTRY_MANAGER_GUID;
+        return true;
+    }
+    nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                        __FILE__, __LINE__, "Invalid manager_entry.manager");
+    return false;
+}
+
+static bool parse_manager_entry_options_value(
+    yyjson_val *entry_val,
+    nmo_manager_entry_options_t *out_options)
+{
+    if (entry_val == NULL || out_options == NULL || !yyjson_is_obj(entry_val)) {
+        nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                            __FILE__, __LINE__, "Invalid manager_entry");
+        return false;
+    }
+
+    *out_options = nmo_manager_entry_options_default();
+    yyjson_val *policy_val = yyjson_obj_get(entry_val, "policy");
+    if (policy_val != NULL &&
+        !parse_manager_entry_policy_value(policy_val, &out_options->policy)) {
+        return false;
+    }
+    yyjson_val *manager_val = yyjson_obj_get(entry_val, "manager");
+    if (manager_val != NULL &&
+        !parse_manager_entry_manager_value(manager_val, &out_options->manager)) {
+        return false;
+    }
+    yyjson_val *guid_val = yyjson_obj_get(entry_val, "manager_guid");
+    if (guid_val != NULL) {
+        if (!yyjson_is_str(guid_val)) {
+            nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                __FILE__, __LINE__,
+                                "Invalid manager_entry.manager_guid");
+            return false;
+        }
+        out_options->manager_guid = nmo_guid_parse(yyjson_get_str(guid_val));
+        if (nmo_guid_is_null(out_options->manager_guid)) {
+            nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                __FILE__, __LINE__,
+                                "Invalid manager_entry.manager_guid");
+            return false;
+        }
+    } else if (out_options->manager == NMO_MANAGER_ENTRY_MANAGER_MESSAGE) {
+        out_options->manager_guid = NMO_MANAGER_GUID_MESSAGE;
+    }
+    yyjson_val *key_val = yyjson_obj_get(entry_val, "key");
+    if (key_val != NULL) {
+        if (!yyjson_is_str(key_val)) {
+            nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                __FILE__, __LINE__, "Invalid manager_entry.key");
+            return false;
+        }
+        out_options->key = yyjson_get_str(key_val);
+    }
+    return true;
+}
+
+static void add_manager_entry_json(yyjson_mut_doc *doc,
+                                   yyjson_mut_val *obj,
+                                   const nmo_manager_entry_options_t *options)
+{
+    if (doc == NULL || obj == NULL || options == NULL) {
+        return;
+    }
+    yyjson_mut_val *entry = yyjson_mut_obj(doc);
+    if (entry == NULL) {
+        return;
+    }
+    yyjson_mut_obj_add_str(doc, entry, "policy",
+                           manager_entry_policy_string(options->policy));
+    yyjson_mut_obj_add_str(doc, entry, "manager",
+                           manager_entry_manager_string(options->manager));
+    nmo_guid_t manager_guid = options->manager_guid;
+    if (nmo_guid_is_null(manager_guid) &&
+        options->manager == NMO_MANAGER_ENTRY_MANAGER_MESSAGE) {
+        manager_guid = NMO_MANAGER_GUID_MESSAGE;
+    }
+    if (!nmo_guid_is_null(manager_guid)) {
+        add_guid_json(doc, entry, "manager_guid", manager_guid);
+    }
+    add_str_safe(doc, entry, "key", options->key);
+    yyjson_mut_obj_add_val(doc, obj, "manager_entry", entry);
 }
 
 static void add_ref_json(yyjson_mut_doc *doc,
@@ -260,10 +386,8 @@ static yyjson_mut_val *edit_op_to_json(yyjson_mut_doc *doc,
             if (op->data.set_value.has_options) {
                 yyjson_mut_obj_add_bool(doc, obj, "resize",
                                         op->data.set_value.options.resize);
-                yyjson_mut_obj_add_str(
-                    doc, obj, "manager_entry_policy",
-                    manager_entry_policy_string(
-                        op->data.set_value.options.manager_entry_policy));
+                add_manager_entry_json(doc, obj,
+                                       &op->data.set_value.options.manager_entry);
             }
             break;
         case NMO_EDIT_OP_SET_PARAMETER_BYTES: {
@@ -295,10 +419,8 @@ static yyjson_mut_val *edit_op_to_json(yyjson_mut_doc *doc,
             add_guid_json(doc, obj, "guid", op->data.add_node.bb_guid);
             add_str_safe(doc, obj, "name", op->data.add_node.name);
             if (op->data.add_node.has_options) {
-                yyjson_mut_obj_add_str(
-                    doc, obj, "manager_entry_policy",
-                    manager_entry_policy_string(
-                        op->data.add_node.options.manager_entry_policy));
+                add_manager_entry_json(doc, obj,
+                                       &op->data.add_node.options.manager_entry);
             }
             break;
         case NMO_EDIT_OP_REMOVE_NODE:
@@ -992,7 +1114,7 @@ static nmo_status_t parse_add_node(yyjson_val *op_obj,
                                    nmo_edit_plan_t *plan)
 {
     static const char *const allowed[] = {
-        "op", "behavior_id", "guid", "name", "manager_entry_policy",
+        "op", "behavior_id", "guid", "name", "manager_entry",
     };
     RETURN_IF_UNKNOWN_FIELDS(op_obj, "add_node operation", allowed);
     uint32_t behavior_id = 0u;
@@ -1012,14 +1134,13 @@ static nmo_status_t parse_add_node(yyjson_val *op_obj,
     if (nmo_guid_is_null(guid)) {
         return NMO_ERR_INVALID_FORMAT;
     }
-    yyjson_val *policy_val = yyjson_obj_get(op_obj, "manager_entry_policy");
-    bool has_options = policy_val != NULL;
-    nmo_add_node_options_t options = {
-        .manager_entry_policy = NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING,
-    };
-    if (policy_val != NULL &&
-        !parse_manager_entry_policy_value(policy_val,
-                                          &options.manager_entry_policy)) {
+    yyjson_val *manager_entry_val = yyjson_obj_get(op_obj, "manager_entry");
+    bool has_options = manager_entry_val != NULL;
+    nmo_add_node_options_t options = {0};
+    options.manager_entry = nmo_manager_entry_options_default();
+    if (manager_entry_val != NULL &&
+        !parse_manager_entry_options_value(manager_entry_val,
+                                           &options.manager_entry)) {
         return NMO_ERR_INVALID_FORMAT;
     }
     return nmo_edit_plan_add_node_ex(
@@ -1101,27 +1222,26 @@ static nmo_status_t parse_set_parameter_value(yyjson_val *op_obj,
 {
     static const char *const allowed[] = {
         "op", "parameter_id", "parameter_operation", "parameter_handle",
-        "value", "resize", "manager_entry_policy",
+        "value", "resize", "manager_entry",
     };
     RETURN_IF_UNKNOWN_FIELDS(op_obj, "set_parameter_value operation", allowed);
     const char *value = NULL;
     bool resize = false;
-    yyjson_val *policy_val = yyjson_obj_get(op_obj, "manager_entry_policy");
+    yyjson_val *manager_entry_val = yyjson_obj_get(op_obj, "manager_entry");
     bool has_options = yyjson_obj_get(op_obj, "resize") != NULL ||
-                       policy_val != NULL;
+                       manager_entry_val != NULL;
     if (!read_required_string(op_obj, "value", &value)) {
         return NMO_ERR_INVALID_FORMAT;
     }
     if (!read_optional_bool(op_obj, "resize", false, &resize)) {
         return NMO_ERR_INVALID_FORMAT;
     }
-    nmo_parameter_write_options_t options = {
-        .resize = resize,
-        .manager_entry_policy = NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING,
-    };
-    if (policy_val != NULL &&
-        !parse_manager_entry_policy_value(policy_val,
-                                          &options.manager_entry_policy)) {
+    nmo_parameter_write_options_t options = {0};
+    options.resize = resize;
+    options.manager_entry = nmo_manager_entry_options_default();
+    if (manager_entry_val != NULL &&
+        !parse_manager_entry_options_value(manager_entry_val,
+                                           &options.manager_entry)) {
         return NMO_ERR_INVALID_FORMAT;
     }
     const nmo_parameter_write_options_t *options_ptr =

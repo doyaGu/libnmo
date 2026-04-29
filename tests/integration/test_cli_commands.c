@@ -3506,7 +3506,7 @@ TEST(cli, debug_probe_debug_output_text_option_uses_edit_plan) {
 TEST(cli, debug_probe_message_logger_text_option_uses_edit_plan) {
     char args[1024];
     snprintf(args, sizeof(args),
-             "-f json debug probe message-logger --behavior 237 "
+             "-f json debug probe message-logger --behavior 2172 "
              "--name MessageLoggerProbe --text \"message trace\" \"%s\" --dry-run",
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -3518,6 +3518,9 @@ TEST(cli, debug_probe_message_logger_text_option_uses_edit_plan) {
     ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(data, "ok")));
     ASSERT_STR_EQ("message-logger",
                   yyjson_get_str(yyjson_obj_get(data, "probe_kind")));
+    ASSERT_EQ(1667u, yyjson_get_uint(yyjson_obj_get(data, "message_node_id")));
+    ASSERT_STR_EQ("message_flow",
+                  yyjson_get_str(yyjson_obj_get(data, "probe_selector")));
     yyjson_val *operations = yyjson_obj_get(data, "operations");
     ASSERT_TRUE(operations && yyjson_is_arr(operations));
     ASSERT_EQ(2u, yyjson_arr_size(operations));
@@ -3734,6 +3737,11 @@ TEST(cli, debug_probe_rejects_invalid_probe_options) {
             "debug probe 2d-text --behavior 237 --delay 10 "
             "\"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
             "--delay requires --from-io, --to-io, or --remove-link",
+        },
+        {
+            "debug probe message-logger --behavior 237 --text trace "
+            "\"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "debug probe message selector found no message candidates",
         },
         {
             "debug probe message-logger --behavior 237 --message-node 237 "

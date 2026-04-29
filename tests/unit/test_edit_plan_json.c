@@ -3,6 +3,7 @@
 #include "behavior/nmo_edit_plan.h"
 #include "behavior/nmo_edit_plan_json.h"
 #include "core/nmo_error.h"
+#include "object/nmo_manager_guids.h"
 #include "type/nmo_type_guids.h"
 #include "yyjson.h"
 
@@ -227,6 +228,92 @@ TEST(edit_plan_json, reads_manifest_with_operation_handle_refs) {
     nmo_edit_plan_destroy(plan);
 }
 
+TEST(edit_plan_json, writes_structured_manager_entry_options)
+{
+    nmo_edit_plan_t *plan = NULL;
+    char *json = NULL;
+    yyjson_doc *doc = NULL;
+
+    nmo_parameter_write_options_t options = {
+        .manager_entry = {
+            .policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
+            .manager = NMO_MANAGER_ENTRY_MANAGER_MESSAGE,
+            .manager_guid = NMO_MANAGER_GUID_MESSAGE,
+        },
+    };
+
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_set_parameter_value(
+                  plan, 7u, "CreatedMessage", &options));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_json_write(plan, &json));
+    ASSERT_NOT_NULL(json);
+
+    doc = yyjson_read(json, strlen(json), 0);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    yyjson_val *ops = yyjson_obj_get(root, "operations");
+    ASSERT_NOT_NULL(ops);
+    yyjson_val *op = yyjson_arr_get(ops, 0);
+    ASSERT_NOT_NULL(op);
+    yyjson_val *manager_entry = yyjson_obj_get(op, "manager_entry");
+    ASSERT_NOT_NULL(manager_entry);
+    ASSERT_TRUE(yyjson_is_obj(manager_entry));
+    assert_json_string(manager_entry, "policy", "create_missing");
+    assert_json_string(manager_entry, "manager", "message");
+    assert_json_string(manager_entry, "manager_guid",
+                       "{466A0FAC-00000000}");
+    ASSERT_TRUE(yyjson_obj_get(op, "manager_entry_policy") == NULL);
+
+    yyjson_doc_free(doc);
+    nmo_edit_plan_manifest_json_free(json);
+    nmo_edit_plan_destroy(plan);
+}
+
+TEST(edit_plan_json, reads_structured_manager_entry_options)
+{
+    const char json[] =
+        "{"
+        "\"version\":2,"
+        "\"operations\":[{"
+        "\"op\":\"set_parameter_value\","
+        "\"parameter_id\":7,"
+        "\"value\":\"CreatedMessage\","
+        "\"manager_entry\":{"
+        "\"policy\":\"create_missing\","
+        "\"manager\":\"message\","
+        "\"manager_guid\":\"{466A0FAC-00000000}\""
+        "}"
+        "}]"
+        "}";
+    nmo_edit_plan_t *plan = NULL;
+
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_json_read(json, strlen(json), &plan));
+    ASSERT_EQ(1u, nmo_edit_plan_count(plan));
+    const nmo_edit_op_t *op = nmo_edit_plan_get(plan, 0);
+    ASSERT_NOT_NULL(op);
+    ASSERT_TRUE(op->data.set_value.has_options);
+    ASSERT_EQ(NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
+              op->data.set_value.options.manager_entry.policy);
+    ASSERT_EQ(NMO_MANAGER_ENTRY_MANAGER_MESSAGE,
+              op->data.set_value.options.manager_entry.manager);
+    ASSERT_TRUE(nmo_guid_equals(
+        NMO_MANAGER_GUID_MESSAGE,
+        op->data.set_value.options.manager_entry.manager_guid));
+
+    nmo_edit_plan_destroy(plan);
+}
+
+TEST(edit_plan_json, rejects_legacy_manager_entry_policy)
+{
+    assert_plan_invalid_contains(
+        "{\"op\":\"set_parameter_value\",\"parameter_id\":7,"
+        "\"value\":\"CreatedMessage\","
+        "\"manager_entry_policy\":\"create_missing\"}",
+        "Unknown field");
+}
+
 TEST(edit_plan_json, roundtrips_rewire_operation_handle_refs)
 {
     nmo_edit_plan_t *plan = NULL;
@@ -371,7 +458,10 @@ TEST(edit_plan_json, roundtrips_all_current_v2_ops) {
     uint8_t bytes[] = {0xCAu, 0xFEu};
     nmo_parameter_write_options_t resize_options = {
         .resize = true,
-        .manager_entry_policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
+        .manager_entry = {
+            .policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
+            .manager = NMO_MANAGER_ENTRY_MANAGER_MESSAGE,
+        },
     };
     nmo_object_id_t fold_nodes[] = {101u, 102u};
     nmo_behavior_fold_map_t input_maps[] = {
@@ -443,8 +533,10 @@ TEST(edit_plan_json, roundtrips_all_current_v2_ops) {
                   nmo_guid_parse("AAAA0001-BBBB0002"),
                   "Node",
                   &(nmo_add_node_options_t){
-                      .manager_entry_policy =
-                          NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
+                      .manager_entry = {
+                          .policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
+                          .manager = NMO_MANAGER_ENTRY_MANAGER_MESSAGE,
+                      },
                   }));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_node(plan, 4u, 5u, 6u));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_io(plan, 7u, NMO_SCRIPT_EDIT_IO_OUTPUT, "Out"));
@@ -487,7 +579,9 @@ TEST(edit_plan_json, roundtrips_all_current_v2_ops) {
     ASSERT_TRUE(set_value->data.set_value.has_options);
     ASSERT_TRUE(set_value->data.set_value.options.resize);
     ASSERT_EQ(NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
-              set_value->data.set_value.options.manager_entry_policy);
+              set_value->data.set_value.options.manager_entry.policy);
+    ASSERT_EQ(NMO_MANAGER_ENTRY_MANAGER_MESSAGE,
+              set_value->data.set_value.options.manager_entry.manager);
     const nmo_edit_op_t *add_node = nmo_edit_plan_get(manifest.plan, 2u);
     ASSERT_NOT_NULL(add_node);
     ASSERT_EQ(3u, add_node->data.add_node.parent_behavior_id);
@@ -496,7 +590,9 @@ TEST(edit_plan_json, roundtrips_all_current_v2_ops) {
     ASSERT_STR_EQ("Node", add_node->data.add_node.name);
     ASSERT_TRUE(add_node->data.add_node.has_options);
     ASSERT_EQ(NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
-              add_node->data.add_node.options.manager_entry_policy);
+              add_node->data.add_node.options.manager_entry.policy);
+    ASSERT_EQ(NMO_MANAGER_ENTRY_MANAGER_MESSAGE,
+              add_node->data.add_node.options.manager_entry.manager);
     const nmo_edit_op_t *remove_node = nmo_edit_plan_get(manifest.plan, 3u);
     ASSERT_NOT_NULL(remove_node);
     ASSERT_EQ(4u, remove_node->data.remove_node.parent_behavior_id);
@@ -869,6 +965,9 @@ TEST(edit_plan_json, rejects_strict_replay_manifest_errors) {
 TEST_MAIN_BEGIN()
 REGISTER_TEST(edit_plan_json, writes_manifest_with_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, reads_manifest_with_operation_handle_refs);
+REGISTER_TEST(edit_plan_json, writes_structured_manager_entry_options);
+REGISTER_TEST(edit_plan_json, reads_structured_manager_entry_options);
+REGISTER_TEST(edit_plan_json, rejects_legacy_manager_entry_policy);
 REGISTER_TEST(edit_plan_json, roundtrips_rewire_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, roundtrips_plan_without_manifest_paths);
 REGISTER_TEST(edit_plan_json, roundtrips_absent_parameter_bytes_options);

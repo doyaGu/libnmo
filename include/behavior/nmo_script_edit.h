@@ -76,7 +76,7 @@ typedef struct nmo_script_edit_report {
 } nmo_script_edit_report_t;
 
 typedef struct nmo_script_edit_add_node_options {
-    nmo_manager_entry_policy_t manager_entry_policy;
+    nmo_manager_entry_options_t manager_entry;
 } nmo_script_edit_add_node_options_t;
 
 NMO_API nmo_status_t nmo_script_edit_begin(nmo_workspace_t *workspace,

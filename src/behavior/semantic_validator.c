@@ -1444,9 +1444,29 @@ static nmo_status_t semantic_add_manager_default_risks(
     size_t *risk_count,
     nmo_object_id_t parent_behavior_id,
     nmo_guid_t bb_guid,
-    nmo_manager_entry_policy_t manager_entry_policy)
+    nmo_manager_entry_options_t manager_entry)
 {
-    if (manager_entry_policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING) {
+    if (manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_AUTO &&
+        manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_MESSAGE) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "unsupported_manager_entry",
+            "Manager entry creation is only supported for CKMessageManager values",
+            parent_behavior_id);
+    }
+    if (!nmo_guid_is_null(manager_entry.manager_guid) &&
+        !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE)) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "manager_type_mismatch",
+            "Manager entry GUID does not match CKMessageManager",
+            parent_behavior_id);
+    }
+    if (manager_entry.policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING) {
         return NMO_OK;
     }
 
@@ -1506,10 +1526,31 @@ static nmo_status_t semantic_add_manager_value_risk(
     size_t *risk_count,
     nmo_object_id_t object_id,
     const char *value,
-    nmo_manager_entry_policy_t manager_entry_policy,
+    nmo_manager_entry_options_t manager_entry,
     bool is_message_manager_value)
 {
-    if (manager_entry_policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING ||
+    if (manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_AUTO &&
+        manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_MESSAGE) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "unsupported_manager_entry",
+            "Manager entry creation is only supported for CKMessageManager values",
+            object_id);
+    }
+    if (!nmo_guid_is_null(manager_entry.manager_guid) &&
+        !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE)) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "manager_type_mismatch",
+            "Manager entry GUID does not match CKMessageManager",
+            object_id);
+    }
+
+    if (manager_entry.policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING ||
         value == NULL ||
         value[0] == '\0' ||
         strchr(value, ':') != NULL ||
@@ -1593,10 +1634,10 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 op->primary_id,
                 risks,
                 risk_count));
-            nmo_manager_entry_policy_t policy =
+            nmo_manager_entry_options_t manager_entry =
                 op->data.set_value.has_options
-                    ? op->data.set_value.options.manager_entry_policy
-                    : NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+                    ? op->data.set_value.options.manager_entry
+                    : nmo_manager_entry_options_default();
             const nmo_type_descriptor_t *type =
                 semantic_parameter_handle_type_desc(
                     ctx,
@@ -1609,7 +1650,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 risk_count,
                 op->primary_id,
                 op->data.set_value.value,
-                policy,
+                manager_entry,
                 type != NULL && nmo_guid_equals(type->guid, CKPGUID_MESSAGE));
         }
         if (op->kind == NMO_EDIT_OP_SET_PARAMETER_BYTES &&
@@ -1632,17 +1673,17 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 risk_count);
         }
         if (op->kind == NMO_EDIT_OP_SET_PARAMETER_VALUE) {
-            nmo_manager_entry_policy_t policy =
+            nmo_manager_entry_options_t manager_entry =
                 op->data.set_value.has_options
-                    ? op->data.set_value.options.manager_entry_policy
-                    : NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+                    ? op->data.set_value.options.manager_entry
+                    : nmo_manager_entry_options_default();
             NMO_RETURN_IF_ERROR(semantic_add_manager_value_risk(
                 workspace,
                 risks,
                 risk_count,
                 op->primary_id,
                 op->data.set_value.value,
-                policy,
+                manager_entry,
                 semantic_parameter_is_message_manager(repo, op->primary_id)));
         }
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
@@ -1671,7 +1712,9 @@ static nmo_status_t semantic_validate_basic_edit_op(
             risk_count,
             op->data.add_node.parent_behavior_id,
             op->data.add_node.bb_guid,
-            op->data.add_node.options.manager_entry_policy);
+            op->data.add_node.has_options
+                ? op->data.add_node.options.manager_entry
+                : nmo_manager_entry_options_default());
     case NMO_EDIT_OP_REMOVE_NODE:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,

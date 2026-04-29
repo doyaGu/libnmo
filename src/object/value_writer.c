@@ -8,6 +8,7 @@
 nmo_value_write_options_t nmo_value_write_options_default(void)
 {
     nmo_value_write_options_t options = {0};
+    options.manager_entry = nmo_manager_entry_options_default();
     return options;
 }
 

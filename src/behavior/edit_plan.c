@@ -2643,8 +2643,8 @@ static nmo_status_t edit_executor_apply_op(
             op->data.add_node.name,
             op->data.add_node.has_options
                 ? &(nmo_script_edit_add_node_options_t){
-                      .manager_entry_policy =
-                          op->data.add_node.options.manager_entry_policy,
+                      .manager_entry.policy =
+                          op->data.add_node.options.manager_entry.policy,
                   }
                 : NULL,
             out_result_id);

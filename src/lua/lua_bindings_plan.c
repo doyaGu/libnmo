@@ -73,6 +73,47 @@ static int nmo_lua_plan_parse_manager_entry_policy(
         "manager_entry_policy must be 'require_existing' or 'create_missing'");
 }
 
+static int nmo_lua_plan_parse_manager_entry_options(
+    lua_State *state,
+    int index,
+    nmo_manager_entry_options_t *out_options)
+{
+    if (out_options == NULL) {
+        return luaL_error(state, "invalid manager entry options output");
+    }
+    *out_options = nmo_manager_entry_options_default();
+    if (lua_isnoneornil(state, index)) {
+        return 0;
+    }
+    luaL_checktype(state, index, LUA_TTABLE);
+    lua_getfield(state, index, "policy");
+    if (!lua_isnil(state, -1)) {
+        int rc = nmo_lua_plan_parse_manager_entry_policy(
+            state, lua_gettop(state), &out_options->policy);
+        if (rc != 0) {
+            return rc;
+        }
+    }
+    lua_pop(state, 1);
+    lua_getfield(state, index, "manager");
+    if (!lua_isnil(state, -1)) {
+        const char *manager = luaL_checkstring(state, -1);
+        if (strcmp(manager, "auto") == 0) {
+            out_options->manager = NMO_MANAGER_ENTRY_MANAGER_AUTO;
+        } else if (strcmp(manager, "message") == 0) {
+            out_options->manager = NMO_MANAGER_ENTRY_MANAGER_MESSAGE;
+        } else if (strcmp(manager, "attribute") == 0) {
+            out_options->manager = NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE;
+        } else {
+            return luaL_error(
+                state,
+                "manager_entry.manager must be 'auto', 'message', or 'attribute'");
+        }
+    }
+    lua_pop(state, 1);
+    return 0;
+}
+
 static int nmo_lua_plan_parse_parameter_write_options(
     lua_State *state,
     int index,
@@ -83,8 +124,7 @@ static int nmo_lua_plan_parse_parameter_write_options(
         return luaL_error(state, "invalid parameter write options output");
     }
     memset(out_options, 0, sizeof(*out_options));
-    out_options->manager_entry_policy =
-        NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+    out_options->manager_entry = nmo_manager_entry_options_default();
     *out_has_options = false;
     if (lua_isnoneornil(state, index)) {
         return 0;
@@ -98,10 +138,10 @@ static int nmo_lua_plan_parse_parameter_write_options(
     }
     lua_pop(state, 1);
 
-    lua_getfield(state, index, "manager_entry_policy");
+    lua_getfield(state, index, "manager_entry");
     if (!lua_isnil(state, -1)) {
-        int rc = nmo_lua_plan_parse_manager_entry_policy(
-            state, lua_gettop(state), &out_options->manager_entry_policy);
+        int rc = nmo_lua_plan_parse_manager_entry_options(
+            state, lua_gettop(state), &out_options->manager_entry);
         if (rc != 0) {
             return rc;
         }
@@ -150,6 +190,7 @@ static int nmo_lua_plan_add_node(lua_State *state)
     const char *guid_text = luaL_checkstring(state, 3);
     const char *name = luaL_checkstring(state, 4);
     nmo_add_node_options_t options = {0};
+    options.manager_entry = nmo_manager_entry_options_default();
     bool has_options = false;
     nmo_guid_t guid = nmo_guid_parse(guid_text);
     if (nmo_guid_is_null(guid)) {
@@ -157,10 +198,10 @@ static int nmo_lua_plan_add_node(lua_State *state)
     }
     if (!lua_isnoneornil(state, 5)) {
         luaL_checktype(state, 5, LUA_TTABLE);
-        lua_getfield(state, 5, "manager_entry_policy");
+        lua_getfield(state, 5, "manager_entry");
         if (!lua_isnil(state, -1)) {
-            int rc = nmo_lua_plan_parse_manager_entry_policy(
-                state, lua_gettop(state), &options.manager_entry_policy);
+            int rc = nmo_lua_plan_parse_manager_entry_options(
+                state, lua_gettop(state), &options.manager_entry);
             if (rc != 0) {
                 return rc;
             }

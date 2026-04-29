@@ -4,4 +4,4 @@ assert(exec.add_node(
     6,
     "A20E8D5B-DF002150",
     "Lua Script Send Message",
-    { manager_entry_policy = "create_missing" }) == 1)
+    { manager_entry = { policy = "create_missing", manager = "message" } }) == 1)

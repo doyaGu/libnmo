@@ -595,6 +595,64 @@ static nmo_status_t debug_probe_validate_targets(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t debug_probe_analyze_message_selector(
+    nmo_cmd_ctx_t *ctx,
+    nmo_debug_probe_args_t *args)
+{
+    if (ctx == NULL || args == NULL ||
+        strcmp(args->kind, "message-logger") != 0 ||
+        args->message_node_id != 0u) {
+        return NMO_OK;
+    }
+
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(ctx->workspace);
+    nmo_object_t *behavior_obj = repo != NULL
+        ? nmo_object_repository_find_by_id(repo, args->behavior_id)
+        : NULL;
+    const nmo_behavior_state_t *behavior =
+        behavior_obj != NULL &&
+                nmo_object_get_class_id(behavior_obj) == NMO_CID_BEHAVIOR
+            ? (const nmo_behavior_state_t *)nmo_object_get_state(behavior_obj)
+            : NULL;
+    if (behavior == NULL) {
+        return NMO_OK;
+    }
+
+    nmo_object_id_t selected_id = 0u;
+    size_t candidate_count = 0u;
+    for (size_t i = 0; i < behavior->sub_behaviors.count; ++i) {
+        nmo_object_id_t child_id =
+            ((const nmo_object_id_t *)behavior->sub_behaviors.data)[i];
+        nmo_object_t *child_obj =
+            nmo_object_repository_find_by_id(repo, child_id);
+        const nmo_behavior_state_t *child =
+            child_obj != NULL &&
+                    nmo_object_get_class_id(child_obj) == NMO_CID_BEHAVIOR
+                ? (const nmo_behavior_state_t *)nmo_object_get_state(child_obj)
+                : NULL;
+        if (!debug_probe_is_message_behavior(ctx, child)) {
+            continue;
+        }
+        selected_id = child_id;
+        ++candidate_count;
+    }
+
+    if (candidate_count == 1u) {
+        args->message_node_id = selected_id;
+        return NMO_OK;
+    }
+    if (candidate_count == 0u) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR,
+            "debug probe message selector found no message candidates");
+    }
+    NMO_RETURN_ERROR(
+        NMO_ERR_INVALID_ARGUMENT,
+        NMO_SEVERITY_ERROR,
+        "debug probe message selector is ambiguous");
+}
+
 static void debug_probe_replace_report_id(nmo_edit_report_t *report,
                                           nmo_object_id_t old_id,
                                           nmo_object_id_t new_id)
@@ -697,6 +755,9 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
 
     nmo_edit_report_init(&args->report);
     status = debug_probe_infer_removed_link_endpoints(ctx, args);
+    if (status == NMO_OK) {
+        status = debug_probe_analyze_message_selector(ctx, args);
+    }
     if (status == NMO_OK) {
         status = debug_probe_validate_targets(ctx, args, spec);
     }

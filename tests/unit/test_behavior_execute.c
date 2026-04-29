@@ -534,7 +534,7 @@ static nmo_status_t execute_plan_manager_node_action(
             nmo_guid_parse("A20E8D5B-DF002150"),
             "Executor Send Message",
             &(nmo_add_node_options_t){
-                .manager_entry_policy =
+                .manager_entry.policy =
                     NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
             });
     }

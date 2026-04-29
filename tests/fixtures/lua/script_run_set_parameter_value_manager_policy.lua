@@ -4,11 +4,11 @@ local op = exec.add_node(
     6,
     "A20E8D5B-DF002150",
     "Lua Script Send Message Value",
-    { manager_entry_policy = "create_missing" })
+    { manager_entry = { policy = "create_missing", manager = "message" } })
 assert(op == 1)
 
 assert(exec.set_parameter_value_from_handle(
     op,
     "input_param:Message",
     "LuaScriptCreatedMessage",
-    { manager_entry_policy = "create_missing" }) == 2)
+    { manager_entry = { policy = "create_missing", manager = "message" } }) == 2)

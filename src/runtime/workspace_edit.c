@@ -706,11 +706,21 @@ static nmo_status_t workspace_edit_prepare_manager_parameter_value(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
+    nmo_manager_entry_options_t manager_entry =
+        options != NULL ? options->manager_entry
+                        : nmo_manager_entry_options_default();
+    if (manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_AUTO &&
+        manager_entry.manager != NMO_MANAGER_ENTRY_MANAGER_MESSAGE) {
+        return NMO_ERR_NOT_SUPPORTED;
+    }
+    if (!nmo_guid_is_null(manager_entry.manager_guid) &&
+        !nmo_guid_equals(manager_entry.manager_guid, NMO_MANAGER_GUID_MESSAGE)) {
+        return NMO_ERR_NOT_SUPPORTED;
+    }
+
     nmo_session_t *session = nmo_workspace_internal_session(edit->workspace);
     nmo_status_t status = NMO_ERR_NOT_FOUND;
-    if (options != NULL &&
-        options->manager_entry_policy ==
-            NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING) {
+    if (manager_entry.policy == NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING) {
         size_t name_len = (size_t)(name_end - name_begin);
         char *name_copy =
             (char *)nmo_workspace_edit_alloc(edit, name_len + 1u, 1u);

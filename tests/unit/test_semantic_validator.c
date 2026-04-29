@@ -281,7 +281,7 @@ TEST(semantic_validator, detects_missing_symbolic_message_parameter_value)
     nmo_edit_plan_destroy(plan);
 
     nmo_parameter_write_options_t create_options = {
-        .manager_entry_policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
+        .manager_entry.policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
     };
     nmo_edit_plan_t *create_plan = NULL;
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&create_plan));
@@ -302,6 +302,54 @@ TEST(semantic_validator, detects_missing_symbolic_message_parameter_value)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, rejects_unsupported_manager_entry_kinds)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_empty(&fixture);
+
+    nmo_object_id_t param_id = 0u;
+    semantic_create_object(&fixture, NMO_CID_PARAMETER, "Message Param",
+                           &param_id);
+    nmo_object_t *param_obj = nmo_object_repository_find_by_id(
+        nmo_session_get_repository(fixture.session), param_id);
+    ASSERT_NOT_NULL(param_obj);
+    nmo_parameter_state_t *state = nmo_parameter_get_mutable_state(param_obj);
+    ASSERT_NOT_NULL(state);
+    state->type_guid = CKPGUID_MESSAGE;
+    state->mode = CKPARAM_MODE_MANAGER;
+    state->has_state = true;
+    state->manager_guid = NMO_MANAGER_GUID_MESSAGE;
+
+    nmo_parameter_write_options_t options = {
+        .manager_entry = {
+            .policy = NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
+            .manager = NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE,
+        },
+    };
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_set_parameter_value(
+                  plan, param_id, "MissingAttribute", &options));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *risk =
+        find_risk(risks, risk_count, "unsupported_manager_entry");
+    ASSERT_NOT_NULL(risk);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, risk->severity);
+    ASSERT_EQ(param_id, risk->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST(semantic_validator, detects_missing_symbolic_message_handle_value)
 {
     semantic_fixture_t fixture;
@@ -319,7 +367,7 @@ TEST(semantic_validator, detects_missing_symbolic_message_handle_value)
                   nmo_guid_parse("A20E8D5B-DF002150"),
                   "Send Message",
                   &(nmo_add_node_options_t){
-                      .manager_entry_policy =
+                      .manager_entry.policy =
                           NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
                   }));
     ASSERT_EQ(NMO_OK,
@@ -1851,9 +1899,10 @@ TEST(semantic_validator, edit_plan_reports_interface_policy_risk)
 TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, boundary_reports_dangling_delay_and_shared_risks);
     REGISTER_TEST(semantic_validator, detects_message_flow_by_signature_metadata);
-    REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_manager_entry);
-    REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_parameter_value);
-    REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_handle_value);
+REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_manager_entry);
+REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_parameter_value);
+REGISTER_TEST(semantic_validator, rejects_unsupported_manager_entry_kinds);
+REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_handle_value);
     REGISTER_TEST(semantic_validator, edit_plan_rejects_missing_replace_target);
     REGISTER_TEST(semantic_validator, edit_plan_reports_generic_op_risks);
     REGISTER_TEST(semantic_validator, edit_plan_reports_invalid_handle_reference);

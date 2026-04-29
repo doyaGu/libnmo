@@ -9,6 +9,8 @@
 #define NMO_OBJECT_IMPORT_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
 #define NMO_OBJECT_IMPORT_API_TIER NMO_API_TIER_ADVANCED_C
 
+#include "core/nmo_guid.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -42,10 +44,32 @@ typedef enum nmo_manager_entry_policy {
     NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING = 1
 } nmo_manager_entry_policy_t;
 
+typedef enum nmo_manager_entry_manager {
+    NMO_MANAGER_ENTRY_MANAGER_AUTO = 0,
+    NMO_MANAGER_ENTRY_MANAGER_MESSAGE = 1,
+    NMO_MANAGER_ENTRY_MANAGER_ATTRIBUTE = 2,
+    NMO_MANAGER_ENTRY_MANAGER_GUID = 3
+} nmo_manager_entry_manager_t;
+
+typedef struct nmo_manager_entry_options {
+    nmo_manager_entry_policy_t policy;
+    nmo_manager_entry_manager_t manager;
+    nmo_guid_t manager_guid;
+    const char *key;
+} nmo_manager_entry_options_t;
+
 typedef struct nmo_parameter_write_options {
     bool resize;
-    nmo_manager_entry_policy_t manager_entry_policy;
+    nmo_manager_entry_options_t manager_entry;
 } nmo_parameter_write_options_t;
+
+static inline nmo_manager_entry_options_t nmo_manager_entry_options_default(void)
+{
+    nmo_manager_entry_options_t options = {0};
+    options.policy = NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+    options.manager = NMO_MANAGER_ENTRY_MANAGER_AUTO;
+    return options;
+}
 
 NMO_API nmo_status_t nmo_object_edit_set_fields(
     nmo_workspace_edit_t *edit,
