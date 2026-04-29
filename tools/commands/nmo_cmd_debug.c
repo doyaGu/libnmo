@@ -23,6 +23,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
+#include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
@@ -463,6 +464,23 @@ static nmo_status_t debug_probe_validate_targets(
         if (dataarray == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                              "debug probe data array not found");
+        }
+        if (nmo_object_get_class_id(dataarray) != NMO_CID_DATAARRAY) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR,
+                "debug probe data array target is not a CKDataArray");
+        }
+        const nmo_dataarray_state_t *state =
+            (const nmo_dataarray_state_t *)nmo_object_get_state(dataarray);
+        if (state == NULL ||
+            args->data_row >= state->row_count ||
+            args->data_col >= state->column_count ||
+            state->rows == NULL ||
+            args->data_col >= state->rows[args->data_row].column_count) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT,
+                             NMO_SEVERITY_ERROR,
+                             "debug probe data cell is out of range");
         }
     }
 

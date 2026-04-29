@@ -3562,7 +3562,7 @@ TEST(cli, debug_probe_data_cell_logger_uses_edit_plan) {
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe data-cell-logger --behavior 237 "
-             "--dataarray 2261 --row 0 --col 1 \"%s\" --dry-run",
+             "--dataarray 6067 --row 0 --col 1 \"%s\" --dry-run",
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
@@ -3658,7 +3658,17 @@ TEST(cli, debug_probe_rejects_invalid_probe_options) {
             "debug probe data array not found",
         },
         {
-            "debug probe data-cell-logger --behavior 237 --dataarray 2261 "
+            "debug probe data-cell-logger --behavior 237 --dataarray 237 "
+            "--row 0 --col 1 \"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "debug probe data array target is not a CKDataArray",
+        },
+        {
+            "debug probe data-cell-logger --behavior 237 --dataarray 6067 "
+            "--row 999999 --col 1 \"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "debug probe data cell is out of range",
+        },
+        {
+            "debug probe data-cell-logger --behavior 237 --dataarray 6067 "
             "--row nope --col 1 \"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
             "Invalid --row",
         },
