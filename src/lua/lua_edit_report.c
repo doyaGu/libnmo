@@ -174,12 +174,41 @@ static void nmo_lua_push_filtered_edit_impacts(
     }
 }
 
+static size_t nmo_lua_count_filtered_edit_impacts(
+    const nmo_edit_object_impact_t *items,
+    size_t count,
+    bool (*predicate)(const nmo_edit_object_impact_t *))
+{
+    size_t out_count = 0u;
+    for (size_t i = 0; items != NULL && i < count; ++i) {
+        if (predicate == NULL || predicate(&items[i])) {
+            ++out_count;
+        }
+    }
+    return out_count;
+}
+
 static void nmo_lua_push_structural_edit_diff(
     lua_State *state,
     const nmo_edit_report_t *report,
     bool (*predicate)(const nmo_edit_object_impact_t *))
 {
-    lua_createtable(state, 0, 3);
+    lua_createtable(state, 0, 6);
+    lua_pushinteger(
+        state,
+        (lua_Integer)nmo_lua_count_filtered_edit_impacts(
+            report->changed_objects, report->changed_object_count, predicate));
+    lua_setfield(state, -2, "changed_count");
+    lua_pushinteger(
+        state,
+        (lua_Integer)nmo_lua_count_filtered_edit_impacts(
+            report->created_objects, report->created_object_count, predicate));
+    lua_setfield(state, -2, "created_count");
+    lua_pushinteger(
+        state,
+        (lua_Integer)nmo_lua_count_filtered_edit_impacts(
+            report->deleted_objects, report->deleted_object_count, predicate));
+    lua_setfield(state, -2, "deleted_count");
     nmo_lua_push_filtered_edit_impacts(
         state, report->changed_objects, report->changed_object_count,
         predicate);

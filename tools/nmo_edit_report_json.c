@@ -302,33 +302,60 @@ static yyjson_mut_val *nmo_cli_edit_report_make_filtered_impact_array_json(
     return arr;
 }
 
+static size_t nmo_cli_edit_report_count_filtered_impacts(
+    const nmo_edit_object_impact_t *items,
+    size_t count,
+    bool (*predicate)(const nmo_edit_object_impact_t *))
+{
+    size_t out_count = 0u;
+    for (size_t i = 0; items != NULL && i < count; ++i) {
+        if (predicate == NULL || predicate(&items[i])) {
+            ++out_count;
+        }
+    }
+    return out_count;
+}
+
 static yyjson_mut_val *nmo_cli_edit_report_make_structural_diff_json(
     yyjson_mut_doc *doc,
     const nmo_edit_report_t *report,
     bool (*predicate)(const nmo_edit_object_impact_t *))
 {
     yyjson_mut_val *diff = yyjson_mut_obj(doc);
+    const nmo_edit_object_impact_t *changed =
+        report != NULL ? report->changed_objects : NULL;
+    const nmo_edit_object_impact_t *created =
+        report != NULL ? report->created_objects : NULL;
+    const nmo_edit_object_impact_t *deleted =
+        report != NULL ? report->deleted_objects : NULL;
+    size_t changed_count = report != NULL ? report->changed_object_count : 0u;
+    size_t created_count = report != NULL ? report->created_object_count : 0u;
+    size_t deleted_count = report != NULL ? report->deleted_object_count : 0u;
+
+    yyjson_mut_obj_add_uint(
+        doc, diff, "changed_count",
+        (uint64_t)nmo_cli_edit_report_count_filtered_impacts(
+            changed, changed_count, predicate));
+    yyjson_mut_obj_add_uint(
+        doc, diff, "created_count",
+        (uint64_t)nmo_cli_edit_report_count_filtered_impacts(
+            created, created_count, predicate));
+    yyjson_mut_obj_add_uint(
+        doc, diff, "deleted_count",
+        (uint64_t)nmo_cli_edit_report_count_filtered_impacts(
+            deleted, deleted_count, predicate));
     yyjson_mut_obj_add_val(
         doc, diff, "changed",
         nmo_cli_edit_report_make_filtered_impact_array_json(
-            doc,
-            report != NULL ? report->changed_objects : NULL,
-            report != NULL ? report->changed_object_count : 0u,
-            predicate));
+            doc, changed, changed_count, predicate));
     yyjson_mut_obj_add_val(
         doc, diff, "created",
         nmo_cli_edit_report_make_filtered_impact_array_json(
-            doc,
-            report != NULL ? report->created_objects : NULL,
-            report != NULL ? report->created_object_count : 0u,
-            predicate));
+            doc, created, created_count, predicate));
     yyjson_mut_obj_add_val(
         doc, diff, "deleted",
         nmo_cli_edit_report_make_filtered_impact_array_json(
-            doc,
-            report != NULL ? report->deleted_objects : NULL,
-            report != NULL ? report->deleted_object_count : 0u,
-            predicate));
+            doc, deleted, deleted_count, predicate));
     return diff;
 }
 

@@ -157,6 +157,9 @@ TEST(lua_bindings_plan, plan_module_executes_behavior_link_dry_run)
         "assert(report.diff.created_object_count == 1)\n"
         "assert(type(report.diff.graph_edge_diff) == 'table')\n"
         "assert(#report.diff.graph_edge_diff.created == 1)\n"
+        "assert(report.diff.graph_edge_diff.changed_count == #report.diff.graph_edge_diff.changed)\n"
+        "assert(report.diff.graph_edge_diff.created_count == 1)\n"
+        "assert(report.diff.graph_edge_diff.deleted_count == #report.diff.graph_edge_diff.deleted)\n"
         "assert(type(report.diff.parameter_edge_diff) == 'table')\n"
         "assert(#report.diff.parameter_edge_diff.created == 0)\n");
 
@@ -191,6 +194,9 @@ TEST(lua_bindings_plan, plan_module_executes_add_parameter_dry_run)
         "assert(report.diff.created_object_count == 1)\n"
         "assert(type(report.diff.parameter_edge_diff) == 'table')\n"
         "assert(#report.diff.parameter_edge_diff.created == 1)\n"
+        "assert(report.diff.parameter_edge_diff.changed_count == #report.diff.parameter_edge_diff.changed)\n"
+        "assert(report.diff.parameter_edge_diff.created_count == 1)\n"
+        "assert(report.diff.parameter_edge_diff.deleted_count == #report.diff.parameter_edge_diff.deleted)\n"
         "assert(#report.diff.operation_graph_diff.created == 0)\n");
 
     nmo_lua_runtime_destroy(runtime);

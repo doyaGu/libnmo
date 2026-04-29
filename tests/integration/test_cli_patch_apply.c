@@ -1334,6 +1334,16 @@ TEST(cli, patch_apply_v2_add_behavior_link_dry_run) {
     yyjson_val *created_edges = get_array_field(graph_edge_diff, "created");
     ASSERT_NOT_NULL(created_edges);
     ASSERT_TRUE(yyjson_arr_size(created_edges) > 0u);
+    yyjson_val *changed_edges = get_array_field(graph_edge_diff, "changed");
+    ASSERT_NOT_NULL(changed_edges);
+    yyjson_val *deleted_edges = get_array_field(graph_edge_diff, "deleted");
+    ASSERT_NOT_NULL(deleted_edges);
+    ASSERT_EQ((uint32_t)yyjson_arr_size(changed_edges),
+              (uint32_t)get_uint_field(graph_edge_diff, "changed_count"));
+    ASSERT_EQ((uint32_t)yyjson_arr_size(created_edges),
+              (uint32_t)get_uint_field(graph_edge_diff, "created_count"));
+    ASSERT_EQ((uint32_t)yyjson_arr_size(deleted_edges),
+              (uint32_t)get_uint_field(graph_edge_diff, "deleted_count"));
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
     remove(patch);
@@ -1382,6 +1392,18 @@ TEST(cli, patch_apply_v2_add_parameter_dry_run) {
         get_array_field(parameter_edge_diff, "created");
     ASSERT_NOT_NULL(created_parameters);
     ASSERT_TRUE(yyjson_arr_size(created_parameters) > 0u);
+    yyjson_val *changed_parameters =
+        get_array_field(parameter_edge_diff, "changed");
+    ASSERT_NOT_NULL(changed_parameters);
+    yyjson_val *deleted_parameters =
+        get_array_field(parameter_edge_diff, "deleted");
+    ASSERT_NOT_NULL(deleted_parameters);
+    ASSERT_EQ((uint32_t)yyjson_arr_size(changed_parameters),
+              (uint32_t)get_uint_field(parameter_edge_diff, "changed_count"));
+    ASSERT_EQ((uint32_t)yyjson_arr_size(created_parameters),
+              (uint32_t)get_uint_field(parameter_edge_diff, "created_count"));
+    ASSERT_EQ((uint32_t)yyjson_arr_size(deleted_parameters),
+              (uint32_t)get_uint_field(parameter_edge_diff, "deleted_count"));
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
     remove(patch);
