@@ -3521,6 +3521,21 @@ TEST(cli, debug_probe_message_logger_text_option_uses_edit_plan) {
     ASSERT_EQ(1667u, yyjson_get_uint(yyjson_obj_get(data, "message_node_id")));
     ASSERT_STR_EQ("message_flow",
                   yyjson_get_str(yyjson_obj_get(data, "probe_selector")));
+    yyjson_val *diag = yyjson_obj_get(data, "probe_selector_diagnostics");
+    ASSERT_NOT_NULL(diag);
+    ASSERT_STR_EQ("auto", yyjson_get_str(yyjson_obj_get(diag, "mode")));
+    ASSERT_STR_EQ("selected", yyjson_get_str(yyjson_obj_get(diag, "status")));
+    ASSERT_EQ(1667u,
+              yyjson_get_uint(yyjson_obj_get(diag, "selected_node_id")));
+    yyjson_val *candidates = yyjson_obj_get(diag, "candidates");
+    ASSERT_TRUE(candidates && yyjson_is_arr(candidates));
+    ASSERT_EQ(1u, yyjson_arr_size(candidates));
+    yyjson_val *candidate = yyjson_arr_get(candidates, 0);
+    ASSERT_EQ(1667u, yyjson_get_uint(yyjson_obj_get(candidate, "node_id")));
+    ASSERT_EQ(2172u, yyjson_get_uint(yyjson_obj_get(candidate, "parent_id")));
+    ASSERT_NOT_NULL(yyjson_get_str(yyjson_obj_get(candidate, "bb_guid")));
+    ASSERT_NOT_NULL(yyjson_get_str(yyjson_obj_get(candidate, "proto_name")));
+    ASSERT_NOT_NULL(yyjson_get_str(yyjson_obj_get(candidate, "role")));
     yyjson_val *operations = yyjson_obj_get(data, "operations");
     ASSERT_TRUE(operations && yyjson_is_arr(operations));
     ASSERT_EQ(2u, yyjson_arr_size(operations));
@@ -3554,6 +3569,15 @@ TEST(cli, debug_probe_message_logger_analyzes_message_node_without_display_name)
     ASSERT_EQ(1667u, yyjson_get_uint(yyjson_obj_get(data, "message_node_id")));
     ASSERT_STR_EQ("message_flow",
                   yyjson_get_str(yyjson_obj_get(data, "probe_selector")));
+    yyjson_val *diag = yyjson_obj_get(data, "probe_selector_diagnostics");
+    ASSERT_NOT_NULL(diag);
+    ASSERT_STR_EQ("explicit_node", yyjson_get_str(yyjson_obj_get(diag, "mode")));
+    ASSERT_STR_EQ("selected", yyjson_get_str(yyjson_obj_get(diag, "status")));
+    ASSERT_EQ(1667u,
+              yyjson_get_uint(yyjson_obj_get(diag, "selected_node_id")));
+    yyjson_val *candidates = yyjson_obj_get(diag, "candidates");
+    ASSERT_TRUE(candidates && yyjson_is_arr(candidates));
+    ASSERT_EQ(1u, yyjson_arr_size(candidates));
     yyjson_doc_free(doc);
 }
 
@@ -3575,6 +3599,14 @@ TEST(cli, debug_probe_message_logger_inserts_on_selected_message_link) {
     ASSERT_EQ(1667u, yyjson_get_uint(yyjson_obj_get(data, "message_node_id")));
     ASSERT_STR_EQ("message_flow",
                   yyjson_get_str(yyjson_obj_get(data, "probe_selector")));
+    yyjson_val *diag = yyjson_obj_get(data, "probe_selector_diagnostics");
+    ASSERT_NOT_NULL(diag);
+    ASSERT_STR_EQ("explicit_link", yyjson_get_str(yyjson_obj_get(diag, "mode")));
+    ASSERT_STR_EQ("selected", yyjson_get_str(yyjson_obj_get(diag, "status")));
+    ASSERT_EQ(1667u,
+              yyjson_get_uint(yyjson_obj_get(diag, "selected_node_id")));
+    ASSERT_EQ(2152u,
+              yyjson_get_uint(yyjson_obj_get(diag, "selected_link_id")));
     yyjson_val *operations = yyjson_obj_get(data, "operations");
     ASSERT_TRUE(operations && yyjson_is_arr(operations));
     ASSERT_EQ(5u, yyjson_arr_size(operations));

@@ -60,6 +60,19 @@ typedef struct nmo_debug_probe_args {
     bool has_delay;
     const char *name;
     const char *text;
+    char selector_mode[24];
+    char selector_status[24];
+    char selector_rejection_code[64];
+    nmo_object_id_t selector_selected_node_id;
+    nmo_object_id_t selector_selected_link_id;
+    struct {
+        nmo_object_id_t node_id;
+        nmo_object_id_t parent_id;
+        nmo_guid_t bb_guid;
+        char proto_name[96];
+        char role[24];
+    } selector_candidates[64];
+    size_t selector_candidate_count;
     nmo_edit_report_t report;
 } nmo_debug_probe_args_t;
 
@@ -148,6 +161,9 @@ static nmo_status_t debug_probe_reconcile_saved_link_ids(
     nmo_cmd_ctx_t *ctx,
     const char *output_path,
     nmo_debug_probe_args_t *args);
+static yyjson_mut_val *debug_probe_selector_diagnostics_json(
+    yyjson_mut_doc *doc,
+    const nmo_debug_probe_args_t *args);
 
 static int debug_probe_parse(int argc,
                              char **argv,
@@ -468,6 +484,76 @@ static bool debug_probe_is_message_behavior(
            strcmp(proto->category, "Logics/Message") == 0;
 }
 
+static const char *debug_probe_message_role(const nmo_behavior_state_t *state)
+{
+    if (state == NULL) {
+        return "message";
+    }
+    if ((state->flags & CKBEHAVIOR_MESSAGESENDER) != 0u) {
+        return "sender";
+    }
+    if ((state->flags & CKBEHAVIOR_WAITSFORMESSAGE) != 0u) {
+        return "waiter";
+    }
+    if ((state->flags & CKBEHAVIOR_MESSAGERECEIVER) != 0u) {
+        return "receiver";
+    }
+    return "message";
+}
+
+static void debug_probe_selector_set_mode_status(
+    nmo_debug_probe_args_t *args,
+    const char *mode,
+    const char *status,
+    const char *rejection_code)
+{
+    if (args == NULL) {
+        return;
+    }
+    snprintf(args->selector_mode, sizeof(args->selector_mode), "%s",
+             mode != NULL ? mode : "");
+    snprintf(args->selector_status, sizeof(args->selector_status), "%s",
+             status != NULL ? status : "");
+    snprintf(args->selector_rejection_code,
+             sizeof(args->selector_rejection_code),
+             "%s",
+             rejection_code != NULL ? rejection_code : "");
+}
+
+static void debug_probe_selector_add_candidate(
+    const nmo_cmd_ctx_t *ctx,
+    nmo_debug_probe_args_t *args,
+    nmo_object_id_t parent_id,
+    nmo_object_id_t node_id,
+    const nmo_behavior_state_t *state)
+{
+    if (args == NULL ||
+        args->selector_candidate_count >=
+            sizeof(args->selector_candidates) /
+                sizeof(args->selector_candidates[0])) {
+        return;
+    }
+    const nmo_behavior_proto_t *proto =
+        ctx != NULL && ctx->ctx != NULL && state != NULL
+            ? nmo_behavior_registry_find(
+                  nmo_context_get_bb_registry(ctx->ctx),
+                  state->block_guid)
+            : NULL;
+    size_t index = args->selector_candidate_count++;
+    args->selector_candidates[index].node_id = node_id;
+    args->selector_candidates[index].parent_id = parent_id;
+    args->selector_candidates[index].bb_guid =
+        state != NULL ? state->block_guid : NMO_GUID_NULL;
+    snprintf(args->selector_candidates[index].proto_name,
+             sizeof(args->selector_candidates[index].proto_name),
+             "%s",
+             proto != NULL && proto->name != NULL ? proto->name : "");
+    snprintf(args->selector_candidates[index].role,
+             sizeof(args->selector_candidates[index].role),
+             "%s",
+             debug_probe_message_role(state));
+}
+
 static bool debug_probe_behavior_has_io(const nmo_behavior_state_t *state,
                                         nmo_object_id_t io_id)
 {
@@ -478,7 +564,7 @@ static bool debug_probe_behavior_has_io(const nmo_behavior_state_t *state,
 
 static nmo_status_t debug_probe_validate_targets(
     nmo_cmd_ctx_t *ctx,
-    const nmo_debug_probe_args_t *args,
+    nmo_debug_probe_args_t *args,
     const debug_probe_kind_spec_t *spec)
 {
     if (ctx == NULL || args == NULL || spec == NULL) {
@@ -516,6 +602,16 @@ static nmo_status_t debug_probe_validate_targets(
     }
 
     if (args->message_node_id != 0u) {
+        if (args->selector_mode[0] == '\0') {
+            debug_probe_selector_set_mode_status(
+                args,
+                args->remove_link_id != 0u ? "explicit_link" : "explicit_node",
+                "selected",
+                NULL);
+        } else if (args->selector_status[0] == '\0') {
+            snprintf(args->selector_status, sizeof(args->selector_status),
+                     "%s", "selected");
+        }
         nmo_object_t *message_node =
             nmo_object_repository_find_by_id(repo, args->message_node_id);
         if (message_node == NULL) {
@@ -535,6 +631,18 @@ static nmo_status_t debug_probe_validate_targets(
                 NMO_ERR_INVALID_ARGUMENT,
                 NMO_SEVERITY_ERROR,
                 "debug probe message-node target is not a message behavior");
+        }
+        args->selector_selected_node_id = args->message_node_id;
+        if (args->remove_link_id != 0u) {
+            args->selector_selected_link_id = args->remove_link_id;
+        }
+        if (args->selector_candidate_count == 0u) {
+            debug_probe_selector_add_candidate(
+                ctx,
+                args,
+                args->behavior_id,
+                args->message_node_id,
+                message_state);
         }
         if (args->remove_link_id != 0u) {
             nmo_object_t *link_obj =
@@ -618,6 +726,10 @@ static nmo_status_t debug_probe_analyze_message_selector(
         return NMO_OK;
     }
 
+    debug_probe_selector_set_mode_status(args, "auto", "", NULL);
+    args->selector_candidate_count = 0u;
+    args->selector_selected_node_id = 0u;
+    args->selector_selected_link_id = 0u;
     nmo_object_id_t selected_id = 0u;
     size_t candidate_count = 0u;
     char candidate_ids[256];
@@ -636,6 +748,8 @@ static nmo_status_t debug_probe_analyze_message_selector(
         if (!debug_probe_is_message_behavior(ctx, child)) {
             continue;
         }
+        debug_probe_selector_add_candidate(
+            ctx, args, args->behavior_id, child_id, child);
         if (candidate_ids_len < sizeof(candidate_ids) - 1u) {
             int written = snprintf(candidate_ids + candidate_ids_len,
                                    sizeof(candidate_ids) - candidate_ids_len,
@@ -654,15 +768,21 @@ static nmo_status_t debug_probe_analyze_message_selector(
 
     if (candidate_count == 1u) {
         args->message_node_id = selected_id;
+        args->selector_selected_node_id = selected_id;
+        debug_probe_selector_set_mode_status(args, "auto", "selected", NULL);
         return NMO_OK;
     }
     if (candidate_count == 0u) {
+        debug_probe_selector_set_mode_status(
+            args, "auto", "none", "no_message_candidates");
         NMO_RETURN_ERROR(
             NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR,
             "debug probe message selector found no message candidates "
             "(candidates: [])");
     }
+    debug_probe_selector_set_mode_status(
+        args, "auto", "ambiguous", "ambiguous_message_candidates");
     NMO_RETURN_ERROR(
         NMO_ERR_INVALID_ARGUMENT,
         NMO_SEVERITY_ERROR,
@@ -883,6 +1003,12 @@ static int debug_probe_report(nmo_cmd_ctx_t *ctx,
             nmo_cli_json_add_str_safe(
                 doc, data, "probe_selector", "message_flow");
         }
+        yyjson_mut_val *selector_diag =
+            debug_probe_selector_diagnostics_json(doc, args);
+        if (selector_diag != NULL) {
+            yyjson_mut_obj_add_val(
+                doc, data, "probe_selector_diagnostics", selector_diag);
+        }
         int rc = nmo_cmd_ctx_json_end(ctx, doc, data, "debug.probe");
         nmo_edit_report_dispose(&args->report);
         return rc;
@@ -896,6 +1022,62 @@ static int debug_probe_report(nmo_cmd_ctx_t *ctx,
     }
     nmo_edit_report_dispose(&args->report);
     return NMO_CLI_EXIT_SUCCESS;
+}
+
+static yyjson_mut_val *debug_probe_selector_diagnostics_json(
+    yyjson_mut_doc *doc,
+    const nmo_debug_probe_args_t *args)
+{
+    if (doc == NULL || args == NULL ||
+        args->selector_mode[0] == '\0') {
+        return NULL;
+    }
+    yyjson_mut_val *diag = yyjson_mut_obj(doc);
+    if (diag == NULL) {
+        return NULL;
+    }
+    nmo_cli_json_add_str_safe(doc, diag, "mode", args->selector_mode);
+    nmo_cli_json_add_str_safe(doc, diag, "status", args->selector_status);
+    yyjson_mut_val *candidates = yyjson_mut_arr(doc);
+    for (size_t i = 0; i < args->selector_candidate_count; ++i) {
+        yyjson_mut_val *candidate = yyjson_mut_obj(doc);
+        if (candidate == NULL) {
+            continue;
+        }
+        yyjson_mut_obj_add_uint(
+            doc, candidate, "node_id",
+            (uint64_t)args->selector_candidates[i].node_id);
+        yyjson_mut_obj_add_uint(
+            doc, candidate, "parent_id",
+            (uint64_t)args->selector_candidates[i].parent_id);
+        char guid_text[32];
+        nmo_guid_format(args->selector_candidates[i].bb_guid,
+                        guid_text,
+                        sizeof(guid_text));
+        nmo_cli_json_add_str_safe(doc, candidate, "bb_guid", guid_text);
+        nmo_cli_json_add_str_safe(
+            doc, candidate, "proto_name",
+            args->selector_candidates[i].proto_name);
+        nmo_cli_json_add_str_safe(
+            doc, candidate, "role", args->selector_candidates[i].role);
+        yyjson_mut_arr_add_val(candidates, candidate);
+    }
+    yyjson_mut_obj_add_val(doc, diag, "candidates", candidates);
+    if (args->selector_selected_node_id != 0u) {
+        yyjson_mut_obj_add_uint(
+            doc, diag, "selected_node_id",
+            (uint64_t)args->selector_selected_node_id);
+    }
+    if (args->selector_selected_link_id != 0u) {
+        yyjson_mut_obj_add_uint(
+            doc, diag, "selected_link_id",
+            (uint64_t)args->selector_selected_link_id);
+    }
+    if (args->selector_rejection_code[0] != '\0') {
+        nmo_cli_json_add_str_safe(
+            doc, diag, "rejection_code", args->selector_rejection_code);
+    }
+    return diag;
 }
 
 static void debug_add_load_phase_stats_json(yyjson_mut_doc *doc,
