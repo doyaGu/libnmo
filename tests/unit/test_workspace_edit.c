@@ -10,6 +10,8 @@
 #include "behavior/nmo_behavior_edit.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_param_guids.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_enum_guids.h"
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_repository.h"
@@ -740,6 +742,153 @@ TEST(workspace_edit, value_writer_resize_rollback_restores_buffer_size) {
     nmo_context_release(ctx);
 }
 
+TEST(workspace_edit, value_writer_writes_object_refs_and_rejects_invalid_text) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t param_id = 0;
+    nmo_object_id_t target_id = 0;
+    create_object_or_fail(session, NMO_CID_PARAMETER, "object-param", &param_id);
+    create_object_or_fail(session, NMO_CID_BEOBJECT, "target-object", &target_id);
+
+    nmo_object_t *param_obj = nmo_object_repository_find_by_id(repo, param_id);
+    ASSERT_NOT_NULL(param_obj);
+    nmo_parameter_state_t *state = nmo_parameter_get_mutable_state(param_obj);
+    ASSERT_NOT_NULL(state);
+    state->type_guid = CKPGUID_OBJECT;
+    state->mode = CKPARAM_MODE_OBJECT;
+    state->has_state = true;
+    state->object_id = 77u;
+
+    char text[64];
+    workspace_edit_scope_t bare_scope = {0};
+    nmo_workspace_edit_t *bare_edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              begin_workspace_edit_for_session(
+                  ctx, session, "object ref bare", &bare_scope, &bare_edit));
+    snprintf(text, sizeof(text), "%u", target_id);
+    ASSERT_EQ(NMO_OK,
+              nmo_value_writer_set_parameter_value(
+                  bare_edit, param_id, text, NULL));
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&bare_scope));
+    ASSERT_EQ(target_id, state->object_id);
+
+    workspace_edit_scope_t prefixed_scope = {0};
+    nmo_workspace_edit_t *prefixed_edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              begin_workspace_edit_for_session(
+                  ctx, session, "object ref prefix", &prefixed_scope, &prefixed_edit));
+    snprintf(text, sizeof(text), "object:%u", target_id + 1u);
+    ASSERT_EQ(NMO_OK,
+              nmo_value_writer_set_parameter_value(
+                  prefixed_edit, param_id, text, NULL));
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&prefixed_scope));
+    ASSERT_EQ(target_id + 1u, state->object_id);
+
+    workspace_edit_scope_t hash_scope = {0};
+    nmo_workspace_edit_t *hash_edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              begin_workspace_edit_for_session(
+                  ctx, session, "object ref hash", &hash_scope, &hash_edit));
+    snprintf(text, sizeof(text), "#%u", target_id);
+    ASSERT_EQ(NMO_OK,
+              nmo_value_writer_set_parameter_value(
+                  hash_edit, param_id, text, NULL));
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&hash_scope));
+    ASSERT_EQ(target_id, state->object_id);
+
+    workspace_edit_scope_t invalid_scope = {0};
+    nmo_workspace_edit_t *invalid_edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              begin_workspace_edit_for_session(
+                  ctx, session, "object ref invalid", &invalid_scope, &invalid_edit));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_value_writer_set_parameter_value(
+                  invalid_edit, param_id, "object:not-a-number", NULL));
+    rollback_workspace_edit_scope(&invalid_scope);
+    ASSERT_EQ(target_id, state->object_id);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(workspace_edit, value_writer_writes_manager_refs_and_rejects_invalid_text) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t param_id = 0;
+    create_object_or_fail(session, NMO_CID_PARAMETER, "manager-param", &param_id);
+
+    nmo_object_t *param_obj = nmo_object_repository_find_by_id(repo, param_id);
+    ASSERT_NOT_NULL(param_obj);
+    nmo_parameter_state_t *state = nmo_parameter_get_mutable_state(param_obj);
+    ASSERT_NOT_NULL(state);
+    state->type_guid = CKPGUID_INT;
+    state->mode = CKPARAM_MODE_MANAGER;
+    state->has_state = true;
+    state->manager_guid = nmo_guid_parse("11111111-22222222");
+    state->manager_value = 7u;
+
+    workspace_edit_scope_t manager_scope = {0};
+    nmo_workspace_edit_t *manager_edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              begin_workspace_edit_for_session(
+                  ctx, session, "manager ref", &manager_scope, &manager_edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_value_writer_set_parameter_value(
+                  manager_edit,
+                  param_id,
+                  "manager{33333333-44444444}:99",
+                  NULL));
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&manager_scope));
+    ASSERT_TRUE(nmo_guid_equals(
+        nmo_guid_parse("33333333-44444444"), state->manager_guid));
+    ASSERT_EQ(99u, state->manager_value);
+
+    workspace_edit_scope_t equals_scope = {0};
+    nmo_workspace_edit_t *equals_edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              begin_workspace_edit_for_session(
+                  ctx, session, "manager ref equals", &equals_scope, &equals_edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_value_writer_set_parameter_value(
+                  equals_edit,
+                  param_id,
+                  "{55555555-66666666}=123",
+                  NULL));
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&equals_scope));
+    ASSERT_TRUE(nmo_guid_equals(
+        nmo_guid_parse("55555555-66666666"), state->manager_guid));
+    ASSERT_EQ(123u, state->manager_value);
+
+    workspace_edit_scope_t invalid_scope = {0};
+    nmo_workspace_edit_t *invalid_edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              begin_workspace_edit_for_session(
+                  ctx, session, "manager ref invalid", &invalid_scope, &invalid_edit));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_value_writer_set_parameter_value(
+                  invalid_edit,
+                  param_id,
+                  "{55555555-66666666}=not-a-number",
+                  NULL));
+    rollback_workspace_edit_scope(&invalid_scope);
+    ASSERT_TRUE(nmo_guid_equals(
+        nmo_guid_parse("55555555-66666666"), state->manager_guid));
+    ASSERT_EQ(123u, state->manager_value);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(workspace_edit, value_writer_writes_structured_parameter_values) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
@@ -1370,6 +1519,8 @@ REGISTER_TEST(workspace_edit, parameter_edit_rollback_restores_buffer);
 REGISTER_TEST(workspace_edit, value_writer_resizes_string_parameter_and_nul_terminates);
 REGISTER_TEST(workspace_edit, value_writer_raw_bytes_requires_explicit_resize);
 REGISTER_TEST(workspace_edit, value_writer_resize_rollback_restores_buffer_size);
+REGISTER_TEST(workspace_edit, value_writer_writes_object_refs_and_rejects_invalid_text);
+REGISTER_TEST(workspace_edit, value_writer_writes_manager_refs_and_rejects_invalid_text);
 REGISTER_TEST(workspace_edit, value_writer_writes_structured_parameter_values);
 REGISTER_TEST(workspace_edit, value_writer_writes_enum_and_flag_parameter_values);
 REGISTER_TEST(workspace_edit, parameter_bytes_commit_zero_fills_and_rollback_restores);
