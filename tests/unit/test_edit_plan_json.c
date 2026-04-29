@@ -800,9 +800,55 @@ TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics) {
 }
 
 TEST(edit_plan_json, rejects_plan_roots_with_generic_operation_diagnostics) {
+    nmo_edit_plan_t *plan = NULL;
+    const char *unknown_root =
+        "{"
+        "\"version\":2,"
+        "\"operations\":[{\"op\":\"add_io\",\"behavior_id\":1,"
+        "\"kind\":\"input\",\"name\":\"In\"}],"
+        "\"input\":\"not-allowed-here.cmo\""
+        "}";
+    nmo_last_error_clear();
+    ASSERT_NE(NMO_OK,
+              nmo_edit_plan_json_read(
+                  unknown_root, strlen(unknown_root), &plan));
+    ASSERT_STR_CONTAINS(nmo_last_error_message(),
+                        "Unknown field 'input' in edit plan root");
+    nmo_edit_plan_destroy(plan);
+
     assert_plan_invalid_contains(
         "{\"op\":\"unknown_edit\"}",
         "Unsupported edit plan op 'unknown_edit'");
+}
+
+TEST(edit_plan_json, rejects_strict_replay_manifest_errors) {
+    assert_manifest_invalid_contains(
+        "{\"op\":\"add_behavior_link\",\"parent_id\":1,"
+        "\"from_operation\":2,\"from_handle\":\"io\",\"to_io_id\":3}",
+        "from_operation must reference an earlier operation");
+
+    assert_manifest_invalid_contains(
+        "{\"op\":\"connect_parameter\",\"source_id\":1,"
+        "\"target_operation\":2,\"target_handle\":\"parameter\"}",
+        "target_operation must reference an earlier operation");
+
+    assert_manifest_invalid_contains(
+        "{\"op\":\"add_parameter\",\"owner_id\":1,\"kind\":\"in\","
+        "\"type_guid\":\"6BD010E2-115617EA\",\"name\":\"Text\"},"
+        "{\"op\":\"add_operation\",\"parent_id\":1,"
+        "\"operation_guid\":\"33CC6B49-3589282B\","
+        "\"out_operation\":3,\"out_handle\":\"parameter\"}",
+        "out_operation must reference an earlier operation");
+
+    assert_manifest_invalid_contains(
+        "{\"op\":\"connect_parameter\",\"source_id\":1,"
+        "\"target_operation\":1}",
+        "Missing or invalid target_handle");
+
+    assert_manifest_invalid_contains(
+        "{\"op\":\"set_data_cell\",\"dataarray_id\":1,"
+        "\"row\":\"0\",\"col\":1,\"value\":\"x\"}",
+        "Missing or invalid row");
 }
 
 TEST_MAIN_BEGIN()
@@ -823,4 +869,5 @@ REGISTER_TEST(edit_plan_json,
 REGISTER_TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics);
 REGISTER_TEST(edit_plan_json,
               rejects_plan_roots_with_generic_operation_diagnostics);
+REGISTER_TEST(edit_plan_json, rejects_strict_replay_manifest_errors);
 TEST_MAIN_END()

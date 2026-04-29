@@ -1420,10 +1420,14 @@ static nmo_status_t parse_connect_parameter(yyjson_val *op_obj,
             plan, source_id, (nmo_object_id_t)yyjson_get_uint(target_id_val));
     }
     if (operation_val == NULL || !yyjson_is_uint(operation_val) ||
-        yyjson_get_uint(operation_val) == 0u ||
-        handle_val == NULL || !yyjson_is_str(handle_val) ||
+        yyjson_get_uint(operation_val) == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Missing or invalid target_operation");
+    }
+    if (handle_val == NULL || !yyjson_is_str(handle_val) ||
         yyjson_get_str(handle_val)[0] == '\0') {
-        return NMO_ERR_INVALID_FORMAT;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Missing or invalid target_handle");
     }
     return nmo_edit_plan_add_connect_parameter_to_handle(
         plan, source_id,
