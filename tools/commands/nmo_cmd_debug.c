@@ -954,6 +954,26 @@ static nmo_status_t debug_probe_analyze_data_cell_selector(
                 "debug probe write-node target is not a data write behavior");
         }
         args->selector_selected_node_id = args->write_node_id;
+        if (args->remove_link_id != 0u) {
+            nmo_object_t *link_obj =
+                nmo_object_repository_find_by_id(repo, args->remove_link_id);
+            const nmo_behaviorlink_state_t *link =
+                link_obj != NULL &&
+                        nmo_object_get_class_id(link_obj) ==
+                            NMO_CID_BEHAVIORLINK
+                    ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
+                          link_obj)
+                    : NULL;
+            if (link == NULL ||
+                (!debug_probe_behavior_has_io(node, link->in_io_id) &&
+                 !debug_probe_behavior_has_io(node, link->out_io_id))) {
+                NMO_RETURN_ERROR(
+                    NMO_ERR_INVALID_ARGUMENT,
+                    NMO_SEVERITY_ERROR,
+                    "debug probe remove-link does not touch selected write-node");
+            }
+            args->selector_selected_link_id = args->remove_link_id;
+        }
         debug_probe_selector_add_candidate(
             ctx,
             args,
@@ -1014,6 +1034,104 @@ static nmo_status_t debug_probe_analyze_data_cell_selector(
 
     debug_probe_selector_set_mode_status(
         args, "explicit_data_cell", "selected", NULL);
+    return NMO_OK;
+}
+
+static nmo_status_t debug_probe_select_data_write_link(
+    nmo_cmd_ctx_t *ctx,
+    nmo_debug_probe_args_t *args)
+{
+    if (ctx == NULL || args == NULL ||
+        strcmp(args->kind, "data-cell-logger") != 0 ||
+        args->write_node_id == 0u ||
+        args->remove_link_id != 0u ||
+        args->from_io_id != 0u ||
+        args->to_io_id != 0u) {
+        return NMO_OK;
+    }
+
+    nmo_object_repository_t *repo = nmo_tool_owner_repository(ctx->workspace);
+    nmo_object_t *parent_obj = repo != NULL
+        ? nmo_object_repository_find_by_id(repo, args->behavior_id)
+        : NULL;
+    const nmo_behavior_state_t *parent =
+        parent_obj != NULL &&
+                nmo_object_get_class_id(parent_obj) == NMO_CID_BEHAVIOR
+            ? (const nmo_behavior_state_t *)nmo_object_get_state(parent_obj)
+            : NULL;
+    nmo_object_t *writer_obj = repo != NULL
+        ? nmo_object_repository_find_by_id(repo, args->write_node_id)
+        : NULL;
+    const nmo_behavior_state_t *writer =
+        writer_obj != NULL &&
+                nmo_object_get_class_id(writer_obj) == NMO_CID_BEHAVIOR
+            ? (const nmo_behavior_state_t *)nmo_object_get_state(writer_obj)
+            : NULL;
+    if (parent == NULL || writer == NULL) {
+        return NMO_OK;
+    }
+
+    nmo_object_id_t selected_link_id = 0u;
+    const nmo_behaviorlink_state_t *selected_link = NULL;
+    size_t candidate_count = 0u;
+    char candidate_ids[256];
+    size_t candidate_ids_len = 0u;
+    candidate_ids[0] = '\0';
+    const nmo_object_id_t *link_ids =
+        (const nmo_object_id_t *)parent->sub_behavior_links.data;
+    for (size_t i = 0; link_ids != NULL &&
+                       i < parent->sub_behavior_links.count; ++i) {
+        nmo_object_id_t link_id = link_ids[i];
+        nmo_object_t *link_obj =
+            nmo_object_repository_find_by_id(repo, link_id);
+        const nmo_behaviorlink_state_t *link =
+            link_obj != NULL &&
+                    nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK
+                ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
+                      link_obj)
+                : NULL;
+        if (link == NULL ||
+            (!debug_probe_behavior_has_io(writer, link->in_io_id) &&
+             !debug_probe_behavior_has_io(writer, link->out_io_id))) {
+            continue;
+        }
+        if (candidate_ids_len < sizeof(candidate_ids) - 1u) {
+            int written = snprintf(candidate_ids + candidate_ids_len,
+                                   sizeof(candidate_ids) - candidate_ids_len,
+                                   "%s%u",
+                                   candidate_count == 0u ? "" : ",",
+                                   (unsigned)link_id);
+            if (written > 0) {
+                size_t append = (size_t)written;
+                size_t available = sizeof(candidate_ids) - candidate_ids_len;
+                candidate_ids_len += append < available ? append : available - 1u;
+            }
+        }
+        selected_link_id = link_id;
+        selected_link = link;
+        ++candidate_count;
+    }
+
+    if (candidate_count != 1u || selected_link == NULL) {
+        debug_probe_selector_set_mode_status(
+            args, "explicit_node", "unsafe", "unsafe_probe_insertion");
+        NMO_RETURN_ERROR(
+            NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR,
+            "debug probe automatic data write insertion is unsafe (candidate links: [%s])",
+            candidate_ids);
+    }
+
+    args->remove_link_id = selected_link_id;
+    args->from_io_id = selected_link->in_io_id;
+    args->to_io_id = selected_link->out_io_id;
+    args->selector_selected_link_id = selected_link_id;
+    if (!args->has_delay && selected_link->activation_delay > 0) {
+        args->delay = (uint32_t)selected_link->activation_delay;
+        args->has_delay = true;
+    }
+    debug_probe_selector_set_mode_status(
+        args, "explicit_node", "selected", NULL);
     return NMO_OK;
 }
 
@@ -1275,6 +1393,9 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
     }
     if (status == NMO_OK) {
         status = debug_probe_select_message_link(ctx, args);
+    }
+    if (status == NMO_OK) {
+        status = debug_probe_select_data_write_link(ctx, args);
     }
     if (status == NMO_OK && args->remove_link_id != 0u) {
         status = debug_probe_validate_targets(ctx, args, spec);

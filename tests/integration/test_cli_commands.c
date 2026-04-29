@@ -3704,6 +3704,7 @@ TEST(cli, debug_probe_data_cell_logger_reports_explicit_write_node) {
     snprintf(args, sizeof(args),
              "-f json debug probe data-cell-logger --behavior 3880 "
              "--dataarray 6067 --row 0 --col 1 --write-node 3871 "
+             "--remove-link 3874 "
              "\"%s\" --dry-run",
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -3721,12 +3722,26 @@ TEST(cli, debug_probe_data_cell_logger_reports_explicit_write_node) {
     ASSERT_STR_EQ("selected", yyjson_get_str(yyjson_obj_get(diag, "status")));
     ASSERT_EQ(3871u,
               yyjson_get_uint(yyjson_obj_get(diag, "selected_node_id")));
+    ASSERT_EQ(3874u,
+              yyjson_get_uint(yyjson_obj_get(diag, "selected_link_id")));
     yyjson_val *candidates = yyjson_obj_get(diag, "candidates");
     ASSERT_TRUE(candidates && yyjson_is_arr(candidates));
     ASSERT_EQ(1u, yyjson_arr_size(candidates));
     yyjson_val *candidate = yyjson_arr_get(candidates, 0);
     ASSERT_EQ(3871u, yyjson_get_uint(yyjson_obj_get(candidate, "node_id")));
     ASSERT_STR_EQ("data_writer", yyjson_get_str(yyjson_obj_get(candidate, "role")));
+    yyjson_val *operations = yyjson_obj_get(data, "operations");
+    ASSERT_TRUE(operations && yyjson_is_arr(operations));
+    ASSERT_EQ(5u, yyjson_arr_size(operations));
+    ASSERT_STR_EQ("remove_behavior_link",
+                  yyjson_get_str(yyjson_obj_get(
+                      yyjson_arr_get(operations, 0), "op")));
+    ASSERT_STR_EQ("add_behavior_link",
+                  yyjson_get_str(yyjson_obj_get(
+                      yyjson_arr_get(operations, 3), "op")));
+    ASSERT_STR_EQ("add_behavior_link",
+                  yyjson_get_str(yyjson_obj_get(
+                      yyjson_arr_get(operations, 4), "op")));
     yyjson_doc_free(doc);
 }
 
@@ -3819,6 +3834,12 @@ TEST(cli, debug_probe_rejects_invalid_probe_options) {
             "--row 0 --col 1 --write-node 237 \""
             NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
             "debug probe write-node target is not a data write behavior",
+        },
+        {
+            "debug probe data-cell-logger --behavior 3880 --dataarray 6067 "
+            "--row 0 --col 1 --write-node 3871 \""
+            NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "debug probe automatic data write insertion is unsafe",
         },
         {
             "debug probe 2d-text --behavior 237 --write-node 3871 "
