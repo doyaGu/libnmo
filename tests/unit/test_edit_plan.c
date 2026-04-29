@@ -308,6 +308,26 @@ TEST(edit_plan, report_dispose_releases_schema_v2_arrays) {
     ASSERT_EQ(NULL, report.changed_objects);
 }
 
+TEST(edit_plan, report_preserves_distinct_impact_roles) {
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_report_add_changed_object(
+        &report, 44, NMO_EDIT_OP_CONNECT_PARAMETER, "primary"));
+    ASSERT_EQ(NMO_OK, nmo_edit_report_add_changed_object(
+        &report, 44, NMO_EDIT_OP_CONNECT_PARAMETER, "parameter_edge_target"));
+    ASSERT_EQ(NMO_OK, nmo_edit_report_add_changed_object(
+        &report, 44, NMO_EDIT_OP_CONNECT_PARAMETER, "parameter_edge_target"));
+
+    ASSERT_EQ(2u, report.changed_object_count);
+    ASSERT_EQ(44u, report.changed_objects[0].id);
+    ASSERT_STR_EQ("primary", report.changed_objects[0].role);
+    ASSERT_EQ(44u, report.changed_objects[1].id);
+    ASSERT_STR_EQ("parameter_edge_target", report.changed_objects[1].role);
+
+    nmo_edit_report_dispose(&report);
+}
+
 TEST(edit_plan, report_owns_schema_v2_output_path) {
     nmo_edit_report_t report;
     ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
@@ -3195,6 +3215,7 @@ TEST_MAIN_BEGIN()
 REGISTER_TEST(edit_plan, stores_parameter_value_ops);
 REGISTER_TEST(edit_plan, stores_full_script_edit_ops_and_clones_plan);
 REGISTER_TEST(edit_plan, report_dispose_releases_schema_v2_arrays);
+REGISTER_TEST(edit_plan, report_preserves_distinct_impact_roles);
 REGISTER_TEST(edit_plan, report_owns_schema_v2_output_path);
 REGISTER_TEST(edit_plan, executor_commits_parameter_value_plan);
 REGISTER_TEST(edit_plan, executor_rolls_back_failed_plan);

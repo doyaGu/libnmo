@@ -1352,10 +1352,18 @@ static nmo_status_t edit_report_prepare(nmo_edit_report_t *report,
 
 static bool edit_report_has_changed_object(
     const nmo_edit_report_t *report,
-    nmo_object_id_t id)
+    nmo_object_id_t id,
+    nmo_edit_op_kind_t cause,
+    const char *role)
 {
     for (size_t i = 0; i < report->changed_object_count; i++) {
-        if (report->changed_objects[i].id == id) {
+        const char *existing_role = report->changed_objects[i].role;
+        bool same_role = existing_role == role ||
+            (existing_role != NULL && role != NULL &&
+             strcmp(existing_role, role) == 0);
+        if (report->changed_objects[i].id == id &&
+            report->changed_objects[i].cause == cause &&
+            same_role) {
             return true;
         }
     }
@@ -1400,7 +1408,7 @@ nmo_status_t nmo_edit_report_add_changed_object(
     const char *role)
 {
     if (report == NULL || id == 0 ||
-        edit_report_has_changed_object(report, id)) {
+        edit_report_has_changed_object(report, id, cause, role)) {
         return report && id ? NMO_OK : NMO_ERR_INVALID_ARGUMENT;
     }
     size_t capacity = report->changed_object_count;
