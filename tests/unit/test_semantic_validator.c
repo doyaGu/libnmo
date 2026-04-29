@@ -8,6 +8,7 @@
 #include "object/nmo_object_enum_defs.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/nmo_object_repository.h"
 #include "type/nmo_operations.h"
@@ -1454,6 +1455,70 @@ TEST(semantic_validator, edit_plan_reports_targetable_behavior_missing_target)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_reports_target_parameter_class_mismatch)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init(&fixture);
+
+    nmo_object_repository_t *repo =
+        nmo_session_get_repository(fixture.session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t behavior_id = 0u;
+    nmo_object_id_t target_id = 0u;
+    semantic_create_object(
+        &fixture, NMO_CID_BEHAVIOR, "Targetable Wrong Target Type",
+        &behavior_id);
+    semantic_create_object(
+        &fixture, NMO_CID_PARAMETERIN, "Wrong Target", &target_id);
+
+    nmo_object_t *behavior_obj =
+        nmo_object_repository_find_by_id(repo, behavior_id);
+    nmo_object_t *target_obj =
+        nmo_object_repository_find_by_id(repo, target_id);
+    ASSERT_NOT_NULL(behavior_obj);
+    ASSERT_NOT_NULL(target_obj);
+
+    nmo_behavior_state_t *behavior_state =
+        (nmo_behavior_state_t *)nmo_object_get_state(behavior_obj);
+    nmo_parameterin_state_t *target_state =
+        (nmo_parameterin_state_t *)nmo_object_get_state(target_obj);
+    ASSERT_NOT_NULL(behavior_state);
+    ASSERT_NOT_NULL(target_state);
+
+    behavior_state->flags |= CKBEHAVIOR_TARGETABLE;
+    behavior_state->compatible_class_id = NMO_CID_2DENTITY;
+    behavior_state->target_parameter_id = target_id;
+    target_state->type_guid = CKPGUID_STRING;
+
+    nmo_behavior_replace_bb_desc_t replace = {
+        .behavior_id = behavior_id,
+        .block_guid = nmo_guid_parse("055B29FE-662D5CA0"),
+        .name = "Replacement 2D Text",
+        .block_version = 65536u,
+    };
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_replace_bb(plan, &replace));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *mismatch =
+        find_risk(risks, risk_count, "target_parameter_class_mismatch");
+    ASSERT_NOT_NULL(mismatch);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, mismatch->severity);
+    ASSERT_EQ(target_id, mismatch->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST(semantic_validator, edit_plan_reports_replace_target_type_mismatch)
 {
     semantic_fixture_t fixture;
@@ -1557,6 +1622,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, edit_plan_reports_unknown_building_block);
     REGISTER_TEST(semantic_validator, edit_plan_reports_unknown_replace_building_block);
     REGISTER_TEST(semantic_validator, edit_plan_reports_targetable_behavior_missing_target);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_target_parameter_class_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_replace_target_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_interface_policy_risk);
 TEST_MAIN_END()

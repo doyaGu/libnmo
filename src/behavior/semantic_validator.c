@@ -56,6 +56,11 @@ static nmo_status_t semantic_add_risk(
     return NMO_OK;
 }
 
+static bool semantic_parameter_type_guid(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t parameter_id,
+    nmo_guid_t *out_guid);
+
 static nmo_status_t semantic_add_boundary_delay_risks(
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
@@ -378,6 +383,7 @@ static nmo_status_t semantic_add_behavior_node_ref_risk(
 }
 
 static nmo_status_t semantic_add_behavior_target_consistency_risk(
+    nmo_context_t *ctx,
     nmo_object_repository_t *repo,
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
@@ -421,6 +427,29 @@ static nmo_status_t semantic_add_behavior_target_consistency_risk(
             NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
             "target_parameter_type_mismatch",
             "Targetable behavior target must be a behavior input parameter",
+            state->target_parameter_id);
+    }
+    uint32_t target_class_id = state->compatible_class_id > 0
+        ? (uint32_t)state->compatible_class_id
+        : (uint32_t)NMO_CID_BEOBJECT;
+    nmo_type_registry_t *type_registry =
+        ctx != NULL ? nmo_context_get_type_registry(ctx) : NULL;
+    nmo_guid_t expected_guid = NMO_GUID_NULL;
+    nmo_guid_t actual_guid = NMO_GUID_NULL;
+    if (type_registry != NULL &&
+        nmo_type_registry_class_id_to_guid(
+            type_registry, target_class_id, &expected_guid) == NMO_OK &&
+        semantic_parameter_type_guid(
+            repo, state->target_parameter_id, &actual_guid) &&
+        !nmo_guid_is_null(expected_guid) &&
+        !nmo_guid_is_null(actual_guid) &&
+        !nmo_guid_equals(expected_guid, actual_guid)) {
+        return semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "target_parameter_class_mismatch",
+            "Targetable behavior target parameter type does not match its compatible class",
             state->target_parameter_id);
     }
     return NMO_OK;
@@ -1983,6 +2012,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             risk_count,
             op->data.replace_bb.desc.behavior_id));
         NMO_RETURN_IF_ERROR(semantic_add_behavior_target_consistency_risk(
+            ctx,
             repo,
             risks,
             risk_count,
