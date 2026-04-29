@@ -218,6 +218,22 @@ typedef struct nmo_edit_changed_object {
     bool has_parameter_edge_after;
     nmo_object_id_t after_source_parameter_id;
     nmo_object_id_t after_target_parameter_id;
+    bool has_operation_slot_before;
+    nmo_guid_t before_operation_guid;
+    bool before_has_in1_parameter;
+    nmo_object_id_t before_in1_parameter_id;
+    bool before_has_in2_parameter;
+    nmo_object_id_t before_in2_parameter_id;
+    bool before_has_out_parameter;
+    nmo_object_id_t before_out_parameter_id;
+    bool has_operation_slot_after;
+    nmo_guid_t after_operation_guid;
+    bool after_has_in1_parameter;
+    nmo_object_id_t after_in1_parameter_id;
+    bool after_has_in2_parameter;
+    nmo_object_id_t after_in2_parameter_id;
+    bool after_has_out_parameter;
+    nmo_object_id_t after_out_parameter_id;
 } nmo_edit_changed_object_t;
 
 typedef nmo_edit_changed_object_t nmo_edit_object_impact_t;

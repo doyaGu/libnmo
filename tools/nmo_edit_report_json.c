@@ -3,6 +3,7 @@
 #include "nmo_cli_json.h"
 
 #include "core/nmo_error.h"
+#include "core/nmo_guid.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -224,6 +225,33 @@ static yyjson_mut_val *nmo_cli_edit_report_make_parameter_edge_snapshot_json(
     return snapshot;
 }
 
+static yyjson_mut_val *nmo_cli_edit_report_make_operation_slot_snapshot_json(
+    yyjson_mut_doc *doc,
+    nmo_guid_t operation_guid,
+    bool has_in1,
+    nmo_object_id_t in1_parameter_id,
+    bool has_in2,
+    nmo_object_id_t in2_parameter_id,
+    bool has_out,
+    nmo_object_id_t out_parameter_id)
+{
+    yyjson_mut_val *snapshot = yyjson_mut_obj(doc);
+    char guid_text[32];
+    if (nmo_guid_format(operation_guid, guid_text, sizeof(guid_text)) > 0) {
+        yyjson_mut_obj_add_strcpy(doc, snapshot, "operation_guid", guid_text);
+    }
+    yyjson_mut_obj_add_bool(doc, snapshot, "has_in1", has_in1);
+    yyjson_mut_obj_add_uint(doc, snapshot, "in1_parameter_id",
+                            (uint64_t)in1_parameter_id);
+    yyjson_mut_obj_add_bool(doc, snapshot, "has_in2", has_in2);
+    yyjson_mut_obj_add_uint(doc, snapshot, "in2_parameter_id",
+                            (uint64_t)in2_parameter_id);
+    yyjson_mut_obj_add_bool(doc, snapshot, "has_out", has_out);
+    yyjson_mut_obj_add_uint(doc, snapshot, "out_parameter_id",
+                            (uint64_t)out_parameter_id);
+    return snapshot;
+}
+
 static void nmo_cli_edit_report_add_impact_before_after_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *item,
@@ -272,6 +300,36 @@ static void nmo_cli_edit_report_add_impact_before_after_json(
                 impact->after_source_parameter_id,
                 impact->after_target_parameter_id));
     } else if (impact->has_parameter_edge_before) {
+        yyjson_mut_obj_add_null(doc, item, "after");
+    }
+    if (impact->has_operation_slot_before) {
+        yyjson_mut_obj_add_val(
+            doc, item, "before",
+            nmo_cli_edit_report_make_operation_slot_snapshot_json(
+                doc,
+                impact->before_operation_guid,
+                impact->before_has_in1_parameter,
+                impact->before_in1_parameter_id,
+                impact->before_has_in2_parameter,
+                impact->before_in2_parameter_id,
+                impact->before_has_out_parameter,
+                impact->before_out_parameter_id));
+    } else if (impact->has_operation_slot_after) {
+        yyjson_mut_obj_add_null(doc, item, "before");
+    }
+    if (impact->has_operation_slot_after) {
+        yyjson_mut_obj_add_val(
+            doc, item, "after",
+            nmo_cli_edit_report_make_operation_slot_snapshot_json(
+                doc,
+                impact->after_operation_guid,
+                impact->after_has_in1_parameter,
+                impact->after_in1_parameter_id,
+                impact->after_has_in2_parameter,
+                impact->after_in2_parameter_id,
+                impact->after_has_out_parameter,
+                impact->after_out_parameter_id));
+    } else if (impact->has_operation_slot_before) {
         yyjson_mut_obj_add_null(doc, item, "after");
     }
 }

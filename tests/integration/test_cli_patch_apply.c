@@ -1805,6 +1805,20 @@ TEST(cli, patch_apply_v2_add_operation_dry_run) {
         get_array_field(operation_graph_diff, "created");
     ASSERT_NOT_NULL(created_operations);
     ASSERT_TRUE(yyjson_arr_size(created_operations) > 0u);
+    yyjson_val *created_operation = yyjson_arr_get(created_operations, 0);
+    ASSERT_NOT_NULL(created_operation);
+    ASSERT_TRUE(yyjson_is_null(yyjson_obj_get(created_operation, "before")));
+    yyjson_val *created_after =
+        get_object_field(created_operation, "after");
+    ASSERT_NOT_NULL(created_after);
+    ASSERT_STR_EQ("{33CC6B49-3589282B}",
+                  get_string_field(created_after, "operation_guid"));
+    ASSERT_FALSE(get_bool_field(created_after, "has_in1"));
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(created_after, "in1_parameter_id"));
+    ASSERT_FALSE(get_bool_field(created_after, "has_in2"));
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(created_after, "in2_parameter_id"));
+    ASSERT_FALSE(get_bool_field(created_after, "has_out"));
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(created_after, "out_parameter_id"));
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
     remove(patch);
@@ -1840,6 +1854,31 @@ TEST(cli, patch_apply_v2_rewire_operation_dry_run) {
     yyjson_val *changed_objects = get_array_field(data, "changed_objects");
     ASSERT_NOT_NULL(changed_objects);
     ASSERT_TRUE(array_contains_object_id(changed_objects, 17u));
+    yyjson_val *diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    yyjson_val *operation_graph_diff =
+        get_object_field(diff, "operation_graph_diff");
+    ASSERT_NOT_NULL(operation_graph_diff);
+    yyjson_val *changed_operations =
+        get_array_field(operation_graph_diff, "changed");
+    ASSERT_NOT_NULL(changed_operations);
+    yyjson_val *changed_operation =
+        find_object_by_id_and_role(changed_operations, 17u, "primary");
+    ASSERT_NOT_NULL(changed_operation);
+    yyjson_val *rewire_before =
+        get_object_field(changed_operation, "before");
+    yyjson_val *rewire_after =
+        get_object_field(changed_operation, "after");
+    ASSERT_NOT_NULL(rewire_before);
+    ASSERT_NOT_NULL(rewire_after);
+    ASSERT_STR_EQ("{33CC6B49-3589282B}",
+                  get_string_field(rewire_before, "operation_guid"));
+    ASSERT_FALSE(get_bool_field(rewire_before, "has_in1"));
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(rewire_before, "in1_parameter_id"));
+    ASSERT_STR_EQ("{33CC6B49-3589282B}",
+                  get_string_field(rewire_after, "operation_guid"));
+    ASSERT_TRUE(get_bool_field(rewire_after, "has_in1"));
+    ASSERT_EQ(16u, (uint32_t)get_uint_field(rewire_after, "in1_parameter_id"));
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
     remove(patch);
@@ -1875,6 +1914,25 @@ TEST(cli, patch_apply_v2_remove_operation_dry_run) {
     yyjson_val *deleted_objects = get_array_field(data, "deleted_objects");
     ASSERT_NOT_NULL(deleted_objects);
     ASSERT_TRUE(array_contains_object_id(deleted_objects, 16u));
+    yyjson_val *diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    yyjson_val *operation_graph_diff =
+        get_object_field(diff, "operation_graph_diff");
+    ASSERT_NOT_NULL(operation_graph_diff);
+    yyjson_val *deleted_operations =
+        get_array_field(operation_graph_diff, "deleted");
+    ASSERT_NOT_NULL(deleted_operations);
+    yyjson_val *deleted_operation =
+        find_object_by_id_and_role(deleted_operations, 16u, "primary");
+    ASSERT_NOT_NULL(deleted_operation);
+    yyjson_val *remove_before =
+        get_object_field(deleted_operation, "before");
+    ASSERT_NOT_NULL(remove_before);
+    ASSERT_TRUE(yyjson_is_null(yyjson_obj_get(deleted_operation, "after")));
+    ASSERT_STR_EQ("{33CC6B49-3589282B}",
+                  get_string_field(remove_before, "operation_guid"));
+    ASSERT_FALSE(get_bool_field(remove_before, "has_in1"));
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(remove_before, "in1_parameter_id"));
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
     remove(patch);

@@ -1,6 +1,7 @@
 #include "lua_bindings_internal.h"
 
 #include "core/nmo_error.h"
+#include "core/nmo_guid.h"
 #include "lauxlib.h"
 
 #include <stdbool.h>
@@ -176,6 +177,36 @@ static void nmo_lua_push_parameter_edge_snapshot(
     lua_setfield(state, -2, "target_parameter_id");
 }
 
+static void nmo_lua_push_operation_slot_snapshot(
+    lua_State *state,
+    nmo_guid_t operation_guid,
+    bool has_in1,
+    nmo_object_id_t in1_parameter_id,
+    bool has_in2,
+    nmo_object_id_t in2_parameter_id,
+    bool has_out,
+    nmo_object_id_t out_parameter_id)
+{
+    lua_createtable(state, 0, 7);
+    char guid_text[32];
+    if (nmo_guid_format(operation_guid, guid_text, sizeof(guid_text)) > 0) {
+        lua_pushstring(state, guid_text);
+        lua_setfield(state, -2, "operation_guid");
+    }
+    lua_pushboolean(state, has_in1);
+    lua_setfield(state, -2, "has_in1");
+    lua_pushinteger(state, (lua_Integer)in1_parameter_id);
+    lua_setfield(state, -2, "in1_parameter_id");
+    lua_pushboolean(state, has_in2);
+    lua_setfield(state, -2, "has_in2");
+    lua_pushinteger(state, (lua_Integer)in2_parameter_id);
+    lua_setfield(state, -2, "in2_parameter_id");
+    lua_pushboolean(state, has_out);
+    lua_setfield(state, -2, "has_out");
+    lua_pushinteger(state, (lua_Integer)out_parameter_id);
+    lua_setfield(state, -2, "out_parameter_id");
+}
+
 static void nmo_lua_push_impact_before_after(
     lua_State *state,
     const nmo_edit_object_impact_t *impact)
@@ -222,6 +253,36 @@ static void nmo_lua_push_impact_before_after(
             impact->after_target_parameter_id);
         lua_setfield(state, -2, "after");
     } else if (impact->has_parameter_edge_before) {
+        lua_pushnil(state);
+        lua_setfield(state, -2, "after");
+    }
+    if (impact->has_operation_slot_before) {
+        nmo_lua_push_operation_slot_snapshot(
+            state,
+            impact->before_operation_guid,
+            impact->before_has_in1_parameter,
+            impact->before_in1_parameter_id,
+            impact->before_has_in2_parameter,
+            impact->before_in2_parameter_id,
+            impact->before_has_out_parameter,
+            impact->before_out_parameter_id);
+        lua_setfield(state, -2, "before");
+    } else if (impact->has_operation_slot_after) {
+        lua_pushnil(state);
+        lua_setfield(state, -2, "before");
+    }
+    if (impact->has_operation_slot_after) {
+        nmo_lua_push_operation_slot_snapshot(
+            state,
+            impact->after_operation_guid,
+            impact->after_has_in1_parameter,
+            impact->after_in1_parameter_id,
+            impact->after_has_in2_parameter,
+            impact->after_in2_parameter_id,
+            impact->after_has_out_parameter,
+            impact->after_out_parameter_id);
+        lua_setfield(state, -2, "after");
+    } else if (impact->has_operation_slot_before) {
         lua_pushnil(state);
         lua_setfield(state, -2, "after");
     }
