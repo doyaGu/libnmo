@@ -1176,11 +1176,17 @@ static nmo_status_t semantic_add_operation_signature_type_risk(
         return NMO_OK;
     }
     if (rc == NMO_ERR_NOT_FOUND || rc == NMO_ERR_VALIDATION_FAILED) {
-        return semantic_add_operation_type_risk(
+        NMO_RETURN_IF_ERROR(semantic_add_operation_type_risk(
             risks,
             risk_count,
             "operation_type_mismatch",
             "Parameter operation slots are incompatible with the operation signature",
+            object_id));
+        return semantic_add_operation_type_risk(
+            risks,
+            risk_count,
+            "operation_signature_mismatch",
+            "Parameter operation slot count or type GUIDs do not match the operation signature",
             object_id);
     }
     return rc;

@@ -1006,6 +1006,11 @@ TEST(semantic_validator, edit_plan_reports_operation_type_mismatch)
     ASSERT_NOT_NULL(mismatch);
     ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, mismatch->severity);
     ASSERT_EQ(6u, mismatch->object_id);
+    const nmo_behavior_semantic_risk_t *signature =
+        find_risk(risks, risk_count, "operation_signature_mismatch");
+    ASSERT_NOT_NULL(signature);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, signature->severity);
+    ASSERT_EQ(6u, signature->object_id);
 
     nmo_semantic_risks_free(risks);
     nmo_edit_plan_destroy(plan);
