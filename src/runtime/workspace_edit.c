@@ -149,6 +149,20 @@ nmo_status_t workspace_edit_set_dataarray_cell(
 static nmo_status_t parse_object_id_text(
     const char *value_str,
     nmo_object_id_t *out_id);
+static nmo_status_t workspace_edit_prepare_manager_parameter_value(
+    nmo_workspace_edit_t *edit,
+    const nmo_parameter_state_t *state,
+    const char *value_str,
+    const nmo_parameter_write_options_t *options,
+    nmo_guid_t *out_guid,
+    uint32_t *out_value);
+static nmo_status_t workspace_edit_read_message_manager_names(
+    nmo_session_t *session,
+    const nmo_manager_data_t *manager,
+    const char ***out_names,
+    uint32_t *out_count);
+static nmo_status_t workspace_edit_seek_message_manager_identifier(
+    nmo_chunk_t *chunk);
 nmo_status_t workspace_edit_add_behavior_link(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t parent_behavior_id,
@@ -611,6 +625,114 @@ static nmo_status_t parse_manager_parameter_text(
     return NMO_OK;
 }
 
+static bool workspace_edit_has_manager_value_separator(const char *value_str)
+{
+    return value_str != NULL &&
+           (strchr(value_str, ':') != NULL || strchr(value_str, '=') != NULL);
+}
+
+static nmo_status_t workspace_edit_find_message_manager_entry(
+    nmo_session_t *session,
+    const char *name_begin,
+    size_t name_len,
+    uint32_t *out_value)
+{
+    if (session == NULL || name_begin == NULL || name_len == 0u ||
+        out_value == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    const nmo_file_state_t *file_state = nmo_session_get_file_state(session);
+    if (file_state == NULL || file_state->manager_data == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    for (uint32_t i = 0; i < file_state->manager_data_count; ++i) {
+        const nmo_manager_data_t *manager = &file_state->manager_data[i];
+        if (!nmo_guid_equals(manager->guid, NMO_MANAGER_GUID_MESSAGE) ||
+            manager->chunk == NULL) {
+            continue;
+        }
+
+        const char **names = NULL;
+        uint32_t name_count = 0u;
+        if (workspace_edit_read_message_manager_names(
+                session, manager, &names, &name_count) != NMO_OK) {
+            continue;
+        }
+        for (uint32_t index = 0; index < name_count; ++index) {
+            const char *entry_name = names[index];
+            if (entry_name != NULL &&
+                strlen(entry_name) == name_len &&
+                strncmp(entry_name, name_begin, name_len) == 0) {
+                *out_value = index;
+                return NMO_OK;
+            }
+        }
+    }
+
+    return NMO_ERR_NOT_FOUND;
+}
+
+static nmo_status_t workspace_edit_prepare_manager_parameter_value(
+    nmo_workspace_edit_t *edit,
+    const nmo_parameter_state_t *state,
+    const char *value_str,
+    const nmo_parameter_write_options_t *options,
+    nmo_guid_t *out_guid,
+    uint32_t *out_value)
+{
+    nmo_status_t explicit_result =
+        parse_manager_parameter_text(value_str, out_guid, out_value);
+    if (explicit_result == NMO_OK ||
+        workspace_edit_has_manager_value_separator(value_str) ||
+        edit == NULL ||
+        state == NULL ||
+        !nmo_guid_equals(state->manager_guid, NMO_MANAGER_GUID_MESSAGE)) {
+        return explicit_result;
+    }
+
+    const char *name_begin = value_str;
+    while (name_begin != NULL && *name_begin != '\0' &&
+           isspace((unsigned char)*name_begin)) {
+        ++name_begin;
+    }
+    const char *name_end = name_begin != NULL ? name_begin + strlen(name_begin) : NULL;
+    while (name_end != NULL && name_end > name_begin &&
+           isspace((unsigned char)name_end[-1])) {
+        --name_end;
+    }
+    if (name_begin == NULL || name_begin == name_end) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_session_t *session = nmo_workspace_internal_session(edit->workspace);
+    nmo_status_t status = NMO_ERR_NOT_FOUND;
+    if (options != NULL &&
+        options->manager_entry_policy ==
+            NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING) {
+        size_t name_len = (size_t)(name_end - name_begin);
+        char *name_copy =
+            (char *)nmo_workspace_edit_alloc(edit, name_len + 1u, 1u);
+        if (name_copy == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        memcpy(name_copy, name_begin, name_len);
+        name_copy[name_len] = '\0';
+        status = nmo_object_edit_ensure_message_manager_entry(
+            edit, name_copy, out_value);
+    } else {
+        status = workspace_edit_find_message_manager_entry(
+            session, name_begin, (size_t)(name_end - name_begin), out_value);
+    }
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    *out_guid = NMO_MANAGER_GUID_MESSAGE;
+    return NMO_OK;
+}
+
 static nmo_status_t rollback_manager_data(nmo_workspace_edit_t *edit, void *payload)
 {
     (void)edit;
@@ -622,6 +744,30 @@ static nmo_status_t rollback_manager_data(nmo_workspace_edit_t *edit, void *payl
         snapshot->session,
         snapshot->manager_data,
         snapshot->manager_data_count);
+    return NMO_OK;
+}
+
+static nmo_status_t workspace_edit_seek_message_manager_identifier(
+    nmo_chunk_t *chunk)
+{
+    if (chunk == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (nmo_chunk_start_read(chunk) != NMO_OK) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    if (nmo_chunk_seek_identifier(chunk, 0x53u) == NMO_OK) {
+        return NMO_OK;
+    }
+
+    if (nmo_chunk_start_read(chunk) != NMO_OK) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    uint32_t identifier = 0u;
+    if (nmo_chunk_read_identifier(chunk, &identifier) != NMO_OK ||
+        identifier != 0x53u) {
+        return NMO_ERR_INVALID_STATE;
+    }
     return NMO_OK;
 }
 
@@ -1270,7 +1416,8 @@ nmo_status_t workspace_edit_set_parameter_value_ex(
         nmo_guid_t new_guid = NMO_GUID_NULL;
         uint32_t new_value = 0u;
         nmo_status_t parse_result =
-            parse_manager_parameter_text(value_str, &new_guid, &new_value);
+            workspace_edit_prepare_manager_parameter_value(
+                edit, state, value_str, options, &new_guid, &new_value);
         if (parse_result != NMO_OK) {
             return parse_result;
         }
@@ -1279,6 +1426,7 @@ nmo_status_t workspace_edit_set_parameter_value_ex(
             (parameter_manager_snapshot_t *)nmo_workspace_edit_alloc(
                 edit, sizeof(*snapshot), _Alignof(parameter_manager_snapshot_t));
         if (snapshot == NULL) {
+            workspace_edit_rollback_to(edit, checkpoint);
             return NMO_ERR_NOMEM;
         }
         snapshot->state = state;
@@ -1403,8 +1551,7 @@ static nmo_status_t workspace_edit_read_message_manager_names(
     if (chunk == NULL) {
         return NMO_ERR_NOMEM;
     }
-    if (nmo_chunk_start_read(chunk) != NMO_OK ||
-        nmo_chunk_seek_identifier(chunk, 0x53u) != NMO_OK) {
+    if (workspace_edit_seek_message_manager_identifier(chunk) != NMO_OK) {
         return NMO_ERR_INVALID_STATE;
     }
 
@@ -1424,9 +1571,7 @@ static nmo_status_t workspace_edit_read_message_manager_names(
     memset(names, 0, (size_t)count * sizeof(*names));
     for (int32_t i = 0; i < count; ++i) {
         char *entry_name = NULL;
-        if (nmo_chunk_read_string(chunk, &entry_name) != NMO_OK) {
-            return NMO_ERR_INVALID_STATE;
-        }
+        (void)nmo_chunk_read_string(chunk, &entry_name);
         names[i] = nmo_arena_strdup(arena, entry_name ? entry_name : "");
         if (names[i] == NULL) {
             return NMO_ERR_NOMEM;
