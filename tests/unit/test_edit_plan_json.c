@@ -472,18 +472,106 @@ TEST(edit_plan_json, roundtrips_all_current_v2_ops) {
     ASSERT_TRUE(set_bytes->data.set_bytes.options.resize);
     const nmo_edit_op_t *set_value = nmo_edit_plan_get(manifest.plan, 0u);
     ASSERT_NOT_NULL(set_value);
+    ASSERT_EQ(1u, set_value->primary_id);
+    ASSERT_STR_EQ("value", set_value->data.set_value.value);
     ASSERT_TRUE(set_value->data.set_value.has_options);
     ASSERT_TRUE(set_value->data.set_value.options.resize);
+    const nmo_edit_op_t *add_node = nmo_edit_plan_get(manifest.plan, 2u);
+    ASSERT_NOT_NULL(add_node);
+    ASSERT_EQ(3u, add_node->data.add_node.parent_behavior_id);
+    ASSERT_TRUE(nmo_guid_equals(nmo_guid_parse("AAAA0001-BBBB0002"),
+                                add_node->data.add_node.bb_guid));
+    ASSERT_STR_EQ("Node", add_node->data.add_node.name);
+    const nmo_edit_op_t *remove_node = nmo_edit_plan_get(manifest.plan, 3u);
+    ASSERT_NOT_NULL(remove_node);
+    ASSERT_EQ(4u, remove_node->data.remove_node.parent_behavior_id);
+    ASSERT_EQ(5u, remove_node->data.remove_node.node_id);
+    ASSERT_EQ(6u, remove_node->data.remove_node.delete_flags);
     const nmo_edit_op_t *link = nmo_edit_plan_get(manifest.plan, 7u);
     ASSERT_NOT_NULL(link);
     ASSERT_TRUE(link->data.add_link.has_from_io_ref);
     ASSERT_EQ(2u, link->data.add_link.from_io_ref_operation_index);
     ASSERT_STR_EQ("out", link->data.add_link.from_io_ref_handle);
+    ASSERT_TRUE(link->data.add_link.has_to_io_ref);
+    ASSERT_EQ(4u, link->data.add_link.to_io_ref_operation_index);
+    ASSERT_STR_EQ("in", link->data.add_link.to_io_ref_handle);
+    ASSERT_EQ(11u, link->data.add_link.activation_delay);
+    const nmo_edit_op_t *connect = nmo_edit_plan_get(manifest.plan, 12u);
+    ASSERT_NOT_NULL(connect);
+    ASSERT_EQ(20u, connect->data.connect_parameter.source_parameter_id);
+    ASSERT_TRUE(connect->data.connect_parameter.has_target_parameter_ref);
+    ASSERT_EQ(11u,
+              connect->data.connect_parameter
+                  .target_parameter_ref_operation_index);
+    ASSERT_STR_EQ("parameter",
+                  connect->data.connect_parameter
+                      .target_parameter_ref_handle);
+    const nmo_edit_op_t *add_operation = nmo_edit_plan_get(manifest.plan, 15u);
+    ASSERT_NOT_NULL(add_operation);
+    ASSERT_TRUE(add_operation->data.add_operation.has_in1_parameter_ref);
+    ASSERT_EQ(11u,
+              add_operation->data.add_operation
+                  .in1_parameter_ref_operation_index);
+    ASSERT_STR_EQ("parameter",
+                  add_operation->data.add_operation
+                      .in1_parameter_ref_handle);
+    ASSERT_EQ(24u, add_operation->data.add_operation.in2_parameter_id);
+    ASSERT_EQ(25u, add_operation->data.add_operation.out_parameter_id);
+    const nmo_edit_op_t *rewire_operation =
+        nmo_edit_plan_get(manifest.plan, 16u);
+    ASSERT_NOT_NULL(rewire_operation);
+    ASSERT_EQ(26u, rewire_operation->data.rewire_operation.operation_id);
+    ASSERT_TRUE((rewire_operation->data.rewire_operation.slot_flags &
+                 NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u);
+    ASSERT_TRUE((rewire_operation->data.rewire_operation.slot_flags &
+                 NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u);
+    ASSERT_EQ(27u, rewire_operation->data.rewire_operation.in1_parameter_id);
+    ASSERT_EQ(28u, rewire_operation->data.rewire_operation.out_parameter_id);
+    const nmo_edit_op_t *interface_policy =
+        nmo_edit_plan_get(manifest.plan, 18u);
+    ASSERT_NOT_NULL(interface_policy);
+    ASSERT_EQ(30u, interface_policy->data.interface_policy.behavior_id);
+    ASSERT_EQ(NMO_SCRIPT_EDIT_INTERFACE_REMOVE,
+              interface_policy->data.interface_policy.mode);
+    const nmo_edit_op_t *data_cell = nmo_edit_plan_get(manifest.plan, 19u);
+    ASSERT_NOT_NULL(data_cell);
+    ASSERT_EQ(31u, data_cell->data.data_cell.dataarray_id);
+    ASSERT_EQ(32u, data_cell->data.data_cell.row);
+    ASSERT_EQ(33u, data_cell->data.data_cell.col);
+    ASSERT_STR_EQ("cell", data_cell->data.data_cell.value);
     const nmo_edit_op_t *fold_op = nmo_edit_plan_get(manifest.plan, 20u);
     ASSERT_NOT_NULL(fold_op);
+    ASSERT_EQ(500u, fold_op->data.fold.desc.parent_id);
+    ASSERT_EQ(2u, fold_op->data.fold.desc.node_count);
+    ASSERT_EQ(102u, fold_op->data.fold.node_ids[1u]);
+    ASSERT_EQ(101u, fold_op->data.fold.desc.anchor_id);
+    ASSERT_TRUE(nmo_guid_equals(nmo_guid_parse("11111111-22222222"),
+                                fold_op->data.fold.desc.block_guid));
+    ASSERT_STR_EQ("Folded", fold_op->data.fold.desc.name);
+    ASSERT_EQ(7u, fold_op->data.fold.desc.block_version);
+    ASSERT_TRUE(fold_op->data.fold.desc.preserve_boundary);
+    ASSERT_TRUE(fold_op->data.fold.desc.preserve_links);
+    ASSERT_TRUE(fold_op->data.fold.desc.preserve_params);
+    ASSERT_EQ(NMO_BEHAVIOR_FOLD_INTERFACE_CANONICALIZE,
+              fold_op->data.fold.desc.interface_mode);
     ASSERT_EQ(1u, fold_op->data.fold.desc.input_map_count);
     ASSERT_EQ(22u, fold_op->data.fold.input_maps[0].new_id);
     ASSERT_STR_EQ("In", fold_op->data.fold.input_maps[0].label);
+    ASSERT_EQ(1u, fold_op->data.fold.desc.output_map_count);
+    ASSERT_EQ(44u, fold_op->data.fold.output_maps[0].new_id);
+    ASSERT_STR_EQ("Out", fold_op->data.fold.output_maps[0].label);
+    ASSERT_EQ(1u, fold_op->data.fold.desc.parameter_map_count);
+    ASSERT_EQ(66u, fold_op->data.fold.parameter_maps[0].new_id);
+    ASSERT_STR_EQ("Param", fold_op->data.fold.parameter_maps[0].label);
+    const nmo_edit_op_t *replace_op = nmo_edit_plan_get(manifest.plan, 21u);
+    ASSERT_NOT_NULL(replace_op);
+    ASSERT_EQ(600u, replace_op->data.replace_bb.desc.behavior_id);
+    ASSERT_TRUE(nmo_guid_equals(nmo_guid_parse("33333333-44444444"),
+                                replace_op->data.replace_bb.desc.block_guid));
+    ASSERT_STR_EQ("Replacement", replace_op->data.replace_bb.desc.name);
+    ASSERT_EQ(9u, replace_op->data.replace_bb.desc.block_version);
+    ASSERT_TRUE(replace_op->data.replace_bb.desc.preserve_links);
+    ASSERT_TRUE(replace_op->data.replace_bb.desc.preserve_params);
 
     nmo_edit_plan_manifest_dispose(&manifest);
     nmo_edit_plan_manifest_json_free(json);
