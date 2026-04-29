@@ -1030,6 +1030,54 @@ TEST(cli, script_run_executor_add_node_uses_edit_plan) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, script_run_executor_add_node_accepts_manager_entry_policy) {
+    char script_path[1024];
+    const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
+    char args[2048];
+    cli_run_result_t result = {0};
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+    yyjson_val *operations = NULL;
+    yyjson_val *changed_objects = NULL;
+    yyjson_val *item = NULL;
+    size_t idx = 0;
+    size_t max = 0;
+    bool found_manager_entry = false;
+
+    ASSERT_TRUE(build_repo_fixture_path(
+        "tests/fixtures/lua/script_run_add_node_manager_policy.lua",
+        script_path,
+        sizeof(script_path)));
+
+    snprintf(args, sizeof(args),
+             "-f json script run --dry-run \"%s\" \"%s\"",
+             script_path,
+             input_path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(1u, yyjson_arr_size(operations));
+    changed_objects = get_array_field(data, "changed_objects");
+    ASSERT_NOT_NULL(changed_objects);
+    yyjson_arr_foreach(changed_objects, idx, max, item) {
+        if (get_uint_field(item, "object_id") == NMO_OBJECT_ID_INVALID) {
+            found_manager_entry = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(found_manager_entry);
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, script_run_executor_replace_bb_uses_edit_plan) {
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
@@ -1764,6 +1812,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_run_executor_add_operation_uses_edit_plan);
     REGISTER_TEST(cli, script_run_executor_rename_io_uses_edit_plan);
     REGISTER_TEST(cli, script_run_executor_add_node_uses_edit_plan);
+    REGISTER_TEST(cli, script_run_executor_add_node_accepts_manager_entry_policy);
     REGISTER_TEST(cli, script_run_executor_replace_bb_uses_edit_plan);
     REGISTER_TEST(cli, script_run_carries_executor_semantic_risks);
     REGISTER_TEST(cli, script_run_executor_fold_uses_edit_plan);

@@ -447,17 +447,40 @@ static int script_run_lua_add_node(lua_State *state)
     nmo_object_id_t parent_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
     const char *guid_text = luaL_checkstring(state, 2);
     const char *name = luaL_optstring(state, 3, NULL);
+    nmo_add_node_options_t options = {0};
+    bool has_options = false;
     nmo_guid_t bb_guid = nmo_guid_parse(guid_text);
     nmo_status_t status = NMO_OK;
 
     if (nmo_guid_is_null(bb_guid)) {
         return luaL_error(state, "invalid building block GUID");
     }
+    if (!lua_isnoneornil(state, 4)) {
+        luaL_checktype(state, 4, LUA_TTABLE);
+        lua_getfield(state, 4, "manager_entry_policy");
+        if (!lua_isnil(state, -1)) {
+            const char *policy = luaL_checkstring(state, -1);
+            if (strcmp(policy, "require_existing") == 0) {
+                options.manager_entry_policy =
+                    NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+            } else if (strcmp(policy, "create_missing") == 0) {
+                options.manager_entry_policy =
+                    NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING;
+            } else {
+                return luaL_error(
+                    state,
+                    "manager_entry_policy must be 'require_existing' or 'create_missing'");
+            }
+        }
+        lua_pop(state, 1);
+        has_options = true;
+    }
 
     status = script_run_ensure_pending_plan(args);
     if (status == NMO_OK) {
-        status = nmo_edit_plan_add_node(
-            args->pending_plan, parent_id, bb_guid, name);
+        status = nmo_edit_plan_add_node_ex(
+            args->pending_plan, parent_id, bb_guid, name,
+            has_options ? &options : NULL);
     }
     if (status != NMO_OK) {
         return luaL_error(state, "%s",

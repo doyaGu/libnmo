@@ -267,6 +267,32 @@ TEST(lua_bindings_behavior, behavior_execute_returns_edit_report_schema_v2)
     nmo_lua_runtime_destroy(runtime);
 }
 
+TEST(lua_bindings_behavior, behavior_add_node_accepts_manager_entry_policy)
+{
+    nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
+    ASSERT_NOT_NULL(runtime);
+
+    ASSERT_EQ(NMO_OK, nmo_lua_register_platform_bindings(runtime));
+    assert_lua_ok(
+        runtime,
+        "local context = require('nmo.context')\n"
+        "local document = require('nmo.document')\n"
+        "local workspace_mod = require('nmo.workspace')\n"
+        "local behavior = require('nmo.behavior')\n"
+        "local ctx = context.create()\n"
+        "local doc = document.load_file(ctx, '" NMO_TEST_DATA_FILE("Nop.cmo") "')\n"
+        "local ws = workspace_mod.create(ctx, doc)\n"
+        "local tx = behavior.begin_edit(ws, 'lua behavior add node policy')\n"
+        "assert(behavior.add_node(tx, 6, 'A20E8D5B-DF002150', 'Lua Behavior Send Message', { manager_entry_policy = 'create_missing' }))\n"
+        "local report = behavior.report(tx)\n"
+        "assert(report.pending == true)\n"
+        "assert(#report.operations == 1)\n"
+        "assert(report.operations[1].op == 'add_node')\n"
+        "behavior.rollback(tx)\n");
+
+    nmo_lua_runtime_destroy(runtime);
+}
+
 TEST(lua_bindings_behavior, behavior_execute_rollback_discards_queued_plan)
 {
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
@@ -307,6 +333,8 @@ TEST_MAIN_BEGIN()
                   behavior_edit_chains_pending_parameter_handles);
     REGISTER_TEST(lua_bindings_behavior,
                   behavior_execute_returns_edit_report_schema_v2);
+    REGISTER_TEST(lua_bindings_behavior,
+                  behavior_add_node_accepts_manager_entry_policy);
     REGISTER_TEST(lua_bindings_behavior,
                   behavior_execute_rollback_discards_queued_plan);
 TEST_MAIN_END()
