@@ -850,7 +850,7 @@ static nmo_status_t script_edit_apply_symbolic_manager_default(
     nmo_object_t *parameter_obj,
     nmo_guid_t type_guid,
     const char *default_value,
-    nmo_manager_entry_policy_t manager_entry_policy)
+    const nmo_manager_entry_options_t *manager_entry)
 {
     nmo_parameter_state_t *state = parameter_obj
         ? nmo_parameter_get_mutable_state(parameter_obj)
@@ -861,16 +861,23 @@ static nmo_status_t script_edit_apply_symbolic_manager_default(
 
     nmo_guid_t manager_guid = NMO_GUID_NULL;
     uint32_t manager_value = 0u;
+    nmo_manager_entry_options_t effective =
+        manager_entry != NULL ? *manager_entry
+                              : nmo_manager_entry_options_default();
+    const char *entry_key =
+        effective.key != NULL && effective.key[0] != '\0'
+            ? effective.key
+            : default_value;
     nmo_status_t rc = script_edit_resolve_symbolic_manager_default(
-        tx, type_guid, default_value, &manager_guid, &manager_value);
+        tx, type_guid, entry_key, &manager_guid, &manager_value);
     if (rc != NMO_OK) {
-        if (manager_entry_policy != NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING ||
+        if (effective.policy != NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING ||
             !nmo_guid_equals(type_guid, CKPGUID_MESSAGE)) {
             return rc;
         }
         manager_guid = NMO_MANAGER_GUID_MESSAGE;
         rc = nmo_object_edit_ensure_message_manager_entry(
-            tx->edit, default_value, &manager_value);
+            tx->edit, entry_key, &manager_value);
         if (rc != NMO_OK) {
             return rc;
         }
@@ -893,7 +900,7 @@ static nmo_status_t script_edit_create_parameter_object(
     const char *name,
     nmo_guid_t type_guid,
     const char *default_value,
-    nmo_manager_entry_policy_t manager_entry_policy,
+    const nmo_manager_entry_options_t *manager_entry,
     nmo_object_id_t *out_parameter_id)
 {
     nmo_object_repository_t *repo = NULL;
@@ -937,7 +944,7 @@ static nmo_status_t script_edit_create_parameter_object(
             nmo_object_id_t source_id = 0;
             rc = script_edit_create_parameter_object(
                 tx, NMO_CID_PARAMETER, owner_id, name, type_guid, NULL,
-                manager_entry_policy,
+                manager_entry,
                 &source_id);
             if (rc != NMO_OK) {
                 return rc;
@@ -952,7 +959,7 @@ static nmo_status_t script_edit_create_parameter_object(
                     nmo_object_repository_find_by_id(repo, source_id);
                 rc = script_edit_apply_symbolic_manager_default(
                     tx, source_obj, type_guid, default_value,
-                    manager_entry_policy);
+                    manager_entry);
                 if (rc != NMO_OK) {
                     return rc;
                 }
@@ -1015,7 +1022,7 @@ static nmo_status_t script_edit_create_parameter_object(
             }
             rc = script_edit_apply_symbolic_manager_default(
                 tx, object, type_guid, default_value,
-                manager_entry_policy);
+                manager_entry);
             if (rc != NMO_OK) {
                 return rc;
             }
@@ -3095,9 +3102,9 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
     const nmo_behavior_proto_t *proto = NULL;
     nmo_status_t rc = NMO_OK;
     nmo_object_id_t node_id = 0;
-    nmo_manager_entry_policy_t manager_entry_policy =
-        options != NULL ? options->manager_entry.policy
-                        : NMO_MANAGER_ENTRY_POLICY_REQUIRE_EXISTING;
+    nmo_manager_entry_options_t manager_entry =
+        options != NULL ? options->manager_entry
+                        : nmo_manager_entry_options_default();
 
     if (!tx || !tx->edit || parent_behavior_id == 0 || nmo_guid_is_null(bb_guid)) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -3183,7 +3190,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
                 proto->input_params[i].name,
                 proto->input_params[i].type_guid,
                 proto->input_params[i].default_value,
-                manager_entry_policy,
+                &manager_entry,
                 &parameter_id);
             if (rc != NMO_OK) {
                 return rc;
@@ -3200,7 +3207,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
                 proto->output_params[i].name,
                 proto->output_params[i].type_guid,
                 proto->output_params[i].default_value,
-                manager_entry_policy,
+                &manager_entry,
                 &parameter_id);
             if (rc != NMO_OK) {
                 return rc;
@@ -3230,7 +3237,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
             rc = script_edit_create_parameter_object(
                 tx, NMO_CID_PARAMETERIN, node_id, "Target", target_type_guid,
                 NULL,
-                manager_entry_policy,
+                &manager_entry,
                 &target_parameter_id);
             if (rc != NMO_OK) {
                 return rc;
@@ -3244,7 +3251,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
                 proto->local_params[i].name,
                 proto->local_params[i].type_guid,
                 proto->local_params[i].default_value,
-                manager_entry_policy,
+                &manager_entry,
                 &parameter_id);
             if (rc != NMO_OK) {
                 return rc;
@@ -3263,7 +3270,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
                 proto->settings[i].name,
                 proto->settings[i].type_guid,
                 proto->settings[i].default_value,
-                manager_entry_policy,
+                &manager_entry,
                 &parameter_id);
             if (rc != NMO_OK) {
                 return rc;
@@ -4018,7 +4025,7 @@ NMO_API nmo_status_t nmo_script_edit_add_parameter(
     }
 
     rc = script_edit_create_parameter_object(tx, class_id, owner_behavior_id, name,
-                                             type_guid, NULL, false,
+                                             type_guid, NULL, NULL,
                                              &parameter_id);
     if (rc != NMO_OK) {
         return rc;
@@ -4189,7 +4196,7 @@ NMO_API nmo_status_t nmo_script_edit_ensure_input_parameter_source(
         nmo_object_get_name(input_object),
         input_state->type_guid,
         NULL,
-        false,
+        NULL,
         &source_id);
     if (rc != NMO_OK) {
         return rc;

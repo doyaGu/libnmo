@@ -7,6 +7,8 @@
 
 #include "behavior/nmo_semantic_validator.h"
 #include "behavior/nmo_script_edit.h"
+#include "format/nmo_chunk_api.h"
+#include "format/nmo_data.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
@@ -31,6 +33,12 @@ struct nmo_edit_plan {
     size_t capacity;
 };
 
+typedef struct edit_plan_manager_snapshot {
+    bool has_message_manager;
+    const char **message_names;
+    uint32_t message_name_count;
+} edit_plan_manager_snapshot_t;
+
 static char *edit_plan_strdup(const char *text)
 {
     if (text == NULL) {
@@ -42,6 +50,119 @@ static char *edit_plan_strdup(const char *text)
         memcpy(copy, text, len);
     }
     return copy;
+}
+
+static void edit_plan_manager_snapshot_dispose(
+    edit_plan_manager_snapshot_t *snapshot)
+{
+    if (snapshot == NULL) {
+        return;
+    }
+    if (snapshot->message_names != NULL) {
+        for (uint32_t i = 0; i < snapshot->message_name_count; ++i) {
+            free((void *)snapshot->message_names[i]);
+        }
+        free(snapshot->message_names);
+    }
+    memset(snapshot, 0, sizeof(*snapshot));
+}
+
+static nmo_status_t edit_plan_read_message_manager_snapshot(
+    nmo_workspace_t *workspace,
+    edit_plan_manager_snapshot_t *snapshot)
+{
+    if (snapshot == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    memset(snapshot, 0, sizeof(*snapshot));
+    nmo_session_t *session = nmo_workspace_internal_session(workspace);
+    const nmo_file_state_t *file_state =
+        session != NULL ? nmo_session_get_file_state(session) : NULL;
+    if (session == NULL || file_state == NULL ||
+        file_state->manager_data == NULL) {
+        return NMO_OK;
+    }
+
+    for (uint32_t i = 0; i < file_state->manager_data_count; ++i) {
+        const nmo_manager_data_t *manager = &file_state->manager_data[i];
+        if (!nmo_guid_equals(manager->guid, NMO_MANAGER_GUID_MESSAGE) ||
+            manager->chunk == NULL) {
+            continue;
+        }
+        snapshot->has_message_manager = true;
+        nmo_chunk_t *chunk =
+            nmo_chunk_clone(manager->chunk, nmo_session_get_arena(session));
+        if (chunk == NULL ||
+            nmo_chunk_start_read(chunk) != NMO_OK ||
+            nmo_chunk_seek_identifier(chunk, 0x53u) != NMO_OK) {
+            return NMO_OK;
+        }
+        int32_t count = 0;
+        if (nmo_chunk_read_int(chunk, &count) != NMO_OK || count < 0) {
+            return NMO_OK;
+        }
+        snapshot->message_names =
+            (const char **)calloc((size_t)count, sizeof(char *));
+        if (count > 0 && snapshot->message_names == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        snapshot->message_name_count = (uint32_t)count;
+        for (int32_t index = 0; index < count; ++index) {
+            char *name = NULL;
+            if (nmo_chunk_read_string(chunk, &name) == 0u) {
+                edit_plan_manager_snapshot_dispose(snapshot);
+                return NMO_OK;
+            }
+            snapshot->message_names[index] = edit_plan_strdup(name ? name : "");
+            if (snapshot->message_names[index] == NULL) {
+                edit_plan_manager_snapshot_dispose(snapshot);
+                return NMO_ERR_NOMEM;
+            }
+        }
+        return NMO_OK;
+    }
+
+    return NMO_OK;
+}
+
+static bool edit_plan_manager_snapshot_has_name(
+    const edit_plan_manager_snapshot_t *snapshot,
+    const char *name)
+{
+    if (snapshot == NULL || name == NULL) {
+        return false;
+    }
+    for (uint32_t i = 0; i < snapshot->message_name_count; ++i) {
+        if (snapshot->message_names[i] != NULL &&
+            strcmp(snapshot->message_names[i], name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool edit_plan_find_created_message_entry(
+    const edit_plan_manager_snapshot_t *before,
+    const edit_plan_manager_snapshot_t *after,
+    const char **out_key,
+    uint32_t *out_index)
+{
+    if (after == NULL || after->message_names == NULL) {
+        return false;
+    }
+    for (uint32_t i = 0; i < after->message_name_count; ++i) {
+        const char *name = after->message_names[i];
+        if (name != NULL && !edit_plan_manager_snapshot_has_name(before, name)) {
+            if (out_key != NULL) {
+                *out_key = name;
+            }
+            if (out_index != NULL) {
+                *out_index = i;
+            }
+            return true;
+        }
+    }
+    return false;
 }
 
 static nmo_status_t edit_plan_dup_object_ids(
@@ -1766,7 +1887,12 @@ static void edit_report_set_manager_entry_after(
     nmo_object_id_t id,
     nmo_edit_op_kind_t cause,
     const char *role,
-    nmo_guid_t manager_guid)
+    nmo_guid_t manager_guid,
+    const char *key,
+    uint32_t entry_index,
+    uint32_t entry_value,
+    bool created,
+    bool manager_chunk_changed)
 {
     nmo_edit_object_impact_t *impact =
         edit_report_find_impact(items, count, id, cause, role);
@@ -1775,6 +1901,47 @@ static void edit_report_set_manager_entry_after(
     }
     impact->has_manager_entry_after = true;
     impact->after_manager_guid = manager_guid;
+    if (key != NULL) {
+        snprintf(impact->after_manager_entry_key,
+                 sizeof(impact->after_manager_entry_key),
+                 "%s",
+                 key);
+    }
+    impact->after_manager_entry_index = entry_index;
+    impact->after_manager_entry_value = entry_value;
+    impact->after_manager_entry_created = created;
+    impact->after_manager_chunk_changed = manager_chunk_changed;
+}
+
+static nmo_status_t edit_report_note_manager_entry_after(
+    nmo_edit_report_t *report,
+    nmo_edit_op_kind_t cause,
+    const char *key,
+    uint32_t entry_index,
+    bool created,
+    bool manager_chunk_changed)
+{
+    if (report == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_status_t rc = nmo_edit_report_add_changed_object(
+        report, NMO_EDIT_MANAGER_ENTRY_IMPACT_ID, cause, "manager_entry");
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    edit_report_set_manager_entry_after(
+        report->changed_objects,
+        report->changed_object_count,
+        NMO_EDIT_MANAGER_ENTRY_IMPACT_ID,
+        cause,
+        "manager_entry",
+        NMO_MANAGER_GUID_MESSAGE,
+        key,
+        entry_index,
+        entry_index,
+        created,
+        manager_chunk_changed);
+    return NMO_OK;
 }
 
 nmo_status_t nmo_edit_report_add_changed_object(
@@ -2643,8 +2810,8 @@ static nmo_status_t edit_executor_apply_op(
             op->data.add_node.name,
             op->data.add_node.has_options
                 ? &(nmo_script_edit_add_node_options_t){
-                      .manager_entry.policy =
-                          op->data.add_node.options.manager_entry.policy,
+                      .manager_entry =
+                          op->data.add_node.options.manager_entry,
                   }
                 : NULL,
             out_result_id);
@@ -3787,6 +3954,15 @@ nmo_status_t nmo_edit_executor_execute_transaction(
         size_t changed_start = tx_report_before
             ? tx_report_before->changed_object_id_count
             : 0u;
+        edit_plan_manager_snapshot_t manager_before = {0};
+        edit_plan_manager_snapshot_t manager_after = {0};
+        rc = edit_plan_read_message_manager_snapshot(
+            nmo_script_edit_workspace(tx), &manager_before);
+        if (rc != NMO_OK) {
+            report->ok = false;
+            report->status = rc;
+            return rc;
+        }
         nmo_object_id_t result_id = 0;
         const char *diagnostic_code = NULL;
         const char *diagnostic_message = NULL;
@@ -3809,15 +3985,32 @@ nmo_status_t nmo_edit_executor_execute_transaction(
         nmo_status_t diagnostic_rc = edit_report_set_operation_diagnostic(
             report, i, diagnostic_code, diagnostic_message);
         if (diagnostic_rc != NMO_OK) {
+            edit_plan_manager_snapshot_dispose(&manager_before);
             report->ok = false;
             report->status = diagnostic_rc;
             return diagnostic_rc;
         }
         if (op_rc != NMO_OK) {
+            edit_plan_manager_snapshot_dispose(&manager_before);
             report->ok = false;
             report->status = op_rc;
             return op_rc;
         }
+        rc = edit_plan_read_message_manager_snapshot(
+            nmo_script_edit_workspace(tx), &manager_after);
+        if (rc != NMO_OK) {
+            edit_plan_manager_snapshot_dispose(&manager_before);
+            report->ok = false;
+            report->status = rc;
+            return rc;
+        }
+        const char *created_manager_key = NULL;
+        uint32_t created_manager_index = 0u;
+        bool created_manager_entry = edit_plan_find_created_message_entry(
+            &manager_before,
+            &manager_after,
+            &created_manager_key,
+            &created_manager_index);
         if (result_id != 0u && edit_op_creates_result(op->kind)) {
             nmo_status_t handle_rc = nmo_edit_report_add_operation_handle(
                 report,
@@ -3825,6 +4018,8 @@ nmo_status_t nmo_edit_executor_execute_transaction(
                 edit_op_result_handle_name(op->kind),
                 result_id);
             if (handle_rc != NMO_OK) {
+                edit_plan_manager_snapshot_dispose(&manager_after);
+                edit_plan_manager_snapshot_dispose(&manager_before);
                 report->ok = false;
                 report->status = handle_rc;
                 return handle_rc;
@@ -3833,6 +4028,8 @@ nmo_status_t nmo_edit_executor_execute_transaction(
                 handle_rc = edit_report_add_node_child_handles(
                     tx, report, i, result_id);
                 if (handle_rc != NMO_OK) {
+                    edit_plan_manager_snapshot_dispose(&manager_after);
+                    edit_plan_manager_snapshot_dispose(&manager_before);
                     report->ok = false;
                     report->status = handle_rc;
                     return handle_rc;
@@ -3850,6 +4047,8 @@ nmo_status_t nmo_edit_executor_execute_transaction(
                 op->kind,
                 "created");
             if (report_rc != NMO_OK) {
+                edit_plan_manager_snapshot_dispose(&manager_after);
+                edit_plan_manager_snapshot_dispose(&manager_before);
                 report->ok = false;
                 report->status = report_rc;
                 return report_rc;
@@ -3860,6 +4059,8 @@ nmo_status_t nmo_edit_executor_execute_transaction(
             nmo_status_t report_rc = nmo_edit_report_add_created_object(
                 report, result_id, op->kind, "created");
             if (report_rc != NMO_OK) {
+                edit_plan_manager_snapshot_dispose(&manager_after);
+                edit_plan_manager_snapshot_dispose(&manager_before);
                 report->ok = false;
                 report->status = report_rc;
                 return report_rc;
@@ -3916,19 +4117,49 @@ nmo_status_t nmo_edit_executor_execute_transaction(
                 nmo_status_t report_rc = nmo_edit_report_add_changed_object(
                     report, changed_ids[changed_i], op->kind, changed_role);
                 if (report_rc != NMO_OK) {
+                    edit_plan_manager_snapshot_dispose(&manager_after);
+                    edit_plan_manager_snapshot_dispose(&manager_before);
                     report->ok = false;
                     report->status = report_rc;
                     return report_rc;
                 }
                 if (changed_ids[changed_i] == NMO_EDIT_MANAGER_ENTRY_IMPACT_ID) {
+                    const char *key = created_manager_entry
+                        ? created_manager_key
+                        : NULL;
+                    uint32_t index = created_manager_entry
+                        ? created_manager_index
+                        : 0u;
                     edit_report_set_manager_entry_after(
                         report->changed_objects,
                         report->changed_object_count,
                         changed_ids[changed_i],
                         op->kind,
                         changed_role,
-                        NMO_MANAGER_GUID_MESSAGE);
+                        NMO_MANAGER_GUID_MESSAGE,
+                        key,
+                        index,
+                        index,
+                        created_manager_entry,
+                        created_manager_entry);
                 }
+            }
+        }
+        if (created_manager_entry) {
+            nmo_status_t manager_report_rc =
+                edit_report_note_manager_entry_after(
+                    report,
+                    op->kind,
+                    created_manager_key,
+                    created_manager_index,
+                    true,
+                    true);
+            if (manager_report_rc != NMO_OK) {
+                edit_plan_manager_snapshot_dispose(&manager_after);
+                edit_plan_manager_snapshot_dispose(&manager_before);
+                report->ok = false;
+                report->status = manager_report_rc;
+                return manager_report_rc;
             }
         }
         nmo_object_id_t deleted_id = edit_op_deleted_id(op);
@@ -3949,6 +4180,8 @@ nmo_status_t nmo_edit_executor_execute_transaction(
         }
         (void)nmo_edit_report_add_changed_object(
             report, changed_id, op->kind, "primary");
+        edit_plan_manager_snapshot_dispose(&manager_after);
+        edit_plan_manager_snapshot_dispose(&manager_before);
     }
 
     rc = edit_executor_validate_semantics(

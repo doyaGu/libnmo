@@ -270,8 +270,18 @@ typedef struct nmo_edit_changed_object {
     char after_data_cell_value[64];
     bool has_manager_entry_before;
     nmo_guid_t before_manager_guid;
+    char before_manager_entry_key[128];
+    uint32_t before_manager_entry_index;
+    uint32_t before_manager_entry_value;
+    bool before_manager_entry_created;
+    bool before_manager_chunk_changed;
     bool has_manager_entry_after;
     nmo_guid_t after_manager_guid;
+    char after_manager_entry_key[128];
+    uint32_t after_manager_entry_index;
+    uint32_t after_manager_entry_value;
+    bool after_manager_entry_created;
+    bool after_manager_chunk_changed;
 } nmo_edit_changed_object_t;
 
 typedef nmo_edit_changed_object_t nmo_edit_object_impact_t;

@@ -1716,6 +1716,12 @@ TEST(cli, script_node_add_creates_missing_manager_entry_when_policy_allows)
     manager_after = get_object_field(manager_change, "after");
     ASSERT_NOT_NULL(manager_after);
     ASSERT_STR_EQ("message", get_string_field(manager_after, "manager_kind"));
+    ASSERT_STR_EQ("PolicyMessage", get_string_field(manager_after, "key"));
+    ASSERT_EQ(0u, get_uint_field(manager_after, "entry_index"));
+    ASSERT_EQ(0u, get_uint_field(manager_after, "entry_value"));
+    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(manager_after, "created")));
+    ASSERT_TRUE(yyjson_get_bool(
+        yyjson_obj_get(manager_after, "manager_chunk_changed")));
     yyjson_doc_free(doc);
 }
 

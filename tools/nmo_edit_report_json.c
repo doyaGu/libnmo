@@ -328,7 +328,12 @@ static const char *nmo_cli_edit_report_manager_kind(nmo_guid_t manager_guid)
 
 static yyjson_mut_val *nmo_cli_edit_report_make_manager_entry_snapshot_json(
     yyjson_mut_doc *doc,
-    nmo_guid_t manager_guid)
+    nmo_guid_t manager_guid,
+    const char *key,
+    uint32_t entry_index,
+    uint32_t entry_value,
+    bool created,
+    bool manager_chunk_changed)
 {
     yyjson_mut_val *snapshot = yyjson_mut_obj(doc);
     char guid_text[32];
@@ -338,6 +343,14 @@ static yyjson_mut_val *nmo_cli_edit_report_make_manager_entry_snapshot_json(
     nmo_cli_json_add_str_safe(
         doc, snapshot, "manager_kind",
         nmo_cli_edit_report_manager_kind(manager_guid));
+    nmo_cli_json_add_str_safe(doc, snapshot, "key", key);
+    yyjson_mut_obj_add_uint(doc, snapshot, "entry_index",
+                            (uint64_t)entry_index);
+    yyjson_mut_obj_add_uint(doc, snapshot, "entry_value",
+                            (uint64_t)entry_value);
+    yyjson_mut_obj_add_bool(doc, snapshot, "created", created);
+    yyjson_mut_obj_add_bool(doc, snapshot, "manager_chunk_changed",
+                            manager_chunk_changed);
     return snapshot;
 }
 
@@ -479,7 +492,13 @@ static void nmo_cli_edit_report_add_impact_before_after_json(
         yyjson_mut_obj_add_val(
             doc, item, "before",
             nmo_cli_edit_report_make_manager_entry_snapshot_json(
-                doc, impact->before_manager_guid));
+                doc,
+                impact->before_manager_guid,
+                impact->before_manager_entry_key,
+                impact->before_manager_entry_index,
+                impact->before_manager_entry_value,
+                impact->before_manager_entry_created,
+                impact->before_manager_chunk_changed));
     } else if (impact->has_manager_entry_after) {
         yyjson_mut_obj_add_null(doc, item, "before");
     }
@@ -487,7 +506,13 @@ static void nmo_cli_edit_report_add_impact_before_after_json(
         yyjson_mut_obj_add_val(
             doc, item, "after",
             nmo_cli_edit_report_make_manager_entry_snapshot_json(
-                doc, impact->after_manager_guid));
+                doc,
+                impact->after_manager_guid,
+                impact->after_manager_entry_key,
+                impact->after_manager_entry_index,
+                impact->after_manager_entry_value,
+                impact->after_manager_entry_created,
+                impact->after_manager_chunk_changed));
     } else if (impact->has_manager_entry_before) {
         yyjson_mut_obj_add_null(doc, item, "after");
     }
