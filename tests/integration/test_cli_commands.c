@@ -3527,6 +3527,8 @@ TEST(cli, debug_probe_message_logger_text_option_uses_edit_plan) {
     ASSERT_STR_EQ("selected", yyjson_get_str(yyjson_obj_get(diag, "status")));
     ASSERT_EQ(1667u,
               yyjson_get_uint(yyjson_obj_get(diag, "selected_node_id")));
+    ASSERT_EQ(2152u,
+              yyjson_get_uint(yyjson_obj_get(diag, "selected_link_id")));
     yyjson_val *candidates = yyjson_obj_get(diag, "candidates");
     ASSERT_TRUE(candidates && yyjson_is_arr(candidates));
     ASSERT_EQ(1u, yyjson_arr_size(candidates));
@@ -3538,22 +3540,31 @@ TEST(cli, debug_probe_message_logger_text_option_uses_edit_plan) {
     ASSERT_NOT_NULL(yyjson_get_str(yyjson_obj_get(candidate, "role")));
     yyjson_val *operations = yyjson_obj_get(data, "operations");
     ASSERT_TRUE(operations && yyjson_is_arr(operations));
-    ASSERT_EQ(2u, yyjson_arr_size(operations));
-    ASSERT_STR_EQ("add_node",
+    ASSERT_EQ(5u, yyjson_arr_size(operations));
+    ASSERT_STR_EQ("remove_behavior_link",
                   yyjson_get_str(yyjson_obj_get(
                       yyjson_arr_get(operations, 0), "op")));
-    ASSERT_STR_EQ("set_parameter_value",
+    ASSERT_STR_EQ("add_node",
                   yyjson_get_str(yyjson_obj_get(
                       yyjson_arr_get(operations, 1), "op")));
+    ASSERT_STR_EQ("set_parameter_value",
+                  yyjson_get_str(yyjson_obj_get(
+                      yyjson_arr_get(operations, 2), "op")));
     ASSERT_TRUE(yyjson_get_uint(yyjson_obj_get(
-                    yyjson_arr_get(operations, 1), "result_id")) != 0u);
+                    yyjson_arr_get(operations, 2), "result_id")) != 0u);
+    ASSERT_STR_EQ("add_behavior_link",
+                  yyjson_get_str(yyjson_obj_get(
+                      yyjson_arr_get(operations, 3), "op")));
+    ASSERT_STR_EQ("add_behavior_link",
+                  yyjson_get_str(yyjson_obj_get(
+                      yyjson_arr_get(operations, 4), "op")));
     yyjson_doc_free(doc);
 }
 
 TEST(cli, debug_probe_message_logger_analyzes_message_node_without_display_name) {
     char args[1024];
     snprintf(args, sizeof(args),
-             "-f json debug probe message-logger --behavior 237 "
+             "-f json debug probe message-logger --behavior 2172 "
              "--message-node 1667 --name MessageLoggerProbe "
              "--text \"message trace\" \"%s\" --dry-run",
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
