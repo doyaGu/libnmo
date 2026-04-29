@@ -4,6 +4,7 @@
 
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
+#include "object/nmo_object_enum_defs.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -252,6 +253,67 @@ static yyjson_mut_val *nmo_cli_edit_report_make_operation_slot_snapshot_json(
     return snapshot;
 }
 
+static const char *nmo_cli_edit_report_data_cell_type_name(uint32_t type)
+{
+    switch (type) {
+    case CKARRAYTYPE_INT:
+        return "int";
+    case CKARRAYTYPE_FLOAT:
+        return "float";
+    case CKARRAYTYPE_STRING:
+        return "string";
+    case CKARRAYTYPE_OBJECT:
+        return "object";
+    case CKARRAYTYPE_PARAMETER:
+        return "parameter";
+    default:
+        return "unknown";
+    }
+}
+
+static yyjson_mut_val *nmo_cli_edit_report_make_interface_snapshot_json(
+    yyjson_mut_doc *doc,
+    nmo_object_id_t behavior_id,
+    bool has_interface,
+    bool has_interface_chunk,
+    bool has_interface_data,
+    bool interface_ids_are_runtime,
+    uint32_t version,
+    uint32_t sub_count)
+{
+    yyjson_mut_val *snapshot = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_uint(doc, snapshot, "behavior_id",
+                            (uint64_t)behavior_id);
+    yyjson_mut_obj_add_bool(doc, snapshot, "has_interface", has_interface);
+    yyjson_mut_obj_add_bool(doc, snapshot, "has_interface_chunk",
+                            has_interface_chunk);
+    yyjson_mut_obj_add_bool(doc, snapshot, "has_interface_data",
+                            has_interface_data);
+    yyjson_mut_obj_add_bool(doc, snapshot, "interface_ids_are_runtime",
+                            interface_ids_are_runtime);
+    yyjson_mut_obj_add_uint(doc, snapshot, "version", (uint64_t)version);
+    yyjson_mut_obj_add_uint(doc, snapshot, "sub_count",
+                            (uint64_t)sub_count);
+    return snapshot;
+}
+
+static yyjson_mut_val *nmo_cli_edit_report_make_data_cell_snapshot_json(
+    yyjson_mut_doc *doc,
+    uint32_t row,
+    uint32_t col,
+    uint32_t type,
+    const char *value)
+{
+    yyjson_mut_val *snapshot = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_uint(doc, snapshot, "row", (uint64_t)row);
+    yyjson_mut_obj_add_uint(doc, snapshot, "col", (uint64_t)col);
+    nmo_cli_json_add_str_safe(
+        doc, snapshot, "type",
+        nmo_cli_edit_report_data_cell_type_name(type));
+    nmo_cli_json_add_str_safe(doc, snapshot, "value", value);
+    return snapshot;
+}
+
 static void nmo_cli_edit_report_add_impact_before_after_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *item,
@@ -330,6 +392,60 @@ static void nmo_cli_edit_report_add_impact_before_after_json(
                 impact->after_has_out_parameter,
                 impact->after_out_parameter_id));
     } else if (impact->has_operation_slot_before) {
+        yyjson_mut_obj_add_null(doc, item, "after");
+    }
+    if (impact->has_interface_before) {
+        yyjson_mut_obj_add_val(
+            doc, item, "before",
+            nmo_cli_edit_report_make_interface_snapshot_json(
+                doc,
+                impact->before_interface_behavior_id,
+                impact->before_has_interface,
+                impact->before_has_interface_chunk,
+                impact->before_has_interface_data,
+                impact->before_interface_ids_are_runtime,
+                impact->before_interface_version,
+                impact->before_interface_sub_count));
+    } else if (impact->has_interface_after) {
+        yyjson_mut_obj_add_null(doc, item, "before");
+    }
+    if (impact->has_interface_after) {
+        yyjson_mut_obj_add_val(
+            doc, item, "after",
+            nmo_cli_edit_report_make_interface_snapshot_json(
+                doc,
+                impact->after_interface_behavior_id,
+                impact->after_has_interface,
+                impact->after_has_interface_chunk,
+                impact->after_has_interface_data,
+                impact->after_interface_ids_are_runtime,
+                impact->after_interface_version,
+                impact->after_interface_sub_count));
+    } else if (impact->has_interface_before) {
+        yyjson_mut_obj_add_null(doc, item, "after");
+    }
+    if (impact->has_data_cell_before) {
+        yyjson_mut_obj_add_val(
+            doc, item, "before",
+            nmo_cli_edit_report_make_data_cell_snapshot_json(
+                doc,
+                impact->before_data_cell_row,
+                impact->before_data_cell_col,
+                impact->before_data_cell_type,
+                impact->before_data_cell_value));
+    } else if (impact->has_data_cell_after) {
+        yyjson_mut_obj_add_null(doc, item, "before");
+    }
+    if (impact->has_data_cell_after) {
+        yyjson_mut_obj_add_val(
+            doc, item, "after",
+            nmo_cli_edit_report_make_data_cell_snapshot_json(
+                doc,
+                impact->after_data_cell_row,
+                impact->after_data_cell_col,
+                impact->after_data_cell_type,
+                impact->after_data_cell_value));
+    } else if (impact->has_data_cell_before) {
         yyjson_mut_obj_add_null(doc, item, "after");
     }
 }

@@ -2,6 +2,7 @@
 
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
+#include "object/nmo_object_enum_defs.h"
 #include "lauxlib.h"
 
 #include <stdbool.h>
@@ -207,6 +208,69 @@ static void nmo_lua_push_operation_slot_snapshot(
     lua_setfield(state, -2, "out_parameter_id");
 }
 
+static const char *nmo_lua_data_cell_type_name(uint32_t type)
+{
+    switch (type) {
+    case CKARRAYTYPE_INT:
+        return "int";
+    case CKARRAYTYPE_FLOAT:
+        return "float";
+    case CKARRAYTYPE_STRING:
+        return "string";
+    case CKARRAYTYPE_OBJECT:
+        return "object";
+    case CKARRAYTYPE_PARAMETER:
+        return "parameter";
+    default:
+        return "unknown";
+    }
+}
+
+static void nmo_lua_push_interface_snapshot(
+    lua_State *state,
+    nmo_object_id_t behavior_id,
+    bool has_interface,
+    bool has_interface_chunk,
+    bool has_interface_data,
+    bool interface_ids_are_runtime,
+    uint32_t version,
+    uint32_t sub_count)
+{
+    lua_createtable(state, 0, 7);
+    lua_pushinteger(state, (lua_Integer)behavior_id);
+    lua_setfield(state, -2, "behavior_id");
+    lua_pushboolean(state, has_interface);
+    lua_setfield(state, -2, "has_interface");
+    lua_pushboolean(state, has_interface_chunk);
+    lua_setfield(state, -2, "has_interface_chunk");
+    lua_pushboolean(state, has_interface_data);
+    lua_setfield(state, -2, "has_interface_data");
+    lua_pushboolean(state, interface_ids_are_runtime);
+    lua_setfield(state, -2, "interface_ids_are_runtime");
+    lua_pushinteger(state, (lua_Integer)version);
+    lua_setfield(state, -2, "version");
+    lua_pushinteger(state, (lua_Integer)sub_count);
+    lua_setfield(state, -2, "sub_count");
+}
+
+static void nmo_lua_push_data_cell_snapshot(
+    lua_State *state,
+    uint32_t row,
+    uint32_t col,
+    uint32_t type,
+    const char *value)
+{
+    lua_createtable(state, 0, 4);
+    lua_pushinteger(state, (lua_Integer)row);
+    lua_setfield(state, -2, "row");
+    lua_pushinteger(state, (lua_Integer)col);
+    lua_setfield(state, -2, "col");
+    lua_pushstring(state, nmo_lua_data_cell_type_name(type));
+    lua_setfield(state, -2, "type");
+    lua_pushstring(state, value != NULL ? value : "");
+    lua_setfield(state, -2, "value");
+}
+
 static void nmo_lua_push_impact_before_after(
     lua_State *state,
     const nmo_edit_object_impact_t *impact)
@@ -283,6 +347,60 @@ static void nmo_lua_push_impact_before_after(
             impact->after_out_parameter_id);
         lua_setfield(state, -2, "after");
     } else if (impact->has_operation_slot_before) {
+        lua_pushnil(state);
+        lua_setfield(state, -2, "after");
+    }
+    if (impact->has_interface_before) {
+        nmo_lua_push_interface_snapshot(
+            state,
+            impact->before_interface_behavior_id,
+            impact->before_has_interface,
+            impact->before_has_interface_chunk,
+            impact->before_has_interface_data,
+            impact->before_interface_ids_are_runtime,
+            impact->before_interface_version,
+            impact->before_interface_sub_count);
+        lua_setfield(state, -2, "before");
+    } else if (impact->has_interface_after) {
+        lua_pushnil(state);
+        lua_setfield(state, -2, "before");
+    }
+    if (impact->has_interface_after) {
+        nmo_lua_push_interface_snapshot(
+            state,
+            impact->after_interface_behavior_id,
+            impact->after_has_interface,
+            impact->after_has_interface_chunk,
+            impact->after_has_interface_data,
+            impact->after_interface_ids_are_runtime,
+            impact->after_interface_version,
+            impact->after_interface_sub_count);
+        lua_setfield(state, -2, "after");
+    } else if (impact->has_interface_before) {
+        lua_pushnil(state);
+        lua_setfield(state, -2, "after");
+    }
+    if (impact->has_data_cell_before) {
+        nmo_lua_push_data_cell_snapshot(
+            state,
+            impact->before_data_cell_row,
+            impact->before_data_cell_col,
+            impact->before_data_cell_type,
+            impact->before_data_cell_value);
+        lua_setfield(state, -2, "before");
+    } else if (impact->has_data_cell_after) {
+        lua_pushnil(state);
+        lua_setfield(state, -2, "before");
+    }
+    if (impact->has_data_cell_after) {
+        nmo_lua_push_data_cell_snapshot(
+            state,
+            impact->after_data_cell_row,
+            impact->after_data_cell_col,
+            impact->after_data_cell_type,
+            impact->after_data_cell_value);
+        lua_setfield(state, -2, "after");
+    } else if (impact->has_data_cell_before) {
         lua_pushnil(state);
         lua_setfield(state, -2, "after");
     }

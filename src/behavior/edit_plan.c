@@ -7,9 +7,11 @@
 
 #include "behavior/nmo_semantic_validator.h"
 #include "behavior/nmo_script_edit.h"
+#include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/nmo_class_ids.h"
@@ -1552,6 +1554,196 @@ static void edit_report_set_operation_slot_after(
         state->has_out ? state->out_id : 0u;
 }
 
+static void edit_plan_format_data_cell_value(
+    const nmo_dataarray_cell_t *cell,
+    uint32_t type,
+    char *buffer,
+    size_t buffer_size)
+{
+    if (buffer == NULL || buffer_size == 0u) {
+        return;
+    }
+    buffer[0] = '\0';
+    if (cell == NULL) {
+        return;
+    }
+    switch ((CK_ARRAYTYPE)type) {
+    case CKARRAYTYPE_INT:
+        snprintf(buffer, buffer_size, "%d", cell->int_value);
+        break;
+    case CKARRAYTYPE_FLOAT:
+        snprintf(buffer, buffer_size, "%.9g", (double)cell->float_value);
+        break;
+    case CKARRAYTYPE_STRING:
+        snprintf(buffer, buffer_size, "%s",
+                 cell->string_value ? cell->string_value : "");
+        break;
+    case CKARRAYTYPE_OBJECT:
+        snprintf(buffer, buffer_size, "%u", cell->object_id);
+        break;
+    case CKARRAYTYPE_PARAMETER:
+        snprintf(buffer, buffer_size, "%u", cell->parameter_id);
+        break;
+    default:
+        break;
+    }
+}
+
+static const nmo_behavior_state_t *edit_plan_get_behavior_state(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t behavior_id)
+{
+    if (tx == NULL || behavior_id == 0u) {
+        return NULL;
+    }
+    nmo_object_repository_t *repo =
+        nmo_workspace_internal_repository(nmo_script_edit_workspace(tx));
+    nmo_object_t *object = repo
+        ? nmo_object_repository_find_by_id(repo, behavior_id)
+        : NULL;
+    if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
+        return NULL;
+    }
+    return (const nmo_behavior_state_t *)nmo_object_get_state(object);
+}
+
+static const nmo_dataarray_cell_t *edit_plan_get_data_cell(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t dataarray_id,
+    uint32_t row,
+    uint32_t col,
+    uint32_t *out_type)
+{
+    if (out_type != NULL) {
+        *out_type = 0u;
+    }
+    if (tx == NULL || dataarray_id == 0u) {
+        return NULL;
+    }
+    nmo_object_repository_t *repo =
+        nmo_workspace_internal_repository(nmo_script_edit_workspace(tx));
+    nmo_object_t *object = repo
+        ? nmo_object_repository_find_by_id(repo, dataarray_id)
+        : NULL;
+    if (object == NULL ||
+        nmo_object_get_class_id(object) != NMO_CID_DATAARRAY) {
+        return NULL;
+    }
+    const nmo_dataarray_state_t *state =
+        (const nmo_dataarray_state_t *)nmo_object_get_state(object);
+    if (state == NULL || row >= state->row_count ||
+        col >= state->column_count || state->rows == NULL ||
+        state->rows[row].cells == NULL || state->column_formats == NULL) {
+        return NULL;
+    }
+    if (out_type != NULL) {
+        *out_type = (uint32_t)state->column_formats[col].type;
+    }
+    return &state->rows[row].cells[col];
+}
+
+static void edit_report_set_interface_before(
+    nmo_edit_object_impact_t *items,
+    size_t count,
+    nmo_object_id_t id,
+    nmo_edit_op_kind_t cause,
+    const char *role,
+    const nmo_behavior_state_t *state)
+{
+    nmo_edit_object_impact_t *impact =
+        edit_report_find_impact(items, count, id, cause, role);
+    if (impact == NULL || state == NULL) {
+        return;
+    }
+    impact->has_interface_before = true;
+    impact->before_interface_behavior_id = id;
+    impact->before_has_interface = state->has_interface;
+    impact->before_has_interface_chunk = state->interface_chunk != NULL;
+    impact->before_has_interface_data = state->interface_data != NULL;
+    impact->before_interface_ids_are_runtime =
+        state->interface_ids_are_runtime;
+    impact->before_interface_version =
+        state->interface_data ? state->interface_data->version : 0u;
+    impact->before_interface_sub_count =
+        state->interface_data ? (uint32_t)state->interface_data->sub_count : 0u;
+}
+
+static void edit_report_set_interface_after(
+    nmo_edit_object_impact_t *items,
+    size_t count,
+    nmo_object_id_t id,
+    nmo_edit_op_kind_t cause,
+    const char *role,
+    const nmo_behavior_state_t *state)
+{
+    nmo_edit_object_impact_t *impact =
+        edit_report_find_impact(items, count, id, cause, role);
+    if (impact == NULL || state == NULL) {
+        return;
+    }
+    impact->has_interface_after = true;
+    impact->after_interface_behavior_id = id;
+    impact->after_has_interface = state->has_interface;
+    impact->after_has_interface_chunk = state->interface_chunk != NULL;
+    impact->after_has_interface_data = state->interface_data != NULL;
+    impact->after_interface_ids_are_runtime =
+        state->interface_ids_are_runtime;
+    impact->after_interface_version =
+        state->interface_data ? state->interface_data->version : 0u;
+    impact->after_interface_sub_count =
+        state->interface_data ? (uint32_t)state->interface_data->sub_count : 0u;
+}
+
+static void edit_report_set_data_cell_before(
+    nmo_edit_object_impact_t *items,
+    size_t count,
+    nmo_object_id_t id,
+    nmo_edit_op_kind_t cause,
+    const char *role,
+    uint32_t row,
+    uint32_t col,
+    uint32_t type,
+    const nmo_dataarray_cell_t *cell)
+{
+    nmo_edit_object_impact_t *impact =
+        edit_report_find_impact(items, count, id, cause, role);
+    if (impact == NULL || cell == NULL) {
+        return;
+    }
+    impact->has_data_cell_before = true;
+    impact->before_data_cell_row = row;
+    impact->before_data_cell_col = col;
+    impact->before_data_cell_type = type;
+    edit_plan_format_data_cell_value(
+        cell, type, impact->before_data_cell_value,
+        sizeof(impact->before_data_cell_value));
+}
+
+static void edit_report_set_data_cell_after(
+    nmo_edit_object_impact_t *items,
+    size_t count,
+    nmo_object_id_t id,
+    nmo_edit_op_kind_t cause,
+    const char *role,
+    uint32_t row,
+    uint32_t col,
+    uint32_t type,
+    const nmo_dataarray_cell_t *cell)
+{
+    nmo_edit_object_impact_t *impact =
+        edit_report_find_impact(items, count, id, cause, role);
+    if (impact == NULL || cell == NULL) {
+        return;
+    }
+    impact->has_data_cell_after = true;
+    impact->after_data_cell_row = row;
+    impact->after_data_cell_col = col;
+    impact->after_data_cell_type = type;
+    edit_plan_format_data_cell_value(
+        cell, type, impact->after_data_cell_value,
+        sizeof(impact->after_data_cell_value));
+}
+
 nmo_status_t nmo_edit_report_add_changed_object(
     nmo_edit_report_t *report,
     nmo_object_id_t id,
@@ -3026,12 +3218,63 @@ static nmo_status_t edit_executor_apply_op(
             out_parameter_id);
     }
     case NMO_EDIT_OP_INTERFACE_POLICY:
-        return nmo_script_edit_apply_interface_policy(
+    {
+        const nmo_behavior_state_t *before_state =
+            edit_plan_get_behavior_state(
+                tx,
+                op->data.interface_policy.behavior_id);
+        nmo_behavior_state_t before_state_copy;
+        const nmo_behavior_state_t *before_snapshot = NULL;
+        if (before_state != NULL) {
+            before_state_copy = *before_state;
+            before_snapshot = &before_state_copy;
+        }
+        nmo_status_t rc = nmo_script_edit_apply_interface_policy(
             tx,
             op->data.interface_policy.behavior_id,
             op->data.interface_policy.mode);
+        if (rc != NMO_OK || report == NULL) {
+            return rc;
+        }
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            report,
+            op->data.interface_policy.behavior_id,
+            NMO_EDIT_OP_INTERFACE_POLICY,
+            "primary"));
+        edit_report_set_interface_before(
+            report->changed_objects,
+            report->changed_object_count,
+            op->data.interface_policy.behavior_id,
+            NMO_EDIT_OP_INTERFACE_POLICY,
+            "primary",
+            before_snapshot);
+        edit_report_set_interface_after(
+            report->changed_objects,
+            report->changed_object_count,
+            op->data.interface_policy.behavior_id,
+            NMO_EDIT_OP_INTERFACE_POLICY,
+            "primary",
+            edit_plan_get_behavior_state(
+                tx,
+                op->data.interface_policy.behavior_id));
+        return NMO_OK;
+    }
     case NMO_EDIT_OP_SET_DATA_CELL:
     {
+        uint32_t before_type = 0u;
+        const nmo_dataarray_cell_t *before_cell =
+            edit_plan_get_data_cell(
+                tx,
+                op->data.data_cell.dataarray_id,
+                op->data.data_cell.row,
+                op->data.data_cell.col,
+                &before_type);
+        nmo_dataarray_cell_t before_cell_copy;
+        const nmo_dataarray_cell_t *before_snapshot = NULL;
+        if (before_cell != NULL) {
+            before_cell_copy = *before_cell;
+            before_snapshot = &before_cell_copy;
+        }
         nmo_status_t rc = nmo_object_edit_set_dataarray_cell(
             edit,
             op->data.data_cell.dataarray_id,
@@ -3041,11 +3284,40 @@ static nmo_status_t edit_executor_apply_op(
         if (rc != NMO_OK) {
             return rc;
         }
-        return nmo_edit_report_add_changed_object(
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
             report,
             op->data.data_cell.dataarray_id,
             NMO_EDIT_OP_SET_DATA_CELL,
-            "data_cell");
+            "data_cell"));
+        edit_report_set_data_cell_before(
+            report->changed_objects,
+            report->changed_object_count,
+            op->data.data_cell.dataarray_id,
+            NMO_EDIT_OP_SET_DATA_CELL,
+            "data_cell",
+            op->data.data_cell.row,
+            op->data.data_cell.col,
+            before_type,
+            before_snapshot);
+        uint32_t after_type = 0u;
+        const nmo_dataarray_cell_t *after_cell =
+            edit_plan_get_data_cell(
+                tx,
+                op->data.data_cell.dataarray_id,
+                op->data.data_cell.row,
+                op->data.data_cell.col,
+                &after_type);
+        edit_report_set_data_cell_after(
+            report->changed_objects,
+            report->changed_object_count,
+            op->data.data_cell.dataarray_id,
+            NMO_EDIT_OP_SET_DATA_CELL,
+            "data_cell",
+            op->data.data_cell.row,
+            op->data.data_cell.col,
+            after_type,
+            after_cell);
+        return NMO_OK;
     }
     case NMO_EDIT_OP_REPLACE_BB: {
         nmo_behavior_replace_report_t replace_report = {0};

@@ -1724,7 +1724,20 @@ TEST(cli, patch_apply_v2_set_data_cell_dry_run) {
     ASSERT_NOT_NULL(data_cell_diff);
     yyjson_val *changed_cells = get_array_field(data_cell_diff, "changed");
     ASSERT_NOT_NULL(changed_cells);
-    ASSERT_NOT_NULL(find_object_by_id_and_role(changed_cells, 2261u, "data_cell"));
+    yyjson_val *changed_cell =
+        find_object_by_id_and_role(changed_cells, 2261u, "data_cell");
+    ASSERT_NOT_NULL(changed_cell);
+    yyjson_val *cell_before = get_object_field(changed_cell, "before");
+    yyjson_val *cell_after = get_object_field(changed_cell, "after");
+    ASSERT_NOT_NULL(cell_before);
+    ASSERT_NOT_NULL(cell_after);
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(cell_before, "row"));
+    ASSERT_EQ(1u, (uint32_t)get_uint_field(cell_before, "col"));
+    ASSERT_STR_EQ("float", get_string_field(cell_before, "type"));
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(cell_after, "row"));
+    ASSERT_EQ(1u, (uint32_t)get_uint_field(cell_after, "col"));
+    ASSERT_STR_EQ("float", get_string_field(cell_after, "type"));
+    ASSERT_STR_EQ("0.75", get_string_field(cell_after, "value"));
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
     remove(patch);
@@ -2368,6 +2381,26 @@ TEST(cli, patch_apply_v2_interface_policy_dry_run) {
     ASSERT_TRUE(op && yyjson_is_obj(op));
     ASSERT_STR_EQ("interface_policy", get_string_field(op, "op"));
     ASSERT_EQ(3u, (uint32_t)get_uint_field(op, "primary_id"));
+    yyjson_val *diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    yyjson_val *interface_diff = get_object_field(diff, "interface_diff");
+    ASSERT_NOT_NULL(interface_diff);
+    yyjson_val *changed_interfaces =
+        get_array_field(interface_diff, "changed");
+    ASSERT_NOT_NULL(changed_interfaces);
+    yyjson_val *changed_interface =
+        find_object_by_id_and_role(changed_interfaces, 3u, "primary");
+    ASSERT_NOT_NULL(changed_interface);
+    yyjson_val *interface_before =
+        get_object_field(changed_interface, "before");
+    yyjson_val *interface_after =
+        get_object_field(changed_interface, "after");
+    ASSERT_NOT_NULL(interface_before);
+    ASSERT_NOT_NULL(interface_after);
+    ASSERT_EQ(3u, (uint32_t)get_uint_field(interface_before, "behavior_id"));
+    ASSERT_EQ(3u, (uint32_t)get_uint_field(interface_after, "behavior_id"));
+    ASSERT_TRUE(yyjson_obj_get(interface_before, "has_interface") != NULL);
+    ASSERT_TRUE(yyjson_obj_get(interface_after, "has_interface") != NULL);
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
     remove(patch);
