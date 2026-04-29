@@ -268,6 +268,10 @@ typedef struct nmo_edit_changed_object {
     uint32_t after_data_cell_col;
     uint32_t after_data_cell_type;
     char after_data_cell_value[64];
+    bool has_manager_entry_before;
+    nmo_guid_t before_manager_guid;
+    bool has_manager_entry_after;
+    nmo_guid_t after_manager_guid;
 } nmo_edit_changed_object_t;
 
 typedef nmo_edit_changed_object_t nmo_edit_object_impact_t;

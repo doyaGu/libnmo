@@ -1657,6 +1657,11 @@ TEST(cli, script_node_add_creates_missing_manager_entry_when_policy_allows)
     yyjson_val *root = NULL;
     yyjson_val *data = NULL;
     yyjson_val *changed_objects = NULL;
+    yyjson_val *diff = NULL;
+    yyjson_val *manager_entry_diff = NULL;
+    yyjson_val *manager_changes = NULL;
+    yyjson_val *manager_change = NULL;
+    yyjson_val *manager_after = NULL;
     bool found_manager_entry = false;
     char args[1024];
 
@@ -1689,6 +1694,22 @@ TEST(cli, script_node_add_creates_missing_manager_entry_when_policy_allows)
         }
     }
     ASSERT_TRUE(found_manager_entry);
+
+    diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    manager_entry_diff = get_object_field(diff, "manager_entry_diff");
+    ASSERT_NOT_NULL(manager_entry_diff);
+    manager_changes = get_array_field(manager_entry_diff, "changed");
+    ASSERT_NOT_NULL(manager_changes);
+    ASSERT_EQ(1u, yyjson_arr_size(manager_changes));
+    manager_change = yyjson_arr_get(manager_changes, 0);
+    ASSERT_EQ(NMO_OBJECT_ID_INVALID, get_uint_field(manager_change, "object_id"));
+    ASSERT_STR_EQ("manager_entry", get_string_field(manager_change, "role"));
+    ASSERT_TRUE(yyjson_obj_get(manager_change, "before") == NULL ||
+                yyjson_is_null(yyjson_obj_get(manager_change, "before")));
+    manager_after = get_object_field(manager_change, "after");
+    ASSERT_NOT_NULL(manager_after);
+    ASSERT_STR_EQ("message", get_string_field(manager_after, "manager_kind"));
     yyjson_doc_free(doc);
 }
 

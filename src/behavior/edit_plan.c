@@ -15,6 +15,7 @@
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_manager_guids.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_value_writer.h"
 
@@ -1757,6 +1758,23 @@ static void edit_report_set_data_cell_after(
     edit_plan_format_data_cell_value(
         cell, type, impact->after_data_cell_value,
         sizeof(impact->after_data_cell_value));
+}
+
+static void edit_report_set_manager_entry_after(
+    nmo_edit_object_impact_t *items,
+    size_t count,
+    nmo_object_id_t id,
+    nmo_edit_op_kind_t cause,
+    const char *role,
+    nmo_guid_t manager_guid)
+{
+    nmo_edit_object_impact_t *impact =
+        edit_report_find_impact(items, count, id, cause, role);
+    if (impact == NULL) {
+        return;
+    }
+    impact->has_manager_entry_after = true;
+    impact->after_manager_guid = manager_guid;
 }
 
 nmo_status_t nmo_edit_report_add_changed_object(
@@ -3891,12 +3909,25 @@ nmo_status_t nmo_edit_executor_execute_transaction(
                 if (changed_ids[changed_i] == primary_changed_id) {
                     continue;
                 }
+                const char *changed_role =
+                    changed_ids[changed_i] == NMO_EDIT_MANAGER_ENTRY_IMPACT_ID
+                        ? "manager_entry"
+                        : "changed";
                 nmo_status_t report_rc = nmo_edit_report_add_changed_object(
-                    report, changed_ids[changed_i], op->kind, "changed");
+                    report, changed_ids[changed_i], op->kind, changed_role);
                 if (report_rc != NMO_OK) {
                     report->ok = false;
                     report->status = report_rc;
                     return report_rc;
+                }
+                if (changed_ids[changed_i] == NMO_EDIT_MANAGER_ENTRY_IMPACT_ID) {
+                    edit_report_set_manager_entry_after(
+                        report->changed_objects,
+                        report->changed_object_count,
+                        changed_ids[changed_i],
+                        op->kind,
+                        changed_role,
+                        NMO_MANAGER_GUID_MESSAGE);
                 }
             }
         }

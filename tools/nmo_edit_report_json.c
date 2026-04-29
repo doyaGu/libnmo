@@ -5,6 +5,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "object/nmo_object_enum_defs.h"
+#include "object/nmo_manager_guids.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -314,6 +315,32 @@ static yyjson_mut_val *nmo_cli_edit_report_make_data_cell_snapshot_json(
     return snapshot;
 }
 
+static const char *nmo_cli_edit_report_manager_kind(nmo_guid_t manager_guid)
+{
+    if (nmo_guid_equals(manager_guid, NMO_MANAGER_GUID_MESSAGE)) {
+        return "message";
+    }
+    if (nmo_guid_equals(manager_guid, NMO_MANAGER_GUID_ATTRIBUTE)) {
+        return "attribute";
+    }
+    return "unknown";
+}
+
+static yyjson_mut_val *nmo_cli_edit_report_make_manager_entry_snapshot_json(
+    yyjson_mut_doc *doc,
+    nmo_guid_t manager_guid)
+{
+    yyjson_mut_val *snapshot = yyjson_mut_obj(doc);
+    char guid_text[32];
+    if (nmo_guid_format(manager_guid, guid_text, sizeof(guid_text)) > 0) {
+        yyjson_mut_obj_add_strcpy(doc, snapshot, "manager_guid", guid_text);
+    }
+    nmo_cli_json_add_str_safe(
+        doc, snapshot, "manager_kind",
+        nmo_cli_edit_report_manager_kind(manager_guid));
+    return snapshot;
+}
+
 static void nmo_cli_edit_report_add_impact_before_after_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *item,
@@ -448,6 +475,22 @@ static void nmo_cli_edit_report_add_impact_before_after_json(
     } else if (impact->has_data_cell_before) {
         yyjson_mut_obj_add_null(doc, item, "after");
     }
+    if (impact->has_manager_entry_before) {
+        yyjson_mut_obj_add_val(
+            doc, item, "before",
+            nmo_cli_edit_report_make_manager_entry_snapshot_json(
+                doc, impact->before_manager_guid));
+    } else if (impact->has_manager_entry_after) {
+        yyjson_mut_obj_add_null(doc, item, "before");
+    }
+    if (impact->has_manager_entry_after) {
+        yyjson_mut_obj_add_val(
+            doc, item, "after",
+            nmo_cli_edit_report_make_manager_entry_snapshot_json(
+                doc, impact->after_manager_guid));
+    } else if (impact->has_manager_entry_before) {
+        yyjson_mut_obj_add_null(doc, item, "after");
+    }
 }
 
 static bool impact_role_contains(const nmo_edit_object_impact_t *impact,
@@ -530,6 +573,15 @@ static bool impact_is_data_cell(const nmo_edit_object_impact_t *impact)
     }
     return impact->cause == NMO_EDIT_OP_SET_DATA_CELL ||
            impact_role_contains(impact, "data_cell");
+}
+
+static bool impact_is_manager_entry(const nmo_edit_object_impact_t *impact)
+{
+    if (impact == NULL) {
+        return false;
+    }
+    return impact->id == NMO_EDIT_MANAGER_ENTRY_IMPACT_ID ||
+           impact_role_contains(impact, "manager_entry");
 }
 
 static yyjson_mut_val *nmo_cli_edit_report_make_filtered_impact_array_json(
@@ -755,6 +807,10 @@ void nmo_cli_edit_report_add_diff_json(
         doc, diff, "data_cell_diff",
         nmo_cli_edit_report_make_structural_diff_json(
             doc, report, impact_is_data_cell));
+    yyjson_mut_obj_add_val(
+        doc, diff, "manager_entry_diff",
+        nmo_cli_edit_report_make_structural_diff_json(
+            doc, report, impact_is_manager_entry));
     yyjson_mut_obj_add_val(doc, diff, "replay_summary", replay);
     yyjson_mut_obj_add_val(doc, obj, "diff", diff);
 }
