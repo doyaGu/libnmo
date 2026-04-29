@@ -8,6 +8,7 @@
 #include "object/nmo_object_enum_defs.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/nmo_object_repository.h"
@@ -1120,31 +1121,33 @@ TEST(semantic_validator, edit_plan_reports_operation_object_type_mismatch)
 TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch)
 {
     semantic_fixture_t fixture;
-    semantic_fixture_init_path(&fixture, NMO_TEST_DATA_FILE("Nop.cmo"));
+    semantic_fixture_init(&fixture);
 
-    nmo_script_edit_tx_t *tx = NULL;
+    nmo_object_repository_t *repo =
+        nmo_session_get_repository(fixture.session);
+    ASSERT_NOT_NULL(repo);
+
     nmo_object_id_t string_parameter_id = 0u;
     nmo_object_id_t operation_id = 0u;
-    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(
-              fixture.workspace, "semantic rewire setup", &tx));
-    ASSERT_EQ(NMO_OK,
-              nmo_script_edit_add_parameter(
-                  tx,
-                  6u,
-                  NMO_SCRIPT_EDIT_PARAM_LOCAL,
-                  CKPGUID_STRING,
-                  "String Operand",
-                  &string_parameter_id));
-    ASSERT_EQ(NMO_OK,
-              nmo_script_edit_add_operation(
-                  tx,
-                  6u,
-                  NMO_OP_GUID_ADD,
-                  0u,
-                  0u,
-                  0u,
-                  &operation_id));
-    ASSERT_EQ(NMO_OK, nmo_script_edit_commit(tx));
+    semantic_create_object(
+        &fixture, NMO_CID_PARAMETER, "String Operand", &string_parameter_id);
+    semantic_create_object(
+        &fixture, NMO_CID_PARAMETEROPERATION, "Add Operation", &operation_id);
+
+    nmo_object_t *parameter_obj =
+        nmo_object_repository_find_by_id(repo, string_parameter_id);
+    nmo_object_t *operation_obj =
+        nmo_object_repository_find_by_id(repo, operation_id);
+    ASSERT_NOT_NULL(parameter_obj);
+    ASSERT_NOT_NULL(operation_obj);
+    nmo_parameter_state_t *parameter_state =
+        (nmo_parameter_state_t *)nmo_object_get_state(parameter_obj);
+    nmo_parameteroperation_state_t *operation_state =
+        (nmo_parameteroperation_state_t *)nmo_object_get_state(operation_obj);
+    ASSERT_NOT_NULL(parameter_state);
+    ASSERT_NOT_NULL(operation_state);
+    parameter_state->type_guid = CKPGUID_STRING;
+    operation_state->operation_guid = NMO_OP_GUID_ADD;
 
     nmo_edit_plan_t *plan = NULL;
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
@@ -1233,20 +1236,20 @@ TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch_with_h
     semantic_fixture_t fixture;
     semantic_fixture_init_path(&fixture, NMO_TEST_DATA_FILE("Nop.cmo"));
 
-    nmo_script_edit_tx_t *tx = NULL;
+    nmo_object_repository_t *repo =
+        nmo_session_get_repository(fixture.session);
+    ASSERT_NOT_NULL(repo);
+
     nmo_object_id_t operation_id = 0u;
-    ASSERT_EQ(NMO_OK, nmo_script_edit_begin(
-              fixture.workspace, "semantic rewire handle setup", &tx));
-    ASSERT_EQ(NMO_OK,
-              nmo_script_edit_add_operation(
-                  tx,
-                  6u,
-                  NMO_OP_GUID_ADD,
-                  0u,
-                  0u,
-                  0u,
-                  &operation_id));
-    ASSERT_EQ(NMO_OK, nmo_script_edit_commit(tx));
+    semantic_create_object(
+        &fixture, NMO_CID_PARAMETEROPERATION, "Add Operation", &operation_id);
+    nmo_object_t *operation_obj =
+        nmo_object_repository_find_by_id(repo, operation_id);
+    ASSERT_NOT_NULL(operation_obj);
+    nmo_parameteroperation_state_t *operation_state =
+        (nmo_parameteroperation_state_t *)nmo_object_get_state(operation_obj);
+    ASSERT_NOT_NULL(operation_state);
+    operation_state->operation_guid = NMO_OP_GUID_ADD;
 
     nmo_edit_plan_t *plan = NULL;
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
