@@ -204,6 +204,14 @@ typedef struct nmo_edit_changed_object {
     nmo_object_id_t id;
     nmo_edit_op_kind_t cause;
     const char *role;
+    bool has_control_link_before;
+    nmo_object_id_t before_from_io_id;
+    nmo_object_id_t before_to_io_id;
+    uint32_t before_activation_delay;
+    bool has_control_link_after;
+    nmo_object_id_t after_from_io_id;
+    nmo_object_id_t after_to_io_id;
+    uint32_t after_activation_delay;
 } nmo_edit_changed_object_t;
 
 typedef nmo_edit_changed_object_t nmo_edit_object_impact_t;

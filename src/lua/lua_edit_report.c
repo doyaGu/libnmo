@@ -149,6 +149,52 @@ static bool impact_is_data_cell(const nmo_edit_object_impact_t *impact)
            impact_role_contains(impact, "data_cell");
 }
 
+static void nmo_lua_push_control_link_snapshot(
+    lua_State *state,
+    nmo_object_id_t from_io_id,
+    nmo_object_id_t to_io_id,
+    uint32_t activation_delay)
+{
+    lua_createtable(state, 0, 3);
+    lua_pushinteger(state, (lua_Integer)from_io_id);
+    lua_setfield(state, -2, "from_io_id");
+    lua_pushinteger(state, (lua_Integer)to_io_id);
+    lua_setfield(state, -2, "to_io_id");
+    lua_pushinteger(state, (lua_Integer)activation_delay);
+    lua_setfield(state, -2, "activation_delay");
+}
+
+static void nmo_lua_push_impact_before_after(
+    lua_State *state,
+    const nmo_edit_object_impact_t *impact)
+{
+    if (impact == NULL) {
+        return;
+    }
+    if (impact->has_control_link_before) {
+        nmo_lua_push_control_link_snapshot(
+            state,
+            impact->before_from_io_id,
+            impact->before_to_io_id,
+            impact->before_activation_delay);
+        lua_setfield(state, -2, "before");
+    } else if (impact->has_control_link_after) {
+        lua_pushnil(state);
+        lua_setfield(state, -2, "before");
+    }
+    if (impact->has_control_link_after) {
+        nmo_lua_push_control_link_snapshot(
+            state,
+            impact->after_from_io_id,
+            impact->after_to_io_id,
+            impact->after_activation_delay);
+        lua_setfield(state, -2, "after");
+    } else if (impact->has_control_link_before) {
+        lua_pushnil(state);
+        lua_setfield(state, -2, "after");
+    }
+}
+
 static void nmo_lua_push_filtered_edit_impacts(
     lua_State *state,
     const nmo_edit_object_impact_t *items,
@@ -170,6 +216,7 @@ static void nmo_lua_push_filtered_edit_impacts(
         lua_setfield(state, -2, "cause");
         lua_pushstring(state, items[i].role != NULL ? items[i].role : "");
         lua_setfield(state, -2, "role");
+        nmo_lua_push_impact_before_after(state, &items[i]);
         lua_rawseti(state, -2, out_index++);
     }
 }

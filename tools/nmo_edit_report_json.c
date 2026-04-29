@@ -196,6 +196,53 @@ static yyjson_mut_val *nmo_cli_edit_report_make_impact_array_json(
     return arr;
 }
 
+static yyjson_mut_val *nmo_cli_edit_report_make_control_link_snapshot_json(
+    yyjson_mut_doc *doc,
+    nmo_object_id_t from_io_id,
+    nmo_object_id_t to_io_id,
+    uint32_t activation_delay)
+{
+    yyjson_mut_val *snapshot = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_uint(doc, snapshot, "from_io_id",
+                            (uint64_t)from_io_id);
+    yyjson_mut_obj_add_uint(doc, snapshot, "to_io_id", (uint64_t)to_io_id);
+    yyjson_mut_obj_add_uint(doc, snapshot, "activation_delay",
+                            (uint64_t)activation_delay);
+    return snapshot;
+}
+
+static void nmo_cli_edit_report_add_impact_before_after_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *item,
+    const nmo_edit_object_impact_t *impact)
+{
+    if (impact == NULL) {
+        return;
+    }
+    if (impact->has_control_link_before) {
+        yyjson_mut_obj_add_val(
+            doc, item, "before",
+            nmo_cli_edit_report_make_control_link_snapshot_json(
+                doc,
+                impact->before_from_io_id,
+                impact->before_to_io_id,
+                impact->before_activation_delay));
+    } else if (impact->has_control_link_after) {
+        yyjson_mut_obj_add_null(doc, item, "before");
+    }
+    if (impact->has_control_link_after) {
+        yyjson_mut_obj_add_val(
+            doc, item, "after",
+            nmo_cli_edit_report_make_control_link_snapshot_json(
+                doc,
+                impact->after_from_io_id,
+                impact->after_to_io_id,
+                impact->after_activation_delay));
+    } else if (impact->has_control_link_before) {
+        yyjson_mut_obj_add_null(doc, item, "after");
+    }
+}
+
 static bool impact_role_contains(const nmo_edit_object_impact_t *impact,
                                  const char *needle)
 {
@@ -297,6 +344,8 @@ static yyjson_mut_val *nmo_cli_edit_report_make_filtered_impact_array_json(
             doc, item, "cause",
             nmo_cli_edit_report_op_kind_string(items[i].cause));
         nmo_cli_json_add_str_safe(doc, item, "role", items[i].role);
+        nmo_cli_edit_report_add_impact_before_after_json(
+            doc, item, &items[i]);
         yyjson_mut_arr_add_val(arr, item);
     }
     return arr;

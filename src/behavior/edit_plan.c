@@ -1401,6 +1401,46 @@ static nmo_status_t edit_report_add_impact(
     return NMO_OK;
 }
 
+static nmo_edit_object_impact_t *edit_report_find_impact(
+    nmo_edit_object_impact_t *items,
+    size_t count,
+    nmo_object_id_t id,
+    nmo_edit_op_kind_t cause,
+    const char *role)
+{
+    for (size_t i = 0; items != NULL && i < count; ++i) {
+        const char *existing_role = items[i].role;
+        bool same_role = existing_role == role ||
+            (existing_role != NULL && role != NULL &&
+             strcmp(existing_role, role) == 0);
+        if (items[i].id == id && items[i].cause == cause && same_role) {
+            return &items[i];
+        }
+    }
+    return NULL;
+}
+
+static void edit_report_set_control_link_after(
+    nmo_edit_object_impact_t *items,
+    size_t count,
+    nmo_object_id_t id,
+    nmo_edit_op_kind_t cause,
+    const char *role,
+    nmo_object_id_t from_io_id,
+    nmo_object_id_t to_io_id,
+    uint32_t activation_delay)
+{
+    nmo_edit_object_impact_t *impact =
+        edit_report_find_impact(items, count, id, cause, role);
+    if (impact == NULL) {
+        return;
+    }
+    impact->has_control_link_after = true;
+    impact->after_from_io_id = from_io_id;
+    impact->after_to_io_id = to_io_id;
+    impact->after_activation_delay = activation_delay;
+}
+
 nmo_status_t nmo_edit_report_add_changed_object(
     nmo_edit_report_t *report,
     nmo_object_id_t id,
@@ -1684,13 +1724,17 @@ static void edit_plan_get_behavior_link_endpoints(
     nmo_script_edit_tx_t *tx,
     nmo_object_id_t link_id,
     nmo_object_id_t *out_from_io_id,
-    nmo_object_id_t *out_to_io_id)
+    nmo_object_id_t *out_to_io_id,
+    uint32_t *out_activation_delay)
 {
     if (out_from_io_id != NULL) {
         *out_from_io_id = 0u;
     }
     if (out_to_io_id != NULL) {
         *out_to_io_id = 0u;
+    }
+    if (out_activation_delay != NULL) {
+        *out_activation_delay = 0u;
     }
     if (tx == NULL || link_id == 0u) {
         return;
@@ -1712,6 +1756,12 @@ static void edit_plan_get_behavior_link_endpoints(
     }
     if (out_to_io_id != NULL) {
         *out_to_io_id = state->out_io_id;
+    }
+    if (out_activation_delay != NULL) {
+        *out_activation_delay =
+            state->initial_activation_delay > 0
+                ? (uint32_t)state->initial_activation_delay
+                : 0u;
     }
 }
 
@@ -2366,7 +2416,8 @@ static nmo_status_t edit_executor_apply_op(
             tx,
             op->data.remove_link.link_id,
             &from_io_id,
-            &to_io_id);
+            &to_io_id,
+            NULL);
         nmo_status_t rc = nmo_script_edit_remove_behavior_link(
             tx,
             op->data.remove_link.parent_behavior_id,
@@ -3163,6 +3214,26 @@ nmo_status_t nmo_edit_executor_execute_transaction(
                 report->status = report_rc;
                 return report_rc;
             }
+        }
+        if (op->kind == NMO_EDIT_OP_ADD_BEHAVIOR_LINK && result_id != 0u) {
+            nmo_object_id_t after_from_io_id = 0u;
+            nmo_object_id_t after_to_io_id = 0u;
+            uint32_t after_activation_delay = 0u;
+            edit_plan_get_behavior_link_endpoints(
+                tx,
+                result_id,
+                &after_from_io_id,
+                &after_to_io_id,
+                &after_activation_delay);
+            edit_report_set_control_link_after(
+                report->created_objects,
+                report->created_object_count,
+                result_id,
+                op->kind,
+                "created",
+                after_from_io_id,
+                after_to_io_id,
+                after_activation_delay);
         }
         nmo_object_id_t deleted_id = edit_op_deleted_id(op);
         if (deleted_id != 0u) {

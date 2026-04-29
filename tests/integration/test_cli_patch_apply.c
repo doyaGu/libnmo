@@ -1334,6 +1334,15 @@ TEST(cli, patch_apply_v2_add_behavior_link_dry_run) {
     yyjson_val *created_edges = get_array_field(graph_edge_diff, "created");
     ASSERT_NOT_NULL(created_edges);
     ASSERT_TRUE(yyjson_arr_size(created_edges) > 0u);
+    yyjson_val *created_edge = yyjson_arr_get(created_edges, 0);
+    ASSERT_TRUE(created_edge && yyjson_is_obj(created_edge));
+    yyjson_val *created_before = yyjson_obj_get(created_edge, "before");
+    ASSERT_TRUE(created_before && yyjson_is_null(created_before));
+    yyjson_val *created_after = get_object_field(created_edge, "after");
+    ASSERT_NOT_NULL(created_after);
+    ASSERT_EQ(5u, (uint32_t)get_uint_field(created_after, "from_io_id"));
+    ASSERT_EQ(2u, (uint32_t)get_uint_field(created_after, "to_io_id"));
+    ASSERT_EQ(3u, (uint32_t)get_uint_field(created_after, "activation_delay"));
     yyjson_val *changed_edges = get_array_field(graph_edge_diff, "changed");
     ASSERT_NOT_NULL(changed_edges);
     yyjson_val *deleted_edges = get_array_field(graph_edge_diff, "deleted");
