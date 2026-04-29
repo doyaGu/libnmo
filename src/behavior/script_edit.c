@@ -849,7 +849,8 @@ static nmo_status_t script_edit_apply_symbolic_manager_default(
     nmo_script_edit_tx_t *tx,
     nmo_object_t *parameter_obj,
     nmo_guid_t type_guid,
-    const char *default_value)
+    const char *default_value,
+    bool create_missing_manager_entry)
 {
     nmo_parameter_state_t *state = parameter_obj
         ? nmo_parameter_get_mutable_state(parameter_obj)
@@ -863,7 +864,18 @@ static nmo_status_t script_edit_apply_symbolic_manager_default(
     nmo_status_t rc = script_edit_resolve_symbolic_manager_default(
         tx, type_guid, default_value, &manager_guid, &manager_value);
     if (rc != NMO_OK) {
-        return rc;
+        if (!create_missing_manager_entry ||
+            !nmo_guid_equals(type_guid, CKPGUID_MESSAGE)) {
+            return rc;
+        }
+        manager_guid = NMO_MANAGER_GUID_MESSAGE;
+        rc = nmo_object_edit_ensure_message_manager_entry(
+            tx->edit, default_value, &manager_value);
+        if (rc != NMO_OK) {
+            return rc;
+        }
+        NMO_RETURN_IF_ERROR(script_edit_note_changed_id(
+            tx, NMO_OBJECT_ID_INVALID));
     }
 
     nmo_array_dispose(&state->buffer_data);
@@ -881,6 +893,7 @@ static nmo_status_t script_edit_create_parameter_object(
     const char *name,
     nmo_guid_t type_guid,
     const char *default_value,
+    bool create_missing_manager_entry,
     nmo_object_id_t *out_parameter_id)
 {
     nmo_object_repository_t *repo = NULL;
@@ -924,6 +937,7 @@ static nmo_status_t script_edit_create_parameter_object(
             nmo_object_id_t source_id = 0;
             rc = script_edit_create_parameter_object(
                 tx, NMO_CID_PARAMETER, owner_id, name, type_guid, NULL,
+                create_missing_manager_entry,
                 &source_id);
             if (rc != NMO_OK) {
                 return rc;
@@ -937,7 +951,8 @@ static nmo_status_t script_edit_create_parameter_object(
                 nmo_object_t *source_obj =
                     nmo_object_repository_find_by_id(repo, source_id);
                 rc = script_edit_apply_symbolic_manager_default(
-                    tx, source_obj, type_guid, default_value);
+                    tx, source_obj, type_guid, default_value,
+                    create_missing_manager_entry);
                 if (rc != NMO_OK) {
                     return rc;
                 }
@@ -999,7 +1014,8 @@ static nmo_status_t script_edit_create_parameter_object(
                 return rc;
             }
             rc = script_edit_apply_symbolic_manager_default(
-                tx, object, type_guid, default_value);
+                tx, object, type_guid, default_value,
+                create_missing_manager_entry);
             if (rc != NMO_OK) {
                 return rc;
             }
@@ -3062,11 +3078,25 @@ NMO_API nmo_status_t nmo_script_edit_add_node(
     const char *name,
     nmo_object_id_t *out_node_id)
 {
+    return nmo_script_edit_add_node_ex(
+        tx, parent_behavior_id, bb_guid, name, NULL, out_node_id);
+}
+
+NMO_API nmo_status_t nmo_script_edit_add_node_ex(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parent_behavior_id,
+    nmo_guid_t bb_guid,
+    const char *name,
+    const nmo_script_edit_add_node_options_t *options,
+    nmo_object_id_t *out_node_id)
+{
     nmo_behavior_state_t *parent_state = NULL;
     nmo_behavior_state_t *node_state = NULL;
     const nmo_behavior_proto_t *proto = NULL;
     nmo_status_t rc = NMO_OK;
     nmo_object_id_t node_id = 0;
+    bool create_missing_manager_entry =
+        options != NULL && options->create_missing_manager_entry;
 
     if (!tx || !tx->edit || parent_behavior_id == 0 || nmo_guid_is_null(bb_guid)) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -3152,6 +3182,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node(
                 proto->input_params[i].name,
                 proto->input_params[i].type_guid,
                 proto->input_params[i].default_value,
+                create_missing_manager_entry,
                 &parameter_id);
             if (rc != NMO_OK) {
                 return rc;
@@ -3168,6 +3199,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node(
                 proto->output_params[i].name,
                 proto->output_params[i].type_guid,
                 proto->output_params[i].default_value,
+                create_missing_manager_entry,
                 &parameter_id);
             if (rc != NMO_OK) {
                 return rc;
@@ -3197,6 +3229,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node(
             rc = script_edit_create_parameter_object(
                 tx, NMO_CID_PARAMETERIN, node_id, "Target", target_type_guid,
                 NULL,
+                create_missing_manager_entry,
                 &target_parameter_id);
             if (rc != NMO_OK) {
                 return rc;
@@ -3210,6 +3243,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node(
                 proto->local_params[i].name,
                 proto->local_params[i].type_guid,
                 proto->local_params[i].default_value,
+                create_missing_manager_entry,
                 &parameter_id);
             if (rc != NMO_OK) {
                 return rc;
@@ -3228,6 +3262,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node(
                 proto->settings[i].name,
                 proto->settings[i].type_guid,
                 proto->settings[i].default_value,
+                create_missing_manager_entry,
                 &parameter_id);
             if (rc != NMO_OK) {
                 return rc;
@@ -3982,7 +4017,8 @@ NMO_API nmo_status_t nmo_script_edit_add_parameter(
     }
 
     rc = script_edit_create_parameter_object(tx, class_id, owner_behavior_id, name,
-                                             type_guid, NULL, &parameter_id);
+                                             type_guid, NULL, false,
+                                             &parameter_id);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -4152,6 +4188,7 @@ NMO_API nmo_status_t nmo_script_edit_ensure_input_parameter_source(
         nmo_object_get_name(input_object),
         input_state->type_guid,
         NULL,
+        false,
         &source_id);
     if (rc != NMO_OK) {
         return rc;

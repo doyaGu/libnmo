@@ -601,6 +601,17 @@ nmo_status_t nmo_edit_plan_add_node(
     nmo_guid_t bb_guid,
     const char *name)
 {
+    return nmo_edit_plan_add_node_ex(
+        plan, parent_behavior_id, bb_guid, name, NULL);
+}
+
+nmo_status_t nmo_edit_plan_add_node_ex(
+    nmo_edit_plan_t *plan,
+    nmo_object_id_t parent_behavior_id,
+    nmo_guid_t bb_guid,
+    const char *name,
+    const nmo_add_node_options_t *options)
+{
     if (plan == NULL || parent_behavior_id == 0 || nmo_guid_is_null(bb_guid)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -616,6 +627,10 @@ nmo_status_t nmo_edit_plan_add_node(
         if (op->data.add_node.name == NULL) {
             return NMO_ERR_NOMEM;
         }
+    }
+    if (options != NULL) {
+        op->data.add_node.options = *options;
+        op->data.add_node.has_options = true;
     }
     plan->count++;
     return NMO_OK;
@@ -2603,11 +2618,17 @@ static nmo_status_t edit_executor_apply_op(
             op->data.set_bytes.has_options ? &op->data.set_bytes.options : NULL);
     }
     case NMO_EDIT_OP_ADD_NODE:
-        return nmo_script_edit_add_node(
+        return nmo_script_edit_add_node_ex(
             tx,
             op->data.add_node.parent_behavior_id,
             op->data.add_node.bb_guid,
             op->data.add_node.name,
+            op->data.add_node.has_options
+                ? &(nmo_script_edit_add_node_options_t){
+                      .create_missing_manager_entry =
+                          op->data.add_node.options.create_missing_manager_entry,
+                  }
+                : NULL,
             out_result_id);
     case NMO_EDIT_OP_REMOVE_NODE:
     {
@@ -3745,6 +3766,9 @@ nmo_status_t nmo_edit_executor_execute_transaction(
         size_t created_start = tx_report_before
             ? tx_report_before->created_object_id_count
             : 0u;
+        size_t changed_start = tx_report_before
+            ? tx_report_before->changed_object_id_count
+            : 0u;
         nmo_object_id_t result_id = 0;
         const char *diagnostic_code = NULL;
         const char *diagnostic_message = NULL;
@@ -3851,6 +3875,30 @@ nmo_status_t nmo_edit_executor_execute_transaction(
                 op->kind,
                 "created",
                 edit_plan_get_operation_state(tx, result_id));
+        }
+        if (tx_report_after &&
+            tx_report_after->changed_object_ids &&
+            tx_report_after->changed_object_id_count > changed_start) {
+            nmo_object_id_t primary_changed_id = edit_op_changed_id(op);
+            if (primary_changed_id == 0u && result_id != 0u) {
+                primary_changed_id = result_id;
+            }
+            const nmo_object_id_t *changed_ids =
+                tx_report_after->changed_object_ids + changed_start;
+            size_t changed_count =
+                tx_report_after->changed_object_id_count - changed_start;
+            for (size_t changed_i = 0; changed_i < changed_count; ++changed_i) {
+                if (changed_ids[changed_i] == primary_changed_id) {
+                    continue;
+                }
+                nmo_status_t report_rc = nmo_edit_report_add_changed_object(
+                    report, changed_ids[changed_i], op->kind, "changed");
+                if (report_rc != NMO_OK) {
+                    report->ok = false;
+                    report->status = report_rc;
+                    return report_rc;
+                }
+            }
         }
         nmo_object_id_t deleted_id = edit_op_deleted_id(op);
         if (deleted_id != 0u) {

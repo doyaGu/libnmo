@@ -39,6 +39,7 @@ typedef struct nmo_import_result {
 
 typedef struct nmo_parameter_write_options {
     bool resize;
+    bool create_missing_manager_entry;
 } nmo_parameter_write_options_t;
 
 NMO_API nmo_status_t nmo_object_edit_set_fields(
@@ -83,6 +84,11 @@ NMO_API nmo_status_t nmo_object_edit_set_dataarray_cell(
     uint32_t row,
     uint32_t col,
     const char *value_str);
+
+NMO_API nmo_status_t nmo_object_edit_ensure_message_manager_entry(
+    nmo_workspace_edit_t *edit,
+    const char *name,
+    uint32_t *out_value);
 
 NMO_API nmo_status_t nmo_object_edit_import_json(
     nmo_workspace_t *workspace,

@@ -23,6 +23,8 @@ extern "C" {
 
 typedef struct nmo_edit_plan nmo_edit_plan_t;
 
+#define NMO_EDIT_MANAGER_ENTRY_IMPACT_ID NMO_OBJECT_ID_INVALID
+
 typedef enum nmo_edit_op_kind {
     NMO_EDIT_OP_SET_PARAMETER_VALUE = 1,
     NMO_EDIT_OP_SET_PARAMETER_BYTES = 2,
@@ -47,6 +49,10 @@ typedef enum nmo_edit_op_kind {
     NMO_EDIT_OP_FOLD = 21,
     NMO_EDIT_OP_REPLACE_BB = 22
 } nmo_edit_op_kind_t;
+
+typedef struct nmo_add_node_options {
+    bool create_missing_manager_entry;
+} nmo_add_node_options_t;
 
 typedef struct nmo_edit_op {
     nmo_edit_op_kind_t kind;
@@ -73,6 +79,8 @@ typedef struct nmo_edit_op {
             nmo_object_id_t parent_behavior_id;
             nmo_guid_t bb_guid;
             const char *name;
+            nmo_add_node_options_t options;
+            bool has_options;
         } add_node;
         struct {
             nmo_object_id_t parent_behavior_id;
@@ -350,6 +358,13 @@ NMO_API nmo_status_t nmo_edit_plan_add_node(
     nmo_object_id_t parent_behavior_id,
     nmo_guid_t bb_guid,
     const char *name);
+
+NMO_API nmo_status_t nmo_edit_plan_add_node_ex(
+    nmo_edit_plan_t *plan,
+    nmo_object_id_t parent_behavior_id,
+    nmo_guid_t bb_guid,
+    const char *name,
+    const nmo_add_node_options_t *options);
 
 NMO_API nmo_status_t nmo_edit_plan_add_remove_node(
     nmo_edit_plan_t *plan,

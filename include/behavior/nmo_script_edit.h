@@ -74,6 +74,10 @@ typedef struct nmo_script_edit_report {
     size_t errors;
 } nmo_script_edit_report_t;
 
+typedef struct nmo_script_edit_add_node_options {
+    bool create_missing_manager_entry;
+} nmo_script_edit_add_node_options_t;
+
 NMO_API nmo_status_t nmo_script_edit_begin(nmo_workspace_t *workspace,
                                            const char *label,
                                            nmo_script_edit_tx_t **out_tx);
@@ -112,6 +116,14 @@ NMO_API nmo_status_t nmo_script_edit_add_node(
     nmo_object_id_t parent_behavior_id,
     nmo_guid_t bb_guid,
     const char *name,
+    nmo_object_id_t *out_node_id);
+
+NMO_API nmo_status_t nmo_script_edit_add_node_ex(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t parent_behavior_id,
+    nmo_guid_t bb_guid,
+    const char *name,
+    const nmo_script_edit_add_node_options_t *options,
     nmo_object_id_t *out_node_id);
 
 NMO_API nmo_status_t nmo_script_edit_remove_node(

@@ -19,7 +19,10 @@
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
+#include "object/nmo_manager_guids.h"
 #include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
+#include "format/nmo_data.h"
 #include "format/nmo_object.h"
 #include "object/nmo_statesave_ids.h"
 #include "core/nmo_arena.h"
@@ -100,6 +103,12 @@ typedef struct rename_object_action {
     nmo_object_id_t id;
     const char *name;
 } rename_object_action_t;
+
+typedef struct manager_data_snapshot {
+    nmo_session_t *session;
+    nmo_manager_data_t *manager_data;
+    uint32_t manager_data_count;
+} manager_data_snapshot_t;
 
 nmo_status_t workspace_edit_set_object_fields(
     nmo_workspace_edit_t *edit,
@@ -599,6 +608,20 @@ static nmo_status_t parse_manager_parameter_text(
 
     *out_guid = parsed_guid;
     *out_value = value;
+    return NMO_OK;
+}
+
+static nmo_status_t rollback_manager_data(nmo_workspace_edit_t *edit, void *payload)
+{
+    (void)edit;
+    manager_data_snapshot_t *snapshot = (manager_data_snapshot_t *)payload;
+    if (snapshot == NULL || snapshot->session == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_session_set_manager_data(
+        snapshot->session,
+        snapshot->manager_data,
+        snapshot->manager_data_count);
     return NMO_OK;
 }
 
@@ -1356,6 +1379,190 @@ nmo_status_t workspace_edit_set_parameter_value_ex(
         workspace_edit_rollback_to(edit, checkpoint);
         return parse_result;
     }
+    return NMO_OK;
+}
+
+static nmo_status_t workspace_edit_read_message_manager_names(
+    nmo_session_t *session,
+    const nmo_manager_data_t *manager,
+    const char ***out_names,
+    uint32_t *out_count)
+{
+    if (session == NULL || manager == NULL || out_names == NULL ||
+        out_count == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_names = NULL;
+    *out_count = 0u;
+    if (manager->chunk == NULL) {
+        return NMO_OK;
+    }
+
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    nmo_chunk_t *chunk = nmo_chunk_clone(manager->chunk, arena);
+    if (chunk == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    if (nmo_chunk_start_read(chunk) != NMO_OK ||
+        nmo_chunk_seek_identifier(chunk, 0x53u) != NMO_OK) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    int32_t count = 0;
+    if (nmo_chunk_read_int(chunk, &count) != NMO_OK || count < 0) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    if (count == 0) {
+        return NMO_OK;
+    }
+
+    const char **names = (const char **)nmo_arena_alloc(
+        arena, (size_t)count * sizeof(*names), _Alignof(const char *));
+    if (names == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    memset(names, 0, (size_t)count * sizeof(*names));
+    for (int32_t i = 0; i < count; ++i) {
+        char *entry_name = NULL;
+        if (nmo_chunk_read_string(chunk, &entry_name) != NMO_OK) {
+            return NMO_ERR_INVALID_STATE;
+        }
+        names[i] = nmo_arena_strdup(arena, entry_name ? entry_name : "");
+        if (names[i] == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+    }
+
+    *out_names = names;
+    *out_count = (uint32_t)count;
+    return NMO_OK;
+}
+
+static nmo_status_t workspace_edit_write_message_manager_chunk(
+    nmo_session_t *session,
+    const char *const *names,
+    uint32_t count,
+    nmo_chunk_t **out_chunk)
+{
+    if (session == NULL || out_chunk == NULL ||
+        (count > 0u && names == NULL)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_chunk_t *chunk = nmo_chunk_create(nmo_session_get_arena(session));
+    if (chunk == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    NMO_RETURN_IF_ERROR(nmo_chunk_start_write(chunk));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(chunk, 0x53u));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)count));
+    for (uint32_t i = 0; i < count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_string(
+            chunk, names[i] ? names[i] : ""));
+    }
+    nmo_chunk_close(chunk);
+    *out_chunk = chunk;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_object_edit_ensure_message_manager_entry(
+    nmo_workspace_edit_t *edit,
+    const char *name,
+    uint32_t *out_value)
+{
+    if (edit == NULL || edit->finished || name == NULL || name[0] == '\0' ||
+        out_value == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_session_t *session = nmo_workspace_internal_session(edit->workspace);
+    const nmo_file_state_t *file_state =
+        session ? nmo_session_get_file_state(session) : NULL;
+    if (session == NULL || file_state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    uint32_t manager_index = UINT32_MAX;
+    const char **names = NULL;
+    uint32_t name_count = 0u;
+    for (uint32_t i = 0; i < file_state->manager_data_count; ++i) {
+        nmo_manager_data_t *manager = &file_state->manager_data[i];
+        if (!nmo_guid_equals(manager->guid, NMO_MANAGER_GUID_MESSAGE)) {
+            continue;
+        }
+        manager_index = i;
+        NMO_RETURN_IF_ERROR(workspace_edit_read_message_manager_names(
+            session, manager, &names, &name_count));
+        for (uint32_t j = 0; j < name_count; ++j) {
+            if (names[j] != NULL && strcmp(names[j], name) == 0) {
+                *out_value = j;
+                return NMO_OK;
+            }
+        }
+        break;
+    }
+
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    uint32_t new_name_count = name_count + 1u;
+    const char **new_names = (const char **)nmo_arena_alloc(
+        arena, (size_t)new_name_count * sizeof(*new_names),
+        _Alignof(const char *));
+    if (new_names == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    for (uint32_t i = 0; i < name_count; ++i) {
+        new_names[i] = names[i] ? names[i] : "";
+    }
+    new_names[name_count] = nmo_arena_strdup(arena, name);
+    if (new_names[name_count] == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    nmo_chunk_t *new_chunk = NULL;
+    NMO_RETURN_IF_ERROR(workspace_edit_write_message_manager_chunk(
+        session, new_names, new_name_count, &new_chunk));
+
+    uint32_t old_manager_count = file_state->manager_data_count;
+    nmo_manager_data_t *old_manager_data = file_state->manager_data;
+    uint32_t new_manager_count =
+        manager_index == UINT32_MAX ? old_manager_count + 1u : old_manager_count;
+    nmo_manager_data_t *new_manager_data =
+        (nmo_manager_data_t *)nmo_arena_alloc(
+            arena,
+            (size_t)new_manager_count * sizeof(*new_manager_data),
+            _Alignof(nmo_manager_data_t));
+    if (new_manager_data == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    if (old_manager_count > 0u && old_manager_data != NULL) {
+        memcpy(new_manager_data, old_manager_data,
+               (size_t)old_manager_count * sizeof(*new_manager_data));
+    }
+    if (manager_index == UINT32_MAX) {
+        manager_index = old_manager_count;
+        memset(&new_manager_data[manager_index], 0,
+               sizeof(new_manager_data[manager_index]));
+        new_manager_data[manager_index].guid = NMO_MANAGER_GUID_MESSAGE;
+    }
+    new_manager_data[manager_index].chunk = new_chunk;
+    new_manager_data[manager_index].data_size =
+        (uint32_t)nmo_chunk_get_size(new_chunk);
+    new_manager_data[manager_index].flags = 0u;
+
+    manager_data_snapshot_t *snapshot =
+        (manager_data_snapshot_t *)nmo_workspace_edit_alloc(
+            edit, sizeof(*snapshot), _Alignof(manager_data_snapshot_t));
+    if (snapshot == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    snapshot->session = session;
+    snapshot->manager_data = old_manager_data;
+    snapshot->manager_data_count = old_manager_count;
+    NMO_RETURN_IF_ERROR(workspace_edit_push_rollback(
+        edit, rollback_manager_data, snapshot));
+
+    nmo_session_set_manager_data(session, new_manager_data, new_manager_count);
+    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_RESOURCES);
+    *out_value = name_count;
     return NMO_OK;
 }
 

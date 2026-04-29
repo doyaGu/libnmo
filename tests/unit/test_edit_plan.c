@@ -1228,6 +1228,67 @@ TEST(edit_plan, executor_resolves_symbolic_message_default_from_manager_data) {
     edit_plan_fixture_dispose(&fixture);
 }
 
+TEST(edit_plan, executor_creates_missing_symbolic_message_default_when_opted_in) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t root_id = 0;
+    create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "root", &root_id);
+
+    nmo_edit_plan_t *strict_plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&strict_plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_node(
+                  strict_plan,
+                  root_id,
+                  nmo_guid_parse("A20E8D5B-DF002150"),
+                  "Strict Send Message"));
+
+    nmo_edit_report_t strict_report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&strict_report));
+    ASSERT_NE(NMO_OK,
+              nmo_edit_executor_execute(
+                  fixture.workspace, strict_plan,
+                  &(nmo_edit_executor_options_t){0}, &strict_report));
+    ASSERT_EQ(0u, strict_report.operations[0].result_id);
+    uint32_t missing_value = 0;
+    ASSERT_FALSE(find_message_manager_value(
+        fixture.session, "OnClick", &missing_value));
+    nmo_edit_report_dispose(&strict_report);
+    nmo_edit_plan_destroy(strict_plan);
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_node_ex(
+                  plan,
+                  root_id,
+                  nmo_guid_parse("A20E8D5B-DF002150"),
+                  "Opt In Send Message",
+                  &(nmo_add_node_options_t){
+                      .create_missing_manager_entry = true,
+                  }));
+
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_executor_execute(
+                  fixture.workspace, plan,
+                  &(nmo_edit_executor_options_t){0}, &report));
+
+    uint32_t onclick_value = UINT32_MAX;
+    ASSERT_TRUE(find_message_manager_value(
+        fixture.session, "OnClick", &onclick_value));
+    ASSERT_EQ(0u, onclick_value);
+    ASSERT_TRUE(report_contains_object_id(
+        report.changed_objects,
+        report.changed_object_count,
+        NMO_EDIT_MANAGER_ENTRY_IMPACT_ID));
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+}
+
 TEST(edit_plan, executor_resolves_parameter_value_from_prior_handle) {
     edit_plan_fixture_t fixture;
     edit_plan_fixture_init(&fixture);
@@ -3592,6 +3653,7 @@ REGISTER_TEST(edit_plan, executor_materializes_building_block_defaults);
 REGISTER_TEST(edit_plan, executor_materializes_targetable_beobject_target);
 REGISTER_TEST(edit_plan, executor_materializes_common_building_block_prototypes);
 REGISTER_TEST(edit_plan, executor_resolves_symbolic_message_default_from_manager_data);
+REGISTER_TEST(edit_plan, executor_creates_missing_symbolic_message_default_when_opted_in);
 REGISTER_TEST(edit_plan, executor_resolves_parameter_value_from_prior_handle);
 REGISTER_TEST(edit_plan, executor_materializes_input_source_for_handle_value);
 REGISTER_TEST(edit_plan, executor_materializes_input_source_for_handle_bytes);
