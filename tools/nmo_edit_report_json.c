@@ -211,6 +211,19 @@ static yyjson_mut_val *nmo_cli_edit_report_make_control_link_snapshot_json(
     return snapshot;
 }
 
+static yyjson_mut_val *nmo_cli_edit_report_make_parameter_edge_snapshot_json(
+    yyjson_mut_doc *doc,
+    nmo_object_id_t source_parameter_id,
+    nmo_object_id_t target_parameter_id)
+{
+    yyjson_mut_val *snapshot = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_uint(doc, snapshot, "source_parameter_id",
+                            (uint64_t)source_parameter_id);
+    yyjson_mut_obj_add_uint(doc, snapshot, "target_parameter_id",
+                            (uint64_t)target_parameter_id);
+    return snapshot;
+}
+
 static void nmo_cli_edit_report_add_impact_before_after_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *item,
@@ -239,6 +252,26 @@ static void nmo_cli_edit_report_add_impact_before_after_json(
                 impact->after_to_io_id,
                 impact->after_activation_delay));
     } else if (impact->has_control_link_before) {
+        yyjson_mut_obj_add_null(doc, item, "after");
+    }
+    if (impact->has_parameter_edge_before) {
+        yyjson_mut_obj_add_val(
+            doc, item, "before",
+            nmo_cli_edit_report_make_parameter_edge_snapshot_json(
+                doc,
+                impact->before_source_parameter_id,
+                impact->before_target_parameter_id));
+    } else if (impact->has_parameter_edge_after) {
+        yyjson_mut_obj_add_null(doc, item, "before");
+    }
+    if (impact->has_parameter_edge_after) {
+        yyjson_mut_obj_add_val(
+            doc, item, "after",
+            nmo_cli_edit_report_make_parameter_edge_snapshot_json(
+                doc,
+                impact->after_source_parameter_id,
+                impact->after_target_parameter_id));
+    } else if (impact->has_parameter_edge_before) {
         yyjson_mut_obj_add_null(doc, item, "after");
     }
 }

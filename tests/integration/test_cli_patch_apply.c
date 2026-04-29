@@ -1910,6 +1910,24 @@ TEST(cli, patch_apply_v2_connect_parameter_dry_run) {
     yyjson_val *changed_objects = get_array_field(data, "changed_objects");
     ASSERT_NOT_NULL(changed_objects);
     ASSERT_TRUE(array_contains_object_id(changed_objects, 8u));
+    yyjson_val *diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    yyjson_val *parameter_edge_diff =
+        get_object_field(diff, "parameter_edge_diff");
+    ASSERT_NOT_NULL(parameter_edge_diff);
+    yyjson_val *changed_edges = get_array_field(parameter_edge_diff, "changed");
+    ASSERT_NOT_NULL(changed_edges);
+    yyjson_val *changed_edge =
+        find_object_by_id_and_role(changed_edges, 8u, "primary");
+    ASSERT_NOT_NULL(changed_edge);
+    yyjson_val *before = get_object_field(changed_edge, "before");
+    ASSERT_NOT_NULL(before);
+    ASSERT_EQ(7u, (uint32_t)get_uint_field(before, "source_parameter_id"));
+    ASSERT_EQ(8u, (uint32_t)get_uint_field(before, "target_parameter_id"));
+    yyjson_val *after = get_object_field(changed_edge, "after");
+    ASSERT_NOT_NULL(after);
+    ASSERT_EQ(7u, (uint32_t)get_uint_field(after, "source_parameter_id"));
+    ASSERT_EQ(8u, (uint32_t)get_uint_field(after, "target_parameter_id"));
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
     remove(patch);
@@ -1978,6 +1996,24 @@ TEST(cli, patch_apply_v2_disconnect_parameter_dry_run) {
     yyjson_val *changed_objects = get_array_field(data, "changed_objects");
     ASSERT_NOT_NULL(changed_objects);
     ASSERT_TRUE(array_contains_object_id(changed_objects, 8u));
+    yyjson_val *diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    yyjson_val *parameter_edge_diff =
+        get_object_field(diff, "parameter_edge_diff");
+    ASSERT_NOT_NULL(parameter_edge_diff);
+    yyjson_val *changed_edges = get_array_field(parameter_edge_diff, "changed");
+    ASSERT_NOT_NULL(changed_edges);
+    yyjson_val *changed_edge =
+        find_object_by_id_and_role(changed_edges, 8u, "primary");
+    ASSERT_NOT_NULL(changed_edge);
+    yyjson_val *before = get_object_field(changed_edge, "before");
+    ASSERT_NOT_NULL(before);
+    ASSERT_EQ(7u, (uint32_t)get_uint_field(before, "source_parameter_id"));
+    ASSERT_EQ(8u, (uint32_t)get_uint_field(before, "target_parameter_id"));
+    yyjson_val *after = get_object_field(changed_edge, "after");
+    ASSERT_NOT_NULL(after);
+    ASSERT_EQ(0u, (uint32_t)get_uint_field(after, "source_parameter_id"));
+    ASSERT_EQ(8u, (uint32_t)get_uint_field(after, "target_parameter_id"));
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
     remove(patch);

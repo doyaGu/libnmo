@@ -212,6 +212,12 @@ typedef struct nmo_edit_changed_object {
     nmo_object_id_t after_from_io_id;
     nmo_object_id_t after_to_io_id;
     uint32_t after_activation_delay;
+    bool has_parameter_edge_before;
+    nmo_object_id_t before_source_parameter_id;
+    nmo_object_id_t before_target_parameter_id;
+    bool has_parameter_edge_after;
+    nmo_object_id_t after_source_parameter_id;
+    nmo_object_id_t after_target_parameter_id;
 } nmo_edit_changed_object_t;
 
 typedef nmo_edit_changed_object_t nmo_edit_object_impact_t;

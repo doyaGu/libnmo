@@ -1462,6 +1462,44 @@ static void edit_report_set_control_link_before(
     impact->before_activation_delay = activation_delay;
 }
 
+static void edit_report_set_parameter_edge_before(
+    nmo_edit_object_impact_t *items,
+    size_t count,
+    nmo_object_id_t id,
+    nmo_edit_op_kind_t cause,
+    const char *role,
+    nmo_object_id_t source_parameter_id,
+    nmo_object_id_t target_parameter_id)
+{
+    nmo_edit_object_impact_t *impact =
+        edit_report_find_impact(items, count, id, cause, role);
+    if (impact == NULL) {
+        return;
+    }
+    impact->has_parameter_edge_before = true;
+    impact->before_source_parameter_id = source_parameter_id;
+    impact->before_target_parameter_id = target_parameter_id;
+}
+
+static void edit_report_set_parameter_edge_after(
+    nmo_edit_object_impact_t *items,
+    size_t count,
+    nmo_object_id_t id,
+    nmo_edit_op_kind_t cause,
+    const char *role,
+    nmo_object_id_t source_parameter_id,
+    nmo_object_id_t target_parameter_id)
+{
+    nmo_edit_object_impact_t *impact =
+        edit_report_find_impact(items, count, id, cause, role);
+    if (impact == NULL) {
+        return;
+    }
+    impact->has_parameter_edge_after = true;
+    impact->after_source_parameter_id = source_parameter_id;
+    impact->after_target_parameter_id = target_parameter_id;
+}
+
 nmo_status_t nmo_edit_report_add_changed_object(
     nmo_edit_report_t *report,
     nmo_object_id_t id,
@@ -2582,6 +2620,8 @@ static nmo_status_t edit_executor_apply_op(
                 return ref_rc;
             }
         }
+        nmo_object_id_t before_source_parameter_id =
+            edit_plan_get_parameterin_source(tx, target_parameter_id);
         nmo_status_t rc = nmo_script_edit_connect_parameter(
             tx,
             op->data.connect_parameter.source_parameter_id,
@@ -2592,6 +2632,29 @@ static nmo_status_t edit_executor_apply_op(
         if (out_result_id != NULL) {
             *out_result_id = target_parameter_id;
         }
+        nmo_object_id_t after_source_parameter_id =
+            edit_plan_get_parameterin_source(tx, target_parameter_id);
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            report,
+            target_parameter_id,
+            NMO_EDIT_OP_CONNECT_PARAMETER,
+            "primary"));
+        edit_report_set_parameter_edge_before(
+            report->changed_objects,
+            report->changed_object_count,
+            target_parameter_id,
+            NMO_EDIT_OP_CONNECT_PARAMETER,
+            "primary",
+            before_source_parameter_id,
+            target_parameter_id);
+        edit_report_set_parameter_edge_after(
+            report->changed_objects,
+            report->changed_object_count,
+            target_parameter_id,
+            NMO_EDIT_OP_CONNECT_PARAMETER,
+            "primary",
+            after_source_parameter_id,
+            target_parameter_id);
         return edit_report_note_parameter_edge_source(
             report,
             NMO_EDIT_OP_CONNECT_PARAMETER,
@@ -2608,6 +2671,31 @@ static nmo_status_t edit_executor_apply_op(
         if (rc != NMO_OK) {
             return rc;
         }
+        nmo_object_id_t after_source_parameter_id =
+            edit_plan_get_parameterin_source(
+                tx,
+                op->data.disconnect_parameter.target_parameter_id);
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+            report,
+            op->data.disconnect_parameter.target_parameter_id,
+            NMO_EDIT_OP_DISCONNECT_PARAMETER,
+            "primary"));
+        edit_report_set_parameter_edge_before(
+            report->changed_objects,
+            report->changed_object_count,
+            op->data.disconnect_parameter.target_parameter_id,
+            NMO_EDIT_OP_DISCONNECT_PARAMETER,
+            "primary",
+            old_source_parameter_id,
+            op->data.disconnect_parameter.target_parameter_id);
+        edit_report_set_parameter_edge_after(
+            report->changed_objects,
+            report->changed_object_count,
+            op->data.disconnect_parameter.target_parameter_id,
+            NMO_EDIT_OP_DISCONNECT_PARAMETER,
+            "primary",
+            after_source_parameter_id,
+            op->data.disconnect_parameter.target_parameter_id);
         return edit_report_note_parameter_edge_source(
             report,
             NMO_EDIT_OP_DISCONNECT_PARAMETER,

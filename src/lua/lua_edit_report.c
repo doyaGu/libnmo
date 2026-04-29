@@ -164,6 +164,18 @@ static void nmo_lua_push_control_link_snapshot(
     lua_setfield(state, -2, "activation_delay");
 }
 
+static void nmo_lua_push_parameter_edge_snapshot(
+    lua_State *state,
+    nmo_object_id_t source_parameter_id,
+    nmo_object_id_t target_parameter_id)
+{
+    lua_createtable(state, 0, 2);
+    lua_pushinteger(state, (lua_Integer)source_parameter_id);
+    lua_setfield(state, -2, "source_parameter_id");
+    lua_pushinteger(state, (lua_Integer)target_parameter_id);
+    lua_setfield(state, -2, "target_parameter_id");
+}
+
 static void nmo_lua_push_impact_before_after(
     lua_State *state,
     const nmo_edit_object_impact_t *impact)
@@ -190,6 +202,26 @@ static void nmo_lua_push_impact_before_after(
             impact->after_activation_delay);
         lua_setfield(state, -2, "after");
     } else if (impact->has_control_link_before) {
+        lua_pushnil(state);
+        lua_setfield(state, -2, "after");
+    }
+    if (impact->has_parameter_edge_before) {
+        nmo_lua_push_parameter_edge_snapshot(
+            state,
+            impact->before_source_parameter_id,
+            impact->before_target_parameter_id);
+        lua_setfield(state, -2, "before");
+    } else if (impact->has_parameter_edge_after) {
+        lua_pushnil(state);
+        lua_setfield(state, -2, "before");
+    }
+    if (impact->has_parameter_edge_after) {
+        nmo_lua_push_parameter_edge_snapshot(
+            state,
+            impact->after_source_parameter_id,
+            impact->after_target_parameter_id);
+        lua_setfield(state, -2, "after");
+    } else if (impact->has_parameter_edge_before) {
         lua_pushnil(state);
         lua_setfield(state, -2, "after");
     }
