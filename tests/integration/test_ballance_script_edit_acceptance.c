@@ -348,6 +348,49 @@ TEST(ballance_acceptance, accepted_message_probe_save_load_validates)
     remove(output);
 }
 
+TEST(ballance_acceptance, accepted_data_probe_save_load_validates)
+{
+    make_dir("test_ballance_acceptance_tmp");
+    const char *output = "test_ballance_acceptance_tmp/data_probe.cmo";
+    remove(output);
+
+    char args[1536];
+    snprintf(args, sizeof(args),
+             "-f json debug probe data-cell-logger --behavior 3880 "
+             "--dataarray 6067 --row 0 --col 1 "
+             "--write-node 3871 --remove-link 3874 "
+             "\"%s\" -o \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output);
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "debug.probe", &doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_FALSE(get_bool_field(data, "dry_run"));
+    ASSERT_TRUE(file_exists(output));
+    ASSERT_STR_EQ("data_cell_write", get_string_field(data, "probe_selector"));
+    yyjson_val *diagnostics =
+        get_object_field(data, "probe_selector_diagnostics");
+    ASSERT_NOT_NULL(diagnostics);
+    ASSERT_STR_EQ("explicit_node", get_string_field(diagnostics, "mode"));
+    ASSERT_STR_EQ("selected", get_string_field(diagnostics, "status"));
+    yyjson_val *operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(5u, (uint32_t)yyjson_arr_size(operations));
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args), "validate all \"%s\"", output);
+    cli_run_result_t validate = run_cli_capture(args);
+    ASSERT_NOT_NULL(validate.output);
+    ASSERT_EQ(0, validate.exit_code);
+    ASSERT_STR_CONTAINS(validate.output, "Result: VALID");
+    free(validate.output);
+
+    remove(output);
+}
+
 TEST(ballance_acceptance, accepted_manager_entry_save_load_validates)
 {
     make_dir("test_ballance_acceptance_tmp");
@@ -393,11 +436,76 @@ TEST(ballance_acceptance, accepted_manager_entry_save_load_validates)
     remove(output);
 }
 
+TEST(ballance_acceptance, accepted_attribute_manager_entry_save_load_validates)
+{
+    make_dir("test_ballance_acceptance_tmp");
+    const char *patch = "test_ballance_acceptance_tmp/attribute_manager_entry.json";
+    const char *output = "test_ballance_acceptance_tmp/attribute_manager_entry.cmo";
+    char json[2048];
+    snprintf(json, sizeof(json),
+             "{\n"
+             "  \"version\": 2,\n"
+             "  \"input\": \"%s\",\n"
+             "  \"output\": \"%s\",\n"
+             "  \"operations\": [\n"
+             "    {\n"
+             "      \"op\": \"set_parameter_value\",\n"
+             "      \"parameter_id\": 2606,\n"
+             "      \"value\": \"ignored\",\n"
+             "      \"manager_entry\": {\n"
+             "        \"policy\": \"create_missing\",\n"
+             "        \"schema\": \"attribute\",\n"
+             "        \"manager_guid\": \"{3D242466-00000000}\",\n"
+             "        \"key\": \"AcceptanceAttribute\",\n"
+             "        \"create\": {\n"
+             "          \"attribute_type_guid\": \"{5A54D2BD-44E28357}\",\n"
+             "          \"category\": \"Acceptance\",\n"
+             "          \"compatible_class_id\": 19,\n"
+             "          \"flags\": 5\n"
+             "        }\n"
+             "      }\n"
+             "    }\n"
+             "  ]\n"
+             "}\n",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output);
+
+    remove(patch);
+    remove(output);
+    ASSERT_TRUE(write_text_file(patch, json));
+
+    char args[1024];
+    snprintf(args, sizeof(args), "-f json patch apply \"%s\"", patch);
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "patch.apply", &doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_FALSE(get_bool_field(data, "dry_run"));
+    ASSERT_TRUE(file_exists(output));
+    ASSERT_NOT_NULL(get_array_field(data, "operations"));
+    ASSERT_NOT_NULL(get_object_field(data, "manifest"));
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args), "validate all \"%s\"", output);
+    cli_run_result_t validate = run_cli_capture(args);
+    ASSERT_NOT_NULL(validate.output);
+    ASSERT_EQ(0, validate.exit_code);
+    ASSERT_STR_CONTAINS(validate.output, "Result: VALID");
+    free(validate.output);
+
+    remove(patch);
+    remove(output);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(ballance_acceptance, debug_probe_2d_text_dry_run);
 REGISTER_TEST(ballance_acceptance, patch_replay_dry_run);
 REGISTER_TEST(ballance_acceptance, validate_base);
 REGISTER_TEST(ballance_acceptance, accepted_patch_save_load_validates);
 REGISTER_TEST(ballance_acceptance, accepted_message_probe_save_load_validates);
+REGISTER_TEST(ballance_acceptance, accepted_data_probe_save_load_validates);
 REGISTER_TEST(ballance_acceptance, accepted_manager_entry_save_load_validates);
+REGISTER_TEST(ballance_acceptance, accepted_attribute_manager_entry_save_load_validates);
 TEST_MAIN_END()
