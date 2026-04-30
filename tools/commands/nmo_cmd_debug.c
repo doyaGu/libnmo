@@ -661,6 +661,139 @@ static bool debug_probe_behavior_has_io(const nmo_behavior_state_t *state,
             nmo_array_find(&state->outputs, &io_id, NULL) != 0);
 }
 
+typedef enum debug_probe_link_touch_mode {
+    DEBUG_PROBE_LINK_TOUCH_ANY,
+    DEBUG_PROBE_LINK_TOUCH_TO_IO_FIRST,
+} debug_probe_link_touch_mode_t;
+
+static bool debug_probe_link_touches_behavior(
+    const nmo_behavior_state_t *behavior,
+    const nmo_behaviorlink_state_t *link,
+    bool to_io_only)
+{
+    if (behavior == NULL || link == NULL) {
+        return false;
+    }
+    if (debug_probe_behavior_has_io(behavior, link->out_io_id)) {
+        return true;
+    }
+    return !to_io_only &&
+           debug_probe_behavior_has_io(behavior, link->in_io_id);
+}
+
+static void debug_probe_append_id(char *buffer,
+                                  size_t buffer_size,
+                                  size_t *buffer_len,
+                                  size_t index,
+                                  nmo_object_id_t id)
+{
+    if (buffer == NULL || buffer_size == 0u || buffer_len == NULL ||
+        *buffer_len >= buffer_size - 1u) {
+        return;
+    }
+    int written = snprintf(buffer + *buffer_len,
+                           buffer_size - *buffer_len,
+                           "%s%u",
+                           index == 0u ? "" : ",",
+                           (unsigned)id);
+    if (written <= 0) {
+        return;
+    }
+    size_t append = (size_t)written;
+    size_t available = buffer_size - *buffer_len;
+    *buffer_len += append < available ? append : available - 1u;
+}
+
+static size_t debug_probe_collect_touching_links(
+    nmo_object_repository_t *repo,
+    const nmo_behavior_state_t *parent,
+    const nmo_behavior_state_t *target,
+    bool to_io_only,
+    nmo_object_id_t *out_selected_link_id,
+    const nmo_behaviorlink_state_t **out_selected_link,
+    char *candidate_ids,
+    size_t candidate_ids_size)
+{
+    if (out_selected_link_id != NULL) {
+        *out_selected_link_id = 0u;
+    }
+    if (out_selected_link != NULL) {
+        *out_selected_link = NULL;
+    }
+    if (candidate_ids != NULL && candidate_ids_size > 0u) {
+        candidate_ids[0] = '\0';
+    }
+    if (repo == NULL || parent == NULL || target == NULL) {
+        return 0u;
+    }
+
+    size_t candidate_count = 0u;
+    size_t candidate_ids_len = 0u;
+    const nmo_object_id_t *link_ids =
+        (const nmo_object_id_t *)parent->sub_behavior_links.data;
+    for (size_t i = 0; link_ids != NULL &&
+                       i < parent->sub_behavior_links.count; ++i) {
+        nmo_object_id_t link_id = link_ids[i];
+        nmo_object_t *link_obj =
+            nmo_object_repository_find_by_id(repo, link_id);
+        const nmo_behaviorlink_state_t *link =
+            link_obj != NULL &&
+                    nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK
+                ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
+                      link_obj)
+                : NULL;
+        if (!debug_probe_link_touches_behavior(target, link, to_io_only)) {
+            continue;
+        }
+        debug_probe_append_id(candidate_ids,
+                              candidate_ids_size,
+                              &candidate_ids_len,
+                              candidate_count,
+                              link_id);
+        if (out_selected_link_id != NULL) {
+            *out_selected_link_id = link_id;
+        }
+        if (out_selected_link != NULL) {
+            *out_selected_link = link;
+        }
+        ++candidate_count;
+    }
+    return candidate_count;
+}
+
+static size_t debug_probe_select_touching_links(
+    nmo_object_repository_t *repo,
+    const nmo_behavior_state_t *parent,
+    const nmo_behavior_state_t *target,
+    debug_probe_link_touch_mode_t mode,
+    nmo_object_id_t *out_selected_link_id,
+    const nmo_behaviorlink_state_t **out_selected_link,
+    char *candidate_ids,
+    size_t candidate_ids_size)
+{
+    size_t count = debug_probe_collect_touching_links(
+        repo,
+        parent,
+        target,
+        mode == DEBUG_PROBE_LINK_TOUCH_TO_IO_FIRST,
+        out_selected_link_id,
+        out_selected_link,
+        candidate_ids,
+        candidate_ids_size);
+    if (count == 0u && mode == DEBUG_PROBE_LINK_TOUCH_TO_IO_FIRST) {
+        count = debug_probe_collect_touching_links(
+            repo,
+            parent,
+            target,
+            false,
+            out_selected_link_id,
+            out_selected_link,
+            candidate_ids,
+            candidate_ids_size);
+    }
+    return count;
+}
+
 static nmo_status_t debug_probe_validate_targets(
     nmo_cmd_ctx_t *ctx,
     nmo_debug_probe_args_t *args,
@@ -1184,46 +1317,18 @@ static nmo_status_t debug_probe_select_data_write_link(
         return NMO_OK;
     }
 
+    char candidate_ids[256];
     nmo_object_id_t selected_link_id = 0u;
     const nmo_behaviorlink_state_t *selected_link = NULL;
-    size_t candidate_count = 0u;
-    char candidate_ids[256];
-    size_t candidate_ids_len = 0u;
-    candidate_ids[0] = '\0';
-    const nmo_object_id_t *link_ids =
-        (const nmo_object_id_t *)parent->sub_behavior_links.data;
-    for (size_t i = 0; link_ids != NULL &&
-                       i < parent->sub_behavior_links.count; ++i) {
-        nmo_object_id_t link_id = link_ids[i];
-        nmo_object_t *link_obj =
-            nmo_object_repository_find_by_id(repo, link_id);
-        const nmo_behaviorlink_state_t *link =
-            link_obj != NULL &&
-                    nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK
-                ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
-                      link_obj)
-                : NULL;
-        if (link == NULL ||
-            (!debug_probe_behavior_has_io(writer, link->in_io_id) &&
-             !debug_probe_behavior_has_io(writer, link->out_io_id))) {
-            continue;
-        }
-        if (candidate_ids_len < sizeof(candidate_ids) - 1u) {
-            int written = snprintf(candidate_ids + candidate_ids_len,
-                                   sizeof(candidate_ids) - candidate_ids_len,
-                                   "%s%u",
-                                   candidate_count == 0u ? "" : ",",
-                                   (unsigned)link_id);
-            if (written > 0) {
-                size_t append = (size_t)written;
-                size_t available = sizeof(candidate_ids) - candidate_ids_len;
-                candidate_ids_len += append < available ? append : available - 1u;
-            }
-        }
-        selected_link_id = link_id;
-        selected_link = link;
-        ++candidate_count;
-    }
+    size_t candidate_count = debug_probe_select_touching_links(
+        repo,
+        parent,
+        writer,
+        DEBUG_PROBE_LINK_TOUCH_ANY,
+        &selected_link_id,
+        &selected_link,
+        candidate_ids,
+        sizeof(candidate_ids));
 
     if (candidate_count != 1u || selected_link == NULL) {
         debug_probe_selector_set_mode_status(
@@ -1282,83 +1387,18 @@ static nmo_status_t debug_probe_select_message_link(
         return NMO_OK;
     }
 
+    char candidate_ids[256];
     nmo_object_id_t selected_link_id = 0u;
     const nmo_behaviorlink_state_t *selected_link = NULL;
-    size_t candidate_count = 0u;
-    char candidate_ids[256];
-    size_t candidate_ids_len = 0u;
-    candidate_ids[0] = '\0';
-    const nmo_object_id_t *link_ids =
-        (const nmo_object_id_t *)parent->sub_behavior_links.data;
-    for (size_t i = 0; link_ids != NULL &&
-                       i < parent->sub_behavior_links.count; ++i) {
-        nmo_object_id_t link_id = link_ids[i];
-        nmo_object_t *link_obj =
-            nmo_object_repository_find_by_id(repo, link_id);
-        const nmo_behaviorlink_state_t *link =
-            link_obj != NULL &&
-                    nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK
-                ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
-                      link_obj)
-                : NULL;
-        if (link == NULL ||
-            !debug_probe_behavior_has_io(message, link->out_io_id)) {
-            continue;
-        }
-        if (candidate_ids_len < sizeof(candidate_ids) - 1u) {
-            int written = snprintf(candidate_ids + candidate_ids_len,
-                                   sizeof(candidate_ids) - candidate_ids_len,
-                                   "%s%u",
-                                   candidate_count == 0u ? "" : ",",
-                                   (unsigned)link_id);
-            if (written > 0) {
-                size_t append = (size_t)written;
-                size_t available = sizeof(candidate_ids) - candidate_ids_len;
-                candidate_ids_len += append < available ? append : available - 1u;
-            }
-        }
-        selected_link_id = link_id;
-        selected_link = link;
-        ++candidate_count;
-    }
-    if (candidate_count == 0u) {
-        for (size_t i = 0; link_ids != NULL &&
-                           i < parent->sub_behavior_links.count; ++i) {
-            nmo_object_id_t link_id = link_ids[i];
-            nmo_object_t *link_obj =
-                nmo_object_repository_find_by_id(repo, link_id);
-            const nmo_behaviorlink_state_t *link =
-                link_obj != NULL &&
-                        nmo_object_get_class_id(link_obj) ==
-                            NMO_CID_BEHAVIORLINK
-                    ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
-                          link_obj)
-                    : NULL;
-            if (link == NULL ||
-                (!debug_probe_behavior_has_io(message, link->in_io_id) &&
-                 !debug_probe_behavior_has_io(message, link->out_io_id))) {
-                continue;
-            }
-            if (candidate_ids_len < sizeof(candidate_ids) - 1u) {
-                int written = snprintf(
-                    candidate_ids + candidate_ids_len,
-                    sizeof(candidate_ids) - candidate_ids_len,
-                    "%s%u",
-                    candidate_count == 0u ? "" : ",",
-                    (unsigned)link_id);
-                if (written > 0) {
-                    size_t append = (size_t)written;
-                    size_t available =
-                        sizeof(candidate_ids) - candidate_ids_len;
-                    candidate_ids_len +=
-                        append < available ? append : available - 1u;
-                }
-            }
-            selected_link_id = link_id;
-            selected_link = link;
-            ++candidate_count;
-        }
-    }
+    size_t candidate_count = debug_probe_select_touching_links(
+        repo,
+        parent,
+        message,
+        DEBUG_PROBE_LINK_TOUCH_TO_IO_FIRST,
+        &selected_link_id,
+        &selected_link,
+        candidate_ids,
+        sizeof(candidate_ids));
 
     if (candidate_count != 1u || selected_link == NULL) {
         debug_probe_selector_set_mode_status(
