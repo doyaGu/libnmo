@@ -7,6 +7,7 @@
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_class_ids.h"
@@ -455,12 +456,67 @@ static void probe_enrich_candidate_with_data_cell(
         if (operation->has_in1) {
             candidate->source_parameter_id = operation->in1_id;
         }
-        if (operation->has_in2) {
-            candidate->value_parameter_id = operation->in2_id;
-        } else if (operation->has_out) {
+        if (operation->has_out) {
             candidate->value_parameter_id = operation->out_id;
+        } else if (operation->has_in2) {
+            candidate->value_parameter_id = operation->in2_id;
         }
     }
+}
+
+static nmo_guid_t probe_parameter_type_guid(nmo_object_repository_t *repo,
+                                            nmo_object_id_t parameter_id)
+{
+    nmo_object_t *object =
+        repo != NULL ? nmo_object_repository_find_by_id(repo, parameter_id)
+                     : NULL;
+    if (object == NULL) {
+        return NMO_GUID_NULL;
+    }
+    switch (nmo_object_get_class_id(object)) {
+    case NMO_CID_PARAMETERIN:
+        return ((const nmo_parameterin_state_t *)nmo_object_get_state(object))
+            ->type_guid;
+    case NMO_CID_PARAMETEROUT:
+        return ((const nmo_parameterout_state_t *)nmo_object_get_state(object))
+            ->base.type_guid;
+    case NMO_CID_PARAMETERLOCAL:
+        return ((const nmo_parameterlocal_state_t *)nmo_object_get_state(object))
+            ->base.type_guid;
+    default:
+        return NMO_GUID_NULL;
+    }
+}
+
+static bool probe_data_write_candidate_type_matches(
+    nmo_object_repository_t *repo,
+    const nmo_probe_selector_candidate_t *candidate,
+    const nmo_behavior_state_t *node)
+{
+    (void)node;
+    if (repo == NULL || candidate == NULL ||
+        nmo_guid_is_null(candidate->column_type_guid)) {
+        return true;
+    }
+    if (candidate->value_parameter_id != 0u) {
+        nmo_guid_t value_type =
+            probe_parameter_type_guid(repo, candidate->value_parameter_id);
+        return nmo_guid_is_null(value_type) ||
+               nmo_guid_equals(value_type, candidate->column_type_guid);
+    }
+    return true;
+}
+
+static nmo_status_t probe_reject_type_mismatch(
+    nmo_probe_selector_result_t *result,
+    nmo_probe_selector_mode_t mode)
+{
+    return probe_reject(
+        result,
+        mode,
+        NMO_PROBE_SELECTOR_STATUS_UNSAFE,
+        "type_mismatch",
+        "type_mismatch: debug probe data write-site value type does not match data array column type");
 }
 
 static void probe_append_id(char *buffer,
@@ -1128,14 +1184,20 @@ static nmo_status_t probe_analyze_data_cell(
         }
         result->selected_node_id = request->write_node_id;
         result->safe_insertion.selected_node_id = request->write_node_id;
-        probe_add_candidate(ctx,
-                            result,
-                            request->behavior_id,
-                            request->write_node_id,
-                            0u,
-                            0u,
-                            node,
-                            "data_writer");
+        nmo_probe_selector_candidate_t *candidate =
+            probe_add_candidate(ctx,
+                                result,
+                                request->behavior_id,
+                                request->write_node_id,
+                                0u,
+                                0u,
+                                node,
+                                "data_writer");
+        probe_enrich_candidate_with_data_cell(repo, request, NULL, candidate);
+        if (!probe_data_write_candidate_type_matches(repo, candidate, node)) {
+            return probe_reject_type_mismatch(
+                result, NMO_PROBE_SELECTOR_MODE_EXPLICIT_NODE);
+        }
         if (request->remove_link_id != 0u) {
             nmo_object_t *link_obj =
                 nmo_object_repository_find_by_id(repo, request->remove_link_id);
@@ -1268,6 +1330,11 @@ static nmo_status_t probe_analyze_data_cell(
                                     "data_write_operation");
             probe_enrich_candidate_with_data_cell(
                 repo, request, operation, candidate);
+            if (!probe_data_write_candidate_type_matches(
+                    repo, candidate, NULL)) {
+                return probe_reject_type_mismatch(
+                    result, NMO_PROBE_SELECTOR_MODE_EXPLICIT_OPERATION);
+            }
         } else {
             nmo_object_id_t related_behaviors[32];
             size_t related_count =
@@ -1309,6 +1376,11 @@ static nmo_status_t probe_analyze_data_cell(
                                     "data_write_operation");
             probe_enrich_candidate_with_data_cell(
                 repo, request, operation, candidate);
+            if (!probe_data_write_candidate_type_matches(
+                    repo, candidate, NULL)) {
+                return probe_reject_type_mismatch(
+                    result, NMO_PROBE_SELECTOR_MODE_EXPLICIT_OPERATION);
+            }
         }
         result->selected_operation_id = request->write_operation_id;
         result->safe_insertion.selected_operation_id =
@@ -1470,6 +1542,15 @@ static nmo_status_t probe_analyze_data_cell(
     }
     if (candidate_count == 1u) {
         if (selected_operation_id != 0u && selected_link != NULL) {
+            nmo_probe_selector_candidate_t *candidate =
+                result->candidate_count > 0u
+                    ? &result->candidates[result->candidate_count - 1u]
+                    : NULL;
+            if (!probe_data_write_candidate_type_matches(
+                    repo, candidate, NULL)) {
+                return probe_reject_type_mismatch(
+                    result, NMO_PROBE_SELECTOR_MODE_AUTO);
+            }
             result->selected_operation_id = selected_operation_id;
             result->safe_insertion.selected_operation_id =
                 selected_operation_id;
@@ -1482,6 +1563,14 @@ static nmo_status_t probe_analyze_data_cell(
         }
         const nmo_behavior_state_t *writer =
             probe_behavior_state_by_id(repo, selected_id);
+        nmo_probe_selector_candidate_t *candidate =
+            result->candidate_count > 0u
+                ? &result->candidates[result->candidate_count - 1u]
+                : NULL;
+        if (!probe_data_write_candidate_type_matches(repo, candidate, writer)) {
+            return probe_reject_type_mismatch(
+                result, NMO_PROBE_SELECTOR_MODE_AUTO);
+        }
         result->selected_node_id = selected_id;
         result->safe_insertion.selected_node_id = selected_id;
         return probe_select_safe_link(

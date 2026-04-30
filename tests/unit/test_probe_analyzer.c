@@ -9,6 +9,7 @@
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
 #include "session/nmo_session.h"
 #include "type/nmo_type_guids.h"
@@ -173,7 +174,7 @@ TEST(probe_analyzer, resolves_explicit_operation_write_site)
     ASSERT_TRUE(nmo_guid_equals(CKPGUID_STRING,
                                 result.candidates[0].column_type_guid));
     ASSERT_EQ(3789u, result.candidates[0].source_parameter_id);
-    ASSERT_EQ(3790u, result.candidates[0].value_parameter_id);
+    ASSERT_EQ(3717u, result.candidates[0].value_parameter_id);
     ASSERT_TRUE(result.from_io_id != 0u);
     ASSERT_TRUE(result.to_io_id != 0u);
 
@@ -217,7 +218,7 @@ TEST(probe_analyzer, reports_operation_write_site_candidates)
             ASSERT_TRUE(nmo_guid_equals(
                 CKPGUID_STRING, result.candidates[i].column_type_guid));
             ASSERT_EQ(3789u, result.candidates[i].source_parameter_id);
-            ASSERT_EQ(3790u, result.candidates[i].value_parameter_id);
+            ASSERT_EQ(3717u, result.candidates[i].value_parameter_id);
         }
     }
     ASSERT_TRUE(found_operation);
@@ -254,6 +255,40 @@ TEST(probe_analyzer, infers_auto_data_writer_cell_metadata)
                                 result.candidates[0].column_type_guid));
     ASSERT_TRUE(result.safe_insertion.selected);
     ASSERT_EQ(4689u, result.safe_insertion.remove_link_id);
+
+    nmo_probe_analysis_dispose(&result);
+    probe_fixture_dispose(&fixture);
+}
+
+TEST(probe_analyzer, rejects_operation_data_writer_column_type_mismatch)
+{
+    probe_fixture_t fixture;
+    probe_fixture_init(&fixture);
+
+    nmo_probe_selector_request_t request;
+    nmo_probe_selector_request_init(&request);
+    request.kind = NMO_PROBE_SELECTOR_DATA_CELL_WRITE;
+    request.behavior_id = 3798u;
+    request.dataarray_id = 6067u;
+    request.row = 0u;
+    request.col = 2u;
+    request.has_data_cell = true;
+    request.write_operation_id = 3791u;
+    request.remove_link_id = 3780u;
+
+    nmo_probe_selector_result_t result;
+    nmo_probe_selector_result_init(&result);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_probe_analyze_selector(fixture.workspace, &request, &result));
+
+    ASSERT_EQ(NMO_PROBE_SELECTOR_MODE_EXPLICIT_OPERATION, result.mode);
+    ASSERT_EQ(NMO_PROBE_SELECTOR_STATUS_UNSAFE, result.status);
+    ASSERT_STR_EQ("type_mismatch", result.rejection_code);
+    ASSERT_EQ(1u, result.candidate_count);
+    ASSERT_EQ(6067u, result.candidates[0].dataarray_id);
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_BOOL,
+                                result.candidates[0].column_type_guid));
+    ASSERT_EQ(3717u, result.candidates[0].value_parameter_id);
 
     nmo_probe_analysis_dispose(&result);
     probe_fixture_dispose(&fixture);
@@ -360,6 +395,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(probe_analyzer, resolves_explicit_operation_write_site);
     REGISTER_TEST(probe_analyzer, reports_operation_write_site_candidates);
     REGISTER_TEST(probe_analyzer, infers_auto_data_writer_cell_metadata);
+    REGISTER_TEST(probe_analyzer,
+                  rejects_operation_data_writer_column_type_mismatch);
     REGISTER_TEST(probe_analyzer, rejects_operation_write_site_outside_boundary);
     REGISTER_TEST(probe_analyzer,
                   rejects_operation_write_site_unrelated_io_endpoints);

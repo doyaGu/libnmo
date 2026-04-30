@@ -3888,7 +3888,7 @@ TEST(cli, debug_probe_data_cell_logger_accepts_operation_consumer_link) {
     ASSERT_EQ(3789u,
               yyjson_get_uint(
                   yyjson_obj_get(candidate, "source_parameter_id")));
-    ASSERT_EQ(3790u,
+    ASSERT_EQ(3717u,
               yyjson_get_uint(
                   yyjson_obj_get(candidate, "value_parameter_id")));
     ASSERT_STR_EQ("data_write_operation",
