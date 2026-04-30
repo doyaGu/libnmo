@@ -14,6 +14,8 @@
 #include "behavior/nmo_edit_plan.h"
 #include "behavior/nmo_edit_plan_json.h"
 #include "core/nmo_error.h"
+#include "project/nmo_project_executor.h"
+#include "project/nmo_project_manifest_json.h"
 #include "runtime/nmo_context.h"
 #include "yyjson.h"
 
@@ -29,6 +31,13 @@ typedef struct patch_plan {
     const char *output;
     nmo_edit_plan_t *edit_plan;
 } patch_plan_t;
+
+typedef struct patch_apply_args {
+    bool dry_run;
+    const char *patch_path;
+    const char *project_path;
+    const char *output_path;
+} patch_apply_args_t;
 
 static void patch_add_normalized_manifest_json(yyjson_mut_doc *doc,
                                                yyjson_mut_val *data,
@@ -275,14 +284,160 @@ static int patch_apply_plan(patch_plan_t *plan,
     return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_SUCCESS);
 }
 
+static int patch_read_file(const char *path, char **out_text, size_t *out_size)
+{
+    FILE *fp = NULL;
+    long size = 0;
+    char *text = NULL;
+    size_t bytes_read = 0u;
+
+    if (!path || !out_text || !out_size) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    *out_text = NULL;
+    *out_size = 0u;
+
+    fp = fopen(path, "rb");
+    if (!fp) {
+        fprintf(stderr, "Error: Failed to open project manifest: %s\n", path);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        fprintf(stderr, "Error: Failed to seek project manifest: %s\n", path);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+    size = ftell(fp);
+    if (size < 0) {
+        fclose(fp);
+        fprintf(stderr, "Error: Failed to size project manifest: %s\n", path);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+    rewind(fp);
+
+    text = (char *)malloc((size_t)size + 1u);
+    if (!text) {
+        fclose(fp);
+        fprintf(stderr, "Error: Failed to allocate project manifest buffer\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    bytes_read = fread(text, 1u, (size_t)size, fp);
+    fclose(fp);
+    if (bytes_read != (size_t)size) {
+        free(text);
+        fprintf(stderr, "Error: Failed to read project manifest: %s\n", path);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+    text[bytes_read] = '\0';
+    *out_text = text;
+    *out_size = bytes_read;
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+static int patch_apply_project_manifest(
+    const patch_apply_args_t *args,
+    const nmo_cli_global_opts_t *global)
+{
+    nmo_cmd_ctx_t ctx;
+    int rc = nmo_cmd_ctx_init_no_file(&ctx, global);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    if (args->dry_run) {
+        fprintf(stderr,
+                "Error: --dry-run is not supported for project manifests yet\n");
+        return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    char *json = NULL;
+    size_t json_size = 0u;
+    rc = patch_read_file(args->project_path, &json, &json_size);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return nmo_cmd_ctx_done(&ctx, rc);
+    }
+
+    nmo_project_manifest_t manifest;
+    nmo_project_manifest_init(&manifest);
+    nmo_status_t st = nmo_project_manifest_json_read_manifest(
+        json,
+        json_size,
+        &manifest);
+    free(json);
+    if (st != NMO_OK) {
+        const char *message = nmo_last_error_message();
+        fprintf(stderr, "Error: %s\n",
+                message && message[0] ? message : nmo_error_string(st));
+        nmo_project_manifest_dispose(&manifest);
+        return nmo_cmd_ctx_done(&ctx,
+                                st == NMO_ERR_NOMEM
+                                    ? NMO_CLI_EXIT_INTERNAL_ERROR
+                                    : NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    const char *output_path = args->output_path
+        ? args->output_path
+        : manifest.output_path;
+    if (!output_path || output_path[0] == '\0') {
+        fprintf(stderr,
+                "Error: Project manifest output requires -o/--output or output\n");
+        nmo_project_manifest_dispose(&manifest);
+        return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    nmo_project_report_t report;
+    nmo_project_report_init(&report);
+    st = nmo_project_executor_execute_to_file(
+        manifest.plan,
+        output_path,
+        &report);
+    if (st != NMO_OK) {
+        const char *message = nmo_last_error_message();
+        fprintf(stderr, "Error: %s\n",
+                message && message[0] ? message : nmo_error_string(st));
+        nmo_project_report_dispose(&report);
+        nmo_project_manifest_dispose(&manifest);
+        return nmo_cmd_ctx_done(&ctx,
+                                st == NMO_ERR_INVALID_ARGUMENT ||
+                                        st == NMO_ERR_VALIDATION_FAILED ||
+                                        st == NMO_ERR_NOT_FOUND
+                                    ? NMO_CLI_EXIT_ARG_ERROR
+                                    : NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    if (ctx.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&ctx);
+        if (!doc) {
+            nmo_project_report_dispose(&report);
+            nmo_project_manifest_dispose(&manifest);
+            return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        nmo_cli_json_add_bool_safe(doc, data, "ok", report.ok);
+        nmo_cli_json_add_bool_safe(doc, data, "dry_run", report.dry_run);
+        nmo_cli_json_add_str_safe(doc, data, "manifest", args->project_path);
+        nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+        rc = nmo_cmd_ctx_json_end(&ctx, doc, data, "patch.apply");
+    } else {
+        fprintf(ctx.out, "Generated project from: %s\n", args->project_path);
+        fprintf(ctx.out, "Saved to: %s\n", output_path);
+        rc = NMO_CLI_EXIT_SUCCESS;
+    }
+
+    nmo_project_report_dispose(&report);
+    nmo_project_manifest_dispose(&manifest);
+    return nmo_cmd_ctx_done(&ctx, rc);
+}
+
 static int patch_parse_apply_args(int argc,
                                   char **argv,
-                                  bool *out_dry_run,
-                                  const char **out_patch_path) {
+                                  patch_apply_args_t *out_args) {
     static const nmo_opt_def_t opts[] = {
         {"--dry-run", NULL, NMO_OPT_FLAG, "Preview without saving"},
+        {"--project", NULL, NMO_OPT_STRING, "Project manifest to generate"},
+        {"--output", "-o", NMO_OPT_STRING, "Output CMO path"},
     };
-    enum { OPT_DRY_RUN, OPT_COUNT };
+    enum { OPT_DRY_RUN, OPT_PROJECT, OPT_OUTPUT, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[4];
@@ -292,33 +447,47 @@ static int patch_parse_apply_args(int argc,
         .pos_capacity = 4,
     };
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0 ||
-        r.pos_count != 1) {
-        fprintf(stderr, "Usage: nmo patch apply <patch.json> [--dry-run]\n");
+        ((vals[OPT_PROJECT].present && r.pos_count != 0) ||
+         (!vals[OPT_PROJECT].present && r.pos_count != 1)) ||
+        (vals[OPT_OUTPUT].present && !vals[OPT_PROJECT].present)) {
+        fprintf(stderr,
+                "Usage: nmo patch apply <patch.json> [--dry-run]\n"
+                "       nmo patch apply --project <manifest.json> -o <output.cmo>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    *out_dry_run = vals[OPT_DRY_RUN].present &&
-                   vals[OPT_DRY_RUN].val.flag;
-    *out_patch_path = r.pos_args[0];
+    memset(out_args, 0, sizeof(*out_args));
+    out_args->dry_run = vals[OPT_DRY_RUN].present &&
+                        vals[OPT_DRY_RUN].val.flag;
+    out_args->patch_path = r.pos_count == 1 ? r.pos_args[0] : NULL;
+    out_args->project_path = vals[OPT_PROJECT].present
+        ? vals[OPT_PROJECT].val.str
+        : NULL;
+    out_args->output_path = vals[OPT_OUTPUT].present
+        ? vals[OPT_OUTPUT].val.str
+        : NULL;
     return NMO_CLI_EXIT_SUCCESS;
 }
 
 int nmo_cmd_patch_apply(int argc,
                         char **argv,
                         const nmo_cli_global_opts_t *global) {
-    bool dry_run = false;
-    const char *patch_path = NULL;
-    int rc = patch_parse_apply_args(argc, argv, &dry_run, &patch_path);
+    patch_apply_args_t args;
+    int rc = patch_parse_apply_args(argc, argv, &args);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
     }
 
+    if (args.project_path) {
+        return patch_apply_project_manifest(&args, global);
+    }
+
     patch_plan_t plan;
-    rc = patch_parse_plan(patch_path, &plan);
+    rc = patch_parse_plan(args.patch_path, &plan);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
     }
-    rc = patch_apply_plan(&plan, dry_run, global, false);
+    rc = patch_apply_plan(&plan, args.dry_run, global, false);
     patch_plan_free(&plan);
     return rc;
 }
