@@ -989,6 +989,187 @@ static int nmo_lua_plan_set_data_cell(lua_State *state)
     return 0;
 }
 
+static nmo_probe_selector_mode_t nmo_lua_plan_probe_mode_from_string(
+    const char *mode)
+{
+    if (strcmp(mode, "auto") == 0) {
+        return NMO_PROBE_SELECTOR_MODE_AUTO;
+    }
+    if (strcmp(mode, "explicit_node") == 0) {
+        return NMO_PROBE_SELECTOR_MODE_EXPLICIT_NODE;
+    }
+    if (strcmp(mode, "explicit_link") == 0) {
+        return NMO_PROBE_SELECTOR_MODE_EXPLICIT_LINK;
+    }
+    if (strcmp(mode, "explicit_operation") == 0) {
+        return NMO_PROBE_SELECTOR_MODE_EXPLICIT_OPERATION;
+    }
+    if (strcmp(mode, "explicit_data_cell") == 0) {
+        return NMO_PROBE_SELECTOR_MODE_EXPLICIT_DATA_CELL;
+    }
+    if (strcmp(mode, "explicit") == 0) {
+        return NMO_PROBE_SELECTOR_MODE_EXPLICIT;
+    }
+    return NMO_PROBE_SELECTOR_MODE_UNSPECIFIED;
+}
+
+static nmo_probe_selector_status_t nmo_lua_plan_probe_status_from_string(
+    const char *status)
+{
+    if (strcmp(status, "selected") == 0) {
+        return NMO_PROBE_SELECTOR_STATUS_SELECTED;
+    }
+    if (strcmp(status, "none") == 0) {
+        return NMO_PROBE_SELECTOR_STATUS_NONE;
+    }
+    if (strcmp(status, "ambiguous") == 0) {
+        return NMO_PROBE_SELECTOR_STATUS_AMBIGUOUS;
+    }
+    if (strcmp(status, "unsafe") == 0) {
+        return NMO_PROBE_SELECTOR_STATUS_UNSAFE;
+    }
+    return NMO_PROBE_SELECTOR_STATUS_UNSPECIFIED;
+}
+
+static nmo_probe_candidate_role_t nmo_lua_plan_probe_role_from_string(
+    const char *role)
+{
+    if (strcmp(role, "message") == 0) {
+        return NMO_PROBE_CANDIDATE_MESSAGE;
+    }
+    if (strcmp(role, "sender") == 0) {
+        return NMO_PROBE_CANDIDATE_MESSAGE_SENDER;
+    }
+    if (strcmp(role, "waiter") == 0) {
+        return NMO_PROBE_CANDIDATE_MESSAGE_WAITER;
+    }
+    if (strcmp(role, "receiver") == 0) {
+        return NMO_PROBE_CANDIDATE_MESSAGE_RECEIVER;
+    }
+    if (strcmp(role, "data_writer") == 0) {
+        return NMO_PROBE_CANDIDATE_DATA_WRITER;
+    }
+    if (strcmp(role, "data_write_operation") == 0) {
+        return NMO_PROBE_CANDIDATE_DATA_WRITE_OPERATION;
+    }
+    if (strcmp(role, "data_write_link") == 0) {
+        return NMO_PROBE_CANDIDATE_DATA_WRITE_LINK;
+    }
+    return NMO_PROBE_CANDIDATE_UNKNOWN;
+}
+
+static nmo_object_id_t nmo_lua_plan_optional_object_id_field(
+    lua_State *state,
+    int table_index,
+    const char *name)
+{
+    lua_getfield(state, table_index, name);
+    nmo_object_id_t id = lua_isnil(state, -1)
+        ? 0u
+        : (nmo_object_id_t)luaL_checkinteger(state, -1);
+    lua_pop(state, 1);
+    return id;
+}
+
+static int nmo_lua_plan_set_probe_selector_analysis(lua_State *state)
+{
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
+    }
+    luaL_checktype(state, 2, LUA_TTABLE);
+
+    nmo_probe_selector_result_t analysis;
+    nmo_probe_selector_result_init(&analysis);
+    lua_getfield(state, 2, "mode");
+    analysis.mode = nmo_lua_plan_probe_mode_from_string(
+        luaL_checkstring(state, -1));
+    lua_pop(state, 1);
+    lua_getfield(state, 2, "status");
+    analysis.status = nmo_lua_plan_probe_status_from_string(
+        luaL_checkstring(state, -1));
+    lua_pop(state, 1);
+    if (analysis.mode == NMO_PROBE_SELECTOR_MODE_UNSPECIFIED ||
+        analysis.status == NMO_PROBE_SELECTOR_STATUS_UNSPECIFIED) {
+        return luaL_error(state, "probe selector analysis requires valid mode and status");
+    }
+    lua_getfield(state, 2, "rejection_code");
+    if (!lua_isnil(state, -1)) {
+        snprintf(analysis.rejection_code,
+                 sizeof(analysis.rejection_code),
+                 "%s",
+                 luaL_checkstring(state, -1));
+    }
+    lua_pop(state, 1);
+    analysis.selected_node_id =
+        nmo_lua_plan_optional_object_id_field(state, 2, "selected_node_id");
+    analysis.selected_link_id =
+        nmo_lua_plan_optional_object_id_field(state, 2, "selected_link_id");
+    analysis.selected_operation_id =
+        nmo_lua_plan_optional_object_id_field(state, 2, "selected_operation_id");
+
+    lua_getfield(state, 2, "candidates");
+    if (!lua_isnil(state, -1)) {
+        luaL_checktype(state, -1, LUA_TTABLE);
+        int candidates_index = lua_gettop(state);
+        lua_Integer count = luaL_len(state, candidates_index);
+        for (lua_Integer i = 1; i <= count; ++i) {
+            lua_rawgeti(state, candidates_index, i);
+            luaL_checktype(state, -1, LUA_TTABLE);
+            int candidate_index = lua_gettop(state);
+            nmo_probe_selector_candidate_t candidate = {0};
+            candidate.node_id =
+                nmo_lua_plan_optional_object_id_field(state, candidate_index, "node_id");
+            candidate.parent_id =
+                nmo_lua_plan_optional_object_id_field(state, candidate_index, "parent_id");
+            candidate.boundary_behavior_id =
+                nmo_lua_plan_optional_object_id_field(state, candidate_index, "boundary_behavior_id");
+            candidate.link_id =
+                nmo_lua_plan_optional_object_id_field(state, candidate_index, "link_id");
+            candidate.operation_id =
+                nmo_lua_plan_optional_object_id_field(state, candidate_index, "operation_id");
+            candidate.source_parameter_id =
+                nmo_lua_plan_optional_object_id_field(state, candidate_index, "source_parameter_id");
+            candidate.value_parameter_id =
+                nmo_lua_plan_optional_object_id_field(state, candidate_index, "value_parameter_id");
+            candidate.dataarray_id =
+                nmo_lua_plan_optional_object_id_field(state, candidate_index, "dataarray_id");
+            lua_getfield(state, candidate_index, "role");
+            if (!lua_isnil(state, -1)) {
+                candidate.role = nmo_lua_plan_probe_role_from_string(
+                    luaL_checkstring(state, -1));
+            }
+            lua_pop(state, 1);
+            lua_getfield(state, candidate_index, "rejection_code");
+            if (!lua_isnil(state, -1)) {
+                snprintf(candidate.rejection_code,
+                         sizeof(candidate.rejection_code),
+                         "%s",
+                         luaL_checkstring(state, -1));
+            }
+            lua_pop(state, 1);
+            status = nmo_probe_selector_result_add_candidate(
+                &analysis, &candidate);
+            lua_pop(state, 1);
+            if (status != NMO_OK) {
+                nmo_probe_analysis_dispose(&analysis);
+                return nmo_lua_raise_last_error(
+                    state, status, "Failed to add probe candidate");
+            }
+        }
+    }
+    lua_pop(state, 1);
+
+    status = nmo_edit_plan_set_probe_selector_analysis(plan, &analysis);
+    nmo_probe_analysis_dispose(&analysis);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(
+            state, status, "Failed to set probe selector analysis");
+    }
+    return 0;
+}
+
 static int nmo_lua_plan_interface_policy(lua_State *state)
 {
     nmo_edit_plan_t *plan = NULL;
@@ -1111,6 +1292,8 @@ static int nmo_lua_open_plan_module(lua_State *state)
     lua_setfield(state, -2, "set_parameter_bytes_from_handle");
     lua_pushcfunction(state, nmo_lua_plan_set_data_cell);
     lua_setfield(state, -2, "set_data_cell");
+    lua_pushcfunction(state, nmo_lua_plan_set_probe_selector_analysis);
+    lua_setfield(state, -2, "set_probe_selector_analysis");
     lua_pushcfunction(state, nmo_lua_plan_interface_policy);
     lua_setfield(state, -2, "interface_policy");
     lua_pushcfunction(state, nmo_lua_plan_execute);

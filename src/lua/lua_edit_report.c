@@ -637,6 +637,73 @@ static void nmo_lua_push_semantic_risks(lua_State *state,
     }
 }
 
+static void nmo_lua_push_probe_selector_diagnostics(
+    lua_State *state,
+    const nmo_probe_selector_result_t *analysis)
+{
+    lua_createtable(state, 0, 8);
+    lua_pushstring(state, nmo_probe_selector_mode_name(analysis->mode));
+    lua_setfield(state, -2, "mode");
+    lua_pushstring(state, nmo_probe_selector_status_name(analysis->status));
+    lua_setfield(state, -2, "status");
+    lua_pushstring(state, analysis->rejection_code);
+    lua_setfield(state, -2, "rejection_code");
+    lua_pushinteger(state, (lua_Integer)analysis->selected_node_id);
+    lua_setfield(state, -2, "selected_node_id");
+    lua_pushinteger(state, (lua_Integer)analysis->selected_link_id);
+    lua_setfield(state, -2, "selected_link_id");
+    lua_pushinteger(state, (lua_Integer)analysis->selected_operation_id);
+    lua_setfield(state, -2, "selected_operation_id");
+
+    lua_createtable(state, (int)analysis->candidate_count, 0);
+    for (size_t i = 0; i < analysis->candidate_count; ++i) {
+        const nmo_probe_selector_candidate_t *candidate =
+            &analysis->candidates[i];
+        lua_createtable(state, 0, 10);
+        lua_pushinteger(state, (lua_Integer)candidate->node_id);
+        lua_setfield(state, -2, "node_id");
+        lua_pushinteger(state, (lua_Integer)candidate->parent_id);
+        lua_setfield(state, -2, "parent_id");
+        lua_pushinteger(state, (lua_Integer)candidate->boundary_behavior_id);
+        lua_setfield(state, -2, "boundary_behavior_id");
+        lua_pushinteger(state, (lua_Integer)candidate->link_id);
+        lua_setfield(state, -2, "link_id");
+        lua_pushinteger(state, (lua_Integer)candidate->operation_id);
+        lua_setfield(state, -2, "operation_id");
+        lua_pushinteger(state, (lua_Integer)candidate->source_parameter_id);
+        lua_setfield(state, -2, "source_parameter_id");
+        lua_pushinteger(state, (lua_Integer)candidate->value_parameter_id);
+        lua_setfield(state, -2, "value_parameter_id");
+        lua_pushinteger(state, (lua_Integer)candidate->dataarray_id);
+        lua_setfield(state, -2, "dataarray_id");
+        lua_pushstring(state, nmo_probe_candidate_role_name(candidate->role));
+        lua_setfield(state, -2, "role");
+        lua_pushstring(state, candidate->rejection_code);
+        lua_setfield(state, -2, "rejection_code");
+        lua_rawseti(state, -2, (lua_Integer)i + 1);
+    }
+    lua_setfield(state, -2, "candidates");
+
+    lua_createtable(state, 0, 8);
+    lua_pushboolean(state, analysis->safe_insertion.selected);
+    lua_setfield(state, -2, "selected");
+    lua_pushinteger(state, (lua_Integer)analysis->safe_insertion.selected_node_id);
+    lua_setfield(state, -2, "selected_node_id");
+    lua_pushinteger(state, (lua_Integer)analysis->safe_insertion.selected_link_id);
+    lua_setfield(state, -2, "selected_link_id");
+    lua_pushinteger(state, (lua_Integer)analysis->safe_insertion.selected_operation_id);
+    lua_setfield(state, -2, "selected_operation_id");
+    lua_pushinteger(state, (lua_Integer)analysis->safe_insertion.remove_link_id);
+    lua_setfield(state, -2, "remove_link_id");
+    lua_pushinteger(state, (lua_Integer)analysis->safe_insertion.insert_from_io_id);
+    lua_setfield(state, -2, "insert_from_io_id");
+    lua_pushinteger(state, (lua_Integer)analysis->safe_insertion.insert_to_io_id);
+    lua_setfield(state, -2, "insert_to_io_id");
+    lua_pushinteger(state, (lua_Integer)analysis->safe_insertion.preserved_delay);
+    lua_setfield(state, -2, "preserved_delay");
+    lua_setfield(state, -2, "safe_insertion");
+}
+
 void nmo_lua_push_edit_report(lua_State *state, const nmo_edit_report_t *report)
 {
     lua_createtable(state, 0, 10);
@@ -691,6 +758,13 @@ void nmo_lua_push_edit_report(lua_State *state, const nmo_edit_report_t *report)
         lua_pushnil(state);
     }
     lua_setfield(state, -2, "output_path");
+    if (report != NULL && report->has_probe_selector_analysis) {
+        nmo_lua_push_probe_selector_diagnostics(
+            state, &report->probe_selector_analysis);
+    } else {
+        lua_createtable(state, 0, 0);
+    }
+    lua_setfield(state, -2, "probe_selector_diagnostics");
 }
 
 void nmo_lua_push_pending_edit_plan_report(lua_State *state,

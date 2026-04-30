@@ -140,6 +140,40 @@ TEST(lua_bindings_plan, plan_module_executes_rename_io_dry_run)
     nmo_lua_runtime_destroy(runtime);
 }
 
+TEST(lua_bindings_plan, plan_execute_reports_probe_selector_analysis)
+{
+    nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
+    ASSERT_NOT_NULL(runtime);
+
+    ASSERT_EQ(NMO_OK, nmo_lua_register_platform_bindings(runtime));
+    assert_lua_ok(
+        runtime,
+        "local context = require('nmo.context')\n"
+        "local document = require('nmo.document')\n"
+        "local workspace_mod = require('nmo.workspace')\n"
+        "local plan = require('nmo.plan')\n"
+        "local ctx = context.create()\n"
+        "local doc = document.load_file(ctx, '" NMO_TEST_DATA_FILE("Nop.cmo") "')\n"
+        "local ws = workspace_mod.create(ctx, doc)\n"
+        "local p = plan.new()\n"
+        "plan.set_probe_selector_analysis(p, {\n"
+        "  mode = 'explicit_link', status = 'unsafe',\n"
+        "  rejection_code = 'unsafe_probe_insertion', selected_link_id = 42,\n"
+        "  candidates = { { link_id = 42, boundary_behavior_id = 6, role = 'data_write_link', rejection_code = 'cross_boundary' } }\n"
+        "})\n"
+        "local report = plan.execute(p, ws, { dry_run = true })\n"
+        "assert(report.probe_selector_diagnostics.mode == 'explicit_link')\n"
+        "assert(report.probe_selector_diagnostics.status == 'unsafe')\n"
+        "assert(report.probe_selector_diagnostics.candidates[1].link_id == 42)\n"
+        "local saw = false\n"
+        "for _, risk in ipairs(report.semantic_risks) do\n"
+        "  if risk.code == 'probe_insertion_unsafe' then saw = true end\n"
+        "end\n"
+        "assert(saw)\n");
+
+    nmo_lua_runtime_destroy(runtime);
+}
+
 TEST(lua_bindings_plan, plan_module_executes_behavior_link_dry_run)
 {
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
@@ -458,6 +492,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(lua_bindings_plan, plan_module_builds_edit_plan);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_dry_run);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_rename_io_dry_run);
+    REGISTER_TEST(lua_bindings_plan, plan_execute_reports_probe_selector_analysis);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_behavior_link_dry_run);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_add_parameter_dry_run);
     REGISTER_TEST(lua_bindings_plan, plan_module_executes_add_operation_dry_run);
