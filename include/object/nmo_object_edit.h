@@ -104,6 +104,11 @@ NMO_API nmo_status_t nmo_object_edit_rename(
     nmo_object_id_t object_id,
     const char *new_name);
 
+NMO_API nmo_status_t nmo_object_edit_bind_script(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    nmo_object_id_t behavior_id);
+
 NMO_API nmo_status_t nmo_object_edit_set_parameter_value(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t parameter_id,

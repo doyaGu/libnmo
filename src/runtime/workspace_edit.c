@@ -22,6 +22,7 @@
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_attributemanager_schemas.h"
@@ -134,6 +135,10 @@ nmo_status_t workspace_edit_rename_object(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,
     const char *new_name);
+nmo_status_t workspace_edit_bind_script(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    nmo_object_id_t behavior_id);
 nmo_status_t workspace_edit_set_parameter_value(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t parameter_id,
@@ -1074,6 +1079,88 @@ nmo_status_t nmo_scene_edit_add_object(
     return NMO_OK;
 }
 
+nmo_status_t workspace_edit_bind_script(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    nmo_object_id_t behavior_id)
+{
+    if (edit == NULL || edit->finished || object_id == 0u || behavior_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t checkpoint = edit->rollback_count;
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
+    const nmo_type_registry_t *registry =
+        nmo_workspace_internal_type_registry(edit->workspace);
+    if (repo == NULL || registry == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_object_t *owner_object = nmo_object_repository_find_by_id(repo, object_id);
+    nmo_object_t *behavior_object =
+        nmo_object_repository_find_by_id(repo, behavior_id);
+    if (owner_object == NULL || behavior_object == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (!nmo_type_registry_is_class_derived_from(
+            registry,
+            nmo_object_get_class_id(owner_object),
+            NMO_CID_BEOBJECT) ||
+        nmo_object_get_class_id(behavior_object) != NMO_CID_BEHAVIOR) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_beobject_state_t *owner_state =
+        (nmo_beobject_state_t *)nmo_object_get_state(owner_object);
+    nmo_behavior_state_t *behavior_state =
+        (nmo_behavior_state_t *)nmo_object_get_state(behavior_object);
+    if (owner_state == NULL || behavior_state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_status_t status =
+        nmo_workspace_edit_snapshot_bytes(edit, behavior_state, sizeof(*behavior_state));
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    size_t existing_index = 0u;
+    if (nmo_array_find(&owner_state->script_ids, &behavior_id, &existing_index) == 0) {
+        status = nmo_array_append(&owner_state->script_ids, &behavior_id);
+        if (status != NMO_OK) {
+            workspace_edit_rollback_to(edit, checkpoint);
+            return status;
+        }
+
+        array_id_action_t *rollback =
+            (array_id_action_t *)nmo_workspace_edit_alloc(edit, sizeof(*rollback), 1u);
+        if (rollback == NULL) {
+            workspace_edit_rollback_to(edit, checkpoint);
+            return NMO_ERR_NOMEM;
+        }
+        rollback->array = &owner_state->script_ids;
+        rollback->id = behavior_id;
+        rollback->index = owner_state->script_ids.count - 1u;
+        status = workspace_edit_push_rollback(edit, rollback_remove_array_id, rollback);
+        if (status != NMO_OK) {
+            workspace_edit_rollback_to(edit, checkpoint);
+            return status;
+        }
+    }
+
+    behavior_state->flags |= CKBEHAVIOR_SCRIPT;
+    behavior_state->flags &= ~(uint32_t)CKBEHAVIOR_BUILDINGBLOCK;
+    behavior_state->compatible_class_id = (int32_t)nmo_object_get_class_id(owner_object);
+    behavior_state->owner_id = object_id;
+
+    nmo_workspace_edit_mark(
+        edit,
+        NMO_WORKSPACE_EDIT_OBJECT_STATE |
+            NMO_WORKSPACE_EDIT_REFERENCES |
+            NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH);
+    return NMO_OK;
+}
+
 static nmo_status_t workspace_edit_find_typed_object(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,
@@ -1454,6 +1541,17 @@ nmo_status_t nmo_object_edit_rename(
         (nmo_workspace_edit_t *)edit,
         object_id,
         new_name);
+}
+
+nmo_status_t nmo_object_edit_bind_script(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    nmo_object_id_t behavior_id)
+{
+    return workspace_edit_bind_script(
+        (nmo_workspace_edit_t *)edit,
+        object_id,
+        behavior_id);
 }
 
 nmo_status_t nmo_object_edit_set_parameter_value(

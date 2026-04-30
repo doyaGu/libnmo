@@ -47,6 +47,10 @@ add_integration_test(test_object_layer_acceptance)
 add_integration_test(test_project_skeleton_acceptance)
 add_integration_test(test_generated_scene_roundtrip)
 add_integration_test(test_generated_visible_scene)
+add_integration_test(test_generated_script_lifecycle)
+set_tests_properties(test_generated_script_lifecycle PROPERTIES
+    ENVIRONMENT "NMO_DATA_DIR=${PROJECT_SOURCE_DIR}/data"
+)
 
 # Runtime clean-break integration tests
 add_integration_test(test_runtime_load_pipeline)

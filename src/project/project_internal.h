@@ -7,6 +7,7 @@
 #include <stddef.h>
 
 typedef struct nmo_project_plan nmo_project_plan_t;
+typedef struct nmo_workspace nmo_workspace_t;
 typedef struct nmo_workspace_edit nmo_workspace_edit_t;
 
 typedef struct nmo_project_runtime_object {
@@ -22,6 +23,12 @@ nmo_status_t nmo_project_author_scenes(
 
 nmo_status_t nmo_project_author_assets(
     nmo_workspace_edit_t *edit,
+    const nmo_project_plan_t *plan,
+    const nmo_project_runtime_object_t *objects,
+    size_t object_count);
+
+nmo_status_t nmo_project_author_scripts(
+    nmo_workspace_t *workspace,
     const nmo_project_plan_t *plan,
     const nmo_project_runtime_object_t *objects,
     size_t object_count);

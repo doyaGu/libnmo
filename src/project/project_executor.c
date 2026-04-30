@@ -149,10 +149,9 @@ nmo_status_t nmo_project_executor_execute_to_file(
     }
 
     status = nmo_project_author_assets(edit, plan, objects, object_count);
-    free(objects);
-    objects = NULL;
     if (status != NMO_OK) {
         nmo_workspace_edit_rollback(edit);
+        free(objects);
         nmo_workspace_destroy(workspace);
         nmo_document_destroy(document);
         nmo_context_release(ctx);
@@ -160,6 +159,17 @@ nmo_status_t nmo_project_executor_execute_to_file(
     }
 
     status = nmo_workspace_edit_commit(edit);
+    if (status != NMO_OK) {
+        nmo_workspace_destroy(workspace);
+        free(objects);
+        nmo_document_destroy(document);
+        nmo_context_release(ctx);
+        return status;
+    }
+
+    status = nmo_project_author_scripts(workspace, plan, objects, object_count);
+    free(objects);
+    objects = NULL;
     if (status != NMO_OK) {
         nmo_workspace_destroy(workspace);
         nmo_document_destroy(document);

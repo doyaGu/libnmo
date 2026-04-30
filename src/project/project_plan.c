@@ -1,6 +1,7 @@
 #include "project/nmo_project_plan.h"
 #include "project/nmo_asset_plan.h"
 #include "project/nmo_scene_authoring.h"
+#include "project/nmo_script_authoring.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +31,20 @@ typedef struct project_asset_record {
     float material_color[4];
 } project_asset_record_t;
 
+typedef struct project_script_step_record {
+    nmo_project_script_step_kind_t kind;
+    char *message;
+} project_script_step_record_t;
+
+typedef struct project_script_record {
+    uint32_t handle;
+    uint32_t object_handle;
+    char *name;
+    project_script_step_record_t *steps;
+    size_t step_count;
+    size_t step_capacity;
+} project_script_record_t;
+
 struct nmo_project_plan {
     char *document_name;
     project_scene_record_t *scenes;
@@ -41,8 +56,12 @@ struct nmo_project_plan {
     project_asset_record_t *assets;
     size_t asset_count;
     size_t asset_capacity;
+    project_script_record_t *scripts;
+    size_t script_count;
+    size_t script_capacity;
     uint32_t next_scene_handle;
     uint32_t next_object_handle;
+    uint32_t next_script_handle;
 };
 
 static char *project_plan_strdup(const char *src)
@@ -121,6 +140,20 @@ static nmo_status_t project_plan_clone_fields(
     NMO_RETURN_OK();
 }
 
+static void project_plan_free_script_steps(
+    project_script_step_record_t *steps,
+    size_t step_count)
+{
+    if (!steps) {
+        return;
+    }
+
+    for (size_t i = 0u; i < step_count; ++i) {
+        free(steps[i].message);
+    }
+    free(steps);
+}
+
 nmo_status_t nmo_project_plan_create(nmo_project_plan_t **out_plan)
 {
     if (!out_plan) {
@@ -136,6 +169,7 @@ nmo_status_t nmo_project_plan_create(nmo_project_plan_t **out_plan)
 
     plan->next_scene_handle = 1u;
     plan->next_object_handle = 1u;
+    plan->next_script_handle = 1u;
     *out_plan = plan;
     NMO_RETURN_OK();
 }
@@ -156,9 +190,16 @@ void nmo_project_plan_destroy(nmo_project_plan_t *plan)
             plan->objects[i].fields,
             plan->objects[i].field_count);
     }
+    for (size_t i = 0; i < plan->script_count; ++i) {
+        free(plan->scripts[i].name);
+        project_plan_free_script_steps(
+            plan->scripts[i].steps,
+            plan->scripts[i].step_count);
+    }
     free(plan->scenes);
     free(plan->objects);
     free(plan->assets);
+    free(plan->scripts);
     free(plan);
 }
 
@@ -187,6 +228,7 @@ nmo_status_t nmo_project_plan_clone(
     }
     clone->next_scene_handle = plan->next_scene_handle;
     clone->next_object_handle = plan->next_object_handle;
+    clone->next_script_handle = plan->next_script_handle;
     if (plan->scene_count > 0u) {
         clone->scenes = (project_scene_record_t *)calloc(
             plan->scene_count,
@@ -257,6 +299,52 @@ nmo_status_t nmo_project_plan_clone(
             plan->asset_count * sizeof(*clone->assets));
         clone->asset_count = plan->asset_count;
         clone->asset_capacity = plan->asset_count;
+    }
+    if (plan->script_count > 0u) {
+        clone->scripts = (project_script_record_t *)calloc(
+            plan->script_count,
+            sizeof(*clone->scripts));
+        if (!clone->scripts) {
+            nmo_project_plan_destroy(clone);
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to clone project scripts");
+        }
+        clone->script_capacity = plan->script_count;
+        for (size_t i = 0u; i < plan->script_count; ++i) {
+            const project_script_record_t *src = &plan->scripts[i];
+            project_script_record_t *dst = &clone->scripts[i];
+            dst->handle = src->handle;
+            dst->object_handle = src->object_handle;
+            dst->name = project_plan_strdup(src->name);
+            if (src->name && !dst->name) {
+                nmo_project_plan_destroy(clone);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "failed to clone project script name");
+            }
+            if (src->step_count > 0u) {
+                dst->steps = (project_script_step_record_t *)calloc(
+                    src->step_count,
+                    sizeof(*dst->steps));
+                if (!dst->steps) {
+                    nmo_project_plan_destroy(clone);
+                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                     "failed to clone project script steps");
+                }
+                dst->step_capacity = src->step_count;
+                for (size_t j = 0u; j < src->step_count; ++j) {
+                    dst->steps[j].kind = src->steps[j].kind;
+                    dst->steps[j].message =
+                        project_plan_strdup(src->steps[j].message);
+                    if (src->steps[j].message && !dst->steps[j].message) {
+                        nmo_project_plan_destroy(clone);
+                        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                         "failed to clone project script step");
+                    }
+                    dst->step_count++;
+                }
+            }
+            clone->script_count++;
+        }
     }
 
     *out_clone = clone;
@@ -402,6 +490,38 @@ static bool project_plan_has_object_handle(
     return false;
 }
 
+static project_script_record_t *project_plan_find_script(
+    nmo_project_plan_t *plan,
+    uint32_t script_handle)
+{
+    if (!plan || script_handle == 0u) {
+        return NULL;
+    }
+
+    for (size_t i = 0u; i < plan->script_count; ++i) {
+        if (plan->scripts[i].handle == script_handle) {
+            return &plan->scripts[i];
+        }
+    }
+    return NULL;
+}
+
+static const project_script_record_t *project_plan_find_script_const(
+    const nmo_project_plan_t *plan,
+    uint32_t script_handle)
+{
+    if (!plan || script_handle == 0u) {
+        return NULL;
+    }
+
+    for (size_t i = 0u; i < plan->script_count; ++i) {
+        if (plan->scripts[i].handle == script_handle) {
+            return &plan->scripts[i];
+        }
+    }
+    return NULL;
+}
+
 static nmo_status_t project_plan_find_or_add_asset(
     nmo_project_plan_t *plan,
     uint32_t object_handle,
@@ -445,6 +565,156 @@ static nmo_status_t project_plan_find_or_add_asset(
     memset(asset, 0, sizeof(*asset));
     asset->object_handle = object_handle;
     *out_asset = asset;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_add_object_script(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const char *name,
+    uint32_t *out_script_handle)
+{
+    if (!plan || object_handle == 0u || !name || name[0] == '\0') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan, object handle, and non-empty script name are required");
+    }
+    if (!project_plan_has_object_handle(plan, object_handle)) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "script target object handle not found");
+    }
+
+    if (plan->script_count == plan->script_capacity) {
+        size_t new_capacity = plan->script_capacity ? plan->script_capacity * 2u : 4u;
+        project_script_record_t *new_scripts =
+            (project_script_record_t *)realloc(
+                plan->scripts,
+                new_capacity * sizeof(*new_scripts));
+        if (!new_scripts) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate project script");
+        }
+        memset(new_scripts + plan->script_capacity,
+               0,
+               (new_capacity - plan->script_capacity) * sizeof(*new_scripts));
+        plan->scripts = new_scripts;
+        plan->script_capacity = new_capacity;
+    }
+
+    char *name_copy = project_plan_strdup(name);
+    if (!name_copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate project script name");
+    }
+
+    uint32_t handle = plan->next_script_handle++;
+    project_script_record_t *script = &plan->scripts[plan->script_count++];
+    script->handle = handle;
+    script->object_handle = object_handle;
+    script->name = name_copy;
+
+    if (out_script_handle) {
+        *out_script_handle = handle;
+    }
+    NMO_RETURN_OK();
+}
+
+size_t nmo_project_plan_script_count(const nmo_project_plan_t *plan)
+{
+    return plan ? plan->script_count : 0u;
+}
+
+nmo_status_t nmo_project_plan_get_script(
+    const nmo_project_plan_t *plan,
+    size_t index,
+    nmo_project_script_desc_t *out_script)
+{
+    if (!plan || !out_script) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and out_script are required");
+    }
+    if (index >= plan->script_count) {
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR,
+                         "script index out of bounds");
+    }
+
+    const project_script_record_t *script = &plan->scripts[index];
+    out_script->handle = script->handle;
+    out_script->object_handle = script->object_handle;
+    out_script->name = script->name;
+    out_script->step_count = script->step_count;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_get_script_step(
+    const nmo_project_plan_t *plan,
+    uint32_t script_handle,
+    size_t index,
+    nmo_project_script_step_desc_t *out_step)
+{
+    if (!plan || !out_step) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and out_step are required");
+    }
+
+    const project_script_record_t *script =
+        project_plan_find_script_const(plan, script_handle);
+    if (!script) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "script handle not found");
+    }
+    if (index >= script->step_count) {
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR,
+                         "script step index out of bounds");
+    }
+
+    out_step->kind = script->steps[index].kind;
+    out_step->message = script->steps[index].message;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_script_add_debug_output(
+    nmo_project_plan_t *plan,
+    uint32_t script_handle,
+    const char *message)
+{
+    if (!plan || script_handle == 0u || !message) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan, script handle, and message are required");
+    }
+
+    project_script_record_t *script =
+        project_plan_find_script(plan, script_handle);
+    if (!script) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "script handle not found");
+    }
+
+    if (script->step_count == script->step_capacity) {
+        size_t new_capacity = script->step_capacity ? script->step_capacity * 2u : 4u;
+        project_script_step_record_t *new_steps =
+            (project_script_step_record_t *)realloc(
+                script->steps,
+                new_capacity * sizeof(*new_steps));
+        if (!new_steps) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate project script step");
+        }
+        memset(new_steps + script->step_capacity,
+               0,
+               (new_capacity - script->step_capacity) * sizeof(*new_steps));
+        script->steps = new_steps;
+        script->step_capacity = new_capacity;
+    }
+
+    char *message_copy = project_plan_strdup(message);
+    if (!message_copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate project script message");
+    }
+
+    project_script_step_record_t *step = &script->steps[script->step_count++];
+    step->kind = NMO_PROJECT_SCRIPT_STEP_DEBUG_OUTPUT;
+    step->message = message_copy;
     NMO_RETURN_OK();
 }
 

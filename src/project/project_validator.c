@@ -2,6 +2,7 @@
 
 #include "object/nmo_class_ids.h"
 #include "project/nmo_project_plan.h"
+#include "project/nmo_script_authoring.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -211,6 +212,43 @@ static nmo_status_t project_validation_check_objects(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t project_validation_check_scripts(
+    const nmo_project_plan_t *plan,
+    nmo_project_validation_report_t *report)
+{
+    size_t script_count = nmo_project_plan_script_count(plan);
+    for (size_t i = 0u; i < script_count; ++i) {
+        nmo_project_script_desc_t script = {0};
+        NMO_RETURN_IF_ERROR(nmo_project_plan_get_script(plan, i, &script));
+
+        if (script.object_handle == 0u ||
+            !project_validation_has_object_handle(plan, script.object_handle)) {
+            NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                report,
+                "missing_script_object",
+                "Project script references a missing object handle"));
+        }
+        if (!script.name || script.name[0] == '\0') {
+            NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                report,
+                "missing_script_name",
+                "Project script requires a non-empty name"));
+        }
+
+        for (size_t j = i + 1u; j < script_count; ++j) {
+            nmo_project_script_desc_t other = {0};
+            NMO_RETURN_IF_ERROR(nmo_project_plan_get_script(plan, j, &other));
+            if (script.handle == other.handle) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    report,
+                    "duplicate_script_handle",
+                    "Project script handles must be unique"));
+            }
+        }
+    }
+    NMO_RETURN_OK();
+}
+
 nmo_status_t nmo_project_validate_plan(
     const nmo_project_plan_t *plan,
     nmo_project_validation_report_t *report)
@@ -232,6 +270,7 @@ nmo_status_t nmo_project_validate_plan(
 
     NMO_RETURN_IF_ERROR(project_validation_check_duplicate_scenes(plan, report));
     NMO_RETURN_IF_ERROR(project_validation_check_objects(plan, report));
+    NMO_RETURN_IF_ERROR(project_validation_check_scripts(plan, report));
 
     report->ok = report->issue_count == 0u;
     NMO_RETURN_OK();
