@@ -1,5 +1,6 @@
 #include "project/nmo_project_validator.h"
 
+#include "object/nmo_class_ids.h"
 #include "project/nmo_project_plan.h"
 
 #include <stdlib.h>
@@ -112,6 +113,104 @@ bool nmo_project_validation_contains(
     return false;
 }
 
+static bool project_validation_has_scene_handle(
+    const nmo_project_plan_t *plan,
+    uint32_t handle)
+{
+    size_t scene_count = nmo_project_plan_scene_count(plan);
+    for (size_t i = 0; i < scene_count; ++i) {
+        nmo_project_scene_desc_t scene = {0};
+        if (nmo_project_plan_get_scene(plan, i, &scene) == NMO_OK &&
+            scene.handle == handle) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool project_validation_has_object_handle(
+    const nmo_project_plan_t *plan,
+    uint32_t handle)
+{
+    size_t object_count = nmo_project_plan_object_count(plan);
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_project_object_desc_t object = {0};
+        if (nmo_project_plan_get_object(plan, i, &object) == NMO_OK &&
+            object.handle == handle) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static nmo_status_t project_validation_check_duplicate_scenes(
+    const nmo_project_plan_t *plan,
+    nmo_project_validation_report_t *report)
+{
+    size_t scene_count = nmo_project_plan_scene_count(plan);
+    for (size_t i = 0; i < scene_count; ++i) {
+        nmo_project_scene_desc_t lhs = {0};
+        NMO_RETURN_IF_ERROR(nmo_project_plan_get_scene(plan, i, &lhs));
+        for (size_t j = i + 1u; j < scene_count; ++j) {
+            nmo_project_scene_desc_t rhs = {0};
+            NMO_RETURN_IF_ERROR(nmo_project_plan_get_scene(plan, j, &rhs));
+            if (lhs.handle == rhs.handle) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    report,
+                    "duplicate_scene_handle",
+                    "Project scene handles must be unique"));
+            }
+        }
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t project_validation_check_objects(
+    const nmo_project_plan_t *plan,
+    nmo_project_validation_report_t *report)
+{
+    size_t object_count = nmo_project_plan_object_count(plan);
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_project_object_desc_t object = {0};
+        NMO_RETURN_IF_ERROR(nmo_project_plan_get_object(plan, i, &object));
+
+        if (object.class_id == 0u ||
+            object.class_id == NMO_CLASS_ID_INVALID ||
+            object.class_id > NMO_CID_MAXCLASSID) {
+            NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                report,
+                "invalid_object_class",
+                "Project object class must be a valid CKObject class ID"));
+        }
+        if (object.scene_handle != 0u &&
+            !project_validation_has_scene_handle(plan, object.scene_handle)) {
+            NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                report,
+                "missing_scene",
+                "Project object references a missing scene handle"));
+        }
+        if (object.parent_handle != 0u &&
+            !project_validation_has_object_handle(plan, object.parent_handle)) {
+            NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                report,
+                "missing_parent",
+                "Project object references a missing parent object handle"));
+        }
+
+        for (size_t j = i + 1u; j < object_count; ++j) {
+            nmo_project_object_desc_t other = {0};
+            NMO_RETURN_IF_ERROR(nmo_project_plan_get_object(plan, j, &other));
+            if (object.handle == other.handle) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    report,
+                    "duplicate_object_handle",
+                    "Project object handles must be unique"));
+            }
+        }
+    }
+    NMO_RETURN_OK();
+}
+
 nmo_status_t nmo_project_validate_plan(
     const nmo_project_plan_t *plan,
     nmo_project_validation_report_t *report)
@@ -130,6 +229,9 @@ nmo_status_t nmo_project_validate_plan(
             "missing_document_name",
             "Project plan requires a document name"));
     }
+
+    NMO_RETURN_IF_ERROR(project_validation_check_duplicate_scenes(plan, report));
+    NMO_RETURN_IF_ERROR(project_validation_check_objects(plan, report));
 
     report->ok = report->issue_count == 0u;
     NMO_RETURN_OK();
