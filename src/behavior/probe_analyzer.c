@@ -824,6 +824,43 @@ static bool probe_link_touches_any_behavior(
     return false;
 }
 
+static bool probe_explicit_endpoints_touch_operation_flow(
+    nmo_object_repository_t *repo,
+    const nmo_behavior_state_t *parent,
+    nmo_object_id_t from_io_id,
+    nmo_object_id_t to_io_id,
+    const nmo_object_id_t *related_behaviors,
+    size_t related_count)
+{
+    if (repo == NULL || parent == NULL || from_io_id == 0u ||
+        to_io_id == 0u || related_behaviors == NULL ||
+        related_count == 0u) {
+        return false;
+    }
+    const nmo_object_id_t *link_ids =
+        (const nmo_object_id_t *)parent->sub_behavior_links.data;
+    for (size_t i = 0; link_ids != NULL &&
+                       i < parent->sub_behavior_links.count; ++i) {
+        nmo_object_t *link_obj =
+            nmo_object_repository_find_by_id(repo, link_ids[i]);
+        const nmo_behaviorlink_state_t *link =
+            link_obj != NULL &&
+                    nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK
+                ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
+                      link_obj)
+                : NULL;
+        if (link == NULL || link->in_io_id != from_io_id ||
+            link->out_io_id != to_io_id) {
+            continue;
+        }
+        return probe_link_touches_any_behavior(repo,
+                                               link,
+                                               related_behaviors,
+                                               related_count);
+    }
+    return false;
+}
+
 static size_t probe_collect_operation_touching_links(
     nmo_object_repository_t *repo,
     const nmo_behavior_state_t *parent,
@@ -1232,6 +1269,28 @@ static nmo_status_t probe_analyze_data_cell(
             probe_enrich_candidate_with_data_cell(
                 repo, request, operation, candidate);
         } else {
+            nmo_object_id_t related_behaviors[32];
+            size_t related_count =
+                probe_collect_operation_related_behaviors(
+                    repo,
+                    request->write_operation_id,
+                    operation,
+                    related_behaviors,
+                    sizeof(related_behaviors) / sizeof(related_behaviors[0]));
+            if (!probe_explicit_endpoints_touch_operation_flow(
+                    repo,
+                    parent,
+                    request->from_io_id,
+                    request->to_io_id,
+                    related_behaviors,
+                    related_count)) {
+                return probe_reject(
+                    result,
+                    NMO_PROBE_SELECTOR_MODE_EXPLICIT_OPERATION,
+                    NMO_PROBE_SELECTOR_STATUS_UNSAFE,
+                    "unsafe_probe_insertion",
+                    "unsafe_probe_insertion: debug probe explicit IO endpoints do not touch selected write-operation data flow");
+            }
             result->from_io_id = request->from_io_id;
             result->to_io_id = request->to_io_id;
             result->safe_insertion.selected = true;

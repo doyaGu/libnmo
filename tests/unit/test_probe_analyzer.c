@@ -286,6 +286,34 @@ TEST(probe_analyzer, rejects_operation_write_site_outside_boundary)
     probe_fixture_dispose(&fixture);
 }
 
+TEST(probe_analyzer, rejects_operation_write_site_unrelated_io_endpoints)
+{
+    probe_fixture_t fixture;
+    probe_fixture_init(&fixture);
+
+    nmo_probe_selector_request_t request;
+    nmo_probe_selector_request_init(&request);
+    request.kind = NMO_PROBE_SELECTOR_DATA_CELL_WRITE;
+    request.behavior_id = 3798u;
+    request.write_operation_id = 3791u;
+    request.from_io_id = 1u;
+    request.to_io_id = 2u;
+
+    nmo_probe_selector_result_t result;
+    nmo_probe_selector_result_init(&result);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_probe_analyze_selector(fixture.workspace, &request, &result));
+
+    ASSERT_EQ(NMO_PROBE_SELECTOR_MODE_EXPLICIT_OPERATION, result.mode);
+    ASSERT_EQ(NMO_PROBE_SELECTOR_STATUS_UNSAFE, result.status);
+    ASSERT_STR_EQ("unsafe_probe_insertion", result.rejection_code);
+    ASSERT_STR_CONTAINS(result.message,
+                        "explicit IO endpoints do not touch selected write-operation");
+
+    nmo_probe_analysis_dispose(&result);
+    probe_fixture_dispose(&fixture);
+}
+
 TEST(probe_analyzer, dynamic_candidates_are_not_truncated_at_64)
 {
     probe_fixture_t fixture;
@@ -333,5 +361,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(probe_analyzer, reports_operation_write_site_candidates);
     REGISTER_TEST(probe_analyzer, infers_auto_data_writer_cell_metadata);
     REGISTER_TEST(probe_analyzer, rejects_operation_write_site_outside_boundary);
+    REGISTER_TEST(probe_analyzer,
+                  rejects_operation_write_site_unrelated_io_endpoints);
     REGISTER_TEST(probe_analyzer, dynamic_candidates_are_not_truncated_at_64);
 TEST_MAIN_END()
