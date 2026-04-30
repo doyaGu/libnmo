@@ -313,6 +313,85 @@ TEST(ballance_acceptance, accepted_patch_save_load_validates)
     remove(output);
 }
 
+TEST(ballance_acceptance, accepted_patch_report_manifest_replays)
+{
+    make_dir("test_ballance_acceptance_tmp");
+    const char *patch = "test_ballance_acceptance_tmp/closed_loop_patch.json";
+    const char *replay = "test_ballance_acceptance_tmp/closed_loop_replay.json";
+    const char *output = "test_ballance_acceptance_tmp/closed_loop_patch.cmo";
+    char json[2048];
+    snprintf(json, sizeof(json),
+             "{\n"
+             "  \"version\": 2,\n"
+             "  \"input\": \"%s\",\n"
+             "  \"output\": \"%s\",\n"
+             "  \"operations\": [\n"
+             "    {\n"
+             "      \"op\": \"add_node\",\n"
+             "      \"behavior_id\": 237,\n"
+             "      \"guid\": \"055B29FE-662D5CA0\",\n"
+             "      \"name\": \"Closed Loop 2D Text\"\n"
+             "    },\n"
+             "    {\n"
+             "      \"op\": \"set_parameter_value\",\n"
+             "      \"parameter_operation\": 1,\n"
+             "      \"parameter_handle\": \"input_param:Text\",\n"
+             "      \"value\": \"closed loop\"\n"
+             "    }\n"
+             "  ]\n"
+             "}\n",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output);
+
+    remove(patch);
+    remove(replay);
+    remove(output);
+    ASSERT_TRUE(write_text_file(patch, json));
+
+    char args[1024];
+    snprintf(args, sizeof(args), "-f json patch apply \"%s\"", patch);
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "patch.apply", &doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_FALSE(get_bool_field(data, "dry_run"));
+    ASSERT_TRUE(file_exists(output));
+    yyjson_val *manifest = get_object_field(data, "manifest");
+    ASSERT_NOT_NULL(manifest);
+    yyjson_val *manifest_ops = get_array_field(manifest, "operations");
+    ASSERT_NOT_NULL(manifest_ops);
+    ASSERT_EQ(2u, (uint32_t)yyjson_arr_size(manifest_ops));
+    ASSERT_TRUE(yyjson_val_write_file(replay, manifest,
+                                      YYJSON_WRITE_PRETTY, NULL, NULL));
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
+             replay);
+    run_json_command(args, "patch.apply", &doc);
+    root = yyjson_doc_get_root(doc);
+    data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    yyjson_val *operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(2u, (uint32_t)yyjson_arr_size(operations));
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args), "validate all \"%s\"", output);
+    cli_run_result_t validate = run_cli_capture(args);
+    ASSERT_NOT_NULL(validate.output);
+    ASSERT_EQ(0, validate.exit_code);
+    ASSERT_STR_CONTAINS(validate.output, "Result: VALID");
+    free(validate.output);
+
+    remove(patch);
+    remove(replay);
+    remove(output);
+}
+
 TEST(ballance_acceptance, accepted_message_probe_save_load_validates)
 {
     make_dir("test_ballance_acceptance_tmp");
@@ -535,6 +614,7 @@ REGISTER_TEST(ballance_acceptance, debug_probe_2d_text_dry_run);
 REGISTER_TEST(ballance_acceptance, patch_replay_dry_run);
 REGISTER_TEST(ballance_acceptance, validate_base);
 REGISTER_TEST(ballance_acceptance, accepted_patch_save_load_validates);
+REGISTER_TEST(ballance_acceptance, accepted_patch_report_manifest_replays);
 REGISTER_TEST(ballance_acceptance, accepted_message_probe_save_load_validates);
 REGISTER_TEST(ballance_acceptance, accepted_data_probe_save_load_validates);
 REGISTER_TEST(ballance_acceptance, accepted_manager_entry_save_load_validates);
