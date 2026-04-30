@@ -27,6 +27,8 @@ typedef struct project_asset_record {
     uint32_t object_handle;
     bool has_primitive_mesh;
     nmo_primitive_mesh_t primitive_mesh;
+    bool has_external_mesh;
+    char *external_mesh_path;
     bool has_material_color;
     float material_color[4];
 } project_asset_record_t;
@@ -154,6 +156,19 @@ static void project_plan_free_script_steps(
     free(steps);
 }
 
+static void project_plan_free_assets(
+    project_asset_record_t *assets,
+    size_t asset_count)
+{
+    if (!assets) {
+        return;
+    }
+    for (size_t i = 0u; i < asset_count; ++i) {
+        free(assets[i].external_mesh_path);
+    }
+    free(assets);
+}
+
 nmo_status_t nmo_project_plan_create(nmo_project_plan_t **out_plan)
 {
     if (!out_plan) {
@@ -198,7 +213,7 @@ void nmo_project_plan_destroy(nmo_project_plan_t *plan)
     }
     free(plan->scenes);
     free(plan->objects);
-    free(plan->assets);
+    project_plan_free_assets(plan->assets, plan->asset_count);
     free(plan->scripts);
     free(plan);
 }
@@ -293,12 +308,19 @@ nmo_status_t nmo_project_plan_clone(
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                              "failed to clone project assets");
         }
-        memcpy(
-            clone->assets,
-            plan->assets,
-            plan->asset_count * sizeof(*clone->assets));
-        clone->asset_count = plan->asset_count;
         clone->asset_capacity = plan->asset_count;
+        for (size_t i = 0u; i < plan->asset_count; ++i) {
+            clone->assets[i] = plan->assets[i];
+            clone->assets[i].external_mesh_path =
+                project_plan_strdup(plan->assets[i].external_mesh_path);
+            if (plan->assets[i].external_mesh_path &&
+                !clone->assets[i].external_mesh_path) {
+                nmo_project_plan_destroy(clone);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "failed to clone project external mesh path");
+            }
+            clone->asset_count++;
+        }
     }
     if (plan->script_count > 0u) {
         clone->scripts = (project_script_record_t *)calloc(
@@ -753,6 +775,31 @@ nmo_status_t nmo_project_plan_set_material_color(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_project_plan_set_external_mesh(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const char *path)
+{
+    if (!path || path[0] == '\0') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "external mesh path is required");
+    }
+
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+
+    char *path_copy = project_plan_strdup(path);
+    if (!path_copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate external mesh path");
+    }
+
+    free(asset->external_mesh_path);
+    asset->external_mesh_path = path_copy;
+    asset->has_external_mesh = true;
+    NMO_RETURN_OK();
+}
+
 size_t nmo_project_plan_asset_count(const nmo_project_plan_t *plan)
 {
     return plan ? plan->asset_count : 0u;
@@ -776,6 +823,8 @@ nmo_status_t nmo_project_plan_get_asset(
     out_asset->object_handle = asset->object_handle;
     out_asset->has_primitive_mesh = asset->has_primitive_mesh;
     out_asset->primitive_mesh = asset->primitive_mesh;
+    out_asset->has_external_mesh = asset->has_external_mesh;
+    out_asset->external_mesh_path = asset->external_mesh_path;
     out_asset->has_material_color = asset->has_material_color;
     memcpy(out_asset->material_color, asset->material_color, sizeof(out_asset->material_color));
     NMO_RETURN_OK();

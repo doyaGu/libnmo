@@ -110,6 +110,18 @@ nmo_status_t nmo_project_author_assets(
                 material_id));
             NMO_RETURN_IF_ERROR(nmo_asset_edit_bind_entity_mesh(edit, object_id, mesh_id));
         }
+
+        if (asset.has_external_mesh) {
+            FILE *fp = fopen(asset.external_mesh_path, "rb");
+            if (!fp) {
+                NMO_RETURN_ERROR(NMO_ERR_CANT_OPEN_FILE, NMO_SEVERITY_ERROR,
+                                 "failed to open external mesh: %s",
+                                 asset.external_mesh_path);
+            }
+            fclose(fp);
+            NMO_RETURN_ERROR(NMO_ERR_NOT_SUPPORTED, NMO_SEVERITY_ERROR,
+                             "external mesh import is not implemented yet");
+        }
     }
 
     NMO_RETURN_OK();

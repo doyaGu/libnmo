@@ -48,6 +48,7 @@ add_integration_test(test_project_skeleton_acceptance)
 add_integration_test(test_generated_scene_roundtrip)
 add_integration_test(test_generated_visible_scene)
 add_integration_test(test_generated_script_lifecycle)
+add_integration_test(test_generated_project_rollback)
 set_tests_properties(test_generated_script_lifecycle PROPERTIES
     ENVIRONMENT "NMO_DATA_DIR=${PROJECT_SOURCE_DIR}/data"
 )
