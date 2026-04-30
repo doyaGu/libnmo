@@ -5,13 +5,16 @@
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
+#include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
 #include "runtime/nmo_context.h"
+#include "type/nmo_type_guids.h"
 #include "../runtime/runtime_internal.h"
 
 #include <stdarg.h>
@@ -343,17 +346,18 @@ static bool probe_ensure_candidate_capacity(nmo_probe_selector_result_t *result)
     return true;
 }
 
-static void probe_add_candidate(nmo_context_t *ctx,
-                                nmo_probe_selector_result_t *result,
-                                nmo_object_id_t parent_id,
-                                nmo_object_id_t node_id,
-                                nmo_object_id_t link_id,
-                                nmo_object_id_t operation_id,
-                                const nmo_behavior_state_t *state,
-                                const char *role_override)
+static nmo_probe_selector_candidate_t *probe_add_candidate(
+    nmo_context_t *ctx,
+    nmo_probe_selector_result_t *result,
+    nmo_object_id_t parent_id,
+    nmo_object_id_t node_id,
+    nmo_object_id_t link_id,
+    nmo_object_id_t operation_id,
+    const nmo_behavior_state_t *state,
+    const char *role_override)
 {
     if (!probe_ensure_candidate_capacity(result)) {
-        return;
+        return NULL;
     }
     const nmo_behavior_proto_t *proto =
         ctx != NULL && state != NULL
@@ -377,6 +381,72 @@ static void probe_add_candidate(nmo_context_t *ctx,
     result->candidates[index].role =
         role_override != NULL ? probe_role_from_legacy_text(role_override)
                               : probe_message_role(state);
+    return &result->candidates[index];
+}
+
+static nmo_guid_t probe_dataarray_column_type_guid(
+    const nmo_dataarray_state_t *state,
+    uint32_t col)
+{
+    if (state == NULL || state->column_formats == NULL ||
+        col >= state->column_count) {
+        return NMO_GUID_NULL;
+    }
+    const nmo_dataarray_column_format_t *format = &state->column_formats[col];
+    if (!nmo_guid_is_null(format->parameter_type_guid)) {
+        return format->parameter_type_guid;
+    }
+    switch (format->type) {
+    case CKARRAYTYPE_INT:
+        return CKPGUID_INT;
+    case CKARRAYTYPE_FLOAT:
+        return CKPGUID_FLOAT;
+    case CKARRAYTYPE_STRING:
+        return CKPGUID_STRING;
+    case CKARRAYTYPE_OBJECT:
+        return CKPGUID_OBJECT;
+    case CKARRAYTYPE_PARAMETER:
+        return CKPGUID_PARAMETEROUT;
+    default:
+        return NMO_GUID_NULL;
+    }
+}
+
+static void probe_enrich_candidate_with_data_cell(
+    nmo_object_repository_t *repo,
+    const nmo_probe_selector_request_t *request,
+    const nmo_parameteroperation_state_t *operation,
+    nmo_probe_selector_candidate_t *candidate)
+{
+    if (candidate == NULL || request == NULL) {
+        return;
+    }
+    if (request->dataarray_id != 0u) {
+        candidate->dataarray_id = request->dataarray_id;
+        nmo_object_t *dataarray =
+            repo != NULL
+                ? nmo_object_repository_find_by_id(repo, request->dataarray_id)
+                : NULL;
+        const nmo_dataarray_state_t *state =
+            dataarray != NULL &&
+                    nmo_object_get_class_id(dataarray) == NMO_CID_DATAARRAY
+                ? (const nmo_dataarray_state_t *)nmo_object_get_state(dataarray)
+                : NULL;
+        if (request->has_data_cell) {
+            candidate->column_type_guid =
+                probe_dataarray_column_type_guid(state, request->col);
+        }
+    }
+    if (operation != NULL) {
+        if (operation->has_in1) {
+            candidate->source_parameter_id = operation->in1_id;
+        }
+        if (operation->has_in2) {
+            candidate->value_parameter_id = operation->in2_id;
+        } else if (operation->has_out) {
+            candidate->value_parameter_id = operation->out_id;
+        }
+    }
 }
 
 static void probe_append_id(char *buffer,
@@ -1136,14 +1206,17 @@ static nmo_status_t probe_analyze_data_cell(
                     "touch selected write-operation data flow");
             }
             probe_apply_selected_link(result, request->remove_link_id, link);
-            probe_add_candidate(ctx,
-                                result,
-                                request->behavior_id,
-                                0u,
-                                request->remove_link_id,
-                                request->write_operation_id,
-                                NULL,
-                                "data_write_operation");
+            nmo_probe_selector_candidate_t *candidate =
+                probe_add_candidate(ctx,
+                                    result,
+                                    request->behavior_id,
+                                    0u,
+                                    request->remove_link_id,
+                                    request->write_operation_id,
+                                    NULL,
+                                    "data_write_operation");
+            probe_enrich_candidate_with_data_cell(
+                repo, request, operation, candidate);
         } else {
             result->from_io_id = request->from_io_id;
             result->to_io_id = request->to_io_id;
@@ -1152,14 +1225,17 @@ static nmo_status_t probe_analyze_data_cell(
                 request->write_operation_id;
             result->safe_insertion.insert_from_io_id = request->from_io_id;
             result->safe_insertion.insert_to_io_id = request->to_io_id;
-            probe_add_candidate(ctx,
-                                result,
-                                request->behavior_id,
-                                0u,
-                                0u,
-                                request->write_operation_id,
-                                NULL,
-                                "data_write_operation");
+            nmo_probe_selector_candidate_t *candidate =
+                probe_add_candidate(ctx,
+                                    result,
+                                    request->behavior_id,
+                                    0u,
+                                    0u,
+                                    request->write_operation_id,
+                                    NULL,
+                                    "data_write_operation");
+            probe_enrich_candidate_with_data_cell(
+                repo, request, operation, candidate);
         }
         result->selected_operation_id = request->write_operation_id;
         result->safe_insertion.selected_operation_id =
@@ -1287,14 +1363,17 @@ static nmo_status_t probe_analyze_data_cell(
         if (touching_count == 0u) {
             continue;
         }
-        probe_add_candidate(ctx,
-                            result,
-                            request->behavior_id,
-                            0u,
-                            operation_link_id,
-                            operation_id,
-                            NULL,
-                            "data_write_operation");
+        nmo_probe_selector_candidate_t *candidate =
+            probe_add_candidate(ctx,
+                                result,
+                                request->behavior_id,
+                                0u,
+                                operation_link_id,
+                                operation_id,
+                                NULL,
+                                "data_write_operation");
+        probe_enrich_candidate_with_data_cell(
+            repo, request, operation, candidate);
         probe_append_id(candidate_ids,
                         sizeof(candidate_ids),
                         &candidate_ids_len,

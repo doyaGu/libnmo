@@ -11,6 +11,7 @@
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_repository.h"
 #include "session/nmo_session.h"
+#include "type/nmo_type_guids.h"
 
 #include <string.h>
 
@@ -148,6 +149,10 @@ TEST(probe_analyzer, resolves_explicit_operation_write_site)
     nmo_probe_selector_request_init(&request);
     request.kind = NMO_PROBE_SELECTOR_DATA_CELL_WRITE;
     request.behavior_id = 3798u;
+    request.dataarray_id = 6067u;
+    request.row = 0u;
+    request.col = 1u;
+    request.has_data_cell = true;
     request.write_operation_id = 3791u;
     request.remove_link_id = 3780u;
 
@@ -163,6 +168,12 @@ TEST(probe_analyzer, resolves_explicit_operation_write_site)
     ASSERT_TRUE(result.safe_insertion.selected);
     ASSERT_EQ(3791u, result.safe_insertion.selected_operation_id);
     ASSERT_EQ(3780u, result.safe_insertion.remove_link_id);
+    ASSERT_EQ(1u, result.candidate_count);
+    ASSERT_EQ(6067u, result.candidates[0].dataarray_id);
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_STRING,
+                                result.candidates[0].column_type_guid));
+    ASSERT_EQ(3789u, result.candidates[0].source_parameter_id);
+    ASSERT_EQ(3790u, result.candidates[0].value_parameter_id);
     ASSERT_TRUE(result.from_io_id != 0u);
     ASSERT_TRUE(result.to_io_id != 0u);
 
@@ -179,6 +190,10 @@ TEST(probe_analyzer, reports_operation_write_site_candidates)
     nmo_probe_selector_request_init(&request);
     request.kind = NMO_PROBE_SELECTOR_DATA_CELL_WRITE;
     request.behavior_id = 3798u;
+    request.dataarray_id = 6067u;
+    request.row = 0u;
+    request.col = 1u;
+    request.has_data_cell = true;
 
     nmo_probe_selector_result_t result;
     nmo_probe_selector_result_init(&result);
@@ -198,6 +213,11 @@ TEST(probe_analyzer, reports_operation_write_site_candidates)
                 nmo_probe_candidate_role_name(result.candidates[i].role));
             ASSERT_EQ(3798u, result.candidates[i].boundary_behavior_id);
             ASSERT_TRUE(result.candidates[i].link_id != 0u);
+            ASSERT_EQ(6067u, result.candidates[i].dataarray_id);
+            ASSERT_TRUE(nmo_guid_equals(
+                CKPGUID_STRING, result.candidates[i].column_type_guid));
+            ASSERT_EQ(3789u, result.candidates[i].source_parameter_id);
+            ASSERT_EQ(3790u, result.candidates[i].value_parameter_id);
         }
     }
     ASSERT_TRUE(found_operation);

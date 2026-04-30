@@ -3880,6 +3880,17 @@ TEST(cli, debug_probe_data_cell_logger_accepts_operation_consumer_link) {
               yyjson_get_uint(yyjson_obj_get(candidate, "link_id")));
     ASSERT_EQ(3798u, yyjson_get_uint(
                           yyjson_obj_get(candidate, "boundary_behavior_id")));
+    ASSERT_EQ(6067u,
+              yyjson_get_uint(yyjson_obj_get(candidate, "dataarray_id")));
+    ASSERT_STR_EQ("{6BD010E2-115617EA}",
+                  yyjson_get_str(
+                      yyjson_obj_get(candidate, "column_type_guid")));
+    ASSERT_EQ(3789u,
+              yyjson_get_uint(
+                  yyjson_obj_get(candidate, "source_parameter_id")));
+    ASSERT_EQ(3790u,
+              yyjson_get_uint(
+                  yyjson_obj_get(candidate, "value_parameter_id")));
     ASSERT_STR_EQ("data_write_operation",
                   yyjson_get_str(yyjson_obj_get(candidate, "role")));
     yyjson_val *operations = yyjson_obj_get(data, "operations");
