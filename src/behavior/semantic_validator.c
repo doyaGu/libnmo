@@ -1340,6 +1340,30 @@ static nmo_status_t semantic_add_data_cell_risk(
                         nmo_parse_object_id(id_buf, &parsed) == NMO_OK;
                 }
             }
+            if (value_matches_type && parsed != 0u) {
+                nmo_object_t *referenced =
+                    nmo_object_repository_find_by_id(repo, parsed);
+                if (referenced == NULL) {
+                    return semantic_add_risk(
+                        risks,
+                        risk_count,
+                        NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+                        "dangling_data_cell_reference",
+                        "Data cell value references a missing object",
+                        dataarray_id);
+                }
+                if (col_type == CKARRAYTYPE_PARAMETER &&
+                    !semantic_is_parameter_object_class(
+                        nmo_object_get_class_id(referenced))) {
+                    return semantic_add_risk(
+                        risks,
+                        risk_count,
+                        NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+                        "data_cell_type_mismatch",
+                        "Data cell value is incompatible with the data array column type",
+                        dataarray_id);
+                }
+            }
             break;
         }
         default:

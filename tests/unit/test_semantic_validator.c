@@ -14,6 +14,7 @@
 #include "object/nmo_object_guids.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
+#include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
@@ -1971,6 +1972,67 @@ TEST(semantic_validator, edit_plan_reports_data_cell_type_mismatch)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_reports_dangling_data_cell_reference)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_empty(&fixture);
+
+    nmo_object_id_t dataarray_id = 0u;
+    semantic_create_object(&fixture, NMO_CID_DATAARRAY, "Object Cells", &dataarray_id);
+
+    nmo_object_repository_t *repo =
+        nmo_session_get_repository(fixture.session);
+    nmo_arena_t *arena = nmo_session_get_arena(fixture.session);
+    ASSERT_NOT_NULL(repo);
+    ASSERT_NOT_NULL(arena);
+    nmo_object_t *data_obj =
+        nmo_object_repository_find_by_id(repo, dataarray_id);
+    ASSERT_NOT_NULL(data_obj);
+    nmo_dataarray_state_t *state =
+        (nmo_dataarray_state_t *)nmo_object_get_state(data_obj);
+    ASSERT_NOT_NULL(state);
+    state->column_count = 1u;
+    state->row_count = 1u;
+    state->column_formats =
+        (nmo_dataarray_column_format_t *)nmo_arena_alloc(
+            arena,
+            sizeof(nmo_dataarray_column_format_t),
+            _Alignof(nmo_dataarray_column_format_t));
+    ASSERT_NOT_NULL(state->column_formats);
+    state->column_formats[0].name = "object";
+    state->column_formats[0].type = CKARRAYTYPE_OBJECT;
+    state->column_formats[0].parameter_type_guid = NMO_GUID_NULL;
+    state->rows = (nmo_dataarray_row_t *)nmo_arena_alloc(
+        arena, sizeof(nmo_dataarray_row_t), _Alignof(nmo_dataarray_row_t));
+    ASSERT_NOT_NULL(state->rows);
+    state->rows[0].column_count = 1u;
+    state->rows[0].cells = (nmo_dataarray_cell_t *)nmo_arena_alloc(
+        arena, sizeof(nmo_dataarray_cell_t), _Alignof(nmo_dataarray_cell_t));
+    ASSERT_NOT_NULL(state->rows[0].cells);
+    memset(state->rows[0].cells, 0, sizeof(nmo_dataarray_cell_t));
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_data_cell(plan, dataarray_id, 0u, 0u, "999999"));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *dangling =
+        find_risk(risks, risk_count, "dangling_data_cell_reference");
+    ASSERT_NOT_NULL(dangling);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, dangling->severity);
+    ASSERT_EQ(dataarray_id, dangling->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST(semantic_validator, edit_plan_reports_unknown_building_block)
 {
     semantic_fixture_t fixture;
@@ -2310,6 +2372,7 @@ REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_handle_value)
     REGISTER_TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch_with_handle_refs);
     REGISTER_TEST(semantic_validator, edit_plan_reports_data_cell_bounds);
     REGISTER_TEST(semantic_validator, edit_plan_reports_data_cell_type_mismatch);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_dangling_data_cell_reference);
     REGISTER_TEST(semantic_validator, edit_plan_reports_unknown_building_block);
     REGISTER_TEST(semantic_validator, edit_plan_reports_unknown_replace_building_block);
     REGISTER_TEST(semantic_validator, edit_plan_reports_targetable_behavior_missing_target);
