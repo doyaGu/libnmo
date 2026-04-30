@@ -7,6 +7,7 @@
 #define NMO_EDIT_PLAN_H
 
 #include "behavior/nmo_behavior_edit.h"
+#include "behavior/nmo_probe_analyzer.h"
 #include "object/nmo_object_edit.h"
 #include "runtime/nmo_workspace.h"
 #include "nmo_types.h"
@@ -348,6 +349,11 @@ NMO_API nmo_status_t nmo_edit_plan_clone(
 NMO_API void nmo_edit_plan_destroy(nmo_edit_plan_t *plan);
 NMO_API size_t nmo_edit_plan_count(const nmo_edit_plan_t *plan);
 NMO_API const nmo_edit_op_t *nmo_edit_plan_get(const nmo_edit_plan_t *plan, size_t index);
+NMO_API nmo_status_t nmo_edit_plan_set_probe_selector_analysis(
+    nmo_edit_plan_t *plan,
+    const nmo_probe_selector_result_t *analysis);
+NMO_API const nmo_probe_selector_result_t *
+nmo_edit_plan_get_probe_selector_analysis(const nmo_edit_plan_t *plan);
 
 NMO_API nmo_status_t nmo_edit_plan_add_set_parameter_value(
     nmo_edit_plan_t *plan,

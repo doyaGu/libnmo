@@ -32,6 +32,8 @@ struct nmo_edit_plan {
     nmo_edit_op_t *ops;
     size_t count;
     size_t capacity;
+    bool has_probe_selector_analysis;
+    nmo_probe_selector_result_t probe_selector_analysis;
 };
 
 typedef struct edit_plan_manager_snapshot {
@@ -59,6 +61,29 @@ static char *edit_plan_strdup(const char *text)
         memcpy(copy, text, len);
     }
     return copy;
+}
+
+static nmo_status_t edit_plan_probe_analysis_copy(
+    nmo_probe_selector_result_t *dst,
+    const nmo_probe_selector_result_t *src)
+{
+    if (dst == NULL || src == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_probe_analysis_dispose(dst);
+    *dst = *src;
+    dst->candidates = NULL;
+    dst->candidate_count = 0u;
+    dst->candidate_capacity = 0u;
+    for (size_t i = 0; i < src->candidate_count; ++i) {
+        nmo_status_t rc =
+            nmo_probe_selector_result_add_candidate(dst, &src->candidates[i]);
+        if (rc != NMO_OK) {
+            nmo_probe_analysis_dispose(dst);
+            return rc;
+        }
+    }
+    return NMO_OK;
 }
 
 static void edit_plan_manager_entry_options_dispose(
@@ -887,6 +912,15 @@ nmo_status_t nmo_edit_plan_clone(
         }
         clone->count++;
     }
+    if (plan->has_probe_selector_analysis) {
+        rc = edit_plan_probe_analysis_copy(&clone->probe_selector_analysis,
+                                           &plan->probe_selector_analysis);
+        if (rc != NMO_OK) {
+            nmo_edit_plan_destroy(clone);
+            return rc;
+        }
+        clone->has_probe_selector_analysis = true;
+    }
     *out_plan = clone;
     return NMO_OK;
 }
@@ -899,6 +933,7 @@ void nmo_edit_plan_destroy(nmo_edit_plan_t *plan)
     for (size_t i = 0; i < plan->count; i++) {
         edit_op_dispose(&plan->ops[i]);
     }
+    nmo_probe_analysis_dispose(&plan->probe_selector_analysis);
     free(plan->ops);
     free(plan);
 }
@@ -914,6 +949,31 @@ const nmo_edit_op_t *nmo_edit_plan_get(const nmo_edit_plan_t *plan, size_t index
         return NULL;
     }
     return &plan->ops[index];
+}
+
+nmo_status_t nmo_edit_plan_set_probe_selector_analysis(
+    nmo_edit_plan_t *plan,
+    const nmo_probe_selector_result_t *analysis)
+{
+    if (plan == NULL || analysis == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_status_t rc = edit_plan_probe_analysis_copy(
+        &plan->probe_selector_analysis, analysis);
+    if (rc != NMO_OK) {
+        plan->has_probe_selector_analysis = false;
+        return rc;
+    }
+    plan->has_probe_selector_analysis = true;
+    return NMO_OK;
+}
+
+const nmo_probe_selector_result_t *
+nmo_edit_plan_get_probe_selector_analysis(const nmo_edit_plan_t *plan)
+{
+    return plan != NULL && plan->has_probe_selector_analysis
+        ? &plan->probe_selector_analysis
+        : NULL;
 }
 
 nmo_status_t nmo_edit_plan_add_set_parameter_value(

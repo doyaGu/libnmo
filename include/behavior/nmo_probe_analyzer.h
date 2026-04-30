@@ -144,6 +144,9 @@ NMO_API const char *nmo_probe_candidate_role_name(
     nmo_probe_candidate_role_t role);
 NMO_API void nmo_probe_analysis_dispose(
     nmo_probe_selector_result_t *result);
+NMO_API nmo_status_t nmo_probe_selector_result_add_candidate(
+    nmo_probe_selector_result_t *result,
+    const nmo_probe_selector_candidate_t *candidate);
 
 NMO_API nmo_status_t nmo_probe_analyze_selector(
     nmo_workspace_t *workspace,

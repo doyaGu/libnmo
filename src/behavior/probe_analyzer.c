@@ -346,6 +346,20 @@ static bool probe_ensure_candidate_capacity(nmo_probe_selector_result_t *result)
     return true;
 }
 
+nmo_status_t nmo_probe_selector_result_add_candidate(
+    nmo_probe_selector_result_t *result,
+    const nmo_probe_selector_candidate_t *candidate)
+{
+    if (result == NULL || candidate == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (!probe_ensure_candidate_capacity(result)) {
+        return NMO_ERR_NOMEM;
+    }
+    result->candidates[result->candidate_count++] = *candidate;
+    return NMO_OK;
+}
+
 static nmo_probe_selector_candidate_t *probe_add_candidate(
     nmo_context_t *ctx,
     nmo_probe_selector_result_t *result,

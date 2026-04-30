@@ -3,6 +3,7 @@
 #include "behavior/nmo_edit_plan.h"
 #include "behavior/nmo_behavior_edit.h"
 #include "behavior/nmo_behavior_registry.h"
+#include "behavior/nmo_probe_analyzer.h"
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include "document/nmo_document.h"
@@ -3647,6 +3648,68 @@ TEST(edit_plan, executor_fold_failure_reports_operation_diagnostic) {
     nmo_session_close_with_context(ctx, session);
 }
 
+TEST(edit_plan, stores_probe_selector_analysis_metadata) {
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+
+    nmo_probe_selector_result_t analysis;
+    nmo_probe_selector_result_init(&analysis);
+    analysis.mode = NMO_PROBE_SELECTOR_MODE_EXPLICIT_OPERATION;
+    analysis.status = NMO_PROBE_SELECTOR_STATUS_SELECTED;
+    analysis.selected_operation_id = 3791u;
+    analysis.selected_link_id = 3780u;
+    analysis.safe_insertion.selected = true;
+    analysis.safe_insertion.selected_operation_id = 3791u;
+    analysis.safe_insertion.remove_link_id = 3780u;
+    analysis.safe_insertion.insert_from_io_id = 3779u;
+    analysis.safe_insertion.insert_to_io_id = 3781u;
+    analysis.safe_insertion.has_preserved_delay = true;
+    analysis.safe_insertion.preserved_delay = 3u;
+    ASSERT_EQ(NMO_OK,
+              nmo_probe_selector_result_add_candidate(
+                  &analysis,
+                  &(nmo_probe_selector_candidate_t){
+                      .operation_id = 3791u,
+                      .link_id = 3780u,
+                      .boundary_behavior_id = 3798u,
+                      .source_parameter_id = 3789u,
+                      .value_parameter_id = 3790u,
+                      .dataarray_id = 6067u,
+                      .column_type_guid = CKPGUID_STRING,
+                      .confidence = 0.85,
+                      .role = NMO_PROBE_CANDIDATE_DATA_WRITE_OPERATION,
+                  }));
+
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_set_probe_selector_analysis(plan, &analysis));
+
+    const nmo_probe_selector_result_t *stored =
+        nmo_edit_plan_get_probe_selector_analysis(plan);
+    ASSERT_NOT_NULL(stored);
+    ASSERT_EQ(NMO_PROBE_SELECTOR_MODE_EXPLICIT_OPERATION, stored->mode);
+    ASSERT_EQ(NMO_PROBE_SELECTOR_STATUS_SELECTED, stored->status);
+    ASSERT_EQ(1u, stored->candidate_count);
+    ASSERT_EQ(3791u, stored->candidates[0].operation_id);
+    ASSERT_EQ(6067u, stored->candidates[0].dataarray_id);
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_STRING,
+                                stored->candidates[0].column_type_guid));
+    ASSERT_TRUE(stored->safe_insertion.selected);
+    ASSERT_EQ(3u, stored->safe_insertion.preserved_delay);
+
+    nmo_edit_plan_t *clone = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_clone(plan, &clone));
+    const nmo_probe_selector_result_t *cloned =
+        nmo_edit_plan_get_probe_selector_analysis(clone);
+    ASSERT_NOT_NULL(cloned);
+    ASSERT_EQ(1u, cloned->candidate_count);
+    ASSERT_EQ(3789u, cloned->candidates[0].source_parameter_id);
+    ASSERT_EQ(3790u, cloned->candidates[0].value_parameter_id);
+
+    nmo_edit_plan_destroy(clone);
+    nmo_probe_analysis_dispose(&analysis);
+    nmo_edit_plan_destroy(plan);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(edit_plan, stores_parameter_value_ops);
 REGISTER_TEST(edit_plan, stores_full_script_edit_ops_and_clones_plan);
@@ -3696,4 +3759,5 @@ REGISTER_TEST(edit_plan, report_semantic_risk_merge_deduplicates);
 REGISTER_TEST(edit_plan, executor_merges_edit_plan_semantic_validation);
 REGISTER_TEST(edit_plan, executor_reports_generic_activation_delay_risk);
 REGISTER_TEST(edit_plan, executor_fold_failure_reports_operation_diagnostic);
+REGISTER_TEST(edit_plan, stores_probe_selector_analysis_metadata);
 TEST_MAIN_END()
