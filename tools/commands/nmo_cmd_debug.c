@@ -76,13 +76,25 @@ typedef struct nmo_debug_probe_args {
     struct {
         nmo_object_id_t node_id;
         nmo_object_id_t parent_id;
+        nmo_object_id_t boundary_behavior_id;
         nmo_object_id_t link_id;
         nmo_object_id_t operation_id;
+        nmo_object_id_t from_io_id;
+        nmo_object_id_t to_io_id;
+        bool has_delay;
+        uint32_t delay;
+        nmo_object_id_t source_parameter_id;
+        nmo_object_id_t value_parameter_id;
+        nmo_object_id_t dataarray_id;
+        nmo_guid_t column_type_guid;
+        double confidence;
         nmo_guid_t bb_guid;
         char proto_name[96];
         char role[24];
+        char rejection_code[64];
     } selector_candidates[64];
     size_t selector_candidate_count;
+    nmo_probe_safe_insertion_t selector_safe_insertion;
     nmo_edit_report_t report;
 } nmo_debug_probe_args_t;
 
@@ -1038,6 +1050,7 @@ static void debug_probe_apply_selector_result(
     args->selector_selected_node_id = result->selected_node_id;
     args->selector_selected_link_id = result->selected_link_id;
     args->selector_selected_operation_id = result->selected_operation_id;
+    args->selector_safe_insertion = result->safe_insertion;
     args->selector_candidate_count = 0u;
     for (size_t i = 0;
          i < result->candidate_count &&
@@ -1047,9 +1060,28 @@ static void debug_probe_apply_selector_result(
         args->selector_candidates[i].node_id = result->candidates[i].node_id;
         args->selector_candidates[i].parent_id =
             result->candidates[i].parent_id;
+        args->selector_candidates[i].boundary_behavior_id =
+            result->candidates[i].boundary_behavior_id;
         args->selector_candidates[i].link_id = result->candidates[i].link_id;
         args->selector_candidates[i].operation_id =
             result->candidates[i].operation_id;
+        args->selector_candidates[i].from_io_id =
+            result->candidates[i].from_io_id;
+        args->selector_candidates[i].to_io_id =
+            result->candidates[i].to_io_id;
+        args->selector_candidates[i].has_delay =
+            result->candidates[i].has_delay;
+        args->selector_candidates[i].delay = result->candidates[i].delay;
+        args->selector_candidates[i].source_parameter_id =
+            result->candidates[i].source_parameter_id;
+        args->selector_candidates[i].value_parameter_id =
+            result->candidates[i].value_parameter_id;
+        args->selector_candidates[i].dataarray_id =
+            result->candidates[i].dataarray_id;
+        args->selector_candidates[i].column_type_guid =
+            result->candidates[i].column_type_guid;
+        args->selector_candidates[i].confidence =
+            result->candidates[i].confidence;
         args->selector_candidates[i].bb_guid = result->candidates[i].bb_guid;
         snprintf(args->selector_candidates[i].proto_name,
                  sizeof(args->selector_candidates[i].proto_name),
@@ -1058,7 +1090,11 @@ static void debug_probe_apply_selector_result(
         snprintf(args->selector_candidates[i].role,
                  sizeof(args->selector_candidates[i].role),
                  "%s",
-                 result->candidates[i].role);
+                 nmo_probe_candidate_role_name(result->candidates[i].role));
+        snprintf(args->selector_candidates[i].rejection_code,
+                 sizeof(args->selector_candidates[i].rejection_code),
+                 "%s",
+                 result->candidates[i].rejection_code);
         ++args->selector_candidate_count;
     }
     if (result->selected_link_id != 0u && args->remove_link_id == 0u) {
@@ -1104,6 +1140,10 @@ static nmo_status_t debug_probe_analyze_core_selector(
     nmo_probe_selector_result_init(&result);
     request.kind = kind;
     request.behavior_id = args->behavior_id;
+    request.dataarray_id = args->dataarray_id;
+    request.row = args->data_row;
+    request.col = args->data_col;
+    request.has_data_cell = args->has_data_row && args->has_data_col;
     request.message_node_id = args->message_node_id;
     request.write_node_id = args->write_node_id;
     request.write_operation_id = args->write_operation_id;
@@ -1118,13 +1158,20 @@ static nmo_status_t debug_probe_analyze_core_selector(
         nmo_probe_analyze_selector(ctx->workspace, &request, &result);
     debug_probe_apply_selector_result(args, &result);
     if (status != NMO_OK) {
+        char message[sizeof(result.message)];
+        snprintf(message,
+                 sizeof(message),
+                 "%s",
+                 result.message[0] != '\0' ? result.message
+                                           : "debug probe selector failed");
+        nmo_probe_analysis_dispose(&result);
         NMO_RETURN_ERROR(
             status,
             NMO_SEVERITY_ERROR,
             "%s",
-            result.message[0] != '\0' ? result.message
-                                      : "debug probe selector failed");
+            message);
     }
+    nmo_probe_analysis_dispose(&result);
     return NMO_OK;
 }
 
@@ -2136,6 +2183,9 @@ static yyjson_mut_val *debug_probe_selector_diagnostics_json(
         yyjson_mut_obj_add_uint(
             doc, candidate, "parent_id",
             (uint64_t)args->selector_candidates[i].parent_id);
+        yyjson_mut_obj_add_uint(
+            doc, candidate, "boundary_behavior_id",
+            (uint64_t)args->selector_candidates[i].boundary_behavior_id);
         if (args->selector_candidates[i].link_id != 0u) {
             yyjson_mut_obj_add_uint(
                 doc, candidate, "link_id",
@@ -2146,6 +2196,47 @@ static yyjson_mut_val *debug_probe_selector_diagnostics_json(
                 doc, candidate, "operation_id",
                 (uint64_t)args->selector_candidates[i].operation_id);
         }
+        if (args->selector_candidates[i].from_io_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, candidate, "from_io_id",
+                (uint64_t)args->selector_candidates[i].from_io_id);
+        }
+        if (args->selector_candidates[i].to_io_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, candidate, "to_io_id",
+                (uint64_t)args->selector_candidates[i].to_io_id);
+        }
+        if (args->selector_candidates[i].has_delay) {
+            yyjson_mut_obj_add_uint(
+                doc, candidate, "delay",
+                (uint64_t)args->selector_candidates[i].delay);
+        }
+        if (args->selector_candidates[i].source_parameter_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, candidate, "source_parameter_id",
+                (uint64_t)args->selector_candidates[i].source_parameter_id);
+        }
+        if (args->selector_candidates[i].value_parameter_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, candidate, "value_parameter_id",
+                (uint64_t)args->selector_candidates[i].value_parameter_id);
+        }
+        if (args->selector_candidates[i].dataarray_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, candidate, "dataarray_id",
+                (uint64_t)args->selector_candidates[i].dataarray_id);
+        }
+        char column_guid_text[32];
+        nmo_guid_format(args->selector_candidates[i].column_type_guid,
+                        column_guid_text,
+                        sizeof(column_guid_text));
+        if (!nmo_guid_is_null(args->selector_candidates[i].column_type_guid)) {
+            nmo_cli_json_add_str_safe(
+                doc, candidate, "column_type_guid", column_guid_text);
+        }
+        yyjson_mut_obj_add_real(
+            doc, candidate, "confidence",
+            args->selector_candidates[i].confidence);
         char guid_text[32];
         nmo_guid_format(args->selector_candidates[i].bb_guid,
                         guid_text,
@@ -2156,6 +2247,13 @@ static yyjson_mut_val *debug_probe_selector_diagnostics_json(
             args->selector_candidates[i].proto_name);
         nmo_cli_json_add_str_safe(
             doc, candidate, "role", args->selector_candidates[i].role);
+        if (args->selector_candidates[i].rejection_code[0] != '\0') {
+            nmo_cli_json_add_str_safe(
+                doc,
+                candidate,
+                "rejection_code",
+                args->selector_candidates[i].rejection_code);
+        }
         yyjson_mut_arr_add_val(candidates, candidate);
     }
     yyjson_mut_obj_add_val(doc, diag, "candidates", candidates);
@@ -2177,6 +2275,46 @@ static yyjson_mut_val *debug_probe_selector_diagnostics_json(
     if (args->selector_rejection_code[0] != '\0') {
         nmo_cli_json_add_str_safe(
             doc, diag, "rejection_code", args->selector_rejection_code);
+    }
+    if (args->selector_safe_insertion.selected) {
+        yyjson_mut_val *safe = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_bool(doc, safe, "selected", true);
+        if (args->selector_safe_insertion.selected_node_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, safe, "selected_node_id",
+                (uint64_t)args->selector_safe_insertion.selected_node_id);
+        }
+        if (args->selector_safe_insertion.selected_link_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, safe, "selected_link_id",
+                (uint64_t)args->selector_safe_insertion.selected_link_id);
+        }
+        if (args->selector_safe_insertion.selected_operation_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, safe, "selected_operation_id",
+                (uint64_t)args->selector_safe_insertion.selected_operation_id);
+        }
+        if (args->selector_safe_insertion.remove_link_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, safe, "remove_link_id",
+                (uint64_t)args->selector_safe_insertion.remove_link_id);
+        }
+        if (args->selector_safe_insertion.insert_from_io_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, safe, "insert_from_io_id",
+                (uint64_t)args->selector_safe_insertion.insert_from_io_id);
+        }
+        if (args->selector_safe_insertion.insert_to_io_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, safe, "insert_to_io_id",
+                (uint64_t)args->selector_safe_insertion.insert_to_io_id);
+        }
+        if (args->selector_safe_insertion.has_preserved_delay) {
+            yyjson_mut_obj_add_uint(
+                doc, safe, "preserved_delay",
+                (uint64_t)args->selector_safe_insertion.preserved_delay);
+        }
+        yyjson_mut_obj_add_val(doc, diag, "safe_insertion", safe);
     }
     return diag;
 }

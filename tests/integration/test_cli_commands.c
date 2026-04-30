@@ -3529,15 +3529,31 @@ TEST(cli, debug_probe_message_logger_text_option_uses_edit_plan) {
               yyjson_get_uint(yyjson_obj_get(diag, "selected_node_id")));
     ASSERT_EQ(2152u,
               yyjson_get_uint(yyjson_obj_get(diag, "selected_link_id")));
+    yyjson_val *safe = yyjson_obj_get(diag, "safe_insertion");
+    ASSERT_NOT_NULL(safe);
+    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(safe, "selected")));
+    ASSERT_EQ(1667u,
+              yyjson_get_uint(yyjson_obj_get(safe, "selected_node_id")));
+    ASSERT_EQ(2152u,
+              yyjson_get_uint(yyjson_obj_get(safe, "remove_link_id")));
+    ASSERT_TRUE(yyjson_get_uint(
+                    yyjson_obj_get(safe, "insert_from_io_id")) != 0u);
+    ASSERT_TRUE(yyjson_get_uint(
+                    yyjson_obj_get(safe, "insert_to_io_id")) != 0u);
     yyjson_val *candidates = yyjson_obj_get(diag, "candidates");
     ASSERT_TRUE(candidates && yyjson_is_arr(candidates));
     ASSERT_EQ(1u, yyjson_arr_size(candidates));
     yyjson_val *candidate = yyjson_arr_get(candidates, 0);
     ASSERT_EQ(1667u, yyjson_get_uint(yyjson_obj_get(candidate, "node_id")));
     ASSERT_EQ(2172u, yyjson_get_uint(yyjson_obj_get(candidate, "parent_id")));
+    ASSERT_EQ(2172u, yyjson_get_uint(
+                          yyjson_obj_get(candidate, "boundary_behavior_id")));
     ASSERT_NOT_NULL(yyjson_get_str(yyjson_obj_get(candidate, "bb_guid")));
     ASSERT_NOT_NULL(yyjson_get_str(yyjson_obj_get(candidate, "proto_name")));
-    ASSERT_NOT_NULL(yyjson_get_str(yyjson_obj_get(candidate, "role")));
+    ASSERT_STR_EQ("sender", yyjson_get_str(yyjson_obj_get(candidate, "role")));
+    ASSERT_FLOAT_EQ(1.0,
+                    yyjson_get_real(yyjson_obj_get(candidate, "confidence")),
+                    0.001);
     yyjson_val *operations = yyjson_obj_get(data, "operations");
     ASSERT_TRUE(operations && yyjson_is_arr(operations));
     ASSERT_EQ(5u, yyjson_arr_size(operations));
@@ -3847,6 +3863,13 @@ TEST(cli, debug_probe_data_cell_logger_accepts_operation_consumer_link) {
               yyjson_get_uint(yyjson_obj_get(diag, "selected_operation_id")));
     ASSERT_EQ(3780u,
               yyjson_get_uint(yyjson_obj_get(diag, "selected_link_id")));
+    yyjson_val *safe = yyjson_obj_get(diag, "safe_insertion");
+    ASSERT_NOT_NULL(safe);
+    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(safe, "selected")));
+    ASSERT_EQ(3791u,
+              yyjson_get_uint(yyjson_obj_get(safe, "selected_operation_id")));
+    ASSERT_EQ(3780u,
+              yyjson_get_uint(yyjson_obj_get(safe, "remove_link_id")));
     yyjson_val *candidates = yyjson_obj_get(diag, "candidates");
     ASSERT_TRUE(candidates && yyjson_is_arr(candidates));
     ASSERT_EQ(1u, yyjson_arr_size(candidates));
@@ -3855,6 +3878,8 @@ TEST(cli, debug_probe_data_cell_logger_accepts_operation_consumer_link) {
               yyjson_get_uint(yyjson_obj_get(candidate, "operation_id")));
     ASSERT_EQ(3780u,
               yyjson_get_uint(yyjson_obj_get(candidate, "link_id")));
+    ASSERT_EQ(3798u, yyjson_get_uint(
+                          yyjson_obj_get(candidate, "boundary_behavior_id")));
     ASSERT_STR_EQ("data_write_operation",
                   yyjson_get_str(yyjson_obj_get(candidate, "role")));
     yyjson_val *operations = yyjson_obj_get(data, "operations");

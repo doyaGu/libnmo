@@ -37,19 +37,57 @@ typedef enum nmo_probe_selector_status {
     NMO_PROBE_SELECTOR_STATUS_UNSAFE
 } nmo_probe_selector_status_t;
 
+typedef enum nmo_probe_selector_safety_policy {
+    NMO_PROBE_SELECTOR_SAFETY_DEFAULT = 0,
+    NMO_PROBE_SELECTOR_SAFETY_CONSERVATIVE,
+    NMO_PROBE_SELECTOR_SAFETY_EXPLICIT_ONLY
+} nmo_probe_selector_safety_policy_t;
+
+typedef enum nmo_probe_selector_policy {
+    NMO_PROBE_SELECTOR_POLICY_DEFAULT = 0,
+    NMO_PROBE_SELECTOR_POLICY_AUTO,
+    NMO_PROBE_SELECTOR_POLICY_EXPLICIT
+} nmo_probe_selector_policy_t;
+
+typedef enum nmo_probe_candidate_role {
+    NMO_PROBE_CANDIDATE_UNKNOWN = 0,
+    NMO_PROBE_CANDIDATE_MESSAGE,
+    NMO_PROBE_CANDIDATE_MESSAGE_SENDER,
+    NMO_PROBE_CANDIDATE_MESSAGE_WAITER,
+    NMO_PROBE_CANDIDATE_MESSAGE_RECEIVER,
+    NMO_PROBE_CANDIDATE_DATA_WRITER,
+    NMO_PROBE_CANDIDATE_DATA_WRITE_OPERATION,
+    NMO_PROBE_CANDIDATE_DATA_WRITE_LINK
+} nmo_probe_candidate_role_t;
+
 typedef struct nmo_probe_selector_candidate {
     nmo_object_id_t node_id;
     nmo_object_id_t parent_id;
+    nmo_object_id_t boundary_behavior_id;
     nmo_object_id_t link_id;
     nmo_object_id_t operation_id;
+    nmo_object_id_t from_io_id;
+    nmo_object_id_t to_io_id;
+    bool has_delay;
+    uint32_t delay;
+    nmo_object_id_t source_parameter_id;
+    nmo_object_id_t value_parameter_id;
+    nmo_object_id_t dataarray_id;
+    nmo_guid_t column_type_guid;
+    double confidence;
     nmo_guid_t bb_guid;
     char proto_name[96];
-    char role[24];
+    nmo_probe_candidate_role_t role;
+    char rejection_code[64];
 } nmo_probe_selector_candidate_t;
 
 typedef struct nmo_probe_selector_request {
     nmo_probe_selector_kind_t kind;
     nmo_object_id_t behavior_id;
+    nmo_object_id_t dataarray_id;
+    uint32_t row;
+    uint32_t col;
+    bool has_data_cell;
     nmo_object_id_t message_node_id;
     nmo_object_id_t write_node_id;
     nmo_object_id_t write_operation_id;
@@ -59,7 +97,21 @@ typedef struct nmo_probe_selector_request {
     nmo_object_id_t to_io_id;
     bool has_delay;
     uint32_t delay;
+    nmo_probe_selector_safety_policy_t safety_policy;
+    nmo_probe_selector_policy_t selector_policy;
 } nmo_probe_selector_request_t;
+
+typedef struct nmo_probe_safe_insertion {
+    bool selected;
+    nmo_object_id_t selected_node_id;
+    nmo_object_id_t selected_link_id;
+    nmo_object_id_t selected_operation_id;
+    nmo_object_id_t remove_link_id;
+    nmo_object_id_t insert_from_io_id;
+    nmo_object_id_t insert_to_io_id;
+    bool has_preserved_delay;
+    uint32_t preserved_delay;
+} nmo_probe_safe_insertion_t;
 
 typedef struct nmo_probe_selector_result {
     nmo_probe_selector_mode_t mode;
@@ -73,8 +125,10 @@ typedef struct nmo_probe_selector_result {
     nmo_object_id_t to_io_id;
     bool has_delay;
     uint32_t delay;
-    nmo_probe_selector_candidate_t candidates[64];
+    nmo_probe_safe_insertion_t safe_insertion;
+    nmo_probe_selector_candidate_t *candidates;
     size_t candidate_count;
+    size_t candidate_capacity;
 } nmo_probe_selector_result_t;
 
 NMO_API void nmo_probe_selector_request_init(
@@ -86,6 +140,10 @@ NMO_API const char *nmo_probe_selector_mode_name(
     nmo_probe_selector_mode_t mode);
 NMO_API const char *nmo_probe_selector_status_name(
     nmo_probe_selector_status_t status);
+NMO_API const char *nmo_probe_candidate_role_name(
+    nmo_probe_candidate_role_t role);
+NMO_API void nmo_probe_analysis_dispose(
+    nmo_probe_selector_result_t *result);
 
 NMO_API nmo_status_t nmo_probe_analyze_selector(
     nmo_workspace_t *workspace,

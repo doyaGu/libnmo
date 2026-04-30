@@ -1,9 +1,15 @@
 #include "test_framework.h"
 
 #include "behavior/nmo_probe_analyzer.h"
+#include "core/nmo_array.h"
 #include "document/nmo_document.h"
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
+#include "format/nmo_object.h"
+#include "object/builtin/nmo_behavior_schemas.h"
+#include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_defs.h"
+#include "object/nmo_object_repository.h"
 #include "session/nmo_session.h"
 
 #include <string.h>
@@ -30,6 +36,20 @@ static void probe_fixture_init(probe_fixture_t *fixture)
                                            &fixture->workspace));
 }
 
+static void probe_fixture_init_empty(probe_fixture_t *fixture)
+{
+    memset(fixture, 0, sizeof(*fixture));
+    fixture->ctx = nmo_context_create(
+        &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
+    ASSERT_NOT_NULL(fixture->ctx);
+    fixture->session = nmo_session_create(fixture->ctx);
+    ASSERT_NOT_NULL(fixture->session);
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(fixture->session,
+                                                  &fixture->document));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(fixture->ctx, fixture->document,
+                                           &fixture->workspace));
+}
+
 static void probe_fixture_dispose(probe_fixture_t *fixture)
 {
     if (fixture->workspace) {
@@ -46,6 +66,37 @@ static void probe_fixture_dispose(probe_fixture_t *fixture)
         nmo_context_release(fixture->ctx);
     }
     memset(fixture, 0, sizeof(*fixture));
+}
+
+static nmo_behavior_state_t *probe_behavior_state(probe_fixture_t *fixture,
+                                                  nmo_object_id_t behavior_id)
+{
+    nmo_object_repository_t *repo =
+        nmo_session_get_repository(fixture->session);
+    if (repo == NULL) {
+        return NULL;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, behavior_id);
+    if (object == NULL ||
+        nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
+        return NULL;
+    }
+    return (nmo_behavior_state_t *)nmo_object_get_state(object);
+}
+
+static nmo_object_id_t probe_create_behavior(probe_fixture_t *fixture,
+                                             const char *name)
+{
+    nmo_object_id_t id = 0u;
+    if (nmo_session_create_object(fixture->session,
+                                  NMO_CID_BEHAVIOR,
+                                  name,
+                                  NMO_GUID_NULL,
+                                  &id,
+                                  NULL) != NMO_OK) {
+        return 0u;
+    }
+    return id;
 }
 
 TEST(probe_analyzer, selects_unique_message_candidate_and_link)
@@ -67,13 +118,24 @@ TEST(probe_analyzer, selects_unique_message_candidate_and_link)
     ASSERT_EQ(NMO_PROBE_SELECTOR_STATUS_SELECTED, result.status);
     ASSERT_EQ(1667u, result.selected_node_id);
     ASSERT_EQ(2152u, result.selected_link_id);
+    ASSERT_TRUE(result.safe_insertion.selected);
+    ASSERT_EQ(1667u, result.safe_insertion.selected_node_id);
+    ASSERT_EQ(2152u, result.safe_insertion.remove_link_id);
+    ASSERT_TRUE(result.safe_insertion.insert_from_io_id != 0u);
+    ASSERT_TRUE(result.safe_insertion.insert_to_io_id != 0u);
     ASSERT_EQ(1u, result.candidate_count);
+    ASSERT_NOT_NULL(result.candidates);
     ASSERT_EQ(1667u, result.candidates[0].node_id);
     ASSERT_EQ(2172u, result.candidates[0].parent_id);
-    ASSERT_STR_EQ("sender", result.candidates[0].role);
+    ASSERT_EQ(2172u, result.candidates[0].boundary_behavior_id);
+    ASSERT_EQ(NMO_PROBE_CANDIDATE_MESSAGE_SENDER,
+              result.candidates[0].role);
+    ASSERT_STR_EQ("sender",
+                  nmo_probe_candidate_role_name(result.candidates[0].role));
     ASSERT_TRUE(result.from_io_id != 0u);
     ASSERT_TRUE(result.to_io_id != 0u);
 
+    nmo_probe_analysis_dispose(&result);
     probe_fixture_dispose(&fixture);
 }
 
@@ -98,9 +160,13 @@ TEST(probe_analyzer, resolves_explicit_operation_write_site)
     ASSERT_EQ(NMO_PROBE_SELECTOR_STATUS_SELECTED, result.status);
     ASSERT_EQ(3791u, result.selected_operation_id);
     ASSERT_EQ(3780u, result.selected_link_id);
+    ASSERT_TRUE(result.safe_insertion.selected);
+    ASSERT_EQ(3791u, result.safe_insertion.selected_operation_id);
+    ASSERT_EQ(3780u, result.safe_insertion.remove_link_id);
     ASSERT_TRUE(result.from_io_id != 0u);
     ASSERT_TRUE(result.to_io_id != 0u);
 
+    nmo_probe_analysis_dispose(&result);
     probe_fixture_dispose(&fixture);
 }
 
@@ -125,11 +191,18 @@ TEST(probe_analyzer, reports_operation_write_site_candidates)
     for (size_t i = 0; i < result.candidate_count; ++i) {
         if (result.candidates[i].operation_id == 3791u) {
             found_operation = true;
-            ASSERT_STR_EQ("data_write_operation", result.candidates[i].role);
+            ASSERT_EQ(NMO_PROBE_CANDIDATE_DATA_WRITE_OPERATION,
+                      result.candidates[i].role);
+            ASSERT_STR_EQ(
+                "data_write_operation",
+                nmo_probe_candidate_role_name(result.candidates[i].role));
+            ASSERT_EQ(3798u, result.candidates[i].boundary_behavior_id);
+            ASSERT_TRUE(result.candidates[i].link_id != 0u);
         }
     }
     ASSERT_TRUE(found_operation);
 
+    nmo_probe_analysis_dispose(&result);
     probe_fixture_dispose(&fixture);
 }
 
@@ -156,6 +229,48 @@ TEST(probe_analyzer, rejects_operation_write_site_outside_boundary)
     ASSERT_STR_CONTAINS(result.message,
                         "outside the selected behavior boundary");
 
+    nmo_probe_analysis_dispose(&result);
+    probe_fixture_dispose(&fixture);
+}
+
+TEST(probe_analyzer, dynamic_candidates_are_not_truncated_at_64)
+{
+    probe_fixture_t fixture;
+    probe_fixture_init_empty(&fixture);
+
+    nmo_object_id_t root_id = probe_create_behavior(&fixture, "root");
+    nmo_behavior_state_t *root = probe_behavior_state(&fixture, root_id);
+    ASSERT_NOT_NULL(root);
+
+    for (uint32_t i = 0u; i < 70u; ++i) {
+        char name[32];
+        snprintf(name, sizeof(name), "sender_%u", (unsigned)i);
+        nmo_object_id_t child_id = probe_create_behavior(&fixture, name);
+        nmo_behavior_state_t *child =
+            probe_behavior_state(&fixture, child_id);
+        ASSERT_NOT_NULL(child);
+        child->flags = CKBEHAVIOR_BUILDINGBLOCK | CKBEHAVIOR_MESSAGESENDER;
+        ASSERT_EQ(NMO_OK, nmo_array_append(&root->sub_behaviors, &child_id));
+    }
+
+    nmo_probe_selector_request_t request;
+    nmo_probe_selector_request_init(&request);
+    request.kind = NMO_PROBE_SELECTOR_MESSAGE;
+    request.behavior_id = root_id;
+
+    nmo_probe_selector_result_t result;
+    nmo_probe_selector_result_init(&result);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_probe_analyze_selector(fixture.workspace, &request, &result));
+
+    ASSERT_EQ(NMO_PROBE_SELECTOR_MODE_AUTO, result.mode);
+    ASSERT_EQ(NMO_PROBE_SELECTOR_STATUS_AMBIGUOUS, result.status);
+    ASSERT_EQ(70u, result.candidate_count);
+    ASSERT_NOT_NULL(result.candidates);
+    ASSERT_EQ(NMO_PROBE_CANDIDATE_MESSAGE_SENDER,
+              result.candidates[69].role);
+
+    nmo_probe_analysis_dispose(&result);
     probe_fixture_dispose(&fixture);
 }
 
@@ -164,4 +279,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(probe_analyzer, resolves_explicit_operation_write_site);
     REGISTER_TEST(probe_analyzer, reports_operation_write_site_candidates);
     REGISTER_TEST(probe_analyzer, rejects_operation_write_site_outside_boundary);
+    REGISTER_TEST(probe_analyzer, dynamic_candidates_are_not_truncated_at_64);
 TEST_MAIN_END()

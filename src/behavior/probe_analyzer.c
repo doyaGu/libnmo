@@ -16,6 +16,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef enum probe_link_touch_mode {
@@ -35,6 +36,15 @@ void nmo_probe_selector_result_init(nmo_probe_selector_result_t *result)
     if (result != NULL) {
         memset(result, 0, sizeof(*result));
     }
+}
+
+void nmo_probe_analysis_dispose(nmo_probe_selector_result_t *result)
+{
+    if (result == NULL) {
+        return;
+    }
+    free(result->candidates);
+    memset(result, 0, sizeof(*result));
 }
 
 const char *nmo_probe_selector_mode_name(nmo_probe_selector_mode_t mode)
@@ -70,6 +80,29 @@ const char *nmo_probe_selector_status_name(nmo_probe_selector_status_t status)
     case NMO_PROBE_SELECTOR_STATUS_UNSAFE:
         return "unsafe";
     case NMO_PROBE_SELECTOR_STATUS_UNSPECIFIED:
+    default:
+        return "";
+    }
+}
+
+const char *nmo_probe_candidate_role_name(nmo_probe_candidate_role_t role)
+{
+    switch (role) {
+    case NMO_PROBE_CANDIDATE_MESSAGE:
+        return "message";
+    case NMO_PROBE_CANDIDATE_MESSAGE_SENDER:
+        return "sender";
+    case NMO_PROBE_CANDIDATE_MESSAGE_WAITER:
+        return "waiter";
+    case NMO_PROBE_CANDIDATE_MESSAGE_RECEIVER:
+        return "receiver";
+    case NMO_PROBE_CANDIDATE_DATA_WRITER:
+        return "data_writer";
+    case NMO_PROBE_CANDIDATE_DATA_WRITE_OPERATION:
+        return "data_write_operation";
+    case NMO_PROBE_CANDIDATE_DATA_WRITE_LINK:
+        return "data_write_link";
+    case NMO_PROBE_CANDIDATE_UNKNOWN:
     default:
         return "";
     }
@@ -207,21 +240,22 @@ static bool probe_is_message_behavior(nmo_context_t *ctx,
            strcmp(proto->category, "Logics/Message") == 0;
 }
 
-static const char *probe_message_role(const nmo_behavior_state_t *state)
+static nmo_probe_candidate_role_t probe_message_role(
+    const nmo_behavior_state_t *state)
 {
     if (state == NULL) {
-        return "message";
+        return NMO_PROBE_CANDIDATE_MESSAGE;
     }
     if ((state->flags & CKBEHAVIOR_MESSAGESENDER) != 0u) {
-        return "sender";
+        return NMO_PROBE_CANDIDATE_MESSAGE_SENDER;
     }
     if ((state->flags & CKBEHAVIOR_WAITSFORMESSAGE) != 0u) {
-        return "waiter";
+        return NMO_PROBE_CANDIDATE_MESSAGE_WAITER;
     }
     if ((state->flags & CKBEHAVIOR_MESSAGERECEIVER) != 0u) {
-        return "receiver";
+        return NMO_PROBE_CANDIDATE_MESSAGE_RECEIVER;
     }
-    return "message";
+    return NMO_PROBE_CANDIDATE_MESSAGE;
 }
 
 static bool probe_is_data_write_behavior(nmo_context_t *ctx,
@@ -253,6 +287,62 @@ static bool probe_is_data_write_behavior(nmo_context_t *ctx,
     return false;
 }
 
+static nmo_probe_candidate_role_t probe_role_from_legacy_text(
+    const char *role)
+{
+    if (role == NULL || role[0] == '\0') {
+        return NMO_PROBE_CANDIDATE_UNKNOWN;
+    }
+    if (strcmp(role, "sender") == 0) {
+        return NMO_PROBE_CANDIDATE_MESSAGE_SENDER;
+    }
+    if (strcmp(role, "waiter") == 0) {
+        return NMO_PROBE_CANDIDATE_MESSAGE_WAITER;
+    }
+    if (strcmp(role, "receiver") == 0) {
+        return NMO_PROBE_CANDIDATE_MESSAGE_RECEIVER;
+    }
+    if (strcmp(role, "message") == 0) {
+        return NMO_PROBE_CANDIDATE_MESSAGE;
+    }
+    if (strcmp(role, "data_writer") == 0) {
+        return NMO_PROBE_CANDIDATE_DATA_WRITER;
+    }
+    if (strcmp(role, "data_write_operation") == 0) {
+        return NMO_PROBE_CANDIDATE_DATA_WRITE_OPERATION;
+    }
+    if (strcmp(role, "data_write_link") == 0) {
+        return NMO_PROBE_CANDIDATE_DATA_WRITE_LINK;
+    }
+    return NMO_PROBE_CANDIDATE_UNKNOWN;
+}
+
+static bool probe_ensure_candidate_capacity(nmo_probe_selector_result_t *result)
+{
+    if (result == NULL) {
+        return false;
+    }
+    if (result->candidate_count < result->candidate_capacity) {
+        return true;
+    }
+    size_t new_capacity =
+        result->candidate_capacity == 0u ? 8u : result->candidate_capacity * 2u;
+    nmo_probe_selector_candidate_t *new_candidates =
+        (nmo_probe_selector_candidate_t *)realloc(
+            result->candidates,
+            new_capacity * sizeof(*new_candidates));
+    if (new_candidates == NULL) {
+        return false;
+    }
+    memset(new_candidates + result->candidate_capacity,
+           0,
+           (new_capacity - result->candidate_capacity) *
+               sizeof(*new_candidates));
+    result->candidates = new_candidates;
+    result->candidate_capacity = new_capacity;
+    return true;
+}
+
 static void probe_add_candidate(nmo_context_t *ctx,
                                 nmo_probe_selector_result_t *result,
                                 nmo_object_id_t parent_id,
@@ -262,9 +352,7 @@ static void probe_add_candidate(nmo_context_t *ctx,
                                 const nmo_behavior_state_t *state,
                                 const char *role_override)
 {
-    if (result == NULL ||
-        result->candidate_count >=
-            sizeof(result->candidates) / sizeof(result->candidates[0])) {
+    if (!probe_ensure_candidate_capacity(result)) {
         return;
     }
     const nmo_behavior_proto_t *proto =
@@ -273,20 +361,22 @@ static void probe_add_candidate(nmo_context_t *ctx,
                                          state->block_guid)
             : NULL;
     size_t index = result->candidate_count++;
+    memset(&result->candidates[index], 0, sizeof(result->candidates[index]));
     result->candidates[index].node_id = node_id;
     result->candidates[index].parent_id = parent_id;
+    result->candidates[index].boundary_behavior_id = parent_id;
     result->candidates[index].link_id = link_id;
     result->candidates[index].operation_id = operation_id;
+    result->candidates[index].confidence = 1.0;
     result->candidates[index].bb_guid =
         state != NULL ? state->block_guid : NMO_GUID_NULL;
     snprintf(result->candidates[index].proto_name,
              sizeof(result->candidates[index].proto_name),
              "%s",
              proto != NULL && proto->name != NULL ? proto->name : "");
-    snprintf(result->candidates[index].role,
-             sizeof(result->candidates[index].role),
-             "%s",
-             role_override != NULL ? role_override : probe_message_role(state));
+    result->candidates[index].role =
+        role_override != NULL ? probe_role_from_legacy_text(role_override)
+                              : probe_message_role(state);
 }
 
 static void probe_append_id(char *buffer,
@@ -411,9 +501,21 @@ static void probe_apply_selected_link(nmo_probe_selector_result_t *result,
     result->selected_link_id = link_id;
     result->from_io_id = link->in_io_id;
     result->to_io_id = link->out_io_id;
+    result->safe_insertion.selected = true;
+    result->safe_insertion.selected_node_id = result->selected_node_id;
+    result->safe_insertion.selected_operation_id =
+        result->selected_operation_id;
+    result->safe_insertion.selected_link_id = link_id;
+    result->safe_insertion.remove_link_id = link_id;
+    result->safe_insertion.insert_from_io_id = link->in_io_id;
+    result->safe_insertion.insert_to_io_id = link->out_io_id;
     if (!result->has_delay && link->activation_delay > 0) {
         result->delay = (uint32_t)link->activation_delay;
         result->has_delay = true;
+    }
+    if (result->has_delay) {
+        result->safe_insertion.has_preserved_delay = true;
+        result->safe_insertion.preserved_delay = result->delay;
     }
 }
 
@@ -725,6 +827,7 @@ static nmo_status_t probe_analyze_message(nmo_context_t *ctx,
                 "debug probe message-node target is not a message behavior");
         }
         result->selected_node_id = request->message_node_id;
+        result->safe_insertion.selected_node_id = request->message_node_id;
         probe_add_candidate(ctx,
                             result,
                             request->behavior_id,
@@ -780,6 +883,10 @@ static nmo_status_t probe_analyze_message(nmo_context_t *ctx,
             }
             result->from_io_id = request->from_io_id;
             result->to_io_id = request->to_io_id;
+            result->safe_insertion.selected = true;
+            result->safe_insertion.selected_node_id = result->selected_node_id;
+            result->safe_insertion.insert_from_io_id = request->from_io_id;
+            result->safe_insertion.insert_to_io_id = request->to_io_id;
             probe_set_status(result, mode, NMO_PROBE_SELECTOR_STATUS_SELECTED,
                              NULL);
             return NMO_OK;
@@ -850,6 +957,7 @@ static nmo_status_t probe_analyze_message(nmo_context_t *ctx,
     const nmo_behavior_state_t *message =
         probe_behavior_state_by_id(repo, selected_id);
     result->selected_node_id = selected_id;
+    result->safe_insertion.selected_node_id = selected_id;
     return probe_select_safe_link(repo,
                                   parent,
                                   message,
@@ -898,6 +1006,7 @@ static nmo_status_t probe_analyze_data_cell(
                 "debug probe write-node target is not a data write behavior");
         }
         result->selected_node_id = request->write_node_id;
+        result->safe_insertion.selected_node_id = request->write_node_id;
         probe_add_candidate(ctx,
                             result,
                             request->behavior_id,
@@ -1038,6 +1147,11 @@ static nmo_status_t probe_analyze_data_cell(
         } else {
             result->from_io_id = request->from_io_id;
             result->to_io_id = request->to_io_id;
+            result->safe_insertion.selected = true;
+            result->safe_insertion.selected_operation_id =
+                request->write_operation_id;
+            result->safe_insertion.insert_from_io_id = request->from_io_id;
+            result->safe_insertion.insert_to_io_id = request->to_io_id;
             probe_add_candidate(ctx,
                                 result,
                                 request->behavior_id,
@@ -1048,6 +1162,8 @@ static nmo_status_t probe_analyze_data_cell(
                                 "data_write_operation");
         }
         result->selected_operation_id = request->write_operation_id;
+        result->safe_insertion.selected_operation_id =
+            request->write_operation_id;
         probe_set_status(result,
                          NMO_PROBE_SELECTOR_MODE_EXPLICIT_OPERATION,
                          NMO_PROBE_SELECTOR_STATUS_SELECTED,
@@ -1201,6 +1317,8 @@ static nmo_status_t probe_analyze_data_cell(
     if (candidate_count == 1u) {
         if (selected_operation_id != 0u && selected_link != NULL) {
             result->selected_operation_id = selected_operation_id;
+            result->safe_insertion.selected_operation_id =
+                selected_operation_id;
             probe_apply_selected_link(result, selected_link_id, selected_link);
             probe_set_status(result,
                              NMO_PROBE_SELECTOR_MODE_AUTO,
@@ -1211,6 +1329,7 @@ static nmo_status_t probe_analyze_data_cell(
         const nmo_behavior_state_t *writer =
             probe_behavior_state_by_id(repo, selected_id);
         result->selected_node_id = selected_id;
+        result->safe_insertion.selected_node_id = selected_id;
         return probe_select_safe_link(
             repo,
             parent,
