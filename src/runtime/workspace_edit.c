@@ -1673,7 +1673,25 @@ static nmo_status_t workspace_obj_mesh_build(
     if (obj_data->face_count == 0 && obj_data->line_count == 0) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
+    if ((obj_data->face_count > 0 && obj_data->faces == NULL) ||
+        (obj_data->line_count > 0 && obj_data->lines == NULL)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
     if (obj_data->material_name_count > UINT16_MAX) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (obj_data->face_count > SIZE_MAX / 3u ||
+        obj_data->line_count > SIZE_MAX / 2u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    size_t face_vertex_count = obj_data->face_count * 3u;
+    size_t line_vertex_count = obj_data->line_count * 2u;
+    if (face_vertex_count > SIZE_MAX - line_vertex_count) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    size_t max_vertices = face_vertex_count + line_vertex_count;
+    if (max_vertices == 0 || max_vertices > 65535u) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
@@ -1681,14 +1699,6 @@ static nmo_status_t workspace_obj_mesh_build(
     uint32_t material_group_count =
         workspace_obj_mesh_material_group_count(obj_data, &material_offset);
     if (material_group_count > UINT16_MAX) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    size_t max_vertices = obj_data->face_count * 3u + obj_data->line_count * 2u;
-    if (max_vertices == 0 || max_vertices > 65535u) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (max_vertices > SIZE_MAX / 2u) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
