@@ -3742,6 +3742,29 @@ TEST(cli, debug_probe_data_cell_logger_reports_explicit_write_node) {
     ASSERT_STR_EQ("add_behavior_link",
                   yyjson_get_str(yyjson_obj_get(
                       yyjson_arr_get(operations, 4), "op")));
+    yyjson_val *diff = yyjson_obj_get(data, "diff");
+    ASSERT_TRUE(diff && yyjson_is_obj(diff));
+    yyjson_val *graph_edge_diff = yyjson_obj_get(diff, "graph_edge_diff");
+    ASSERT_TRUE(graph_edge_diff && yyjson_is_obj(graph_edge_diff));
+    yyjson_val *deleted = yyjson_obj_get(graph_edge_diff, "deleted");
+    ASSERT_TRUE(deleted && yyjson_is_arr(deleted));
+    yyjson_val *deleted_edge = yyjson_arr_get(deleted, 0);
+    ASSERT_TRUE(deleted_edge && yyjson_is_obj(deleted_edge));
+    ASSERT_EQ(3874u,
+              yyjson_get_uint(yyjson_obj_get(deleted_edge, "object_id")));
+    yyjson_val *before = yyjson_obj_get(deleted_edge, "before");
+    ASSERT_TRUE(before && yyjson_is_obj(before));
+    ASSERT_EQ(3839u, yyjson_get_uint(yyjson_obj_get(before, "from_io_id")));
+    ASSERT_EQ(3861u, yyjson_get_uint(yyjson_obj_get(before, "to_io_id")));
+    yyjson_val *created = yyjson_obj_get(graph_edge_diff, "created");
+    ASSERT_TRUE(created && yyjson_is_arr(created));
+    ASSERT_TRUE(yyjson_arr_size(created) >= 2u);
+    yyjson_val *created_edge = yyjson_arr_get(created, 0);
+    ASSERT_TRUE(created_edge && yyjson_is_obj(created_edge));
+    yyjson_val *after = yyjson_obj_get(created_edge, "after");
+    ASSERT_TRUE(after && yyjson_is_obj(after));
+    ASSERT_TRUE(yyjson_obj_get(after, "from_io_id") != NULL);
+    ASSERT_TRUE(yyjson_obj_get(after, "to_io_id") != NULL);
     yyjson_doc_free(doc);
 }
 
