@@ -354,6 +354,7 @@ set(NMO_BEHAVIOR_SOURCES
     src/behavior/behavior_view.c
     src/behavior/edit_plan.c
     src/behavior/edit_plan_json.c
+    src/behavior/probe_analyzer.c
     src/behavior/semantic_validator.c
     src/behavior/script_edit.c
     src/behavior/script_edit_graph.c
