@@ -17,6 +17,7 @@
 
 #include "behavior/nmo_edit_plan.h"
 #include "behavior/nmo_behavior_registry.h"
+#include "behavior/nmo_probe_analyzer.h"
 #include "nmo.h"
 #include "document/nmo_document_stats.h"
 #include "document/nmo_document_save.h"
@@ -1020,6 +1021,108 @@ static size_t debug_probe_select_touching_links(
     return count;
 }
 
+static void debug_probe_apply_selector_result(
+    nmo_debug_probe_args_t *args,
+    const nmo_probe_selector_result_t *result)
+{
+    if (args == NULL || result == NULL) {
+        return;
+    }
+    debug_probe_selector_set_mode_status(
+        args,
+        nmo_probe_selector_mode_name(result->mode),
+        nmo_probe_selector_status_name(result->status),
+        result->rejection_code[0] != '\0' ? result->rejection_code : NULL);
+    args->selector_selected_node_id = result->selected_node_id;
+    args->selector_selected_link_id = result->selected_link_id;
+    args->selector_selected_operation_id = result->selected_operation_id;
+    args->selector_candidate_count = 0u;
+    for (size_t i = 0;
+         i < result->candidate_count &&
+         i < sizeof(args->selector_candidates) /
+                 sizeof(args->selector_candidates[0]);
+         ++i) {
+        args->selector_candidates[i].node_id = result->candidates[i].node_id;
+        args->selector_candidates[i].parent_id =
+            result->candidates[i].parent_id;
+        args->selector_candidates[i].bb_guid = result->candidates[i].bb_guid;
+        snprintf(args->selector_candidates[i].proto_name,
+                 sizeof(args->selector_candidates[i].proto_name),
+                 "%s",
+                 result->candidates[i].proto_name);
+        snprintf(args->selector_candidates[i].role,
+                 sizeof(args->selector_candidates[i].role),
+                 "%s",
+                 result->candidates[i].role);
+        ++args->selector_candidate_count;
+    }
+    if (result->selected_link_id != 0u && args->remove_link_id == 0u) {
+        args->remove_link_id = result->selected_link_id;
+    }
+    if (result->from_io_id != 0u && args->from_io_id == 0u) {
+        args->from_io_id = result->from_io_id;
+    }
+    if (result->to_io_id != 0u && args->to_io_id == 0u) {
+        args->to_io_id = result->to_io_id;
+    }
+    if (result->has_delay && !args->has_delay) {
+        args->delay = result->delay;
+        args->has_delay = true;
+    }
+    if (strcmp(args->kind, "message-logger") == 0 &&
+        result->selected_node_id != 0u &&
+        args->message_node_id == 0u) {
+        args->message_node_id = result->selected_node_id;
+    }
+    if (strcmp(args->kind, "data-cell-logger") == 0) {
+        if (result->selected_node_id != 0u && args->write_node_id == 0u) {
+            args->write_node_id = result->selected_node_id;
+        }
+        if (result->selected_operation_id != 0u &&
+            args->write_operation_id == 0u) {
+            args->write_operation_id = result->selected_operation_id;
+        }
+    }
+}
+
+static nmo_status_t debug_probe_analyze_core_selector(
+    nmo_cmd_ctx_t *ctx,
+    nmo_debug_probe_args_t *args,
+    nmo_probe_selector_kind_t kind)
+{
+    if (ctx == NULL || args == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_probe_selector_request_t request;
+    nmo_probe_selector_result_t result;
+    nmo_probe_selector_request_init(&request);
+    nmo_probe_selector_result_init(&result);
+    request.kind = kind;
+    request.behavior_id = args->behavior_id;
+    request.message_node_id = args->message_node_id;
+    request.write_node_id = args->write_node_id;
+    request.write_operation_id = args->write_operation_id;
+    request.write_link_id = args->write_link_id;
+    request.remove_link_id = args->remove_link_id;
+    request.from_io_id = args->from_io_id;
+    request.to_io_id = args->to_io_id;
+    request.has_delay = args->has_delay;
+    request.delay = args->delay;
+
+    nmo_status_t status =
+        nmo_probe_analyze_selector(ctx->workspace, &request, &result);
+    debug_probe_apply_selector_result(args, &result);
+    if (status != NMO_OK) {
+        NMO_RETURN_ERROR(
+            status,
+            NMO_SEVERITY_ERROR,
+            "%s",
+            result.message[0] != '\0' ? result.message
+                                      : "debug probe selector failed");
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t debug_probe_validate_targets(
     nmo_cmd_ctx_t *ctx,
     nmo_debug_probe_args_t *args,
@@ -1171,6 +1274,8 @@ static nmo_status_t debug_probe_analyze_message_selector(
         args->message_node_id != 0u) {
         return NMO_OK;
     }
+    return debug_probe_analyze_core_selector(
+        ctx, args, NMO_PROBE_SELECTOR_MESSAGE);
 
     nmo_object_repository_t *repo = nmo_tool_owner_repository(ctx->workspace);
     nmo_object_t *behavior_obj = repo != NULL
@@ -1257,6 +1362,8 @@ static nmo_status_t debug_probe_analyze_data_cell_selector(
         strcmp(args->kind, "data-cell-logger") != 0) {
         return NMO_OK;
     }
+    return debug_probe_analyze_core_selector(
+        ctx, args, NMO_PROBE_SELECTOR_DATA_CELL_WRITE);
 
     unsigned explicit_count = 0u;
     if (args->write_node_id != 0u) {
@@ -1851,13 +1958,13 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
     nmo_edit_report_init(&args->report);
     status = debug_probe_infer_removed_link_endpoints(ctx, args);
     if (status == NMO_OK) {
+        status = debug_probe_validate_targets(ctx, args, spec);
+    }
+    if (status == NMO_OK) {
         status = debug_probe_analyze_message_selector(ctx, args);
     }
     if (status == NMO_OK) {
         status = debug_probe_analyze_data_cell_selector(ctx, args);
-    }
-    if (status == NMO_OK) {
-        status = debug_probe_validate_targets(ctx, args, spec);
     }
     if (status == NMO_OK) {
         status = debug_probe_select_message_link(ctx, args);
