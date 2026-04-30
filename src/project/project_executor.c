@@ -3,6 +3,7 @@
 #include "document/nmo_document.h"
 #include "document/nmo_document_save.h"
 #include "object/nmo_class_ids.h"
+#include "project_internal.h"
 #include "project/nmo_project_plan.h"
 #include "runtime/nmo_context.h"
 #include "../runtime/runtime_internal.h"
@@ -96,6 +97,13 @@ nmo_status_t nmo_project_executor_execute_to_file(
         nmo_project_plan_document_name(plan),
         (nmo_guid_t){0, 0},
         &root_id);
+    if (status != NMO_OK) {
+        nmo_document_destroy(document);
+        nmo_context_release(ctx);
+        return status;
+    }
+
+    status = nmo_project_author_scenes(document, plan);
     if (status != NMO_OK) {
         nmo_document_destroy(document);
         nmo_context_release(ctx);

@@ -15,6 +15,11 @@ extern "C" {
 
 typedef struct nmo_project_plan nmo_project_plan_t;
 
+typedef struct nmo_project_scene_desc {
+    uint32_t handle;
+    const char *name;
+} nmo_project_scene_desc_t;
+
 NMO_API nmo_status_t nmo_project_plan_create(nmo_project_plan_t **out_plan);
 NMO_API void nmo_project_plan_destroy(nmo_project_plan_t *plan);
 
@@ -31,6 +36,11 @@ NMO_API const char *nmo_project_plan_document_name(
 
 NMO_API size_t nmo_project_plan_scene_count(
     const nmo_project_plan_t *plan);
+
+NMO_API nmo_status_t nmo_project_plan_get_scene(
+    const nmo_project_plan_t *plan,
+    size_t index,
+    nmo_project_scene_desc_t *out_scene);
 
 #ifdef __cplusplus
 }
