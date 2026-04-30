@@ -34,6 +34,7 @@
 #include "format/nmo_data.h"
 #include "format/nmo_object.h"
 #include "object/nmo_statesave_ids.h"
+#include "object/nmo_serialize_context.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
 #include "core/nmo_guid.h"
@@ -45,6 +46,7 @@
 
 #include <stdbool.h>
 #include <ctype.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1413,6 +1415,554 @@ static nmo_status_t workspace_edit_alloc_cube_mesh(
     *out_vertex_specular = vertex_specular;
     *out_groups = groups;
     return NMO_OK;
+}
+
+typedef struct workspace_obj_mesh_slot {
+    int32_t pos_idx;
+    int32_t uv_idx;
+    int32_t normal_idx;
+    uint16_t idx_plus1;
+} workspace_obj_mesh_slot_t;
+
+static uint32_t workspace_obj_mesh_rgb_to_argb(const float *rgb)
+{
+    uint32_t r = workspace_edit_float_color_channel(rgb[0]);
+    uint32_t g = workspace_edit_float_color_channel(rgb[1]);
+    uint32_t b = workspace_edit_float_color_channel(rgb[2]);
+    return 0xFF000000u | (r << 16) | (g << 8) | b;
+}
+
+static size_t workspace_obj_mesh_tuple_hash(
+    int32_t pos_idx,
+    int32_t uv_idx,
+    int32_t normal_idx,
+    size_t capacity)
+{
+    uint64_t h = 1469598103934665603ULL;
+    h ^= (uint32_t)pos_idx;
+    h *= 1099511628211ULL;
+    h ^= (uint32_t)uv_idx;
+    h *= 1099511628211ULL;
+    h ^= (uint32_t)normal_idx;
+    h *= 1099511628211ULL;
+    return (size_t)(h % capacity);
+}
+
+static nmo_status_t workspace_obj_mesh_validate_material_id(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t material_id)
+{
+    if (material_id == 0 || material_id == NMO_OBJECT_ID_NONE) {
+        return NMO_OK;
+    }
+    return workspace_edit_require_object_class(edit, material_id, NMO_CID_MATERIAL);
+}
+
+static nmo_status_t workspace_obj_mesh_validate_materials(
+    nmo_workspace_edit_t *edit,
+    const nmo_asset_mesh_import_options_t *options)
+{
+    if (options == NULL) {
+        return NMO_OK;
+    }
+    NMO_RETURN_IF_ERROR(workspace_obj_mesh_validate_material_id(
+        edit,
+        options->default_material_id));
+    if (options->material_count > 0 && options->materials == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    for (size_t i = 0; i < options->material_count; ++i) {
+        NMO_RETURN_IF_ERROR(workspace_obj_mesh_validate_material_id(
+            edit,
+            options->materials[i].material_id));
+    }
+    return NMO_OK;
+}
+
+static nmo_object_id_t workspace_obj_mesh_material_for_name(
+    const nmo_asset_mesh_import_options_t *options,
+    const char *name)
+{
+    if (options == NULL) {
+        return NMO_OBJECT_ID_NONE;
+    }
+    if (name != NULL && options->materials != NULL) {
+        for (size_t i = 0; i < options->material_count; ++i) {
+            if (options->materials[i].name != NULL &&
+                strcmp(options->materials[i].name, name) == 0) {
+                return options->materials[i].material_id;
+            }
+        }
+    }
+    return options->default_material_id;
+}
+
+static void workspace_obj_mesh_compute_bounds(
+    const nmo_obj_data_t *obj_data,
+    nmo_vector_t *center,
+    nmo_vector_t *box_min,
+    nmo_vector_t *box_max,
+    float *radius)
+{
+    if (obj_data == NULL || obj_data->positions == NULL ||
+        obj_data->pos_count == 0) {
+        *center = (nmo_vector_t){0.0f, 0.0f, 0.0f};
+        *box_min = (nmo_vector_t){0.0f, 0.0f, 0.0f};
+        *box_max = (nmo_vector_t){0.0f, 0.0f, 0.0f};
+        *radius = 0.0f;
+        return;
+    }
+
+    float minx = obj_data->positions[0];
+    float miny = obj_data->positions[1];
+    float minz = obj_data->positions[2];
+    float maxx = minx;
+    float maxy = miny;
+    float maxz = minz;
+
+    for (size_t i = 0; i < obj_data->pos_count; ++i) {
+        float x = obj_data->positions[i * 3u + 0u];
+        float y = obj_data->positions[i * 3u + 1u];
+        float z = obj_data->positions[i * 3u + 2u];
+        if (x < minx) {
+            minx = x;
+        }
+        if (y < miny) {
+            miny = y;
+        }
+        if (z < minz) {
+            minz = z;
+        }
+        if (x > maxx) {
+            maxx = x;
+        }
+        if (y > maxy) {
+            maxy = y;
+        }
+        if (z > maxz) {
+            maxz = z;
+        }
+    }
+
+    *box_min = (nmo_vector_t){minx, miny, minz};
+    *box_max = (nmo_vector_t){maxx, maxy, maxz};
+    *center = (nmo_vector_t){
+        (minx + maxx) * 0.5f,
+        (miny + maxy) * 0.5f,
+        (minz + maxz) * 0.5f,
+    };
+
+    float max_dist_sq = 0.0f;
+    for (size_t i = 0; i < obj_data->pos_count; ++i) {
+        float dx = obj_data->positions[i * 3u + 0u] - center->x;
+        float dy = obj_data->positions[i * 3u + 1u] - center->y;
+        float dz = obj_data->positions[i * 3u + 2u] - center->z;
+        float dist_sq = dx * dx + dy * dy + dz * dz;
+        if (dist_sq > max_dist_sq) {
+            max_dist_sq = dist_sq;
+        }
+    }
+    *radius = sqrtf(max_dist_sq);
+}
+
+static nmo_status_t workspace_obj_mesh_get_or_add_vertex(
+    const nmo_obj_data_t *obj_data,
+    const nmo_obj_face_vertex_t *fv,
+    nmo_vertex_t *vertices,
+    uint32_t *vertex_colors,
+    uint32_t *vertex_specular,
+    workspace_obj_mesh_slot_t *dedup_table,
+    size_t dedup_capacity,
+    uint32_t *unique_count,
+    uint16_t *out_index)
+{
+    int32_t pi = fv->pos_idx;
+    int32_t ui = fv->uv_idx;
+    int32_t ni = fv->normal_idx;
+    size_t slot = workspace_obj_mesh_tuple_hash(pi, ui, ni, dedup_capacity);
+
+    for (;;) {
+        workspace_obj_mesh_slot_t *entry = &dedup_table[slot];
+        if (entry->idx_plus1 == 0) {
+            if (*unique_count >= 65535u) {
+                return NMO_ERR_INVALID_ARGUMENT;
+            }
+
+            nmo_vertex_t *vertex = &vertices[*unique_count];
+            memset(vertex, 0, sizeof(*vertex));
+
+            if (pi >= 0 && (size_t)pi < obj_data->pos_count) {
+                vertex->position.x = obj_data->positions[(size_t)pi * 3u + 0u];
+                vertex->position.y = obj_data->positions[(size_t)pi * 3u + 1u];
+                vertex->position.z = obj_data->positions[(size_t)pi * 3u + 2u];
+            }
+            if (ui >= 0 && (size_t)ui < obj_data->uv_count) {
+                vertex->uv.x = obj_data->uvs[(size_t)ui * 2u + 0u];
+                vertex->uv.y = obj_data->uvs[(size_t)ui * 2u + 1u];
+            }
+            if (ni >= 0 && (size_t)ni < obj_data->normal_count) {
+                vertex->normal.x = obj_data->normals[(size_t)ni * 3u + 0u];
+                vertex->normal.y = obj_data->normals[(size_t)ni * 3u + 1u];
+                vertex->normal.z = obj_data->normals[(size_t)ni * 3u + 2u];
+            }
+
+            uint32_t color = 0xFFFFFFFFu;
+            if (pi >= 0 && obj_data->position_has_color != NULL &&
+                obj_data->colors != NULL &&
+                (size_t)pi < obj_data->pos_count &&
+                obj_data->position_has_color[pi]) {
+                color = workspace_obj_mesh_rgb_to_argb(
+                    &obj_data->colors[(size_t)pi * 3u]);
+            }
+            vertex_colors[*unique_count] = color;
+            vertex_specular[*unique_count] = 0xFF000000u;
+
+            entry->pos_idx = pi;
+            entry->uv_idx = ui;
+            entry->normal_idx = ni;
+            entry->idx_plus1 = (uint16_t)(*unique_count + 1u);
+            *out_index = (uint16_t)*unique_count;
+            (*unique_count)++;
+            return NMO_OK;
+        }
+
+        if (entry->pos_idx == pi &&
+            entry->uv_idx == ui &&
+            entry->normal_idx == ni) {
+            *out_index = (uint16_t)(entry->idx_plus1 - 1u);
+            return NMO_OK;
+        }
+
+        slot = (slot + 1u) % dedup_capacity;
+    }
+}
+
+static uint32_t workspace_obj_mesh_material_group_count(
+    const nmo_obj_data_t *obj_data,
+    uint32_t *out_material_offset)
+{
+    bool has_unassigned = false;
+    for (size_t i = 0; i < obj_data->face_count; ++i) {
+        if (obj_data->faces[i].material_group == NMO_OBJ_NO_MATERIAL) {
+            has_unassigned = true;
+            break;
+        }
+    }
+    uint32_t offset = has_unassigned ? 1u : 0u;
+    uint32_t count = (uint32_t)obj_data->material_name_count + offset;
+    if (obj_data->face_count > 0 && count == 0) {
+        count = 1u;
+        offset = 1u;
+    }
+    *out_material_offset = offset;
+    return count;
+}
+
+static nmo_status_t workspace_obj_mesh_build(
+    nmo_arena_t *scratch,
+    nmo_arena_t *document_arena,
+    const nmo_obj_data_t *obj_data,
+    const nmo_asset_mesh_import_options_t *options,
+    nmo_mesh_state_t *out_state)
+{
+    if (scratch == NULL || document_arena == NULL ||
+        obj_data == NULL || out_state == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (obj_data->face_count == 0 && obj_data->line_count == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (obj_data->material_name_count > UINT16_MAX) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    uint32_t material_offset = 0;
+    uint32_t material_group_count =
+        workspace_obj_mesh_material_group_count(obj_data, &material_offset);
+    if (material_group_count > UINT16_MAX) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t max_vertices = obj_data->face_count * 3u + obj_data->line_count * 2u;
+    if (max_vertices == 0 || max_vertices > 65535u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (max_vertices > SIZE_MAX / 2u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_vertex_t *vertices = (nmo_vertex_t *)nmo_arena_alloc(
+        document_arena,
+        max_vertices * sizeof(*vertices),
+        _Alignof(nmo_vertex_t));
+    uint32_t *vertex_colors = (uint32_t *)nmo_arena_alloc(
+        document_arena,
+        max_vertices * sizeof(*vertex_colors),
+        _Alignof(uint32_t));
+    uint32_t *vertex_specular = (uint32_t *)nmo_arena_alloc(
+        document_arena,
+        max_vertices * sizeof(*vertex_specular),
+        _Alignof(uint32_t));
+    if (vertices == NULL || vertex_colors == NULL || vertex_specular == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    nmo_face_t *faces = NULL;
+    uint16_t *face_indices = NULL;
+    if (obj_data->face_count > 0) {
+        faces = (nmo_face_t *)nmo_arena_alloc(
+            document_arena,
+            obj_data->face_count * sizeof(*faces),
+            _Alignof(nmo_face_t));
+        face_indices = (uint16_t *)nmo_arena_alloc(
+            document_arena,
+            obj_data->face_count * 3u * sizeof(*face_indices),
+            _Alignof(uint16_t));
+        if (faces == NULL || face_indices == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+    }
+
+    uint16_t *line_indices = NULL;
+    if (obj_data->line_count > 0) {
+        line_indices = (uint16_t *)nmo_arena_alloc(
+            document_arena,
+            obj_data->line_count * 2u * sizeof(*line_indices),
+            _Alignof(uint16_t));
+        if (line_indices == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+    }
+
+    nmo_material_group_t *material_groups = NULL;
+    if (material_group_count > 0) {
+        material_groups = (nmo_material_group_t *)nmo_arena_alloc(
+            document_arena,
+            material_group_count * sizeof(*material_groups),
+            _Alignof(nmo_material_group_t));
+        if (material_groups == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        memset(material_groups, 0, material_group_count * sizeof(*material_groups));
+        for (uint32_t i = 0; i < material_group_count; ++i) {
+            material_groups[i].material_id =
+                options != NULL ? options->default_material_id : NMO_OBJECT_ID_NONE;
+        }
+        for (size_t i = 0; i < obj_data->material_name_count; ++i) {
+            uint32_t group_index = (uint32_t)i + material_offset;
+            if (group_index < material_group_count) {
+                material_groups[group_index].material_id =
+                    workspace_obj_mesh_material_for_name(
+                        options,
+                        obj_data->material_names != NULL
+                            ? obj_data->material_names[i]
+                            : NULL);
+            }
+        }
+    }
+
+    size_t dedup_capacity = max_vertices * 2u;
+    if (dedup_capacity < 64u) {
+        dedup_capacity = 64u;
+    }
+    workspace_obj_mesh_slot_t *dedup_table =
+        (workspace_obj_mesh_slot_t *)nmo_arena_alloc(
+            scratch,
+            dedup_capacity * sizeof(*dedup_table),
+            _Alignof(workspace_obj_mesh_slot_t));
+    if (dedup_table == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    memset(dedup_table, 0, dedup_capacity * sizeof(*dedup_table));
+
+    uint32_t unique_count = 0;
+    for (size_t face_index = 0; face_index < obj_data->face_count; ++face_index) {
+        const nmo_obj_face_t *obj_face = &obj_data->faces[face_index];
+        for (size_t vertex_index = 0; vertex_index < 3u; ++vertex_index) {
+            uint16_t out_index = 0;
+            NMO_RETURN_IF_ERROR(workspace_obj_mesh_get_or_add_vertex(
+                obj_data,
+                &obj_face->verts[vertex_index],
+                vertices,
+                vertex_colors,
+                vertex_specular,
+                dedup_table,
+                dedup_capacity,
+                &unique_count,
+                &out_index));
+            face_indices[face_index * 3u + vertex_index] = out_index;
+        }
+
+        nmo_vertex_t *v0 = &vertices[face_indices[face_index * 3u + 0u]];
+        nmo_vertex_t *v1 = &vertices[face_indices[face_index * 3u + 1u]];
+        nmo_vertex_t *v2 = &vertices[face_indices[face_index * 3u + 2u]];
+        float e1x = v1->position.x - v0->position.x;
+        float e1y = v1->position.y - v0->position.y;
+        float e1z = v1->position.z - v0->position.z;
+        float e2x = v2->position.x - v0->position.x;
+        float e2y = v2->position.y - v0->position.y;
+        float e2z = v2->position.z - v0->position.z;
+        float nx = e1y * e2z - e1z * e2y;
+        float ny = e1z * e2x - e1x * e2z;
+        float nz = e1x * e2y - e1y * e2x;
+        float len = sqrtf(nx * nx + ny * ny + nz * nz);
+        if (len > 1e-8f) {
+            nx /= len;
+            ny /= len;
+            nz /= len;
+        }
+
+        faces[face_index].normal = (nmo_vector_t){nx, ny, nz};
+        faces[face_index].material_group_idx =
+            obj_face->material_group == NMO_OBJ_NO_MATERIAL
+                ? 0u
+                : (uint16_t)(obj_face->material_group + material_offset);
+        faces[face_index].channel_mask = 0u;
+    }
+
+    for (size_t line_index = 0; line_index < obj_data->line_count; ++line_index) {
+        const nmo_obj_line_t *obj_line = &obj_data->lines[line_index];
+        for (size_t vertex_index = 0; vertex_index < 2u; ++vertex_index) {
+            uint16_t out_index = 0;
+            NMO_RETURN_IF_ERROR(workspace_obj_mesh_get_or_add_vertex(
+                obj_data,
+                &obj_line->verts[vertex_index],
+                vertices,
+                vertex_colors,
+                vertex_specular,
+                dedup_table,
+                dedup_capacity,
+                &unique_count,
+                &out_index));
+            line_indices[line_index * 2u + vertex_index] = out_index;
+        }
+    }
+
+    nmo_vector_t center = {0};
+    nmo_vector_t box_min = {0};
+    nmo_vector_t box_max = {0};
+    float radius = 0.0f;
+    workspace_obj_mesh_compute_bounds(
+        obj_data,
+        &center,
+        &box_min,
+        &box_max,
+        &radius);
+
+    memset(out_state, 0, sizeof(*out_state));
+    out_state->flags = 0u;
+    out_state->bary_center = center;
+    out_state->radius = radius;
+    out_state->local_box_min = box_min;
+    out_state->local_box_max = box_max;
+    out_state->face_count = (uint32_t)obj_data->face_count;
+    out_state->faces = faces;
+    out_state->face_vertex_indices = face_indices;
+    out_state->line_count = (uint32_t)obj_data->line_count;
+    out_state->line_indices = line_indices;
+    out_state->vertex_count = unique_count;
+    out_state->vertices = vertices;
+    out_state->vertex_colors = vertex_colors;
+    out_state->vertex_specular = vertex_specular;
+    out_state->vertex_weights = NULL;
+    out_state->vertex_weight_count = 0u;
+    out_state->material_group_count = material_group_count;
+    out_state->material_groups = material_groups;
+    out_state->material_channel_count = 0u;
+    out_state->material_channels = NULL;
+    out_state->is_valid = true;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_asset_edit_set_obj_mesh(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t mesh_id,
+    const nmo_obj_data_t *obj_data,
+    const nmo_asset_mesh_import_options_t *options)
+{
+    if (edit == NULL || mesh_id == 0 || obj_data == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_t *mesh_object = NULL;
+    nmo_mesh_state_t *state = NULL;
+    nmo_status_t status = workspace_edit_find_typed_object(
+        edit,
+        mesh_id,
+        NMO_CID_MESH,
+        &mesh_object,
+        (void **)&state);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    status = workspace_obj_mesh_validate_materials(edit, options);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    nmo_arena_t *document_arena =
+        nmo_workspace_internal_document_arena(edit->workspace);
+    if (document_arena == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_arena_t *scratch = nmo_arena_create(NULL, 0);
+    if (scratch == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    nmo_mesh_state_t next = {0};
+    status = workspace_obj_mesh_build(
+        scratch,
+        document_arena,
+        obj_data,
+        options,
+        &next);
+    if (status == NMO_OK) {
+        status = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
+    }
+    if (status == NMO_OK) {
+        status = nmo_workspace_edit_snapshot_object_chunk(edit, mesh_id);
+    }
+
+    nmo_chunk_t *chunk = NULL;
+    if (status == NMO_OK) {
+        *state = next;
+        chunk = nmo_object_get_chunk(mesh_object);
+        if (chunk == NULL) {
+            chunk = nmo_chunk_create(document_arena);
+            if (chunk == NULL) {
+                status = NMO_ERR_NOMEM;
+            } else {
+                status = nmo_object_set_chunk(mesh_object, chunk);
+            }
+        }
+    }
+    if (status == NMO_OK) {
+        chunk->class_id = NMO_CID_MESH;
+        chunk->chunk_class_id = (uint8_t)(NMO_CID_MESH & 0xFFu);
+        chunk->chunk_version = 7u;
+        nmo_chunk_set_data_version(chunk, 9u);
+        chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        status = nmo_chunk_start_write(chunk);
+    }
+    if (status == NMO_OK) {
+        nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+            document_arena,
+            nmo_workspace_internal_repository(edit->workspace),
+            NMO_SERIALIZE_FLAG_FILE_MODE,
+            0);
+        status = nmo_mesh_serialize(state, chunk, NULL, &ser_ctx);
+    }
+    if (status == NMO_OK) {
+        nmo_workspace_edit_mark(
+            edit,
+            NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
+    }
+
+    nmo_arena_destroy(scratch);
+    return status;
 }
 
 nmo_status_t nmo_asset_edit_set_primitive_mesh(
