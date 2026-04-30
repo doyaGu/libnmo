@@ -226,6 +226,39 @@ TEST(probe_analyzer, reports_operation_write_site_candidates)
     probe_fixture_dispose(&fixture);
 }
 
+TEST(probe_analyzer, infers_auto_data_writer_cell_metadata)
+{
+    probe_fixture_t fixture;
+    probe_fixture_init(&fixture);
+
+    nmo_probe_selector_request_t request;
+    nmo_probe_selector_request_init(&request);
+    request.kind = NMO_PROBE_SELECTOR_DATA_CELL_WRITE;
+    request.behavior_id = 4692u;
+    request.dataarray_id = 6067u;
+    request.row = 0u;
+    request.col = 1u;
+    request.has_data_cell = true;
+
+    nmo_probe_selector_result_t result;
+    nmo_probe_selector_result_init(&result);
+    ASSERT_EQ(NMO_OK,
+              nmo_probe_analyze_selector(fixture.workspace, &request, &result));
+
+    ASSERT_EQ(NMO_PROBE_SELECTOR_MODE_AUTO, result.mode);
+    ASSERT_EQ(NMO_PROBE_SELECTOR_STATUS_SELECTED, result.status);
+    ASSERT_EQ(1u, result.candidate_count);
+    ASSERT_EQ(NMO_PROBE_CANDIDATE_DATA_WRITER, result.candidates[0].role);
+    ASSERT_EQ(6067u, result.candidates[0].dataarray_id);
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_STRING,
+                                result.candidates[0].column_type_guid));
+    ASSERT_TRUE(result.safe_insertion.selected);
+    ASSERT_EQ(4689u, result.safe_insertion.remove_link_id);
+
+    nmo_probe_analysis_dispose(&result);
+    probe_fixture_dispose(&fixture);
+}
+
 TEST(probe_analyzer, rejects_operation_write_site_outside_boundary)
 {
     probe_fixture_t fixture;
@@ -298,6 +331,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(probe_analyzer, selects_unique_message_candidate_and_link);
     REGISTER_TEST(probe_analyzer, resolves_explicit_operation_write_site);
     REGISTER_TEST(probe_analyzer, reports_operation_write_site_candidates);
+    REGISTER_TEST(probe_analyzer, infers_auto_data_writer_cell_metadata);
     REGISTER_TEST(probe_analyzer, rejects_operation_write_site_outside_boundary);
     REGISTER_TEST(probe_analyzer, dynamic_candidates_are_not_truncated_at_64);
 TEST_MAIN_END()

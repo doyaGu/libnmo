@@ -1332,14 +1332,16 @@ static nmo_status_t probe_analyze_data_cell(
         if (!probe_is_data_write_behavior(ctx, child)) {
             continue;
         }
-        probe_add_candidate(ctx,
-                            result,
-                            request->behavior_id,
-                            child_id,
-                            0u,
-                            0u,
-                            child,
-                            "data_writer");
+        nmo_probe_selector_candidate_t *candidate =
+            probe_add_candidate(ctx,
+                                result,
+                                request->behavior_id,
+                                child_id,
+                                0u,
+                                0u,
+                                child,
+                                "data_writer");
+        probe_enrich_candidate_with_data_cell(repo, request, NULL, candidate);
         probe_append_id(candidate_ids,
                         sizeof(candidate_ids),
                         &candidate_ids_len,
