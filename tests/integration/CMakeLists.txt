@@ -44,6 +44,7 @@ add_integration_test(test_plugin_dependency_corpus)
 
 # Object layer acceptance test - comprehensive round-trip validation
 add_integration_test(test_object_layer_acceptance)
+add_integration_test(test_project_skeleton_acceptance)
 
 # Runtime clean-break integration tests
 add_integration_test(test_runtime_load_pipeline)

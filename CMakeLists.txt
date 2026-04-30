@@ -344,6 +344,7 @@ set(NMO_APP_SOURCES
 
 # Project authoring layer sources
 set(NMO_PROJECT_SOURCES
+    src/project/project_executor.c
     src/project/project_plan.c
 )
 
