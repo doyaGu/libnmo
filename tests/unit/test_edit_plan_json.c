@@ -1040,6 +1040,137 @@ TEST(edit_plan_json, rejects_strict_replay_manifest_errors) {
         "Missing or invalid row");
 }
 
+TEST(edit_plan_json, roundtrips_probe_selector_analysis_metadata) {
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_plan_t *parsed = NULL;
+    char *json = NULL;
+
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_data_cell(plan, 6067u, 0u, 1u, "trace"));
+
+    nmo_probe_selector_result_t analysis;
+    nmo_probe_selector_result_init(&analysis);
+    analysis.mode = NMO_PROBE_SELECTOR_MODE_AUTO;
+    analysis.status = NMO_PROBE_SELECTOR_STATUS_SELECTED;
+    analysis.selected_node_id = 4628u;
+    analysis.selected_link_id = 4689u;
+    analysis.selected_operation_id = 3791u;
+    analysis.from_io_id = 4687u;
+    analysis.to_io_id = 4688u;
+    analysis.has_delay = true;
+    analysis.delay = 12u;
+    analysis.safe_insertion.selected = true;
+    analysis.safe_insertion.selected_node_id = 4628u;
+    analysis.safe_insertion.selected_link_id = 4689u;
+    analysis.safe_insertion.selected_operation_id = 3791u;
+    analysis.safe_insertion.remove_link_id = 4689u;
+    analysis.safe_insertion.insert_from_io_id = 4687u;
+    analysis.safe_insertion.insert_to_io_id = 4688u;
+    analysis.safe_insertion.has_preserved_delay = true;
+    analysis.safe_insertion.preserved_delay = 12u;
+
+    nmo_probe_selector_candidate_t candidate = {0};
+    candidate.node_id = 4628u;
+    candidate.parent_id = 4692u;
+    candidate.boundary_behavior_id = 4692u;
+    candidate.link_id = 4689u;
+    candidate.operation_id = 3791u;
+    candidate.from_io_id = 4687u;
+    candidate.to_io_id = 4688u;
+    candidate.has_delay = true;
+    candidate.delay = 12u;
+    candidate.source_parameter_id = 3789u;
+    candidate.value_parameter_id = 3790u;
+    candidate.dataarray_id = 6067u;
+    candidate.column_type_guid = CKPGUID_STRING;
+    candidate.confidence = 0.75;
+    candidate.bb_guid = nmo_guid_parse("33CC6B49-3589282B");
+    snprintf(candidate.proto_name, sizeof(candidate.proto_name),
+             "Set Cell");
+    candidate.role = NMO_PROBE_CANDIDATE_DATA_WRITE_OPERATION;
+    ASSERT_EQ(NMO_OK,
+              nmo_probe_selector_result_add_candidate(&analysis, &candidate));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_set_probe_selector_analysis(plan, &analysis));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_json_write(plan, &json));
+    ASSERT_NOT_NULL(json);
+
+    yyjson_doc *doc = yyjson_read(json, strlen(json), 0);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *probe = yyjson_obj_get(root, "probe_selector_analysis");
+    ASSERT_NOT_NULL(probe);
+    ASSERT_TRUE(yyjson_is_obj(probe));
+    assert_json_string(probe, "mode", "auto");
+    assert_json_string(probe, "status", "selected");
+    assert_json_uint(probe, "selected_node_id", 4628u);
+    yyjson_val *candidates = yyjson_obj_get(probe, "candidates");
+    ASSERT_NOT_NULL(candidates);
+    ASSERT_TRUE(yyjson_is_arr(candidates));
+    ASSERT_EQ(1u, yyjson_arr_size(candidates));
+    yyjson_doc_free(doc);
+
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_json_read(json, strlen(json), &parsed));
+    const nmo_probe_selector_result_t *roundtrip =
+        nmo_edit_plan_get_probe_selector_analysis(parsed);
+    ASSERT_NOT_NULL(roundtrip);
+    ASSERT_EQ(NMO_PROBE_SELECTOR_MODE_AUTO, roundtrip->mode);
+    ASSERT_EQ(NMO_PROBE_SELECTOR_STATUS_SELECTED, roundtrip->status);
+    ASSERT_EQ(4628u, roundtrip->selected_node_id);
+    ASSERT_EQ(4689u, roundtrip->safe_insertion.remove_link_id);
+    ASSERT_TRUE(roundtrip->safe_insertion.has_preserved_delay);
+    ASSERT_EQ(12u, roundtrip->safe_insertion.preserved_delay);
+    ASSERT_EQ(1u, roundtrip->candidate_count);
+    ASSERT_EQ(NMO_PROBE_CANDIDATE_DATA_WRITE_OPERATION,
+              roundtrip->candidates[0].role);
+    ASSERT_EQ(6067u, roundtrip->candidates[0].dataarray_id);
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_STRING,
+                                roundtrip->candidates[0].column_type_guid));
+    ASSERT_EQ(3789u, roundtrip->candidates[0].source_parameter_id);
+    ASSERT_EQ(3790u, roundtrip->candidates[0].value_parameter_id);
+
+    nmo_probe_analysis_dispose(&analysis);
+    nmo_edit_plan_manifest_json_free(json);
+    nmo_edit_plan_destroy(parsed);
+    nmo_edit_plan_destroy(plan);
+}
+
+TEST(edit_plan_json, rejects_invalid_probe_selector_analysis_metadata) {
+    const char *unknown_field =
+        "{"
+        "\"version\":2,"
+        "\"probe_selector_analysis\":{\"mode\":\"auto\","
+        "\"status\":\"selected\",\"candidates\":[],\"extra\":1},"
+        "\"operations\":[{\"op\":\"set_data_cell\",\"dataarray_id\":1,"
+        "\"row\":0,\"col\":0,\"value\":\"x\"}]"
+        "}";
+    nmo_edit_plan_t *plan = NULL;
+    nmo_last_error_clear();
+    ASSERT_NE(NMO_OK,
+              nmo_edit_plan_json_read(
+                  unknown_field, strlen(unknown_field), &plan));
+    ASSERT_STR_CONTAINS(nmo_last_error_message(),
+                        "Unknown field 'extra' in probe_selector_analysis");
+    nmo_edit_plan_destroy(plan);
+
+    const char *bad_role =
+        "{"
+        "\"version\":2,"
+        "\"probe_selector_analysis\":{\"mode\":\"auto\","
+        "\"status\":\"selected\",\"candidates\":[{\"role\":\"bad\"}]},"
+        "\"operations\":[{\"op\":\"set_data_cell\",\"dataarray_id\":1,"
+        "\"row\":0,\"col\":0,\"value\":\"x\"}]"
+        "}";
+    nmo_last_error_clear();
+    ASSERT_NE(NMO_OK,
+              nmo_edit_plan_json_read(bad_role, strlen(bad_role), &plan));
+    ASSERT_STR_CONTAINS(nmo_last_error_message(),
+                        "Invalid probe_selector_analysis.candidates.role");
+    nmo_edit_plan_destroy(plan);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(edit_plan_json, writes_manifest_with_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, reads_manifest_with_operation_handle_refs);
@@ -1065,4 +1196,6 @@ REGISTER_TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics
 REGISTER_TEST(edit_plan_json,
               rejects_plan_roots_with_generic_operation_diagnostics);
 REGISTER_TEST(edit_plan_json, rejects_strict_replay_manifest_errors);
+REGISTER_TEST(edit_plan_json, roundtrips_probe_selector_analysis_metadata);
+REGISTER_TEST(edit_plan_json, rejects_invalid_probe_selector_analysis_metadata);
 TEST_MAIN_END()

@@ -464,6 +464,117 @@ static void add_ref_json(yyjson_mut_doc *doc,
     add_str_safe(doc, obj, handle_key, handle_name);
 }
 
+static yyjson_mut_val *probe_candidate_to_json(
+    yyjson_mut_doc *doc,
+    const nmo_probe_selector_candidate_t *candidate)
+{
+    yyjson_mut_val *obj = yyjson_mut_obj(doc);
+    if (obj == NULL || candidate == NULL) {
+        return obj;
+    }
+    add_optional_id_json(doc, obj, "node_id", candidate->node_id);
+    add_optional_id_json(doc, obj, "parent_id", candidate->parent_id);
+    add_optional_id_json(doc, obj, "boundary_behavior_id",
+                         candidate->boundary_behavior_id);
+    add_optional_id_json(doc, obj, "link_id", candidate->link_id);
+    add_optional_id_json(doc, obj, "operation_id", candidate->operation_id);
+    add_optional_id_json(doc, obj, "from_io_id", candidate->from_io_id);
+    add_optional_id_json(doc, obj, "to_io_id", candidate->to_io_id);
+    if (candidate->has_delay) {
+        yyjson_mut_obj_add_uint(doc, obj, "delay",
+                                (uint64_t)candidate->delay);
+    }
+    add_optional_id_json(doc, obj, "source_parameter_id",
+                         candidate->source_parameter_id);
+    add_optional_id_json(doc, obj, "value_parameter_id",
+                         candidate->value_parameter_id);
+    add_optional_id_json(doc, obj, "dataarray_id", candidate->dataarray_id);
+    if (!nmo_guid_is_null(candidate->column_type_guid)) {
+        add_guid_json(doc, obj, "column_type_guid",
+                      candidate->column_type_guid);
+    }
+    if (candidate->confidence != 0.0) {
+        yyjson_mut_obj_add_real(doc, obj, "confidence",
+                                candidate->confidence);
+    }
+    if (!nmo_guid_is_null(candidate->bb_guid)) {
+        add_guid_json(doc, obj, "bb_guid", candidate->bb_guid);
+    }
+    add_str_safe(doc, obj, "proto_name", candidate->proto_name);
+    yyjson_mut_obj_add_str(doc, obj, "role",
+                           nmo_probe_candidate_role_name(candidate->role));
+    add_str_safe(doc, obj, "rejection_code", candidate->rejection_code);
+    return obj;
+}
+
+static yyjson_mut_val *probe_safe_insertion_to_json(
+    yyjson_mut_doc *doc,
+    const nmo_probe_safe_insertion_t *safe)
+{
+    yyjson_mut_val *obj = yyjson_mut_obj(doc);
+    if (obj == NULL || safe == NULL) {
+        return obj;
+    }
+    yyjson_mut_obj_add_bool(doc, obj, "selected", safe->selected);
+    add_optional_id_json(doc, obj, "selected_node_id",
+                         safe->selected_node_id);
+    add_optional_id_json(doc, obj, "selected_link_id",
+                         safe->selected_link_id);
+    add_optional_id_json(doc, obj, "selected_operation_id",
+                         safe->selected_operation_id);
+    add_optional_id_json(doc, obj, "remove_link_id", safe->remove_link_id);
+    add_optional_id_json(doc, obj, "insert_from_io_id",
+                         safe->insert_from_io_id);
+    add_optional_id_json(doc, obj, "insert_to_io_id",
+                         safe->insert_to_io_id);
+    if (safe->has_preserved_delay) {
+        yyjson_mut_obj_add_uint(doc, obj, "preserved_delay",
+                                (uint64_t)safe->preserved_delay);
+    }
+    return obj;
+}
+
+static yyjson_mut_val *probe_analysis_to_json(
+    yyjson_mut_doc *doc,
+    const nmo_probe_selector_result_t *analysis)
+{
+    yyjson_mut_val *obj = yyjson_mut_obj(doc);
+    if (obj == NULL || analysis == NULL) {
+        return obj;
+    }
+    yyjson_mut_obj_add_str(doc, obj, "mode",
+                           nmo_probe_selector_mode_name(analysis->mode));
+    yyjson_mut_obj_add_str(doc, obj, "status",
+                           nmo_probe_selector_status_name(analysis->status));
+    add_str_safe(doc, obj, "rejection_code", analysis->rejection_code);
+    add_str_safe(doc, obj, "message", analysis->message);
+    add_optional_id_json(doc, obj, "selected_node_id",
+                         analysis->selected_node_id);
+    add_optional_id_json(doc, obj, "selected_link_id",
+                         analysis->selected_link_id);
+    add_optional_id_json(doc, obj, "selected_operation_id",
+                         analysis->selected_operation_id);
+    add_optional_id_json(doc, obj, "from_io_id", analysis->from_io_id);
+    add_optional_id_json(doc, obj, "to_io_id", analysis->to_io_id);
+    if (analysis->has_delay) {
+        yyjson_mut_obj_add_uint(doc, obj, "delay",
+                                (uint64_t)analysis->delay);
+    }
+    yyjson_mut_obj_add_val(
+        doc, obj, "safe_insertion",
+        probe_safe_insertion_to_json(doc, &analysis->safe_insertion));
+    yyjson_mut_val *candidates = yyjson_mut_arr(doc);
+    if (candidates != NULL) {
+        for (size_t i = 0; i < analysis->candidate_count; ++i) {
+            yyjson_mut_arr_add_val(
+                candidates,
+                probe_candidate_to_json(doc, &analysis->candidates[i]));
+        }
+        yyjson_mut_obj_add_val(doc, obj, "candidates", candidates);
+    }
+    return obj;
+}
+
 static char *bytes_to_hex(const uint8_t *bytes, size_t byte_count)
 {
     static const char hex[] = "0123456789ABCDEF";
@@ -913,6 +1024,17 @@ static nmo_status_t edit_plan_json_write_root(
         yyjson_mut_arr_add_val(ops, op_obj);
     }
     yyjson_mut_obj_add_val(doc, root, "operations", ops);
+    const nmo_probe_selector_result_t *analysis =
+        nmo_edit_plan_get_probe_selector_analysis(plan);
+    if (analysis != NULL) {
+        yyjson_mut_val *analysis_obj = probe_analysis_to_json(doc, analysis);
+        if (analysis_obj == NULL) {
+            yyjson_mut_doc_free(doc);
+            return NMO_ERR_NOMEM;
+        }
+        yyjson_mut_obj_add_val(doc, root, "probe_selector_analysis",
+                               analysis_obj);
+    }
 
     size_t json_len = 0u;
     char *json = yyjson_mut_write(doc, 0, &json_len);
@@ -1070,6 +1192,159 @@ static bool read_required_string(yyjson_val *obj,
         return false;
     }
     *out_value = yyjson_get_str(value);
+    return true;
+}
+
+static bool read_optional_string(yyjson_val *obj,
+                                 const char *key,
+                                 const char **out_value)
+{
+    yyjson_val *value = yyjson_obj_get(obj, key);
+    if (value == NULL) {
+        *out_value = NULL;
+        return true;
+    }
+    if (!yyjson_is_str(value)) {
+        nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                            __FILE__, __LINE__, "Invalid %s", key);
+        return false;
+    }
+    *out_value = yyjson_get_str(value);
+    return true;
+}
+
+static bool read_optional_guid(yyjson_val *obj,
+                               const char *key,
+                               nmo_guid_t *out_guid)
+{
+    const char *text = NULL;
+    if (!read_optional_string(obj, key, &text)) {
+        return false;
+    }
+    if (text == NULL) {
+        *out_guid = NMO_GUID_NULL;
+        return true;
+    }
+    *out_guid = nmo_guid_parse(text);
+    if (nmo_guid_is_null(*out_guid)) {
+        nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                            __FILE__, __LINE__, "Invalid %s", key);
+        return false;
+    }
+    return true;
+}
+
+static bool read_optional_double(yyjson_val *obj,
+                                 const char *key,
+                                 double *out_value)
+{
+    yyjson_val *value = yyjson_obj_get(obj, key);
+    if (value == NULL) {
+        *out_value = 0.0;
+        return true;
+    }
+    if (!yyjson_is_num(value)) {
+        nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                            __FILE__, __LINE__, "Invalid %s", key);
+        return false;
+    }
+    *out_value = yyjson_is_real(value)
+                     ? yyjson_get_real(value)
+                     : (double)yyjson_get_uint(value);
+    return true;
+}
+
+static bool parse_probe_selector_mode_value(
+    yyjson_val *value,
+    nmo_probe_selector_mode_t *out_mode)
+{
+    if (value == NULL || out_mode == NULL || !yyjson_is_str(value)) {
+        nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                            __FILE__, __LINE__,
+                            "Invalid probe_selector_analysis.mode");
+        return false;
+    }
+    const char *text = yyjson_get_str(value);
+    if (strcmp(text, "auto") == 0) {
+        *out_mode = NMO_PROBE_SELECTOR_MODE_AUTO;
+    } else if (strcmp(text, "explicit_node") == 0) {
+        *out_mode = NMO_PROBE_SELECTOR_MODE_EXPLICIT_NODE;
+    } else if (strcmp(text, "explicit_link") == 0) {
+        *out_mode = NMO_PROBE_SELECTOR_MODE_EXPLICIT_LINK;
+    } else if (strcmp(text, "explicit_operation") == 0) {
+        *out_mode = NMO_PROBE_SELECTOR_MODE_EXPLICIT_OPERATION;
+    } else if (strcmp(text, "explicit_data_cell") == 0) {
+        *out_mode = NMO_PROBE_SELECTOR_MODE_EXPLICIT_DATA_CELL;
+    } else if (strcmp(text, "explicit") == 0) {
+        *out_mode = NMO_PROBE_SELECTOR_MODE_EXPLICIT;
+    } else {
+        nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                            __FILE__, __LINE__,
+                            "Invalid probe_selector_analysis.mode");
+        return false;
+    }
+    return true;
+}
+
+static bool parse_probe_selector_status_value(
+    yyjson_val *value,
+    nmo_probe_selector_status_t *out_status)
+{
+    if (value == NULL || out_status == NULL || !yyjson_is_str(value)) {
+        nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                            __FILE__, __LINE__,
+                            "Invalid probe_selector_analysis.status");
+        return false;
+    }
+    const char *text = yyjson_get_str(value);
+    if (strcmp(text, "selected") == 0) {
+        *out_status = NMO_PROBE_SELECTOR_STATUS_SELECTED;
+    } else if (strcmp(text, "none") == 0) {
+        *out_status = NMO_PROBE_SELECTOR_STATUS_NONE;
+    } else if (strcmp(text, "ambiguous") == 0) {
+        *out_status = NMO_PROBE_SELECTOR_STATUS_AMBIGUOUS;
+    } else if (strcmp(text, "unsafe") == 0) {
+        *out_status = NMO_PROBE_SELECTOR_STATUS_UNSAFE;
+    } else {
+        nmo_last_error_setf(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                            __FILE__, __LINE__,
+                            "Invalid probe_selector_analysis.status");
+        return false;
+    }
+    return true;
+}
+
+static bool parse_probe_candidate_role_value(
+    yyjson_val *value,
+    nmo_probe_candidate_role_t *out_role)
+{
+    if (value == NULL || out_role == NULL || !yyjson_is_str(value)) {
+        nmo_last_error_setf(
+            NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, __FILE__, __LINE__,
+            "Invalid probe_selector_analysis.candidates.role");
+        return false;
+    }
+    const char *text = yyjson_get_str(value);
+    if (strcmp(text, "message") == 0) {
+        *out_role = NMO_PROBE_CANDIDATE_MESSAGE;
+    } else if (strcmp(text, "sender") == 0) {
+        *out_role = NMO_PROBE_CANDIDATE_MESSAGE_SENDER;
+    } else if (strcmp(text, "waiter") == 0) {
+        *out_role = NMO_PROBE_CANDIDATE_MESSAGE_WAITER;
+    } else if (strcmp(text, "receiver") == 0) {
+        *out_role = NMO_PROBE_CANDIDATE_MESSAGE_RECEIVER;
+    } else if (strcmp(text, "data_writer") == 0) {
+        *out_role = NMO_PROBE_CANDIDATE_DATA_WRITER;
+    } else if (strcmp(text, "data_write_operation") == 0) {
+        *out_role = NMO_PROBE_CANDIDATE_DATA_WRITE_OPERATION;
+    } else if (strcmp(text, "data_write_link") == 0) {
+        *out_role = NMO_PROBE_CANDIDATE_DATA_WRITE_LINK;
+    } else {
+        nmo_last_error_setf(
+            NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, __FILE__, __LINE__,
+            "Invalid probe_selector_analysis.candidates.role");
+        return false;
+    }
     return true;
 }
 
@@ -2386,6 +2661,213 @@ static nmo_status_t parse_operations_array(yyjson_val *ops,
     return NMO_OK;
 }
 
+static nmo_status_t parse_probe_safe_insertion(
+    yyjson_val *obj,
+    nmo_probe_safe_insertion_t *out_safe)
+{
+    if (obj == NULL) {
+        memset(out_safe, 0, sizeof(*out_safe));
+        return NMO_OK;
+    }
+    if (!yyjson_is_obj(obj)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Invalid probe_selector_analysis.safe_insertion");
+    }
+    static const char *const allowed[] = {
+        "selected", "selected_node_id", "selected_link_id",
+        "selected_operation_id", "remove_link_id", "insert_from_io_id",
+        "insert_to_io_id", "preserved_delay",
+    };
+    NMO_RETURN_IF_ERROR(reject_unknown_fields(
+        obj, "probe_selector_analysis.safe_insertion", allowed,
+        sizeof(allowed) / sizeof(allowed[0])));
+    bool selected = false;
+    if (!read_optional_bool(obj, "selected", false, &selected) ||
+        !read_optional_u32(obj, "selected_node_id",
+                           &out_safe->selected_node_id) ||
+        !read_optional_u32(obj, "selected_link_id",
+                           &out_safe->selected_link_id) ||
+        !read_optional_u32(obj, "selected_operation_id",
+                           &out_safe->selected_operation_id) ||
+        !read_optional_u32(obj, "remove_link_id",
+                           &out_safe->remove_link_id) ||
+        !read_optional_u32(obj, "insert_from_io_id",
+                           &out_safe->insert_from_io_id) ||
+        !read_optional_u32(obj, "insert_to_io_id",
+                           &out_safe->insert_to_io_id)) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+    out_safe->selected = selected;
+    yyjson_val *delay = yyjson_obj_get(obj, "preserved_delay");
+    if (delay != NULL) {
+        if (!yyjson_is_uint(delay) || yyjson_get_uint(delay) > UINT32_MAX) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid probe_selector_analysis.safe_insertion.preserved_delay");
+        }
+        out_safe->has_preserved_delay = true;
+        out_safe->preserved_delay = (uint32_t)yyjson_get_uint(delay);
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t parse_probe_candidate(
+    yyjson_val *obj,
+    nmo_probe_selector_candidate_t *out_candidate)
+{
+    if (obj == NULL || out_candidate == NULL || !yyjson_is_obj(obj)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Invalid probe_selector_analysis.candidates");
+    }
+    static const char *const allowed[] = {
+        "node_id", "parent_id", "boundary_behavior_id", "link_id",
+        "operation_id", "from_io_id", "to_io_id", "delay",
+        "source_parameter_id", "value_parameter_id", "dataarray_id",
+        "column_type_guid", "confidence", "bb_guid", "proto_name", "role",
+        "rejection_code",
+    };
+    NMO_RETURN_IF_ERROR(reject_unknown_fields(
+        obj, "probe_selector_analysis.candidates", allowed,
+        sizeof(allowed) / sizeof(allowed[0])));
+    memset(out_candidate, 0, sizeof(*out_candidate));
+    if (!read_optional_u32(obj, "node_id", &out_candidate->node_id) ||
+        !read_optional_u32(obj, "parent_id", &out_candidate->parent_id) ||
+        !read_optional_u32(obj, "boundary_behavior_id",
+                           &out_candidate->boundary_behavior_id) ||
+        !read_optional_u32(obj, "link_id", &out_candidate->link_id) ||
+        !read_optional_u32(obj, "operation_id",
+                           &out_candidate->operation_id) ||
+        !read_optional_u32(obj, "from_io_id", &out_candidate->from_io_id) ||
+        !read_optional_u32(obj, "to_io_id", &out_candidate->to_io_id) ||
+        !read_optional_u32(obj, "source_parameter_id",
+                           &out_candidate->source_parameter_id) ||
+        !read_optional_u32(obj, "value_parameter_id",
+                           &out_candidate->value_parameter_id) ||
+        !read_optional_u32(obj, "dataarray_id",
+                           &out_candidate->dataarray_id) ||
+        !read_optional_guid(obj, "column_type_guid",
+                            &out_candidate->column_type_guid) ||
+        !read_optional_guid(obj, "bb_guid", &out_candidate->bb_guid) ||
+        !read_optional_double(obj, "confidence",
+                              &out_candidate->confidence)) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+    yyjson_val *delay = yyjson_obj_get(obj, "delay");
+    if (delay != NULL) {
+        if (!yyjson_is_uint(delay) || yyjson_get_uint(delay) > UINT32_MAX) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid probe_selector_analysis.candidates.delay");
+        }
+        out_candidate->has_delay = true;
+        out_candidate->delay = (uint32_t)yyjson_get_uint(delay);
+    }
+    const char *proto_name = NULL;
+    const char *rejection_code = NULL;
+    if (!read_optional_string(obj, "proto_name", &proto_name) ||
+        !read_optional_string(obj, "rejection_code", &rejection_code)) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+    if (proto_name != NULL) {
+        snprintf(out_candidate->proto_name,
+                 sizeof(out_candidate->proto_name), "%s", proto_name);
+    }
+    if (rejection_code != NULL) {
+        snprintf(out_candidate->rejection_code,
+                 sizeof(out_candidate->rejection_code), "%s",
+                 rejection_code);
+    }
+    if (!parse_probe_candidate_role_value(yyjson_obj_get(obj, "role"),
+                                          &out_candidate->role)) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t parse_probe_analysis(
+    yyjson_val *obj,
+    nmo_probe_selector_result_t *out_analysis)
+{
+    if (obj == NULL) {
+        return NMO_OK;
+    }
+    if (!yyjson_is_obj(obj)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Invalid probe_selector_analysis");
+    }
+    static const char *const allowed[] = {
+        "mode", "status", "rejection_code", "message",
+        "selected_node_id", "selected_link_id", "selected_operation_id",
+        "from_io_id", "to_io_id", "delay", "safe_insertion", "candidates",
+    };
+    NMO_RETURN_IF_ERROR(reject_unknown_fields(
+        obj, "probe_selector_analysis", allowed,
+        sizeof(allowed) / sizeof(allowed[0])));
+    if (!parse_probe_selector_mode_value(yyjson_obj_get(obj, "mode"),
+                                         &out_analysis->mode) ||
+        !parse_probe_selector_status_value(yyjson_obj_get(obj, "status"),
+                                           &out_analysis->status) ||
+        !read_optional_u32(obj, "selected_node_id",
+                           &out_analysis->selected_node_id) ||
+        !read_optional_u32(obj, "selected_link_id",
+                           &out_analysis->selected_link_id) ||
+        !read_optional_u32(obj, "selected_operation_id",
+                           &out_analysis->selected_operation_id) ||
+        !read_optional_u32(obj, "from_io_id", &out_analysis->from_io_id) ||
+        !read_optional_u32(obj, "to_io_id", &out_analysis->to_io_id)) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+    const char *rejection_code = NULL;
+    const char *message = NULL;
+    if (!read_optional_string(obj, "rejection_code", &rejection_code) ||
+        !read_optional_string(obj, "message", &message)) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+    if (rejection_code != NULL) {
+        snprintf(out_analysis->rejection_code,
+                 sizeof(out_analysis->rejection_code), "%s",
+                 rejection_code);
+    }
+    if (message != NULL) {
+        snprintf(out_analysis->message, sizeof(out_analysis->message), "%s",
+                 message);
+    }
+    yyjson_val *delay = yyjson_obj_get(obj, "delay");
+    if (delay != NULL) {
+        if (!yyjson_is_uint(delay) || yyjson_get_uint(delay) > UINT32_MAX) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid probe_selector_analysis.delay");
+        }
+        out_analysis->has_delay = true;
+        out_analysis->delay = (uint32_t)yyjson_get_uint(delay);
+    }
+    NMO_RETURN_IF_ERROR(parse_probe_safe_insertion(
+        yyjson_obj_get(obj, "safe_insertion"),
+        &out_analysis->safe_insertion));
+
+    yyjson_val *candidates = yyjson_obj_get(obj, "candidates");
+    if (candidates == NULL || !yyjson_is_arr(candidates)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Invalid probe_selector_analysis.candidates");
+    }
+    yyjson_val *candidate_obj = NULL;
+    yyjson_arr_iter iter;
+    yyjson_arr_iter_init(candidates, &iter);
+    while ((candidate_obj = yyjson_arr_iter_next(&iter)) != NULL) {
+        nmo_probe_selector_candidate_t candidate;
+        NMO_RETURN_IF_ERROR(parse_probe_candidate(candidate_obj, &candidate));
+        NMO_RETURN_IF_ERROR(nmo_probe_selector_result_add_candidate(
+            out_analysis, &candidate));
+    }
+    if (out_analysis->safe_insertion.selected &&
+        out_analysis->safe_insertion.selected_node_id != 0u &&
+        out_analysis->selected_node_id != 0u &&
+        out_analysis->safe_insertion.selected_node_id !=
+            out_analysis->selected_node_id) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "probe_selector_analysis safe_insertion conflicts with selected_node_id");
+    }
+    return NMO_OK;
+}
+
 nmo_status_t nmo_edit_plan_json_read(
     const char *json,
     size_t json_len,
@@ -2421,7 +2903,7 @@ nmo_status_t nmo_edit_plan_json_read(
                          "Edit plan operations must be a non-empty array");
     }
     static const char *const root_allowed[] = {
-        "version", "operations",
+        "version", "operations", "probe_selector_analysis",
     };
     nmo_status_t st = reject_unknown_fields(
         root, "edit plan root", root_allowed,
@@ -2435,6 +2917,16 @@ nmo_status_t nmo_edit_plan_json_read(
     st = nmo_edit_plan_create(&plan);
     if (st == NMO_OK) {
         st = parse_operations_array(ops, plan);
+    }
+    yyjson_val *analysis_val = yyjson_obj_get(root, "probe_selector_analysis");
+    if (st == NMO_OK && analysis_val != NULL) {
+        nmo_probe_selector_result_t analysis;
+        nmo_probe_selector_result_init(&analysis);
+        st = parse_probe_analysis(analysis_val, &analysis);
+        if (st == NMO_OK) {
+            st = nmo_edit_plan_set_probe_selector_analysis(plan, &analysis);
+        }
+        nmo_probe_analysis_dispose(&analysis);
     }
     yyjson_doc_free(doc);
     if (st != NMO_OK) {
@@ -2495,6 +2987,7 @@ nmo_status_t nmo_edit_plan_manifest_json_read(
     }
     static const char *const root_allowed[] = {
         "version", "input", "output", "operations",
+        "probe_selector_analysis",
     };
     nmo_status_t st = reject_unknown_fields(
         root, "edit plan manifest root", root_allowed,
@@ -2512,6 +3005,16 @@ nmo_status_t nmo_edit_plan_manifest_json_read(
     }
 
     st = parse_operations_array(ops, plan);
+    yyjson_val *analysis_val = yyjson_obj_get(root, "probe_selector_analysis");
+    if (st == NMO_OK && analysis_val != NULL) {
+        nmo_probe_selector_result_t analysis;
+        nmo_probe_selector_result_init(&analysis);
+        st = parse_probe_analysis(analysis_val, &analysis);
+        if (st == NMO_OK) {
+            st = nmo_edit_plan_set_probe_selector_analysis(plan, &analysis);
+        }
+        nmo_probe_analysis_dispose(&analysis);
+    }
 
     if (st == NMO_OK) {
         out_manifest->input_path = dup_string(yyjson_get_str(input));
