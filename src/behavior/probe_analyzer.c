@@ -638,6 +638,64 @@ static bool probe_link_touches_any_behavior(
     return false;
 }
 
+static size_t probe_collect_operation_touching_links(
+    nmo_object_repository_t *repo,
+    const nmo_behavior_state_t *parent,
+    nmo_object_id_t operation_id,
+    const nmo_parameteroperation_state_t *operation,
+    nmo_object_id_t *out_selected_link_id,
+    const nmo_behaviorlink_state_t **out_selected_link)
+{
+    if (out_selected_link_id != NULL) {
+        *out_selected_link_id = 0u;
+    }
+    if (out_selected_link != NULL) {
+        *out_selected_link = NULL;
+    }
+    if (repo == NULL || parent == NULL || operation == NULL) {
+        return 0u;
+    }
+
+    nmo_object_id_t related_behaviors[32];
+    size_t related_count = probe_collect_operation_related_behaviors(
+        repo,
+        operation_id,
+        operation,
+        related_behaviors,
+        sizeof(related_behaviors) / sizeof(related_behaviors[0]));
+    if (related_count == 0u) {
+        return 0u;
+    }
+
+    size_t count = 0u;
+    const nmo_object_id_t *link_ids =
+        (const nmo_object_id_t *)parent->sub_behavior_links.data;
+    for (size_t i = 0; link_ids != NULL &&
+                       i < parent->sub_behavior_links.count; ++i) {
+        nmo_object_id_t link_id = link_ids[i];
+        nmo_object_t *link_obj =
+            nmo_object_repository_find_by_id(repo, link_id);
+        const nmo_behaviorlink_state_t *link =
+            link_obj != NULL &&
+                    nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK
+                ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
+                      link_obj)
+                : NULL;
+        if (!probe_link_touches_any_behavior(
+                repo, link, related_behaviors, related_count)) {
+            continue;
+        }
+        if (out_selected_link_id != NULL) {
+            *out_selected_link_id = link_id;
+        }
+        if (out_selected_link != NULL) {
+            *out_selected_link = link;
+        }
+        ++count;
+    }
+    return count;
+}
+
 static nmo_status_t probe_analyze_message(nmo_context_t *ctx,
                                           nmo_object_repository_t *repo,
                                           const nmo_behavior_state_t *parent,
@@ -1037,6 +1095,9 @@ static nmo_status_t probe_analyze_data_cell(
         parent != NULL ? (const nmo_object_id_t *)parent->sub_behaviors.data
                        : NULL;
     nmo_object_id_t selected_id = 0u;
+    nmo_object_id_t selected_operation_id = 0u;
+    nmo_object_id_t selected_link_id = 0u;
+    const nmo_behaviorlink_state_t *selected_link = NULL;
     size_t candidate_count = 0u;
     char candidate_ids[256];
     size_t candidate_ids_len = 0u;
@@ -1065,6 +1126,53 @@ static nmo_status_t probe_analyze_data_cell(
         selected_id = child_id;
         ++candidate_count;
     }
+    const nmo_object_id_t *operation_ids =
+        parent != NULL ? (const nmo_object_id_t *)parent->operations.data
+                       : NULL;
+    for (size_t i = 0; operation_ids != NULL && i < parent->operations.count;
+         ++i) {
+        nmo_object_id_t operation_id = operation_ids[i];
+        nmo_object_t *op_obj =
+            nmo_object_repository_find_by_id(repo, operation_id);
+        const nmo_parameteroperation_state_t *operation =
+            op_obj != NULL &&
+                    nmo_object_get_class_id(op_obj) == NMO_CID_PARAMETEROPERATION
+                ? (const nmo_parameteroperation_state_t *)nmo_object_get_state(
+                      op_obj)
+                : NULL;
+        if (operation == NULL) {
+            continue;
+        }
+        nmo_object_id_t operation_link_id = 0u;
+        const nmo_behaviorlink_state_t *operation_link = NULL;
+        size_t touching_count = probe_collect_operation_touching_links(
+            repo,
+            parent,
+            operation_id,
+            operation,
+            &operation_link_id,
+            &operation_link);
+        if (touching_count == 0u) {
+            continue;
+        }
+        probe_add_candidate(ctx,
+                            result,
+                            request->behavior_id,
+                            0u,
+                            operation_link_id,
+                            operation_id,
+                            NULL,
+                            "data_write_operation");
+        probe_append_id(candidate_ids,
+                        sizeof(candidate_ids),
+                        &candidate_ids_len,
+                        candidate_count,
+                        operation_id);
+        selected_operation_id = operation_id;
+        selected_link_id = operation_link_id;
+        selected_link = operation_link;
+        ++candidate_count;
+    }
     if (candidate_count > 1u) {
         return probe_reject(
             result,
@@ -1075,6 +1183,15 @@ static nmo_status_t probe_analyze_data_cell(
             candidate_ids);
     }
     if (candidate_count == 1u) {
+        if (selected_operation_id != 0u && selected_link != NULL) {
+            result->selected_operation_id = selected_operation_id;
+            probe_apply_selected_link(result, selected_link_id, selected_link);
+            probe_set_status(result,
+                             NMO_PROBE_SELECTOR_MODE_AUTO,
+                             NMO_PROBE_SELECTOR_STATUS_SELECTED,
+                             NULL);
+            return NMO_OK;
+        }
         const nmo_behavior_state_t *writer =
             probe_behavior_state_by_id(repo, selected_id);
         result->selected_node_id = selected_id;

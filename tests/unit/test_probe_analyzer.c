@@ -104,6 +104,35 @@ TEST(probe_analyzer, resolves_explicit_operation_write_site)
     probe_fixture_dispose(&fixture);
 }
 
+TEST(probe_analyzer, reports_operation_write_site_candidates)
+{
+    probe_fixture_t fixture;
+    probe_fixture_init(&fixture);
+
+    nmo_probe_selector_request_t request;
+    nmo_probe_selector_request_init(&request);
+    request.kind = NMO_PROBE_SELECTOR_DATA_CELL_WRITE;
+    request.behavior_id = 3798u;
+
+    nmo_probe_selector_result_t result;
+    nmo_probe_selector_result_init(&result);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_probe_analyze_selector(fixture.workspace, &request, &result));
+
+    ASSERT_EQ(NMO_PROBE_SELECTOR_MODE_AUTO, result.mode);
+    ASSERT_EQ(NMO_PROBE_SELECTOR_STATUS_AMBIGUOUS, result.status);
+    bool found_operation = false;
+    for (size_t i = 0; i < result.candidate_count; ++i) {
+        if (result.candidates[i].operation_id == 3791u) {
+            found_operation = true;
+            ASSERT_STR_EQ("data_write_operation", result.candidates[i].role);
+        }
+    }
+    ASSERT_TRUE(found_operation);
+
+    probe_fixture_dispose(&fixture);
+}
+
 TEST(probe_analyzer, rejects_operation_write_site_outside_boundary)
 {
     probe_fixture_t fixture;
@@ -133,5 +162,6 @@ TEST(probe_analyzer, rejects_operation_write_site_outside_boundary)
 TEST_MAIN_BEGIN()
     REGISTER_TEST(probe_analyzer, selects_unique_message_candidate_and_link);
     REGISTER_TEST(probe_analyzer, resolves_explicit_operation_write_site);
+    REGISTER_TEST(probe_analyzer, reports_operation_write_site_candidates);
     REGISTER_TEST(probe_analyzer, rejects_operation_write_site_outside_boundary);
 TEST_MAIN_END()
