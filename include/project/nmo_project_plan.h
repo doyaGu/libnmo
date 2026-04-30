@@ -20,6 +20,19 @@ typedef struct nmo_project_scene_desc {
     const char *name;
 } nmo_project_scene_desc_t;
 
+typedef enum nmo_project_object_flags {
+    NMO_PROJECT_OBJECT_FLAG_ACTIVE = 1u << 0
+} nmo_project_object_flags_t;
+
+typedef struct nmo_project_object_desc {
+    uint32_t handle;
+    uint32_t scene_handle;
+    uint32_t parent_handle;
+    nmo_class_id_t class_id;
+    const char *name;
+    uint32_t flags;
+} nmo_project_object_desc_t;
+
 NMO_API nmo_status_t nmo_project_plan_create(nmo_project_plan_t **out_plan);
 NMO_API void nmo_project_plan_destroy(nmo_project_plan_t *plan);
 
@@ -41,6 +54,14 @@ NMO_API nmo_status_t nmo_project_plan_get_scene(
     const nmo_project_plan_t *plan,
     size_t index,
     nmo_project_scene_desc_t *out_scene);
+
+NMO_API size_t nmo_project_plan_object_count(
+    const nmo_project_plan_t *plan);
+
+NMO_API nmo_status_t nmo_project_plan_get_object(
+    const nmo_project_plan_t *plan,
+    size_t index,
+    nmo_project_object_desc_t *out_object);
 
 #ifdef __cplusplus
 }
