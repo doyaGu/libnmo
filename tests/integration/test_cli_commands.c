@@ -3900,6 +3900,12 @@ TEST(cli, debug_probe_rejects_invalid_probe_options) {
             "debug probe automatic data write insertion is unsafe",
         },
         {
+            "debug probe data-cell-logger --behavior 3880 --dataarray 6067 "
+            "--row 0 --col 1 --write-link 3874 --remove-link 3873 \""
+            NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
+            "debug probe --write-link conflicts with --remove-link",
+        },
+        {
             "debug probe 2d-text --behavior 237 --write-node 3871 "
             "\"" NMO_TEST_DATA_FILE("Ballance/base.cmo") "\" --dry-run",
             "--write-node/--write-operation/--write-link are only supported",
