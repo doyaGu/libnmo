@@ -151,6 +151,7 @@
 #include "behavior/nmo_behavior_edit.h"
 #include "behavior/nmo_behavior_execute.h"
 #include "behavior/nmo_edit_plan_json.h"
+#include "behavior/nmo_probe_analyzer.h"
 #include "export/nmo_export_text.h"
 #include "export/nmo_export_json.h"
 #include "export/nmo_export_dot.h"
