@@ -1,8 +1,6 @@
 #include "project/nmo_project_plan.h"
 #include "project/nmo_scene_authoring.h"
 
-#include "object/nmo_class_ids.h"
-
 #include <stdlib.h>
 #include <string.h>
 
@@ -16,8 +14,11 @@ typedef struct project_object_record {
     uint32_t scene_handle;
     uint32_t parent_handle;
     nmo_class_id_t class_id;
+    nmo_guid_t type_guid;
     char *name;
     uint32_t flags;
+    nmo_session_field_edit_t *fields;
+    size_t field_count;
 } project_object_record_t;
 
 struct nmo_project_plan {
@@ -45,6 +46,67 @@ static char *project_plan_strdup(const char *src)
     }
     memcpy(copy, src, len + 1u);
     return copy;
+}
+
+static void project_plan_free_fields(
+    nmo_session_field_edit_t *fields,
+    size_t field_count)
+{
+    if (!fields) {
+        return;
+    }
+
+    for (size_t i = 0; i < field_count; ++i) {
+        free((void *)fields[i].field_name);
+        free((void *)fields[i].value_str);
+    }
+    free(fields);
+}
+
+static nmo_status_t project_plan_clone_fields(
+    const nmo_session_field_edit_t *src_fields,
+    size_t field_count,
+    nmo_session_field_edit_t **out_fields)
+{
+    if (!out_fields) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "out_fields is required");
+    }
+    *out_fields = NULL;
+
+    if (field_count == 0u) {
+        NMO_RETURN_OK();
+    }
+    if (!src_fields) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "field array is required when field_count is non-zero");
+    }
+
+    nmo_session_field_edit_t *fields =
+        (nmo_session_field_edit_t *)calloc(field_count, sizeof(*fields));
+    if (!fields) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate project object field edits");
+    }
+
+    for (size_t i = 0; i < field_count; ++i) {
+        if (!src_fields[i].field_name || !src_fields[i].value_str) {
+            project_plan_free_fields(fields, field_count);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "field edits require field_name and value_str");
+        }
+
+        fields[i].field_name = project_plan_strdup(src_fields[i].field_name);
+        fields[i].value_str = project_plan_strdup(src_fields[i].value_str);
+        if (!fields[i].field_name || !fields[i].value_str) {
+            project_plan_free_fields(fields, field_count);
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to clone project object field edit");
+        }
+    }
+
+    *out_fields = fields;
+    NMO_RETURN_OK();
 }
 
 nmo_status_t nmo_project_plan_create(nmo_project_plan_t **out_plan)
@@ -78,6 +140,9 @@ void nmo_project_plan_destroy(nmo_project_plan_t *plan)
     }
     for (size_t i = 0; i < plan->object_count; ++i) {
         free(plan->objects[i].name);
+        project_plan_free_fields(
+            plan->objects[i].fields,
+            plan->objects[i].field_count);
     }
     free(plan->scenes);
     free(plan->objects);
@@ -144,12 +209,23 @@ nmo_status_t nmo_project_plan_clone(
         clone->object_capacity = plan->object_count;
         for (size_t i = 0; i < plan->object_count; ++i) {
             clone->objects[i] = plan->objects[i];
+            clone->objects[i].fields = NULL;
+            clone->objects[i].field_count = 0u;
             clone->objects[i].name = project_plan_strdup(plan->objects[i].name);
             if (plan->objects[i].name && !clone->objects[i].name) {
                 nmo_project_plan_destroy(clone);
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                  "failed to clone project object name");
             }
+            status = project_plan_clone_fields(
+                plan->objects[i].fields,
+                plan->objects[i].field_count,
+                &clone->objects[i].fields);
+            if (status != NMO_OK) {
+                nmo_project_plan_destroy(clone);
+                return status;
+            }
+            clone->objects[i].field_count = plan->objects[i].field_count;
             clone->object_count++;
         }
     }
@@ -230,8 +306,11 @@ nmo_status_t nmo_project_plan_get_object(
     out_object->scene_handle = plan->objects[index].scene_handle;
     out_object->parent_handle = plan->objects[index].parent_handle;
     out_object->class_id = plan->objects[index].class_id;
+    out_object->type_guid = plan->objects[index].type_guid;
     out_object->name = plan->objects[index].name;
     out_object->flags = plan->objects[index].flags;
+    out_object->fields = plan->objects[index].fields;
+    out_object->field_count = plan->objects[index].field_count;
     NMO_RETURN_OK();
 }
 
@@ -296,16 +375,15 @@ const char *nmo_project_plan_scene_name(
     return NULL;
 }
 
-static nmo_status_t project_plan_add_object(
+nmo_status_t nmo_project_plan_add_object(
     nmo_project_plan_t *plan,
-    uint32_t scene_handle,
-    nmo_class_id_t class_id,
-    const char *name,
+    const nmo_project_object_spec_t *spec,
     uint32_t *out_object_handle)
 {
-    if (!plan || scene_handle == 0u || !name || name[0] == '\0') {
+    if (!plan || !spec || !spec->name || spec->name[0] == '\0' ||
+        spec->class_id == 0u || spec->class_id == NMO_CLASS_ID_INVALID) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "plan, scene handle, and non-empty object name are required");
+                         "plan, object class, and non-empty object name are required");
     }
 
     if (plan->object_count == plan->object_capacity) {
@@ -325,65 +403,36 @@ static nmo_status_t project_plan_add_object(
         plan->object_capacity = new_capacity;
     }
 
-    char *name_copy = project_plan_strdup(name);
+    char *name_copy = project_plan_strdup(spec->name);
     if (!name_copy) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                          "failed to allocate project object name");
     }
 
+    nmo_session_field_edit_t *fields_copy = NULL;
+    nmo_status_t status = project_plan_clone_fields(
+        spec->fields,
+        spec->field_count,
+        &fields_copy);
+    if (status != NMO_OK) {
+        free(name_copy);
+        return status;
+    }
+
     uint32_t handle = plan->next_object_handle++;
     project_object_record_t *object = &plan->objects[plan->object_count++];
     object->handle = handle;
-    object->scene_handle = scene_handle;
-    object->parent_handle = 0u;
-    object->class_id = class_id;
+    object->scene_handle = spec->scene_handle;
+    object->parent_handle = spec->parent_handle;
+    object->class_id = spec->class_id;
+    object->type_guid = spec->type_guid;
     object->name = name_copy;
-    object->flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE;
+    object->flags = spec->flags;
+    object->fields = fields_copy;
+    object->field_count = spec->field_count;
 
     if (out_object_handle) {
         *out_object_handle = handle;
     }
     NMO_RETURN_OK();
-}
-
-nmo_status_t nmo_project_plan_add_camera(
-    nmo_project_plan_t *plan,
-    uint32_t scene_handle,
-    const char *name,
-    uint32_t *out_object_handle)
-{
-    return project_plan_add_object(
-        plan,
-        scene_handle,
-        NMO_CID_CAMERA,
-        name,
-        out_object_handle);
-}
-
-nmo_status_t nmo_project_plan_add_light(
-    nmo_project_plan_t *plan,
-    uint32_t scene_handle,
-    const char *name,
-    uint32_t *out_object_handle)
-{
-    return project_plan_add_object(
-        plan,
-        scene_handle,
-        NMO_CID_LIGHT,
-        name,
-        out_object_handle);
-}
-
-nmo_status_t nmo_project_plan_add_3d_entity(
-    nmo_project_plan_t *plan,
-    uint32_t scene_handle,
-    const char *name,
-    uint32_t *out_object_handle)
-{
-    return project_plan_add_object(
-        plan,
-        scene_handle,
-        NMO_CID_3DENTITY,
-        name,
-        out_object_handle);
 }

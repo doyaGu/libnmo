@@ -43,11 +43,29 @@ TEST(generated_scene_roundtrip, saves_and_reloads_scene_objects)
     uint32_t camera = 0u;
     uint32_t light = 0u;
     uint32_t cube = 0u;
-    ASSERT_EQ(NMO_OK, nmo_project_plan_add_camera(plan, scene, "Camera_Main", &camera));
+    nmo_project_object_spec_t camera_spec = {
+        .scene_handle = scene,
+        .class_id = NMO_CID_CAMERA,
+        .name = "Camera_Main",
+        .flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE
+    };
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_object(plan, &camera_spec, &camera));
     ASSERT_NE(0u, camera);
-    ASSERT_EQ(NMO_OK, nmo_project_plan_add_light(plan, scene, "Light_Key", &light));
+    nmo_project_object_spec_t light_spec = {
+        .scene_handle = scene,
+        .class_id = NMO_CID_LIGHT,
+        .name = "Light_Key",
+        .flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE
+    };
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_object(plan, &light_spec, &light));
     ASSERT_NE(0u, light);
-    ASSERT_EQ(NMO_OK, nmo_project_plan_add_3d_entity(plan, scene, "Cube_A", &cube));
+    nmo_project_object_spec_t cube_spec = {
+        .scene_handle = scene,
+        .class_id = NMO_CID_3DENTITY,
+        .name = "Cube_A",
+        .flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE
+    };
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_object(plan, &cube_spec, &cube));
     ASSERT_NE(0u, cube);
 
     nmo_project_report_t report;

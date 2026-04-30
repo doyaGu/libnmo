@@ -39,6 +39,47 @@ TEST(scene_authoring, clones_scene_metadata)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(scene_authoring, clones_generic_object_metadata)
+{
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_plan_t *clone = NULL;
+    uint32_t scene_handle = 0;
+    uint32_t object_handle = 0;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "Level", &scene_handle));
+
+    nmo_session_field_edit_t fields[] = {
+        {.field_name = "some_reflected_field", .value_str = "42"},
+    };
+    nmo_project_object_spec_t object_spec = {
+        .scene_handle = scene_handle,
+        .class_id = NMO_CID_3DENTITY,
+        .name = "Cube",
+        .flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE,
+        .fields = fields,
+        .field_count = 1u,
+    };
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_object(plan, &object_spec, &object_handle));
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_clone(plan, &clone));
+    ASSERT_EQ(1u, nmo_project_plan_object_count(clone));
+
+    nmo_project_object_desc_t object = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(clone, 0u, &object));
+    ASSERT_EQ(object_handle, object.handle);
+    ASSERT_EQ(scene_handle, object.scene_handle);
+    ASSERT_EQ(NMO_CID_3DENTITY, object.class_id);
+    ASSERT_STR_EQ("Cube", object.name);
+    ASSERT_EQ(NMO_PROJECT_OBJECT_FLAG_ACTIVE, object.flags);
+    ASSERT_EQ(1u, object.field_count);
+    ASSERT_STR_EQ("some_reflected_field", object.fields[0].field_name);
+    ASSERT_STR_EQ("42", object.fields[0].value_str);
+
+    nmo_project_plan_destroy(clone);
+    nmo_project_plan_destroy(plan);
+}
+
 TEST(scene_authoring, executor_creates_scene_object)
 {
     const char *output_path = "test_scene_authoring_scene.cmo";
@@ -83,5 +124,6 @@ TEST(scene_authoring, executor_creates_scene_object)
 TEST_MAIN_BEGIN()
 REGISTER_TEST(scene_authoring, adds_scene_to_project_plan);
 REGISTER_TEST(scene_authoring, clones_scene_metadata);
+REGISTER_TEST(scene_authoring, clones_generic_object_metadata);
 REGISTER_TEST(scene_authoring, executor_creates_scene_object);
 TEST_MAIN_END()

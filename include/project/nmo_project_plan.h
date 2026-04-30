@@ -1,7 +1,9 @@
 #ifndef NMO_PROJECT_PLAN_H
 #define NMO_PROJECT_PLAN_H
 
+#include "core/nmo_guid.h"
 #include "core/nmo_error.h"
+#include "object/nmo_object_edit.h"
 #include "nmo_types.h"
 
 #include <stddef.h>
@@ -24,13 +26,27 @@ typedef enum nmo_project_object_flags {
     NMO_PROJECT_OBJECT_FLAG_ACTIVE = 1u << 0
 } nmo_project_object_flags_t;
 
+typedef struct nmo_project_object_spec {
+    uint32_t scene_handle;
+    uint32_t parent_handle;
+    nmo_class_id_t class_id;
+    nmo_guid_t type_guid;
+    const char *name;
+    uint32_t flags;
+    const nmo_session_field_edit_t *fields;
+    size_t field_count;
+} nmo_project_object_spec_t;
+
 typedef struct nmo_project_object_desc {
     uint32_t handle;
     uint32_t scene_handle;
     uint32_t parent_handle;
     nmo_class_id_t class_id;
+    nmo_guid_t type_guid;
     const char *name;
     uint32_t flags;
+    const nmo_session_field_edit_t *fields;
+    size_t field_count;
 } nmo_project_object_desc_t;
 
 NMO_API nmo_status_t nmo_project_plan_create(nmo_project_plan_t **out_plan);
@@ -62,6 +78,11 @@ NMO_API nmo_status_t nmo_project_plan_get_object(
     const nmo_project_plan_t *plan,
     size_t index,
     nmo_project_object_desc_t *out_object);
+
+NMO_API nmo_status_t nmo_project_plan_add_object(
+    nmo_project_plan_t *plan,
+    const nmo_project_object_spec_t *spec,
+    uint32_t *out_object_handle);
 
 #ifdef __cplusplus
 }

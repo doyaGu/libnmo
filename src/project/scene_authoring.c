@@ -124,7 +124,7 @@ nmo_status_t nmo_project_author_scenes(
             document,
             object.class_id,
             object.name,
-            (nmo_guid_t){0, 0},
+            object.type_guid,
             &object_id);
         if (status != NMO_OK) {
             goto cleanup;
