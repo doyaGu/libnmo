@@ -10,7 +10,7 @@
  * - No additional data is serialized to chunks beyond CKObject's visibility flags
  * 
  * This schema correctly delegates to CKObject deserializer and maintains
- * the parent chain functionality as required by design.md ��6.4.
+ * the parent chain functionality as required by design.md section 6.4.
  */
 
 #include "object/builtin/nmo_object_schemas.h"

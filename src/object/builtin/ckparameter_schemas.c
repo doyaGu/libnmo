@@ -9,7 +9,7 @@
  * - CKParameter::Save writes: identifier(0x40), GUID, mode, data
  * - CKParameter::Load reads: GUID (with migration), mode, data
  * - Supports 5 storage modes: buffer, object reference, manager int, sub-chunk, none
- * - Handles GUID migrations: OLDMESSAGE��MESSAGE, OLDATTRIBUTE��ATTRIBUTE, ID��OBJECT, OLDTIME��TIME
+ * - Handles GUID migrations: OLDMESSAGE->MESSAGE, OLDATTRIBUTE->ATTRIBUTE, ID->OBJECT, OLDTIME->TIME
  * 
  * Key design decisions:
  * - Store raw buffer data for round-trip safety
