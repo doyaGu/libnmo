@@ -5,16 +5,19 @@
 
 #include "runtime/nmo_workspace.h"
 #include "object/nmo_object_edit.h"
+#include "object/nmo_scene_edit.h"
 #include "behavior/nmo_behavior_edit.h"
 
 #include "runtime_internal.h"
 #include "runtime_internal.h"
 
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_guids.h"
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_repository.h"
+#include "object/builtin/nmo_scene_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_attributemanager_schemas.h"
@@ -84,6 +87,12 @@ typedef struct dataarray_cell_snapshot {
     nmo_dataarray_cell_t *cell;
     nmo_dataarray_cell_t old_cell;
 } dataarray_cell_snapshot_t;
+
+typedef struct scene_object_descs_snapshot {
+    nmo_array_t *object_descs;
+    size_t previous_count;
+    nmo_object_id_t object_id;
+} scene_object_descs_snapshot_t;
 
 typedef struct array_id_action {
     nmo_array_t *array;
@@ -316,6 +325,37 @@ static nmo_status_t rollback_dataarray_cell(nmo_workspace_edit_t *edit, void *pa
     }
     *snapshot->cell = snapshot->old_cell;
     return NMO_OK;
+}
+
+static nmo_status_t rollback_scene_object_desc_append(
+    nmo_workspace_edit_t *edit,
+    void *payload)
+{
+    (void)edit;
+    scene_object_descs_snapshot_t *snapshot =
+        (scene_object_descs_snapshot_t *)payload;
+    if (snapshot == NULL || snapshot->object_descs == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t count = nmo_array_size(snapshot->object_descs);
+    if (count == snapshot->previous_count) {
+        return NMO_OK;
+    }
+    if (count != snapshot->previous_count + 1u) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_scene_object_desc_t *desc =
+        NMO_ARRAY_GET(
+            nmo_scene_object_desc_t,
+            snapshot->object_descs,
+            snapshot->previous_count);
+    if (desc == NULL || desc->object_id != snapshot->object_id) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    return nmo_array_resize(snapshot->object_descs, snapshot->previous_count);
 }
 
 static nmo_status_t rollback_remove_array_id(nmo_workspace_edit_t *edit, void *payload)
@@ -941,6 +981,92 @@ nmo_status_t nmo_object_edit_create(
     }
 
     *out_object_id = object_id;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_scene_edit_add_object(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t scene_id,
+    nmo_object_id_t object_id,
+    uint32_t flags)
+{
+    const uint32_t allowed_flags =
+        NMO_SCENE_MEMBERSHIP_ACTIVE | NMO_SCENE_MEMBERSHIP_START_ACTIVE;
+    if (edit == NULL || edit->finished || scene_id == 0 || object_id == 0 ||
+        (flags & ~allowed_flags) != 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t checkpoint = edit->rollback_count;
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_object_t *scene_object = nmo_object_repository_find_by_id(repo, scene_id);
+    if (scene_object == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (nmo_object_get_class_id(scene_object) != NMO_CID_SCENE) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_object_t *target_object = nmo_object_repository_find_by_id(repo, object_id);
+    if (target_object == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    nmo_scene_state_t *scene_state =
+        (nmo_scene_state_t *)nmo_object_get_state(scene_object);
+    if (scene_state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    const nmo_scene_object_desc_t *descs =
+        NMO_ARRAY_DATA(nmo_scene_object_desc_t, &scene_state->object_descs);
+    size_t existing_count = nmo_array_size(&scene_state->object_descs);
+    for (size_t i = 0; i < existing_count; ++i) {
+        if (descs[i].object_id == object_id) {
+            return NMO_ERR_ALREADY_EXISTS;
+        }
+    }
+
+    scene_object_descs_snapshot_t *snapshot =
+        (scene_object_descs_snapshot_t *)nmo_workspace_edit_alloc(
+            edit, sizeof(*snapshot), _Alignof(scene_object_descs_snapshot_t));
+    if (snapshot == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    snapshot->object_descs = &scene_state->object_descs;
+    snapshot->previous_count = existing_count;
+    snapshot->object_id = object_id;
+
+    nmo_status_t push_result =
+        workspace_edit_push_rollback(edit, rollback_scene_object_desc_append, snapshot);
+    if (push_result != NMO_OK) {
+        return push_result;
+    }
+
+    uint32_t scene_flags = 0;
+    if ((flags & NMO_SCENE_MEMBERSHIP_ACTIVE) != 0u) {
+        scene_flags |= CK_SCENEOBJECT_ACTIVE;
+    }
+    if ((flags & NMO_SCENE_MEMBERSHIP_START_ACTIVE) != 0u) {
+        scene_flags |= CK_SCENEOBJECT_START_ACTIVATE;
+    }
+
+    nmo_scene_object_desc_t scene_desc = {0};
+    scene_desc.object_id = object_id;
+    scene_desc.flags = scene_flags;
+    nmo_status_t append_result =
+        nmo_array_append(&scene_state->object_descs, &scene_desc);
+    if (append_result != NMO_OK) {
+        workspace_edit_rollback_to(edit, checkpoint);
+        return append_result;
+    }
+
+    nmo_workspace_edit_mark(
+        edit,
+        NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
     return NMO_OK;
 }
 
