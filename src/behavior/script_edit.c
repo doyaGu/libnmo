@@ -28,6 +28,7 @@
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "type/nmo_operation_system.h"
+#include "type/nmo_type_guids.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
@@ -945,7 +946,7 @@ static nmo_status_t script_edit_create_parameter_object(
         input_state->source_id = 0u;
         input_state->is_shared = 0u;
         input_state->is_disabled = 0u;
-        if (default_value && default_value[0] != '\0') {
+        if (default_value != NULL) {
             nmo_object_id_t source_id = 0;
             rc = script_edit_create_parameter_object(
                 tx, NMO_CID_PARAMETER, owner_id, name, type_guid, NULL,
@@ -954,19 +955,21 @@ static nmo_status_t script_edit_create_parameter_object(
             if (rc != NMO_OK) {
                 return rc;
             }
-            rc = nmo_value_writer_set_parameter_value(
-                tx->edit, source_id, default_value, NULL);
-            if (rc != NMO_OK) {
-                if (!script_edit_is_symbolic_manager_default_type(type_guid)) {
-                    return rc;
-                }
-                nmo_object_t *source_obj =
-                    nmo_object_repository_find_by_id(repo, source_id);
-                rc = script_edit_apply_symbolic_manager_default(
-                    tx, source_obj, type_guid, default_value,
-                    manager_entry);
+            if (default_value[0] != '\0') {
+                rc = nmo_value_writer_set_parameter_value(
+                    tx->edit, source_id, default_value, NULL);
                 if (rc != NMO_OK) {
-                    return rc;
+                    if (!script_edit_is_symbolic_manager_default_type(type_guid)) {
+                        return rc;
+                    }
+                    nmo_object_t *source_obj =
+                        nmo_object_repository_find_by_id(repo, source_id);
+                    rc = script_edit_apply_symbolic_manager_default(
+                        tx, source_obj, type_guid, default_value,
+                        manager_entry);
+                    if (rc != NMO_OK) {
+                        return rc;
+                    }
                 }
             }
             input_state->source_id = source_id;
@@ -990,6 +993,9 @@ static nmo_status_t script_edit_create_parameter_object(
             parameter->mode = CKPARAM_MODE_OBJECT;
         } else {
             size_t buffer_size = type_desc->size;
+            if (buffer_size == 0u && nmo_guid_equals(type_guid, CKPGUID_STRING)) {
+                buffer_size = 1u;
+            }
             if (buffer_size == 0u) {
                 return NMO_ERR_INVALID_ARGUMENT;
             }

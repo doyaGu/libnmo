@@ -349,6 +349,120 @@ static void assert_param_ids_match_proto(
     }
 }
 
+static nmo_behavior_state_t *find_first_behavior_by_block_guid(
+    nmo_object_repository_t *repo,
+    nmo_guid_t guid,
+    nmo_object_t **out_object)
+{
+    if (out_object != NULL) {
+        *out_object = NULL;
+    }
+    if (repo == NULL) {
+        return NULL;
+    }
+    size_t count = nmo_object_repository_get_count(repo);
+    for (size_t i = 0; i < count; ++i) {
+        nmo_object_t *obj = nmo_object_repository_get_by_index(repo, i);
+        if (obj == NULL || nmo_object_get_class_id(obj) != NMO_CID_BEHAVIOR) {
+            continue;
+        }
+        nmo_behavior_state_t *state =
+            (nmo_behavior_state_t *)nmo_object_get_state(obj);
+        if (state != NULL && nmo_guid_equals(state->block_guid, guid)) {
+            if (out_object != NULL) {
+                *out_object = obj;
+            }
+            return state;
+        }
+    }
+    return NULL;
+}
+
+static nmo_guid_t parameter_type_guid_for_object(nmo_object_t *obj)
+{
+    if (obj == NULL) {
+        return NMO_GUID_NULL;
+    }
+    switch (nmo_object_get_class_id(obj)) {
+    case NMO_CID_PARAMETERIN:
+        return ((nmo_parameterin_state_t *)nmo_object_get_state(obj))->type_guid;
+    case NMO_CID_PARAMETEROUT:
+        return ((nmo_parameterout_state_t *)nmo_object_get_state(obj))->base.type_guid;
+    case NMO_CID_PARAMETERLOCAL:
+        return ((nmo_parameterlocal_state_t *)nmo_object_get_state(obj))->base.type_guid;
+    default:
+        return NMO_GUID_NULL;
+    }
+}
+
+static nmo_object_id_t parameter_source_id_for_object(nmo_object_t *obj)
+{
+    if (obj == NULL || nmo_object_get_class_id(obj) != NMO_CID_PARAMETERIN) {
+        return 0u;
+    }
+    return ((nmo_parameterin_state_t *)nmo_object_get_state(obj))->source_id;
+}
+
+static void assert_named_object_arrays_match(
+    nmo_object_repository_t *golden_repo,
+    const nmo_array_t *golden_ids,
+    nmo_object_repository_t *actual_repo,
+    const nmo_array_t *actual_ids)
+{
+    const nmo_object_id_t *golden_data =
+        golden_ids ? (const nmo_object_id_t *)golden_ids->data : NULL;
+    const nmo_object_id_t *actual_data =
+        actual_ids ? (const nmo_object_id_t *)actual_ids->data : NULL;
+    ASSERT_EQ(golden_ids ? golden_ids->count : 0u,
+              actual_ids ? actual_ids->count : 0u);
+    for (size_t i = 0; golden_ids != NULL && i < golden_ids->count; ++i) {
+        ASSERT_NOT_NULL(golden_data);
+        ASSERT_NOT_NULL(actual_data);
+        nmo_object_t *golden_obj =
+            nmo_object_repository_find_by_id(golden_repo, golden_data[i]);
+        nmo_object_t *actual_obj =
+            nmo_object_repository_find_by_id(actual_repo, actual_data[i]);
+        ASSERT_NOT_NULL(golden_obj);
+        ASSERT_NOT_NULL(actual_obj);
+        ASSERT_EQ(nmo_object_get_class_id(golden_obj),
+                  nmo_object_get_class_id(actual_obj));
+        ASSERT_STR_EQ(nmo_object_get_name(golden_obj),
+                      nmo_object_get_name(actual_obj));
+    }
+}
+
+static void assert_parameter_shape_arrays_match(
+    nmo_object_repository_t *golden_repo,
+    const nmo_array_t *golden_ids,
+    nmo_object_repository_t *actual_repo,
+    const nmo_array_t *actual_ids)
+{
+    const nmo_object_id_t *golden_data =
+        golden_ids ? (const nmo_object_id_t *)golden_ids->data : NULL;
+    const nmo_object_id_t *actual_data =
+        actual_ids ? (const nmo_object_id_t *)actual_ids->data : NULL;
+    ASSERT_EQ(golden_ids ? golden_ids->count : 0u,
+              actual_ids ? actual_ids->count : 0u);
+    for (size_t i = 0; golden_ids != NULL && i < golden_ids->count; ++i) {
+        ASSERT_NOT_NULL(golden_data);
+        ASSERT_NOT_NULL(actual_data);
+        nmo_object_t *golden_obj =
+            nmo_object_repository_find_by_id(golden_repo, golden_data[i]);
+        nmo_object_t *actual_obj =
+            nmo_object_repository_find_by_id(actual_repo, actual_data[i]);
+        ASSERT_NOT_NULL(golden_obj);
+        ASSERT_NOT_NULL(actual_obj);
+        ASSERT_EQ(nmo_object_get_class_id(golden_obj),
+                  nmo_object_get_class_id(actual_obj));
+        ASSERT_STR_EQ(nmo_object_get_name(golden_obj),
+                      nmo_object_get_name(actual_obj));
+        ASSERT_TRUE(nmo_guid_equals(parameter_type_guid_for_object(golden_obj),
+                                    parameter_type_guid_for_object(actual_obj)));
+        ASSERT_EQ(parameter_source_id_for_object(golden_obj) != 0u ? 1u : 0u,
+                  parameter_source_id_for_object(actual_obj) != 0u ? 1u : 0u);
+    }
+}
+
 TEST(edit_plan, stores_parameter_value_ops) {
     nmo_edit_plan_t *plan = NULL;
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
@@ -1217,6 +1331,84 @@ TEST(edit_plan, executor_materializes_common_building_block_prototypes) {
         nmo_edit_plan_destroy(plan);
         edit_plan_fixture_dispose(&fixture);
     }
+}
+
+TEST(edit_plan, executor_matches_authored_2d_text_golden_shape) {
+    nmo_context_t *golden_ctx = nmo_context_create(
+        &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
+    ASSERT_NOT_NULL(golden_ctx);
+    nmo_session_t *golden_session =
+        nmo_session_load(golden_ctx, NMO_TEST_DATA_FILE("Ballance/2D Text.nmo"));
+    ASSERT_NOT_NULL(golden_session);
+    nmo_object_repository_t *golden_repo =
+        nmo_session_get_repository(golden_session);
+    ASSERT_NOT_NULL(golden_repo);
+
+    const nmo_guid_t text_guid = NMO_GUID_INIT(0x055B29FEu, 0x662D5CA0u);
+    nmo_behavior_state_t *golden_state =
+        find_first_behavior_by_block_guid(golden_repo, text_guid, NULL);
+    ASSERT_NOT_NULL(golden_state);
+
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t root_id = 0;
+    create_object_or_fail(fixture.session, NMO_CID_BEHAVIOR, "Root", &root_id);
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_node(
+                  plan,
+                  root_id,
+                  text_guid,
+                  "Golden 2D Text"));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+
+    nmo_object_t *actual_obj = nmo_object_repository_find_by_id(
+        fixture.repo, report.operations[0].result_id);
+    nmo_behavior_state_t *actual_state = actual_obj
+        ? (nmo_behavior_state_t *)nmo_object_get_state(actual_obj)
+        : NULL;
+    ASSERT_NOT_NULL(actual_state);
+
+    const uint32_t behavior_flag_mask =
+        CKBEHAVIOR_BUILDINGBLOCK | CKBEHAVIOR_USEFUNCTION |
+        CKBEHAVIOR_TARGETABLE;
+    ASSERT_EQ(golden_state->flags & behavior_flag_mask,
+              actual_state->flags & behavior_flag_mask);
+    ASSERT_TRUE(nmo_guid_equals(golden_state->block_guid,
+                                actual_state->block_guid));
+    ASSERT_EQ(golden_state->block_version, actual_state->block_version);
+    ASSERT_EQ(golden_state->compatible_class_id,
+              actual_state->compatible_class_id);
+    ASSERT_EQ(golden_state->target_parameter_id != 0u ? 1u : 0u,
+              actual_state->target_parameter_id != 0u ? 1u : 0u);
+
+    assert_named_object_arrays_match(
+        golden_repo, &golden_state->inputs,
+        fixture.repo, &actual_state->inputs);
+    assert_named_object_arrays_match(
+        golden_repo, &golden_state->outputs,
+        fixture.repo, &actual_state->outputs);
+    assert_parameter_shape_arrays_match(
+        golden_repo, &golden_state->in_parameters,
+        fixture.repo, &actual_state->in_parameters);
+    assert_parameter_shape_arrays_match(
+        golden_repo, &golden_state->out_parameters,
+        fixture.repo, &actual_state->out_parameters);
+    assert_parameter_shape_arrays_match(
+        golden_repo, &golden_state->local_parameters,
+        fixture.repo, &actual_state->local_parameters);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+    nmo_session_close_with_context(golden_ctx, golden_session);
+    nmo_context_release(golden_ctx);
 }
 
 TEST(edit_plan, executor_resolves_symbolic_message_default_from_manager_data) {
@@ -3785,6 +3977,7 @@ REGISTER_TEST(edit_plan, executor_adds_node_with_created_object_report);
 REGISTER_TEST(edit_plan, executor_materializes_building_block_defaults);
 REGISTER_TEST(edit_plan, executor_materializes_targetable_beobject_target);
 REGISTER_TEST(edit_plan, executor_materializes_common_building_block_prototypes);
+REGISTER_TEST(edit_plan, executor_matches_authored_2d_text_golden_shape);
 REGISTER_TEST(edit_plan, executor_resolves_symbolic_message_default_from_manager_data);
 REGISTER_TEST(edit_plan, executor_creates_missing_symbolic_message_default_when_opted_in);
 REGISTER_TEST(edit_plan, executor_resolves_parameter_value_from_prior_handle);
