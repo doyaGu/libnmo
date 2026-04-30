@@ -1152,15 +1152,19 @@ TEST(no_legacy_runtime_api_exports, mesh_import_uses_workspace_edit_transaction)
     assert_function_has_substring(
         "tools/commands/nmo_cmd_mesh.c",
         "nmo_cmd_mesh_import",
-        "nmo_workspace_edit_snapshot_bytes");
+        "nmo_asset_edit_set_obj_mesh");
     assert_function_has_substring(
         "tools/commands/nmo_cmd_mesh.c",
         "nmo_cmd_mesh_import",
         "nmo_workspace_edit_track_created_object");
-    assert_function_has_substring(
+    assert_function_has_no_substring(
         "tools/commands/nmo_cmd_mesh.c",
         "nmo_cmd_mesh_import",
         "nmo_workspace_edit_snapshot_object_chunk");
+    assert_function_has_no_substring(
+        "tools/commands/nmo_cmd_mesh.c",
+        "nmo_cmd_mesh_import",
+        "nmo_mesh_serialize");
     assert_function_has_substring(
         "tools/commands/nmo_cmd_mesh.c",
         "nmo_cmd_mesh_import",
