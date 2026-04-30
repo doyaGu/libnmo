@@ -1027,9 +1027,25 @@ static nmo_status_t probe_analyze_data_cell(
                     "touch selected write-operation data flow");
             }
             probe_apply_selected_link(result, request->remove_link_id, link);
+            probe_add_candidate(ctx,
+                                result,
+                                request->behavior_id,
+                                0u,
+                                request->remove_link_id,
+                                request->write_operation_id,
+                                NULL,
+                                "data_write_operation");
         } else {
             result->from_io_id = request->from_io_id;
             result->to_io_id = request->to_io_id;
+            probe_add_candidate(ctx,
+                                result,
+                                request->behavior_id,
+                                0u,
+                                0u,
+                                request->write_operation_id,
+                                NULL,
+                                "data_write_operation");
         }
         result->selected_operation_id = request->write_operation_id;
         probe_set_status(result,

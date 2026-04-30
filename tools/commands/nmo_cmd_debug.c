@@ -76,6 +76,8 @@ typedef struct nmo_debug_probe_args {
     struct {
         nmo_object_id_t node_id;
         nmo_object_id_t parent_id;
+        nmo_object_id_t link_id;
+        nmo_object_id_t operation_id;
         nmo_guid_t bb_guid;
         char proto_name[96];
         char role[24];
@@ -1045,6 +1047,9 @@ static void debug_probe_apply_selector_result(
         args->selector_candidates[i].node_id = result->candidates[i].node_id;
         args->selector_candidates[i].parent_id =
             result->candidates[i].parent_id;
+        args->selector_candidates[i].link_id = result->candidates[i].link_id;
+        args->selector_candidates[i].operation_id =
+            result->candidates[i].operation_id;
         args->selector_candidates[i].bb_guid = result->candidates[i].bb_guid;
         snprintf(args->selector_candidates[i].proto_name,
                  sizeof(args->selector_candidates[i].proto_name),
@@ -2131,6 +2136,16 @@ static yyjson_mut_val *debug_probe_selector_diagnostics_json(
         yyjson_mut_obj_add_uint(
             doc, candidate, "parent_id",
             (uint64_t)args->selector_candidates[i].parent_id);
+        if (args->selector_candidates[i].link_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, candidate, "link_id",
+                (uint64_t)args->selector_candidates[i].link_id);
+        }
+        if (args->selector_candidates[i].operation_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, candidate, "operation_id",
+                (uint64_t)args->selector_candidates[i].operation_id);
+        }
         char guid_text[32];
         nmo_guid_format(args->selector_candidates[i].bb_guid,
                         guid_text,

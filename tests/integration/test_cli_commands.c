@@ -3847,6 +3847,16 @@ TEST(cli, debug_probe_data_cell_logger_accepts_operation_consumer_link) {
               yyjson_get_uint(yyjson_obj_get(diag, "selected_operation_id")));
     ASSERT_EQ(3780u,
               yyjson_get_uint(yyjson_obj_get(diag, "selected_link_id")));
+    yyjson_val *candidates = yyjson_obj_get(diag, "candidates");
+    ASSERT_TRUE(candidates && yyjson_is_arr(candidates));
+    ASSERT_EQ(1u, yyjson_arr_size(candidates));
+    yyjson_val *candidate = yyjson_arr_get(candidates, 0);
+    ASSERT_EQ(3791u,
+              yyjson_get_uint(yyjson_obj_get(candidate, "operation_id")));
+    ASSERT_EQ(3780u,
+              yyjson_get_uint(yyjson_obj_get(candidate, "link_id")));
+    ASSERT_STR_EQ("data_write_operation",
+                  yyjson_get_str(yyjson_obj_get(candidate, "role")));
     yyjson_val *operations = yyjson_obj_get(data, "operations");
     ASSERT_TRUE(operations && yyjson_is_arr(operations));
     ASSERT_EQ(5u, yyjson_arr_size(operations));
