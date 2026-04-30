@@ -1011,13 +1011,31 @@ static nmo_status_t debug_probe_analyze_data_cell_selector(
     if (args->write_link_id != 0u) {
         debug_probe_selector_set_mode_status(
             args, "explicit_link", "selected", NULL);
+        if (args->remove_link_id != 0u &&
+            args->remove_link_id != args->write_link_id) {
+            debug_probe_selector_set_mode_status(
+                args,
+                "explicit_link",
+                "unsafe",
+                "conflicting_probe_links");
+            NMO_RETURN_ERROR(
+                NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR,
+                "debug probe --write-link conflicts with --remove-link");
+        }
         nmo_object_t *link_obj =
             nmo_object_repository_find_by_id(repo, args->write_link_id);
+        const nmo_behaviorlink_state_t *link =
+            link_obj != NULL &&
+                    nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK
+                ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
+                      link_obj)
+                : NULL;
         if (link_obj == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                              "debug probe write-link not found");
         }
-        if (nmo_object_get_class_id(link_obj) != NMO_CID_BEHAVIORLINK) {
+        if (link == NULL) {
             debug_probe_selector_set_mode_status(
                 args,
                 "explicit_link",
@@ -1027,6 +1045,34 @@ static nmo_status_t debug_probe_analyze_data_cell_selector(
                 NMO_ERR_INVALID_ARGUMENT,
                 NMO_SEVERITY_ERROR,
                 "debug probe write-link target is not a behavior link");
+        }
+        nmo_object_t *parent_obj =
+            nmo_object_repository_find_by_id(repo, args->behavior_id);
+        const nmo_behavior_state_t *parent =
+            parent_obj != NULL &&
+                    nmo_object_get_class_id(parent_obj) == NMO_CID_BEHAVIOR
+                ? (const nmo_behavior_state_t *)nmo_object_get_state(parent_obj)
+                : NULL;
+        if (parent == NULL ||
+            nmo_array_find(&parent->sub_behavior_links,
+                           &args->write_link_id,
+                           NULL) == 0) {
+            debug_probe_selector_set_mode_status(
+                args,
+                "explicit_link",
+                "unsafe",
+                "cross_boundary_probe_link");
+            NMO_RETURN_ERROR(
+                NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR,
+                "debug probe write-link is not in the selected behavior boundary");
+        }
+        args->remove_link_id = args->write_link_id;
+        args->from_io_id = link->in_io_id;
+        args->to_io_id = link->out_io_id;
+        if (!args->has_delay && link->activation_delay > 0) {
+            args->delay = (uint32_t)link->activation_delay;
+            args->has_delay = true;
         }
         args->selector_selected_link_id = args->write_link_id;
         return NMO_OK;
