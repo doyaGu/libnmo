@@ -2691,6 +2691,44 @@ static nmo_object_id_t semantic_probe_analysis_object_id(
     return 0u;
 }
 
+static bool semantic_probe_rejection_is_cross_boundary(const char *code)
+{
+    return code != NULL &&
+           (strcmp(code, "cross_boundary") == 0 ||
+            strcmp(code, "cross_boundary_probe_link") == 0);
+}
+
+static bool semantic_probe_rejection_is_type_mismatch(const char *code)
+{
+    return code != NULL && strcmp(code, "type_mismatch") == 0;
+}
+
+static nmo_status_t semantic_validate_probe_safe_insertion_metadata(
+    const nmo_probe_selector_result_t *analysis)
+{
+    if (analysis == NULL || !analysis->safe_insertion.selected) {
+        return NMO_OK;
+    }
+
+    const nmo_probe_safe_insertion_t *safe = &analysis->safe_insertion;
+    if (analysis->selected_node_id != 0u &&
+        safe->selected_node_id != 0u &&
+        analysis->selected_node_id != safe->selected_node_id) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (analysis->selected_link_id != 0u &&
+        safe->selected_link_id != 0u &&
+        analysis->selected_link_id != safe->selected_link_id) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (analysis->selected_operation_id != 0u &&
+        safe->selected_operation_id != 0u &&
+        analysis->selected_operation_id != safe->selected_operation_id) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t semantic_add_probe_analysis_risks(
     const nmo_probe_selector_result_t *analysis,
     nmo_behavior_semantic_risk_t **risks,
@@ -2699,6 +2737,8 @@ static nmo_status_t semantic_add_probe_analysis_risks(
     if (analysis == NULL) {
         return NMO_OK;
     }
+    NMO_RETURN_IF_ERROR(
+        semantic_validate_probe_safe_insertion_metadata(analysis));
     if (analysis->status == NMO_PROBE_SELECTOR_STATUS_UNSAFE) {
         NMO_RETURN_IF_ERROR(semantic_add_risk(
             risks,
@@ -2710,17 +2750,45 @@ static nmo_status_t semantic_add_probe_analysis_risks(
                 : "Probe insertion selector was unsafe",
             semantic_probe_analysis_object_id(analysis)));
     }
+    if (semantic_probe_rejection_is_cross_boundary(analysis->rejection_code)) {
+        NMO_RETURN_IF_ERROR(semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "write_site_cross_boundary",
+            "Probe write-site candidate crosses a behavior boundary",
+            semantic_probe_analysis_object_id(analysis)));
+    }
+    if (semantic_probe_rejection_is_type_mismatch(analysis->rejection_code)) {
+        NMO_RETURN_IF_ERROR(semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "write_site_column_type_mismatch",
+            "Probe write-site value type does not match the data array column type",
+            semantic_probe_analysis_object_id(analysis)));
+    }
     for (size_t i = 0; i < analysis->candidate_count; ++i) {
         const nmo_probe_selector_candidate_t *candidate =
             &analysis->candidates[i];
-        if (strcmp(candidate->rejection_code, "cross_boundary") == 0 ||
-            strcmp(candidate->rejection_code, "cross_boundary_probe_link") == 0) {
+        if (semantic_probe_rejection_is_cross_boundary(
+                candidate->rejection_code)) {
             NMO_RETURN_IF_ERROR(semantic_add_risk(
                 risks,
                 risk_count,
                 NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
                 "write_site_cross_boundary",
                 "Probe write-site candidate crosses a behavior boundary",
+                semantic_probe_candidate_object_id(candidate)));
+        }
+        if (semantic_probe_rejection_is_type_mismatch(
+                candidate->rejection_code)) {
+            NMO_RETURN_IF_ERROR(semantic_add_risk(
+                risks,
+                risk_count,
+                NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+                "write_site_column_type_mismatch",
+                "Probe write-site value type does not match the data array column type",
                 semantic_probe_candidate_object_id(candidate)));
         }
     }

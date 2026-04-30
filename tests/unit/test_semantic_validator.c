@@ -2415,6 +2415,85 @@ TEST(semantic_validator, edit_plan_reports_probe_analysis_safety_risk)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_reports_probe_analysis_type_mismatch)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init(&fixture);
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+
+    nmo_probe_selector_result_t analysis;
+    nmo_probe_selector_result_init(&analysis);
+    analysis.mode = NMO_PROBE_SELECTOR_MODE_EXPLICIT_OPERATION;
+    analysis.status = NMO_PROBE_SELECTOR_STATUS_UNSAFE;
+    snprintf(analysis.rejection_code,
+             sizeof(analysis.rejection_code),
+             "%s",
+             "type_mismatch");
+    analysis.selected_operation_id = 3791u;
+    ASSERT_EQ(NMO_OK,
+              nmo_probe_selector_result_add_candidate(
+                  &analysis,
+                  &(nmo_probe_selector_candidate_t){
+                      .operation_id = 3791u,
+                      .value_parameter_id = 3717u,
+                      .dataarray_id = 6067u,
+                      .column_type_guid = CKPGUID_INT,
+                      .rejection_code = "type_mismatch",
+                      .role = NMO_PROBE_CANDIDATE_DATA_WRITE_OPERATION,
+                  }));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_set_probe_selector_analysis(plan, &analysis));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *risk =
+        find_risk(risks, risk_count, "write_site_column_type_mismatch");
+    ASSERT_NOT_NULL(risk);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, risk->severity);
+    ASSERT_EQ(3791u, risk->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_probe_analysis_dispose(&analysis);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
+TEST(semantic_validator, edit_plan_rejects_conflicting_probe_safe_insertion)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init(&fixture);
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+
+    nmo_probe_selector_result_t analysis;
+    nmo_probe_selector_result_init(&analysis);
+    analysis.mode = NMO_PROBE_SELECTOR_MODE_AUTO;
+    analysis.status = NMO_PROBE_SELECTOR_STATUS_SELECTED;
+    analysis.selected_node_id = 1667u;
+    analysis.safe_insertion.selected = true;
+    analysis.safe_insertion.selected_node_id = 1668u;
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_set_probe_selector_analysis(plan, &analysis));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_TRUE(nmo_semantic_validate_edit_plan(
+                    fixture.workspace, plan, &risks, &risk_count) != NMO_OK);
+    ASSERT_NULL(risks);
+    ASSERT_EQ(0u, risk_count);
+
+    nmo_probe_analysis_dispose(&analysis);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(semantic_validator, boundary_reports_dangling_delay_and_shared_risks);
     REGISTER_TEST(semantic_validator, detects_message_flow_by_signature_metadata);
@@ -2469,4 +2548,6 @@ REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_handle_value)
     REGISTER_TEST(semantic_validator, edit_plan_reports_replace_target_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_interface_policy_risk);
     REGISTER_TEST(semantic_validator, edit_plan_reports_probe_analysis_safety_risk);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_probe_analysis_type_mismatch);
+    REGISTER_TEST(semantic_validator, edit_plan_rejects_conflicting_probe_safe_insertion);
 TEST_MAIN_END()
