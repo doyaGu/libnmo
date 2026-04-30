@@ -535,6 +535,61 @@ TEST(edit_plan, executor_commits_parameter_value_plan) {
     edit_plan_fixture_dispose(&fixture);
 }
 
+TEST(edit_plan, executor_report_carries_probe_selector_analysis) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t param_id = 0;
+    nmo_parameter_state_t *state = NULL;
+    create_string_parameter(&fixture, "old", &param_id, &state);
+
+    nmo_probe_selector_result_t analysis;
+    nmo_probe_selector_result_init(&analysis);
+    analysis.mode = NMO_PROBE_SELECTOR_MODE_AUTO;
+    analysis.status = NMO_PROBE_SELECTOR_STATUS_SELECTED;
+    analysis.selected_node_id = 1667u;
+    analysis.selected_link_id = 2152u;
+    analysis.safe_insertion.selected = true;
+    analysis.safe_insertion.selected_node_id = 1667u;
+    analysis.safe_insertion.remove_link_id = 2152u;
+    ASSERT_EQ(NMO_OK,
+              nmo_probe_selector_result_add_candidate(
+                  &analysis,
+                  &(nmo_probe_selector_candidate_t){
+                      .node_id = 1667u,
+                      .parent_id = 2172u,
+                      .boundary_behavior_id = 2172u,
+                      .link_id = 2152u,
+                      .confidence = 1.0,
+                      .role = NMO_PROBE_CANDIDATE_MESSAGE_SENDER,
+                  }));
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_set_parameter_value(plan, param_id, "new value", NULL));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_set_probe_selector_analysis(plan, &analysis));
+
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_TRUE(report.has_probe_selector_analysis);
+    ASSERT_EQ(NMO_PROBE_SELECTOR_MODE_AUTO, report.probe_selector_analysis.mode);
+    ASSERT_EQ(NMO_PROBE_SELECTOR_STATUS_SELECTED,
+              report.probe_selector_analysis.status);
+    ASSERT_EQ(1u, report.probe_selector_analysis.candidate_count);
+    ASSERT_EQ(1667u, report.probe_selector_analysis.candidates[0].node_id);
+    ASSERT_TRUE(report.probe_selector_analysis.safe_insertion.selected);
+
+    nmo_edit_report_dispose(&report);
+    nmo_probe_analysis_dispose(&analysis);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+}
+
 TEST(edit_plan, executor_rolls_back_failed_plan) {
     edit_plan_fixture_t fixture;
     edit_plan_fixture_init(&fixture);
@@ -3717,6 +3772,7 @@ REGISTER_TEST(edit_plan, report_dispose_releases_schema_v2_arrays);
 REGISTER_TEST(edit_plan, report_preserves_distinct_impact_roles);
 REGISTER_TEST(edit_plan, report_owns_schema_v2_output_path);
 REGISTER_TEST(edit_plan, executor_commits_parameter_value_plan);
+REGISTER_TEST(edit_plan, executor_report_carries_probe_selector_analysis);
 REGISTER_TEST(edit_plan, executor_rolls_back_failed_plan);
 REGISTER_TEST(edit_plan, executor_rolls_back_created_handle_chain_failure);
 REGISTER_TEST(edit_plan, executor_dry_run_reports_without_persisting);

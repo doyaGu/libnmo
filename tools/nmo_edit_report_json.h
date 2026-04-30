@@ -48,6 +48,10 @@ void nmo_cli_edit_report_add_diff_json(
     yyjson_mut_val *obj,
     const nmo_edit_report_t *report);
 
+yyjson_mut_val *nmo_cli_edit_report_probe_selector_diagnostics_json(
+    yyjson_mut_doc *doc,
+    const nmo_probe_selector_result_t *analysis);
+
 void nmo_cli_edit_report_add_diff_counts_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *obj,

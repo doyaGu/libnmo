@@ -95,6 +95,8 @@ typedef struct nmo_debug_probe_args {
     } selector_candidates[64];
     size_t selector_candidate_count;
     nmo_probe_safe_insertion_t selector_safe_insertion;
+    bool has_selector_analysis;
+    nmo_probe_selector_result_t selector_analysis;
     nmo_edit_report_t report;
 } nmo_debug_probe_args_t;
 
@@ -772,12 +774,20 @@ static void debug_probe_apply_selector_result(
     args->selector_selected_link_id = result->selected_link_id;
     args->selector_selected_operation_id = result->selected_operation_id;
     args->selector_safe_insertion = result->safe_insertion;
+    nmo_probe_analysis_dispose(&args->selector_analysis);
+    args->selector_analysis = *result;
+    args->selector_analysis.candidates = NULL;
+    args->selector_analysis.candidate_count = 0u;
+    args->selector_analysis.candidate_capacity = 0u;
+    args->has_selector_analysis = true;
     args->selector_candidate_count = 0u;
     for (size_t i = 0;
          i < result->candidate_count &&
          i < sizeof(args->selector_candidates) /
                  sizeof(args->selector_candidates[0]);
          ++i) {
+        (void)nmo_probe_selector_result_add_candidate(
+            &args->selector_analysis, &result->candidates[i]);
         args->selector_candidates[i].node_id = result->candidates[i].node_id;
         args->selector_candidates[i].parent_id =
             result->candidates[i].parent_id;
@@ -1043,8 +1053,7 @@ static nmo_status_t debug_probe_analyze_message_selector(
     nmo_debug_probe_args_t *args)
 {
     if (ctx == NULL || args == NULL ||
-        strcmp(args->kind, "message-logger") != 0 ||
-        args->message_node_id != 0u) {
+        strcmp(args->kind, "message-logger") != 0) {
         return NMO_OK;
     }
     return debug_probe_analyze_core_selector(
@@ -1336,6 +1345,10 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
     if (status == NMO_OK) {
         status = nmo_edit_plan_create(&plan);
     }
+    if (status == NMO_OK && args->has_selector_analysis) {
+        status = nmo_edit_plan_set_probe_selector_analysis(
+            plan, &args->selector_analysis);
+    }
     if (status == NMO_OK && args->remove_link_id != 0u) {
         status = nmo_edit_plan_add_remove_behavior_link(
             plan, args->behavior_id, args->remove_link_id);
@@ -1397,6 +1410,7 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
                 (message != NULL && message[0] != '\0')
                     ? message
                     : nmo_error_string(status));
+        nmo_probe_analysis_dispose(&args->selector_analysis);
         return status == NMO_ERR_INVALID_ARGUMENT || status == NMO_ERR_NOT_FOUND
             ? NMO_CLI_EXIT_ARG_ERROR
             : NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -1442,14 +1456,16 @@ static int debug_probe_report(nmo_cmd_ctx_t *ctx,
             nmo_cli_json_add_str_safe(
                 doc, data, "probe_selector", "data_cell_write");
         }
-        yyjson_mut_val *selector_diag =
-            debug_probe_selector_diagnostics_json(doc, args);
+        yyjson_mut_val *selector_diag = args->report.has_probe_selector_analysis
+            ? NULL
+            : debug_probe_selector_diagnostics_json(doc, args);
         if (selector_diag != NULL) {
             yyjson_mut_obj_add_val(
                 doc, data, "probe_selector_diagnostics", selector_diag);
         }
         int rc = nmo_cmd_ctx_json_end(ctx, doc, data, "debug.probe");
         nmo_edit_report_dispose(&args->report);
+        nmo_probe_analysis_dispose(&args->selector_analysis);
         return rc;
     }
 
@@ -1460,6 +1476,7 @@ static int debug_probe_report(nmo_cmd_ctx_t *ctx,
         fprintf(ctx->out, "Saved to: %s\n", output_path);
     }
     nmo_edit_report_dispose(&args->report);
+    nmo_probe_analysis_dispose(&args->selector_analysis);
     return NMO_CLI_EXIT_SUCCESS;
 }
 

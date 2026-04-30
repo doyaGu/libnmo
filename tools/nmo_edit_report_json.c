@@ -94,6 +94,174 @@ void nmo_cli_edit_report_add_schema_v2_json(
     nmo_cli_edit_report_add_semantic_risks_json(doc, obj, report);
     nmo_cli_edit_report_add_validation_json(doc, obj, report);
     nmo_cli_edit_report_add_diff_json(doc, obj, report);
+    if (report != NULL && report->has_probe_selector_analysis) {
+        yyjson_mut_val *diag =
+            nmo_cli_edit_report_probe_selector_diagnostics_json(
+                doc, &report->probe_selector_analysis);
+        if (diag != NULL) {
+            yyjson_mut_obj_add_val(
+                doc, obj, "probe_selector_diagnostics", diag);
+        }
+    }
+}
+
+yyjson_mut_val *nmo_cli_edit_report_probe_selector_diagnostics_json(
+    yyjson_mut_doc *doc,
+    const nmo_probe_selector_result_t *analysis)
+{
+    if (doc == NULL || analysis == NULL ||
+        analysis->mode == NMO_PROBE_SELECTOR_MODE_UNSPECIFIED) {
+        return NULL;
+    }
+    yyjson_mut_val *diag = yyjson_mut_obj(doc);
+    if (diag == NULL) {
+        return NULL;
+    }
+    nmo_cli_json_add_str_safe(
+        doc, diag, "mode", nmo_probe_selector_mode_name(analysis->mode));
+    nmo_cli_json_add_str_safe(
+        doc, diag, "status", nmo_probe_selector_status_name(analysis->status));
+    if (analysis->rejection_code[0] != '\0') {
+        nmo_cli_json_add_str_safe(
+            doc, diag, "rejection_code", analysis->rejection_code);
+    }
+    if (analysis->selected_node_id != 0u) {
+        yyjson_mut_obj_add_uint(
+            doc, diag, "selected_node_id",
+            (uint64_t)analysis->selected_node_id);
+    }
+    if (analysis->selected_link_id != 0u) {
+        yyjson_mut_obj_add_uint(
+            doc, diag, "selected_link_id",
+            (uint64_t)analysis->selected_link_id);
+    }
+    if (analysis->selected_operation_id != 0u) {
+        yyjson_mut_obj_add_uint(
+            doc, diag, "selected_operation_id",
+            (uint64_t)analysis->selected_operation_id);
+    }
+
+    yyjson_mut_val *candidates = yyjson_mut_arr(doc);
+    for (size_t i = 0; i < analysis->candidate_count; ++i) {
+        const nmo_probe_selector_candidate_t *candidate =
+            &analysis->candidates[i];
+        yyjson_mut_val *item = yyjson_mut_obj(doc);
+        if (candidate->node_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, item, "node_id", (uint64_t)candidate->node_id);
+        }
+        if (candidate->parent_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, item, "parent_id", (uint64_t)candidate->parent_id);
+        }
+        if (candidate->boundary_behavior_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, item, "boundary_behavior_id",
+                (uint64_t)candidate->boundary_behavior_id);
+        }
+        if (candidate->link_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, item, "link_id", (uint64_t)candidate->link_id);
+        }
+        if (candidate->operation_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, item, "operation_id",
+                (uint64_t)candidate->operation_id);
+        }
+        if (candidate->from_io_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, item, "from_io_id", (uint64_t)candidate->from_io_id);
+        }
+        if (candidate->to_io_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, item, "to_io_id", (uint64_t)candidate->to_io_id);
+        }
+        if (candidate->has_delay) {
+            yyjson_mut_obj_add_uint(
+                doc, item, "delay", (uint64_t)candidate->delay);
+        }
+        if (candidate->source_parameter_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, item, "source_parameter_id",
+                (uint64_t)candidate->source_parameter_id);
+        }
+        if (candidate->value_parameter_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, item, "value_parameter_id",
+                (uint64_t)candidate->value_parameter_id);
+        }
+        if (candidate->dataarray_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, item, "dataarray_id",
+                (uint64_t)candidate->dataarray_id);
+        }
+        char guid_text[64];
+        if (nmo_guid_format(candidate->column_type_guid,
+                            guid_text, sizeof(guid_text)) > 0) {
+            nmo_cli_json_add_str_safe(
+                doc, item, "column_type_guid", guid_text);
+        }
+        if (nmo_guid_format(candidate->bb_guid,
+                            guid_text, sizeof(guid_text)) > 0) {
+            nmo_cli_json_add_str_safe(doc, item, "bb_guid", guid_text);
+        }
+        nmo_cli_json_add_str_safe(doc, item, "proto_name",
+                                  candidate->proto_name);
+        nmo_cli_json_add_str_safe(
+            doc, item, "role",
+            nmo_probe_candidate_role_name(candidate->role));
+        yyjson_mut_obj_add_real(doc, item, "confidence",
+                                candidate->confidence);
+        if (candidate->rejection_code[0] != '\0') {
+            nmo_cli_json_add_str_safe(
+                doc, item, "rejection_code", candidate->rejection_code);
+        }
+        yyjson_mut_arr_add_val(candidates, item);
+    }
+    yyjson_mut_obj_add_val(doc, diag, "candidates", candidates);
+
+    if (analysis->safe_insertion.selected) {
+        const nmo_probe_safe_insertion_t *safe = &analysis->safe_insertion;
+        yyjson_mut_val *safe_obj = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_bool(doc, safe_obj, "selected", true);
+        if (safe->selected_node_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, safe_obj, "selected_node_id",
+                (uint64_t)safe->selected_node_id);
+        }
+        if (safe->selected_link_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, safe_obj, "selected_link_id",
+                (uint64_t)safe->selected_link_id);
+        }
+        if (safe->selected_operation_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, safe_obj, "selected_operation_id",
+                (uint64_t)safe->selected_operation_id);
+        }
+        if (safe->remove_link_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, safe_obj, "remove_link_id",
+                (uint64_t)safe->remove_link_id);
+        }
+        if (safe->insert_from_io_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, safe_obj, "insert_from_io_id",
+                (uint64_t)safe->insert_from_io_id);
+        }
+        if (safe->insert_to_io_id != 0u) {
+            yyjson_mut_obj_add_uint(
+                doc, safe_obj, "insert_to_io_id",
+                (uint64_t)safe->insert_to_io_id);
+        }
+        if (safe->has_preserved_delay) {
+            yyjson_mut_obj_add_uint(
+                doc, safe_obj, "preserved_delay",
+                (uint64_t)safe->preserved_delay);
+        }
+        yyjson_mut_obj_add_val(doc, diag, "safe_insertion", safe_obj);
+    }
+    return diag;
 }
 
 static const char *semantic_risk_severity_string(

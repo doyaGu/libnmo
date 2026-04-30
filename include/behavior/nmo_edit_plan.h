@@ -340,6 +340,8 @@ typedef struct nmo_edit_report {
     nmo_behavior_semantic_risk_t *semantic_risks;
     size_t semantic_risk_count;
     size_t semantic_risk_capacity;
+    bool has_probe_selector_analysis;
+    nmo_probe_selector_result_t probe_selector_analysis;
 } nmo_edit_report_t;
 
 NMO_API nmo_status_t nmo_edit_plan_create(nmo_edit_plan_t **out_plan);

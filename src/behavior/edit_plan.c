@@ -1841,6 +1841,7 @@ void nmo_edit_report_dispose(nmo_edit_report_t *report)
     free(report->deleted_objects);
     free(report->semantic_risks);
     free(report->output_path);
+    nmo_probe_analysis_dispose(&report->probe_selector_analysis);
     memset(report, 0, sizeof(*report));
 }
 
@@ -1893,6 +1894,16 @@ static nmo_status_t edit_report_prepare(nmo_edit_report_t *report,
     nmo_edit_report_dispose(report);
     report->dry_run = dry_run;
     report->operation_count = plan->count;
+    if (plan->has_probe_selector_analysis) {
+        nmo_status_t rc = edit_plan_probe_analysis_copy(
+            &report->probe_selector_analysis,
+            &plan->probe_selector_analysis);
+        if (rc != NMO_OK) {
+            nmo_edit_report_dispose(report);
+            return rc;
+        }
+        report->has_probe_selector_analysis = true;
+    }
     if (plan->count == 0) {
         return NMO_OK;
     }
