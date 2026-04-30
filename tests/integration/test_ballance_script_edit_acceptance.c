@@ -392,6 +392,58 @@ TEST(ballance_acceptance, accepted_patch_report_manifest_replays)
     remove(output);
 }
 
+TEST(ballance_acceptance, failed_patch_chain_does_not_write_output)
+{
+    make_dir("test_ballance_acceptance_tmp");
+    const char *patch = "test_ballance_acceptance_tmp/failed_chain.json";
+    const char *output = "test_ballance_acceptance_tmp/failed_chain.cmo";
+    char json[2048];
+    snprintf(json, sizeof(json),
+             "{\n"
+             "  \"version\": 2,\n"
+             "  \"input\": \"%s\",\n"
+             "  \"output\": \"%s\",\n"
+             "  \"operations\": [\n"
+             "    {\n"
+             "      \"op\": \"add_node\",\n"
+             "      \"behavior_id\": 237,\n"
+             "      \"guid\": \"055B29FE-662D5CA0\",\n"
+             "      \"name\": \"Rolled Back 2D Text\"\n"
+             "    },\n"
+             "    {\n"
+             "      \"op\": \"set_parameter_value\",\n"
+             "      \"parameter_id\": 999999,\n"
+             "      \"value\": \"must fail\"\n"
+             "    }\n"
+             "  ]\n"
+             "}\n",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output);
+
+    remove(patch);
+    remove(output);
+    ASSERT_TRUE(write_text_file(patch, json));
+
+    char args[1024];
+    snprintf(args, sizeof(args), "-f json patch apply \"%s\"", patch);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(0, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "999999");
+    free(result.output);
+    ASSERT_FALSE(file_exists(output));
+
+    snprintf(args, sizeof(args), "validate all \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    cli_run_result_t validate = run_cli_capture(args);
+    ASSERT_NOT_NULL(validate.output);
+    ASSERT_EQ(0, validate.exit_code);
+    ASSERT_STR_CONTAINS(validate.output, "Result: VALID");
+    free(validate.output);
+
+    remove(patch);
+}
+
 TEST(ballance_acceptance, accepted_message_probe_save_load_validates)
 {
     make_dir("test_ballance_acceptance_tmp");
@@ -615,6 +667,7 @@ REGISTER_TEST(ballance_acceptance, patch_replay_dry_run);
 REGISTER_TEST(ballance_acceptance, validate_base);
 REGISTER_TEST(ballance_acceptance, accepted_patch_save_load_validates);
 REGISTER_TEST(ballance_acceptance, accepted_patch_report_manifest_replays);
+REGISTER_TEST(ballance_acceptance, failed_patch_chain_does_not_write_output);
 REGISTER_TEST(ballance_acceptance, accepted_message_probe_save_load_validates);
 REGISTER_TEST(ballance_acceptance, accepted_data_probe_save_load_validates);
 REGISTER_TEST(ballance_acceptance, accepted_manager_entry_save_load_validates);
