@@ -349,6 +349,7 @@ set(NMO_PROJECT_SOURCES
     src/project/scene_authoring.c
     src/project/asset_authoring.c
     src/project/script_authoring.c
+    src/project/project_manifest_json.c
     src/project/project_validator.c
 )
 
