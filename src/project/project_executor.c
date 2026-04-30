@@ -3,10 +3,11 @@
 #include "document/nmo_document.h"
 #include "document/nmo_document_save.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_edit.h"
 #include "project_internal.h"
 #include "project/nmo_project_plan.h"
 #include "runtime/nmo_context.h"
-#include "../runtime/runtime_internal.h"
+#include "runtime/nmo_workspace.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -90,27 +91,60 @@ nmo_status_t nmo_project_executor_execute_to_file(
                          "failed to create generated document");
     }
 
-    nmo_object_id_t root_id = 0;
-    status = nmo_document_internal_create_object(
-        document,
-        NMO_CID_OBJECT,
-        nmo_project_plan_document_name(plan),
-        (nmo_guid_t){0, 0},
-        &root_id);
+    nmo_workspace_t *workspace = NULL;
+    status = nmo_workspace_create(ctx, document, &workspace);
     if (status != NMO_OK) {
         nmo_document_destroy(document);
         nmo_context_release(ctx);
         return status;
     }
 
-    status = nmo_project_author_scenes(document, plan);
+    nmo_workspace_edit_t *edit = NULL;
+    status = nmo_workspace_edit_begin(workspace, "project generation", &edit);
     if (status != NMO_OK) {
+        nmo_workspace_destroy(workspace);
+        nmo_document_destroy(document);
+        nmo_context_release(ctx);
+        return status;
+    }
+
+    nmo_object_id_t root_id = 0;
+    nmo_object_create_desc_t root = {
+        .class_id = NMO_CID_OBJECT,
+        .name = nmo_project_plan_document_name(plan),
+        .type_guid = NMO_GUID_NULL,
+    };
+    status = nmo_object_edit_create(
+        edit,
+        &root,
+        &root_id);
+    if (status != NMO_OK) {
+        nmo_workspace_edit_rollback(edit);
+        nmo_workspace_destroy(workspace);
+        nmo_document_destroy(document);
+        nmo_context_release(ctx);
+        return status;
+    }
+
+    status = nmo_project_author_scenes(edit, plan);
+    if (status != NMO_OK) {
+        nmo_workspace_edit_rollback(edit);
+        nmo_workspace_destroy(workspace);
+        nmo_document_destroy(document);
+        nmo_context_release(ctx);
+        return status;
+    }
+
+    status = nmo_workspace_edit_commit(edit);
+    if (status != NMO_OK) {
+        nmo_workspace_destroy(workspace);
         nmo_document_destroy(document);
         nmo_context_release(ctx);
         return status;
     }
 
     status = nmo_document_save_file(document, output_path, NULL);
+    nmo_workspace_destroy(workspace);
     nmo_document_destroy(document);
     nmo_context_release(ctx);
     if (status != NMO_OK) {
