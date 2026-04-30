@@ -2655,6 +2655,78 @@ static nmo_status_t semantic_validate_basic_edit_op(
     }
 }
 
+static nmo_object_id_t semantic_probe_candidate_object_id(
+    const nmo_probe_selector_candidate_t *candidate)
+{
+    if (candidate == NULL) {
+        return 0u;
+    }
+    if (candidate->link_id != 0u) {
+        return candidate->link_id;
+    }
+    if (candidate->operation_id != 0u) {
+        return candidate->operation_id;
+    }
+    return candidate->node_id;
+}
+
+static nmo_object_id_t semantic_probe_analysis_object_id(
+    const nmo_probe_selector_result_t *analysis)
+{
+    if (analysis == NULL) {
+        return 0u;
+    }
+    if (analysis->selected_link_id != 0u) {
+        return analysis->selected_link_id;
+    }
+    if (analysis->selected_operation_id != 0u) {
+        return analysis->selected_operation_id;
+    }
+    if (analysis->selected_node_id != 0u) {
+        return analysis->selected_node_id;
+    }
+    if (analysis->candidate_count > 0u) {
+        return semantic_probe_candidate_object_id(&analysis->candidates[0]);
+    }
+    return 0u;
+}
+
+static nmo_status_t semantic_add_probe_analysis_risks(
+    const nmo_probe_selector_result_t *analysis,
+    nmo_behavior_semantic_risk_t **risks,
+    size_t *risk_count)
+{
+    if (analysis == NULL) {
+        return NMO_OK;
+    }
+    if (analysis->status == NMO_PROBE_SELECTOR_STATUS_UNSAFE) {
+        NMO_RETURN_IF_ERROR(semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "probe_insertion_unsafe",
+            analysis->message[0] != '\0'
+                ? analysis->message
+                : "Probe insertion selector was unsafe",
+            semantic_probe_analysis_object_id(analysis)));
+    }
+    for (size_t i = 0; i < analysis->candidate_count; ++i) {
+        const nmo_probe_selector_candidate_t *candidate =
+            &analysis->candidates[i];
+        if (strcmp(candidate->rejection_code, "cross_boundary") == 0 ||
+            strcmp(candidate->rejection_code, "cross_boundary_probe_link") == 0) {
+            NMO_RETURN_IF_ERROR(semantic_add_risk(
+                risks,
+                risk_count,
+                NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+                "write_site_cross_boundary",
+                "Probe write-site candidate crosses a behavior boundary",
+                semantic_probe_candidate_object_id(candidate)));
+        }
+    }
+    return NMO_OK;
+}
+
 nmo_status_t nmo_semantic_validate_boundary(
     nmo_workspace_t *workspace,
     const nmo_behavior_boundary_t *boundary,
@@ -2831,6 +2903,14 @@ nmo_status_t nmo_semantic_validate_edit_plan(
             }
             free(op_risks);
         }
+    }
+
+    rc = semantic_add_probe_analysis_risks(
+        nmo_edit_plan_get_probe_selector_analysis(plan),
+        &risks,
+        &risk_count);
+    if (rc != NMO_OK) {
+        goto fail;
     }
 
     *out_risks = risks;
