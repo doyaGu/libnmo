@@ -28,6 +28,12 @@ typedef struct nmo_session_field_edit_result {
     size_t failed;
 } nmo_session_field_edit_result_t;
 
+typedef struct nmo_object_create_desc {
+    nmo_class_id_t class_id;
+    const char *name;
+    nmo_guid_t type_guid;
+} nmo_object_create_desc_t;
+
 #define NMO_IMPORT_CREATE_MISSING  0x0001
 #define NMO_IMPORT_DRY_RUN         0x0002
 
@@ -87,6 +93,11 @@ NMO_API nmo_status_t nmo_object_edit_set_fields(
     const nmo_session_field_edit_t *fields,
     size_t field_count,
     nmo_session_field_edit_result_t *out_result);
+
+NMO_API nmo_status_t nmo_object_edit_create(
+    nmo_workspace_edit_t *edit,
+    const nmo_object_create_desc_t *desc,
+    nmo_object_id_t *out_object_id);
 
 NMO_API nmo_status_t nmo_object_edit_rename(
     nmo_workspace_edit_t *edit,

@@ -904,6 +904,46 @@ nmo_status_t nmo_workspace_edit_begin(
         out_edit);
 }
 
+nmo_status_t nmo_object_edit_create(
+    nmo_workspace_edit_t *edit,
+    const nmo_object_create_desc_t *desc,
+    nmo_object_id_t *out_object_id)
+{
+    if (out_object_id != NULL) {
+        *out_object_id = 0;
+    }
+    if (edit == NULL || edit->finished || desc == NULL || out_object_id == NULL ||
+        desc->class_id == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_id_t object_id = 0;
+    nmo_status_t create_result =
+        nmo_workspace_internal_create_object(
+            edit->workspace,
+            desc->class_id,
+            desc->name,
+            desc->type_guid,
+            &object_id);
+    if (create_result != NMO_OK) {
+        return create_result;
+    }
+
+    nmo_status_t track_result =
+        nmo_workspace_edit_track_created_object(edit, object_id);
+    if (track_result != NMO_OK) {
+        (void)nmo_workspace_internal_destroy_objects(
+            edit->workspace,
+            &object_id,
+            1,
+            NMO_RUNTIME_REQUEST_DEFAULT);
+        return track_result;
+    }
+
+    *out_object_id = object_id;
+    return NMO_OK;
+}
+
 nmo_status_t nmo_object_edit_set_fields(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,
