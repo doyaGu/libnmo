@@ -1039,6 +1039,12 @@ TEST(edit_plan, executor_materializes_common_building_block_prototypes) {
         {"Output To Console", NMO_GUID_INIT(0x18655B3Fu, 0x68291DC3u)},
         {"Send Message", NMO_GUID_INIT(0xA20E8D5Bu, 0xDF002150u)},
         {"Wait Message", NMO_GUID_INIT(0x4587FFEEu, 0x4587FFDDu)},
+        {"Add Row", NMO_GUID_INIT(0x1C7E5DC6u, 0x3F6423C2u)},
+        {"Set Cell", NMO_GUID_INIT(0x30ED1C6Du, 0x4A3B7067u)},
+        {"Get Cell", NMO_GUID_INIT(0x33B99F51u, 0x07D95C45u)},
+        {"Remove Row", NMO_GUID_INIT(0x1FA57136u, 0x14310857u)},
+        {"Sort Rows", NMO_GUID_INIT(0x6F623E68u, 0x62BB5A98u)},
+        {"Get Current Scene", NMO_GUID_INIT(0x00DC125Fu, 0x592B00A8u)},
         {"Show", NMO_GUID_INIT(0xA85A213Au, 0xEF78D52Au)},
     };
 
