@@ -26,6 +26,9 @@
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameteroperation_schemas.h"
+#include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_repository.h"
@@ -466,10 +469,9 @@ static nmo_object_id_t debug_probe_find_matching_link(
     if (repo == NULL || wanted == NULL) {
         return 0u;
     }
-    size_t object_count = 0u;
-    nmo_object_t **objects = nmo_object_repository_get_all(repo, &object_count);
-    for (size_t i = 0; objects != NULL && i < object_count; ++i) {
-        nmo_object_t *object = objects[i];
+    size_t object_count = nmo_object_repository_get_count(repo);
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
         if (object == NULL ||
             nmo_object_get_class_id(object) != NMO_CID_BEHAVIORLINK) {
             continue;
@@ -653,12 +655,236 @@ static void debug_probe_selector_add_candidate(
                                     : debug_probe_message_role(state));
 }
 
+static bool debug_probe_link_touches_behavior(
+    const nmo_behavior_state_t *behavior,
+    const nmo_behaviorlink_state_t *link,
+    bool to_io_only);
+
 static bool debug_probe_behavior_has_io(const nmo_behavior_state_t *state,
                                         nmo_object_id_t io_id)
 {
     return state != NULL && io_id != 0u &&
            (nmo_array_find(&state->inputs, &io_id, NULL) != 0 ||
             nmo_array_find(&state->outputs, &io_id, NULL) != 0);
+}
+
+static bool debug_probe_behavior_has_child_behavior(
+    const nmo_behavior_state_t *state,
+    nmo_object_id_t behavior_id)
+{
+    return state != NULL && behavior_id != 0u &&
+           nmo_array_find(&state->sub_behaviors, &behavior_id, NULL) != 0;
+}
+
+static bool debug_probe_behavior_has_parameter(
+    const nmo_behavior_state_t *state,
+    nmo_object_id_t parameter_id)
+{
+    return state != NULL && parameter_id != 0u &&
+           (nmo_array_find(&state->in_parameters, &parameter_id, NULL) != 0 ||
+            nmo_array_find(&state->out_parameters, &parameter_id, NULL) != 0 ||
+            nmo_array_find(&state->local_parameters, &parameter_id, NULL) != 0 ||
+            state->target_parameter_id == parameter_id);
+}
+
+static const nmo_behavior_state_t *debug_probe_behavior_state_by_id(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t behavior_id)
+{
+    nmo_object_t *object = repo != NULL
+        ? nmo_object_repository_find_by_id(repo, behavior_id)
+        : NULL;
+    return object != NULL && nmo_object_get_class_id(object) == NMO_CID_BEHAVIOR
+        ? (const nmo_behavior_state_t *)nmo_object_get_state(object)
+        : NULL;
+}
+
+static nmo_object_id_t debug_probe_find_operation_owner_behavior(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t operation_id,
+    const nmo_parameteroperation_state_t *operation)
+{
+    if (repo == NULL || operation_id == 0u) {
+        return 0u;
+    }
+    if (operation != NULL && operation->has_owner &&
+        operation->owner_id != 0u) {
+        nmo_object_t *owner =
+            nmo_object_repository_find_by_id(repo, operation->owner_id);
+        if (owner != NULL &&
+            nmo_object_get_class_id(owner) == NMO_CID_BEHAVIOR) {
+            return operation->owner_id;
+        }
+    }
+
+    size_t object_count = nmo_object_repository_get_count(repo);
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        if (object == NULL ||
+            nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
+            continue;
+        }
+        const nmo_behavior_state_t *behavior =
+            (const nmo_behavior_state_t *)nmo_object_get_state(object);
+        if (behavior != NULL &&
+            nmo_array_find(&behavior->operations, &operation_id, NULL) != 0) {
+            return nmo_object_get_id(object);
+        }
+    }
+    return 0u;
+}
+
+static nmo_object_id_t debug_probe_find_parameter_owner_behavior(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t parameter_id)
+{
+    if (repo == NULL || parameter_id == 0u) {
+        return 0u;
+    }
+    size_t object_count = 0u;
+    nmo_object_t **objects = nmo_object_repository_get_all(repo, &object_count);
+    for (size_t i = 0; objects != NULL && i < object_count; ++i) {
+        nmo_object_t *object = objects[i];
+        if (object == NULL ||
+            nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
+            continue;
+        }
+        const nmo_behavior_state_t *behavior =
+            (const nmo_behavior_state_t *)nmo_object_get_state(object);
+        if (debug_probe_behavior_has_parameter(behavior, parameter_id)) {
+            return nmo_object_get_id(object);
+        }
+    }
+    return 0u;
+}
+
+static void debug_probe_add_related_behavior(
+    nmo_object_id_t *ids,
+    size_t *count,
+    size_t capacity,
+    nmo_object_id_t id)
+{
+    if (ids == NULL || count == NULL || id == 0u || *count >= capacity) {
+        return;
+    }
+    for (size_t i = 0; i < *count; ++i) {
+        if (ids[i] == id) {
+            return;
+        }
+    }
+    ids[(*count)++] = id;
+}
+
+static void debug_probe_collect_operation_parameter_behaviors(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t parameter_id,
+    nmo_object_id_t *ids,
+    size_t *count,
+    size_t capacity)
+{
+    nmo_object_id_t owner =
+        debug_probe_find_parameter_owner_behavior(repo, parameter_id);
+    debug_probe_add_related_behavior(ids, count, capacity, owner);
+
+    nmo_object_t *parameter_obj = repo != NULL
+        ? nmo_object_repository_find_by_id(repo, parameter_id)
+        : NULL;
+    if (parameter_obj != NULL &&
+        nmo_object_get_class_id(parameter_obj) == NMO_CID_PARAMETERIN) {
+        const nmo_parameterin_state_t *param_in =
+            (const nmo_parameterin_state_t *)nmo_object_get_state(
+                parameter_obj);
+        if (param_in != NULL && param_in->source_id != 0u) {
+            owner = debug_probe_find_parameter_owner_behavior(
+                repo, param_in->source_id);
+            debug_probe_add_related_behavior(ids, count, capacity, owner);
+        }
+    }
+
+    size_t object_count = repo != NULL
+        ? nmo_object_repository_get_count(repo)
+        : 0u;
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        if (object == NULL ||
+            nmo_object_get_class_id(object) != NMO_CID_PARAMETERIN) {
+            continue;
+        }
+        const nmo_parameterin_state_t *param_in =
+            (const nmo_parameterin_state_t *)nmo_object_get_state(object);
+        if (param_in == NULL || param_in->source_id != parameter_id) {
+            continue;
+        }
+        owner = debug_probe_find_parameter_owner_behavior(
+            repo, nmo_object_get_id(object));
+        debug_probe_add_related_behavior(ids, count, capacity, owner);
+    }
+
+    if (parameter_obj != NULL &&
+        nmo_object_get_class_id(parameter_obj) == NMO_CID_PARAMETEROUT) {
+        const nmo_parameterout_state_t *param_out =
+            (const nmo_parameterout_state_t *)nmo_object_get_state(
+                parameter_obj);
+        const nmo_object_id_t *destinations = param_out != NULL
+            ? param_out->destination_ids
+            : NULL;
+        for (uint32_t i = 0;
+             destinations != NULL && i < param_out->destination_count; ++i) {
+            owner = debug_probe_find_parameter_owner_behavior(
+                repo, destinations[i]);
+            debug_probe_add_related_behavior(ids, count, capacity, owner);
+        }
+    }
+}
+
+static size_t debug_probe_collect_operation_related_behaviors(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t operation_id,
+    const nmo_parameteroperation_state_t *operation,
+    nmo_object_id_t *ids,
+    size_t capacity)
+{
+    size_t count = 0u;
+    if (repo == NULL || operation == NULL || ids == NULL || capacity == 0u) {
+        return 0u;
+    }
+    debug_probe_add_related_behavior(
+        ids,
+        &count,
+        capacity,
+        debug_probe_find_operation_owner_behavior(repo, operation_id, operation));
+    if (operation->has_in1) {
+        debug_probe_collect_operation_parameter_behaviors(
+            repo, operation->in1_id, ids, &count, capacity);
+    }
+    if (operation->has_in2) {
+        debug_probe_collect_operation_parameter_behaviors(
+            repo, operation->in2_id, ids, &count, capacity);
+    }
+    if (operation->has_out) {
+        debug_probe_collect_operation_parameter_behaviors(
+            repo, operation->out_id, ids, &count, capacity);
+    }
+    return count;
+}
+
+static bool debug_probe_link_touches_any_behavior(
+    nmo_object_repository_t *repo,
+    const nmo_behaviorlink_state_t *link,
+    const nmo_object_id_t *behavior_ids,
+    size_t behavior_count)
+{
+    if (repo == NULL || link == NULL || behavior_ids == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < behavior_count; ++i) {
+        const nmo_behavior_state_t *behavior =
+            debug_probe_behavior_state_by_id(repo, behavior_ids[i]);
+        if (debug_probe_link_touches_behavior(behavior, link, false)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 typedef enum debug_probe_link_touch_mode {
@@ -1137,6 +1363,8 @@ static nmo_status_t debug_probe_analyze_data_cell_selector(
                 NMO_SEVERITY_ERROR,
                 "debug probe write-operation target is not a parameter operation");
         }
+        const nmo_parameteroperation_state_t *operation =
+            (const nmo_parameteroperation_state_t *)nmo_object_get_state(op_obj);
         if (args->remove_link_id == 0u &&
             args->from_io_id == 0u &&
             args->to_io_id == 0u) {
@@ -1149,6 +1377,80 @@ static nmo_status_t debug_probe_analyze_data_cell_selector(
                 NMO_ERR_INVALID_ARGUMENT,
                 NMO_SEVERITY_ERROR,
                 "debug probe write-operation requires --remove-link or explicit IO endpoints");
+        }
+        nmo_object_id_t operation_owner_id =
+            debug_probe_find_operation_owner_behavior(
+                repo, args->write_operation_id, operation);
+        nmo_object_t *parent_obj =
+            nmo_object_repository_find_by_id(repo, args->behavior_id);
+        const nmo_behavior_state_t *parent =
+            parent_obj != NULL &&
+                    nmo_object_get_class_id(parent_obj) == NMO_CID_BEHAVIOR
+                ? (const nmo_behavior_state_t *)nmo_object_get_state(parent_obj)
+                : NULL;
+        if (operation_owner_id == 0u ||
+            (operation_owner_id != args->behavior_id &&
+             !debug_probe_behavior_has_child_behavior(parent,
+                                                      operation_owner_id))) {
+            debug_probe_selector_set_mode_status(
+                args,
+                "explicit_operation",
+                "unsafe",
+                "unsafe_probe_insertion");
+            NMO_RETURN_ERROR(
+                NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR,
+                "unsafe_probe_insertion: debug probe write-operation is outside the selected behavior boundary");
+        }
+        if (args->remove_link_id != 0u) {
+            nmo_object_t *link_obj =
+                nmo_object_repository_find_by_id(repo, args->remove_link_id);
+            const nmo_behaviorlink_state_t *link =
+                link_obj != NULL &&
+                        nmo_object_get_class_id(link_obj) ==
+                            NMO_CID_BEHAVIORLINK
+                    ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
+                          link_obj)
+                    : NULL;
+            if (link == NULL || parent == NULL ||
+                nmo_array_find(&parent->sub_behavior_links,
+                               &args->remove_link_id,
+                               NULL) == 0) {
+                debug_probe_selector_set_mode_status(
+                    args,
+                    "explicit_operation",
+                    "unsafe",
+                    "cross_boundary_probe_link");
+                NMO_RETURN_ERROR(
+                    NMO_ERR_INVALID_ARGUMENT,
+                    NMO_SEVERITY_ERROR,
+                    "debug probe remove-link is not in the selected behavior boundary");
+            }
+            nmo_object_id_t related_behaviors[32];
+            size_t related_count =
+                debug_probe_collect_operation_related_behaviors(
+                    repo,
+                    args->write_operation_id,
+                    operation,
+                    related_behaviors,
+                    sizeof(related_behaviors) / sizeof(related_behaviors[0]));
+            if (!debug_probe_link_touches_any_behavior(
+                    repo, link, related_behaviors, related_count)) {
+                debug_probe_selector_set_mode_status(
+                    args,
+                    "explicit_operation",
+                    "unsafe",
+                    "unsafe_probe_insertion");
+                NMO_RETURN_ERROR(
+                    NMO_ERR_INVALID_ARGUMENT,
+                    NMO_SEVERITY_ERROR,
+                    "unsafe_probe_insertion: debug probe remove-link does not touch selected write-operation data flow");
+            }
+            args->selector_selected_link_id = args->remove_link_id;
+            if (!args->has_delay && link->activation_delay > 0) {
+                args->delay = (uint32_t)link->activation_delay;
+                args->has_delay = true;
+            }
         }
         args->selector_selected_operation_id = args->write_operation_id;
         return NMO_OK;

@@ -3811,6 +3811,48 @@ TEST(cli, debug_probe_data_cell_logger_inserts_on_selected_write_link) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, debug_probe_data_cell_logger_rejects_cross_boundary_write_operation) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json debug probe data-cell-logger --behavior 3880 "
+             "--dataarray 6067 --row 0 --col 1 --write-operation 3791 "
+             "--remove-link 3874 \"%s\" --dry-run",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_STR_CONTAINS(result.output, "unsafe_probe_insertion");
+    ASSERT_STR_CONTAINS(result.output, "write-operation is outside the selected behavior boundary");
+    free(result.output);
+}
+
+TEST(cli, debug_probe_data_cell_logger_accepts_operation_consumer_link) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json debug probe data-cell-logger --behavior 3798 "
+             "--dataarray 6067 --row 0 --col 1 --write-operation 3791 "
+             "--remove-link 3780 \"%s\" --dry-run",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(data, "ok")));
+    yyjson_val *diag = yyjson_obj_get(data, "probe_selector_diagnostics");
+    ASSERT_NOT_NULL(diag);
+    ASSERT_STR_EQ("explicit_operation",
+                  yyjson_get_str(yyjson_obj_get(diag, "mode")));
+    ASSERT_STR_EQ("selected", yyjson_get_str(yyjson_obj_get(diag, "status")));
+    ASSERT_EQ(3791u,
+              yyjson_get_uint(yyjson_obj_get(diag, "selected_operation_id")));
+    ASSERT_EQ(3780u,
+              yyjson_get_uint(yyjson_obj_get(diag, "selected_link_id")));
+    yyjson_val *operations = yyjson_obj_get(data, "operations");
+    ASSERT_TRUE(operations && yyjson_is_arr(operations));
+    ASSERT_EQ(5u, yyjson_arr_size(operations));
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, debug_probe_data_cell_logger_auto_rejects_multi_link_write_node) {
     char args[1024];
     snprintf(args, sizeof(args),
@@ -4132,6 +4174,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, debug_probe_data_cell_logger_uses_edit_plan);
     REGISTER_TEST(cli, debug_probe_data_cell_logger_reports_explicit_write_node);
     REGISTER_TEST(cli, debug_probe_data_cell_logger_inserts_on_selected_write_link);
+    REGISTER_TEST(cli, debug_probe_data_cell_logger_rejects_cross_boundary_write_operation);
+    REGISTER_TEST(cli, debug_probe_data_cell_logger_accepts_operation_consumer_link);
     REGISTER_TEST(cli, debug_probe_data_cell_logger_auto_rejects_multi_link_write_node);
     REGISTER_TEST(cli, debug_probe_control_marker_dry_run_reports_edit_plan);
     REGISTER_TEST(cli, debug_probe_rejects_invalid_probe_options);
