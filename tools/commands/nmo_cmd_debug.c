@@ -1137,6 +1137,19 @@ static nmo_status_t debug_probe_analyze_data_cell_selector(
                 NMO_SEVERITY_ERROR,
                 "debug probe write-operation target is not a parameter operation");
         }
+        if (args->remove_link_id == 0u &&
+            args->from_io_id == 0u &&
+            args->to_io_id == 0u) {
+            debug_probe_selector_set_mode_status(
+                args,
+                "explicit_operation",
+                "unsafe",
+                "unsafe_probe_insertion");
+            NMO_RETURN_ERROR(
+                NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR,
+                "debug probe write-operation requires --remove-link or explicit IO endpoints");
+        }
         args->selector_selected_operation_id = args->write_operation_id;
         return NMO_OK;
     }
