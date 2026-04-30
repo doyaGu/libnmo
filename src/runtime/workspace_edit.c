@@ -48,6 +48,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1962,6 +1963,82 @@ nmo_status_t nmo_asset_edit_set_obj_mesh(
     }
 
     nmo_arena_destroy(scratch);
+    return status;
+}
+
+static uint8_t *workspace_edit_read_file_to_heap(
+    const char *path,
+    size_t *out_size)
+{
+    if (path == NULL || out_size == NULL) {
+        return NULL;
+    }
+
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) {
+        return NULL;
+    }
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return NULL;
+    }
+    long size_long = ftell(file);
+    if (size_long < 0) {
+        fclose(file);
+        return NULL;
+    }
+    if (fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        return NULL;
+    }
+
+    size_t size = (size_t)size_long;
+    uint8_t *bytes = (uint8_t *)malloc(size > 0 ? size : 1u);
+    if (bytes == NULL) {
+        fclose(file);
+        return NULL;
+    }
+    size_t read_size = fread(bytes, 1u, size, file);
+    fclose(file);
+    if (read_size != size) {
+        free(bytes);
+        return NULL;
+    }
+
+    *out_size = size;
+    return bytes;
+}
+
+nmo_status_t nmo_asset_edit_set_obj_mesh_from_file(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t mesh_id,
+    const char *path,
+    const nmo_asset_mesh_import_options_t *options)
+{
+    if (edit == NULL || mesh_id == 0 || path == NULL || *path == '\0') {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t size = 0;
+    uint8_t *bytes = workspace_edit_read_file_to_heap(path, &size);
+    if (bytes == NULL) {
+        return NMO_ERR_CANT_OPEN_FILE;
+    }
+
+    nmo_arena_t *parse_arena = nmo_arena_create(NULL, 0);
+    if (parse_arena == NULL) {
+        free(bytes);
+        return NMO_ERR_NOMEM;
+    }
+
+    nmo_obj_data_t obj_data = {0};
+    nmo_status_t status =
+        nmo_obj_parse(parse_arena, (const char *)bytes, size, &obj_data);
+    free(bytes);
+    if (status == NMO_OK) {
+        status = nmo_asset_edit_set_obj_mesh(edit, mesh_id, &obj_data, options);
+    }
+    nmo_arena_destroy(parse_arena);
     return status;
 }
 

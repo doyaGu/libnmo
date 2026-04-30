@@ -12,6 +12,7 @@
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 
+#include <stdio.h>
 #include <string.h>
 
 static void create_workspace(
@@ -230,8 +231,47 @@ TEST(asset_edit_obj_mesh, rejects_wrong_class_material_binding)
     destroy_workspace(ctx, doc, workspace);
 }
 
+TEST(asset_edit_obj_mesh, imports_obj_from_file)
+{
+    const char *path = "test_asset_edit_obj_mesh_tmp.obj";
+    remove(path);
+    FILE *fp = fopen(path, "wb");
+    ASSERT_NOT_NULL(fp);
+    fputs("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n", fp);
+    fclose(fp);
+
+    nmo_context_t *ctx = NULL;
+    nmo_document_t *doc = NULL;
+    nmo_workspace_t *workspace = NULL;
+    create_workspace(&ctx, &doc, &workspace);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "obj file", &edit));
+    nmo_object_id_t mesh_id = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){.class_id = NMO_CID_MESH, .name = "FileMesh"},
+                  &mesh_id));
+
+    ASSERT_EQ(NMO_OK, nmo_asset_edit_set_obj_mesh_from_file(edit, mesh_id, path, NULL));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    nmo_object_t *mesh_object = find_object(doc, mesh_id);
+    ASSERT_NOT_NULL(mesh_object);
+    const nmo_mesh_state_t *mesh =
+        (const nmo_mesh_state_t *)nmo_object_get_state(mesh_object);
+    ASSERT_NOT_NULL(mesh);
+    ASSERT_EQ(3u, mesh->vertex_count);
+    ASSERT_EQ(1u, mesh->face_count);
+
+    destroy_workspace(ctx, doc, workspace);
+    remove(path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(asset_edit_obj_mesh, imports_triangle_from_parsed_obj);
 REGISTER_TEST(asset_edit_obj_mesh, binds_named_obj_materials);
 REGISTER_TEST(asset_edit_obj_mesh, rejects_wrong_class_material_binding);
+REGISTER_TEST(asset_edit_obj_mesh, imports_obj_from_file);
 TEST_MAIN_END()

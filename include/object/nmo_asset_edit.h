@@ -40,6 +40,12 @@ NMO_API nmo_status_t nmo_asset_edit_set_obj_mesh(
     const nmo_obj_data_t *obj_data,
     const nmo_asset_mesh_import_options_t *options);
 
+NMO_API nmo_status_t nmo_asset_edit_set_obj_mesh_from_file(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t mesh_id,
+    const char *path,
+    const nmo_asset_mesh_import_options_t *options);
+
 NMO_API nmo_status_t nmo_asset_edit_bind_entity_mesh(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t entity_id,
