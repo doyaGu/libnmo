@@ -355,7 +355,7 @@ TEST(conformance, inheritance_3d_entity_chain) {
         return;
     }
 
-    /* CK3dEntity �?CKRenderObject �?CKBeObject �?CKSceneObject �?CKObject */
+    /* CK3dEntity -> CKRenderObject -> CKBeObject -> CKSceneObject -> CKObject */
     const nmo_type_descriptor_t *entity3d = 
         nmo_type_registry_find_by_class_id(g_registry, NMO_CID_3DENTITY);
     const nmo_type_descriptor_t *renderobj = 
@@ -403,7 +403,7 @@ TEST(conformance, inheritance_camera) {
     ASSERT_NE(NULL, camera);
     ASSERT_NE(NULL, entity3d);
 
-    /* CKTargetCamera �?CKCamera �?CK3dEntity */
+    /* CKTargetCamera -> CKCamera -> CK3dEntity */
     ASSERT_TRUE(nmo_type_is_derived_from(g_registry, targetcam->id, camera->id));
     ASSERT_TRUE(nmo_type_is_derived_from(g_registry, camera->id, entity3d->id));
     ASSERT_TRUE(nmo_type_is_derived_from(g_registry, targetcam->id, entity3d->id));
@@ -435,14 +435,14 @@ TEST(conformance, inheritance_parameter) {
     ASSERT_NE(NULL, paramin);
     ASSERT_NE(NULL, paramout);
 
-    /* CKParameterLocal �?CKParameter �?CKObject */
+    /* CKParameterLocal -> CKParameter -> CKObject */
     ASSERT_TRUE(nmo_type_is_derived_from(g_registry, paramlocal->id, param->id));
     ASSERT_TRUE(nmo_type_is_derived_from(g_registry, param->id, ckobj->id));
 
-    /* CKParameterOut �?CKParameter (per SDK) */
+    /* CKParameterOut -> CKParameter (per SDK) */
     ASSERT_TRUE(nmo_type_is_derived_from(g_registry, paramout->id, param->id));
 
-    /* CKParameterIn �?CKObject directly (NOT CKParameter, per SDK!) */
+    /* CKParameterIn -> CKObject directly (NOT CKParameter, per SDK!) */
     ASSERT_TRUE(nmo_type_is_derived_from(g_registry, paramin->id, ckobj->id));
     ASSERT_FALSE(nmo_type_is_derived_from(g_registry, paramin->id, param->id));
 
@@ -477,10 +477,10 @@ TEST(conformance, inheritance_behavior) {
     ASSERT_NE(NULL, behaviorio);
     ASSERT_NE(NULL, behaviorlink);
 
-    /* CKBehavior �?CKSceneObject */
+    /* CKBehavior -> CKSceneObject */
     ASSERT_TRUE(nmo_type_is_derived_from(g_registry, behavior->id, sceneobj->id));
 
-    /* CKBehaviorIO, CKBehaviorLink �?CKObject (not CKSceneObject) */
+    /* CKBehaviorIO, CKBehaviorLink -> CKObject (not CKSceneObject) */
     ASSERT_TRUE(nmo_type_is_derived_from(g_registry, behaviorio->id, ckobj->id));
     ASSERT_TRUE(nmo_type_is_derived_from(g_registry, behaviorlink->id, ckobj->id));
     ASSERT_FALSE(nmo_type_is_derived_from(g_registry, behaviorio->id, sceneobj->id));
@@ -503,7 +503,7 @@ TEST(conformance, inheritance_mesh_variants) {
 
     ASSERT_NE(NULL, mesh);
 
-    /* CKMesh �?CKBeObject */
+    /* CKMesh -> CKBeObject */
     ASSERT_TRUE(nmo_type_is_derived_from(g_registry, mesh->id, beobj->id));
 
 }

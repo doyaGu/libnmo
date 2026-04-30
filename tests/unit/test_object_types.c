@@ -212,7 +212,7 @@ TEST(object_types, 3d_entity_hierarchy) {
     ASSERT_NE(NULL, entity3d);
     ASSERT_NE(NULL, camera);
 
-    /* Verify hierarchy: CKCamera �?CK3dEntity �?CKRenderObject �?CKBeObject �?CKSceneObject �?CKObject */
+    /* Verify hierarchy: CKCamera -> CK3dEntity -> CKRenderObject -> CKBeObject -> CKSceneObject -> CKObject */
     ASSERT_TRUE(nmo_type_is_derived_from(registry, camera->id, entity3d->id));
     ASSERT_TRUE(nmo_type_is_derived_from(registry, entity3d->id, renderobject->id));
     ASSERT_TRUE(nmo_type_is_derived_from(registry, renderobject->id, beobject->id));
