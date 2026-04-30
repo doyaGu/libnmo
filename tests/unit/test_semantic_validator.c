@@ -303,6 +303,11 @@ TEST(semantic_validator, detects_missing_symbolic_message_manager_entry)
     ASSERT_NOT_NULL(risk);
     ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, risk->severity);
     ASSERT_EQ(root_id, risk->object_id);
+    const nmo_behavior_semantic_risk_t *message_risk =
+        find_risk(risks, risk_count, "message_entry_missing");
+    ASSERT_NOT_NULL(message_risk);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, message_risk->severity);
+    ASSERT_EQ(root_id, message_risk->object_id);
 
     nmo_semantic_risks_free(risks);
     nmo_edit_plan_destroy(plan);
@@ -1966,6 +1971,42 @@ TEST(semantic_validator, edit_plan_reports_data_cell_type_mismatch)
     ASSERT_NOT_NULL(mismatch);
     ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, mismatch->severity);
     ASSERT_EQ(2261u, mismatch->object_id);
+    const nmo_behavior_semantic_risk_t *write_site =
+        find_risk(risks, risk_count, "write_site_column_type_mismatch");
+    ASSERT_NOT_NULL(write_site);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, write_site->severity);
+    ASSERT_EQ(2261u, write_site->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
+TEST(semantic_validator, edit_plan_reports_write_site_dataarray_mismatch)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_empty(&fixture);
+
+    nmo_object_id_t behavior_id = 0u;
+    semantic_create_object(&fixture, NMO_CID_BEHAVIOR, "Not DataArray",
+                           &behavior_id);
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_data_cell(plan, behavior_id, 0u, 0u, "x"));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+
+    const nmo_behavior_semantic_risk_t *mismatch =
+        find_risk(risks, risk_count, "write_site_dataarray_mismatch");
+    ASSERT_NOT_NULL(mismatch);
+    ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, mismatch->severity);
+    ASSERT_EQ(behavior_id, mismatch->object_id);
 
     nmo_semantic_risks_free(risks);
     nmo_edit_plan_destroy(plan);
@@ -2372,6 +2413,7 @@ REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_handle_value)
     REGISTER_TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch_with_handle_refs);
     REGISTER_TEST(semantic_validator, edit_plan_reports_data_cell_bounds);
     REGISTER_TEST(semantic_validator, edit_plan_reports_data_cell_type_mismatch);
+    REGISTER_TEST(semantic_validator, edit_plan_reports_write_site_dataarray_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_dangling_data_cell_reference);
     REGISTER_TEST(semantic_validator, edit_plan_reports_unknown_building_block);
     REGISTER_TEST(semantic_validator, edit_plan_reports_unknown_replace_building_block);

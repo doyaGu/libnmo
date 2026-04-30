@@ -1261,6 +1261,13 @@ static nmo_status_t semantic_add_data_cell_risk(
         return NMO_OK;
     }
     if (nmo_object_get_class_id(object) != NMO_CID_DATAARRAY) {
+        NMO_RETURN_IF_ERROR(semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "write_site_dataarray_mismatch",
+            "Data write-site target is not a CKDataArray",
+            dataarray_id));
         return semantic_add_risk(
             risks,
             risk_count,
@@ -1373,6 +1380,13 @@ static nmo_status_t semantic_add_data_cell_risk(
     }
 
     if (!value_matches_type) {
+        NMO_RETURN_IF_ERROR(semantic_add_risk(
+            risks,
+            risk_count,
+            NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+            "write_site_column_type_mismatch",
+            "Data write-site value is incompatible with the data array column type",
+            dataarray_id));
         return semantic_add_risk(
             risks,
             risk_count,
@@ -1697,6 +1711,13 @@ static nmo_status_t semantic_add_manager_default_risks(
         }
         if (!semantic_message_manager_has_name(
                 workspace, param->default_value)) {
+            NMO_RETURN_IF_ERROR(semantic_add_risk(
+                risks,
+                risk_count,
+                NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
+                "message_entry_missing",
+                "Building-block default references a missing message manager entry",
+                parent_behavior_id));
             return semantic_add_risk(
                 risks,
                 risk_count,
