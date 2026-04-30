@@ -528,6 +528,51 @@ TEST(ballance_acceptance, accepted_data_probe_save_load_validates)
     remove(output);
 }
 
+TEST(ballance_acceptance, accepted_operation_data_probe_save_load_validates)
+{
+    make_dir("test_ballance_acceptance_tmp");
+    const char *output = "test_ballance_acceptance_tmp/operation_data_probe.cmo";
+    remove(output);
+
+    char args[1536];
+    snprintf(args, sizeof(args),
+             "-f json debug probe data-cell-logger --behavior 3798 "
+             "--dataarray 6067 --row 0 --col 1 "
+             "--write-operation 3791 --remove-link 3780 "
+             "\"%s\" -o \"%s\"",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output);
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "debug.probe", &doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_FALSE(get_bool_field(data, "dry_run"));
+    ASSERT_TRUE(file_exists(output));
+    ASSERT_STR_EQ("data_cell_write", get_string_field(data, "probe_selector"));
+    yyjson_val *diagnostics =
+        get_object_field(data, "probe_selector_diagnostics");
+    ASSERT_NOT_NULL(diagnostics);
+    ASSERT_STR_EQ("explicit_operation", get_string_field(diagnostics, "mode"));
+    ASSERT_STR_EQ("selected", get_string_field(diagnostics, "status"));
+    ASSERT_EQ(3791u, (uint32_t)get_uint_field(diagnostics, "selected_operation_id"));
+    ASSERT_EQ(3780u, (uint32_t)get_uint_field(diagnostics, "selected_link_id"));
+    yyjson_val *operations = get_array_field(data, "operations");
+    ASSERT_NOT_NULL(operations);
+    ASSERT_EQ(5u, (uint32_t)yyjson_arr_size(operations));
+    yyjson_doc_free(doc);
+
+    snprintf(args, sizeof(args), "validate all \"%s\"", output);
+    cli_run_result_t validate = run_cli_capture(args);
+    ASSERT_NOT_NULL(validate.output);
+    ASSERT_EQ(0, validate.exit_code);
+    ASSERT_STR_CONTAINS(validate.output, "Result: VALID");
+    free(validate.output);
+
+    remove(output);
+}
+
 TEST(ballance_acceptance, accepted_manager_entry_save_load_validates)
 {
     make_dir("test_ballance_acceptance_tmp");
@@ -670,6 +715,7 @@ REGISTER_TEST(ballance_acceptance, accepted_patch_report_manifest_replays);
 REGISTER_TEST(ballance_acceptance, failed_patch_chain_does_not_write_output);
 REGISTER_TEST(ballance_acceptance, accepted_message_probe_save_load_validates);
 REGISTER_TEST(ballance_acceptance, accepted_data_probe_save_load_validates);
+REGISTER_TEST(ballance_acceptance, accepted_operation_data_probe_save_load_validates);
 REGISTER_TEST(ballance_acceptance, accepted_manager_entry_save_load_validates);
 REGISTER_TEST(ballance_acceptance, accepted_attribute_manager_entry_save_load_validates);
 TEST_MAIN_END()
