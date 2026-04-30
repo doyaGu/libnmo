@@ -1302,6 +1302,22 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     write_probe_close(&mesh_semantic_probe);
 
     ASSERT_TRUE(write_text_file(
+        "test_cli_write_tmp/mesh_wrong_material.obj",
+        "v 0 0 0\n"
+        "v 1 0 0\n"
+        "v 0 1 0\n"
+        "usemtl Cam_Pos\n"
+        "f 1 2 3\n"));
+    remove("test_cli_write_tmp/mesh_wrong_material_out.nmo");
+    assert_cli_failure(
+        "mesh import --name MeshWrongMaterial "
+        "\"test_cli_write_tmp/mesh_wrong_material.obj\" "
+        "\"" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "\" "
+        "-o \"test_cli_write_tmp/mesh_wrong_material_out.nmo\"",
+        "material");
+    ASSERT_FALSE(file_exists("test_cli_write_tmp/mesh_wrong_material_out.nmo"));
+
+    ASSERT_TRUE(write_text_file(
         "test_cli_write_tmp/tiny_replace.obj",
         "o TinyReplace\n"
         "v 0 0 0\n"
