@@ -1,4 +1,5 @@
 #include "project/nmo_project_plan.h"
+#include "project/nmo_asset_plan.h"
 #include "project/nmo_scene_authoring.h"
 
 #include <stdlib.h>
@@ -21,6 +22,14 @@ typedef struct project_object_record {
     size_t field_count;
 } project_object_record_t;
 
+typedef struct project_asset_record {
+    uint32_t object_handle;
+    bool has_primitive_mesh;
+    nmo_primitive_mesh_t primitive_mesh;
+    bool has_material_color;
+    float material_color[4];
+} project_asset_record_t;
+
 struct nmo_project_plan {
     char *document_name;
     project_scene_record_t *scenes;
@@ -29,6 +38,9 @@ struct nmo_project_plan {
     project_object_record_t *objects;
     size_t object_count;
     size_t object_capacity;
+    project_asset_record_t *assets;
+    size_t asset_count;
+    size_t asset_capacity;
     uint32_t next_scene_handle;
     uint32_t next_object_handle;
 };
@@ -146,6 +158,7 @@ void nmo_project_plan_destroy(nmo_project_plan_t *plan)
     }
     free(plan->scenes);
     free(plan->objects);
+    free(plan->assets);
     free(plan);
 }
 
@@ -228,6 +241,22 @@ nmo_status_t nmo_project_plan_clone(
             clone->objects[i].field_count = plan->objects[i].field_count;
             clone->object_count++;
         }
+    }
+    if (plan->asset_count > 0u) {
+        clone->assets = (project_asset_record_t *)calloc(
+            plan->asset_count,
+            sizeof(*clone->assets));
+        if (!clone->assets) {
+            nmo_project_plan_destroy(clone);
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to clone project assets");
+        }
+        memcpy(
+            clone->assets,
+            plan->assets,
+            plan->asset_count * sizeof(*clone->assets));
+        clone->asset_count = plan->asset_count;
+        clone->asset_capacity = plan->asset_count;
     }
 
     *out_clone = clone;
@@ -355,6 +384,130 @@ nmo_status_t nmo_project_plan_add_scene(
     if (out_scene_handle) {
         *out_scene_handle = handle;
     }
+    NMO_RETURN_OK();
+}
+
+static bool project_plan_has_object_handle(
+    const nmo_project_plan_t *plan,
+    uint32_t object_handle)
+{
+    if (!plan || object_handle == 0u) {
+        return false;
+    }
+    for (size_t i = 0; i < plan->object_count; ++i) {
+        if (plan->objects[i].handle == object_handle) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static nmo_status_t project_plan_find_or_add_asset(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    project_asset_record_t **out_asset)
+{
+    if (!plan || object_handle == 0u || !out_asset) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan, object handle, and out_asset are required");
+    }
+    *out_asset = NULL;
+    if (!project_plan_has_object_handle(plan, object_handle)) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "asset target object handle not found");
+    }
+
+    for (size_t i = 0; i < plan->asset_count; ++i) {
+        if (plan->assets[i].object_handle == object_handle) {
+            *out_asset = &plan->assets[i];
+            NMO_RETURN_OK();
+        }
+    }
+
+    if (plan->asset_count == plan->asset_capacity) {
+        size_t new_capacity = plan->asset_capacity ? plan->asset_capacity * 2u : 4u;
+        project_asset_record_t *new_assets =
+            (project_asset_record_t *)realloc(
+                plan->assets,
+                new_capacity * sizeof(*new_assets));
+        if (!new_assets) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate project asset");
+        }
+        memset(new_assets + plan->asset_capacity,
+               0,
+               (new_capacity - plan->asset_capacity) * sizeof(*new_assets));
+        plan->assets = new_assets;
+        plan->asset_capacity = new_capacity;
+    }
+
+    project_asset_record_t *asset = &plan->assets[plan->asset_count++];
+    memset(asset, 0, sizeof(*asset));
+    asset->object_handle = object_handle;
+    *out_asset = asset;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_primitive_mesh(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    nmo_primitive_mesh_t primitive)
+{
+    if (primitive != NMO_PRIMITIVE_CUBE) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "unsupported primitive mesh");
+    }
+
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+    asset->has_primitive_mesh = true;
+    asset->primitive_mesh = primitive;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_material_color(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float r,
+    float g,
+    float b,
+    float a)
+{
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+    asset->has_material_color = true;
+    asset->material_color[0] = r;
+    asset->material_color[1] = g;
+    asset->material_color[2] = b;
+    asset->material_color[3] = a;
+    NMO_RETURN_OK();
+}
+
+size_t nmo_project_plan_asset_count(const nmo_project_plan_t *plan)
+{
+    return plan ? plan->asset_count : 0u;
+}
+
+nmo_status_t nmo_project_plan_get_asset(
+    const nmo_project_plan_t *plan,
+    size_t index,
+    nmo_project_asset_desc_t *out_asset)
+{
+    if (!plan || !out_asset) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and out_asset are required");
+    }
+    if (index >= plan->asset_count) {
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR,
+                         "asset index out of bounds");
+    }
+
+    const project_asset_record_t *asset = &plan->assets[index];
+    out_asset->object_handle = asset->object_handle;
+    out_asset->has_primitive_mesh = asset->has_primitive_mesh;
+    out_asset->primitive_mesh = asset->primitive_mesh;
+    out_asset->has_material_color = asset->has_material_color;
+    memcpy(out_asset->material_color, asset->material_color, sizeof(out_asset->material_color));
     NMO_RETURN_OK();
 }
 

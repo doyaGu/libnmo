@@ -4,6 +4,7 @@
  */
 
 #include "runtime/nmo_workspace.h"
+#include "object/nmo_asset_edit.h"
 #include "object/nmo_object_edit.h"
 #include "object/nmo_scene_edit.h"
 #include "behavior/nmo_behavior_edit.h"
@@ -17,7 +18,10 @@
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_repository.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
+#include "object/builtin/nmo_material_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_attributemanager_schemas.h"
@@ -1063,6 +1067,362 @@ nmo_status_t nmo_scene_edit_add_object(
         workspace_edit_rollback_to(edit, checkpoint);
         return append_result;
     }
+
+    nmo_workspace_edit_mark(
+        edit,
+        NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
+    return NMO_OK;
+}
+
+static nmo_status_t workspace_edit_find_typed_object(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    nmo_class_id_t class_id,
+    nmo_object_t **out_object,
+    void **out_state)
+{
+    if (out_object != NULL) {
+        *out_object = NULL;
+    }
+    if (out_state != NULL) {
+        *out_state = NULL;
+    }
+    if (edit == NULL || edit->finished || object_id == 0 || out_state == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, object_id);
+    if (object == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (nmo_object_get_class_id(object) != class_id) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    void *state = nmo_object_get_state(object);
+    if (state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    if (out_object != NULL) {
+        *out_object = object;
+    }
+    *out_state = state;
+    return NMO_OK;
+}
+
+static nmo_status_t workspace_edit_find_typed_state(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    nmo_class_id_t class_id,
+    void **out_state)
+{
+    return workspace_edit_find_typed_object(
+        edit,
+        object_id,
+        class_id,
+        NULL,
+        out_state);
+}
+
+static uint8_t workspace_edit_float_color_channel(float value)
+{
+    if (value <= 0.0f) {
+        return 0u;
+    }
+    if (value >= 1.0f) {
+        return 255u;
+    }
+    return (uint8_t)(value * 255.0f + 0.5f);
+}
+
+static uint32_t workspace_edit_pack_argb(float r, float g, float b, float a)
+{
+    uint32_t alpha = workspace_edit_float_color_channel(a);
+    uint32_t red = workspace_edit_float_color_channel(r);
+    uint32_t green = workspace_edit_float_color_channel(g);
+    uint32_t blue = workspace_edit_float_color_channel(b);
+    return (alpha << 24) | (red << 16) | (green << 8) | blue;
+}
+
+nmo_status_t nmo_asset_edit_set_material_color(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t material_id,
+    float r,
+    float g,
+    float b,
+    float a)
+{
+    nmo_material_state_t *state = NULL;
+    nmo_status_t status = workspace_edit_find_typed_state(
+        edit,
+        material_id,
+        NMO_CID_MATERIAL,
+        (void **)&state);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    status = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    uint32_t color = workspace_edit_pack_argb(r, g, b, a);
+    state->diffuse_color = color;
+    state->ambient_color = color;
+    state->specular_color = 0xFFFFFFFFu;
+    state->emissive_color = 0xFF000000u;
+    state->specular_power = 0.0f;
+
+    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
+    return NMO_OK;
+}
+
+static nmo_status_t workspace_edit_require_object_class(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    nmo_class_id_t class_id)
+{
+    void *state = NULL;
+    return workspace_edit_find_typed_state(edit, object_id, class_id, &state);
+}
+
+nmo_status_t nmo_asset_edit_bind_entity_mesh(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t entity_id,
+    nmo_object_id_t mesh_id)
+{
+    nmo_3dentity_state_t *state = NULL;
+    nmo_status_t status = workspace_edit_find_typed_state(
+        edit,
+        entity_id,
+        NMO_CID_3DENTITY,
+        (void **)&state);
+    if (status != NMO_OK) {
+        return status;
+    }
+    status = workspace_edit_require_object_class(edit, mesh_id, NMO_CID_MESH);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    nmo_arena_t *arena = nmo_workspace_internal_document_arena(edit->workspace);
+    if (arena == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_object_id_t *mesh_ids = (nmo_object_id_t *)nmo_arena_alloc(
+        arena,
+        sizeof(*mesh_ids),
+        _Alignof(nmo_object_id_t));
+    if (mesh_ids == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    mesh_ids[0] = mesh_id;
+
+    status = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    state->current_mesh_id = mesh_id;
+    state->mesh_count = 1u;
+    state->mesh_ids = mesh_ids;
+    state->has_mesh_chunk = 1u;
+
+    nmo_workspace_edit_mark(
+        edit,
+        NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
+    return NMO_OK;
+}
+
+static nmo_status_t workspace_edit_alloc_cube_mesh(
+    nmo_arena_t *arena,
+    nmo_vertex_t **out_vertices,
+    nmo_face_t **out_faces,
+    uint16_t **out_indices,
+    uint32_t **out_vertex_colors,
+    uint32_t **out_vertex_specular,
+    nmo_material_group_t **out_groups)
+{
+    if (arena == NULL || out_vertices == NULL || out_faces == NULL ||
+        out_indices == NULL || out_vertex_colors == NULL ||
+        out_vertex_specular == NULL || out_groups == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_vertex_t *vertices = (nmo_vertex_t *)nmo_arena_alloc(
+        arena,
+        sizeof(*vertices) * 8u,
+        _Alignof(nmo_vertex_t));
+    nmo_face_t *faces = (nmo_face_t *)nmo_arena_alloc(
+        arena,
+        sizeof(*faces) * 12u,
+        _Alignof(nmo_face_t));
+    uint16_t *indices = (uint16_t *)nmo_arena_alloc(
+        arena,
+        sizeof(*indices) * 36u,
+        _Alignof(uint16_t));
+    uint32_t *vertex_colors = (uint32_t *)nmo_arena_alloc(
+        arena,
+        sizeof(*vertex_colors) * 8u,
+        _Alignof(uint32_t));
+    uint32_t *vertex_specular = (uint32_t *)nmo_arena_alloc(
+        arena,
+        sizeof(*vertex_specular) * 8u,
+        _Alignof(uint32_t));
+    nmo_material_group_t *groups = (nmo_material_group_t *)nmo_arena_alloc(
+        arena,
+        sizeof(*groups),
+        _Alignof(nmo_material_group_t));
+    if (vertices == NULL || faces == NULL || indices == NULL ||
+        vertex_colors == NULL || vertex_specular == NULL || groups == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    static const float coords[8][3] = {
+        {-0.5f, -0.5f, -0.5f},
+        { 0.5f, -0.5f, -0.5f},
+        { 0.5f,  0.5f, -0.5f},
+        {-0.5f,  0.5f, -0.5f},
+        {-0.5f, -0.5f,  0.5f},
+        { 0.5f, -0.5f,  0.5f},
+        { 0.5f,  0.5f,  0.5f},
+        {-0.5f,  0.5f,  0.5f},
+    };
+    static const uint16_t cube_indices[36] = {
+        0u, 2u, 1u, 0u, 3u, 2u,
+        4u, 5u, 6u, 4u, 6u, 7u,
+        0u, 1u, 5u, 0u, 5u, 4u,
+        3u, 6u, 2u, 3u, 7u, 6u,
+        1u, 2u, 6u, 1u, 6u, 5u,
+        0u, 4u, 7u, 0u, 7u, 3u,
+    };
+
+    for (size_t i = 0; i < 8u; ++i) {
+        vertices[i].position.x = coords[i][0];
+        vertices[i].position.y = coords[i][1];
+        vertices[i].position.z = coords[i][2];
+        vertices[i].normal.x = coords[i][0] * 1.1547005f;
+        vertices[i].normal.y = coords[i][1] * 1.1547005f;
+        vertices[i].normal.z = coords[i][2] * 1.1547005f;
+        vertices[i].uv.x = 0.0f;
+        vertices[i].uv.y = 0.0f;
+        vertex_colors[i] = 0xFFFFFFFFu;
+        vertex_specular[i] = 0xFF000000u;
+    }
+    memset(faces, 0, sizeof(*faces) * 12u);
+    memcpy(indices, cube_indices, sizeof(cube_indices));
+    memset(groups, 0, sizeof(*groups));
+
+    *out_vertices = vertices;
+    *out_faces = faces;
+    *out_indices = indices;
+    *out_vertex_colors = vertex_colors;
+    *out_vertex_specular = vertex_specular;
+    *out_groups = groups;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_asset_edit_set_primitive_mesh(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t mesh_id,
+    nmo_primitive_mesh_t primitive,
+    nmo_object_id_t material_id)
+{
+    if (primitive != NMO_PRIMITIVE_CUBE) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_t *mesh_object = NULL;
+    nmo_mesh_state_t *state = NULL;
+    nmo_status_t status = workspace_edit_find_typed_object(
+        edit,
+        mesh_id,
+        NMO_CID_MESH,
+        &mesh_object,
+        (void **)&state);
+    if (status != NMO_OK) {
+        return status;
+    }
+    if (material_id != 0) {
+        status = workspace_edit_require_object_class(edit, material_id, NMO_CID_MATERIAL);
+        if (status != NMO_OK) {
+            return status;
+        }
+    }
+
+    nmo_arena_t *arena = nmo_workspace_internal_document_arena(edit->workspace);
+    if (arena == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_vertex_t *vertices = NULL;
+    nmo_face_t *faces = NULL;
+    uint16_t *indices = NULL;
+    uint32_t *vertex_colors = NULL;
+    uint32_t *vertex_specular = NULL;
+    nmo_material_group_t *groups = NULL;
+    status = workspace_edit_alloc_cube_mesh(
+        arena,
+        &vertices,
+        &faces,
+        &indices,
+        &vertex_colors,
+        &vertex_specular,
+        &groups);
+    if (status != NMO_OK) {
+        return status;
+    }
+    groups[0].material_id = material_id;
+
+    status = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
+    if (status != NMO_OK) {
+        return status;
+    }
+    status = nmo_workspace_edit_snapshot_object_chunk(edit, mesh_id);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    nmo_chunk_t *chunk = nmo_object_get_chunk(mesh_object);
+    if (chunk == NULL) {
+        chunk = nmo_chunk_create(arena);
+        if (chunk == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        status = nmo_object_set_chunk(mesh_object, chunk);
+        if (status != NMO_OK) {
+            return status;
+        }
+    }
+    nmo_chunk_set_data_version(chunk, 9u);
+
+    state->flags = 0u;
+    state->bary_center = (nmo_vector_t){0.0f, 0.0f, 0.0f};
+    state->radius = 0.8660254f;
+    state->local_box_min = (nmo_vector_t){-0.5f, -0.5f, -0.5f};
+    state->local_box_max = (nmo_vector_t){0.5f, 0.5f, 0.5f};
+    state->face_count = 12u;
+    state->faces = faces;
+    state->face_vertex_indices = indices;
+    state->line_count = 0u;
+    state->line_indices = NULL;
+    state->vertex_count = 8u;
+    state->vertices = vertices;
+    state->vertex_colors = vertex_colors;
+    state->vertex_specular = vertex_specular;
+    state->vertex_weights = NULL;
+    state->vertex_weight_count = 0u;
+    state->material_group_count = 1u;
+    state->material_groups = groups;
+    state->material_channel_count = 0u;
+    state->material_channels = NULL;
+    state->is_valid = true;
 
     nmo_workspace_edit_mark(
         edit,

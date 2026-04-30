@@ -1,6 +1,7 @@
 #include "project/nmo_project_executor.h"
 
 #include "document/nmo_document.h"
+#include "document/nmo_document_file_state.h"
 #include "document/nmo_document_save.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_edit.h"
@@ -90,6 +91,16 @@ nmo_status_t nmo_project_executor_execute_to_file(
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                          "failed to create generated document");
     }
+    status = nmo_document_set_file_info(
+        document,
+        &(nmo_file_info_t){
+            .file_version = 9u,
+        });
+    if (status != NMO_OK) {
+        nmo_document_destroy(document);
+        nmo_context_release(ctx);
+        return status;
+    }
 
     nmo_workspace_t *workspace = NULL;
     status = nmo_workspace_create(ctx, document, &workspace);
@@ -126,7 +137,20 @@ nmo_status_t nmo_project_executor_execute_to_file(
         return status;
     }
 
-    status = nmo_project_author_scenes(edit, plan);
+    nmo_project_runtime_object_t *objects = NULL;
+    size_t object_count = 0u;
+    status = nmo_project_author_scenes(edit, plan, &objects, &object_count);
+    if (status != NMO_OK) {
+        nmo_workspace_edit_rollback(edit);
+        nmo_workspace_destroy(workspace);
+        nmo_document_destroy(document);
+        nmo_context_release(ctx);
+        return status;
+    }
+
+    status = nmo_project_author_assets(edit, plan, objects, object_count);
+    free(objects);
+    objects = NULL;
     if (status != NMO_OK) {
         nmo_workspace_edit_rollback(edit);
         nmo_workspace_destroy(workspace);

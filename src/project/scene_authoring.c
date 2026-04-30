@@ -12,11 +12,6 @@ typedef struct project_authored_scene {
     nmo_object_id_t object_id;
 } project_authored_scene_t;
 
-typedef struct project_authored_object {
-    uint32_t plan_handle;
-    nmo_object_id_t object_id;
-} project_authored_object_t;
-
 static nmo_object_id_t project_authoring_find_scene_id(
     const project_authored_scene_t *scenes,
     size_t scene_count,
@@ -40,15 +35,19 @@ static uint32_t project_authoring_scene_membership_flags(uint32_t object_flags)
 
 nmo_status_t nmo_project_author_scenes(
     nmo_workspace_edit_t *edit,
-    const nmo_project_plan_t *plan)
+    const nmo_project_plan_t *plan,
+    nmo_project_runtime_object_t **out_objects,
+    size_t *out_object_count)
 {
-    if (!edit || !plan) {
+    if (!edit || !plan || !out_objects || !out_object_count) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "workspace edit and plan are required");
+                         "workspace edit, plan, and object map outputs are required");
     }
+    *out_objects = NULL;
+    *out_object_count = 0u;
 
     project_authored_scene_t *authored_scenes = NULL;
-    project_authored_object_t *authored_objects = NULL;
+    nmo_project_runtime_object_t *authored_objects = NULL;
     size_t scene_count = nmo_project_plan_scene_count(plan);
     size_t object_count = nmo_project_plan_object_count(plan);
     if (scene_count > 0u) {
@@ -88,7 +87,7 @@ nmo_status_t nmo_project_author_scenes(
     }
 
     if (object_count > 0u) {
-        authored_objects = (project_authored_object_t *)calloc(
+        authored_objects = (nmo_project_runtime_object_t *)calloc(
             object_count,
             sizeof(*authored_objects));
         if (!authored_objects) {
@@ -168,6 +167,11 @@ nmo_status_t nmo_project_author_scenes(
     }
 
 cleanup:
+    if (status == NMO_OK) {
+        *out_objects = authored_objects;
+        *out_object_count = object_count;
+        authored_objects = NULL;
+    }
     free(authored_objects);
     free(authored_scenes);
     return status;
