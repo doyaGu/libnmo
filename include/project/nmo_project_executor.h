@@ -3,6 +3,7 @@
 
 #include "core/nmo_error.h"
 #include "nmo_types.h"
+#include "project/nmo_project_validator.h"
 
 #include <stdbool.h>
 
@@ -15,6 +16,7 @@ typedef struct nmo_project_plan nmo_project_plan_t;
 typedef struct nmo_project_report {
     bool ok;
     bool dry_run;
+    nmo_project_validation_report_t validation;
     char *output_path;
 } nmo_project_report_t;
 

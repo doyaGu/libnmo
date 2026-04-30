@@ -346,6 +346,7 @@ set(NMO_APP_SOURCES
 set(NMO_PROJECT_SOURCES
     src/project/project_executor.c
     src/project/project_plan.c
+    src/project/project_validator.c
 )
 
 # Behavior layer sources

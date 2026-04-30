@@ -32,6 +32,7 @@ void nmo_project_report_init(nmo_project_report_t *report)
     }
 
     memset(report, 0, sizeof(*report));
+    nmo_project_validation_report_init(&report->validation);
 }
 
 void nmo_project_report_dispose(nmo_project_report_t *report)
@@ -40,6 +41,7 @@ void nmo_project_report_dispose(nmo_project_report_t *report)
         return;
     }
 
+    nmo_project_validation_report_dispose(&report->validation);
     free(report->output_path);
     memset(report, 0, sizeof(*report));
 }
@@ -56,11 +58,21 @@ nmo_status_t nmo_project_executor_execute_to_file(
 
     report->ok = false;
     report->dry_run = false;
+    nmo_project_validation_report_dispose(&report->validation);
+    nmo_project_validation_report_init(&report->validation);
     free(report->output_path);
     report->output_path = project_executor_strdup(output_path);
     if (!report->output_path) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                          "failed to copy project output path");
+    }
+
+    nmo_status_t status = nmo_project_validate_plan(plan, &report->validation);
+    if (status != NMO_OK) {
+        return status;
+    }
+    if (!report->validation.ok) {
+        return NMO_ERR_VALIDATION_FAILED;
     }
 
     nmo_context_desc_t desc = {0};
@@ -78,7 +90,7 @@ nmo_status_t nmo_project_executor_execute_to_file(
     }
 
     nmo_object_id_t root_id = 0;
-    nmo_status_t status = nmo_document_internal_create_object(
+    status = nmo_document_internal_create_object(
         document,
         NMO_CID_OBJECT,
         nmo_project_plan_document_name(plan),

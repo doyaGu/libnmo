@@ -149,6 +149,7 @@ add_unit_test(test_workspace_edit)
 # Public API / umbrella header smoke test
 add_unit_test(test_public_api_smoke)
 add_unit_test(test_project_plan)
+add_unit_test(test_project_validator)
 add_unit_test(test_lua_runtime)
 add_unit_test(test_lua_bindings)
 add_unit_test(test_lua_bindings_document)
