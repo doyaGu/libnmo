@@ -555,6 +555,46 @@ static void write_set_parameter_value_handle_patch_v2(
     ASSERT_TRUE(write_text_file(path, json));
 }
 
+static void write_probe_analysis_patch_v2(
+    const char *path,
+    const char *output_path) {
+    char json[4096];
+    snprintf(json, sizeof(json),
+             "{\n"
+             "  \"version\": 2,\n"
+             "  \"input\": \"%s\",\n"
+             "  \"output\": \"%s\",\n"
+             "  \"operations\": [\n"
+             "    {\n"
+             "      \"op\": \"set_data_cell\",\n"
+             "      \"dataarray_id\": 6067,\n"
+             "      \"row\": 0,\n"
+             "      \"col\": 1,\n"
+             "      \"value\": \"patch-probe-trace\"\n"
+             "    }\n"
+             "  ],\n"
+             "  \"probe_selector_analysis\": {\n"
+             "    \"mode\": \"explicit_operation\",\n"
+             "    \"status\": \"unsafe\",\n"
+             "    \"rejection_code\": \"type_mismatch\",\n"
+             "    \"selected_operation_id\": 3791,\n"
+             "    \"candidates\": [\n"
+             "      {\n"
+             "        \"operation_id\": 3791,\n"
+             "        \"value_parameter_id\": 3717,\n"
+             "        \"dataarray_id\": 6067,\n"
+             "        \"column_type_guid\": \"5A5716FD-44E276D7\",\n"
+             "        \"role\": \"data_write_operation\",\n"
+             "        \"rejection_code\": \"type_mismatch\"\n"
+             "      }\n"
+             "    ]\n"
+             "  }\n"
+             "}\n",
+             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
+             output_path);
+    ASSERT_TRUE(write_text_file(path, json));
+}
+
 static void write_add_operation_handle_patch_v2(const char *path,
                                                 const char *output_path) {
     char json[4096];
@@ -1549,6 +1589,59 @@ TEST(cli, patch_diff_json_emits_normalized_v2_manifest) {
     yyjson_doc_free(replay_doc);
 
     remove(replay);
+    remove(patch);
+}
+
+TEST(cli, patch_apply_v2_reports_probe_analysis_metadata) {
+    make_dir("test_patch_tmp");
+    const char *patch = "test_patch_tmp/probe_analysis_manifest_v2.json";
+    const char *output = "test_patch_tmp/probe_analysis_manifest_v2.cmo";
+    remove(patch);
+    remove(output);
+    write_probe_analysis_patch_v2(patch, output);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
+             patch);
+    yyjson_doc *doc = NULL;
+    run_json_command(args, "patch.apply", &doc);
+
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    yyjson_val *data = get_object_field(root, "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+
+    yyjson_val *diag = get_object_field(data, "probe_selector_diagnostics");
+    ASSERT_NOT_NULL(diag);
+    ASSERT_STR_EQ("explicit_operation", get_string_field(diag, "mode"));
+    ASSERT_STR_EQ("unsafe", get_string_field(diag, "status"));
+    ASSERT_EQ(3791u, (uint32_t)get_uint_field(diag, "selected_operation_id"));
+    yyjson_val *candidates = get_array_field(diag, "candidates");
+    ASSERT_NOT_NULL(candidates);
+    ASSERT_EQ(1u, (uint32_t)yyjson_arr_size(candidates));
+    yyjson_val *candidate = yyjson_arr_get(candidates, 0);
+    ASSERT_STR_EQ("data_write_operation",
+                  get_string_field(candidate, "role"));
+    ASSERT_EQ(3717u,
+              (uint32_t)get_uint_field(candidate, "value_parameter_id"));
+
+    yyjson_val *risks = get_array_field(data, "semantic_risks");
+    ASSERT_NOT_NULL(risks);
+    bool saw_type_mismatch = false;
+    size_t idx = 0;
+    size_t max = 0;
+    yyjson_val *risk = NULL;
+    yyjson_arr_foreach(risks, idx, max, risk) {
+        if (strcmp(get_string_field(risk, "code"),
+                   "write_site_column_type_mismatch") == 0) {
+            saw_type_mismatch = true;
+        }
+    }
+    ASSERT_TRUE(saw_type_mismatch);
+    ASSERT_FALSE(file_exists(output));
+
+    yyjson_doc_free(doc);
     remove(patch);
 }
 
@@ -2662,6 +2755,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, patch_apply_v2_set_parameter_value_dry_run);
     REGISTER_TEST(cli, patch_apply_v2_set_parameter_value_to_handle_dry_run);
     REGISTER_TEST(cli, patch_diff_json_emits_normalized_v2_manifest);
+    REGISTER_TEST(cli, patch_apply_v2_reports_probe_analysis_metadata);
     REGISTER_TEST(cli, patch_diff_json_roundtrips_operation_handle_refs);
     REGISTER_TEST(cli, patch_apply_v2_set_parameter_bytes_dry_run);
     REGISTER_TEST(cli, patch_apply_v2_set_parameter_bytes_to_handle_dry_run);

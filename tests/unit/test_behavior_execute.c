@@ -19,6 +19,7 @@
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
 #include "session/nmo_serializer.h"
+#include "type/nmo_type_guids.h"
 #include "../../src/runtime/runtime_internal.h"
 
 #include <stdio.h>
@@ -556,6 +557,47 @@ static nmo_status_t execute_plan_manager_node_action(
     return status;
 }
 
+static nmo_status_t execute_plan_probe_analysis_action(
+    nmo_behavior_execution_t *executor,
+    void *user_data)
+{
+    (void)user_data;
+    nmo_edit_plan_t *plan = NULL;
+    nmo_status_t status = nmo_edit_plan_create(&plan);
+    nmo_probe_selector_result_t analysis;
+    nmo_probe_selector_result_init(&analysis);
+
+    if (status == NMO_OK) {
+        analysis.mode = NMO_PROBE_SELECTOR_MODE_EXPLICIT_OPERATION;
+        analysis.status = NMO_PROBE_SELECTOR_STATUS_UNSAFE;
+        snprintf(analysis.rejection_code,
+                 sizeof(analysis.rejection_code),
+                 "%s",
+                 "type_mismatch");
+        analysis.selected_operation_id = 3791u;
+        status = nmo_probe_selector_result_add_candidate(
+            &analysis,
+            &(nmo_probe_selector_candidate_t){
+                .operation_id = 3791u,
+                .value_parameter_id = 3717u,
+                .dataarray_id = 6067u,
+                .column_type_guid = CKPGUID_INT,
+                .role = NMO_PROBE_CANDIDATE_DATA_WRITE_OPERATION,
+                .rejection_code = "type_mismatch",
+            });
+    }
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_set_probe_selector_analysis(plan, &analysis);
+    }
+    if (status == NMO_OK) {
+        status = nmo_behavior_execution_execute_plan(executor, plan, NULL);
+    }
+
+    nmo_probe_analysis_dispose(&analysis);
+    nmo_edit_plan_destroy(plan);
+    return status;
+}
+
 static nmo_status_t add_io_action(nmo_behavior_execution_t *executor, void *user_data)
 {
     executor_add_io_action_t *action = (executor_add_io_action_t *)user_data;
@@ -857,6 +899,53 @@ TEST(behavior_execute, execute_plan_reports_manager_entry_impacts)
         }
     }
     ASSERT_TRUE(saw_manager_entry);
+    ASSERT_TRUE(report.output_path == NULL);
+
+    nmo_edit_report_dispose(&report);
+    nmo_context_release(ctx);
+}
+
+TEST(behavior_execute, execute_plan_reports_probe_analysis_metadata)
+{
+    const char *input_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
+    nmo_context_t *ctx =
+        nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
+    nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();
+    nmo_edit_report_t report = {0};
+    bool saw_type_mismatch = false;
+
+    ASSERT_NOT_NULL(ctx);
+    options.label = "test-behavior-execute-probe-analysis";
+    options.dry_run = true;
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK,
+              nmo_behavior_execute(ctx,
+                                   input_path,
+                                   NULL,
+                                   &options,
+                                   execute_plan_probe_analysis_action,
+                                   NULL,
+                                   &report));
+
+    ASSERT_TRUE(report.ok);
+    ASSERT_TRUE(report.dry_run);
+    ASSERT_TRUE(report.has_probe_selector_analysis);
+    ASSERT_EQ(NMO_PROBE_SELECTOR_MODE_EXPLICIT_OPERATION,
+              report.probe_selector_analysis.mode);
+    ASSERT_EQ(NMO_PROBE_SELECTOR_STATUS_UNSAFE,
+              report.probe_selector_analysis.status);
+    ASSERT_EQ(1u, report.probe_selector_analysis.candidate_count);
+    ASSERT_EQ(3791u,
+              report.probe_selector_analysis.candidates[0].operation_id);
+    ASSERT_EQ(3717u,
+              report.probe_selector_analysis.candidates[0].value_parameter_id);
+    for (size_t i = 0; i < report.semantic_risk_count; ++i) {
+        if (strcmp(report.semantic_risks[i].code,
+                   "write_site_column_type_mismatch") == 0) {
+            saw_type_mismatch = true;
+        }
+    }
+    ASSERT_TRUE(saw_type_mismatch);
     ASSERT_TRUE(report.output_path == NULL);
 
     nmo_edit_report_dispose(&report);
@@ -1202,6 +1291,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(behavior_execute, reports_edit_schema);
     REGISTER_TEST(behavior_execute, execute_plan_reports_schema_v2_operations);
     REGISTER_TEST(behavior_execute, execute_plan_reports_manager_entry_impacts);
+    REGISTER_TEST(behavior_execute, execute_plan_reports_probe_analysis_metadata);
     REGISTER_TEST(behavior_execute, failure_report_has_no_output_path);
     REGISTER_TEST(behavior_execute, save_failure_report_is_not_successful);
     REGISTER_TEST(behavior_execute, rolls_back_on_action_error_and_skips_output);
