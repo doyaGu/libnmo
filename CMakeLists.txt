@@ -342,6 +342,11 @@ set(NMO_EXPORT_SOURCES
 set(NMO_APP_SOURCES
 )
 
+# Project authoring layer sources
+set(NMO_PROJECT_SOURCES
+    src/project/project_plan.c
+)
+
 # Behavior layer sources
 set(NMO_BEHAVIOR_SOURCES
     src/behavior/bb_registry.c
@@ -404,6 +409,7 @@ set(NMO_SOURCES
     ${NMO_LUA_SOURCES}
     ${NMO_EXTENSION_SOURCES}
     ${NMO_APP_SOURCES}
+    ${NMO_PROJECT_SOURCES}
     ${NMO_JSON_SOURCES}
     ${NMO_YYJSON_DIR}/src/yyjson.c
 )
