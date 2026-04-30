@@ -501,8 +501,10 @@ static yyjson_mut_val *probe_candidate_to_json(
         add_guid_json(doc, obj, "bb_guid", candidate->bb_guid);
     }
     add_str_safe(doc, obj, "proto_name", candidate->proto_name);
-    yyjson_mut_obj_add_str(doc, obj, "role",
-                           nmo_probe_candidate_role_name(candidate->role));
+    const char *role_name = nmo_probe_candidate_role_name(candidate->role);
+    if (role_name[0] != '\0') {
+        yyjson_mut_obj_add_str(doc, obj, "role", role_name);
+    }
     add_str_safe(doc, obj, "rejection_code", candidate->rejection_code);
     return obj;
 }
@@ -1318,14 +1320,26 @@ static bool parse_probe_candidate_role_value(
     yyjson_val *value,
     nmo_probe_candidate_role_t *out_role)
 {
-    if (value == NULL || out_role == NULL || !yyjson_is_str(value)) {
+    if (out_role == NULL) {
+        nmo_last_error_setf(
+            NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, __FILE__, __LINE__,
+            "Invalid probe_selector_analysis.candidates.role");
+        return false;
+    }
+    if (value == NULL) {
+        *out_role = NMO_PROBE_CANDIDATE_UNKNOWN;
+        return true;
+    }
+    if (!yyjson_is_str(value)) {
         nmo_last_error_setf(
             NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, __FILE__, __LINE__,
             "Invalid probe_selector_analysis.candidates.role");
         return false;
     }
     const char *text = yyjson_get_str(value);
-    if (strcmp(text, "message") == 0) {
+    if (text[0] == '\0') {
+        *out_role = NMO_PROBE_CANDIDATE_UNKNOWN;
+    } else if (strcmp(text, "message") == 0) {
         *out_role = NMO_PROBE_CANDIDATE_MESSAGE;
     } else if (strcmp(text, "sender") == 0) {
         *out_role = NMO_PROBE_CANDIDATE_MESSAGE_SENDER;

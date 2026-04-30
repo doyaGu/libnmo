@@ -354,6 +354,28 @@ TEST(lua_bindings_behavior, behavior_manager_entry_reports_policy_path)
     nmo_lua_runtime_destroy(runtime);
 }
 
+TEST(lua_bindings_behavior, behavior_manager_entry_rejects_unknown_fields)
+{
+    nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
+    ASSERT_NOT_NULL(runtime);
+
+    ASSERT_EQ(NMO_OK, nmo_lua_register_platform_bindings(runtime));
+    assert_lua_error_contains(
+        runtime,
+        "local context = require('nmo.context')\n"
+        "local document = require('nmo.document')\n"
+        "local workspace_mod = require('nmo.workspace')\n"
+        "local behavior = require('nmo.behavior')\n"
+        "local ctx = context.create()\n"
+        "local doc = document.load_file(ctx, '" NMO_TEST_DATA_FILE("Nop.cmo") "')\n"
+        "local ws = workspace_mod.create(ctx, doc)\n"
+        "local tx = behavior.begin_edit(ws, 'unknown manager entry')\n"
+        "behavior.add_node(tx, 6, 'A20E8D5B-DF002150', 'Send Message', { manager_entry = { manager = 'message' } })\n",
+        "Unknown manager_entry field 'manager'");
+
+    nmo_lua_runtime_destroy(runtime);
+}
+
 TEST(lua_bindings_behavior, behavior_execute_rollback_discards_queued_plan)
 {
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
@@ -400,6 +422,8 @@ TEST_MAIN_BEGIN()
                   behavior_set_parameter_value_accepts_manager_entry_policy);
     REGISTER_TEST(lua_bindings_behavior,
                   behavior_manager_entry_reports_policy_path);
+    REGISTER_TEST(lua_bindings_behavior,
+                  behavior_manager_entry_rejects_unknown_fields);
     REGISTER_TEST(lua_bindings_behavior,
                   behavior_execute_rollback_discards_queued_plan);
 TEST_MAIN_END()

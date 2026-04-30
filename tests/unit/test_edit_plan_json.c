@@ -306,7 +306,7 @@ TEST(edit_plan_json, reads_structured_manager_entry_options)
     nmo_edit_plan_destroy(plan);
 }
 
-TEST(edit_plan_json, rejects_old_manager_entry_manager)
+TEST(edit_plan_json, rejects_unknown_manager_entry_manager_field)
 {
     assert_plan_invalid_contains(
         "{\"op\":\"set_parameter_value\",\"parameter_id\":7,"
@@ -374,7 +374,7 @@ TEST(edit_plan_json, roundtrips_attribute_manager_create_options)
     nmo_edit_plan_destroy(plan);
 }
 
-TEST(edit_plan_json, rejects_old_manager_entry_policy)
+TEST(edit_plan_json, rejects_unknown_manager_entry_policy_field)
 {
     assert_plan_invalid_contains(
         "{\"op\":\"set_parameter_value\",\"parameter_id\":7,"
@@ -1137,6 +1137,45 @@ TEST(edit_plan_json, roundtrips_probe_selector_analysis_metadata) {
     nmo_edit_plan_destroy(plan);
 }
 
+TEST(edit_plan_json, roundtrips_probe_selector_candidate_without_role) {
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_plan_t *parsed = NULL;
+    char *json = NULL;
+
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_data_cell(plan, 6067u, 0u, 1u, "trace"));
+
+    nmo_probe_selector_result_t analysis;
+    nmo_probe_selector_result_init(&analysis);
+    analysis.mode = NMO_PROBE_SELECTOR_MODE_AUTO;
+    analysis.status = NMO_PROBE_SELECTOR_STATUS_SELECTED;
+
+    nmo_probe_selector_candidate_t candidate = {0};
+    candidate.operation_id = 3791u;
+    candidate.dataarray_id = 6067u;
+    ASSERT_EQ(NMO_OK,
+              nmo_probe_selector_result_add_candidate(&analysis, &candidate));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_set_probe_selector_analysis(plan, &analysis));
+
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_json_write(plan, &json));
+    ASSERT_NOT_NULL(json);
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_json_read(json, strlen(json), &parsed));
+
+    const nmo_probe_selector_result_t *roundtrip =
+        nmo_edit_plan_get_probe_selector_analysis(parsed);
+    ASSERT_NOT_NULL(roundtrip);
+    ASSERT_EQ(1u, roundtrip->candidate_count);
+    ASSERT_EQ(NMO_PROBE_CANDIDATE_UNKNOWN, roundtrip->candidates[0].role);
+    ASSERT_EQ(3791u, roundtrip->candidates[0].operation_id);
+
+    nmo_probe_analysis_dispose(&analysis);
+    nmo_edit_plan_manifest_json_free(json);
+    nmo_edit_plan_destroy(parsed);
+    nmo_edit_plan_destroy(plan);
+}
+
 TEST(edit_plan_json, rejects_invalid_probe_selector_analysis_metadata) {
     const char *unknown_field =
         "{"
@@ -1176,8 +1215,8 @@ REGISTER_TEST(edit_plan_json, writes_manifest_with_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, reads_manifest_with_operation_handle_refs);
     REGISTER_TEST(edit_plan_json, writes_structured_manager_entry_options);
     REGISTER_TEST(edit_plan_json, reads_structured_manager_entry_options);
-    REGISTER_TEST(edit_plan_json, rejects_old_manager_entry_policy);
-    REGISTER_TEST(edit_plan_json, rejects_old_manager_entry_manager);
+    REGISTER_TEST(edit_plan_json, rejects_unknown_manager_entry_policy_field);
+    REGISTER_TEST(edit_plan_json, rejects_unknown_manager_entry_manager_field);
     REGISTER_TEST(edit_plan_json, roundtrips_attribute_manager_create_options);
     REGISTER_TEST(edit_plan_json, reports_manager_entry_policy_path);
 REGISTER_TEST(edit_plan_json, roundtrips_rewire_operation_handle_refs);
@@ -1197,5 +1236,6 @@ REGISTER_TEST(edit_plan_json,
               rejects_plan_roots_with_generic_operation_diagnostics);
 REGISTER_TEST(edit_plan_json, rejects_strict_replay_manifest_errors);
 REGISTER_TEST(edit_plan_json, roundtrips_probe_selector_analysis_metadata);
+REGISTER_TEST(edit_plan_json, roundtrips_probe_selector_candidate_without_role);
 REGISTER_TEST(edit_plan_json, rejects_invalid_probe_selector_analysis_metadata);
 TEST_MAIN_END()

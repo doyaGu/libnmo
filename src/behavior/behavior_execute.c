@@ -70,7 +70,7 @@ static nmo_status_t behavior_execute_copy_report(
     nmo_status_t status,
     nmo_edit_report_t *out_report)
 {
-    const nmo_script_edit_report_t *legacy = NULL;
+    const nmo_script_edit_report_t *tx_report = NULL;
 
     if (out_report == NULL) {
         return NMO_OK;
@@ -95,22 +95,22 @@ static nmo_status_t behavior_execute_copy_report(
         return NMO_OK;
     }
 
-    legacy = nmo_script_edit_report(execution->tx);
-    if (legacy == NULL) {
+    tx_report = nmo_script_edit_report(execution->tx);
+    if (tx_report == NULL) {
         return NMO_OK;
     }
 
-    for (size_t i = 0; i < legacy->created_object_id_count; ++i) {
+    for (size_t i = 0; i < tx_report->created_object_id_count; ++i) {
         NMO_RETURN_IF_ERROR(nmo_edit_report_add_created_object(
             out_report,
-            legacy->created_object_ids[i],
+            tx_report->created_object_ids[i],
             0,
             "created"));
     }
-    for (size_t i = 0; i < legacy->changed_object_id_count; ++i) {
+    for (size_t i = 0; i < tx_report->changed_object_id_count; ++i) {
         NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
             out_report,
-            legacy->changed_object_ids[i],
+            tx_report->changed_object_ids[i],
             0,
             "changed"));
     }

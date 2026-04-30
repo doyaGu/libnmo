@@ -1128,6 +1128,27 @@ TEST(cli, script_run_executor_set_parameter_value_accepts_manager_entry_policy) 
     yyjson_doc_free(doc);
 }
 
+TEST(cli, script_run_rejects_unknown_manager_entry_field) {
+    char script_path[1024];
+    const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
+    char args[2048];
+
+    ASSERT_TRUE(build_repo_fixture_path(
+        "tests/fixtures/lua/script_run_unknown_manager_entry_field.lua",
+        script_path,
+        sizeof(script_path)));
+
+    snprintf(args, sizeof(args),
+             "script run --dry-run \"%s\" \"%s\"",
+             script_path,
+             input_path);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Unknown manager_entry field 'manager'");
+    free(result.output);
+}
+
 TEST(cli, script_run_executor_replace_bb_uses_edit_plan) {
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
@@ -1864,6 +1885,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, script_run_executor_add_node_uses_edit_plan);
     REGISTER_TEST(cli, script_run_executor_add_node_accepts_manager_entry_policy);
     REGISTER_TEST(cli, script_run_executor_set_parameter_value_accepts_manager_entry_policy);
+    REGISTER_TEST(cli, script_run_rejects_unknown_manager_entry_field);
     REGISTER_TEST(cli, script_run_executor_replace_bb_uses_edit_plan);
     REGISTER_TEST(cli, script_run_carries_executor_semantic_risks);
     REGISTER_TEST(cli, script_run_executor_fold_uses_edit_plan);

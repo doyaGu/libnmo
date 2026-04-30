@@ -889,6 +889,33 @@ static int nmo_lua_behavior_parse_manager_entry_policy(
         "manager_entry.policy must be 'require_existing' or 'create_missing'");
 }
 
+static int nmo_lua_behavior_check_manager_entry_fields(lua_State *state,
+                                                       int index)
+{
+    static const char *const allowed[] = {
+        "policy", "schema", "manager_guid", "key", "create", NULL
+    };
+    index = lua_absindex(state, index);
+    lua_pushnil(state);
+    while (lua_next(state, index) != 0) {
+        const char *key = lua_tostring(state, -2);
+        bool known = false;
+        for (size_t i = 0; allowed[i] != NULL; ++i) {
+            if (key != NULL && strcmp(key, allowed[i]) == 0) {
+                known = true;
+                break;
+            }
+        }
+        if (!known) {
+            return luaL_error(state,
+                              "Unknown manager_entry field '%s'",
+                              key != NULL ? key : "(non-string)");
+        }
+        lua_pop(state, 1);
+    }
+    return 0;
+}
+
 static int nmo_lua_behavior_parse_manager_entry_options(
     lua_State *state,
     int index,
@@ -902,6 +929,10 @@ static int nmo_lua_behavior_parse_manager_entry_options(
         return 0;
     }
     luaL_checktype(state, index, LUA_TTABLE);
+    int field_rc = nmo_lua_behavior_check_manager_entry_fields(state, index);
+    if (field_rc != 0) {
+        return field_rc;
+    }
     lua_getfield(state, index, "policy");
     if (!lua_isnil(state, -1)) {
         int rc = nmo_lua_behavior_parse_manager_entry_policy(
@@ -909,11 +940,6 @@ static int nmo_lua_behavior_parse_manager_entry_options(
         if (rc != 0) {
             return rc;
         }
-    }
-    lua_pop(state, 1);
-    lua_getfield(state, index, "manager");
-    if (!lua_isnil(state, -1)) {
-        return luaL_error(state, "manager_entry.manager is no longer supported; use manager_entry.schema");
     }
     lua_pop(state, 1);
     lua_getfield(state, index, "schema");

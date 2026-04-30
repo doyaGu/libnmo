@@ -291,36 +291,6 @@ static bool probe_is_data_write_behavior(nmo_context_t *ctx,
     return false;
 }
 
-static nmo_probe_candidate_role_t probe_role_from_legacy_text(
-    const char *role)
-{
-    if (role == NULL || role[0] == '\0') {
-        return NMO_PROBE_CANDIDATE_UNKNOWN;
-    }
-    if (strcmp(role, "sender") == 0) {
-        return NMO_PROBE_CANDIDATE_MESSAGE_SENDER;
-    }
-    if (strcmp(role, "waiter") == 0) {
-        return NMO_PROBE_CANDIDATE_MESSAGE_WAITER;
-    }
-    if (strcmp(role, "receiver") == 0) {
-        return NMO_PROBE_CANDIDATE_MESSAGE_RECEIVER;
-    }
-    if (strcmp(role, "message") == 0) {
-        return NMO_PROBE_CANDIDATE_MESSAGE;
-    }
-    if (strcmp(role, "data_writer") == 0) {
-        return NMO_PROBE_CANDIDATE_DATA_WRITER;
-    }
-    if (strcmp(role, "data_write_operation") == 0) {
-        return NMO_PROBE_CANDIDATE_DATA_WRITE_OPERATION;
-    }
-    if (strcmp(role, "data_write_link") == 0) {
-        return NMO_PROBE_CANDIDATE_DATA_WRITE_LINK;
-    }
-    return NMO_PROBE_CANDIDATE_UNKNOWN;
-}
-
 static bool probe_ensure_candidate_capacity(nmo_probe_selector_result_t *result)
 {
     if (result == NULL) {
@@ -369,7 +339,7 @@ static nmo_probe_selector_candidate_t *probe_add_candidate(
     nmo_object_id_t link_id,
     nmo_object_id_t operation_id,
     const nmo_behavior_state_t *state,
-    const char *role_override)
+    nmo_probe_candidate_role_t explicit_role)
 {
     if (!probe_ensure_candidate_capacity(result)) {
         return NULL;
@@ -394,8 +364,9 @@ static nmo_probe_selector_candidate_t *probe_add_candidate(
              "%s",
              proto != NULL && proto->name != NULL ? proto->name : "");
     result->candidates[index].role =
-        role_override != NULL ? probe_role_from_legacy_text(role_override)
-                              : probe_message_role(state);
+        explicit_role != NMO_PROBE_CANDIDATE_UNKNOWN
+            ? explicit_role
+            : probe_message_role(state);
     return &result->candidates[index];
 }
 
@@ -1012,7 +983,7 @@ static nmo_status_t probe_analyze_message(nmo_context_t *ctx,
                             0u,
                             0u,
                             message,
-                            NULL);
+                            NMO_PROBE_CANDIDATE_UNKNOWN);
         if (request->remove_link_id != 0u) {
             nmo_object_t *link_obj =
                 nmo_object_repository_find_by_id(repo, request->remove_link_id);
@@ -1105,7 +1076,7 @@ static nmo_status_t probe_analyze_message(nmo_context_t *ctx,
                             0u,
                             0u,
                             child,
-                            NULL);
+                            NMO_PROBE_CANDIDATE_UNKNOWN);
         probe_append_id(candidate_ids,
                         sizeof(candidate_ids),
                         &candidate_ids_len,
@@ -1192,7 +1163,7 @@ static nmo_status_t probe_analyze_data_cell(
                                 0u,
                                 0u,
                                 node,
-                                "data_writer");
+                                NMO_PROBE_CANDIDATE_DATA_WRITER);
         probe_enrich_candidate_with_data_cell(repo, request, NULL, candidate);
         if (!probe_data_write_candidate_type_matches(repo, candidate, node)) {
             return probe_reject_type_mismatch(
@@ -1327,7 +1298,7 @@ static nmo_status_t probe_analyze_data_cell(
                                     request->remove_link_id,
                                     request->write_operation_id,
                                     NULL,
-                                    "data_write_operation");
+                                    NMO_PROBE_CANDIDATE_DATA_WRITE_OPERATION);
             probe_enrich_candidate_with_data_cell(
                 repo, request, operation, candidate);
             if (!probe_data_write_candidate_type_matches(
@@ -1373,7 +1344,7 @@ static nmo_status_t probe_analyze_data_cell(
                                     0u,
                                     request->write_operation_id,
                                     NULL,
-                                    "data_write_operation");
+                                    NMO_PROBE_CANDIDATE_DATA_WRITE_OPERATION);
             probe_enrich_candidate_with_data_cell(
                 repo, request, operation, candidate);
             if (!probe_data_write_candidate_type_matches(
@@ -1471,7 +1442,7 @@ static nmo_status_t probe_analyze_data_cell(
                                 0u,
                                 0u,
                                 child,
-                                "data_writer");
+                                NMO_PROBE_CANDIDATE_DATA_WRITER);
         probe_enrich_candidate_with_data_cell(repo, request, NULL, candidate);
         probe_append_id(candidate_ids,
                         sizeof(candidate_ids),
@@ -1518,7 +1489,7 @@ static nmo_status_t probe_analyze_data_cell(
                                 operation_link_id,
                                 operation_id,
                                 NULL,
-                                "data_write_operation");
+                                NMO_PROBE_CANDIDATE_DATA_WRITE_OPERATION);
         probe_enrich_candidate_with_data_cell(
             repo, request, operation, candidate);
         probe_append_id(candidate_ids,

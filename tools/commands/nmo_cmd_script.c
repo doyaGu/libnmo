@@ -461,6 +461,31 @@ static int script_run_lua_add_node(lua_State *state)
         lua_getfield(state, 4, "manager_entry");
         if (!lua_isnil(state, -1)) {
             luaL_checktype(state, lua_gettop(state), LUA_TTABLE);
+            int manager_entry_index = lua_gettop(state);
+            static const char *const allowed_manager_entry_fields[] = {
+                "policy", "schema", "manager_guid", "key", NULL
+            };
+            lua_pushnil(state);
+            while (lua_next(state, manager_entry_index) != 0) {
+                const char *key = lua_tostring(state, -2);
+                bool known = false;
+                for (size_t i = 0;
+                     allowed_manager_entry_fields[i] != NULL;
+                     ++i) {
+                    if (key != NULL &&
+                        strcmp(key, allowed_manager_entry_fields[i]) == 0) {
+                        known = true;
+                        break;
+                    }
+                }
+                if (!known) {
+                    return luaL_error(
+                        state,
+                        "Unknown manager_entry field '%s'",
+                        key != NULL ? key : "(non-string)");
+                }
+                lua_pop(state, 1);
+            }
             lua_getfield(state, -1, "policy");
             if (!lua_isnil(state, -1)) {
                 const char *policy = luaL_checkstring(state, -1);
@@ -475,13 +500,6 @@ static int script_run_lua_add_node(lua_State *state)
                         state,
                         "manager_entry.policy must be 'require_existing' or 'create_missing'");
                 }
-            }
-            lua_pop(state, 1);
-            lua_getfield(state, -1, "manager");
-            if (!lua_isnil(state, -1)) {
-                return luaL_error(
-                    state,
-                    "manager_entry.manager is no longer supported; use manager_entry.schema");
             }
             lua_pop(state, 1);
             lua_getfield(state, -1, "schema");
@@ -557,6 +575,33 @@ static int script_run_lua_parse_manager_entry_policy(
         "manager_entry.policy must be 'require_existing' or 'create_missing'");
 }
 
+static int script_run_lua_check_manager_entry_fields(lua_State *state,
+                                                     int index)
+{
+    static const char *const allowed[] = {
+        "policy", "schema", "manager_guid", "key", NULL
+    };
+    index = lua_absindex(state, index);
+    lua_pushnil(state);
+    while (lua_next(state, index) != 0) {
+        const char *key = lua_tostring(state, -2);
+        bool known = false;
+        for (size_t i = 0; allowed[i] != NULL; ++i) {
+            if (key != NULL && strcmp(key, allowed[i]) == 0) {
+                known = true;
+                break;
+            }
+        }
+        if (!known) {
+            return luaL_error(state,
+                              "Unknown manager_entry field '%s'",
+                              key != NULL ? key : "(non-string)");
+        }
+        lua_pop(state, 1);
+    }
+    return 0;
+}
+
 static int script_run_lua_parse_parameter_write_options(
     lua_State *state,
     int index,
@@ -584,6 +629,11 @@ static int script_run_lua_parse_parameter_write_options(
     lua_getfield(state, index, "manager_entry");
     if (!lua_isnil(state, -1)) {
         luaL_checktype(state, lua_gettop(state), LUA_TTABLE);
+        int field_rc = script_run_lua_check_manager_entry_fields(
+            state, lua_gettop(state));
+        if (field_rc != 0) {
+            return field_rc;
+        }
         lua_getfield(state, -1, "policy");
         if (!lua_isnil(state, -1)) {
             int rc = script_run_lua_parse_manager_entry_policy(
@@ -591,13 +641,6 @@ static int script_run_lua_parse_parameter_write_options(
             if (rc != 0) {
                 return rc;
             }
-        }
-        lua_pop(state, 1);
-        lua_getfield(state, -1, "manager");
-        if (!lua_isnil(state, -1)) {
-            return luaL_error(
-                state,
-                "manager_entry.manager is no longer supported; use manager_entry.schema");
         }
         lua_pop(state, 1);
         lua_getfield(state, -1, "schema");
