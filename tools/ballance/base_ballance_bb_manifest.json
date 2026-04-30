@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "description": "Ballance base.cmo high-level building block rewrite manifest for the original runtime without BMLPlus.",
   "folds": [
     {

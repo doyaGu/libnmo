@@ -2894,7 +2894,7 @@ nmo_status_t nmo_edit_plan_json_read(
         yyjson_get_uint(version) != 2u) {
         yyjson_doc_free(doc);
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "Edit plan version 2 is required");
+                         "Current edit plan version 2 is required");
     }
     if (ops == NULL || !yyjson_is_arr(ops) ||
         yyjson_arr_size(ops) == 0u) {
@@ -2965,7 +2965,7 @@ nmo_status_t nmo_edit_plan_manifest_json_read(
         yyjson_get_uint(version) != 2u) {
         yyjson_doc_free(doc);
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "Edit plan manifest version 2 is required");
+                         "Current edit plan manifest version 2 is required");
     }
     if (input == NULL || !yyjson_is_str(input) ||
         yyjson_get_str(input)[0] == '\0') {

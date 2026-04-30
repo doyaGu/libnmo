@@ -306,7 +306,7 @@ TEST(edit_plan_json, reads_structured_manager_entry_options)
     nmo_edit_plan_destroy(plan);
 }
 
-TEST(edit_plan_json, rejects_legacy_manager_entry_manager)
+TEST(edit_plan_json, rejects_old_manager_entry_manager)
 {
     assert_plan_invalid_contains(
         "{\"op\":\"set_parameter_value\",\"parameter_id\":7,"
@@ -374,7 +374,7 @@ TEST(edit_plan_json, roundtrips_attribute_manager_create_options)
     nmo_edit_plan_destroy(plan);
 }
 
-TEST(edit_plan_json, rejects_legacy_manager_entry_policy)
+TEST(edit_plan_json, rejects_old_manager_entry_policy)
 {
     assert_plan_invalid_contains(
         "{\"op\":\"set_parameter_value\",\"parameter_id\":7,"
@@ -529,7 +529,7 @@ TEST(edit_plan_json, roundtrips_absent_parameter_bytes_options) {
     nmo_edit_plan_destroy(plan);
 }
 
-TEST(edit_plan_json, roundtrips_all_current_v2_ops) {
+TEST(edit_plan_json, roundtrips_all_current_ops) {
     nmo_edit_plan_t *plan = NULL;
     char *json = NULL;
     nmo_edit_plan_manifest_t manifest;
@@ -882,13 +882,13 @@ TEST(edit_plan_json, rejects_incomplete_manifest_roots) {
     nmo_edit_plan_manifest_dispose(&manifest);
 }
 
-TEST(edit_plan_json, rejects_manifest_version_with_generic_diagnostic) {
+TEST(edit_plan_json, rejects_non_current_manifest_version_with_generic_diagnostic) {
     nmo_edit_plan_manifest_t manifest;
     memset(&manifest, 0, sizeof(manifest));
 
-    const char *legacy =
+    const char *non_current =
         "{"
-        "\"version\":1,"
+        "\"version\":3,"
         "\"input\":\"in.cmo\","
         "\"output\":\"out.cmo\","
         "\"operations\":[{\"op\":\"add_io\",\"behavior_id\":1,"
@@ -898,9 +898,9 @@ TEST(edit_plan_json, rejects_manifest_version_with_generic_diagnostic) {
     nmo_last_error_clear();
     ASSERT_NE(NMO_OK,
               nmo_edit_plan_manifest_json_read(
-                  legacy, strlen(legacy), &manifest));
+                  non_current, strlen(non_current), &manifest));
     ASSERT_STR_CONTAINS(nmo_last_error_message(),
-                        "Edit plan manifest version 2 is required");
+                        "Current edit plan manifest version 2 is required");
 
     nmo_edit_plan_manifest_dispose(&manifest);
 }
@@ -1176,20 +1176,20 @@ REGISTER_TEST(edit_plan_json, writes_manifest_with_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, reads_manifest_with_operation_handle_refs);
     REGISTER_TEST(edit_plan_json, writes_structured_manager_entry_options);
     REGISTER_TEST(edit_plan_json, reads_structured_manager_entry_options);
-    REGISTER_TEST(edit_plan_json, rejects_legacy_manager_entry_policy);
-    REGISTER_TEST(edit_plan_json, rejects_legacy_manager_entry_manager);
+    REGISTER_TEST(edit_plan_json, rejects_old_manager_entry_policy);
+    REGISTER_TEST(edit_plan_json, rejects_old_manager_entry_manager);
     REGISTER_TEST(edit_plan_json, roundtrips_attribute_manager_create_options);
     REGISTER_TEST(edit_plan_json, reports_manager_entry_policy_path);
 REGISTER_TEST(edit_plan_json, roundtrips_rewire_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, roundtrips_plan_without_manifest_paths);
 REGISTER_TEST(edit_plan_json, roundtrips_absent_parameter_bytes_options);
-REGISTER_TEST(edit_plan_json, roundtrips_all_current_v2_ops);
+REGISTER_TEST(edit_plan_json, roundtrips_all_current_ops);
 REGISTER_TEST(edit_plan_json, reads_manifest_from_file);
 REGISTER_TEST(edit_plan_json,
               rejects_missing_manifest_file_with_generic_diagnostic);
 REGISTER_TEST(edit_plan_json, rejects_incomplete_manifest_roots);
 REGISTER_TEST(edit_plan_json,
-              rejects_manifest_version_with_generic_diagnostic);
+              rejects_non_current_manifest_version_with_generic_diagnostic);
 REGISTER_TEST(edit_plan_json,
               rejects_non_object_manifest_with_generic_diagnostic);
 REGISTER_TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics);

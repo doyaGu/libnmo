@@ -116,7 +116,7 @@ if ($manifestData.PSObject.Properties.Name -contains "folds") {
 }
 
 $patch = [ordered] @{
-    version = 1
+    version = 2
     input = $inputPath
     output = $outputPath
     operations = $operations

@@ -128,7 +128,7 @@ static int write_text_file(const char *path, const char *text) {
     return ok;
 }
 
-static void write_raw_v2_patch_operation(
+static void write_raw_patch_operation(
     const char *path,
     const char *output_path,
     const char *operation_json)
@@ -230,40 +230,7 @@ static void run_json_command(const char *args,
     *out_doc = doc;
 }
 
-static void write_legacy_v1_patch(const char *path, const char *output_path) {
-    rewrite_manifest_t manifest;
-    char replace_guid[64];
-    char json[2048];
-
-    load_ballance_manifest_or_die(&manifest);
-    rewrite_manifest_cli_guid(manifest.replace_guid, replace_guid,
-                              sizeof(replace_guid));
-
-    snprintf(json, sizeof(json),
-             "{\n"
-             "  \"version\": 1,\n"
-             "  \"input\": \"%s\",\n"
-             "  \"output\": \"%s\",\n"
-             "  \"operations\": [\n"
-             "    {\n"
-             "      \"op\": \"replace_bb\",\n"
-             "      \"behavior_id\": 343,\n"
-             "      \"name\": \"%s\",\n"
-             "      \"guid\": \"%s\",\n"
-             "      \"version\": 65536,\n"
-             "      \"preserve_links\": true,\n"
-             "      \"preserve_params\": true\n"
-             "    }\n"
-             "  ]\n"
-             "}\n",
-             NMO_TEST_DATA_FILE("Ballance/base.cmo"),
-             output_path,
-             manifest.replace_name,
-             replace_guid);
-    ASSERT_TRUE(write_text_file(path, json));
-}
-
-static void write_leaf_patch_v2(const char *path, const char *output_path) {
+static void write_leaf_patch(const char *path, const char *output_path) {
     rewrite_manifest_t manifest;
     char replace_guid[64];
     char json[2048];
@@ -296,7 +263,7 @@ static void write_leaf_patch_v2(const char *path, const char *output_path) {
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_add_io_patch_v2(const char *path, const char *output_path) {
+static void write_add_io_patch(const char *path, const char *output_path) {
     char json[2048];
     snprintf(json, sizeof(json),
              "{\n"
@@ -308,7 +275,7 @@ static void write_add_io_patch_v2(const char *path, const char *output_path) {
              "      \"op\": \"add_io\",\n"
              "      \"behavior_id\": 3,\n"
              "      \"kind\": \"input\",\n"
-             "      \"name\": \"Patch V2 In\"\n"
+             "      \"name\": \"Patch Current In\"\n"
              "    }\n"
              "  ]\n"
              "}\n",
@@ -317,7 +284,7 @@ static void write_add_io_patch_v2(const char *path, const char *output_path) {
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_add_node_patch_v2(const char *path,
+static void write_add_node_patch(const char *path,
                                     const char *output_path) {
     char json[2048];
     snprintf(json, sizeof(json),
@@ -330,7 +297,7 @@ static void write_add_node_patch_v2(const char *path,
              "      \"op\": \"add_node\",\n"
              "      \"behavior_id\": 3,\n"
              "      \"guid\": \"055B29FE-662D5CA0\",\n"
-             "      \"name\": \"Patch V2 2D Text\"\n"
+             "      \"name\": \"Patch Current 2D Text\"\n"
              "    }\n"
              "  ]\n"
              "}\n",
@@ -339,7 +306,7 @@ static void write_add_node_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_add_behavior_link_patch_v2(const char *path,
+static void write_add_behavior_link_patch(const char *path,
                                              const char *output_path) {
     char json[2048];
     snprintf(json, sizeof(json),
@@ -362,7 +329,7 @@ static void write_add_behavior_link_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_add_parameter_patch_v2(const char *path,
+static void write_add_parameter_patch(const char *path,
                                          const char *output_path) {
     char json[2048];
     snprintf(json, sizeof(json),
@@ -376,7 +343,7 @@ static void write_add_parameter_patch_v2(const char *path,
              "      \"owner_id\": 6,\n"
              "      \"kind\": \"local\",\n"
              "      \"type_guid\": \"5A5716FD-44E276D7\",\n"
-             "      \"name\": \"Patch V2 Int\"\n"
+             "      \"name\": \"Patch Current Int\"\n"
              "    }\n"
              "  ]\n"
              "}\n",
@@ -385,7 +352,7 @@ static void write_add_parameter_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_add_operation_patch_v2(const char *path,
+static void write_add_operation_patch(const char *path,
                                          const char *output_path) {
     char json[2048];
     snprintf(json, sizeof(json),
@@ -406,7 +373,7 @@ static void write_add_operation_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_add_remove_operation_patch_v2(const char *path,
+static void write_add_remove_operation_patch(const char *path,
                                                 const char *output_path) {
     char json[2048];
     snprintf(json, sizeof(json),
@@ -431,7 +398,7 @@ static void write_add_remove_operation_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_rewire_operation_patch_v2(const char *path,
+static void write_rewire_operation_patch(const char *path,
                                             const char *output_path) {
     char json[3072];
     snprintf(json, sizeof(json),
@@ -445,7 +412,7 @@ static void write_rewire_operation_patch_v2(const char *path,
              "      \"owner_id\": 6,\n"
              "      \"kind\": \"local\",\n"
              "      \"type_guid\": \"5A5716FD-44E276D7\",\n"
-             "      \"name\": \"Patch V2 Op In\"\n"
+             "      \"name\": \"Patch Current Op In\"\n"
              "    },\n"
              "    {\n"
              "      \"op\": \"add_operation\",\n"
@@ -464,7 +431,7 @@ static void write_rewire_operation_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_disconnect_parameter_patch_v2(const char *path,
+static void write_disconnect_parameter_patch(const char *path,
                                                 const char *output_path) {
     char json[2048];
     snprintf(json, sizeof(json),
@@ -484,7 +451,7 @@ static void write_disconnect_parameter_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_remove_parameter_patch_v2(const char *path,
+static void write_remove_parameter_patch(const char *path,
                                             const char *output_path) {
     char json[2048];
     snprintf(json, sizeof(json),
@@ -505,7 +472,7 @@ static void write_remove_parameter_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_set_parameter_value_patch_v2(const char *path,
+static void write_set_parameter_value_patch(const char *path,
                                                const char *output_path) {
     char json[2048];
     snprintf(json, sizeof(json),
@@ -526,7 +493,7 @@ static void write_set_parameter_value_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_set_parameter_value_handle_patch_v2(
+static void write_set_parameter_value_handle_patch(
     const char *path,
     const char *output_path) {
     char json[3072];
@@ -555,7 +522,7 @@ static void write_set_parameter_value_handle_patch_v2(
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_probe_analysis_patch_v2(
+static void write_probe_analysis_patch(
     const char *path,
     const char *output_path) {
     char json[4096];
@@ -595,7 +562,7 @@ static void write_probe_analysis_patch_v2(
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_add_operation_handle_patch_v2(const char *path,
+static void write_add_operation_handle_patch(const char *path,
                                                 const char *output_path) {
     char json[4096];
     snprintf(json, sizeof(json),
@@ -643,7 +610,7 @@ static void write_add_operation_handle_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_set_parameter_bytes_patch_v2(const char *path,
+static void write_set_parameter_bytes_patch(const char *path,
                                                const char *output_path) {
     char json[2048];
     snprintf(json, sizeof(json),
@@ -664,7 +631,7 @@ static void write_set_parameter_bytes_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_set_parameter_bytes_handle_patch_v2(
+static void write_set_parameter_bytes_handle_patch(
     const char *path,
     const char *output_path) {
     char json[3072];
@@ -694,7 +661,7 @@ static void write_set_parameter_bytes_handle_patch_v2(
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_set_data_cell_patch_v2(const char *path,
+static void write_set_data_cell_patch(const char *path,
                                          const char *output_path) {
     char json[2048];
     snprintf(json, sizeof(json),
@@ -717,7 +684,7 @@ static void write_set_data_cell_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_connect_parameter_patch_v2(const char *path,
+static void write_connect_parameter_patch(const char *path,
                                              const char *output_path) {
     char json[2048];
     snprintf(json, sizeof(json),
@@ -738,7 +705,7 @@ static void write_connect_parameter_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_connect_parameter_handle_patch_v2(const char *path,
+static void write_connect_parameter_handle_patch(const char *path,
                                                     const char *output_path) {
     char json[3072];
     snprintf(json, sizeof(json),
@@ -766,7 +733,7 @@ static void write_connect_parameter_handle_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_rewire_behavior_link_patch_v2(const char *path,
+static void write_rewire_behavior_link_patch(const char *path,
                                                 const char *output_path) {
     char json[2048];
     snprintf(json, sizeof(json),
@@ -788,7 +755,7 @@ static void write_rewire_behavior_link_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_set_behavior_link_delay_patch_v2(
+static void write_set_behavior_link_delay_patch(
     const char *path,
     const char *output_path) {
     char json[2048];
@@ -810,7 +777,7 @@ static void write_set_behavior_link_delay_patch_v2(
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_remove_behavior_link_patch_v2(const char *path,
+static void write_remove_behavior_link_patch(const char *path,
                                                 const char *output_path) {
     char json[2048];
     snprintf(json, sizeof(json),
@@ -831,7 +798,7 @@ static void write_remove_behavior_link_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_remove_node_patch_v2(const char *path,
+static void write_remove_node_patch(const char *path,
                                        const char *output_path) {
     char json[2048];
     snprintf(json, sizeof(json),
@@ -853,7 +820,7 @@ static void write_remove_node_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_remove_io_patch_v2(const char *path,
+static void write_remove_io_patch(const char *path,
                                      const char *output_path) {
     char json[2048];
     snprintf(json, sizeof(json),
@@ -874,7 +841,7 @@ static void write_remove_io_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_rename_io_patch_v2(const char *path,
+static void write_rename_io_patch(const char *path,
                                      const char *output_path) {
     char json[2048];
     snprintf(json, sizeof(json),
@@ -886,7 +853,7 @@ static void write_rename_io_patch_v2(const char *path,
              "    {\n"
              "      \"op\": \"rename_io\",\n"
              "      \"io_id\": 2,\n"
-             "      \"name\": \"Patch V2 Start\"\n"
+             "      \"name\": \"Patch Current Start\"\n"
              "    }\n"
              "  ]\n"
              "}\n",
@@ -895,7 +862,7 @@ static void write_rename_io_patch_v2(const char *path,
     ASSERT_TRUE(write_text_file(path, json));
 }
 
-static void write_interface_policy_patch_v2(const char *path,
+static void write_interface_policy_patch(const char *path,
                                             const char *output_path) {
     char json[2048];
     snprintf(json, sizeof(json),
@@ -1114,7 +1081,7 @@ TEST(cli, patch_apply_leaf_replace_bb_dry_run_and_apply) {
     const char *output = "test_patch_tmp/replace_bb.cmo";
     remove(patch);
     remove(output);
-    write_leaf_patch_v2(patch, output);
+    write_leaf_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -1148,27 +1115,6 @@ TEST(cli, patch_apply_leaf_replace_bb_dry_run_and_apply) {
     ASSERT_NOT_NULL(data);
     ASSERT_STR_EQ(replace_guid, get_string_field(data, "bb_guid"));
     yyjson_doc_free(doc);
-
-    remove(output);
-    remove(patch);
-}
-
-TEST(cli, patch_apply_rejects_legacy_v1_manifest) {
-    make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/legacy_v1.json";
-    const char *output = "test_patch_tmp/legacy_v1.cmo";
-    remove(patch);
-    remove(output);
-    write_legacy_v1_patch(patch, output);
-
-    char args[1024];
-    snprintf(args, sizeof(args), "patch apply \"%s\"", patch);
-    cli_run_result_t result = run_cli_capture(args);
-    ASSERT_NOT_NULL(result.output);
-    ASSERT_NE(NMO_CLI_EXIT_SUCCESS, result.exit_code);
-    ASSERT_STR_CONTAINS(result.output, "version 2");
-    ASSERT_FALSE(file_exists(output));
-    free(result.output);
 
     remove(output);
     remove(patch);
@@ -1240,13 +1186,13 @@ TEST(cli, patch_apply_json_failure_reports_edit_report) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_replace_bb_dry_run) {
+TEST(cli, patch_apply_replace_bb_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/replace_bb_v2.json";
-    const char *output = "test_patch_tmp/replace_bb_v2.cmo";
+    const char *patch = "test_patch_tmp/replace_bb.json";
+    const char *output = "test_patch_tmp/replace_bb.cmo";
     remove(patch);
     remove(output);
-    write_leaf_patch_v2(patch, output);
+    write_leaf_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -1268,13 +1214,13 @@ TEST(cli, patch_apply_v2_replace_bb_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_add_io_dry_run) {
+TEST(cli, patch_apply_add_io_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/add_io_v2.json";
-    const char *output = "test_patch_tmp/add_io_v2.cmo";
+    const char *patch = "test_patch_tmp/add_io.json";
+    const char *output = "test_patch_tmp/add_io.cmo";
     remove(patch);
     remove(output);
-    write_add_io_patch_v2(patch, output);
+    write_add_io_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -1300,13 +1246,13 @@ TEST(cli, patch_apply_v2_add_io_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_add_node_dry_run) {
+TEST(cli, patch_apply_add_node_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/add_node_v2.json";
-    const char *output = "test_patch_tmp/add_node_v2.cmo";
+    const char *patch = "test_patch_tmp/add_node.json";
+    const char *output = "test_patch_tmp/add_node.cmo";
     remove(patch);
     remove(output);
-    write_add_node_patch_v2(patch, output);
+    write_add_node_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -1336,13 +1282,13 @@ TEST(cli, patch_apply_v2_add_node_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_add_behavior_link_dry_run) {
+TEST(cli, patch_apply_add_behavior_link_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/add_behavior_link_v2.json";
-    const char *output = "test_patch_tmp/add_behavior_link_v2.cmo";
+    const char *patch = "test_patch_tmp/add_behavior_link.json";
+    const char *output = "test_patch_tmp/add_behavior_link.cmo";
     remove(patch);
     remove(output);
-    write_add_behavior_link_patch_v2(patch, output);
+    write_add_behavior_link_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -1398,13 +1344,13 @@ TEST(cli, patch_apply_v2_add_behavior_link_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_add_parameter_dry_run) {
+TEST(cli, patch_apply_add_parameter_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/add_parameter_v2.json";
-    const char *output = "test_patch_tmp/add_parameter_v2.cmo";
+    const char *patch = "test_patch_tmp/add_parameter.json";
+    const char *output = "test_patch_tmp/add_parameter.cmo";
     remove(patch);
     remove(output);
-    write_add_parameter_patch_v2(patch, output);
+    write_add_parameter_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -1458,13 +1404,13 @@ TEST(cli, patch_apply_v2_add_parameter_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_set_parameter_value_dry_run) {
+TEST(cli, patch_apply_set_parameter_value_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/set_parameter_value_v2.json";
-    const char *output = "test_patch_tmp/set_parameter_value_v2.cmo";
+    const char *patch = "test_patch_tmp/set_parameter_value.json";
+    const char *output = "test_patch_tmp/set_parameter_value.cmo";
     remove(patch);
     remove(output);
-    write_set_parameter_value_patch_v2(patch, output);
+    write_set_parameter_value_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -1493,13 +1439,13 @@ TEST(cli, patch_apply_v2_set_parameter_value_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_set_parameter_value_to_handle_dry_run) {
+TEST(cli, patch_apply_set_parameter_value_to_handle_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/set_parameter_value_handle_v2.json";
-    const char *output = "test_patch_tmp/set_parameter_value_handle_v2.cmo";
+    const char *patch = "test_patch_tmp/set_parameter_value_handle.json";
+    const char *output = "test_patch_tmp/set_parameter_value_handle.cmo";
     remove(patch);
     remove(output);
-    write_set_parameter_value_handle_patch_v2(patch, output);
+    write_set_parameter_value_handle_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -1526,13 +1472,13 @@ TEST(cli, patch_apply_v2_set_parameter_value_to_handle_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_diff_json_emits_normalized_v2_manifest) {
+TEST(cli, patch_diff_json_emits_normalized_manifest) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/normalized_manifest_v2.json";
-    const char *output = "test_patch_tmp/normalized_manifest_v2.cmo";
+    const char *patch = "test_patch_tmp/normalized_manifest.json";
+    const char *output = "test_patch_tmp/normalized_manifest.cmo";
     remove(patch);
     remove(output);
-    write_set_parameter_value_handle_patch_v2(patch, output);
+    write_set_parameter_value_handle_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch diff \"%s\"", patch);
@@ -1571,7 +1517,7 @@ TEST(cli, patch_diff_json_emits_normalized_v2_manifest) {
     ASSERT_TRUE(yyjson_obj_get(set_op, "parameter_id") == NULL);
     ASSERT_FALSE(file_exists(output));
 
-    const char *replay = "test_patch_tmp/normalized_manifest_replay_v2.json";
+    const char *replay = "test_patch_tmp/normalized_manifest_replay.json";
     remove(replay);
     ASSERT_TRUE(yyjson_val_write_file(replay, manifest,
                                       YYJSON_WRITE_PRETTY, NULL, NULL));
@@ -1592,13 +1538,13 @@ TEST(cli, patch_diff_json_emits_normalized_v2_manifest) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_reports_probe_analysis_metadata) {
+TEST(cli, patch_apply_reports_probe_analysis_metadata) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/probe_analysis_manifest_v2.json";
-    const char *output = "test_patch_tmp/probe_analysis_manifest_v2.cmo";
+    const char *patch = "test_patch_tmp/probe_analysis_manifest.json";
+    const char *output = "test_patch_tmp/probe_analysis_manifest.cmo";
     remove(patch);
     remove(output);
-    write_probe_analysis_patch_v2(patch, output);
+    write_probe_analysis_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -1647,11 +1593,11 @@ TEST(cli, patch_apply_v2_reports_probe_analysis_metadata) {
 
 TEST(cli, patch_diff_json_roundtrips_operation_handle_refs) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/operation_handle_manifest_v2.json";
-    const char *output = "test_patch_tmp/operation_handle_manifest_v2.cmo";
+    const char *patch = "test_patch_tmp/operation_handle_manifest.json";
+    const char *output = "test_patch_tmp/operation_handle_manifest.cmo";
     remove(patch);
     remove(output);
-    write_add_operation_handle_patch_v2(patch, output);
+    write_add_operation_handle_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch diff \"%s\"", patch);
@@ -1685,7 +1631,7 @@ TEST(cli, patch_diff_json_roundtrips_operation_handle_refs) {
     ASSERT_EQ(3u, (uint32_t)get_uint_field(op, "out_operation"));
     ASSERT_STR_EQ("parameter", get_string_field(op, "out_handle"));
 
-    const char *replay = "test_patch_tmp/operation_handle_manifest_replay_v2.json";
+    const char *replay = "test_patch_tmp/operation_handle_manifest_replay.json";
     remove(replay);
     ASSERT_TRUE(yyjson_val_write_file(replay, manifest,
                                       YYJSON_WRITE_PRETTY, NULL, NULL));
@@ -1712,13 +1658,13 @@ TEST(cli, patch_diff_json_roundtrips_operation_handle_refs) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_set_parameter_bytes_dry_run) {
+TEST(cli, patch_apply_set_parameter_bytes_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/set_parameter_bytes_v2.json";
-    const char *output = "test_patch_tmp/set_parameter_bytes_v2.nmo";
+    const char *patch = "test_patch_tmp/set_parameter_bytes.json";
+    const char *output = "test_patch_tmp/set_parameter_bytes.nmo";
     remove(patch);
     remove(output);
-    write_set_parameter_bytes_patch_v2(patch, output);
+    write_set_parameter_bytes_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -1747,13 +1693,13 @@ TEST(cli, patch_apply_v2_set_parameter_bytes_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_set_parameter_bytes_to_handle_dry_run) {
+TEST(cli, patch_apply_set_parameter_bytes_to_handle_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/set_parameter_bytes_handle_v2.json";
-    const char *output = "test_patch_tmp/set_parameter_bytes_handle_v2.cmo";
+    const char *patch = "test_patch_tmp/set_parameter_bytes_handle.json";
+    const char *output = "test_patch_tmp/set_parameter_bytes_handle.cmo";
     remove(patch);
     remove(output);
-    write_set_parameter_bytes_handle_patch_v2(patch, output);
+    write_set_parameter_bytes_handle_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -1780,13 +1726,13 @@ TEST(cli, patch_apply_v2_set_parameter_bytes_to_handle_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_set_data_cell_dry_run) {
+TEST(cli, patch_apply_set_data_cell_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/set_data_cell_v2.json";
-    const char *output = "test_patch_tmp/set_data_cell_v2.cmo";
+    const char *patch = "test_patch_tmp/set_data_cell.json";
+    const char *output = "test_patch_tmp/set_data_cell.cmo";
     remove(patch);
     remove(output);
-    write_set_data_cell_patch_v2(patch, output);
+    write_set_data_cell_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -1836,13 +1782,13 @@ TEST(cli, patch_apply_v2_set_data_cell_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_remove_parameter_dry_run) {
+TEST(cli, patch_apply_remove_parameter_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/remove_parameter_v2.json";
-    const char *output = "test_patch_tmp/remove_parameter_v2.cmo";
+    const char *patch = "test_patch_tmp/remove_parameter.json";
+    const char *output = "test_patch_tmp/remove_parameter.cmo";
     remove(patch);
     remove(output);
-    write_remove_parameter_patch_v2(patch, output);
+    write_remove_parameter_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -1871,13 +1817,13 @@ TEST(cli, patch_apply_v2_remove_parameter_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_add_operation_dry_run) {
+TEST(cli, patch_apply_add_operation_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/add_operation_v2.json";
-    const char *output = "test_patch_tmp/add_operation_v2.cmo";
+    const char *patch = "test_patch_tmp/add_operation.json";
+    const char *output = "test_patch_tmp/add_operation.cmo";
     remove(patch);
     remove(output);
-    write_add_operation_patch_v2(patch, output);
+    write_add_operation_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -1930,13 +1876,13 @@ TEST(cli, patch_apply_v2_add_operation_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_rewire_operation_dry_run) {
+TEST(cli, patch_apply_rewire_operation_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/rewire_operation_v2.json";
-    const char *output = "test_patch_tmp/rewire_operation_v2.cmo";
+    const char *patch = "test_patch_tmp/rewire_operation.json";
+    const char *output = "test_patch_tmp/rewire_operation.cmo";
     remove(patch);
     remove(output);
-    write_rewire_operation_patch_v2(patch, output);
+    write_rewire_operation_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -1990,13 +1936,13 @@ TEST(cli, patch_apply_v2_rewire_operation_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_remove_operation_dry_run) {
+TEST(cli, patch_apply_remove_operation_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/remove_operation_v2.json";
-    const char *output = "test_patch_tmp/remove_operation_v2.cmo";
+    const char *patch = "test_patch_tmp/remove_operation.json";
+    const char *output = "test_patch_tmp/remove_operation.cmo";
     remove(patch);
     remove(output);
-    write_add_remove_operation_patch_v2(patch, output);
+    write_add_remove_operation_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -2044,13 +1990,13 @@ TEST(cli, patch_apply_v2_remove_operation_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_connect_parameter_dry_run) {
+TEST(cli, patch_apply_connect_parameter_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/connect_parameter_v2.json";
-    const char *output = "test_patch_tmp/connect_parameter_v2.cmo";
+    const char *patch = "test_patch_tmp/connect_parameter.json";
+    const char *output = "test_patch_tmp/connect_parameter.cmo";
     remove(patch);
     remove(output);
-    write_connect_parameter_patch_v2(patch, output);
+    write_connect_parameter_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -2097,13 +2043,13 @@ TEST(cli, patch_apply_v2_connect_parameter_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_connect_parameter_to_handle_dry_run) {
+TEST(cli, patch_apply_connect_parameter_to_handle_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/connect_parameter_handle_v2.json";
-    const char *output = "test_patch_tmp/connect_parameter_handle_v2.cmo";
+    const char *patch = "test_patch_tmp/connect_parameter_handle.json";
+    const char *output = "test_patch_tmp/connect_parameter_handle.cmo";
     remove(patch);
     remove(output);
-    write_connect_parameter_handle_patch_v2(patch, output);
+    write_connect_parameter_handle_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -2130,13 +2076,13 @@ TEST(cli, patch_apply_v2_connect_parameter_to_handle_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_disconnect_parameter_dry_run) {
+TEST(cli, patch_apply_disconnect_parameter_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/disconnect_parameter_v2.json";
-    const char *output = "test_patch_tmp/disconnect_parameter_v2.cmo";
+    const char *patch = "test_patch_tmp/disconnect_parameter.json";
+    const char *output = "test_patch_tmp/disconnect_parameter.cmo";
     remove(patch);
     remove(output);
-    write_disconnect_parameter_patch_v2(patch, output);
+    write_disconnect_parameter_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -2183,13 +2129,13 @@ TEST(cli, patch_apply_v2_disconnect_parameter_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_rewire_behavior_link_dry_run) {
+TEST(cli, patch_apply_rewire_behavior_link_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/rewire_behavior_link_v2.json";
-    const char *output = "test_patch_tmp/rewire_behavior_link_v2.cmo";
+    const char *patch = "test_patch_tmp/rewire_behavior_link.json";
+    const char *output = "test_patch_tmp/rewire_behavior_link.cmo";
     remove(patch);
     remove(output);
-    write_rewire_behavior_link_patch_v2(patch, output);
+    write_rewire_behavior_link_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -2237,13 +2183,13 @@ TEST(cli, patch_apply_v2_rewire_behavior_link_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_set_behavior_link_delay_dry_run) {
+TEST(cli, patch_apply_set_behavior_link_delay_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/set_behavior_link_delay_v2.json";
-    const char *output = "test_patch_tmp/set_behavior_link_delay_v2.cmo";
+    const char *patch = "test_patch_tmp/set_behavior_link_delay.json";
+    const char *output = "test_patch_tmp/set_behavior_link_delay.cmo";
     remove(patch);
     remove(output);
-    write_set_behavior_link_delay_patch_v2(patch, output);
+    write_set_behavior_link_delay_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -2291,13 +2237,13 @@ TEST(cli, patch_apply_v2_set_behavior_link_delay_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_remove_behavior_link_dry_run) {
+TEST(cli, patch_apply_remove_behavior_link_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/remove_behavior_link_v2.json";
-    const char *output = "test_patch_tmp/remove_behavior_link_v2.cmo";
+    const char *patch = "test_patch_tmp/remove_behavior_link.json";
+    const char *output = "test_patch_tmp/remove_behavior_link.cmo";
     remove(patch);
     remove(output);
-    write_remove_behavior_link_patch_v2(patch, output);
+    write_remove_behavior_link_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -2342,13 +2288,13 @@ TEST(cli, patch_apply_v2_remove_behavior_link_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_remove_node_dry_run) {
+TEST(cli, patch_apply_remove_node_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/remove_node_v2.json";
-    const char *output = "test_patch_tmp/remove_node_v2.cmo";
+    const char *patch = "test_patch_tmp/remove_node.json";
+    const char *output = "test_patch_tmp/remove_node.cmo";
     remove(patch);
     remove(output);
-    write_remove_node_patch_v2(patch, output);
+    write_remove_node_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -2377,13 +2323,13 @@ TEST(cli, patch_apply_v2_remove_node_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_remove_io_dry_run) {
+TEST(cli, patch_apply_remove_io_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/remove_io_v2.json";
-    const char *output = "test_patch_tmp/remove_io_v2.cmo";
+    const char *patch = "test_patch_tmp/remove_io.json";
+    const char *output = "test_patch_tmp/remove_io.cmo";
     remove(patch);
     remove(output);
-    write_remove_io_patch_v2(patch, output);
+    write_remove_io_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -2412,13 +2358,13 @@ TEST(cli, patch_apply_v2_remove_io_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_rename_io_dry_run) {
+TEST(cli, patch_apply_rename_io_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/rename_io_v2.json";
-    const char *output = "test_patch_tmp/rename_io_v2.cmo";
+    const char *patch = "test_patch_tmp/rename_io.json";
+    const char *output = "test_patch_tmp/rename_io.cmo";
     remove(patch);
     remove(output);
-    write_rename_io_patch_v2(patch, output);
+    write_rename_io_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -2447,13 +2393,13 @@ TEST(cli, patch_apply_v2_rename_io_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_interface_policy_dry_run) {
+TEST(cli, patch_apply_interface_policy_dry_run) {
     make_dir("test_patch_tmp");
-    const char *patch = "test_patch_tmp/interface_policy_v2.json";
-    const char *output = "test_patch_tmp/interface_policy_v2.cmo";
+    const char *patch = "test_patch_tmp/interface_policy.json";
+    const char *output = "test_patch_tmp/interface_policy.cmo";
     remove(patch);
     remove(output);
-    write_interface_policy_patch_v2(patch, output);
+    write_interface_policy_patch(patch, output);
 
     char args[1024];
     snprintf(args, sizeof(args), "-f json patch apply \"%s\" --dry-run",
@@ -2499,7 +2445,7 @@ TEST(cli, patch_apply_v2_interface_policy_dry_run) {
     remove(patch);
 }
 
-TEST(cli, patch_apply_v2_rejects_strict_manifest_edges) {
+TEST(cli, patch_apply_rejects_strict_manifest_edges) {
     struct invalid_case {
         const char *name;
         const char *operation_json;
@@ -2581,7 +2527,7 @@ TEST(cli, patch_apply_v2_rejects_strict_manifest_edges) {
             "      \"op\": \"add_io\",\n"
             "      \"behavior_id\": 3,\n"
             "      \"kind\": \"input\",\n"
-            "      \"name\": \"Patch V2 In\",\n"
+            "      \"name\": \"Patch Current In\",\n"
             "      \"unexpected\": true\n"
             "    }",
             "Unknown field 'unexpected' in add_io operation",
@@ -2598,7 +2544,7 @@ TEST(cli, patch_apply_v2_rejects_strict_manifest_edges) {
                  "test_patch_tmp/invalid_%s.cmo", cases[i].name);
         remove(patch);
         remove(output);
-        write_raw_v2_patch_operation(
+        write_raw_patch_operation(
             patch, output, cases[i].operation_json);
         assert_patch_apply_fails_with(patch, cases[i].expected_text);
         ASSERT_FALSE(file_exists(output));
@@ -2737,37 +2683,36 @@ TEST(cli, patch_diff_json_reports_fold_delete_plan) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, patch_apply_rejects_non_leaf_replace_bb);
     REGISTER_TEST(cli, patch_apply_json_failure_reports_edit_report);
-    REGISTER_TEST(cli, patch_apply_v2_replace_bb_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_add_node_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_remove_node_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_add_behavior_link_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_rewire_behavior_link_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_set_behavior_link_delay_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_remove_behavior_link_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_add_parameter_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_add_operation_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_remove_operation_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_rewire_operation_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_connect_parameter_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_connect_parameter_to_handle_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_disconnect_parameter_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_remove_parameter_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_set_parameter_value_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_set_parameter_value_to_handle_dry_run);
-    REGISTER_TEST(cli, patch_diff_json_emits_normalized_v2_manifest);
-    REGISTER_TEST(cli, patch_apply_v2_reports_probe_analysis_metadata);
+    REGISTER_TEST(cli, patch_apply_replace_bb_dry_run);
+    REGISTER_TEST(cli, patch_apply_add_node_dry_run);
+    REGISTER_TEST(cli, patch_apply_remove_node_dry_run);
+    REGISTER_TEST(cli, patch_apply_add_behavior_link_dry_run);
+    REGISTER_TEST(cli, patch_apply_rewire_behavior_link_dry_run);
+    REGISTER_TEST(cli, patch_apply_set_behavior_link_delay_dry_run);
+    REGISTER_TEST(cli, patch_apply_remove_behavior_link_dry_run);
+    REGISTER_TEST(cli, patch_apply_add_parameter_dry_run);
+    REGISTER_TEST(cli, patch_apply_add_operation_dry_run);
+    REGISTER_TEST(cli, patch_apply_remove_operation_dry_run);
+    REGISTER_TEST(cli, patch_apply_rewire_operation_dry_run);
+    REGISTER_TEST(cli, patch_apply_connect_parameter_dry_run);
+    REGISTER_TEST(cli, patch_apply_connect_parameter_to_handle_dry_run);
+    REGISTER_TEST(cli, patch_apply_disconnect_parameter_dry_run);
+    REGISTER_TEST(cli, patch_apply_remove_parameter_dry_run);
+    REGISTER_TEST(cli, patch_apply_set_parameter_value_dry_run);
+    REGISTER_TEST(cli, patch_apply_set_parameter_value_to_handle_dry_run);
+    REGISTER_TEST(cli, patch_diff_json_emits_normalized_manifest);
+    REGISTER_TEST(cli, patch_apply_reports_probe_analysis_metadata);
     REGISTER_TEST(cli, patch_diff_json_roundtrips_operation_handle_refs);
-    REGISTER_TEST(cli, patch_apply_v2_set_parameter_bytes_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_set_parameter_bytes_to_handle_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_set_data_cell_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_add_io_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_remove_io_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_rename_io_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_interface_policy_dry_run);
-    REGISTER_TEST(cli, patch_apply_v2_rejects_strict_manifest_edges);
+    REGISTER_TEST(cli, patch_apply_set_parameter_bytes_dry_run);
+    REGISTER_TEST(cli, patch_apply_set_parameter_bytes_to_handle_dry_run);
+    REGISTER_TEST(cli, patch_apply_set_data_cell_dry_run);
+    REGISTER_TEST(cli, patch_apply_add_io_dry_run);
+    REGISTER_TEST(cli, patch_apply_remove_io_dry_run);
+    REGISTER_TEST(cli, patch_apply_rename_io_dry_run);
+    REGISTER_TEST(cli, patch_apply_interface_policy_dry_run);
+    REGISTER_TEST(cli, patch_apply_rejects_strict_manifest_edges);
     REGISTER_TEST(cli, patch_apply_fold_dry_run_reports_analysis);
     REGISTER_TEST(cli, patch_apply_fold_dry_run_reports_semantic_risks);
     REGISTER_TEST(cli, patch_diff_json_reports_fold_delete_plan);
     REGISTER_TEST(cli, patch_apply_leaf_replace_bb_dry_run_and_apply);
-    REGISTER_TEST(cli, patch_apply_rejects_legacy_v1_manifest);
 TEST_MAIN_END()
