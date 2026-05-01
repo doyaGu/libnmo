@@ -480,6 +480,197 @@ static nmo_status_t patch_resolve_project_manifest_paths(
     return NMO_OK;
 }
 
+static yyjson_mut_val *patch_project_name_list_json(
+    yyjson_mut_doc *doc,
+    const nmo_project_report_name_list_t *list)
+{
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    if (!arr) {
+        return NULL;
+    }
+    if (!list) {
+        return arr;
+    }
+    for (size_t i = 0u; i < list->count; ++i) {
+        if (!nmo_cli_json_add_str_safe_to_arr(doc, arr, list->names[i])) {
+            return NULL;
+        }
+    }
+    return arr;
+}
+
+static void patch_project_report_add_created_list(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *created,
+    const char *key,
+    const nmo_project_report_diff_t *diff)
+{
+    yyjson_mut_val *arr = patch_project_name_list_json(
+        doc,
+        diff ? &diff->created : NULL);
+    if (arr) {
+        nmo_cli_json_add_val_safe(doc, created, key, arr);
+    }
+}
+
+static void patch_add_project_validation_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *data,
+    const nmo_project_validation_report_t *validation)
+{
+    yyjson_mut_val *validation_obj = yyjson_mut_obj(doc);
+    yyjson_mut_val *issues = yyjson_mut_arr(doc);
+    if (!validation_obj || !issues) {
+        return;
+    }
+
+    bool ok = validation ? validation->ok : false;
+    nmo_cli_json_add_bool_safe(doc, validation_obj, "ok", ok);
+    if (validation) {
+        for (size_t i = 0u; i < validation->issue_count; ++i) {
+            const nmo_project_validation_issue_t *issue =
+                &validation->issues[i];
+            yyjson_mut_val *issue_obj = yyjson_mut_obj(doc);
+            if (!issue_obj) {
+                continue;
+            }
+            nmo_cli_json_add_str_safe(doc, issue_obj, "code", issue->code);
+            nmo_cli_json_add_str_safe(doc, issue_obj, "message", issue->message);
+            nmo_cli_json_add_str_safe(doc,
+                                      issue_obj,
+                                      "subject_kind",
+                                      issue->subject_kind);
+            nmo_cli_json_add_str_safe(doc,
+                                      issue_obj,
+                                      "subject_name",
+                                      issue->subject_name);
+            nmo_cli_json_add_str_safe(doc,
+                                      issue_obj,
+                                      "source_path",
+                                      issue->source_path);
+            yyjson_mut_arr_append(issues, issue_obj);
+        }
+    }
+    nmo_cli_json_add_val_safe(doc, validation_obj, "issues", issues);
+    nmo_cli_json_add_val_safe(doc, data, "validation", validation_obj);
+}
+
+static void patch_add_project_report_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *data,
+    const nmo_project_report_t *report,
+    bool requested_dry_run,
+    const char *manifest_path,
+    const char *output_path)
+{
+    bool ok = report ? report->ok : false;
+    bool dry_run = report ? report->dry_run : requested_dry_run;
+    nmo_cli_json_add_bool_safe(doc, data, "ok", ok);
+    nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
+    nmo_cli_json_add_str_safe(doc, data, "manifest", manifest_path);
+    nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+
+    yyjson_mut_val *diffs = yyjson_mut_obj(doc);
+    yyjson_mut_val *created = yyjson_mut_obj(doc);
+    if (diffs && created) {
+        patch_project_report_add_created_list(
+            doc,
+            created,
+            "documents",
+            report ? &report->document_diff : NULL);
+        patch_project_report_add_created_list(
+            doc,
+            created,
+            "scenes",
+            report ? &report->scene_diff : NULL);
+        patch_project_report_add_created_list(
+            doc,
+            created,
+            "objects",
+            report ? &report->object_diff : NULL);
+        patch_project_report_add_created_list(
+            doc,
+            created,
+            "assets",
+            report ? &report->asset_diff : NULL);
+        patch_project_report_add_created_list(
+            doc,
+            created,
+            "scripts",
+            report ? &report->script_diff : NULL);
+        patch_project_report_add_created_list(
+            doc,
+            created,
+            "managers",
+            report ? &report->manager_diff : NULL);
+        nmo_cli_json_add_val_safe(doc, diffs, "created", created);
+        nmo_cli_json_add_val_safe(doc, data, "diffs", diffs);
+    }
+
+    patch_add_project_validation_json(
+        doc,
+        data,
+        report ? &report->validation : NULL);
+}
+
+static int patch_emit_project_report_json(
+    nmo_cmd_ctx_t *ctx,
+    const nmo_project_report_t *report,
+    bool requested_dry_run,
+    const char *manifest_path,
+    const char *output_path)
+{
+    yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
+    if (!doc) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    yyjson_mut_val *data = yyjson_mut_obj(doc);
+    patch_add_project_report_json(doc,
+                                  data,
+                                  report,
+                                  requested_dry_run,
+                                  manifest_path,
+                                  output_path);
+    return nmo_cmd_ctx_json_end(ctx, doc, data, "patch.apply");
+}
+
+static void patch_print_project_validation_issues(
+    FILE *out,
+    const nmo_project_validation_report_t *validation)
+{
+    if (!out || !validation) {
+        return;
+    }
+    for (size_t i = 0u; i < validation->issue_count; ++i) {
+        const nmo_project_validation_issue_t *issue = &validation->issues[i];
+        fprintf(out,
+                "Validation: %s: %s",
+                issue->code ? issue->code : "project_validation",
+                issue->message ? issue->message : "Validation failed");
+        if (issue->subject_kind || issue->subject_name ||
+            issue->source_path) {
+            fputs(" (", out);
+            bool needs_comma = false;
+            if (issue->subject_kind || issue->subject_name) {
+                fprintf(out,
+                        "%s%s%s",
+                        issue->subject_kind ? issue->subject_kind : "subject",
+                        issue->subject_name ? " " : "",
+                        issue->subject_name ? issue->subject_name : "");
+                needs_comma = true;
+            }
+            if (issue->source_path) {
+                fprintf(out,
+                        "%s%s",
+                        needs_comma ? ", " : "",
+                        issue->source_path);
+            }
+            fputs(")", out);
+        }
+        fputc('\n', out);
+    }
+}
+
 static int patch_apply_project_manifest(
     const patch_apply_args_t *args,
     const nmo_cli_global_opts_t *global)
@@ -488,12 +679,6 @@ static int patch_apply_project_manifest(
     int rc = nmo_cmd_ctx_init_no_file(&ctx, global);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         return rc;
-    }
-
-    if (args->dry_run) {
-        fprintf(stderr,
-                "Error: --dry-run is not supported for project manifests yet\n");
-        return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_ARG_ERROR);
     }
 
     char *json = NULL;
@@ -561,44 +746,52 @@ static int patch_apply_project_manifest(
 
     nmo_project_report_t report;
     nmo_project_report_init(&report);
-    st = nmo_project_executor_execute_to_file(
-        manifest.plan,
-        output_path,
-        &report);
+    st = args->dry_run
+        ? nmo_project_executor_execute_dry_run(manifest.plan, &report)
+        : nmo_project_executor_execute_to_file(
+              manifest.plan,
+              output_path,
+              &report);
     if (st != NMO_OK) {
-        const char *message = nmo_last_error_message();
-        fprintf(stderr, "Error: %s\n",
-                message && message[0] ? message : nmo_error_string(st));
+        int exit_code = st == NMO_ERR_INVALID_ARGUMENT ||
+                                st == NMO_ERR_VALIDATION_FAILED ||
+                                st == NMO_ERR_NOT_FOUND
+                            ? NMO_CLI_EXIT_ARG_ERROR
+                            : NMO_CLI_EXIT_INTERNAL_ERROR;
+        if (ctx.is_json) {
+            int json_rc = patch_emit_project_report_json(&ctx,
+                                                         &report,
+                                                         args->dry_run,
+                                                         args->project_path,
+                                                         output_path);
+            (void)json_rc;
+        } else {
+            const char *message = nmo_last_error_message();
+            fprintf(stderr, "Error: %s\n",
+                    message && message[0] ? message : nmo_error_string(st));
+            patch_print_project_validation_issues(stderr, &report.validation);
+        }
         nmo_project_report_dispose(&report);
         free(resolved_manifest_output);
         free(manifest_base_dir);
         nmo_project_manifest_dispose(&manifest);
-        return nmo_cmd_ctx_done(&ctx,
-                                st == NMO_ERR_INVALID_ARGUMENT ||
-                                        st == NMO_ERR_VALIDATION_FAILED ||
-                                        st == NMO_ERR_NOT_FOUND
-                                    ? NMO_CLI_EXIT_ARG_ERROR
-                                    : NMO_CLI_EXIT_INTERNAL_ERROR);
+        return nmo_cmd_ctx_done(&ctx, exit_code);
     }
 
     if (ctx.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&ctx);
-        if (!doc) {
-            nmo_project_report_dispose(&report);
-            free(resolved_manifest_output);
-            free(manifest_base_dir);
-            nmo_project_manifest_dispose(&manifest);
-            return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "ok", report.ok);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", report.dry_run);
-        nmo_cli_json_add_str_safe(doc, data, "manifest", args->project_path);
-        nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        rc = nmo_cmd_ctx_json_end(&ctx, doc, data, "patch.apply");
+        rc = patch_emit_project_report_json(&ctx,
+                                            &report,
+                                            args->dry_run,
+                                            args->project_path,
+                                            output_path);
     } else {
         fprintf(ctx.out, "Generated project from: %s\n", args->project_path);
-        fprintf(ctx.out, "Saved to: %s\n", output_path);
+        if (args->dry_run) {
+            fprintf(ctx.out, "[dry-run] Output not written: %s\n",
+                    output_path);
+        } else {
+            fprintf(ctx.out, "Saved to: %s\n", output_path);
+        }
         rc = NMO_CLI_EXIT_SUCCESS;
     }
 

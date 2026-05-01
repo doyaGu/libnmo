@@ -4,6 +4,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_query.h"
 #include "runtime/nmo_context.h"
+#include "yyjson.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -102,6 +103,16 @@ static void make_dir(const char *path)
 #endif
 }
 
+static int file_exists(const char *path)
+{
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        return 0;
+    }
+    fclose(fp);
+    return 1;
+}
+
 static int write_text_file(const char *path, const char *text)
 {
     FILE *fp = fopen(path, "wb");
@@ -112,6 +123,62 @@ static int write_text_file(const char *path, const char *text)
     int ok = fwrite(text, 1u, len, fp) == len;
     fclose(fp);
     return ok;
+}
+
+static const char *get_string_field(yyjson_val *obj, const char *key)
+{
+    yyjson_val *val = yyjson_obj_get(obj, key);
+    return yyjson_get_str(val);
+}
+
+static yyjson_val *get_object_field(yyjson_val *obj, const char *key)
+{
+    yyjson_val *val = yyjson_obj_get(obj, key);
+    return val && yyjson_is_obj(val) ? val : NULL;
+}
+
+static yyjson_val *get_array_field(yyjson_val *obj, const char *key)
+{
+    yyjson_val *val = yyjson_obj_get(obj, key);
+    return val && yyjson_is_arr(val) ? val : NULL;
+}
+
+static bool get_bool_field(yyjson_val *obj, const char *key)
+{
+    yyjson_val *val = yyjson_obj_get(obj, key);
+    return val && yyjson_is_bool(val) && yyjson_get_bool(val);
+}
+
+static int array_contains_string(yyjson_val *arr, const char *needle)
+{
+    size_t idx = 0u;
+    size_t max = 0u;
+    yyjson_val *item = NULL;
+    yyjson_arr_foreach(arr, idx, max, item) {
+        const char *value = yyjson_get_str(item);
+        if (value && strcmp(value, needle) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void parse_cli_json_result(cli_run_result_t *result, yyjson_doc **out_doc)
+{
+    ASSERT_NOT_NULL(result);
+    ASSERT_NOT_NULL(out_doc);
+    *out_doc = NULL;
+    ASSERT_NOT_NULL(result->output);
+    yyjson_doc *doc = yyjson_read(result->output, strlen(result->output), 0);
+    if (!doc) {
+        fprintf(stderr, "\nCLI output was not JSON:\n%s\n", result->output);
+    }
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *root = yyjson_doc_get_root(doc);
+    ASSERT_NOT_NULL(root);
+    ASSERT_STR_EQ("patch.apply", get_string_field(root, "command"));
+    ASSERT_NOT_NULL(get_object_field(root, "data"));
+    *out_doc = doc;
 }
 
 static void assert_named_class_exists(
@@ -127,6 +194,149 @@ static void assert_named_class_exists(
     size_t count = 0u;
     ASSERT_EQ(NMO_OK, nmo_object_query_count(document, &query, &count));
     ASSERT_EQ(1u, count);
+}
+
+TEST(generated_project_manifest, cli_dry_run_reports_project_diagnostics)
+{
+    make_dir("test_project_manifest_tmp");
+    const char *manifest_path = "test_project_manifest_tmp/project_dry_run.json";
+    const char *output_path = "test_project_manifest_tmp/project_dry_run.cmo";
+    remove(manifest_path);
+    remove(output_path);
+
+    const char *manifest =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"GeneratedDryRun\"},"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"objects\":["
+                "{\"name\":\"Camera\",\"class\":\"CKCamera\"},"
+                "{\"name\":\"Cube\",\"class\":\"CK3dEntity\","
+                    "\"mesh\":{\"primitive\":\"cube\"},"
+                    "\"material\":{\"color\":[1,0,0,1]}}"
+            "]"
+        "}]"
+        "}";
+    ASSERT_TRUE(write_text_file(manifest_path, manifest));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json patch apply --project \"%s\" --dry-run -o \"%s\"",
+             manifest_path,
+             output_path);
+    cli_run_result_t result = run_cli_capture(args);
+    if (result.exit_code != 0) {
+        fprintf(stderr, "\nCommand: %s\nExit: %d\nOutput:\n%s\n",
+                args,
+                result.exit_code,
+                result.output ? result.output : "(null)");
+    }
+    ASSERT_EQ(0, result.exit_code);
+    ASSERT_FALSE(file_exists(output_path));
+
+    yyjson_doc *doc = NULL;
+    parse_cli_json_result(&result, &doc);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    ASSERT_STR_EQ(manifest_path, get_string_field(data, "manifest"));
+    ASSERT_STR_EQ(output_path, get_string_field(data, "output"));
+
+    yyjson_val *diffs = get_object_field(data, "diffs");
+    ASSERT_NOT_NULL(diffs);
+    yyjson_val *created = get_object_field(diffs, "created");
+    ASSERT_NOT_NULL(created);
+    ASSERT_TRUE(array_contains_string(get_array_field(created, "documents"),
+                                      "GeneratedDryRun"));
+    ASSERT_TRUE(array_contains_string(get_array_field(created, "scenes"),
+                                      "Level"));
+    ASSERT_TRUE(array_contains_string(get_array_field(created, "objects"),
+                                      "Cube"));
+    ASSERT_TRUE(array_contains_string(get_array_field(created, "assets"),
+                                      "Cube_Mesh"));
+
+    yyjson_val *validation = get_object_field(data, "validation");
+    ASSERT_NOT_NULL(validation);
+    ASSERT_TRUE(get_bool_field(validation, "ok"));
+    ASSERT_EQ(0u, yyjson_arr_size(get_array_field(validation, "issues")));
+
+    yyjson_doc_free(doc);
+    free(result.output);
+    remove(manifest_path);
+}
+
+TEST(generated_project_manifest, cli_json_failure_reports_project_source)
+{
+    make_dir("test_project_manifest_tmp");
+    const char *manifest_path = "test_project_manifest_tmp/project_bad.json";
+    const char *mesh_path = "test_project_manifest_tmp/project_bad.obj";
+    const char *output_path = "test_project_manifest_tmp/project_bad.cmo";
+    remove(manifest_path);
+    remove(mesh_path);
+    remove(output_path);
+
+    ASSERT_TRUE(write_text_file(mesh_path,
+                                "v 0 0 0\n"
+                                "v 1 0 0\n"
+                                "v 0 1 0\n"
+                                "usemtl missing_texture_group\n"
+                                "f 1 2 3\n"));
+    const char *manifest =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"BadProject\"},"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"objects\":[{"
+                "\"name\":\"MeshEntity\","
+                "\"class\":\"CK3dEntity\","
+                "\"mesh\":{\"obj\":\"project_bad.obj\"},"
+                "\"materials\":[{"
+                    "\"name\":\"missing_texture_group\","
+                    "\"texture\":\"missing_texture.png\""
+                "}]"
+            "}]"
+        "}]"
+        "}";
+    ASSERT_TRUE(write_text_file(manifest_path, manifest));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json patch apply --project \"%s\" -o \"%s\"",
+             manifest_path,
+             output_path);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(0, result.exit_code);
+    ASSERT_FALSE(file_exists(output_path));
+
+    yyjson_doc *doc = NULL;
+    parse_cli_json_result(&result, &doc);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_FALSE(get_bool_field(data, "ok"));
+    ASSERT_FALSE(get_bool_field(data, "dry_run"));
+
+    yyjson_val *validation = get_object_field(data, "validation");
+    ASSERT_NOT_NULL(validation);
+    ASSERT_FALSE(get_bool_field(validation, "ok"));
+    yyjson_val *issues = get_array_field(validation, "issues");
+    ASSERT_NOT_NULL(issues);
+    ASSERT_EQ(1u, yyjson_arr_size(issues));
+    yyjson_val *issue = yyjson_arr_get(issues, 0);
+    ASSERT_STR_EQ("missing_obj_material_texture_file",
+                  get_string_field(issue, "code"));
+    ASSERT_STR_EQ("object", get_string_field(issue, "subject_kind"));
+    ASSERT_STR_EQ("MeshEntity", get_string_field(issue, "subject_name"));
+    ASSERT_STR_EQ("scenes[0].objects[0].materials[0].texture",
+                  get_string_field(issue, "source_path"));
+
+    yyjson_doc_free(doc);
+    free(result.output);
+    remove(mesh_path);
+    remove(manifest_path);
 }
 
 TEST(generated_project_manifest, cli_replays_project_manifest)
@@ -191,5 +401,7 @@ TEST(generated_project_manifest, cli_replays_project_manifest)
 }
 
 TEST_MAIN_BEGIN()
+REGISTER_TEST(generated_project_manifest, cli_dry_run_reports_project_diagnostics);
+REGISTER_TEST(generated_project_manifest, cli_json_failure_reports_project_source);
 REGISTER_TEST(generated_project_manifest, cli_replays_project_manifest);
 TEST_MAIN_END()
