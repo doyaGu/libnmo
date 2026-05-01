@@ -310,6 +310,262 @@ TEST(project_validator, reports_manifest_source_for_missing_named_texture)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_validator, reports_manifest_source_for_missing_external_mesh)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":[{"
+        "\"name\":\"Cube\","
+        "\"class\":\"CK3dEntity\","
+        "\"mesh\":{\"obj\":\"missing.obj\"}"
+        "}]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_validation_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+    nmo_project_validation_report_init(&report);
+
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_FALSE(report.ok);
+
+    const nmo_project_validation_issue_t *issue =
+        find_issue(&report, "missing_external_mesh_file");
+    ASSERT_NOT_NULL(issue);
+    ASSERT_STR_EQ("object", issue->subject_kind);
+    ASSERT_STR_EQ("Cube", issue->subject_name);
+    ASSERT_STR_EQ("scenes[0].objects[0].mesh.obj", issue->source_path);
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+}
+
+TEST(project_validator, reports_manifest_source_for_missing_default_texture)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":[{"
+        "\"name\":\"Cube\","
+        "\"class\":\"CK3dEntity\","
+        "\"mesh\":{\"primitive\":\"cube\"},"
+        "\"material\":{\"texture\":\"missing.png\"}"
+        "}]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_validation_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+    nmo_project_validation_report_init(&report);
+
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_FALSE(report.ok);
+
+    const nmo_project_validation_issue_t *issue =
+        find_issue(&report, "missing_material_texture_file");
+    ASSERT_NOT_NULL(issue);
+    ASSERT_STR_EQ("object", issue->subject_kind);
+    ASSERT_STR_EQ("Cube", issue->subject_name);
+    ASSERT_STR_EQ("scenes[0].objects[0].material.texture", issue->source_path);
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+}
+
+TEST(project_validator, reports_manifest_source_for_duplicate_obj_material)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":[{"
+        "\"name\":\"Cube\","
+        "\"class\":\"CK3dEntity\","
+        "\"mesh\":{\"obj\":\"missing.obj\"},"
+        "\"materials\":["
+            "{\"name\":\"Red\",\"color\":[1,0,0,1]},"
+            "{\"name\":\"Red\",\"color\":[0,1,0,1]}"
+        "]"
+        "}]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_validation_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+    nmo_project_validation_report_init(&report);
+
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_FALSE(report.ok);
+
+    const nmo_project_validation_issue_t *issue =
+        find_issue(&report, "duplicate_obj_material");
+    ASSERT_NOT_NULL(issue);
+    ASSERT_STR_EQ("object", issue->subject_kind);
+    ASSERT_STR_EQ("Cube", issue->subject_name);
+    ASSERT_STR_EQ("scenes[0].objects[0].materials[0]", issue->source_path);
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+}
+
+TEST(project_validator, reports_manifest_source_for_unbound_obj_material)
+{
+    const char *obj_path = "test_project_validator_unbound_manifest.obj";
+    remove(obj_path);
+    FILE *fp = fopen(obj_path, "wb");
+    ASSERT_NOT_NULL(fp);
+    fputs(
+        "v 0 0 0\n"
+        "v 1 0 0\n"
+        "v 0 1 0\n"
+        "usemtl Red\n"
+        "f 1 2 3\n"
+        "usemtl Blue\n"
+        "f 1 3 2\n",
+        fp);
+    fclose(fp);
+
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":[{"
+        "\"name\":\"Cube\","
+        "\"class\":\"CK3dEntity\","
+        "\"mesh\":{\"obj\":\"test_project_validator_unbound_manifest.obj\"},"
+        "\"materials\":[{\"name\":\"Red\",\"color\":[1,0,0,1]}]"
+        "}]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_validation_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+    nmo_project_validation_report_init(&report);
+
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_FALSE(report.ok);
+
+    const nmo_project_validation_issue_t *issue =
+        find_issue(&report, "unbound_obj_material");
+    ASSERT_NOT_NULL(issue);
+    ASSERT_STR_EQ("object", issue->subject_kind);
+    ASSERT_STR_EQ("Cube", issue->subject_name);
+    ASSERT_STR_EQ("scenes[0].objects[0].mesh.obj", issue->source_path);
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+    remove(obj_path);
+}
+
+TEST(project_validator, reports_manifest_source_for_invalid_active_camera)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"active_camera\":\"cube\","
+        "\"objects\":[{"
+        "\"id\":\"cube\","
+        "\"name\":\"Cube\","
+        "\"class\":\"CK3dEntity\""
+        "}]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_validation_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+    nmo_project_validation_report_init(&report);
+
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_FALSE(report.ok);
+
+    const nmo_project_validation_issue_t *issue =
+        find_issue(&report, "invalid_active_camera_class");
+    ASSERT_NOT_NULL(issue);
+    ASSERT_STR_EQ("scene", issue->subject_kind);
+    ASSERT_STR_EQ("Level", issue->subject_name);
+    ASSERT_STR_EQ("scenes[0].active_camera", issue->source_path);
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+}
+
+TEST(project_validator, reports_manifest_source_for_invalid_camera_light_targets)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":["
+            "{\"id\":\"bad-target\",\"name\":\"BadTarget\",\"class\":\"CKMaterial\"},"
+            "{\"name\":\"Camera\",\"class\":\"CKTargetCamera\","
+                "\"camera\":{\"fov\":0.5,\"near\":0.1,\"far\":100,"
+                    "\"target\":\"bad-target\"}},"
+            "{\"name\":\"Light\",\"class\":\"CKTargetLight\","
+                "\"light\":{\"diffuse\":[1,1,1,1],\"range\":10,"
+                    "\"type\":\"point\",\"target\":\"bad-target\"}}"
+        "]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_validation_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+    nmo_project_validation_report_init(&report);
+
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_FALSE(report.ok);
+
+    const nmo_project_validation_issue_t *camera_issue =
+        find_issue(&report, "invalid_camera_target_object");
+    ASSERT_NOT_NULL(camera_issue);
+    ASSERT_STR_EQ("object", camera_issue->subject_kind);
+    ASSERT_STR_EQ("Camera", camera_issue->subject_name);
+    ASSERT_STR_EQ("scenes[0].objects[1]", camera_issue->source_path);
+
+    const nmo_project_validation_issue_t *light_issue =
+        find_issue(&report, "invalid_light_target_object");
+    ASSERT_NOT_NULL(light_issue);
+    ASSERT_STR_EQ("object", light_issue->subject_kind);
+    ASSERT_STR_EQ("Light", light_issue->subject_name);
+    ASSERT_STR_EQ("scenes[0].objects[2]", light_issue->source_path);
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+}
+
 TEST(project_validator, rejects_invalid_scene_active_camera)
 {
     nmo_project_plan_t *plan = NULL;
@@ -362,5 +618,11 @@ REGISTER_TEST(project_validator, rejects_duplicate_named_obj_materials);
 REGISTER_TEST(project_validator, rejects_missing_named_obj_material_texture);
 REGISTER_TEST(project_validator, rejects_unbound_obj_material_without_default);
 REGISTER_TEST(project_validator, reports_manifest_source_for_missing_named_texture);
+REGISTER_TEST(project_validator, reports_manifest_source_for_missing_external_mesh);
+REGISTER_TEST(project_validator, reports_manifest_source_for_missing_default_texture);
+REGISTER_TEST(project_validator, reports_manifest_source_for_duplicate_obj_material);
+REGISTER_TEST(project_validator, reports_manifest_source_for_unbound_obj_material);
+REGISTER_TEST(project_validator, reports_manifest_source_for_invalid_active_camera);
+REGISTER_TEST(project_validator, reports_manifest_source_for_invalid_camera_light_targets);
 REGISTER_TEST(project_validator, rejects_invalid_scene_active_camera);
 TEST_MAIN_END()

@@ -9,8 +9,10 @@
 typedef struct project_scene_record {
     uint32_t handle;
     char *name;
+    char *source_path;
     bool startup_active;
     uint32_t active_camera_handle;
+    char *active_camera_source_path;
 } project_scene_record_t;
 
 typedef struct project_object_record {
@@ -236,6 +238,8 @@ void nmo_project_plan_destroy(nmo_project_plan_t *plan)
     free(plan->document_name);
     for (size_t i = 0; i < plan->scene_count; ++i) {
         free(plan->scenes[i].name);
+        free(plan->scenes[i].source_path);
+        free(plan->scenes[i].active_camera_source_path);
     }
     for (size_t i = 0; i < plan->object_count; ++i) {
         free(plan->objects[i].name);
@@ -300,10 +304,28 @@ nmo_status_t nmo_project_plan_clone(
             clone->scenes[i].active_camera_handle =
                 plan->scenes[i].active_camera_handle;
             clone->scenes[i].name = project_plan_strdup(plan->scenes[i].name);
+            clone->scenes[i].source_path =
+                project_plan_strdup(plan->scenes[i].source_path);
+            clone->scenes[i].active_camera_source_path =
+                project_plan_strdup(plan->scenes[i].active_camera_source_path);
             if (plan->scenes[i].name && !clone->scenes[i].name) {
                 nmo_project_plan_destroy(clone);
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                  "failed to clone project scene name");
+            }
+            if (plan->scenes[i].source_path &&
+                !clone->scenes[i].source_path) {
+                nmo_project_plan_destroy(clone);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "failed to clone project scene source path");
+            }
+            if (plan->scenes[i].active_camera_source_path &&
+                !clone->scenes[i].active_camera_source_path) {
+                nmo_project_plan_destroy(clone);
+                NMO_RETURN_ERROR(
+                    NMO_ERR_NOMEM,
+                    NMO_SEVERITY_ERROR,
+                    "failed to clone project scene active camera source path");
             }
             clone->scene_count++;
         }
@@ -543,8 +565,11 @@ nmo_status_t nmo_project_plan_get_scene(
 
     out_scene->handle = plan->scenes[index].handle;
     out_scene->name = plan->scenes[index].name;
+    out_scene->source_path = plan->scenes[index].source_path;
     out_scene->startup_active = plan->scenes[index].startup_active;
     out_scene->active_camera_handle = plan->scenes[index].active_camera_handle;
+    out_scene->active_camera_source_path =
+        plan->scenes[index].active_camera_source_path;
     NMO_RETURN_OK();
 }
 
@@ -650,6 +675,70 @@ nmo_status_t nmo_project_plan_add_scene(
         *out_scene_handle = handle;
     }
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_scene_source_path(
+    nmo_project_plan_t *plan,
+    uint32_t scene_handle,
+    const char *source_path)
+{
+    if (!plan || scene_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and scene handle are required");
+    }
+
+    char *source_copy = NULL;
+    if (source_path) {
+        source_copy = project_plan_strdup(source_path);
+        if (!source_copy) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate project scene source path");
+        }
+    }
+    for (size_t i = 0u; i < plan->scene_count; ++i) {
+        if (plan->scenes[i].handle == scene_handle) {
+            free(plan->scenes[i].source_path);
+            plan->scenes[i].source_path = source_copy;
+            NMO_RETURN_OK();
+        }
+    }
+
+    free(source_copy);
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "scene handle not found");
+}
+
+nmo_status_t nmo_project_plan_set_scene_active_camera_source_path(
+    nmo_project_plan_t *plan,
+    uint32_t scene_handle,
+    const char *source_path)
+{
+    if (!plan || scene_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and scene handle are required");
+    }
+
+    char *source_copy = NULL;
+    if (source_path) {
+        source_copy = project_plan_strdup(source_path);
+        if (!source_copy) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_NOMEM,
+                NMO_SEVERITY_ERROR,
+                "failed to allocate project scene active camera source path");
+        }
+    }
+    for (size_t i = 0u; i < plan->scene_count; ++i) {
+        if (plan->scenes[i].handle == scene_handle) {
+            free(plan->scenes[i].active_camera_source_path);
+            plan->scenes[i].active_camera_source_path = source_copy;
+            NMO_RETURN_OK();
+        }
+    }
+
+    free(source_copy);
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "scene handle not found");
 }
 
 nmo_status_t nmo_project_plan_set_scene_startup_active(

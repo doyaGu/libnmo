@@ -320,22 +320,31 @@ static nmo_status_t project_validation_check_duplicate_scenes(
                     plan,
                     lhs.active_camera_handle,
                     &camera)) {
-                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                     report,
                     "missing_active_camera",
-                    "Project scene active camera references a missing object"));
+                    "Project scene active camera references a missing object",
+                    "scene",
+                    lhs.name,
+                    lhs.active_camera_source_path));
             } else {
                 if (camera.scene_handle != lhs.handle) {
-                    NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                         report,
                         "active_camera_outside_scene",
-                        "Project scene active camera must belong to the scene"));
+                        "Project scene active camera must belong to the scene",
+                        "scene",
+                        lhs.name,
+                        lhs.active_camera_source_path));
                 }
                 if (!project_validation_class_is_camera(camera.class_id)) {
-                    NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                         report,
                         "invalid_active_camera_class",
-                        "Project scene active camera must be camera-compatible"));
+                        "Project scene active camera must be camera-compatible",
+                        "scene",
+                        lhs.name,
+                        lhs.active_camera_source_path));
                 }
             }
         }
@@ -397,61 +406,85 @@ static nmo_status_t project_validation_check_objects(
                 "Project object transform requires a 3D entity-compatible class"));
         }
         if (object.has_camera && !project_validation_class_is_camera(object.class_id)) {
-            NMO_RETURN_IF_ERROR(project_validation_add_issue(
+            NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                 report,
                 "invalid_camera_target",
-                "Project camera settings require CKCamera or CKTargetCamera"));
+                "Project camera settings require CKCamera or CKTargetCamera",
+                "object",
+                object.name,
+                object.source_path));
         }
         if (object.has_camera_target) {
             nmo_project_object_desc_t target = {0};
             if (object.class_id != NMO_CID_TARGETCAMERA) {
-                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                     report,
                     "invalid_camera_target_binding_class",
-                    "Project camera target requires CKTargetCamera"));
+                    "Project camera target requires CKTargetCamera",
+                    "object",
+                    object.name,
+                    object.source_path));
             }
             if (!project_validation_get_object_by_handle(
                     plan,
                     object.camera_target_handle,
                     &target)) {
-                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                     report,
                     "missing_camera_target",
-                    "Project camera target references a missing object"));
+                    "Project camera target references a missing object",
+                    "object",
+                    object.name,
+                    object.source_path));
             } else if (!project_validation_class_is_entity(target.class_id)) {
-                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                     report,
                     "invalid_camera_target_object",
-                    "Project camera target must be entity-compatible"));
+                    "Project camera target must be entity-compatible",
+                    "object",
+                    object.name,
+                    object.source_path));
             }
         }
         if (object.has_light && !project_validation_class_is_light(object.class_id)) {
-            NMO_RETURN_IF_ERROR(project_validation_add_issue(
+            NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                 report,
                 "invalid_light_target",
-                "Project light settings require CKLight or CKTargetLight"));
+                "Project light settings require CKLight or CKTargetLight",
+                "object",
+                object.name,
+                object.source_path));
         }
         if (object.has_light_target) {
             nmo_project_object_desc_t target = {0};
             if (object.class_id != NMO_CID_TARGETLIGHT) {
-                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                     report,
                     "invalid_light_target_binding_class",
-                    "Project light target requires CKTargetLight"));
+                    "Project light target requires CKTargetLight",
+                    "object",
+                    object.name,
+                    object.source_path));
             }
             if (!project_validation_get_object_by_handle(
                     plan,
                     object.light_target_handle,
                     &target)) {
-                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                     report,
                     "missing_light_target",
-                    "Project light target references a missing object"));
+                    "Project light target references a missing object",
+                    "object",
+                    object.name,
+                    object.source_path));
             } else if (!project_validation_class_is_entity(target.class_id)) {
-                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                     report,
                     "invalid_light_target_object",
-                    "Project light target must be entity-compatible"));
+                    "Project light target must be entity-compatible",
+                    "object",
+                    object.name,
+                    object.source_path));
             }
         }
 
@@ -585,19 +618,25 @@ static nmo_status_t project_validation_check_assets(
             free(obj_bytes);
             if (parse_status != NMO_OK) {
                 nmo_arena_destroy(arena);
-                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                     report,
                     "invalid_external_mesh_file",
-                    "Project external OBJ mesh path must parse"));
+                    "Project external OBJ mesh path must parse",
+                    "object",
+                    has_asset_object ? asset_object.name : NULL,
+                    asset.external_mesh_source_path));
                 continue;
             }
 
             for (size_t face_index = 0u; face_index < obj_data.face_count; ++face_index) {
                 if (obj_data.faces[face_index].material_group == NMO_OBJ_NO_MATERIAL) {
-                    NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                         report,
                         "unbound_obj_material",
-                        "Project OBJ has unassigned material faces and no default material"));
+                        "Project OBJ has unassigned material faces and no default material",
+                        "object",
+                        has_asset_object ? asset_object.name : NULL,
+                        asset.external_mesh_source_path));
                     break;
                 }
             }
@@ -624,10 +663,13 @@ static nmo_status_t project_validation_check_assets(
                     }
                 }
                 if (!bound) {
-                    NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                         report,
                         "unbound_obj_material",
-                        "Project OBJ material group has no binding and no default material"));
+                        "Project OBJ material group has no binding and no default material",
+                        "object",
+                        has_asset_object ? asset_object.name : NULL,
+                        asset.external_mesh_source_path));
                 }
             }
             nmo_arena_destroy(arena);

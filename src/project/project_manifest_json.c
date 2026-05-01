@@ -1042,6 +1042,15 @@ static nmo_status_t manifest_parse_scene(
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(scene, "scene", allowed));
     NMO_RETURN_IF_ERROR(manifest_required_string(scene, "name", &name));
     NMO_RETURN_IF_ERROR(nmo_project_plan_add_scene(ctx->plan, name, &scene_handle));
+    char scene_source_path[64];
+    snprintf(scene_source_path,
+             sizeof(scene_source_path),
+             "scenes[%zu]",
+             scene_index);
+    NMO_RETURN_IF_ERROR(nmo_project_plan_set_scene_source_path(
+        ctx->plan,
+        scene_handle,
+        scene_source_path));
 
     yyjson_val *objects = yyjson_obj_get(scene, "objects");
     if (!objects) {
@@ -1092,6 +1101,16 @@ static nmo_status_t manifest_parse_scene(
             ctx->plan,
             scene_handle,
             active_camera_handle));
+        char active_camera_source_path[96];
+        snprintf(active_camera_source_path,
+                 sizeof(active_camera_source_path),
+                 "scenes[%zu].active_camera",
+                 scene_index);
+        NMO_RETURN_IF_ERROR(
+            nmo_project_plan_set_scene_active_camera_source_path(
+                ctx->plan,
+                scene_handle,
+                active_camera_source_path));
     }
 
     yyjson_val *startup_active = yyjson_obj_get(scene, "startup_active");

@@ -22,8 +22,10 @@ typedef struct nmo_project_plan nmo_project_plan_t;
 typedef struct nmo_project_scene_desc {
     uint32_t handle;
     const char *name;
+    const char *source_path;
     bool startup_active;
     uint32_t active_camera_handle;
+    const char *active_camera_source_path;
 } nmo_project_scene_desc_t;
 
 typedef enum nmo_project_object_flags {
@@ -124,6 +126,16 @@ NMO_API nmo_status_t nmo_project_plan_add_object(
     nmo_project_plan_t *plan,
     const nmo_project_object_spec_t *spec,
     uint32_t *out_object_handle);
+
+NMO_API nmo_status_t nmo_project_plan_set_scene_source_path(
+    nmo_project_plan_t *plan,
+    uint32_t scene_handle,
+    const char *source_path);
+
+NMO_API nmo_status_t nmo_project_plan_set_scene_active_camera_source_path(
+    nmo_project_plan_t *plan,
+    uint32_t scene_handle,
+    const char *source_path);
 
 NMO_API nmo_status_t nmo_project_plan_set_object_parent(
     nmo_project_plan_t *plan,
