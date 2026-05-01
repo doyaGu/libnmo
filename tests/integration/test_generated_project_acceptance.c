@@ -5,6 +5,8 @@
 #include "format/nmo_object.h"
 #include "format/nmo_stb_adapter.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_camera_schemas.h"
+#include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
@@ -243,15 +245,23 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
         "\"scenes\":[{"
             "\"name\":\"Level\","
             "\"objects\":["
-                "{\"name\":\"Camera\",\"class\":\"CKCamera\"},"
-                "{\"name\":\"Light\",\"class\":\"CKLight\"},"
+                "{\"name\":\"Camera\",\"class\":\"CKCamera\","
+                    "\"camera\":{\"fov\":0.75,\"near\":0.25,\"far\":500}},"
+                "{\"name\":\"Light\",\"class\":\"CKLight\","
+                    "\"light\":{\"diffuse\":[0.1,0.2,0.3,1],"
+                        "\"range\":123,\"type\":\"directional\"}},"
+                "{\"name\":\"Parent\",\"class\":\"CK3dEntity\"},"
                 "{\"name\":\"Cube\",\"class\":\"CK3dEntity\","
+                    "\"parent\":\"Parent\","
                     "\"mesh\":{\"obj\":\"triangle.obj\"},"
                     "\"material\":{\"texture\":\"triangle.png\"},"
-                    "\"transform\":{\"position\":[7,8,9]},"
+                    "\"transform\":{\"position\":[7,8,9],"
+                        "\"rotation_euler_deg\":[0,0,0],"
+                        "\"scale\":[2,3,4]},"
                     "\"scripts\":[{"
                         "\"name\":\"CubeScript\","
-                        "\"debug_output\":[\"generated script start\"]"
+                        "\"template\":\"on_start_debug_output\","
+                        "\"message\":\"generated script start\""
                     "}]"
                 "}"
             "]"
@@ -278,6 +288,7 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
     assert_named_class_exists(document, "Level", NMO_CID_SCENE);
     assert_named_class_exists(document, "Camera", NMO_CID_CAMERA);
     assert_named_class_exists(document, "Light", NMO_CID_LIGHT);
+    assert_named_class_exists(document, "Parent", NMO_CID_3DENTITY);
     assert_named_class_exists(document, "Cube", NMO_CID_3DENTITY);
     assert_named_class_exists(document, "Cube_Mesh", NMO_CID_MESH);
     assert_named_class_exists(document, "Cube_Material", NMO_CID_MATERIAL);
@@ -285,10 +296,16 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
     assert_named_class_exists(document, "CubeScript", NMO_CID_BEHAVIOR);
 
     nmo_object_t *cube_object = find_named_object(document, "Cube", NMO_CID_3DENTITY);
+    nmo_object_t *parent_object = find_named_object(document, "Parent", NMO_CID_3DENTITY);
+    nmo_object_t *camera_object = find_named_object(document, "Camera", NMO_CID_CAMERA);
+    nmo_object_t *light_object = find_named_object(document, "Light", NMO_CID_LIGHT);
     nmo_object_t *mesh_object = find_named_object(document, "Cube_Mesh", NMO_CID_MESH);
     nmo_object_t *material_object = find_named_object(document, "Cube_Material", NMO_CID_MATERIAL);
     nmo_object_t *texture_object = find_named_object(document, "Cube_Texture", NMO_CID_TEXTURE);
     ASSERT_NOT_NULL(cube_object);
+    ASSERT_NOT_NULL(parent_object);
+    ASSERT_NOT_NULL(camera_object);
+    ASSERT_NOT_NULL(light_object);
     ASSERT_NOT_NULL(mesh_object);
     ASSERT_NOT_NULL(material_object);
     ASSERT_NOT_NULL(texture_object);
@@ -301,9 +318,30 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
         (const nmo_3dentity_state_t *)nmo_object_get_state(cube_object);
     ASSERT_NOT_NULL(cube_state);
     ASSERT_EQ(mesh_id, cube_state->current_mesh_id);
+    ASSERT_EQ(nmo_object_get_id(parent_object), cube_state->parent_id);
+    ASSERT_FLOAT_EQ(2.0f, cube_state->world_matrix[0], 0.0001f);
+    ASSERT_FLOAT_EQ(3.0f, cube_state->world_matrix[5], 0.0001f);
+    ASSERT_FLOAT_EQ(4.0f, cube_state->world_matrix[10], 0.0001f);
     ASSERT_FLOAT_EQ(7.0f, cube_state->world_matrix[12], 0.0001f);
     ASSERT_FLOAT_EQ(8.0f, cube_state->world_matrix[13], 0.0001f);
     ASSERT_FLOAT_EQ(9.0f, cube_state->world_matrix[14], 0.0001f);
+
+    const nmo_camera_state_t *camera_state =
+        (const nmo_camera_state_t *)nmo_object_get_state(camera_object);
+    ASSERT_NOT_NULL(camera_state);
+    ASSERT_FLOAT_EQ(0.75f, camera_state->fov, 0.0001f);
+    ASSERT_FLOAT_EQ(0.25f, camera_state->near_plane, 0.0001f);
+    ASSERT_FLOAT_EQ(500.0f, camera_state->far_plane, 0.0001f);
+
+    const nmo_light_state_t *light_state =
+        (const nmo_light_state_t *)nmo_object_get_state(light_object);
+    ASSERT_NOT_NULL(light_state);
+    ASSERT_FLOAT_EQ(26.0f / 255.0f, light_state->light_data.diffuse.r, 0.0001f);
+    ASSERT_FLOAT_EQ(51.0f / 255.0f, light_state->light_data.diffuse.g, 0.0001f);
+    ASSERT_FLOAT_EQ(77.0f / 255.0f, light_state->light_data.diffuse.b, 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, light_state->light_data.diffuse.a, 0.0001f);
+    ASSERT_FLOAT_EQ(123.0f, light_state->light_data.range, 0.0001f);
+    ASSERT_EQ(VX_LIGHTDIREC, light_state->light_data.type);
 
     const nmo_mesh_state_t *mesh_state =
         (const nmo_mesh_state_t *)nmo_object_get_state(mesh_object);
