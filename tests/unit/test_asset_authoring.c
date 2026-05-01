@@ -1,6 +1,7 @@
 #include "test_framework.h"
 
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_defs.h"
 #include "project/nmo_asset_plan.h"
 #include "project/nmo_project_plan.h"
 #include "project/nmo_scene_authoring.h"
@@ -124,7 +125,66 @@ TEST(asset_authoring, clones_asset_specs) {
     nmo_project_plan_destroy(plan);
 }
 
+TEST(asset_authoring, stores_camera_and_light_specs) {
+    nmo_project_plan_t *plan = NULL;
+    uint32_t scene = 0u;
+    uint32_t camera = 0u;
+    uint32_t light = 0u;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "Level", &scene));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_CAMERA,
+                      .name = "Camera",
+                  },
+                  &camera));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_LIGHT,
+                      .name = "Light",
+                  },
+                  &light));
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_camera_settings(plan, camera, 0.75f, 0.25f, 500.0f));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_light_settings(
+                          plan,
+                          light,
+                          0.1f,
+                          0.2f,
+                          0.3f,
+                          1.0f,
+                          123.0f,
+                          VX_LIGHTDIREC));
+
+    nmo_project_object_desc_t camera_desc = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 0u, &camera_desc));
+    ASSERT_TRUE(camera_desc.has_camera);
+    ASSERT_FLOAT_EQ(0.75f, camera_desc.camera_fov, 0.0001f);
+    ASSERT_FLOAT_EQ(0.25f, camera_desc.camera_near, 0.0001f);
+    ASSERT_FLOAT_EQ(500.0f, camera_desc.camera_far, 0.0001f);
+
+    nmo_project_object_desc_t light_desc = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 1u, &light_desc));
+    ASSERT_TRUE(light_desc.has_light);
+    ASSERT_FLOAT_EQ(0.1f, light_desc.light_diffuse[0], 0.0001f);
+    ASSERT_FLOAT_EQ(0.2f, light_desc.light_diffuse[1], 0.0001f);
+    ASSERT_FLOAT_EQ(0.3f, light_desc.light_diffuse[2], 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, light_desc.light_diffuse[3], 0.0001f);
+    ASSERT_FLOAT_EQ(123.0f, light_desc.light_range, 0.0001f);
+    ASSERT_EQ(VX_LIGHTDIREC, light_desc.light_type);
+
+    nmo_project_plan_destroy(plan);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(asset_authoring, stores_primitive_mesh_and_material_specs);
 REGISTER_TEST(asset_authoring, clones_asset_specs);
+REGISTER_TEST(asset_authoring, stores_camera_and_light_specs);
 TEST_MAIN_END()

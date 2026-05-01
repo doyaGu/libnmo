@@ -1,6 +1,7 @@
 #include "project_internal.h"
 
 #include "object/nmo_class_ids.h"
+#include "object/nmo_entity_edit.h"
 #include "object/nmo_object_edit.h"
 #include "object/nmo_scene_edit.h"
 #include "project/nmo_project_plan.h"
@@ -180,6 +181,37 @@ static nmo_status_t project_authoring_set_parent(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t project_authoring_set_camera(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    const nmo_project_object_desc_t *object)
+{
+    nmo_entity_camera_settings_t settings = {
+        .fov = object->camera_fov,
+        .near_plane = object->camera_near,
+        .far_plane = object->camera_far,
+    };
+    return nmo_entity_edit_set_camera_settings(edit, object_id, &settings);
+}
+
+static nmo_status_t project_authoring_set_light(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    const nmo_project_object_desc_t *object)
+{
+    nmo_entity_light_settings_t settings = {
+        .diffuse = {
+            object->light_diffuse[0],
+            object->light_diffuse[1],
+            object->light_diffuse[2],
+            object->light_diffuse[3],
+        },
+        .range = object->light_range,
+        .type = object->light_type,
+    };
+    return nmo_entity_edit_set_light_settings(edit, object_id, &settings);
+}
+
 nmo_status_t nmo_project_author_scenes(
     nmo_workspace_edit_t *edit,
     const nmo_project_plan_t *plan,
@@ -318,6 +350,20 @@ nmo_status_t nmo_project_author_scenes(
                 edit,
                 object_id,
                 &object);
+            if (status != NMO_OK) {
+                goto cleanup;
+            }
+        }
+
+        if (object.has_camera) {
+            status = project_authoring_set_camera(edit, object_id, &object);
+            if (status != NMO_OK) {
+                goto cleanup;
+            }
+        }
+
+        if (object.has_light) {
+            status = project_authoring_set_light(edit, object_id, &object);
             if (status != NMO_OK) {
                 goto cleanup;
             }

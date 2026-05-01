@@ -245,6 +245,102 @@ static nmo_status_t manifest_parse_mesh(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t manifest_parse_vec4(
+    yyjson_val *value,
+    const char *field_name,
+    float out_values[4])
+{
+    if (!yyjson_is_arr(value) || yyjson_arr_size(value) != 4u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest %s must contain four numbers", field_name);
+    }
+
+    for (size_t i = 0u; i < 4u; ++i) {
+        yyjson_val *item = yyjson_arr_get(value, i);
+        if (!yyjson_is_num(item)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest %s values must be numbers", field_name);
+        }
+        out_values[i] = (float)manifest_get_number(item);
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t manifest_parse_camera(
+    yyjson_val *camera,
+    float *out_fov,
+    float *out_near,
+    float *out_far)
+{
+    static const char *const allowed[] = {"fov", "near", "far", NULL};
+    NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(camera, "camera", allowed));
+    if (!out_fov || !out_near || !out_far) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "camera output arguments are required");
+    }
+
+    yyjson_val *fov = yyjson_obj_get(camera, "fov");
+    yyjson_val *near_plane = yyjson_obj_get(camera, "near");
+    yyjson_val *far_plane = yyjson_obj_get(camera, "far");
+    if (!yyjson_is_num(fov) || !yyjson_is_num(near_plane) || !yyjson_is_num(far_plane)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest camera requires numeric fov, near, and far");
+    }
+    *out_fov = (float)manifest_get_number(fov);
+    *out_near = (float)manifest_get_number(near_plane);
+    *out_far = (float)manifest_get_number(far_plane);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t manifest_parse_light_type(
+    const char *type,
+    VXLIGHT_TYPE *out_type)
+{
+    if (!type || !out_type) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "light type output is required");
+    }
+    if (strcmp(type, "point") == 0) {
+        *out_type = VX_LIGHTPOINT;
+    } else if (strcmp(type, "spot") == 0) {
+        *out_type = VX_LIGHTSPOT;
+    } else if (strcmp(type, "directional") == 0) {
+        *out_type = VX_LIGHTDIREC;
+    } else if (strcmp(type, "parallel") == 0) {
+        *out_type = VX_LIGHTPARA;
+    } else {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_SUPPORTED, NMO_SEVERITY_ERROR,
+                         "unsupported manifest light.type '%s'", type);
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t manifest_parse_light(
+    yyjson_val *light,
+    float out_diffuse[4],
+    float *out_range,
+    VXLIGHT_TYPE *out_type)
+{
+    static const char *const allowed[] = {"diffuse", "range", "type", NULL};
+    NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(light, "light", allowed));
+    if (!out_diffuse || !out_range || !out_type) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "light output arguments are required");
+    }
+
+    yyjson_val *diffuse = yyjson_obj_get(light, "diffuse");
+    yyjson_val *range = yyjson_obj_get(light, "range");
+    yyjson_val *type = yyjson_obj_get(light, "type");
+    if (!diffuse || !yyjson_is_num(range) || !yyjson_is_str(type)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest light requires diffuse, range, and type");
+    }
+    NMO_RETURN_IF_ERROR(manifest_parse_vec4(diffuse, "light.diffuse", out_diffuse));
+    *out_range = (float)manifest_get_number(range);
+    NMO_RETURN_IF_ERROR(manifest_parse_light_type(yyjson_get_str(type), out_type));
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t manifest_parse_transform(
     yyjson_val *transform,
     bool *out_has_position,
@@ -472,7 +568,8 @@ static nmo_status_t manifest_parse_object(
     uint32_t scene_handle)
 {
     static const char *const allowed[] = {
-        "name", "class", "parent", "fields", "mesh", "material", "transform", "scripts", NULL};
+        "name", "class", "parent", "fields", "mesh", "material", "transform",
+        "camera", "light", "scripts", NULL};
     const char *name = NULL;
     const char *class_name = NULL;
     const char *parent_name = NULL;
@@ -625,6 +722,45 @@ static nmo_status_t manifest_parse_object(
                 scale[1],
                 scale[2]));
         }
+    }
+
+    yyjson_val *camera = yyjson_obj_get(object, "camera");
+    if (camera) {
+        float fov = 0.0f;
+        float near_plane = 0.0f;
+        float far_plane = 0.0f;
+        NMO_RETURN_IF_ERROR(manifest_parse_camera(
+            camera,
+            &fov,
+            &near_plane,
+            &far_plane));
+        NMO_RETURN_IF_ERROR(nmo_project_plan_set_camera_settings(
+            ctx->plan,
+            object_handle,
+            fov,
+            near_plane,
+            far_plane));
+    }
+
+    yyjson_val *light = yyjson_obj_get(object, "light");
+    if (light) {
+        float diffuse[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        float range = 0.0f;
+        VXLIGHT_TYPE type = VX_LIGHTPOINT;
+        NMO_RETURN_IF_ERROR(manifest_parse_light(
+            light,
+            diffuse,
+            &range,
+            &type));
+        NMO_RETURN_IF_ERROR(nmo_project_plan_set_light_settings(
+            ctx->plan,
+            object_handle,
+            diffuse[0],
+            diffuse[1],
+            diffuse[2],
+            diffuse[3],
+            range,
+            type));
     }
 
     NMO_RETURN_IF_ERROR(manifest_parse_scripts(

@@ -27,6 +27,14 @@ typedef struct project_object_record {
     float rotation_euler_deg[3];
     bool has_scale;
     float scale[3];
+    bool has_camera;
+    float camera_fov;
+    float camera_near;
+    float camera_far;
+    bool has_light;
+    float light_diffuse[4];
+    float light_range;
+    VXLIGHT_TYPE light_type;
 } project_object_record_t;
 
 typedef struct project_asset_record {
@@ -480,6 +488,16 @@ nmo_status_t nmo_project_plan_get_object(
     memcpy(out_object->scale,
            plan->objects[index].scale,
            sizeof(out_object->scale));
+    out_object->has_camera = plan->objects[index].has_camera;
+    out_object->camera_fov = plan->objects[index].camera_fov;
+    out_object->camera_near = plan->objects[index].camera_near;
+    out_object->camera_far = plan->objects[index].camera_far;
+    out_object->has_light = plan->objects[index].has_light;
+    memcpy(out_object->light_diffuse,
+           plan->objects[index].light_diffuse,
+           sizeof(out_object->light_diffuse));
+    out_object->light_range = plan->objects[index].light_range;
+    out_object->light_type = plan->objects[index].light_type;
     NMO_RETURN_OK();
 }
 
@@ -967,6 +985,16 @@ nmo_status_t nmo_project_plan_add_object(
            sizeof(object->rotation_euler_deg));
     object->has_scale = spec->has_scale;
     memcpy(object->scale, spec->scale, sizeof(object->scale));
+    object->has_camera = spec->has_camera;
+    object->camera_fov = spec->camera_fov;
+    object->camera_near = spec->camera_near;
+    object->camera_far = spec->camera_far;
+    object->has_light = spec->has_light;
+    memcpy(object->light_diffuse,
+           spec->light_diffuse,
+           sizeof(object->light_diffuse));
+    object->light_range = spec->light_range;
+    object->light_type = spec->light_type;
 
     if (out_object_handle) {
         *out_object_handle = handle;
@@ -1044,6 +1072,68 @@ nmo_status_t nmo_project_plan_set_object_scale(
             plan->objects[i].scale[0] = x;
             plan->objects[i].scale[1] = y;
             plan->objects[i].scale[2] = z;
+            NMO_RETURN_OK();
+        }
+    }
+
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "object handle not found");
+}
+
+nmo_status_t nmo_project_plan_set_camera_settings(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float fov,
+    float near_plane,
+    float far_plane)
+{
+    if (!plan || object_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and object handle are required");
+    }
+
+    for (size_t i = 0u; i < plan->object_count; ++i) {
+        if (plan->objects[i].handle == object_handle) {
+            plan->objects[i].has_camera = true;
+            plan->objects[i].camera_fov = fov;
+            plan->objects[i].camera_near = near_plane;
+            plan->objects[i].camera_far = far_plane;
+            NMO_RETURN_OK();
+        }
+    }
+
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "object handle not found");
+}
+
+nmo_status_t nmo_project_plan_set_light_settings(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float diffuse_r,
+    float diffuse_g,
+    float diffuse_b,
+    float diffuse_a,
+    float range,
+    VXLIGHT_TYPE type)
+{
+    if (!plan || object_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and object handle are required");
+    }
+    if (type < VX_LIGHTPOINT || type > VX_LIGHTPARA) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "unsupported light type");
+    }
+
+    for (size_t i = 0u; i < plan->object_count; ++i) {
+        if (plan->objects[i].handle == object_handle) {
+            plan->objects[i].has_light = true;
+            plan->objects[i].light_diffuse[0] = diffuse_r;
+            plan->objects[i].light_diffuse[1] = diffuse_g;
+            plan->objects[i].light_diffuse[2] = diffuse_b;
+            plan->objects[i].light_diffuse[3] = diffuse_a;
+            plan->objects[i].light_range = range;
+            plan->objects[i].light_type = type;
             NMO_RETURN_OK();
         }
     }

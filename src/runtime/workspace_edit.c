@@ -5,6 +5,7 @@
 
 #include "runtime/nmo_workspace.h"
 #include "object/nmo_asset_edit.h"
+#include "object/nmo_entity_edit.h"
 #include "object/nmo_object_edit.h"
 #include "object/nmo_scene_edit.h"
 #include "behavior/nmo_behavior_edit.h"
@@ -19,10 +20,14 @@
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
+#include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
+#include "object/builtin/nmo_targetcamera_schemas.h"
+#include "object/builtin/nmo_targetlight_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
@@ -2328,6 +2333,100 @@ nmo_status_t nmo_object_edit_bind_script(
         (nmo_workspace_edit_t *)edit,
         object_id,
         behavior_id);
+}
+
+nmo_status_t nmo_entity_edit_set_camera_settings(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    const nmo_entity_camera_settings_t *settings)
+{
+    if (edit == NULL || edit->finished || object_id == 0u || settings == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, object_id);
+    if (object == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    nmo_class_id_t class_id = nmo_object_get_class_id(object);
+    void *state = nmo_object_get_state(object);
+    if (state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    if (class_id != NMO_CID_CAMERA && class_id != NMO_CID_TARGETCAMERA) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_camera_state_t *camera =
+        (class_id == NMO_CID_TARGETCAMERA)
+            ? &((nmo_targetcamera_state_t *)state)->base
+            : (nmo_camera_state_t *)state;
+    nmo_status_t status =
+        nmo_workspace_edit_snapshot_bytes(edit, camera, sizeof(*camera));
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    camera->fov = settings->fov;
+    camera->near_plane = settings->near_plane;
+    camera->far_plane = settings->far_plane;
+    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
+    return NMO_OK;
+}
+
+nmo_status_t nmo_entity_edit_set_light_settings(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    const nmo_entity_light_settings_t *settings)
+{
+    if (edit == NULL || edit->finished || object_id == 0u || settings == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (settings->type < VX_LIGHTPOINT || settings->type > VX_LIGHTPARA) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, object_id);
+    if (object == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    nmo_class_id_t class_id = nmo_object_get_class_id(object);
+    void *state = nmo_object_get_state(object);
+    if (state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    if (class_id != NMO_CID_LIGHT && class_id != NMO_CID_TARGETLIGHT) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_light_state_t *light =
+        (class_id == NMO_CID_TARGETLIGHT)
+            ? &((nmo_targetlight_state_t *)state)->base
+            : (nmo_light_state_t *)state;
+    nmo_status_t status =
+        nmo_workspace_edit_snapshot_bytes(edit, light, sizeof(*light));
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    light->light_data.diffuse.r = settings->diffuse[0];
+    light->light_data.diffuse.g = settings->diffuse[1];
+    light->light_data.diffuse.b = settings->diffuse[2];
+    light->light_data.diffuse.a = settings->diffuse[3];
+    light->light_data.range = settings->range;
+    light->light_data.type = settings->type;
+    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
+    return NMO_OK;
 }
 
 nmo_status_t nmo_object_edit_set_parameter_value(

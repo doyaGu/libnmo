@@ -143,6 +143,7 @@
 #include "chunk/nmo_chunk_inspect.h"
 #include "object/nmo_object_refs.h"
 #include "object/nmo_object_edit.h"
+#include "object/nmo_entity_edit.h"
 #include "object/nmo_object_hierarchy.h"
 #include "behavior/nmo_behavior_registry.h"
 #include "behavior/nmo_behavior_query.h"

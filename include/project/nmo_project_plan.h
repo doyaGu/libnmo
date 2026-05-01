@@ -4,6 +4,7 @@
 #include "core/nmo_guid.h"
 #include "core/nmo_error.h"
 #include "object/nmo_object_edit.h"
+#include "object/nmo_object_enum_defs.h"
 #include "nmo_types.h"
 
 #include <stdbool.h>
@@ -42,6 +43,14 @@ typedef struct nmo_project_object_spec {
     float rotation_euler_deg[3];
     bool has_scale;
     float scale[3];
+    bool has_camera;
+    float camera_fov;
+    float camera_near;
+    float camera_far;
+    bool has_light;
+    float light_diffuse[4];
+    float light_range;
+    VXLIGHT_TYPE light_type;
 } nmo_project_object_spec_t;
 
 typedef struct nmo_project_object_desc {
@@ -60,6 +69,14 @@ typedef struct nmo_project_object_desc {
     float rotation_euler_deg[3];
     bool has_scale;
     float scale[3];
+    bool has_camera;
+    float camera_fov;
+    float camera_near;
+    float camera_far;
+    bool has_light;
+    float light_diffuse[4];
+    float light_range;
+    VXLIGHT_TYPE light_type;
 } nmo_project_object_desc_t;
 
 NMO_API nmo_status_t nmo_project_plan_create(nmo_project_plan_t **out_plan);
@@ -117,6 +134,23 @@ NMO_API nmo_status_t nmo_project_plan_set_object_scale(
     float x,
     float y,
     float z);
+
+NMO_API nmo_status_t nmo_project_plan_set_camera_settings(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float fov,
+    float near_plane,
+    float far_plane);
+
+NMO_API nmo_status_t nmo_project_plan_set_light_settings(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float diffuse_r,
+    float diffuse_g,
+    float diffuse_b,
+    float diffuse_a,
+    float range,
+    VXLIGHT_TYPE type);
 
 #ifdef __cplusplus
 }

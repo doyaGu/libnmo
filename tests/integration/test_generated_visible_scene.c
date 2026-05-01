@@ -5,6 +5,8 @@
 #include "format/nmo_stb_adapter.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_camera_schemas.h"
+#include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
@@ -333,8 +335,92 @@ TEST(generated_visible_scene, creates_transform_hierarchy) {
     remove(output_path);
 }
 
+TEST(generated_visible_scene, creates_camera_and_light_settings) {
+    const char *output_path = "test_generated_visible_camera_light.cmo";
+    remove(output_path);
+
+    nmo_project_plan_t *plan = NULL;
+    uint32_t scene = 0u;
+    uint32_t camera = 0u;
+    uint32_t light = 0u;
+    nmo_project_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_document_name(plan, "CameraLight"));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "Level", &scene));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_CAMERA,
+                      .name = "Camera",
+                      .flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE,
+                  },
+                  &camera));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_LIGHT,
+                      .name = "Light",
+                      .flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE,
+                  },
+                  &light));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_camera_settings(plan, camera, 0.75f, 0.25f, 500.0f));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_light_settings(
+                          plan,
+                          light,
+                          0.1f,
+                          0.2f,
+                          0.3f,
+                          1.0f,
+                          123.0f,
+                          VX_LIGHTDIREC));
+
+    nmo_project_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_executor_execute_to_file(plan, output_path, &report));
+    ASSERT_TRUE(report.ok);
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &document));
+    ASSERT_NOT_NULL(document);
+
+    nmo_object_t *camera_object = find_named_object(document, "Camera", NMO_CID_CAMERA);
+    nmo_object_t *light_object = find_named_object(document, "Light", NMO_CID_LIGHT);
+    ASSERT_NOT_NULL(camera_object);
+    ASSERT_NOT_NULL(light_object);
+
+    const nmo_camera_state_t *camera_state =
+        (const nmo_camera_state_t *)nmo_object_get_state(camera_object);
+    ASSERT_NOT_NULL(camera_state);
+    ASSERT_FLOAT_EQ(0.75f, camera_state->fov, 0.0001f);
+    ASSERT_FLOAT_EQ(0.25f, camera_state->near_plane, 0.0001f);
+    ASSERT_FLOAT_EQ(500.0f, camera_state->far_plane, 0.0001f);
+
+    const nmo_light_state_t *light_state =
+        (const nmo_light_state_t *)nmo_object_get_state(light_object);
+    ASSERT_NOT_NULL(light_state);
+    ASSERT_FLOAT_EQ(26.0f / 255.0f, light_state->light_data.diffuse.r, 0.0001f);
+    ASSERT_FLOAT_EQ(51.0f / 255.0f, light_state->light_data.diffuse.g, 0.0001f);
+    ASSERT_FLOAT_EQ(77.0f / 255.0f, light_state->light_data.diffuse.b, 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, light_state->light_data.diffuse.a, 0.0001f);
+    ASSERT_FLOAT_EQ(123.0f, light_state->light_data.range, 0.0001f);
+    ASSERT_EQ(VX_LIGHTDIREC, light_state->light_data.type);
+
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+    nmo_project_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+    remove(output_path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(generated_visible_scene, creates_cube_mesh_and_material);
 REGISTER_TEST(generated_visible_scene, creates_external_obj_texture_and_position);
 REGISTER_TEST(generated_visible_scene, creates_transform_hierarchy);
+REGISTER_TEST(generated_visible_scene, creates_camera_and_light_settings);
 TEST_MAIN_END()

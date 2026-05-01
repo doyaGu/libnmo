@@ -5,6 +5,7 @@
 #include "project/nmo_project_plan.h"
 #include "project/nmo_scene_authoring.h"
 #include "project/nmo_script_authoring.h"
+#include "object/nmo_object_enum_defs.h"
 
 #include <string.h>
 
@@ -18,8 +19,11 @@ TEST(project_manifest_json, parses_minimal_visible_scene)
         "\"scenes\":[{"
             "\"name\":\"Level\","
             "\"objects\":["
-                "{\"name\":\"Camera\",\"class\":\"CKCamera\"},"
-                "{\"name\":\"Light\",\"class\":\"CKLight\"},"
+                "{\"name\":\"Camera\",\"class\":\"CKCamera\","
+                    "\"camera\":{\"fov\":0.75,\"near\":0.25,\"far\":500}},"
+                "{\"name\":\"Light\",\"class\":\"CKLight\","
+                    "\"light\":{\"diffuse\":[0.1,0.2,0.3,1],"
+                        "\"range\":123,\"type\":\"directional\"}},"
                 "{\"name\":\"Cube\",\"class\":\"CK3dEntity\","
                     "\"mesh\":{\"obj\":\"assets/cube.obj\"},"
                     "\"material\":{\"color\":[1,0,0,1],\"texture\":\"assets/cube.png\"},"
@@ -67,6 +71,23 @@ TEST(project_manifest_json, parses_minimal_visible_scene)
     ASSERT_FLOAT_EQ(2.0f, object.scale[0], 0.0001f);
     ASSERT_FLOAT_EQ(3.0f, object.scale[1], 0.0001f);
     ASSERT_FLOAT_EQ(4.0f, object.scale[2], 0.0001f);
+
+    nmo_project_object_desc_t camera = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(manifest.plan, 0u, &camera));
+    ASSERT_TRUE(camera.has_camera);
+    ASSERT_FLOAT_EQ(0.75f, camera.camera_fov, 0.0001f);
+    ASSERT_FLOAT_EQ(0.25f, camera.camera_near, 0.0001f);
+    ASSERT_FLOAT_EQ(500.0f, camera.camera_far, 0.0001f);
+
+    nmo_project_object_desc_t light = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(manifest.plan, 1u, &light));
+    ASSERT_TRUE(light.has_light);
+    ASSERT_FLOAT_EQ(0.1f, light.light_diffuse[0], 0.0001f);
+    ASSERT_FLOAT_EQ(0.2f, light.light_diffuse[1], 0.0001f);
+    ASSERT_FLOAT_EQ(0.3f, light.light_diffuse[2], 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, light.light_diffuse[3], 0.0001f);
+    ASSERT_FLOAT_EQ(123.0f, light.light_range, 0.0001f);
+    ASSERT_EQ(VX_LIGHTDIREC, light.light_type);
 
     nmo_project_manifest_dispose(&manifest);
 }
