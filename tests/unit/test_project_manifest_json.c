@@ -21,8 +21,9 @@ TEST(project_manifest_json, parses_minimal_visible_scene)
                 "{\"name\":\"Camera\",\"class\":\"CKCamera\"},"
                 "{\"name\":\"Light\",\"class\":\"CKLight\"},"
                 "{\"name\":\"Cube\",\"class\":\"CK3dEntity\","
-                    "\"mesh\":{\"primitive\":\"cube\"},"
-                    "\"material\":{\"color\":[1,0,0,1]}}"
+                    "\"mesh\":{\"obj\":\"assets/cube.obj\"},"
+                    "\"material\":{\"color\":[1,0,0,1],\"texture\":\"assets/cube.png\"},"
+                    "\"transform\":{\"position\":[1,2,3]}}"
             "]"
         "}]"
         "}";
@@ -41,6 +42,21 @@ TEST(project_manifest_json, parses_minimal_visible_scene)
     ASSERT_EQ(1u, nmo_project_plan_scene_count(manifest.plan));
     ASSERT_EQ(3u, nmo_project_plan_object_count(manifest.plan));
     ASSERT_EQ(1u, nmo_project_plan_asset_count(manifest.plan));
+
+    nmo_project_asset_desc_t asset = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_asset(manifest.plan, 0u, &asset));
+    ASSERT_TRUE(asset.has_external_mesh);
+    ASSERT_STR_EQ("assets/cube.obj", asset.external_mesh_path);
+    ASSERT_TRUE(asset.has_material_color);
+    ASSERT_TRUE(asset.has_material_texture);
+    ASSERT_STR_EQ("assets/cube.png", asset.material_texture_path);
+
+    nmo_project_object_desc_t object = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(manifest.plan, 2u, &object));
+    ASSERT_TRUE(object.has_position);
+    ASSERT_FLOAT_EQ(1.0f, object.position[0], 0.0001f);
+    ASSERT_FLOAT_EQ(2.0f, object.position[1], 0.0001f);
+    ASSERT_FLOAT_EQ(3.0f, object.position[2], 0.0001f);
 
     nmo_project_manifest_dispose(&manifest);
 }
@@ -110,8 +126,30 @@ TEST(project_manifest_json, rejects_unknown_fields)
     ASSERT_NULL(plan);
 }
 
+TEST(project_manifest_json, rejects_unknown_transform_fields)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"objects\":[{"
+                "\"name\":\"Cube\","
+                "\"class\":\"CK3dEntity\","
+                "\"transform\":{\"rotation\":[0,0,0]}"
+            "}]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_NE(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NULL(plan);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(project_manifest_json, parses_minimal_visible_scene);
 REGISTER_TEST(project_manifest_json, maps_fields_and_scripts_to_project_plan);
 REGISTER_TEST(project_manifest_json, rejects_unknown_fields);
+REGISTER_TEST(project_manifest_json, rejects_unknown_transform_fields);
 TEST_MAIN_END()

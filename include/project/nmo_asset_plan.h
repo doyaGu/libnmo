@@ -22,6 +22,8 @@ typedef struct nmo_project_asset_desc {
     const char *external_mesh_path;
     bool has_material_color;
     float material_color[4];
+    bool has_material_texture;
+    const char *material_texture_path;
 } nmo_project_asset_desc_t;
 
 NMO_API nmo_status_t nmo_project_plan_set_primitive_mesh(
@@ -38,6 +40,11 @@ NMO_API nmo_status_t nmo_project_plan_set_material_color(
     float a);
 
 NMO_API nmo_status_t nmo_project_plan_set_external_mesh(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const char *path);
+
+NMO_API nmo_status_t nmo_project_plan_set_material_texture(
     nmo_project_plan_t *plan,
     uint32_t object_handle,
     const char *path);

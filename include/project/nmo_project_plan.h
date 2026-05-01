@@ -6,6 +6,7 @@
 #include "object/nmo_object_edit.h"
 #include "nmo_types.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #define NMO_PROJECT_PLAN_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
@@ -35,6 +36,8 @@ typedef struct nmo_project_object_spec {
     uint32_t flags;
     const nmo_session_field_edit_t *fields;
     size_t field_count;
+    bool has_position;
+    float position[3];
 } nmo_project_object_spec_t;
 
 typedef struct nmo_project_object_desc {
@@ -47,6 +50,8 @@ typedef struct nmo_project_object_desc {
     uint32_t flags;
     const nmo_session_field_edit_t *fields;
     size_t field_count;
+    bool has_position;
+    float position[3];
 } nmo_project_object_desc_t;
 
 NMO_API nmo_status_t nmo_project_plan_create(nmo_project_plan_t **out_plan);
@@ -83,6 +88,13 @@ NMO_API nmo_status_t nmo_project_plan_add_object(
     nmo_project_plan_t *plan,
     const nmo_project_object_spec_t *spec,
     uint32_t *out_object_handle);
+
+NMO_API nmo_status_t nmo_project_plan_set_object_position(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float x,
+    float y,
+    float z);
 
 #ifdef __cplusplus
 }

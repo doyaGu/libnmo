@@ -21,6 +21,8 @@ typedef struct project_object_record {
     uint32_t flags;
     nmo_session_field_edit_t *fields;
     size_t field_count;
+    bool has_position;
+    float position[3];
 } project_object_record_t;
 
 typedef struct project_asset_record {
@@ -31,6 +33,8 @@ typedef struct project_asset_record {
     char *external_mesh_path;
     bool has_material_color;
     float material_color[4];
+    bool has_material_texture;
+    char *material_texture_path;
 } project_asset_record_t;
 
 typedef struct project_script_step_record {
@@ -165,6 +169,7 @@ static void project_plan_free_assets(
     }
     for (size_t i = 0u; i < asset_count; ++i) {
         free(assets[i].external_mesh_path);
+        free(assets[i].material_texture_path);
     }
     free(assets);
 }
@@ -319,6 +324,14 @@ nmo_status_t nmo_project_plan_clone(
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                  "failed to clone project external mesh path");
             }
+            clone->assets[i].material_texture_path =
+                project_plan_strdup(plan->assets[i].material_texture_path);
+            if (plan->assets[i].material_texture_path &&
+                !clone->assets[i].material_texture_path) {
+                nmo_project_plan_destroy(clone);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "failed to clone project material texture path");
+            }
             clone->asset_count++;
         }
     }
@@ -450,6 +463,10 @@ nmo_status_t nmo_project_plan_get_object(
     out_object->flags = plan->objects[index].flags;
     out_object->fields = plan->objects[index].fields;
     out_object->field_count = plan->objects[index].field_count;
+    out_object->has_position = plan->objects[index].has_position;
+    memcpy(out_object->position,
+           plan->objects[index].position,
+           sizeof(out_object->position));
     NMO_RETURN_OK();
 }
 
@@ -800,6 +817,31 @@ nmo_status_t nmo_project_plan_set_external_mesh(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_project_plan_set_material_texture(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const char *path)
+{
+    if (!path || path[0] == '\0') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "material texture path is required");
+    }
+
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+
+    char *path_copy = project_plan_strdup(path);
+    if (!path_copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate material texture path");
+    }
+
+    free(asset->material_texture_path);
+    asset->material_texture_path = path_copy;
+    asset->has_material_texture = true;
+    NMO_RETURN_OK();
+}
+
 size_t nmo_project_plan_asset_count(const nmo_project_plan_t *plan)
 {
     return plan ? plan->asset_count : 0u;
@@ -827,6 +869,8 @@ nmo_status_t nmo_project_plan_get_asset(
     out_asset->external_mesh_path = asset->external_mesh_path;
     out_asset->has_material_color = asset->has_material_color;
     memcpy(out_asset->material_color, asset->material_color, sizeof(out_asset->material_color));
+    out_asset->has_material_texture = asset->has_material_texture;
+    out_asset->material_texture_path = asset->material_texture_path;
     NMO_RETURN_OK();
 }
 
@@ -902,9 +946,37 @@ nmo_status_t nmo_project_plan_add_object(
     object->flags = spec->flags;
     object->fields = fields_copy;
     object->field_count = spec->field_count;
+    object->has_position = spec->has_position;
+    memcpy(object->position, spec->position, sizeof(object->position));
 
     if (out_object_handle) {
         *out_object_handle = handle;
     }
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_object_position(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float x,
+    float y,
+    float z)
+{
+    if (!plan || object_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and object handle are required");
+    }
+
+    for (size_t i = 0u; i < plan->object_count; ++i) {
+        if (plan->objects[i].handle == object_handle) {
+            plan->objects[i].has_position = true;
+            plan->objects[i].position[0] = x;
+            plan->objects[i].position[1] = y;
+            plan->objects[i].position[2] = z;
+            NMO_RETURN_OK();
+        }
+    }
+
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "object handle not found");
 }

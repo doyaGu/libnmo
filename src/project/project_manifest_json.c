@@ -131,44 +131,149 @@ static nmo_status_t manifest_optional_string(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t manifest_parse_color(
-    yyjson_val *material,
-    float out_color[4])
+static double manifest_get_number(yyjson_val *value)
 {
-    static const char *const allowed[] = {"color", NULL};
+    if (yyjson_is_real(value)) {
+        return yyjson_get_real(value);
+    }
+    if (yyjson_is_sint(value)) {
+        return (double)yyjson_get_sint(value);
+    }
+    return (double)yyjson_get_uint(value);
+}
+
+static nmo_status_t manifest_parse_material(
+    yyjson_val *material,
+    bool *out_has_color,
+    float out_color[4],
+    const char **out_texture)
+{
+    static const char *const allowed[] = {"color", "texture", NULL};
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(material, "material", allowed));
 
+    if (!out_has_color || !out_color || !out_texture) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "material output arguments are required");
+    }
+    *out_has_color = false;
+    *out_texture = NULL;
+
     yyjson_val *color = yyjson_obj_get(material, "color");
-    if (!yyjson_is_arr(color) || yyjson_arr_size(color) != 4u) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "manifest material.color must contain four numbers");
+    if (color) {
+        if (!yyjson_is_arr(color) || yyjson_arr_size(color) != 4u) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest material.color must contain four numbers");
+        }
+
+        for (size_t i = 0u; i < 4u; ++i) {
+            yyjson_val *item = yyjson_arr_get(color, i);
+            if (!yyjson_is_num(item)) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest material.color values must be numbers");
+            }
+            out_color[i] = (float)manifest_get_number(item);
+        }
+        *out_has_color = true;
     }
 
-    for (size_t i = 0u; i < 4u; ++i) {
-        yyjson_val *item = yyjson_arr_get(color, i);
-        if (!yyjson_is_num(item)) {
+    yyjson_val *texture = yyjson_obj_get(material, "texture");
+    if (texture) {
+        if (!yyjson_is_str(texture) || yyjson_get_str(texture)[0] == '\0') {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "manifest material.color values must be numbers");
+                             "manifest material.texture must be a non-empty string");
         }
-        out_color[i] = (float)yyjson_get_real(item);
+        *out_texture = yyjson_get_str(texture);
+    }
+
+    if (!*out_has_color && !*out_texture) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest material requires color or texture");
     }
     NMO_RETURN_OK();
 }
 
 static nmo_status_t manifest_parse_mesh(
     yyjson_val *mesh,
-    nmo_primitive_mesh_t *out_primitive)
+    bool *out_has_primitive,
+    nmo_primitive_mesh_t *out_primitive,
+    const char **out_obj_path)
 {
-    static const char *const allowed[] = {"primitive", NULL};
+    static const char *const allowed[] = {"primitive", "obj", NULL};
     const char *primitive = NULL;
+    const char *obj_path = NULL;
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(mesh, "mesh", allowed));
-    NMO_RETURN_IF_ERROR(manifest_required_string(mesh, "primitive", &primitive));
-
-    if (strcmp(primitive, "cube") != 0) {
-        NMO_RETURN_ERROR(NMO_ERR_NOT_SUPPORTED, NMO_SEVERITY_ERROR,
-                         "unsupported manifest mesh primitive '%s'", primitive);
+    if (!out_has_primitive || !out_primitive || !out_obj_path) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "mesh output arguments are required");
     }
-    *out_primitive = NMO_PRIMITIVE_CUBE;
+    *out_has_primitive = false;
+    *out_obj_path = NULL;
+
+    yyjson_val *primitive_value = yyjson_obj_get(mesh, "primitive");
+    yyjson_val *obj_value = yyjson_obj_get(mesh, "obj");
+    if ((primitive_value && obj_value) || (!primitive_value && !obj_value)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest mesh requires exactly one of primitive or obj");
+    }
+
+    if (primitive_value) {
+        if (!yyjson_is_str(primitive_value) ||
+            yyjson_get_str(primitive_value)[0] == '\0') {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest mesh.primitive must be a non-empty string");
+        }
+        primitive = yyjson_get_str(primitive_value);
+        if (strcmp(primitive, "cube") != 0) {
+            NMO_RETURN_ERROR(NMO_ERR_NOT_SUPPORTED, NMO_SEVERITY_ERROR,
+                             "unsupported manifest mesh primitive '%s'", primitive);
+        }
+        *out_primitive = NMO_PRIMITIVE_CUBE;
+        *out_has_primitive = true;
+    } else {
+        if (!yyjson_is_str(obj_value) || yyjson_get_str(obj_value)[0] == '\0') {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest mesh.obj must be a non-empty string");
+        }
+        obj_path = yyjson_get_str(obj_value);
+        *out_obj_path = obj_path;
+    }
+
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t manifest_parse_transform(
+    yyjson_val *transform,
+    bool *out_has_position,
+    float out_position[3])
+{
+    static const char *const allowed[] = {"position", NULL};
+    NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(transform, "transform", allowed));
+
+    if (!out_has_position || !out_position) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "transform output arguments are required");
+    }
+    *out_has_position = false;
+
+    yyjson_val *position = yyjson_obj_get(transform, "position");
+    if (!position) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest transform requires position");
+    }
+    if (!yyjson_is_arr(position) || yyjson_arr_size(position) != 3u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest transform.position must contain three numbers");
+    }
+
+    for (size_t i = 0u; i < 3u; ++i) {
+        yyjson_val *item = yyjson_arr_get(position, i);
+        if (!yyjson_is_num(item)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest transform.position values must be numbers");
+        }
+        out_position[i] = (float)manifest_get_number(item);
+    }
+    *out_has_position = true;
     NMO_RETURN_OK();
 }
 
@@ -284,7 +389,7 @@ static nmo_status_t manifest_parse_object(
     uint32_t scene_handle)
 {
     static const char *const allowed[] = {
-        "name", "class", "fields", "mesh", "material", "scripts", NULL};
+        "name", "class", "fields", "mesh", "material", "transform", "scripts", NULL};
     const char *name = NULL;
     const char *class_name = NULL;
     nmo_class_id_t class_id = 0;
@@ -337,25 +442,70 @@ static nmo_status_t manifest_parse_object(
 
     yyjson_val *mesh = yyjson_obj_get(object, "mesh");
     if (mesh) {
+        bool has_primitive = false;
         nmo_primitive_mesh_t primitive = NMO_PRIMITIVE_CUBE;
-        NMO_RETURN_IF_ERROR(manifest_parse_mesh(mesh, &primitive));
-        NMO_RETURN_IF_ERROR(nmo_project_plan_set_primitive_mesh(
-            ctx->plan,
-            object_handle,
-            primitive));
+        const char *obj_path = NULL;
+        NMO_RETURN_IF_ERROR(manifest_parse_mesh(
+            mesh,
+            &has_primitive,
+            &primitive,
+            &obj_path));
+        if (has_primitive) {
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_primitive_mesh(
+                ctx->plan,
+                object_handle,
+                primitive));
+        } else {
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_external_mesh(
+                ctx->plan,
+                object_handle,
+                obj_path));
+        }
     }
 
     yyjson_val *material = yyjson_obj_get(object, "material");
     if (material) {
+        bool has_color = false;
         float color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-        NMO_RETURN_IF_ERROR(manifest_parse_color(material, color));
-        NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_color(
-            ctx->plan,
-            object_handle,
-            color[0],
-            color[1],
-            color[2],
-            color[3]));
+        const char *texture = NULL;
+        NMO_RETURN_IF_ERROR(manifest_parse_material(
+            material,
+            &has_color,
+            color,
+            &texture));
+        if (has_color) {
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_color(
+                ctx->plan,
+                object_handle,
+                color[0],
+                color[1],
+                color[2],
+                color[3]));
+        }
+        if (texture) {
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_texture(
+                ctx->plan,
+                object_handle,
+                texture));
+        }
+    }
+
+    yyjson_val *transform = yyjson_obj_get(object, "transform");
+    if (transform) {
+        bool has_position = false;
+        float position[3] = {0.0f, 0.0f, 0.0f};
+        NMO_RETURN_IF_ERROR(manifest_parse_transform(
+            transform,
+            &has_position,
+            position));
+        if (has_position) {
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_object_position(
+                ctx->plan,
+                object_handle,
+                position[0],
+                position[1],
+                position[2]));
+        }
     }
 
     NMO_RETURN_IF_ERROR(manifest_parse_scripts(
