@@ -16,6 +16,9 @@ typedef struct nmo_project_plan nmo_project_plan_t;
 typedef struct nmo_project_validation_issue {
     char *code;
     char *message;
+    char *subject_kind;
+    char *subject_name;
+    char *source_path;
 } nmo_project_validation_issue_t;
 
 typedef struct nmo_project_validation_report {

@@ -60,6 +60,7 @@ typedef struct nmo_project_object_desc {
     nmo_class_id_t class_id;
     nmo_guid_t type_guid;
     const char *name;
+    const char *source_path;
     uint32_t flags;
     const nmo_session_field_edit_t *fields;
     size_t field_count;
@@ -118,6 +119,11 @@ NMO_API nmo_status_t nmo_project_plan_set_object_parent(
     nmo_project_plan_t *plan,
     uint32_t object_handle,
     uint32_t parent_handle);
+
+NMO_API nmo_status_t nmo_project_plan_set_object_source_path(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const char *source_path);
 
 NMO_API nmo_status_t nmo_project_plan_set_object_position(
     nmo_project_plan_t *plan,

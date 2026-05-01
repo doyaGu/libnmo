@@ -18,6 +18,7 @@ typedef struct project_object_record {
     nmo_class_id_t class_id;
     nmo_guid_t type_guid;
     char *name;
+    char *source_path;
     uint32_t flags;
     nmo_session_field_edit_t *fields;
     size_t field_count;
@@ -43,10 +44,12 @@ typedef struct project_asset_record {
     nmo_primitive_mesh_t primitive_mesh;
     bool has_external_mesh;
     char *external_mesh_path;
+    char *external_mesh_source_path;
     bool has_material_color;
     float material_color[4];
     bool has_material_texture;
     char *material_texture_path;
+    char *material_texture_source_path;
     nmo_project_material_spec_t *obj_materials;
     size_t obj_material_count;
     size_t obj_material_capacity;
@@ -184,10 +187,14 @@ static void project_plan_free_assets(
     }
     for (size_t i = 0u; i < asset_count; ++i) {
         free(assets[i].external_mesh_path);
+        free(assets[i].external_mesh_source_path);
         free(assets[i].material_texture_path);
+        free(assets[i].material_texture_source_path);
         for (size_t j = 0u; j < assets[i].obj_material_count; ++j) {
             free((void *)assets[i].obj_materials[j].obj_material_name);
             free((void *)assets[i].obj_materials[j].texture_path);
+            free((void *)assets[i].obj_materials[j].source_path);
+            free((void *)assets[i].obj_materials[j].texture_source_path);
         }
         free(assets[i].obj_materials);
     }
@@ -226,6 +233,7 @@ void nmo_project_plan_destroy(nmo_project_plan_t *plan)
     }
     for (size_t i = 0; i < plan->object_count; ++i) {
         free(plan->objects[i].name);
+        free(plan->objects[i].source_path);
         project_plan_free_fields(
             plan->objects[i].fields,
             plan->objects[i].field_count);
@@ -307,10 +315,18 @@ nmo_status_t nmo_project_plan_clone(
             clone->objects[i].fields = NULL;
             clone->objects[i].field_count = 0u;
             clone->objects[i].name = project_plan_strdup(plan->objects[i].name);
+            clone->objects[i].source_path =
+                project_plan_strdup(plan->objects[i].source_path);
             if (plan->objects[i].name && !clone->objects[i].name) {
                 nmo_project_plan_destroy(clone);
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                  "failed to clone project object name");
+            }
+            if (plan->objects[i].source_path &&
+                !clone->objects[i].source_path) {
+                nmo_project_plan_destroy(clone);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "failed to clone project object source path");
             }
             status = project_plan_clone_fields(
                 plan->objects[i].fields,
@@ -341,19 +357,35 @@ nmo_status_t nmo_project_plan_clone(
             clone->assets[i].obj_material_capacity = 0u;
             clone->assets[i].external_mesh_path =
                 project_plan_strdup(plan->assets[i].external_mesh_path);
+            clone->assets[i].external_mesh_source_path =
+                project_plan_strdup(plan->assets[i].external_mesh_source_path);
             if (plan->assets[i].external_mesh_path &&
                 !clone->assets[i].external_mesh_path) {
                 nmo_project_plan_destroy(clone);
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                  "failed to clone project external mesh path");
             }
+            if (plan->assets[i].external_mesh_source_path &&
+                !clone->assets[i].external_mesh_source_path) {
+                nmo_project_plan_destroy(clone);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "failed to clone project external mesh source path");
+            }
             clone->assets[i].material_texture_path =
                 project_plan_strdup(plan->assets[i].material_texture_path);
+            clone->assets[i].material_texture_source_path =
+                project_plan_strdup(plan->assets[i].material_texture_source_path);
             if (plan->assets[i].material_texture_path &&
                 !clone->assets[i].material_texture_path) {
                 nmo_project_plan_destroy(clone);
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                  "failed to clone project material texture path");
+            }
+            if (plan->assets[i].material_texture_source_path &&
+                !clone->assets[i].material_texture_source_path) {
+                nmo_project_plan_destroy(clone);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "failed to clone project material texture source path");
             }
             if (plan->assets[i].obj_material_count > 0u) {
                 clone->assets[i].obj_materials =
@@ -381,10 +413,23 @@ nmo_status_t nmo_project_plan_clone(
                                          "failed to clone project OBJ material name");
                     }
                     dst->texture_path = project_plan_strdup(src->texture_path);
+                    dst->source_path = project_plan_strdup(src->source_path);
+                    dst->texture_source_path =
+                        project_plan_strdup(src->texture_source_path);
                     if (src->texture_path && !dst->texture_path) {
                         nmo_project_plan_destroy(clone);
                         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                          "failed to clone project OBJ material texture path");
+                    }
+                    if (src->source_path && !dst->source_path) {
+                        nmo_project_plan_destroy(clone);
+                        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                         "failed to clone project OBJ material source path");
+                    }
+                    if (src->texture_source_path && !dst->texture_source_path) {
+                        nmo_project_plan_destroy(clone);
+                        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                         "failed to clone project OBJ material texture source path");
                     }
                     clone->assets[i].obj_material_count++;
                 }
@@ -517,6 +562,7 @@ nmo_status_t nmo_project_plan_get_object(
     out_object->class_id = plan->objects[index].class_id;
     out_object->type_guid = plan->objects[index].type_guid;
     out_object->name = plan->objects[index].name;
+    out_object->source_path = plan->objects[index].source_path;
     out_object->flags = plan->objects[index].flags;
     out_object->fields = plan->objects[index].fields;
     out_object->field_count = plan->objects[index].field_count;
@@ -918,6 +964,27 @@ nmo_status_t nmo_project_plan_set_external_mesh(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_project_plan_set_external_mesh_source_path(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const char *source_path)
+{
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+
+    char *source_copy = NULL;
+    if (source_path) {
+        source_copy = project_plan_strdup(source_path);
+        if (!source_copy) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate external mesh source path");
+        }
+    }
+    free(asset->external_mesh_source_path);
+    asset->external_mesh_source_path = source_copy;
+    NMO_RETURN_OK();
+}
+
 nmo_status_t nmo_project_plan_set_material_texture(
     nmo_project_plan_t *plan,
     uint32_t object_handle,
@@ -940,6 +1007,27 @@ nmo_status_t nmo_project_plan_set_material_texture(
     free(asset->material_texture_path);
     asset->material_texture_path = path_copy;
     asset->has_material_texture = true;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_material_texture_source_path(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const char *source_path)
+{
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+
+    char *source_copy = NULL;
+    if (source_path) {
+        source_copy = project_plan_strdup(source_path);
+        if (!source_copy) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate material texture source path");
+        }
+    }
+    free(asset->material_texture_source_path);
+    asset->material_texture_source_path = source_copy;
     NMO_RETURN_OK();
 }
 
@@ -1011,12 +1099,29 @@ nmo_status_t nmo_project_plan_add_obj_material(
                              "failed to allocate project OBJ material texture path");
         }
     }
+    char *source_copy = project_plan_strdup(spec->source_path);
+    if (spec->source_path && !source_copy) {
+        free(name_copy);
+        free(texture_copy);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate project OBJ material source path");
+    }
+    char *texture_source_copy = project_plan_strdup(spec->texture_source_path);
+    if (spec->texture_source_path && !texture_source_copy) {
+        free(name_copy);
+        free(texture_copy);
+        free(source_copy);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate project OBJ material texture source path");
+    }
 
     nmo_project_material_spec_t *dst =
         &asset->obj_materials[asset->obj_material_count++];
     *dst = *spec;
     dst->obj_material_name = name_copy;
     dst->texture_path = texture_copy;
+    dst->source_path = source_copy;
+    dst->texture_source_path = texture_source_copy;
     NMO_RETURN_OK();
 }
 
@@ -1081,6 +1186,38 @@ nmo_status_t nmo_project_plan_set_obj_material_texture(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_project_plan_set_obj_material_source_paths(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    size_t index,
+    const char *source_path,
+    const char *texture_source_path)
+{
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+    if (index >= asset->obj_material_count) {
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR,
+                         "OBJ material index out of bounds");
+    }
+
+    char *source_copy = project_plan_strdup(source_path);
+    if (source_path && !source_copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate OBJ material source path");
+    }
+    char *texture_source_copy = project_plan_strdup(texture_source_path);
+    if (texture_source_path && !texture_source_copy) {
+        free(source_copy);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate OBJ material texture source path");
+    }
+    free((void *)asset->obj_materials[index].source_path);
+    free((void *)asset->obj_materials[index].texture_source_path);
+    asset->obj_materials[index].source_path = source_copy;
+    asset->obj_materials[index].texture_source_path = texture_source_copy;
+    NMO_RETURN_OK();
+}
+
 size_t nmo_project_plan_asset_count(const nmo_project_plan_t *plan)
 {
     return plan ? plan->asset_count : 0u;
@@ -1106,10 +1243,12 @@ nmo_status_t nmo_project_plan_get_asset(
     out_asset->primitive_mesh = asset->primitive_mesh;
     out_asset->has_external_mesh = asset->has_external_mesh;
     out_asset->external_mesh_path = asset->external_mesh_path;
+    out_asset->external_mesh_source_path = asset->external_mesh_source_path;
     out_asset->has_material_color = asset->has_material_color;
     memcpy(out_asset->material_color, asset->material_color, sizeof(out_asset->material_color));
     out_asset->has_material_texture = asset->has_material_texture;
     out_asset->material_texture_path = asset->material_texture_path;
+    out_asset->material_texture_source_path = asset->material_texture_source_path;
     NMO_RETURN_OK();
 }
 
@@ -1241,6 +1380,37 @@ nmo_status_t nmo_project_plan_set_object_parent(
 
     object->parent_handle = parent_handle;
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_object_source_path(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const char *source_path)
+{
+    if (!plan || object_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and object handle are required");
+    }
+
+    char *source_copy = NULL;
+    if (source_path) {
+        source_copy = project_plan_strdup(source_path);
+        if (!source_copy) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate project object source path");
+        }
+    }
+    for (size_t i = 0u; i < plan->object_count; ++i) {
+        if (plan->objects[i].handle == object_handle) {
+            free(plan->objects[i].source_path);
+            plan->objects[i].source_path = source_copy;
+            NMO_RETURN_OK();
+        }
+    }
+
+    free(source_copy);
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "object handle not found");
 }
 
 nmo_status_t nmo_project_plan_set_object_position(

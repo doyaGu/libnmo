@@ -9,6 +9,7 @@
 #include "yyjson.h"
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -686,7 +687,9 @@ static nmo_status_t manifest_parse_scripts(
 static nmo_status_t manifest_parse_object_declare(
     manifest_parse_ctx_t *ctx,
     yyjson_val *object,
-    uint32_t scene_handle)
+    uint32_t scene_handle,
+    size_t scene_index,
+    size_t object_index)
 {
     static const char *const allowed[] = {
         "id", "name", "class", "parent", "fields", "mesh", "material", "materials",
@@ -747,13 +750,25 @@ static nmo_status_t manifest_parse_object_declare(
         return status;
     }
     NMO_RETURN_IF_ERROR(manifest_register_object(ctx, id, name, object_handle));
+    char source_path[96];
+    snprintf(source_path,
+             sizeof(source_path),
+             "scenes[%zu].objects[%zu]",
+             scene_index,
+             object_index);
+    NMO_RETURN_IF_ERROR(nmo_project_plan_set_object_source_path(
+        ctx->plan,
+        object_handle,
+        source_path));
     NMO_RETURN_OK();
 }
 
 static nmo_status_t manifest_parse_object_details(
     manifest_parse_ctx_t *ctx,
     yyjson_val *object,
-    uint32_t object_handle)
+    uint32_t object_handle,
+    size_t scene_index,
+    size_t object_index)
 {
     static const char *const allowed[] = {
         "id", "name", "class", "parent", "fields", "mesh", "material", "materials",
@@ -794,6 +809,16 @@ static nmo_status_t manifest_parse_object_details(
                 ctx->plan,
                 object_handle,
                 obj_path));
+            char source_path[128];
+            snprintf(source_path,
+                     sizeof(source_path),
+                     "scenes[%zu].objects[%zu].mesh.obj",
+                     scene_index,
+                     object_index);
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_external_mesh_source_path(
+                ctx->plan,
+                object_handle,
+                source_path));
         }
     }
 
@@ -821,6 +846,16 @@ static nmo_status_t manifest_parse_object_details(
                 ctx->plan,
                 object_handle,
                 texture));
+            char source_path[128];
+            snprintf(source_path,
+                     sizeof(source_path),
+                     "scenes[%zu].objects[%zu].material.texture",
+                     scene_index,
+                     object_index);
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_texture_source_path(
+                ctx->plan,
+                object_handle,
+                source_path));
         }
     }
 
@@ -836,10 +871,36 @@ static nmo_status_t manifest_parse_object_details(
         yyjson_arr_foreach(materials, idx, max, item) {
             nmo_project_material_spec_t spec = {0};
             NMO_RETURN_IF_ERROR(manifest_parse_obj_material(item, &spec));
+            size_t material_plan_index =
+                nmo_project_plan_obj_material_count(ctx->plan, object_handle);
             NMO_RETURN_IF_ERROR(nmo_project_plan_add_obj_material(
                 ctx->plan,
                 object_handle,
                 &spec));
+            char material_source_path[128];
+            char texture_source_path[144];
+            snprintf(material_source_path,
+                     sizeof(material_source_path),
+                     "scenes[%zu].objects[%zu].materials[%zu]",
+                     scene_index,
+                     object_index,
+                     idx);
+            const char *texture_source = NULL;
+            if (spec.has_texture) {
+                snprintf(texture_source_path,
+                         sizeof(texture_source_path),
+                         "scenes[%zu].objects[%zu].materials[%zu].texture",
+                         scene_index,
+                         object_index,
+                         idx);
+                texture_source = texture_source_path;
+            }
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_obj_material_source_paths(
+                ctx->plan,
+                object_handle,
+                material_plan_index,
+                material_source_path,
+                texture_source));
         }
     }
 
@@ -933,7 +994,8 @@ static nmo_status_t manifest_parse_object_details(
 
 static nmo_status_t manifest_parse_scene(
     manifest_parse_ctx_t *ctx,
-    yyjson_val *scene)
+    yyjson_val *scene,
+    size_t scene_index)
 {
     static const char *const allowed[] = {"name", "objects", NULL};
     const char *name = NULL;
@@ -956,7 +1018,12 @@ static nmo_status_t manifest_parse_scene(
     yyjson_val *object = NULL;
     size_t object_start = ctx->object_count;
     yyjson_arr_foreach(objects, idx, max, object) {
-        NMO_RETURN_IF_ERROR(manifest_parse_object_declare(ctx, object, scene_handle));
+        NMO_RETURN_IF_ERROR(manifest_parse_object_declare(
+            ctx,
+            object,
+            scene_handle,
+            scene_index,
+            idx));
     }
 
     idx = 0u;
@@ -966,7 +1033,9 @@ static nmo_status_t manifest_parse_scene(
         NMO_RETURN_IF_ERROR(manifest_parse_object_details(
             ctx,
             object,
-            ctx->object_handles[object_start + idx]));
+            ctx->object_handles[object_start + idx],
+            scene_index,
+            idx));
     }
     NMO_RETURN_OK();
 }
@@ -1016,7 +1085,7 @@ static nmo_status_t manifest_parse_root(
     size_t max = 0u;
     yyjson_val *scene = NULL;
     yyjson_arr_foreach(scenes, idx, max, scene) {
-        NMO_RETURN_IF_ERROR(manifest_parse_scene(ctx, scene));
+        NMO_RETURN_IF_ERROR(manifest_parse_scene(ctx, scene, idx));
     }
     NMO_RETURN_OK();
 }

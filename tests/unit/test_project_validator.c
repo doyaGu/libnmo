@@ -2,11 +2,13 @@
 #include "object/nmo_class_ids.h"
 #include "project/nmo_asset_plan.h"
 #include "project/nmo_project_executor.h"
+#include "project/nmo_project_manifest_json.h"
 #include "project/nmo_project_plan.h"
 #include "project/nmo_project_validator.h"
 #include "project/nmo_scene_authoring.h"
 
 #include <stdio.h>
+#include <string.h>
 
 static int file_exists(const char *path)
 {
@@ -16,6 +18,18 @@ static int file_exists(const char *path)
     }
     fclose(file);
     return 1;
+}
+
+static const nmo_project_validation_issue_t *find_issue(
+    const nmo_project_validation_report_t *report,
+    const char *code)
+{
+    for (size_t i = 0u; i < report->issue_count; ++i) {
+        if (report->issues[i].code && strcmp(report->issues[i].code, code) == 0) {
+            return &report->issues[i];
+        }
+    }
+    return NULL;
 }
 
 TEST(project_validator, rejects_missing_document_name)
@@ -257,6 +271,45 @@ TEST(project_validator, rejects_unbound_obj_material_without_default)
     remove(obj_path);
 }
 
+TEST(project_validator, reports_manifest_source_for_missing_named_texture)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":[{"
+        "\"id\":\"cube\","
+        "\"name\":\"Cube\","
+        "\"class\":\"CK3dEntity\","
+        "\"mesh\":{\"obj\":\"missing.obj\"},"
+        "\"materials\":[{\"name\":\"Blue\",\"texture\":\"missing.png\"}]"
+        "}]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_validation_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+    nmo_project_validation_report_init(&report);
+
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_FALSE(report.ok);
+
+    const nmo_project_validation_issue_t *issue =
+        find_issue(&report, "missing_obj_material_texture_file");
+    ASSERT_NOT_NULL(issue);
+    ASSERT_STR_EQ("object", issue->subject_kind);
+    ASSERT_STR_EQ("Cube", issue->subject_name);
+    ASSERT_STR_EQ("scenes[0].objects[0].materials[0].texture", issue->source_path);
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(project_validator, rejects_missing_document_name);
 REGISTER_TEST(project_validator, accepts_named_empty_project);
@@ -265,4 +318,5 @@ REGISTER_TEST(project_validator, rejects_named_obj_material_without_external_mes
 REGISTER_TEST(project_validator, rejects_duplicate_named_obj_materials);
 REGISTER_TEST(project_validator, rejects_missing_named_obj_material_texture);
 REGISTER_TEST(project_validator, rejects_unbound_obj_material_without_default);
+REGISTER_TEST(project_validator, reports_manifest_source_for_missing_named_texture);
 TEST_MAIN_END()

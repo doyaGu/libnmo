@@ -35,6 +35,9 @@ static void project_validation_clear(nmo_project_validation_report_t *report)
     for (size_t i = 0; i < report->issue_count; ++i) {
         free(report->issues[i].code);
         free(report->issues[i].message);
+        free(report->issues[i].subject_kind);
+        free(report->issues[i].subject_name);
+        free(report->issues[i].source_path);
     }
     free(report->issues);
     report->issues = NULL;
@@ -43,10 +46,35 @@ static void project_validation_clear(nmo_project_validation_report_t *report)
     report->ok = false;
 }
 
+static nmo_status_t project_validation_add_issue_ex(
+    nmo_project_validation_report_t *report,
+    const char *code,
+    const char *message,
+    const char *subject_kind,
+    const char *subject_name,
+    const char *source_path);
+
 static nmo_status_t project_validation_add_issue(
     nmo_project_validation_report_t *report,
     const char *code,
     const char *message)
+{
+    return project_validation_add_issue_ex(
+        report,
+        code,
+        message,
+        NULL,
+        NULL,
+        NULL);
+}
+
+static nmo_status_t project_validation_add_issue_ex(
+    nmo_project_validation_report_t *report,
+    const char *code,
+    const char *message,
+    const char *subject_kind,
+    const char *subject_name,
+    const char *source_path)
 {
     if (!report || !code) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -73,9 +101,18 @@ static nmo_status_t project_validation_add_issue(
     nmo_project_validation_issue_t *issue = &report->issues[report->issue_count];
     issue->code = project_validation_strdup(code);
     issue->message = project_validation_strdup(message ? message : code);
-    if (!issue->code || !issue->message) {
+    issue->subject_kind = project_validation_strdup(subject_kind);
+    issue->subject_name = project_validation_strdup(subject_name);
+    issue->source_path = project_validation_strdup(source_path);
+    if (!issue->code || !issue->message ||
+        (subject_kind && !issue->subject_kind) ||
+        (subject_name && !issue->subject_name) ||
+        (source_path && !issue->source_path)) {
         free(issue->code);
         free(issue->message);
+        free(issue->subject_kind);
+        free(issue->subject_name);
+        free(issue->source_path);
         memset(issue, 0, sizeof(*issue));
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                          "failed to copy project validation issue");
@@ -369,8 +406,13 @@ static nmo_status_t project_validation_check_assets(
     for (size_t i = 0u; i < asset_count; ++i) {
         nmo_project_asset_desc_t asset = {0};
         NMO_RETURN_IF_ERROR(nmo_project_plan_get_asset(plan, i, &asset));
+        nmo_project_object_desc_t asset_object = {0};
+        bool has_asset_object = project_validation_get_object_by_handle(
+            plan,
+            asset.object_handle,
+            &asset_object);
         if (asset.object_handle == 0u ||
-            !project_validation_has_object_handle(plan, asset.object_handle)) {
+            !has_asset_object) {
             NMO_RETURN_IF_ERROR(project_validation_add_issue(
                 report,
                 "missing_asset_object",
@@ -378,17 +420,23 @@ static nmo_status_t project_validation_check_assets(
         }
         if (asset.has_external_mesh &&
             !project_validation_file_exists(asset.external_mesh_path)) {
-            NMO_RETURN_IF_ERROR(project_validation_add_issue(
+            NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                 report,
                 "missing_external_mesh_file",
-                "Project external OBJ mesh path must exist"));
+                "Project external OBJ mesh path must exist",
+                "object",
+                has_asset_object ? asset_object.name : NULL,
+                asset.external_mesh_source_path));
         }
         if (asset.has_material_texture &&
             !project_validation_file_exists(asset.material_texture_path)) {
-            NMO_RETURN_IF_ERROR(project_validation_add_issue(
+            NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                 report,
                 "missing_material_texture_file",
-                "Project material texture path must exist"));
+                "Project material texture path must exist",
+                "object",
+                has_asset_object ? asset_object.name : NULL,
+                asset.material_texture_source_path));
         }
 
         size_t obj_material_count =
@@ -410,10 +458,13 @@ static nmo_status_t project_validation_check_assets(
                 &material));
             if (material.has_texture &&
                 !project_validation_file_exists(material.texture_path)) {
-                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                     report,
                     "missing_obj_material_texture_file",
-                    "Project OBJ material texture path must exist"));
+                    "Project OBJ material texture path must exist",
+                    "object",
+                    has_asset_object ? asset_object.name : NULL,
+                    material.texture_source_path));
             }
             for (size_t other_index = material_index + 1u;
                  other_index < obj_material_count;
@@ -427,10 +478,13 @@ static nmo_status_t project_validation_check_assets(
                 if (material.obj_material_name &&
                     other.obj_material_name &&
                     strcmp(material.obj_material_name, other.obj_material_name) == 0) {
-                    NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                         report,
                         "duplicate_obj_material",
-                        "Project OBJ material names must be unique per object"));
+                        "Project OBJ material names must be unique per object",
+                        "object",
+                        has_asset_object ? asset_object.name : NULL,
+                        material.source_path));
                 }
             }
         }
