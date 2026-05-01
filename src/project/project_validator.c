@@ -532,15 +532,29 @@ static nmo_status_t project_validation_check_assets(
                 has_asset_object ? asset_object.name : NULL,
                 asset.external_mesh_source_path));
         }
-        if (asset.has_material_texture &&
-            !project_validation_file_exists(asset.material_texture_path)) {
-            NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
-                report,
-                "missing_material_texture_file",
-                "Project material texture path must exist",
-                "object",
-                has_asset_object ? asset_object.name : NULL,
-                asset.material_texture_source_path));
+        if (asset.has_material_texture) {
+            for (size_t slot = 0u; slot < 4u; ++slot) {
+                const char *texture_path = asset.has_material_texture_slots[slot]
+                    ? asset.material_texture_paths[slot]
+                    : NULL;
+                const char *source_path = asset.has_material_texture_slots[slot]
+                    ? asset.material_texture_source_paths[slot]
+                    : NULL;
+                if (!texture_path && slot == 0u && asset.material_texture_path) {
+                    texture_path = asset.material_texture_path;
+                    source_path = asset.material_texture_source_path;
+                }
+                if (texture_path &&
+                    !project_validation_file_exists(texture_path)) {
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                        report,
+                        "missing_material_texture_file",
+                        "Project material texture path must exist",
+                        "object",
+                        has_asset_object ? asset_object.name : NULL,
+                        source_path));
+                }
+            }
         }
 
         size_t obj_material_count =
@@ -560,15 +574,27 @@ static nmo_status_t project_validation_check_assets(
                 asset.object_handle,
                 material_index,
                 &material));
-            if (material.has_texture &&
-                !project_validation_file_exists(material.texture_path)) {
-                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
-                    report,
-                    "missing_obj_material_texture_file",
-                    "Project OBJ material texture path must exist",
-                    "object",
-                    has_asset_object ? asset_object.name : NULL,
-                    material.texture_source_path));
+            for (size_t slot = 0u; slot < 4u; ++slot) {
+                const char *texture_path = material.has_texture_slots[slot]
+                    ? material.texture_paths[slot]
+                    : NULL;
+                const char *source_path = material.has_texture_slots[slot]
+                    ? material.texture_source_paths[slot]
+                    : NULL;
+                if (!texture_path && slot == 0u && material.texture_path) {
+                    texture_path = material.texture_path;
+                    source_path = material.texture_source_path;
+                }
+                if (texture_path &&
+                    !project_validation_file_exists(texture_path)) {
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                        report,
+                        "missing_obj_material_texture_file",
+                        "Project OBJ material texture path must exist",
+                        "object",
+                        has_asset_object ? asset_object.name : NULL,
+                        source_path));
+                }
             }
             for (size_t other_index = material_index + 1u;
                  other_index < obj_material_count;

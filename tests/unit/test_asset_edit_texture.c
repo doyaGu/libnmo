@@ -107,6 +107,43 @@ TEST(asset_edit_texture, replaces_rgba_texture_and_binds_material_slot_zero)
     destroy_workspace(ctx, doc, workspace);
 }
 
+TEST(asset_edit_texture, binds_material_texture_slot_one)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_document_t *doc = NULL;
+    nmo_workspace_t *workspace = NULL;
+    create_workspace(&ctx, &doc, &workspace);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "texture slot one", &edit));
+    nmo_object_id_t material_id = 0;
+    nmo_object_id_t texture_id = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){.class_id = NMO_CID_MATERIAL, .name = "Mat"},
+                  &material_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){.class_id = NMO_CID_TEXTURE, .name = "Tex"},
+                  &texture_id));
+
+    ASSERT_EQ(NMO_OK,
+              nmo_asset_edit_bind_material_texture(edit, material_id, texture_id, 1u));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    nmo_object_t *material_object = find_object(doc, material_id);
+    ASSERT_NOT_NULL(material_object);
+    const nmo_material_state_t *material =
+        (const nmo_material_state_t *)nmo_object_get_state(material_object);
+    ASSERT_NOT_NULL(material);
+    ASSERT_EQ(texture_id, material->texture_ids[1]);
+    ASSERT_TRUE(material->has_additional_textures);
+
+    destroy_workspace(ctx, doc, workspace);
+}
+
 TEST(asset_edit_texture, replaces_texture_from_file)
 {
     const char *path = "test_asset_edit_texture_tmp.png";
@@ -192,7 +229,7 @@ TEST(asset_edit_texture, rejects_invalid_material_texture_binding)
                   &camera_id));
 
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
-              nmo_asset_edit_bind_material_texture(edit, material_id, texture_id, 1u));
+              nmo_asset_edit_bind_material_texture(edit, material_id, texture_id, 4u));
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
               nmo_asset_edit_bind_material_texture(edit, camera_id, texture_id, 0u));
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
@@ -206,6 +243,7 @@ TEST(asset_edit_texture, rejects_invalid_material_texture_binding)
 
 TEST_MAIN_BEGIN()
 REGISTER_TEST(asset_edit_texture, replaces_rgba_texture_and_binds_material_slot_zero);
+REGISTER_TEST(asset_edit_texture, binds_material_texture_slot_one);
 REGISTER_TEST(asset_edit_texture, replaces_texture_from_file);
 REGISTER_TEST(asset_edit_texture, rejects_invalid_material_texture_binding);
 TEST_MAIN_END()

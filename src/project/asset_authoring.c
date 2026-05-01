@@ -69,6 +69,55 @@ static nmo_status_t project_authoring_create_material(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t project_authoring_texture_name(
+    const char *base_name,
+    uint32_t slot,
+    char *out_name,
+    size_t out_size)
+{
+    int len = slot == 0u
+        ? snprintf(out_name, out_size, "%s_Texture", base_name)
+        : snprintf(out_name, out_size, "%s_Texture%u", base_name, slot);
+    if (len < 0 || (size_t)len >= out_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "generated texture asset name is too long");
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t project_authoring_bind_texture_slot(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t material_id,
+    const char *texture_name,
+    const char *texture_path,
+    uint32_t slot)
+{
+    if (!edit || material_id == 0u || !texture_name || !texture_path) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "texture slot authoring arguments are required");
+    }
+
+    nmo_object_id_t texture_id = 0;
+    NMO_RETURN_IF_ERROR(nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_TEXTURE,
+            .name = texture_name,
+            .type_guid = NMO_GUID_NULL,
+        },
+        &texture_id));
+    NMO_RETURN_IF_ERROR(nmo_asset_edit_set_texture_from_file(
+        edit,
+        texture_id,
+        texture_path));
+    NMO_RETURN_IF_ERROR(nmo_asset_edit_bind_material_texture(
+        edit,
+        material_id,
+        texture_id,
+        slot));
+    NMO_RETURN_OK();
+}
+
 nmo_status_t nmo_project_author_assets(
     nmo_workspace_edit_t *edit,
     const nmo_project_plan_t *plan,
@@ -98,14 +147,11 @@ nmo_status_t nmo_project_author_assets(
 
         char material_name[256];
         char mesh_name[256];
-        char texture_name[256];
         int material_len = snprintf(material_name, sizeof(material_name), "%s_Material", object.name);
         int mesh_len = snprintf(mesh_name, sizeof(mesh_name), "%s_Mesh", object.name);
-        int texture_len = snprintf(texture_name, sizeof(texture_name), "%s_Texture", object.name);
-        if (material_len < 0 || mesh_len < 0 || texture_len < 0 ||
+        if (material_len < 0 || mesh_len < 0 ||
             (size_t)material_len >= sizeof(material_name) ||
-            (size_t)mesh_len >= sizeof(mesh_name) ||
-            (size_t)texture_len >= sizeof(texture_name)) {
+            (size_t)mesh_len >= sizeof(mesh_name)) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                              "generated asset name is too long");
         }
@@ -121,24 +167,29 @@ nmo_status_t nmo_project_author_assets(
         }
 
         if (asset.has_material_texture) {
-            nmo_object_id_t texture_id = 0;
-            NMO_RETURN_IF_ERROR(nmo_object_edit_create(
-                edit,
-                &(nmo_object_create_desc_t){
-                    .class_id = NMO_CID_TEXTURE,
-                    .name = texture_name,
-                    .type_guid = NMO_GUID_NULL,
-                },
-                &texture_id));
-            NMO_RETURN_IF_ERROR(nmo_asset_edit_set_texture_from_file(
-                edit,
-                texture_id,
-                asset.material_texture_path));
-            NMO_RETURN_IF_ERROR(nmo_asset_edit_bind_material_texture(
-                edit,
-                material_id,
-                texture_id,
-                0u));
+            for (uint32_t slot = 0u; slot < 4u; ++slot) {
+                const char *texture_path = asset.has_material_texture_slots[slot]
+                    ? asset.material_texture_paths[slot]
+                    : NULL;
+                if (!texture_path && slot == 0u && asset.material_texture_path) {
+                    texture_path = asset.material_texture_path;
+                }
+                if (!texture_path) {
+                    continue;
+                }
+                char texture_name[256];
+                NMO_RETURN_IF_ERROR(project_authoring_texture_name(
+                    object.name,
+                    slot,
+                    texture_name,
+                    sizeof(texture_name)));
+                NMO_RETURN_IF_ERROR(project_authoring_bind_texture_slot(
+                    edit,
+                    material_id,
+                    texture_name,
+                    texture_path,
+                    slot));
+            }
         }
 
         size_t obj_material_count =
@@ -169,22 +220,14 @@ nmo_status_t nmo_project_author_assets(
             }
 
             char obj_material_name[256];
-            char obj_texture_name[256];
             int obj_material_len = snprintf(
                 obj_material_name,
                 sizeof(obj_material_name),
                 "%s_%s_Material",
                 object.name,
                 obj_material.obj_material_name);
-            int obj_texture_len = snprintf(
-                obj_texture_name,
-                sizeof(obj_texture_name),
-                "%s_%s_Texture",
-                object.name,
-                obj_material.obj_material_name);
-            if (obj_material_len < 0 || obj_texture_len < 0 ||
-                (size_t)obj_material_len >= sizeof(obj_material_name) ||
-                (size_t)obj_texture_len >= sizeof(obj_texture_name)) {
+            if (obj_material_len < 0 ||
+                (size_t)obj_material_len >= sizeof(obj_material_name)) {
                 free(obj_material_bindings);
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                  "generated OBJ material asset name is too long");
@@ -202,36 +245,55 @@ nmo_status_t nmo_project_author_assets(
                 return status;
             }
 
-            if (obj_material.has_texture) {
-                nmo_object_id_t obj_texture_id = 0;
-                status = nmo_object_edit_create(
-                    edit,
-                    &(nmo_object_create_desc_t){
-                        .class_id = NMO_CID_TEXTURE,
-                        .name = obj_texture_name,
-                        .type_guid = NMO_GUID_NULL,
-                    },
-                    &obj_texture_id);
-                if (status != NMO_OK) {
+            bool obj_material_has_texture = obj_material.has_texture;
+            for (uint32_t slot = 0u; slot < 4u; ++slot) {
+                obj_material_has_texture =
+                    obj_material_has_texture || obj_material.has_texture_slots[slot];
+            }
+            if (obj_material_has_texture) {
+                char obj_texture_base[256];
+                int obj_texture_base_len = snprintf(
+                    obj_texture_base,
+                    sizeof(obj_texture_base),
+                    "%s_%s",
+                    object.name,
+                    obj_material.obj_material_name);
+                if (obj_texture_base_len < 0 ||
+                    (size_t)obj_texture_base_len >= sizeof(obj_texture_base)) {
                     free(obj_material_bindings);
-                    return status;
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                     "generated OBJ material texture asset name is too long");
                 }
-                status = nmo_asset_edit_set_texture_from_file(
-                    edit,
-                    obj_texture_id,
-                    obj_material.texture_path);
-                if (status != NMO_OK) {
-                    free(obj_material_bindings);
-                    return status;
-                }
-                status = nmo_asset_edit_bind_material_texture(
-                    edit,
-                    obj_material_id,
-                    obj_texture_id,
-                    0u);
-                if (status != NMO_OK) {
-                    free(obj_material_bindings);
-                    return status;
+                for (uint32_t slot = 0u; slot < 4u; ++slot) {
+                    const char *texture_path = obj_material.has_texture_slots[slot]
+                        ? obj_material.texture_paths[slot]
+                        : NULL;
+                    if (!texture_path && slot == 0u && obj_material.texture_path) {
+                        texture_path = obj_material.texture_path;
+                    }
+                    if (!texture_path) {
+                        continue;
+                    }
+                    char obj_texture_name[256];
+                    status = project_authoring_texture_name(
+                        obj_texture_base,
+                        slot,
+                        obj_texture_name,
+                        sizeof(obj_texture_name));
+                    if (status != NMO_OK) {
+                        free(obj_material_bindings);
+                        return status;
+                    }
+                    status = project_authoring_bind_texture_slot(
+                        edit,
+                        obj_material_id,
+                        obj_texture_name,
+                        texture_path,
+                        slot);
+                    if (status != NMO_OK) {
+                        free(obj_material_bindings);
+                        return status;
+                    }
                 }
             }
 

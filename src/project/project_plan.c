@@ -58,6 +58,9 @@ typedef struct project_asset_record {
     bool has_material_texture;
     char *material_texture_path;
     char *material_texture_source_path;
+    bool has_material_texture_slots[4];
+    char *material_texture_paths[4];
+    char *material_texture_source_paths[4];
     nmo_project_material_spec_t *obj_materials;
     size_t obj_material_count;
     size_t obj_material_capacity;
@@ -198,11 +201,19 @@ static void project_plan_free_assets(
         free(assets[i].external_mesh_source_path);
         free(assets[i].material_texture_path);
         free(assets[i].material_texture_source_path);
+        for (size_t slot = 0u; slot < 4u; ++slot) {
+            free(assets[i].material_texture_paths[slot]);
+            free(assets[i].material_texture_source_paths[slot]);
+        }
         for (size_t j = 0u; j < assets[i].obj_material_count; ++j) {
             free((void *)assets[i].obj_materials[j].obj_material_name);
             free((void *)assets[i].obj_materials[j].texture_path);
             free((void *)assets[i].obj_materials[j].source_path);
             free((void *)assets[i].obj_materials[j].texture_source_path);
+            for (size_t slot = 0u; slot < 4u; ++slot) {
+                free((void *)assets[i].obj_materials[j].texture_paths[slot]);
+                free((void *)assets[i].obj_materials[j].texture_source_paths[slot]);
+            }
         }
         free(assets[i].obj_materials);
     }
@@ -418,6 +429,29 @@ nmo_status_t nmo_project_plan_clone(
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                  "failed to clone project material texture source path");
             }
+            for (size_t slot = 0u; slot < 4u; ++slot) {
+                clone->assets[i].material_texture_paths[slot] =
+                    project_plan_strdup(plan->assets[i].material_texture_paths[slot]);
+                clone->assets[i].material_texture_source_paths[slot] =
+                    project_plan_strdup(
+                        plan->assets[i].material_texture_source_paths[slot]);
+                if (plan->assets[i].material_texture_paths[slot] &&
+                    !clone->assets[i].material_texture_paths[slot]) {
+                    nmo_project_plan_destroy(clone);
+                    NMO_RETURN_ERROR(
+                        NMO_ERR_NOMEM,
+                        NMO_SEVERITY_ERROR,
+                        "failed to clone project material texture slot path");
+                }
+                if (plan->assets[i].material_texture_source_paths[slot] &&
+                    !clone->assets[i].material_texture_source_paths[slot]) {
+                    nmo_project_plan_destroy(clone);
+                    NMO_RETURN_ERROR(
+                        NMO_ERR_NOMEM,
+                        NMO_SEVERITY_ERROR,
+                        "failed to clone project material texture slot source path");
+                }
+            }
             if (plan->assets[i].obj_material_count > 0u) {
                 clone->assets[i].obj_materials =
                     (nmo_project_material_spec_t *)calloc(
@@ -461,6 +495,28 @@ nmo_status_t nmo_project_plan_clone(
                         nmo_project_plan_destroy(clone);
                         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                          "failed to clone project OBJ material texture source path");
+                    }
+                    for (size_t slot = 0u; slot < 4u; ++slot) {
+                        dst->texture_paths[slot] =
+                            project_plan_strdup(src->texture_paths[slot]);
+                        dst->texture_source_paths[slot] =
+                            project_plan_strdup(src->texture_source_paths[slot]);
+                        if (src->texture_paths[slot] &&
+                            !dst->texture_paths[slot]) {
+                            nmo_project_plan_destroy(clone);
+                            NMO_RETURN_ERROR(
+                                NMO_ERR_NOMEM,
+                                NMO_SEVERITY_ERROR,
+                                "failed to clone project OBJ material texture slot path");
+                        }
+                        if (src->texture_source_paths[slot] &&
+                            !dst->texture_source_paths[slot]) {
+                            nmo_project_plan_destroy(clone);
+                            NMO_RETURN_ERROR(
+                                NMO_ERR_NOMEM,
+                                NMO_SEVERITY_ERROR,
+                                "failed to clone project OBJ material texture slot source path");
+                        }
                     }
                     clone->assets[i].obj_material_count++;
                 }
@@ -1144,11 +1200,16 @@ nmo_status_t nmo_project_plan_set_external_mesh_source_path(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_project_plan_set_material_texture(
+static nmo_status_t project_plan_set_asset_texture_slot(
     nmo_project_plan_t *plan,
     uint32_t object_handle,
+    uint32_t slot,
     const char *path)
 {
+    if (slot >= 4u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "material texture slot must be in range 0..3");
+    }
     if (!path || path[0] == '\0') {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "material texture path is required");
@@ -1163,10 +1224,37 @@ nmo_status_t nmo_project_plan_set_material_texture(
                          "failed to allocate material texture path");
     }
 
-    free(asset->material_texture_path);
-    asset->material_texture_path = path_copy;
+    free(asset->material_texture_paths[slot]);
+    asset->material_texture_paths[slot] = path_copy;
+    asset->has_material_texture_slots[slot] = true;
+    if (slot == 0u) {
+        char *alias_copy = project_plan_strdup(path);
+        if (!alias_copy) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate material texture alias path");
+        }
+        free(asset->material_texture_path);
+        asset->material_texture_path = alias_copy;
+    }
     asset->has_material_texture = true;
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_material_texture(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const char *path)
+{
+    return project_plan_set_asset_texture_slot(plan, object_handle, 0u, path);
+}
+
+nmo_status_t nmo_project_plan_set_material_texture_slot(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    uint32_t slot,
+    const char *path)
+{
+    return project_plan_set_asset_texture_slot(plan, object_handle, slot, path);
 }
 
 nmo_status_t nmo_project_plan_set_material_texture_source_path(
@@ -1174,6 +1262,23 @@ nmo_status_t nmo_project_plan_set_material_texture_source_path(
     uint32_t object_handle,
     const char *source_path)
 {
+    return nmo_project_plan_set_material_texture_slot_source_path(
+        plan,
+        object_handle,
+        0u,
+        source_path);
+}
+
+nmo_status_t nmo_project_plan_set_material_texture_slot_source_path(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    uint32_t slot,
+    const char *source_path)
+{
+    if (slot >= 4u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "material texture slot must be in range 0..3");
+    }
     project_asset_record_t *asset = NULL;
     NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
 
@@ -1185,8 +1290,17 @@ nmo_status_t nmo_project_plan_set_material_texture_source_path(
                              "failed to allocate material texture source path");
         }
     }
-    free(asset->material_texture_source_path);
-    asset->material_texture_source_path = source_copy;
+    free(asset->material_texture_source_paths[slot]);
+    asset->material_texture_source_paths[slot] = source_copy;
+    if (slot == 0u) {
+        char *alias_copy = project_plan_strdup(source_path);
+        if (source_path && !alias_copy) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate material texture alias source path");
+        }
+        free(asset->material_texture_source_path);
+        asset->material_texture_source_path = alias_copy;
+    }
     NMO_RETURN_OK();
 }
 
@@ -1214,7 +1328,16 @@ nmo_status_t nmo_project_plan_add_obj_material(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "OBJ material name is required");
     }
-    if (!spec->has_color && !spec->has_texture) {
+    bool has_any_texture = spec->has_texture;
+    for (size_t slot = 0u; slot < 4u; ++slot) {
+        has_any_texture = has_any_texture || spec->has_texture_slots[slot];
+        if (spec->has_texture_slots[slot] &&
+            (!spec->texture_paths[slot] || spec->texture_paths[slot][0] == '\0')) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "OBJ material texture slot path is required");
+        }
+    }
+    if (!spec->has_color && !has_any_texture) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "OBJ material requires color or texture");
     }
@@ -1250,18 +1373,49 @@ nmo_status_t nmo_project_plan_add_obj_material(
                          "failed to allocate project OBJ material name");
     }
     char *texture_copy = NULL;
+    const char *slot_paths[4] = {0};
+    bool has_slots[4] = {false, false, false, false};
+    for (size_t slot = 0u; slot < 4u; ++slot) {
+        has_slots[slot] = spec->has_texture_slots[slot];
+        slot_paths[slot] = spec->texture_paths[slot];
+    }
     if (spec->has_texture) {
-        texture_copy = project_plan_strdup(spec->texture_path);
+        has_slots[0] = true;
+        slot_paths[0] = spec->texture_path;
+    }
+    if (has_slots[0]) {
+        texture_copy = project_plan_strdup(slot_paths[0]);
         if (!texture_copy) {
             free(name_copy);
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                              "failed to allocate project OBJ material texture path");
         }
     }
+    char *texture_slot_copies[4] = {0};
+    for (size_t slot = 0u; slot < 4u; ++slot) {
+        if (!has_slots[slot]) {
+            continue;
+        }
+        texture_slot_copies[slot] = project_plan_strdup(slot_paths[slot]);
+        if (!texture_slot_copies[slot]) {
+            free(name_copy);
+            free(texture_copy);
+            for (size_t cleanup = 0u; cleanup < slot; ++cleanup) {
+                free(texture_slot_copies[cleanup]);
+            }
+            NMO_RETURN_ERROR(
+                NMO_ERR_NOMEM,
+                NMO_SEVERITY_ERROR,
+                "failed to allocate project OBJ material texture slot path");
+        }
+    }
     char *source_copy = project_plan_strdup(spec->source_path);
     if (spec->source_path && !source_copy) {
         free(name_copy);
         free(texture_copy);
+        for (size_t slot = 0u; slot < 4u; ++slot) {
+            free(texture_slot_copies[slot]);
+        }
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                          "failed to allocate project OBJ material source path");
     }
@@ -1269,9 +1423,32 @@ nmo_status_t nmo_project_plan_add_obj_material(
     if (spec->texture_source_path && !texture_source_copy) {
         free(name_copy);
         free(texture_copy);
+        for (size_t slot = 0u; slot < 4u; ++slot) {
+            free(texture_slot_copies[slot]);
+        }
         free(source_copy);
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                          "failed to allocate project OBJ material texture source path");
+    }
+    char *texture_source_slot_copies[4] = {0};
+    for (size_t slot = 0u; slot < 4u; ++slot) {
+        texture_source_slot_copies[slot] =
+            project_plan_strdup(spec->texture_source_paths[slot]);
+        if (spec->texture_source_paths[slot] &&
+            !texture_source_slot_copies[slot]) {
+            free(name_copy);
+            free(texture_copy);
+            free(source_copy);
+            free(texture_source_copy);
+            for (size_t cleanup = 0u; cleanup < 4u; ++cleanup) {
+                free(texture_slot_copies[cleanup]);
+                free(texture_source_slot_copies[cleanup]);
+            }
+            NMO_RETURN_ERROR(
+                NMO_ERR_NOMEM,
+                NMO_SEVERITY_ERROR,
+                "failed to allocate project OBJ material texture slot source path");
+        }
     }
 
     nmo_project_material_spec_t *dst =
@@ -1281,6 +1458,12 @@ nmo_status_t nmo_project_plan_add_obj_material(
     dst->texture_path = texture_copy;
     dst->source_path = source_copy;
     dst->texture_source_path = texture_source_copy;
+    dst->has_texture = has_slots[0];
+    for (size_t slot = 0u; slot < 4u; ++slot) {
+        dst->has_texture_slots[slot] = has_slots[slot];
+        dst->texture_paths[slot] = texture_slot_copies[slot];
+        dst->texture_source_paths[slot] = texture_source_slot_copies[slot];
+    }
     NMO_RETURN_OK();
 }
 
@@ -1317,12 +1500,17 @@ nmo_status_t nmo_project_plan_get_obj_material(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_project_plan_set_obj_material_texture(
+static nmo_status_t project_plan_set_obj_material_texture_slot(
     nmo_project_plan_t *plan,
     uint32_t object_handle,
     size_t index,
+    uint32_t slot,
     const char *path)
 {
+    if (slot >= 4u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "OBJ material texture slot must be in range 0..3");
+    }
     if (!path || path[0] == '\0') {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "OBJ material texture path is required");
@@ -1339,10 +1527,49 @@ nmo_status_t nmo_project_plan_set_obj_material_texture(
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                          "failed to allocate OBJ material texture path");
     }
-    free((void *)asset->obj_materials[index].texture_path);
-    asset->obj_materials[index].texture_path = path_copy;
+    free((void *)asset->obj_materials[index].texture_paths[slot]);
+    asset->obj_materials[index].texture_paths[slot] = path_copy;
+    asset->obj_materials[index].has_texture_slots[slot] = true;
+    if (slot == 0u) {
+        char *alias_copy = project_plan_strdup(path);
+        if (!alias_copy) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate OBJ material texture alias path");
+        }
+        free((void *)asset->obj_materials[index].texture_path);
+        asset->obj_materials[index].texture_path = alias_copy;
+    }
     asset->obj_materials[index].has_texture = true;
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_obj_material_texture(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    size_t index,
+    const char *path)
+{
+    return project_plan_set_obj_material_texture_slot(
+        plan,
+        object_handle,
+        index,
+        0u,
+        path);
+}
+
+nmo_status_t nmo_project_plan_set_obj_material_texture_slot(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    size_t index,
+    uint32_t slot,
+    const char *path)
+{
+    return project_plan_set_obj_material_texture_slot(
+        plan,
+        object_handle,
+        index,
+        slot,
+        path);
 }
 
 nmo_status_t nmo_project_plan_set_obj_material_source_paths(
@@ -1372,8 +1599,16 @@ nmo_status_t nmo_project_plan_set_obj_material_source_paths(
     }
     free((void *)asset->obj_materials[index].source_path);
     free((void *)asset->obj_materials[index].texture_source_path);
+    free((void *)asset->obj_materials[index].texture_source_paths[0]);
     asset->obj_materials[index].source_path = source_copy;
     asset->obj_materials[index].texture_source_path = texture_source_copy;
+    asset->obj_materials[index].texture_source_paths[0] =
+        project_plan_strdup(texture_source_path);
+    if (texture_source_path &&
+        !asset->obj_materials[index].texture_source_paths[0]) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate OBJ material texture slot source path");
+    }
     NMO_RETURN_OK();
 }
 
@@ -1408,6 +1643,15 @@ nmo_status_t nmo_project_plan_get_asset(
     out_asset->has_material_texture = asset->has_material_texture;
     out_asset->material_texture_path = asset->material_texture_path;
     out_asset->material_texture_source_path = asset->material_texture_source_path;
+    memcpy(out_asset->has_material_texture_slots,
+           asset->has_material_texture_slots,
+           sizeof(out_asset->has_material_texture_slots));
+    memcpy(out_asset->material_texture_paths,
+           asset->material_texture_paths,
+           sizeof(out_asset->material_texture_paths));
+    memcpy(out_asset->material_texture_source_paths,
+           asset->material_texture_source_paths,
+           sizeof(out_asset->material_texture_source_paths));
     NMO_RETURN_OK();
 }
 

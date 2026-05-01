@@ -423,10 +423,9 @@ nmo_status_t nmo_material_serialize(
         nmo_chunk_write_dword(chunk, state->effect);
     }
 
-    if (state->has_effect && state->effect != 0 &&
-        (state->texture_ids[1] != NMO_OBJECT_ID_NONE ||
-         state->texture_ids[2] != NMO_OBJECT_ID_NONE ||
-         state->texture_ids[3] != NMO_OBJECT_ID_NONE)) {
+    if (state->texture_ids[1] != NMO_OBJECT_ID_NONE ||
+        state->texture_ids[2] != NMO_OBJECT_ID_NONE ||
+        state->texture_ids[3] != NMO_OBJECT_ID_NONE) {
         result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_MATDATA2);
         if (result != NMO_OK) return result;
         nmo_chunk_write_object_id(chunk, state->texture_ids[1]);

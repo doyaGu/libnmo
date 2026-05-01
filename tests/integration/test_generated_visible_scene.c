@@ -266,8 +266,12 @@ TEST(generated_visible_scene, creates_external_obj_texture_and_position) {
 
 TEST(generated_visible_scene, creates_external_obj_named_materials) {
     const char *obj_path = "test_generated_visible_multi_material.obj";
+    const char *base_png_path = "test_generated_visible_multi_material_base.png";
+    const char *detail_png_path = "test_generated_visible_multi_material_detail.png";
     const char *output_path = "test_generated_visible_multi_material.cmo";
     remove(obj_path);
+    remove(base_png_path);
+    remove(detail_png_path);
     remove(output_path);
     remove("test_generated_visible_multi_material.cmo.tmp");
     ASSERT_TRUE(write_text_file(
@@ -280,6 +284,8 @@ TEST(generated_visible_scene, creates_external_obj_named_materials) {
         "f 1 2 3\n"
         "usemtl Blue\n"
         "f 2 4 3\n"));
+    ASSERT_TRUE(write_png_file(base_png_path));
+    ASSERT_TRUE(write_png_file(detail_png_path));
 
     nmo_project_plan_t *plan = NULL;
     uint32_t scene = 0u;
@@ -317,6 +323,8 @@ TEST(generated_visible_scene, creates_external_obj_named_materials) {
                       .obj_material_name = "Blue",
                       .has_color = true,
                       .color = {0.0f, 0.0f, 1.0f, 1.0f},
+                      .has_texture_slots = {true, true, false, false},
+                      .texture_paths = {base_png_path, detail_png_path, NULL, NULL},
                   }));
 
     nmo_project_report_init(&report);
@@ -332,9 +340,13 @@ TEST(generated_visible_scene, creates_external_obj_named_materials) {
     nmo_object_t *mesh_object = find_named_object(document, "Entity_Mesh", NMO_CID_MESH);
     nmo_object_t *red_object = find_named_object(document, "Entity_Red_Material", NMO_CID_MATERIAL);
     nmo_object_t *blue_object = find_named_object(document, "Entity_Blue_Material", NMO_CID_MATERIAL);
+    nmo_object_t *blue_base_texture = find_named_object(document, "Entity_Blue_Texture", NMO_CID_TEXTURE);
+    nmo_object_t *blue_detail_texture = find_named_object(document, "Entity_Blue_Texture1", NMO_CID_TEXTURE);
     ASSERT_NOT_NULL(mesh_object);
     ASSERT_NOT_NULL(red_object);
     ASSERT_NOT_NULL(blue_object);
+    ASSERT_NOT_NULL(blue_base_texture);
+    ASSERT_NOT_NULL(blue_detail_texture);
 
     const nmo_mesh_state_t *mesh_state =
         (const nmo_mesh_state_t *)nmo_object_get_state(mesh_object);
@@ -347,12 +359,21 @@ TEST(generated_visible_scene, creates_external_obj_named_materials) {
     ASSERT_EQ(0u, mesh_state->faces[0].material_group_idx);
     ASSERT_EQ(1u, mesh_state->faces[1].material_group_idx);
 
+    const nmo_material_state_t *blue_state =
+        (const nmo_material_state_t *)nmo_object_get_state(blue_object);
+    ASSERT_NOT_NULL(blue_state);
+    ASSERT_EQ(nmo_object_get_id(blue_base_texture), blue_state->texture_ids[0]);
+    ASSERT_EQ(nmo_object_get_id(blue_detail_texture), blue_state->texture_ids[1]);
+    ASSERT_TRUE(blue_state->has_additional_textures);
+
     nmo_document_destroy(document);
     nmo_context_release(ctx);
     nmo_project_report_dispose(&report);
     nmo_project_plan_destroy(plan);
     remove(output_path);
     remove(obj_path);
+    remove(base_png_path);
+    remove(detail_png_path);
 }
 
 TEST(generated_visible_scene, creates_transform_hierarchy) {

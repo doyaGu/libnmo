@@ -134,6 +134,100 @@ TEST(project_manifest_json, parses_named_obj_materials)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_manifest_json, parses_material_texture_slots)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":[{"
+        "\"name\":\"Cube\","
+        "\"class\":\"CK3dEntity\","
+        "\"mesh\":{\"obj\":\"assets/cube.obj\"},"
+        "\"material\":{\"texture\":\"assets/base.png\","
+            "\"textures\":[{\"slot\":1,\"path\":\"assets/detail.png\"}]},"
+        "\"materials\":[{"
+            "\"name\":\"Layered\","
+            "\"texture\":\"assets/layered-base.png\","
+            "\"textures\":[{\"slot\":1,\"path\":\"assets/layered-detail.png\"}]"
+        "}]"
+        "}]"
+        "}]"
+        "}";
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+
+    nmo_project_object_desc_t object = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 0u, &object));
+
+    nmo_project_asset_desc_t asset = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_asset(plan, 0u, &asset));
+    ASSERT_TRUE(asset.has_material_texture_slots[0]);
+    ASSERT_TRUE(asset.has_material_texture_slots[1]);
+    ASSERT_STR_EQ("assets/base.png", asset.material_texture_paths[0]);
+    ASSERT_STR_EQ("assets/detail.png", asset.material_texture_paths[1]);
+
+    nmo_project_material_spec_t material = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_obj_material(plan, object.handle, 0u, &material));
+    ASSERT_TRUE(material.has_texture_slots[0]);
+    ASSERT_TRUE(material.has_texture_slots[1]);
+    ASSERT_STR_EQ("assets/layered-base.png", material.texture_paths[0]);
+    ASSERT_STR_EQ("assets/layered-detail.png", material.texture_paths[1]);
+
+    nmo_project_plan_destroy(plan);
+}
+
+TEST(project_manifest_json, rejects_duplicate_material_texture_slots)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":[{"
+        "\"name\":\"Cube\","
+        "\"class\":\"CK3dEntity\","
+        "\"material\":{\"textures\":["
+            "{\"slot\":1,\"path\":\"a.png\"},"
+            "{\"slot\":1,\"path\":\"b.png\"}"
+        "]}"
+        "}]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_NE(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NULL(plan);
+}
+
+TEST(project_manifest_json, rejects_out_of_range_material_texture_slot)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":[{"
+        "\"name\":\"Cube\","
+        "\"class\":\"CK3dEntity\","
+        "\"materials\":[{"
+            "\"name\":\"Bad\","
+            "\"textures\":[{\"slot\":4,\"path\":\"bad.png\"}]"
+        "}]"
+        "}]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_NE(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NULL(plan);
+}
+
 TEST(project_manifest_json, maps_fields_and_scripts_to_project_plan)
 {
     const char *json =
@@ -501,6 +595,9 @@ TEST(project_manifest_json, rejects_ambiguous_parent_name)
 TEST_MAIN_BEGIN()
 REGISTER_TEST(project_manifest_json, parses_minimal_visible_scene);
 REGISTER_TEST(project_manifest_json, parses_named_obj_materials);
+REGISTER_TEST(project_manifest_json, parses_material_texture_slots);
+REGISTER_TEST(project_manifest_json, rejects_duplicate_material_texture_slots);
+REGISTER_TEST(project_manifest_json, rejects_out_of_range_material_texture_slot);
 REGISTER_TEST(project_manifest_json, maps_fields_and_scripts_to_project_plan);
 REGISTER_TEST(project_manifest_json, parses_script_template);
 REGISTER_TEST(project_manifest_json, parses_scene_script_template);

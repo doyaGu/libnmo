@@ -66,6 +66,53 @@ TEST(asset_authoring, stores_primitive_mesh_and_material_specs) {
     nmo_project_plan_destroy(plan);
 }
 
+TEST(asset_authoring, stores_material_texture_slots) {
+    nmo_project_plan_t *plan = NULL;
+    uint32_t scene = 0u;
+    uint32_t cube = 0u;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "Level", &scene));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "Cube",
+                  },
+                  &cube));
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_material_texture_slot(
+                          plan,
+                          cube,
+                          1u,
+                          "assets/detail.png"));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_material_texture(
+                          plan,
+                          cube,
+                          "assets/base.png"));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_project_plan_set_material_texture_slot(
+                  plan,
+                  cube,
+                  4u,
+                  "assets/bad.png"));
+
+    nmo_project_asset_desc_t asset = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_asset(plan, 0u, &asset));
+    ASSERT_TRUE(asset.has_material_texture);
+    ASSERT_STR_EQ("assets/base.png", asset.material_texture_path);
+    ASSERT_TRUE(asset.has_material_texture_slots[0]);
+    ASSERT_TRUE(asset.has_material_texture_slots[1]);
+    ASSERT_STR_EQ("assets/base.png", asset.material_texture_paths[0]);
+    ASSERT_STR_EQ("assets/detail.png", asset.material_texture_paths[1]);
+    ASSERT_FALSE(asset.has_material_texture_slots[2]);
+    ASSERT_FALSE(asset.has_material_texture_slots[3]);
+
+    nmo_project_plan_destroy(plan);
+}
+
 TEST(asset_authoring, clones_asset_specs) {
     nmo_project_plan_t *plan = NULL;
     nmo_project_plan_t *clone = NULL;
@@ -180,6 +227,54 @@ TEST(asset_authoring, stores_named_obj_material_specs) {
     nmo_project_plan_destroy(plan);
 }
 
+TEST(asset_authoring, stores_named_obj_material_texture_slots) {
+    nmo_project_plan_t *plan = NULL;
+    uint32_t scene = 0u;
+    uint32_t cube = 0u;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "Level", &scene));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "Cube",
+                  },
+                  &cube));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_external_mesh(plan, cube, "assets/cube.obj"));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_obj_material(
+                  plan,
+                  cube,
+                  &(nmo_project_material_spec_t){
+                      .obj_material_name = "Layered",
+                      .has_color = true,
+                      .color = {1.0f, 1.0f, 1.0f, 1.0f},
+                      .has_texture_slots = {true, true, false, false},
+                      .texture_paths = {"assets/base.png", "assets/detail.png", NULL, NULL},
+                  }));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_project_plan_set_obj_material_texture_slot(
+                  plan,
+                  cube,
+                  0u,
+                  4u,
+                  "assets/bad.png"));
+
+    nmo_project_material_spec_t material = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_obj_material(plan, cube, 0u, &material));
+    ASSERT_TRUE(material.has_texture);
+    ASSERT_STR_EQ("assets/base.png", material.texture_path);
+    ASSERT_TRUE(material.has_texture_slots[0]);
+    ASSERT_TRUE(material.has_texture_slots[1]);
+    ASSERT_STR_EQ("assets/base.png", material.texture_paths[0]);
+    ASSERT_STR_EQ("assets/detail.png", material.texture_paths[1]);
+
+    nmo_project_plan_destroy(plan);
+}
+
 TEST(asset_authoring, clones_named_obj_material_specs) {
     nmo_project_plan_t *plan = NULL;
     nmo_project_plan_t *clone = NULL;
@@ -285,8 +380,10 @@ TEST(asset_authoring, stores_camera_and_light_specs) {
 
 TEST_MAIN_BEGIN()
 REGISTER_TEST(asset_authoring, stores_primitive_mesh_and_material_specs);
+REGISTER_TEST(asset_authoring, stores_material_texture_slots);
 REGISTER_TEST(asset_authoring, clones_asset_specs);
 REGISTER_TEST(asset_authoring, stores_named_obj_material_specs);
+REGISTER_TEST(asset_authoring, stores_named_obj_material_texture_slots);
 REGISTER_TEST(asset_authoring, clones_named_obj_material_specs);
 REGISTER_TEST(asset_authoring, stores_camera_and_light_specs);
 TEST_MAIN_END()

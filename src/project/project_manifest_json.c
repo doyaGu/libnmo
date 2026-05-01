@@ -152,17 +152,26 @@ static nmo_status_t manifest_parse_material(
     yyjson_val *material,
     bool *out_has_color,
     float out_color[4],
-    const char **out_texture)
+    const char **out_texture,
+    bool out_has_texture_slots[4],
+    const char *out_texture_paths[4],
+    size_t out_texture_indices[4])
 {
-    static const char *const allowed[] = {"color", "texture", NULL};
+    static const char *const allowed[] = {"color", "texture", "textures", NULL};
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(material, "material", allowed));
 
-    if (!out_has_color || !out_color || !out_texture) {
+    if (!out_has_color || !out_color || !out_texture ||
+        !out_has_texture_slots || !out_texture_paths || !out_texture_indices) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "material output arguments are required");
     }
     *out_has_color = false;
     *out_texture = NULL;
+    memset(out_has_texture_slots, 0, sizeof(bool) * 4u);
+    memset(out_texture_paths, 0, sizeof(const char *) * 4u);
+    for (size_t slot = 0u; slot < 4u; ++slot) {
+        out_texture_indices[slot] = (size_t)-1;
+    }
 
     yyjson_val *color = yyjson_obj_get(material, "color");
     if (color) {
@@ -189,9 +198,51 @@ static nmo_status_t manifest_parse_material(
                              "manifest material.texture must be a non-empty string");
         }
         *out_texture = yyjson_get_str(texture);
+        out_has_texture_slots[0] = true;
+        out_texture_paths[0] = *out_texture;
     }
 
-    if (!*out_has_color && !*out_texture) {
+    yyjson_val *textures = yyjson_obj_get(material, "textures");
+    if (textures) {
+        if (!yyjson_is_arr(textures)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest material.textures must be an array");
+        }
+        size_t idx = 0u;
+        size_t max = 0u;
+        yyjson_val *item = NULL;
+        yyjson_arr_foreach(textures, idx, max, item) {
+            static const char *const texture_allowed[] = {"slot", "path", NULL};
+            NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(
+                item,
+                "material.textures[]",
+                texture_allowed));
+            yyjson_val *slot_value = yyjson_obj_get(item, "slot");
+            yyjson_val *path_value = yyjson_obj_get(item, "path");
+            if (!yyjson_is_uint(slot_value) || yyjson_get_uint(slot_value) >= 4u) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest material.textures[].slot must be 0..3");
+            }
+            if (!yyjson_is_str(path_value) || yyjson_get_str(path_value)[0] == '\0') {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest material.textures[].path must be a non-empty string");
+            }
+            uint32_t slot = (uint32_t)yyjson_get_uint(slot_value);
+            if (out_has_texture_slots[slot]) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest material texture slot is duplicated");
+            }
+            out_has_texture_slots[slot] = true;
+            out_texture_paths[slot] = yyjson_get_str(path_value);
+            out_texture_indices[slot] = idx;
+        }
+    }
+
+    bool has_any_texture = false;
+    for (size_t slot = 0u; slot < 4u; ++slot) {
+        has_any_texture = has_any_texture || out_has_texture_slots[slot];
+    }
+    if (!*out_has_color && !has_any_texture) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "manifest material requires color or texture");
     }
@@ -200,14 +251,20 @@ static nmo_status_t manifest_parse_material(
 
 static nmo_status_t manifest_parse_obj_material(
     yyjson_val *material,
-    nmo_project_material_spec_t *out_spec)
+    nmo_project_material_spec_t *out_spec,
+    size_t out_texture_indices[4])
 {
-    static const char *const allowed[] = {"name", "color", "texture", NULL};
+    static const char *const allowed[] = {"name", "color", "texture", "textures", NULL};
     if (!out_spec) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "OBJ material output argument is required");
     }
     memset(out_spec, 0, sizeof(*out_spec));
+    if (out_texture_indices) {
+        for (size_t slot = 0u; slot < 4u; ++slot) {
+            out_texture_indices[slot] = (size_t)-1;
+        }
+    }
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(
         material,
         "materials[]",
@@ -242,9 +299,57 @@ static nmo_status_t manifest_parse_obj_material(
         }
         out_spec->has_texture = true;
         out_spec->texture_path = yyjson_get_str(texture);
+        out_spec->has_texture_slots[0] = true;
+        out_spec->texture_paths[0] = out_spec->texture_path;
     }
 
-    if (!out_spec->has_color && !out_spec->has_texture) {
+    yyjson_val *textures = yyjson_obj_get(material, "textures");
+    if (textures) {
+        if (!yyjson_is_arr(textures)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest materials[].textures must be an array");
+        }
+        size_t idx = 0u;
+        size_t max = 0u;
+        yyjson_val *item = NULL;
+        yyjson_arr_foreach(textures, idx, max, item) {
+            static const char *const texture_allowed[] = {"slot", "path", NULL};
+            NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(
+                item,
+                "materials[].textures[]",
+                texture_allowed));
+            yyjson_val *slot_value = yyjson_obj_get(item, "slot");
+            yyjson_val *path_value = yyjson_obj_get(item, "path");
+            if (!yyjson_is_uint(slot_value) || yyjson_get_uint(slot_value) >= 4u) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest materials[].textures[].slot must be 0..3");
+            }
+            if (!yyjson_is_str(path_value) || yyjson_get_str(path_value)[0] == '\0') {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest materials[].textures[].path must be a non-empty string");
+            }
+            uint32_t slot = (uint32_t)yyjson_get_uint(slot_value);
+            if (out_spec->has_texture_slots[slot]) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest OBJ material texture slot is duplicated");
+            }
+            out_spec->has_texture_slots[slot] = true;
+            out_spec->texture_paths[slot] = yyjson_get_str(path_value);
+            if (out_texture_indices) {
+                out_texture_indices[slot] = idx;
+            }
+        }
+        if (out_spec->has_texture_slots[0]) {
+            out_spec->has_texture = true;
+            out_spec->texture_path = out_spec->texture_paths[0];
+        }
+    }
+
+    bool has_any_texture = out_spec->has_texture;
+    for (size_t slot = 0u; slot < 4u; ++slot) {
+        has_any_texture = has_any_texture || out_spec->has_texture_slots[slot];
+    }
+    if (!out_spec->has_color && !has_any_texture) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "manifest materials[] requires color or texture");
     }
@@ -839,11 +944,17 @@ static nmo_status_t manifest_parse_object_details(
         bool has_color = false;
         float color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
         const char *texture = NULL;
+        bool has_texture_slots[4] = {false, false, false, false};
+        const char *texture_paths[4] = {0};
+        size_t texture_indices[4] = {0};
         NMO_RETURN_IF_ERROR(manifest_parse_material(
             material,
             &has_color,
             color,
-            &texture));
+            &texture,
+            has_texture_slots,
+            texture_paths,
+            texture_indices));
         if (has_color) {
             NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_color(
                 ctx->plan,
@@ -853,21 +964,53 @@ static nmo_status_t manifest_parse_object_details(
                 color[2],
                 color[3]));
         }
-        if (texture) {
+        if (has_texture_slots[0]) {
             NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_texture(
                 ctx->plan,
                 object_handle,
-                texture));
+                texture_paths[0]));
             char source_path[128];
-            snprintf(source_path,
-                     sizeof(source_path),
-                     "scenes[%zu].objects[%zu].material.texture",
-                     scene_index,
-                     object_index);
+            if (texture) {
+                snprintf(source_path,
+                         sizeof(source_path),
+                         "scenes[%zu].objects[%zu].material.texture",
+                         scene_index,
+                         object_index);
+            } else {
+                snprintf(source_path,
+                         sizeof(source_path),
+                         "scenes[%zu].objects[%zu].material.textures[%zu].path",
+                         scene_index,
+                         object_index,
+                         texture_indices[0]);
+            }
             NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_texture_source_path(
                 ctx->plan,
                 object_handle,
                 source_path));
+        }
+        for (size_t slot = 1u; slot < 4u; ++slot) {
+            if (!has_texture_slots[slot]) {
+                continue;
+            }
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_texture_slot(
+                ctx->plan,
+                object_handle,
+                (uint32_t)slot,
+                texture_paths[slot]));
+            char source_path[144];
+            snprintf(source_path,
+                     sizeof(source_path),
+                     "scenes[%zu].objects[%zu].material.textures[%zu].path",
+                     scene_index,
+                     object_index,
+                     texture_indices[slot]);
+            NMO_RETURN_IF_ERROR(
+                nmo_project_plan_set_material_texture_slot_source_path(
+                    ctx->plan,
+                    object_handle,
+                    (uint32_t)slot,
+                    source_path));
         }
     }
 
@@ -882,31 +1025,52 @@ static nmo_status_t manifest_parse_object_details(
         yyjson_val *item = NULL;
         yyjson_arr_foreach(materials, idx, max, item) {
             nmo_project_material_spec_t spec = {0};
-            NMO_RETURN_IF_ERROR(manifest_parse_obj_material(item, &spec));
+            size_t texture_indices[4] = {0};
+            NMO_RETURN_IF_ERROR(manifest_parse_obj_material(
+                item,
+                &spec,
+                texture_indices));
+            bool has_texture_shorthand = yyjson_obj_get(item, "texture") != NULL;
             size_t material_plan_index =
                 nmo_project_plan_obj_material_count(ctx->plan, object_handle);
-            NMO_RETURN_IF_ERROR(nmo_project_plan_add_obj_material(
-                ctx->plan,
-                object_handle,
-                &spec));
             char material_source_path[128];
-            char texture_source_path[144];
+            char texture_source_paths[4][144];
             snprintf(material_source_path,
                      sizeof(material_source_path),
                      "scenes[%zu].objects[%zu].materials[%zu]",
                      scene_index,
                      object_index,
                      idx);
+            spec.source_path = material_source_path;
             const char *texture_source = NULL;
-            if (spec.has_texture) {
-                snprintf(texture_source_path,
-                         sizeof(texture_source_path),
-                         "scenes[%zu].objects[%zu].materials[%zu].texture",
-                         scene_index,
-                         object_index,
-                         idx);
-                texture_source = texture_source_path;
+            for (size_t slot = 0u; slot < 4u; ++slot) {
+                if (!spec.has_texture_slots[slot]) {
+                    continue;
+                }
+                if (slot == 0u && has_texture_shorthand) {
+                    snprintf(texture_source_paths[slot],
+                             sizeof(texture_source_paths[slot]),
+                             "scenes[%zu].objects[%zu].materials[%zu].texture",
+                             scene_index,
+                             object_index,
+                             idx);
+                    texture_source = texture_source_paths[slot];
+                } else {
+                    snprintf(texture_source_paths[slot],
+                             sizeof(texture_source_paths[slot]),
+                             "scenes[%zu].objects[%zu].materials[%zu].textures[%zu].path",
+                             scene_index,
+                             object_index,
+                             idx,
+                             texture_indices[slot]);
+                }
+                spec.texture_source_paths[slot] = texture_source_paths[slot];
             }
+            spec.texture_source_path = texture_source;
+            NMO_RETURN_IF_ERROR(nmo_project_plan_add_obj_material(
+                ctx->plan,
+                object_handle,
+                &spec));
             NMO_RETURN_IF_ERROR(nmo_project_plan_set_obj_material_source_paths(
                 ctx->plan,
                 object_handle,

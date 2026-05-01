@@ -385,6 +385,85 @@ TEST(project_validator, reports_manifest_source_for_missing_default_texture)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_validator, reports_manifest_source_for_missing_default_texture_slot)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":[{"
+        "\"name\":\"Cube\","
+        "\"class\":\"CK3dEntity\","
+        "\"mesh\":{\"primitive\":\"cube\"},"
+        "\"material\":{\"textures\":[{\"slot\":1,\"path\":\"missing_detail.png\"}]}"
+        "}]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_validation_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+    nmo_project_validation_report_init(&report);
+
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_FALSE(report.ok);
+
+    const nmo_project_validation_issue_t *issue =
+        find_issue(&report, "missing_material_texture_file");
+    ASSERT_NOT_NULL(issue);
+    ASSERT_STR_EQ("object", issue->subject_kind);
+    ASSERT_STR_EQ("Cube", issue->subject_name);
+    ASSERT_STR_EQ("scenes[0].objects[0].material.textures[0].path", issue->source_path);
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+}
+
+TEST(project_validator, reports_manifest_source_for_missing_named_texture_slot)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":[{"
+        "\"name\":\"Cube\","
+        "\"class\":\"CK3dEntity\","
+        "\"mesh\":{\"obj\":\"missing.obj\"},"
+        "\"materials\":[{"
+            "\"name\":\"Blue\","
+            "\"textures\":[{\"slot\":1,\"path\":\"missing_detail.png\"}]"
+        "}]"
+        "}]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_validation_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+    nmo_project_validation_report_init(&report);
+
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_FALSE(report.ok);
+
+    const nmo_project_validation_issue_t *issue =
+        find_issue(&report, "missing_obj_material_texture_file");
+    ASSERT_NOT_NULL(issue);
+    ASSERT_STR_EQ("object", issue->subject_kind);
+    ASSERT_STR_EQ("Cube", issue->subject_name);
+    ASSERT_STR_EQ("scenes[0].objects[0].materials[0].textures[0].path", issue->source_path);
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+}
+
 TEST(project_validator, reports_manifest_source_for_duplicate_obj_material)
 {
     const char *json =
@@ -620,6 +699,8 @@ REGISTER_TEST(project_validator, rejects_unbound_obj_material_without_default);
 REGISTER_TEST(project_validator, reports_manifest_source_for_missing_named_texture);
 REGISTER_TEST(project_validator, reports_manifest_source_for_missing_external_mesh);
 REGISTER_TEST(project_validator, reports_manifest_source_for_missing_default_texture);
+REGISTER_TEST(project_validator, reports_manifest_source_for_missing_default_texture_slot);
+REGISTER_TEST(project_validator, reports_manifest_source_for_missing_named_texture_slot);
 REGISTER_TEST(project_validator, reports_manifest_source_for_duplicate_obj_material);
 REGISTER_TEST(project_validator, reports_manifest_source_for_unbound_obj_material);
 REGISTER_TEST(project_validator, reports_manifest_source_for_invalid_active_camera);

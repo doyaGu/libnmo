@@ -1335,7 +1335,7 @@ nmo_status_t nmo_asset_edit_bind_material_texture(
     nmo_object_id_t texture_id,
     uint32_t slot)
 {
-    if (slot != 0u) {
+    if (slot >= 4u) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
@@ -1358,7 +1358,13 @@ nmo_status_t nmo_asset_edit_bind_material_texture(
         return status;
     }
 
-    state->texture_ids[0] = texture_id;
+    state->texture_ids[slot] = texture_id;
+    state->has_additional_textures =
+        (state->texture_ids[1] != NMO_OBJECT_ID_NONE ||
+         state->texture_ids[2] != NMO_OBJECT_ID_NONE ||
+         state->texture_ids[3] != NMO_OBJECT_ID_NONE)
+            ? 1u
+            : 0u;
     nmo_workspace_edit_mark(
         edit,
         NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
