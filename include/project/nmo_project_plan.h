@@ -22,6 +22,8 @@ typedef struct nmo_project_plan nmo_project_plan_t;
 typedef struct nmo_project_scene_desc {
     uint32_t handle;
     const char *name;
+    bool startup_active;
+    uint32_t active_camera_handle;
 } nmo_project_scene_desc_t;
 
 typedef enum nmo_project_object_flags {

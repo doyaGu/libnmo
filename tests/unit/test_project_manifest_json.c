@@ -322,6 +322,36 @@ TEST(project_manifest_json, parses_parent_by_forward_object_id)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_manifest_json, parses_scene_active_camera)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"active_camera\":\"main-camera\","
+            "\"startup_active\":true,"
+            "\"objects\":["
+                "{\"id\":\"main-camera\",\"name\":\"Camera\",\"class\":\"CKCamera\"}"
+            "]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+
+    nmo_project_scene_desc_t scene = {0};
+    nmo_project_object_desc_t camera = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_scene(plan, 0u, &scene));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 0u, &camera));
+    ASSERT_TRUE(scene.startup_active);
+    ASSERT_EQ(camera.handle, scene.active_camera_handle);
+
+    nmo_project_plan_destroy(plan);
+}
+
 TEST(project_manifest_json, resolves_parent_id_before_ambiguous_name)
 {
     const char *json =
@@ -402,6 +432,7 @@ REGISTER_TEST(project_manifest_json, rejects_unknown_fields);
 REGISTER_TEST(project_manifest_json, rejects_unknown_transform_fields);
 REGISTER_TEST(project_manifest_json, parses_parent_by_prior_object_name);
 REGISTER_TEST(project_manifest_json, parses_parent_by_forward_object_id);
+REGISTER_TEST(project_manifest_json, parses_scene_active_camera);
 REGISTER_TEST(project_manifest_json, resolves_parent_id_before_ambiguous_name);
 REGISTER_TEST(project_manifest_json, rejects_duplicate_object_id);
 REGISTER_TEST(project_manifest_json, rejects_ambiguous_parent_name);

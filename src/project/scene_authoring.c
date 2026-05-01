@@ -181,6 +181,40 @@ static nmo_status_t project_authoring_set_parent(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t project_authoring_set_scene_active_camera(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t scene_id,
+    nmo_object_id_t camera_id)
+{
+    char camera_value[32];
+    int wrote = snprintf(
+        camera_value,
+        sizeof(camera_value),
+        "%u",
+        camera_id);
+    if (wrote < 0 || (size_t)wrote >= sizeof(camera_value)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "active camera id string is too long");
+    }
+
+    nmo_session_field_edit_result_t field_result = {0};
+    nmo_session_field_edit_t field = {
+        .field_name = "starting_camera_id",
+        .value_str = camera_value,
+    };
+    NMO_RETURN_IF_ERROR(nmo_object_edit_set_fields(
+        edit,
+        scene_id,
+        &field,
+        1u,
+        &field_result));
+    if (field_result.failed > 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "failed to set project scene active camera");
+    }
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t project_authoring_set_camera(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,
@@ -298,6 +332,33 @@ nmo_status_t nmo_project_author_scenes(
 
         authored_objects[i].plan_handle = object.handle;
         authored_objects[i].object_id = object_id;
+    }
+
+    for (size_t i = 0; i < scene_count; ++i) {
+        nmo_project_scene_desc_t scene = {0};
+        status = nmo_project_plan_get_scene(plan, i, &scene);
+        if (status != NMO_OK) {
+            goto cleanup;
+        }
+        if (scene.active_camera_handle == 0u) {
+            continue;
+        }
+        nmo_object_id_t scene_id = authored_scenes[i].object_id;
+        nmo_object_id_t camera_id = project_authoring_find_object_id(
+            authored_objects,
+            object_count,
+            scene.active_camera_handle);
+        if (scene_id == 0u || camera_id == 0u) {
+            status = NMO_ERR_INVALID_ARGUMENT;
+            goto cleanup;
+        }
+        status = project_authoring_set_scene_active_camera(
+            edit,
+            scene_id,
+            camera_id);
+        if (status != NMO_OK) {
+            goto cleanup;
+        }
     }
 
     for (size_t i = 0; i < object_count; ++i) {

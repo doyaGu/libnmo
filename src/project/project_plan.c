@@ -9,6 +9,8 @@
 typedef struct project_scene_record {
     uint32_t handle;
     char *name;
+    bool startup_active;
+    uint32_t active_camera_handle;
 } project_scene_record_t;
 
 typedef struct project_object_record {
@@ -290,6 +292,9 @@ nmo_status_t nmo_project_plan_clone(
         clone->scene_capacity = plan->scene_count;
         for (size_t i = 0; i < plan->scene_count; ++i) {
             clone->scenes[i].handle = plan->scenes[i].handle;
+            clone->scenes[i].startup_active = plan->scenes[i].startup_active;
+            clone->scenes[i].active_camera_handle =
+                plan->scenes[i].active_camera_handle;
             clone->scenes[i].name = project_plan_strdup(plan->scenes[i].name);
             if (plan->scenes[i].name && !clone->scenes[i].name) {
                 nmo_project_plan_destroy(clone);
@@ -534,6 +539,8 @@ nmo_status_t nmo_project_plan_get_scene(
 
     out_scene->handle = plan->scenes[index].handle;
     out_scene->name = plan->scenes[index].name;
+    out_scene->startup_active = plan->scenes[index].startup_active;
+    out_scene->active_camera_handle = plan->scenes[index].active_camera_handle;
     NMO_RETURN_OK();
 }
 
@@ -636,6 +643,25 @@ nmo_status_t nmo_project_plan_add_scene(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_project_plan_set_scene_startup_active(
+    nmo_project_plan_t *plan,
+    uint32_t scene_handle,
+    bool startup_active)
+{
+    if (!plan || scene_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and scene handle are required");
+    }
+    for (size_t i = 0u; i < plan->scene_count; ++i) {
+        if (plan->scenes[i].handle == scene_handle) {
+            plan->scenes[i].startup_active = startup_active;
+            NMO_RETURN_OK();
+        }
+    }
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "scene handle not found");
+}
+
 static bool project_plan_has_object_handle(
     const nmo_project_plan_t *plan,
     uint32_t object_handle)
@@ -649,6 +675,29 @@ static bool project_plan_has_object_handle(
         }
     }
     return false;
+}
+
+nmo_status_t nmo_project_plan_set_scene_active_camera(
+    nmo_project_plan_t *plan,
+    uint32_t scene_handle,
+    uint32_t camera_handle)
+{
+    if (!plan || scene_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and scene handle are required");
+    }
+    if (camera_handle != 0u && !project_plan_has_object_handle(plan, camera_handle)) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "active camera object handle not found");
+    }
+    for (size_t i = 0u; i < plan->scene_count; ++i) {
+        if (plan->scenes[i].handle == scene_handle) {
+            plan->scenes[i].active_camera_handle = camera_handle;
+            NMO_RETURN_OK();
+        }
+    }
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "scene handle not found");
 }
 
 static project_script_record_t *project_plan_find_script(

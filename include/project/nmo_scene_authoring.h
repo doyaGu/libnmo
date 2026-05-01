@@ -12,6 +12,16 @@ NMO_API nmo_status_t nmo_project_plan_add_scene(
     const char *name,
     uint32_t *out_scene_handle);
 
+NMO_API nmo_status_t nmo_project_plan_set_scene_startup_active(
+    nmo_project_plan_t *plan,
+    uint32_t scene_handle,
+    bool startup_active);
+
+NMO_API nmo_status_t nmo_project_plan_set_scene_active_camera(
+    nmo_project_plan_t *plan,
+    uint32_t scene_handle,
+    uint32_t camera_handle);
+
 NMO_API const char *nmo_project_plan_scene_name(
     const nmo_project_plan_t *plan,
     uint32_t scene_handle);

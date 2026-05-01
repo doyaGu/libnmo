@@ -314,6 +314,31 @@ static nmo_status_t project_validation_check_duplicate_scenes(
                     "Project scene handles must be unique"));
             }
         }
+        if (lhs.active_camera_handle != 0u) {
+            nmo_project_object_desc_t camera = {0};
+            if (!project_validation_get_object_by_handle(
+                    plan,
+                    lhs.active_camera_handle,
+                    &camera)) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    report,
+                    "missing_active_camera",
+                    "Project scene active camera references a missing object"));
+            } else {
+                if (camera.scene_handle != lhs.handle) {
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                        report,
+                        "active_camera_outside_scene",
+                        "Project scene active camera must belong to the scene"));
+                }
+                if (!project_validation_class_is_camera(camera.class_id)) {
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                        report,
+                        "invalid_active_camera_class",
+                        "Project scene active camera must be camera-compatible"));
+                }
+            }
+        }
     }
     NMO_RETURN_OK();
 }

@@ -310,6 +310,49 @@ TEST(project_validator, reports_manifest_source_for_missing_named_texture)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_validator, rejects_invalid_scene_active_camera)
+{
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_validation_report_t report;
+    uint32_t scene_a = 0u;
+    uint32_t scene_b = 0u;
+    uint32_t cube = 0u;
+    uint32_t camera = 0u;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_document_name(plan, "Generated"));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "A", &scene_a));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "B", &scene_b));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene_a,
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "Cube",
+                  },
+                  &cube));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene_b,
+                      .class_id = NMO_CID_CAMERA,
+                      .name = "Camera",
+                  },
+                  &camera));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_scene_active_camera(plan, scene_a, cube));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_scene_active_camera(plan, scene_b, camera));
+
+    nmo_project_validation_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_FALSE(report.ok);
+    ASSERT_TRUE(nmo_project_validation_contains(&report, "invalid_active_camera_class"));
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(project_validator, rejects_missing_document_name);
 REGISTER_TEST(project_validator, accepts_named_empty_project);
@@ -319,4 +362,5 @@ REGISTER_TEST(project_validator, rejects_duplicate_named_obj_materials);
 REGISTER_TEST(project_validator, rejects_missing_named_obj_material_texture);
 REGISTER_TEST(project_validator, rejects_unbound_obj_material_without_default);
 REGISTER_TEST(project_validator, reports_manifest_source_for_missing_named_texture);
+REGISTER_TEST(project_validator, rejects_invalid_scene_active_camera);
 TEST_MAIN_END()

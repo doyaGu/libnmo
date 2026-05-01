@@ -51,6 +51,7 @@ TEST(generated_scene_roundtrip, saves_and_reloads_scene_objects)
     };
     ASSERT_EQ(NMO_OK, nmo_project_plan_add_object(plan, &camera_spec, &camera));
     ASSERT_NE(0u, camera);
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_scene_active_camera(plan, scene, camera));
     nmo_project_object_spec_t light_spec = {
         .scene_handle = scene,
         .class_id = NMO_CID_LIGHT,
@@ -103,6 +104,19 @@ TEST(generated_scene_roundtrip, saves_and_reloads_scene_objects)
         (nmo_scene_state_t *)nmo_object_get_state(scene_object);
     ASSERT_NOT_NULL(scene_state);
     ASSERT_EQ(3u, nmo_array_size(&scene_state->object_descs));
+
+    nmo_object_query_t camera_query = {0};
+    camera_query.name = "Camera_Main";
+    camera_query.name_mode = NMO_OBJECT_QUERY_NAME_EXACT;
+    camera_query.class_id = NMO_CID_CAMERA;
+    nmo_object_t *camera_object = NULL;
+    ASSERT_EQ(NMO_OK, nmo_object_query_find_first(
+                          document,
+                          &camera_query,
+                          &camera_object,
+                          NULL));
+    ASSERT_NOT_NULL(camera_object);
+    ASSERT_EQ(nmo_object_get_id(camera_object), scene_state->starting_camera_id);
 
     const nmo_scene_object_desc_t *descs =
         NMO_ARRAY_DATA(nmo_scene_object_desc_t, &scene_state->object_descs);

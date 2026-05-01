@@ -997,7 +997,8 @@ static nmo_status_t manifest_parse_scene(
     yyjson_val *scene,
     size_t scene_index)
 {
-    static const char *const allowed[] = {"name", "objects", NULL};
+    static const char *const allowed[] = {
+        "name", "objects", "active_camera", "startup_active", NULL};
     const char *name = NULL;
     uint32_t scene_handle = 0u;
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(scene, "scene", allowed));
@@ -1036,6 +1037,35 @@ static nmo_status_t manifest_parse_scene(
             ctx->object_handles[object_start + idx],
             scene_index,
             idx));
+    }
+
+    const char *active_camera_ref = NULL;
+    NMO_RETURN_IF_ERROR(manifest_optional_string(
+        scene,
+        "active_camera",
+        &active_camera_ref));
+    if (active_camera_ref) {
+        uint32_t active_camera_handle = 0u;
+        NMO_RETURN_IF_ERROR(manifest_resolve_object_ref(
+            ctx,
+            active_camera_ref,
+            &active_camera_handle));
+        NMO_RETURN_IF_ERROR(nmo_project_plan_set_scene_active_camera(
+            ctx->plan,
+            scene_handle,
+            active_camera_handle));
+    }
+
+    yyjson_val *startup_active = yyjson_obj_get(scene, "startup_active");
+    if (startup_active) {
+        if (!yyjson_is_bool(startup_active)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest scene.startup_active must be a boolean");
+        }
+        NMO_RETURN_IF_ERROR(nmo_project_plan_set_scene_startup_active(
+            ctx->plan,
+            scene_handle,
+            yyjson_get_bool(startup_active)));
     }
     NMO_RETURN_OK();
 }
