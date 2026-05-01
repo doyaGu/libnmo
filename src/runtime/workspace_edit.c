@@ -1517,6 +1517,35 @@ typedef struct workspace_obj_mesh_slot {
     uint16_t idx_plus1;
 } workspace_obj_mesh_slot_t;
 
+typedef struct workspace_obj_mesh_counts {
+    size_t face_vertex_count;
+    size_t line_vertex_count;
+    size_t max_vertices;
+    size_t vertex_bytes;
+    size_t vertex_color_bytes;
+    size_t vertex_specular_bytes;
+    size_t face_bytes;
+    size_t face_index_bytes;
+    size_t line_index_bytes;
+    size_t dedup_capacity;
+    size_t dedup_bytes;
+} workspace_obj_mesh_counts_t;
+
+static bool workspace_obj_mesh_checked_mul(
+    size_t count,
+    size_t elem_size,
+    size_t *out_size)
+{
+    if (out_size == NULL || elem_size == 0u) {
+        return false;
+    }
+    if (count > SIZE_MAX / elem_size) {
+        return false;
+    }
+    *out_size = count * elem_size;
+    return true;
+}
+
 static uint32_t workspace_obj_mesh_rgb_to_argb(const float *rgb)
 {
     uint32_t r = workspace_edit_float_color_channel(rgb[0]);
@@ -1751,6 +1780,74 @@ static uint32_t workspace_obj_mesh_material_group_count(
     return count;
 }
 
+static nmo_status_t workspace_obj_mesh_compute_counts(
+    const nmo_obj_data_t *obj_data,
+    workspace_obj_mesh_counts_t *out_counts)
+{
+    if (obj_data == NULL || out_counts == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (obj_data->face_count > SIZE_MAX / 3u ||
+        obj_data->line_count > SIZE_MAX / 2u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    workspace_obj_mesh_counts_t counts = {0};
+    counts.face_vertex_count = obj_data->face_count * 3u;
+    counts.line_vertex_count = obj_data->line_count * 2u;
+    if (counts.face_vertex_count > SIZE_MAX - counts.line_vertex_count) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    counts.max_vertices = counts.face_vertex_count + counts.line_vertex_count;
+    if (counts.max_vertices == 0 || counts.max_vertices > 65535u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (!workspace_obj_mesh_checked_mul(
+            counts.max_vertices,
+            sizeof(nmo_vertex_t),
+            &counts.vertex_bytes) ||
+        !workspace_obj_mesh_checked_mul(
+            counts.max_vertices,
+            sizeof(uint32_t),
+            &counts.vertex_color_bytes) ||
+        !workspace_obj_mesh_checked_mul(
+            counts.max_vertices,
+            sizeof(uint32_t),
+            &counts.vertex_specular_bytes) ||
+        !workspace_obj_mesh_checked_mul(
+            obj_data->face_count,
+            sizeof(nmo_face_t),
+            &counts.face_bytes) ||
+        !workspace_obj_mesh_checked_mul(
+            counts.face_vertex_count,
+            sizeof(uint16_t),
+            &counts.face_index_bytes) ||
+        !workspace_obj_mesh_checked_mul(
+            counts.line_vertex_count,
+            sizeof(uint16_t),
+            &counts.line_index_bytes)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (counts.max_vertices > SIZE_MAX / 2u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    counts.dedup_capacity = counts.max_vertices * 2u;
+    if (counts.dedup_capacity < 64u) {
+        counts.dedup_capacity = 64u;
+    }
+    if (!workspace_obj_mesh_checked_mul(
+            counts.dedup_capacity,
+            sizeof(workspace_obj_mesh_slot_t),
+            &counts.dedup_bytes)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    *out_counts = counts;
+    return NMO_OK;
+}
+
 static nmo_status_t workspace_obj_mesh_build(
     nmo_arena_t *scratch,
     nmo_arena_t *document_arena,
@@ -1773,19 +1870,8 @@ static nmo_status_t workspace_obj_mesh_build(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (obj_data->face_count > SIZE_MAX / 3u ||
-        obj_data->line_count > SIZE_MAX / 2u) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    size_t face_vertex_count = obj_data->face_count * 3u;
-    size_t line_vertex_count = obj_data->line_count * 2u;
-    if (face_vertex_count > SIZE_MAX - line_vertex_count) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    size_t max_vertices = face_vertex_count + line_vertex_count;
-    if (max_vertices == 0 || max_vertices > 65535u) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
+    workspace_obj_mesh_counts_t counts = {0};
+    NMO_RETURN_IF_ERROR(workspace_obj_mesh_compute_counts(obj_data, &counts));
 
     uint32_t material_offset = 0;
     uint32_t material_group_count =
@@ -1796,15 +1882,15 @@ static nmo_status_t workspace_obj_mesh_build(
 
     nmo_vertex_t *vertices = (nmo_vertex_t *)nmo_arena_alloc(
         document_arena,
-        max_vertices * sizeof(*vertices),
+        counts.vertex_bytes,
         _Alignof(nmo_vertex_t));
     uint32_t *vertex_colors = (uint32_t *)nmo_arena_alloc(
         document_arena,
-        max_vertices * sizeof(*vertex_colors),
+        counts.vertex_color_bytes,
         _Alignof(uint32_t));
     uint32_t *vertex_specular = (uint32_t *)nmo_arena_alloc(
         document_arena,
-        max_vertices * sizeof(*vertex_specular),
+        counts.vertex_specular_bytes,
         _Alignof(uint32_t));
     if (vertices == NULL || vertex_colors == NULL || vertex_specular == NULL) {
         return NMO_ERR_NOMEM;
@@ -1815,11 +1901,11 @@ static nmo_status_t workspace_obj_mesh_build(
     if (obj_data->face_count > 0) {
         faces = (nmo_face_t *)nmo_arena_alloc(
             document_arena,
-            obj_data->face_count * sizeof(*faces),
+            counts.face_bytes,
             _Alignof(nmo_face_t));
         face_indices = (uint16_t *)nmo_arena_alloc(
             document_arena,
-            obj_data->face_count * 3u * sizeof(*face_indices),
+            counts.face_index_bytes,
             _Alignof(uint16_t));
         if (faces == NULL || face_indices == NULL) {
             return NMO_ERR_NOMEM;
@@ -1830,7 +1916,7 @@ static nmo_status_t workspace_obj_mesh_build(
     if (obj_data->line_count > 0) {
         line_indices = (uint16_t *)nmo_arena_alloc(
             document_arena,
-            obj_data->line_count * 2u * sizeof(*line_indices),
+            counts.line_index_bytes,
             _Alignof(uint16_t));
         if (line_indices == NULL) {
             return NMO_ERR_NOMEM;
@@ -1864,19 +1950,15 @@ static nmo_status_t workspace_obj_mesh_build(
         }
     }
 
-    size_t dedup_capacity = max_vertices * 2u;
-    if (dedup_capacity < 64u) {
-        dedup_capacity = 64u;
-    }
     workspace_obj_mesh_slot_t *dedup_table =
         (workspace_obj_mesh_slot_t *)nmo_arena_alloc(
             scratch,
-            dedup_capacity * sizeof(*dedup_table),
+            counts.dedup_bytes,
             _Alignof(workspace_obj_mesh_slot_t));
     if (dedup_table == NULL) {
         return NMO_ERR_NOMEM;
     }
-    memset(dedup_table, 0, dedup_capacity * sizeof(*dedup_table));
+    memset(dedup_table, 0, counts.dedup_bytes);
 
     uint32_t unique_count = 0;
     for (size_t face_index = 0; face_index < obj_data->face_count; ++face_index) {
@@ -1890,7 +1972,7 @@ static nmo_status_t workspace_obj_mesh_build(
                 vertex_colors,
                 vertex_specular,
                 dedup_table,
-                dedup_capacity,
+                counts.dedup_capacity,
                 &unique_count,
                 &out_index));
             face_indices[face_index * 3u + vertex_index] = out_index;
@@ -1934,7 +2016,7 @@ static nmo_status_t workspace_obj_mesh_build(
                 vertex_colors,
                 vertex_specular,
                 dedup_table,
-                dedup_capacity,
+                counts.dedup_capacity,
                 &unique_count,
                 &out_index));
             line_indices[line_index * 2u + vertex_index] = out_index;

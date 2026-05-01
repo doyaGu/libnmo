@@ -259,6 +259,33 @@ TEST(asset_edit_obj_mesh, rejects_missing_face_array)
     destroy_workspace(ctx, doc, workspace);
 }
 
+TEST(asset_edit_obj_mesh, rejects_missing_line_array)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_document_t *doc = NULL;
+    nmo_workspace_t *workspace = NULL;
+    create_workspace(&ctx, &doc, &workspace);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "obj missing lines", &edit));
+    nmo_object_id_t mesh_id = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){.class_id = NMO_CID_MESH, .name = "Mesh"},
+                  &mesh_id));
+
+    nmo_obj_data_t obj = {
+        .line_count = 1u,
+        .lines = NULL,
+    };
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_asset_edit_set_obj_mesh(edit, mesh_id, &obj, NULL));
+
+    nmo_workspace_edit_rollback(edit);
+    destroy_workspace(ctx, doc, workspace);
+}
+
 TEST(asset_edit_obj_mesh, rejects_overflowing_line_count)
 {
     nmo_context_t *ctx = NULL;
@@ -315,6 +342,37 @@ TEST(asset_edit_obj_mesh, rejects_overflowing_face_count)
     destroy_workspace(ctx, doc, workspace);
 }
 
+TEST(asset_edit_obj_mesh, rejects_overflowing_combined_vertex_count)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_document_t *doc = NULL;
+    nmo_workspace_t *workspace = NULL;
+    create_workspace(&ctx, &doc, &workspace);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "obj combined overflow", &edit));
+    nmo_object_id_t mesh_id = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){.class_id = NMO_CID_MESH, .name = "Mesh"},
+                  &mesh_id));
+
+    nmo_obj_face_t face = {0};
+    nmo_obj_line_t line = {0};
+    nmo_obj_data_t obj = {
+        .face_count = SIZE_MAX / 3u,
+        .faces = &face,
+        .line_count = SIZE_MAX / 2u,
+        .lines = &line,
+    };
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_asset_edit_set_obj_mesh(edit, mesh_id, &obj, NULL));
+
+    nmo_workspace_edit_rollback(edit);
+    destroy_workspace(ctx, doc, workspace);
+}
+
 TEST(asset_edit_obj_mesh, imports_obj_from_file)
 {
     const char *path = "test_asset_edit_obj_mesh_tmp.obj";
@@ -358,7 +416,9 @@ REGISTER_TEST(asset_edit_obj_mesh, imports_triangle_from_parsed_obj);
 REGISTER_TEST(asset_edit_obj_mesh, binds_named_obj_materials);
 REGISTER_TEST(asset_edit_obj_mesh, rejects_wrong_class_material_binding);
 REGISTER_TEST(asset_edit_obj_mesh, rejects_missing_face_array);
+REGISTER_TEST(asset_edit_obj_mesh, rejects_missing_line_array);
 REGISTER_TEST(asset_edit_obj_mesh, rejects_overflowing_line_count);
 REGISTER_TEST(asset_edit_obj_mesh, rejects_overflowing_face_count);
+REGISTER_TEST(asset_edit_obj_mesh, rejects_overflowing_combined_vertex_count);
 REGISTER_TEST(asset_edit_obj_mesh, imports_obj_from_file);
 TEST_MAIN_END()
