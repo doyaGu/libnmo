@@ -357,6 +357,55 @@ TEST(project_manifest_json, parses_scene_script_template)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_manifest_json, parses_script_template_v2_names)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"objects\":[{"
+                "\"name\":\"Owner\","
+                "\"class\":\"CK3dEntity\","
+                "\"scripts\":["
+                    "{\"name\":\"TimerScript\",\"template\":\"timer_debug_output\","
+                        "\"message\":\"timer\"},"
+                    "{\"name\":\"InputScript\",\"template\":\"input_key_debug_output\","
+                        "\"message\":\"input\"},"
+                    "{\"name\":\"TriggerScript\",\"template\":\"object_trigger_debug_output\","
+                        "\"message\":\"trigger\"},"
+                    "{\"name\":\"SceneTimerScript\","
+                        "\"template\":\"scene_start_then_timer_debug_output\","
+                        "\"message\":\"scene timer\"}"
+                "]"
+            "}]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+    ASSERT_EQ(4u, nmo_project_plan_script_count(plan));
+
+    nmo_project_script_desc_t script = {0};
+    nmo_project_script_step_desc_t step = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_script(plan, 0u, &script));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_script_step(plan, script.handle, 0u, &step));
+    ASSERT_EQ(NMO_PROJECT_SCRIPT_STEP_TIMER_DEBUG_OUTPUT, step.kind);
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_script(plan, 1u, &script));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_script_step(plan, script.handle, 0u, &step));
+    ASSERT_EQ(NMO_PROJECT_SCRIPT_STEP_INPUT_KEY_DEBUG_OUTPUT, step.kind);
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_script(plan, 2u, &script));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_script_step(plan, script.handle, 0u, &step));
+    ASSERT_EQ(NMO_PROJECT_SCRIPT_STEP_OBJECT_TRIGGER_DEBUG_OUTPUT, step.kind);
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_script(plan, 3u, &script));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_script_step(plan, script.handle, 0u, &step));
+    ASSERT_EQ(NMO_PROJECT_SCRIPT_STEP_SCENE_START_THEN_TIMER_DEBUG_OUTPUT, step.kind);
+
+    nmo_project_plan_destroy(plan);
+}
+
 TEST(project_manifest_json, rejects_unknown_fields)
 {
     const char *json =
@@ -660,6 +709,7 @@ REGISTER_TEST(project_manifest_json, rejects_out_of_range_material_texture_slot)
 REGISTER_TEST(project_manifest_json, maps_fields_and_scripts_to_project_plan);
 REGISTER_TEST(project_manifest_json, parses_script_template);
 REGISTER_TEST(project_manifest_json, parses_scene_script_template);
+REGISTER_TEST(project_manifest_json, parses_script_template_v2_names);
 REGISTER_TEST(project_manifest_json, rejects_unknown_fields);
 REGISTER_TEST(project_manifest_json, rejects_unknown_transform_fields);
 REGISTER_TEST(project_manifest_json, parses_parent_by_prior_object_name);

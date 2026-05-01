@@ -1256,6 +1256,54 @@ nmo_status_t nmo_project_plan_script_add_scene_on_start_debug_output(
         message);
 }
 
+nmo_status_t nmo_project_plan_script_add_timer_debug_output(
+    nmo_project_plan_t *plan,
+    uint32_t script_handle,
+    const char *message)
+{
+    return project_plan_script_add_step(
+        plan,
+        script_handle,
+        NMO_PROJECT_SCRIPT_STEP_TIMER_DEBUG_OUTPUT,
+        message);
+}
+
+nmo_status_t nmo_project_plan_script_add_input_key_debug_output(
+    nmo_project_plan_t *plan,
+    uint32_t script_handle,
+    const char *message)
+{
+    return project_plan_script_add_step(
+        plan,
+        script_handle,
+        NMO_PROJECT_SCRIPT_STEP_INPUT_KEY_DEBUG_OUTPUT,
+        message);
+}
+
+nmo_status_t nmo_project_plan_script_add_object_trigger_debug_output(
+    nmo_project_plan_t *plan,
+    uint32_t script_handle,
+    const char *message)
+{
+    return project_plan_script_add_step(
+        plan,
+        script_handle,
+        NMO_PROJECT_SCRIPT_STEP_OBJECT_TRIGGER_DEBUG_OUTPUT,
+        message);
+}
+
+nmo_status_t nmo_project_plan_script_add_scene_start_then_timer_debug_output(
+    nmo_project_plan_t *plan,
+    uint32_t script_handle,
+    const char *message)
+{
+    return project_plan_script_add_step(
+        plan,
+        script_handle,
+        NMO_PROJECT_SCRIPT_STEP_SCENE_START_THEN_TIMER_DEBUG_OUTPUT,
+        message);
+}
+
 nmo_status_t nmo_project_plan_set_primitive_mesh(
     nmo_project_plan_t *plan,
     uint32_t object_handle,

@@ -736,7 +736,13 @@ static nmo_status_t project_validation_check_scripts(
             if (step.kind != NMO_PROJECT_SCRIPT_STEP_DEBUG_OUTPUT &&
                 step.kind != NMO_PROJECT_SCRIPT_STEP_ON_START_DEBUG_OUTPUT &&
                 step.kind !=
-                    NMO_PROJECT_SCRIPT_STEP_SCENE_ON_START_DEBUG_OUTPUT) {
+                    NMO_PROJECT_SCRIPT_STEP_SCENE_ON_START_DEBUG_OUTPUT &&
+                step.kind != NMO_PROJECT_SCRIPT_STEP_TIMER_DEBUG_OUTPUT &&
+                step.kind != NMO_PROJECT_SCRIPT_STEP_INPUT_KEY_DEBUG_OUTPUT &&
+                step.kind !=
+                    NMO_PROJECT_SCRIPT_STEP_OBJECT_TRIGGER_DEBUG_OUTPUT &&
+                step.kind !=
+                    NMO_PROJECT_SCRIPT_STEP_SCENE_START_THEN_TIMER_DEBUG_OUTPUT) {
                 NMO_RETURN_IF_ERROR(project_validation_add_issue(
                     report,
                     "unsupported_script_template",

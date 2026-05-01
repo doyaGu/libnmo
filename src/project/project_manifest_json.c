@@ -861,11 +861,23 @@ static nmo_status_t manifest_parse_scripts(
             &template_name));
         if (template_name) {
             const char *message = NULL;
-            bool object_start =
-                strcmp(template_name, "on_start_debug_output") == 0;
-            bool scene_start =
-                strcmp(template_name, "scene_on_start_debug_output") == 0;
-            if (!object_start && !scene_start) {
+            nmo_project_script_step_kind_t template_kind = 0;
+            if (strcmp(template_name, "on_start_debug_output") == 0) {
+                template_kind = NMO_PROJECT_SCRIPT_STEP_ON_START_DEBUG_OUTPUT;
+            } else if (strcmp(template_name, "scene_on_start_debug_output") == 0) {
+                template_kind =
+                    NMO_PROJECT_SCRIPT_STEP_SCENE_ON_START_DEBUG_OUTPUT;
+            } else if (strcmp(template_name, "timer_debug_output") == 0) {
+                template_kind = NMO_PROJECT_SCRIPT_STEP_TIMER_DEBUG_OUTPUT;
+            } else if (strcmp(template_name, "input_key_debug_output") == 0) {
+                template_kind = NMO_PROJECT_SCRIPT_STEP_INPUT_KEY_DEBUG_OUTPUT;
+            } else if (strcmp(template_name, "object_trigger_debug_output") == 0) {
+                template_kind =
+                    NMO_PROJECT_SCRIPT_STEP_OBJECT_TRIGGER_DEBUG_OUTPUT;
+            } else if (strcmp(template_name, "scene_start_then_timer_debug_output") == 0) {
+                template_kind =
+                    NMO_PROJECT_SCRIPT_STEP_SCENE_START_THEN_TIMER_DEBUG_OUTPUT;
+            } else {
                 NMO_RETURN_ERROR(NMO_ERR_NOT_SUPPORTED, NMO_SEVERITY_ERROR,
                                  "unsupported manifest script template '%s'",
                                  template_name);
@@ -874,9 +886,37 @@ static nmo_status_t manifest_parse_scripts(
                 script_obj,
                 "message",
                 &message));
-            if (scene_start) {
+            if (template_kind ==
+                NMO_PROJECT_SCRIPT_STEP_SCENE_ON_START_DEBUG_OUTPUT) {
                 NMO_RETURN_IF_ERROR(
                     nmo_project_plan_script_add_scene_on_start_debug_output(
+                        ctx->plan,
+                        script_handle,
+                        message));
+            } else if (template_kind ==
+                       NMO_PROJECT_SCRIPT_STEP_TIMER_DEBUG_OUTPUT) {
+                NMO_RETURN_IF_ERROR(nmo_project_plan_script_add_timer_debug_output(
+                    ctx->plan,
+                    script_handle,
+                    message));
+            } else if (template_kind ==
+                       NMO_PROJECT_SCRIPT_STEP_INPUT_KEY_DEBUG_OUTPUT) {
+                NMO_RETURN_IF_ERROR(
+                    nmo_project_plan_script_add_input_key_debug_output(
+                        ctx->plan,
+                        script_handle,
+                        message));
+            } else if (template_kind ==
+                       NMO_PROJECT_SCRIPT_STEP_OBJECT_TRIGGER_DEBUG_OUTPUT) {
+                NMO_RETURN_IF_ERROR(
+                    nmo_project_plan_script_add_object_trigger_debug_output(
+                        ctx->plan,
+                        script_handle,
+                        message));
+            } else if (template_kind ==
+                       NMO_PROJECT_SCRIPT_STEP_SCENE_START_THEN_TIMER_DEBUG_OUTPUT) {
+                NMO_RETURN_IF_ERROR(
+                    nmo_project_plan_script_add_scene_start_then_timer_debug_output(
                         ctx->plan,
                         script_handle,
                         message));

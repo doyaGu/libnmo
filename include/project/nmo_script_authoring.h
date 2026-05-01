@@ -16,7 +16,11 @@ extern "C" {
 typedef enum nmo_project_script_step_kind {
     NMO_PROJECT_SCRIPT_STEP_DEBUG_OUTPUT = 1,
     NMO_PROJECT_SCRIPT_STEP_ON_START_DEBUG_OUTPUT = 2,
-    NMO_PROJECT_SCRIPT_STEP_SCENE_ON_START_DEBUG_OUTPUT = 3
+    NMO_PROJECT_SCRIPT_STEP_SCENE_ON_START_DEBUG_OUTPUT = 3,
+    NMO_PROJECT_SCRIPT_STEP_TIMER_DEBUG_OUTPUT = 4,
+    NMO_PROJECT_SCRIPT_STEP_INPUT_KEY_DEBUG_OUTPUT = 5,
+    NMO_PROJECT_SCRIPT_STEP_OBJECT_TRIGGER_DEBUG_OUTPUT = 6,
+    NMO_PROJECT_SCRIPT_STEP_SCENE_START_THEN_TIMER_DEBUG_OUTPUT = 7
 } nmo_project_script_step_kind_t;
 
 typedef struct nmo_project_script_desc {
@@ -62,6 +66,26 @@ NMO_API nmo_status_t nmo_project_plan_script_add_on_start_debug_output(
     const char *message);
 
 NMO_API nmo_status_t nmo_project_plan_script_add_scene_on_start_debug_output(
+    nmo_project_plan_t *plan,
+    uint32_t script_handle,
+    const char *message);
+
+NMO_API nmo_status_t nmo_project_plan_script_add_timer_debug_output(
+    nmo_project_plan_t *plan,
+    uint32_t script_handle,
+    const char *message);
+
+NMO_API nmo_status_t nmo_project_plan_script_add_input_key_debug_output(
+    nmo_project_plan_t *plan,
+    uint32_t script_handle,
+    const char *message);
+
+NMO_API nmo_status_t nmo_project_plan_script_add_object_trigger_debug_output(
+    nmo_project_plan_t *plan,
+    uint32_t script_handle,
+    const char *message);
+
+NMO_API nmo_status_t nmo_project_plan_script_add_scene_start_then_timer_debug_output(
     nmo_project_plan_t *plan,
     uint32_t script_handle,
     const char *message);

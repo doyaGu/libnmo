@@ -177,6 +177,10 @@ nmo_status_t nmo_project_author_scripts(
             case NMO_PROJECT_SCRIPT_STEP_DEBUG_OUTPUT:
             case NMO_PROJECT_SCRIPT_STEP_ON_START_DEBUG_OUTPUT:
             case NMO_PROJECT_SCRIPT_STEP_SCENE_ON_START_DEBUG_OUTPUT:
+            case NMO_PROJECT_SCRIPT_STEP_TIMER_DEBUG_OUTPUT:
+            case NMO_PROJECT_SCRIPT_STEP_INPUT_KEY_DEBUG_OUTPUT:
+            case NMO_PROJECT_SCRIPT_STEP_OBJECT_TRIGGER_DEBUG_OUTPUT:
+            case NMO_PROJECT_SCRIPT_STEP_SCENE_START_THEN_TIMER_DEBUG_OUTPUT:
                 NMO_RETURN_IF_ERROR(project_script_add_debug_output(
                     workspace,
                     behavior_id,
