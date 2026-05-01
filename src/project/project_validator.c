@@ -1,5 +1,7 @@
 #include "project/nmo_project_validator.h"
 
+#include "core/nmo_arena.h"
+#include "format/nmo_obj_parser.h"
 #include "object/nmo_class_ids.h"
 #include "project/nmo_asset_plan.h"
 #include "project/nmo_project_plan.h"
@@ -178,6 +180,55 @@ static bool project_validation_file_exists(const char *path)
     return true;
 }
 
+static nmo_status_t project_validation_read_file(
+    const char *path,
+    uint8_t **out_data,
+    size_t *out_size)
+{
+    if (!path || !out_data || !out_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "file read arguments are required");
+    }
+    *out_data = NULL;
+    *out_size = 0u;
+
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        NMO_RETURN_ERROR(NMO_ERR_CANT_OPEN_FILE, NMO_SEVERITY_ERROR,
+                         "failed to open project asset file");
+    }
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR,
+                         "failed to seek project asset file");
+    }
+    long size = ftell(fp);
+    if (size < 0) {
+        fclose(fp);
+        NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR,
+                         "failed to size project asset file");
+    }
+    rewind(fp);
+    uint8_t *data = (uint8_t *)malloc((size_t)size + 1u);
+    if (!data) {
+        fclose(fp);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate project asset file buffer");
+    }
+    if ((size_t)size > 0u &&
+        fread(data, 1u, (size_t)size, fp) != (size_t)size) {
+        free(data);
+        fclose(fp);
+        NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR,
+                         "failed to read project asset file");
+    }
+    fclose(fp);
+    data[size] = 0u;
+    *out_data = data;
+    *out_size = (size_t)size;
+    NMO_RETURN_OK();
+}
+
 static bool project_validation_class_is_entity(nmo_class_id_t class_id)
 {
     switch (class_id) {
@@ -338,6 +389,123 @@ static nmo_status_t project_validation_check_assets(
                 report,
                 "missing_material_texture_file",
                 "Project material texture path must exist"));
+        }
+
+        size_t obj_material_count =
+            nmo_project_plan_obj_material_count(plan, asset.object_handle);
+        if (obj_material_count > 0u && !asset.has_external_mesh) {
+            NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                report,
+                "obj_material_without_external_mesh",
+                "Project OBJ material bindings require an external OBJ mesh"));
+        }
+        for (size_t material_index = 0u;
+             material_index < obj_material_count;
+             ++material_index) {
+            nmo_project_material_spec_t material = {0};
+            NMO_RETURN_IF_ERROR(nmo_project_plan_get_obj_material(
+                plan,
+                asset.object_handle,
+                material_index,
+                &material));
+            if (material.has_texture &&
+                !project_validation_file_exists(material.texture_path)) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    report,
+                    "missing_obj_material_texture_file",
+                    "Project OBJ material texture path must exist"));
+            }
+            for (size_t other_index = material_index + 1u;
+                 other_index < obj_material_count;
+                 ++other_index) {
+                nmo_project_material_spec_t other = {0};
+                NMO_RETURN_IF_ERROR(nmo_project_plan_get_obj_material(
+                    plan,
+                    asset.object_handle,
+                    other_index,
+                    &other));
+                if (material.obj_material_name &&
+                    other.obj_material_name &&
+                    strcmp(material.obj_material_name, other.obj_material_name) == 0) {
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                        report,
+                        "duplicate_obj_material",
+                        "Project OBJ material names must be unique per object"));
+                }
+            }
+        }
+        if (asset.has_external_mesh &&
+            project_validation_file_exists(asset.external_mesh_path) &&
+            obj_material_count > 0u &&
+            !asset.has_material_color &&
+            !asset.has_material_texture) {
+            uint8_t *obj_bytes = NULL;
+            size_t obj_size = 0u;
+            nmo_status_t read_status = project_validation_read_file(
+                asset.external_mesh_path,
+                &obj_bytes,
+                &obj_size);
+            if (read_status != NMO_OK) {
+                return read_status;
+            }
+            nmo_arena_t *arena = nmo_arena_create(NULL, obj_size + 4096u);
+            if (!arena) {
+                free(obj_bytes);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "failed to allocate OBJ validation arena");
+            }
+            nmo_obj_data_t obj_data = {0};
+            nmo_status_t parse_status =
+                nmo_obj_parse(arena, (const char *)obj_bytes, obj_size, &obj_data);
+            free(obj_bytes);
+            if (parse_status != NMO_OK) {
+                nmo_arena_destroy(arena);
+                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    report,
+                    "invalid_external_mesh_file",
+                    "Project external OBJ mesh path must parse"));
+                continue;
+            }
+
+            for (size_t face_index = 0u; face_index < obj_data.face_count; ++face_index) {
+                if (obj_data.faces[face_index].material_group == NMO_OBJ_NO_MATERIAL) {
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                        report,
+                        "unbound_obj_material",
+                        "Project OBJ has unassigned material faces and no default material"));
+                    break;
+                }
+            }
+            for (size_t name_index = 0u;
+                 name_index < obj_data.material_name_count;
+                 ++name_index) {
+                const char *obj_name = obj_data.material_names
+                    ? obj_data.material_names[name_index]
+                    : NULL;
+                bool bound = false;
+                for (size_t material_index = 0u;
+                     material_index < obj_material_count;
+                     ++material_index) {
+                    nmo_project_material_spec_t material = {0};
+                    NMO_RETURN_IF_ERROR(nmo_project_plan_get_obj_material(
+                        plan,
+                        asset.object_handle,
+                        material_index,
+                        &material));
+                    if (obj_name && material.obj_material_name &&
+                        strcmp(obj_name, material.obj_material_name) == 0) {
+                        bound = true;
+                        break;
+                    }
+                }
+                if (!bound) {
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                        report,
+                        "unbound_obj_material",
+                        "Project OBJ material group has no binding and no default material"));
+                }
+            }
+            nmo_arena_destroy(arena);
         }
     }
     NMO_RETURN_OK();

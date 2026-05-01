@@ -447,6 +447,35 @@ static nmo_status_t patch_resolve_project_manifest_paths(
                 return st;
             }
         }
+        size_t obj_material_count =
+            nmo_project_plan_obj_material_count(manifest->plan, asset.object_handle);
+        for (size_t material_index = 0u;
+             material_index < obj_material_count;
+             ++material_index) {
+            nmo_project_material_spec_t material = {0};
+            NMO_RETURN_IF_ERROR(nmo_project_plan_get_obj_material(
+                manifest->plan,
+                asset.object_handle,
+                material_index,
+                &material));
+            if (material.has_texture &&
+                !patch_path_is_absolute(material.texture_path)) {
+                char *resolved =
+                    patch_join_manifest_path(base_dir, material.texture_path);
+                if (!resolved) {
+                    return NMO_ERR_NOMEM;
+                }
+                nmo_status_t st = nmo_project_plan_set_obj_material_texture(
+                    manifest->plan,
+                    asset.object_handle,
+                    material_index,
+                    resolved);
+                free(resolved);
+                if (st != NMO_OK) {
+                    return st;
+                }
+            }
+        }
     }
     return NMO_OK;
 }

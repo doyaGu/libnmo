@@ -26,6 +26,14 @@ typedef struct nmo_project_asset_desc {
     const char *material_texture_path;
 } nmo_project_asset_desc_t;
 
+typedef struct nmo_project_material_spec {
+    const char *obj_material_name;
+    bool has_color;
+    float color[4];
+    bool has_texture;
+    const char *texture_path;
+} nmo_project_material_spec_t;
+
 NMO_API nmo_status_t nmo_project_plan_set_primitive_mesh(
     nmo_project_plan_t *plan,
     uint32_t object_handle,
@@ -47,6 +55,27 @@ NMO_API nmo_status_t nmo_project_plan_set_external_mesh(
 NMO_API nmo_status_t nmo_project_plan_set_material_texture(
     nmo_project_plan_t *plan,
     uint32_t object_handle,
+    const char *path);
+
+NMO_API nmo_status_t nmo_project_plan_add_obj_material(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const nmo_project_material_spec_t *spec);
+
+NMO_API size_t nmo_project_plan_obj_material_count(
+    const nmo_project_plan_t *plan,
+    uint32_t object_handle);
+
+NMO_API nmo_status_t nmo_project_plan_get_obj_material(
+    const nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    size_t index,
+    nmo_project_material_spec_t *out_spec);
+
+NMO_API nmo_status_t nmo_project_plan_set_obj_material_texture(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    size_t index,
     const char *path);
 
 NMO_API size_t nmo_project_plan_asset_count(

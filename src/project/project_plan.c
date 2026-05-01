@@ -47,6 +47,9 @@ typedef struct project_asset_record {
     float material_color[4];
     bool has_material_texture;
     char *material_texture_path;
+    nmo_project_material_spec_t *obj_materials;
+    size_t obj_material_count;
+    size_t obj_material_capacity;
 } project_asset_record_t;
 
 typedef struct project_script_step_record {
@@ -182,6 +185,11 @@ static void project_plan_free_assets(
     for (size_t i = 0u; i < asset_count; ++i) {
         free(assets[i].external_mesh_path);
         free(assets[i].material_texture_path);
+        for (size_t j = 0u; j < assets[i].obj_material_count; ++j) {
+            free((void *)assets[i].obj_materials[j].obj_material_name);
+            free((void *)assets[i].obj_materials[j].texture_path);
+        }
+        free(assets[i].obj_materials);
     }
     free(assets);
 }
@@ -328,6 +336,9 @@ nmo_status_t nmo_project_plan_clone(
         clone->asset_capacity = plan->asset_count;
         for (size_t i = 0u; i < plan->asset_count; ++i) {
             clone->assets[i] = plan->assets[i];
+            clone->assets[i].obj_materials = NULL;
+            clone->assets[i].obj_material_count = 0u;
+            clone->assets[i].obj_material_capacity = 0u;
             clone->assets[i].external_mesh_path =
                 project_plan_strdup(plan->assets[i].external_mesh_path);
             if (plan->assets[i].external_mesh_path &&
@@ -343,6 +354,40 @@ nmo_status_t nmo_project_plan_clone(
                 nmo_project_plan_destroy(clone);
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                  "failed to clone project material texture path");
+            }
+            if (plan->assets[i].obj_material_count > 0u) {
+                clone->assets[i].obj_materials =
+                    (nmo_project_material_spec_t *)calloc(
+                        plan->assets[i].obj_material_count,
+                        sizeof(*clone->assets[i].obj_materials));
+                if (!clone->assets[i].obj_materials) {
+                    nmo_project_plan_destroy(clone);
+                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                     "failed to clone project OBJ materials");
+                }
+                clone->assets[i].obj_material_capacity =
+                    plan->assets[i].obj_material_count;
+                for (size_t j = 0u; j < plan->assets[i].obj_material_count; ++j) {
+                    const nmo_project_material_spec_t *src =
+                        &plan->assets[i].obj_materials[j];
+                    nmo_project_material_spec_t *dst =
+                        &clone->assets[i].obj_materials[j];
+                    *dst = *src;
+                    dst->obj_material_name =
+                        project_plan_strdup(src->obj_material_name);
+                    if (src->obj_material_name && !dst->obj_material_name) {
+                        nmo_project_plan_destroy(clone);
+                        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                         "failed to clone project OBJ material name");
+                    }
+                    dst->texture_path = project_plan_strdup(src->texture_path);
+                    if (src->texture_path && !dst->texture_path) {
+                        nmo_project_plan_destroy(clone);
+                        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                         "failed to clone project OBJ material texture path");
+                    }
+                    clone->assets[i].obj_material_count++;
+                }
             }
             clone->asset_count++;
         }
@@ -895,6 +940,144 @@ nmo_status_t nmo_project_plan_set_material_texture(
     free(asset->material_texture_path);
     asset->material_texture_path = path_copy;
     asset->has_material_texture = true;
+    NMO_RETURN_OK();
+}
+
+static const project_asset_record_t *project_plan_find_asset_const(
+    const nmo_project_plan_t *plan,
+    uint32_t object_handle)
+{
+    if (!plan || object_handle == 0u) {
+        return NULL;
+    }
+    for (size_t i = 0u; i < plan->asset_count; ++i) {
+        if (plan->assets[i].object_handle == object_handle) {
+            return &plan->assets[i];
+        }
+    }
+    return NULL;
+}
+
+nmo_status_t nmo_project_plan_add_obj_material(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const nmo_project_material_spec_t *spec)
+{
+    if (!spec || !spec->obj_material_name || spec->obj_material_name[0] == '\0') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "OBJ material name is required");
+    }
+    if (!spec->has_color && !spec->has_texture) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "OBJ material requires color or texture");
+    }
+    if (spec->has_texture &&
+        (!spec->texture_path || spec->texture_path[0] == '\0')) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "OBJ material texture path is required");
+    }
+
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+    if (asset->obj_material_count == asset->obj_material_capacity) {
+        size_t new_capacity =
+            asset->obj_material_capacity ? asset->obj_material_capacity * 2u : 4u;
+        nmo_project_material_spec_t *new_materials =
+            (nmo_project_material_spec_t *)realloc(
+                asset->obj_materials,
+                new_capacity * sizeof(*new_materials));
+        if (!new_materials) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate project OBJ material");
+        }
+        memset(new_materials + asset->obj_material_capacity,
+               0,
+               (new_capacity - asset->obj_material_capacity) * sizeof(*new_materials));
+        asset->obj_materials = new_materials;
+        asset->obj_material_capacity = new_capacity;
+    }
+
+    char *name_copy = project_plan_strdup(spec->obj_material_name);
+    if (!name_copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate project OBJ material name");
+    }
+    char *texture_copy = NULL;
+    if (spec->has_texture) {
+        texture_copy = project_plan_strdup(spec->texture_path);
+        if (!texture_copy) {
+            free(name_copy);
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate project OBJ material texture path");
+        }
+    }
+
+    nmo_project_material_spec_t *dst =
+        &asset->obj_materials[asset->obj_material_count++];
+    *dst = *spec;
+    dst->obj_material_name = name_copy;
+    dst->texture_path = texture_copy;
+    NMO_RETURN_OK();
+}
+
+size_t nmo_project_plan_obj_material_count(
+    const nmo_project_plan_t *plan,
+    uint32_t object_handle)
+{
+    const project_asset_record_t *asset =
+        project_plan_find_asset_const(plan, object_handle);
+    return asset ? asset->obj_material_count : 0u;
+}
+
+nmo_status_t nmo_project_plan_get_obj_material(
+    const nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    size_t index,
+    nmo_project_material_spec_t *out_spec)
+{
+    if (!out_spec) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "out_spec is required");
+    }
+    const project_asset_record_t *asset =
+        project_plan_find_asset_const(plan, object_handle);
+    if (!asset) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "asset target object handle not found");
+    }
+    if (index >= asset->obj_material_count) {
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR,
+                         "OBJ material index out of bounds");
+    }
+    *out_spec = asset->obj_materials[index];
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_obj_material_texture(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    size_t index,
+    const char *path)
+{
+    if (!path || path[0] == '\0') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "OBJ material texture path is required");
+    }
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+    if (index >= asset->obj_material_count) {
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR,
+                         "OBJ material index out of bounds");
+    }
+
+    char *path_copy = project_plan_strdup(path);
+    if (!path_copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate OBJ material texture path");
+    }
+    free((void *)asset->obj_materials[index].texture_path);
+    asset->obj_materials[index].texture_path = path_copy;
+    asset->obj_materials[index].has_texture = true;
     NMO_RETURN_OK();
 }
 

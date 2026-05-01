@@ -264,6 +264,97 @@ TEST(generated_visible_scene, creates_external_obj_texture_and_position) {
     remove(png_path);
 }
 
+TEST(generated_visible_scene, creates_external_obj_named_materials) {
+    const char *obj_path = "test_generated_visible_multi_material.obj";
+    const char *output_path = "test_generated_visible_multi_material.cmo";
+    remove(obj_path);
+    remove(output_path);
+    remove("test_generated_visible_multi_material.cmo.tmp");
+    ASSERT_TRUE(write_text_file(
+        obj_path,
+        "v 0 0 0\n"
+        "v 1 0 0\n"
+        "v 0 1 0\n"
+        "v 1 1 0\n"
+        "usemtl Red\n"
+        "f 1 2 3\n"
+        "usemtl Blue\n"
+        "f 2 4 3\n"));
+
+    nmo_project_plan_t *plan = NULL;
+    uint32_t scene = 0u;
+    uint32_t entity = 0u;
+    nmo_project_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_document_name(plan, "NamedMaterials"));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "Level", &scene));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "Entity",
+                      .flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE,
+                  },
+                  &entity));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_external_mesh(plan, entity, obj_path));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_obj_material(
+                  plan,
+                  entity,
+                  &(nmo_project_material_spec_t){
+                      .obj_material_name = "Red",
+                      .has_color = true,
+                      .color = {1.0f, 0.0f, 0.0f, 1.0f},
+                  }));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_obj_material(
+                  plan,
+                  entity,
+                  &(nmo_project_material_spec_t){
+                      .obj_material_name = "Blue",
+                      .has_color = true,
+                      .color = {0.0f, 0.0f, 1.0f, 1.0f},
+                  }));
+
+    nmo_project_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_executor_execute_to_file(plan, output_path, &report));
+    ASSERT_TRUE(report.ok);
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &document));
+    ASSERT_NOT_NULL(document);
+
+    nmo_object_t *mesh_object = find_named_object(document, "Entity_Mesh", NMO_CID_MESH);
+    nmo_object_t *red_object = find_named_object(document, "Entity_Red_Material", NMO_CID_MATERIAL);
+    nmo_object_t *blue_object = find_named_object(document, "Entity_Blue_Material", NMO_CID_MATERIAL);
+    ASSERT_NOT_NULL(mesh_object);
+    ASSERT_NOT_NULL(red_object);
+    ASSERT_NOT_NULL(blue_object);
+
+    const nmo_mesh_state_t *mesh_state =
+        (const nmo_mesh_state_t *)nmo_object_get_state(mesh_object);
+    ASSERT_NOT_NULL(mesh_state);
+    ASSERT_EQ(2u, mesh_state->face_count);
+    ASSERT_EQ(2u, mesh_state->material_group_count);
+    ASSERT_NOT_NULL(mesh_state->material_groups);
+    ASSERT_EQ(nmo_object_get_id(red_object), mesh_state->material_groups[0].material_id);
+    ASSERT_EQ(nmo_object_get_id(blue_object), mesh_state->material_groups[1].material_id);
+    ASSERT_EQ(0u, mesh_state->faces[0].material_group_idx);
+    ASSERT_EQ(1u, mesh_state->faces[1].material_group_idx);
+
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+    nmo_project_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+    remove(output_path);
+    remove(obj_path);
+}
+
 TEST(generated_visible_scene, creates_transform_hierarchy) {
     const char *output_path = "test_generated_visible_hierarchy.cmo";
     remove(output_path);
@@ -421,6 +512,7 @@ TEST(generated_visible_scene, creates_camera_and_light_settings) {
 TEST_MAIN_BEGIN()
 REGISTER_TEST(generated_visible_scene, creates_cube_mesh_and_material);
 REGISTER_TEST(generated_visible_scene, creates_external_obj_texture_and_position);
+REGISTER_TEST(generated_visible_scene, creates_external_obj_named_materials);
 REGISTER_TEST(generated_visible_scene, creates_transform_hierarchy);
 REGISTER_TEST(generated_visible_scene, creates_camera_and_light_settings);
 TEST_MAIN_END()

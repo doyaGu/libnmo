@@ -196,6 +196,59 @@ static nmo_status_t manifest_parse_material(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t manifest_parse_obj_material(
+    yyjson_val *material,
+    nmo_project_material_spec_t *out_spec)
+{
+    static const char *const allowed[] = {"name", "color", "texture", NULL};
+    if (!out_spec) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "OBJ material output argument is required");
+    }
+    memset(out_spec, 0, sizeof(*out_spec));
+    NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(
+        material,
+        "materials[]",
+        allowed));
+    NMO_RETURN_IF_ERROR(manifest_required_string(
+        material,
+        "name",
+        &out_spec->obj_material_name));
+
+    yyjson_val *color = yyjson_obj_get(material, "color");
+    if (color) {
+        if (!yyjson_is_arr(color) || yyjson_arr_size(color) != 4u) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest materials[].color must contain four numbers");
+        }
+        for (size_t i = 0u; i < 4u; ++i) {
+            yyjson_val *item = yyjson_arr_get(color, i);
+            if (!yyjson_is_num(item)) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest materials[].color values must be numbers");
+            }
+            out_spec->color[i] = (float)manifest_get_number(item);
+        }
+        out_spec->has_color = true;
+    }
+
+    yyjson_val *texture = yyjson_obj_get(material, "texture");
+    if (texture) {
+        if (!yyjson_is_str(texture) || yyjson_get_str(texture)[0] == '\0') {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest materials[].texture must be a non-empty string");
+        }
+        out_spec->has_texture = true;
+        out_spec->texture_path = yyjson_get_str(texture);
+    }
+
+    if (!out_spec->has_color && !out_spec->has_texture) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest materials[] requires color or texture");
+    }
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t manifest_parse_mesh(
     yyjson_val *mesh,
     bool *out_has_primitive,
@@ -592,7 +645,7 @@ static nmo_status_t manifest_parse_object(
     uint32_t scene_handle)
 {
     static const char *const allowed[] = {
-        "name", "class", "parent", "fields", "mesh", "material", "transform",
+        "name", "class", "parent", "fields", "mesh", "material", "materials", "transform",
         "camera", "light", "scripts", NULL};
     const char *name = NULL;
     const char *class_name = NULL;
@@ -703,6 +756,25 @@ static nmo_status_t manifest_parse_object(
                 ctx->plan,
                 object_handle,
                 texture));
+        }
+    }
+
+    yyjson_val *materials = yyjson_obj_get(object, "materials");
+    if (materials) {
+        if (!yyjson_is_arr(materials)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest materials must be an array");
+        }
+        size_t idx = 0u;
+        size_t max = 0u;
+        yyjson_val *item = NULL;
+        yyjson_arr_foreach(materials, idx, max, item) {
+            nmo_project_material_spec_t spec = {0};
+            NMO_RETURN_IF_ERROR(manifest_parse_obj_material(item, &spec));
+            NMO_RETURN_IF_ERROR(nmo_project_plan_add_obj_material(
+                ctx->plan,
+                object_handle,
+                &spec));
         }
     }
 

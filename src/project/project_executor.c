@@ -205,6 +205,46 @@ static nmo_status_t project_report_populate_diff(
                 &report->asset_diff,
                 asset_name));
         }
+        size_t obj_material_count =
+            nmo_project_plan_obj_material_count(plan, asset.object_handle);
+        for (size_t material_index = 0u;
+             material_index < obj_material_count;
+             ++material_index) {
+            nmo_project_material_spec_t material = {0};
+            NMO_RETURN_IF_ERROR(nmo_project_plan_get_obj_material(
+                plan,
+                asset.object_handle,
+                material_index,
+                &material));
+            int len = snprintf(
+                asset_name,
+                sizeof(asset_name),
+                "%s_%s_Material",
+                object.name,
+                material.obj_material_name);
+            if (len < 0 || (size_t)len >= sizeof(asset_name)) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                 "generated OBJ material asset name is too long");
+            }
+            NMO_RETURN_IF_ERROR(project_report_add_created(
+                &report->asset_diff,
+                asset_name));
+            if (material.has_texture) {
+                len = snprintf(
+                    asset_name,
+                    sizeof(asset_name),
+                    "%s_%s_Texture",
+                    object.name,
+                    material.obj_material_name);
+                if (len < 0 || (size_t)len >= sizeof(asset_name)) {
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                     "generated OBJ material texture asset name is too long");
+                }
+                NMO_RETURN_IF_ERROR(project_report_add_created(
+                    &report->asset_diff,
+                    asset_name));
+            }
+        }
     }
 
     for (size_t i = 0u; i < nmo_project_plan_script_count(plan); ++i) {

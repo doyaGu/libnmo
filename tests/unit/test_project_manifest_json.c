@@ -92,6 +92,48 @@ TEST(project_manifest_json, parses_minimal_visible_scene)
     nmo_project_manifest_dispose(&manifest);
 }
 
+TEST(project_manifest_json, parses_named_obj_materials)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":[{"
+        "\"name\":\"Cube\","
+        "\"class\":\"CK3dEntity\","
+        "\"mesh\":{\"obj\":\"assets/cube.obj\"},"
+        "\"materials\":["
+        "{\"name\":\"Red\",\"color\":[1,0,0,1]},"
+        "{\"name\":\"Blue\",\"texture\":\"assets/blue.png\"}"
+        "]"
+        "}]"
+        "}]"
+        "}";
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+    ASSERT_EQ(1u, nmo_project_plan_object_count(plan));
+
+    nmo_project_object_desc_t object = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 0u, &object));
+    ASSERT_EQ(2u, nmo_project_plan_obj_material_count(plan, object.handle));
+
+    nmo_project_material_spec_t material = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_obj_material(plan, object.handle, 0u, &material));
+    ASSERT_STR_EQ("Red", material.obj_material_name);
+    ASSERT_TRUE(material.has_color);
+    ASSERT_FLOAT_EQ(1.0f, material.color[0], 0.0001f);
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_obj_material(plan, object.handle, 1u, &material));
+    ASSERT_STR_EQ("Blue", material.obj_material_name);
+    ASSERT_TRUE(material.has_texture);
+    ASSERT_STR_EQ("assets/blue.png", material.texture_path);
+
+    nmo_project_plan_destroy(plan);
+}
+
 TEST(project_manifest_json, maps_fields_and_scripts_to_project_plan)
 {
     const char *json =
@@ -252,6 +294,7 @@ TEST(project_manifest_json, parses_parent_by_prior_object_name)
 
 TEST_MAIN_BEGIN()
 REGISTER_TEST(project_manifest_json, parses_minimal_visible_scene);
+REGISTER_TEST(project_manifest_json, parses_named_obj_materials);
 REGISTER_TEST(project_manifest_json, maps_fields_and_scripts_to_project_plan);
 REGISTER_TEST(project_manifest_json, parses_script_template);
 REGISTER_TEST(project_manifest_json, rejects_unknown_fields);

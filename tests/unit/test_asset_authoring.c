@@ -125,6 +125,106 @@ TEST(asset_authoring, clones_asset_specs) {
     nmo_project_plan_destroy(plan);
 }
 
+TEST(asset_authoring, stores_named_obj_material_specs) {
+    nmo_project_plan_t *plan = NULL;
+    uint32_t scene = 0u;
+    uint32_t cube = 0u;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "Level", &scene));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "Cube",
+                  },
+                  &cube));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_external_mesh(plan, cube, "assets/cube.obj"));
+
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_obj_material(
+                  plan,
+                  cube,
+                  &(nmo_project_material_spec_t){
+                      .obj_material_name = "Red",
+                      .has_color = true,
+                      .color = {1.0f, 0.0f, 0.0f, 1.0f},
+                  }));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_obj_material(
+                  plan,
+                  cube,
+                  &(nmo_project_material_spec_t){
+                      .obj_material_name = "Blue",
+                      .has_texture = true,
+                      .texture_path = "assets/blue.png",
+                  }));
+
+    ASSERT_EQ(2u, nmo_project_plan_obj_material_count(plan, cube));
+    nmo_project_material_spec_t material = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_obj_material(plan, cube, 0u, &material));
+    ASSERT_STR_EQ("Red", material.obj_material_name);
+    ASSERT_TRUE(material.has_color);
+    ASSERT_FLOAT_EQ(1.0f, material.color[0], 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, material.color[1], 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, material.color[2], 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, material.color[3], 0.0001f);
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_obj_material(plan, cube, 1u, &material));
+    ASSERT_STR_EQ("Blue", material.obj_material_name);
+    ASSERT_TRUE(material.has_texture);
+    ASSERT_STR_EQ("assets/blue.png", material.texture_path);
+
+    nmo_project_plan_destroy(plan);
+}
+
+TEST(asset_authoring, clones_named_obj_material_specs) {
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_plan_t *clone = NULL;
+    uint32_t scene = 0u;
+    uint32_t cube = 0u;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "Level", &scene));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "Cube",
+                  },
+                  &cube));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_external_mesh(plan, cube, "assets/cube.obj"));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_obj_material(
+                  plan,
+                  cube,
+                  &(nmo_project_material_spec_t){
+                      .obj_material_name = "CloneMat",
+                      .has_color = true,
+                      .color = {0.25f, 0.5f, 0.75f, 1.0f},
+                      .has_texture = true,
+                      .texture_path = "assets/clone.png",
+                  }));
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_clone(plan, &clone));
+    ASSERT_EQ(1u, nmo_project_plan_obj_material_count(clone, cube));
+
+    nmo_project_material_spec_t material = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_obj_material(clone, cube, 0u, &material));
+    ASSERT_STR_EQ("CloneMat", material.obj_material_name);
+    ASSERT_TRUE(material.has_color);
+    ASSERT_FLOAT_EQ(0.25f, material.color[0], 0.0001f);
+    ASSERT_TRUE(material.has_texture);
+    ASSERT_STR_EQ("assets/clone.png", material.texture_path);
+
+    nmo_project_plan_destroy(clone);
+    nmo_project_plan_destroy(plan);
+}
+
 TEST(asset_authoring, stores_camera_and_light_specs) {
     nmo_project_plan_t *plan = NULL;
     uint32_t scene = 0u;
@@ -186,5 +286,7 @@ TEST(asset_authoring, stores_camera_and_light_specs) {
 TEST_MAIN_BEGIN()
 REGISTER_TEST(asset_authoring, stores_primitive_mesh_and_material_specs);
 REGISTER_TEST(asset_authoring, clones_asset_specs);
+REGISTER_TEST(asset_authoring, stores_named_obj_material_specs);
+REGISTER_TEST(asset_authoring, clones_named_obj_material_specs);
 REGISTER_TEST(asset_authoring, stores_camera_and_light_specs);
 TEST_MAIN_END()
