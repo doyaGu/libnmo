@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 typedef struct project_authored_scene {
     uint32_t plan_handle;
@@ -26,6 +27,19 @@ static nmo_object_id_t project_authoring_find_scene_id(
     return 0;
 }
 
+static nmo_object_id_t project_authoring_find_object_id(
+    const nmo_project_runtime_object_t *objects,
+    size_t object_count,
+    uint32_t object_handle)
+{
+    for (size_t i = 0; i < object_count; ++i) {
+        if (objects[i].plan_handle == object_handle) {
+            return objects[i].object_id;
+        }
+    }
+    return 0;
+}
+
 static uint32_t project_authoring_scene_membership_flags(uint32_t object_flags)
 {
     if ((object_flags & NMO_PROJECT_OBJECT_FLAG_ACTIVE) != 0u) {
@@ -34,22 +48,84 @@ static uint32_t project_authoring_scene_membership_flags(uint32_t object_flags)
     return 0u;
 }
 
-static nmo_status_t project_authoring_set_position(
+static void project_authoring_compose_matrix(
+    const nmo_project_object_desc_t *object,
+    float matrix[16])
+{
+    const float position[3] = {
+        object->has_position ? object->position[0] : 0.0f,
+        object->has_position ? object->position[1] : 0.0f,
+        object->has_position ? object->position[2] : 0.0f,
+    };
+    const float scale[3] = {
+        object->has_scale ? object->scale[0] : 1.0f,
+        object->has_scale ? object->scale[1] : 1.0f,
+        object->has_scale ? object->scale[2] : 1.0f,
+    };
+    const float rotation[3] = {
+        object->has_rotation_euler_deg ? object->rotation_euler_deg[0] : 0.0f,
+        object->has_rotation_euler_deg ? object->rotation_euler_deg[1] : 0.0f,
+        object->has_rotation_euler_deg ? object->rotation_euler_deg[2] : 0.0f,
+    };
+    const float deg_to_rad = 0.017453292519943295769f;
+    float rx = rotation[0] * deg_to_rad;
+    float ry = rotation[1] * deg_to_rad;
+    float rz = rotation[2] * deg_to_rad;
+    float cx = cosf(rx);
+    float sx = sinf(rx);
+    float cy = cosf(ry);
+    float sy = sinf(ry);
+    float cz = cosf(rz);
+    float sz = sinf(rz);
+
+    float r00 = cy * cz;
+    float r01 = cy * sz;
+    float r02 = -sy;
+    float r10 = sx * sy * cz - cx * sz;
+    float r11 = sx * sy * sz + cx * cz;
+    float r12 = sx * cy;
+    float r20 = cx * sy * cz + sx * sz;
+    float r21 = cx * sy * sz - sx * cz;
+    float r22 = cx * cy;
+
+    matrix[0] = scale[0] * r00;
+    matrix[1] = scale[0] * r01;
+    matrix[2] = scale[0] * r02;
+    matrix[3] = 0.0f;
+    matrix[4] = scale[1] * r10;
+    matrix[5] = scale[1] * r11;
+    matrix[6] = scale[1] * r12;
+    matrix[7] = 0.0f;
+    matrix[8] = scale[2] * r20;
+    matrix[9] = scale[2] * r21;
+    matrix[10] = scale[2] * r22;
+    matrix[11] = 0.0f;
+    matrix[12] = position[0];
+    matrix[13] = position[1];
+    matrix[14] = position[2];
+    matrix[15] = 1.0f;
+}
+
+static nmo_status_t project_authoring_set_transform(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,
-    const float position[3])
+    const nmo_project_object_desc_t *object)
 {
+    float matrix[16];
+    project_authoring_compose_matrix(object, matrix);
+
     char matrix_value[256];
     int wrote = snprintf(
         matrix_value,
         sizeof(matrix_value),
-        "(1, 0, 0, 0; 0, 1, 0, 0; 0, 0, 1, 0; %.9g, %.9g, %.9g, 1)",
-        position[0],
-        position[1],
-        position[2]);
+        "(%.9g, %.9g, %.9g, %.9g; %.9g, %.9g, %.9g, %.9g; %.9g, %.9g, %.9g, %.9g; %.9g, %.9g, %.9g, %.9g)",
+        matrix[0], matrix[1], matrix[2], matrix[3],
+        matrix[4], matrix[5], matrix[6], matrix[7],
+        matrix[8], matrix[9], matrix[10], matrix[11],
+        matrix[12], matrix[13], matrix[14], matrix[15]);
     if (wrote < 0 || (size_t)wrote >= sizeof(matrix_value)) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "position matrix string is too long");
+                         "transform matrix string is too long");
     }
 
     nmo_session_field_edit_result_t field_result = {0};
@@ -65,7 +141,41 @@ static nmo_status_t project_authoring_set_position(
         &field_result));
     if (field_result.failed > 0u) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                         "failed to set project object position");
+                         "failed to set project object transform");
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t project_authoring_set_parent(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    nmo_object_id_t parent_id)
+{
+    char parent_value[32];
+    int wrote = snprintf(
+        parent_value,
+        sizeof(parent_value),
+        "%u",
+        parent_id);
+    if (wrote < 0 || (size_t)wrote >= sizeof(parent_value)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "parent id string is too long");
+    }
+
+    nmo_session_field_edit_result_t field_result = {0};
+    nmo_session_field_edit_t field = {
+        .field_name = "parent_id",
+        .value_str = parent_value,
+    };
+    NMO_RETURN_IF_ERROR(nmo_object_edit_set_fields(
+        edit,
+        object_id,
+        &field,
+        1u,
+        &field_result));
+    if (field_result.failed > 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "failed to set project object parent");
     }
     NMO_RETURN_OK();
 }
@@ -183,11 +293,31 @@ nmo_status_t nmo_project_author_scenes(
             }
         }
 
-        if (object.has_position) {
-            status = project_authoring_set_position(
+        if (object.parent_handle != 0u) {
+            nmo_object_id_t parent_id = project_authoring_find_object_id(
+                authored_objects,
+                object_count,
+                object.parent_handle);
+            if (parent_id == 0) {
+                status = NMO_ERR_INVALID_ARGUMENT;
+                goto cleanup;
+            }
+            status = project_authoring_set_parent(
                 edit,
                 object_id,
-                object.position);
+                parent_id);
+            if (status != NMO_OK) {
+                goto cleanup;
+            }
+        }
+
+        if (object.has_position ||
+            object.has_rotation_euler_deg ||
+            object.has_scale) {
+            status = project_authoring_set_transform(
+                edit,
+                object_id,
+                &object);
             if (status != NMO_OK) {
                 goto cleanup;
             }

@@ -23,6 +23,10 @@ typedef struct project_object_record {
     size_t field_count;
     bool has_position;
     float position[3];
+    bool has_rotation_euler_deg;
+    float rotation_euler_deg[3];
+    bool has_scale;
+    float scale[3];
 } project_object_record_t;
 
 typedef struct project_asset_record {
@@ -467,6 +471,15 @@ nmo_status_t nmo_project_plan_get_object(
     memcpy(out_object->position,
            plan->objects[index].position,
            sizeof(out_object->position));
+    out_object->has_rotation_euler_deg =
+        plan->objects[index].has_rotation_euler_deg;
+    memcpy(out_object->rotation_euler_deg,
+           plan->objects[index].rotation_euler_deg,
+           sizeof(out_object->rotation_euler_deg));
+    out_object->has_scale = plan->objects[index].has_scale;
+    memcpy(out_object->scale,
+           plan->objects[index].scale,
+           sizeof(out_object->scale));
     NMO_RETURN_OK();
 }
 
@@ -948,6 +961,12 @@ nmo_status_t nmo_project_plan_add_object(
     object->field_count = spec->field_count;
     object->has_position = spec->has_position;
     memcpy(object->position, spec->position, sizeof(object->position));
+    object->has_rotation_euler_deg = spec->has_rotation_euler_deg;
+    memcpy(object->rotation_euler_deg,
+           spec->rotation_euler_deg,
+           sizeof(object->rotation_euler_deg));
+    object->has_scale = spec->has_scale;
+    memcpy(object->scale, spec->scale, sizeof(object->scale));
 
     if (out_object_handle) {
         *out_object_handle = handle;
@@ -973,6 +992,58 @@ nmo_status_t nmo_project_plan_set_object_position(
             plan->objects[i].position[0] = x;
             plan->objects[i].position[1] = y;
             plan->objects[i].position[2] = z;
+            NMO_RETURN_OK();
+        }
+    }
+
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "object handle not found");
+}
+
+nmo_status_t nmo_project_plan_set_object_rotation_euler_deg(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float x,
+    float y,
+    float z)
+{
+    if (!plan || object_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and object handle are required");
+    }
+
+    for (size_t i = 0u; i < plan->object_count; ++i) {
+        if (plan->objects[i].handle == object_handle) {
+            plan->objects[i].has_rotation_euler_deg = true;
+            plan->objects[i].rotation_euler_deg[0] = x;
+            plan->objects[i].rotation_euler_deg[1] = y;
+            plan->objects[i].rotation_euler_deg[2] = z;
+            NMO_RETURN_OK();
+        }
+    }
+
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "object handle not found");
+}
+
+nmo_status_t nmo_project_plan_set_object_scale(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float x,
+    float y,
+    float z)
+{
+    if (!plan || object_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and object handle are required");
+    }
+
+    for (size_t i = 0u; i < plan->object_count; ++i) {
+        if (plan->objects[i].handle == object_handle) {
+            plan->objects[i].has_scale = true;
+            plan->objects[i].scale[0] = x;
+            plan->objects[i].scale[1] = y;
+            plan->objects[i].scale[2] = z;
             NMO_RETURN_OK();
         }
     }

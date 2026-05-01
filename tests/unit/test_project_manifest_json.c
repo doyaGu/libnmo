@@ -23,7 +23,9 @@ TEST(project_manifest_json, parses_minimal_visible_scene)
                 "{\"name\":\"Cube\",\"class\":\"CK3dEntity\","
                     "\"mesh\":{\"obj\":\"assets/cube.obj\"},"
                     "\"material\":{\"color\":[1,0,0,1],\"texture\":\"assets/cube.png\"},"
-                    "\"transform\":{\"position\":[1,2,3]}}"
+                    "\"transform\":{\"position\":[1,2,3],"
+                        "\"rotation_euler_deg\":[10,20,30],"
+                        "\"scale\":[2,3,4]}}"
             "]"
         "}]"
         "}";
@@ -57,6 +59,14 @@ TEST(project_manifest_json, parses_minimal_visible_scene)
     ASSERT_FLOAT_EQ(1.0f, object.position[0], 0.0001f);
     ASSERT_FLOAT_EQ(2.0f, object.position[1], 0.0001f);
     ASSERT_FLOAT_EQ(3.0f, object.position[2], 0.0001f);
+    ASSERT_TRUE(object.has_rotation_euler_deg);
+    ASSERT_FLOAT_EQ(10.0f, object.rotation_euler_deg[0], 0.0001f);
+    ASSERT_FLOAT_EQ(20.0f, object.rotation_euler_deg[1], 0.0001f);
+    ASSERT_FLOAT_EQ(30.0f, object.rotation_euler_deg[2], 0.0001f);
+    ASSERT_TRUE(object.has_scale);
+    ASSERT_FLOAT_EQ(2.0f, object.scale[0], 0.0001f);
+    ASSERT_FLOAT_EQ(3.0f, object.scale[1], 0.0001f);
+    ASSERT_FLOAT_EQ(4.0f, object.scale[2], 0.0001f);
 
     nmo_project_manifest_dispose(&manifest);
 }
@@ -147,9 +157,41 @@ TEST(project_manifest_json, rejects_unknown_transform_fields)
     ASSERT_NULL(plan);
 }
 
+TEST(project_manifest_json, parses_parent_by_prior_object_name)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"objects\":["
+                "{\"name\":\"Parent\",\"class\":\"CK3dEntity\"},"
+                "{\"name\":\"Child\",\"class\":\"CK3dEntity\","
+                    "\"parent\":\"Parent\","
+                    "\"transform\":{\"position\":[4,5,6]}}"
+            "]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+    ASSERT_EQ(2u, nmo_project_plan_object_count(plan));
+
+    nmo_project_object_desc_t parent = {0};
+    nmo_project_object_desc_t child = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 0u, &parent));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 1u, &child));
+    ASSERT_EQ(parent.handle, child.parent_handle);
+
+    nmo_project_plan_destroy(plan);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(project_manifest_json, parses_minimal_visible_scene);
 REGISTER_TEST(project_manifest_json, maps_fields_and_scripts_to_project_plan);
 REGISTER_TEST(project_manifest_json, rejects_unknown_fields);
 REGISTER_TEST(project_manifest_json, rejects_unknown_transform_fields);
+REGISTER_TEST(project_manifest_json, parses_parent_by_prior_object_name);
 TEST_MAIN_END()

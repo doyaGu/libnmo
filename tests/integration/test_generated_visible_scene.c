@@ -262,7 +262,79 @@ TEST(generated_visible_scene, creates_external_obj_texture_and_position) {
     remove(png_path);
 }
 
+TEST(generated_visible_scene, creates_transform_hierarchy) {
+    const char *output_path = "test_generated_visible_hierarchy.cmo";
+    remove(output_path);
+
+    nmo_project_plan_t *plan = NULL;
+    uint32_t scene = 0u;
+    uint32_t parent = 0u;
+    uint32_t child = 0u;
+    nmo_project_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_document_name(plan, "Hierarchy"));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "Level", &scene));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "Parent",
+                      .flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE,
+                  },
+                  &parent));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .parent_handle = parent,
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "Child",
+                      .flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE,
+                  },
+                  &child));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_object_position(plan, child, 4.0f, 5.0f, 6.0f));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_object_rotation_euler_deg(plan, child, 0.0f, 0.0f, 0.0f));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_object_scale(plan, child, 2.0f, 3.0f, 4.0f));
+
+    nmo_project_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_executor_execute_to_file(plan, output_path, &report));
+    ASSERT_TRUE(report.ok);
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &document));
+    ASSERT_NOT_NULL(document);
+
+    nmo_object_t *parent_object = find_named_object(document, "Parent", NMO_CID_3DENTITY);
+    nmo_object_t *child_object = find_named_object(document, "Child", NMO_CID_3DENTITY);
+    ASSERT_NOT_NULL(parent_object);
+    ASSERT_NOT_NULL(child_object);
+
+    const nmo_3dentity_state_t *child_state =
+        (const nmo_3dentity_state_t *)nmo_object_get_state(child_object);
+    ASSERT_NOT_NULL(child_state);
+    ASSERT_EQ(nmo_object_get_id(parent_object), child_state->parent_id);
+    ASSERT_FLOAT_EQ(2.0f, child_state->world_matrix[0], 0.0001f);
+    ASSERT_FLOAT_EQ(3.0f, child_state->world_matrix[5], 0.0001f);
+    ASSERT_FLOAT_EQ(4.0f, child_state->world_matrix[10], 0.0001f);
+    ASSERT_FLOAT_EQ(4.0f, child_state->world_matrix[12], 0.0001f);
+    ASSERT_FLOAT_EQ(5.0f, child_state->world_matrix[13], 0.0001f);
+    ASSERT_FLOAT_EQ(6.0f, child_state->world_matrix[14], 0.0001f);
+
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+    nmo_project_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+    remove(output_path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(generated_visible_scene, creates_cube_mesh_and_material);
 REGISTER_TEST(generated_visible_scene, creates_external_obj_texture_and_position);
+REGISTER_TEST(generated_visible_scene, creates_transform_hierarchy);
 TEST_MAIN_END()

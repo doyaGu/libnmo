@@ -15,6 +15,10 @@
 typedef struct manifest_parse_ctx {
     nmo_context_t *context;
     nmo_project_plan_t *plan;
+    const char **object_names;
+    uint32_t *object_handles;
+    size_t object_count;
+    size_t object_capacity;
 } manifest_parse_ctx_t;
 
 static char *manifest_strdup(const char *src)
@@ -244,37 +248,116 @@ static nmo_status_t manifest_parse_mesh(
 static nmo_status_t manifest_parse_transform(
     yyjson_val *transform,
     bool *out_has_position,
-    float out_position[3])
+    float out_position[3],
+    bool *out_has_rotation,
+    float out_rotation[3],
+    bool *out_has_scale,
+    float out_scale[3])
 {
-    static const char *const allowed[] = {"position", NULL};
+    static const char *const allowed[] = {
+        "position", "rotation_euler_deg", "scale", NULL};
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(transform, "transform", allowed));
 
-    if (!out_has_position || !out_position) {
+    if (!out_has_position || !out_position ||
+        !out_has_rotation || !out_rotation ||
+        !out_has_scale || !out_scale) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "transform output arguments are required");
     }
     *out_has_position = false;
+    *out_has_rotation = false;
+    *out_has_scale = false;
 
     yyjson_val *position = yyjson_obj_get(transform, "position");
-    if (!position) {
+    yyjson_val *rotation = yyjson_obj_get(transform, "rotation_euler_deg");
+    yyjson_val *scale = yyjson_obj_get(transform, "scale");
+    if (!position && !rotation && !scale) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "manifest transform requires position");
-    }
-    if (!yyjson_is_arr(position) || yyjson_arr_size(position) != 3u) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "manifest transform.position must contain three numbers");
+                         "manifest transform requires position, rotation_euler_deg, or scale");
     }
 
-    for (size_t i = 0u; i < 3u; ++i) {
-        yyjson_val *item = yyjson_arr_get(position, i);
-        if (!yyjson_is_num(item)) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "manifest transform.position values must be numbers");
+    yyjson_val *values[] = {position, rotation, scale};
+    float *outputs[] = {out_position, out_rotation, out_scale};
+    bool *has_outputs[] = {out_has_position, out_has_rotation, out_has_scale};
+    const char *names[] = {"position", "rotation_euler_deg", "scale"};
+    for (size_t value_index = 0u; value_index < 3u; ++value_index) {
+        yyjson_val *value = values[value_index];
+        if (!value) {
+            continue;
         }
-        out_position[i] = (float)manifest_get_number(item);
+        if (!yyjson_is_arr(value) || yyjson_arr_size(value) != 3u) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest transform.%s must contain three numbers",
+                             names[value_index]);
+        }
+        for (size_t i = 0u; i < 3u; ++i) {
+            yyjson_val *item = yyjson_arr_get(value, i);
+            if (!yyjson_is_num(item)) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest transform.%s values must be numbers",
+                                 names[value_index]);
+            }
+            outputs[value_index][i] = (float)manifest_get_number(item);
+        }
+        *has_outputs[value_index] = true;
     }
-    *out_has_position = true;
     NMO_RETURN_OK();
+}
+
+static nmo_status_t manifest_register_object_name(
+    manifest_parse_ctx_t *ctx,
+    const char *name,
+    uint32_t handle)
+{
+    if (!ctx || !name || handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "object name registration requires arguments");
+    }
+    if (ctx->object_count == ctx->object_capacity) {
+        size_t new_capacity = ctx->object_capacity ? ctx->object_capacity * 2u : 8u;
+        const char **new_names = (const char **)calloc(
+            new_capacity,
+            sizeof(*new_names));
+        uint32_t *new_handles = (uint32_t *)calloc(
+            new_capacity,
+            sizeof(*new_handles));
+        if (!new_names || !new_handles) {
+            free(new_names);
+            free(new_handles);
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate manifest object name map");
+        }
+        memcpy(new_names,
+               ctx->object_names,
+               ctx->object_count * sizeof(*new_names));
+        memcpy(new_handles,
+               ctx->object_handles,
+               ctx->object_count * sizeof(*new_handles));
+        free(ctx->object_names);
+        free(ctx->object_handles);
+        ctx->object_names = new_names;
+        ctx->object_handles = new_handles;
+        ctx->object_capacity = new_capacity;
+    }
+    ctx->object_names[ctx->object_count] = name;
+    ctx->object_handles[ctx->object_count] = handle;
+    ctx->object_count++;
+    NMO_RETURN_OK();
+}
+
+static uint32_t manifest_find_object_handle(
+    const manifest_parse_ctx_t *ctx,
+    const char *name)
+{
+    if (!ctx || !name) {
+        return 0u;
+    }
+    for (size_t i = 0u; i < ctx->object_count; ++i) {
+        if (strcmp(ctx->object_names[i], name) == 0) {
+            return ctx->object_handles[i];
+        }
+    }
+    return 0u;
 }
 
 static nmo_status_t manifest_count_fields(
@@ -389,17 +472,27 @@ static nmo_status_t manifest_parse_object(
     uint32_t scene_handle)
 {
     static const char *const allowed[] = {
-        "name", "class", "fields", "mesh", "material", "transform", "scripts", NULL};
+        "name", "class", "parent", "fields", "mesh", "material", "transform", "scripts", NULL};
     const char *name = NULL;
     const char *class_name = NULL;
+    const char *parent_name = NULL;
     nmo_class_id_t class_id = 0;
     nmo_session_field_edit_t *fields = NULL;
     size_t field_count = 0u;
     uint32_t object_handle = 0u;
+    uint32_t parent_handle = 0u;
 
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(object, "object", allowed));
     NMO_RETURN_IF_ERROR(manifest_required_string(object, "name", &name));
     NMO_RETURN_IF_ERROR(manifest_required_string(object, "class", &class_name));
+    NMO_RETURN_IF_ERROR(manifest_optional_string(object, "parent", &parent_name));
+    if (parent_name) {
+        parent_handle = manifest_find_object_handle(ctx, parent_name);
+        if (parent_handle == 0u) {
+            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                             "manifest object parent '%s' was not found", parent_name);
+        }
+    }
 
     class_id = nmo_type_query_class_id_from_name(
         nmo_context_get_type_registry(ctx->context),
@@ -428,6 +521,7 @@ static nmo_status_t manifest_parse_object(
         ctx->plan,
         &(nmo_project_object_spec_t){
             .scene_handle = scene_handle,
+            .parent_handle = parent_handle,
             .class_id = class_id,
             .name = name,
             .flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE,
@@ -439,6 +533,7 @@ static nmo_status_t manifest_parse_object(
     if (status != NMO_OK) {
         return status;
     }
+    NMO_RETURN_IF_ERROR(manifest_register_object_name(ctx, name, object_handle));
 
     yyjson_val *mesh = yyjson_obj_get(object, "mesh");
     if (mesh) {
@@ -494,10 +589,18 @@ static nmo_status_t manifest_parse_object(
     if (transform) {
         bool has_position = false;
         float position[3] = {0.0f, 0.0f, 0.0f};
+        bool has_rotation = false;
+        float rotation[3] = {0.0f, 0.0f, 0.0f};
+        bool has_scale = false;
+        float scale[3] = {0.0f, 0.0f, 0.0f};
         NMO_RETURN_IF_ERROR(manifest_parse_transform(
             transform,
             &has_position,
-            position));
+            position,
+            &has_rotation,
+            rotation,
+            &has_scale,
+            scale));
         if (has_position) {
             NMO_RETURN_IF_ERROR(nmo_project_plan_set_object_position(
                 ctx->plan,
@@ -505,6 +608,22 @@ static nmo_status_t manifest_parse_object(
                 position[0],
                 position[1],
                 position[2]));
+        }
+        if (has_rotation) {
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_object_rotation_euler_deg(
+                ctx->plan,
+                object_handle,
+                rotation[0],
+                rotation[1],
+                rotation[2]));
+        }
+        if (has_scale) {
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_object_scale(
+                ctx->plan,
+                object_handle,
+                scale[0],
+                scale[1],
+                scale[2]));
         }
     }
 
@@ -628,6 +747,8 @@ nmo_status_t nmo_project_manifest_json_read_manifest(
     if (ctx.context) {
         nmo_context_release(ctx.context);
     }
+    free(ctx.object_names);
+    free(ctx.object_handles);
     yyjson_doc_free(doc);
     if (status != NMO_OK) {
         nmo_project_manifest_dispose(out_manifest);

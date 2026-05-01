@@ -38,6 +38,10 @@ typedef struct nmo_project_object_spec {
     size_t field_count;
     bool has_position;
     float position[3];
+    bool has_rotation_euler_deg;
+    float rotation_euler_deg[3];
+    bool has_scale;
+    float scale[3];
 } nmo_project_object_spec_t;
 
 typedef struct nmo_project_object_desc {
@@ -52,6 +56,10 @@ typedef struct nmo_project_object_desc {
     size_t field_count;
     bool has_position;
     float position[3];
+    bool has_rotation_euler_deg;
+    float rotation_euler_deg[3];
+    bool has_scale;
+    float scale[3];
 } nmo_project_object_desc_t;
 
 NMO_API nmo_status_t nmo_project_plan_create(nmo_project_plan_t **out_plan);
@@ -90,6 +98,20 @@ NMO_API nmo_status_t nmo_project_plan_add_object(
     uint32_t *out_object_handle);
 
 NMO_API nmo_status_t nmo_project_plan_set_object_position(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float x,
+    float y,
+    float z);
+
+NMO_API nmo_status_t nmo_project_plan_set_object_rotation_euler_deg(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float x,
+    float y,
+    float z);
+
+NMO_API nmo_status_t nmo_project_plan_set_object_scale(
     nmo_project_plan_t *plan,
     uint32_t object_handle,
     float x,
