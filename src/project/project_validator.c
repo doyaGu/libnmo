@@ -402,11 +402,57 @@ static nmo_status_t project_validation_check_objects(
                 "invalid_camera_target",
                 "Project camera settings require CKCamera or CKTargetCamera"));
         }
+        if (object.has_camera_target) {
+            nmo_project_object_desc_t target = {0};
+            if (object.class_id != NMO_CID_TARGETCAMERA) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    report,
+                    "invalid_camera_target_binding_class",
+                    "Project camera target requires CKTargetCamera"));
+            }
+            if (!project_validation_get_object_by_handle(
+                    plan,
+                    object.camera_target_handle,
+                    &target)) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    report,
+                    "missing_camera_target",
+                    "Project camera target references a missing object"));
+            } else if (!project_validation_class_is_entity(target.class_id)) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    report,
+                    "invalid_camera_target_object",
+                    "Project camera target must be entity-compatible"));
+            }
+        }
         if (object.has_light && !project_validation_class_is_light(object.class_id)) {
             NMO_RETURN_IF_ERROR(project_validation_add_issue(
                 report,
                 "invalid_light_target",
                 "Project light settings require CKLight or CKTargetLight"));
+        }
+        if (object.has_light_target) {
+            nmo_project_object_desc_t target = {0};
+            if (object.class_id != NMO_CID_TARGETLIGHT) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    report,
+                    "invalid_light_target_binding_class",
+                    "Project light target requires CKTargetLight"));
+            }
+            if (!project_validation_get_object_by_handle(
+                    plan,
+                    object.light_target_handle,
+                    &target)) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    report,
+                    "missing_light_target",
+                    "Project light target references a missing object"));
+            } else if (!project_validation_class_is_entity(target.class_id)) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    report,
+                    "invalid_light_target_object",
+                    "Project light target must be entity-compatible"));
+            }
         }
 
         for (size_t j = i + 1u; j < object_count; ++j) {
@@ -620,7 +666,9 @@ static nmo_status_t project_validation_check_scripts(
                 step_index,
                 &step));
             if (step.kind != NMO_PROJECT_SCRIPT_STEP_DEBUG_OUTPUT &&
-                step.kind != NMO_PROJECT_SCRIPT_STEP_ON_START_DEBUG_OUTPUT) {
+                step.kind != NMO_PROJECT_SCRIPT_STEP_ON_START_DEBUG_OUTPUT &&
+                step.kind !=
+                    NMO_PROJECT_SCRIPT_STEP_SCENE_ON_START_DEBUG_OUTPUT) {
                 NMO_RETURN_IF_ERROR(project_validation_add_issue(
                     report,
                     "unsupported_script_template",

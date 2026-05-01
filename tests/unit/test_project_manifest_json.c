@@ -225,6 +225,44 @@ TEST(project_manifest_json, parses_script_template)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_manifest_json, parses_scene_script_template)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"objects\":[{"
+                "\"name\":\"SceneOwner\","
+                "\"class\":\"CK3dEntity\","
+                "\"scripts\":[{"
+                    "\"name\":\"SceneScript\","
+                    "\"template\":\"scene_on_start_debug_output\","
+                    "\"message\":\"scene template start\""
+                "}]"
+            "}]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+
+    nmo_project_script_desc_t script = {0};
+    nmo_project_script_step_desc_t step = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_script(plan, 0u, &script));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_script_step(
+                          plan,
+                          script.handle,
+                          0u,
+                          &step));
+    ASSERT_EQ(NMO_PROJECT_SCRIPT_STEP_SCENE_ON_START_DEBUG_OUTPUT, step.kind);
+    ASSERT_STR_EQ("scene template start", step.message);
+
+    nmo_project_plan_destroy(plan);
+}
+
 TEST(project_manifest_json, rejects_unknown_fields)
 {
     const char *json =
@@ -352,6 +390,43 @@ TEST(project_manifest_json, parses_scene_active_camera)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_manifest_json, parses_camera_and_light_targets)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"objects\":["
+                "{\"id\":\"target\",\"name\":\"Target\",\"class\":\"CK3dEntity\"},"
+                "{\"name\":\"Camera\",\"class\":\"CKTargetCamera\","
+                    "\"camera\":{\"fov\":0.5,\"near\":0.1,\"far\":100,\"target\":\"target\"}},"
+                "{\"name\":\"Light\",\"class\":\"CKTargetLight\","
+                    "\"light\":{\"diffuse\":[1,1,1,1],\"range\":50,"
+                        "\"type\":\"point\",\"target\":\"target\"}}"
+            "]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+
+    nmo_project_object_desc_t target = {0};
+    nmo_project_object_desc_t camera = {0};
+    nmo_project_object_desc_t light = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 0u, &target));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 1u, &camera));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 2u, &light));
+    ASSERT_TRUE(camera.has_camera_target);
+    ASSERT_EQ(target.handle, camera.camera_target_handle);
+    ASSERT_TRUE(light.has_light_target);
+    ASSERT_EQ(target.handle, light.light_target_handle);
+
+    nmo_project_plan_destroy(plan);
+}
+
 TEST(project_manifest_json, resolves_parent_id_before_ambiguous_name)
 {
     const char *json =
@@ -428,11 +503,13 @@ REGISTER_TEST(project_manifest_json, parses_minimal_visible_scene);
 REGISTER_TEST(project_manifest_json, parses_named_obj_materials);
 REGISTER_TEST(project_manifest_json, maps_fields_and_scripts_to_project_plan);
 REGISTER_TEST(project_manifest_json, parses_script_template);
+REGISTER_TEST(project_manifest_json, parses_scene_script_template);
 REGISTER_TEST(project_manifest_json, rejects_unknown_fields);
 REGISTER_TEST(project_manifest_json, rejects_unknown_transform_fields);
 REGISTER_TEST(project_manifest_json, parses_parent_by_prior_object_name);
 REGISTER_TEST(project_manifest_json, parses_parent_by_forward_object_id);
 REGISTER_TEST(project_manifest_json, parses_scene_active_camera);
+REGISTER_TEST(project_manifest_json, parses_camera_and_light_targets);
 REGISTER_TEST(project_manifest_json, resolves_parent_id_before_ambiguous_name);
 REGISTER_TEST(project_manifest_json, rejects_duplicate_object_id);
 REGISTER_TEST(project_manifest_json, rejects_ambiguous_parent_name);

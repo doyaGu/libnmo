@@ -49,10 +49,14 @@ typedef struct nmo_project_object_spec {
     float camera_fov;
     float camera_near;
     float camera_far;
+    bool has_camera_target;
+    uint32_t camera_target_handle;
     bool has_light;
     float light_diffuse[4];
     float light_range;
     VXLIGHT_TYPE light_type;
+    bool has_light_target;
+    uint32_t light_target_handle;
 } nmo_project_object_spec_t;
 
 typedef struct nmo_project_object_desc {
@@ -76,10 +80,14 @@ typedef struct nmo_project_object_desc {
     float camera_fov;
     float camera_near;
     float camera_far;
+    bool has_camera_target;
+    uint32_t camera_target_handle;
     bool has_light;
     float light_diffuse[4];
     float light_range;
     VXLIGHT_TYPE light_type;
+    bool has_light_target;
+    uint32_t light_target_handle;
 } nmo_project_object_desc_t;
 
 NMO_API nmo_status_t nmo_project_plan_create(nmo_project_plan_t **out_plan);
@@ -155,6 +163,11 @@ NMO_API nmo_status_t nmo_project_plan_set_camera_settings(
     float near_plane,
     float far_plane);
 
+NMO_API nmo_status_t nmo_project_plan_set_camera_target(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    uint32_t target_handle);
+
 NMO_API nmo_status_t nmo_project_plan_set_light_settings(
     nmo_project_plan_t *plan,
     uint32_t object_handle,
@@ -164,6 +177,11 @@ NMO_API nmo_status_t nmo_project_plan_set_light_settings(
     float diffuse_a,
     float range,
     VXLIGHT_TYPE type);
+
+NMO_API nmo_status_t nmo_project_plan_set_light_target(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    uint32_t target_handle);
 
 #ifdef __cplusplus
 }

@@ -28,10 +28,20 @@ NMO_API nmo_status_t nmo_entity_edit_set_camera_settings(
     nmo_object_id_t object_id,
     const nmo_entity_camera_settings_t *settings);
 
+NMO_API nmo_status_t nmo_entity_edit_set_camera_target(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    nmo_object_id_t target_id);
+
 NMO_API nmo_status_t nmo_entity_edit_set_light_settings(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,
     const nmo_entity_light_settings_t *settings);
+
+NMO_API nmo_status_t nmo_entity_edit_set_light_target(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    nmo_object_id_t target_id);
 
 #ifdef __cplusplus
 }

@@ -422,9 +422,37 @@ nmo_status_t nmo_project_author_scenes(
                 goto cleanup;
             }
         }
+        if (object.has_camera_target) {
+            nmo_object_id_t target_id = project_authoring_find_object_id(
+                authored_objects,
+                object_count,
+                object.camera_target_handle);
+            if (target_id == 0u) {
+                status = NMO_ERR_INVALID_ARGUMENT;
+                goto cleanup;
+            }
+            status = nmo_entity_edit_set_camera_target(edit, object_id, target_id);
+            if (status != NMO_OK) {
+                goto cleanup;
+            }
+        }
 
         if (object.has_light) {
             status = project_authoring_set_light(edit, object_id, &object);
+            if (status != NMO_OK) {
+                goto cleanup;
+            }
+        }
+        if (object.has_light_target) {
+            nmo_object_id_t target_id = project_authoring_find_object_id(
+                authored_objects,
+                object_count,
+                object.light_target_handle);
+            if (target_id == 0u) {
+                status = NMO_ERR_INVALID_ARGUMENT;
+                goto cleanup;
+            }
+            status = nmo_entity_edit_set_light_target(edit, object_id, target_id);
             if (status != NMO_OK) {
                 goto cleanup;
             }

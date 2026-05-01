@@ -3,6 +3,8 @@
 #include "document/nmo_document_load.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_scene_schemas.h"
+#include "object/builtin/nmo_targetcamera_schemas.h"
+#include "object/builtin/nmo_targetlight_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_query.h"
@@ -133,6 +135,133 @@ TEST(generated_scene_roundtrip, saves_and_reloads_scene_objects)
     remove(output_path);
 }
 
+TEST(generated_scene_roundtrip, saves_target_camera_light_bindings)
+{
+    const char *output_path = "test_generated_scene_targets.cmo";
+    remove(output_path);
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_document_name(plan, "GeneratedLevel"));
+
+    uint32_t scene = 0u;
+    uint32_t target = 0u;
+    uint32_t camera = 0u;
+    uint32_t light = 0u;
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "Scene_Main", &scene));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "Target",
+                      .flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE,
+                  },
+                  &target));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_TARGETCAMERA,
+                      .name = "TargetCamera",
+                      .flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE,
+                  },
+                  &camera));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_camera_settings(
+                          plan,
+                          camera,
+                          0.7f,
+                          0.1f,
+                          100.0f));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_camera_target(plan, camera, target));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_TARGETLIGHT,
+                      .name = "TargetLight",
+                      .flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE,
+                  },
+                  &light));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_light_settings(
+                          plan,
+                          light,
+                          1.0f,
+                          1.0f,
+                          1.0f,
+                          1.0f,
+                          50.0f,
+                          VX_LIGHTPOINT));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_light_target(plan, light, target));
+
+    nmo_project_report_t report;
+    nmo_project_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_executor_execute_to_file(plan, output_path, &report));
+    ASSERT_TRUE(report.ok);
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &document));
+    ASSERT_NOT_NULL(document);
+
+    nmo_object_query_t target_query = {0};
+    target_query.name = "Target";
+    target_query.name_mode = NMO_OBJECT_QUERY_NAME_EXACT;
+    target_query.class_id = NMO_CID_3DENTITY;
+    nmo_object_t *target_object = NULL;
+    ASSERT_EQ(NMO_OK, nmo_object_query_find_first(
+                          document,
+                          &target_query,
+                          &target_object,
+                          NULL));
+    ASSERT_NOT_NULL(target_object);
+
+    nmo_object_query_t camera_query = {0};
+    camera_query.name = "TargetCamera";
+    camera_query.name_mode = NMO_OBJECT_QUERY_NAME_EXACT;
+    camera_query.class_id = NMO_CID_TARGETCAMERA;
+    nmo_object_t *camera_object = NULL;
+    ASSERT_EQ(NMO_OK, nmo_object_query_find_first(
+                          document,
+                          &camera_query,
+                          &camera_object,
+                          NULL));
+    ASSERT_NOT_NULL(camera_object);
+    nmo_targetcamera_state_t *camera_state =
+        (nmo_targetcamera_state_t *)nmo_object_get_state(camera_object);
+    ASSERT_NOT_NULL(camera_state);
+    ASSERT_TRUE(camera_state->has_target != 0u);
+    ASSERT_EQ(nmo_object_get_id(target_object), camera_state->target_id);
+
+    nmo_object_query_t light_query = {0};
+    light_query.name = "TargetLight";
+    light_query.name_mode = NMO_OBJECT_QUERY_NAME_EXACT;
+    light_query.class_id = NMO_CID_TARGETLIGHT;
+    nmo_object_t *light_object = NULL;
+    ASSERT_EQ(NMO_OK, nmo_object_query_find_first(
+                          document,
+                          &light_query,
+                          &light_object,
+                          NULL));
+    ASSERT_NOT_NULL(light_object);
+    nmo_targetlight_state_t *light_state =
+        (nmo_targetlight_state_t *)nmo_object_get_state(light_object);
+    ASSERT_NOT_NULL(light_state);
+    ASSERT_TRUE(light_state->has_target != 0u);
+    ASSERT_EQ(nmo_object_get_id(target_object), light_state->target_id);
+
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+    nmo_project_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+    remove(output_path);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(generated_scene_roundtrip, saves_and_reloads_scene_objects);
+REGISTER_TEST(generated_scene_roundtrip, saves_target_camera_light_bindings);
 TEST_MAIN_END()

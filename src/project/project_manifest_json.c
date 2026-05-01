@@ -327,7 +327,7 @@ static nmo_status_t manifest_parse_camera(
     float *out_near,
     float *out_far)
 {
-    static const char *const allowed[] = {"fov", "near", "far", NULL};
+    static const char *const allowed[] = {"fov", "near", "far", "target", NULL};
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(camera, "camera", allowed));
     if (!out_fov || !out_near || !out_far) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -376,7 +376,7 @@ static nmo_status_t manifest_parse_light(
     float *out_range,
     VXLIGHT_TYPE *out_type)
 {
-    static const char *const allowed[] = {"diffuse", "range", "type", NULL};
+    static const char *const allowed[] = {"diffuse", "range", "type", "target", NULL};
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(light, "light", allowed));
     if (!out_diffuse || !out_range || !out_type) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -643,7 +643,11 @@ static nmo_status_t manifest_parse_scripts(
             &template_name));
         if (template_name) {
             const char *message = NULL;
-            if (strcmp(template_name, "on_start_debug_output") != 0) {
+            bool object_start =
+                strcmp(template_name, "on_start_debug_output") == 0;
+            bool scene_start =
+                strcmp(template_name, "scene_on_start_debug_output") == 0;
+            if (!object_start && !scene_start) {
                 NMO_RETURN_ERROR(NMO_ERR_NOT_SUPPORTED, NMO_SEVERITY_ERROR,
                                  "unsupported manifest script template '%s'",
                                  template_name);
@@ -652,11 +656,19 @@ static nmo_status_t manifest_parse_scripts(
                 script_obj,
                 "message",
                 &message));
-            NMO_RETURN_IF_ERROR(
-                nmo_project_plan_script_add_on_start_debug_output(
+            if (scene_start) {
+                NMO_RETURN_IF_ERROR(
+                    nmo_project_plan_script_add_scene_on_start_debug_output(
+                        ctx->plan,
+                        script_handle,
+                        message));
+            } else {
+                NMO_RETURN_IF_ERROR(
+                    nmo_project_plan_script_add_on_start_debug_output(
                     ctx->plan,
                     script_handle,
                     message));
+            }
         }
 
         yyjson_val *debug = yyjson_obj_get(script_obj, "debug_output");
@@ -962,6 +974,19 @@ static nmo_status_t manifest_parse_object_details(
             fov,
             near_plane,
             far_plane));
+        const char *target_ref = NULL;
+        NMO_RETURN_IF_ERROR(manifest_optional_string(camera, "target", &target_ref));
+        if (target_ref) {
+            uint32_t target_handle = 0u;
+            NMO_RETURN_IF_ERROR(manifest_resolve_object_ref(
+                ctx,
+                target_ref,
+                &target_handle));
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_camera_target(
+                ctx->plan,
+                object_handle,
+                target_handle));
+        }
     }
 
     yyjson_val *light = yyjson_obj_get(object, "light");
@@ -983,6 +1008,19 @@ static nmo_status_t manifest_parse_object_details(
             diffuse[3],
             range,
             type));
+        const char *target_ref = NULL;
+        NMO_RETURN_IF_ERROR(manifest_optional_string(light, "target", &target_ref));
+        if (target_ref) {
+            uint32_t target_handle = 0u;
+            NMO_RETURN_IF_ERROR(manifest_resolve_object_ref(
+                ctx,
+                target_ref,
+                &target_handle));
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_light_target(
+                ctx->plan,
+                object_handle,
+                target_handle));
+        }
     }
 
     NMO_RETURN_IF_ERROR(manifest_parse_scripts(

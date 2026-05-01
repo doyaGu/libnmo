@@ -15,7 +15,8 @@ extern "C" {
 
 typedef enum nmo_project_script_step_kind {
     NMO_PROJECT_SCRIPT_STEP_DEBUG_OUTPUT = 1,
-    NMO_PROJECT_SCRIPT_STEP_ON_START_DEBUG_OUTPUT = 2
+    NMO_PROJECT_SCRIPT_STEP_ON_START_DEBUG_OUTPUT = 2,
+    NMO_PROJECT_SCRIPT_STEP_SCENE_ON_START_DEBUG_OUTPUT = 3
 } nmo_project_script_step_kind_t;
 
 typedef struct nmo_project_script_desc {
@@ -56,6 +57,11 @@ NMO_API nmo_status_t nmo_project_plan_script_add_debug_output(
     const char *message);
 
 NMO_API nmo_status_t nmo_project_plan_script_add_on_start_debug_output(
+    nmo_project_plan_t *plan,
+    uint32_t script_handle,
+    const char *message);
+
+NMO_API nmo_status_t nmo_project_plan_script_add_scene_on_start_debug_output(
     nmo_project_plan_t *plan,
     uint32_t script_handle,
     const char *message);

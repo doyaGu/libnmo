@@ -34,10 +34,14 @@ typedef struct project_object_record {
     float camera_fov;
     float camera_near;
     float camera_far;
+    bool has_camera_target;
+    uint32_t camera_target_handle;
     bool has_light;
     float light_diffuse[4];
     float light_range;
     VXLIGHT_TYPE light_type;
+    bool has_light_target;
+    uint32_t light_target_handle;
 } project_object_record_t;
 
 typedef struct project_asset_record {
@@ -590,12 +594,17 @@ nmo_status_t nmo_project_plan_get_object(
     out_object->camera_fov = plan->objects[index].camera_fov;
     out_object->camera_near = plan->objects[index].camera_near;
     out_object->camera_far = plan->objects[index].camera_far;
+    out_object->has_camera_target = plan->objects[index].has_camera_target;
+    out_object->camera_target_handle =
+        plan->objects[index].camera_target_handle;
     out_object->has_light = plan->objects[index].has_light;
     memcpy(out_object->light_diffuse,
            plan->objects[index].light_diffuse,
            sizeof(out_object->light_diffuse));
     out_object->light_range = plan->objects[index].light_range;
     out_object->light_type = plan->objects[index].light_type;
+    out_object->has_light_target = plan->objects[index].has_light_target;
+    out_object->light_target_handle = plan->objects[index].light_target_handle;
     NMO_RETURN_OK();
 }
 
@@ -950,6 +959,18 @@ nmo_status_t nmo_project_plan_script_add_on_start_debug_output(
         plan,
         script_handle,
         NMO_PROJECT_SCRIPT_STEP_ON_START_DEBUG_OUTPUT,
+        message);
+}
+
+nmo_status_t nmo_project_plan_script_add_scene_on_start_debug_output(
+    nmo_project_plan_t *plan,
+    uint32_t script_handle,
+    const char *message)
+{
+    return project_plan_script_add_step(
+        plan,
+        script_handle,
+        NMO_PROJECT_SCRIPT_STEP_SCENE_ON_START_DEBUG_OUTPUT,
         message);
 }
 
@@ -1385,12 +1406,16 @@ nmo_status_t nmo_project_plan_add_object(
     object->camera_fov = spec->camera_fov;
     object->camera_near = spec->camera_near;
     object->camera_far = spec->camera_far;
+    object->has_camera_target = spec->has_camera_target;
+    object->camera_target_handle = spec->camera_target_handle;
     object->has_light = spec->has_light;
     memcpy(object->light_diffuse,
            spec->light_diffuse,
            sizeof(object->light_diffuse));
     object->light_range = spec->light_range;
     object->light_type = spec->light_type;
+    object->has_light_target = spec->has_light_target;
+    object->light_target_handle = spec->light_target_handle;
 
     if (out_object_handle) {
         *out_object_handle = handle;
@@ -1598,6 +1623,54 @@ nmo_status_t nmo_project_plan_set_light_settings(
         }
     }
 
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "object handle not found");
+}
+
+nmo_status_t nmo_project_plan_set_camera_target(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    uint32_t target_handle)
+{
+    if (!plan || object_handle == 0u || target_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan, camera handle, and target handle are required");
+    }
+    if (!project_plan_has_object_handle(plan, target_handle)) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "camera target handle not found");
+    }
+    for (size_t i = 0u; i < plan->object_count; ++i) {
+        if (plan->objects[i].handle == object_handle) {
+            plan->objects[i].has_camera_target = true;
+            plan->objects[i].camera_target_handle = target_handle;
+            NMO_RETURN_OK();
+        }
+    }
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "object handle not found");
+}
+
+nmo_status_t nmo_project_plan_set_light_target(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    uint32_t target_handle)
+{
+    if (!plan || object_handle == 0u || target_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan, light handle, and target handle are required");
+    }
+    if (!project_plan_has_object_handle(plan, target_handle)) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "light target handle not found");
+    }
+    for (size_t i = 0u; i < plan->object_count; ++i) {
+        if (plan->objects[i].handle == object_handle) {
+            plan->objects[i].has_light_target = true;
+            plan->objects[i].light_target_handle = target_handle;
+            NMO_RETURN_OK();
+        }
+    }
     NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                      "object handle not found");
 }

@@ -2461,6 +2461,68 @@ nmo_status_t nmo_entity_edit_set_camera_settings(
     return NMO_OK;
 }
 
+static bool workspace_edit_class_is_entity_target(nmo_class_id_t class_id)
+{
+    switch (class_id) {
+    case NMO_CID_3DENTITY:
+    case NMO_CID_3DOBJECT:
+    case NMO_CID_CAMERA:
+    case NMO_CID_TARGETCAMERA:
+    case NMO_CID_LIGHT:
+    case NMO_CID_TARGETLIGHT:
+    case NMO_CID_CHARACTER:
+    case NMO_CID_SPRITE3D:
+    case NMO_CID_CURVE:
+    case NMO_CID_CURVEPOINT:
+    case NMO_CID_BODYPART:
+        return true;
+    default:
+        return false;
+    }
+}
+
+nmo_status_t nmo_entity_edit_set_camera_target(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    nmo_object_id_t target_id)
+{
+    if (edit == NULL || edit->finished || object_id == 0u || target_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, object_id);
+    nmo_object_t *target = nmo_object_repository_find_by_id(repo, target_id);
+    if (object == NULL || target == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (!workspace_edit_class_is_entity_target(nmo_object_get_class_id(target))) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (nmo_object_get_class_id(object) != NMO_CID_TARGETCAMERA) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_targetcamera_state_t *state =
+        (nmo_targetcamera_state_t *)nmo_object_get_state(object);
+    if (state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_status_t status =
+        nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
+    if (status != NMO_OK) {
+        return status;
+    }
+    state->has_target = 1u;
+    state->target_id = target_id;
+    nmo_workspace_edit_mark(
+        edit,
+        NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
+    return NMO_OK;
+}
+
 nmo_status_t nmo_entity_edit_set_light_settings(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,
@@ -2508,6 +2570,48 @@ nmo_status_t nmo_entity_edit_set_light_settings(
     light->light_data.range = settings->range;
     light->light_data.type = settings->type;
     nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
+    return NMO_OK;
+}
+
+nmo_status_t nmo_entity_edit_set_light_target(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    nmo_object_id_t target_id)
+{
+    if (edit == NULL || edit->finished || object_id == 0u || target_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, object_id);
+    nmo_object_t *target = nmo_object_repository_find_by_id(repo, target_id);
+    if (object == NULL || target == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (!workspace_edit_class_is_entity_target(nmo_object_get_class_id(target))) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (nmo_object_get_class_id(object) != NMO_CID_TARGETLIGHT) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_targetlight_state_t *state =
+        (nmo_targetlight_state_t *)nmo_object_get_state(object);
+    if (state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_status_t status =
+        nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
+    if (status != NMO_OK) {
+        return status;
+    }
+    state->has_target = 1u;
+    state->target_id = target_id;
+    nmo_workspace_edit_mark(
+        edit,
+        NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
     return NMO_OK;
 }
 
