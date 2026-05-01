@@ -1,6 +1,13 @@
 #include "test_framework.h"
 
+#include "core/nmo_arena.h"
 #include "document/nmo_document_load.h"
+#include "format/nmo_object.h"
+#include "format/nmo_stb_adapter.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_material_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_texture_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_query.h"
 #include "runtime/nmo_context.h"
@@ -114,6 +121,41 @@ static int write_text_file(const char *path, const char *text)
     return ok;
 }
 
+static int write_png_file(const char *path)
+{
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    if (!arena) {
+        return 0;
+    }
+    const uint8_t pixels[] = {
+        255u, 255u, 255u, 255u,
+        255u, 0u, 0u, 255u,
+    };
+    size_t png_size = 0u;
+    uint8_t *png = nmo_stbi_write_to_memory(
+        arena,
+        NMO_BITMAP_FORMAT_PNG,
+        2,
+        1,
+        4,
+        pixels,
+        90,
+        &png_size);
+    if (!png || png_size == 0u) {
+        nmo_arena_destroy(arena);
+        return 0;
+    }
+    FILE *fp = fopen(path, "wb");
+    if (!fp) {
+        nmo_arena_destroy(arena);
+        return 0;
+    }
+    int ok = fwrite(png, 1u, png_size, fp) == png_size;
+    fclose(fp);
+    nmo_arena_destroy(arena);
+    return ok;
+}
+
 static void assert_cli_success_contains(
     const char *args,
     const char *expected_text)
@@ -150,14 +192,49 @@ static void assert_named_class_exists(
     ASSERT_EQ(1u, count);
 }
 
+static nmo_object_t *find_named_object(
+    nmo_document_t *document,
+    const char *name,
+    nmo_class_id_t class_id)
+{
+    nmo_object_t *object = NULL;
+    if (nmo_object_query_find_first(
+            document,
+            &(nmo_object_query_t){
+                .class_id = class_id,
+                .name = name,
+                .name_mode = NMO_OBJECT_QUERY_NAME_EXACT,
+            },
+            &object,
+            NULL) != NMO_OK) {
+        return NULL;
+    }
+    return object;
+}
+
 TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
 {
     make_dir("test_project_acceptance_tmp");
     const char *manifest_path = "test_project_acceptance_tmp/project.json";
+    const char *obj_path = "test_project_acceptance_tmp/triangle.obj";
+    const char *png_path = "test_project_acceptance_tmp/triangle.png";
     const char *output_path = "test_project_acceptance_tmp/project.cmo";
     remove(manifest_path);
+    remove(obj_path);
+    remove(png_path);
     remove(output_path);
     remove("test_project_acceptance_tmp/project.cmo.tmp");
+
+    ASSERT_TRUE(write_text_file(
+        obj_path,
+        "v 0 0 0\n"
+        "v 1 0 0\n"
+        "v 0 1 0\n"
+        "vt 0 0\n"
+        "vt 1 0\n"
+        "vt 0 1\n"
+        "f 1/1 2/2 3/3\n"));
+    ASSERT_TRUE(write_png_file(png_path));
 
     const char *manifest =
         "{"
@@ -169,8 +246,9 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
                 "{\"name\":\"Camera\",\"class\":\"CKCamera\"},"
                 "{\"name\":\"Light\",\"class\":\"CKLight\"},"
                 "{\"name\":\"Cube\",\"class\":\"CK3dEntity\","
-                    "\"mesh\":{\"primitive\":\"cube\"},"
-                    "\"material\":{\"color\":[1,0,0,1]},"
+                    "\"mesh\":{\"obj\":\"triangle.obj\"},"
+                    "\"material\":{\"texture\":\"triangle.png\"},"
+                    "\"transform\":{\"position\":[7,8,9]},"
                     "\"scripts\":[{"
                         "\"name\":\"CubeScript\","
                         "\"debug_output\":[\"generated script start\"]"
@@ -203,11 +281,56 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
     assert_named_class_exists(document, "Cube", NMO_CID_3DENTITY);
     assert_named_class_exists(document, "Cube_Mesh", NMO_CID_MESH);
     assert_named_class_exists(document, "Cube_Material", NMO_CID_MATERIAL);
+    assert_named_class_exists(document, "Cube_Texture", NMO_CID_TEXTURE);
     assert_named_class_exists(document, "CubeScript", NMO_CID_BEHAVIOR);
+
+    nmo_object_t *cube_object = find_named_object(document, "Cube", NMO_CID_3DENTITY);
+    nmo_object_t *mesh_object = find_named_object(document, "Cube_Mesh", NMO_CID_MESH);
+    nmo_object_t *material_object = find_named_object(document, "Cube_Material", NMO_CID_MATERIAL);
+    nmo_object_t *texture_object = find_named_object(document, "Cube_Texture", NMO_CID_TEXTURE);
+    ASSERT_NOT_NULL(cube_object);
+    ASSERT_NOT_NULL(mesh_object);
+    ASSERT_NOT_NULL(material_object);
+    ASSERT_NOT_NULL(texture_object);
+
+    nmo_object_id_t mesh_id = nmo_object_get_id(mesh_object);
+    nmo_object_id_t material_id = nmo_object_get_id(material_object);
+    nmo_object_id_t texture_id = nmo_object_get_id(texture_object);
+
+    const nmo_3dentity_state_t *cube_state =
+        (const nmo_3dentity_state_t *)nmo_object_get_state(cube_object);
+    ASSERT_NOT_NULL(cube_state);
+    ASSERT_EQ(mesh_id, cube_state->current_mesh_id);
+    ASSERT_FLOAT_EQ(7.0f, cube_state->world_matrix[12], 0.0001f);
+    ASSERT_FLOAT_EQ(8.0f, cube_state->world_matrix[13], 0.0001f);
+    ASSERT_FLOAT_EQ(9.0f, cube_state->world_matrix[14], 0.0001f);
+
+    const nmo_mesh_state_t *mesh_state =
+        (const nmo_mesh_state_t *)nmo_object_get_state(mesh_object);
+    ASSERT_NOT_NULL(mesh_state);
+    ASSERT_EQ(3u, mesh_state->vertex_count);
+    ASSERT_EQ(1u, mesh_state->face_count);
+    ASSERT_EQ(1u, mesh_state->material_group_count);
+    ASSERT_NOT_NULL(mesh_state->material_groups);
+    ASSERT_EQ(material_id, mesh_state->material_groups[0].material_id);
+
+    const nmo_material_state_t *material_state =
+        (const nmo_material_state_t *)nmo_object_get_state(material_object);
+    ASSERT_NOT_NULL(material_state);
+    ASSERT_EQ(0xFFFFFFFFu, material_state->diffuse_color);
+    ASSERT_EQ(texture_id, material_state->texture_ids[0]);
+
+    const nmo_texture_state_t *texture_state =
+        (const nmo_texture_state_t *)nmo_object_get_state(texture_object);
+    ASSERT_NOT_NULL(texture_state);
+    ASSERT_EQ(2, texture_state->reader_width);
+    ASSERT_EQ(1, texture_state->reader_height);
 
     nmo_document_destroy(document);
     nmo_context_release(ctx);
     remove(output_path);
+    remove(png_path);
+    remove(obj_path);
     remove(manifest_path);
 }
 

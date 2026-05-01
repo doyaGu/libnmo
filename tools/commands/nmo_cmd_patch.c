@@ -14,6 +14,7 @@
 #include "behavior/nmo_edit_plan.h"
 #include "behavior/nmo_edit_plan_json.h"
 #include "core/nmo_error.h"
+#include "project/nmo_asset_plan.h"
 #include "project/nmo_project_executor.h"
 #include "project/nmo_project_manifest_json.h"
 #include "runtime/nmo_context.h"
@@ -334,6 +335,122 @@ static int patch_read_file(const char *path, char **out_text, size_t *out_size)
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+static bool patch_path_is_absolute(const char *path)
+{
+    if (!path || !path[0]) {
+        return false;
+    }
+    if (path[0] == '/' || path[0] == '\\') {
+        return true;
+    }
+    return ((path[0] >= 'A' && path[0] <= 'Z') ||
+            (path[0] >= 'a' && path[0] <= 'z')) &&
+           path[1] == ':';
+}
+
+static char *patch_manifest_base_dir(const char *manifest_path)
+{
+    if (!manifest_path) {
+        return NULL;
+    }
+    const char *slash = strrchr(manifest_path, '/');
+    const char *bslash = strrchr(manifest_path, '\\');
+    const char *sep = slash;
+    if (!sep || (bslash && bslash > sep)) {
+        sep = bslash;
+    }
+    if (!sep) {
+        return NULL;
+    }
+
+    size_t len = (size_t)(sep - manifest_path);
+    char *dir = (char *)malloc(len + 1u);
+    if (!dir) {
+        return NULL;
+    }
+    memcpy(dir, manifest_path, len);
+    dir[len] = '\0';
+    return dir;
+}
+
+static char *patch_join_manifest_path(const char *base_dir, const char *path)
+{
+    if (!path) {
+        return NULL;
+    }
+    if (patch_path_is_absolute(path) || !base_dir || !base_dir[0]) {
+        size_t len = strlen(path);
+        char *copy = (char *)malloc(len + 1u);
+        if (copy) {
+            memcpy(copy, path, len + 1u);
+        }
+        return copy;
+    }
+
+    size_t base_len = strlen(base_dir);
+    size_t path_len = strlen(path);
+    bool needs_sep = base_dir[base_len - 1u] != '/' && base_dir[base_len - 1u] != '\\';
+    char *joined = (char *)malloc(base_len + (needs_sep ? 1u : 0u) + path_len + 1u);
+    if (!joined) {
+        return NULL;
+    }
+    memcpy(joined, base_dir, base_len);
+    size_t offset = base_len;
+    if (needs_sep) {
+        joined[offset++] = '/';
+    }
+    memcpy(joined + offset, path, path_len + 1u);
+    return joined;
+}
+
+static nmo_status_t patch_resolve_project_manifest_paths(
+    nmo_project_manifest_t *manifest,
+    const char *base_dir)
+{
+    if (!manifest || !manifest->plan || !base_dir || !base_dir[0]) {
+        return NMO_OK;
+    }
+
+    size_t asset_count = nmo_project_plan_asset_count(manifest->plan);
+    for (size_t i = 0u; i < asset_count; ++i) {
+        nmo_project_asset_desc_t asset = {0};
+        NMO_RETURN_IF_ERROR(nmo_project_plan_get_asset(manifest->plan, i, &asset));
+        if (asset.has_external_mesh &&
+            !patch_path_is_absolute(asset.external_mesh_path)) {
+            char *resolved =
+                patch_join_manifest_path(base_dir, asset.external_mesh_path);
+            if (!resolved) {
+                return NMO_ERR_NOMEM;
+            }
+            nmo_status_t st = nmo_project_plan_set_external_mesh(
+                manifest->plan,
+                asset.object_handle,
+                resolved);
+            free(resolved);
+            if (st != NMO_OK) {
+                return st;
+            }
+        }
+        if (asset.has_material_texture &&
+            !patch_path_is_absolute(asset.material_texture_path)) {
+            char *resolved =
+                patch_join_manifest_path(base_dir, asset.material_texture_path);
+            if (!resolved) {
+                return NMO_ERR_NOMEM;
+            }
+            nmo_status_t st = nmo_project_plan_set_material_texture(
+                manifest->plan,
+                asset.object_handle,
+                resolved);
+            free(resolved);
+            if (st != NMO_OK) {
+                return st;
+            }
+        }
+    }
+    return NMO_OK;
+}
+
 static int patch_apply_project_manifest(
     const patch_apply_args_t *args,
     const nmo_cli_global_opts_t *global)
@@ -375,12 +492,40 @@ static int patch_apply_project_manifest(
                                     : NMO_CLI_EXIT_ARG_ERROR);
     }
 
+    char *manifest_base_dir = patch_manifest_base_dir(args->project_path);
+    st = patch_resolve_project_manifest_paths(&manifest, manifest_base_dir);
+    if (st != NMO_OK) {
+        const char *message = nmo_last_error_message();
+        fprintf(stderr, "Error: %s\n",
+                message && message[0] ? message : nmo_error_string(st));
+        free(manifest_base_dir);
+        nmo_project_manifest_dispose(&manifest);
+        return nmo_cmd_ctx_done(&ctx,
+                                st == NMO_ERR_NOMEM
+                                    ? NMO_CLI_EXIT_INTERNAL_ERROR
+                                    : NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    char *resolved_manifest_output = NULL;
     const char *output_path = args->output_path
         ? args->output_path
         : manifest.output_path;
+    if (!args->output_path && output_path && manifest_base_dir &&
+        !patch_path_is_absolute(output_path)) {
+        resolved_manifest_output =
+            patch_join_manifest_path(manifest_base_dir, output_path);
+        if (!resolved_manifest_output) {
+            free(manifest_base_dir);
+            nmo_project_manifest_dispose(&manifest);
+            return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+        output_path = resolved_manifest_output;
+    }
     if (!output_path || output_path[0] == '\0') {
         fprintf(stderr,
                 "Error: Project manifest output requires -o/--output or output\n");
+        free(resolved_manifest_output);
+        free(manifest_base_dir);
         nmo_project_manifest_dispose(&manifest);
         return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_ARG_ERROR);
     }
@@ -396,6 +541,8 @@ static int patch_apply_project_manifest(
         fprintf(stderr, "Error: %s\n",
                 message && message[0] ? message : nmo_error_string(st));
         nmo_project_report_dispose(&report);
+        free(resolved_manifest_output);
+        free(manifest_base_dir);
         nmo_project_manifest_dispose(&manifest);
         return nmo_cmd_ctx_done(&ctx,
                                 st == NMO_ERR_INVALID_ARGUMENT ||
@@ -409,6 +556,8 @@ static int patch_apply_project_manifest(
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&ctx);
         if (!doc) {
             nmo_project_report_dispose(&report);
+            free(resolved_manifest_output);
+            free(manifest_base_dir);
             nmo_project_manifest_dispose(&manifest);
             return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
@@ -425,6 +574,8 @@ static int patch_apply_project_manifest(
     }
 
     nmo_project_report_dispose(&report);
+    free(resolved_manifest_output);
+    free(manifest_base_dir);
     nmo_project_manifest_dispose(&manifest);
     return nmo_cmd_ctx_done(&ctx, rc);
 }
