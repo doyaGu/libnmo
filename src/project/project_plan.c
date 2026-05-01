@@ -1210,6 +1210,39 @@ nmo_status_t nmo_project_plan_add_object(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_project_plan_set_object_parent(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    uint32_t parent_handle)
+{
+    if (!plan || object_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and object handle are required");
+    }
+
+    project_object_record_t *object = NULL;
+    bool parent_found = (parent_handle == 0u);
+    for (size_t i = 0u; i < plan->object_count; ++i) {
+        if (plan->objects[i].handle == object_handle) {
+            object = &plan->objects[i];
+        }
+        if (parent_handle != 0u && plan->objects[i].handle == parent_handle) {
+            parent_found = true;
+        }
+    }
+    if (!object) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "object handle not found");
+    }
+    if (!parent_found) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "parent object handle not found");
+    }
+
+    object->parent_handle = parent_handle;
+    NMO_RETURN_OK();
+}
+
 nmo_status_t nmo_project_plan_set_object_position(
     nmo_project_plan_t *plan,
     uint32_t object_handle,

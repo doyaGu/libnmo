@@ -15,6 +15,7 @@
 typedef struct manifest_parse_ctx {
     nmo_context_t *context;
     nmo_project_plan_t *plan;
+    const char **object_ids;
     const char **object_names;
     uint32_t *object_handles;
     size_t object_count;
@@ -453,60 +454,103 @@ static nmo_status_t manifest_parse_transform(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t manifest_register_object_name(
+static nmo_status_t manifest_register_object(
     manifest_parse_ctx_t *ctx,
+    const char *id,
     const char *name,
     uint32_t handle)
 {
     if (!ctx || !name || handle == 0u) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "object name registration requires arguments");
+                         "object registration requires arguments");
+    }
+    if (id) {
+        for (size_t i = 0u; i < ctx->object_count; ++i) {
+            if (ctx->object_ids[i] && strcmp(ctx->object_ids[i], id) == 0) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest object id '%s' is duplicated", id);
+            }
+        }
     }
     if (ctx->object_count == ctx->object_capacity) {
         size_t new_capacity = ctx->object_capacity ? ctx->object_capacity * 2u : 8u;
+        const char **new_ids = (const char **)calloc(
+            new_capacity,
+            sizeof(*new_ids));
         const char **new_names = (const char **)calloc(
             new_capacity,
             sizeof(*new_names));
         uint32_t *new_handles = (uint32_t *)calloc(
             new_capacity,
             sizeof(*new_handles));
-        if (!new_names || !new_handles) {
+        if (!new_ids || !new_names || !new_handles) {
+            free(new_ids);
             free(new_names);
             free(new_handles);
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                             "failed to allocate manifest object name map");
+                             "failed to allocate manifest object map");
         }
+        memcpy(new_ids,
+               ctx->object_ids,
+               ctx->object_count * sizeof(*new_ids));
         memcpy(new_names,
                ctx->object_names,
                ctx->object_count * sizeof(*new_names));
         memcpy(new_handles,
                ctx->object_handles,
                ctx->object_count * sizeof(*new_handles));
+        free(ctx->object_ids);
         free(ctx->object_names);
         free(ctx->object_handles);
+        ctx->object_ids = new_ids;
         ctx->object_names = new_names;
         ctx->object_handles = new_handles;
         ctx->object_capacity = new_capacity;
     }
+    ctx->object_ids[ctx->object_count] = id;
     ctx->object_names[ctx->object_count] = name;
     ctx->object_handles[ctx->object_count] = handle;
     ctx->object_count++;
     NMO_RETURN_OK();
 }
 
-static uint32_t manifest_find_object_handle(
+static nmo_status_t manifest_resolve_object_ref(
     const manifest_parse_ctx_t *ctx,
-    const char *name)
+    const char *ref,
+    uint32_t *out_handle)
 {
-    if (!ctx || !name) {
-        return 0u;
+    if (!ctx || !ref || !out_handle) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "object reference lookup requires arguments");
     }
+    *out_handle = 0u;
+
     for (size_t i = 0u; i < ctx->object_count; ++i) {
-        if (strcmp(ctx->object_names[i], name) == 0) {
-            return ctx->object_handles[i];
+        if (ctx->object_ids[i] && strcmp(ctx->object_ids[i], ref) == 0) {
+            *out_handle = ctx->object_handles[i];
+            NMO_RETURN_OK();
         }
     }
-    return 0u;
+
+    size_t match_count = 0u;
+    uint32_t match_handle = 0u;
+    for (size_t i = 0u; i < ctx->object_count; ++i) {
+        if (strcmp(ctx->object_names[i], ref) == 0) {
+            match_count++;
+            match_handle = ctx->object_handles[i];
+        }
+    }
+    if (match_count == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "manifest object reference '%s' was not found", ref);
+    }
+    if (match_count > 1u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest object reference '%s' is ambiguous", ref);
+    }
+
+    *out_handle = match_handle;
+    NMO_RETURN_OK();
 }
 
 static nmo_status_t manifest_count_fields(
@@ -639,34 +683,30 @@ static nmo_status_t manifest_parse_scripts(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t manifest_parse_object(
+static nmo_status_t manifest_parse_object_declare(
     manifest_parse_ctx_t *ctx,
     yyjson_val *object,
     uint32_t scene_handle)
 {
     static const char *const allowed[] = {
-        "name", "class", "parent", "fields", "mesh", "material", "materials", "transform",
-        "camera", "light", "scripts", NULL};
+        "id", "name", "class", "parent", "fields", "mesh", "material", "materials",
+        "transform", "camera", "light", "scripts", NULL};
+    const char *id = NULL;
     const char *name = NULL;
     const char *class_name = NULL;
-    const char *parent_name = NULL;
     nmo_class_id_t class_id = 0;
     nmo_session_field_edit_t *fields = NULL;
     size_t field_count = 0u;
     uint32_t object_handle = 0u;
-    uint32_t parent_handle = 0u;
 
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(object, "object", allowed));
+    NMO_RETURN_IF_ERROR(manifest_optional_string(object, "id", &id));
+    if (id && id[0] == '\0') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest object.id must be a non-empty string");
+    }
     NMO_RETURN_IF_ERROR(manifest_required_string(object, "name", &name));
     NMO_RETURN_IF_ERROR(manifest_required_string(object, "class", &class_name));
-    NMO_RETURN_IF_ERROR(manifest_optional_string(object, "parent", &parent_name));
-    if (parent_name) {
-        parent_handle = manifest_find_object_handle(ctx, parent_name);
-        if (parent_handle == 0u) {
-            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                             "manifest object parent '%s' was not found", parent_name);
-        }
-    }
 
     class_id = nmo_type_query_class_id_from_name(
         nmo_context_get_type_registry(ctx->context),
@@ -695,7 +735,6 @@ static nmo_status_t manifest_parse_object(
         ctx->plan,
         &(nmo_project_object_spec_t){
             .scene_handle = scene_handle,
-            .parent_handle = parent_handle,
             .class_id = class_id,
             .name = name,
             .flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE,
@@ -707,7 +746,33 @@ static nmo_status_t manifest_parse_object(
     if (status != NMO_OK) {
         return status;
     }
-    NMO_RETURN_IF_ERROR(manifest_register_object_name(ctx, name, object_handle));
+    NMO_RETURN_IF_ERROR(manifest_register_object(ctx, id, name, object_handle));
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t manifest_parse_object_details(
+    manifest_parse_ctx_t *ctx,
+    yyjson_val *object,
+    uint32_t object_handle)
+{
+    static const char *const allowed[] = {
+        "id", "name", "class", "parent", "fields", "mesh", "material", "materials",
+        "transform", "camera", "light", "scripts", NULL};
+    const char *parent_ref = NULL;
+
+    NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(object, "object", allowed));
+    NMO_RETURN_IF_ERROR(manifest_optional_string(object, "parent", &parent_ref));
+    if (parent_ref) {
+        uint32_t parent_handle = 0u;
+        NMO_RETURN_IF_ERROR(manifest_resolve_object_ref(
+            ctx,
+            parent_ref,
+            &parent_handle));
+        NMO_RETURN_IF_ERROR(nmo_project_plan_set_object_parent(
+            ctx->plan,
+            object_handle,
+            parent_handle));
+    }
 
     yyjson_val *mesh = yyjson_obj_get(object, "mesh");
     if (mesh) {
@@ -889,8 +954,19 @@ static nmo_status_t manifest_parse_scene(
     size_t idx = 0u;
     size_t max = 0u;
     yyjson_val *object = NULL;
+    size_t object_start = ctx->object_count;
     yyjson_arr_foreach(objects, idx, max, object) {
-        NMO_RETURN_IF_ERROR(manifest_parse_object(ctx, object, scene_handle));
+        NMO_RETURN_IF_ERROR(manifest_parse_object_declare(ctx, object, scene_handle));
+    }
+
+    idx = 0u;
+    max = 0u;
+    object = NULL;
+    yyjson_arr_foreach(objects, idx, max, object) {
+        NMO_RETURN_IF_ERROR(manifest_parse_object_details(
+            ctx,
+            object,
+            ctx->object_handles[object_start + idx]));
     }
     NMO_RETURN_OK();
 }
@@ -979,6 +1055,7 @@ nmo_status_t nmo_project_manifest_json_read_manifest(
     if (ctx.context) {
         nmo_context_release(ctx.context);
     }
+    free(ctx.object_ids);
     free(ctx.object_names);
     free(ctx.object_handles);
     yyjson_doc_free(doc);

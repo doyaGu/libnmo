@@ -292,6 +292,107 @@ TEST(project_manifest_json, parses_parent_by_prior_object_name)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_manifest_json, parses_parent_by_forward_object_id)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"objects\":["
+                "{\"id\":\"child-id\",\"name\":\"Child\",\"class\":\"CK3dEntity\","
+                    "\"parent\":\"parent-id\"},"
+                "{\"id\":\"parent-id\",\"name\":\"Parent\",\"class\":\"CK3dEntity\"}"
+            "]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+    ASSERT_EQ(2u, nmo_project_plan_object_count(plan));
+
+    nmo_project_object_desc_t child = {0};
+    nmo_project_object_desc_t parent = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 0u, &child));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 1u, &parent));
+    ASSERT_EQ(parent.handle, child.parent_handle);
+
+    nmo_project_plan_destroy(plan);
+}
+
+TEST(project_manifest_json, resolves_parent_id_before_ambiguous_name)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"objects\":["
+                "{\"name\":\"Child\",\"class\":\"CK3dEntity\",\"parent\":\"Target\"},"
+                "{\"name\":\"Target\",\"class\":\"CK3dEntity\"},"
+                "{\"name\":\"Target\",\"class\":\"CK3dEntity\"},"
+                "{\"id\":\"Target\",\"name\":\"ActualParent\",\"class\":\"CK3dEntity\"}"
+            "]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+
+    nmo_project_object_desc_t child = {0};
+    nmo_project_object_desc_t parent = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 0u, &child));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 3u, &parent));
+    ASSERT_EQ(parent.handle, child.parent_handle);
+
+    nmo_project_plan_destroy(plan);
+}
+
+TEST(project_manifest_json, rejects_duplicate_object_id)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"objects\":["
+                "{\"id\":\"same\",\"name\":\"One\",\"class\":\"CK3dEntity\"},"
+                "{\"id\":\"same\",\"name\":\"Two\",\"class\":\"CK3dEntity\"}"
+            "]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_NE(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NULL(plan);
+}
+
+TEST(project_manifest_json, rejects_ambiguous_parent_name)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"objects\":["
+                "{\"name\":\"Child\",\"class\":\"CK3dEntity\",\"parent\":\"Target\"},"
+                "{\"name\":\"Target\",\"class\":\"CK3dEntity\"},"
+                "{\"name\":\"Target\",\"class\":\"CK3dEntity\"}"
+            "]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_NE(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NULL(plan);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(project_manifest_json, parses_minimal_visible_scene);
 REGISTER_TEST(project_manifest_json, parses_named_obj_materials);
@@ -300,4 +401,8 @@ REGISTER_TEST(project_manifest_json, parses_script_template);
 REGISTER_TEST(project_manifest_json, rejects_unknown_fields);
 REGISTER_TEST(project_manifest_json, rejects_unknown_transform_fields);
 REGISTER_TEST(project_manifest_json, parses_parent_by_prior_object_name);
+REGISTER_TEST(project_manifest_json, parses_parent_by_forward_object_id);
+REGISTER_TEST(project_manifest_json, resolves_parent_id_before_ambiguous_name);
+REGISTER_TEST(project_manifest_json, rejects_duplicate_object_id);
+REGISTER_TEST(project_manifest_json, rejects_ambiguous_parent_name);
 TEST_MAIN_END()

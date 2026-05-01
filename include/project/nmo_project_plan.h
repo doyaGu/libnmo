@@ -114,6 +114,11 @@ NMO_API nmo_status_t nmo_project_plan_add_object(
     const nmo_project_object_spec_t *spec,
     uint32_t *out_object_handle);
 
+NMO_API nmo_status_t nmo_project_plan_set_object_parent(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    uint32_t parent_handle);
+
 NMO_API nmo_status_t nmo_project_plan_set_object_position(
     nmo_project_plan_t *plan,
     uint32_t object_handle,
