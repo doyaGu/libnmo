@@ -5,6 +5,7 @@
 #include "object/nmo_scene_edit.h"
 #include "project/nmo_project_plan.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 
 typedef struct project_authored_scene {
@@ -31,6 +32,42 @@ static uint32_t project_authoring_scene_membership_flags(uint32_t object_flags)
         return NMO_SCENE_MEMBERSHIP_ACTIVE | NMO_SCENE_MEMBERSHIP_START_ACTIVE;
     }
     return 0u;
+}
+
+static nmo_status_t project_authoring_set_position(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    const float position[3])
+{
+    char matrix_value[256];
+    int wrote = snprintf(
+        matrix_value,
+        sizeof(matrix_value),
+        "(1, 0, 0, 0; 0, 1, 0, 0; 0, 0, 1, 0; %.9g, %.9g, %.9g, 1)",
+        position[0],
+        position[1],
+        position[2]);
+    if (wrote < 0 || (size_t)wrote >= sizeof(matrix_value)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "position matrix string is too long");
+    }
+
+    nmo_session_field_edit_result_t field_result = {0};
+    nmo_session_field_edit_t field = {
+        .field_name = "world_matrix",
+        .value_str = matrix_value,
+    };
+    NMO_RETURN_IF_ERROR(nmo_object_edit_set_fields(
+        edit,
+        object_id,
+        &field,
+        1u,
+        &field_result));
+    if (field_result.failed > 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "failed to set project object position");
+    }
+    NMO_RETURN_OK();
 }
 
 nmo_status_t nmo_project_author_scenes(
@@ -142,6 +179,16 @@ nmo_status_t nmo_project_author_scenes(
             }
             if (field_result.failed > 0u) {
                 status = NMO_ERR_VALIDATION_FAILED;
+                goto cleanup;
+            }
+        }
+
+        if (object.has_position) {
+            status = project_authoring_set_position(
+                edit,
+                object_id,
+                object.position);
+            if (status != NMO_OK) {
                 goto cleanup;
             }
         }

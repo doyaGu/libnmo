@@ -185,11 +185,21 @@ static nmo_status_t project_report_populate_diff(
                 &report->asset_diff,
                 asset_name));
         }
-        if (asset.has_material_color) {
+        if (asset.has_material_color || asset.has_material_texture) {
             int len = snprintf(asset_name, sizeof(asset_name), "%s_Material", object.name);
             if (len < 0 || (size_t)len >= sizeof(asset_name)) {
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                  "generated material asset name is too long");
+            }
+            NMO_RETURN_IF_ERROR(project_report_add_created(
+                &report->asset_diff,
+                asset_name));
+        }
+        if (asset.has_material_texture) {
+            int len = snprintf(asset_name, sizeof(asset_name), "%s_Texture", object.name);
+            if (len < 0 || (size_t)len >= sizeof(asset_name)) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                 "generated texture asset name is too long");
             }
             NMO_RETURN_IF_ERROR(project_report_add_created(
                 &report->asset_diff,

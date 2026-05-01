@@ -65,17 +65,20 @@ nmo_status_t nmo_project_author_assets(
 
         char material_name[256];
         char mesh_name[256];
+        char texture_name[256];
         int material_len = snprintf(material_name, sizeof(material_name), "%s_Material", object.name);
         int mesh_len = snprintf(mesh_name, sizeof(mesh_name), "%s_Mesh", object.name);
-        if (material_len < 0 || mesh_len < 0 ||
+        int texture_len = snprintf(texture_name, sizeof(texture_name), "%s_Texture", object.name);
+        if (material_len < 0 || mesh_len < 0 || texture_len < 0 ||
             (size_t)material_len >= sizeof(material_name) ||
-            (size_t)mesh_len >= sizeof(mesh_name)) {
+            (size_t)mesh_len >= sizeof(mesh_name) ||
+            (size_t)texture_len >= sizeof(texture_name)) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                              "generated asset name is too long");
         }
 
         nmo_object_id_t material_id = 0;
-        if (asset.has_material_color) {
+        if (asset.has_material_color || asset.has_material_texture) {
             NMO_RETURN_IF_ERROR(nmo_object_edit_create(
                 edit,
                 &(nmo_object_create_desc_t){
@@ -87,10 +90,31 @@ nmo_status_t nmo_project_author_assets(
             NMO_RETURN_IF_ERROR(nmo_asset_edit_set_material_color(
                 edit,
                 material_id,
-                asset.material_color[0],
-                asset.material_color[1],
-                asset.material_color[2],
-                asset.material_color[3]));
+                asset.has_material_color ? asset.material_color[0] : 1.0f,
+                asset.has_material_color ? asset.material_color[1] : 1.0f,
+                asset.has_material_color ? asset.material_color[2] : 1.0f,
+                asset.has_material_color ? asset.material_color[3] : 1.0f));
+        }
+
+        if (asset.has_material_texture) {
+            nmo_object_id_t texture_id = 0;
+            NMO_RETURN_IF_ERROR(nmo_object_edit_create(
+                edit,
+                &(nmo_object_create_desc_t){
+                    .class_id = NMO_CID_TEXTURE,
+                    .name = texture_name,
+                    .type_guid = NMO_GUID_NULL,
+                },
+                &texture_id));
+            NMO_RETURN_IF_ERROR(nmo_asset_edit_set_texture_from_file(
+                edit,
+                texture_id,
+                asset.material_texture_path));
+            NMO_RETURN_IF_ERROR(nmo_asset_edit_bind_material_texture(
+                edit,
+                material_id,
+                texture_id,
+                0u));
         }
 
         if (asset.has_primitive_mesh) {
@@ -112,15 +136,23 @@ nmo_status_t nmo_project_author_assets(
         }
 
         if (asset.has_external_mesh) {
-            FILE *fp = fopen(asset.external_mesh_path, "rb");
-            if (!fp) {
-                NMO_RETURN_ERROR(NMO_ERR_CANT_OPEN_FILE, NMO_SEVERITY_ERROR,
-                                 "failed to open external mesh: %s",
-                                 asset.external_mesh_path);
-            }
-            fclose(fp);
-            NMO_RETURN_ERROR(NMO_ERR_NOT_SUPPORTED, NMO_SEVERITY_ERROR,
-                             "external mesh import is not implemented yet");
+            nmo_object_id_t mesh_id = 0;
+            NMO_RETURN_IF_ERROR(nmo_object_edit_create(
+                edit,
+                &(nmo_object_create_desc_t){
+                    .class_id = NMO_CID_MESH,
+                    .name = mesh_name,
+                    .type_guid = NMO_GUID_NULL,
+                },
+                &mesh_id));
+            NMO_RETURN_IF_ERROR(nmo_asset_edit_set_obj_mesh_from_file(
+                edit,
+                mesh_id,
+                asset.external_mesh_path,
+                &(nmo_asset_mesh_import_options_t){
+                    .default_material_id = material_id,
+                }));
+            NMO_RETURN_IF_ERROR(nmo_asset_edit_bind_entity_mesh(edit, object_id, mesh_id));
         }
     }
 
