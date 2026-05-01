@@ -1,8 +1,12 @@
 #include "test_framework.h"
 
 #include "document/nmo_document_load.h"
+#include "document/nmo_document.h"
+#include "format/nmo_object.h"
 #include "object/nmo_class_ids.h"
+#include "object/builtin/nmo_sound_schemas.h"
 #include "object/nmo_object_query.h"
+#include "object/nmo_object_repository.h"
 #include "project/nmo_project_executor.h"
 #include "project/nmo_project_manifest_json.h"
 #include "project/nmo_project_plan.h"
@@ -130,6 +134,14 @@ static void assert_named_class_exists(
     ASSERT_EQ(1u, count);
 }
 
+static nmo_object_t *find_named_object(
+    nmo_document_t *document,
+    const char *name)
+{
+    nmo_object_repository_t *repo = nmo_document_get_repository(document);
+    return repo ? nmo_object_repository_find_by_name(repo, name) : NULL;
+}
+
 TEST(generated_advanced_probes, sound_and_animation_skeletons_save_load_validate)
 {
     const char *output_path = "test_generated_advanced_subsystems.cmo";
@@ -192,6 +204,124 @@ TEST(generated_advanced_probes, sound_and_animation_skeletons_save_load_validate
     remove(output_path);
 }
 
+TEST(generated_advanced_probes, wavesound_field_semantics_save_load_validate)
+{
+    const char *output_path = "test_generated_wavesound_probe.cmo";
+    remove(output_path);
+    remove("test_generated_wavesound_probe.cmo.tmp");
+
+    nmo_session_field_edit_t sound_fields[] = {
+        {.field_name = "has_wave_file_name", .value_str = "true"},
+        {.field_name = "wave_file_name", .value_str = "\"tone.wav\""},
+        {.field_name = "has_duration", .value_str = "true"},
+        {.field_name = "duration", .value_str = "44100"},
+        {.field_name = "has_data2", .value_str = "true"},
+        {.field_name = "state_flags", .value_str = "1"},
+        {.field_name = "priority", .value_str = "0.25"},
+        {.field_name = "gain", .value_str = "0.75"},
+        {.field_name = "pan", .value_str = "-0.5"},
+        {.field_name = "pitch", .value_str = "1.25"},
+        {.field_name = "cone_in_angle", .value_str = "30"},
+        {.field_name = "cone_out_angle", .value_str = "60"},
+        {.field_name = "cone_out_gain", .value_str = "0.125"},
+        {.field_name = "min_distance", .value_str = "2"},
+        {.field_name = "max_distance", .value_str = "20"},
+        {.field_name = "distance_behavior", .value_str = "3"},
+        {.field_name = "attached_object_id", .value_str = "3"},
+        {.field_name = "position", .value_str = "(1, 2, 3)"},
+        {.field_name = "direction", .value_str = "(0, 0, -1)"},
+    };
+
+    nmo_project_plan_t *plan = NULL;
+    uint32_t scene = 0u;
+    uint32_t anchor = 0u;
+    uint32_t sound = 0u;
+    nmo_project_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_document_name(plan, "WaveSoundProbe"));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "Level", &scene));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "SoundAnchor",
+                  },
+                  &anchor));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .class_id = NMO_CID_WAVESOUND,
+                      .name = "ProbeWaveSound",
+                      .fields = sound_fields,
+                      .field_count = sizeof(sound_fields) / sizeof(sound_fields[0]),
+                  },
+                  &sound));
+    ASSERT_TRUE(anchor != 0u);
+    ASSERT_TRUE(sound != 0u);
+
+    nmo_project_report_init(&report);
+    ASSERT_EQ(NMO_OK,
+              nmo_project_executor_execute_to_file(plan, output_path, &report));
+    ASSERT_TRUE(report.ok);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "validate all \"%s\"", output_path);
+    assert_cli_success_contains(args, "Result: VALID");
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &document));
+    ASSERT_NOT_NULL(document);
+
+    nmo_object_t *anchor_object =
+        find_named_object(document, "SoundAnchor");
+    nmo_object_t *sound_object =
+        find_named_object(document, "ProbeWaveSound");
+    ASSERT_NOT_NULL(anchor_object);
+    ASSERT_EQ(NMO_CID_3DENTITY, nmo_object_get_class_id(anchor_object));
+    ASSERT_NOT_NULL(sound_object);
+    ASSERT_EQ(NMO_CID_WAVESOUND, nmo_object_get_class_id(sound_object));
+    const nmo_wavesound_state_t *state =
+        (const nmo_wavesound_state_t *)nmo_object_get_state(sound_object);
+    ASSERT_NOT_NULL(state);
+
+    ASSERT_TRUE(state->has_wave_file_name);
+    ASSERT_STR_EQ("tone.wav", state->wave_file_name);
+    ASSERT_TRUE(state->has_duration);
+    ASSERT_EQ(44100, state->duration);
+    ASSERT_TRUE(state->has_data2);
+    ASSERT_EQ(1u, state->state_flags);
+    ASSERT_FLOAT_EQ(0.25f, state->priority, 0.0001f);
+    ASSERT_FLOAT_EQ(0.75f, state->gain, 0.0001f);
+    ASSERT_FLOAT_EQ(-0.5f, state->pan, 0.0001f);
+    ASSERT_FLOAT_EQ(1.25f, state->pitch, 0.0001f);
+    ASSERT_FLOAT_EQ(30.0f, state->cone_in_angle, 0.0001f);
+    ASSERT_FLOAT_EQ(60.0f, state->cone_out_angle, 0.0001f);
+    ASSERT_FLOAT_EQ(0.125f, state->cone_out_gain, 0.0001f);
+    ASSERT_FLOAT_EQ(2.0f, state->min_distance, 0.0001f);
+    ASSERT_FLOAT_EQ(20.0f, state->max_distance, 0.0001f);
+    ASSERT_EQ(3u, state->distance_behavior);
+    ASSERT_EQ(nmo_object_get_id(anchor_object), state->attached_object_id);
+    ASSERT_FLOAT_EQ(1.0f, state->position.x, 0.0001f);
+    ASSERT_FLOAT_EQ(2.0f, state->position.y, 0.0001f);
+    ASSERT_FLOAT_EQ(3.0f, state->position.z, 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, state->direction.x, 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, state->direction.y, 0.0001f);
+    ASSERT_FLOAT_EQ(-1.0f, state->direction.z, 0.0001f);
+
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+    nmo_project_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+    remove(output_path);
+}
+
 TEST(generated_advanced_probes, unproven_manifest_authoring_fields_are_rejected)
 {
     static const char *const manifests[] = {
@@ -235,6 +365,8 @@ TEST(generated_advanced_probes, unproven_manifest_authoring_fields_are_rejected)
 TEST_MAIN_BEGIN()
 REGISTER_TEST(generated_advanced_probes,
               sound_and_animation_skeletons_save_load_validate);
+REGISTER_TEST(generated_advanced_probes,
+              wavesound_field_semantics_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,
               unproven_manifest_authoring_fields_are_rejected);
 TEST_MAIN_END()

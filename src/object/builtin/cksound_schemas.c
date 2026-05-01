@@ -331,6 +331,15 @@ nmo_status_t nmo_wavesound_serialize(
         NMO_RETURN_OK();
     }
 
+    if ((is_file && in_state->has_wave_file_name) ||
+        (!is_file && (save_flags & CK_STATESAVE_WAVSOUNDFILE) != 0)) {
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_WAVSOUNDFILE);
+        if (result != NMO_OK) return result;
+        const char *base_name = nmo_sound_basename(in_state->wave_file_name);
+        result = nmo_chunk_write_string(out_chunk, base_name ? base_name : "");
+        if (result != NMO_OK) return result;
+    }
+
     if ((is_file && in_state->has_duration) ||
         (!is_file && (save_flags & CK_STATESAVE_WAVSOUNDDURATION) != 0)) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_WAVSOUNDDURATION);
