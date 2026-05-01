@@ -1,9 +1,11 @@
 #include "project/nmo_project_validator.h"
 
 #include "object/nmo_class_ids.h"
+#include "project/nmo_asset_plan.h"
 #include "project/nmo_project_plan.h"
 #include "project/nmo_script_authoring.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -144,6 +146,68 @@ static bool project_validation_has_object_handle(
     return false;
 }
 
+static bool project_validation_get_object_by_handle(
+    const nmo_project_plan_t *plan,
+    uint32_t handle,
+    nmo_project_object_desc_t *out_object)
+{
+    size_t object_count = nmo_project_plan_object_count(plan);
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_project_object_desc_t object = {0};
+        if (nmo_project_plan_get_object(plan, i, &object) == NMO_OK &&
+            object.handle == handle) {
+            if (out_object) {
+                *out_object = object;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool project_validation_file_exists(const char *path)
+{
+    if (!path || path[0] == '\0') {
+        return false;
+    }
+    FILE *file = fopen(path, "rb");
+    if (!file) {
+        return false;
+    }
+    fclose(file);
+    return true;
+}
+
+static bool project_validation_class_is_entity(nmo_class_id_t class_id)
+{
+    switch (class_id) {
+    case NMO_CID_3DENTITY:
+    case NMO_CID_3DOBJECT:
+    case NMO_CID_CAMERA:
+    case NMO_CID_TARGETCAMERA:
+    case NMO_CID_LIGHT:
+    case NMO_CID_TARGETLIGHT:
+    case NMO_CID_CHARACTER:
+    case NMO_CID_SPRITE3D:
+    case NMO_CID_CURVE:
+    case NMO_CID_CURVEPOINT:
+    case NMO_CID_BODYPART:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static bool project_validation_class_is_camera(nmo_class_id_t class_id)
+{
+    return class_id == NMO_CID_CAMERA || class_id == NMO_CID_TARGETCAMERA;
+}
+
+static bool project_validation_class_is_light(nmo_class_id_t class_id)
+{
+    return class_id == NMO_CID_LIGHT || class_id == NMO_CID_TARGETLIGHT;
+}
+
 static nmo_status_t project_validation_check_duplicate_scenes(
     const nmo_project_plan_t *plan,
     nmo_project_validation_report_t *report)
@@ -197,6 +261,40 @@ static nmo_status_t project_validation_check_objects(
                 "missing_parent",
                 "Project object references a missing parent object handle"));
         }
+        if (object.parent_handle != 0u) {
+            nmo_project_object_desc_t parent = {0};
+            if (project_validation_get_object_by_handle(
+                    plan,
+                    object.parent_handle,
+                    &parent) &&
+                !project_validation_class_is_entity(parent.class_id)) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    report,
+                    "invalid_parent_class",
+                    "Project object parent must be a 3D entity-compatible object"));
+            }
+        }
+        if ((object.has_position ||
+             object.has_rotation_euler_deg ||
+             object.has_scale) &&
+            !project_validation_class_is_entity(object.class_id)) {
+            NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                report,
+                "invalid_transform_target",
+                "Project object transform requires a 3D entity-compatible class"));
+        }
+        if (object.has_camera && !project_validation_class_is_camera(object.class_id)) {
+            NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                report,
+                "invalid_camera_target",
+                "Project camera settings require CKCamera or CKTargetCamera"));
+        }
+        if (object.has_light && !project_validation_class_is_light(object.class_id)) {
+            NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                report,
+                "invalid_light_target",
+                "Project light settings require CKLight or CKTargetLight"));
+        }
 
         for (size_t j = i + 1u; j < object_count; ++j) {
             nmo_project_object_desc_t other = {0};
@@ -207,6 +305,39 @@ static nmo_status_t project_validation_check_objects(
                     "duplicate_object_handle",
                     "Project object handles must be unique"));
             }
+        }
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t project_validation_check_assets(
+    const nmo_project_plan_t *plan,
+    nmo_project_validation_report_t *report)
+{
+    size_t asset_count = nmo_project_plan_asset_count(plan);
+    for (size_t i = 0u; i < asset_count; ++i) {
+        nmo_project_asset_desc_t asset = {0};
+        NMO_RETURN_IF_ERROR(nmo_project_plan_get_asset(plan, i, &asset));
+        if (asset.object_handle == 0u ||
+            !project_validation_has_object_handle(plan, asset.object_handle)) {
+            NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                report,
+                "missing_asset_object",
+                "Project asset references a missing object handle"));
+        }
+        if (asset.has_external_mesh &&
+            !project_validation_file_exists(asset.external_mesh_path)) {
+            NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                report,
+                "missing_external_mesh_file",
+                "Project external OBJ mesh path must exist"));
+        }
+        if (asset.has_material_texture &&
+            !project_validation_file_exists(asset.material_texture_path)) {
+            NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                report,
+                "missing_material_texture_file",
+                "Project material texture path must exist"));
         }
     }
     NMO_RETURN_OK();
@@ -233,6 +364,21 @@ static nmo_status_t project_validation_check_scripts(
                 report,
                 "missing_script_name",
                 "Project script requires a non-empty name"));
+        }
+        for (size_t step_index = 0u; step_index < script.step_count; ++step_index) {
+            nmo_project_script_step_desc_t step = {0};
+            NMO_RETURN_IF_ERROR(nmo_project_plan_get_script_step(
+                plan,
+                script.handle,
+                step_index,
+                &step));
+            if (step.kind != NMO_PROJECT_SCRIPT_STEP_DEBUG_OUTPUT &&
+                step.kind != NMO_PROJECT_SCRIPT_STEP_ON_START_DEBUG_OUTPUT) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue(
+                    report,
+                    "unsupported_script_template",
+                    "Project script step kind is not supported"));
+            }
         }
 
         for (size_t j = i + 1u; j < script_count; ++j) {
@@ -270,6 +416,7 @@ nmo_status_t nmo_project_validate_plan(
 
     NMO_RETURN_IF_ERROR(project_validation_check_duplicate_scenes(plan, report));
     NMO_RETURN_IF_ERROR(project_validation_check_objects(plan, report));
+    NMO_RETURN_IF_ERROR(project_validation_check_assets(plan, report));
     NMO_RETURN_IF_ERROR(project_validation_check_scripts(plan, report));
 
     report->ok = report->issue_count == 0u;
