@@ -114,6 +114,12 @@ if(TARGET nmo_cli)
         ENVIRONMENT "NMO_DATA_DIR=${PROJECT_SOURCE_DIR}/data"
     )
 
+    add_executable(test_generated_advanced_subsystem_probes test_generated_advanced_subsystem_probes.c)
+    target_link_libraries(test_generated_advanced_subsystem_probes PRIVATE nmo test_framework)
+    add_dependencies(test_generated_advanced_subsystem_probes nmo_cli)
+    target_compile_definitions(test_generated_advanced_subsystem_probes PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
+    add_test(NAME test_generated_advanced_subsystem_probes COMMAND test_generated_advanced_subsystem_probes)
+
     add_executable(test_ballance_script_edit_acceptance test_ballance_script_edit_acceptance.c)
     target_link_libraries(test_ballance_script_edit_acceptance PRIVATE nmo test_framework yyjson)
     add_dependencies(test_ballance_script_edit_acceptance nmo_cli)
