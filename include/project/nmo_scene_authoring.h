@@ -22,6 +22,34 @@ NMO_API nmo_status_t nmo_project_plan_set_scene_active_camera(
     uint32_t scene_handle,
     uint32_t camera_handle);
 
+NMO_API nmo_status_t nmo_project_plan_set_scene_background_color(
+    nmo_project_plan_t *plan,
+    uint32_t scene_handle,
+    float r,
+    float g,
+    float b,
+    float a);
+
+NMO_API nmo_status_t nmo_project_plan_set_scene_ambient_light(
+    nmo_project_plan_t *plan,
+    uint32_t scene_handle,
+    float r,
+    float g,
+    float b,
+    float a);
+
+NMO_API nmo_status_t nmo_project_plan_set_scene_fog(
+    nmo_project_plan_t *plan,
+    uint32_t scene_handle,
+    VXFOG_MODE mode,
+    float r,
+    float g,
+    float b,
+    float a,
+    float start,
+    float end,
+    float density);
+
 NMO_API const char *nmo_project_plan_scene_name(
     const nmo_project_plan_t *plan,
     uint32_t scene_handle);

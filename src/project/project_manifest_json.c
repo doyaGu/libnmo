@@ -501,6 +501,119 @@ static nmo_status_t manifest_parse_light(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t manifest_parse_fog_mode(
+    const char *mode,
+    VXFOG_MODE *out_mode)
+{
+    if (!mode || !out_mode) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "fog mode output is required");
+    }
+    if (strcmp(mode, "none") == 0) {
+        *out_mode = VXFOG_NONE;
+    } else if (strcmp(mode, "exp") == 0) {
+        *out_mode = VXFOG_EXP;
+    } else if (strcmp(mode, "exp2") == 0) {
+        *out_mode = VXFOG_EXP2;
+    } else if (strcmp(mode, "linear") == 0) {
+        *out_mode = VXFOG_LINEAR;
+    } else {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_SUPPORTED, NMO_SEVERITY_ERROR,
+                         "unsupported manifest fog.mode '%s'", mode);
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t manifest_parse_scene_environment(
+    nmo_project_plan_t *plan,
+    uint32_t scene_handle,
+    yyjson_val *environment)
+{
+    static const char *const allowed[] = {
+        "background_color", "ambient_light", "fog", NULL};
+    if (!environment) {
+        NMO_RETURN_OK();
+    }
+    NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(
+        environment,
+        "environment",
+        allowed));
+
+    yyjson_val *background = yyjson_obj_get(environment, "background_color");
+    if (background) {
+        float color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        NMO_RETURN_IF_ERROR(manifest_parse_vec4(
+            background,
+            "environment.background_color",
+            color));
+        NMO_RETURN_IF_ERROR(nmo_project_plan_set_scene_background_color(
+            plan,
+            scene_handle,
+            color[0],
+            color[1],
+            color[2],
+            color[3]));
+    }
+
+    yyjson_val *ambient = yyjson_obj_get(environment, "ambient_light");
+    if (ambient) {
+        float color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        NMO_RETURN_IF_ERROR(manifest_parse_vec4(
+            ambient,
+            "environment.ambient_light",
+            color));
+        NMO_RETURN_IF_ERROR(nmo_project_plan_set_scene_ambient_light(
+            plan,
+            scene_handle,
+            color[0],
+            color[1],
+            color[2],
+            color[3]));
+    }
+
+    yyjson_val *fog = yyjson_obj_get(environment, "fog");
+    if (fog) {
+        static const char *const fog_allowed[] = {
+            "mode", "color", "start", "end", "density", NULL};
+        NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(
+            fog,
+            "environment.fog",
+            fog_allowed));
+        yyjson_val *mode_value = yyjson_obj_get(fog, "mode");
+        yyjson_val *color_value = yyjson_obj_get(fog, "color");
+        yyjson_val *start_value = yyjson_obj_get(fog, "start");
+        yyjson_val *end_value = yyjson_obj_get(fog, "end");
+        yyjson_val *density_value = yyjson_obj_get(fog, "density");
+        if (!yyjson_is_str(mode_value) || !color_value ||
+            !yyjson_is_num(start_value) || !yyjson_is_num(end_value) ||
+            !yyjson_is_num(density_value)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest environment.fog requires mode, color, start, end, and density");
+        }
+        VXFOG_MODE mode = VXFOG_NONE;
+        float color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        NMO_RETURN_IF_ERROR(manifest_parse_fog_mode(
+            yyjson_get_str(mode_value),
+            &mode));
+        NMO_RETURN_IF_ERROR(manifest_parse_vec4(
+            color_value,
+            "environment.fog.color",
+            color));
+        NMO_RETURN_IF_ERROR(nmo_project_plan_set_scene_fog(
+            plan,
+            scene_handle,
+            mode,
+            color[0],
+            color[1],
+            color[2],
+            color[3],
+            (float)manifest_get_number(start_value),
+            (float)manifest_get_number(end_value),
+            (float)manifest_get_number(density_value)));
+    }
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t manifest_parse_transform(
     yyjson_val *transform,
     bool *out_has_position,
@@ -1200,7 +1313,7 @@ static nmo_status_t manifest_parse_scene(
     size_t scene_index)
 {
     static const char *const allowed[] = {
-        "name", "objects", "active_camera", "startup_active", NULL};
+        "name", "objects", "active_camera", "startup_active", "environment", NULL};
     const char *name = NULL;
     uint32_t scene_handle = 0u;
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(scene, "scene", allowed));
@@ -1215,6 +1328,10 @@ static nmo_status_t manifest_parse_scene(
         ctx->plan,
         scene_handle,
         scene_source_path));
+    NMO_RETURN_IF_ERROR(manifest_parse_scene_environment(
+        ctx->plan,
+        scene_handle,
+        yyjson_obj_get(scene, "environment")));
 
     yyjson_val *objects = yyjson_obj_get(scene, "objects");
     if (!objects) {

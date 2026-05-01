@@ -215,6 +215,139 @@ static nmo_status_t project_authoring_set_scene_active_camera(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t project_authoring_format_color(
+    const float color[4],
+    char *out_value,
+    size_t out_size)
+{
+    int wrote = snprintf(
+        out_value,
+        out_size,
+        "(%.9g, %.9g, %.9g, %.9g)",
+        color[0],
+        color[1],
+        color[2],
+        color[3]);
+    if (wrote < 0 || (size_t)wrote >= out_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "scene color string is too long");
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t project_authoring_format_float(
+    float value,
+    char *out_value,
+    size_t out_size)
+{
+    int wrote = snprintf(out_value, out_size, "%.9g", value);
+    if (wrote < 0 || (size_t)wrote >= out_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "scene float string is too long");
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t project_authoring_set_scene_environment(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t scene_id,
+    const nmo_project_scene_desc_t *scene)
+{
+    nmo_session_field_edit_t fields[7] = {0};
+    char background_value[96];
+    char ambient_value[96];
+    char fog_mode_value[32];
+    char fog_color_value[96];
+    char fog_start_value[32];
+    char fog_end_value[32];
+    char fog_density_value[32];
+    size_t field_count = 0u;
+
+    if (scene->has_background_color) {
+        NMO_RETURN_IF_ERROR(project_authoring_format_color(
+            scene->background_color,
+            background_value,
+            sizeof(background_value)));
+        fields[field_count++] = (nmo_session_field_edit_t){
+            .field_name = "background_color",
+            .value_str = background_value,
+        };
+    }
+    if (scene->has_ambient_light) {
+        NMO_RETURN_IF_ERROR(project_authoring_format_color(
+            scene->ambient_light,
+            ambient_value,
+            sizeof(ambient_value)));
+        fields[field_count++] = (nmo_session_field_edit_t){
+            .field_name = "ambient_light_color",
+            .value_str = ambient_value,
+        };
+    }
+    if (scene->has_fog) {
+        int wrote = snprintf(
+            fog_mode_value,
+            sizeof(fog_mode_value),
+            "%u",
+            (uint32_t)scene->fog_mode);
+        if (wrote < 0 || (size_t)wrote >= sizeof(fog_mode_value)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "scene fog mode string is too long");
+        }
+        NMO_RETURN_IF_ERROR(project_authoring_format_color(
+            scene->fog_color,
+            fog_color_value,
+            sizeof(fog_color_value)));
+        NMO_RETURN_IF_ERROR(project_authoring_format_float(
+            scene->fog_start,
+            fog_start_value,
+            sizeof(fog_start_value)));
+        NMO_RETURN_IF_ERROR(project_authoring_format_float(
+            scene->fog_end,
+            fog_end_value,
+            sizeof(fog_end_value)));
+        NMO_RETURN_IF_ERROR(project_authoring_format_float(
+            scene->fog_density,
+            fog_density_value,
+            sizeof(fog_density_value)));
+        fields[field_count++] = (nmo_session_field_edit_t){
+            .field_name = "fog_mode",
+            .value_str = fog_mode_value,
+        };
+        fields[field_count++] = (nmo_session_field_edit_t){
+            .field_name = "fog_color",
+            .value_str = fog_color_value,
+        };
+        fields[field_count++] = (nmo_session_field_edit_t){
+            .field_name = "fog_start",
+            .value_str = fog_start_value,
+        };
+        fields[field_count++] = (nmo_session_field_edit_t){
+            .field_name = "fog_end",
+            .value_str = fog_end_value,
+        };
+        fields[field_count++] = (nmo_session_field_edit_t){
+            .field_name = "fog_density",
+            .value_str = fog_density_value,
+        };
+    }
+
+    if (field_count == 0u) {
+        NMO_RETURN_OK();
+    }
+    nmo_session_field_edit_result_t field_result = {0};
+    NMO_RETURN_IF_ERROR(nmo_object_edit_set_fields(
+        edit,
+        scene_id,
+        fields,
+        field_count,
+        &field_result));
+    if (field_result.failed > 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "failed to set project scene environment");
+    }
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t project_authoring_set_camera(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,
@@ -297,6 +430,14 @@ nmo_status_t nmo_project_author_scenes(
 
         authored_scenes[i].plan_handle = scene.handle;
         authored_scenes[i].object_id = scene_id;
+
+        status = project_authoring_set_scene_environment(
+            edit,
+            scene_id,
+            &scene);
+        if (status != NMO_OK) {
+            goto cleanup;
+        }
     }
 
     if (object_count > 0u) {

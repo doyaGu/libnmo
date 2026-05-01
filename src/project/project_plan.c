@@ -13,6 +13,16 @@ typedef struct project_scene_record {
     bool startup_active;
     uint32_t active_camera_handle;
     char *active_camera_source_path;
+    bool has_background_color;
+    float background_color[4];
+    bool has_ambient_light;
+    float ambient_light[4];
+    bool has_fog;
+    VXFOG_MODE fog_mode;
+    float fog_color[4];
+    float fog_start;
+    float fog_end;
+    float fog_density;
 } project_scene_record_t;
 
 typedef struct project_object_record {
@@ -314,6 +324,24 @@ nmo_status_t nmo_project_plan_clone(
             clone->scenes[i].startup_active = plan->scenes[i].startup_active;
             clone->scenes[i].active_camera_handle =
                 plan->scenes[i].active_camera_handle;
+            clone->scenes[i].has_background_color =
+                plan->scenes[i].has_background_color;
+            memcpy(clone->scenes[i].background_color,
+                   plan->scenes[i].background_color,
+                   sizeof(clone->scenes[i].background_color));
+            clone->scenes[i].has_ambient_light =
+                plan->scenes[i].has_ambient_light;
+            memcpy(clone->scenes[i].ambient_light,
+                   plan->scenes[i].ambient_light,
+                   sizeof(clone->scenes[i].ambient_light));
+            clone->scenes[i].has_fog = plan->scenes[i].has_fog;
+            clone->scenes[i].fog_mode = plan->scenes[i].fog_mode;
+            memcpy(clone->scenes[i].fog_color,
+                   plan->scenes[i].fog_color,
+                   sizeof(clone->scenes[i].fog_color));
+            clone->scenes[i].fog_start = plan->scenes[i].fog_start;
+            clone->scenes[i].fog_end = plan->scenes[i].fog_end;
+            clone->scenes[i].fog_density = plan->scenes[i].fog_density;
             clone->scenes[i].name = project_plan_strdup(plan->scenes[i].name);
             clone->scenes[i].source_path =
                 project_plan_strdup(plan->scenes[i].source_path);
@@ -626,6 +654,22 @@ nmo_status_t nmo_project_plan_get_scene(
     out_scene->active_camera_handle = plan->scenes[index].active_camera_handle;
     out_scene->active_camera_source_path =
         plan->scenes[index].active_camera_source_path;
+    out_scene->has_background_color = plan->scenes[index].has_background_color;
+    memcpy(out_scene->background_color,
+           plan->scenes[index].background_color,
+           sizeof(out_scene->background_color));
+    out_scene->has_ambient_light = plan->scenes[index].has_ambient_light;
+    memcpy(out_scene->ambient_light,
+           plan->scenes[index].ambient_light,
+           sizeof(out_scene->ambient_light));
+    out_scene->has_fog = plan->scenes[index].has_fog;
+    out_scene->fog_mode = plan->scenes[index].fog_mode;
+    memcpy(out_scene->fog_color,
+           plan->scenes[index].fog_color,
+           sizeof(out_scene->fog_color));
+    out_scene->fog_start = plan->scenes[index].fog_start;
+    out_scene->fog_end = plan->scenes[index].fog_end;
+    out_scene->fog_density = plan->scenes[index].fog_density;
     NMO_RETURN_OK();
 }
 
@@ -852,6 +896,99 @@ nmo_status_t nmo_project_plan_set_scene_active_camera(
     }
     NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                      "scene handle not found");
+}
+
+static project_scene_record_t *project_plan_find_scene(
+    nmo_project_plan_t *plan,
+    uint32_t scene_handle)
+{
+    if (!plan || scene_handle == 0u) {
+        return NULL;
+    }
+    for (size_t i = 0u; i < plan->scene_count; ++i) {
+        if (plan->scenes[i].handle == scene_handle) {
+            return &plan->scenes[i];
+        }
+    }
+    return NULL;
+}
+
+nmo_status_t nmo_project_plan_set_scene_background_color(
+    nmo_project_plan_t *plan,
+    uint32_t scene_handle,
+    float r,
+    float g,
+    float b,
+    float a)
+{
+    project_scene_record_t *scene = project_plan_find_scene(plan, scene_handle);
+    if (!scene) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "scene handle not found");
+    }
+    scene->has_background_color = true;
+    scene->background_color[0] = r;
+    scene->background_color[1] = g;
+    scene->background_color[2] = b;
+    scene->background_color[3] = a;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_scene_ambient_light(
+    nmo_project_plan_t *plan,
+    uint32_t scene_handle,
+    float r,
+    float g,
+    float b,
+    float a)
+{
+    project_scene_record_t *scene = project_plan_find_scene(plan, scene_handle);
+    if (!scene) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "scene handle not found");
+    }
+    scene->has_ambient_light = true;
+    scene->ambient_light[0] = r;
+    scene->ambient_light[1] = g;
+    scene->ambient_light[2] = b;
+    scene->ambient_light[3] = a;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_scene_fog(
+    nmo_project_plan_t *plan,
+    uint32_t scene_handle,
+    VXFOG_MODE mode,
+    float r,
+    float g,
+    float b,
+    float a,
+    float start,
+    float end,
+    float density)
+{
+    if (mode != VXFOG_NONE &&
+        mode != VXFOG_EXP &&
+        mode != VXFOG_EXP2 &&
+        mode != VXFOG_LINEAR) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "unsupported fog mode");
+    }
+    project_scene_record_t *scene = project_plan_find_scene(plan, scene_handle);
+    if (!scene) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "scene handle not found");
+    }
+    scene->has_fog = true;
+    scene->fog_mode = mode;
+    scene->fog_color[0] = r;
+    scene->fog_color[1] = g;
+    scene->fog_color[2] = b;
+    scene->fog_color[3] = a;
+    scene->fog_start = start;
+    scene->fog_end = end;
+    scene->fog_density = density;
+    NMO_RETURN_OK();
 }
 
 static project_script_record_t *project_plan_find_script(

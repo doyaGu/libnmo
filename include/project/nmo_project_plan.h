@@ -26,6 +26,16 @@ typedef struct nmo_project_scene_desc {
     bool startup_active;
     uint32_t active_camera_handle;
     const char *active_camera_source_path;
+    bool has_background_color;
+    float background_color[4];
+    bool has_ambient_light;
+    float ambient_light[4];
+    bool has_fog;
+    VXFOG_MODE fog_mode;
+    float fog_color[4];
+    float fog_start;
+    float fog_end;
+    float fog_density;
 } nmo_project_scene_desc_t;
 
 typedef enum nmo_project_object_flags {

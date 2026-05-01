@@ -253,6 +253,12 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
         "\"scenes\":[{"
             "\"name\":\"Level\","
             "\"active_camera\":\"main-camera\","
+            "\"environment\":{"
+                "\"background_color\":[0.1,0.2,0.3,1],"
+                "\"ambient_light\":[0.4,0.5,0.6,1],"
+                "\"fog\":{\"mode\":\"linear\",\"color\":[0.7,0.8,0.9,1],"
+                    "\"start\":12,\"end\":34,\"density\":0.25}"
+            "},"
             "\"objects\":["
                 "{\"id\":\"main-camera\",\"name\":\"Camera\",\"class\":\"CKTargetCamera\","
                     "\"camera\":{\"fov\":0.75,\"near\":0.25,\"far\":500,"
@@ -346,6 +352,13 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
         (const nmo_scene_state_t *)nmo_object_get_state(scene_object);
     ASSERT_NOT_NULL(scene_state);
     ASSERT_EQ(nmo_object_get_id(camera_object), scene_state->starting_camera_id);
+    ASSERT_EQ(0xFF1A334Du, scene_state->background_color);
+    ASSERT_EQ(0xFF668099u, scene_state->ambient_light_color);
+    ASSERT_EQ(VXFOG_LINEAR, scene_state->fog_mode);
+    ASSERT_EQ(0xFFB3CCE6u, scene_state->fog_color);
+    ASSERT_FLOAT_EQ(12.0f, scene_state->fog_start, 0.0001f);
+    ASSERT_FLOAT_EQ(34.0f, scene_state->fog_end, 0.0001f);
+    ASSERT_FLOAT_EQ(0.25f, scene_state->fog_density, 0.0001f);
 
     const nmo_3dentity_state_t *cube_state =
         (const nmo_3dentity_state_t *)nmo_object_get_state(cube_object);

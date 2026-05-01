@@ -484,6 +484,65 @@ TEST(project_manifest_json, parses_scene_active_camera)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_manifest_json, parses_scene_environment)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"environment\":{"
+                "\"background_color\":[0.1,0.2,0.3,1],"
+                "\"ambient_light\":[0.4,0.5,0.6,1],"
+                "\"fog\":{"
+                    "\"mode\":\"linear\","
+                    "\"color\":[0.7,0.8,0.9,1],"
+                    "\"start\":12,"
+                    "\"end\":34,"
+                    "\"density\":0.25"
+                "}"
+            "}"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+
+    nmo_project_scene_desc_t scene = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_scene(plan, 0u, &scene));
+    ASSERT_TRUE(scene.has_background_color);
+    ASSERT_FLOAT_EQ(0.1f, scene.background_color[0], 0.0001f);
+    ASSERT_TRUE(scene.has_ambient_light);
+    ASSERT_FLOAT_EQ(0.5f, scene.ambient_light[1], 0.0001f);
+    ASSERT_TRUE(scene.has_fog);
+    ASSERT_EQ(VXFOG_LINEAR, scene.fog_mode);
+    ASSERT_FLOAT_EQ(0.9f, scene.fog_color[2], 0.0001f);
+    ASSERT_FLOAT_EQ(12.0f, scene.fog_start, 0.0001f);
+    ASSERT_FLOAT_EQ(34.0f, scene.fog_end, 0.0001f);
+    ASSERT_FLOAT_EQ(0.25f, scene.fog_density, 0.0001f);
+
+    nmo_project_plan_destroy(plan);
+}
+
+TEST(project_manifest_json, rejects_unknown_scene_environment_fields)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"environment\":{\"skybox\":\"unsupported\"}"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_NE(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NULL(plan);
+}
+
 TEST(project_manifest_json, parses_camera_and_light_targets)
 {
     const char *json =
@@ -606,6 +665,8 @@ REGISTER_TEST(project_manifest_json, rejects_unknown_transform_fields);
 REGISTER_TEST(project_manifest_json, parses_parent_by_prior_object_name);
 REGISTER_TEST(project_manifest_json, parses_parent_by_forward_object_id);
 REGISTER_TEST(project_manifest_json, parses_scene_active_camera);
+REGISTER_TEST(project_manifest_json, parses_scene_environment);
+REGISTER_TEST(project_manifest_json, rejects_unknown_scene_environment_fields);
 REGISTER_TEST(project_manifest_json, parses_camera_and_light_targets);
 REGISTER_TEST(project_manifest_json, resolves_parent_id_before_ambiguous_name);
 REGISTER_TEST(project_manifest_json, rejects_duplicate_object_id);
