@@ -142,6 +142,47 @@ TEST(project_manifest_json, maps_fields_and_scripts_to_project_plan)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_manifest_json, parses_script_template)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"objects\":[{"
+                "\"name\":\"Cube\","
+                "\"class\":\"CK3dEntity\","
+                "\"scripts\":[{"
+                    "\"name\":\"CubeScript\","
+                    "\"template\":\"on_start_debug_output\","
+                    "\"message\":\"template script start\""
+                "}]"
+            "}]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+    ASSERT_EQ(1u, nmo_project_plan_script_count(plan));
+
+    nmo_project_script_desc_t script = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_script(plan, 0u, &script));
+    ASSERT_EQ(1u, script.step_count);
+
+    nmo_project_script_step_desc_t step = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_script_step(
+                          plan,
+                          script.handle,
+                          0u,
+                          &step));
+    ASSERT_EQ(NMO_PROJECT_SCRIPT_STEP_ON_START_DEBUG_OUTPUT, step.kind);
+    ASSERT_STR_EQ("template script start", step.message);
+
+    nmo_project_plan_destroy(plan);
+}
+
 TEST(project_manifest_json, rejects_unknown_fields)
 {
     const char *json =
@@ -212,6 +253,7 @@ TEST(project_manifest_json, parses_parent_by_prior_object_name)
 TEST_MAIN_BEGIN()
 REGISTER_TEST(project_manifest_json, parses_minimal_visible_scene);
 REGISTER_TEST(project_manifest_json, maps_fields_and_scripts_to_project_plan);
+REGISTER_TEST(project_manifest_json, parses_script_template);
 REGISTER_TEST(project_manifest_json, rejects_unknown_fields);
 REGISTER_TEST(project_manifest_json, rejects_unknown_transform_fields);
 REGISTER_TEST(project_manifest_json, parses_parent_by_prior_object_name);

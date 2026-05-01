@@ -742,9 +742,10 @@ nmo_status_t nmo_project_plan_get_script_step(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_project_plan_script_add_debug_output(
+static nmo_status_t project_plan_script_add_step(
     nmo_project_plan_t *plan,
     uint32_t script_handle,
+    nmo_project_script_step_kind_t kind,
     const char *message)
 {
     if (!plan || script_handle == 0u || !message) {
@@ -783,9 +784,33 @@ nmo_status_t nmo_project_plan_script_add_debug_output(
     }
 
     project_script_step_record_t *step = &script->steps[script->step_count++];
-    step->kind = NMO_PROJECT_SCRIPT_STEP_DEBUG_OUTPUT;
+    step->kind = kind;
     step->message = message_copy;
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_script_add_debug_output(
+    nmo_project_plan_t *plan,
+    uint32_t script_handle,
+    const char *message)
+{
+    return project_plan_script_add_step(
+        plan,
+        script_handle,
+        NMO_PROJECT_SCRIPT_STEP_DEBUG_OUTPUT,
+        message);
+}
+
+nmo_status_t nmo_project_plan_script_add_on_start_debug_output(
+    nmo_project_plan_t *plan,
+    uint32_t script_handle,
+    const char *message)
+{
+    return project_plan_script_add_step(
+        plan,
+        script_handle,
+        NMO_PROJECT_SCRIPT_STEP_ON_START_DEBUG_OUTPUT,
+        message);
 }
 
 nmo_status_t nmo_project_plan_set_primitive_mesh(

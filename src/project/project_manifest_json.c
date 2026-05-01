@@ -525,7 +525,8 @@ static nmo_status_t manifest_parse_scripts(
     size_t script_max = 0u;
     yyjson_val *script_obj = NULL;
     yyjson_arr_foreach(scripts, script_index, script_max, script_obj) {
-        static const char *const allowed[] = {"name", "debug_output", NULL};
+        static const char *const allowed[] = {
+            "name", "debug_output", "template", "message", NULL};
         const char *name = NULL;
         uint32_t script_handle = 0u;
         NMO_RETURN_IF_ERROR(
@@ -536,6 +537,29 @@ static nmo_status_t manifest_parse_scripts(
             object_handle,
             name,
             &script_handle));
+
+        const char *template_name = NULL;
+        NMO_RETURN_IF_ERROR(manifest_optional_string(
+            script_obj,
+            "template",
+            &template_name));
+        if (template_name) {
+            const char *message = NULL;
+            if (strcmp(template_name, "on_start_debug_output") != 0) {
+                NMO_RETURN_ERROR(NMO_ERR_NOT_SUPPORTED, NMO_SEVERITY_ERROR,
+                                 "unsupported manifest script template '%s'",
+                                 template_name);
+            }
+            NMO_RETURN_IF_ERROR(manifest_required_string(
+                script_obj,
+                "message",
+                &message));
+            NMO_RETURN_IF_ERROR(
+                nmo_project_plan_script_add_on_start_debug_output(
+                    ctx->plan,
+                    script_handle,
+                    message));
+        }
 
         yyjson_val *debug = yyjson_obj_get(script_obj, "debug_output");
         if (!debug) {

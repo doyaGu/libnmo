@@ -80,7 +80,7 @@ TEST(generated_script_lifecycle, binds_generated_script_to_object)
                   "CubeScript",
                   &script));
     ASSERT_EQ(NMO_OK,
-              nmo_project_plan_script_add_debug_output(
+              nmo_project_plan_script_add_on_start_debug_output(
                   plan,
                   script,
                   "generated script start"));
