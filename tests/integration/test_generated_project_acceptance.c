@@ -9,6 +9,9 @@
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_scene_schemas.h"
+#include "object/builtin/nmo_targetcamera_schemas.h"
+#include "object/builtin/nmo_targetlight_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_query.h"
@@ -218,8 +221,8 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
 {
     make_dir("test_project_acceptance_tmp");
     const char *manifest_path = "test_project_acceptance_tmp/project.json";
-    const char *obj_path = "test_project_acceptance_tmp/triangle.obj";
-    const char *png_path = "test_project_acceptance_tmp/triangle.png";
+    const char *obj_path = "test_project_acceptance_tmp/multi_material.obj";
+    const char *png_path = "test_project_acceptance_tmp/blue.png";
     const char *output_path = "test_project_acceptance_tmp/project.cmo";
     remove(manifest_path);
     remove(obj_path);
@@ -232,10 +235,15 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
         "v 0 0 0\n"
         "v 1 0 0\n"
         "v 0 1 0\n"
+        "v 1 1 0\n"
         "vt 0 0\n"
         "vt 1 0\n"
         "vt 0 1\n"
-        "f 1/1 2/2 3/3\n"));
+        "vt 1 1\n"
+        "usemtl Red\n"
+        "f 1/1 2/2 3/3\n"
+        "usemtl Blue\n"
+        "f 2/2 4/4 3/3\n"));
     ASSERT_TRUE(write_png_file(png_path));
 
     const char *manifest =
@@ -244,26 +252,33 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
         "\"document\":{\"name\":\"GeneratedAcceptance\"},"
         "\"scenes\":[{"
             "\"name\":\"Level\","
+            "\"active_camera\":\"main-camera\","
             "\"objects\":["
-                "{\"name\":\"Camera\",\"class\":\"CKCamera\","
-                    "\"camera\":{\"fov\":0.75,\"near\":0.25,\"far\":500}},"
-                "{\"name\":\"Light\",\"class\":\"CKLight\","
+                "{\"id\":\"main-camera\",\"name\":\"Camera\",\"class\":\"CKTargetCamera\","
+                    "\"camera\":{\"fov\":0.75,\"near\":0.25,\"far\":500,"
+                        "\"target\":\"look-target\"}},"
+                "{\"id\":\"key-light\",\"name\":\"Light\",\"class\":\"CKTargetLight\","
                     "\"light\":{\"diffuse\":[0.1,0.2,0.3,1],"
-                        "\"range\":123,\"type\":\"directional\"}},"
-                "{\"name\":\"Parent\",\"class\":\"CK3dEntity\"},"
-                "{\"name\":\"Cube\",\"class\":\"CK3dEntity\","
-                    "\"parent\":\"Parent\","
-                    "\"mesh\":{\"obj\":\"triangle.obj\"},"
-                    "\"material\":{\"texture\":\"triangle.png\"},"
+                        "\"range\":123,\"type\":\"directional\","
+                        "\"target\":\"look-target\"}},"
+                "{\"id\":\"mesh-child\",\"name\":\"MeshEntity\",\"class\":\"CK3dEntity\","
+                    "\"parent\":\"parent\","
+                    "\"mesh\":{\"obj\":\"multi_material.obj\"},"
+                    "\"materials\":["
+                        "{\"name\":\"Red\",\"color\":[1,0,0,1]},"
+                        "{\"name\":\"Blue\",\"texture\":\"blue.png\"}"
+                    "],"
                     "\"transform\":{\"position\":[7,8,9],"
                         "\"rotation_euler_deg\":[0,0,0],"
                         "\"scale\":[2,3,4]},"
                     "\"scripts\":[{"
-                        "\"name\":\"CubeScript\","
-                        "\"template\":\"on_start_debug_output\","
+                        "\"name\":\"SceneStartScript\","
+                        "\"template\":\"scene_on_start_debug_output\","
                         "\"message\":\"generated script start\""
                     "}]"
-                "}"
+                "},"
+                "{\"id\":\"parent\",\"name\":\"Parent\",\"class\":\"CK3dEntity\"},"
+                "{\"id\":\"look-target\",\"name\":\"LookTarget\",\"class\":\"CK3dEntity\"}"
             "]"
         "}]"
         "}";
@@ -286,33 +301,51 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
     ASSERT_NOT_NULL(document);
 
     assert_named_class_exists(document, "Level", NMO_CID_SCENE);
-    assert_named_class_exists(document, "Camera", NMO_CID_CAMERA);
-    assert_named_class_exists(document, "Light", NMO_CID_LIGHT);
+    assert_named_class_exists(document, "Camera", NMO_CID_TARGETCAMERA);
+    assert_named_class_exists(document, "Light", NMO_CID_TARGETLIGHT);
     assert_named_class_exists(document, "Parent", NMO_CID_3DENTITY);
-    assert_named_class_exists(document, "Cube", NMO_CID_3DENTITY);
-    assert_named_class_exists(document, "Cube_Mesh", NMO_CID_MESH);
-    assert_named_class_exists(document, "Cube_Material", NMO_CID_MATERIAL);
-    assert_named_class_exists(document, "Cube_Texture", NMO_CID_TEXTURE);
-    assert_named_class_exists(document, "CubeScript", NMO_CID_BEHAVIOR);
+    assert_named_class_exists(document, "LookTarget", NMO_CID_3DENTITY);
+    assert_named_class_exists(document, "MeshEntity", NMO_CID_3DENTITY);
+    assert_named_class_exists(document, "MeshEntity_Mesh", NMO_CID_MESH);
+    assert_named_class_exists(document, "MeshEntity_Red_Material", NMO_CID_MATERIAL);
+    assert_named_class_exists(document, "MeshEntity_Blue_Material", NMO_CID_MATERIAL);
+    assert_named_class_exists(document, "MeshEntity_Blue_Texture", NMO_CID_TEXTURE);
+    assert_named_class_exists(document, "SceneStartScript", NMO_CID_BEHAVIOR);
 
-    nmo_object_t *cube_object = find_named_object(document, "Cube", NMO_CID_3DENTITY);
+    nmo_object_t *scene_object = find_named_object(document, "Level", NMO_CID_SCENE);
+    nmo_object_t *cube_object = find_named_object(document, "MeshEntity", NMO_CID_3DENTITY);
     nmo_object_t *parent_object = find_named_object(document, "Parent", NMO_CID_3DENTITY);
-    nmo_object_t *camera_object = find_named_object(document, "Camera", NMO_CID_CAMERA);
-    nmo_object_t *light_object = find_named_object(document, "Light", NMO_CID_LIGHT);
-    nmo_object_t *mesh_object = find_named_object(document, "Cube_Mesh", NMO_CID_MESH);
-    nmo_object_t *material_object = find_named_object(document, "Cube_Material", NMO_CID_MATERIAL);
-    nmo_object_t *texture_object = find_named_object(document, "Cube_Texture", NMO_CID_TEXTURE);
+    nmo_object_t *target_object = find_named_object(document, "LookTarget", NMO_CID_3DENTITY);
+    nmo_object_t *camera_object = find_named_object(document, "Camera", NMO_CID_TARGETCAMERA);
+    nmo_object_t *light_object = find_named_object(document, "Light", NMO_CID_TARGETLIGHT);
+    nmo_object_t *mesh_object = find_named_object(document, "MeshEntity_Mesh", NMO_CID_MESH);
+    nmo_object_t *red_material_object =
+        find_named_object(document, "MeshEntity_Red_Material", NMO_CID_MATERIAL);
+    nmo_object_t *blue_material_object =
+        find_named_object(document, "MeshEntity_Blue_Material", NMO_CID_MATERIAL);
+    nmo_object_t *texture_object =
+        find_named_object(document, "MeshEntity_Blue_Texture", NMO_CID_TEXTURE);
+    ASSERT_NOT_NULL(scene_object);
     ASSERT_NOT_NULL(cube_object);
     ASSERT_NOT_NULL(parent_object);
+    ASSERT_NOT_NULL(target_object);
     ASSERT_NOT_NULL(camera_object);
     ASSERT_NOT_NULL(light_object);
     ASSERT_NOT_NULL(mesh_object);
-    ASSERT_NOT_NULL(material_object);
+    ASSERT_NOT_NULL(red_material_object);
+    ASSERT_NOT_NULL(blue_material_object);
     ASSERT_NOT_NULL(texture_object);
 
     nmo_object_id_t mesh_id = nmo_object_get_id(mesh_object);
-    nmo_object_id_t material_id = nmo_object_get_id(material_object);
+    nmo_object_id_t red_material_id = nmo_object_get_id(red_material_object);
+    nmo_object_id_t blue_material_id = nmo_object_get_id(blue_material_object);
     nmo_object_id_t texture_id = nmo_object_get_id(texture_object);
+    nmo_object_id_t target_id = nmo_object_get_id(target_object);
+
+    const nmo_scene_state_t *scene_state =
+        (const nmo_scene_state_t *)nmo_object_get_state(scene_object);
+    ASSERT_NOT_NULL(scene_state);
+    ASSERT_EQ(nmo_object_get_id(camera_object), scene_state->starting_camera_id);
 
     const nmo_3dentity_state_t *cube_state =
         (const nmo_3dentity_state_t *)nmo_object_get_state(cube_object);
@@ -326,15 +359,23 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
     ASSERT_FLOAT_EQ(8.0f, cube_state->world_matrix[13], 0.0001f);
     ASSERT_FLOAT_EQ(9.0f, cube_state->world_matrix[14], 0.0001f);
 
-    const nmo_camera_state_t *camera_state =
-        (const nmo_camera_state_t *)nmo_object_get_state(camera_object);
+    const nmo_targetcamera_state_t *target_camera_state =
+        (const nmo_targetcamera_state_t *)nmo_object_get_state(camera_object);
+    ASSERT_NOT_NULL(target_camera_state);
+    ASSERT_TRUE(target_camera_state->has_target);
+    ASSERT_EQ(target_id, target_camera_state->target_id);
+    const nmo_camera_state_t *camera_state = &target_camera_state->base;
     ASSERT_NOT_NULL(camera_state);
     ASSERT_FLOAT_EQ(0.75f, camera_state->fov, 0.0001f);
     ASSERT_FLOAT_EQ(0.25f, camera_state->near_plane, 0.0001f);
     ASSERT_FLOAT_EQ(500.0f, camera_state->far_plane, 0.0001f);
 
-    const nmo_light_state_t *light_state =
-        (const nmo_light_state_t *)nmo_object_get_state(light_object);
+    const nmo_targetlight_state_t *target_light_state =
+        (const nmo_targetlight_state_t *)nmo_object_get_state(light_object);
+    ASSERT_NOT_NULL(target_light_state);
+    ASSERT_TRUE(target_light_state->has_target);
+    ASSERT_EQ(target_id, target_light_state->target_id);
+    const nmo_light_state_t *light_state = &target_light_state->base;
     ASSERT_NOT_NULL(light_state);
     ASSERT_FLOAT_EQ(26.0f / 255.0f, light_state->light_data.diffuse.r, 0.0001f);
     ASSERT_FLOAT_EQ(51.0f / 255.0f, light_state->light_data.diffuse.g, 0.0001f);
@@ -346,14 +387,17 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
     const nmo_mesh_state_t *mesh_state =
         (const nmo_mesh_state_t *)nmo_object_get_state(mesh_object);
     ASSERT_NOT_NULL(mesh_state);
-    ASSERT_EQ(3u, mesh_state->vertex_count);
-    ASSERT_EQ(1u, mesh_state->face_count);
-    ASSERT_EQ(1u, mesh_state->material_group_count);
+    ASSERT_EQ(4u, mesh_state->vertex_count);
+    ASSERT_EQ(2u, mesh_state->face_count);
+    ASSERT_EQ(2u, mesh_state->material_group_count);
     ASSERT_NOT_NULL(mesh_state->material_groups);
-    ASSERT_EQ(material_id, mesh_state->material_groups[0].material_id);
+    ASSERT_EQ(red_material_id, mesh_state->material_groups[0].material_id);
+    ASSERT_EQ(blue_material_id, mesh_state->material_groups[1].material_id);
+    ASSERT_EQ(0u, mesh_state->faces[0].material_group_idx);
+    ASSERT_EQ(1u, mesh_state->faces[1].material_group_idx);
 
     const nmo_material_state_t *material_state =
-        (const nmo_material_state_t *)nmo_object_get_state(material_object);
+        (const nmo_material_state_t *)nmo_object_get_state(blue_material_object);
     ASSERT_NOT_NULL(material_state);
     ASSERT_EQ(0xFFFFFFFFu, material_state->diffuse_color);
     ASSERT_EQ(texture_id, material_state->texture_ids[0]);
