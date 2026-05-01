@@ -22,6 +22,7 @@
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_texture_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
@@ -32,6 +33,7 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_data.h"
+#include "format/nmo_stb_adapter.h"
 #include "format/nmo_object.h"
 #include "object/nmo_statesave_ids.h"
 #include "object/nmo_serialize_context.h"
@@ -47,6 +49,7 @@
 #include <stdbool.h>
 #include <ctype.h>
 #include <math.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1219,6 +1222,11 @@ static nmo_status_t workspace_edit_find_typed_state(
         out_state);
 }
 
+static nmo_status_t workspace_edit_require_object_class(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    nmo_class_id_t class_id);
+
 static uint8_t workspace_edit_float_color_channel(float value)
 {
     if (value <= 0.0f) {
@@ -1270,6 +1278,85 @@ nmo_status_t nmo_asset_edit_set_material_color(
     state->specular_power = 0.0f;
 
     nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
+    return NMO_OK;
+}
+
+nmo_status_t nmo_asset_edit_set_texture_rgba(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t texture_id,
+    const void *rgba_pixels,
+    uint32_t width,
+    uint32_t height)
+{
+    if (edit == NULL || texture_id == 0u || rgba_pixels == NULL ||
+        width == 0u || height == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_texture_state_t *state = NULL;
+    nmo_status_t status = workspace_edit_find_typed_state(
+        edit,
+        texture_id,
+        NMO_CID_TEXTURE,
+        (void **)&state);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    nmo_arena_t *arena = nmo_workspace_internal_document_arena(edit->workspace);
+    if (arena == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    status = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    status = nmo_texture_replace_bitmap(state, arena, rgba_pixels, width, height);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    nmo_workspace_edit_mark(
+        edit,
+        NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_RESOURCES);
+    return NMO_OK;
+}
+
+nmo_status_t nmo_asset_edit_bind_material_texture(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t material_id,
+    nmo_object_id_t texture_id,
+    uint32_t slot)
+{
+    if (slot != 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_material_state_t *state = NULL;
+    nmo_status_t status = workspace_edit_find_typed_state(
+        edit,
+        material_id,
+        NMO_CID_MATERIAL,
+        (void **)&state);
+    if (status != NMO_OK) {
+        return status;
+    }
+    status = workspace_edit_require_object_class(edit, texture_id, NMO_CID_TEXTURE);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    status = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    state->texture_ids[0] = texture_id;
+    nmo_workspace_edit_mark(
+        edit,
+        NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
     return NMO_OK;
 }
 
@@ -2017,6 +2104,58 @@ static uint8_t *workspace_edit_read_file_to_heap(
 
     *out_size = size;
     return bytes;
+}
+
+nmo_status_t nmo_asset_edit_set_texture_from_file(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t texture_id,
+    const char *path)
+{
+    if (edit == NULL || texture_id == 0u || path == NULL || *path == '\0') {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t size = 0u;
+    uint8_t *bytes = workspace_edit_read_file_to_heap(path, &size);
+    if (bytes == NULL) {
+        return NMO_ERR_CANT_OPEN_FILE;
+    }
+    if (size > (size_t)INT_MAX) {
+        free(bytes);
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_arena_t *decode_arena = nmo_arena_create(NULL, 0);
+    if (decode_arena == NULL) {
+        free(bytes);
+        return NMO_ERR_NOMEM;
+    }
+
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    uint8_t *pixels = nmo_stbi_load_from_memory(
+        decode_arena,
+        bytes,
+        (int)size,
+        &width,
+        &height,
+        &channels,
+        4);
+    free(bytes);
+    if (pixels == NULL || width <= 0 || height <= 0) {
+        nmo_arena_destroy(decode_arena);
+        return NMO_ERR_INVALID_FORMAT;
+    }
+
+    nmo_status_t status = nmo_asset_edit_set_texture_rgba(
+        edit,
+        texture_id,
+        pixels,
+        (uint32_t)width,
+        (uint32_t)height);
+    nmo_arena_destroy(decode_arena);
+    return status;
 }
 
 nmo_status_t nmo_asset_edit_set_obj_mesh_from_file(

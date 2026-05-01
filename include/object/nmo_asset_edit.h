@@ -28,6 +28,24 @@ NMO_API nmo_status_t nmo_asset_edit_set_material_color(
     float b,
     float a);
 
+NMO_API nmo_status_t nmo_asset_edit_set_texture_rgba(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t texture_id,
+    const void *rgba_pixels,
+    uint32_t width,
+    uint32_t height);
+
+NMO_API nmo_status_t nmo_asset_edit_set_texture_from_file(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t texture_id,
+    const char *path);
+
+NMO_API nmo_status_t nmo_asset_edit_bind_material_texture(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t material_id,
+    nmo_object_id_t texture_id,
+    uint32_t slot);
+
 NMO_API nmo_status_t nmo_asset_edit_set_primitive_mesh(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t mesh_id,
