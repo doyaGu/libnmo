@@ -4,6 +4,7 @@
 #include "document/nmo_document.h"
 #include "format/nmo_object.h"
 #include "object/nmo_class_ids.h"
+#include "object/builtin/nmo_animation_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_repository.h"
@@ -402,6 +403,95 @@ TEST(generated_advanced_probes, manifest_wavesound_authoring_save_load_validate)
     remove(sound_path);
 }
 
+TEST(generated_advanced_probes, objectanimation_field_semantics_save_load_validate)
+{
+    const char *output_path = "test_generated_objectanimation_probe.cmo";
+    remove(output_path);
+    remove("test_generated_objectanimation_probe.cmo.tmp");
+
+    nmo_session_field_edit_t animation_fields[] = {
+        {.field_name = "format", .value_str = "2"},
+        {.field_name = "root_pos", .value_str = "(1, 2, 3)"},
+        {.field_name = "flags", .value_str = "1"},
+        {.field_name = "entity_id", .value_str = "3"},
+        {.field_name = "has_length", .value_str = "1"},
+        {.field_name = "length", .value_str = "12.5"},
+    };
+
+    nmo_project_plan_t *plan = NULL;
+    uint32_t scene = 0u;
+    uint32_t entity = 0u;
+    uint32_t animation = 0u;
+    nmo_project_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_document_name(plan, "ObjectAnimationProbe"));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "Level", &scene));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "AnimatedEntity",
+                  },
+                  &entity));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .class_id = NMO_CID_OBJECTANIMATION,
+                      .name = "ProbeObjectAnimation",
+                      .fields = animation_fields,
+                      .field_count = sizeof(animation_fields) / sizeof(animation_fields[0]),
+                  },
+                  &animation));
+    ASSERT_TRUE(entity != 0u);
+    ASSERT_TRUE(animation != 0u);
+
+    nmo_project_report_init(&report);
+    ASSERT_EQ(NMO_OK,
+              nmo_project_executor_execute_to_file(plan, output_path, &report));
+    ASSERT_TRUE(report.ok);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "validate all \"%s\"", output_path);
+    assert_cli_success_contains(args, "Result: VALID");
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &document));
+    ASSERT_NOT_NULL(document);
+
+    nmo_object_t *entity_object =
+        find_named_object(document, "AnimatedEntity");
+    nmo_object_t *animation_object =
+        find_named_object(document, "ProbeObjectAnimation");
+    ASSERT_NOT_NULL(entity_object);
+    ASSERT_NOT_NULL(animation_object);
+    const nmo_objectanimation_state_t *state =
+        (const nmo_objectanimation_state_t *)nmo_object_get_state(animation_object);
+    ASSERT_NOT_NULL(state);
+    ASSERT_EQ(CKOBJANIM_FORMAT_CONTROLLERS, state->format);
+    ASSERT_TRUE(state->has_root_pos);
+    ASSERT_FLOAT_EQ(1.0f, state->root_pos.x, 0.0001f);
+    ASSERT_FLOAT_EQ(2.0f, state->root_pos.y, 0.0001f);
+    ASSERT_FLOAT_EQ(3.0f, state->root_pos.z, 0.0001f);
+    ASSERT_EQ(1u, state->flags);
+    ASSERT_EQ(nmo_object_get_id(entity_object), state->entity_id);
+    ASSERT_TRUE(state->has_length);
+    ASSERT_FLOAT_EQ(12.5f, state->length, 0.0001f);
+    ASSERT_EQ(0u, state->controller_count);
+
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+    nmo_project_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+    remove(output_path);
+}
+
 TEST(generated_advanced_probes, unproven_manifest_authoring_fields_are_rejected)
 {
     static const char *const manifests[] = {
@@ -449,6 +539,8 @@ REGISTER_TEST(generated_advanced_probes,
               wavesound_field_semantics_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,
               manifest_wavesound_authoring_save_load_validate);
+REGISTER_TEST(generated_advanced_probes,
+              objectanimation_field_semantics_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,
               unproven_manifest_authoring_fields_are_rejected);
 TEST_MAIN_END()
