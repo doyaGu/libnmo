@@ -23,6 +23,45 @@ typedef struct nmo_project_report_diff {
     nmo_project_report_name_list_t created;
 } nmo_project_report_diff_t;
 
+typedef struct nmo_project_report_object_evidence {
+    uint32_t plan_handle;
+    nmo_object_id_t object_id;
+    nmo_class_id_t class_id;
+    char *name;
+} nmo_project_report_object_evidence_t;
+
+typedef struct nmo_project_report_asset_binding_evidence {
+    char *owner_name;
+    char *asset_name;
+    char *kind;
+} nmo_project_report_asset_binding_evidence_t;
+
+typedef struct nmo_project_report_material_texture_slot_evidence {
+    char *material_name;
+    uint32_t slot;
+    char *texture_name;
+    char *source_path;
+} nmo_project_report_material_texture_slot_evidence_t;
+
+typedef struct nmo_project_report_script_evidence {
+    char *name;
+    size_t step_count;
+    bool validation_ok;
+} nmo_project_report_script_evidence_t;
+
+typedef struct nmo_project_report_evidence {
+    nmo_project_report_object_evidence_t *objects;
+    size_t object_count;
+    nmo_project_report_asset_binding_evidence_t *asset_bindings;
+    size_t asset_binding_count;
+    nmo_project_report_material_texture_slot_evidence_t *material_texture_slots;
+    size_t material_texture_slot_count;
+    nmo_project_report_script_evidence_t *scripts;
+    size_t script_count;
+    bool post_load_checked;
+    bool post_load_ok;
+} nmo_project_report_evidence_t;
+
 typedef struct nmo_project_report {
     bool ok;
     bool dry_run;
@@ -33,6 +72,7 @@ typedef struct nmo_project_report {
     nmo_project_report_diff_t script_diff;
     nmo_project_report_diff_t manager_diff;
     nmo_project_validation_report_t validation;
+    nmo_project_report_evidence_t evidence;
     char *output_path;
 } nmo_project_report_t;
 

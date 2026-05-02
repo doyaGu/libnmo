@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #if !defined(_WIN32)
 #include <sys/stat.h>
@@ -149,6 +150,12 @@ static bool get_bool_field(yyjson_val *obj, const char *key)
     return val && yyjson_is_bool(val) && yyjson_get_bool(val);
 }
 
+static uint64_t get_uint_field(yyjson_val *obj, const char *key)
+{
+    yyjson_val *val = yyjson_obj_get(obj, key);
+    return val && yyjson_is_uint(val) ? yyjson_get_uint(val) : 0u;
+}
+
 static int array_contains_string(yyjson_val *arr, const char *needle)
 {
     size_t idx = 0u;
@@ -262,6 +269,27 @@ TEST(generated_project_manifest, cli_dry_run_reports_project_diagnostics)
     ASSERT_TRUE(get_bool_field(validation, "ok"));
     ASSERT_EQ(0u, yyjson_arr_size(get_array_field(validation, "issues")));
 
+    yyjson_val *evidence = get_object_field(data, "evidence");
+    ASSERT_NOT_NULL(evidence);
+    ASSERT_FALSE(get_bool_field(evidence, "post_load_checked"));
+    ASSERT_FALSE(get_bool_field(evidence, "post_load_ok"));
+
+    yyjson_val *objects = get_array_field(evidence, "generated_objects");
+    ASSERT_NOT_NULL(objects);
+    ASSERT_EQ(2u, yyjson_arr_size(objects));
+    yyjson_val *object = yyjson_arr_get(objects, 1);
+    ASSERT_STR_EQ("Cube", get_string_field(object, "name"));
+    ASSERT_EQ(0u, get_uint_field(object, "id"));
+    ASSERT_EQ((uint64_t)NMO_CID_3DENTITY, get_uint_field(object, "class_id"));
+
+    yyjson_val *asset_bindings = get_array_field(evidence, "asset_bindings");
+    ASSERT_NOT_NULL(asset_bindings);
+    ASSERT_EQ(2u, yyjson_arr_size(asset_bindings));
+    yyjson_val *binding = yyjson_arr_get(asset_bindings, 0);
+    ASSERT_STR_EQ("Cube", get_string_field(binding, "owner"));
+    ASSERT_STR_EQ("Cube_Mesh", get_string_field(binding, "asset"));
+    ASSERT_STR_EQ("primitive_mesh", get_string_field(binding, "kind"));
+
     yyjson_doc_free(doc);
     free(result.output);
     remove(manifest_path);
@@ -339,6 +367,75 @@ TEST(generated_project_manifest, cli_json_failure_reports_project_source)
     remove(manifest_path);
 }
 
+TEST(generated_project_manifest, cli_json_write_reports_project_evidence)
+{
+    make_dir("test_project_manifest_tmp");
+    const char *manifest_path = "test_project_manifest_tmp/project_evidence.json";
+    const char *output_path = "test_project_manifest_tmp/project_evidence.cmo";
+    remove(manifest_path);
+    remove(output_path);
+
+    const char *manifest =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"GeneratedEvidence\"},"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"objects\":["
+                "{\"name\":\"Camera\",\"class\":\"CKCamera\"},"
+                "{\"name\":\"Cube\",\"class\":\"CK3dEntity\","
+                    "\"mesh\":{\"primitive\":\"cube\"},"
+                    "\"material\":{\"color\":[1,0,0,1]}}"
+            "]"
+        "}]"
+        "}";
+    ASSERT_TRUE(write_text_file(manifest_path, manifest));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json patch apply --project \"%s\" -o \"%s\"",
+             manifest_path,
+             output_path);
+    cli_run_result_t result = run_cli_capture(args);
+    if (result.exit_code != 0) {
+        fprintf(stderr, "\nCommand: %s\nExit: %d\nOutput:\n%s\n",
+                args,
+                result.exit_code,
+                result.output ? result.output : "(null)");
+    }
+    ASSERT_EQ(0, result.exit_code);
+    ASSERT_TRUE(file_exists(output_path));
+
+    yyjson_doc *doc = NULL;
+    parse_cli_json_result(&result, &doc);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_TRUE(get_bool_field(data, "ok"));
+    ASSERT_FALSE(get_bool_field(data, "dry_run"));
+
+    yyjson_val *evidence = get_object_field(data, "evidence");
+    ASSERT_NOT_NULL(evidence);
+    ASSERT_TRUE(get_bool_field(evidence, "post_load_checked"));
+    ASSERT_TRUE(get_bool_field(evidence, "post_load_ok"));
+
+    yyjson_val *objects = get_array_field(evidence, "generated_objects");
+    ASSERT_NOT_NULL(objects);
+    ASSERT_EQ(2u, yyjson_arr_size(objects));
+    yyjson_val *cube = yyjson_arr_get(objects, 1);
+    ASSERT_STR_EQ("Cube", get_string_field(cube, "name"));
+    ASSERT_GT(get_uint_field(cube, "id"), 0u);
+    ASSERT_EQ((uint64_t)NMO_CID_3DENTITY, get_uint_field(cube, "class_id"));
+
+    yyjson_val *scripts = get_array_field(evidence, "scripts");
+    ASSERT_NOT_NULL(scripts);
+    ASSERT_EQ(0u, yyjson_arr_size(scripts));
+
+    yyjson_doc_free(doc);
+    free(result.output);
+    remove(output_path);
+    remove(manifest_path);
+}
+
 TEST(generated_project_manifest, cli_replays_project_manifest)
 {
     make_dir("test_project_manifest_tmp");
@@ -403,5 +500,6 @@ TEST(generated_project_manifest, cli_replays_project_manifest)
 TEST_MAIN_BEGIN()
 REGISTER_TEST(generated_project_manifest, cli_dry_run_reports_project_diagnostics);
 REGISTER_TEST(generated_project_manifest, cli_json_failure_reports_project_source);
+REGISTER_TEST(generated_project_manifest, cli_json_write_reports_project_evidence);
 REGISTER_TEST(generated_project_manifest, cli_replays_project_manifest);
 TEST_MAIN_END()

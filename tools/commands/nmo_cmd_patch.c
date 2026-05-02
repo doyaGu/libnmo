@@ -555,6 +555,159 @@ static void patch_add_project_validation_json(
     nmo_cli_json_add_val_safe(doc, data, "validation", validation_obj);
 }
 
+static void patch_add_project_evidence_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *data,
+    const nmo_project_report_evidence_t *evidence)
+{
+    yyjson_mut_val *evidence_obj = yyjson_mut_obj(doc);
+    if (!evidence_obj) {
+        return;
+    }
+
+    yyjson_mut_val *objects = yyjson_mut_arr(doc);
+    if (objects) {
+        if (evidence) {
+            for (size_t i = 0u; i < evidence->object_count; ++i) {
+                const nmo_project_report_object_evidence_t *object =
+                    &evidence->objects[i];
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                if (!item) {
+                    continue;
+                }
+                nmo_cli_json_add_uint_safe(
+                    doc,
+                    item,
+                    "plan_handle",
+                    (uint64_t)object->plan_handle);
+                nmo_cli_json_add_uint_safe(
+                    doc,
+                    item,
+                    "id",
+                    (uint64_t)object->object_id);
+                nmo_cli_json_add_uint_safe(
+                    doc,
+                    item,
+                    "class_id",
+                    (uint64_t)object->class_id);
+                nmo_cli_json_add_str_safe(doc, item, "name", object->name);
+                yyjson_mut_arr_append(objects, item);
+            }
+        }
+        nmo_cli_json_add_val_safe(doc, evidence_obj, "generated_objects", objects);
+    }
+
+    yyjson_mut_val *asset_bindings = yyjson_mut_arr(doc);
+    if (asset_bindings) {
+        if (evidence) {
+            for (size_t i = 0u; i < evidence->asset_binding_count; ++i) {
+                const nmo_project_report_asset_binding_evidence_t *binding =
+                    &evidence->asset_bindings[i];
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                if (!item) {
+                    continue;
+                }
+                nmo_cli_json_add_str_safe(
+                    doc,
+                    item,
+                    "owner",
+                    binding->owner_name);
+                nmo_cli_json_add_str_safe(
+                    doc,
+                    item,
+                    "asset",
+                    binding->asset_name);
+                nmo_cli_json_add_str_safe(doc, item, "kind", binding->kind);
+                yyjson_mut_arr_append(asset_bindings, item);
+            }
+        }
+        nmo_cli_json_add_val_safe(
+            doc,
+            evidence_obj,
+            "asset_bindings",
+            asset_bindings);
+    }
+
+    yyjson_mut_val *texture_slots = yyjson_mut_arr(doc);
+    if (texture_slots) {
+        if (evidence) {
+            for (size_t i = 0u; i < evidence->material_texture_slot_count; ++i) {
+                const nmo_project_report_material_texture_slot_evidence_t *slot =
+                    &evidence->material_texture_slots[i];
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                if (!item) {
+                    continue;
+                }
+                nmo_cli_json_add_str_safe(
+                    doc,
+                    item,
+                    "material",
+                    slot->material_name);
+                nmo_cli_json_add_uint_safe(
+                    doc,
+                    item,
+                    "slot",
+                    (uint64_t)slot->slot);
+                nmo_cli_json_add_str_safe(
+                    doc,
+                    item,
+                    "texture",
+                    slot->texture_name);
+                nmo_cli_json_add_str_safe(
+                    doc,
+                    item,
+                    "source_path",
+                    slot->source_path);
+                yyjson_mut_arr_append(texture_slots, item);
+            }
+        }
+        nmo_cli_json_add_val_safe(
+            doc,
+            evidence_obj,
+            "material_texture_slots",
+            texture_slots);
+    }
+
+    yyjson_mut_val *scripts = yyjson_mut_arr(doc);
+    if (scripts) {
+        if (evidence) {
+            for (size_t i = 0u; i < evidence->script_count; ++i) {
+                const nmo_project_report_script_evidence_t *script =
+                    &evidence->scripts[i];
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                if (!item) {
+                    continue;
+                }
+                nmo_cli_json_add_str_safe(doc, item, "name", script->name);
+                nmo_cli_json_add_uint_safe(
+                    doc,
+                    item,
+                    "step_count",
+                    (uint64_t)script->step_count);
+                nmo_cli_json_add_bool_safe(
+                    doc,
+                    item,
+                    "validation_ok",
+                    script->validation_ok);
+                yyjson_mut_arr_append(scripts, item);
+            }
+        }
+        nmo_cli_json_add_val_safe(doc, evidence_obj, "scripts", scripts);
+    }
+
+    nmo_cli_json_add_bool_safe(
+        doc,
+        evidence_obj,
+        "post_load_checked",
+        evidence ? evidence->post_load_checked : false);
+    nmo_cli_json_add_bool_safe(
+        doc,
+        evidence_obj,
+        "post_load_ok",
+        evidence ? evidence->post_load_ok : false);
+    nmo_cli_json_add_val_safe(doc, data, "evidence", evidence_obj);
+}
+
 static void patch_add_project_report_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *data,
@@ -611,6 +764,10 @@ static void patch_add_project_report_json(
         doc,
         data,
         report ? &report->validation : NULL);
+    patch_add_project_evidence_json(
+        doc,
+        data,
+        report ? &report->evidence : NULL);
 }
 
 static int patch_emit_project_report_json(

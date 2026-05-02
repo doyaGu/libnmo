@@ -52,6 +52,34 @@ static void project_report_diff_dispose(nmo_project_report_diff_t *diff)
     project_report_name_list_dispose(&diff->created);
 }
 
+static void project_report_evidence_dispose(nmo_project_report_evidence_t *evidence)
+{
+    if (!evidence) {
+        return;
+    }
+    for (size_t i = 0u; i < evidence->object_count; ++i) {
+        free(evidence->objects[i].name);
+    }
+    free(evidence->objects);
+    for (size_t i = 0u; i < evidence->asset_binding_count; ++i) {
+        free(evidence->asset_bindings[i].owner_name);
+        free(evidence->asset_bindings[i].asset_name);
+        free(evidence->asset_bindings[i].kind);
+    }
+    free(evidence->asset_bindings);
+    for (size_t i = 0u; i < evidence->material_texture_slot_count; ++i) {
+        free(evidence->material_texture_slots[i].material_name);
+        free(evidence->material_texture_slots[i].texture_name);
+        free(evidence->material_texture_slots[i].source_path);
+    }
+    free(evidence->material_texture_slots);
+    for (size_t i = 0u; i < evidence->script_count; ++i) {
+        free(evidence->scripts[i].name);
+    }
+    free(evidence->scripts);
+    memset(evidence, 0, sizeof(*evidence));
+}
+
 static void project_report_dispose_diffs(nmo_project_report_t *report)
 {
     if (!report) {
@@ -95,6 +123,226 @@ static nmo_status_t project_report_add_created(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t project_report_format_asset_name(
+    const char *owner_name,
+    const char *suffix,
+    char *out_name,
+    size_t out_size)
+{
+    int len = snprintf(out_name, out_size, "%s_%s", owner_name, suffix);
+    if (len < 0 || (size_t)len >= out_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "generated asset evidence name is too long");
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t project_report_format_obj_material_name(
+    const char *owner_name,
+    const char *obj_material_name,
+    const char *suffix,
+    char *out_name,
+    size_t out_size)
+{
+    int len = snprintf(out_name,
+                       out_size,
+                       "%s_%s_%s",
+                       owner_name,
+                       obj_material_name,
+                       suffix);
+    if (len < 0 || (size_t)len >= out_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "generated OBJ material evidence name is too long");
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t project_report_format_texture_name(
+    const char *base_name,
+    uint32_t slot,
+    char *out_name,
+    size_t out_size)
+{
+    int len = slot == 0u
+        ? snprintf(out_name, out_size, "%s_Texture", base_name)
+        : snprintf(out_name, out_size, "%s_Texture%u", base_name, slot);
+    if (len < 0 || (size_t)len >= out_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "generated texture evidence name is too long");
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t project_report_add_object_evidence(
+    nmo_project_report_evidence_t *evidence,
+    uint32_t plan_handle,
+    nmo_object_id_t object_id,
+    nmo_class_id_t class_id,
+    const char *name)
+{
+    if (!evidence || !name) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "object evidence and name are required");
+    }
+
+    char *name_copy = project_executor_strdup(name);
+    if (!name_copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate object evidence name");
+    }
+
+    size_t next_count = evidence->object_count + 1u;
+    nmo_project_report_object_evidence_t *next_objects =
+        (nmo_project_report_object_evidence_t *)realloc(
+            evidence->objects,
+            next_count * sizeof(*next_objects));
+    if (!next_objects) {
+        free(name_copy);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate object evidence");
+    }
+
+    evidence->objects = next_objects;
+    nmo_project_report_object_evidence_t *item =
+        &evidence->objects[evidence->object_count];
+    item->plan_handle = plan_handle;
+    item->object_id = object_id;
+    item->class_id = class_id;
+    item->name = name_copy;
+    evidence->object_count = next_count;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t project_report_add_asset_binding_evidence(
+    nmo_project_report_evidence_t *evidence,
+    const char *owner_name,
+    const char *asset_name,
+    const char *kind)
+{
+    if (!evidence || !owner_name || !asset_name || !kind) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "asset binding evidence fields are required");
+    }
+
+    char *owner_copy = project_executor_strdup(owner_name);
+    char *asset_copy = project_executor_strdup(asset_name);
+    char *kind_copy = project_executor_strdup(kind);
+    if (!owner_copy || !asset_copy || !kind_copy) {
+        free(owner_copy);
+        free(asset_copy);
+        free(kind_copy);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate asset binding evidence");
+    }
+
+    size_t next_count = evidence->asset_binding_count + 1u;
+    nmo_project_report_asset_binding_evidence_t *next_bindings =
+        (nmo_project_report_asset_binding_evidence_t *)realloc(
+            evidence->asset_bindings,
+            next_count * sizeof(*next_bindings));
+    if (!next_bindings) {
+        free(owner_copy);
+        free(asset_copy);
+        free(kind_copy);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate asset binding evidence");
+    }
+
+    evidence->asset_bindings = next_bindings;
+    nmo_project_report_asset_binding_evidence_t *item =
+        &evidence->asset_bindings[evidence->asset_binding_count];
+    item->owner_name = owner_copy;
+    item->asset_name = asset_copy;
+    item->kind = kind_copy;
+    evidence->asset_binding_count = next_count;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t project_report_add_material_texture_slot_evidence(
+    nmo_project_report_evidence_t *evidence,
+    const char *material_name,
+    uint32_t slot,
+    const char *texture_name,
+    const char *source_path)
+{
+    if (!evidence || !material_name || !texture_name) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "material texture slot evidence fields are required");
+    }
+
+    char *material_copy = project_executor_strdup(material_name);
+    char *texture_copy = project_executor_strdup(texture_name);
+    char *source_copy = source_path ? project_executor_strdup(source_path) : NULL;
+    if (!material_copy || !texture_copy || (source_path && !source_copy)) {
+        free(material_copy);
+        free(texture_copy);
+        free(source_copy);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate material texture slot evidence");
+    }
+
+    size_t next_count = evidence->material_texture_slot_count + 1u;
+    nmo_project_report_material_texture_slot_evidence_t *next_slots =
+        (nmo_project_report_material_texture_slot_evidence_t *)realloc(
+            evidence->material_texture_slots,
+            next_count * sizeof(*next_slots));
+    if (!next_slots) {
+        free(material_copy);
+        free(texture_copy);
+        free(source_copy);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate material texture slot evidence");
+    }
+
+    evidence->material_texture_slots = next_slots;
+    nmo_project_report_material_texture_slot_evidence_t *item =
+        &evidence->material_texture_slots[evidence->material_texture_slot_count];
+    item->material_name = material_copy;
+    item->slot = slot;
+    item->texture_name = texture_copy;
+    item->source_path = source_copy;
+    evidence->material_texture_slot_count = next_count;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t project_report_add_script_evidence(
+    nmo_project_report_evidence_t *evidence,
+    const char *name,
+    size_t step_count,
+    bool validation_ok)
+{
+    if (!evidence || !name) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "script evidence and name are required");
+    }
+
+    char *name_copy = project_executor_strdup(name);
+    if (!name_copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate script evidence name");
+    }
+
+    size_t next_count = evidence->script_count + 1u;
+    nmo_project_report_script_evidence_t *next_scripts =
+        (nmo_project_report_script_evidence_t *)realloc(
+            evidence->scripts,
+            next_count * sizeof(*next_scripts));
+    if (!next_scripts) {
+        free(name_copy);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate script evidence");
+    }
+
+    evidence->scripts = next_scripts;
+    nmo_project_report_script_evidence_t *item =
+        &evidence->scripts[evidence->script_count];
+    item->name = name_copy;
+    item->step_count = step_count;
+    item->validation_ok = validation_ok;
+    evidence->script_count = next_count;
+    NMO_RETURN_OK();
+}
+
 static bool project_report_created_contains(
     const nmo_project_report_diff_t *diff,
     const char *name)
@@ -111,6 +359,24 @@ static bool project_report_created_contains(
     return false;
 }
 
+static void project_report_set_generated_object_ids(
+    nmo_project_report_t *report,
+    const nmo_project_runtime_object_t *objects,
+    size_t object_count)
+{
+    if (!report || !objects) {
+        return;
+    }
+    for (size_t i = 0u; i < report->evidence.object_count; ++i) {
+        for (size_t j = 0u; j < object_count; ++j) {
+            if (report->evidence.objects[i].plan_handle == objects[j].plan_handle) {
+                report->evidence.objects[i].object_id = objects[j].object_id;
+                break;
+            }
+        }
+    }
+}
+
 static nmo_status_t project_report_reset_for_execute(
     nmo_project_report_t *report)
 {
@@ -122,6 +388,7 @@ static nmo_status_t project_report_reset_for_execute(
     report->ok = false;
     report->dry_run = false;
     project_report_dispose_diffs(report);
+    project_report_evidence_dispose(&report->evidence);
     nmo_project_validation_report_dispose(&report->validation);
     nmo_project_validation_report_init(&report->validation);
     free(report->output_path);
@@ -154,6 +421,12 @@ static nmo_status_t project_report_populate_diff(
         NMO_RETURN_IF_ERROR(project_report_add_created(
             &report->object_diff,
             object.name));
+        NMO_RETURN_IF_ERROR(project_report_add_object_evidence(
+            &report->evidence,
+            object.handle,
+            0u,
+            object.class_id,
+            object.name));
     }
 
     for (size_t i = 0u; i < nmo_project_plan_asset_count(plan); ++i) {
@@ -176,34 +449,76 @@ static nmo_status_t project_report_populate_diff(
 
         char asset_name[256];
         if (asset.has_primitive_mesh || asset.has_external_mesh) {
-            int len = snprintf(asset_name, sizeof(asset_name), "%s_Mesh", object.name);
-            if (len < 0 || (size_t)len >= sizeof(asset_name)) {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "generated mesh asset name is too long");
-            }
+            NMO_RETURN_IF_ERROR(project_report_format_asset_name(
+                object.name,
+                "Mesh",
+                asset_name,
+                sizeof(asset_name)));
             NMO_RETURN_IF_ERROR(project_report_add_created(
                 &report->asset_diff,
                 asset_name));
+            NMO_RETURN_IF_ERROR(project_report_add_asset_binding_evidence(
+                &report->evidence,
+                object.name,
+                asset_name,
+                asset.has_external_mesh ? "external_mesh" : "primitive_mesh"));
         }
         if (asset.has_material_color || asset.has_material_texture) {
-            int len = snprintf(asset_name, sizeof(asset_name), "%s_Material", object.name);
-            if (len < 0 || (size_t)len >= sizeof(asset_name)) {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "generated material asset name is too long");
-            }
+            NMO_RETURN_IF_ERROR(project_report_format_asset_name(
+                object.name,
+                "Material",
+                asset_name,
+                sizeof(asset_name)));
             NMO_RETURN_IF_ERROR(project_report_add_created(
                 &report->asset_diff,
                 asset_name));
+            NMO_RETURN_IF_ERROR(project_report_add_asset_binding_evidence(
+                &report->evidence,
+                object.name,
+                asset_name,
+                "material"));
         }
         if (asset.has_material_texture) {
-            int len = snprintf(asset_name, sizeof(asset_name), "%s_Texture", object.name);
-            if (len < 0 || (size_t)len >= sizeof(asset_name)) {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "generated texture asset name is too long");
+            char material_name[256];
+            NMO_RETURN_IF_ERROR(project_report_format_asset_name(
+                object.name,
+                "Material",
+                material_name,
+                sizeof(material_name)));
+            for (uint32_t slot = 0u; slot < 4u; ++slot) {
+                const char *texture_path = asset.has_material_texture_slots[slot]
+                    ? asset.material_texture_paths[slot]
+                    : NULL;
+                const char *source_path = asset.has_material_texture_slots[slot]
+                    ? asset.material_texture_source_paths[slot]
+                    : NULL;
+                if (!texture_path && slot == 0u && asset.material_texture_path) {
+                    texture_path = asset.material_texture_path;
+                    source_path = asset.material_texture_source_path;
+                }
+                if (!texture_path) {
+                    continue;
+                }
+                NMO_RETURN_IF_ERROR(project_report_format_texture_name(
+                    object.name,
+                    slot,
+                    asset_name,
+                    sizeof(asset_name)));
+                NMO_RETURN_IF_ERROR(project_report_add_created(
+                    &report->asset_diff,
+                    asset_name));
+                NMO_RETURN_IF_ERROR(project_report_add_asset_binding_evidence(
+                    &report->evidence,
+                    object.name,
+                    asset_name,
+                    "texture"));
+                NMO_RETURN_IF_ERROR(project_report_add_material_texture_slot_evidence(
+                    &report->evidence,
+                    material_name,
+                    slot,
+                    asset_name,
+                    source_path));
             }
-            NMO_RETURN_IF_ERROR(project_report_add_created(
-                &report->asset_diff,
-                asset_name));
         }
         size_t obj_material_count =
             nmo_project_plan_obj_material_count(plan, asset.object_handle);
@@ -216,33 +531,79 @@ static nmo_status_t project_report_populate_diff(
                 asset.object_handle,
                 material_index,
                 &material));
-            int len = snprintf(
-                asset_name,
-                sizeof(asset_name),
-                "%s_%s_Material",
+            NMO_RETURN_IF_ERROR(project_report_format_obj_material_name(
                 object.name,
-                material.obj_material_name);
-            if (len < 0 || (size_t)len >= sizeof(asset_name)) {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "generated OBJ material asset name is too long");
-            }
+                material.obj_material_name,
+                "Material",
+                asset_name,
+                sizeof(asset_name)));
             NMO_RETURN_IF_ERROR(project_report_add_created(
                 &report->asset_diff,
                 asset_name));
-            if (material.has_texture) {
-                len = snprintf(
-                    asset_name,
-                    sizeof(asset_name),
-                    "%s_%s_Texture",
+            NMO_RETURN_IF_ERROR(project_report_add_asset_binding_evidence(
+                &report->evidence,
+                object.name,
+                asset_name,
+                "obj_material"));
+
+            bool material_has_texture = material.has_texture;
+            for (uint32_t slot = 0u; slot < 4u; ++slot) {
+                material_has_texture =
+                    material_has_texture || material.has_texture_slots[slot];
+            }
+            if (material_has_texture) {
+                char material_name[256];
+                char texture_base[256];
+                NMO_RETURN_IF_ERROR(project_report_format_obj_material_name(
                     object.name,
-                    material.obj_material_name);
-                if (len < 0 || (size_t)len >= sizeof(asset_name)) {
-                    NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                     "generated OBJ material texture asset name is too long");
+                    material.obj_material_name,
+                    "Material",
+                    material_name,
+                    sizeof(material_name)));
+                int len = snprintf(texture_base,
+                                   sizeof(texture_base),
+                                   "%s_%s",
+                                   object.name,
+                                   material.obj_material_name);
+                if (len < 0 || (size_t)len >= sizeof(texture_base)) {
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT,
+                                     NMO_SEVERITY_ERROR,
+                                     "generated OBJ texture evidence base name is too long");
                 }
-                NMO_RETURN_IF_ERROR(project_report_add_created(
-                    &report->asset_diff,
-                    asset_name));
+                for (uint32_t slot = 0u; slot < 4u; ++slot) {
+                    const char *texture_path = material.has_texture_slots[slot]
+                        ? material.texture_paths[slot]
+                        : NULL;
+                    const char *source_path = material.has_texture_slots[slot]
+                        ? material.texture_source_paths[slot]
+                        : NULL;
+                    if (!texture_path && slot == 0u && material.texture_path) {
+                        texture_path = material.texture_path;
+                        source_path = material.texture_source_path;
+                    }
+                    if (!texture_path) {
+                        continue;
+                    }
+                    NMO_RETURN_IF_ERROR(project_report_format_texture_name(
+                        texture_base,
+                        slot,
+                        asset_name,
+                        sizeof(asset_name)));
+                    NMO_RETURN_IF_ERROR(project_report_add_created(
+                        &report->asset_diff,
+                        asset_name));
+                    NMO_RETURN_IF_ERROR(project_report_add_asset_binding_evidence(
+                        &report->evidence,
+                        object.name,
+                        asset_name,
+                        "obj_material_texture"));
+                    NMO_RETURN_IF_ERROR(project_report_add_material_texture_slot_evidence(
+                        &report->evidence,
+                        material_name,
+                        slot,
+                        asset_name,
+                        source_path));
+                }
             }
         }
     }
@@ -253,6 +614,11 @@ static nmo_status_t project_report_populate_diff(
         NMO_RETURN_IF_ERROR(project_report_add_created(
             &report->script_diff,
             script.name));
+        NMO_RETURN_IF_ERROR(project_report_add_script_evidence(
+            &report->evidence,
+            script.name,
+            script.step_count,
+            report->validation.ok));
     }
 
     NMO_RETURN_OK();
@@ -289,6 +655,7 @@ void nmo_project_report_dispose(nmo_project_report_t *report)
     }
 
     project_report_dispose_diffs(report);
+    project_report_evidence_dispose(&report->evidence);
     nmo_project_validation_report_dispose(&report->validation);
     free(report->output_path);
     memset(report, 0, sizeof(*report));
@@ -425,6 +792,7 @@ nmo_status_t nmo_project_executor_execute_to_file(
         nmo_context_release(ctx);
         return status;
     }
+    project_report_set_generated_object_ids(report, objects, object_count);
 
     status = nmo_project_author_assets(edit, plan, objects, object_count);
     if (status != NMO_OK) {
@@ -474,6 +842,8 @@ nmo_status_t nmo_project_executor_execute_to_file(
         status = nmo_document_load_file(ctx, temp_path, NULL, &loaded);
         nmo_document_destroy(loaded);
     }
+    report->evidence.post_load_checked = true;
+    report->evidence.post_load_ok = status == NMO_OK;
     if (status == NMO_OK) {
         remove(output_path);
         if (rename(temp_path, output_path) != 0) {

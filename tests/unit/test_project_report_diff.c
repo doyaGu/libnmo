@@ -36,6 +36,15 @@ TEST(project_report_diff, reports_created_scene_object_and_asset)
     ASSERT_TRUE(nmo_project_report_diff_has_created_scene(&report, "Level"));
     ASSERT_TRUE(nmo_project_report_diff_has_created_object(&report, "Cube"));
     ASSERT_TRUE(nmo_project_report_diff_has_created_asset(&report, "Cube_Mesh"));
+    ASSERT_EQ(1u, report.evidence.object_count);
+    ASSERT_EQ(cube, report.evidence.objects[0].plan_handle);
+    ASSERT_EQ(0u, report.evidence.objects[0].object_id);
+    ASSERT_EQ(NMO_CID_3DENTITY, report.evidence.objects[0].class_id);
+    ASSERT_STR_EQ("Cube", report.evidence.objects[0].name);
+    ASSERT_EQ(1u, report.evidence.asset_binding_count);
+    ASSERT_STR_EQ("Cube", report.evidence.asset_bindings[0].owner_name);
+    ASSERT_STR_EQ("Cube_Mesh", report.evidence.asset_bindings[0].asset_name);
+    ASSERT_STR_EQ("primitive_mesh", report.evidence.asset_bindings[0].kind);
 
     nmo_project_report_dispose(&report);
     nmo_project_plan_destroy(plan);
