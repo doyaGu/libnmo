@@ -519,6 +519,24 @@ TEST(generated_advanced_probes, unproven_manifest_authoring_fields_are_rejected)
         "\"physics\":{\"collision\":\"mesh\"}"
         "}]}]"
         "}",
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
+        "\"name\":\"Body\","
+        "\"class\":\"CK3dEntity\","
+        "\"collision\":{\"type\":\"mesh\"}"
+        "}]}]"
+        "}",
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
+        "\"name\":\"Body\","
+        "\"class\":\"CK3dEntity\","
+        "\"manager\":{\"guid\":\"00000000-00000000\"}"
+        "}]}]"
+        "}",
     };
 
     for (size_t i = 0u; i < sizeof(manifests) / sizeof(manifests[0]); ++i) {
