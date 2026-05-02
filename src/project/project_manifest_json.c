@@ -426,6 +426,118 @@ static nmo_status_t manifest_parse_vec4(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t manifest_parse_vec3(
+    yyjson_val *value,
+    const char *field_name,
+    float out_values[3])
+{
+    if (!yyjson_is_arr(value) || yyjson_arr_size(value) != 3u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest %s must contain three numbers", field_name);
+    }
+
+    for (size_t i = 0u; i < 3u; ++i) {
+        yyjson_val *item = yyjson_arr_get(value, i);
+        if (!yyjson_is_num(item)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest %s values must be numbers", field_name);
+        }
+        out_values[i] = (float)manifest_get_number(item);
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t manifest_parse_sound(
+    yyjson_val *sound,
+    const char **out_file,
+    bool *out_has_gain,
+    float *out_gain,
+    bool *out_has_pan,
+    float *out_pan,
+    bool *out_has_pitch,
+    float *out_pitch,
+    const char **out_attached,
+    bool *out_has_position,
+    float out_position[3],
+    bool *out_has_direction,
+    float out_direction[3])
+{
+    static const char *const allowed[] = {
+        "file", "gain", "pan", "pitch", "attached_object",
+        "position", "direction", NULL};
+    NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(sound, "sound", allowed));
+    if (!out_file || !out_has_gain || !out_gain ||
+        !out_has_pan || !out_pan || !out_has_pitch || !out_pitch ||
+        !out_attached || !out_has_position || !out_position ||
+        !out_has_direction || !out_direction) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "sound output arguments are required");
+    }
+    *out_file = NULL;
+    *out_has_gain = false;
+    *out_has_pan = false;
+    *out_has_pitch = false;
+    *out_attached = NULL;
+    *out_has_position = false;
+    *out_has_direction = false;
+
+    yyjson_val *file = yyjson_obj_get(sound, "file");
+    if (!yyjson_is_str(file) || yyjson_get_str(file)[0] == '\0') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest sound.file must be a non-empty string");
+    }
+    *out_file = yyjson_get_str(file);
+
+    yyjson_val *gain = yyjson_obj_get(sound, "gain");
+    if (gain) {
+        if (!yyjson_is_num(gain)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest sound.gain must be numeric");
+        }
+        *out_has_gain = true;
+        *out_gain = (float)manifest_get_number(gain);
+    }
+    yyjson_val *pan = yyjson_obj_get(sound, "pan");
+    if (pan) {
+        if (!yyjson_is_num(pan)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest sound.pan must be numeric");
+        }
+        *out_has_pan = true;
+        *out_pan = (float)manifest_get_number(pan);
+    }
+    yyjson_val *pitch = yyjson_obj_get(sound, "pitch");
+    if (pitch) {
+        if (!yyjson_is_num(pitch)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest sound.pitch must be numeric");
+        }
+        *out_has_pitch = true;
+        *out_pitch = (float)manifest_get_number(pitch);
+    }
+    NMO_RETURN_IF_ERROR(manifest_optional_string(
+        sound,
+        "attached_object",
+        out_attached));
+    yyjson_val *position = yyjson_obj_get(sound, "position");
+    if (position) {
+        NMO_RETURN_IF_ERROR(manifest_parse_vec3(
+            position,
+            "sound.position",
+            out_position));
+        *out_has_position = true;
+    }
+    yyjson_val *direction = yyjson_obj_get(sound, "direction");
+    if (direction) {
+        NMO_RETURN_IF_ERROR(manifest_parse_vec3(
+            direction,
+            "sound.direction",
+            out_direction));
+        *out_has_direction = true;
+    }
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t manifest_parse_camera(
     yyjson_val *camera,
     float *out_fov,
@@ -963,7 +1075,7 @@ static nmo_status_t manifest_parse_object_declare(
 {
     static const char *const allowed[] = {
         "id", "name", "class", "parent", "fields", "mesh", "material", "materials",
-        "transform", "camera", "light", "scripts", NULL};
+        "transform", "camera", "light", "sound", "scripts", NULL};
     const char *id = NULL;
     const char *name = NULL;
     const char *class_name = NULL;
@@ -1042,7 +1154,7 @@ static nmo_status_t manifest_parse_object_details(
 {
     static const char *const allowed[] = {
         "id", "name", "class", "parent", "fields", "mesh", "material", "materials",
-        "transform", "camera", "light", "scripts", NULL};
+        "transform", "camera", "light", "sound", "scripts", NULL};
     const char *parent_ref = NULL;
 
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(object, "object", allowed));
@@ -1337,6 +1449,83 @@ static nmo_status_t manifest_parse_object_details(
                 ctx->plan,
                 object_handle,
                 target_handle));
+        }
+    }
+
+    yyjson_val *sound = yyjson_obj_get(object, "sound");
+    if (sound) {
+        const char *file = NULL;
+        bool has_gain = false;
+        float gain = 0.0f;
+        bool has_pan = false;
+        float pan = 0.0f;
+        bool has_pitch = false;
+        float pitch = 0.0f;
+        const char *attached_ref = NULL;
+        bool has_position = false;
+        float position[3] = {0.0f, 0.0f, 0.0f};
+        bool has_direction = false;
+        float direction[3] = {0.0f, 0.0f, 0.0f};
+        NMO_RETURN_IF_ERROR(manifest_parse_sound(
+            sound,
+            &file,
+            &has_gain,
+            &gain,
+            &has_pan,
+            &pan,
+            &has_pitch,
+            &pitch,
+            &attached_ref,
+            &has_position,
+            position,
+            &has_direction,
+            direction));
+        NMO_RETURN_IF_ERROR(nmo_project_plan_set_wavesound_file(
+            ctx->plan,
+            object_handle,
+            file));
+        char source_path[128];
+        snprintf(source_path,
+                 sizeof(source_path),
+                 "scenes[%zu].objects[%zu].sound.file",
+                 scene_index,
+                 object_index);
+        NMO_RETURN_IF_ERROR(nmo_project_plan_set_wavesound_file_source_path(
+            ctx->plan,
+            object_handle,
+            source_path));
+        NMO_RETURN_IF_ERROR(nmo_project_plan_set_wavesound_playback(
+            ctx->plan,
+            object_handle,
+            has_gain,
+            gain,
+            has_pan,
+            pan,
+            has_pitch,
+            pitch));
+        if (attached_ref) {
+            uint32_t attached_handle = 0u;
+            NMO_RETURN_IF_ERROR(manifest_resolve_object_ref(
+                ctx,
+                attached_ref,
+                &attached_handle));
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_wavesound_attached_object(
+                ctx->plan,
+                object_handle,
+                attached_handle));
+        }
+        if (has_position || has_direction) {
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_wavesound_spatial(
+                ctx->plan,
+                object_handle,
+                has_position,
+                position[0],
+                position[1],
+                position[2],
+                has_direction,
+                direction[0],
+                direction[1],
+                direction[2]));
         }
     }
 

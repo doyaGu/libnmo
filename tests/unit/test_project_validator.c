@@ -688,6 +688,92 @@ TEST(project_validator, rejects_invalid_scene_active_camera)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_validator, rejects_invalid_wavesound_authoring)
+{
+    const char *sound_path = "test_project_validator_sound.wav";
+    FILE *sound_file = fopen(sound_path, "wb");
+    ASSERT_NOT_NULL(sound_file);
+    fputs("RIFF", sound_file);
+    fclose(sound_file);
+
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_validation_report_t report;
+    uint32_t scene = 0u;
+    uint32_t bad_sound = 0u;
+    uint32_t anchor = 0u;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_document_name(plan, "Generated"));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "Level", &scene));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "NotSound",
+                  },
+                  &bad_sound));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .class_id = NMO_CID_WAVESOUND,
+                      .name = "AnchorIsSound",
+                  },
+                  &anchor));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_wavesound_file(
+                          plan,
+                          bad_sound,
+                          sound_path));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_wavesound_attached_object(
+                          plan,
+                          bad_sound,
+                          anchor));
+
+    nmo_project_validation_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_FALSE(report.ok);
+    ASSERT_TRUE(nmo_project_validation_contains(&report, "invalid_sound_class"));
+    ASSERT_TRUE(nmo_project_validation_contains(
+        &report,
+        "invalid_sound_attached_object"));
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+    remove(sound_path);
+}
+
+TEST(project_validator, rejects_missing_wavesound_file)
+{
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_validation_report_t report;
+    uint32_t sound = 0u;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_document_name(plan, "Generated"));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .class_id = NMO_CID_WAVESOUND,
+                      .name = "Sound",
+                  },
+                  &sound));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_wavesound_file(
+                          plan,
+                          sound,
+                          "missing-tone.wav"));
+
+    nmo_project_validation_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_FALSE(report.ok);
+    ASSERT_TRUE(nmo_project_validation_contains(&report, "missing_sound_file"));
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(project_validator, rejects_missing_document_name);
 REGISTER_TEST(project_validator, accepts_named_empty_project);
@@ -706,4 +792,6 @@ REGISTER_TEST(project_validator, reports_manifest_source_for_unbound_obj_materia
 REGISTER_TEST(project_validator, reports_manifest_source_for_invalid_active_camera);
 REGISTER_TEST(project_validator, reports_manifest_source_for_invalid_camera_light_targets);
 REGISTER_TEST(project_validator, rejects_invalid_scene_active_camera);
+REGISTER_TEST(project_validator, rejects_invalid_wavesound_authoring);
+REGISTER_TEST(project_validator, rejects_missing_wavesound_file);
 TEST_MAIN_END()

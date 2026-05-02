@@ -296,6 +296,11 @@ static bool project_validation_class_is_light(nmo_class_id_t class_id)
     return class_id == NMO_CID_LIGHT || class_id == NMO_CID_TARGETLIGHT;
 }
 
+static bool project_validation_class_is_wavesound(nmo_class_id_t class_id)
+{
+    return class_id == NMO_CID_WAVESOUND;
+}
+
 static nmo_status_t project_validation_check_duplicate_scenes(
     const nmo_project_plan_t *plan,
     nmo_project_validation_report_t *report)
@@ -496,6 +501,57 @@ static nmo_status_t project_validation_check_objects(
                     report,
                     "duplicate_object_handle",
                     "Project object handles must be unique"));
+            }
+        }
+        if (object.has_sound) {
+            if (!project_validation_class_is_wavesound(object.class_id)) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                    report,
+                    "invalid_sound_class",
+                    "Project sound settings require CKWaveSound",
+                    "object",
+                    object.name,
+                    object.source_path));
+            }
+            if (!object.sound_file_path || object.sound_file_path[0] == '\0') {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                    report,
+                    "missing_sound_file",
+                    "Project sound requires a non-empty file path",
+                    "object",
+                    object.name,
+                    object.sound_file_source_path ? object.sound_file_source_path : object.source_path));
+            } else if (!project_validation_file_exists(object.sound_file_path)) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                    report,
+                    "missing_sound_file",
+                    "Project sound file does not exist",
+                    "object",
+                    object.name,
+                    object.sound_file_source_path ? object.sound_file_source_path : object.source_path));
+            }
+            if (object.has_sound_attached_object) {
+                nmo_project_object_desc_t attached = {0};
+                if (!project_validation_get_object_by_handle(
+                        plan,
+                        object.sound_attached_object_handle,
+                        &attached)) {
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                        report,
+                        "missing_sound_attached_object",
+                        "Project sound attached object references a missing object",
+                        "object",
+                        object.name,
+                        object.source_path));
+                } else if (!project_validation_class_is_entity(attached.class_id)) {
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                        report,
+                        "invalid_sound_attached_object",
+                        "Project sound attached object must be entity-compatible",
+                        "object",
+                        object.name,
+                        object.source_path));
+                }
             }
         }
     }

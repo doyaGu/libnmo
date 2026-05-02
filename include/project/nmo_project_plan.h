@@ -69,6 +69,21 @@ typedef struct nmo_project_object_spec {
     VXLIGHT_TYPE light_type;
     bool has_light_target;
     uint32_t light_target_handle;
+    bool has_sound;
+    const char *sound_file_path;
+    const char *sound_file_source_path;
+    bool has_sound_gain;
+    float sound_gain;
+    bool has_sound_pan;
+    float sound_pan;
+    bool has_sound_pitch;
+    float sound_pitch;
+    bool has_sound_attached_object;
+    uint32_t sound_attached_object_handle;
+    bool has_sound_position;
+    float sound_position[3];
+    bool has_sound_direction;
+    float sound_direction[3];
 } nmo_project_object_spec_t;
 
 typedef struct nmo_project_object_desc {
@@ -100,6 +115,21 @@ typedef struct nmo_project_object_desc {
     VXLIGHT_TYPE light_type;
     bool has_light_target;
     uint32_t light_target_handle;
+    bool has_sound;
+    const char *sound_file_path;
+    const char *sound_file_source_path;
+    bool has_sound_gain;
+    float sound_gain;
+    bool has_sound_pan;
+    float sound_pan;
+    bool has_sound_pitch;
+    float sound_pitch;
+    bool has_sound_attached_object;
+    uint32_t sound_attached_object_handle;
+    bool has_sound_position;
+    float sound_position[3];
+    bool has_sound_direction;
+    float sound_direction[3];
 } nmo_project_object_desc_t;
 
 NMO_API nmo_status_t nmo_project_plan_create(nmo_project_plan_t **out_plan);
@@ -204,6 +234,43 @@ NMO_API nmo_status_t nmo_project_plan_set_light_target(
     nmo_project_plan_t *plan,
     uint32_t object_handle,
     uint32_t target_handle);
+
+NMO_API nmo_status_t nmo_project_plan_set_wavesound_file(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const char *file_path);
+
+NMO_API nmo_status_t nmo_project_plan_set_wavesound_file_source_path(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const char *source_path);
+
+NMO_API nmo_status_t nmo_project_plan_set_wavesound_playback(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    bool has_gain,
+    float gain,
+    bool has_pan,
+    float pan,
+    bool has_pitch,
+    float pitch);
+
+NMO_API nmo_status_t nmo_project_plan_set_wavesound_attached_object(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    uint32_t attached_object_handle);
+
+NMO_API nmo_status_t nmo_project_plan_set_wavesound_spatial(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    bool has_position,
+    float position_x,
+    float position_y,
+    float position_z,
+    bool has_direction,
+    float direction_x,
+    float direction_y,
+    float direction_z);
 
 #ifdef __cplusplus
 }

@@ -54,6 +54,21 @@ typedef struct project_object_record {
     VXLIGHT_TYPE light_type;
     bool has_light_target;
     uint32_t light_target_handle;
+    bool has_sound;
+    char *sound_file_path;
+    char *sound_file_source_path;
+    bool has_sound_gain;
+    float sound_gain;
+    bool has_sound_pan;
+    float sound_pan;
+    bool has_sound_pitch;
+    float sound_pitch;
+    bool has_sound_attached_object;
+    uint32_t sound_attached_object_handle;
+    bool has_sound_position;
+    float sound_position[3];
+    bool has_sound_direction;
+    float sound_direction[3];
 } project_object_record_t;
 
 typedef struct project_asset_record {
@@ -265,6 +280,8 @@ void nmo_project_plan_destroy(nmo_project_plan_t *plan)
     for (size_t i = 0; i < plan->object_count; ++i) {
         free(plan->objects[i].name);
         free(plan->objects[i].source_path);
+        free(plan->objects[i].sound_file_path);
+        free(plan->objects[i].sound_file_source_path);
         project_plan_free_fields(
             plan->objects[i].fields,
             plan->objects[i].field_count);
@@ -387,6 +404,10 @@ nmo_status_t nmo_project_plan_clone(
             clone->objects[i].name = project_plan_strdup(plan->objects[i].name);
             clone->objects[i].source_path =
                 project_plan_strdup(plan->objects[i].source_path);
+            clone->objects[i].sound_file_path =
+                project_plan_strdup(plan->objects[i].sound_file_path);
+            clone->objects[i].sound_file_source_path =
+                project_plan_strdup(plan->objects[i].sound_file_source_path);
             if (plan->objects[i].name && !clone->objects[i].name) {
                 nmo_project_plan_destroy(clone);
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
@@ -397,6 +418,18 @@ nmo_status_t nmo_project_plan_clone(
                 nmo_project_plan_destroy(clone);
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                  "failed to clone project object source path");
+            }
+            if (plan->objects[i].sound_file_path &&
+                !clone->objects[i].sound_file_path) {
+                nmo_project_plan_destroy(clone);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "failed to clone project sound file path");
+            }
+            if (plan->objects[i].sound_file_source_path &&
+                !clone->objects[i].sound_file_source_path) {
+                nmo_project_plan_destroy(clone);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "failed to clone project sound source path");
             }
             status = project_plan_clone_fields(
                 plan->objects[i].fields,
@@ -730,6 +763,28 @@ nmo_status_t nmo_project_plan_get_object(
     out_object->light_type = plan->objects[index].light_type;
     out_object->has_light_target = plan->objects[index].has_light_target;
     out_object->light_target_handle = plan->objects[index].light_target_handle;
+    out_object->has_sound = plan->objects[index].has_sound;
+    out_object->sound_file_path = plan->objects[index].sound_file_path;
+    out_object->sound_file_source_path =
+        plan->objects[index].sound_file_source_path;
+    out_object->has_sound_gain = plan->objects[index].has_sound_gain;
+    out_object->sound_gain = plan->objects[index].sound_gain;
+    out_object->has_sound_pan = plan->objects[index].has_sound_pan;
+    out_object->sound_pan = plan->objects[index].sound_pan;
+    out_object->has_sound_pitch = plan->objects[index].has_sound_pitch;
+    out_object->sound_pitch = plan->objects[index].sound_pitch;
+    out_object->has_sound_attached_object =
+        plan->objects[index].has_sound_attached_object;
+    out_object->sound_attached_object_handle =
+        plan->objects[index].sound_attached_object_handle;
+    out_object->has_sound_position = plan->objects[index].has_sound_position;
+    memcpy(out_object->sound_position,
+           plan->objects[index].sound_position,
+           sizeof(out_object->sound_position));
+    out_object->has_sound_direction = plan->objects[index].has_sound_direction;
+    memcpy(out_object->sound_direction,
+           plan->objects[index].sound_direction,
+           sizeof(out_object->sound_direction));
     NMO_RETURN_OK();
 }
 
@@ -1900,6 +1955,22 @@ nmo_status_t nmo_project_plan_add_object(
         free(name_copy);
         return status;
     }
+    char *sound_file_copy = project_plan_strdup(spec->sound_file_path);
+    if (spec->sound_file_path && !sound_file_copy) {
+        project_plan_free_fields(fields_copy, spec->field_count);
+        free(name_copy);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate project sound file path");
+    }
+    char *sound_source_copy =
+        project_plan_strdup(spec->sound_file_source_path);
+    if (spec->sound_file_source_path && !sound_source_copy) {
+        free(sound_file_copy);
+        project_plan_free_fields(fields_copy, spec->field_count);
+        free(name_copy);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate project sound source path");
+    }
 
     uint32_t handle = plan->next_object_handle++;
     project_object_record_t *object = &plan->objects[plan->object_count++];
@@ -1912,6 +1983,8 @@ nmo_status_t nmo_project_plan_add_object(
     object->flags = spec->flags;
     object->fields = fields_copy;
     object->field_count = spec->field_count;
+    object->sound_file_path = sound_file_copy;
+    object->sound_file_source_path = sound_source_copy;
     object->has_position = spec->has_position;
     memcpy(object->position, spec->position, sizeof(object->position));
     object->has_rotation_euler_deg = spec->has_rotation_euler_deg;
@@ -1934,7 +2007,23 @@ nmo_status_t nmo_project_plan_add_object(
     object->light_type = spec->light_type;
     object->has_light_target = spec->has_light_target;
     object->light_target_handle = spec->light_target_handle;
-
+    object->has_sound = spec->has_sound;
+    object->has_sound_gain = spec->has_sound_gain;
+    object->sound_gain = spec->sound_gain;
+    object->has_sound_pan = spec->has_sound_pan;
+    object->sound_pan = spec->sound_pan;
+    object->has_sound_pitch = spec->has_sound_pitch;
+    object->sound_pitch = spec->sound_pitch;
+    object->has_sound_attached_object = spec->has_sound_attached_object;
+    object->sound_attached_object_handle = spec->sound_attached_object_handle;
+    object->has_sound_position = spec->has_sound_position;
+    memcpy(object->sound_position,
+           spec->sound_position,
+           sizeof(object->sound_position));
+    object->has_sound_direction = spec->has_sound_direction;
+    memcpy(object->sound_direction,
+           spec->sound_direction,
+           sizeof(object->sound_direction));
     if (out_object_handle) {
         *out_object_handle = handle;
     }
@@ -2186,6 +2275,149 @@ nmo_status_t nmo_project_plan_set_light_target(
         if (plan->objects[i].handle == object_handle) {
             plan->objects[i].has_light_target = true;
             plan->objects[i].light_target_handle = target_handle;
+            NMO_RETURN_OK();
+        }
+    }
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "object handle not found");
+}
+
+nmo_status_t nmo_project_plan_set_wavesound_file(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const char *file_path)
+{
+    if (!plan || object_handle == 0u || !file_path || file_path[0] == '\0') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan, object handle, and sound file path are required");
+    }
+    char *copy = project_plan_strdup(file_path);
+    if (!copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate project sound file path");
+    }
+    for (size_t i = 0u; i < plan->object_count; ++i) {
+        if (plan->objects[i].handle == object_handle) {
+            free(plan->objects[i].sound_file_path);
+            plan->objects[i].sound_file_path = copy;
+            plan->objects[i].has_sound = true;
+            NMO_RETURN_OK();
+        }
+    }
+    free(copy);
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "object handle not found");
+}
+
+nmo_status_t nmo_project_plan_set_wavesound_file_source_path(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const char *source_path)
+{
+    if (!plan || object_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and object handle are required");
+    }
+    char *copy = project_plan_strdup(source_path);
+    if (source_path && !copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate project sound source path");
+    }
+    for (size_t i = 0u; i < plan->object_count; ++i) {
+        if (plan->objects[i].handle == object_handle) {
+            free(plan->objects[i].sound_file_source_path);
+            plan->objects[i].sound_file_source_path = copy;
+            NMO_RETURN_OK();
+        }
+    }
+    free(copy);
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "object handle not found");
+}
+
+nmo_status_t nmo_project_plan_set_wavesound_playback(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    bool has_gain,
+    float gain,
+    bool has_pan,
+    float pan,
+    bool has_pitch,
+    float pitch)
+{
+    if (!plan || object_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and object handle are required");
+    }
+    for (size_t i = 0u; i < plan->object_count; ++i) {
+        if (plan->objects[i].handle == object_handle) {
+            plan->objects[i].has_sound = true;
+            plan->objects[i].has_sound_gain = has_gain;
+            plan->objects[i].sound_gain = gain;
+            plan->objects[i].has_sound_pan = has_pan;
+            plan->objects[i].sound_pan = pan;
+            plan->objects[i].has_sound_pitch = has_pitch;
+            plan->objects[i].sound_pitch = pitch;
+            NMO_RETURN_OK();
+        }
+    }
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "object handle not found");
+}
+
+nmo_status_t nmo_project_plan_set_wavesound_attached_object(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    uint32_t attached_object_handle)
+{
+    if (!plan || object_handle == 0u || attached_object_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan, sound handle, and attached object handle are required");
+    }
+    if (!project_plan_has_object_handle(plan, attached_object_handle)) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "attached object handle not found");
+    }
+    for (size_t i = 0u; i < plan->object_count; ++i) {
+        if (plan->objects[i].handle == object_handle) {
+            plan->objects[i].has_sound = true;
+            plan->objects[i].has_sound_attached_object = true;
+            plan->objects[i].sound_attached_object_handle =
+                attached_object_handle;
+            NMO_RETURN_OK();
+        }
+    }
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "object handle not found");
+}
+
+nmo_status_t nmo_project_plan_set_wavesound_spatial(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    bool has_position,
+    float position_x,
+    float position_y,
+    float position_z,
+    bool has_direction,
+    float direction_x,
+    float direction_y,
+    float direction_z)
+{
+    if (!plan || object_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and object handle are required");
+    }
+    for (size_t i = 0u; i < plan->object_count; ++i) {
+        if (plan->objects[i].handle == object_handle) {
+            plan->objects[i].has_sound = true;
+            plan->objects[i].has_sound_position = has_position;
+            plan->objects[i].sound_position[0] = position_x;
+            plan->objects[i].sound_position[1] = position_y;
+            plan->objects[i].sound_position[2] = position_z;
+            plan->objects[i].has_sound_direction = has_direction;
+            plan->objects[i].sound_direction[0] = direction_x;
+            plan->objects[i].sound_direction[1] = direction_y;
+            plan->objects[i].sound_direction[2] = direction_z;
             NMO_RETURN_OK();
         }
     }

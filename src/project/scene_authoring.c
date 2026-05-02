@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <math.h>
 
 typedef struct project_authored_scene {
@@ -244,6 +245,186 @@ static nmo_status_t project_authoring_format_float(
     if (wrote < 0 || (size_t)wrote >= out_size) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "scene float string is too long");
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t project_authoring_format_quoted_string(
+    const char *value,
+    char *out_value,
+    size_t out_size)
+{
+    if (!value || !out_value || out_size < 3u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "string and output buffer are required");
+    }
+    size_t out = 0u;
+    out_value[out++] = '"';
+    for (const char *p = value; *p != '\0'; ++p) {
+        if (*p == '"' || *p == '\\') {
+            if (out + 2u >= out_size) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                 "quoted string is too long");
+            }
+            out_value[out++] = '\\';
+            out_value[out++] = *p;
+        } else {
+            if (out + 1u >= out_size) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                 "quoted string is too long");
+            }
+            out_value[out++] = *p;
+        }
+    }
+    if (out + 1u >= out_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "quoted string is too long");
+    }
+    out_value[out++] = '"';
+    out_value[out] = '\0';
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t project_authoring_format_vector3(
+    const float value[3],
+    char *out_value,
+    size_t out_size)
+{
+    int wrote = snprintf(
+        out_value,
+        out_size,
+        "(%.9g, %.9g, %.9g)",
+        value[0],
+        value[1],
+        value[2]);
+    if (wrote < 0 || (size_t)wrote >= out_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "vector string is too long");
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t project_authoring_set_wavesound(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    const nmo_project_object_desc_t *object,
+    const nmo_project_runtime_object_t *objects,
+    size_t object_count)
+{
+    nmo_session_field_edit_t fields[20] = {0};
+    char file_value[512];
+    char gain_value[32];
+    char pan_value[32];
+    char pitch_value[32];
+    char attached_value[32];
+    char position_value[96];
+    char direction_value[96];
+    size_t field_count = 0u;
+
+    if (object->sound_file_path) {
+        NMO_RETURN_IF_ERROR(project_authoring_format_quoted_string(
+            object->sound_file_path,
+            file_value,
+            sizeof(file_value)));
+        fields[field_count++] = (nmo_session_field_edit_t){
+            .field_name = "has_wave_file_name",
+            .value_str = "true",
+        };
+        fields[field_count++] = (nmo_session_field_edit_t){
+            .field_name = "wave_file_name",
+            .value_str = file_value,
+        };
+    }
+
+    if (object->has_sound_gain ||
+        object->has_sound_pan ||
+        object->has_sound_pitch ||
+        object->has_sound_attached_object ||
+        object->has_sound_position ||
+        object->has_sound_direction) {
+        fields[field_count++] = (nmo_session_field_edit_t){
+            .field_name = "has_data2",
+            .value_str = "true",
+        };
+        fields[field_count++] = (nmo_session_field_edit_t){
+            .field_name = "gain",
+            .value_str = gain_value,
+        };
+        fields[field_count++] = (nmo_session_field_edit_t){
+            .field_name = "pan",
+            .value_str = pan_value,
+        };
+        fields[field_count++] = (nmo_session_field_edit_t){
+            .field_name = "pitch",
+            .value_str = pitch_value,
+        };
+        NMO_RETURN_IF_ERROR(project_authoring_format_float(
+            object->has_sound_gain ? object->sound_gain : 1.0f,
+            gain_value,
+            sizeof(gain_value)));
+        NMO_RETURN_IF_ERROR(project_authoring_format_float(
+            object->has_sound_pan ? object->sound_pan : 0.0f,
+            pan_value,
+            sizeof(pan_value)));
+        NMO_RETURN_IF_ERROR(project_authoring_format_float(
+            object->has_sound_pitch ? object->sound_pitch : 1.0f,
+            pitch_value,
+            sizeof(pitch_value)));
+    }
+
+    if (object->has_sound_attached_object) {
+        nmo_object_id_t attached_id = project_authoring_find_object_id(
+            objects,
+            object_count,
+            object->sound_attached_object_handle);
+        if (attached_id == 0u) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "project sound attached object was not authored");
+        }
+        int wrote = snprintf(attached_value, sizeof(attached_value), "%u", attached_id);
+        if (wrote < 0 || (size_t)wrote >= sizeof(attached_value)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "attached object id string is too long");
+        }
+        fields[field_count++] = (nmo_session_field_edit_t){
+            .field_name = "attached_object_id",
+            .value_str = attached_value,
+        };
+    }
+    if (object->has_sound_position) {
+        NMO_RETURN_IF_ERROR(project_authoring_format_vector3(
+            object->sound_position,
+            position_value,
+            sizeof(position_value)));
+        fields[field_count++] = (nmo_session_field_edit_t){
+            .field_name = "position",
+            .value_str = position_value,
+        };
+    }
+    if (object->has_sound_direction) {
+        NMO_RETURN_IF_ERROR(project_authoring_format_vector3(
+            object->sound_direction,
+            direction_value,
+            sizeof(direction_value)));
+        fields[field_count++] = (nmo_session_field_edit_t){
+            .field_name = "direction",
+            .value_str = direction_value,
+        };
+    }
+
+    if (field_count == 0u) {
+        NMO_RETURN_OK();
+    }
+    nmo_session_field_edit_result_t field_result = {0};
+    NMO_RETURN_IF_ERROR(nmo_object_edit_set_fields(
+        edit,
+        object_id,
+        fields,
+        field_count,
+        &field_result));
+    if (field_result.failed > 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "failed to set project wavesound fields");
     }
     NMO_RETURN_OK();
 }
@@ -594,6 +775,18 @@ nmo_status_t nmo_project_author_scenes(
                 goto cleanup;
             }
             status = nmo_entity_edit_set_light_target(edit, object_id, target_id);
+            if (status != NMO_OK) {
+                goto cleanup;
+            }
+        }
+
+        if (object.has_sound) {
+            status = project_authoring_set_wavesound(
+                edit,
+                object_id,
+                &object,
+                authored_objects,
+                object_count);
             if (status != NMO_OK) {
                 goto cleanup;
             }

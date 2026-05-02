@@ -322,6 +322,86 @@ TEST(generated_advanced_probes, wavesound_field_semantics_save_load_validate)
     remove(output_path);
 }
 
+TEST(generated_advanced_probes, manifest_wavesound_authoring_save_load_validate)
+{
+    const char *output_path = "test_generated_wavesound_authoring.cmo";
+    const char *sound_path = "test_generated_wavesound_authoring.wav";
+    remove(output_path);
+    remove("test_generated_wavesound_authoring.cmo.tmp");
+    remove(sound_path);
+    FILE *sound_file = fopen(sound_path, "wb");
+    ASSERT_NOT_NULL(sound_file);
+    fputs("RIFF", sound_file);
+    fclose(sound_file);
+
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"WaveSoundGenerated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":["
+        "{\"id\":\"anchor\",\"name\":\"SoundAnchor\",\"class\":\"CK3dEntity\"},"
+        "{\"name\":\"ProbeWaveSound\",\"class\":\"CKWaveSound\","
+        "\"sound\":{\"file\":\"test_generated_wavesound_authoring.wav\","
+        "\"gain\":0.8,\"pan\":0.25,\"pitch\":1.5,"
+        "\"attached_object\":\"anchor\","
+        "\"position\":[4,5,6],\"direction\":[0,1,0]}}"
+        "]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+
+    nmo_project_report_init(&report);
+    ASSERT_EQ(NMO_OK,
+              nmo_project_executor_execute_to_file(plan, output_path, &report));
+    ASSERT_TRUE(report.ok);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "validate all \"%s\"", output_path);
+    assert_cli_success_contains(args, "Result: VALID");
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &document));
+    ASSERT_NOT_NULL(document);
+
+    nmo_object_t *anchor_object =
+        find_named_object(document, "SoundAnchor");
+    nmo_object_t *sound_object =
+        find_named_object(document, "ProbeWaveSound");
+    ASSERT_NOT_NULL(anchor_object);
+    ASSERT_NOT_NULL(sound_object);
+    const nmo_wavesound_state_t *state =
+        (const nmo_wavesound_state_t *)nmo_object_get_state(sound_object);
+    ASSERT_NOT_NULL(state);
+    ASSERT_TRUE(state->has_wave_file_name);
+    ASSERT_STR_EQ("test_generated_wavesound_authoring.wav", state->wave_file_name);
+    ASSERT_TRUE(state->has_data2);
+    ASSERT_FLOAT_EQ(0.8f, state->gain, 0.0001f);
+    ASSERT_FLOAT_EQ(0.25f, state->pan, 0.0001f);
+    ASSERT_FLOAT_EQ(1.5f, state->pitch, 0.0001f);
+    ASSERT_EQ(nmo_object_get_id(anchor_object), state->attached_object_id);
+    ASSERT_FLOAT_EQ(4.0f, state->position.x, 0.0001f);
+    ASSERT_FLOAT_EQ(5.0f, state->position.y, 0.0001f);
+    ASSERT_FLOAT_EQ(6.0f, state->position.z, 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, state->direction.x, 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, state->direction.y, 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, state->direction.z, 0.0001f);
+
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+    nmo_project_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+    remove(output_path);
+    remove(sound_path);
+}
+
 TEST(generated_advanced_probes, unproven_manifest_authoring_fields_are_rejected)
 {
     static const char *const manifests[] = {
@@ -335,9 +415,9 @@ TEST(generated_advanced_probes, unproven_manifest_authoring_fields_are_rejected)
         "\"version\":1,"
         "\"document\":{\"name\":\"Generated\"},"
         "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
-        "\"name\":\"Sound\","
-        "\"class\":\"CKWaveSound\","
-        "\"sound\":{\"file\":\"tone.wav\"}"
+        "\"name\":\"Animation\","
+        "\"class\":\"CKObjectAnimation\","
+        "\"animation\":{\"file\":\"walk.anim\"}"
         "}]}]"
         "}",
         "{"
@@ -367,6 +447,8 @@ REGISTER_TEST(generated_advanced_probes,
               sound_and_animation_skeletons_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,
               wavesound_field_semantics_save_load_validate);
+REGISTER_TEST(generated_advanced_probes,
+              manifest_wavesound_authoring_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,
               unproven_manifest_authoring_fields_are_rejected);
 TEST_MAIN_END()

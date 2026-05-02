@@ -180,6 +180,53 @@ TEST(project_manifest_json, parses_material_texture_slots)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_manifest_json, parses_wavesound_authoring)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":["
+        "{\"id\":\"anchor\",\"name\":\"Anchor\",\"class\":\"CK3dEntity\"},"
+        "{\"name\":\"Sound\",\"class\":\"CKWaveSound\","
+        "\"sound\":{\"file\":\"assets/tone.wav\","
+        "\"gain\":0.75,\"pan\":-0.5,\"pitch\":1.25,"
+        "\"attached_object\":\"anchor\","
+        "\"position\":[1,2,3],\"direction\":[0,0,-1]}}"
+        "]"
+        "}]"
+        "}";
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+    ASSERT_EQ(2u, nmo_project_plan_object_count(plan));
+
+    nmo_project_object_desc_t sound = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 1u, &sound));
+    ASSERT_TRUE(sound.has_sound);
+    ASSERT_STR_EQ("assets/tone.wav", sound.sound_file_path);
+    ASSERT_TRUE(sound.has_sound_gain);
+    ASSERT_FLOAT_EQ(0.75f, sound.sound_gain, 0.0001f);
+    ASSERT_TRUE(sound.has_sound_pan);
+    ASSERT_FLOAT_EQ(-0.5f, sound.sound_pan, 0.0001f);
+    ASSERT_TRUE(sound.has_sound_pitch);
+    ASSERT_FLOAT_EQ(1.25f, sound.sound_pitch, 0.0001f);
+    ASSERT_TRUE(sound.has_sound_attached_object);
+    ASSERT_EQ(1u, sound.sound_attached_object_handle);
+    ASSERT_TRUE(sound.has_sound_position);
+    ASSERT_FLOAT_EQ(1.0f, sound.sound_position[0], 0.0001f);
+    ASSERT_FLOAT_EQ(2.0f, sound.sound_position[1], 0.0001f);
+    ASSERT_FLOAT_EQ(3.0f, sound.sound_position[2], 0.0001f);
+    ASSERT_TRUE(sound.has_sound_direction);
+    ASSERT_FLOAT_EQ(0.0f, sound.sound_direction[0], 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, sound.sound_direction[1], 0.0001f);
+    ASSERT_FLOAT_EQ(-1.0f, sound.sound_direction[2], 0.0001f);
+
+    nmo_project_plan_destroy(plan);
+}
+
 TEST(project_manifest_json, rejects_duplicate_material_texture_slots)
 {
     const char *json =
@@ -704,6 +751,7 @@ TEST_MAIN_BEGIN()
 REGISTER_TEST(project_manifest_json, parses_minimal_visible_scene);
 REGISTER_TEST(project_manifest_json, parses_named_obj_materials);
 REGISTER_TEST(project_manifest_json, parses_material_texture_slots);
+REGISTER_TEST(project_manifest_json, parses_wavesound_authoring);
 REGISTER_TEST(project_manifest_json, rejects_duplicate_material_texture_slots);
 REGISTER_TEST(project_manifest_json, rejects_out_of_range_material_texture_slot);
 REGISTER_TEST(project_manifest_json, maps_fields_and_scripts_to_project_plan);
