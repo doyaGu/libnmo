@@ -34,9 +34,19 @@ static nmo_status_t project_find_runtime_object(
                      "project object handle has no generated runtime object");
 }
 
+static char *project_script_make_node_name(
+    const char *script_name,
+    const char *suffix);
+
 static char *project_script_make_debug_name(const char *script_name)
 {
-    const char *suffix = "_DebugOutput";
+    return project_script_make_node_name(script_name, "_DebugOutput");
+}
+
+static char *project_script_make_node_name(
+    const char *script_name,
+    const char *suffix)
+{
     size_t name_len = script_name ? strlen(script_name) : 0u;
     size_t suffix_len = strlen(suffix);
     char *name = (char *)malloc(name_len + suffix_len + 1u);
@@ -95,6 +105,146 @@ static nmo_status_t project_script_add_debug_output(
     nmo_edit_report_dispose(&edit_report);
     free(node_name);
     return status;
+}
+
+static nmo_status_t project_script_add_triggered_debug_output(
+    nmo_workspace_t *workspace,
+    nmo_object_id_t behavior_id,
+    const char *script_name,
+    const char *message,
+    const char *trigger_suffix,
+    nmo_guid_t trigger_guid,
+    const char *trigger_output_handle,
+    const char *trigger_param_handle,
+    const char *trigger_param_value)
+{
+    nmo_edit_plan_t *edit_plan = NULL;
+    nmo_edit_report_t edit_report;
+    char *trigger_name = NULL;
+    char *debug_name = NULL;
+    nmo_status_t status = nmo_edit_report_init(&edit_report);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    trigger_name = project_script_make_node_name(script_name, trigger_suffix);
+    debug_name = project_script_make_debug_name(script_name);
+    if (!trigger_name || !debug_name) {
+        status = NMO_ERR_NOMEM;
+        goto cleanup;
+    }
+
+    status = nmo_edit_plan_create(&edit_plan);
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_node(
+            edit_plan,
+            behavior_id,
+            trigger_guid,
+            trigger_name);
+    }
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_node(
+            edit_plan,
+            behavior_id,
+            NMO_GUID(0x18655B3Fu, 0x68291DC3u),
+            debug_name);
+    }
+    if (status == NMO_OK) {
+        if (trigger_param_handle && trigger_param_value) {
+            status = nmo_edit_plan_add_set_parameter_value_from_handle(
+                edit_plan,
+                0u,
+                trigger_param_handle,
+                trigger_param_value,
+                NULL);
+        }
+    }
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_set_parameter_value_from_handle(
+            edit_plan,
+            1u,
+            "input_param:String",
+            message,
+            NULL);
+    }
+    if (status == NMO_OK) {
+        status = nmo_edit_plan_add_behavior_link_from_handles(
+            edit_plan,
+            behavior_id,
+            0u,
+            trigger_output_handle,
+            1u,
+            "input:In",
+            0u);
+    }
+    if (status == NMO_OK) {
+        status = nmo_edit_executor_execute(workspace, edit_plan, NULL, &edit_report);
+    }
+
+cleanup:
+    nmo_edit_plan_destroy(edit_plan);
+    nmo_edit_report_dispose(&edit_report);
+    free(trigger_name);
+    free(debug_name);
+    if (status == NMO_ERR_NOMEM) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate script template node name");
+    }
+    return status;
+}
+
+static nmo_status_t project_script_add_timer_debug_output(
+    nmo_workspace_t *workspace,
+    nmo_object_id_t behavior_id,
+    const char *script_name,
+    const char *message)
+{
+    return project_script_add_triggered_debug_output(
+        workspace,
+        behavior_id,
+        script_name,
+        message,
+        "_Timer",
+        NMO_GUID(0x302561C4u, 0x0D282980u),
+        "output:Out 0",
+        NULL,
+        NULL);
+}
+
+static nmo_status_t project_script_add_input_key_debug_output(
+    nmo_workspace_t *workspace,
+    nmo_object_id_t behavior_id,
+    const char *script_name,
+    const char *message)
+{
+    return project_script_add_triggered_debug_output(
+        workspace,
+        behavior_id,
+        script_name,
+        message,
+        "_KeyWaiter",
+        NMO_GUID(0x016D010Bu, 0x017D010Bu),
+        "output:Out",
+        "input_param:Key",
+        "32");
+}
+
+static nmo_status_t project_script_add_object_trigger_debug_output(
+    nmo_workspace_t *workspace,
+    nmo_object_id_t behavior_id,
+    const char *script_name,
+    const char *message)
+{
+    return project_script_add_triggered_debug_output(
+        workspace,
+        behavior_id,
+        script_name,
+        message,
+        "_TriggerEvent",
+        NMO_GUID(0x3C3F7044u, 0x0E917D1Au),
+        "output:Activate",
+        NULL,
+        NULL);
 }
 
 static nmo_status_t project_script_create_root(
@@ -177,11 +327,35 @@ nmo_status_t nmo_project_author_scripts(
             case NMO_PROJECT_SCRIPT_STEP_DEBUG_OUTPUT:
             case NMO_PROJECT_SCRIPT_STEP_ON_START_DEBUG_OUTPUT:
             case NMO_PROJECT_SCRIPT_STEP_SCENE_ON_START_DEBUG_OUTPUT:
-            case NMO_PROJECT_SCRIPT_STEP_TIMER_DEBUG_OUTPUT:
-            case NMO_PROJECT_SCRIPT_STEP_INPUT_KEY_DEBUG_OUTPUT:
-            case NMO_PROJECT_SCRIPT_STEP_OBJECT_TRIGGER_DEBUG_OUTPUT:
-            case NMO_PROJECT_SCRIPT_STEP_SCENE_START_THEN_TIMER_DEBUG_OUTPUT:
                 NMO_RETURN_IF_ERROR(project_script_add_debug_output(
+                    workspace,
+                    behavior_id,
+                    script.name,
+                    step.message));
+                break;
+            case NMO_PROJECT_SCRIPT_STEP_TIMER_DEBUG_OUTPUT:
+                NMO_RETURN_IF_ERROR(project_script_add_timer_debug_output(
+                    workspace,
+                    behavior_id,
+                    script.name,
+                    step.message));
+                break;
+            case NMO_PROJECT_SCRIPT_STEP_INPUT_KEY_DEBUG_OUTPUT:
+                NMO_RETURN_IF_ERROR(project_script_add_input_key_debug_output(
+                    workspace,
+                    behavior_id,
+                    script.name,
+                    step.message));
+                break;
+            case NMO_PROJECT_SCRIPT_STEP_OBJECT_TRIGGER_DEBUG_OUTPUT:
+                NMO_RETURN_IF_ERROR(project_script_add_object_trigger_debug_output(
+                    workspace,
+                    behavior_id,
+                    script.name,
+                    step.message));
+                break;
+            case NMO_PROJECT_SCRIPT_STEP_SCENE_START_THEN_TIMER_DEBUG_OUTPUT:
+                NMO_RETURN_IF_ERROR(project_script_add_timer_debug_output(
                     workspace,
                     behavior_id,
                     script.name,

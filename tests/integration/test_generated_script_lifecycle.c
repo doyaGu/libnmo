@@ -49,6 +49,18 @@ static bool array_contains_id(const nmo_array_t *array, nmo_object_id_t id)
     return false;
 }
 
+static void assert_script_has_sub_behavior(
+    nmo_document_t *document,
+    const nmo_behavior_state_t *script_state,
+    const char *name)
+{
+    nmo_object_t *node = find_named_object(document, name, NMO_CID_BEHAVIOR);
+    ASSERT_NOT_NULL(node);
+    ASSERT_TRUE(array_contains_id(
+        &script_state->sub_behaviors,
+        nmo_object_get_id(node)));
+}
+
 TEST(generated_script_lifecycle, binds_generated_script_to_object)
 {
     const char *output_path = "test_generated_script_lifecycle.cmo";
@@ -212,6 +224,12 @@ TEST(generated_script_lifecycle, generates_v2_debug_templates)
         "TriggerScript_DebugOutput",
         "SceneTimerScript_DebugOutput",
     };
+    const char *trigger_names[] = {
+        "TimerScript_Timer",
+        "InputScript_KeyWaiter",
+        "TriggerScript_TriggerEvent",
+        "SceneTimerScript_Timer",
+    };
     nmo_object_t *owner_object = find_named_object(document, "Owner", NMO_CID_3DENTITY);
     ASSERT_NOT_NULL(owner_object);
     const nmo_beobject_state_t *owner_state =
@@ -233,6 +251,8 @@ TEST(generated_script_lifecycle, generates_v2_debug_templates)
         ASSERT_TRUE(array_contains_id(
             &script_state->sub_behaviors,
             nmo_object_get_id(debug_object)));
+        assert_script_has_sub_behavior(document, script_state, trigger_names[i]);
+        ASSERT_TRUE(script_state->sub_behavior_links.count >= 1u);
     }
 
     nmo_document_destroy(document);
