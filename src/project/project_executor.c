@@ -463,7 +463,13 @@ static nmo_status_t project_report_populate_diff(
                 asset_name,
                 asset.has_external_mesh ? "external_mesh" : "primitive_mesh"));
         }
-        if (asset.has_material_color || asset.has_material_texture) {
+        if (asset.has_material_color ||
+            asset.has_material_diffuse ||
+            asset.has_material_ambient ||
+            asset.has_material_specular ||
+            asset.has_material_emissive ||
+            asset.has_material_specular_power ||
+            asset.has_material_texture) {
             NMO_RETURN_IF_ERROR(project_report_format_asset_name(
                 object.name,
                 "Material",

@@ -80,6 +80,16 @@ typedef struct project_asset_record {
     char *external_mesh_source_path;
     bool has_material_color;
     float material_color[4];
+    bool has_material_diffuse;
+    float material_diffuse[4];
+    bool has_material_ambient;
+    float material_ambient[4];
+    bool has_material_specular;
+    float material_specular[4];
+    bool has_material_emissive;
+    float material_emissive[4];
+    bool has_material_specular_power;
+    float material_specular_power;
     bool has_material_texture;
     char *material_texture_path;
     char *material_texture_source_path;
@@ -1391,6 +1401,100 @@ nmo_status_t nmo_project_plan_set_material_color(
     asset->material_color[1] = g;
     asset->material_color[2] = b;
     asset->material_color[3] = a;
+    asset->has_material_diffuse = true;
+    asset->material_diffuse[0] = r;
+    asset->material_diffuse[1] = g;
+    asset->material_diffuse[2] = b;
+    asset->material_diffuse[3] = a;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_material_diffuse(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float r,
+    float g,
+    float b,
+    float a)
+{
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+    asset->has_material_color = true;
+    asset->material_color[0] = r;
+    asset->material_color[1] = g;
+    asset->material_color[2] = b;
+    asset->material_color[3] = a;
+    asset->has_material_diffuse = true;
+    asset->material_diffuse[0] = r;
+    asset->material_diffuse[1] = g;
+    asset->material_diffuse[2] = b;
+    asset->material_diffuse[3] = a;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_material_ambient(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float r,
+    float g,
+    float b,
+    float a)
+{
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+    asset->has_material_ambient = true;
+    asset->material_ambient[0] = r;
+    asset->material_ambient[1] = g;
+    asset->material_ambient[2] = b;
+    asset->material_ambient[3] = a;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_material_specular(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float r,
+    float g,
+    float b,
+    float a)
+{
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+    asset->has_material_specular = true;
+    asset->material_specular[0] = r;
+    asset->material_specular[1] = g;
+    asset->material_specular[2] = b;
+    asset->material_specular[3] = a;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_material_emissive(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float r,
+    float g,
+    float b,
+    float a)
+{
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+    asset->has_material_emissive = true;
+    asset->material_emissive[0] = r;
+    asset->material_emissive[1] = g;
+    asset->material_emissive[2] = b;
+    asset->material_emissive[3] = a;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_project_plan_set_material_specular_power(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float power)
+{
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+    asset->has_material_specular_power = true;
+    asset->material_specular_power = power;
     NMO_RETURN_OK();
 }
 
@@ -1577,9 +1681,16 @@ nmo_status_t nmo_project_plan_add_obj_material(
                              "OBJ material texture slot path is required");
         }
     }
-    if (!spec->has_color && !has_any_texture) {
+    bool has_any_channel =
+        spec->has_color ||
+        spec->has_diffuse ||
+        spec->has_ambient ||
+        spec->has_specular ||
+        spec->has_emissive ||
+        spec->has_specular_power;
+    if (!has_any_channel && !has_any_texture) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "OBJ material requires color or texture");
+                         "OBJ material requires color channel or texture");
     }
     if (spec->has_texture &&
         (!spec->texture_path || spec->texture_path[0] == '\0')) {
@@ -1694,6 +1805,10 @@ nmo_status_t nmo_project_plan_add_obj_material(
     nmo_project_material_spec_t *dst =
         &asset->obj_materials[asset->obj_material_count++];
     *dst = *spec;
+    if (dst->has_color && !dst->has_diffuse) {
+        dst->has_diffuse = true;
+        memcpy(dst->diffuse, dst->color, sizeof(dst->diffuse));
+    }
     dst->obj_material_name = name_copy;
     dst->texture_path = texture_copy;
     dst->source_path = source_copy;
@@ -1880,6 +1995,25 @@ nmo_status_t nmo_project_plan_get_asset(
     out_asset->external_mesh_source_path = asset->external_mesh_source_path;
     out_asset->has_material_color = asset->has_material_color;
     memcpy(out_asset->material_color, asset->material_color, sizeof(out_asset->material_color));
+    out_asset->has_material_diffuse = asset->has_material_diffuse;
+    memcpy(out_asset->material_diffuse,
+           asset->material_diffuse,
+           sizeof(out_asset->material_diffuse));
+    out_asset->has_material_ambient = asset->has_material_ambient;
+    memcpy(out_asset->material_ambient,
+           asset->material_ambient,
+           sizeof(out_asset->material_ambient));
+    out_asset->has_material_specular = asset->has_material_specular;
+    memcpy(out_asset->material_specular,
+           asset->material_specular,
+           sizeof(out_asset->material_specular));
+    out_asset->has_material_emissive = asset->has_material_emissive;
+    memcpy(out_asset->material_emissive,
+           asset->material_emissive,
+           sizeof(out_asset->material_emissive));
+    out_asset->has_material_specular_power =
+        asset->has_material_specular_power;
+    out_asset->material_specular_power = asset->material_specular_power;
     out_asset->has_material_texture = asset->has_material_texture;
     out_asset->material_texture_path = asset->material_texture_path;
     out_asset->material_texture_source_path = asset->material_texture_source_path;

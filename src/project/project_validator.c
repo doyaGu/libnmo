@@ -678,6 +678,11 @@ static nmo_status_t project_validation_check_assets(
             project_validation_file_exists(asset.external_mesh_path) &&
             obj_material_count > 0u &&
             !asset.has_material_color &&
+            !asset.has_material_diffuse &&
+            !asset.has_material_ambient &&
+            !asset.has_material_specular &&
+            !asset.has_material_emissive &&
+            !asset.has_material_specular_power &&
             !asset.has_material_texture) {
             uint8_t *obj_bytes = NULL;
             size_t obj_size = 0u;

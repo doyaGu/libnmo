@@ -272,7 +272,13 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
                     "\"mesh\":{\"obj\":\"multi_material.obj\"},"
                     "\"materials\":["
                         "{\"name\":\"Red\",\"color\":[1,0,0,1]},"
-                        "{\"name\":\"Blue\",\"texture\":\"blue.png\"}"
+                        "{\"name\":\"Blue\","
+                            "\"diffuse\":[0,1,0,1],"
+                            "\"ambient\":[0,0,1,1],"
+                            "\"specular\":[1,1,0,1],"
+                            "\"emissive\":[1,0,1,1],"
+                            "\"specular_power\":12.5,"
+                            "\"texture\":\"blue.png\"}"
                     "],"
                     "\"transform\":{\"position\":[7,8,9],"
                         "\"rotation_euler_deg\":[0,0,0],"
@@ -412,7 +418,11 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
     const nmo_material_state_t *material_state =
         (const nmo_material_state_t *)nmo_object_get_state(blue_material_object);
     ASSERT_NOT_NULL(material_state);
-    ASSERT_EQ(0xFFFFFFFFu, material_state->diffuse_color);
+    ASSERT_EQ(0xFF00FF00u, material_state->diffuse_color);
+    ASSERT_EQ(0xFF0000FFu, material_state->ambient_color);
+    ASSERT_EQ(0xFFFFFF00u, material_state->specular_color);
+    ASSERT_EQ(0xFFFF00FFu, material_state->emissive_color);
+    ASSERT_FLOAT_EQ(12.5f, material_state->specular_power, 0.0001f);
     ASSERT_EQ(texture_id, material_state->texture_ids[0]);
 
     const nmo_texture_state_t *texture_state =

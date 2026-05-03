@@ -23,6 +23,16 @@ typedef struct nmo_project_asset_desc {
     const char *external_mesh_source_path;
     bool has_material_color;
     float material_color[4];
+    bool has_material_diffuse;
+    float material_diffuse[4];
+    bool has_material_ambient;
+    float material_ambient[4];
+    bool has_material_specular;
+    float material_specular[4];
+    bool has_material_emissive;
+    float material_emissive[4];
+    bool has_material_specular_power;
+    float material_specular_power;
     bool has_material_texture;
     const char *material_texture_path;
     const char *material_texture_source_path;
@@ -35,6 +45,16 @@ typedef struct nmo_project_material_spec {
     const char *obj_material_name;
     bool has_color;
     float color[4];
+    bool has_diffuse;
+    float diffuse[4];
+    bool has_ambient;
+    float ambient[4];
+    bool has_specular;
+    float specular[4];
+    bool has_emissive;
+    float emissive[4];
+    bool has_specular_power;
+    float specular_power;
     bool has_texture;
     const char *texture_path;
     const char *source_path;
@@ -56,6 +76,43 @@ NMO_API nmo_status_t nmo_project_plan_set_material_color(
     float g,
     float b,
     float a);
+
+NMO_API nmo_status_t nmo_project_plan_set_material_diffuse(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float r,
+    float g,
+    float b,
+    float a);
+
+NMO_API nmo_status_t nmo_project_plan_set_material_ambient(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float r,
+    float g,
+    float b,
+    float a);
+
+NMO_API nmo_status_t nmo_project_plan_set_material_specular(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float r,
+    float g,
+    float b,
+    float a);
+
+NMO_API nmo_status_t nmo_project_plan_set_material_emissive(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float r,
+    float g,
+    float b,
+    float a);
+
+NMO_API nmo_status_t nmo_project_plan_set_material_specular_power(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    float power);
 
 NMO_API nmo_status_t nmo_project_plan_set_external_mesh(
     nmo_project_plan_t *plan,

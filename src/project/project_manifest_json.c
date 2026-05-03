@@ -148,24 +148,70 @@ static double manifest_get_number(yyjson_val *value)
     return (double)yyjson_get_uint(value);
 }
 
+static nmo_status_t manifest_parse_color4(
+    yyjson_val *value,
+    const char *field_name,
+    float out_color[4])
+{
+    if (!yyjson_is_arr(value) || yyjson_arr_size(value) != 4u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest %s must contain four numbers", field_name);
+    }
+    for (size_t i = 0u; i < 4u; ++i) {
+        yyjson_val *item = yyjson_arr_get(value, i);
+        if (!yyjson_is_num(item)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest %s values must be numbers", field_name);
+        }
+        out_color[i] = (float)manifest_get_number(item);
+    }
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t manifest_parse_material(
     yyjson_val *material,
     bool *out_has_color,
     float out_color[4],
+    bool *out_has_ambient,
+    float out_ambient[4],
+    bool *out_has_specular,
+    float out_specular[4],
+    bool *out_has_emissive,
+    float out_emissive[4],
+    bool *out_has_specular_power,
+    float *out_specular_power,
     const char **out_texture,
     bool out_has_texture_slots[4],
     const char *out_texture_paths[4],
     size_t out_texture_indices[4])
 {
-    static const char *const allowed[] = {"color", "texture", "textures", NULL};
+    static const char *const allowed[] = {
+        "color",
+        "diffuse",
+        "ambient",
+        "specular",
+        "emissive",
+        "specular_power",
+        "texture",
+        "textures",
+        NULL};
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(material, "material", allowed));
 
     if (!out_has_color || !out_color || !out_texture ||
+        !out_has_ambient || !out_ambient ||
+        !out_has_specular || !out_specular ||
+        !out_has_emissive || !out_emissive ||
+        !out_has_specular_power || !out_specular_power ||
         !out_has_texture_slots || !out_texture_paths || !out_texture_indices) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "material output arguments are required");
     }
     *out_has_color = false;
+    *out_has_ambient = false;
+    *out_has_specular = false;
+    *out_has_emissive = false;
+    *out_has_specular_power = false;
+    *out_specular_power = 0.0f;
     *out_texture = NULL;
     memset(out_has_texture_slots, 0, sizeof(bool) * 4u);
     memset(out_texture_paths, 0, sizeof(const char *) * 4u);
@@ -174,21 +220,57 @@ static nmo_status_t manifest_parse_material(
     }
 
     yyjson_val *color = yyjson_obj_get(material, "color");
+    yyjson_val *diffuse = yyjson_obj_get(material, "diffuse");
+    if (color && diffuse) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest material.color and material.diffuse are aliases");
+    }
     if (color) {
-        if (!yyjson_is_arr(color) || yyjson_arr_size(color) != 4u) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "manifest material.color must contain four numbers");
-        }
-
-        for (size_t i = 0u; i < 4u; ++i) {
-            yyjson_val *item = yyjson_arr_get(color, i);
-            if (!yyjson_is_num(item)) {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                 "manifest material.color values must be numbers");
-            }
-            out_color[i] = (float)manifest_get_number(item);
-        }
+        NMO_RETURN_IF_ERROR(manifest_parse_color4(
+            color,
+            "material.color",
+            out_color));
         *out_has_color = true;
+    }
+    if (diffuse) {
+        NMO_RETURN_IF_ERROR(manifest_parse_color4(
+            diffuse,
+            "material.diffuse",
+            out_color));
+        *out_has_color = true;
+    }
+    yyjson_val *ambient = yyjson_obj_get(material, "ambient");
+    if (ambient) {
+        NMO_RETURN_IF_ERROR(manifest_parse_color4(
+            ambient,
+            "material.ambient",
+            out_ambient));
+        *out_has_ambient = true;
+    }
+    yyjson_val *specular = yyjson_obj_get(material, "specular");
+    if (specular) {
+        NMO_RETURN_IF_ERROR(manifest_parse_color4(
+            specular,
+            "material.specular",
+            out_specular));
+        *out_has_specular = true;
+    }
+    yyjson_val *emissive = yyjson_obj_get(material, "emissive");
+    if (emissive) {
+        NMO_RETURN_IF_ERROR(manifest_parse_color4(
+            emissive,
+            "material.emissive",
+            out_emissive));
+        *out_has_emissive = true;
+    }
+    yyjson_val *specular_power = yyjson_obj_get(material, "specular_power");
+    if (specular_power) {
+        if (!yyjson_is_num(specular_power)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest material.specular_power must be a number");
+        }
+        *out_has_specular_power = true;
+        *out_specular_power = (float)manifest_get_number(specular_power);
     }
 
     yyjson_val *texture = yyjson_obj_get(material, "texture");
@@ -242,9 +324,10 @@ static nmo_status_t manifest_parse_material(
     for (size_t slot = 0u; slot < 4u; ++slot) {
         has_any_texture = has_any_texture || out_has_texture_slots[slot];
     }
-    if (!*out_has_color && !has_any_texture) {
+    if (!*out_has_color && !*out_has_ambient && !*out_has_specular &&
+        !*out_has_emissive && !*out_has_specular_power && !has_any_texture) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "manifest material requires color or texture");
+                         "manifest material requires color channel or texture");
     }
     NMO_RETURN_OK();
 }
@@ -254,7 +337,17 @@ static nmo_status_t manifest_parse_obj_material(
     nmo_project_material_spec_t *out_spec,
     size_t out_texture_indices[4])
 {
-    static const char *const allowed[] = {"name", "color", "texture", "textures", NULL};
+    static const char *const allowed[] = {
+        "name",
+        "color",
+        "diffuse",
+        "ambient",
+        "specular",
+        "emissive",
+        "specular_power",
+        "texture",
+        "textures",
+        NULL};
     if (!out_spec) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "OBJ material output argument is required");
@@ -275,20 +368,59 @@ static nmo_status_t manifest_parse_obj_material(
         &out_spec->obj_material_name));
 
     yyjson_val *color = yyjson_obj_get(material, "color");
+    yyjson_val *diffuse = yyjson_obj_get(material, "diffuse");
+    if (color && diffuse) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest materials[].color and materials[].diffuse are aliases");
+    }
     if (color) {
-        if (!yyjson_is_arr(color) || yyjson_arr_size(color) != 4u) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "manifest materials[].color must contain four numbers");
-        }
-        for (size_t i = 0u; i < 4u; ++i) {
-            yyjson_val *item = yyjson_arr_get(color, i);
-            if (!yyjson_is_num(item)) {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                 "manifest materials[].color values must be numbers");
-            }
-            out_spec->color[i] = (float)manifest_get_number(item);
-        }
+        NMO_RETURN_IF_ERROR(manifest_parse_color4(
+            color,
+            "materials[].color",
+            out_spec->color));
         out_spec->has_color = true;
+        out_spec->has_diffuse = true;
+        memcpy(out_spec->diffuse, out_spec->color, sizeof(out_spec->diffuse));
+    }
+    if (diffuse) {
+        NMO_RETURN_IF_ERROR(manifest_parse_color4(
+            diffuse,
+            "materials[].diffuse",
+            out_spec->diffuse));
+        out_spec->has_diffuse = true;
+    }
+    yyjson_val *ambient = yyjson_obj_get(material, "ambient");
+    if (ambient) {
+        NMO_RETURN_IF_ERROR(manifest_parse_color4(
+            ambient,
+            "materials[].ambient",
+            out_spec->ambient));
+        out_spec->has_ambient = true;
+    }
+    yyjson_val *specular = yyjson_obj_get(material, "specular");
+    if (specular) {
+        NMO_RETURN_IF_ERROR(manifest_parse_color4(
+            specular,
+            "materials[].specular",
+            out_spec->specular));
+        out_spec->has_specular = true;
+    }
+    yyjson_val *emissive = yyjson_obj_get(material, "emissive");
+    if (emissive) {
+        NMO_RETURN_IF_ERROR(manifest_parse_color4(
+            emissive,
+            "materials[].emissive",
+            out_spec->emissive));
+        out_spec->has_emissive = true;
+    }
+    yyjson_val *specular_power = yyjson_obj_get(material, "specular_power");
+    if (specular_power) {
+        if (!yyjson_is_num(specular_power)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest materials[].specular_power must be a number");
+        }
+        out_spec->has_specular_power = true;
+        out_spec->specular_power = (float)manifest_get_number(specular_power);
     }
 
     yyjson_val *texture = yyjson_obj_get(material, "texture");
@@ -349,9 +481,12 @@ static nmo_status_t manifest_parse_obj_material(
     for (size_t slot = 0u; slot < 4u; ++slot) {
         has_any_texture = has_any_texture || out_spec->has_texture_slots[slot];
     }
-    if (!out_spec->has_color && !has_any_texture) {
+    if (!out_spec->has_color && !out_spec->has_diffuse &&
+        !out_spec->has_ambient && !out_spec->has_specular &&
+        !out_spec->has_emissive && !out_spec->has_specular_power &&
+        !has_any_texture) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "manifest materials[] requires color or texture");
+                         "manifest materials[] requires color channel or texture");
     }
     NMO_RETURN_OK();
 }
@@ -1208,6 +1343,14 @@ static nmo_status_t manifest_parse_object_details(
     if (material) {
         bool has_color = false;
         float color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        bool has_ambient = false;
+        float ambient[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        bool has_specular = false;
+        float specular[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        bool has_emissive = false;
+        float emissive[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        bool has_specular_power = false;
+        float specular_power = 0.0f;
         const char *texture = NULL;
         bool has_texture_slots[4] = {false, false, false, false};
         const char *texture_paths[4] = {0};
@@ -1216,6 +1359,14 @@ static nmo_status_t manifest_parse_object_details(
             material,
             &has_color,
             color,
+            &has_ambient,
+            ambient,
+            &has_specular,
+            specular,
+            &has_emissive,
+            emissive,
+            &has_specular_power,
+            &specular_power,
             &texture,
             has_texture_slots,
             texture_paths,
@@ -1228,6 +1379,39 @@ static nmo_status_t manifest_parse_object_details(
                 color[1],
                 color[2],
                 color[3]));
+        }
+        if (has_ambient) {
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_ambient(
+                ctx->plan,
+                object_handle,
+                ambient[0],
+                ambient[1],
+                ambient[2],
+                ambient[3]));
+        }
+        if (has_specular) {
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_specular(
+                ctx->plan,
+                object_handle,
+                specular[0],
+                specular[1],
+                specular[2],
+                specular[3]));
+        }
+        if (has_emissive) {
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_emissive(
+                ctx->plan,
+                object_handle,
+                emissive[0],
+                emissive[1],
+                emissive[2],
+                emissive[3]));
+        }
+        if (has_specular_power) {
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_specular_power(
+                ctx->plan,
+                object_handle,
+                specular_power));
         }
         if (has_texture_slots[0]) {
             NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_texture(

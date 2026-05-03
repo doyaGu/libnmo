@@ -180,6 +180,95 @@ TEST(project_manifest_json, parses_material_texture_slots)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_manifest_json, parses_material_color_channels)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":[{"
+        "\"name\":\"Cube\","
+        "\"class\":\"CK3dEntity\","
+        "\"mesh\":{\"obj\":\"assets/cube.obj\"},"
+        "\"material\":{"
+            "\"diffuse\":[1,0,0,1],"
+            "\"ambient\":[0.1,0.2,0.3,1],"
+            "\"specular\":[0.4,0.5,0.6,1],"
+            "\"emissive\":[0.7,0.8,0.9,1],"
+            "\"specular_power\":12.5"
+        "},"
+        "\"materials\":[{"
+            "\"name\":\"Layered\","
+            "\"diffuse\":[0.9,0.8,0.7,1],"
+            "\"ambient\":[0.6,0.5,0.4,1],"
+            "\"specular\":[0.3,0.2,0.1,1],"
+            "\"emissive\":[0.05,0.06,0.07,1],"
+            "\"specular_power\":6.25"
+        "}]"
+        "}]"
+        "}]"
+        "}";
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+
+    nmo_project_object_desc_t object = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 0u, &object));
+
+    nmo_project_asset_desc_t asset = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_asset(plan, 0u, &asset));
+    ASSERT_TRUE(asset.has_material_diffuse);
+    ASSERT_FLOAT_EQ(1.0f, asset.material_diffuse[0], 0.0001f);
+    ASSERT_TRUE(asset.has_material_ambient);
+    ASSERT_FLOAT_EQ(0.1f, asset.material_ambient[0], 0.0001f);
+    ASSERT_TRUE(asset.has_material_specular);
+    ASSERT_FLOAT_EQ(0.4f, asset.material_specular[0], 0.0001f);
+    ASSERT_TRUE(asset.has_material_emissive);
+    ASSERT_FLOAT_EQ(0.7f, asset.material_emissive[0], 0.0001f);
+    ASSERT_TRUE(asset.has_material_specular_power);
+    ASSERT_FLOAT_EQ(12.5f, asset.material_specular_power, 0.0001f);
+
+    nmo_project_material_spec_t material = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_obj_material(plan, object.handle, 0u, &material));
+    ASSERT_STR_EQ("Layered", material.obj_material_name);
+    ASSERT_TRUE(material.has_diffuse);
+    ASSERT_FLOAT_EQ(0.9f, material.diffuse[0], 0.0001f);
+    ASSERT_TRUE(material.has_ambient);
+    ASSERT_FLOAT_EQ(0.6f, material.ambient[0], 0.0001f);
+    ASSERT_TRUE(material.has_specular);
+    ASSERT_FLOAT_EQ(0.3f, material.specular[0], 0.0001f);
+    ASSERT_TRUE(material.has_emissive);
+    ASSERT_FLOAT_EQ(0.05f, material.emissive[0], 0.0001f);
+    ASSERT_TRUE(material.has_specular_power);
+    ASSERT_FLOAT_EQ(6.25f, material.specular_power, 0.0001f);
+
+    nmo_project_plan_destroy(plan);
+}
+
+TEST(project_manifest_json, rejects_material_color_alias_conflict)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":[{"
+        "\"name\":\"Cube\","
+        "\"class\":\"CK3dEntity\","
+        "\"mesh\":{\"obj\":\"assets/cube.obj\"},"
+        "\"material\":{\"color\":[1,0,0,1],\"diffuse\":[1,0,0,1]}"
+        "}]"
+        "}]"
+        "}";
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+              nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NULL(plan);
+}
+
 TEST(project_manifest_json, parses_wavesound_authoring)
 {
     const char *json =
@@ -751,6 +840,8 @@ TEST_MAIN_BEGIN()
 REGISTER_TEST(project_manifest_json, parses_minimal_visible_scene);
 REGISTER_TEST(project_manifest_json, parses_named_obj_materials);
 REGISTER_TEST(project_manifest_json, parses_material_texture_slots);
+REGISTER_TEST(project_manifest_json, parses_material_color_channels);
+REGISTER_TEST(project_manifest_json, rejects_material_color_alias_conflict);
 REGISTER_TEST(project_manifest_json, parses_wavesound_authoring);
 REGISTER_TEST(project_manifest_json, rejects_duplicate_material_texture_slots);
 REGISTER_TEST(project_manifest_json, rejects_out_of_range_material_texture_slot);

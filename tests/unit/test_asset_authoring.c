@@ -27,6 +27,10 @@ TEST(asset_authoring, stores_primitive_mesh_and_material_specs) {
     ASSERT_EQ(NMO_OK, nmo_project_plan_set_primitive_mesh(plan, cube, NMO_PRIMITIVE_CUBE));
     ASSERT_EQ(NMO_OK, nmo_project_plan_set_external_mesh(plan, cube, "assets/cube.obj"));
     ASSERT_EQ(NMO_OK, nmo_project_plan_set_material_color(plan, cube, 1.0f, 0.0f, 0.0f, 1.0f));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_material_ambient(plan, cube, 0.1f, 0.2f, 0.3f, 1.0f));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_material_specular(plan, cube, 0.4f, 0.5f, 0.6f, 1.0f));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_material_emissive(plan, cube, 0.7f, 0.8f, 0.9f, 1.0f));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_material_specular_power(plan, cube, 12.5f));
     ASSERT_EQ(NMO_OK, nmo_project_plan_set_material_texture(plan, cube, "assets/cube.png"));
     ASSERT_EQ(NMO_OK, nmo_project_plan_set_object_position(plan, cube, 1.0f, 2.0f, 3.0f));
     ASSERT_EQ(NMO_OK, nmo_project_plan_set_object_rotation_euler_deg(plan, cube, 10.0f, 20.0f, 30.0f));
@@ -45,6 +49,28 @@ TEST(asset_authoring, stores_primitive_mesh_and_material_specs) {
     ASSERT_FLOAT_EQ(0.0f, asset.material_color[1], 0.0001f);
     ASSERT_FLOAT_EQ(0.0f, asset.material_color[2], 0.0001f);
     ASSERT_FLOAT_EQ(1.0f, asset.material_color[3], 0.0001f);
+    ASSERT_TRUE(asset.has_material_diffuse);
+    ASSERT_FLOAT_EQ(1.0f, asset.material_diffuse[0], 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, asset.material_diffuse[1], 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, asset.material_diffuse[2], 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, asset.material_diffuse[3], 0.0001f);
+    ASSERT_TRUE(asset.has_material_ambient);
+    ASSERT_FLOAT_EQ(0.1f, asset.material_ambient[0], 0.0001f);
+    ASSERT_FLOAT_EQ(0.2f, asset.material_ambient[1], 0.0001f);
+    ASSERT_FLOAT_EQ(0.3f, asset.material_ambient[2], 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, asset.material_ambient[3], 0.0001f);
+    ASSERT_TRUE(asset.has_material_specular);
+    ASSERT_FLOAT_EQ(0.4f, asset.material_specular[0], 0.0001f);
+    ASSERT_FLOAT_EQ(0.5f, asset.material_specular[1], 0.0001f);
+    ASSERT_FLOAT_EQ(0.6f, asset.material_specular[2], 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, asset.material_specular[3], 0.0001f);
+    ASSERT_TRUE(asset.has_material_emissive);
+    ASSERT_FLOAT_EQ(0.7f, asset.material_emissive[0], 0.0001f);
+    ASSERT_FLOAT_EQ(0.8f, asset.material_emissive[1], 0.0001f);
+    ASSERT_FLOAT_EQ(0.9f, asset.material_emissive[2], 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, asset.material_emissive[3], 0.0001f);
+    ASSERT_TRUE(asset.has_material_specular_power);
+    ASSERT_FLOAT_EQ(12.5f, asset.material_specular_power, 0.0001f);
     ASSERT_TRUE(asset.has_material_texture);
     ASSERT_STR_EQ("assets/cube.png", asset.material_texture_path);
 
@@ -133,6 +159,10 @@ TEST(asset_authoring, clones_asset_specs) {
     ASSERT_EQ(NMO_OK, nmo_project_plan_set_primitive_mesh(plan, cube, NMO_PRIMITIVE_CUBE));
     ASSERT_EQ(NMO_OK, nmo_project_plan_set_external_mesh(plan, cube, "assets/clone.obj"));
     ASSERT_EQ(NMO_OK, nmo_project_plan_set_material_color(plan, cube, 0.25f, 0.5f, 0.75f, 1.0f));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_material_ambient(plan, cube, 0.05f, 0.10f, 0.15f, 1.0f));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_material_specular(plan, cube, 0.20f, 0.25f, 0.30f, 1.0f));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_material_emissive(plan, cube, 0.35f, 0.40f, 0.45f, 1.0f));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_material_specular_power(plan, cube, 6.25f));
     ASSERT_EQ(NMO_OK, nmo_project_plan_set_material_texture(plan, cube, "assets/clone.png"));
     ASSERT_EQ(NMO_OK, nmo_project_plan_set_object_position(plan, cube, -1.0f, 4.0f, 8.0f));
     ASSERT_EQ(NMO_OK, nmo_project_plan_set_object_rotation_euler_deg(plan, cube, 45.0f, 0.0f, 90.0f));
@@ -150,6 +180,14 @@ TEST(asset_authoring, clones_asset_specs) {
     ASSERT_FLOAT_EQ(0.25f, asset.material_color[0], 0.0001f);
     ASSERT_FLOAT_EQ(0.5f, asset.material_color[1], 0.0001f);
     ASSERT_FLOAT_EQ(0.75f, asset.material_color[2], 0.0001f);
+    ASSERT_TRUE(asset.has_material_ambient);
+    ASSERT_FLOAT_EQ(0.05f, asset.material_ambient[0], 0.0001f);
+    ASSERT_TRUE(asset.has_material_specular);
+    ASSERT_FLOAT_EQ(0.20f, asset.material_specular[0], 0.0001f);
+    ASSERT_TRUE(asset.has_material_emissive);
+    ASSERT_FLOAT_EQ(0.35f, asset.material_emissive[0], 0.0001f);
+    ASSERT_TRUE(asset.has_material_specular_power);
+    ASSERT_FLOAT_EQ(6.25f, asset.material_specular_power, 0.0001f);
     ASSERT_TRUE(asset.has_material_texture);
     ASSERT_STR_EQ("assets/clone.png", asset.material_texture_path);
 
@@ -198,6 +236,14 @@ TEST(asset_authoring, stores_named_obj_material_specs) {
                       .obj_material_name = "Red",
                       .has_color = true,
                       .color = {1.0f, 0.0f, 0.0f, 1.0f},
+                      .has_ambient = true,
+                      .ambient = {0.1f, 0.0f, 0.0f, 1.0f},
+                      .has_specular = true,
+                      .specular = {0.4f, 0.4f, 0.4f, 1.0f},
+                      .has_emissive = true,
+                      .emissive = {0.0f, 0.0f, 0.1f, 1.0f},
+                      .has_specular_power = true,
+                      .specular_power = 12.5f,
                   }));
     ASSERT_EQ(NMO_OK,
               nmo_project_plan_add_obj_material(
@@ -218,6 +264,16 @@ TEST(asset_authoring, stores_named_obj_material_specs) {
     ASSERT_FLOAT_EQ(0.0f, material.color[1], 0.0001f);
     ASSERT_FLOAT_EQ(0.0f, material.color[2], 0.0001f);
     ASSERT_FLOAT_EQ(1.0f, material.color[3], 0.0001f);
+    ASSERT_TRUE(material.has_diffuse);
+    ASSERT_FLOAT_EQ(1.0f, material.diffuse[0], 0.0001f);
+    ASSERT_TRUE(material.has_ambient);
+    ASSERT_FLOAT_EQ(0.1f, material.ambient[0], 0.0001f);
+    ASSERT_TRUE(material.has_specular);
+    ASSERT_FLOAT_EQ(0.4f, material.specular[0], 0.0001f);
+    ASSERT_TRUE(material.has_emissive);
+    ASSERT_FLOAT_EQ(0.1f, material.emissive[2], 0.0001f);
+    ASSERT_TRUE(material.has_specular_power);
+    ASSERT_FLOAT_EQ(12.5f, material.specular_power, 0.0001f);
 
     ASSERT_EQ(NMO_OK, nmo_project_plan_get_obj_material(plan, cube, 1u, &material));
     ASSERT_STR_EQ("Blue", material.obj_material_name);
@@ -301,6 +357,14 @@ TEST(asset_authoring, clones_named_obj_material_specs) {
                       .obj_material_name = "CloneMat",
                       .has_color = true,
                       .color = {0.25f, 0.5f, 0.75f, 1.0f},
+                      .has_ambient = true,
+                      .ambient = {0.05f, 0.10f, 0.15f, 1.0f},
+                      .has_specular = true,
+                      .specular = {0.20f, 0.25f, 0.30f, 1.0f},
+                      .has_emissive = true,
+                      .emissive = {0.35f, 0.40f, 0.45f, 1.0f},
+                      .has_specular_power = true,
+                      .specular_power = 6.25f,
                       .has_texture = true,
                       .texture_path = "assets/clone.png",
                   }));
@@ -313,6 +377,14 @@ TEST(asset_authoring, clones_named_obj_material_specs) {
     ASSERT_STR_EQ("CloneMat", material.obj_material_name);
     ASSERT_TRUE(material.has_color);
     ASSERT_FLOAT_EQ(0.25f, material.color[0], 0.0001f);
+    ASSERT_TRUE(material.has_ambient);
+    ASSERT_FLOAT_EQ(0.05f, material.ambient[0], 0.0001f);
+    ASSERT_TRUE(material.has_specular);
+    ASSERT_FLOAT_EQ(0.20f, material.specular[0], 0.0001f);
+    ASSERT_TRUE(material.has_emissive);
+    ASSERT_FLOAT_EQ(0.35f, material.emissive[0], 0.0001f);
+    ASSERT_TRUE(material.has_specular_power);
+    ASSERT_FLOAT_EQ(6.25f, material.specular_power, 0.0001f);
     ASSERT_TRUE(material.has_texture);
     ASSERT_STR_EQ("assets/clone.png", material.texture_path);
 
