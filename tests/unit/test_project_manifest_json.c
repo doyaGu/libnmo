@@ -269,6 +269,39 @@ TEST(project_manifest_json, rejects_material_color_alias_conflict)
     ASSERT_NULL(plan);
 }
 
+TEST(project_manifest_json, rejects_unproven_material_flag_fields)
+{
+    static const char *const field_names[] = {
+        "alpha",
+        "blend",
+        "filter",
+        "wrap",
+    };
+    for (size_t i = 0u; i < sizeof(field_names) / sizeof(field_names[0]); ++i) {
+        char json[512];
+        snprintf(json,
+                 sizeof(json),
+                 "{"
+                 "\"version\":1,"
+                 "\"document\":{\"name\":\"Generated\"},"
+                 "\"scenes\":[{"
+                 "\"name\":\"Level\","
+                 "\"objects\":[{"
+                 "\"name\":\"Cube\","
+                 "\"class\":\"CK3dEntity\","
+                 "\"mesh\":{\"primitive\":\"cube\"},"
+                 "\"material\":{\"%s\":true}"
+                 "}]"
+                 "}]"
+                 "}",
+                 field_names[i]);
+        nmo_project_plan_t *plan = NULL;
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+                  nmo_project_manifest_json_read(json, strlen(json), &plan));
+        ASSERT_NULL(plan);
+    }
+}
+
 TEST(project_manifest_json, parses_wavesound_authoring)
 {
     const char *json =
@@ -842,6 +875,7 @@ REGISTER_TEST(project_manifest_json, parses_named_obj_materials);
 REGISTER_TEST(project_manifest_json, parses_material_texture_slots);
 REGISTER_TEST(project_manifest_json, parses_material_color_channels);
 REGISTER_TEST(project_manifest_json, rejects_material_color_alias_conflict);
+REGISTER_TEST(project_manifest_json, rejects_unproven_material_flag_fields);
 REGISTER_TEST(project_manifest_json, parses_wavesound_authoring);
 REGISTER_TEST(project_manifest_json, rejects_duplicate_material_texture_slots);
 REGISTER_TEST(project_manifest_json, rejects_out_of_range_material_texture_slot);

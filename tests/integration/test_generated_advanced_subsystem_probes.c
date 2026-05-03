@@ -5,6 +5,7 @@
 #include "format/nmo_object.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_animation_schemas.h"
+#include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_repository.h"
@@ -492,6 +493,68 @@ TEST(generated_advanced_probes, objectanimation_field_semantics_save_load_valida
     remove(output_path);
 }
 
+TEST(generated_advanced_probes, material_packed_flag_semantics_save_load_validate)
+{
+    const char *output_path = "test_generated_material_flags_probe.cmo";
+    remove(output_path);
+    remove("test_generated_material_flags_probe.cmo.tmp");
+
+    nmo_session_field_edit_t material_fields[] = {
+        {.field_name = "packed_modes", .value_str = "858149412"},
+        {.field_name = "packed_flags", .value_str = "17171465"},
+    };
+
+    nmo_project_plan_t *plan = NULL;
+    uint32_t material = 0u;
+    nmo_project_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_document_name(plan, "MaterialFlagProbe"));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .class_id = NMO_CID_MATERIAL,
+                      .name = "ProbeMaterial",
+                      .fields = material_fields,
+                      .field_count =
+                          sizeof(material_fields) / sizeof(material_fields[0]),
+                  },
+                  &material));
+    ASSERT_TRUE(material != 0u);
+
+    nmo_project_report_init(&report);
+    ASSERT_EQ(NMO_OK,
+              nmo_project_executor_execute_to_file(plan, output_path, &report));
+    ASSERT_TRUE(report.ok);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "validate all \"%s\"", output_path);
+    assert_cli_success_contains(args, "Result: VALID");
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &document));
+    ASSERT_NOT_NULL(document);
+
+    nmo_object_t *material_object = find_named_object(document, "ProbeMaterial");
+    ASSERT_NOT_NULL(material_object);
+    ASSERT_EQ(NMO_CID_MATERIAL, nmo_object_get_class_id(material_object));
+    const nmo_material_state_t *state =
+        (const nmo_material_state_t *)nmo_object_get_state(material_object);
+    ASSERT_NOT_NULL(state);
+    ASSERT_EQ(858149412u, state->packed_modes);
+    ASSERT_EQ(17171465u, state->packed_flags);
+
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+    nmo_project_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+    remove(output_path);
+}
+
 TEST(generated_advanced_probes, unproven_manifest_authoring_fields_are_rejected)
 {
     static const char *const manifests[] = {
@@ -559,6 +622,8 @@ REGISTER_TEST(generated_advanced_probes,
               manifest_wavesound_authoring_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,
               objectanimation_field_semantics_save_load_validate);
+REGISTER_TEST(generated_advanced_probes,
+              material_packed_flag_semantics_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,
               unproven_manifest_authoring_fields_are_rejected);
 TEST_MAIN_END()
