@@ -418,6 +418,55 @@ TEST(project_manifest_json, rejects_unproven_animation_payload_fields)
     }
 }
 
+TEST(project_manifest_json, rejects_unproven_physics_collision_manager_fields)
+{
+    static const char *const manifests[] = {
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"managers\":[{\"guid\":\"00000000-00000000\"}],"
+        "\"scenes\":[]"
+        "}",
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
+        "\"name\":\"Body\","
+        "\"class\":\"CK3dEntity\","
+        "\"physics\":{\"collision\":\"mesh\"}"
+        "}]}]"
+        "}",
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
+        "\"name\":\"Body\","
+        "\"class\":\"CK3dEntity\","
+        "\"collision\":{\"type\":\"mesh\"}"
+        "}]}]"
+        "}",
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
+        "\"name\":\"Body\","
+        "\"class\":\"CK3dEntity\","
+        "\"manager\":{\"guid\":\"00000000-00000000\"}"
+        "}]}]"
+        "}",
+    };
+
+    for (size_t i = 0u; i < sizeof(manifests) / sizeof(manifests[0]); ++i) {
+        nmo_project_plan_t *plan = NULL;
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+                  nmo_project_manifest_json_read(
+                      manifests[i],
+                      strlen(manifests[i]),
+                      &plan));
+        ASSERT_NULL(plan);
+    }
+}
+
 TEST(project_manifest_json, rejects_duplicate_material_texture_slots)
 {
     const char *json =
@@ -948,6 +997,7 @@ REGISTER_TEST(project_manifest_json, rejects_unproven_material_flag_fields);
 REGISTER_TEST(project_manifest_json, parses_wavesound_authoring);
 REGISTER_TEST(project_manifest_json, parses_objectanimation_authoring);
 REGISTER_TEST(project_manifest_json, rejects_unproven_animation_payload_fields);
+REGISTER_TEST(project_manifest_json, rejects_unproven_physics_collision_manager_fields);
 REGISTER_TEST(project_manifest_json, rejects_duplicate_material_texture_slots);
 REGISTER_TEST(project_manifest_json, rejects_out_of_range_material_texture_slot);
 REGISTER_TEST(project_manifest_json, maps_fields_and_scripts_to_project_plan);
