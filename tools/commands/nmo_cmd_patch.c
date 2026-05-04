@@ -668,6 +668,56 @@ static void patch_add_project_evidence_json(
             texture_slots);
     }
 
+    yyjson_mut_val *material_channels = yyjson_mut_arr(doc);
+    if (material_channels) {
+        if (evidence) {
+            for (size_t i = 0u; i < evidence->material_channel_count; ++i) {
+                const nmo_project_report_material_channel_evidence_t *channel =
+                    &evidence->material_channels[i];
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                if (!item) {
+                    continue;
+                }
+                nmo_cli_json_add_str_safe(
+                    doc,
+                    item,
+                    "material",
+                    channel->material_name);
+                nmo_cli_json_add_bool_safe(
+                    doc,
+                    item,
+                    "diffuse",
+                    channel->has_diffuse);
+                nmo_cli_json_add_bool_safe(
+                    doc,
+                    item,
+                    "ambient",
+                    channel->has_ambient);
+                nmo_cli_json_add_bool_safe(
+                    doc,
+                    item,
+                    "specular",
+                    channel->has_specular);
+                nmo_cli_json_add_bool_safe(
+                    doc,
+                    item,
+                    "emissive",
+                    channel->has_emissive);
+                nmo_cli_json_add_bool_safe(
+                    doc,
+                    item,
+                    "specular_power",
+                    channel->has_specular_power);
+                yyjson_mut_arr_append(material_channels, item);
+            }
+        }
+        nmo_cli_json_add_val_safe(
+            doc,
+            evidence_obj,
+            "material_channels",
+            material_channels);
+    }
+
     yyjson_mut_val *scripts = yyjson_mut_arr(doc);
     if (scripts) {
         if (evidence) {
@@ -695,6 +745,86 @@ static void patch_add_project_evidence_json(
         nmo_cli_json_add_val_safe(doc, evidence_obj, "scripts", scripts);
     }
 
+    yyjson_mut_val *sound_bindings = yyjson_mut_arr(doc);
+    if (sound_bindings) {
+        if (evidence) {
+            for (size_t i = 0u; i < evidence->sound_binding_count; ++i) {
+                const nmo_project_report_sound_binding_evidence_t *sound =
+                    &evidence->sound_bindings[i];
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                if (!item) {
+                    continue;
+                }
+                nmo_cli_json_add_str_safe(doc, item, "name", sound->name);
+                nmo_cli_json_add_str_safe(doc, item, "file", sound->file);
+                nmo_cli_json_add_str_safe(
+                    doc,
+                    item,
+                    "attached_object",
+                    sound->attached_object_name);
+                yyjson_mut_arr_append(sound_bindings, item);
+            }
+        }
+        nmo_cli_json_add_val_safe(
+            doc,
+            evidence_obj,
+            "sound_bindings",
+            sound_bindings);
+    }
+
+    yyjson_mut_val *animation_bindings = yyjson_mut_arr(doc);
+    if (animation_bindings) {
+        if (evidence) {
+            for (size_t i = 0u; i < evidence->animation_binding_count; ++i) {
+                const nmo_project_report_animation_binding_evidence_t *animation =
+                    &evidence->animation_bindings[i];
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                if (!item) {
+                    continue;
+                }
+                nmo_cli_json_add_str_safe(doc, item, "name", animation->name);
+                nmo_cli_json_add_str_safe(
+                    doc,
+                    item,
+                    "target",
+                    animation->target_name);
+                nmo_cli_json_add_uint_safe(
+                    doc,
+                    item,
+                    "format",
+                    (uint64_t)animation->format);
+                nmo_cli_json_add_bool_safe(
+                    doc,
+                    item,
+                    "has_length",
+                    animation->has_length);
+                if (animation->has_length) {
+                    nmo_cli_json_add_real_safe(
+                        doc,
+                        item,
+                        "length",
+                        animation->length);
+                }
+                yyjson_mut_arr_append(animation_bindings, item);
+            }
+        }
+        nmo_cli_json_add_val_safe(
+            doc,
+            evidence_obj,
+            "animation_bindings",
+            animation_bindings);
+    }
+
+    nmo_cli_json_add_bool_safe(
+        doc,
+        evidence_obj,
+        "post_save_validate_checked",
+        evidence ? evidence->post_save_validate_checked : false);
+    nmo_cli_json_add_bool_safe(
+        doc,
+        evidence_obj,
+        "post_save_validate_ok",
+        evidence ? evidence->post_save_validate_ok : false);
     nmo_cli_json_add_bool_safe(
         doc,
         evidence_obj,

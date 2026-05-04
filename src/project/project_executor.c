@@ -73,10 +73,25 @@ static void project_report_evidence_dispose(nmo_project_report_evidence_t *evide
         free(evidence->material_texture_slots[i].source_path);
     }
     free(evidence->material_texture_slots);
+    for (size_t i = 0u; i < evidence->material_channel_count; ++i) {
+        free(evidence->material_channels[i].material_name);
+    }
+    free(evidence->material_channels);
     for (size_t i = 0u; i < evidence->script_count; ++i) {
         free(evidence->scripts[i].name);
     }
     free(evidence->scripts);
+    for (size_t i = 0u; i < evidence->sound_binding_count; ++i) {
+        free(evidence->sound_bindings[i].name);
+        free(evidence->sound_bindings[i].file);
+        free(evidence->sound_bindings[i].attached_object_name);
+    }
+    free(evidence->sound_bindings);
+    for (size_t i = 0u; i < evidence->animation_binding_count; ++i) {
+        free(evidence->animation_bindings[i].name);
+        free(evidence->animation_bindings[i].target_name);
+    }
+    free(evidence->animation_bindings);
     memset(evidence, 0, sizeof(*evidence));
 }
 
@@ -305,6 +320,50 @@ static nmo_status_t project_report_add_material_texture_slot_evidence(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t project_report_add_material_channel_evidence(
+    nmo_project_report_evidence_t *evidence,
+    const char *material_name,
+    bool has_diffuse,
+    bool has_ambient,
+    bool has_specular,
+    bool has_emissive,
+    bool has_specular_power)
+{
+    if (!evidence || !material_name) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "material channel evidence fields are required");
+    }
+
+    char *material_copy = project_executor_strdup(material_name);
+    if (!material_copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate material channel evidence");
+    }
+
+    size_t next_count = evidence->material_channel_count + 1u;
+    nmo_project_report_material_channel_evidence_t *next_channels =
+        (nmo_project_report_material_channel_evidence_t *)realloc(
+            evidence->material_channels,
+            next_count * sizeof(*next_channels));
+    if (!next_channels) {
+        free(material_copy);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate material channel evidence");
+    }
+
+    evidence->material_channels = next_channels;
+    nmo_project_report_material_channel_evidence_t *item =
+        &evidence->material_channels[evidence->material_channel_count];
+    item->material_name = material_copy;
+    item->has_diffuse = has_diffuse;
+    item->has_ambient = has_ambient;
+    item->has_specular = has_specular;
+    item->has_emissive = has_emissive;
+    item->has_specular_power = has_specular_power;
+    evidence->material_channel_count = next_count;
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t project_report_add_script_evidence(
     nmo_project_report_evidence_t *evidence,
     const char *name,
@@ -343,6 +402,100 @@ static nmo_status_t project_report_add_script_evidence(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t project_report_add_sound_binding_evidence(
+    nmo_project_report_evidence_t *evidence,
+    const char *name,
+    const char *file,
+    const char *attached_object_name)
+{
+    if (!evidence || !name) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "sound binding evidence fields are required");
+    }
+
+    char *name_copy = project_executor_strdup(name);
+    char *file_copy = file ? project_executor_strdup(file) : NULL;
+    char *attached_copy = attached_object_name
+        ? project_executor_strdup(attached_object_name)
+        : NULL;
+    if (!name_copy || (file && !file_copy) ||
+        (attached_object_name && !attached_copy)) {
+        free(name_copy);
+        free(file_copy);
+        free(attached_copy);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate sound binding evidence");
+    }
+
+    size_t next_count = evidence->sound_binding_count + 1u;
+    nmo_project_report_sound_binding_evidence_t *next_bindings =
+        (nmo_project_report_sound_binding_evidence_t *)realloc(
+            evidence->sound_bindings,
+            next_count * sizeof(*next_bindings));
+    if (!next_bindings) {
+        free(name_copy);
+        free(file_copy);
+        free(attached_copy);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate sound binding evidence");
+    }
+
+    evidence->sound_bindings = next_bindings;
+    nmo_project_report_sound_binding_evidence_t *item =
+        &evidence->sound_bindings[evidence->sound_binding_count];
+    item->name = name_copy;
+    item->file = file_copy;
+    item->attached_object_name = attached_copy;
+    evidence->sound_binding_count = next_count;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t project_report_add_animation_binding_evidence(
+    nmo_project_report_evidence_t *evidence,
+    const char *name,
+    const char *target_name,
+    uint32_t format,
+    bool has_length,
+    float length)
+{
+    if (!evidence || !name || !target_name) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "animation binding evidence fields are required");
+    }
+
+    char *name_copy = project_executor_strdup(name);
+    char *target_copy = project_executor_strdup(target_name);
+    if (!name_copy || !target_copy) {
+        free(name_copy);
+        free(target_copy);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate animation binding evidence");
+    }
+
+    size_t next_count = evidence->animation_binding_count + 1u;
+    nmo_project_report_animation_binding_evidence_t *next_bindings =
+        (nmo_project_report_animation_binding_evidence_t *)realloc(
+            evidence->animation_bindings,
+            next_count * sizeof(*next_bindings));
+    if (!next_bindings) {
+        free(name_copy);
+        free(target_copy);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate animation binding evidence");
+    }
+
+    evidence->animation_bindings = next_bindings;
+    nmo_project_report_animation_binding_evidence_t *item =
+        &evidence->animation_bindings[evidence->animation_binding_count];
+    item->name = name_copy;
+    item->target_name = target_copy;
+    item->format = format;
+    item->has_length = has_length;
+    item->length = length;
+    evidence->animation_binding_count = next_count;
+    NMO_RETURN_OK();
+}
+
 static bool project_report_created_contains(
     const nmo_project_report_diff_t *diff,
     const char *name)
@@ -353,6 +506,27 @@ static bool project_report_created_contains(
     for (size_t i = 0u; i < diff->created.count; ++i) {
         if (diff->created.names[i] &&
             strcmp(diff->created.names[i], name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool project_report_get_object_by_handle(
+    const nmo_project_plan_t *plan,
+    uint32_t handle,
+    nmo_project_object_desc_t *out_object)
+{
+    if (!plan || handle == 0u || !out_object) {
+        return false;
+    }
+    for (size_t i = 0u; i < nmo_project_plan_object_count(plan); ++i) {
+        nmo_project_object_desc_t object = {0};
+        if (nmo_project_plan_get_object(plan, i, &object) != NMO_OK) {
+            return false;
+        }
+        if (object.handle == handle) {
+            *out_object = object;
             return true;
         }
     }
@@ -427,6 +601,39 @@ static nmo_status_t project_report_populate_diff(
             0u,
             object.class_id,
             object.name));
+        if (object.has_sound) {
+            nmo_project_object_desc_t attached = {0};
+            const char *attached_name = NULL;
+            if (object.has_sound_attached_object &&
+                project_report_get_object_by_handle(
+                    plan,
+                    object.sound_attached_object_handle,
+                    &attached)) {
+                attached_name = attached.name;
+            }
+            NMO_RETURN_IF_ERROR(project_report_add_sound_binding_evidence(
+                &report->evidence,
+                object.name,
+                object.sound_file_path,
+                attached_name));
+        }
+        if (object.has_animation) {
+            nmo_project_object_desc_t target = {0};
+            if (!project_report_get_object_by_handle(
+                    plan,
+                    object.animation_target_handle,
+                    &target)) {
+                NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                 "animation target object handle not found");
+            }
+            NMO_RETURN_IF_ERROR(project_report_add_animation_binding_evidence(
+                &report->evidence,
+                object.name,
+                target.name,
+                (uint32_t)object.animation_format,
+                object.has_animation_length,
+                object.animation_length));
+        }
     }
 
     for (size_t i = 0u; i < nmo_project_plan_asset_count(plan); ++i) {
@@ -483,6 +690,14 @@ static nmo_status_t project_report_populate_diff(
                 object.name,
                 asset_name,
                 "material"));
+            NMO_RETURN_IF_ERROR(project_report_add_material_channel_evidence(
+                &report->evidence,
+                asset_name,
+                asset.has_material_color || asset.has_material_diffuse,
+                asset.has_material_ambient,
+                asset.has_material_specular,
+                asset.has_material_emissive,
+                asset.has_material_specular_power));
         }
         if (asset.has_material_texture) {
             char material_name[256];
@@ -551,6 +766,14 @@ static nmo_status_t project_report_populate_diff(
                 object.name,
                 asset_name,
                 "obj_material"));
+            NMO_RETURN_IF_ERROR(project_report_add_material_channel_evidence(
+                &report->evidence,
+                asset_name,
+                material.has_color || material.has_diffuse,
+                material.has_ambient,
+                material.has_specular,
+                material.has_emissive,
+                material.has_specular_power));
 
             bool material_has_texture = material.has_texture;
             for (uint32_t slot = 0u; slot < 4u; ++slot) {
@@ -850,6 +1073,8 @@ nmo_status_t nmo_project_executor_execute_to_file(
     }
     report->evidence.post_load_checked = true;
     report->evidence.post_load_ok = status == NMO_OK;
+    report->evidence.post_save_validate_checked = true;
+    report->evidence.post_save_validate_ok = status == NMO_OK;
     if (status == NMO_OK) {
         remove(output_path);
         if (rename(temp_path, output_path) != 0) {

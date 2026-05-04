@@ -43,11 +43,34 @@ typedef struct nmo_project_report_material_texture_slot_evidence {
     char *source_path;
 } nmo_project_report_material_texture_slot_evidence_t;
 
+typedef struct nmo_project_report_material_channel_evidence {
+    char *material_name;
+    bool has_diffuse;
+    bool has_ambient;
+    bool has_specular;
+    bool has_emissive;
+    bool has_specular_power;
+} nmo_project_report_material_channel_evidence_t;
+
 typedef struct nmo_project_report_script_evidence {
     char *name;
     size_t step_count;
     bool validation_ok;
 } nmo_project_report_script_evidence_t;
+
+typedef struct nmo_project_report_sound_binding_evidence {
+    char *name;
+    char *file;
+    char *attached_object_name;
+} nmo_project_report_sound_binding_evidence_t;
+
+typedef struct nmo_project_report_animation_binding_evidence {
+    char *name;
+    char *target_name;
+    uint32_t format;
+    bool has_length;
+    float length;
+} nmo_project_report_animation_binding_evidence_t;
 
 typedef struct nmo_project_report_evidence {
     nmo_project_report_object_evidence_t *objects;
@@ -56,8 +79,16 @@ typedef struct nmo_project_report_evidence {
     size_t asset_binding_count;
     nmo_project_report_material_texture_slot_evidence_t *material_texture_slots;
     size_t material_texture_slot_count;
+    nmo_project_report_material_channel_evidence_t *material_channels;
+    size_t material_channel_count;
     nmo_project_report_script_evidence_t *scripts;
     size_t script_count;
+    nmo_project_report_sound_binding_evidence_t *sound_bindings;
+    size_t sound_binding_count;
+    nmo_project_report_animation_binding_evidence_t *animation_bindings;
+    size_t animation_binding_count;
+    bool post_save_validate_checked;
+    bool post_save_validate_ok;
     bool post_load_checked;
     bool post_load_ok;
 } nmo_project_report_evidence_t;
