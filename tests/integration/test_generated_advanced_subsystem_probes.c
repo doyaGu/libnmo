@@ -493,6 +493,74 @@ TEST(generated_advanced_probes, objectanimation_field_semantics_save_load_valida
     remove(output_path);
 }
 
+TEST(generated_advanced_probes, manifest_objectanimation_authoring_save_load_validate)
+{
+    const char *output_path = "test_generated_objectanimation_authoring.cmo";
+    remove(output_path);
+    remove("test_generated_objectanimation_authoring.cmo.tmp");
+
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"ObjectAnimationGenerated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":["
+        "{\"id\":\"target\",\"name\":\"AnimatedEntity\",\"class\":\"CK3dEntity\"},"
+        "{\"name\":\"ManifestObjectAnimation\",\"class\":\"CKObjectAnimation\","
+        "\"animation\":{\"target\":\"target\",\"format\":\"controllers\","
+        "\"root_position\":[1,2,3],\"flags\":1,\"length\":12.5}}"
+        "]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+
+    nmo_project_report_init(&report);
+    ASSERT_EQ(NMO_OK,
+              nmo_project_executor_execute_to_file(plan, output_path, &report));
+    ASSERT_TRUE(report.ok);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "validate all \"%s\"", output_path);
+    assert_cli_success_contains(args, "Result: VALID");
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &document));
+    ASSERT_NOT_NULL(document);
+
+    nmo_object_t *entity_object =
+        find_named_object(document, "AnimatedEntity");
+    nmo_object_t *animation_object =
+        find_named_object(document, "ManifestObjectAnimation");
+    ASSERT_NOT_NULL(entity_object);
+    ASSERT_NOT_NULL(animation_object);
+    const nmo_objectanimation_state_t *state =
+        (const nmo_objectanimation_state_t *)nmo_object_get_state(animation_object);
+    ASSERT_NOT_NULL(state);
+    ASSERT_EQ(CKOBJANIM_FORMAT_CONTROLLERS, state->format);
+    ASSERT_TRUE(state->has_root_pos);
+    ASSERT_FLOAT_EQ(1.0f, state->root_pos.x, 0.0001f);
+    ASSERT_FLOAT_EQ(2.0f, state->root_pos.y, 0.0001f);
+    ASSERT_FLOAT_EQ(3.0f, state->root_pos.z, 0.0001f);
+    ASSERT_EQ(1u, state->flags);
+    ASSERT_EQ(nmo_object_get_id(entity_object), state->entity_id);
+    ASSERT_TRUE(state->has_length);
+    ASSERT_FLOAT_EQ(12.5f, state->length, 0.0001f);
+    ASSERT_EQ(0u, state->controller_count);
+
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+    nmo_project_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+    remove(output_path);
+}
+
 TEST(generated_advanced_probes, material_packed_flag_semantics_save_load_validate)
 {
     const char *output_path = "test_generated_material_flags_probe.cmo";
@@ -622,6 +690,8 @@ REGISTER_TEST(generated_advanced_probes,
               manifest_wavesound_authoring_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,
               objectanimation_field_semantics_save_load_validate);
+REGISTER_TEST(generated_advanced_probes,
+              manifest_objectanimation_authoring_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,
               material_packed_flag_semantics_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,

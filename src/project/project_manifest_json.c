@@ -673,6 +673,77 @@ static nmo_status_t manifest_parse_sound(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t manifest_parse_animation(
+    yyjson_val *animation,
+    const char **out_target,
+    CK_OBJECTANIMATION_FORMAT *out_format,
+    bool *out_has_root_position,
+    float out_root_position[3],
+    bool *out_has_flags,
+    uint32_t *out_flags,
+    bool *out_has_length,
+    float *out_length)
+{
+    static const char *const allowed[] = {
+        "target", "format", "root_position", "flags", "length", NULL};
+    NMO_RETURN_IF_ERROR(
+        manifest_reject_unknown_fields(animation, "animation", allowed));
+    if (!out_target || !out_format || !out_has_root_position ||
+        !out_root_position || !out_has_flags || !out_flags ||
+        !out_has_length || !out_length) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "animation output arguments are required");
+    }
+    *out_target = NULL;
+    *out_format = CKOBJANIM_FORMAT_CONTROLLERS;
+    *out_has_root_position = false;
+    *out_has_flags = false;
+    *out_has_length = false;
+
+    NMO_RETURN_IF_ERROR(manifest_required_string(
+        animation,
+        "target",
+        out_target));
+
+    const char *format = NULL;
+    NMO_RETURN_IF_ERROR(manifest_required_string(
+        animation,
+        "format",
+        &format));
+    if (strcmp(format, "controllers") != 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest animation.format only supports 'controllers'");
+    }
+
+    yyjson_val *root_position = yyjson_obj_get(animation, "root_position");
+    if (root_position) {
+        NMO_RETURN_IF_ERROR(manifest_parse_vec3(
+            root_position,
+            "animation.root_position",
+            out_root_position));
+        *out_has_root_position = true;
+    }
+    yyjson_val *flags = yyjson_obj_get(animation, "flags");
+    if (flags) {
+        if (!yyjson_is_uint(flags)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest animation.flags must be an unsigned integer");
+        }
+        *out_has_flags = true;
+        *out_flags = (uint32_t)yyjson_get_uint(flags);
+    }
+    yyjson_val *length = yyjson_obj_get(animation, "length");
+    if (length) {
+        if (!yyjson_is_num(length)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest animation.length must be numeric");
+        }
+        *out_has_length = true;
+        *out_length = (float)manifest_get_number(length);
+    }
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t manifest_parse_camera(
     yyjson_val *camera,
     float *out_fov,
@@ -1210,7 +1281,7 @@ static nmo_status_t manifest_parse_object_declare(
 {
     static const char *const allowed[] = {
         "id", "name", "class", "parent", "fields", "mesh", "material", "materials",
-        "transform", "camera", "light", "sound", "scripts", NULL};
+        "transform", "camera", "light", "sound", "animation", "scripts", NULL};
     const char *id = NULL;
     const char *name = NULL;
     const char *class_name = NULL;
@@ -1289,7 +1360,7 @@ static nmo_status_t manifest_parse_object_details(
 {
     static const char *const allowed[] = {
         "id", "name", "class", "parent", "fields", "mesh", "material", "materials",
-        "transform", "camera", "light", "sound", "scripts", NULL};
+        "transform", "camera", "light", "sound", "animation", "scripts", NULL};
     const char *parent_ref = NULL;
 
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(object, "object", allowed));
@@ -1711,6 +1782,46 @@ static nmo_status_t manifest_parse_object_details(
                 direction[1],
                 direction[2]));
         }
+    }
+
+    yyjson_val *animation = yyjson_obj_get(object, "animation");
+    if (animation) {
+        const char *target_ref = NULL;
+        CK_OBJECTANIMATION_FORMAT format = CKOBJANIM_FORMAT_CONTROLLERS;
+        bool has_root_position = false;
+        float root_position[3] = {0.0f, 0.0f, 0.0f};
+        bool has_flags = false;
+        uint32_t flags = 0u;
+        bool has_length = false;
+        float length = 0.0f;
+        uint32_t target_handle = 0u;
+        NMO_RETURN_IF_ERROR(manifest_parse_animation(
+            animation,
+            &target_ref,
+            &format,
+            &has_root_position,
+            root_position,
+            &has_flags,
+            &flags,
+            &has_length,
+            &length));
+        NMO_RETURN_IF_ERROR(manifest_resolve_object_ref(
+            ctx,
+            target_ref,
+            &target_handle));
+        NMO_RETURN_IF_ERROR(nmo_project_plan_set_object_animation(
+            ctx->plan,
+            object_handle,
+            target_handle,
+            format,
+            has_root_position,
+            root_position[0],
+            root_position[1],
+            root_position[2],
+            has_flags,
+            flags,
+            has_length,
+            length));
     }
 
     NMO_RETURN_IF_ERROR(manifest_parse_scripts(

@@ -301,6 +301,11 @@ static bool project_validation_class_is_wavesound(nmo_class_id_t class_id)
     return class_id == NMO_CID_WAVESOUND;
 }
 
+static bool project_validation_class_is_objectanimation(nmo_class_id_t class_id)
+{
+    return class_id == NMO_CID_OBJECTANIMATION;
+}
+
 static nmo_status_t project_validation_check_duplicate_scenes(
     const nmo_project_plan_t *plan,
     nmo_project_validation_report_t *report)
@@ -552,6 +557,47 @@ static nmo_status_t project_validation_check_objects(
                         object.name,
                         object.source_path));
                 }
+            }
+        }
+        if (object.has_animation) {
+            nmo_project_object_desc_t target = {0};
+            if (!project_validation_class_is_objectanimation(object.class_id)) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                    report,
+                    "invalid_animation_class",
+                    "Project animation settings require CKObjectAnimation",
+                    "object",
+                    object.name,
+                    object.source_path));
+            }
+            if (object.animation_format != CKOBJANIM_FORMAT_CONTROLLERS) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                    report,
+                    "unsupported_animation_format",
+                    "Project animation only supports controllers format",
+                    "object",
+                    object.name,
+                    object.source_path));
+            }
+            if (!project_validation_get_object_by_handle(
+                    plan,
+                    object.animation_target_handle,
+                    &target)) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                    report,
+                    "missing_animation_target",
+                    "Project animation target references a missing object",
+                    "object",
+                    object.name,
+                    object.source_path));
+            } else if (!project_validation_class_is_entity(target.class_id)) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                    report,
+                    "invalid_animation_target_object",
+                    "Project animation target must be entity-compatible",
+                    "object",
+                    object.name,
+                    object.source_path));
             }
         }
     }

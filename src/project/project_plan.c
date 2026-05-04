@@ -69,6 +69,15 @@ typedef struct project_object_record {
     float sound_position[3];
     bool has_sound_direction;
     float sound_direction[3];
+    bool has_animation;
+    uint32_t animation_target_handle;
+    CK_OBJECTANIMATION_FORMAT animation_format;
+    bool has_animation_root_position;
+    float animation_root_position[3];
+    bool has_animation_flags;
+    uint32_t animation_flags;
+    bool has_animation_length;
+    float animation_length;
 } project_object_record_t;
 
 typedef struct project_asset_record {
@@ -795,6 +804,21 @@ nmo_status_t nmo_project_plan_get_object(
     memcpy(out_object->sound_direction,
            plan->objects[index].sound_direction,
            sizeof(out_object->sound_direction));
+    out_object->has_animation = plan->objects[index].has_animation;
+    out_object->animation_target_handle =
+        plan->objects[index].animation_target_handle;
+    out_object->animation_format = plan->objects[index].animation_format;
+    out_object->has_animation_root_position =
+        plan->objects[index].has_animation_root_position;
+    memcpy(out_object->animation_root_position,
+           plan->objects[index].animation_root_position,
+           sizeof(out_object->animation_root_position));
+    out_object->has_animation_flags =
+        plan->objects[index].has_animation_flags;
+    out_object->animation_flags = plan->objects[index].animation_flags;
+    out_object->has_animation_length =
+        plan->objects[index].has_animation_length;
+    out_object->animation_length = plan->objects[index].animation_length;
     NMO_RETURN_OK();
 }
 
@@ -2158,6 +2182,18 @@ nmo_status_t nmo_project_plan_add_object(
     memcpy(object->sound_direction,
            spec->sound_direction,
            sizeof(object->sound_direction));
+    object->has_animation = spec->has_animation;
+    object->animation_target_handle = spec->animation_target_handle;
+    object->animation_format = spec->animation_format;
+    object->has_animation_root_position =
+        spec->has_animation_root_position;
+    memcpy(object->animation_root_position,
+           spec->animation_root_position,
+           sizeof(object->animation_root_position));
+    object->has_animation_flags = spec->has_animation_flags;
+    object->animation_flags = spec->animation_flags;
+    object->has_animation_length = spec->has_animation_length;
+    object->animation_length = spec->animation_length;
     if (out_object_handle) {
         *out_object_handle = handle;
     }
@@ -2552,6 +2588,48 @@ nmo_status_t nmo_project_plan_set_wavesound_spatial(
             plan->objects[i].sound_direction[0] = direction_x;
             plan->objects[i].sound_direction[1] = direction_y;
             plan->objects[i].sound_direction[2] = direction_z;
+            NMO_RETURN_OK();
+        }
+    }
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "object handle not found");
+}
+
+nmo_status_t nmo_project_plan_set_object_animation(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    uint32_t target_handle,
+    CK_OBJECTANIMATION_FORMAT format,
+    bool has_root_position,
+    float root_x,
+    float root_y,
+    float root_z,
+    bool has_flags,
+    uint32_t flags,
+    bool has_length,
+    float length)
+{
+    if (!plan || object_handle == 0u || target_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan, animation handle, and target handle are required");
+    }
+    if (!project_plan_has_object_handle(plan, target_handle)) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "animation target handle not found");
+    }
+    for (size_t i = 0u; i < plan->object_count; ++i) {
+        if (plan->objects[i].handle == object_handle) {
+            plan->objects[i].has_animation = true;
+            plan->objects[i].animation_target_handle = target_handle;
+            plan->objects[i].animation_format = format;
+            plan->objects[i].has_animation_root_position = has_root_position;
+            plan->objects[i].animation_root_position[0] = root_x;
+            plan->objects[i].animation_root_position[1] = root_y;
+            plan->objects[i].animation_root_position[2] = root_z;
+            plan->objects[i].has_animation_flags = has_flags;
+            plan->objects[i].animation_flags = flags;
+            plan->objects[i].has_animation_length = has_length;
+            plan->objects[i].animation_length = length;
             NMO_RETURN_OK();
         }
     }

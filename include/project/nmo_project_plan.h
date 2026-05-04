@@ -84,6 +84,15 @@ typedef struct nmo_project_object_spec {
     float sound_position[3];
     bool has_sound_direction;
     float sound_direction[3];
+    bool has_animation;
+    uint32_t animation_target_handle;
+    CK_OBJECTANIMATION_FORMAT animation_format;
+    bool has_animation_root_position;
+    float animation_root_position[3];
+    bool has_animation_flags;
+    uint32_t animation_flags;
+    bool has_animation_length;
+    float animation_length;
 } nmo_project_object_spec_t;
 
 typedef struct nmo_project_object_desc {
@@ -130,6 +139,15 @@ typedef struct nmo_project_object_desc {
     float sound_position[3];
     bool has_sound_direction;
     float sound_direction[3];
+    bool has_animation;
+    uint32_t animation_target_handle;
+    CK_OBJECTANIMATION_FORMAT animation_format;
+    bool has_animation_root_position;
+    float animation_root_position[3];
+    bool has_animation_flags;
+    uint32_t animation_flags;
+    bool has_animation_length;
+    float animation_length;
 } nmo_project_object_desc_t;
 
 NMO_API nmo_status_t nmo_project_plan_create(nmo_project_plan_t **out_plan);
@@ -271,6 +289,20 @@ NMO_API nmo_status_t nmo_project_plan_set_wavesound_spatial(
     float direction_x,
     float direction_y,
     float direction_z);
+
+NMO_API nmo_status_t nmo_project_plan_set_object_animation(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    uint32_t target_handle,
+    CK_OBJECTANIMATION_FORMAT format,
+    bool has_root_position,
+    float root_x,
+    float root_y,
+    float root_z,
+    bool has_flags,
+    uint32_t flags,
+    bool has_length,
+    float length);
 
 #ifdef __cplusplus
 }

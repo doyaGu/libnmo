@@ -774,6 +774,52 @@ TEST(project_validator, rejects_missing_wavesound_file)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_validator, rejects_invalid_objectanimation_authoring)
+{
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_validation_report_t report;
+    uint32_t scene = 0u;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_document_name(plan, "Generated"));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "Level", &scene));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "NotAnimation",
+                      .has_animation = true,
+                      .animation_target_handle = 2u,
+                      .animation_format = CKOBJANIM_FORMAT_NEWDATA,
+                  },
+                  NULL));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_WAVESOUND,
+                      .name = "NotEntityTarget",
+                  },
+                  NULL));
+
+    nmo_project_validation_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_FALSE(report.ok);
+    ASSERT_TRUE(nmo_project_validation_contains(&report, "invalid_animation_class"));
+    ASSERT_TRUE(nmo_project_validation_contains(
+        &report,
+        "unsupported_animation_format"));
+    ASSERT_TRUE(nmo_project_validation_contains(
+        &report,
+        "invalid_animation_target_object"));
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(project_validator, rejects_missing_document_name);
 REGISTER_TEST(project_validator, accepts_named_empty_project);
@@ -794,4 +840,5 @@ REGISTER_TEST(project_validator, reports_manifest_source_for_invalid_camera_ligh
 REGISTER_TEST(project_validator, rejects_invalid_scene_active_camera);
 REGISTER_TEST(project_validator, rejects_invalid_wavesound_authoring);
 REGISTER_TEST(project_validator, rejects_missing_wavesound_file);
+REGISTER_TEST(project_validator, rejects_invalid_objectanimation_authoring);
 TEST_MAIN_END()
