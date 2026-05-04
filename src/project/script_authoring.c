@@ -205,8 +205,8 @@ static nmo_status_t project_script_add_timer_debug_output(
         script_name,
         message,
         "_Timer",
-        NMO_GUID(0x302561C4u, 0x0D282980u),
-        "output:Out 0",
+        NMO_GUID(0xA2A5A63Au, 0xE4E7E8E5u),
+        "output:Out",
         NULL,
         NULL);
 }

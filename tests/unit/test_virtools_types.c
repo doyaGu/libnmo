@@ -200,11 +200,19 @@ TEST(vt, derived_json_primitive_types_parse_from_string) {
               nmo_type_value_from_string(&time_value, time_type, reg, "2.5"));
     ASSERT_FLOAT_EQ(2.5f, time_value, 0.001f);
 
+    ASSERT_EQ(NMO_OK,
+              nmo_type_value_from_string(&time_value, time_type, reg, "0m 3s 0ms"));
+    ASSERT_FLOAT_EQ(3000.0f, time_value, 0.001f);
+
+    ASSERT_EQ(NMO_OK,
+              nmo_type_value_from_string(&time_value, time_type, reg, "1m 2s 3ms"));
+    ASSERT_FLOAT_EQ(62003.0f, time_value, 0.001f);
+
     char time_buffer[64];
     ASSERT_EQ(NMO_OK,
               nmo_type_value_to_string(&time_value, time_type, reg,
                                        time_buffer, sizeof(time_buffer)));
-    ASSERT_STR_EQ("2.5 ms", time_buffer);
+    ASSERT_STR_EQ("62003.0 ms", time_buffer);
 
     const nmo_type_descriptor_t *key_type =
         nmo_type_registry_find_by_guid(reg, CKPGUID_KEY);

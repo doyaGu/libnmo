@@ -158,6 +158,10 @@ nmo_status_t nmo_vt_to_string_time(
     const void *value, const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
     char *buffer, size_t buffer_size, int depth);
+nmo_status_t nmo_vt_from_string_time(
+    void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string);
 nmo_status_t nmo_vt_to_string_classid(
     const void *value, const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -464,7 +468,7 @@ const nmo_type_vtable_t nmo_builtin_vtable_time = {
     .equals = nmo_equals_float_bits,
     .hash = nmo_hash_float_bits,
     .to_string = nmo_vt_to_string_time,
-    .from_string = nmo_vt_from_string_float,
+    .from_string = nmo_vt_from_string_time,
 };
 
 const nmo_type_vtable_t nmo_builtin_vtable_none = {
@@ -1339,6 +1343,114 @@ nmo_status_t nmo_vt_to_string_time(
     (void)type; (void)registry; (void)depth;
     float f = *(const float *)value;
     snprintf(buffer, buffer_size, "%.1f ms", (double)f);
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_vt_from_string_time(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)type;
+    (void)registry;
+    if (!value || !string) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments for time from_string");
+    }
+
+    float numeric = 0.0f;
+    if (nmo_float_from_string(&numeric, string) == NMO_OK) {
+        *(float *)value = numeric;
+        NMO_RETURN_OK();
+    }
+
+    const char *cursor = string;
+    float total_ms = 0.0f;
+    bool saw_component = false;
+    while (*cursor) {
+        while (isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+        if (*cursor == '\0') {
+            break;
+        }
+
+        const char *number_start = cursor;
+        if (*cursor == '+' || *cursor == '-') {
+            cursor++;
+        }
+        bool saw_digit = false;
+        while (isdigit((unsigned char)*cursor)) {
+            saw_digit = true;
+            cursor++;
+        }
+        if (*cursor == '.') {
+            cursor++;
+            while (isdigit((unsigned char)*cursor)) {
+                saw_digit = true;
+                cursor++;
+            }
+        }
+        if ((*cursor == 'e' || *cursor == 'E') && saw_digit) {
+            const char *exponent = cursor;
+            cursor++;
+            if (*cursor == '+' || *cursor == '-') {
+                cursor++;
+            }
+            bool saw_exponent_digit = false;
+            while (isdigit((unsigned char)*cursor)) {
+                saw_exponent_digit = true;
+                cursor++;
+            }
+            if (!saw_exponent_digit) {
+                cursor = exponent;
+            }
+        }
+        if (!saw_digit) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid time value");
+        }
+
+        size_t number_len = (size_t)(cursor - number_start);
+        if (number_len >= 64u) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid time value");
+        }
+        char number[64];
+        memcpy(number, number_start, number_len);
+        number[number_len] = '\0';
+
+        float amount = 0.0f;
+        if (nmo_float_from_string(&amount, number) != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid time value");
+        }
+        while (isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+
+        if (cursor[0] == 'm' && cursor[1] == 's') {
+            total_ms += amount;
+            cursor += 2;
+        } else if (cursor[0] == 'm') {
+            total_ms += amount * 60000.0f;
+            cursor += 1;
+        } else if (cursor[0] == 's') {
+            total_ms += amount * 1000.0f;
+            cursor += 1;
+        } else {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid time unit");
+        }
+        saw_component = true;
+    }
+
+    if (!saw_component) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Invalid time value");
+    }
+    *(float *)value = total_ms;
     NMO_RETURN_OK();
 }
 
