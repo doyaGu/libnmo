@@ -298,7 +298,7 @@ static bool project_validation_class_is_light(nmo_class_id_t class_id)
 
 static bool project_validation_class_is_wavesound(nmo_class_id_t class_id)
 {
-    return class_id == NMO_CID_WAVESOUND;
+    return class_id == NMO_CID_WAVESOUND || class_id == NMO_CID_SOUND;
 }
 
 static bool project_validation_class_is_objectanimation(nmo_class_id_t class_id)
@@ -513,7 +513,7 @@ static nmo_status_t project_validation_check_objects(
                 NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                     report,
                     "invalid_sound_class",
-                    "Project sound settings require CKWaveSound",
+                    "Project sound settings require CKSound or CKWaveSound",
                     "object",
                     object.name,
                     object.source_path));
@@ -534,6 +534,21 @@ static nmo_status_t project_validation_check_objects(
                     "object",
                     object.name,
                     object.sound_file_source_path ? object.sound_file_source_path : object.source_path));
+            }
+            if (object.class_id == NMO_CID_SOUND &&
+                (object.has_sound_gain ||
+                 object.has_sound_pan ||
+                 object.has_sound_pitch ||
+                 object.has_sound_attached_object ||
+                 object.has_sound_position ||
+                 object.has_sound_direction)) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                    report,
+                    "unsupported_sound_field",
+                    "CKSound project authoring only supports file path",
+                    "object",
+                    object.name,
+                    object.source_path));
             }
             if (object.has_sound_attached_object) {
                 nmo_project_object_desc_t attached = {0};

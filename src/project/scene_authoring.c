@@ -321,6 +321,24 @@ static nmo_status_t project_authoring_set_wavesound(
     char direction_value[96];
     size_t field_count = 0u;
 
+    if (object->class_id == NMO_CID_SOUND) {
+        if (object->sound_file_path) {
+            NMO_RETURN_IF_ERROR(project_authoring_format_quoted_string(
+                object->sound_file_path,
+                file_value,
+                sizeof(file_value)));
+            fields[field_count++] = (nmo_session_field_edit_t){
+                .field_name = "save_options",
+                .value_str = "1",
+            };
+            fields[field_count++] = (nmo_session_field_edit_t){
+                .field_name = "file_name",
+                .value_str = file_value,
+            };
+        }
+        goto apply_fields;
+    }
+
     if (object->sound_file_path) {
         NMO_RETURN_IF_ERROR(project_authoring_format_quoted_string(
             object->sound_file_path,
@@ -412,6 +430,7 @@ static nmo_status_t project_authoring_set_wavesound(
         };
     }
 
+apply_fields:
     if (field_count == 0u) {
         NMO_RETURN_OK();
     }

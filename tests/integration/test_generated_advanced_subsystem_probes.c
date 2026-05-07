@@ -441,6 +441,64 @@ TEST(generated_advanced_probes, midisound_skeleton_save_load_validate)
     remove(output_path);
 }
 
+TEST(generated_advanced_probes, manifest_sound_authoring_save_load_validate)
+{
+    const char *output_path = "test_generated_sound_authoring.cmo";
+    const char *sound_path = "test_generated_sound_authoring.wav";
+    remove(output_path);
+    remove("test_generated_sound_authoring.cmo.tmp");
+    remove(sound_path);
+    FILE *sound_file = fopen(sound_path, "wb");
+    ASSERT_NOT_NULL(sound_file);
+    fputs("RIFF", sound_file);
+    fclose(sound_file);
+
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"SoundAuthoring\"},"
+        "\"scenes\":[{\"name\":\"Level\",\"objects\":["
+        "{\"name\":\"ProbeSound\",\"class\":\"CKSound\","
+        "\"sound\":{\"file\":\"test_generated_sound_authoring.wav\"}}"
+        "]}]"
+        "}";
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+
+    nmo_project_report_init(&report);
+    ASSERT_EQ(NMO_OK,
+              nmo_project_executor_execute_to_file(plan, output_path, &report));
+    ASSERT_TRUE(report.ok);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "validate all \"%s\"", output_path);
+    assert_cli_success_contains(args, "Result: VALID");
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &document));
+    ASSERT_NOT_NULL(document);
+
+    nmo_object_t *sound_object = find_named_object(document, "ProbeSound");
+    ASSERT_NOT_NULL(sound_object);
+    ASSERT_EQ(NMO_CID_SOUND, nmo_object_get_class_id(sound_object));
+    const nmo_sound_state_t *state =
+        (const nmo_sound_state_t *)nmo_object_get_state(sound_object);
+    ASSERT_NOT_NULL(state);
+    ASSERT_EQ(CKSOUND_INCLUDEORIGINALFILE, state->save_options);
+    ASSERT_STR_EQ("test_generated_sound_authoring.wav", state->file_name);
+
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+    nmo_project_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+    remove(output_path);
+    remove(sound_path);
+}
+
 TEST(generated_advanced_probes, manifest_wavesound_authoring_save_load_validate)
 {
     const char *output_path = "test_generated_wavesound_authoring.cmo";
@@ -807,6 +865,8 @@ REGISTER_TEST(generated_advanced_probes,
               sound_field_semantics_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,
               midisound_skeleton_save_load_validate);
+REGISTER_TEST(generated_advanced_probes,
+              manifest_sound_authoring_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,
               manifest_wavesound_authoring_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,
