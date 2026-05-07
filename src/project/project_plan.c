@@ -80,6 +80,8 @@ typedef struct project_object_record {
     float animation_length;
     nmo_objanim_controller_t *animation_controllers;
     size_t animation_controller_count;
+    nmo_objanim_morph_key_t *animation_morph_keys;
+    size_t animation_morph_key_count;
 } project_object_record_t;
 
 typedef struct project_asset_record {
@@ -288,6 +290,69 @@ static nmo_status_t project_plan_clone_animation_controllers(
     NMO_RETURN_OK();
 }
 
+static void project_plan_free_animation_morph_keys(
+    nmo_objanim_morph_key_t *morph_keys,
+    size_t morph_key_count)
+{
+    if (!morph_keys) {
+        return;
+    }
+    for (size_t i = 0u; i < morph_key_count; ++i) {
+        free(morph_keys[i].data);
+    }
+    free(morph_keys);
+}
+
+static nmo_status_t project_plan_clone_animation_morph_keys(
+    const nmo_objanim_morph_key_t *src_morph_keys,
+    size_t morph_key_count,
+    nmo_objanim_morph_key_t **out_morph_keys)
+{
+    if (!out_morph_keys) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "out_morph_keys is required");
+    }
+    *out_morph_keys = NULL;
+    if (morph_key_count == 0u) {
+        if (src_morph_keys != NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "animation morph keys must be NULL when count is zero");
+        }
+        NMO_RETURN_OK();
+    }
+    if (!src_morph_keys || morph_key_count > SIZE_MAX / sizeof(*src_morph_keys)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "animation morph key array is invalid");
+    }
+
+    nmo_objanim_morph_key_t *morph_keys =
+        (nmo_objanim_morph_key_t *)calloc(morph_key_count, sizeof(*morph_keys));
+    if (!morph_keys) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate project animation morph keys");
+    }
+    for (size_t i = 0u; i < morph_key_count; ++i) {
+        const nmo_objanim_morph_key_t *src = &src_morph_keys[i];
+        if (src->data_size == 0u || src->data == NULL) {
+            project_plan_free_animation_morph_keys(morph_keys, morph_key_count);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "animation morph key payload is invalid");
+        }
+        void *data = malloc(src->data_size);
+        if (!data) {
+            project_plan_free_animation_morph_keys(morph_keys, morph_key_count);
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate project animation morph key data");
+        }
+        memcpy(data, src->data, src->data_size);
+        morph_keys[i].time_step = src->time_step;
+        morph_keys[i].data_size = src->data_size;
+        morph_keys[i].data = data;
+    }
+    *out_morph_keys = morph_keys;
+    NMO_RETURN_OK();
+}
+
 static void project_plan_free_script_steps(
     project_script_step_record_t *steps,
     size_t step_count)
@@ -373,6 +438,9 @@ void nmo_project_plan_destroy(nmo_project_plan_t *plan)
         project_plan_free_animation_controllers(
             plan->objects[i].animation_controllers,
             plan->objects[i].animation_controller_count);
+        project_plan_free_animation_morph_keys(
+            plan->objects[i].animation_morph_keys,
+            plan->objects[i].animation_morph_key_count);
         project_plan_free_fields(
             plan->objects[i].fields,
             plan->objects[i].field_count);
@@ -501,6 +569,8 @@ nmo_status_t nmo_project_plan_clone(
                 project_plan_strdup(plan->objects[i].sound_file_source_path);
             clone->objects[i].animation_controllers = NULL;
             clone->objects[i].animation_controller_count = 0u;
+            clone->objects[i].animation_morph_keys = NULL;
+            clone->objects[i].animation_morph_key_count = 0u;
             if (plan->objects[i].name && !clone->objects[i].name) {
                 nmo_project_plan_destroy(clone);
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
@@ -543,6 +613,16 @@ nmo_status_t nmo_project_plan_clone(
             }
             clone->objects[i].animation_controller_count =
                 plan->objects[i].animation_controller_count;
+            status = project_plan_clone_animation_morph_keys(
+                plan->objects[i].animation_morph_keys,
+                plan->objects[i].animation_morph_key_count,
+                &clone->objects[i].animation_morph_keys);
+            if (status != NMO_OK) {
+                nmo_project_plan_destroy(clone);
+                return status;
+            }
+            clone->objects[i].animation_morph_key_count =
+                plan->objects[i].animation_morph_key_count;
             clone->object_count++;
         }
     }
@@ -907,6 +987,10 @@ nmo_status_t nmo_project_plan_get_object(
         plan->objects[index].animation_controller_count;
     out_object->animation_controllers =
         plan->objects[index].animation_controllers;
+    out_object->animation_morph_key_count =
+        plan->objects[index].animation_morph_key_count;
+    out_object->animation_morph_keys =
+        plan->objects[index].animation_morph_keys;
     NMO_RETURN_OK();
 }
 
@@ -2230,8 +2314,24 @@ nmo_status_t nmo_project_plan_add_object(
         free(name_copy);
         return status;
     }
+    nmo_objanim_morph_key_t *morph_keys_copy = NULL;
+    status = project_plan_clone_animation_morph_keys(
+        spec->animation_morph_keys,
+        spec->animation_morph_key_count,
+        &morph_keys_copy);
+    if (status != NMO_OK) {
+        project_plan_free_animation_controllers(
+            controllers_copy,
+            spec->animation_controller_count);
+        project_plan_free_fields(fields_copy, spec->field_count);
+        free(name_copy);
+        return status;
+    }
     char *sound_file_copy = project_plan_strdup(spec->sound_file_path);
     if (spec->sound_file_path && !sound_file_copy) {
+        project_plan_free_animation_morph_keys(
+            morph_keys_copy,
+            spec->animation_morph_key_count);
         project_plan_free_animation_controllers(
             controllers_copy,
             spec->animation_controller_count);
@@ -2243,6 +2343,9 @@ nmo_status_t nmo_project_plan_add_object(
     char *sound_source_copy =
         project_plan_strdup(spec->sound_file_source_path);
     if (spec->sound_file_source_path && !sound_source_copy) {
+        project_plan_free_animation_morph_keys(
+            morph_keys_copy,
+            spec->animation_morph_key_count);
         project_plan_free_animation_controllers(
             controllers_copy,
             spec->animation_controller_count);
@@ -2319,6 +2422,8 @@ nmo_status_t nmo_project_plan_add_object(
     object->animation_length = spec->animation_length;
     object->animation_controllers = controllers_copy;
     object->animation_controller_count = spec->animation_controller_count;
+    object->animation_morph_keys = morph_keys_copy;
+    object->animation_morph_key_count = spec->animation_morph_key_count;
     if (out_object_handle) {
         *out_object_handle = handle;
     }
@@ -2791,6 +2896,39 @@ nmo_status_t nmo_project_plan_set_object_animation_controllers(
         }
     }
     project_plan_free_animation_controllers(controllers_copy, controller_count);
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "project object handle was not found");
+}
+
+nmo_status_t nmo_project_plan_set_object_animation_morph_keys(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const nmo_objanim_morph_key_t *morph_keys,
+    size_t morph_key_count)
+{
+    if (!plan || object_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and object handle are required");
+    }
+    nmo_objanim_morph_key_t *morph_keys_copy = NULL;
+    nmo_status_t status = project_plan_clone_animation_morph_keys(
+        morph_keys,
+        morph_key_count,
+        &morph_keys_copy);
+    if (status != NMO_OK) {
+        return status;
+    }
+    for (size_t i = 0u; i < plan->object_count; ++i) {
+        if (plan->objects[i].handle == object_handle) {
+            project_plan_free_animation_morph_keys(
+                plan->objects[i].animation_morph_keys,
+                plan->objects[i].animation_morph_key_count);
+            plan->objects[i].animation_morph_keys = morph_keys_copy;
+            plan->objects[i].animation_morph_key_count = morph_key_count;
+            NMO_RETURN_OK();
+        }
+    }
+    project_plan_free_animation_morph_keys(morph_keys_copy, morph_key_count);
     NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                      "project object handle was not found");
 }

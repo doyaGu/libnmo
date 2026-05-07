@@ -240,7 +240,98 @@ TEST(animation_edit, sets_object_animation_controllers)
     destroy_workspace(ctx, doc, workspace);
 }
 
+TEST(animation_edit, sets_object_animation_morph_keys)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_document_t *doc = NULL;
+    nmo_workspace_t *workspace = NULL;
+    create_workspace(&ctx, &doc, &workspace);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "animation", &edit));
+
+    nmo_object_id_t animation_id = 0;
+    nmo_object_id_t entity_id = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){
+                      .class_id = NMO_CID_OBJECTANIMATION,
+                      .name = "MorphAnimation",
+                  },
+                  &animation_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "Entity",
+                  },
+                  &entity_id));
+
+    float morph_payload[] = {
+        1.0f, 2.0f, 3.0f,
+        4.0f, 5.0f, 6.0f,
+    };
+    nmo_objanim_morph_key_t morph_keys[] = {
+        {
+            .time_step = 0.25f,
+            .data_size = sizeof(morph_payload),
+            .data = morph_payload,
+        },
+    };
+    nmo_objanim_morph_key_t malformed[] = {
+        {
+            .time_step = 0.5f,
+            .data_size = 0u,
+            .data = morph_payload,
+        },
+    };
+
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_animation_edit_set_object_animation(
+                  edit,
+                  animation_id,
+                  &(nmo_object_animation_settings_t){
+                      .format = CKOBJANIM_FORMAT_NEWDATA,
+                      .entity_id = entity_id,
+                      .morph_key_count = 1u,
+                      .morph_keys = malformed,
+                  }));
+    ASSERT_EQ(NMO_OK,
+              nmo_animation_edit_set_object_animation(
+                  edit,
+                  animation_id,
+                  &(nmo_object_animation_settings_t){
+                      .format = CKOBJANIM_FORMAT_NEWDATA,
+                      .entity_id = entity_id,
+                      .morph_key_count = 1u,
+                      .morph_keys = morph_keys,
+                  }));
+
+    morph_payload[1] = 99.0f;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    nmo_object_t *animation_object = find_object(doc, animation_id);
+    ASSERT_NOT_NULL(animation_object);
+    const nmo_objectanimation_state_t *animation =
+        (const nmo_objectanimation_state_t *)nmo_object_get_state(animation_object);
+    ASSERT_NOT_NULL(animation);
+    ASSERT_EQ(CKOBJANIM_FORMAT_NEWDATA, animation->format);
+    ASSERT_EQ(1u, animation->morph_key_parsed_count);
+    ASSERT_NOT_NULL(animation->morph_keys);
+    ASSERT_FLOAT_EQ(0.25f, animation->morph_keys[0].time_step, 0.0001f);
+    ASSERT_EQ(sizeof(morph_payload), animation->morph_keys[0].data_size);
+    ASSERT_NOT_NULL(animation->morph_keys[0].data);
+    const float *stored_payload = (const float *)animation->morph_keys[0].data;
+    ASSERT_FLOAT_EQ(2.0f, stored_payload[1], 0.0001f);
+    ASSERT_FLOAT_EQ(6.0f, stored_payload[5], 0.0001f);
+
+    destroy_workspace(ctx, doc, workspace);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(animation_edit, sets_object_animation_metadata);
 REGISTER_TEST(animation_edit, sets_object_animation_controllers);
+REGISTER_TEST(animation_edit, sets_object_animation_morph_keys);
 TEST_MAIN_END()

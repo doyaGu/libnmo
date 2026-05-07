@@ -7,6 +7,7 @@
 #include "project/nmo_project_plan.h"
 #include "project/nmo_script_authoring.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -510,13 +511,23 @@ static nmo_status_t project_validation_check_objects(
         }
         if (object.has_sound) {
             if (!project_validation_class_is_wavesound(object.class_id)) {
-                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
-                    report,
-                    "invalid_sound_class",
-                    "Project sound settings require CKSound or CKWaveSound",
-                    "object",
-                    object.name,
-                    object.source_path));
+                if (object.class_id == NMO_CID_MIDISOUND) {
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                        report,
+                        "unsupported_midisound_file_authoring",
+                        "CKMidiSound file authoring is not persistent and remains gated",
+                        "object",
+                        object.name,
+                        object.sound_file_source_path ? object.sound_file_source_path : object.source_path));
+                } else {
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                        report,
+                        "invalid_sound_class",
+                        "Project sound settings require CKSound or CKWaveSound",
+                        "object",
+                        object.name,
+                        object.source_path));
+                }
             }
             if (!object.sound_file_path || object.sound_file_path[0] == '\0') {
                 NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
@@ -585,11 +596,31 @@ static nmo_status_t project_validation_check_objects(
                     object.name,
                     object.source_path));
             }
-            if (object.animation_format != CKOBJANIM_FORMAT_CONTROLLERS) {
+            if (object.animation_format != CKOBJANIM_FORMAT_CONTROLLERS &&
+                object.animation_format != CKOBJANIM_FORMAT_NEWDATA) {
                 NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                     report,
-                    "unsupported_animation_format",
-                    "Project animation only supports controllers format",
+                    "unsupported_animation_payload_format",
+                    "Project animation only supports controllers and newdata formats",
+                    "object",
+                    object.name,
+                    object.source_path));
+            }
+            if (object.animation_morph_key_count > 0u &&
+                object.animation_format != CKOBJANIM_FORMAT_NEWDATA) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                    report,
+                    "unsupported_animation_payload_format",
+                    "Project animation morph keys require newdata format",
+                    "object",
+                    object.name,
+                    object.source_path));
+            }
+            if (object.animation_morph_key_count > INT32_MAX) {
+                NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                    report,
+                    "invalid_animation_morph_key_payload",
+                    "Project animation morph key count exceeds Virtools limits",
                     "object",
                     object.name,
                     object.source_path));
@@ -631,6 +662,20 @@ static nmo_status_t project_validation_check_objects(
                         object.source_path));
                     continue;
                 }
+                if (object.animation_format == CKOBJANIM_FORMAT_NEWDATA &&
+                    controller->type != 0x637c4301u &&
+                    controller->type != 0x654a3a04u &&
+                    controller->type != 0x49ed4002u &&
+                    controller->type != 0x2f200b08u) {
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                        report,
+                        "unsupported_animation_controller_type",
+                        "Project newdata animation only supports inline Virtools controller slots",
+                        "object",
+                        object.name,
+                        object.source_path));
+                    continue;
+                }
                 if (controller->key_count == 0u ||
                     controller->data_size == 0u ||
                     controller->data == NULL ||
@@ -644,6 +689,39 @@ static nmo_status_t project_validation_check_objects(
                         object.name,
                         object.source_path));
                 }
+            }
+            uint32_t morph_vertex_count = 0u;
+            for (size_t morph_index = 0u;
+                 morph_index < object.animation_morph_key_count;
+                 ++morph_index) {
+                const nmo_objanim_morph_key_t *morph_key =
+                    &object.animation_morph_keys[morph_index];
+                if (morph_key->data_size == 0u ||
+                    morph_key->data == NULL ||
+                    morph_key->data_size % (3u * sizeof(float)) != 0u) {
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                        report,
+                        "invalid_animation_morph_key_payload",
+                        "Project animation morph key payload must contain vertex float triples",
+                        "object",
+                        object.name,
+                        object.source_path));
+                    continue;
+                }
+                uint32_t key_vertex_count =
+                    morph_key->data_size / (uint32_t)(3u * sizeof(float));
+                if (key_vertex_count > INT32_MAX ||
+                    (morph_index > 0u && key_vertex_count != morph_vertex_count)) {
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                        report,
+                        "invalid_animation_morph_key_payload",
+                        "Project animation morph key payload sizes must match",
+                        "object",
+                        object.name,
+                        object.source_path));
+                    continue;
+                }
+                morph_vertex_count = key_vertex_count;
             }
         }
     }

@@ -96,6 +96,8 @@ typedef struct nmo_project_object_spec {
     float animation_length;
     size_t animation_controller_count;
     const nmo_objanim_controller_t *animation_controllers;
+    size_t animation_morph_key_count;
+    const nmo_objanim_morph_key_t *animation_morph_keys;
 } nmo_project_object_spec_t;
 
 typedef struct nmo_project_object_desc {
@@ -153,6 +155,8 @@ typedef struct nmo_project_object_desc {
     float animation_length;
     size_t animation_controller_count;
     const nmo_objanim_controller_t *animation_controllers;
+    size_t animation_morph_key_count;
+    const nmo_objanim_morph_key_t *animation_morph_keys;
 } nmo_project_object_desc_t;
 
 NMO_API nmo_status_t nmo_project_plan_create(nmo_project_plan_t **out_plan);
@@ -314,6 +318,12 @@ NMO_API nmo_status_t nmo_project_plan_set_object_animation_controllers(
     uint32_t object_handle,
     const nmo_objanim_controller_t *controllers,
     size_t controller_count);
+
+NMO_API nmo_status_t nmo_project_plan_set_object_animation_morph_keys(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const nmo_objanim_morph_key_t *morph_keys,
+    size_t morph_key_count);
 
 #ifdef __cplusplus
 }

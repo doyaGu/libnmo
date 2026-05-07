@@ -809,7 +809,7 @@ TEST(project_validator, rejects_midisound_authoring_until_file_semantics_are_pro
     ASSERT_FALSE(report.ok);
     ASSERT_TRUE(nmo_project_validation_contains(
         &report,
-        "invalid_sound_class"));
+        "unsupported_midisound_file_authoring"));
     ASSERT_NOT_NULL(report.issues[0].source_path);
 
     nmo_project_validation_report_dispose(&report);
@@ -834,7 +834,7 @@ TEST(project_validator, rejects_invalid_objectanimation_authoring)
                       .name = "NotAnimation",
                       .has_animation = true,
                       .animation_target_handle = 2u,
-                      .animation_format = CKOBJANIM_FORMAT_NEWDATA,
+                      .animation_format = (CK_OBJECTANIMATION_FORMAT)99,
                   },
                   NULL));
     ASSERT_EQ(NMO_OK,
@@ -853,10 +853,116 @@ TEST(project_validator, rejects_invalid_objectanimation_authoring)
     ASSERT_TRUE(nmo_project_validation_contains(&report, "invalid_animation_class"));
     ASSERT_TRUE(nmo_project_validation_contains(
         &report,
-        "unsupported_animation_format"));
+        "unsupported_animation_payload_format"));
     ASSERT_TRUE(nmo_project_validation_contains(
         &report,
         "invalid_animation_target_object"));
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+}
+
+TEST(project_validator, reports_invalid_objectanimation_morph_payloads)
+{
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_validation_report_t report;
+    uint32_t scene = 0u;
+    uint32_t target = 0u;
+    uint32_t wrong_format = 0u;
+    uint32_t bad_payload = 0u;
+    float good_morph[] = {0.0f, 1.0f, 2.0f};
+    float short_morph[] = {0.0f, 1.0f};
+    nmo_objanim_morph_key_t good_key = {
+        .time_step = 0.0f,
+        .data_size = sizeof(good_morph),
+        .data = good_morph,
+    };
+    nmo_objanim_morph_key_t bad_key = {
+        .time_step = 0.0f,
+        .data_size = sizeof(short_morph),
+        .data = short_morph,
+    };
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_document_name(plan, "Generated"));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "Level", &scene));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "Target",
+                  },
+                  &target));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_OBJECTANIMATION,
+                      .name = "WrongFormat",
+                  },
+                  &wrong_format));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_OBJECTANIMATION,
+                      .name = "BadPayload",
+                  },
+                  &bad_payload));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_object_animation(
+                  plan,
+                  wrong_format,
+                  target,
+                  CKOBJANIM_FORMAT_CONTROLLERS,
+                  false,
+                  0.0f,
+                  0.0f,
+                  0.0f,
+                  false,
+                  0u,
+                  false,
+                  0.0f));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_object_animation_morph_keys(
+                  plan,
+                  wrong_format,
+                  &good_key,
+                  1u));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_object_animation(
+                  plan,
+                  bad_payload,
+                  target,
+                  CKOBJANIM_FORMAT_NEWDATA,
+                  false,
+                  0.0f,
+                  0.0f,
+                  0.0f,
+                  false,
+                  0u,
+                  false,
+                  0.0f));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_object_animation_morph_keys(
+                  plan,
+                  bad_payload,
+                  &bad_key,
+                  1u));
+
+    nmo_project_validation_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_FALSE(report.ok);
+    ASSERT_TRUE(nmo_project_validation_contains(
+        &report,
+        "unsupported_animation_payload_format"));
+    ASSERT_TRUE(nmo_project_validation_contains(
+        &report,
+        "invalid_animation_morph_key_payload"));
 
     nmo_project_validation_report_dispose(&report);
     nmo_project_plan_destroy(plan);
@@ -1000,5 +1106,6 @@ REGISTER_TEST(project_validator, rejects_invalid_wavesound_authoring);
 REGISTER_TEST(project_validator, rejects_missing_wavesound_file);
 REGISTER_TEST(project_validator, rejects_midisound_authoring_until_file_semantics_are_proven);
 REGISTER_TEST(project_validator, rejects_invalid_objectanimation_authoring);
+REGISTER_TEST(project_validator, reports_invalid_objectanimation_morph_payloads);
 REGISTER_TEST(project_validator, reports_invalid_objectanimation_controller_payloads);
 TEST_MAIN_END()

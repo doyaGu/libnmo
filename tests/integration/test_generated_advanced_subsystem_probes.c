@@ -814,6 +814,89 @@ TEST(generated_advanced_probes, manifest_objectanimation_authoring_save_load_val
     remove(output_path);
 }
 
+TEST(generated_advanced_probes, manifest_objectanimation_newdata_morph_keys_save_load_validate)
+{
+    const char *output_path = "test_generated_objectanimation_newdata.cmo";
+    remove(output_path);
+    remove("test_generated_objectanimation_newdata.cmo.tmp");
+
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"ObjectAnimationNewData\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":["
+        "{\"id\":\"target\",\"name\":\"AnimatedEntity\",\"class\":\"CK3dEntity\"},"
+        "{\"name\":\"NewDataObjectAnimation\",\"class\":\"CKObjectAnimation\","
+        "\"animation\":{\"target\":\"target\",\"format\":\"newdata\","
+        "\"controllers\":["
+        "{\"type\":1669088001,\"keys\":[[0,1,2,3],[1,4,5,6]]},"
+        "{\"type\":1240285186,\"keys\":[[0,0,0,0,1]]}"
+        "],"
+        "\"morph_keys\":["
+        "{\"time\":0.25,\"data\":[1,2,3,4,5,6]},"
+        "{\"time\":0.75,\"data\":[7,8,9,10,11,12]}"
+        "],"
+        "\"root_position\":[1,2,3],\"flags\":1,\"length\":12.5}}"
+        "]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+
+    nmo_project_report_init(&report);
+    ASSERT_EQ(NMO_OK,
+              nmo_project_executor_execute_to_file(plan, output_path, &report));
+    ASSERT_TRUE(report.ok);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "validate all \"%s\"", output_path);
+    assert_cli_success_contains(args, "Result: VALID");
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &document));
+    ASSERT_NOT_NULL(document);
+
+    nmo_object_t *entity_object =
+        find_named_object(document, "AnimatedEntity");
+    nmo_object_t *animation_object =
+        find_named_object(document, "NewDataObjectAnimation");
+    ASSERT_NOT_NULL(entity_object);
+    ASSERT_NOT_NULL(animation_object);
+    const nmo_objectanimation_state_t *state =
+        (const nmo_objectanimation_state_t *)nmo_object_get_state(animation_object);
+    ASSERT_NOT_NULL(state);
+    ASSERT_EQ(CKOBJANIM_FORMAT_NEWDATA, state->format);
+    ASSERT_EQ(nmo_object_get_id(entity_object), state->entity_id);
+    ASSERT_TRUE(state->has_morph_counts);
+    ASSERT_EQ(2, state->morph_vertex_count);
+    ASSERT_EQ(2, state->morph_key_count);
+    ASSERT_EQ(2u, state->morph_key_parsed_count);
+    ASSERT_NOT_NULL(state->morph_keys);
+    ASSERT_FLOAT_EQ(0.25f, state->morph_keys[0].time_step, 0.0001f);
+    ASSERT_EQ(6u * sizeof(float), state->morph_keys[0].data_size);
+    const float *first_morph = (const float *)state->morph_keys[0].data;
+    ASSERT_FLOAT_EQ(1.0f, first_morph[0], 0.0001f);
+    ASSERT_FLOAT_EQ(6.0f, first_morph[5], 0.0001f);
+    ASSERT_FLOAT_EQ(0.75f, state->morph_keys[1].time_step, 0.0001f);
+    ASSERT_EQ(2u, state->controller_count);
+    ASSERT_NOT_NULL(state->controllers);
+    ASSERT_EQ(1669088001u, state->controllers[0].type);
+    ASSERT_EQ(1240285186u, state->controllers[1].type);
+
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+    nmo_project_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+    remove(output_path);
+}
+
 TEST(generated_advanced_probes, material_packed_flag_semantics_save_load_validate)
 {
     const char *output_path = "test_generated_material_flags_probe.cmo";
@@ -908,17 +991,6 @@ TEST(generated_advanced_probes, unproven_manifest_authoring_fields_are_rejected)
         "{\"name\":\"Animation\","
         "\"class\":\"CKObjectAnimation\","
         "\"animation\":{\"target\":\"target\",\"format\":\"controllers\","
-        "\"morph_keys\":[]}"
-        "}]}"
-        "}",
-        "{"
-        "\"version\":1,"
-        "\"document\":{\"name\":\"Generated\"},"
-        "\"scenes\":[{\"name\":\"Level\",\"objects\":["
-        "{\"id\":\"target\",\"name\":\"Target\",\"class\":\"CK3dEntity\"},"
-        "{\"name\":\"Animation\","
-        "\"class\":\"CKObjectAnimation\","
-        "\"animation\":{\"target\":\"target\",\"format\":\"controllers\","
         "\"keys\":[]}"
         "}]}"
         "}",
@@ -995,6 +1067,8 @@ REGISTER_TEST(generated_advanced_probes,
               objectanimation_field_semantics_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,
               manifest_objectanimation_authoring_save_load_validate);
+REGISTER_TEST(generated_advanced_probes,
+              manifest_objectanimation_newdata_morph_keys_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,
               material_packed_flag_semantics_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,

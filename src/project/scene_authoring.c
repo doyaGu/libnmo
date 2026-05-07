@@ -214,6 +214,8 @@ static nmo_status_t project_authoring_set_object_animation(
             .length = object->animation_length,
             .controller_count = object->animation_controller_count,
             .controllers = object->animation_controllers,
+            .morph_key_count = object->animation_morph_key_count,
+            .morph_keys = object->animation_morph_keys,
         });
 }
 

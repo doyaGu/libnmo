@@ -427,12 +427,51 @@ TEST(project_manifest_json, parses_objectanimation_authoring)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_manifest_json, parses_objectanimation_newdata_morph_keys)
+{
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":["
+        "{\"id\":\"target\",\"name\":\"Target\",\"class\":\"CK3dEntity\"},"
+        "{\"name\":\"Anim\",\"class\":\"CKObjectAnimation\","
+        "\"animation\":{\"target\":\"target\","
+        "\"format\":\"newdata\","
+        "\"controllers\":[{\"type\":1669088001,\"keys\":[[0,1,2,3]]}],"
+        "\"morph_keys\":[{\"time\":0.25,\"data\":[1,2,3,4,5,6]}],"
+        "\"root_position\":[1,2,3]}}"
+        "]"
+        "}]"
+        "}";
+
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+
+    nmo_project_object_desc_t animation = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 1u, &animation));
+    ASSERT_TRUE(animation.has_animation);
+    ASSERT_EQ(CKOBJANIM_FORMAT_NEWDATA, animation.animation_format);
+    ASSERT_EQ(1u, animation.animation_controller_count);
+    ASSERT_EQ(1u, animation.animation_morph_key_count);
+    ASSERT_NOT_NULL(animation.animation_morph_keys);
+    ASSERT_FLOAT_EQ(0.25f, animation.animation_morph_keys[0].time_step, 0.0001f);
+    ASSERT_EQ(6u * sizeof(float), animation.animation_morph_keys[0].data_size);
+    const float *data = (const float *)animation.animation_morph_keys[0].data;
+    ASSERT_FLOAT_EQ(1.0f, data[0], 0.0001f);
+    ASSERT_FLOAT_EQ(6.0f, data[5], 0.0001f);
+
+    nmo_project_plan_destroy(plan);
+}
+
 TEST(project_manifest_json, rejects_unproven_animation_payload_fields)
 {
     static const char *const field_names[] = {
         "file",
         "keys",
-        "morph_keys",
     };
     for (size_t i = 0u; i < sizeof(field_names) / sizeof(field_names[0]); ++i) {
         char json[512];
@@ -449,6 +488,46 @@ TEST(project_manifest_json, rejects_unproven_animation_payload_fields)
                  "]}]"
                  "}",
                  field_names[i]);
+        nmo_project_plan_t *plan = NULL;
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+                  nmo_project_manifest_json_read(json, strlen(json), &plan));
+        ASSERT_NULL(plan);
+    }
+}
+
+TEST(project_manifest_json, rejects_malformed_animation_morph_keys)
+{
+    static const char *const payloads[] = {
+        "\"morph_keys\":[]",
+        "\"morph_keys\":[{\"time\":0,\"data\":[]}]",
+        "\"morph_keys\":[{\"time\":0,\"data\":[1,2]}]",
+        "\"morph_keys\":[{\"time\":\"bad\",\"data\":[1,2,3]}]",
+        "\"morph_keys\":[{\"time\":0,\"data\":[1,2,3]},{\"time\":1,\"data\":[1,2,3,4,5,6]}]",
+        "\"morph_keys\":[{\"time\":0,\"data\":[1,2,3]}]",
+    };
+    static const char *const formats[] = {
+        "newdata",
+        "newdata",
+        "newdata",
+        "newdata",
+        "newdata",
+        "controllers",
+    };
+    for (size_t i = 0u; i < sizeof(payloads) / sizeof(payloads[0]); ++i) {
+        char json[768];
+        snprintf(json,
+                 sizeof(json),
+                 "{"
+                 "\"version\":1,"
+                 "\"document\":{\"name\":\"Generated\"},"
+                 "\"scenes\":[{\"name\":\"Level\",\"objects\":["
+                 "{\"id\":\"target\",\"name\":\"Target\",\"class\":\"CK3dEntity\"},"
+                 "{\"name\":\"Anim\",\"class\":\"CKObjectAnimation\","
+                 "\"animation\":{\"target\":\"target\",\"format\":\"%s\",%s}}"
+                 "]}]"
+                 "}",
+                 formats[i],
+                 payloads[i]);
         nmo_project_plan_t *plan = NULL;
         ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
                   nmo_project_manifest_json_read(json, strlen(json), &plan));
@@ -1034,7 +1113,9 @@ REGISTER_TEST(project_manifest_json, rejects_material_color_alias_conflict);
 REGISTER_TEST(project_manifest_json, parses_material_render_flags);
 REGISTER_TEST(project_manifest_json, parses_wavesound_authoring);
 REGISTER_TEST(project_manifest_json, parses_objectanimation_authoring);
+REGISTER_TEST(project_manifest_json, parses_objectanimation_newdata_morph_keys);
 REGISTER_TEST(project_manifest_json, rejects_unproven_animation_payload_fields);
+REGISTER_TEST(project_manifest_json, rejects_malformed_animation_morph_keys);
 REGISTER_TEST(project_manifest_json, rejects_unproven_physics_collision_manager_fields);
 REGISTER_TEST(project_manifest_json, rejects_duplicate_material_texture_slots);
 REGISTER_TEST(project_manifest_json, rejects_out_of_range_material_texture_slot);

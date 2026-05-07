@@ -3022,7 +3022,8 @@ nmo_status_t nmo_animation_edit_set_object_animation(
     if (settings->controller_count > 0u) {
         if (settings->controllers == NULL ||
             settings->controller_count > UINT32_MAX ||
-            settings->format != CKOBJANIM_FORMAT_CONTROLLERS) {
+            (settings->format != CKOBJANIM_FORMAT_CONTROLLERS &&
+             settings->format != CKOBJANIM_FORMAT_NEWDATA)) {
             return NMO_ERR_INVALID_ARGUMENT;
         }
         for (size_t i = 0u; i < settings->controller_count; ++i) {
@@ -3036,8 +3037,39 @@ nmo_status_t nmo_animation_edit_set_object_animation(
                 controller->data_size != controller->key_count * key_size) {
                 return NMO_ERR_INVALID_ARGUMENT;
             }
+            if (settings->format == CKOBJANIM_FORMAT_NEWDATA &&
+                controller->type != 0x637c4301u &&
+                controller->type != 0x654a3a04u &&
+                controller->type != 0x49ed4002u &&
+                controller->type != 0x2f200b08u) {
+                return NMO_ERR_INVALID_ARGUMENT;
+            }
         }
     } else if (settings->controllers != NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (settings->morph_key_count > 0u) {
+        if (settings->morph_keys == NULL ||
+            settings->morph_key_count > INT32_MAX ||
+            settings->format != CKOBJANIM_FORMAT_NEWDATA) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+        uint32_t morph_vertex_count = 0u;
+        for (size_t i = 0u; i < settings->morph_key_count; ++i) {
+            const nmo_objanim_morph_key_t *key = &settings->morph_keys[i];
+            if (key->data_size == 0u || key->data == NULL ||
+                key->data_size % (3u * sizeof(float)) != 0u) {
+                return NMO_ERR_INVALID_ARGUMENT;
+            }
+            uint32_t key_vertex_count =
+                key->data_size / (uint32_t)(3u * sizeof(float));
+            if (key_vertex_count > INT32_MAX ||
+                (i > 0u && key_vertex_count != morph_vertex_count)) {
+                return NMO_ERR_INVALID_ARGUMENT;
+            }
+            morph_vertex_count = key_vertex_count;
+        }
+    } else if (settings->morph_keys != NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
@@ -3099,6 +3131,45 @@ nmo_status_t nmo_animation_edit_set_object_animation(
     } else {
         state->controller_count = 0u;
         state->controllers = NULL;
+    }
+    if (settings->morph_key_count > 0u) {
+        nmo_arena_t *arena =
+            nmo_workspace_internal_document_arena(edit->workspace);
+        if (arena == NULL) {
+            return NMO_ERR_INVALID_STATE;
+        }
+        nmo_objanim_morph_key_t *morph_keys =
+            (nmo_objanim_morph_key_t *)nmo_arena_alloc(
+                arena,
+                sizeof(*morph_keys) * settings->morph_key_count,
+                _Alignof(nmo_objanim_morph_key_t));
+        if (morph_keys == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        memset(morph_keys, 0, sizeof(*morph_keys) * settings->morph_key_count);
+        for (size_t i = 0u; i < settings->morph_key_count; ++i) {
+            const nmo_objanim_morph_key_t *src = &settings->morph_keys[i];
+            void *data = nmo_arena_alloc(arena, src->data_size, 1u);
+            if (data == NULL) {
+                return NMO_ERR_NOMEM;
+            }
+            memcpy(data, src->data, src->data_size);
+            morph_keys[i].time_step = src->time_step;
+            morph_keys[i].data_size = src->data_size;
+            morph_keys[i].data = data;
+        }
+        state->has_morph_counts = 1u;
+        state->morph_key_count = (int32_t)settings->morph_key_count;
+        state->morph_vertex_count =
+            (int32_t)(settings->morph_keys[0].data_size / (3u * sizeof(float)));
+        state->morph_key_parsed_count = (uint32_t)settings->morph_key_count;
+        state->morph_keys = morph_keys;
+    } else {
+        state->has_morph_counts = 0u;
+        state->morph_key_count = 0;
+        state->morph_vertex_count = 0;
+        state->morph_key_parsed_count = 0u;
+        state->morph_keys = NULL;
     }
 
     nmo_workspace_edit_mark(

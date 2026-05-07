@@ -25,6 +25,8 @@ typedef struct nmo_object_animation_settings {
     float length;
     size_t controller_count;
     const nmo_objanim_controller_t *controllers;
+    size_t morph_key_count;
+    const nmo_objanim_morph_key_t *morph_keys;
 } nmo_object_animation_settings_t;
 
 NMO_API nmo_status_t nmo_animation_edit_set_object_animation(

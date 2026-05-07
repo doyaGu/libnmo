@@ -8,6 +8,7 @@
 #include "type/nmo_type_query.h"
 #include "yyjson.h"
 
+#include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -930,7 +931,8 @@ static nmo_status_t manifest_parse_animation(
     float *out_length)
 {
     static const char *const allowed[] = {
-        "target", "format", "root_position", "flags", "length", "controllers", NULL};
+        "target", "format", "root_position", "flags", "length", "controllers",
+        "morph_keys", NULL};
     NMO_RETURN_IF_ERROR(
         manifest_reject_unknown_fields(animation, "animation", allowed));
     if (!out_target || !out_format || !out_has_root_position ||
@@ -955,9 +957,13 @@ static nmo_status_t manifest_parse_animation(
         animation,
         "format",
         &format));
-    if (strcmp(format, "controllers") != 0) {
+    if (strcmp(format, "controllers") == 0) {
+        *out_format = CKOBJANIM_FORMAT_CONTROLLERS;
+    } else if (strcmp(format, "newdata") == 0) {
+        *out_format = CKOBJANIM_FORMAT_NEWDATA;
+    } else {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "manifest animation.format only supports 'controllers'");
+                         "manifest animation.format only supports 'controllers' or 'newdata'");
     }
 
     yyjson_val *root_position = yyjson_obj_get(animation, "root_position");
@@ -1000,6 +1006,116 @@ static void manifest_free_animation_controllers(
         free(controllers[i].data);
     }
     free(controllers);
+}
+
+static void manifest_free_animation_morph_keys(
+    nmo_objanim_morph_key_t *morph_keys,
+    size_t morph_key_count)
+{
+    if (!morph_keys) {
+        return;
+    }
+    for (size_t i = 0u; i < morph_key_count; ++i) {
+        free(morph_keys[i].data);
+    }
+    free(morph_keys);
+}
+
+static nmo_status_t manifest_parse_animation_morph_keys(
+    yyjson_val *morph_keys_value,
+    nmo_objanim_morph_key_t **out_morph_keys,
+    size_t *out_morph_key_count)
+{
+    if (!out_morph_keys || !out_morph_key_count) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "animation morph key outputs are required");
+    }
+    *out_morph_keys = NULL;
+    *out_morph_key_count = 0u;
+    if (!morph_keys_value) {
+        NMO_RETURN_OK();
+    }
+    if (!yyjson_is_arr(morph_keys_value)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest animation.morph_keys must be an array");
+    }
+    size_t morph_key_count = yyjson_arr_size(morph_keys_value);
+    if (morph_key_count == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest animation.morph_keys must not be empty");
+    }
+    if (morph_key_count > SIZE_MAX / sizeof(nmo_objanim_morph_key_t) ||
+        morph_key_count > INT32_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest animation.morph_keys is too large");
+    }
+    nmo_objanim_morph_key_t *morph_keys =
+        (nmo_objanim_morph_key_t *)calloc(morph_key_count, sizeof(*morph_keys));
+    if (!morph_keys) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate manifest animation morph keys");
+    }
+    size_t expected_float_count = 0u;
+    size_t key_index;
+    size_t key_max;
+    yyjson_val *key;
+    yyjson_arr_foreach(morph_keys_value, key_index, key_max, key) {
+        static const char *const allowed[] = {"time", "data", NULL};
+        nmo_status_t status = manifest_reject_unknown_fields(
+            key,
+            "animation.morph_keys[]",
+            allowed);
+        if (status != NMO_OK) {
+            manifest_free_animation_morph_keys(morph_keys, morph_key_count);
+            return status;
+        }
+        yyjson_val *time_value = yyjson_obj_get(key, "time");
+        yyjson_val *data_value = yyjson_obj_get(key, "data");
+        if (!yyjson_is_num(time_value) || !yyjson_is_arr(data_value)) {
+            manifest_free_animation_morph_keys(morph_keys, morph_key_count);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest animation morph key requires numeric time and data array");
+        }
+        size_t float_count = yyjson_arr_size(data_value);
+        if (float_count == 0u || float_count % 3u != 0u ||
+            float_count > UINT32_MAX / sizeof(float) ||
+            float_count > SIZE_MAX / sizeof(float)) {
+            manifest_free_animation_morph_keys(morph_keys, morph_key_count);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest animation morph key data is invalid");
+        }
+        if (key_index > 0u && float_count != expected_float_count) {
+            manifest_free_animation_morph_keys(morph_keys, morph_key_count);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest animation morph key data sizes must match");
+        }
+        expected_float_count = float_count;
+        size_t data_size = float_count * sizeof(float);
+        float *data = (float *)malloc(data_size);
+        if (!data) {
+            manifest_free_animation_morph_keys(morph_keys, morph_key_count);
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate manifest animation morph key data");
+        }
+        size_t component_index;
+        size_t component_max;
+        yyjson_val *component;
+        yyjson_arr_foreach(data_value, component_index, component_max, component) {
+            if (!yyjson_is_num(component)) {
+                free(data);
+                manifest_free_animation_morph_keys(morph_keys, morph_key_count);
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest animation morph key data values must be numeric");
+            }
+            data[component_index] = (float)manifest_get_number(component);
+        }
+        morph_keys[key_index].time_step = (float)manifest_get_number(time_value);
+        morph_keys[key_index].data_size = (uint32_t)data_size;
+        morph_keys[key_index].data = data;
+    }
+    *out_morph_keys = morph_keys;
+    *out_morph_key_count = morph_key_count;
+    NMO_RETURN_OK();
 }
 
 static nmo_status_t manifest_parse_animation_controllers(
@@ -2184,6 +2300,8 @@ static nmo_status_t manifest_parse_object_details(
         uint32_t target_handle = 0u;
         nmo_objanim_controller_t *controllers = NULL;
         size_t controller_count = 0u;
+        nmo_objanim_morph_key_t *morph_keys = NULL;
+        size_t morph_key_count = 0u;
         NMO_RETURN_IF_ERROR(manifest_parse_animation(
             animation,
             &target_ref,
@@ -2198,7 +2316,21 @@ static nmo_status_t manifest_parse_object_details(
             yyjson_obj_get(animation, "controllers"),
             &controllers,
             &controller_count));
-        nmo_status_t animation_status = manifest_resolve_object_ref(
+        nmo_status_t animation_status = manifest_parse_animation_morph_keys(
+            yyjson_obj_get(animation, "morph_keys"),
+            &morph_keys,
+            &morph_key_count);
+        if (animation_status != NMO_OK) {
+            manifest_free_animation_controllers(controllers, controller_count);
+            return animation_status;
+        }
+        if (morph_key_count > 0u && format != CKOBJANIM_FORMAT_NEWDATA) {
+            manifest_free_animation_morph_keys(morph_keys, morph_key_count);
+            manifest_free_animation_controllers(controllers, controller_count);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest animation.morph_keys requires format 'newdata'");
+        }
+        animation_status = manifest_resolve_object_ref(
             ctx,
             target_ref,
             &target_handle);
@@ -2224,6 +2356,14 @@ static nmo_status_t manifest_parse_object_details(
                 controllers,
                 controller_count);
         }
+        if (animation_status == NMO_OK) {
+            animation_status = nmo_project_plan_set_object_animation_morph_keys(
+                ctx->plan,
+                object_handle,
+                morph_keys,
+                morph_key_count);
+        }
+        manifest_free_animation_morph_keys(morph_keys, morph_key_count);
         manifest_free_animation_controllers(controllers, controller_count);
         if (animation_status != NMO_OK) {
             return animation_status;
