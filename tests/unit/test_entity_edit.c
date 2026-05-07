@@ -108,6 +108,63 @@ TEST(entity_edit, sets_parent)
     entity_edit_fixture_destroy(&fixture);
 }
 
+TEST(entity_edit, sets_world_matrix)
+{
+    entity_edit_fixture_t fixture = {0};
+    entity_edit_fixture_create(&fixture);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(fixture.workspace, "matrix", &edit));
+
+    nmo_object_id_t entity_id = 0;
+    nmo_object_id_t material_id = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "Entity",
+                  },
+                  &entity_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){
+                      .class_id = NMO_CID_MATERIAL,
+                      .name = "Material",
+                  },
+                  &material_id));
+
+    const float matrix[16] = {
+        2.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 3.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 4.0f, 0.0f,
+        5.0f, 6.0f, 7.0f, 1.0f,
+    };
+    ASSERT_EQ(NMO_OK,
+              nmo_entity_edit_set_world_matrix(edit, entity_id, matrix));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_entity_edit_set_world_matrix(edit, material_id, matrix));
+    ASSERT_EQ(NMO_ERR_NOT_FOUND,
+              nmo_entity_edit_set_world_matrix(edit, 999999u, matrix));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_entity_edit_set_world_matrix(edit, entity_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    nmo_object_t *entity_object = find_object(fixture.document, entity_id);
+    ASSERT_NOT_NULL(entity_object);
+    const nmo_3dentity_state_t *entity =
+        (const nmo_3dentity_state_t *)nmo_object_get_state(entity_object);
+    ASSERT_NOT_NULL(entity);
+    for (size_t i = 0; i < 16u; ++i) {
+        ASSERT_FLOAT_EQ(matrix[i], entity->world_matrix[i], 0.0001f);
+    }
+    ASSERT_FALSE(entity->has_matrix_chunk);
+
+    entity_edit_fixture_destroy(&fixture);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(entity_edit, sets_parent);
+REGISTER_TEST(entity_edit, sets_world_matrix);
 TEST_MAIN_END()

@@ -2755,6 +2755,46 @@ nmo_status_t nmo_entity_edit_set_parent(
     return NMO_OK;
 }
 
+nmo_status_t nmo_entity_edit_set_world_matrix(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    const float matrix[16])
+{
+    if (edit == NULL || edit->finished || object_id == 0u ||
+        matrix == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_repository_t *repo =
+        nmo_workspace_internal_repository(edit->workspace);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, object_id);
+    if (object == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (!workspace_edit_class_is_entity_target(nmo_object_get_class_id(object))) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_3dentity_state_t *state =
+        workspace_edit_entity_state_for_object(object);
+    if (state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_status_t status =
+        nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    memcpy(state->world_matrix, matrix, sizeof(state->world_matrix));
+    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
+    return NMO_OK;
+}
+
 nmo_status_t nmo_entity_edit_set_camera_target(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,

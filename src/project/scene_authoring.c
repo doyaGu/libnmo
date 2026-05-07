@@ -115,37 +115,7 @@ static nmo_status_t project_authoring_set_transform(
 {
     float matrix[16];
     project_authoring_compose_matrix(object, matrix);
-
-    char matrix_value[256];
-    int wrote = snprintf(
-        matrix_value,
-        sizeof(matrix_value),
-        "(%.9g, %.9g, %.9g, %.9g; %.9g, %.9g, %.9g, %.9g; %.9g, %.9g, %.9g, %.9g; %.9g, %.9g, %.9g, %.9g)",
-        matrix[0], matrix[1], matrix[2], matrix[3],
-        matrix[4], matrix[5], matrix[6], matrix[7],
-        matrix[8], matrix[9], matrix[10], matrix[11],
-        matrix[12], matrix[13], matrix[14], matrix[15]);
-    if (wrote < 0 || (size_t)wrote >= sizeof(matrix_value)) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "transform matrix string is too long");
-    }
-
-    nmo_session_field_edit_result_t field_result = {0};
-    nmo_session_field_edit_t field = {
-        .field_name = "world_matrix",
-        .value_str = matrix_value,
-    };
-    NMO_RETURN_IF_ERROR(nmo_object_edit_set_fields(
-        edit,
-        object_id,
-        &field,
-        1u,
-        &field_result));
-    if (field_result.failed > 0u) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                         "failed to set project object transform");
-    }
-    NMO_RETURN_OK();
+    return nmo_entity_edit_set_world_matrix(edit, object_id, matrix);
 }
 
 static nmo_status_t project_authoring_set_parent(
