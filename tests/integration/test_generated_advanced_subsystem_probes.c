@@ -810,6 +810,12 @@ TEST(generated_advanced_probes, unproven_manifest_authoring_fields_are_rejected)
         "{"
         "\"version\":1,"
         "\"document\":{\"name\":\"Generated\"},"
+        "\"managers\":[{\"guid\":\"{3D242466-00000000}\",\"kind\":\"attribute\"}],"
+        "\"scenes\":[]"
+        "}",
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
         "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
         "\"name\":\"Animation\","
         "\"class\":\"CKObjectAnimation\","
