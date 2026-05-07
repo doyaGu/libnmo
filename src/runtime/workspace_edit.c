@@ -1157,6 +1157,59 @@ nmo_status_t nmo_scene_edit_set_environment(
     return NMO_OK;
 }
 
+nmo_status_t nmo_scene_edit_set_active_camera(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t scene_id,
+    nmo_object_id_t camera_id)
+{
+    if (edit == NULL || edit->finished || scene_id == 0u ||
+        camera_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_repository_t *repo =
+        nmo_workspace_internal_repository(edit->workspace);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_object_t *scene_object = nmo_object_repository_find_by_id(repo, scene_id);
+    if (scene_object == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (nmo_object_get_class_id(scene_object) != NMO_CID_SCENE) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_object_t *camera_object =
+        nmo_object_repository_find_by_id(repo, camera_id);
+    if (camera_object == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    nmo_class_id_t camera_class = nmo_object_get_class_id(camera_object);
+    if (camera_class != NMO_CID_CAMERA &&
+        camera_class != NMO_CID_TARGETCAMERA) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_scene_state_t *scene_state =
+        (nmo_scene_state_t *)nmo_object_get_state(scene_object);
+    if (scene_state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_status_t status =
+        nmo_workspace_edit_snapshot_bytes(edit, scene_state, sizeof(*scene_state));
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    scene_state->starting_camera_id = camera_id;
+    nmo_workspace_edit_mark(
+        edit,
+        NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
+    return NMO_OK;
+}
+
 nmo_status_t workspace_edit_bind_script(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,

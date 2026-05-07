@@ -88,6 +88,48 @@ static void create_committed_scene_and_object(
     ASSERT_TRUE(*out_object_id != 0);
 }
 
+static void create_committed_scene_camera_and_object(
+    scene_edit_fixture_t *fixture,
+    nmo_object_id_t *out_scene_id,
+    nmo_object_id_t *out_camera_id,
+    nmo_object_id_t *out_object_id)
+{
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(fixture->workspace, "create scene camera", &edit));
+
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){
+                      .class_id = NMO_CID_SCENE,
+                      .name = "Scene",
+                      .type_guid = NMO_GUID_NULL,
+                  },
+                  out_scene_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){
+                      .class_id = NMO_CID_CAMERA,
+                      .name = "Camera",
+                      .type_guid = NMO_GUID_NULL,
+                  },
+                  out_camera_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "Cube",
+                      .type_guid = NMO_GUID_NULL,
+                  },
+                  out_object_id));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+    ASSERT_TRUE(*out_scene_id != 0);
+    ASSERT_TRUE(*out_camera_id != 0);
+    ASSERT_TRUE(*out_object_id != 0);
+}
+
 TEST(scene_edit, adds_object_to_scene_membership) {
     scene_edit_fixture_t fixture = {0};
     scene_edit_fixture_create(&fixture);
@@ -238,9 +280,46 @@ TEST(scene_edit, sets_environment_preserving_unset_fields) {
     scene_edit_fixture_destroy(&fixture);
 }
 
+TEST(scene_edit, sets_active_camera)
+{
+    scene_edit_fixture_t fixture = {0};
+    scene_edit_fixture_create(&fixture);
+
+    nmo_object_id_t scene_id = 0;
+    nmo_object_id_t camera_id = 0;
+    nmo_object_id_t object_id = 0;
+    create_committed_scene_camera_and_object(
+        &fixture,
+        &scene_id,
+        &camera_id,
+        &object_id);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(fixture.workspace, "active camera", &edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_scene_edit_set_active_camera(edit, scene_id, camera_id));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_scene_edit_set_active_camera(edit, object_id, camera_id));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_scene_edit_set_active_camera(edit, scene_id, object_id));
+    ASSERT_EQ(NMO_ERR_NOT_FOUND,
+              nmo_scene_edit_set_active_camera(edit, scene_id, 999999u));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    nmo_object_t *scene_object = find_one_or_null(fixture.document, scene_id);
+    ASSERT_NOT_NULL(scene_object);
+    const nmo_scene_state_t *scene_state =
+        (const nmo_scene_state_t *)nmo_object_get_state(scene_object);
+    ASSERT_NOT_NULL(scene_state);
+    ASSERT_EQ(camera_id, scene_state->starting_camera_id);
+
+    scene_edit_fixture_destroy(&fixture);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(scene_edit, adds_object_to_scene_membership);
 REGISTER_TEST(scene_edit, rollback_removes_scene_membership);
 REGISTER_TEST(scene_edit, rejects_invalid_membership);
 REGISTER_TEST(scene_edit, sets_environment_preserving_unset_fields);
+REGISTER_TEST(scene_edit, sets_active_camera);
 TEST_MAIN_END()

@@ -40,6 +40,11 @@ NMO_API nmo_status_t nmo_scene_edit_set_environment(
     nmo_object_id_t scene_id,
     const nmo_scene_environment_settings_t *settings);
 
+NMO_API nmo_status_t nmo_scene_edit_set_active_camera(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t scene_id,
+    nmo_object_id_t camera_id);
+
 #ifdef __cplusplus
 }
 #endif
