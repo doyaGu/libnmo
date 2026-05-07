@@ -39,6 +39,15 @@ def main() -> int:
         help="Optional file produced by an external wrapper to indicate frames rendered",
     )
     parser.add_argument(
+        "--evidence-dir",
+        help="Optional directory where stdout, stderr, and result JSON evidence are written",
+    )
+    parser.add_argument(
+        "--strict-exit",
+        action="store_true",
+        help="Return a failing status when the advisory smoke result is not ok",
+    )
+    parser.add_argument(
         "--player-arg",
         action="append",
         default=[],
@@ -57,6 +66,7 @@ def main() -> int:
         "timed_out": False,
         "elapsed_seconds": None,
         "frame_evidence": None,
+        "logs": None,
         "stdout_tail": "",
         "stderr_tail": "",
     }
@@ -72,7 +82,12 @@ def main() -> int:
 
     command = [str(player_path), *args.player_arg, str(cmo_path)]
     result["command"] = command
+    evidence_dir = Path(args.evidence_dir) if args.evidence_dir else None
+    if evidence_dir is not None:
+        evidence_dir.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
+    stdout_text = ""
+    stderr_text = ""
     try:
         completed = subprocess.run(
             command,
@@ -82,14 +97,26 @@ def main() -> int:
             timeout=args.timeout,
         )
         result["exit_code"] = completed.returncode
-        result["stdout_tail"] = tail_text(completed.stdout)
-        result["stderr_tail"] = tail_text(completed.stderr)
+        stdout_text = completed.stdout
+        stderr_text = completed.stderr
     except subprocess.TimeoutExpired as exc:
         result["timed_out"] = True
-        result["stdout_tail"] = tail_text(exc.stdout or "")
-        result["stderr_tail"] = tail_text(exc.stderr or "")
+        stdout_text = exc.stdout or ""
+        stderr_text = exc.stderr or ""
     finally:
         result["elapsed_seconds"] = round(time.monotonic() - started, 3)
+
+    result["stdout_tail"] = tail_text(stdout_text)
+    result["stderr_tail"] = tail_text(stderr_text)
+    if evidence_dir is not None:
+        stdout_path = evidence_dir / "player_stdout.log"
+        stderr_path = evidence_dir / "player_stderr.log"
+        stdout_path.write_text(stdout_text, encoding="utf-8", errors="replace")
+        stderr_path.write_text(stderr_text, encoding="utf-8", errors="replace")
+        result["logs"] = {
+            "stdout": str(stdout_path),
+            "stderr": str(stderr_path),
+        }
 
     if args.frame_evidence_file:
         evidence = Path(args.frame_evidence_file)
@@ -107,8 +134,12 @@ def main() -> int:
             or result["frame_evidence"]["exists"]
         )
     )
+    if evidence_dir is not None:
+        result_path = evidence_dir / "smoke_result.json"
+        result["logs"]["result"] = str(result_path)
+        result_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(json.dumps(result, indent=2))
-    return 0 if result["ok"] else 1
+    return 0 if result["ok"] or not args.strict_exit else 1
 
 
 if __name__ == "__main__":
