@@ -168,6 +168,227 @@ static nmo_status_t manifest_parse_color4(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t manifest_parse_texture_blend(
+    const char *value,
+    VXTEXTURE_BLENDMODE *out_mode)
+{
+    if (!value || !out_mode) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "texture blend output is required");
+    }
+    if (strcmp(value, "decal") == 0) *out_mode = VXTEXTUREBLEND_DECAL;
+    else if (strcmp(value, "modulate") == 0) *out_mode = VXTEXTUREBLEND_MODULATE;
+    else if (strcmp(value, "decal_alpha") == 0) *out_mode = VXTEXTUREBLEND_DECALALPHA;
+    else if (strcmp(value, "modulate_alpha") == 0) *out_mode = VXTEXTUREBLEND_MODULATEALPHA;
+    else if (strcmp(value, "copy") == 0) *out_mode = VXTEXTUREBLEND_COPY;
+    else if (strcmp(value, "add") == 0) *out_mode = VXTEXTUREBLEND_ADD;
+    else {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "unsupported material texture blend");
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t manifest_parse_blend_factor(
+    const char *value,
+    VXBLEND_MODE *out_mode)
+{
+    if (!value || !out_mode) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "blend factor output is required");
+    }
+    if (strcmp(value, "zero") == 0) *out_mode = VXBLEND_ZERO;
+    else if (strcmp(value, "one") == 0) *out_mode = VXBLEND_ONE;
+    else if (strcmp(value, "src_color") == 0) *out_mode = VXBLEND_SRCCOLOR;
+    else if (strcmp(value, "inv_src_color") == 0) *out_mode = VXBLEND_INVSRCCOLOR;
+    else if (strcmp(value, "src_alpha") == 0) *out_mode = VXBLEND_SRCALPHA;
+    else if (strcmp(value, "inv_src_alpha") == 0) *out_mode = VXBLEND_INVSRCALPHA;
+    else if (strcmp(value, "dest_alpha") == 0) *out_mode = VXBLEND_DESTALPHA;
+    else if (strcmp(value, "inv_dest_alpha") == 0) *out_mode = VXBLEND_INVDESTALPHA;
+    else if (strcmp(value, "dest_color") == 0) *out_mode = VXBLEND_DESTCOLOR;
+    else if (strcmp(value, "inv_dest_color") == 0) *out_mode = VXBLEND_INVDESTCOLOR;
+    else {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "unsupported material blend factor");
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t manifest_parse_filter_mode(
+    const char *value,
+    VXTEXTURE_FILTERMODE *out_mode)
+{
+    if (!value || !out_mode) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "filter mode output is required");
+    }
+    if (strcmp(value, "nearest") == 0) *out_mode = VXTEXTUREFILTER_NEAREST;
+    else if (strcmp(value, "linear") == 0) *out_mode = VXTEXTUREFILTER_LINEAR;
+    else if (strcmp(value, "mip_nearest") == 0) *out_mode = VXTEXTUREFILTER_MIPNEAREST;
+    else if (strcmp(value, "mip_linear") == 0) *out_mode = VXTEXTUREFILTER_MIPLINEAR;
+    else if (strcmp(value, "linear_mip_nearest") == 0) *out_mode = VXTEXTUREFILTER_LINEARMIPNEAREST;
+    else if (strcmp(value, "linear_mip_linear") == 0) *out_mode = VXTEXTUREFILTER_LINEARMIPLINEAR;
+    else if (strcmp(value, "anisotropic") == 0) *out_mode = VXTEXTUREFILTER_ANISOTROPIC;
+    else {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "unsupported material filter mode");
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t manifest_parse_wrap_mode(
+    const char *value,
+    VXTEXTURE_ADDRESSMODE *out_mode)
+{
+    if (!value || !out_mode) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "wrap mode output is required");
+    }
+    if (strcmp(value, "wrap") == 0) *out_mode = VXTEXTURE_ADDRESSWRAP;
+    else if (strcmp(value, "mirror") == 0) *out_mode = VXTEXTURE_ADDRESSMIRROR;
+    else if (strcmp(value, "clamp") == 0) *out_mode = VXTEXTURE_ADDRESSCLAMP;
+    else if (strcmp(value, "border") == 0) *out_mode = VXTEXTURE_ADDRESSBORDER;
+    else {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "unsupported material wrap mode");
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t manifest_parse_alpha_func(
+    const char *value,
+    VXCMPFUNC *out_func)
+{
+    if (!value || !out_func) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "alpha func output is required");
+    }
+    if (strcmp(value, "never") == 0) *out_func = VXCMP_NEVER;
+    else if (strcmp(value, "less") == 0) *out_func = VXCMP_LESS;
+    else if (strcmp(value, "equal") == 0) *out_func = VXCMP_EQUAL;
+    else if (strcmp(value, "less_equal") == 0) *out_func = VXCMP_LESSEQUAL;
+    else if (strcmp(value, "greater") == 0) *out_func = VXCMP_GREATER;
+    else if (strcmp(value, "not_equal") == 0) *out_func = VXCMP_NOTEQUAL;
+    else if (strcmp(value, "greater_equal") == 0) *out_func = VXCMP_GREATEREQUAL;
+    else if (strcmp(value, "always") == 0) *out_func = VXCMP_ALWAYS;
+    else {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "unsupported material alpha func");
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t manifest_parse_material_render_flags(
+    yyjson_val *material,
+    const char *context,
+    nmo_project_material_render_flags_t *out_flags,
+    bool *out_has_flags)
+{
+    if (!out_flags || !out_has_flags) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "material render flag outputs are required");
+    }
+    memset(out_flags, 0, sizeof(*out_flags));
+    *out_has_flags = false;
+
+    yyjson_val *blend = yyjson_obj_get(material, "blend");
+    if (blend) {
+        static const char *const allowed[] = {"texture", "source", "destination", NULL};
+        NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(blend, "material.blend", allowed));
+        yyjson_val *texture = yyjson_obj_get(blend, "texture");
+        if (texture) {
+            if (!yyjson_is_str(texture)) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest %s.blend.texture must be a string", context);
+            }
+            NMO_RETURN_IF_ERROR(manifest_parse_texture_blend(
+                yyjson_get_str(texture), &out_flags->texture_blend));
+            out_flags->has_texture_blend = true;
+        }
+        yyjson_val *source = yyjson_obj_get(blend, "source");
+        if (source) {
+            if (!yyjson_is_str(source)) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest %s.blend.source must be a string", context);
+            }
+            NMO_RETURN_IF_ERROR(manifest_parse_blend_factor(
+                yyjson_get_str(source), &out_flags->source_blend));
+            out_flags->has_source_blend = true;
+        }
+        yyjson_val *destination = yyjson_obj_get(blend, "destination");
+        if (destination) {
+            if (!yyjson_is_str(destination)) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest %s.blend.destination must be a string", context);
+            }
+            NMO_RETURN_IF_ERROR(manifest_parse_blend_factor(
+                yyjson_get_str(destination), &out_flags->destination_blend));
+            out_flags->has_destination_blend = true;
+        }
+    }
+
+    yyjson_val *filter = yyjson_obj_get(material, "filter");
+    if (filter) {
+        static const char *const allowed[] = {"min", "mag", NULL};
+        NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(filter, "material.filter", allowed));
+        yyjson_val *min = yyjson_obj_get(filter, "min");
+        if (min) {
+            if (!yyjson_is_str(min)) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest %s.filter.min must be a string", context);
+            }
+            NMO_RETURN_IF_ERROR(manifest_parse_filter_mode(
+                yyjson_get_str(min), &out_flags->min_filter));
+            out_flags->has_min_filter = true;
+        }
+        yyjson_val *mag = yyjson_obj_get(filter, "mag");
+        if (mag) {
+            if (!yyjson_is_str(mag)) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest %s.filter.mag must be a string", context);
+            }
+            NMO_RETURN_IF_ERROR(manifest_parse_filter_mode(
+                yyjson_get_str(mag), &out_flags->mag_filter));
+            out_flags->has_mag_filter = true;
+        }
+    }
+
+    yyjson_val *wrap = yyjson_obj_get(material, "wrap");
+    if (wrap) {
+        if (!yyjson_is_str(wrap)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest %s.wrap must be a string", context);
+        }
+        NMO_RETURN_IF_ERROR(manifest_parse_wrap_mode(
+            yyjson_get_str(wrap), &out_flags->wrap));
+        out_flags->has_wrap = true;
+    }
+
+    yyjson_val *alpha = yyjson_obj_get(material, "alpha");
+    if (alpha) {
+        static const char *const allowed[] = {"func", NULL};
+        NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(alpha, "material.alpha", allowed));
+        yyjson_val *func = yyjson_obj_get(alpha, "func");
+        if (!yyjson_is_str(func)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest %s.alpha.func must be a string", context);
+        }
+        NMO_RETURN_IF_ERROR(manifest_parse_alpha_func(
+            yyjson_get_str(func), &out_flags->alpha_func));
+        out_flags->has_alpha_func = true;
+    }
+
+    *out_has_flags =
+        out_flags->has_texture_blend ||
+        out_flags->has_source_blend ||
+        out_flags->has_destination_blend ||
+        out_flags->has_min_filter ||
+        out_flags->has_mag_filter ||
+        out_flags->has_wrap ||
+        out_flags->has_alpha_func;
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t manifest_parse_material(
     yyjson_val *material,
     bool *out_has_color,
@@ -183,7 +404,9 @@ static nmo_status_t manifest_parse_material(
     const char **out_texture,
     bool out_has_texture_slots[4],
     const char *out_texture_paths[4],
-    size_t out_texture_indices[4])
+    size_t out_texture_indices[4],
+    bool *out_has_render_flags,
+    nmo_project_material_render_flags_t *out_render_flags)
 {
     static const char *const allowed[] = {
         "color",
@@ -194,6 +417,10 @@ static nmo_status_t manifest_parse_material(
         "specular_power",
         "texture",
         "textures",
+        "blend",
+        "filter",
+        "wrap",
+        "alpha",
         NULL};
     NMO_RETURN_IF_ERROR(manifest_reject_unknown_fields(material, "material", allowed));
 
@@ -202,7 +429,8 @@ static nmo_status_t manifest_parse_material(
         !out_has_specular || !out_specular ||
         !out_has_emissive || !out_emissive ||
         !out_has_specular_power || !out_specular_power ||
-        !out_has_texture_slots || !out_texture_paths || !out_texture_indices) {
+        !out_has_texture_slots || !out_texture_paths || !out_texture_indices ||
+        !out_has_render_flags || !out_render_flags) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "material output arguments are required");
     }
@@ -212,6 +440,8 @@ static nmo_status_t manifest_parse_material(
     *out_has_emissive = false;
     *out_has_specular_power = false;
     *out_specular_power = 0.0f;
+    *out_has_render_flags = false;
+    memset(out_render_flags, 0, sizeof(*out_render_flags));
     *out_texture = NULL;
     memset(out_has_texture_slots, 0, sizeof(bool) * 4u);
     memset(out_texture_paths, 0, sizeof(const char *) * 4u);
@@ -324,8 +554,14 @@ static nmo_status_t manifest_parse_material(
     for (size_t slot = 0u; slot < 4u; ++slot) {
         has_any_texture = has_any_texture || out_has_texture_slots[slot];
     }
+    NMO_RETURN_IF_ERROR(manifest_parse_material_render_flags(
+        material,
+        "material",
+        out_render_flags,
+        out_has_render_flags));
     if (!*out_has_color && !*out_has_ambient && !*out_has_specular &&
-        !*out_has_emissive && !*out_has_specular_power && !has_any_texture) {
+        !*out_has_emissive && !*out_has_specular_power && !has_any_texture &&
+        !*out_has_render_flags) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "manifest material requires color channel or texture");
     }
@@ -347,6 +583,10 @@ static nmo_status_t manifest_parse_obj_material(
         "specular_power",
         "texture",
         "textures",
+        "blend",
+        "filter",
+        "wrap",
+        "alpha",
         NULL};
     if (!out_spec) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -481,10 +721,15 @@ static nmo_status_t manifest_parse_obj_material(
     for (size_t slot = 0u; slot < 4u; ++slot) {
         has_any_texture = has_any_texture || out_spec->has_texture_slots[slot];
     }
+    NMO_RETURN_IF_ERROR(manifest_parse_material_render_flags(
+        material,
+        "materials[]",
+        &out_spec->render_flags,
+        &out_spec->has_render_flags));
     if (!out_spec->has_color && !out_spec->has_diffuse &&
         !out_spec->has_ambient && !out_spec->has_specular &&
         !out_spec->has_emissive && !out_spec->has_specular_power &&
-        !has_any_texture) {
+        !has_any_texture && !out_spec->has_render_flags) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "manifest materials[] requires color channel or texture");
     }
@@ -1426,6 +1671,8 @@ static nmo_status_t manifest_parse_object_details(
         bool has_texture_slots[4] = {false, false, false, false};
         const char *texture_paths[4] = {0};
         size_t texture_indices[4] = {0};
+        bool has_render_flags = false;
+        nmo_project_material_render_flags_t render_flags = {0};
         NMO_RETURN_IF_ERROR(manifest_parse_material(
             material,
             &has_color,
@@ -1441,7 +1688,9 @@ static nmo_status_t manifest_parse_object_details(
             &texture,
             has_texture_slots,
             texture_paths,
-            texture_indices));
+            texture_indices,
+            &has_render_flags,
+            &render_flags));
         if (has_color) {
             NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_color(
                 ctx->plan,
@@ -1483,6 +1732,12 @@ static nmo_status_t manifest_parse_object_details(
                 ctx->plan,
                 object_handle,
                 specular_power));
+        }
+        if (has_render_flags) {
+            NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_render_flags(
+                ctx->plan,
+                object_handle,
+                &render_flags));
         }
         if (has_texture_slots[0]) {
             NMO_RETURN_IF_ERROR(nmo_project_plan_set_material_texture(

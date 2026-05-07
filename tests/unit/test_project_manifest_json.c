@@ -269,37 +269,65 @@ TEST(project_manifest_json, rejects_material_color_alias_conflict)
     ASSERT_NULL(plan);
 }
 
-TEST(project_manifest_json, rejects_unproven_material_flag_fields)
+TEST(project_manifest_json, parses_material_render_flags)
 {
-    static const char *const field_names[] = {
-        "alpha",
-        "blend",
-        "filter",
-        "wrap",
-    };
-    for (size_t i = 0u; i < sizeof(field_names) / sizeof(field_names[0]); ++i) {
-        char json[512];
-        snprintf(json,
-                 sizeof(json),
-                 "{"
-                 "\"version\":1,"
-                 "\"document\":{\"name\":\"Generated\"},"
-                 "\"scenes\":[{"
-                 "\"name\":\"Level\","
-                 "\"objects\":[{"
-                 "\"name\":\"Cube\","
-                 "\"class\":\"CK3dEntity\","
-                 "\"mesh\":{\"primitive\":\"cube\"},"
-                 "\"material\":{\"%s\":true}"
-                 "}]"
-                 "}]"
-                 "}",
-                 field_names[i]);
-        nmo_project_plan_t *plan = NULL;
-        ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
-                  nmo_project_manifest_json_read(json, strlen(json), &plan));
-        ASSERT_NULL(plan);
-    }
+    const char *json =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{"
+        "\"name\":\"Level\","
+        "\"objects\":[{"
+        "\"name\":\"Cube\","
+        "\"class\":\"CK3dEntity\","
+        "\"mesh\":{\"primitive\":\"cube\"},"
+        "\"material\":{"
+        "\"blend\":{\"texture\":\"modulate\",\"source\":\"src_alpha\",\"destination\":\"inv_src_alpha\"},"
+        "\"filter\":{\"min\":\"linear\",\"mag\":\"nearest\"},"
+        "\"wrap\":\"clamp\","
+        "\"alpha\":{\"func\":\"greater_equal\"}"
+        "},"
+        "\"materials\":[{"
+        "\"name\":\"Layered\","
+        "\"blend\":{\"texture\":\"add\"},"
+        "\"filter\":{\"min\":\"mip_linear\"},"
+        "\"wrap\":\"mirror\","
+        "\"alpha\":{\"func\":\"always\"}"
+        "}]"
+        "}]"
+        "}]"
+        "}";
+    nmo_project_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_project_manifest_json_read(json, strlen(json), &plan));
+    ASSERT_NOT_NULL(plan);
+
+    nmo_project_asset_desc_t asset = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_asset(plan, 0u, &asset));
+    ASSERT_TRUE(asset.has_material_render_flags);
+    ASSERT_TRUE(asset.material_render_flags.has_texture_blend);
+    ASSERT_EQ(VXTEXTUREBLEND_MODULATE, asset.material_render_flags.texture_blend);
+    ASSERT_TRUE(asset.material_render_flags.has_source_blend);
+    ASSERT_EQ(VXBLEND_SRCALPHA, asset.material_render_flags.source_blend);
+    ASSERT_TRUE(asset.material_render_flags.has_destination_blend);
+    ASSERT_EQ(VXBLEND_INVSRCALPHA, asset.material_render_flags.destination_blend);
+    ASSERT_TRUE(asset.material_render_flags.has_min_filter);
+    ASSERT_EQ(VXTEXTUREFILTER_LINEAR, asset.material_render_flags.min_filter);
+    ASSERT_TRUE(asset.material_render_flags.has_mag_filter);
+    ASSERT_EQ(VXTEXTUREFILTER_NEAREST, asset.material_render_flags.mag_filter);
+    ASSERT_TRUE(asset.material_render_flags.has_wrap);
+    ASSERT_EQ(VXTEXTURE_ADDRESSCLAMP, asset.material_render_flags.wrap);
+    ASSERT_TRUE(asset.material_render_flags.has_alpha_func);
+    ASSERT_EQ(VXCMP_GREATEREQUAL, asset.material_render_flags.alpha_func);
+
+    nmo_project_material_spec_t material = {0};
+    ASSERT_EQ(NMO_OK, nmo_project_plan_get_obj_material(plan, asset.object_handle, 0u, &material));
+    ASSERT_TRUE(material.has_render_flags);
+    ASSERT_EQ(VXTEXTUREBLEND_ADD, material.render_flags.texture_blend);
+    ASSERT_EQ(VXTEXTUREFILTER_MIPLINEAR, material.render_flags.min_filter);
+    ASSERT_EQ(VXTEXTURE_ADDRESSMIRROR, material.render_flags.wrap);
+    ASSERT_EQ(VXCMP_ALWAYS, material.render_flags.alpha_func);
+
+    nmo_project_plan_destroy(plan);
 }
 
 TEST(project_manifest_json, parses_wavesound_authoring)
@@ -993,7 +1021,7 @@ REGISTER_TEST(project_manifest_json, parses_named_obj_materials);
 REGISTER_TEST(project_manifest_json, parses_material_texture_slots);
 REGISTER_TEST(project_manifest_json, parses_material_color_channels);
 REGISTER_TEST(project_manifest_json, rejects_material_color_alias_conflict);
-REGISTER_TEST(project_manifest_json, rejects_unproven_material_flag_fields);
+REGISTER_TEST(project_manifest_json, parses_material_render_flags);
 REGISTER_TEST(project_manifest_json, parses_wavesound_authoring);
 REGISTER_TEST(project_manifest_json, parses_objectanimation_authoring);
 REGISTER_TEST(project_manifest_json, rejects_unproven_animation_payload_fields);

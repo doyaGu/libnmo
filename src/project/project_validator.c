@@ -729,7 +729,8 @@ static nmo_status_t project_validation_check_assets(
             !asset.has_material_specular &&
             !asset.has_material_emissive &&
             !asset.has_material_specular_power &&
-            !asset.has_material_texture) {
+            !asset.has_material_texture &&
+            !asset.has_material_render_flags) {
             uint8_t *obj_bytes = NULL;
             size_t obj_size = 0u;
             nmo_status_t read_status = project_validation_read_file(

@@ -278,7 +278,13 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
                             "\"specular\":[1,1,0,1],"
                             "\"emissive\":[1,0,1,1],"
                             "\"specular_power\":12.5,"
-                            "\"texture\":\"blue.png\"}"
+                            "\"texture\":\"blue.png\","
+                            "\"blend\":{\"texture\":\"modulate\","
+                                "\"source\":\"src_alpha\","
+                                "\"destination\":\"inv_src_alpha\"},"
+                            "\"filter\":{\"min\":\"linear\",\"mag\":\"nearest\"},"
+                            "\"wrap\":\"clamp\","
+                            "\"alpha\":{\"func\":\"greater_equal\"}}"
                     "],"
                     "\"transform\":{\"position\":[7,8,9],"
                         "\"rotation_euler_deg\":[0,0,0],"
@@ -424,6 +430,20 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
     ASSERT_EQ(0xFFFF00FFu, material_state->emissive_color);
     ASSERT_FLOAT_EQ(12.5f, material_state->specular_power, 0.0001f);
     ASSERT_EQ(texture_id, material_state->texture_ids[0]);
+    ASSERT_EQ(VXTEXTUREBLEND_MODULATE,
+              (VXTEXTURE_BLENDMODE)(material_state->packed_modes & 0xFu));
+    ASSERT_EQ(VXTEXTUREFILTER_LINEAR,
+              (VXTEXTURE_FILTERMODE)((material_state->packed_modes >> 4) & 0xFu));
+    ASSERT_EQ(VXTEXTUREFILTER_NEAREST,
+              (VXTEXTURE_FILTERMODE)((material_state->packed_modes >> 8) & 0xFu));
+    ASSERT_EQ(VXBLEND_SRCALPHA,
+              (VXBLEND_MODE)((material_state->packed_modes >> 12) & 0xFu));
+    ASSERT_EQ(VXBLEND_INVSRCALPHA,
+              (VXBLEND_MODE)((material_state->packed_modes >> 16) & 0xFu));
+    ASSERT_EQ(VXTEXTURE_ADDRESSCLAMP,
+              (VXTEXTURE_ADDRESSMODE)((material_state->packed_modes >> 28) & 0xFu));
+    ASSERT_EQ(VXCMP_GREATEREQUAL,
+              (VXCMPFUNC)((material_state->packed_flags >> 16) & 0x1Fu));
 
     const nmo_texture_state_t *texture_state =
         (const nmo_texture_state_t *)nmo_object_get_state(texture_object);

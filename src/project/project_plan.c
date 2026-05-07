@@ -105,6 +105,8 @@ typedef struct project_asset_record {
     bool has_material_texture_slots[4];
     char *material_texture_paths[4];
     char *material_texture_source_paths[4];
+    bool has_material_render_flags;
+    nmo_project_material_render_flags_t material_render_flags;
     nmo_project_material_spec_t *obj_materials;
     size_t obj_material_count;
     size_t obj_material_capacity;
@@ -1522,6 +1524,22 @@ nmo_status_t nmo_project_plan_set_material_specular_power(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_project_plan_set_material_render_flags(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const nmo_project_material_render_flags_t *flags)
+{
+    if (!flags) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "material render flags are required");
+    }
+    project_asset_record_t *asset = NULL;
+    NMO_RETURN_IF_ERROR(project_plan_find_or_add_asset(plan, object_handle, &asset));
+    asset->has_material_render_flags = true;
+    asset->material_render_flags = *flags;
+    NMO_RETURN_OK();
+}
+
 nmo_status_t nmo_project_plan_set_external_mesh(
     nmo_project_plan_t *plan,
     uint32_t object_handle,
@@ -1711,7 +1729,8 @@ nmo_status_t nmo_project_plan_add_obj_material(
         spec->has_ambient ||
         spec->has_specular ||
         spec->has_emissive ||
-        spec->has_specular_power;
+        spec->has_specular_power ||
+        spec->has_render_flags;
     if (!has_any_channel && !has_any_texture) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "OBJ material requires color channel or texture");
@@ -2050,6 +2069,8 @@ nmo_status_t nmo_project_plan_get_asset(
     memcpy(out_asset->material_texture_source_paths,
            asset->material_texture_source_paths,
            sizeof(out_asset->material_texture_source_paths));
+    out_asset->has_material_render_flags = asset->has_material_render_flags;
+    out_asset->material_render_flags = asset->material_render_flags;
     NMO_RETURN_OK();
 }
 

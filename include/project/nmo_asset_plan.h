@@ -2,6 +2,7 @@
 #define NMO_ASSET_PLAN_H
 
 #include "core/nmo_error.h"
+#include "object/nmo_object_enum_defs.h"
 #include "object/nmo_primitive_mesh.h"
 #include "nmo_types.h"
 
@@ -13,6 +14,23 @@ extern "C" {
 #endif
 
 typedef struct nmo_project_plan nmo_project_plan_t;
+
+typedef struct nmo_project_material_render_flags {
+    bool has_texture_blend;
+    VXTEXTURE_BLENDMODE texture_blend;
+    bool has_source_blend;
+    VXBLEND_MODE source_blend;
+    bool has_destination_blend;
+    VXBLEND_MODE destination_blend;
+    bool has_min_filter;
+    VXTEXTURE_FILTERMODE min_filter;
+    bool has_mag_filter;
+    VXTEXTURE_FILTERMODE mag_filter;
+    bool has_wrap;
+    VXTEXTURE_ADDRESSMODE wrap;
+    bool has_alpha_func;
+    VXCMPFUNC alpha_func;
+} nmo_project_material_render_flags_t;
 
 typedef struct nmo_project_asset_desc {
     uint32_t object_handle;
@@ -39,6 +57,8 @@ typedef struct nmo_project_asset_desc {
     bool has_material_texture_slots[4];
     const char *material_texture_paths[4];
     const char *material_texture_source_paths[4];
+    bool has_material_render_flags;
+    nmo_project_material_render_flags_t material_render_flags;
 } nmo_project_asset_desc_t;
 
 typedef struct nmo_project_material_spec {
@@ -62,6 +82,8 @@ typedef struct nmo_project_material_spec {
     bool has_texture_slots[4];
     const char *texture_paths[4];
     const char *texture_source_paths[4];
+    bool has_render_flags;
+    nmo_project_material_render_flags_t render_flags;
 } nmo_project_material_spec_t;
 
 NMO_API nmo_status_t nmo_project_plan_set_primitive_mesh(
@@ -113,6 +135,11 @@ NMO_API nmo_status_t nmo_project_plan_set_material_specular_power(
     nmo_project_plan_t *plan,
     uint32_t object_handle,
     float power);
+
+NMO_API nmo_status_t nmo_project_plan_set_material_render_flags(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const nmo_project_material_render_flags_t *flags);
 
 NMO_API nmo_status_t nmo_project_plan_set_external_mesh(
     nmo_project_plan_t *plan,

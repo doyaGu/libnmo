@@ -676,6 +676,7 @@ static nmo_status_t project_report_populate_diff(
             asset.has_material_specular ||
             asset.has_material_emissive ||
             asset.has_material_specular_power ||
+            asset.has_material_render_flags ||
             asset.has_material_texture) {
             NMO_RETURN_IF_ERROR(project_report_format_asset_name(
                 object.name,
