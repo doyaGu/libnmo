@@ -157,6 +157,27 @@ TEST(public_api_smoke, reusable_edit_headers_are_in_umbrella) {
     free(umbrella);
 }
 
+TEST(public_api_smoke, project_generation_headers_are_in_umbrella) {
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_report_t report;
+    nmo_project_validation_report_t validation;
+    nmo_project_material_render_flags_t render_flags = {0};
+    nmo_project_script_step_kind_t script_step =
+        NMO_PROJECT_SCRIPT_STEP_DEBUG_OUTPUT;
+
+    nmo_project_report_init(&report);
+    nmo_project_validation_report_init(&validation);
+
+    ASSERT_NULL(plan);
+    ASSERT_FALSE(render_flags.has_alpha_func);
+    ASSERT_EQ(NMO_PROJECT_SCRIPT_STEP_DEBUG_OUTPUT, script_step);
+    ASSERT_FALSE(report.ok);
+    ASSERT_FALSE(validation.ok);
+
+    nmo_project_validation_report_dispose(&validation);
+    nmo_project_report_dispose(&report);
+}
+
 TEST(public_api_smoke, reorg_owner_headers_are_directly_usable) {
     ASSERT_TRUE(1);
 }
@@ -397,6 +418,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(public_api_smoke, context_create_release);
     REGISTER_TEST(public_api_smoke, preferred_edit_and_query_headers_are_directly_usable);
     REGISTER_TEST(public_api_smoke, reusable_edit_headers_are_in_umbrella);
+    REGISTER_TEST(public_api_smoke, project_generation_headers_are_in_umbrella);
     REGISTER_TEST(public_api_smoke, reorg_owner_headers_are_directly_usable);
     REGISTER_TEST(public_api_smoke, report_owner_headers_are_directly_usable);
     REGISTER_TEST(public_api_smoke, json_stream_is_not_part_of_public_api_surface);

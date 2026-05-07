@@ -162,6 +162,13 @@
 #include "export/nmo_export_dot.h"
 #include "export/nmo_ansi.h"
 #include "export/nmo_hexdump.h"
+#include "project/nmo_project_plan.h"
+#include "project/nmo_asset_plan.h"
+#include "project/nmo_scene_authoring.h"
+#include "project/nmo_script_authoring.h"
+#include "project/nmo_project_validator.h"
+#include "project/nmo_project_executor.h"
+#include "project/nmo_project_manifest_json.h"
 
 // Additional type helpers
 #include "type/nmo_type_query.h"
