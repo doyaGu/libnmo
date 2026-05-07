@@ -153,33 +153,7 @@ static nmo_status_t project_authoring_set_parent(
     nmo_object_id_t object_id,
     nmo_object_id_t parent_id)
 {
-    char parent_value[32];
-    int wrote = snprintf(
-        parent_value,
-        sizeof(parent_value),
-        "%u",
-        parent_id);
-    if (wrote < 0 || (size_t)wrote >= sizeof(parent_value)) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "parent id string is too long");
-    }
-
-    nmo_session_field_edit_result_t field_result = {0};
-    nmo_session_field_edit_t field = {
-        .field_name = "parent_id",
-        .value_str = parent_value,
-    };
-    NMO_RETURN_IF_ERROR(nmo_object_edit_set_fields(
-        edit,
-        object_id,
-        &field,
-        1u,
-        &field_result));
-    if (field_result.failed > 0u) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                         "failed to set project object parent");
-    }
-    NMO_RETURN_OK();
+    return nmo_entity_edit_set_parent(edit, object_id, parent_id);
 }
 
 static nmo_status_t project_authoring_set_scene_active_camera(

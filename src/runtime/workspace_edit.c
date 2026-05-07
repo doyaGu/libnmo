@@ -20,12 +20,16 @@
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_3dobject_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
+#include "object/builtin/nmo_character_schemas.h"
+#include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
+#include "object/builtin/nmo_sprite3d_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
 #include "object/builtin/nmo_targetlight_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
@@ -2666,6 +2670,89 @@ static bool workspace_edit_class_is_entity_target(nmo_class_id_t class_id)
     default:
         return false;
     }
+}
+
+static nmo_3dentity_state_t *workspace_edit_entity_state_for_object(
+    nmo_object_t *object)
+{
+    if (object == NULL) {
+        return NULL;
+    }
+    void *state = nmo_object_get_state(object);
+    if (state == NULL) {
+        return NULL;
+    }
+
+    switch (nmo_object_get_class_id(object)) {
+    case NMO_CID_3DENTITY:
+        return (nmo_3dentity_state_t *)state;
+    case NMO_CID_3DOBJECT:
+        return &((nmo_3dobject_state_t *)state)->entity;
+    case NMO_CID_CAMERA:
+        return &((nmo_camera_state_t *)state)->entity;
+    case NMO_CID_TARGETCAMERA:
+        return &((nmo_targetcamera_state_t *)state)->base.entity;
+    case NMO_CID_LIGHT:
+        return &((nmo_light_state_t *)state)->entity;
+    case NMO_CID_TARGETLIGHT:
+        return &((nmo_targetlight_state_t *)state)->base.entity;
+    case NMO_CID_CHARACTER:
+        return &((nmo_character_state_t *)state)->base;
+    case NMO_CID_SPRITE3D:
+        return &((nmo_sprite3d_state_t *)state)->base;
+    case NMO_CID_CURVE:
+        return &((nmo_curve_state_t *)state)->base;
+    case NMO_CID_CURVEPOINT:
+        return &((nmo_curvepoint_state_t *)state)->base;
+    case NMO_CID_BODYPART:
+        return &((nmo_bodypart_state_t *)state)->base.entity;
+    default:
+        return NULL;
+    }
+}
+
+nmo_status_t nmo_entity_edit_set_parent(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    nmo_object_id_t parent_id)
+{
+    if (edit == NULL || edit->finished || object_id == 0u ||
+        parent_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_repository_t *repo =
+        nmo_workspace_internal_repository(edit->workspace);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(repo, object_id);
+    nmo_object_t *parent = nmo_object_repository_find_by_id(repo, parent_id);
+    if (object == NULL || parent == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (!workspace_edit_class_is_entity_target(nmo_object_get_class_id(object)) ||
+        !workspace_edit_class_is_entity_target(nmo_object_get_class_id(parent))) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_3dentity_state_t *state =
+        workspace_edit_entity_state_for_object(object);
+    if (state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_status_t status =
+        nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    state->parent_id = parent_id;
+    nmo_workspace_edit_mark(
+        edit,
+        NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
+    return NMO_OK;
 }
 
 nmo_status_t nmo_entity_edit_set_camera_target(

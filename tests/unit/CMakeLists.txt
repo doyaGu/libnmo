@@ -146,6 +146,7 @@ add_unit_test(test_session)
 add_unit_test(test_workspace_edit)
 add_unit_test(test_object_edit_create)
 add_unit_test(test_scene_edit)
+add_unit_test(test_entity_edit)
 
 # App layer tests (Phase 7)
 # Public API / umbrella header smoke test
