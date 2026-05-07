@@ -614,6 +614,37 @@ static nmo_status_t project_validation_check_objects(
                     object.name,
                     object.source_path));
             }
+            for (size_t controller_index = 0u;
+                 controller_index < object.animation_controller_count;
+                 ++controller_index) {
+                const nmo_objanim_controller_t *controller =
+                    &object.animation_controllers[controller_index];
+                uint32_t key_size =
+                    nmo_objanim_controller_key_size(controller->type);
+                if (key_size == 0u) {
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                        report,
+                        "unsupported_animation_controller_type",
+                        "Project animation controller type is not supported",
+                        "object",
+                        object.name,
+                        object.source_path));
+                    continue;
+                }
+                if (controller->key_count == 0u ||
+                    controller->data_size == 0u ||
+                    controller->data == NULL ||
+                    controller->key_count > UINT32_MAX / key_size ||
+                    controller->data_size != controller->key_count * key_size) {
+                    NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
+                        report,
+                        "invalid_animation_controller_payload",
+                        "Project animation controller payload does not match its key size",
+                        "object",
+                        object.name,
+                        object.source_path));
+                }
+            }
         }
     }
     NMO_RETURN_OK();

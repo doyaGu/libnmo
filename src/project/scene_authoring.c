@@ -212,6 +212,8 @@ static nmo_status_t project_authoring_set_object_animation(
             .flags = object->animation_flags,
             .has_length = object->has_animation_length,
             .length = object->animation_length,
+            .controller_count = object->animation_controller_count,
+            .controllers = object->animation_controllers,
         });
 }
 

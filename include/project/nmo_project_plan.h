@@ -3,6 +3,7 @@
 
 #include "core/nmo_guid.h"
 #include "core/nmo_error.h"
+#include "object/builtin/nmo_animation_schemas.h"
 #include "object/nmo_object_edit.h"
 #include "object/nmo_object_enum_defs.h"
 #include "nmo_types.h"
@@ -93,6 +94,8 @@ typedef struct nmo_project_object_spec {
     uint32_t animation_flags;
     bool has_animation_length;
     float animation_length;
+    size_t animation_controller_count;
+    const nmo_objanim_controller_t *animation_controllers;
 } nmo_project_object_spec_t;
 
 typedef struct nmo_project_object_desc {
@@ -148,6 +151,8 @@ typedef struct nmo_project_object_desc {
     uint32_t animation_flags;
     bool has_animation_length;
     float animation_length;
+    size_t animation_controller_count;
+    const nmo_objanim_controller_t *animation_controllers;
 } nmo_project_object_desc_t;
 
 NMO_API nmo_status_t nmo_project_plan_create(nmo_project_plan_t **out_plan);
@@ -303,6 +308,12 @@ NMO_API nmo_status_t nmo_project_plan_set_object_animation(
     uint32_t flags,
     bool has_length,
     float length);
+
+NMO_API nmo_status_t nmo_project_plan_set_object_animation_controllers(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const nmo_objanim_controller_t *controllers,
+    size_t controller_count);
 
 #ifdef __cplusplus
 }

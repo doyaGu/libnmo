@@ -930,7 +930,7 @@ static nmo_status_t manifest_parse_animation(
     float *out_length)
 {
     static const char *const allowed[] = {
-        "target", "format", "root_position", "flags", "length", NULL};
+        "target", "format", "root_position", "flags", "length", "controllers", NULL};
     NMO_RETURN_IF_ERROR(
         manifest_reject_unknown_fields(animation, "animation", allowed));
     if (!out_target || !out_format || !out_has_root_position ||
@@ -986,6 +986,138 @@ static nmo_status_t manifest_parse_animation(
         *out_has_length = true;
         *out_length = (float)manifest_get_number(length);
     }
+    NMO_RETURN_OK();
+}
+
+static void manifest_free_animation_controllers(
+    nmo_objanim_controller_t *controllers,
+    size_t controller_count)
+{
+    if (!controllers) {
+        return;
+    }
+    for (size_t i = 0u; i < controller_count; ++i) {
+        free(controllers[i].data);
+    }
+    free(controllers);
+}
+
+static nmo_status_t manifest_parse_animation_controllers(
+    yyjson_val *controllers_value,
+    nmo_objanim_controller_t **out_controllers,
+    size_t *out_controller_count)
+{
+    if (!out_controllers || !out_controller_count) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "animation controller outputs are required");
+    }
+    *out_controllers = NULL;
+    *out_controller_count = 0u;
+    if (!controllers_value) {
+        NMO_RETURN_OK();
+    }
+    if (!yyjson_is_arr(controllers_value)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest animation.controllers must be an array");
+    }
+    size_t controller_count = yyjson_arr_size(controllers_value);
+    if (controller_count == 0u) {
+        NMO_RETURN_OK();
+    }
+    if (controller_count > SIZE_MAX / sizeof(nmo_objanim_controller_t)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "manifest animation.controllers is too large");
+    }
+    nmo_objanim_controller_t *controllers =
+        (nmo_objanim_controller_t *)calloc(controller_count, sizeof(*controllers));
+    if (!controllers) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate manifest animation controllers");
+    }
+    size_t controller_index;
+    size_t controller_max;
+    yyjson_val *controller;
+    yyjson_arr_foreach(controllers_value, controller_index, controller_max, controller) {
+        static const char *const allowed[] = {"type", "keys", NULL};
+        nmo_status_t status = manifest_reject_unknown_fields(
+            controller,
+            "animation.controllers[]",
+            allowed);
+        if (status != NMO_OK) {
+            manifest_free_animation_controllers(controllers, controller_count);
+            return status;
+        }
+        yyjson_val *type_value = yyjson_obj_get(controller, "type");
+        yyjson_val *keys_value = yyjson_obj_get(controller, "keys");
+        if (!yyjson_is_uint(type_value) || !yyjson_is_arr(keys_value)) {
+            manifest_free_animation_controllers(controllers, controller_count);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest animation controller requires unsigned type and keys array");
+        }
+        uint64_t type_u64 = yyjson_get_uint(type_value);
+        if (type_u64 > UINT32_MAX) {
+            manifest_free_animation_controllers(controllers, controller_count);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest animation controller type is out of range");
+        }
+        uint32_t type = (uint32_t)type_u64;
+        uint32_t key_size = nmo_objanim_controller_key_size(type);
+        if (key_size == 0u || key_size % sizeof(float) != 0u) {
+            manifest_free_animation_controllers(controllers, controller_count);
+            NMO_RETURN_ERROR(NMO_ERR_NOT_SUPPORTED, NMO_SEVERITY_ERROR,
+                             "unsupported manifest animation controller type");
+        }
+        size_t key_count = yyjson_arr_size(keys_value);
+        size_t floats_per_key = key_size / sizeof(float);
+        if (key_count == 0u || key_count > UINT32_MAX ||
+            key_count > SIZE_MAX / key_size) {
+            manifest_free_animation_controllers(controllers, controller_count);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest animation controller key count is invalid");
+        }
+        size_t data_size = key_count * key_size;
+        if (data_size > UINT32_MAX) {
+            manifest_free_animation_controllers(controllers, controller_count);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "manifest animation controller data is too large");
+        }
+        float *data = (float *)malloc(data_size);
+        if (!data) {
+            manifest_free_animation_controllers(controllers, controller_count);
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate manifest animation controller data");
+        }
+        size_t key_index;
+        size_t key_max;
+        yyjson_val *key;
+        yyjson_arr_foreach(keys_value, key_index, key_max, key) {
+            if (!yyjson_is_arr(key) || yyjson_arr_size(key) != floats_per_key) {
+                free(data);
+                manifest_free_animation_controllers(controllers, controller_count);
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "manifest animation controller key size does not match controller type");
+            }
+            size_t component_index;
+            size_t component_max;
+            yyjson_val *component;
+            yyjson_arr_foreach(key, component_index, component_max, component) {
+                if (!yyjson_is_num(component)) {
+                    free(data);
+                    manifest_free_animation_controllers(controllers, controller_count);
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                     "manifest animation controller key values must be numeric");
+                }
+                data[key_index * floats_per_key + component_index] =
+                    (float)manifest_get_number(component);
+            }
+        }
+        controllers[controller_index].type = type;
+        controllers[controller_index].key_count = (uint32_t)key_count;
+        controllers[controller_index].data_size = (uint32_t)data_size;
+        controllers[controller_index].data = data;
+    }
+    *out_controllers = controllers;
+    *out_controller_count = controller_count;
     NMO_RETURN_OK();
 }
 
@@ -2050,6 +2182,8 @@ static nmo_status_t manifest_parse_object_details(
         bool has_length = false;
         float length = 0.0f;
         uint32_t target_handle = 0u;
+        nmo_objanim_controller_t *controllers = NULL;
+        size_t controller_count = 0u;
         NMO_RETURN_IF_ERROR(manifest_parse_animation(
             animation,
             &target_ref,
@@ -2060,11 +2194,16 @@ static nmo_status_t manifest_parse_object_details(
             &flags,
             &has_length,
             &length));
-        NMO_RETURN_IF_ERROR(manifest_resolve_object_ref(
+        NMO_RETURN_IF_ERROR(manifest_parse_animation_controllers(
+            yyjson_obj_get(animation, "controllers"),
+            &controllers,
+            &controller_count));
+        nmo_status_t animation_status = manifest_resolve_object_ref(
             ctx,
             target_ref,
-            &target_handle));
-        NMO_RETURN_IF_ERROR(nmo_project_plan_set_object_animation(
+            &target_handle);
+        if (animation_status == NMO_OK) {
+            animation_status = nmo_project_plan_set_object_animation(
             ctx->plan,
             object_handle,
             target_handle,
@@ -2076,7 +2215,19 @@ static nmo_status_t manifest_parse_object_details(
             has_flags,
             flags,
             has_length,
-            length));
+            length);
+        }
+        if (animation_status == NMO_OK) {
+            animation_status = nmo_project_plan_set_object_animation_controllers(
+                ctx->plan,
+                object_handle,
+                controllers,
+                controller_count);
+        }
+        manifest_free_animation_controllers(controllers, controller_count);
+        if (animation_status != NMO_OK) {
+            return animation_status;
+        }
     }
 
     NMO_RETURN_IF_ERROR(manifest_parse_scripts(

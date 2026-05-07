@@ -441,6 +441,68 @@ TEST(generated_advanced_probes, midisound_skeleton_save_load_validate)
     remove(output_path);
 }
 
+TEST(generated_advanced_probes, midisound_file_field_probe_stays_gated)
+{
+    const char *output_path = "test_generated_midisound_file_probe.cmo";
+    remove(output_path);
+    remove("test_generated_midisound_file_probe.cmo.tmp");
+
+    nmo_session_field_edit_t sound_fields[] = {
+        {.field_name = "has_midi_file_name", .value_str = "1"},
+        {.field_name = "midi_file_name", .value_str = "\"song.mid\""},
+    };
+
+    nmo_project_plan_t *plan = NULL;
+    uint32_t sound = 0u;
+    nmo_project_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_document_name(plan, "MidiSoundFileProbe"));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .class_id = NMO_CID_MIDISOUND,
+                      .name = "ProbeMidiSoundFile",
+                      .fields = sound_fields,
+                      .field_count = sizeof(sound_fields) / sizeof(sound_fields[0]),
+                  },
+                  &sound));
+    ASSERT_TRUE(sound != 0u);
+
+    nmo_project_report_init(&report);
+    ASSERT_EQ(NMO_OK,
+              nmo_project_executor_execute_to_file(plan, output_path, &report));
+    ASSERT_TRUE(report.ok);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "validate all \"%s\"", output_path);
+    assert_cli_success_contains(args, "Result: VALID");
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &document));
+    ASSERT_NOT_NULL(document);
+
+    nmo_object_t *sound_object =
+        find_named_object(document, "ProbeMidiSoundFile");
+    ASSERT_NOT_NULL(sound_object);
+    ASSERT_EQ(NMO_CID_MIDISOUND, nmo_object_get_class_id(sound_object));
+    const nmo_midisound_state_t *state =
+        (const nmo_midisound_state_t *)nmo_object_get_state(sound_object);
+    ASSERT_NOT_NULL(state);
+    ASSERT_FALSE(state->has_midi_file_name);
+    ASSERT_NULL(state->midi_file_name);
+
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+    nmo_project_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+    remove(output_path);
+}
+
 TEST(generated_advanced_probes, manifest_sound_authoring_save_load_validate)
 {
     const char *output_path = "test_generated_sound_authoring.cmo";
@@ -684,6 +746,10 @@ TEST(generated_advanced_probes, manifest_objectanimation_authoring_save_load_val
         "{\"id\":\"target\",\"name\":\"AnimatedEntity\",\"class\":\"CK3dEntity\"},"
         "{\"name\":\"ManifestObjectAnimation\",\"class\":\"CKObjectAnimation\","
         "\"animation\":{\"target\":\"target\",\"format\":\"controllers\","
+        "\"controllers\":["
+        "{\"type\":1669088001,\"keys\":[[0,1,2,3],[1,4,5,6]]},"
+        "{\"type\":1240285186,\"keys\":[[0,0,0,0,1]]}"
+        "],"
         "\"root_position\":[1,2,3],\"flags\":1,\"length\":12.5}}"
         "]"
         "}]"
@@ -727,7 +793,19 @@ TEST(generated_advanced_probes, manifest_objectanimation_authoring_save_load_val
     ASSERT_EQ(nmo_object_get_id(entity_object), state->entity_id);
     ASSERT_TRUE(state->has_length);
     ASSERT_FLOAT_EQ(12.5f, state->length, 0.0001f);
-    ASSERT_EQ(0u, state->controller_count);
+    ASSERT_EQ(2u, state->controller_count);
+    ASSERT_NOT_NULL(state->controllers);
+    ASSERT_EQ(1669088001u, state->controllers[0].type);
+    ASSERT_EQ(32u, state->controllers[0].data_size);
+    ASSERT_NOT_NULL(state->controllers[0].data);
+    const float *position_keys = (const float *)state->controllers[0].data;
+    ASSERT_FLOAT_EQ(0.0f, position_keys[0], 0.0001f);
+    ASSERT_FLOAT_EQ(6.0f, position_keys[7], 0.0001f);
+    ASSERT_EQ(1240285186u, state->controllers[1].type);
+    ASSERT_EQ(20u, state->controllers[1].data_size);
+    ASSERT_NOT_NULL(state->controllers[1].data);
+    const float *rotation_keys = (const float *)state->controllers[1].data;
+    ASSERT_FLOAT_EQ(1.0f, rotation_keys[4], 0.0001f);
 
     nmo_document_destroy(document);
     nmo_context_release(ctx);
@@ -830,7 +908,7 @@ TEST(generated_advanced_probes, unproven_manifest_authoring_fields_are_rejected)
         "{\"name\":\"Animation\","
         "\"class\":\"CKObjectAnimation\","
         "\"animation\":{\"target\":\"target\",\"format\":\"controllers\","
-        "\"controllers\":[]}"
+        "\"morph_keys\":[]}"
         "}]}"
         "}",
         "{"
@@ -849,6 +927,13 @@ TEST(generated_advanced_probes, unproven_manifest_authoring_fields_are_rejected)
         "\"document\":{\"name\":\"Generated\"},"
         "\"scenes\":[{\"name\":\"Level\","
         "\"environment\":{\"skybox\":\"sky.cmo\"},"
+        "\"objects\":[]}]"
+        "}",
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{\"name\":\"Level\","
+        "\"environment\":{\"viewport\":{\"mode\":\"wireframe\"}},"
         "\"objects\":[]}]"
         "}",
         "{"
@@ -900,6 +985,8 @@ REGISTER_TEST(generated_advanced_probes,
               sound_field_semantics_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,
               midisound_skeleton_save_load_validate);
+REGISTER_TEST(generated_advanced_probes,
+              midisound_file_field_probe_stays_gated);
 REGISTER_TEST(generated_advanced_probes,
               manifest_sound_authoring_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,

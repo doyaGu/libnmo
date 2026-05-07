@@ -390,6 +390,7 @@ TEST(project_manifest_json, parses_objectanimation_authoring)
         "{\"name\":\"Anim\",\"class\":\"CKObjectAnimation\","
         "\"animation\":{\"target\":\"target\","
         "\"format\":\"controllers\","
+        "\"controllers\":[{\"type\":1669088001,\"keys\":[[0,1,2,3],[1,4,5,6]]}],"
         "\"root_position\":[1,2,3],"
         "\"flags\":1,"
         "\"length\":12.5}}"
@@ -413,6 +414,15 @@ TEST(project_manifest_json, parses_objectanimation_authoring)
     ASSERT_EQ(1u, animation.animation_flags);
     ASSERT_TRUE(animation.has_animation_length);
     ASSERT_FLOAT_EQ(12.5f, animation.animation_length, 0.0001f);
+    ASSERT_EQ(1u, animation.animation_controller_count);
+    ASSERT_NOT_NULL(animation.animation_controllers);
+    ASSERT_EQ(1669088001u, animation.animation_controllers[0].type);
+    ASSERT_EQ(2u, animation.animation_controllers[0].key_count);
+    ASSERT_EQ(32u, animation.animation_controllers[0].data_size);
+    ASSERT_NOT_NULL(animation.animation_controllers[0].data);
+    const float *keys = (const float *)animation.animation_controllers[0].data;
+    ASSERT_FLOAT_EQ(0.0f, keys[0], 0.0001f);
+    ASSERT_FLOAT_EQ(6.0f, keys[7], 0.0001f);
 
     nmo_project_plan_destroy(plan);
 }
@@ -421,8 +431,8 @@ TEST(project_manifest_json, rejects_unproven_animation_payload_fields)
 {
     static const char *const field_names[] = {
         "file",
-        "controllers",
         "keys",
+        "morph_keys",
     };
     for (size_t i = 0u; i < sizeof(field_names) / sizeof(field_names[0]); ++i) {
         char json[512];

@@ -147,6 +147,100 @@ TEST(animation_edit, sets_object_animation_metadata)
     destroy_workspace(ctx, doc, workspace);
 }
 
+TEST(animation_edit, sets_object_animation_controllers)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_document_t *doc = NULL;
+    nmo_workspace_t *workspace = NULL;
+    create_workspace(&ctx, &doc, &workspace);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "animation", &edit));
+
+    nmo_object_id_t animation_id = 0;
+    nmo_object_id_t entity_id = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){
+                      .class_id = NMO_CID_OBJECTANIMATION,
+                      .name = "Animation",
+                  },
+                  &animation_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "Entity",
+                  },
+                  &entity_id));
+
+    float position_keys[] = {
+        0.0f, 1.0f, 2.0f, 3.0f,
+        1.0f, 4.0f, 5.0f, 6.0f,
+    };
+    nmo_objanim_controller_t controllers[] = {
+        {
+            .type = 0x637c4301u,
+            .key_count = 2u,
+            .data_size = sizeof(position_keys),
+            .data = position_keys,
+        },
+    };
+    nmo_objanim_controller_t malformed[] = {
+        {
+            .type = 0x637c4301u,
+            .key_count = 1u,
+            .data_size = sizeof(position_keys) - sizeof(float),
+            .data = position_keys,
+        },
+    };
+
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_animation_edit_set_object_animation(
+                  edit,
+                  animation_id,
+                  &(nmo_object_animation_settings_t){
+                      .format = CKOBJANIM_FORMAT_CONTROLLERS,
+                      .entity_id = entity_id,
+                      .controller_count = 1u,
+                      .controllers = malformed,
+                  }));
+    ASSERT_EQ(NMO_OK,
+              nmo_animation_edit_set_object_animation(
+                  edit,
+                  animation_id,
+                  &(nmo_object_animation_settings_t){
+                      .format = CKOBJANIM_FORMAT_CONTROLLERS,
+                      .entity_id = entity_id,
+                      .controller_count = 1u,
+                      .controllers = controllers,
+                  }));
+
+    position_keys[1] = 99.0f;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    nmo_object_t *animation_object = find_object(doc, animation_id);
+    ASSERT_NOT_NULL(animation_object);
+    const nmo_objectanimation_state_t *animation =
+        (const nmo_objectanimation_state_t *)nmo_object_get_state(animation_object);
+    ASSERT_NOT_NULL(animation);
+    ASSERT_EQ(CKOBJANIM_FORMAT_CONTROLLERS, animation->format);
+    ASSERT_EQ(1u, animation->controller_count);
+    ASSERT_NOT_NULL(animation->controllers);
+    ASSERT_EQ(0x637c4301u, animation->controllers[0].type);
+    ASSERT_EQ(2u, animation->controllers[0].key_count);
+    ASSERT_EQ(sizeof(position_keys), animation->controllers[0].data_size);
+    ASSERT_NOT_NULL(animation->controllers[0].data);
+    const float *stored_keys = (const float *)animation->controllers[0].data;
+    ASSERT_FLOAT_EQ(1.0f, stored_keys[1], 0.0001f);
+    ASSERT_FLOAT_EQ(6.0f, stored_keys[7], 0.0001f);
+
+    destroy_workspace(ctx, doc, workspace);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(animation_edit, sets_object_animation_metadata);
+REGISTER_TEST(animation_edit, sets_object_animation_controllers);
 TEST_MAIN_END()

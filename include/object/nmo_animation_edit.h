@@ -2,8 +2,11 @@
 #define NMO_ANIMATION_EDIT_H
 
 #include "core/nmo_error.h"
+#include "object/builtin/nmo_animation_schemas.h"
 #include "object/nmo_object_enum_defs.h"
 #include "nmo_types.h"
+
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,6 +23,8 @@ typedef struct nmo_object_animation_settings {
     uint32_t flags;
     bool has_length;
     float length;
+    size_t controller_count;
+    const nmo_objanim_controller_t *controllers;
 } nmo_object_animation_settings_t;
 
 NMO_API nmo_status_t nmo_animation_edit_set_object_animation(

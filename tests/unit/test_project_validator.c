@@ -774,6 +774,48 @@ TEST(project_validator, rejects_missing_wavesound_file)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_validator, rejects_midisound_authoring_until_file_semantics_are_proven)
+{
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_validation_report_t report;
+    uint32_t scene = 0u;
+    uint32_t sound = 0u;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_document_name(plan, "Generated"));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "Level", &scene));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_MIDISOUND,
+                      .name = "MidiSound",
+                  },
+                  &sound));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_object_source_path(
+                  plan,
+                  sound,
+                  "scenes[0].objects[0]"));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_wavesound_file(
+                  plan,
+                  sound,
+                  "song.mid"));
+
+    nmo_project_validation_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_FALSE(report.ok);
+    ASSERT_TRUE(nmo_project_validation_contains(
+        &report,
+        "invalid_sound_class"));
+    ASSERT_NOT_NULL(report.issues[0].source_path);
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+}
+
 TEST(project_validator, rejects_invalid_objectanimation_authoring)
 {
     nmo_project_plan_t *plan = NULL;
@@ -820,6 +862,122 @@ TEST(project_validator, rejects_invalid_objectanimation_authoring)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_validator, reports_invalid_objectanimation_controller_payloads)
+{
+    nmo_project_plan_t *plan = NULL;
+    nmo_project_validation_report_t report;
+    uint32_t scene = 0u;
+    uint32_t target = 0u;
+    uint32_t bad_type = 0u;
+    uint32_t bad_size = 0u;
+    float good_key[] = {0.0f, 1.0f, 2.0f, 3.0f};
+    float short_key[] = {0.0f, 1.0f, 2.0f};
+    nmo_objanim_controller_t bad_type_controller = {
+        .type = 0xDEADBEEFu,
+        .key_count = 1u,
+        .data_size = sizeof(good_key),
+        .data = good_key,
+    };
+    nmo_objanim_controller_t bad_size_controller = {
+        .type = 0x637c4301u,
+        .key_count = 1u,
+        .data_size = sizeof(short_key),
+        .data = short_key,
+    };
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_document_name(plan, "Generated"));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "Level", &scene));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "Target",
+                  },
+                  &target));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_OBJECTANIMATION,
+                      .name = "BadType",
+                  },
+                  &bad_type));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_OBJECTANIMATION,
+                      .name = "BadSize",
+                  },
+                  &bad_size));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_object_source_path(
+                  plan,
+                  bad_type,
+                  "scenes[0].objects[1]"));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_object_animation(
+                  plan,
+                  bad_type,
+                  target,
+                  CKOBJANIM_FORMAT_CONTROLLERS,
+                  false,
+                  0.0f,
+                  0.0f,
+                  0.0f,
+                  false,
+                  0u,
+                  false,
+                  0.0f));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_object_animation_controllers(
+                  plan,
+                  bad_type,
+                  &bad_type_controller,
+                  1u));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_object_animation(
+                  plan,
+                  bad_size,
+                  target,
+                  CKOBJANIM_FORMAT_CONTROLLERS,
+                  false,
+                  0.0f,
+                  0.0f,
+                  0.0f,
+                  false,
+                  0u,
+                  false,
+                  0.0f));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_object_animation_controllers(
+                  plan,
+                  bad_size,
+                  &bad_size_controller,
+                  1u));
+
+    nmo_project_validation_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_validate_plan(plan, &report));
+    ASSERT_FALSE(report.ok);
+    ASSERT_TRUE(nmo_project_validation_contains(
+        &report,
+        "unsupported_animation_controller_type"));
+    ASSERT_TRUE(nmo_project_validation_contains(
+        &report,
+        "invalid_animation_controller_payload"));
+    ASSERT_NOT_NULL(report.issues[0].subject_kind);
+    ASSERT_NOT_NULL(report.issues[0].subject_name);
+    ASSERT_NOT_NULL(report.issues[0].source_path);
+
+    nmo_project_validation_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(project_validator, rejects_missing_document_name);
 REGISTER_TEST(project_validator, accepts_named_empty_project);
@@ -840,5 +998,7 @@ REGISTER_TEST(project_validator, reports_manifest_source_for_invalid_camera_ligh
 REGISTER_TEST(project_validator, rejects_invalid_scene_active_camera);
 REGISTER_TEST(project_validator, rejects_invalid_wavesound_authoring);
 REGISTER_TEST(project_validator, rejects_missing_wavesound_file);
+REGISTER_TEST(project_validator, rejects_midisound_authoring_until_file_semantics_are_proven);
 REGISTER_TEST(project_validator, rejects_invalid_objectanimation_authoring);
+REGISTER_TEST(project_validator, reports_invalid_objectanimation_controller_payloads);
 TEST_MAIN_END()

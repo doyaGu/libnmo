@@ -3019,6 +3019,27 @@ nmo_status_t nmo_animation_edit_set_object_animation(
         !workspace_edit_class_is_entity_target(nmo_object_get_class_id(entity))) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
+    if (settings->controller_count > 0u) {
+        if (settings->controllers == NULL ||
+            settings->controller_count > UINT32_MAX ||
+            settings->format != CKOBJANIM_FORMAT_CONTROLLERS) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+        for (size_t i = 0u; i < settings->controller_count; ++i) {
+            const nmo_objanim_controller_t *controller = &settings->controllers[i];
+            uint32_t key_size = nmo_objanim_controller_key_size(controller->type);
+            if (key_size == 0u || controller->key_count == 0u ||
+                controller->data_size == 0u || controller->data == NULL) {
+                return NMO_ERR_INVALID_ARGUMENT;
+            }
+            if (controller->key_count > UINT32_MAX / key_size ||
+                controller->data_size != controller->key_count * key_size) {
+                return NMO_ERR_INVALID_ARGUMENT;
+            }
+        }
+    } else if (settings->controllers != NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
 
     nmo_objectanimation_state_t *state =
         (nmo_objectanimation_state_t *)nmo_object_get_state(animation);
@@ -3045,6 +3066,39 @@ nmo_status_t nmo_animation_edit_set_object_animation(
     if (settings->has_length) {
         state->has_length = 1u;
         state->length = settings->length;
+    }
+    if (settings->controller_count > 0u) {
+        nmo_arena_t *arena =
+            nmo_workspace_internal_document_arena(edit->workspace);
+        if (arena == NULL) {
+            return NMO_ERR_INVALID_STATE;
+        }
+        nmo_objanim_controller_t *controllers =
+            (nmo_objanim_controller_t *)nmo_arena_alloc(
+                arena,
+                sizeof(*controllers) * settings->controller_count,
+                _Alignof(nmo_objanim_controller_t));
+        if (controllers == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        memset(controllers, 0, sizeof(*controllers) * settings->controller_count);
+        for (size_t i = 0u; i < settings->controller_count; ++i) {
+            const nmo_objanim_controller_t *src = &settings->controllers[i];
+            void *data = nmo_arena_alloc(arena, src->data_size, 1u);
+            if (data == NULL) {
+                return NMO_ERR_NOMEM;
+            }
+            memcpy(data, src->data, src->data_size);
+            controllers[i].type = src->type;
+            controllers[i].key_count = src->key_count;
+            controllers[i].data_size = src->data_size;
+            controllers[i].data = data;
+        }
+        state->controller_count = (uint32_t)settings->controller_count;
+        state->controllers = controllers;
+    } else {
+        state->controller_count = 0u;
+        state->controllers = NULL;
     }
 
     nmo_workspace_edit_mark(

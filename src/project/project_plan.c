@@ -78,6 +78,8 @@ typedef struct project_object_record {
     uint32_t animation_flags;
     bool has_animation_length;
     float animation_length;
+    nmo_objanim_controller_t *animation_controllers;
+    size_t animation_controller_count;
 } project_object_record_t;
 
 typedef struct project_asset_record {
@@ -221,6 +223,71 @@ static nmo_status_t project_plan_clone_fields(
     NMO_RETURN_OK();
 }
 
+static void project_plan_free_animation_controllers(
+    nmo_objanim_controller_t *controllers,
+    size_t controller_count)
+{
+    if (!controllers) {
+        return;
+    }
+    for (size_t i = 0u; i < controller_count; ++i) {
+        free(controllers[i].data);
+    }
+    free(controllers);
+}
+
+static nmo_status_t project_plan_clone_animation_controllers(
+    const nmo_objanim_controller_t *src_controllers,
+    size_t controller_count,
+    nmo_objanim_controller_t **out_controllers)
+{
+    if (!out_controllers) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "out_controllers is required");
+    }
+    *out_controllers = NULL;
+    if (controller_count == 0u) {
+        if (src_controllers != NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "animation controllers must be NULL when count is zero");
+        }
+        NMO_RETURN_OK();
+    }
+    if (!src_controllers || controller_count > SIZE_MAX / sizeof(*src_controllers)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "animation controller array is invalid");
+    }
+
+    nmo_objanim_controller_t *controllers =
+        (nmo_objanim_controller_t *)calloc(controller_count, sizeof(*controllers));
+    if (!controllers) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "failed to allocate project animation controllers");
+    }
+    for (size_t i = 0u; i < controller_count; ++i) {
+        const nmo_objanim_controller_t *src = &src_controllers[i];
+        if (src->type == 0u || src->key_count == 0u ||
+            src->data_size == 0u || src->data == NULL) {
+            project_plan_free_animation_controllers(controllers, controller_count);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "animation controller payload is invalid");
+        }
+        void *data = malloc(src->data_size);
+        if (!data) {
+            project_plan_free_animation_controllers(controllers, controller_count);
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate project animation controller data");
+        }
+        memcpy(data, src->data, src->data_size);
+        controllers[i].type = src->type;
+        controllers[i].key_count = src->key_count;
+        controllers[i].data_size = src->data_size;
+        controllers[i].data = data;
+    }
+    *out_controllers = controllers;
+    NMO_RETURN_OK();
+}
+
 static void project_plan_free_script_steps(
     project_script_step_record_t *steps,
     size_t step_count)
@@ -303,6 +370,9 @@ void nmo_project_plan_destroy(nmo_project_plan_t *plan)
         free(plan->objects[i].source_path);
         free(plan->objects[i].sound_file_path);
         free(plan->objects[i].sound_file_source_path);
+        project_plan_free_animation_controllers(
+            plan->objects[i].animation_controllers,
+            plan->objects[i].animation_controller_count);
         project_plan_free_fields(
             plan->objects[i].fields,
             plan->objects[i].field_count);
@@ -429,6 +499,8 @@ nmo_status_t nmo_project_plan_clone(
                 project_plan_strdup(plan->objects[i].sound_file_path);
             clone->objects[i].sound_file_source_path =
                 project_plan_strdup(plan->objects[i].sound_file_source_path);
+            clone->objects[i].animation_controllers = NULL;
+            clone->objects[i].animation_controller_count = 0u;
             if (plan->objects[i].name && !clone->objects[i].name) {
                 nmo_project_plan_destroy(clone);
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
@@ -461,6 +533,16 @@ nmo_status_t nmo_project_plan_clone(
                 return status;
             }
             clone->objects[i].field_count = plan->objects[i].field_count;
+            status = project_plan_clone_animation_controllers(
+                plan->objects[i].animation_controllers,
+                plan->objects[i].animation_controller_count,
+                &clone->objects[i].animation_controllers);
+            if (status != NMO_OK) {
+                nmo_project_plan_destroy(clone);
+                return status;
+            }
+            clone->objects[i].animation_controller_count =
+                plan->objects[i].animation_controller_count;
             clone->object_count++;
         }
     }
@@ -821,6 +903,10 @@ nmo_status_t nmo_project_plan_get_object(
     out_object->has_animation_length =
         plan->objects[index].has_animation_length;
     out_object->animation_length = plan->objects[index].animation_length;
+    out_object->animation_controller_count =
+        plan->objects[index].animation_controller_count;
+    out_object->animation_controllers =
+        plan->objects[index].animation_controllers;
     NMO_RETURN_OK();
 }
 
@@ -2134,8 +2220,21 @@ nmo_status_t nmo_project_plan_add_object(
         free(name_copy);
         return status;
     }
+    nmo_objanim_controller_t *controllers_copy = NULL;
+    status = project_plan_clone_animation_controllers(
+        spec->animation_controllers,
+        spec->animation_controller_count,
+        &controllers_copy);
+    if (status != NMO_OK) {
+        project_plan_free_fields(fields_copy, spec->field_count);
+        free(name_copy);
+        return status;
+    }
     char *sound_file_copy = project_plan_strdup(spec->sound_file_path);
     if (spec->sound_file_path && !sound_file_copy) {
+        project_plan_free_animation_controllers(
+            controllers_copy,
+            spec->animation_controller_count);
         project_plan_free_fields(fields_copy, spec->field_count);
         free(name_copy);
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
@@ -2144,6 +2243,9 @@ nmo_status_t nmo_project_plan_add_object(
     char *sound_source_copy =
         project_plan_strdup(spec->sound_file_source_path);
     if (spec->sound_file_source_path && !sound_source_copy) {
+        project_plan_free_animation_controllers(
+            controllers_copy,
+            spec->animation_controller_count);
         free(sound_file_copy);
         project_plan_free_fields(fields_copy, spec->field_count);
         free(name_copy);
@@ -2215,6 +2317,8 @@ nmo_status_t nmo_project_plan_add_object(
     object->animation_flags = spec->animation_flags;
     object->has_animation_length = spec->has_animation_length;
     object->animation_length = spec->animation_length;
+    object->animation_controllers = controllers_copy;
+    object->animation_controller_count = spec->animation_controller_count;
     if (out_object_handle) {
         *out_object_handle = handle;
     }
@@ -2656,4 +2760,37 @@ nmo_status_t nmo_project_plan_set_object_animation(
     }
     NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                      "object handle not found");
+}
+
+nmo_status_t nmo_project_plan_set_object_animation_controllers(
+    nmo_project_plan_t *plan,
+    uint32_t object_handle,
+    const nmo_objanim_controller_t *controllers,
+    size_t controller_count)
+{
+    if (!plan || object_handle == 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "plan and object handle are required");
+    }
+    nmo_objanim_controller_t *controllers_copy = NULL;
+    nmo_status_t status = project_plan_clone_animation_controllers(
+        controllers,
+        controller_count,
+        &controllers_copy);
+    if (status != NMO_OK) {
+        return status;
+    }
+    for (size_t i = 0u; i < plan->object_count; ++i) {
+        if (plan->objects[i].handle == object_handle) {
+            project_plan_free_animation_controllers(
+                plan->objects[i].animation_controllers,
+                plan->objects[i].animation_controller_count);
+            plan->objects[i].animation_controllers = controllers_copy;
+            plan->objects[i].animation_controller_count = controller_count;
+            NMO_RETURN_OK();
+        }
+    }
+    project_plan_free_animation_controllers(controllers_copy, controller_count);
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                     "project object handle was not found");
 }
