@@ -841,6 +841,13 @@ TEST(generated_advanced_probes, unproven_manifest_authoring_fields_are_rejected)
         "{"
         "\"version\":1,"
         "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{\"name\":\"Level\","
+        "\"environment\":{\"skybox\":\"sky.cmo\"},"
+        "\"objects\":[]}]"
+        "}",
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
         "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
         "\"name\":\"Body\","
         "\"class\":\"CK3dEntity\","
