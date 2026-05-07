@@ -1410,6 +1410,66 @@ nmo_status_t nmo_asset_edit_set_material_color(
     return NMO_OK;
 }
 
+nmo_status_t nmo_asset_edit_set_material_channels(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t material_id,
+    const nmo_asset_material_channels_t *channels)
+{
+    if (channels == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_material_state_t *state = NULL;
+    nmo_status_t status = workspace_edit_find_typed_state(
+        edit,
+        material_id,
+        NMO_CID_MATERIAL,
+        (void **)&state);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    status = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    if (channels->has_diffuse) {
+        state->diffuse_color = workspace_edit_pack_argb(
+            channels->diffuse[0],
+            channels->diffuse[1],
+            channels->diffuse[2],
+            channels->diffuse[3]);
+    }
+    if (channels->has_ambient) {
+        state->ambient_color = workspace_edit_pack_argb(
+            channels->ambient[0],
+            channels->ambient[1],
+            channels->ambient[2],
+            channels->ambient[3]);
+    }
+    if (channels->has_specular) {
+        state->specular_color = workspace_edit_pack_argb(
+            channels->specular[0],
+            channels->specular[1],
+            channels->specular[2],
+            channels->specular[3]);
+    }
+    if (channels->has_emissive) {
+        state->emissive_color = workspace_edit_pack_argb(
+            channels->emissive[0],
+            channels->emissive[1],
+            channels->emissive[2],
+            channels->emissive[3]);
+    }
+    if (channels->has_specular_power) {
+        state->specular_power = channels->specular_power;
+    }
+
+    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
+    return NMO_OK;
+}
+
 nmo_status_t nmo_asset_edit_set_material_render_flags(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t material_id,

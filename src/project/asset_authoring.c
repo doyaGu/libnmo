@@ -81,99 +81,41 @@ static nmo_status_t project_authoring_create_material(
         material->has_diffuse ? material->diffuse[2] : 1.0f,
         material->has_diffuse ? material->diffuse[3] : 1.0f));
 
-    nmo_session_field_edit_t fields[5];
-    char diffuse_value[64];
-    char ambient_value[64];
-    char specular_value[64];
-    char emissive_value[64];
-    char power_value[64];
-    size_t field_count = 0u;
-
-    if (material->has_diffuse) {
-        int wrote = snprintf(diffuse_value,
-                             sizeof(diffuse_value),
-                             "(%.9g, %.9g, %.9g, %.9g)",
-                             material->diffuse[0],
-                             material->diffuse[1],
-                             material->diffuse[2],
-                             material->diffuse[3]);
-        if (wrote < 0 || (size_t)wrote >= sizeof(diffuse_value)) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                             "material diffuse color string is too long");
-        }
-        fields[field_count++] =
-            (nmo_session_field_edit_t){"diffuse_color", diffuse_value};
-    }
-    if (material->has_ambient) {
-        int wrote = snprintf(ambient_value,
-                             sizeof(ambient_value),
-                             "(%.9g, %.9g, %.9g, %.9g)",
-                             material->ambient[0],
-                             material->ambient[1],
-                             material->ambient[2],
-                             material->ambient[3]);
-        if (wrote < 0 || (size_t)wrote >= sizeof(ambient_value)) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                             "material ambient color string is too long");
-        }
-        fields[field_count++] =
-            (nmo_session_field_edit_t){"ambient_color", ambient_value};
-    }
-    if (material->has_specular) {
-        int wrote = snprintf(specular_value,
-                             sizeof(specular_value),
-                             "(%.9g, %.9g, %.9g, %.9g)",
-                             material->specular[0],
-                             material->specular[1],
-                             material->specular[2],
-                             material->specular[3]);
-        if (wrote < 0 || (size_t)wrote >= sizeof(specular_value)) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                             "material specular color string is too long");
-        }
-        fields[field_count++] =
-            (nmo_session_field_edit_t){"specular_color", specular_value};
-    }
-    if (material->has_emissive) {
-        int wrote = snprintf(emissive_value,
-                             sizeof(emissive_value),
-                             "(%.9g, %.9g, %.9g, %.9g)",
-                             material->emissive[0],
-                             material->emissive[1],
-                             material->emissive[2],
-                             material->emissive[3]);
-        if (wrote < 0 || (size_t)wrote >= sizeof(emissive_value)) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                             "material emissive color string is too long");
-        }
-        fields[field_count++] =
-            (nmo_session_field_edit_t){"emissive_color", emissive_value};
-    }
-    if (material->has_specular_power) {
-        int wrote = snprintf(power_value,
-                             sizeof(power_value),
-                             "%.9g",
-                             material->specular_power);
-        if (wrote < 0 || (size_t)wrote >= sizeof(power_value)) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                             "material specular power string is too long");
-        }
-        fields[field_count++] =
-            (nmo_session_field_edit_t){"specular_power", power_value};
-    }
-    if (field_count > 0u) {
-        nmo_session_field_edit_result_t result = {0};
-        NMO_RETURN_IF_ERROR(nmo_object_edit_set_fields(
-            edit,
-            material_id,
-            fields,
-            field_count,
-            &result));
-        if (result.failed > 0u) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                             "failed to set generated material fields");
-        }
-    }
+    NMO_RETURN_IF_ERROR(nmo_asset_edit_set_material_channels(
+        edit,
+        material_id,
+        &(nmo_asset_material_channels_t){
+            .has_diffuse = material->has_diffuse,
+            .diffuse = {
+                material->diffuse[0],
+                material->diffuse[1],
+                material->diffuse[2],
+                material->diffuse[3],
+            },
+            .has_ambient = material->has_ambient,
+            .ambient = {
+                material->ambient[0],
+                material->ambient[1],
+                material->ambient[2],
+                material->ambient[3],
+            },
+            .has_specular = material->has_specular,
+            .specular = {
+                material->specular[0],
+                material->specular[1],
+                material->specular[2],
+                material->specular[3],
+            },
+            .has_emissive = material->has_emissive,
+            .emissive = {
+                material->emissive[0],
+                material->emissive[1],
+                material->emissive[2],
+                material->emissive[3],
+            },
+            .has_specular_power = material->has_specular_power,
+            .specular_power = material->specular_power,
+        }));
     if (material->has_render_flags) {
         const nmo_project_material_render_flags_t *flags =
             &material->render_flags;

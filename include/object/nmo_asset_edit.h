@@ -38,6 +38,19 @@ typedef struct nmo_asset_material_render_flags {
     VXCMPFUNC alpha_func;
 } nmo_asset_material_render_flags_t;
 
+typedef struct nmo_asset_material_channels {
+    bool has_diffuse;
+    float diffuse[4];
+    bool has_ambient;
+    float ambient[4];
+    bool has_specular;
+    float specular[4];
+    bool has_emissive;
+    float emissive[4];
+    bool has_specular_power;
+    float specular_power;
+} nmo_asset_material_channels_t;
+
 NMO_API nmo_status_t nmo_asset_edit_set_material_color(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t material_id,
@@ -45,6 +58,11 @@ NMO_API nmo_status_t nmo_asset_edit_set_material_color(
     float g,
     float b,
     float a);
+
+NMO_API nmo_status_t nmo_asset_edit_set_material_channels(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t material_id,
+    const nmo_asset_material_channels_t *channels);
 
 NMO_API nmo_status_t nmo_asset_edit_set_material_render_flags(
     nmo_workspace_edit_t *edit,

@@ -316,10 +316,79 @@ TEST(asset_edit_texture, sets_material_render_flags_preserving_unset_bits)
     destroy_workspace(ctx, doc, workspace);
 }
 
+TEST(asset_edit_texture, sets_material_channels_preserving_unset_channels)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_document_t *doc = NULL;
+    nmo_workspace_t *workspace = NULL;
+    create_workspace(&ctx, &doc, &workspace);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "material channels", &edit));
+    nmo_object_id_t material_id = 0;
+    nmo_object_id_t camera_id = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){.class_id = NMO_CID_MATERIAL, .name = "Mat"},
+                  &material_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){.class_id = NMO_CID_CAMERA, .name = "Camera"},
+                  &camera_id));
+
+    ASSERT_EQ(NMO_OK,
+              nmo_asset_edit_set_material_color(
+                  edit,
+                  material_id,
+                  0.10f,
+                  0.20f,
+                  0.30f,
+                  0.40f));
+    ASSERT_EQ(NMO_OK,
+              nmo_asset_edit_set_material_channels(
+                  edit,
+                  material_id,
+                  &(nmo_asset_material_channels_t){
+                      .has_diffuse = true,
+                      .diffuse = {0.90f, 0.80f, 0.70f, 0.60f},
+                      .has_specular = true,
+                      .specular = {0.25f, 0.50f, 0.75f, 1.0f},
+                      .has_specular_power = true,
+                      .specular_power = 12.5f,
+                  }));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_asset_edit_set_material_channels(edit, material_id, NULL));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_asset_edit_set_material_channels(
+                  edit,
+                  camera_id,
+                  &(nmo_asset_material_channels_t){
+                      .has_diffuse = true,
+                      .diffuse = {1.0f, 1.0f, 1.0f, 1.0f},
+                  }));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    nmo_object_t *material_object = find_object(doc, material_id);
+    ASSERT_NOT_NULL(material_object);
+    const nmo_material_state_t *material =
+        (const nmo_material_state_t *)nmo_object_get_state(material_object);
+    ASSERT_NOT_NULL(material);
+    ASSERT_EQ(0x99E6CCB3u, material->diffuse_color);
+    ASSERT_EQ(0x661A334Du, material->ambient_color);
+    ASSERT_EQ(0xFF4080BFu, material->specular_color);
+    ASSERT_EQ(0xFF000000u, material->emissive_color);
+    ASSERT_FLOAT_EQ(12.5f, material->specular_power, 0.0001f);
+
+    destroy_workspace(ctx, doc, workspace);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(asset_edit_texture, replaces_rgba_texture_and_binds_material_slot_zero);
 REGISTER_TEST(asset_edit_texture, binds_material_texture_slot_one);
 REGISTER_TEST(asset_edit_texture, replaces_texture_from_file);
 REGISTER_TEST(asset_edit_texture, rejects_invalid_material_texture_binding);
 REGISTER_TEST(asset_edit_texture, sets_material_render_flags_preserving_unset_bits);
+REGISTER_TEST(asset_edit_texture, sets_material_channels_preserving_unset_channels);
 TEST_MAIN_END()
