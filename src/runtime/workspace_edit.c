@@ -176,6 +176,7 @@ nmo_status_t workspace_edit_set_dataarray_cell(
     uint32_t row,
     uint32_t col,
     const char *value_str);
+static uint32_t workspace_edit_pack_argb(float r, float g, float b, float a);
 static nmo_status_t parse_object_id_text(
     const char *value_str,
     nmo_object_id_t *out_id);
@@ -1087,6 +1088,72 @@ nmo_status_t nmo_scene_edit_add_object(
     nmo_workspace_edit_mark(
         edit,
         NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
+    return NMO_OK;
+}
+
+nmo_status_t nmo_scene_edit_set_environment(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t scene_id,
+    const nmo_scene_environment_settings_t *settings)
+{
+    if (edit == NULL || edit->finished || scene_id == 0u ||
+        settings == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_repository_t *repo =
+        nmo_workspace_internal_repository(edit->workspace);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_object_t *scene_object = nmo_object_repository_find_by_id(repo, scene_id);
+    if (scene_object == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (nmo_object_get_class_id(scene_object) != NMO_CID_SCENE) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_scene_state_t *scene_state =
+        (nmo_scene_state_t *)nmo_object_get_state(scene_object);
+    if (scene_state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_status_t status =
+        nmo_workspace_edit_snapshot_bytes(edit, scene_state, sizeof(*scene_state));
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    if (settings->has_background_color) {
+        scene_state->background_color = workspace_edit_pack_argb(
+            settings->background_color[0],
+            settings->background_color[1],
+            settings->background_color[2],
+            settings->background_color[3]);
+    }
+    if (settings->has_ambient_light) {
+        scene_state->ambient_light_color = workspace_edit_pack_argb(
+            settings->ambient_light[0],
+            settings->ambient_light[1],
+            settings->ambient_light[2],
+            settings->ambient_light[3]);
+    }
+    if (settings->has_fog) {
+        scene_state->fog_mode = settings->fog_mode;
+        scene_state->fog_color = workspace_edit_pack_argb(
+            settings->fog_color[0],
+            settings->fog_color[1],
+            settings->fog_color[2],
+            settings->fog_color[3]);
+        scene_state->fog_start = settings->fog_start;
+        scene_state->fog_end = settings->fog_end;
+        scene_state->fog_density = settings->fog_density;
+    }
+
+    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
     return NMO_OK;
 }
 

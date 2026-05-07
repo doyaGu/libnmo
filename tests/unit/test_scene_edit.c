@@ -174,8 +174,73 @@ TEST(scene_edit, rejects_invalid_membership) {
     scene_edit_fixture_destroy(&fixture);
 }
 
+TEST(scene_edit, sets_environment_preserving_unset_fields) {
+    scene_edit_fixture_t fixture = {0};
+    scene_edit_fixture_create(&fixture);
+
+    nmo_object_id_t scene_id = 0;
+    nmo_object_id_t object_id = 0;
+    create_committed_scene_and_object(&fixture, &scene_id, &object_id);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(fixture.workspace, "scene environment", &edit));
+    nmo_session_field_edit_result_t field_result = {0};
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_set_fields(
+                  edit,
+                  scene_id,
+                  (const nmo_session_field_edit_t[]){
+                      {"background_color", "(0,0,0,1)"},
+                      {"ambient_light_color", "(0.4,0.5,0.6,1)"},
+                      {"fog_mode", "3"},
+                      {"fog_color", "(0.7,0.8,0.9,1)"},
+                      {"fog_start", "12"},
+                      {"fog_end", "34"},
+                      {"fog_density", "0.25"},
+                  },
+                  7u,
+                  &field_result));
+    ASSERT_EQ(0u, field_result.failed);
+
+    ASSERT_EQ(NMO_OK,
+              nmo_scene_edit_set_environment(
+                  edit,
+                  scene_id,
+                  &(nmo_scene_environment_settings_t){
+                      .has_background_color = true,
+                      .background_color = {0.1f, 0.2f, 0.3f, 1.0f},
+                  }));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_scene_edit_set_environment(
+                  edit,
+                  object_id,
+                  &(nmo_scene_environment_settings_t){
+                      .has_background_color = true,
+                      .background_color = {0.1f, 0.2f, 0.3f, 1.0f},
+                  }));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_scene_edit_set_environment(edit, scene_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    nmo_object_t *scene_object = find_one_or_null(fixture.document, scene_id);
+    ASSERT_NOT_NULL(scene_object);
+    const nmo_scene_state_t *scene_state =
+        (const nmo_scene_state_t *)nmo_object_get_state(scene_object);
+    ASSERT_NOT_NULL(scene_state);
+    ASSERT_EQ(0xFF1A334Du, scene_state->background_color);
+    ASSERT_EQ(0xFF668099u, scene_state->ambient_light_color);
+    ASSERT_EQ(VXFOG_LINEAR, scene_state->fog_mode);
+    ASSERT_EQ(0xFFB3CCE6u, scene_state->fog_color);
+    ASSERT_FLOAT_EQ(12.0f, scene_state->fog_start, 0.0001f);
+    ASSERT_FLOAT_EQ(34.0f, scene_state->fog_end, 0.0001f);
+    ASSERT_FLOAT_EQ(0.25f, scene_state->fog_density, 0.0001f);
+
+    scene_edit_fixture_destroy(&fixture);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(scene_edit, adds_object_to_scene_membership);
 REGISTER_TEST(scene_edit, rollback_removes_scene_membership);
 REGISTER_TEST(scene_edit, rejects_invalid_membership);
+REGISTER_TEST(scene_edit, sets_environment_preserving_unset_fields);
 TEST_MAIN_END()
