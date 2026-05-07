@@ -81,14 +81,12 @@ static nmo_status_t project_authoring_create_material(
         material->has_diffuse ? material->diffuse[2] : 1.0f,
         material->has_diffuse ? material->diffuse[3] : 1.0f));
 
-    nmo_session_field_edit_t fields[7];
+    nmo_session_field_edit_t fields[5];
     char diffuse_value[64];
     char ambient_value[64];
     char specular_value[64];
     char emissive_value[64];
     char power_value[64];
-    char packed_modes_value[32];
-    char packed_flags_value[32];
     size_t field_count = 0u;
 
     if (material->has_diffuse) {
@@ -163,60 +161,6 @@ static nmo_status_t project_authoring_create_material(
         fields[field_count++] =
             (nmo_session_field_edit_t){"specular_power", power_value};
     }
-    if (material->has_render_flags) {
-        uint32_t packed_modes = 0u;
-        uint32_t packed_flags = 0u;
-        const nmo_project_material_render_flags_t *flags =
-            &material->render_flags;
-        if (flags->has_texture_blend) {
-            packed_modes = (packed_modes & ~0xFu) |
-                           ((uint32_t)flags->texture_blend & 0xFu);
-        }
-        if (flags->has_min_filter) {
-            packed_modes = (packed_modes & ~(0xFu << 4)) |
-                           (((uint32_t)flags->min_filter & 0xFu) << 4);
-        }
-        if (flags->has_mag_filter) {
-            packed_modes = (packed_modes & ~(0xFu << 8)) |
-                           (((uint32_t)flags->mag_filter & 0xFu) << 8);
-        }
-        if (flags->has_source_blend) {
-            packed_modes = (packed_modes & ~(0xFu << 12)) |
-                           (((uint32_t)flags->source_blend & 0xFu) << 12);
-        }
-        if (flags->has_destination_blend) {
-            packed_modes = (packed_modes & ~(0xFu << 16)) |
-                           (((uint32_t)flags->destination_blend & 0xFu) << 16);
-        }
-        if (flags->has_wrap) {
-            packed_modes = (packed_modes & ~(0xFu << 28)) |
-                           (((uint32_t)flags->wrap & 0xFu) << 28);
-        }
-        if (flags->has_alpha_func) {
-            packed_flags = (packed_flags & ~(0x1Fu << 16)) |
-                           (((uint32_t)flags->alpha_func & 0x1Fu) << 16);
-        }
-        int wrote = snprintf(packed_modes_value,
-                             sizeof(packed_modes_value),
-                             "%u",
-                             packed_modes);
-        if (wrote < 0 || (size_t)wrote >= sizeof(packed_modes_value)) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                             "material packed modes string is too long");
-        }
-        wrote = snprintf(packed_flags_value,
-                         sizeof(packed_flags_value),
-                         "%u",
-                         packed_flags);
-        if (wrote < 0 || (size_t)wrote >= sizeof(packed_flags_value)) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                             "material packed flags string is too long");
-        }
-        fields[field_count++] =
-            (nmo_session_field_edit_t){"packed_modes", packed_modes_value};
-        fields[field_count++] =
-            (nmo_session_field_edit_t){"packed_flags", packed_flags_value};
-    }
     if (field_count > 0u) {
         nmo_session_field_edit_result_t result = {0};
         NMO_RETURN_IF_ERROR(nmo_object_edit_set_fields(
@@ -229,6 +173,29 @@ static nmo_status_t project_authoring_create_material(
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                              "failed to set generated material fields");
         }
+    }
+    if (material->has_render_flags) {
+        const nmo_project_material_render_flags_t *flags =
+            &material->render_flags;
+        NMO_RETURN_IF_ERROR(nmo_asset_edit_set_material_render_flags(
+            edit,
+            material_id,
+            &(nmo_asset_material_render_flags_t){
+                .has_texture_blend = flags->has_texture_blend,
+                .texture_blend = flags->texture_blend,
+                .has_source_blend = flags->has_source_blend,
+                .source_blend = flags->source_blend,
+                .has_destination_blend = flags->has_destination_blend,
+                .destination_blend = flags->destination_blend,
+                .has_min_filter = flags->has_min_filter,
+                .min_filter = flags->min_filter,
+                .has_mag_filter = flags->has_mag_filter,
+                .mag_filter = flags->mag_filter,
+                .has_wrap = flags->has_wrap,
+                .wrap = flags->wrap,
+                .has_alpha_func = flags->has_alpha_func,
+                .alpha_func = flags->alpha_func,
+            }));
     }
     *out_material_id = material_id;
     NMO_RETURN_OK();

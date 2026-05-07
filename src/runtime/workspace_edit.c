@@ -1286,6 +1286,67 @@ nmo_status_t nmo_asset_edit_set_material_color(
     return NMO_OK;
 }
 
+nmo_status_t nmo_asset_edit_set_material_render_flags(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t material_id,
+    const nmo_asset_material_render_flags_t *flags)
+{
+    if (flags == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_material_state_t *state = NULL;
+    nmo_status_t status = workspace_edit_find_typed_state(
+        edit,
+        material_id,
+        NMO_CID_MATERIAL,
+        (void **)&state);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    status = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    uint32_t packed_modes = state->packed_modes;
+    uint32_t packed_flags = state->packed_flags;
+    if (flags->has_texture_blend) {
+        packed_modes = (packed_modes & ~0xFu) |
+                       ((uint32_t)flags->texture_blend & 0xFu);
+    }
+    if (flags->has_min_filter) {
+        packed_modes = (packed_modes & ~(0xFu << 4)) |
+                       (((uint32_t)flags->min_filter & 0xFu) << 4);
+    }
+    if (flags->has_mag_filter) {
+        packed_modes = (packed_modes & ~(0xFu << 8)) |
+                       (((uint32_t)flags->mag_filter & 0xFu) << 8);
+    }
+    if (flags->has_source_blend) {
+        packed_modes = (packed_modes & ~(0xFu << 12)) |
+                       (((uint32_t)flags->source_blend & 0xFu) << 12);
+    }
+    if (flags->has_destination_blend) {
+        packed_modes = (packed_modes & ~(0xFu << 16)) |
+                       (((uint32_t)flags->destination_blend & 0xFu) << 16);
+    }
+    if (flags->has_wrap) {
+        packed_modes = (packed_modes & ~(0xFu << 28)) |
+                       (((uint32_t)flags->wrap & 0xFu) << 28);
+    }
+    if (flags->has_alpha_func) {
+        packed_flags = (packed_flags & ~(0x1Fu << 16)) |
+                       (((uint32_t)flags->alpha_func & 0x1Fu) << 16);
+    }
+
+    state->packed_modes = packed_modes;
+    state->packed_flags = packed_flags;
+    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
+    return NMO_OK;
+}
+
 nmo_status_t nmo_asset_edit_set_texture_rgba(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t texture_id,

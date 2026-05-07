@@ -241,9 +241,85 @@ TEST(asset_edit_texture, rejects_invalid_material_texture_binding)
     destroy_workspace(ctx, doc, workspace);
 }
 
+TEST(asset_edit_texture, sets_material_render_flags_preserving_unset_bits)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_document_t *doc = NULL;
+    nmo_workspace_t *workspace = NULL;
+    create_workspace(&ctx, &doc, &workspace);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "material flags", &edit));
+    nmo_object_id_t material_id = 0;
+    nmo_object_id_t camera_id = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){.class_id = NMO_CID_MATERIAL, .name = "Mat"},
+                  &material_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){.class_id = NMO_CID_CAMERA, .name = "Camera"},
+                  &camera_id));
+
+    nmo_session_field_edit_result_t field_result = {0};
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_set_fields(
+                  edit,
+                  material_id,
+                  (const nmo_session_field_edit_t[]){
+                      {"packed_modes", "2947768352"},
+                      {"packed_flags", "2852126720"},
+                  },
+                  2u,
+                  &field_result));
+    ASSERT_EQ(0u, field_result.failed);
+
+    ASSERT_EQ(NMO_OK,
+              nmo_asset_edit_set_material_render_flags(
+                  edit,
+                  material_id,
+                  &(nmo_asset_material_render_flags_t){
+                      .has_texture_blend = true,
+                      .texture_blend = VXTEXTUREBLEND_ADD,
+                      .has_alpha_func = true,
+                      .alpha_func = VXCMP_GREATEREQUAL,
+                  }));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_asset_edit_set_material_render_flags(
+                  edit,
+                  camera_id,
+                  &(nmo_asset_material_render_flags_t){
+                      .has_texture_blend = true,
+                      .texture_blend = VXTEXTUREBLEND_ADD,
+                  }));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_asset_edit_set_material_render_flags(edit, material_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    nmo_object_t *material_object = find_object(doc, material_id);
+    ASSERT_NOT_NULL(material_object);
+    const nmo_material_state_t *material =
+        (const nmo_material_state_t *)nmo_object_get_state(material_object);
+    ASSERT_NOT_NULL(material);
+    ASSERT_EQ(VXTEXTUREBLEND_ADD,
+              (VXTEXTURE_BLENDMODE)(material->packed_modes & 0xFu));
+    ASSERT_EQ((2947768352u & ~0xFu) | (uint32_t)VXTEXTUREBLEND_ADD,
+              material->packed_modes);
+    ASSERT_EQ(VXCMP_GREATEREQUAL,
+              (VXCMPFUNC)((material->packed_flags >> 16) & 0x1Fu));
+    ASSERT_EQ((2852126720u & ~(0x1Fu << 16)) |
+                  (((uint32_t)VXCMP_GREATEREQUAL & 0x1Fu) << 16),
+              material->packed_flags);
+
+    destroy_workspace(ctx, doc, workspace);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(asset_edit_texture, replaces_rgba_texture_and_binds_material_slot_zero);
 REGISTER_TEST(asset_edit_texture, binds_material_texture_slot_one);
 REGISTER_TEST(asset_edit_texture, replaces_texture_from_file);
 REGISTER_TEST(asset_edit_texture, rejects_invalid_material_texture_binding);
+REGISTER_TEST(asset_edit_texture, sets_material_render_flags_preserving_unset_bits);
 TEST_MAIN_END()
