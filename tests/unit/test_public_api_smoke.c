@@ -147,6 +147,16 @@ TEST(public_api_smoke, preferred_edit_and_query_headers_are_directly_usable) {
     ASSERT_EQ(NMO_OBJECT_QUERY_NAME_EXACT, query.name_mode);
 }
 
+TEST(public_api_smoke, reusable_edit_headers_are_in_umbrella) {
+    char *umbrella = read_source_text("include/nmo.h");
+    ASSERT_NOT_NULL(umbrella);
+    ASSERT_NOT_NULL(strstr(umbrella, "object/nmo_asset_edit.h"));
+    ASSERT_NOT_NULL(strstr(umbrella, "object/nmo_scene_edit.h"));
+    ASSERT_NOT_NULL(strstr(umbrella, "object/nmo_animation_edit.h"));
+    ASSERT_NOT_NULL(strstr(umbrella, "object/nmo_sound_edit.h"));
+    free(umbrella);
+}
+
 TEST(public_api_smoke, reorg_owner_headers_are_directly_usable) {
     ASSERT_TRUE(1);
 }
@@ -386,6 +396,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(public_api_smoke, version);
     REGISTER_TEST(public_api_smoke, context_create_release);
     REGISTER_TEST(public_api_smoke, preferred_edit_and_query_headers_are_directly_usable);
+    REGISTER_TEST(public_api_smoke, reusable_edit_headers_are_in_umbrella);
     REGISTER_TEST(public_api_smoke, reorg_owner_headers_are_directly_usable);
     REGISTER_TEST(public_api_smoke, report_owner_headers_are_directly_usable);
     REGISTER_TEST(public_api_smoke, json_stream_is_not_part_of_public_api_surface);
