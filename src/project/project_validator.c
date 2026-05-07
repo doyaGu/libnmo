@@ -519,6 +519,7 @@ static nmo_status_t project_validation_check_objects(
                         "object",
                         object.name,
                         object.sound_file_source_path ? object.sound_file_source_path : object.source_path));
+                    continue;
                 } else {
                     NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                         report,

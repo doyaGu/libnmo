@@ -367,6 +367,132 @@ TEST(generated_project_manifest, cli_json_failure_reports_project_source)
     remove(manifest_path);
 }
 
+TEST(generated_project_manifest, cli_dry_run_reports_animation_payload_gaps)
+{
+    make_dir("test_project_manifest_tmp");
+    const char *manifest_path = "test_project_manifest_tmp/project_bad_animation.json";
+    const char *output_path = "test_project_manifest_tmp/project_bad_animation.cmo";
+    remove(manifest_path);
+    remove(output_path);
+
+    const char *manifest =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"BadAnimationProject\"},"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"objects\":["
+                "{\"id\":\"target\",\"name\":\"Target\",\"class\":\"CK3dEntity\"},"
+                "{\"name\":\"Animation\",\"class\":\"CKObjectAnimation\","
+                    "\"animation\":{"
+                        "\"target\":\"target\","
+                        "\"format\":\"newdata\","
+                        "\"controllers\":[{"
+                            "\"type\":2451224577,"
+                            "\"keys\":[[0,1,2,3,4,5,6,7,8,9,10]]"
+                        "}],"
+                        "\"morph_keys\":[{\"time\":0,\"data\":[1,2,3]}]"
+                    "}"
+                "}"
+            "]"
+        "}]"
+        "}";
+    ASSERT_TRUE(write_text_file(manifest_path, manifest));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json patch apply --project \"%s\" --dry-run -o \"%s\"",
+             manifest_path,
+             output_path);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(0, result.exit_code);
+    ASSERT_FALSE(file_exists(output_path));
+
+    yyjson_doc *doc = NULL;
+    parse_cli_json_result(&result, &doc);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_FALSE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+    ASSERT_STR_EQ(output_path, get_string_field(data, "output"));
+
+    yyjson_val *validation = get_object_field(data, "validation");
+    ASSERT_NOT_NULL(validation);
+    ASSERT_FALSE(get_bool_field(validation, "ok"));
+    yyjson_val *issues = get_array_field(validation, "issues");
+    ASSERT_NOT_NULL(issues);
+    ASSERT_EQ(1u, yyjson_arr_size(issues));
+    yyjson_val *issue = yyjson_arr_get(issues, 0);
+    ASSERT_STR_EQ("unsupported_animation_controller_type",
+                  get_string_field(issue, "code"));
+    ASSERT_STR_EQ("object", get_string_field(issue, "subject_kind"));
+    ASSERT_STR_EQ("Animation", get_string_field(issue, "subject_name"));
+    ASSERT_STR_EQ("scenes[0].objects[1]",
+                  get_string_field(issue, "source_path"));
+
+    yyjson_doc_free(doc);
+    free(result.output);
+    remove(manifest_path);
+}
+
+TEST(generated_project_manifest, cli_dry_run_reports_midisound_gate)
+{
+    make_dir("test_project_manifest_tmp");
+    const char *manifest_path = "test_project_manifest_tmp/project_midi_sound.json";
+    const char *output_path = "test_project_manifest_tmp/project_midi_sound.cmo";
+    remove(manifest_path);
+    remove(output_path);
+
+    const char *manifest =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"MidiSoundProject\"},"
+        "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"objects\":[{"
+                "\"name\":\"MidiSound\","
+                "\"class\":\"CKMidiSound\","
+                "\"sound\":{\"file\":\"song.mid\"}"
+            "}]"
+        "}]"
+        "}";
+    ASSERT_TRUE(write_text_file(manifest_path, manifest));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json patch apply --project \"%s\" --dry-run -o \"%s\"",
+             manifest_path,
+             output_path);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(0, result.exit_code);
+    ASSERT_FALSE(file_exists(output_path));
+
+    yyjson_doc *doc = NULL;
+    parse_cli_json_result(&result, &doc);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_FALSE(get_bool_field(data, "ok"));
+    ASSERT_TRUE(get_bool_field(data, "dry_run"));
+
+    yyjson_val *validation = get_object_field(data, "validation");
+    ASSERT_NOT_NULL(validation);
+    yyjson_val *issues = get_array_field(validation, "issues");
+    ASSERT_NOT_NULL(issues);
+    ASSERT_EQ(1u, yyjson_arr_size(issues));
+    yyjson_val *issue = yyjson_arr_get(issues, 0);
+    ASSERT_STR_EQ("unsupported_midisound_file_authoring",
+                  get_string_field(issue, "code"));
+    ASSERT_STR_EQ("MidiSound", get_string_field(issue, "subject_name"));
+    ASSERT_STR_EQ("scenes[0].objects[0].sound.file",
+                  get_string_field(issue, "source_path"));
+
+    yyjson_doc_free(doc);
+    free(result.output);
+    remove(manifest_path);
+}
+
 TEST(generated_project_manifest, cli_json_write_reports_project_evidence)
 {
     make_dir("test_project_manifest_tmp");
@@ -500,6 +626,8 @@ TEST(generated_project_manifest, cli_replays_project_manifest)
 TEST_MAIN_BEGIN()
 REGISTER_TEST(generated_project_manifest, cli_dry_run_reports_project_diagnostics);
 REGISTER_TEST(generated_project_manifest, cli_json_failure_reports_project_source);
+REGISTER_TEST(generated_project_manifest, cli_dry_run_reports_animation_payload_gaps);
+REGISTER_TEST(generated_project_manifest, cli_dry_run_reports_midisound_gate);
 REGISTER_TEST(generated_project_manifest, cli_json_write_reports_project_evidence);
 REGISTER_TEST(generated_project_manifest, cli_replays_project_manifest);
 TEST_MAIN_END()
