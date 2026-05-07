@@ -4,6 +4,7 @@
  */
 
 #include "runtime/nmo_workspace.h"
+#include "object/nmo_animation_edit.h"
 #include "object/nmo_asset_edit.h"
 #include "object/nmo_entity_edit.h"
 #include "object/nmo_object_edit.h"
@@ -19,6 +20,7 @@
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_repository.h"
+#include "object/builtin/nmo_animation_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_3dobject_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
@@ -2983,6 +2985,66 @@ nmo_status_t nmo_entity_edit_set_light_target(
     }
     state->has_target = 1u;
     state->target_id = target_id;
+    nmo_workspace_edit_mark(
+        edit,
+        NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
+    return NMO_OK;
+}
+
+nmo_status_t nmo_animation_edit_set_object_animation(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t animation_id,
+    const nmo_object_animation_settings_t *settings)
+{
+    if (edit == NULL || edit->finished || animation_id == 0u ||
+        settings == NULL || settings->entity_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_repository_t *repo =
+        nmo_workspace_internal_repository(edit->workspace);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_object_t *animation =
+        nmo_object_repository_find_by_id(repo, animation_id);
+    nmo_object_t *entity =
+        nmo_object_repository_find_by_id(repo, settings->entity_id);
+    if (animation == NULL || entity == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (nmo_object_get_class_id(animation) != NMO_CID_OBJECTANIMATION ||
+        !workspace_edit_class_is_entity_target(nmo_object_get_class_id(entity))) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_objectanimation_state_t *state =
+        (nmo_objectanimation_state_t *)nmo_object_get_state(animation);
+    if (state == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    nmo_status_t status =
+        nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    state->format = settings->format;
+    state->entity_id = settings->entity_id;
+    if (settings->has_root_position) {
+        state->has_root_pos = 1u;
+        state->root_pos.x = settings->root_position[0];
+        state->root_pos.y = settings->root_position[1];
+        state->root_pos.z = settings->root_position[2];
+    }
+    if (settings->has_flags) {
+        state->flags = settings->flags;
+    }
+    if (settings->has_length) {
+        state->has_length = 1u;
+        state->length = settings->length;
+    }
+
     nmo_workspace_edit_mark(
         edit,
         NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);

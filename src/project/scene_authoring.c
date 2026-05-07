@@ -1,5 +1,6 @@
 #include "project_internal.h"
 
+#include "object/nmo_animation_edit.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_entity_edit.h"
 #include "object/nmo_object_edit.h"
@@ -353,14 +354,6 @@ static nmo_status_t project_authoring_set_object_animation(
     const nmo_project_runtime_object_t *objects,
     size_t object_count)
 {
-    nmo_session_field_edit_t fields[6] = {0};
-    char format_value[32];
-    char entity_value[32];
-    char root_position_value[96];
-    char flags_value[32];
-    char length_value[32];
-    size_t field_count = 0u;
-
     nmo_object_id_t target_id = project_authoring_find_object_id(
         objects,
         object_count,
@@ -369,82 +362,23 @@ static nmo_status_t project_authoring_set_object_animation(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "project animation target was not authored");
     }
-
-    int wrote = snprintf(
-        format_value,
-        sizeof(format_value),
-        "%u",
-        (unsigned)object->animation_format);
-    if (wrote < 0 || (size_t)wrote >= sizeof(format_value)) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "animation format string is too long");
-    }
-    wrote = snprintf(entity_value, sizeof(entity_value), "%u", target_id);
-    if (wrote < 0 || (size_t)wrote >= sizeof(entity_value)) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "animation target id string is too long");
-    }
-    fields[field_count++] = (nmo_session_field_edit_t){
-        .field_name = "format",
-        .value_str = format_value,
-    };
-    fields[field_count++] = (nmo_session_field_edit_t){
-        .field_name = "entity_id",
-        .value_str = entity_value,
-    };
-
-    if (object->has_animation_root_position) {
-        NMO_RETURN_IF_ERROR(project_authoring_format_vector3(
-            object->animation_root_position,
-            root_position_value,
-            sizeof(root_position_value)));
-        fields[field_count++] = (nmo_session_field_edit_t){
-            .field_name = "root_pos",
-            .value_str = root_position_value,
-        };
-    }
-    if (object->has_animation_flags) {
-        wrote = snprintf(
-            flags_value,
-            sizeof(flags_value),
-            "%u",
-            object->animation_flags);
-        if (wrote < 0 || (size_t)wrote >= sizeof(flags_value)) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                             "animation flags string is too long");
-        }
-        fields[field_count++] = (nmo_session_field_edit_t){
-            .field_name = "flags",
-            .value_str = flags_value,
-        };
-    }
-    if (object->has_animation_length) {
-        NMO_RETURN_IF_ERROR(project_authoring_format_float(
-            object->animation_length,
-            length_value,
-            sizeof(length_value)));
-        fields[field_count++] = (nmo_session_field_edit_t){
-            .field_name = "has_length",
-            .value_str = "1",
-        };
-        fields[field_count++] = (nmo_session_field_edit_t){
-            .field_name = "length",
-            .value_str = length_value,
-        };
-    }
-
-    nmo_session_field_edit_result_t field_result = {0};
-    NMO_RETURN_IF_ERROR(nmo_object_edit_set_fields(
+    return nmo_animation_edit_set_object_animation(
         edit,
         object_id,
-        fields,
-        field_count,
-        &field_result));
-    if (field_result.failed > 0u) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                         "failed to set project object animation fields");
-    }
-    NMO_RETURN_OK();
+        &(nmo_object_animation_settings_t){
+            .format = object->animation_format,
+            .entity_id = target_id,
+            .has_root_position = object->has_animation_root_position,
+            .root_position = {
+                object->animation_root_position[0],
+                object->animation_root_position[1],
+                object->animation_root_position[2],
+            },
+            .has_flags = object->has_animation_flags,
+            .flags = object->animation_flags,
+            .has_length = object->has_animation_length,
+            .length = object->animation_length,
+        });
 }
 
 static nmo_status_t project_authoring_set_scene_environment(

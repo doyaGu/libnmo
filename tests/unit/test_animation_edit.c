@@ -1,0 +1,152 @@
+#include "test_framework.h"
+
+#include "document/nmo_document.h"
+#include "format/nmo_object.h"
+#include "object/builtin/nmo_animation_schemas.h"
+#include "object/nmo_animation_edit.h"
+#include "object/nmo_class_ids.h"
+#include "object/nmo_object_edit.h"
+#include "object/nmo_object_query.h"
+#include "runtime/nmo_context.h"
+#include "runtime/nmo_workspace.h"
+
+static void create_workspace(
+    nmo_context_t **out_ctx,
+    nmo_document_t **out_doc,
+    nmo_workspace_t **out_workspace)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *doc = nmo_document_create(ctx);
+    ASSERT_NOT_NULL(doc);
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, doc, &workspace));
+    *out_ctx = ctx;
+    *out_doc = doc;
+    *out_workspace = workspace;
+}
+
+static void destroy_workspace(
+    nmo_context_t *ctx,
+    nmo_document_t *doc,
+    nmo_workspace_t *workspace)
+{
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(doc);
+    nmo_context_release(ctx);
+}
+
+static nmo_object_t *find_object(nmo_document_t *doc, nmo_object_id_t id)
+{
+    nmo_object_t *object = NULL;
+    if (nmo_object_query_find_first(
+            doc,
+            &(nmo_object_query_t){.object_id = id},
+            &object,
+            NULL) != NMO_OK) {
+        return NULL;
+    }
+    return object;
+}
+
+TEST(animation_edit, sets_object_animation_metadata)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_document_t *doc = NULL;
+    nmo_workspace_t *workspace = NULL;
+    create_workspace(&ctx, &doc, &workspace);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "animation", &edit));
+
+    nmo_object_id_t animation_id = 0;
+    nmo_object_id_t entity_id = 0;
+    nmo_object_id_t material_id = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){
+                      .class_id = NMO_CID_OBJECTANIMATION,
+                      .name = "Animation",
+                  },
+                  &animation_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "Entity",
+                  },
+                  &entity_id));
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){
+                      .class_id = NMO_CID_MATERIAL,
+                      .name = "Material",
+                  },
+                  &material_id));
+
+    ASSERT_EQ(NMO_OK,
+              nmo_animation_edit_set_object_animation(
+                  edit,
+                  animation_id,
+                  &(nmo_object_animation_settings_t){
+                      .format = CKOBJANIM_FORMAT_CONTROLLERS,
+                      .entity_id = entity_id,
+                      .has_root_position = true,
+                      .root_position = {1.0f, 2.0f, 3.0f},
+                      .has_flags = true,
+                      .flags = 7u,
+                      .has_length = true,
+                      .length = 12.5f,
+                  }));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_animation_edit_set_object_animation(edit, animation_id, NULL));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_animation_edit_set_object_animation(
+                  edit,
+                  material_id,
+                  &(nmo_object_animation_settings_t){
+                      .format = CKOBJANIM_FORMAT_CONTROLLERS,
+                      .entity_id = entity_id,
+                  }));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_animation_edit_set_object_animation(
+                  edit,
+                  animation_id,
+                  &(nmo_object_animation_settings_t){
+                      .format = CKOBJANIM_FORMAT_CONTROLLERS,
+                      .entity_id = material_id,
+                  }));
+    ASSERT_EQ(NMO_ERR_NOT_FOUND,
+              nmo_animation_edit_set_object_animation(
+                  edit,
+                  animation_id,
+                  &(nmo_object_animation_settings_t){
+                      .format = CKOBJANIM_FORMAT_CONTROLLERS,
+                      .entity_id = 999999u,
+                  }));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    nmo_object_t *animation_object = find_object(doc, animation_id);
+    ASSERT_NOT_NULL(animation_object);
+    const nmo_objectanimation_state_t *animation =
+        (const nmo_objectanimation_state_t *)nmo_object_get_state(animation_object);
+    ASSERT_NOT_NULL(animation);
+    ASSERT_EQ(CKOBJANIM_FORMAT_CONTROLLERS, animation->format);
+    ASSERT_EQ(entity_id, animation->entity_id);
+    ASSERT_TRUE(animation->has_root_pos);
+    ASSERT_FLOAT_EQ(1.0f, animation->root_pos.x, 0.0001f);
+    ASSERT_FLOAT_EQ(2.0f, animation->root_pos.y, 0.0001f);
+    ASSERT_FLOAT_EQ(3.0f, animation->root_pos.z, 0.0001f);
+    ASSERT_EQ(7u, animation->flags);
+    ASSERT_TRUE(animation->has_length);
+    ASSERT_FLOAT_EQ(12.5f, animation->length, 0.0001f);
+
+    destroy_workspace(ctx, doc, workspace);
+}
+
+TEST_MAIN_BEGIN()
+REGISTER_TEST(animation_edit, sets_object_animation_metadata);
+TEST_MAIN_END()
