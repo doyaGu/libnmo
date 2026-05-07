@@ -3,6 +3,9 @@
 
 #include "project/nmo_project_plan.h"
 
+#define NMO_SCENE_AUTHORING_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_SCENE_AUTHORING_API_TIER NMO_API_TIER_ADVANCED_C
+
 #ifdef __cplusplus
 extern "C" {
 #endif

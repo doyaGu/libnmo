@@ -7,6 +7,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#define NMO_PROJECT_VALIDATOR_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
+#define NMO_PROJECT_VALIDATOR_API_TIER NMO_API_TIER_ADVANCED_C
+
 #ifdef __cplusplus
 extern "C" {
 #endif
