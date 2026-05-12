@@ -65,6 +65,14 @@ static const nmo_type_field_t nmo_material_fields[] = {
     NMO_FIELD(nmo_material_state_t, has_additional_textures, CKPGUID_UINT8)
 };
 
+static uint32_t nmo_material_normalize_packed_flags(uint32_t packed_flags)
+{
+    return (packed_flags & 0xFFu) |
+           (((packed_flags >> 8) & 0xFu) << 8) |
+           (((packed_flags >> 16) & 0xFu) << 16) |
+           (packed_flags & 0xFF000000u);
+}
+
 nmo_status_t nmo_material_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
@@ -205,8 +213,8 @@ nmo_status_t nmo_material_deserialize(
 
             out_state->packed_flags =
                 (low_flags & 0xFF) |
-                ((zfunc & 0x1F) << 8) |
-                (((uint32_t)VXCMP_ALWAYS & 0x1F) << 16) |
+                ((zfunc & 0xF) << 8) |
+                (((uint32_t)VXCMP_ALWAYS & 0xF) << 16) |
                 ((uint32_t)0 << 24);
         } else {
             nmo_chunk_read_dword(chunk, &out_state->diffuse_color);
@@ -218,11 +226,12 @@ nmo_status_t nmo_material_deserialize(
             nmo_chunk_read_dword(chunk, &out_state->texture_border_color);
             nmo_chunk_read_dword(chunk, &out_state->packed_modes);
             nmo_chunk_read_dword(chunk, &out_state->packed_flags);
+            out_state->packed_flags = nmo_material_normalize_packed_flags(out_state->packed_flags);
 
-            uint32_t alpha_func = (out_state->packed_flags >> 16) & 0x1Fu;
+            uint32_t alpha_func = (out_state->packed_flags >> 16) & 0xFu;
             if (alpha_func == 0) {
-                out_state->packed_flags &= ~(0x1Fu << 16);
-                out_state->packed_flags |= ((uint32_t)VXCMP_ALWAYS & 0x1Fu) << 16;
+                out_state->packed_flags &= ~(0xFu << 16);
+                out_state->packed_flags |= ((uint32_t)VXCMP_ALWAYS & 0xFu) << 16;
             }
 
             uint32_t shade_mode = (out_state->packed_modes >> 20) & 0xFu;
@@ -409,7 +418,7 @@ nmo_status_t nmo_material_serialize(
     nmo_chunk_write_object_id(chunk, state->texture_ids[0]);
     nmo_chunk_write_dword(chunk, state->texture_border_color);
     nmo_chunk_write_dword(chunk, state->packed_modes);
-    nmo_chunk_write_dword(chunk, state->packed_flags);
+    nmo_chunk_write_dword(chunk, nmo_material_normalize_packed_flags(state->packed_flags));
 
     if (state->has_effect && state->effect != 0) {
         if (state->has_effect_param) {

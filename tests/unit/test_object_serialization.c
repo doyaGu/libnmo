@@ -8,6 +8,7 @@
 #include "object/nmo_object_guids.h"
 #include "object/builtin/nmo_object_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_material_schemas.h"
 #include "type/nmo_operations.h"
 #include "type/nmo_type_system.h"
 #include "format/nmo_chunk.h"
@@ -308,6 +309,62 @@ TEST(object_serialization, ck3dentity_transform) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_serialization, ckmaterial_uses_four_bit_compare_functions) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NE(NULL, arena);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NE(NULL, chunk);
+    nmo_chunk_set_data_version(chunk, 5u);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_MATDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0xFFFFFFFFu));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0xFF000000u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0xFF101010u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0xFF202020u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 2.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(chunk, NMO_OBJECT_ID_NONE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0xAA1F1F06u));
+    nmo_chunk_close(chunk);
+
+    nmo_material_state_t state;
+    memset(&state, 0, sizeof(state));
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(arena, NULL, NULL, 0);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    ASSERT_EQ(NMO_OK, nmo_material_deserialize(&state, chunk, NULL, &des_ctx));
+    ASSERT_EQ(0xAA0F0F06u, state.packed_flags);
+
+    nmo_chunk_t *written = nmo_chunk_create(arena);
+    ASSERT_NE(NULL, written);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(written));
+    state.packed_flags = 0xAA1F1F06u;
+    ASSERT_EQ(NMO_OK, nmo_material_serialize(&state, written, NULL, &ser_ctx));
+    nmo_chunk_close(written);
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(written));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(written, CK_STATESAVE_MATDATA));
+    uint32_t ignored = 0;
+    float ignored_float = 0.0f;
+    nmo_object_id_t ignored_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(written, &ignored));
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(written, &ignored));
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(written, &ignored));
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(written, &ignored));
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_float(written, &ignored_float));
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_object_id(written, &ignored_id));
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(written, &ignored));
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(written, &ignored));
+    uint32_t written_flags = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(written, &written_flags));
+    ASSERT_EQ(0xAA0F0F06u, written_flags);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_serialization, ckobject_roundtrip);
     REGISTER_TEST(object_serialization, ckobject_hidden);
@@ -315,4 +372,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_serialization, null_checks);
     REGISTER_TEST(object_serialization, ck3dentity_roundtrip);
     REGISTER_TEST(object_serialization, ck3dentity_transform);
+    REGISTER_TEST(object_serialization, ckmaterial_uses_four_bit_compare_functions);
 TEST_MAIN_END()
