@@ -477,6 +477,28 @@ static nmo_status_t patch_resolve_project_manifest_paths(
             }
         }
     }
+    size_t object_count = nmo_project_plan_object_count(manifest->plan);
+    for (size_t i = 0u; i < object_count; ++i) {
+        nmo_project_object_desc_t object = {0};
+        NMO_RETURN_IF_ERROR(nmo_project_plan_get_object(manifest->plan, i, &object));
+        if (object.has_sound &&
+            object.sound_file_path &&
+            !patch_path_is_absolute(object.sound_file_path)) {
+            char *resolved =
+                patch_join_manifest_path(base_dir, object.sound_file_path);
+            if (!resolved) {
+                return NMO_ERR_NOMEM;
+            }
+            nmo_status_t st = nmo_project_plan_set_wavesound_file(
+                manifest->plan,
+                object.handle,
+                resolved);
+            free(resolved);
+            if (st != NMO_OK) {
+                return st;
+            }
+        }
+    }
     return NMO_OK;
 }
 

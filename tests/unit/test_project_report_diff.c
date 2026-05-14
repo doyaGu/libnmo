@@ -11,6 +11,10 @@
 TEST(project_report_diff, reports_created_scene_object_and_asset)
 {
     const char *sound_path = "test_project_report_sound.wav";
+    const char *output_path = "test_project_report_diff.cmo";
+    remove(sound_path);
+    remove(output_path);
+    remove("test_project_report_diff.cmo.tmp");
     FILE *sound_file = fopen(sound_path, "wb");
     ASSERT_NOT_NULL(sound_file);
     fputs("RIFF", sound_file);
@@ -22,6 +26,7 @@ TEST(project_report_diff, reports_created_scene_object_and_asset)
     uint32_t sound = 0u;
     uint32_t animation = 0u;
     nmo_project_report_t report;
+    nmo_project_report_t write_report;
     float position_keys[] = {
         0.0f, 1.0f, 2.0f, 3.0f,
         1.0f, 4.0f, 5.0f, 6.0f,
@@ -187,8 +192,44 @@ TEST(project_report_diff, reports_created_scene_object_and_asset)
     ASSERT_EQ(sizeof(morph_payload),
               report.evidence.animation_bindings[0].morph_keys[0].data_size);
 
+    nmo_project_report_init(&write_report);
+    ASSERT_EQ(NMO_OK,
+              nmo_project_executor_execute_to_file(plan, output_path, &write_report));
+    ASSERT_TRUE(write_report.ok);
+    ASSERT_FALSE(write_report.dry_run);
+    ASSERT_EQ(report.document_diff.created.count,
+              write_report.document_diff.created.count);
+    ASSERT_EQ(report.scene_diff.created.count,
+              write_report.scene_diff.created.count);
+    ASSERT_EQ(report.object_diff.created.count,
+              write_report.object_diff.created.count);
+    ASSERT_EQ(report.asset_diff.created.count,
+              write_report.asset_diff.created.count);
+    ASSERT_EQ(report.script_diff.created.count,
+              write_report.script_diff.created.count);
+    ASSERT_EQ(report.manager_diff.created.count,
+              write_report.manager_diff.created.count);
+    ASSERT_EQ(report.evidence.object_count, write_report.evidence.object_count);
+    ASSERT_EQ(report.evidence.asset_binding_count,
+              write_report.evidence.asset_binding_count);
+    ASSERT_EQ(report.evidence.material_channel_count,
+              write_report.evidence.material_channel_count);
+    ASSERT_EQ(report.evidence.sound_binding_count,
+              write_report.evidence.sound_binding_count);
+    ASSERT_EQ(report.evidence.animation_binding_count,
+              write_report.evidence.animation_binding_count);
+    ASSERT_STR_EQ(report.evidence.objects[0].name,
+                  write_report.evidence.objects[0].name);
+    ASSERT_EQ(0u, report.evidence.objects[0].object_id);
+    ASSERT_NE(0u, write_report.evidence.objects[0].object_id);
+    ASSERT_FALSE(report.evidence.post_load_checked);
+    ASSERT_TRUE(write_report.evidence.post_load_checked);
+    ASSERT_TRUE(write_report.evidence.post_load_ok);
+
+    nmo_project_report_dispose(&write_report);
     nmo_project_report_dispose(&report);
     nmo_project_plan_destroy(plan);
+    remove(output_path);
     remove(sound_path);
 }
 

@@ -238,6 +238,27 @@ static void assert_named_class_exists(
     ASSERT_EQ(1u, count);
 }
 
+static void assert_cli_success_contains(
+    const char *args,
+    const char *expected_text)
+{
+    cli_run_result_t result = run_cli_capture(args);
+    if (result.exit_code != 0 ||
+        (expected_text && (!result.output ||
+                           !strstr(result.output, expected_text)))) {
+        fprintf(stderr, "\nCommand: %s\nExit: %d\nOutput:\n%s\n",
+                args,
+                result.exit_code,
+                result.output ? result.output : "(null)");
+    }
+    ASSERT_EQ(0, result.exit_code);
+    ASSERT_NOT_NULL(result.output);
+    if (expected_text) {
+        ASSERT_STR_CONTAINS(result.output, expected_text);
+    }
+    free(result.output);
+}
+
 typedef struct project_gate_manifest_case {
     const char *name;
     const char *manifest;
@@ -276,6 +297,61 @@ static void assert_cli_dry_run_parse_gate_rejects_without_output(
     ASSERT_STR_CONTAINS(result.output, "unknown manifest field");
 
     free(result.output);
+    remove(manifest_path);
+}
+
+typedef struct project_boundary_manifest_case {
+    const char *name;
+    const char *manifest;
+    const char *expected_object_name;
+    nmo_class_id_t expected_object_class;
+} project_boundary_manifest_case_t;
+
+static void assert_cli_writes_boundary_manifest(
+    const project_boundary_manifest_case_t *boundary_case)
+{
+    char manifest_path[256];
+    char output_path[256];
+    snprintf(
+        manifest_path,
+        sizeof(manifest_path),
+        "test_project_manifest_tmp/%s.json",
+        boundary_case->name);
+    snprintf(
+        output_path,
+        sizeof(output_path),
+        "test_project_manifest_tmp/%s.cmo",
+        boundary_case->name);
+    remove(manifest_path);
+    remove(output_path);
+    ASSERT_TRUE(write_text_file(manifest_path, boundary_case->manifest));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "patch apply --project \"%s\" -o \"%s\"",
+             manifest_path,
+             output_path);
+    assert_cli_success_contains(args, "Saved to:");
+    ASSERT_TRUE(file_exists(output_path));
+
+    snprintf(args, sizeof(args), "validate all \"%s\"", output_path);
+    assert_cli_success_contains(args, "Result: VALID");
+
+    if (boundary_case->expected_object_name) {
+        nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+        ASSERT_NOT_NULL(ctx);
+        nmo_document_t *document = NULL;
+        ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &document));
+        ASSERT_NOT_NULL(document);
+        assert_named_class_exists(
+            document,
+            boundary_case->expected_object_name,
+            boundary_case->expected_object_class);
+        nmo_document_destroy(document);
+        nmo_context_release(ctx);
+    }
+
+    remove(output_path);
     remove(manifest_path);
 }
 
@@ -380,6 +456,51 @@ TEST(generated_project_manifest, cli_dry_run_reports_project_diagnostics)
     yyjson_doc_free(doc);
     free(result.output);
     remove(manifest_path);
+}
+
+TEST(generated_project_manifest, cli_writes_boundary_manifests_and_validates)
+{
+    make_dir("test_project_manifest_tmp");
+    static const project_boundary_manifest_case_t cases[] = {
+        {
+            "boundary_no_scenes",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"BoundaryNoScenes\"},"
+            "\"scenes\":[]"
+            "}",
+            NULL,
+            0,
+        },
+        {
+            "boundary_empty_scene",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"BoundaryEmptyScene\"},"
+            "\"scenes\":[{\"name\":\"Empty\",\"objects\":[]}]"
+            "}",
+            "Empty",
+            NMO_CID_SCENE,
+        },
+        {
+            "boundary_active_camera_only",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"BoundaryCameraOnly\"},"
+            "\"scenes\":[{"
+            "\"name\":\"Level\","
+            "\"active_camera\":\"cam\","
+            "\"objects\":[{\"id\":\"cam\",\"name\":\"Camera\",\"class\":\"CKCamera\"}]"
+            "}]"
+            "}",
+            "Camera",
+            NMO_CID_CAMERA,
+        },
+    };
+
+    for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        assert_cli_writes_boundary_manifest(&cases[i]);
+    }
 }
 
 TEST(generated_project_manifest, cli_dry_run_keeps_parse_gates_without_output)
@@ -871,6 +992,7 @@ TEST(generated_project_manifest, cli_replays_project_manifest)
 
 TEST_MAIN_BEGIN()
 REGISTER_TEST(generated_project_manifest, cli_dry_run_reports_project_diagnostics);
+REGISTER_TEST(generated_project_manifest, cli_writes_boundary_manifests_and_validates);
 REGISTER_TEST(generated_project_manifest, cli_dry_run_keeps_parse_gates_without_output);
 REGISTER_TEST(generated_project_manifest, cli_json_failure_reports_project_source);
 REGISTER_TEST(generated_project_manifest, cli_dry_run_reports_animation_payload_gaps);

@@ -10,6 +10,7 @@
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
+#include "object/builtin/nmo_sound_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
 #include "object/builtin/nmo_targetlight_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
@@ -223,10 +224,12 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
     const char *manifest_path = "test_project_acceptance_tmp/project.json";
     const char *obj_path = "test_project_acceptance_tmp/multi_material.obj";
     const char *png_path = "test_project_acceptance_tmp/blue.png";
+    const char *sound_path = "test_project_acceptance_tmp/tone.wav";
     const char *output_path = "test_project_acceptance_tmp/project.cmo";
     remove(manifest_path);
     remove(obj_path);
     remove(png_path);
+    remove(sound_path);
     remove(output_path);
     remove("test_project_acceptance_tmp/project.cmo.tmp");
 
@@ -245,6 +248,10 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
         "usemtl Blue\n"
         "f 2/2 4/4 3/3\n"));
     ASSERT_TRUE(write_png_file(png_path));
+    FILE *sound_file = fopen(sound_path, "wb");
+    ASSERT_NOT_NULL(sound_file);
+    fputs("RIFF", sound_file);
+    fclose(sound_file);
 
     const char *manifest =
         "{"
@@ -295,6 +302,9 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
                         "\"message\":\"generated script start\""
                     "}]"
                 "},"
+                "{\"name\":\"LevelSound\",\"class\":\"CKSound\","
+                    "\"sound\":{\"file\":\"tone.wav\"}"
+                "},"
                 "{\"id\":\"parent\",\"name\":\"Parent\",\"class\":\"CK3dEntity\"},"
                 "{\"id\":\"look-target\",\"name\":\"LookTarget\",\"class\":\"CK3dEntity\"}"
             "]"
@@ -323,6 +333,7 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
     assert_named_class_exists(document, "Light", NMO_CID_TARGETLIGHT);
     assert_named_class_exists(document, "Parent", NMO_CID_3DENTITY);
     assert_named_class_exists(document, "LookTarget", NMO_CID_3DENTITY);
+    assert_named_class_exists(document, "LevelSound", NMO_CID_SOUND);
     assert_named_class_exists(document, "MeshEntity", NMO_CID_3DENTITY);
     assert_named_class_exists(document, "MeshEntity_Mesh", NMO_CID_MESH);
     assert_named_class_exists(document, "MeshEntity_Red_Material", NMO_CID_MATERIAL);
@@ -336,6 +347,7 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
     nmo_object_t *target_object = find_named_object(document, "LookTarget", NMO_CID_3DENTITY);
     nmo_object_t *camera_object = find_named_object(document, "Camera", NMO_CID_TARGETCAMERA);
     nmo_object_t *light_object = find_named_object(document, "Light", NMO_CID_TARGETLIGHT);
+    nmo_object_t *sound_object = find_named_object(document, "LevelSound", NMO_CID_SOUND);
     nmo_object_t *mesh_object = find_named_object(document, "MeshEntity_Mesh", NMO_CID_MESH);
     nmo_object_t *red_material_object =
         find_named_object(document, "MeshEntity_Red_Material", NMO_CID_MATERIAL);
@@ -349,6 +361,7 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
     ASSERT_NOT_NULL(target_object);
     ASSERT_NOT_NULL(camera_object);
     ASSERT_NOT_NULL(light_object);
+    ASSERT_NOT_NULL(sound_object);
     ASSERT_NOT_NULL(mesh_object);
     ASSERT_NOT_NULL(red_material_object);
     ASSERT_NOT_NULL(blue_material_object);
@@ -409,6 +422,12 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
     ASSERT_FLOAT_EQ(123.0f, light_state->light_data.range, 0.0001f);
     ASSERT_EQ(VX_LIGHTDIREC, light_state->light_data.type);
 
+    const nmo_sound_state_t *sound_state =
+        (const nmo_sound_state_t *)nmo_object_get_state(sound_object);
+    ASSERT_NOT_NULL(sound_state);
+    ASSERT_EQ(CKSOUND_INCLUDEORIGINALFILE, sound_state->save_options);
+    ASSERT_STR_EQ("tone.wav", sound_state->file_name);
+
     const nmo_mesh_state_t *mesh_state =
         (const nmo_mesh_state_t *)nmo_object_get_state(mesh_object);
     ASSERT_NOT_NULL(mesh_state);
@@ -454,6 +473,7 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
     nmo_document_destroy(document);
     nmo_context_release(ctx);
     remove(output_path);
+    remove(sound_path);
     remove(png_path);
     remove(obj_path);
     remove(manifest_path);
