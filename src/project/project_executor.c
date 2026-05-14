@@ -97,6 +97,193 @@ static void project_report_evidence_dispose(nmo_project_report_evidence_t *evide
     memset(evidence, 0, sizeof(*evidence));
 }
 
+static bool project_report_name_matches(const char *actual, const char *expected)
+{
+    return actual && expected && strcmp(actual, expected) == 0;
+}
+
+size_t nmo_project_report_evidence_object_count(
+    const nmo_project_report_t *report)
+{
+    return report ? report->evidence.object_count : 0u;
+}
+
+size_t nmo_project_report_evidence_asset_binding_count(
+    const nmo_project_report_t *report)
+{
+    return report ? report->evidence.asset_binding_count : 0u;
+}
+
+size_t nmo_project_report_evidence_material_texture_slot_count(
+    const nmo_project_report_t *report)
+{
+    return report ? report->evidence.material_texture_slot_count : 0u;
+}
+
+size_t nmo_project_report_evidence_material_channel_count(
+    const nmo_project_report_t *report)
+{
+    return report ? report->evidence.material_channel_count : 0u;
+}
+
+size_t nmo_project_report_evidence_script_count(
+    const nmo_project_report_t *report)
+{
+    return report ? report->evidence.script_count : 0u;
+}
+
+size_t nmo_project_report_evidence_sound_binding_count(
+    const nmo_project_report_t *report)
+{
+    return report ? report->evidence.sound_binding_count : 0u;
+}
+
+size_t nmo_project_report_evidence_animation_binding_count(
+    const nmo_project_report_t *report)
+{
+    return report ? report->evidence.animation_binding_count : 0u;
+}
+
+const nmo_project_report_object_evidence_t *
+nmo_project_report_find_object_evidence_by_name(
+    const nmo_project_report_t *report,
+    const char *name)
+{
+    if (!report || !name) {
+        return NULL;
+    }
+    for (size_t i = 0u; i < report->evidence.object_count; ++i) {
+        if (project_report_name_matches(report->evidence.objects[i].name, name)) {
+            return &report->evidence.objects[i];
+        }
+    }
+    return NULL;
+}
+
+const nmo_project_report_object_evidence_t *
+nmo_project_report_find_object_evidence_by_handle(
+    const nmo_project_report_t *report,
+    uint32_t plan_handle)
+{
+    if (!report) {
+        return NULL;
+    }
+    for (size_t i = 0u; i < report->evidence.object_count; ++i) {
+        if (report->evidence.objects[i].plan_handle == plan_handle) {
+            return &report->evidence.objects[i];
+        }
+    }
+    return NULL;
+}
+
+const nmo_project_report_asset_binding_evidence_t *
+nmo_project_report_find_asset_binding_evidence(
+    const nmo_project_report_t *report,
+    const char *asset_name)
+{
+    if (!report || !asset_name) {
+        return NULL;
+    }
+    for (size_t i = 0u; i < report->evidence.asset_binding_count; ++i) {
+        if (project_report_name_matches(
+                report->evidence.asset_bindings[i].asset_name,
+                asset_name)) {
+            return &report->evidence.asset_bindings[i];
+        }
+    }
+    return NULL;
+}
+
+const nmo_project_report_material_texture_slot_evidence_t *
+nmo_project_report_find_material_texture_slot_evidence(
+    const nmo_project_report_t *report,
+    const char *material_name,
+    uint32_t slot)
+{
+    if (!report || !material_name) {
+        return NULL;
+    }
+    for (size_t i = 0u; i < report->evidence.material_texture_slot_count; ++i) {
+        const nmo_project_report_material_texture_slot_evidence_t *item =
+            &report->evidence.material_texture_slots[i];
+        if (item->slot == slot &&
+            project_report_name_matches(item->material_name, material_name)) {
+            return item;
+        }
+    }
+    return NULL;
+}
+
+const nmo_project_report_material_channel_evidence_t *
+nmo_project_report_find_material_channel_evidence(
+    const nmo_project_report_t *report,
+    const char *material_name)
+{
+    if (!report || !material_name) {
+        return NULL;
+    }
+    for (size_t i = 0u; i < report->evidence.material_channel_count; ++i) {
+        if (project_report_name_matches(
+                report->evidence.material_channels[i].material_name,
+                material_name)) {
+            return &report->evidence.material_channels[i];
+        }
+    }
+    return NULL;
+}
+
+const nmo_project_report_script_evidence_t *
+nmo_project_report_find_script_evidence(
+    const nmo_project_report_t *report,
+    const char *name)
+{
+    if (!report || !name) {
+        return NULL;
+    }
+    for (size_t i = 0u; i < report->evidence.script_count; ++i) {
+        if (project_report_name_matches(report->evidence.scripts[i].name, name)) {
+            return &report->evidence.scripts[i];
+        }
+    }
+    return NULL;
+}
+
+const nmo_project_report_sound_binding_evidence_t *
+nmo_project_report_find_sound_binding_evidence(
+    const nmo_project_report_t *report,
+    const char *name)
+{
+    if (!report || !name) {
+        return NULL;
+    }
+    for (size_t i = 0u; i < report->evidence.sound_binding_count; ++i) {
+        if (project_report_name_matches(
+                report->evidence.sound_bindings[i].name,
+                name)) {
+            return &report->evidence.sound_bindings[i];
+        }
+    }
+    return NULL;
+}
+
+const nmo_project_report_animation_binding_evidence_t *
+nmo_project_report_find_animation_binding_evidence(
+    const nmo_project_report_t *report,
+    const char *name)
+{
+    if (!report || !name) {
+        return NULL;
+    }
+    for (size_t i = 0u; i < report->evidence.animation_binding_count; ++i) {
+        if (project_report_name_matches(
+                report->evidence.animation_bindings[i].name,
+                name)) {
+            return &report->evidence.animation_bindings[i];
+        }
+    }
+    return NULL;
+}
+
 static void project_report_dispose_diffs(nmo_project_report_t *report)
 {
     if (!report) {

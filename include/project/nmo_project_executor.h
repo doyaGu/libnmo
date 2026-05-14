@@ -139,6 +139,68 @@ NMO_API bool nmo_project_report_diff_has_created_asset(
     const nmo_project_report_t *report,
     const char *name);
 
+NMO_API size_t nmo_project_report_evidence_object_count(
+    const nmo_project_report_t *report);
+
+NMO_API size_t nmo_project_report_evidence_asset_binding_count(
+    const nmo_project_report_t *report);
+
+NMO_API size_t nmo_project_report_evidence_material_texture_slot_count(
+    const nmo_project_report_t *report);
+
+NMO_API size_t nmo_project_report_evidence_material_channel_count(
+    const nmo_project_report_t *report);
+
+NMO_API size_t nmo_project_report_evidence_script_count(
+    const nmo_project_report_t *report);
+
+NMO_API size_t nmo_project_report_evidence_sound_binding_count(
+    const nmo_project_report_t *report);
+
+NMO_API size_t nmo_project_report_evidence_animation_binding_count(
+    const nmo_project_report_t *report);
+
+NMO_API const nmo_project_report_object_evidence_t *
+nmo_project_report_find_object_evidence_by_name(
+    const nmo_project_report_t *report,
+    const char *name);
+
+NMO_API const nmo_project_report_object_evidence_t *
+nmo_project_report_find_object_evidence_by_handle(
+    const nmo_project_report_t *report,
+    uint32_t plan_handle);
+
+NMO_API const nmo_project_report_asset_binding_evidence_t *
+nmo_project_report_find_asset_binding_evidence(
+    const nmo_project_report_t *report,
+    const char *asset_name);
+
+NMO_API const nmo_project_report_material_texture_slot_evidence_t *
+nmo_project_report_find_material_texture_slot_evidence(
+    const nmo_project_report_t *report,
+    const char *material_name,
+    uint32_t slot);
+
+NMO_API const nmo_project_report_material_channel_evidence_t *
+nmo_project_report_find_material_channel_evidence(
+    const nmo_project_report_t *report,
+    const char *material_name);
+
+NMO_API const nmo_project_report_script_evidence_t *
+nmo_project_report_find_script_evidence(
+    const nmo_project_report_t *report,
+    const char *name);
+
+NMO_API const nmo_project_report_sound_binding_evidence_t *
+nmo_project_report_find_sound_binding_evidence(
+    const nmo_project_report_t *report,
+    const char *name);
+
+NMO_API const nmo_project_report_animation_binding_evidence_t *
+nmo_project_report_find_animation_binding_evidence(
+    const nmo_project_report_t *report,
+    const char *name);
+
 NMO_API nmo_status_t nmo_project_executor_execute_dry_run(
     const nmo_project_plan_t *plan,
     nmo_project_report_t *report);
