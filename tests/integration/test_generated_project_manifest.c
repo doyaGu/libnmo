@@ -194,6 +194,35 @@ static void parse_cli_json_result(cli_run_result_t *result, yyjson_doc **out_doc
     *out_doc = doc;
 }
 
+static void assert_project_cli_json_contract(
+    yyjson_val *data,
+    const char *manifest_path,
+    const char *output_path)
+{
+    ASSERT_NOT_NULL(data);
+    ASSERT_NOT_NULL(yyjson_obj_get(data, "ok"));
+    ASSERT_NOT_NULL(yyjson_obj_get(data, "dry_run"));
+    ASSERT_STR_EQ(manifest_path, get_string_field(data, "manifest"));
+    ASSERT_STR_EQ(output_path, get_string_field(data, "output"));
+    ASSERT_NOT_NULL(get_object_field(data, "diffs"));
+    ASSERT_NOT_NULL(get_object_field(data, "validation"));
+    ASSERT_NOT_NULL(get_object_field(data, "evidence"));
+}
+
+static void assert_project_validation_issue_contract(
+    yyjson_val *issue,
+    const char *code,
+    const char *subject_kind,
+    const char *subject_name,
+    const char *source_path)
+{
+    ASSERT_NOT_NULL(issue);
+    ASSERT_STR_EQ(code, get_string_field(issue, "code"));
+    ASSERT_STR_EQ(subject_kind, get_string_field(issue, "subject_kind"));
+    ASSERT_STR_EQ(subject_name, get_string_field(issue, "subject_name"));
+    ASSERT_STR_EQ(source_path, get_string_field(issue, "source_path"));
+}
+
 static void assert_named_class_exists(
     nmo_document_t *document,
     const char *name,
@@ -244,6 +273,7 @@ static void assert_cli_dry_run_parse_gate_rejects_without_output(
     ASSERT_NE(0, result.exit_code);
     ASSERT_FALSE(file_exists(output_path));
     ASSERT_STR_CONTAINS(result.output, gate_case->expected_field);
+    ASSERT_STR_CONTAINS(result.output, "unknown manifest field");
 
     free(result.output);
     remove(manifest_path);
@@ -304,10 +334,9 @@ TEST(generated_project_manifest, cli_dry_run_reports_project_diagnostics)
     parse_cli_json_result(&result, &doc);
     ASSERT_NOT_NULL(doc);
     yyjson_val *data = get_object_field(yyjson_doc_get_root(doc), "data");
+    assert_project_cli_json_contract(data, manifest_path, output_path);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_STR_EQ(manifest_path, get_string_field(data, "manifest"));
-    ASSERT_STR_EQ(output_path, get_string_field(data, "output"));
 
     yyjson_val *diffs = get_object_field(data, "diffs");
     ASSERT_NOT_NULL(diffs);
@@ -523,6 +552,7 @@ TEST(generated_project_manifest, cli_json_failure_reports_project_source)
     parse_cli_json_result(&result, &doc);
     ASSERT_NOT_NULL(doc);
     yyjson_val *data = get_object_field(yyjson_doc_get_root(doc), "data");
+    assert_project_cli_json_contract(data, manifest_path, output_path);
     ASSERT_FALSE(get_bool_field(data, "ok"));
     ASSERT_FALSE(get_bool_field(data, "dry_run"));
 
@@ -533,12 +563,12 @@ TEST(generated_project_manifest, cli_json_failure_reports_project_source)
     ASSERT_NOT_NULL(issues);
     ASSERT_EQ(1u, yyjson_arr_size(issues));
     yyjson_val *issue = yyjson_arr_get(issues, 0);
-    ASSERT_STR_EQ("missing_obj_material_texture_file",
-                  get_string_field(issue, "code"));
-    ASSERT_STR_EQ("object", get_string_field(issue, "subject_kind"));
-    ASSERT_STR_EQ("MeshEntity", get_string_field(issue, "subject_name"));
-    ASSERT_STR_EQ("scenes[0].objects[0].materials[0].texture",
-                  get_string_field(issue, "source_path"));
+    assert_project_validation_issue_contract(
+        issue,
+        "missing_obj_material_texture_file",
+        "object",
+        "MeshEntity",
+        "scenes[0].objects[0].materials[0].texture");
 
     yyjson_doc_free(doc);
     free(result.output);
@@ -592,9 +622,9 @@ TEST(generated_project_manifest, cli_dry_run_reports_animation_payload_gaps)
     parse_cli_json_result(&result, &doc);
     ASSERT_NOT_NULL(doc);
     yyjson_val *data = get_object_field(yyjson_doc_get_root(doc), "data");
+    assert_project_cli_json_contract(data, manifest_path, output_path);
     ASSERT_FALSE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
-    ASSERT_STR_EQ(output_path, get_string_field(data, "output"));
 
     yyjson_val *validation = get_object_field(data, "validation");
     ASSERT_NOT_NULL(validation);
@@ -603,12 +633,12 @@ TEST(generated_project_manifest, cli_dry_run_reports_animation_payload_gaps)
     ASSERT_NOT_NULL(issues);
     ASSERT_EQ(1u, yyjson_arr_size(issues));
     yyjson_val *issue = yyjson_arr_get(issues, 0);
-    ASSERT_STR_EQ("unsupported_animation_controller_type",
-                  get_string_field(issue, "code"));
-    ASSERT_STR_EQ("object", get_string_field(issue, "subject_kind"));
-    ASSERT_STR_EQ("Animation", get_string_field(issue, "subject_name"));
-    ASSERT_STR_EQ("scenes[0].objects[1]",
-                  get_string_field(issue, "source_path"));
+    assert_project_validation_issue_contract(
+        issue,
+        "unsupported_animation_controller_type",
+        "object",
+        "Animation",
+        "scenes[0].objects[1]");
 
     yyjson_doc_free(doc);
     free(result.output);
@@ -652,6 +682,7 @@ TEST(generated_project_manifest, cli_dry_run_reports_midisound_gate)
     parse_cli_json_result(&result, &doc);
     ASSERT_NOT_NULL(doc);
     yyjson_val *data = get_object_field(yyjson_doc_get_root(doc), "data");
+    assert_project_cli_json_contract(data, manifest_path, output_path);
     ASSERT_FALSE(get_bool_field(data, "ok"));
     ASSERT_TRUE(get_bool_field(data, "dry_run"));
 
@@ -661,12 +692,12 @@ TEST(generated_project_manifest, cli_dry_run_reports_midisound_gate)
     ASSERT_NOT_NULL(issues);
     ASSERT_EQ(1u, yyjson_arr_size(issues));
     yyjson_val *issue = yyjson_arr_get(issues, 0);
-    ASSERT_STR_EQ("unsupported_midisound_file_authoring",
-                  get_string_field(issue, "code"));
-    ASSERT_STR_EQ("object", get_string_field(issue, "subject_kind"));
-    ASSERT_STR_EQ("MidiSound", get_string_field(issue, "subject_name"));
-    ASSERT_STR_EQ("scenes[0].objects[0].sound.file",
-                  get_string_field(issue, "source_path"));
+    assert_project_validation_issue_contract(
+        issue,
+        "unsupported_midisound_file_authoring",
+        "object",
+        "MidiSound",
+        "scenes[0].objects[0].sound.file");
 
     yyjson_doc_free(doc);
     free(result.output);
@@ -728,6 +759,7 @@ TEST(generated_project_manifest, cli_json_write_reports_project_evidence)
     parse_cli_json_result(&result, &doc);
     ASSERT_NOT_NULL(doc);
     yyjson_val *data = get_object_field(yyjson_doc_get_root(doc), "data");
+    assert_project_cli_json_contract(data, manifest_path, output_path);
     ASSERT_TRUE(get_bool_field(data, "ok"));
     ASSERT_FALSE(get_bool_field(data, "dry_run"));
 
