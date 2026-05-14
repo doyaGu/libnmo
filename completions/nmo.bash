@@ -15,7 +15,7 @@ _nmo() {
     fi
     local groups="file f chunk ch object obj behavior beh patch parameter param script resource res texture tex data da scene sc entity ent material mat mesh m animation anim type t validate val convert conv diff d extension ext completion comp debug dbg repl"
     local global_flags="-h --help -V --version -f --format --color -o --output -v --verbose -q --quiet --no-pager --strict --fail-on-warning --plugin -F --filter --batch"
-    local value_options="-f --format --color -o --output --plugin --top -m --max-bytes -c --class --name -o --output -n -d --depth --id --type-guid --kind --max-nodes --max-edges --bb-guid --version -p --parent --nodes --guid --type --from --max-depth --to --delay -b --owner -i --index -s --sort -t --out-dir -f --format -q --quality --file -r --row --col -v --value --bg-color --ambient --fog-color --camera --fov --near --far --diffuse --range --specular --emissive --power --replace --replace-name --strip --compress --max-objects --max-fields --min-similarity --rename-similarity --object --behavior --remove-link --from-io --to-io --message-node --parameter --dataarray --write-node --write-operation --write-link --text"
+    local value_options="-f --format --color -o --output --plugin --top -m --max-bytes -c --class --name -o --output -n -d --depth --id --type-guid --kind --max-nodes --max-edges --bb-guid --version -p --parent --nodes --guid --type --from --max-depth --to --delay --project -b --owner -i --index -s --sort -t --out-dir -f --format -q --quality --file -r --row --col -v --value --bg-color --ambient --fog-color --camera --fov --near --far --diffuse --range --specular --emissive --power --replace --replace-name --strip --compress --max-objects --max-fields --min-similarity --rename-similarity --object --behavior --remove-link --from-io --to-io --message-node --parameter --dataarray --write-node --write-operation --write-link --text"
     local file_value_options="-o --output --plugin -d --out-dir --file --obj"
 
     case "$prev" in
@@ -213,7 +213,7 @@ _nmo() {
             behavior/iface/set-graph-io) echo '' ;;
             behavior/interface/translate) echo '' ;;
             behavior/iface/translate) echo '' ;;
-            patch/apply/) echo '--dry-run' ;;
+            patch/apply/) echo '-o --output --project --dry-run' ;;
             patch/diff/) echo '' ;;
             parameter/list/) echo '' ;;
             parameter/ls/) echo '' ;;

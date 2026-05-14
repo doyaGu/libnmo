@@ -623,10 +623,13 @@ static void behavior_remove_link_usage(FILE *out) {
 }
 
 static void patch_apply_usage(FILE *out) {
-    fprintf(out, "Usage: nmo patch apply <patch.json> [--dry-run]\n\n");
-    fprintf(out, "Apply a strict behavior rewrite patch.\n\n");
+    fprintf(out, "Usage: nmo patch apply <patch.json> [--dry-run]\n");
+    fprintf(out, "       nmo patch apply --project <manifest.json> -o <output.cmo> [--dry-run]\n\n");
+    fprintf(out, "Apply a strict behavior rewrite patch or generate a project manifest.\n\n");
     fprintf(out, "Options:\n");
-    fprintf(out, "  --dry-run    Preview operations without saving output\n");
+    fprintf(out, "  --project <path>      Project manifest to generate\n");
+    fprintf(out, "  -o, --output <path>   Output file for project generation\n");
+    fprintf(out, "  --dry-run             Preview operations without saving output\n");
 }
 
 static void patch_diff_usage(FILE *out) {

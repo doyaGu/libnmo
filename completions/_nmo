@@ -223,7 +223,7 @@ _nmo_action_flags() {
         behavior/iface/set-graph-io) echo '' ;;
         behavior/interface/translate) echo '' ;;
         behavior/iface/translate) echo '' ;;
-        patch/apply/) echo '--dry-run' ;;
+        patch/apply/) echo '-o --output --project --dry-run' ;;
         patch/diff/) echo '' ;;
         parameter/list/) echo '' ;;
         parameter/ls/) echo '' ;;

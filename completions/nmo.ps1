@@ -223,7 +223,7 @@ $_nmo_action_flags = @{
     'behavior/iface/set-graph-io' = @()
     'behavior/interface/translate' = @()
     'behavior/iface/translate' = @()
-    'patch/apply/' = @(@{ Name = '--dry-run'; Desc = 'Preview operations without saving output' })
+    'patch/apply/' = @(@{ Name = '-o'; Desc = 'Output file for project generation' }, @{ Name = '--output'; Desc = 'Output file for project generation' }, @{ Name = '--project'; Desc = 'Project manifest to generate' }, @{ Name = '--dry-run'; Desc = 'Preview operations without saving output' })
     'patch/diff/' = @()
     'parameter/list/' = @()
     'parameter/ls/' = @()
@@ -370,7 +370,7 @@ $_nmo_action_flags = @{
 Register-ArgumentCompleter -CommandName nmo -Native -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
     $tokens = $commandAst.ToString().Substring(0, $cursorPosition).Trim() -split '\s+'
-    $valueOptions = @('-f','--format','--color','-o','--output','--plugin','-F','--filter','--top', '-m', '--max-bytes', '-c', '--class', '--name', '-o', '--output', '-n', '-d', '--depth', '--id', '--type-guid', '--kind', '--max-nodes', '--max-edges', '--bb-guid', '--version', '-p', '--parent', '--nodes', '--guid', '--type', '--from', '--max-depth', '--to', '--delay', '-b', '--owner', '-i', '--index', '-s', '--sort', '-t', '--out-dir', '-f', '--format', '-q', '--quality', '--file', '-r', '--row', '--col', '-v', '--value', '--bg-color', '--ambient', '--fog-color', '--camera', '--fov', '--near', '--far', '--diffuse', '--range', '--specular', '--emissive', '--power', '--replace', '--replace-name', '--strip', '--compress', '--max-objects', '--max-fields', '--min-similarity', '--rename-similarity', '--object', '--behavior', '--remove-link', '--from-io', '--to-io', '--message-node', '--parameter', '--dataarray', '--write-node', '--write-operation', '--write-link', '--text')
+    $valueOptions = @('-f','--format','--color','-o','--output','--plugin','-F','--filter','--top', '-m', '--max-bytes', '-c', '--class', '--name', '-o', '--output', '-n', '-d', '--depth', '--id', '--type-guid', '--kind', '--max-nodes', '--max-edges', '--bb-guid', '--version', '-p', '--parent', '--nodes', '--guid', '--type', '--from', '--max-depth', '--to', '--delay', '--project', '-b', '--owner', '-i', '--index', '-s', '--sort', '-t', '--out-dir', '-f', '--format', '-q', '--quality', '--file', '-r', '--row', '--col', '-v', '--value', '--bg-color', '--ambient', '--fog-color', '--camera', '--fov', '--near', '--far', '--diffuse', '--range', '--specular', '--emissive', '--power', '--replace', '--replace-name', '--strip', '--compress', '--max-objects', '--max-fields', '--min-similarity', '--rename-similarity', '--object', '--behavior', '--remove-link', '--from-io', '--to-io', '--message-node', '--parameter', '--dataarray', '--write-node', '--write-operation', '--write-link', '--text')
     $positional = @()
     $expectValue = $false
     for ($i = 1; $i -lt $tokens.Count; $i++) {

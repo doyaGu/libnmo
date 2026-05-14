@@ -53,6 +53,11 @@ def opt(short: str | None, long: str | None, desc: str, takes_value: bool) -> "C
 
 
 EXPLICIT_ACTION_OPTIONS: dict[tuple[str, str], list["CompletionOption"]] = {
+    ("patch", "apply"): [
+        opt("-o", "--output", "Output file for project generation", True),
+        opt(None, "--project", "Project manifest to generate", True),
+        opt(None, "--dry-run", "Preview operations without saving output", False),
+    ],
     ("parameter", "set"): [
         opt("-o", "--output", "Output file (required unless --dry-run)", True),
         opt("-b", "--owner", "Owner behavior/object ID", True),
