@@ -144,6 +144,27 @@ static nmo_object_t *find_named_object(
     return repo ? nmo_object_repository_find_by_name(repo, name) : NULL;
 }
 
+typedef struct generated_manifest_gate_case {
+    const char *group;
+    const char *field;
+    const char *manifest;
+} generated_manifest_gate_case_t;
+
+static void assert_manifest_gate_case_rejected(
+    const generated_manifest_gate_case_t *gate_case)
+{
+    ASSERT_NOT_NULL(gate_case);
+    ASSERT_NOT_NULL(gate_case->group);
+    ASSERT_NOT_NULL(gate_case->field);
+    nmo_project_plan_t *plan = NULL;
+    nmo_status_t status = nmo_project_manifest_json_read(
+        gate_case->manifest,
+        strlen(gate_case->manifest),
+        &plan);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, status);
+    ASSERT_NULL(plan);
+}
+
 TEST(generated_advanced_probes, sound_and_animation_skeletons_save_load_validate)
 {
     const char *output_path = "test_generated_advanced_subsystems.cmo";
@@ -961,138 +982,164 @@ TEST(generated_advanced_probes, material_packed_flag_semantics_save_load_validat
 
 TEST(generated_advanced_probes, unproven_manifest_authoring_fields_are_rejected)
 {
-    static const char *const manifests[] = {
-        "{"
-        "\"version\":1,"
-        "\"document\":{\"name\":\"Generated\"},"
-        "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
-        "\"name\":\"Animation\","
-        "\"class\":\"CKObjectAnimation\","
-        "\"animation\":{\"file\":\"walk.anim\"}"
-        "}]}]"
-        "}",
-        "{"
-        "\"version\":1,"
-        "\"document\":{\"name\":\"Generated\"},"
-        "\"scenes\":[{\"name\":\"Level\",\"objects\":["
-        "{\"id\":\"target\",\"name\":\"Target\",\"class\":\"CK3dEntity\"},"
-        "{\"name\":\"Animation\","
-        "\"class\":\"CKObjectAnimation\","
-        "\"animation\":{\"target\":\"target\",\"format\":\"controllers\","
-        "\"keys\":[]}"
-        "}]}"
-        "}",
+    static const generated_manifest_gate_case_t cases[] = {
+        {
+            "animation_import_gaps",
+            "animation.file",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Generated\"},"
+            "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
+            "\"name\":\"Animation\","
+            "\"class\":\"CKObjectAnimation\","
+            "\"animation\":{\"file\":\"walk.anim\"}"
+            "}]}]"
+            "}",
+        },
+        {
+            "animation_import_gaps",
+            "animation.keys",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Generated\"},"
+            "\"scenes\":[{\"name\":\"Level\",\"objects\":["
+            "{\"id\":\"target\",\"name\":\"Target\",\"class\":\"CK3dEntity\"},"
+            "{\"name\":\"Animation\","
+            "\"class\":\"CKObjectAnimation\","
+            "\"animation\":{\"target\":\"target\",\"format\":\"controllers\","
+            "\"keys\":[]}"
+            "}]}"
+            "}",
+        },
     };
 
-    for (size_t i = 0u; i < sizeof(manifests) / sizeof(manifests[0]); ++i) {
-        nmo_project_plan_t *plan = NULL;
-        nmo_status_t status = nmo_project_manifest_json_read(
-            manifests[i],
-            strlen(manifests[i]),
-            &plan);
-        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, status);
-        ASSERT_NULL(plan);
+    for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        assert_manifest_gate_case_rejected(&cases[i]);
     }
 }
 
 TEST(generated_advanced_probes, physics_collision_manager_fields_stay_gated)
 {
-    static const char *const manifests[] = {
-        "{"
-        "\"version\":1,"
-        "\"document\":{\"name\":\"Generated\"},"
-        "\"managers\":[],"
-        "\"scenes\":[]"
-        "}",
-        "{"
-        "\"version\":1,"
-        "\"document\":{\"name\":\"Generated\"},"
-        "\"managers\":[{\"guid\":\"{3D242466-00000000}\",\"kind\":\"attribute\"}],"
-        "\"scenes\":[]"
-        "}",
-        "{"
-        "\"version\":1,"
-        "\"document\":{\"name\":\"Generated\"},"
-        "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
-        "\"name\":\"Body\","
-        "\"class\":\"CK3dEntity\","
-        "\"physics\":{\"collision\":\"mesh\"}"
-        "}]}]"
-        "}",
-        "{"
-        "\"version\":1,"
-        "\"document\":{\"name\":\"Generated\"},"
-        "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
-        "\"name\":\"Body\","
-        "\"class\":\"CK3dEntity\","
-        "\"collision\":{\"type\":\"mesh\"}"
-        "}]}]"
-        "}",
-        "{"
-        "\"version\":1,"
-        "\"document\":{\"name\":\"Generated\"},"
-        "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
-        "\"name\":\"Body\","
-        "\"class\":\"CK3dEntity\","
-        "\"manager\":{\"guid\":\"00000000-00000000\"}"
-        "}]}]"
-        "}",
-        "{"
-        "\"version\":1,"
-        "\"document\":{\"name\":\"Generated\"},"
-        "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
-        "\"name\":\"Body\","
-        "\"class\":\"CK3dEntity\","
-        "\"manager\":{\"guid\":\"{3D242466-00000000}\",\"kind\":\"attribute\"}"
-        "}]}]"
-        "}",
+    static const generated_manifest_gate_case_t cases[] = {
+        {
+            "physics_collision_manager",
+            "root.managers",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Generated\"},"
+            "\"managers\":[],"
+            "\"scenes\":[]"
+            "}",
+        },
+        {
+            "physics_collision_manager",
+            "root.managers[]",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Generated\"},"
+            "\"managers\":[{\"guid\":\"{3D242466-00000000}\",\"kind\":\"attribute\"}],"
+            "\"scenes\":[]"
+            "}",
+        },
+        {
+            "physics_collision_manager",
+            "object.physics",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Generated\"},"
+            "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
+            "\"name\":\"Body\","
+            "\"class\":\"CK3dEntity\","
+            "\"physics\":{\"collision\":\"mesh\"}"
+            "}]}]"
+            "}",
+        },
+        {
+            "physics_collision_manager",
+            "object.collision",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Generated\"},"
+            "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
+            "\"name\":\"Body\","
+            "\"class\":\"CK3dEntity\","
+            "\"collision\":{\"type\":\"mesh\"}"
+            "}]}]"
+            "}",
+        },
+        {
+            "physics_collision_manager",
+            "object.manager",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Generated\"},"
+            "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
+            "\"name\":\"Body\","
+            "\"class\":\"CK3dEntity\","
+            "\"manager\":{\"guid\":\"00000000-00000000\"}"
+            "}]}]"
+            "}",
+        },
+        {
+            "physics_collision_manager",
+            "object.manager.known",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Generated\"},"
+            "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
+            "\"name\":\"Body\","
+            "\"class\":\"CK3dEntity\","
+            "\"manager\":{\"guid\":\"{3D242466-00000000}\",\"kind\":\"attribute\"}"
+            "}]}]"
+            "}",
+        },
     };
 
-    for (size_t i = 0u; i < sizeof(manifests) / sizeof(manifests[0]); ++i) {
-        nmo_project_plan_t *plan = NULL;
-        nmo_status_t status = nmo_project_manifest_json_read(
-            manifests[i],
-            strlen(manifests[i]),
-            &plan);
-        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, status);
-        ASSERT_NULL(plan);
+    for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        assert_manifest_gate_case_rejected(&cases[i]);
     }
 }
 
 TEST(generated_advanced_probes, scene_render_extension_fields_stay_gated)
 {
-    static const char *const manifests[] = {
-        "{"
-        "\"version\":1,"
-        "\"document\":{\"name\":\"Generated\"},"
-        "\"scenes\":[{\"name\":\"Level\","
-        "\"environment\":{\"skybox\":\"sky.cmo\"},"
-        "\"objects\":[]}]"
-        "}",
-        "{"
-        "\"version\":1,"
-        "\"document\":{\"name\":\"Generated\"},"
-        "\"scenes\":[{\"name\":\"Level\","
-        "\"environment\":{\"viewport\":{\"mode\":\"wireframe\"}},"
-        "\"objects\":[]}]"
-        "}",
-        "{"
-        "\"version\":1,"
-        "\"document\":{\"name\":\"Generated\"},"
-        "\"scenes\":[{\"name\":\"Level\","
-        "\"environment\":{\"render_options\":{\"z_write\":false}},"
-        "\"objects\":[]}]"
-        "}",
+    static const generated_manifest_gate_case_t cases[] = {
+        {
+            "scene_render_extensions",
+            "environment.skybox",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Generated\"},"
+            "\"scenes\":[{\"name\":\"Level\","
+            "\"environment\":{\"skybox\":\"sky.cmo\"},"
+            "\"objects\":[]}]"
+            "}",
+        },
+        {
+            "scene_render_extensions",
+            "environment.viewport",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Generated\"},"
+            "\"scenes\":[{\"name\":\"Level\","
+            "\"environment\":{\"viewport\":{\"mode\":\"wireframe\"}},"
+            "\"objects\":[]}]"
+            "}",
+        },
+        {
+            "scene_render_extensions",
+            "environment.render_options",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Generated\"},"
+            "\"scenes\":[{\"name\":\"Level\","
+            "\"environment\":{\"render_options\":{\"z_write\":false}},"
+            "\"objects\":[]}]"
+            "}",
+        },
     };
 
-    for (size_t i = 0u; i < sizeof(manifests) / sizeof(manifests[0]); ++i) {
-        nmo_project_plan_t *plan = NULL;
-        nmo_status_t status = nmo_project_manifest_json_read(
-            manifests[i],
-            strlen(manifests[i]),
-            &plan);
-        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, status);
-        ASSERT_NULL(plan);
+    for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        assert_manifest_gate_case_rejected(&cases[i]);
     }
 }
 
