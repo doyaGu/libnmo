@@ -502,6 +502,7 @@ TEST(generated_project_manifest, cli_dry_run_reports_midisound_gate)
     yyjson_val *issue = yyjson_arr_get(issues, 0);
     ASSERT_STR_EQ("unsupported_midisound_file_authoring",
                   get_string_field(issue, "code"));
+    ASSERT_STR_EQ("object", get_string_field(issue, "subject_kind"));
     ASSERT_STR_EQ("MidiSound", get_string_field(issue, "subject_name"));
     ASSERT_STR_EQ("scenes[0].objects[0].sound.file",
                   get_string_field(issue, "source_path"));
