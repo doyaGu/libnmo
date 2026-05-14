@@ -965,18 +965,6 @@ TEST(generated_advanced_probes, unproven_manifest_authoring_fields_are_rejected)
         "{"
         "\"version\":1,"
         "\"document\":{\"name\":\"Generated\"},"
-        "\"managers\":[],"
-        "\"scenes\":[]"
-        "}",
-        "{"
-        "\"version\":1,"
-        "\"document\":{\"name\":\"Generated\"},"
-        "\"managers\":[{\"guid\":\"{3D242466-00000000}\",\"kind\":\"attribute\"}],"
-        "\"scenes\":[]"
-        "}",
-        "{"
-        "\"version\":1,"
-        "\"document\":{\"name\":\"Generated\"},"
         "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
         "\"name\":\"Animation\","
         "\"class\":\"CKObjectAnimation\","
@@ -993,6 +981,34 @@ TEST(generated_advanced_probes, unproven_manifest_authoring_fields_are_rejected)
         "\"animation\":{\"target\":\"target\",\"format\":\"controllers\","
         "\"keys\":[]}"
         "}]}"
+        "}",
+    };
+
+    for (size_t i = 0u; i < sizeof(manifests) / sizeof(manifests[0]); ++i) {
+        nmo_project_plan_t *plan = NULL;
+        nmo_status_t status = nmo_project_manifest_json_read(
+            manifests[i],
+            strlen(manifests[i]),
+            &plan);
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, status);
+        ASSERT_NULL(plan);
+    }
+}
+
+TEST(generated_advanced_probes, physics_collision_manager_fields_stay_gated)
+{
+    static const char *const manifests[] = {
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"managers\":[],"
+        "\"scenes\":[]"
+        "}",
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"managers\":[{\"guid\":\"{3D242466-00000000}\",\"kind\":\"attribute\"}],"
+        "\"scenes\":[]"
         "}",
         "{"
         "\"version\":1,"
@@ -1019,6 +1035,15 @@ TEST(generated_advanced_probes, unproven_manifest_authoring_fields_are_rejected)
         "\"name\":\"Body\","
         "\"class\":\"CK3dEntity\","
         "\"manager\":{\"guid\":\"00000000-00000000\"}"
+        "}]}]"
+        "}",
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"Generated\"},"
+        "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
+        "\"name\":\"Body\","
+        "\"class\":\"CK3dEntity\","
+        "\"manager\":{\"guid\":\"{3D242466-00000000}\",\"kind\":\"attribute\"}"
         "}]}]"
         "}",
     };
@@ -1096,6 +1121,8 @@ REGISTER_TEST(generated_advanced_probes,
               material_packed_flag_semantics_save_load_validate);
 REGISTER_TEST(generated_advanced_probes,
               unproven_manifest_authoring_fields_are_rejected);
+REGISTER_TEST(generated_advanced_probes,
+              physics_collision_manager_fields_stay_gated);
 REGISTER_TEST(generated_advanced_probes,
               scene_render_extension_fields_stay_gated);
 TEST_MAIN_END()
