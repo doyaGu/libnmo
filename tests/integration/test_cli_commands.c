@@ -3076,6 +3076,15 @@ TEST(cli, resource_replace_help_distinguishes_payload_from_texture_bitmap) {
     free(output);
 }
 
+TEST(cli, patch_apply_project_usage_mentions_dry_run) {
+    cli_run_result_t result = run_cli_capture("patch apply --project manifest.json unexpected.cmo");
+    ASSERT_TRUE(result.exit_code != NMO_CLI_EXIT_SUCCESS);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_STR_CONTAINS(result.output, "nmo patch apply --project <manifest.json> -o <output.cmo> [--dry-run]");
+    ASSERT_STR_CONTAINS(result.output, "--project");
+    free(result.output);
+}
+
 TEST(cli, debug_help_marks_output_as_diagnostic) {
     const char *commands[] = {
         "debug load-phases --help",
@@ -4198,6 +4207,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, help_shows_groups);
     REGISTER_TEST(cli, help_documents_batch_supported_subset);
     REGISTER_TEST(cli, resource_replace_help_distinguishes_payload_from_texture_bitmap);
+    REGISTER_TEST(cli, patch_apply_project_usage_mentions_dry_run);
     REGISTER_TEST(cli, debug_help_marks_output_as_diagnostic);
     REGISTER_TEST(cli, debug_probe_help_lists_probe_kinds);
     REGISTER_TEST(cli, debug_probe_2d_text_dry_run_reports_edit_plan);

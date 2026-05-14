@@ -1190,7 +1190,7 @@ static int patch_parse_apply_args(int argc,
         (vals[OPT_OUTPUT].present && !vals[OPT_PROJECT].present)) {
         fprintf(stderr,
                 "Usage: nmo patch apply <patch.json> [--dry-run]\n"
-                "       nmo patch apply --project <manifest.json> -o <output.cmo>\n");
+                "       nmo patch apply --project <manifest.json> -o <output.cmo> [--dry-run]\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
