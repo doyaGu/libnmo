@@ -437,6 +437,9 @@ TEST(public_api_smoke, public_api_tier_signals_are_declared) {
 TEST(public_api_smoke, project_report_evidence_helpers_cover_dry_run_and_write_run) {
     const char *sound_path = "test_public_api_smoke_sound.wav";
     const char *output_path = "test_public_api_smoke_project.cmo";
+    remove(sound_path);
+    remove(output_path);
+    remove("test_public_api_smoke_project.cmo.tmp");
     FILE *sound_file = fopen(sound_path, "wb");
     ASSERT_NOT_NULL(sound_file);
     fputs("RIFF", sound_file);
@@ -447,6 +450,7 @@ TEST(public_api_smoke, project_report_evidence_helpers_cover_dry_run_and_write_r
     uint32_t cube = 0u;
     uint32_t sound = 0u;
     uint32_t animation = 0u;
+    uint32_t script = 0u;
     float position_keys[] = {
         0.0f, 1.0f, 2.0f, 3.0f,
         1.0f, 4.0f, 5.0f, 6.0f,
@@ -528,17 +532,47 @@ TEST(public_api_smoke, project_report_evidence_helpers_cover_dry_run_and_write_r
                   sizeof(controllers) / sizeof(controllers[0])));
 
     nmo_project_report_init(&report);
+    ASSERT_EQ(NMO_OK, nmo_project_executor_execute_to_file(plan, output_path, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_FALSE(report.dry_run);
+    const nmo_project_report_object_evidence_t *cube_by_name =
+        nmo_project_report_find_object_evidence_by_name(&report, "Cube");
+    ASSERT_NOT_NULL(cube_by_name);
+    ASSERT_NE(0u, cube_by_name->object_id);
+    ASSERT_NOT_NULL(nmo_project_report_find_object_evidence_by_handle(&report, cube));
+    nmo_project_report_dispose(&report);
+
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object_script(
+                  plan,
+                  cube,
+                  "StartupScript",
+                  &script));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_script_add_on_start_debug_output(
+                  plan,
+                  script,
+                  "public api smoke"));
+
+    nmo_project_report_init(&report);
     ASSERT_EQ(NMO_OK, nmo_project_executor_execute_dry_run(plan, &report));
     ASSERT_TRUE(report.ok);
     ASSERT_EQ(3u, nmo_project_report_evidence_object_count(&report));
     ASSERT_EQ(2u, nmo_project_report_evidence_asset_binding_count(&report));
     ASSERT_EQ(0u, nmo_project_report_evidence_material_texture_slot_count(&report));
     ASSERT_EQ(1u, nmo_project_report_evidence_material_channel_count(&report));
-    ASSERT_EQ(0u, nmo_project_report_evidence_script_count(&report));
+    ASSERT_EQ(1u, nmo_project_report_evidence_script_count(&report));
     ASSERT_EQ(1u, nmo_project_report_evidence_sound_binding_count(&report));
     ASSERT_EQ(1u, nmo_project_report_evidence_animation_binding_count(&report));
+    ASSERT_EQ(0u, nmo_project_report_evidence_object_count(NULL));
+    ASSERT_EQ(0u, nmo_project_report_evidence_asset_binding_count(NULL));
+    ASSERT_EQ(0u, nmo_project_report_evidence_material_texture_slot_count(NULL));
+    ASSERT_EQ(0u, nmo_project_report_evidence_material_channel_count(NULL));
+    ASSERT_EQ(0u, nmo_project_report_evidence_script_count(NULL));
+    ASSERT_EQ(0u, nmo_project_report_evidence_sound_binding_count(NULL));
+    ASSERT_EQ(0u, nmo_project_report_evidence_animation_binding_count(NULL));
 
-    const nmo_project_report_object_evidence_t *cube_by_name =
+    cube_by_name =
         nmo_project_report_find_object_evidence_by_name(&report, "Cube");
     ASSERT_NOT_NULL(cube_by_name);
     ASSERT_EQ(cube, cube_by_name->plan_handle);
@@ -552,24 +586,44 @@ TEST(public_api_smoke, project_report_evidence_helpers_cover_dry_run_and_write_r
     ASSERT_NOT_NULL(nmo_project_report_find_material_channel_evidence(
         &report,
         "Cube_Material"));
+    ASSERT_NULL(nmo_project_report_find_material_texture_slot_evidence(
+        &report,
+        "Cube_Material",
+        0u));
+    const nmo_project_report_script_evidence_t *script_evidence =
+        nmo_project_report_find_script_evidence(&report, "StartupScript");
+    ASSERT_NOT_NULL(script_evidence);
+    ASSERT_EQ(1u, script_evidence->step_count);
+    ASSERT_TRUE(script_evidence->validation_ok);
     ASSERT_NOT_NULL(nmo_project_report_find_sound_binding_evidence(
         &report,
         "Sound"));
     ASSERT_NOT_NULL(nmo_project_report_find_animation_binding_evidence(
         &report,
         "Animation"));
+    ASSERT_NULL(nmo_project_report_find_asset_binding_evidence(NULL, "Cube_Mesh"));
+    ASSERT_NULL(nmo_project_report_find_asset_binding_evidence(&report, NULL));
+    ASSERT_NULL(nmo_project_report_find_material_texture_slot_evidence(
+        NULL,
+        "Cube_Material",
+        0u));
+    ASSERT_NULL(nmo_project_report_find_material_texture_slot_evidence(
+        &report,
+        NULL,
+        0u));
+    ASSERT_NULL(nmo_project_report_find_material_channel_evidence(NULL, "Cube_Material"));
+    ASSERT_NULL(nmo_project_report_find_material_channel_evidence(&report, NULL));
+    ASSERT_NULL(nmo_project_report_find_script_evidence(NULL, "StartupScript"));
+    ASSERT_NULL(nmo_project_report_find_script_evidence(&report, NULL));
+    ASSERT_NULL(nmo_project_report_find_sound_binding_evidence(NULL, "Sound"));
+    ASSERT_NULL(nmo_project_report_find_sound_binding_evidence(&report, NULL));
+    ASSERT_NULL(nmo_project_report_find_animation_binding_evidence(NULL, "Animation"));
+    ASSERT_NULL(nmo_project_report_find_animation_binding_evidence(&report, NULL));
     ASSERT_NULL(nmo_project_report_find_object_evidence_by_name(&report, "Missing"));
+    ASSERT_NULL(nmo_project_report_find_object_evidence_by_name(NULL, "Cube"));
+    ASSERT_NULL(nmo_project_report_find_object_evidence_by_name(&report, NULL));
     ASSERT_NULL(nmo_project_report_find_object_evidence_by_handle(&report, 9999u));
-    nmo_project_report_dispose(&report);
-
-    nmo_project_report_init(&report);
-    ASSERT_EQ(NMO_OK, nmo_project_executor_execute_to_file(plan, output_path, &report));
-    ASSERT_TRUE(report.ok);
-    ASSERT_FALSE(report.dry_run);
-    cube_by_name = nmo_project_report_find_object_evidence_by_name(&report, "Cube");
-    ASSERT_NOT_NULL(cube_by_name);
-    ASSERT_NE(0u, cube_by_name->object_id);
-    ASSERT_NOT_NULL(nmo_project_report_find_object_evidence_by_handle(&report, cube));
+    ASSERT_NULL(nmo_project_report_find_object_evidence_by_handle(NULL, cube));
     nmo_project_report_dispose(&report);
 
     nmo_project_plan_destroy(plan);
