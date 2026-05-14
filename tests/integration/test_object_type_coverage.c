@@ -209,7 +209,8 @@ TEST(coverage, all_core_types_present) {
     }
 
     int missing = concrete_total - concrete_found;
-    printf("  Concrete type coverage: %d/%d\n", concrete_found, concrete_total);
+    printf("  Concrete type coverage: %d/%d; abstract seen: %d\n",
+           concrete_found, concrete_total, abstract_found);
     if (missing > 0) {
         printf("  WARNING: %d concrete type(s) not found in test corpus\n", missing);
     }

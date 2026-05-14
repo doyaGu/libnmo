@@ -673,7 +673,8 @@ TEST(object_layer_acceptance, deep_validation) {
     /* Print totals */
     printf("\n=== Totals ===\n");
     printf("Files: %zu loaded, %zu failed\n", files_loaded, files_failed);
-    printf("Objects: %zu validated, %zu invalid states\n", total_valid, total_invalid);
+    printf("Objects: %zu total, %zu validated, %zu invalid states\n",
+           total_objects, total_valid, total_invalid);
     printf("References: %zu checked, %zu broken\n", total_refs_checked, total_refs_broken);
     printf("\n");
 
