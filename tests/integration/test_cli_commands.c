@@ -3085,6 +3085,14 @@ TEST(cli, patch_apply_project_usage_mentions_dry_run) {
     free(result.output);
 }
 
+TEST(cli, patch_apply_help_mentions_project_generation) {
+    char *output = run_cli("patch apply --help");
+    ASSERT_NOT_NULL(output);
+    ASSERT_STR_CONTAINS(output, "Apply rewrite patch or generate project manifest");
+    ASSERT_STR_CONTAINS(output, "Output file for project generation");
+    free(output);
+}
+
 TEST(cli, debug_help_marks_output_as_diagnostic) {
     const char *commands[] = {
         "debug load-phases --help",
@@ -4208,6 +4216,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, help_documents_batch_supported_subset);
     REGISTER_TEST(cli, resource_replace_help_distinguishes_payload_from_texture_bitmap);
     REGISTER_TEST(cli, patch_apply_project_usage_mentions_dry_run);
+    REGISTER_TEST(cli, patch_apply_help_mentions_project_generation);
     REGISTER_TEST(cli, debug_help_marks_output_as_diagnostic);
     REGISTER_TEST(cli, debug_probe_help_lists_probe_kinds);
     REGISTER_TEST(cli, debug_probe_2d_text_dry_run_reports_edit_plan);

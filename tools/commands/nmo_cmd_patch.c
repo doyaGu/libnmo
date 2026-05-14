@@ -1173,7 +1173,7 @@ static int patch_parse_apply_args(int argc,
     static const nmo_opt_def_t opts[] = {
         {"--dry-run", NULL, NMO_OPT_FLAG, "Preview without saving"},
         {"--project", NULL, NMO_OPT_STRING, "Project manifest to generate"},
-        {"--output", "-o", NMO_OPT_STRING, "Output CMO path"},
+        {"--output", "-o", NMO_OPT_STRING, "Output file for project generation"},
     };
     enum { OPT_DRY_RUN, OPT_PROJECT, OPT_OUTPUT, OPT_COUNT };
 

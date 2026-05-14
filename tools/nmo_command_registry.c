@@ -1106,7 +1106,7 @@ static const nmo_cli_action_t behavior_actions[] = {
 };
 
 static const nmo_cli_action_t patch_actions[] = {
-    ACTION("apply", NULL, "Apply rewrite patch", nmo_cmd_patch_apply, patch_apply_usage, NMO_REPL_ACTION_FORBIDDEN),
+    ACTION("apply", NULL, "Apply rewrite patch or generate project manifest", nmo_cmd_patch_apply, patch_apply_usage, NMO_REPL_ACTION_FORBIDDEN),
     ACTION("diff", NULL, "Preview rewrite patch", nmo_cmd_patch_diff, patch_diff_usage, NMO_REPL_ACTION_FORBIDDEN),
 };
 

@@ -179,7 +179,7 @@ complete -c nmo -n 'test (__nmo_pos_count) -eq 2; and (test (__nmo_group) = beha
 complete -c nmo -n 'test (__nmo_pos_count) -eq 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = interface or test (__nmo_action) = iface)' -a 'set-viewport' -d 'Set editor viewport'
 complete -c nmo -n 'test (__nmo_pos_count) -eq 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = interface or test (__nmo_action) = iface)' -a 'set-graph-io' -d 'Set graph IO port ordering'
 complete -c nmo -n 'test (__nmo_pos_count) -eq 2; and (test (__nmo_group) = behavior or test (__nmo_group) = beh); and (test (__nmo_action) = interface or test (__nmo_action) = iface)' -a 'translate' -d 'Translate all positions'
-complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = patch)' -a 'apply' -d 'Apply rewrite patch'
+complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = patch)' -a 'apply' -d 'Apply rewrite patch or generate project manifest'
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = patch)' -a 'diff' -d 'Preview rewrite patch'
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = parameter or test (__nmo_group) = param)' -a 'list' -d 'List parameters'
 complete -c nmo -n 'test (__nmo_pos_count) -eq 1; and (test (__nmo_group) = parameter or test (__nmo_group) = param)' -a 'ls' -d 'Alias for list'

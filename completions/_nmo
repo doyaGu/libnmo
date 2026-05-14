@@ -460,7 +460,7 @@ _nmo_actions() {
             ) ;;
         patch)
             acts=(
-                'apply:Apply rewrite patch'
+                'apply:Apply rewrite patch or generate project manifest'
                 'diff:Preview rewrite patch'
             ) ;;
         parameter)
