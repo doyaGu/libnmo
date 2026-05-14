@@ -254,15 +254,6 @@ static const nmo_repl_command_t *find_command(const char *name) {
 }
 
 const char **nmo_repl_get_command_names(void) {
-    /* Count entries (names + non-empty aliases) */
-    size_t count = 0;
-    for (int i = 0; commands[i].name != NULL; i++) {
-        count++;
-        if (commands[i].alias && commands[i].alias[0]) {
-            count++;
-        }
-    }
-
     static const char *names[128];
     size_t idx = 0;
     for (int i = 0; commands[i].name != NULL && idx < sizeof(names) / sizeof(names[0]) - 1; i++) {

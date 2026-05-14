@@ -203,7 +203,6 @@ nmo_status_t nmo_virtools_load_param_types(nmo_type_registry_t *registry, const 
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "expected JSON array");
     }
 
-    size_t registered = 0;
     yyjson_val *item;
     yyjson_arr_iter iter;
     yyjson_arr_iter_init(root, &iter);
@@ -254,8 +253,6 @@ nmo_status_t nmo_virtools_load_param_types(nmo_type_registry_t *registry, const 
             yyjson_doc_free(doc);
             return register_status;
         }
-
-        registered++;
 
         /* Register metadata for enum/flags/struct */
         nmo_type_id_t tid = nmo_type_registry_guid_to_type_id(registry, guid);

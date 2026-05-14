@@ -1356,7 +1356,6 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
             boundary->parameter_in_count,
             boundary->parameter_out_count);
 
-    size_t text_group_count = 0;
     size_t *parents = child_count > 0
         ? (size_t *)malloc(child_count * sizeof(*parents))
         : NULL;
@@ -1528,7 +1527,6 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
                         component_boundary.parameter_out_count,
                         fold_interface_action(children[i].root_state));
                 nmo_behavior_boundary_free(&component_boundary);
-                ++text_group_count;
             }
             free(component_roots);
         }
