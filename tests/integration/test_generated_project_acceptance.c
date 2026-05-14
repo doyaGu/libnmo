@@ -16,6 +16,10 @@
 #include "object/builtin/nmo_texture_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_query.h"
+#include "project/nmo_asset_plan.h"
+#include "project/nmo_project_executor.h"
+#include "project/nmo_project_plan.h"
+#include "project/nmo_scene_authoring.h"
 #include "runtime/nmo_context.h"
 
 #include <stdio.h>
@@ -127,6 +131,16 @@ static int write_text_file(const char *path, const char *text)
     return ok;
 }
 
+static int file_exists(const char *path)
+{
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        return 0;
+    }
+    fclose(fp);
+    return 1;
+}
+
 static int write_png_file(const char *path)
 {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
@@ -216,6 +230,133 @@ static nmo_object_t *find_named_object(
         return NULL;
     }
     return object;
+}
+
+TEST(generated_project_acceptance, c_api_minimal_usage_fixture_generates_level)
+{
+    const char *output_path = "test_project_acceptance_tmp/c_api_minimal.cmo";
+    make_dir("test_project_acceptance_tmp");
+    remove(output_path);
+    remove("test_project_acceptance_tmp/c_api_minimal.cmo.tmp");
+
+    nmo_project_plan_t *plan = NULL;
+    uint32_t scene = 0u;
+    uint32_t cube = 0u;
+    nmo_project_report_t report;
+
+    ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_set_document_name(plan, "CApiUsage"));
+    ASSERT_EQ(NMO_OK, nmo_project_plan_add_scene(plan, "Level", &scene));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_add_object(
+                  plan,
+                  &(nmo_project_object_spec_t){
+                      .scene_handle = scene,
+                      .class_id = NMO_CID_3DENTITY,
+                      .name = "Cube",
+                      .flags = NMO_PROJECT_OBJECT_FLAG_ACTIVE,
+                  },
+                  &cube));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_primitive_mesh(plan, cube, NMO_PRIMITIVE_CUBE));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_material_diffuse(
+                  plan,
+                  cube,
+                  1.0f,
+                  0.0f,
+                  0.0f,
+                  1.0f));
+
+    nmo_project_report_init(&report);
+    ASSERT_EQ(NMO_OK,
+              nmo_project_executor_execute_to_file(plan, output_path, &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_FALSE(report.dry_run);
+    ASSERT_TRUE(nmo_project_report_diff_has_created_scene(&report, "Level"));
+    ASSERT_TRUE(nmo_project_report_diff_has_created_object(&report, "Cube"));
+    ASSERT_TRUE(nmo_project_report_diff_has_created_asset(&report, "Cube_Mesh"));
+
+    char args[1024];
+    snprintf(args, sizeof(args), "validate all \"%s\"", output_path);
+    assert_cli_success_contains(args, "Result: VALID");
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &document));
+    ASSERT_NOT_NULL(document);
+    assert_named_class_exists(document, "Level", NMO_CID_SCENE);
+    assert_named_class_exists(document, "Cube", NMO_CID_3DENTITY);
+    assert_named_class_exists(document, "Cube_Mesh", NMO_CID_MESH);
+    assert_named_class_exists(document, "Cube_Material", NMO_CID_MATERIAL);
+
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+    nmo_project_report_dispose(&report);
+    nmo_project_plan_destroy(plan);
+    remove(output_path);
+}
+
+TEST(generated_project_acceptance, cli_minimal_manifest_usage_fixture_dry_run_and_write)
+{
+    make_dir("test_project_acceptance_tmp");
+    const char *manifest_path = "test_project_acceptance_tmp/minimal_usage.json";
+    const char *output_path = "test_project_acceptance_tmp/minimal_usage.cmo";
+    remove(manifest_path);
+    remove(output_path);
+    remove("test_project_acceptance_tmp/minimal_usage.cmo.tmp");
+
+    const char *manifest =
+        "{"
+        "\"version\":1,"
+        "\"document\":{\"name\":\"ManifestUsage\"},"
+        "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
+        "\"name\":\"Cube\","
+        "\"class\":\"CK3dEntity\","
+        "\"mesh\":{\"primitive\":\"cube\"},"
+        "\"material\":{\"color\":[0,1,0,1]}"
+        "}]}]"
+        "}";
+    ASSERT_TRUE(write_text_file(manifest_path, manifest));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "patch apply --project \"%s\" --dry-run -o \"%s\"",
+             manifest_path,
+             output_path);
+    cli_run_result_t dry_run = run_cli_capture(args);
+    if (dry_run.exit_code != 0) {
+        fprintf(stderr, "\nCommand: %s\nExit: %d\nOutput:\n%s\n",
+                args,
+                dry_run.exit_code,
+                dry_run.output ? dry_run.output : "(null)");
+    }
+    ASSERT_EQ(0, dry_run.exit_code);
+    ASSERT_FALSE(file_exists(output_path));
+    free(dry_run.output);
+
+    snprintf(args, sizeof(args),
+             "patch apply --project \"%s\" -o \"%s\"",
+             manifest_path,
+             output_path);
+    assert_cli_success_contains(args, "Saved to:");
+    snprintf(args, sizeof(args), "validate all \"%s\"", output_path);
+    assert_cli_success_contains(args, "Result: VALID");
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_document_load_file(ctx, output_path, NULL, &document));
+    ASSERT_NOT_NULL(document);
+    assert_named_class_exists(document, "Cube", NMO_CID_3DENTITY);
+    assert_named_class_exists(document, "Cube_Mesh", NMO_CID_MESH);
+    assert_named_class_exists(document, "Cube_Material", NMO_CID_MATERIAL);
+
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+    remove(output_path);
+    remove(manifest_path);
 }
 
 TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
@@ -480,5 +621,8 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
 }
 
 TEST_MAIN_BEGIN()
+REGISTER_TEST(generated_project_acceptance, c_api_minimal_usage_fixture_generates_level);
+REGISTER_TEST(generated_project_acceptance,
+              cli_minimal_manifest_usage_fixture_dry_run_and_write);
 REGISTER_TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest);
 TEST_MAIN_END()
