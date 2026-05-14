@@ -18,6 +18,14 @@ def tail_text(text: str, limit: int = 4000) -> str:
     return text[-limit:]
 
 
+def completed_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Load a generated CMO in an explicitly configured Virtools Player."
@@ -55,12 +63,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    cmo_path = Path(args.cmo)
-    player_path = Path(args.player) if args.player else None
+    cmo_path = Path(args.cmo).expanduser().resolve()
+    player_path = Path(args.player).expanduser().resolve() if args.player else None
     result = {
         "ok": False,
         "cmo": str(cmo_path),
         "player": str(player_path) if player_path else None,
+        "timeout_seconds": args.timeout,
         "command": None,
         "exit_code": None,
         "timed_out": False,
@@ -82,7 +91,11 @@ def main() -> int:
 
     command = [str(player_path), *args.player_arg, str(cmo_path)]
     result["command"] = command
-    evidence_dir = Path(args.evidence_dir) if args.evidence_dir else None
+    evidence_dir = (
+        Path(args.evidence_dir).expanduser().resolve()
+        if args.evidence_dir
+        else None
+    )
     if evidence_dir is not None:
         evidence_dir.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
@@ -101,8 +114,8 @@ def main() -> int:
         stderr_text = completed.stderr
     except subprocess.TimeoutExpired as exc:
         result["timed_out"] = True
-        stdout_text = exc.stdout or ""
-        stderr_text = exc.stderr or ""
+        stdout_text = completed_text(exc.stdout)
+        stderr_text = completed_text(exc.stderr)
     finally:
         result["elapsed_seconds"] = round(time.monotonic() - started, 3)
 
@@ -114,12 +127,12 @@ def main() -> int:
         stdout_path.write_text(stdout_text, encoding="utf-8", errors="replace")
         stderr_path.write_text(stderr_text, encoding="utf-8", errors="replace")
         result["logs"] = {
-            "stdout": str(stdout_path),
-            "stderr": str(stderr_path),
+            "stdout": str(stdout_path.resolve()),
+            "stderr": str(stderr_path.resolve()),
         }
 
     if args.frame_evidence_file:
-        evidence = Path(args.frame_evidence_file)
+        evidence = Path(args.frame_evidence_file).expanduser().resolve()
         result["frame_evidence"] = {
             "path": str(evidence),
             "exists": evidence.is_file(),
@@ -136,7 +149,7 @@ def main() -> int:
     )
     if evidence_dir is not None:
         result_path = evidence_dir / "smoke_result.json"
-        result["logs"]["result"] = str(result_path)
+        result["logs"]["result"] = str(result_path.resolve())
         result_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(json.dumps(result, indent=2))
     return 0 if result["ok"] or not args.strict_exit else 1
