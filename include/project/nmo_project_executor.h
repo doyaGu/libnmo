@@ -67,12 +67,26 @@ typedef struct nmo_project_report_sound_binding_evidence {
     char *attached_object_name;
 } nmo_project_report_sound_binding_evidence_t;
 
+typedef struct nmo_project_report_animation_controller_evidence {
+    uint32_t type;
+    uint32_t data_size;
+} nmo_project_report_animation_controller_evidence_t;
+
+typedef struct nmo_project_report_animation_morph_key_evidence {
+    float time_step;
+    uint32_t data_size;
+} nmo_project_report_animation_morph_key_evidence_t;
+
 typedef struct nmo_project_report_animation_binding_evidence {
     char *name;
     char *target_name;
     uint32_t format;
     bool has_length;
     float length;
+    nmo_project_report_animation_controller_evidence_t *controllers;
+    size_t controller_count;
+    nmo_project_report_animation_morph_key_evidence_t *morph_keys;
+    size_t morph_key_count;
 } nmo_project_report_animation_binding_evidence_t;
 
 typedef struct nmo_project_report_evidence {

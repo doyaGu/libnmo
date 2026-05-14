@@ -805,6 +805,62 @@ static void patch_add_project_evidence_json(
                         "length",
                         animation->length);
                 }
+                nmo_cli_json_add_uint_safe(
+                    doc,
+                    item,
+                    "controller_count",
+                    (uint64_t)animation->controller_count);
+                yyjson_mut_val *controllers = yyjson_mut_arr(doc);
+                if (controllers) {
+                    for (size_t controller_index = 0u;
+                         controller_index < animation->controller_count;
+                         ++controller_index) {
+                        yyjson_mut_val *controller = yyjson_mut_obj(doc);
+                        if (!controller) {
+                            continue;
+                        }
+                        nmo_cli_json_add_uint_safe(
+                            doc,
+                            controller,
+                            "type",
+                            (uint64_t)animation->controllers[controller_index].type);
+                        nmo_cli_json_add_uint_safe(
+                            doc,
+                            controller,
+                            "data_size",
+                            (uint64_t)animation->controllers[controller_index].data_size);
+                        yyjson_mut_arr_append(controllers, controller);
+                    }
+                    nmo_cli_json_add_val_safe(doc, item, "controllers", controllers);
+                }
+                nmo_cli_json_add_uint_safe(
+                    doc,
+                    item,
+                    "morph_key_count",
+                    (uint64_t)animation->morph_key_count);
+                yyjson_mut_val *morph_keys = yyjson_mut_arr(doc);
+                if (morph_keys) {
+                    for (size_t morph_key_index = 0u;
+                         morph_key_index < animation->morph_key_count;
+                         ++morph_key_index) {
+                        yyjson_mut_val *morph_key = yyjson_mut_obj(doc);
+                        if (!morph_key) {
+                            continue;
+                        }
+                        nmo_cli_json_add_real_safe(
+                            doc,
+                            morph_key,
+                            "time",
+                            animation->morph_keys[morph_key_index].time_step);
+                        nmo_cli_json_add_uint_safe(
+                            doc,
+                            morph_key,
+                            "data_size",
+                            (uint64_t)animation->morph_keys[morph_key_index].data_size);
+                        yyjson_mut_arr_append(morph_keys, morph_key);
+                    }
+                    nmo_cli_json_add_val_safe(doc, item, "morph_keys", morph_keys);
+                }
                 yyjson_mut_arr_append(animation_bindings, item);
             }
         }

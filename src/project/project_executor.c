@@ -90,6 +90,8 @@ static void project_report_evidence_dispose(nmo_project_report_evidence_t *evide
     for (size_t i = 0u; i < evidence->animation_binding_count; ++i) {
         free(evidence->animation_bindings[i].name);
         free(evidence->animation_bindings[i].target_name);
+        free(evidence->animation_bindings[i].controllers);
+        free(evidence->animation_bindings[i].morph_keys);
     }
     free(evidence->animation_bindings);
     memset(evidence, 0, sizeof(*evidence));
@@ -456,7 +458,11 @@ static nmo_status_t project_report_add_animation_binding_evidence(
     const char *target_name,
     uint32_t format,
     bool has_length,
-    float length)
+    float length,
+    const nmo_objanim_controller_t *controllers,
+    size_t controller_count,
+    const nmo_objanim_morph_key_t *morph_keys,
+    size_t morph_key_count)
 {
     if (!evidence || !name || !target_name) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -465,9 +471,61 @@ static nmo_status_t project_report_add_animation_binding_evidence(
 
     char *name_copy = project_executor_strdup(name);
     char *target_copy = project_executor_strdup(target_name);
+    nmo_project_report_animation_controller_evidence_t *controller_copy = NULL;
+    nmo_project_report_animation_morph_key_evidence_t *morph_key_copy = NULL;
+    if (controller_count > 0u) {
+        if (!controllers ||
+            controller_count > SIZE_MAX / sizeof(*controller_copy)) {
+            free(name_copy);
+            free(target_copy);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "invalid animation controller evidence");
+        }
+        controller_copy =
+            (nmo_project_report_animation_controller_evidence_t *)calloc(
+                controller_count,
+                sizeof(*controller_copy));
+        if (!controller_copy) {
+            free(name_copy);
+            free(target_copy);
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate animation controller evidence");
+        }
+        for (size_t i = 0u; i < controller_count; ++i) {
+            controller_copy[i].type = controllers[i].type;
+            controller_copy[i].data_size = controllers[i].data_size;
+        }
+    }
+    if (morph_key_count > 0u) {
+        if (!morph_keys ||
+            morph_key_count > SIZE_MAX / sizeof(*morph_key_copy)) {
+            free(name_copy);
+            free(target_copy);
+            free(controller_copy);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "invalid animation morph key evidence");
+        }
+        morph_key_copy =
+            (nmo_project_report_animation_morph_key_evidence_t *)calloc(
+                morph_key_count,
+                sizeof(*morph_key_copy));
+        if (!morph_key_copy) {
+            free(name_copy);
+            free(target_copy);
+            free(controller_copy);
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "failed to allocate animation morph key evidence");
+        }
+        for (size_t i = 0u; i < morph_key_count; ++i) {
+            morph_key_copy[i].time_step = morph_keys[i].time_step;
+            morph_key_copy[i].data_size = morph_keys[i].data_size;
+        }
+    }
     if (!name_copy || !target_copy) {
         free(name_copy);
         free(target_copy);
+        free(controller_copy);
+        free(morph_key_copy);
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                          "failed to allocate animation binding evidence");
     }
@@ -480,6 +538,8 @@ static nmo_status_t project_report_add_animation_binding_evidence(
     if (!next_bindings) {
         free(name_copy);
         free(target_copy);
+        free(controller_copy);
+        free(morph_key_copy);
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                          "failed to allocate animation binding evidence");
     }
@@ -492,6 +552,10 @@ static nmo_status_t project_report_add_animation_binding_evidence(
     item->format = format;
     item->has_length = has_length;
     item->length = length;
+    item->controllers = controller_copy;
+    item->controller_count = controller_count;
+    item->morph_keys = morph_key_copy;
+    item->morph_key_count = morph_key_count;
     evidence->animation_binding_count = next_count;
     NMO_RETURN_OK();
 }
@@ -632,7 +696,11 @@ static nmo_status_t project_report_populate_diff(
                 target.name,
                 (uint32_t)object.animation_format,
                 object.has_animation_length,
-                object.animation_length));
+                object.animation_length,
+                object.animation_controllers,
+                object.animation_controller_count,
+                object.animation_morph_keys,
+                object.animation_morph_key_count));
         }
     }
 

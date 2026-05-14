@@ -156,6 +156,12 @@ static uint64_t get_uint_field(yyjson_val *obj, const char *key)
     return val && yyjson_is_uint(val) ? yyjson_get_uint(val) : 0u;
 }
 
+static double get_real_field(yyjson_val *obj, const char *key)
+{
+    yyjson_val *val = yyjson_obj_get(obj, key);
+    return val && yyjson_is_num(val) ? yyjson_get_real(val) : 0.0;
+}
+
 static int array_contains_string(yyjson_val *arr, const char *needle)
 {
     size_t idx = 0u;
@@ -221,7 +227,19 @@ TEST(generated_project_manifest, cli_dry_run_reports_project_diagnostics)
                 "{\"name\":\"Camera\",\"class\":\"CKCamera\"},"
                 "{\"name\":\"Cube\",\"class\":\"CK3dEntity\","
                     "\"mesh\":{\"primitive\":\"cube\"},"
-                    "\"material\":{\"color\":[1,0,0,1]}}"
+                    "\"material\":{\"color\":[1,0,0,1]}},"
+                "{\"name\":\"Animation\",\"class\":\"CKObjectAnimation\","
+                    "\"animation\":{"
+                        "\"target\":\"Cube\","
+                        "\"format\":\"newdata\","
+                        "\"controllers\":[{"
+                            "\"type\":1669088001,"
+                            "\"keys\":[[0,1,2,3],[1,4,5,6]]"
+                        "}],"
+                        "\"morph_keys\":[{\"time\":0.5,\"data\":[1,2,3]}],"
+                        "\"length\":1.25"
+                    "}"
+                "}"
             "]"
         "}]"
         "}";
@@ -276,7 +294,7 @@ TEST(generated_project_manifest, cli_dry_run_reports_project_diagnostics)
 
     yyjson_val *objects = get_array_field(evidence, "generated_objects");
     ASSERT_NOT_NULL(objects);
-    ASSERT_EQ(2u, yyjson_arr_size(objects));
+    ASSERT_EQ(3u, yyjson_arr_size(objects));
     yyjson_val *object = yyjson_arr_get(objects, 1);
     ASSERT_STR_EQ("Cube", get_string_field(object, "name"));
     ASSERT_EQ(0u, get_uint_field(object, "id"));
@@ -511,7 +529,19 @@ TEST(generated_project_manifest, cli_json_write_reports_project_evidence)
                 "{\"name\":\"Camera\",\"class\":\"CKCamera\"},"
                 "{\"name\":\"Cube\",\"class\":\"CK3dEntity\","
                     "\"mesh\":{\"primitive\":\"cube\"},"
-                    "\"material\":{\"color\":[1,0,0,1]}}"
+                    "\"material\":{\"color\":[1,0,0,1]}},"
+                "{\"name\":\"Animation\",\"class\":\"CKObjectAnimation\","
+                    "\"animation\":{"
+                        "\"target\":\"Cube\","
+                        "\"format\":\"newdata\","
+                        "\"controllers\":[{"
+                            "\"type\":1669088001,"
+                            "\"keys\":[[0,1,2,3],[1,4,5,6]]"
+                        "}],"
+                        "\"morph_keys\":[{\"time\":0.5,\"data\":[1,2,3]}],"
+                        "\"length\":1.25"
+                    "}"
+                "}"
             "]"
         "}]"
         "}";
@@ -546,7 +576,7 @@ TEST(generated_project_manifest, cli_json_write_reports_project_evidence)
 
     yyjson_val *objects = get_array_field(evidence, "generated_objects");
     ASSERT_NOT_NULL(objects);
-    ASSERT_EQ(2u, yyjson_arr_size(objects));
+    ASSERT_EQ(3u, yyjson_arr_size(objects));
     yyjson_val *cube = yyjson_arr_get(objects, 1);
     ASSERT_STR_EQ("Cube", get_string_field(cube, "name"));
     ASSERT_GT(get_uint_field(cube, "id"), 0u);
@@ -555,6 +585,28 @@ TEST(generated_project_manifest, cli_json_write_reports_project_evidence)
     yyjson_val *scripts = get_array_field(evidence, "scripts");
     ASSERT_NOT_NULL(scripts);
     ASSERT_EQ(0u, yyjson_arr_size(scripts));
+
+    yyjson_val *animation_bindings =
+        get_array_field(evidence, "animation_bindings");
+    ASSERT_NOT_NULL(animation_bindings);
+    ASSERT_EQ(1u, yyjson_arr_size(animation_bindings));
+    yyjson_val *animation = yyjson_arr_get(animation_bindings, 0);
+    ASSERT_STR_EQ("Animation", get_string_field(animation, "name"));
+    ASSERT_STR_EQ("Cube", get_string_field(animation, "target"));
+    ASSERT_EQ(1u, get_uint_field(animation, "controller_count"));
+    yyjson_val *controllers = get_array_field(animation, "controllers");
+    ASSERT_NOT_NULL(controllers);
+    ASSERT_EQ(1u, yyjson_arr_size(controllers));
+    yyjson_val *controller = yyjson_arr_get(controllers, 0);
+    ASSERT_EQ(1669088001u, get_uint_field(controller, "type"));
+    ASSERT_EQ(32u, get_uint_field(controller, "data_size"));
+    ASSERT_EQ(1u, get_uint_field(animation, "morph_key_count"));
+    yyjson_val *morph_keys = get_array_field(animation, "morph_keys");
+    ASSERT_NOT_NULL(morph_keys);
+    ASSERT_EQ(1u, yyjson_arr_size(morph_keys));
+    yyjson_val *morph_key = yyjson_arr_get(morph_keys, 0);
+    ASSERT_FLOAT_EQ(0.5f, (float)get_real_field(morph_key, "time"), 0.0001f);
+    ASSERT_EQ(12u, get_uint_field(morph_key, "data_size"));
 
     yyjson_doc_free(doc);
     free(result.output);

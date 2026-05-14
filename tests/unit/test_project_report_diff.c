@@ -22,6 +22,29 @@ TEST(project_report_diff, reports_created_scene_object_and_asset)
     uint32_t sound = 0u;
     uint32_t animation = 0u;
     nmo_project_report_t report;
+    float position_keys[] = {
+        0.0f, 1.0f, 2.0f, 3.0f,
+        1.0f, 4.0f, 5.0f, 6.0f,
+    };
+    nmo_objanim_controller_t controllers[] = {
+        {
+            .type = 1669088001u,
+            .key_count = 2u,
+            .data_size = sizeof(position_keys),
+            .data = position_keys,
+        },
+    };
+    float morph_payload[] = {
+        1.0f, 2.0f, 3.0f,
+        4.0f, 5.0f, 6.0f,
+    };
+    nmo_objanim_morph_key_t morph_keys[] = {
+        {
+            .time_step = 0.5f,
+            .data_size = sizeof(morph_payload),
+            .data = morph_payload,
+        },
+    };
 
     ASSERT_EQ(NMO_OK, nmo_project_plan_create(&plan));
     ASSERT_EQ(NMO_OK, nmo_project_plan_set_document_name(plan, "Diff"));
@@ -85,7 +108,7 @@ TEST(project_report_diff, reports_created_scene_object_and_asset)
                   plan,
                   animation,
                   cube,
-                  CKOBJANIM_FORMAT_CONTROLLERS,
+                  CKOBJANIM_FORMAT_NEWDATA,
                   false,
                   0.0f,
                   0.0f,
@@ -94,6 +117,18 @@ TEST(project_report_diff, reports_created_scene_object_and_asset)
                   0u,
                   true,
                   1.25f));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_object_animation_controllers(
+                  plan,
+                  animation,
+                  controllers,
+                  sizeof(controllers) / sizeof(controllers[0])));
+    ASSERT_EQ(NMO_OK,
+              nmo_project_plan_set_object_animation_morph_keys(
+                  plan,
+                  animation,
+                  morph_keys,
+                  sizeof(morph_keys) / sizeof(morph_keys[0])));
 
     nmo_project_report_init(&report);
     ASSERT_EQ(NMO_OK, nmo_project_executor_execute_dry_run(plan, &report));
@@ -133,10 +168,24 @@ TEST(project_report_diff, reports_created_scene_object_and_asset)
     ASSERT_EQ(1u, report.evidence.animation_binding_count);
     ASSERT_STR_EQ("Animation", report.evidence.animation_bindings[0].name);
     ASSERT_STR_EQ("Cube", report.evidence.animation_bindings[0].target_name);
-    ASSERT_EQ(CKOBJANIM_FORMAT_CONTROLLERS,
+    ASSERT_EQ(CKOBJANIM_FORMAT_NEWDATA,
               report.evidence.animation_bindings[0].format);
     ASSERT_TRUE(report.evidence.animation_bindings[0].has_length);
     ASSERT_FLOAT_EQ(1.25f, report.evidence.animation_bindings[0].length, 0.0001f);
+    ASSERT_EQ(1u, report.evidence.animation_bindings[0].controller_count);
+    ASSERT_NOT_NULL(report.evidence.animation_bindings[0].controllers);
+    ASSERT_EQ(1669088001u,
+              report.evidence.animation_bindings[0].controllers[0].type);
+    ASSERT_EQ(sizeof(position_keys),
+              report.evidence.animation_bindings[0].controllers[0].data_size);
+    ASSERT_EQ(1u, report.evidence.animation_bindings[0].morph_key_count);
+    ASSERT_NOT_NULL(report.evidence.animation_bindings[0].morph_keys);
+    ASSERT_FLOAT_EQ(
+        0.5f,
+        report.evidence.animation_bindings[0].morph_keys[0].time_step,
+        0.0001f);
+    ASSERT_EQ(sizeof(morph_payload),
+              report.evidence.animation_bindings[0].morph_keys[0].data_size);
 
     nmo_project_report_dispose(&report);
     nmo_project_plan_destroy(plan);
