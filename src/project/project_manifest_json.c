@@ -2559,6 +2559,15 @@ nmo_status_t nmo_project_manifest_json_read_manifest(
         status = manifest_parse_root(&ctx, root, out_manifest);
     }
 
+    char error_message[1024] = {0};
+    nmo_error_code_t error_code = NMO_OK;
+    nmo_severity_t error_severity = NMO_SEVERITY_ERROR;
+    if (status != NMO_OK) {
+        error_code = nmo_last_error_code();
+        error_severity = nmo_last_error_severity();
+        nmo_last_error_message_copy(error_message, sizeof(error_message));
+    }
+
     if (ctx.context) {
         nmo_context_release(ctx.context);
     }
@@ -2568,6 +2577,15 @@ nmo_status_t nmo_project_manifest_json_read_manifest(
     yyjson_doc_free(doc);
     if (status != NMO_OK) {
         nmo_project_manifest_dispose(out_manifest);
+        if (error_message[0] != '\0') {
+            nmo_last_error_setf(
+                error_code != NMO_OK ? error_code : (nmo_error_code_t)status,
+                error_severity,
+                __FILE__,
+                __LINE__,
+                "%s",
+                error_message);
+        }
         return status;
     }
     NMO_RETURN_OK();

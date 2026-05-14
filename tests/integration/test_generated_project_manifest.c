@@ -209,6 +209,46 @@ static void assert_named_class_exists(
     ASSERT_EQ(1u, count);
 }
 
+typedef struct project_gate_manifest_case {
+    const char *name;
+    const char *manifest;
+    const char *expected_field;
+} project_gate_manifest_case_t;
+
+static void assert_cli_dry_run_parse_gate_rejects_without_output(
+    const project_gate_manifest_case_t *gate_case)
+{
+    char manifest_path[256];
+    char output_path[256];
+    snprintf(
+        manifest_path,
+        sizeof(manifest_path),
+        "test_project_manifest_tmp/%s.json",
+        gate_case->name);
+    snprintf(
+        output_path,
+        sizeof(output_path),
+        "test_project_manifest_tmp/%s.cmo",
+        gate_case->name);
+    remove(manifest_path);
+    remove(output_path);
+    ASSERT_TRUE(write_text_file(manifest_path, gate_case->manifest));
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "-f json patch apply --project \"%s\" --dry-run -o \"%s\"",
+             manifest_path,
+             output_path);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_NE(0, result.exit_code);
+    ASSERT_FALSE(file_exists(output_path));
+    ASSERT_STR_CONTAINS(result.output, gate_case->expected_field);
+
+    free(result.output);
+    remove(manifest_path);
+}
+
 TEST(generated_project_manifest, cli_dry_run_reports_project_diagnostics)
 {
     make_dir("test_project_manifest_tmp");
@@ -311,6 +351,127 @@ TEST(generated_project_manifest, cli_dry_run_reports_project_diagnostics)
     yyjson_doc_free(doc);
     free(result.output);
     remove(manifest_path);
+}
+
+TEST(generated_project_manifest, cli_dry_run_keeps_parse_gates_without_output)
+{
+    make_dir("test_project_manifest_tmp");
+    static const project_gate_manifest_case_t cases[] = {
+        {
+            "gate_scene_skybox",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Gate\"},"
+            "\"scenes\":[{\"name\":\"Level\","
+            "\"environment\":{\"skybox\":\"sky.cmo\"},"
+            "\"objects\":[]}]"
+            "}",
+            "skybox",
+        },
+        {
+            "gate_scene_viewport",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Gate\"},"
+            "\"scenes\":[{\"name\":\"Level\","
+            "\"environment\":{\"viewport\":{\"mode\":\"wireframe\"}},"
+            "\"objects\":[]}]"
+            "}",
+            "viewport",
+        },
+        {
+            "gate_scene_render_options",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Gate\"},"
+            "\"scenes\":[{\"name\":\"Level\","
+            "\"environment\":{\"render_options\":{\"z_write\":false}},"
+            "\"objects\":[]}]"
+            "}",
+            "render_options",
+        },
+        {
+            "gate_animation_file",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Gate\"},"
+            "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
+            "\"name\":\"Animation\","
+            "\"class\":\"CKObjectAnimation\","
+            "\"animation\":{\"file\":\"walk.anim\"}"
+            "}]}]"
+            "}",
+            "file",
+        },
+        {
+            "gate_animation_legacy_keys",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Gate\"},"
+            "\"scenes\":[{\"name\":\"Level\",\"objects\":["
+            "{\"id\":\"target\",\"name\":\"Target\",\"class\":\"CK3dEntity\"},"
+            "{\"name\":\"Animation\","
+            "\"class\":\"CKObjectAnimation\","
+            "\"animation\":{\"target\":\"target\",\"format\":\"controllers\","
+            "\"keys\":[]}"
+            "}]}]"
+            "}",
+            "keys",
+        },
+        {
+            "gate_root_managers",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Gate\"},"
+            "\"managers\":[],"
+            "\"scenes\":[]"
+            "}",
+            "managers",
+        },
+        {
+            "gate_object_manager",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Gate\"},"
+            "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
+            "\"name\":\"Body\","
+            "\"class\":\"CK3dEntity\","
+            "\"manager\":{\"guid\":\"00000000-00000000\"}"
+            "}]}]"
+            "}",
+            "manager",
+        },
+        {
+            "gate_physics",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Gate\"},"
+            "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
+            "\"name\":\"Body\","
+            "\"class\":\"CK3dEntity\","
+            "\"physics\":{\"collision\":\"mesh\"}"
+            "}]}]"
+            "}",
+            "physics",
+        },
+        {
+            "gate_collision",
+            "{"
+            "\"version\":1,"
+            "\"document\":{\"name\":\"Gate\"},"
+            "\"scenes\":[{\"name\":\"Level\",\"objects\":[{"
+            "\"name\":\"Body\","
+            "\"class\":\"CK3dEntity\","
+            "\"collision\":{\"type\":\"mesh\"}"
+            "}]}]"
+            "}",
+            "collision",
+        },
+    };
+
+    for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        assert_cli_dry_run_parse_gate_rejects_without_output(&cases[i]);
+    }
 }
 
 TEST(generated_project_manifest, cli_json_failure_reports_project_source)
@@ -678,6 +839,7 @@ TEST(generated_project_manifest, cli_replays_project_manifest)
 
 TEST_MAIN_BEGIN()
 REGISTER_TEST(generated_project_manifest, cli_dry_run_reports_project_diagnostics);
+REGISTER_TEST(generated_project_manifest, cli_dry_run_keeps_parse_gates_without_output);
 REGISTER_TEST(generated_project_manifest, cli_json_failure_reports_project_source);
 REGISTER_TEST(generated_project_manifest, cli_dry_run_reports_animation_payload_gaps);
 REGISTER_TEST(generated_project_manifest, cli_dry_run_reports_midisound_gate);
