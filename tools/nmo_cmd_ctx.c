@@ -7,10 +7,110 @@
 
 #include "nmo_tool_common.h"
 
+#include "core/nmo_error.h"
+#include "extension/nmo_extension_registry.h"
+#include "extension/nmo_virtools_loader.h"
 #include "runtime/nmo_context.h"
 
+#include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static bool str_contains_ci(const char *text, const char *needle)
+{
+    if (text == NULL || needle == NULL || needle[0] == '\0') {
+        return false;
+    }
+
+    size_t needle_len = strlen(needle);
+    for (const char *p = text; *p != '\0'; ++p) {
+        size_t i = 0;
+        while (i < needle_len &&
+               p[i] != '\0' &&
+               tolower((unsigned char)p[i]) ==
+                   tolower((unsigned char)needle[i])) {
+            ++i;
+        }
+        if (i == needle_len) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool path_has_extension_ci(const char *path, const char *extension)
+{
+    if (path == NULL || extension == NULL) {
+        return false;
+    }
+    size_t path_len = strlen(path);
+    size_t ext_len = strlen(extension);
+    if (path_len < ext_len) {
+        return false;
+    }
+    const char *tail = path + path_len - ext_len;
+    for (size_t i = 0; i < ext_len; ++i) {
+        if (tolower((unsigned char)tail[i]) !=
+            tolower((unsigned char)extension[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static nmo_status_t load_json_plugin_data(nmo_context_t *ctx, const char *path)
+{
+    if (str_contains_ci(path, "param")) {
+        return nmo_virtools_load_param_types(
+            nmo_context_get_type_registry(ctx), path);
+    }
+    if (str_contains_ci(path, "op")) {
+        return nmo_virtools_load_operations(
+            nmo_context_get_type_registry(ctx),
+            nmo_context_get_operation_registry(ctx),
+            path);
+    }
+    if (str_contains_ci(path, "plugin")) {
+        return nmo_virtools_load_plugins(
+            nmo_context_get_extension_registry(ctx), path);
+    }
+
+    return nmo_virtools_load_building_blocks(
+        nmo_context_get_bb_registry(ctx), path);
+}
+
+static int apply_global_plugins(nmo_cmd_ctx_t *c)
+{
+    if (c == NULL || c->ctx == NULL || c->global == NULL) {
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+
+    for (size_t i = 0; i < c->global->plugin_count; ++i) {
+        const char *path = c->global->plugin_paths[i];
+        if (path == NULL || path[0] == '\0') {
+            continue;
+        }
+
+        nmo_status_t status = NMO_OK;
+        if (path_has_extension_ci(path, ".json")) {
+            status = load_json_plugin_data(c->ctx, path);
+        } else {
+            status = nmo_extension_registry_load_library(
+                nmo_context_get_extension_registry(c->ctx), path, NULL);
+        }
+
+        if (status != NMO_OK) {
+            fprintf(stderr,
+                    "Error: Failed to load --plugin %s: %s\n",
+                    path,
+                    nmo_error_string(status));
+            return NMO_CLI_EXIT_IO_ERROR;
+        }
+    }
+
+    return NMO_CLI_EXIT_SUCCESS;
+}
 
 int nmo_cmd_ctx_init(nmo_cmd_ctx_t *c, int argc, char **argv,
                      const nmo_cli_global_opts_t *global)
@@ -92,6 +192,16 @@ int nmo_cmd_ctx_init_from_source(nmo_cmd_ctx_t *c,
     }
     c->owns_document = true;
 
+    int plugin_rc = apply_global_plugins(c);
+    if (plugin_rc != NMO_CLI_EXIT_SUCCESS) {
+        nmo_tool_close_document(c->ctx, c->document, c->workspace);
+        c->ctx = NULL;
+        c->document = NULL;
+        c->workspace = NULL;
+        c->owns_document = false;
+        return plugin_rc;
+    }
+
     c->registry = nmo_context_get_type_registry(c->ctx);
 
     int rc = init_output(c, global);
@@ -133,6 +243,10 @@ int nmo_cmd_ctx_init_with_document(nmo_cmd_ctx_t *c,
     c->owns_document = false;
     c->is_json = global && (global->format == NMO_CLI_FORMAT_JSON ||
                             global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+    int plugin_rc = apply_global_plugins(c);
+    if (plugin_rc != NMO_CLI_EXIT_SUCCESS) {
+        return plugin_rc;
+    }
     c->registry = ctx ? nmo_context_get_type_registry(ctx) : NULL;
 
     if (global) {
