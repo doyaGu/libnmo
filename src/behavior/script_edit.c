@@ -670,10 +670,9 @@ static nmo_status_t script_edit_create_io_object(
     if (!state) {
         return NMO_ERR_INVALID_STATE;
     }
-    state->old_flags =
-        (kind == NMO_SCRIPT_EDIT_IO_INPUT ? CK_BEHAVIORIO_IN
-                                          : CK_BEHAVIORIO_OUT) |
-        CK_BEHAVIORIO_ACTIVE;
+    state->old_flags = (kind == NMO_SCRIPT_EDIT_IO_INPUT)
+        ? NMO_BEHAVIORIO_OLD_IN
+        : NMO_BEHAVIORIO_OLD_OUT;
     state->has_flags = true;
     nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_OBJECT_STATE);
     return NMO_OK;

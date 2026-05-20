@@ -25,6 +25,15 @@ typedef struct nmo_arena nmo_arena_t;
 
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 
+/*
+ * CKBehaviorIO::Save stores compact legacy I/O flags, not the runtime
+ * CK_OBJECT_FLAGS bits. CKBehaviorIO::SetOldFlags expands these values to
+ * CK_BEHAVIORIO_IN / CK_BEHAVIORIO_OUT / CK_BEHAVIORIO_ACTIVE on load.
+ */
+#define NMO_BEHAVIORIO_OLD_IN     0x01u
+#define NMO_BEHAVIORIO_OLD_OUT    0x02u
+#define NMO_BEHAVIORIO_OLD_ACTIVE 0x100u
+
 /* =============================================================================
  * CKBehaviorIO STATE STRUCTURE
  * ============================================================================= */
@@ -35,10 +44,10 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
  * CKBehaviorIO is a simple class representing behavior I/O endpoints.
  * It only stores old_flags which indicate the I/O type and characteristics.
  * 
- * Common flags (from CK_BEHAVIORIO_FLAGS):
- * - CK_BEHAVIORIO_IN (0x01): Input endpoint
- * - CK_BEHAVIORIO_OUT (0x02): Output endpoint
- * - CK_BEHAVIORIO_ACTIVE (0x100): Active I/O
+ * Common compact old_flags values:
+ * - NMO_BEHAVIORIO_OLD_IN (0x01): Input endpoint
+ * - NMO_BEHAVIORIO_OLD_OUT (0x02): Output endpoint
+ * - NMO_BEHAVIORIO_OLD_ACTIVE (0x100): Active I/O
  * 
  * Reference: reference/src/CKBehaviorIO.cpp:19-48
  */

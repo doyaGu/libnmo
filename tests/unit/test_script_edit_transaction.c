@@ -215,7 +215,16 @@ static void set_io_direction_or_fail(nmo_session_t *session,
         : NULL;
 
     ASSERT_NOT_NULL(io_state);
-    io_state->old_flags = flags | CK_BEHAVIORIO_ACTIVE;
+    io_state->old_flags = 0u;
+    if ((flags & CK_BEHAVIORIO_IN) != 0u) {
+        io_state->old_flags |= NMO_BEHAVIORIO_OLD_IN;
+    }
+    if ((flags & CK_BEHAVIORIO_OUT) != 0u) {
+        io_state->old_flags |= NMO_BEHAVIORIO_OLD_OUT;
+    }
+    if ((flags & CK_BEHAVIORIO_ACTIVE) != 0u) {
+        io_state->old_flags |= NMO_BEHAVIORIO_OLD_ACTIVE;
+    }
     io_state->has_flags = true;
 }
 
@@ -512,6 +521,32 @@ TEST(script_edit_transaction, add_node_keeps_ballance_script_edit_validation_gre
         ASSERT_TRUE(source_state->buffer_data.count >= sizeof(caret_value));
         memcpy(&caret_value, source_state->buffer_data.data, sizeof(caret_value));
         ASSERT_TRUE(fabsf(caret_value - 10.0f) < 0.0001f);
+    }
+    {
+        const nmo_object_id_t *ids = (const nmo_object_id_t *)node_state->inputs.data;
+        ASSERT_TRUE(node_state->inputs.count > 0u);
+        for (size_t i = 0; ids && i < node_state->inputs.count; ++i) {
+            nmo_object_t *io_obj = nmo_object_repository_find_by_id(repo, ids[i]);
+            nmo_behaviorio_state_t *io_state = io_obj
+                ? (nmo_behaviorio_state_t *)nmo_object_get_state(io_obj)
+                : NULL;
+            ASSERT_NOT_NULL(io_state);
+            ASSERT_EQ(NMO_BEHAVIORIO_OLD_IN, io_state->old_flags);
+            ASSERT_TRUE(io_state->has_flags);
+        }
+    }
+    {
+        const nmo_object_id_t *ids = (const nmo_object_id_t *)node_state->outputs.data;
+        ASSERT_TRUE(node_state->outputs.count > 0u);
+        for (size_t i = 0; ids && i < node_state->outputs.count; ++i) {
+            nmo_object_t *io_obj = nmo_object_repository_find_by_id(repo, ids[i]);
+            nmo_behaviorio_state_t *io_state = io_obj
+                ? (nmo_behaviorio_state_t *)nmo_object_get_state(io_obj)
+                : NULL;
+            ASSERT_NOT_NULL(io_state);
+            ASSERT_EQ(NMO_BEHAVIORIO_OLD_OUT, io_state->old_flags);
+            ASSERT_TRUE(io_state->has_flags);
+        }
     }
 
     ASSERT_EQ(NMO_OK,
