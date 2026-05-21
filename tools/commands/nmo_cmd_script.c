@@ -791,23 +791,83 @@ static int script_run_lua_remove_node(lua_State *state)
     return 0;
 }
 
+typedef struct script_run_lua_pending_ref {
+    nmo_object_id_t id;
+    size_t operation_index;
+    const char *handle_name;
+    bool has_ref;
+} script_run_lua_pending_ref_t;
+
+static void script_run_lua_check_pending_ref(lua_State *state,
+                                             int index,
+                                             script_run_lua_pending_ref_t *out_ref)
+{
+    memset(out_ref, 0, sizeof(*out_ref));
+    if (lua_istable(state, index)) {
+        lua_getfield(state, index, "operation");
+        lua_Integer operation = luaL_checkinteger(state, -1);
+        lua_pop(state, 1);
+        lua_getfield(state, index, "handle");
+        const char *handle = luaL_checkstring(state, -1);
+        lua_pop(state, 1);
+        if (operation <= 0 || handle == NULL || handle[0] == '\0') {
+            luaL_error(state, "operation handle references require positive operation and non-empty handle");
+        }
+        out_ref->operation_index = (size_t)(operation - 1);
+        out_ref->handle_name = handle;
+        out_ref->has_ref = true;
+        return;
+    }
+    out_ref->id = (nmo_object_id_t)luaL_checkinteger(state, index);
+}
+
 static int script_run_lua_add_behavior_link(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
     nmo_object_id_t parent_id = (nmo_object_id_t)luaL_checkinteger(state, 1);
-    nmo_object_id_t from_io_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    nmo_object_id_t to_io_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
+    script_run_lua_pending_ref_t from_io = {0};
+    script_run_lua_pending_ref_t to_io = {0};
     uint32_t activation_delay = (uint32_t)luaL_optinteger(state, 4, 0);
     nmo_status_t status = NMO_OK;
 
+    script_run_lua_check_pending_ref(state, 2, &from_io);
+    script_run_lua_check_pending_ref(state, 3, &to_io);
+
     status = script_run_ensure_pending_plan(args);
     if (status == NMO_OK) {
-        status = nmo_edit_plan_add_behavior_link(
-            args->pending_plan,
-            parent_id,
-            from_io_id,
-            to_io_id,
-            activation_delay);
+        if (from_io.has_ref && to_io.has_ref) {
+            status = nmo_edit_plan_add_behavior_link_from_handles(
+                args->pending_plan,
+                parent_id,
+                from_io.operation_index,
+                from_io.handle_name,
+                to_io.operation_index,
+                to_io.handle_name,
+                activation_delay);
+        } else if (from_io.has_ref) {
+            status = nmo_edit_plan_add_behavior_link_from_handle(
+                args->pending_plan,
+                parent_id,
+                from_io.operation_index,
+                from_io.handle_name,
+                to_io.id,
+                activation_delay);
+        } else if (to_io.has_ref) {
+            status = nmo_edit_plan_add_behavior_link_to_handle(
+                args->pending_plan,
+                parent_id,
+                from_io.id,
+                to_io.operation_index,
+                to_io.handle_name,
+                activation_delay);
+        } else {
+            status = nmo_edit_plan_add_behavior_link(
+                args->pending_plan,
+                parent_id,
+                from_io.id,
+                to_io.id,
+                activation_delay);
+        }
     }
     if (status != NMO_OK) {
         return luaL_error(state, "%s",
