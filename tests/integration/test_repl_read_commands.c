@@ -569,6 +569,51 @@ TEST(repl_read, parameter_dump_resolves_input_parameter_sources) {
     close_repl(&repl);
 }
 
+TEST(repl_read, parameter_dump_includes_local_parameter_values) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+
+    remove("test_repl_parameter_local_dump_capture.txt");
+    ASSERT_EQ(0, run_repl_command_capture(
+                     &repl,
+                     "parameter dump 3",
+                     "test_repl_parameter_local_dump_capture.txt"));
+    ASSERT_FALSE(repl.dirty);
+
+    char *output = read_text_file("test_repl_parameter_local_dump_capture.txt");
+    ASSERT_NOT_NULL(output);
+    ASSERT_TRUE(strstr(output, "Parameter #3") != NULL);
+    ASSERT_TRUE(strstr(output, "Value:") != NULL);
+    ASSERT_TRUE(strstr(output, "I_MenuLevel_Curve") != NULL);
+    free(output);
+    remove("test_repl_parameter_local_dump_capture.txt");
+
+    close_repl(&repl);
+}
+
+TEST(repl_read, parameter_dump_includes_operation_links) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/AnimTrafo.nmo"));
+
+    remove("test_repl_parameter_operation_dump_capture.txt");
+    ASSERT_EQ(0, run_repl_command_capture(
+                     &repl,
+                     "parameter dump 453",
+                     "test_repl_parameter_operation_dump_capture.txt"));
+    ASSERT_FALSE(repl.dirty);
+
+    char *output = read_text_file("test_repl_parameter_operation_dump_capture.txt");
+    ASSERT_NOT_NULL(output);
+    ASSERT_TRUE(strstr(output, "Operation GUID:") != NULL);
+    ASSERT_TRUE(strstr(output, "Input 1:") != NULL ||
+                strstr(output, "Input 2:") != NULL ||
+                strstr(output, "Output:") != NULL);
+    free(output);
+    remove("test_repl_parameter_operation_dump_capture.txt");
+
+    close_repl(&repl);
+}
+
 TEST(repl_read, grouped_read_commands_reject_invalid_cli_shape) {
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
@@ -1466,6 +1511,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, entity_show_uses_entity_session_core);
     REGISTER_TEST(repl_read, parameter_grouped_read_commands_use_cli_shape);
     REGISTER_TEST(repl_read, parameter_dump_resolves_input_parameter_sources);
+    REGISTER_TEST(repl_read, parameter_dump_includes_local_parameter_values);
+    REGISTER_TEST(repl_read, parameter_dump_includes_operation_links);
     REGISTER_TEST(repl_read, grouped_read_commands_reject_invalid_cli_shape);
     REGISTER_TEST(repl_read, mirrored_cli_read_groups_are_available);
     REGISTER_TEST(repl_read, cli_read_mirror_does_not_expose_snapshot_paths);
