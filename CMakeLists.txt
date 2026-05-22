@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 project(libnmo
-    VERSION 1.0.0
+    VERSION 0.1.0
     DESCRIPTION "C library for reading and writing Virtools file formats (.nmo/.cmo/.vmo)"
     LANGUAGES C
 )
@@ -425,15 +425,26 @@ if(NMO_BUILD_SHARED)
     add_library(nmo SHARED ${NMO_SOURCES})
 else()
     add_library(nmo STATIC ${NMO_SOURCES})
+    if(TARGET liblua_objects)
+        target_sources(nmo PRIVATE $<TARGET_OBJECTS:liblua_objects>)
+    endif()
 endif()
 
 target_compile_definitions(nmo PUBLIC $<$<CONFIG:Debug>:NMO_ENABLE_DEBUG_ASSERTS>)
 
 # Link dependencies
 target_link_libraries(nmo PUBLIC ${ZLIB_LIBRARIES})
-target_link_libraries(nmo PUBLIC lua::lua)
+if(NMO_BUILD_SHARED)
+    target_link_libraries(nmo PRIVATE lua::lua)
+endif()
 
-target_include_directories(nmo PRIVATE ${PROJECT_SOURCE_DIR}/deps ${NMO_YYJSON_DIR}/src)
+target_include_directories(nmo
+    PUBLIC
+        $<BUILD_INTERFACE:${LUA_RESOLVED_SOURCE_ROOT}/src>
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/deps
+        ${NMO_YYJSON_DIR}/src
+)
 
 # Enable threads support
 find_package(Threads REQUIRED)
