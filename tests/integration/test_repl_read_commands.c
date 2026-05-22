@@ -548,6 +548,27 @@ TEST(repl_read, parameter_grouped_read_commands_use_cli_shape) {
     close_repl(&repl);
 }
 
+TEST(repl_read, parameter_dump_resolves_input_parameter_sources) {
+    nmo_repl_context_t repl;
+    open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
+
+    remove("test_repl_parameter_dump_capture.txt");
+    ASSERT_EQ(0, run_repl_command_capture(
+                     &repl,
+                     "parameter dump 4",
+                     "test_repl_parameter_dump_capture.txt"));
+    ASSERT_FALSE(repl.dirty);
+
+    char *output = read_text_file("test_repl_parameter_dump_capture.txt");
+    ASSERT_NOT_NULL(output);
+    ASSERT_TRUE(strstr(output, "Source Chain:") != NULL);
+    ASSERT_TRUE(strstr(output, "Resolved: #3") != NULL);
+    free(output);
+    remove("test_repl_parameter_dump_capture.txt");
+
+    close_repl(&repl);
+}
+
 TEST(repl_read, grouped_read_commands_reject_invalid_cli_shape) {
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
@@ -1444,6 +1465,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(repl_read, domain_show_commands_enforce_family_type);
     REGISTER_TEST(repl_read, entity_show_uses_entity_session_core);
     REGISTER_TEST(repl_read, parameter_grouped_read_commands_use_cli_shape);
+    REGISTER_TEST(repl_read, parameter_dump_resolves_input_parameter_sources);
     REGISTER_TEST(repl_read, grouped_read_commands_reject_invalid_cli_shape);
     REGISTER_TEST(repl_read, mirrored_cli_read_groups_are_available);
     REGISTER_TEST(repl_read, cli_read_mirror_does_not_expose_snapshot_paths);

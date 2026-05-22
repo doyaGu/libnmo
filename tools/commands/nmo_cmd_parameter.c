@@ -5,6 +5,7 @@
 
 #include "nmo_cmd_parameter.h"
 
+#include "nmo_cmd_behavior_internal.h"
 #include "nmo_cmd_object.h"
 #include "nmo_cmd_object_internal.h"
 
@@ -55,7 +56,7 @@ static int is_parameter_class(const nmo_type_registry_t *registry, nmo_class_id_
            class_id == NMO_CID_PARAMETEROPERATION;
 }
 
-static int is_behavior_class(const nmo_type_registry_t *registry, nmo_class_id_t class_id) {
+static int parameter_is_behavior_class(const nmo_type_registry_t *registry, nmo_class_id_t class_id) {
     if (!registry) {
         return class_id == NMO_CID_BEHAVIOR;
     }
@@ -210,6 +211,235 @@ static char *format_parameter_value(const nmo_parameter_state_t *pstate,
 }
 
 /* Hex formatting is provided by nmo_format_hex() from core/nmo_string.h. */
+
+static const char *parameter_trace_step_type_name(nmo_behavior_trace_step_type_t type) {
+    switch (type) {
+        case NMO_BEHAVIOR_TRACE_STEP_START:
+            return "start";
+        case NMO_BEHAVIOR_TRACE_STEP_SHARED_SOURCE:
+            return "shared_source";
+        case NMO_BEHAVIOR_TRACE_STEP_DIRECT_SOURCE:
+            return "direct_source";
+        default:
+            return "unknown";
+    }
+}
+
+static void parameter_add_source_chain_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *item,
+    const nmo_array_t *chain,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *registry)
+{
+    if (!doc || !item || !chain || chain->count == 0 || !repo) {
+        return;
+    }
+
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    const nmo_behavior_trace_step_t *steps =
+        (const nmo_behavior_trace_step_t *)chain->data;
+
+    for (size_t i = 0; i < chain->count; ++i) {
+        yyjson_mut_val *step = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, step, "id", steps[i].id);
+        yyjson_mut_obj_add_uint(doc, step, "class_id", steps[i].class_id);
+        nmo_cli_json_add_str_safe(doc, step, "step",
+                                  parameter_trace_step_type_name(steps[i].type));
+        nmo_cli_json_add_str_safe(doc, step, "name", resolve_name(repo, steps[i].id));
+        yyjson_mut_obj_add_uint(doc, step, "owner_id", steps[i].owner_id);
+        nmo_cli_json_add_str_safe(doc, step, "owner_name",
+                                  resolve_name(repo, steps[i].owner_id));
+
+        nmo_object_t *obj = nmo_object_repository_find_by_id(repo, steps[i].id);
+        nmo_guid_t type_guid = get_param_type_guid(obj);
+        if (!nmo_guid_is_null(type_guid)) {
+            char guid_buf[64];
+            nmo_guid_format(type_guid, guid_buf, sizeof(guid_buf));
+            nmo_cli_json_add_str_safe(doc, step, "type_guid", guid_buf);
+            nmo_cli_json_add_str_safe(doc, step, "type_name",
+                                      resolve_type(registry, type_guid));
+        }
+
+        yyjson_mut_arr_add_val(arr, step);
+    }
+
+    yyjson_mut_obj_add_val(doc, item, "source_chain", arr);
+}
+
+static void parameter_add_resolved_source_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *item,
+    nmo_context_t *ctx,
+    nmo_object_t *resolved,
+    const nmo_type_registry_t *registry,
+    const nmo_workspace_t *workspace)
+{
+    if (!doc || !item || !resolved) {
+        return;
+    }
+
+    nmo_object_id_t resolved_id = nmo_object_get_id(resolved);
+    nmo_class_id_t resolved_class = nmo_object_get_class_id(resolved);
+    yyjson_mut_obj_add_uint(doc, item, "resolved_source_id", resolved_id);
+    yyjson_mut_obj_add_uint(doc, item, "resolved_class_id", resolved_class);
+
+    const char *class_name = NULL;
+    if (ctx) {
+        class_name = nmo_cli_class_name_from_id(ctx, resolved_class);
+    }
+    if (class_name) {
+        nmo_cli_json_add_str_safe(doc, item, "resolved_class_name", class_name);
+    }
+
+    const char *name = nmo_object_get_name(resolved);
+    if (name && name[0]) {
+        nmo_cli_json_add_str_safe(doc, item, "resolved_name", name);
+    }
+
+    nmo_guid_t type_guid = get_param_type_guid(resolved);
+    if (!nmo_guid_is_null(type_guid)) {
+        char guid_buf[64];
+        nmo_guid_format(type_guid, guid_buf, sizeof(guid_buf));
+        nmo_cli_json_add_str_safe(doc, item, "resolved_type_guid", guid_buf);
+        nmo_cli_json_add_str_safe(doc, item, "resolved_type_name",
+                                  resolve_type(registry, type_guid));
+    }
+
+    if (resolved_class == NMO_CID_PARAMETERIN) {
+        return;
+    }
+
+    const nmo_parameter_state_t *pstate = nmo_parameter_get_state(resolved);
+    if (!pstate) {
+        return;
+    }
+
+    nmo_cli_json_add_str_safe(doc, item, "resolved_mode",
+                              nmo_behavior_param_mode_to_string(pstate->mode));
+    char *value = format_parameter_value(
+        pstate, (nmo_type_registry_t *)registry, workspace, NULL);
+    if (value) {
+        if (value[0]) {
+            nmo_cli_json_add_str_safe(doc, item, "resolved_value", value);
+        }
+        free(value);
+    }
+    if (pstate->buffer_data.data) {
+        yyjson_mut_obj_add_uint(doc, item, "resolved_buffer_size",
+                                (uint64_t)pstate->buffer_data.count);
+    }
+}
+
+static void parameter_add_resolved_source_text(
+    FILE *out,
+    const nmo_array_t *chain,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *registry,
+    const nmo_workspace_t *workspace)
+{
+    if (!out || !chain || chain->count == 0 || !repo) {
+        return;
+    }
+
+    const nmo_behavior_trace_step_t *steps =
+        (const nmo_behavior_trace_step_t *)chain->data;
+
+    fprintf(out, "Source Chain:\n");
+    for (size_t i = 0; i < chain->count; ++i) {
+        nmo_object_t *obj = nmo_object_repository_find_by_id(repo, steps[i].id);
+        nmo_guid_t type_guid = get_param_type_guid(obj);
+        fprintf(out, "  %zu. #%u %s", i, steps[i].id,
+                resolve_name(repo, steps[i].id));
+        if (!nmo_guid_is_null(type_guid)) {
+            fprintf(out, " [%s]", resolve_type(registry, type_guid));
+        }
+        fprintf(out, " (%s)\n", parameter_trace_step_type_name(steps[i].type));
+    }
+
+    const nmo_behavior_trace_step_t *last = &steps[chain->count - 1];
+    nmo_object_t *resolved = nmo_object_repository_find_by_id(repo, last->id);
+    if (!resolved || nmo_object_get_class_id(resolved) == NMO_CID_PARAMETERIN) {
+        return;
+    }
+
+    const nmo_parameter_state_t *pstate = nmo_parameter_get_state(resolved);
+    if (!pstate) {
+        return;
+    }
+
+    char *value = format_parameter_value(
+        pstate, (nmo_type_registry_t *)registry, workspace, NULL);
+    if (value) {
+        fprintf(out, "Resolved: #%u %s = %s\n", last->id,
+                resolve_name(repo, last->id), value);
+        free(value);
+    }
+}
+
+static void parameter_add_parameterin_resolution_json(
+    yyjson_mut_doc *doc,
+    yyjson_mut_val *item,
+    nmo_context_t *ctx,
+    nmo_workspace_t *workspace,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *registry,
+    nmo_object_id_t param_id)
+{
+    if (!doc || !item || !workspace || !repo || param_id == 0) {
+        return;
+    }
+
+    nmo_array_t chain;
+    if (nmo_array_init(&chain, sizeof(nmo_behavior_trace_step_t), 8, NULL) != NMO_OK) {
+        return;
+    }
+
+    if (nmo_behavior_analyze_trace_param_chain(workspace, param_id,
+                                               &chain, 32) == NMO_OK &&
+        chain.count > 0) {
+        parameter_add_source_chain_json(doc, item, &chain, repo, registry);
+
+        const nmo_behavior_trace_step_t *steps =
+            (const nmo_behavior_trace_step_t *)chain.data;
+        nmo_object_t *resolved =
+            nmo_object_repository_find_by_id(repo, steps[chain.count - 1].id);
+        if (resolved && nmo_object_get_class_id(resolved) != NMO_CID_PARAMETERIN) {
+            parameter_add_resolved_source_json(doc, item, ctx, resolved, registry, workspace);
+        } else {
+            const char *reason =
+                (chain.count == 1) ? "no_source" : "chain_ended_at_parameter_in";
+            nmo_cli_json_add_str_safe(doc, item, "unresolved_reason", reason);
+        }
+    }
+
+    nmo_array_dispose(&chain);
+}
+
+static void parameter_add_parameterin_resolution_text(
+    FILE *out,
+    nmo_workspace_t *workspace,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *registry,
+    nmo_object_id_t param_id)
+{
+    if (!out || !workspace || !repo || param_id == 0) {
+        return;
+    }
+
+    nmo_array_t chain;
+    if (nmo_array_init(&chain, sizeof(nmo_behavior_trace_step_t), 8, NULL) != NMO_OK) {
+        return;
+    }
+
+    if (nmo_behavior_analyze_trace_param_chain(workspace, param_id,
+                                               &chain, 32) == NMO_OK &&
+        chain.count > 0) {
+        parameter_add_resolved_source_text(out, &chain, repo, registry, workspace);
+    }
+
+    nmo_array_dispose(&chain);
+}
 
 /* ---- parameter list: per-file handler for batch mode ---- */
 
@@ -507,6 +737,10 @@ static int parameter_show_run(nmo_cmd_ctx_t *ctx, uint32_t object_id,
             yyjson_mut_obj_add_uint(doc, data, "source_id", source_id);
             yyjson_mut_obj_add_bool(doc, data, "is_shared", is_shared != 0);
         }
+        if (cid == NMO_CID_PARAMETERIN) {
+            parameter_add_parameterin_resolution_json(
+                doc, data, c.ctx, c.workspace, repo, c.registry, object_id);
+        }
         if (destination_count > 0) {
             yyjson_mut_obj_add_uint(doc, data, "destination_count", destination_count);
         }
@@ -546,6 +780,10 @@ static int parameter_show_run(nmo_cmd_ctx_t *ctx, uint32_t object_id,
 
         if (source_id != 0) {
             fprintf(c.out, "  Source: #%u%s\n", source_id, is_shared ? " (shared)" : " (direct)");
+        }
+        if (cid == NMO_CID_PARAMETERIN) {
+            parameter_add_parameterin_resolution_text(
+                c.out, c.workspace, repo, c.registry, object_id);
         }
 
         if (destination_count > 0) {
@@ -729,6 +967,10 @@ static void dump_parameter_details(nmo_object_t *obj,
 
     if (source_id != 0) {
         fprintf(out, "Source: #%u%s\n", source_id, is_shared ? " (shared)" : " (direct)");
+    }
+    if (cid == NMO_CID_PARAMETERIN) {
+        parameter_add_parameterin_resolution_text(
+            out, (nmo_workspace_t *)workspace, repo, registry, object_id);
     }
 
     if (destination_count > 0) {
@@ -1037,6 +1279,10 @@ static int parameter_dump_run(nmo_cmd_ctx_t *ctx, const parameter_dump_args_t *a
                     yyjson_mut_obj_add_uint(doc, item, "source_id", source_id);
                     yyjson_mut_obj_add_bool(doc, item, "is_shared", is_shared != 0);
                 }
+                if (class_id == NMO_CID_PARAMETERIN) {
+                    parameter_add_parameterin_resolution_json(
+                        doc, item, c.ctx, c.workspace, repo, c.registry, oid);
+                }
                 if (dest_count) yyjson_mut_obj_add_uint(doc, item, "destination_count", dest_count);
             }
 
@@ -1291,7 +1537,7 @@ static int parameter_set_mutate(
             return NMO_CLI_EXIT_NOT_FOUND;
         }
         nmo_class_id_t owner_cid = nmo_object_get_class_id(owner_obj);
-        if (!is_behavior_class(c->registry, owner_cid)) {
+        if (!parameter_is_behavior_class(c->registry, owner_cid)) {
             fprintf(stderr, "Error: Owner object #%u is not a CKBehavior (class %u)\n",
                     owner_id, owner_cid);
             return NMO_CLI_EXIT_ARG_ERROR;
