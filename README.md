@@ -1,10 +1,9 @@
 # libnmo
 
 **libnmo** is a C17 library for reading, writing, inspecting, and transforming
-Virtools composition files (`.nmo`, `.cmo`, `.vmo`).  It implements a complete
-serialization pipeline with a strict seven-layer architecture, symmetric
-read/write operations, and full compatibility with Virtools file format versions
-2 through 9.
+Virtools composition files (`.nmo`, `.cmo`, `.vmo`). It implements a complete
+serialization pipeline with a strict layered architecture, symmetric read/write
+operations, and full compatibility with Virtools file format versions 2 through 9.
 
 ---
 
@@ -27,18 +26,23 @@ read/write operations, and full compatibility with Virtools file format versions
   - [Object Discovery](#object-discovery)
   - [Chunk Inspection](#chunk-inspection)
   - [Behavior Analysis](#behavior-analysis)
+  - [Script Editing](#script-editing)
+  - [Scene and Entity](#scene-and-entity)
+  - [Mesh, Texture, Material, Animation](#mesh-texture-material-animation)
   - [Type System](#type-system)
   - [Validation](#validation)
   - [Editing](#editing)
+  - [Diff and Patch](#diff-and-patch)
   - [Debugging and REPL](#debugging-and-repl)
 - [API Documentation](#api-documentation)
-  - [Context and Session](#context-and-session)
+  - [Context, Document, and Workspace](#context-document-and-workspace)
   - [Error Handling](#error-handling)
   - [Chunk API](#chunk-api)
   - [Type System](#type-system-api)
   - [Object System](#object-system)
-  - [Behavior Layer](#behavior-layer)
-  - [DSL Query Language](#dsl-query-language)
+  - [Behavior and Script Layer](#behavior-and-script-layer)
+  - [Project and Authoring](#project-and-authoring)
+  - [Lua Scripting](#lua-scripting)
   - [Extension System](#extension-system)
 - [Testing](#testing)
 - [Supported File Model](#supported-file-model)
@@ -66,27 +70,46 @@ read/write operations, and full compatibility with Virtools file format versions
 - GUID-first type identification with O(1) hash lookups
 - Type registry supporting primitives, enums, flags, structs, and manager types
 - Type inheritance via parent GUID chaining
-- 4D dispatch operation tree (operation x P1 type x P2 type x result type)
-- 50+ built-in operations: arithmetic, logic, bitwise, trigonometric, vector
+- 4D dispatch operation tree (operation × P1 type × P2 type × result type)
+- Built-in operations: arithmetic, logic, bitwise, trigonometric, vector
 - String conversion: `nmo_type_to_string()` / `nmo_type_from_string()`
 - Struct field reflection and introspection
 
 ### Object Layer
 
-- 23 CK class schemas and 2 manager schemas with vtable dispatch
+- CK class schemas and manager schemas with vtable dispatch
 - Object repository with dual-index (`nmo_indexed_map_t` + name hash table)
-- Object index providing O(1) lookup by class ID, name, or GUID (50-200x faster
-  than linear scan)
+- Object index providing O(1) lookup by class ID, name, or GUID
 - ID sanitizer handling the `0x800000` reference marker and negative external IDs
 - Reference graph enumeration and runtime kernel
 
-### Behavior System
+### Behavior and Script System
 
 - Recursive behavior graph traversal and analysis
 - Typed parameter chain resolution
-- Building Block registry with 601+ entries and 7638 JSON signatures
+- Building Block registry with JSON signatures
 - Script walker for behavior graph introspection
 - Behavior index for fast parameter and link queries
+- Script editing: node add/remove, IO add/remove/link, behavior graph mutations
+- Edit plan API with JSON serialization for deterministic replay
+- Behavior execution pipeline with dry-run support
+- Probe analyzer for graph diagnostic inspection
+
+### Project and Authoring
+
+- Project plan: declarative scene, object, script, and asset authoring
+- Scene authoring and scene lifecycle management
+- Script authoring with behavior graph construction
+- Project executor with plan replay and validation
+- Project manifest JSON serialization
+
+### Lua Scripting
+
+- Embedded Lua 5.4 runtime with full standard libraries
+- Bindings covering: context, document, session, object, type, behavior, format,
+  plan, workspace, and runtime layers
+- Fold-map parser for declarative Lua-driven automation
+- Lua-based batch edit reports
 
 ### Core Infrastructure
 
@@ -100,7 +123,9 @@ read/write operations, and full compatibility with Virtools file format versions
 
 ### CLI and Tooling
 
-- `nmo` command-line tool with group/action interface (v3)
+- `nmo` command-line tool with group/action interface covering file, chunk,
+  object, behavior, script, parameter, scene, entity, mesh, texture, material,
+  animation, type, validate, convert, diff, extension, debug, and repl
 - Interactive REPL with tab completion and session persistence
 - JSON output with stable envelope (`schema_version`, `tool`, `command`)
 - Shell completions for Bash, Fish, Zsh, and PowerShell
@@ -144,6 +169,12 @@ nmo behavior show 10 composition.nmo
 nmo behavior find --op-type "SetPosition" composition.nmo
 nmo behavior interface show 10 composition.nmo
 
+# Script editing
+nmo script graph 10 composition.nmo
+nmo script run automation.lua composition.nmo -o edited.nmo
+nmo script node --add 10 composition.nmo -o edited.nmo
+nmo script io --add 10 composition.nmo -o edited.nmo
+
 # Type system
 nmo type list
 nmo type show CK3dEntity
@@ -186,17 +217,26 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    nmo_session_t *session = nmo_session_load(ctx, argv[1]);
-    if (!session) {
+    nmo_document_t *document = NULL;
+    if (nmo_document_load_file(ctx, argv[1], &document) != NMO_OK) {
         fprintf(stderr, "Failed to load: %s\n", argv[1]);
         nmo_context_release(ctx);
         return 1;
     }
 
-    nmo_file_info_t info = nmo_session_get_file_info(session);
-    printf("Object count: %u\n", info.object_count);
+    nmo_workspace_t *workspace = NULL;
+    if (nmo_workspace_create(ctx, document, &workspace) != NMO_OK) {
+        fprintf(stderr, "Failed to create workspace\n");
+        nmo_document_destroy(document);
+        nmo_context_release(ctx);
+        return 1;
+    }
 
-    nmo_session_destroy(session);
+    nmo_object_repository_t *repo = nmo_document_get_repository(document);
+    printf("Repository: %p\n", (void *)repo);
+
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_context_release(ctx);
     return 0;
 }
@@ -217,40 +257,46 @@ cc -o demo demo.c -lnmo
 Dependency direction is strict: each layer may only import from layers below it.
 
 ```
-App -> Session -> Object -> Extension -> Type -> Format -> IO -> Core
+Project/Lua -> Behavior -> Object -> Extension -> Type -> Format -> IO -> Core
+                    \-> Document -> Session -> ...
+                    \-> Runtime (Context, Workspace)
 ```
 
-| Layer     | Source          | Headers                   | Responsibility                                                           | Size   |
-|-----------|-----------------|---------------------------|--------------------------------------------------------------------------|--------|
-| Core      | `src/core/`     | `include/core/`           | Arena, allocator, GUID, hash tables, containers, error, math, logging   | 18 .c  |
-| IO        | `src/io/`       | `include/io/`             | File, memory, mmap, compressed, checksummed, transactional IO           | 7 .c   |
-| Format    | `src/format/`   | `include/format/`         | File header, chunk parser/writer, ID remap, image codec, obj parser     | 29 .c  |
-| Type      | `src/type/`     | `include/type/`           | GUID-based type registry, operation dispatch, string conversion, reflection | 17 .c  |
-| Extension | `src/extension/`| `include/extension/`      | Plugin registry, DLL loading, host ABI, diagnostics, Virtools loader    | 6 .c   |
-| Object    | `src/object/`   | `include/object/`         | 23 CK class + 2 manager schemas, vtable dispatch, repository, index, shadow storage | 58 .c |
-| Session   | `src/session/`  | `include/session/`        | Deserializer, builder, ID sanitizer, reference resolver, runtime kernel, delete | 11 .c  |
-| Behavior  | `src/behavior/` | `include/behavior/`       | Behavior graph traversal, BB registry, parameter chains, script walker  | 5 .c   |
-| DSL       | `src/dsl/`      | `include/dsl/`            | Lexer, AST, parser, evaluator, sequence engine                           | 6 .c   |
-| App       | `src/app/`      | `include/app/`            | Context, session lifecycle, load/save pipeline, inspector, stats, JSON  | 25 .c  |
-
-**Totals**: ~186 source files, 177 public headers, ~90 files across the library
-layers (excluding tools, tests, and examples).
+| Layer     | Source           | Headers               | Responsibility                                                                   |
+|-----------|------------------|-----------------------|----------------------------------------------------------------------------------|
+| Core      | `src/core/`      | `include/core/`       | Arena, allocator, GUID, hash tables, containers, error, math, logging           |
+| IO        | `src/io/`        | `include/io/`         | File, memory, mmap, compressed, checksummed, transactional IO                   |
+| Format    | `src/format/`    | `include/format/`     | File header, chunk parser/writer, ID remap, image codec, obj parser             |
+| Type      | `src/type/`      | `include/type/`       | GUID-based type registry, operation dispatch, string conversion, reflection      |
+| Extension | `src/extension/` | `include/extension/`  | Plugin registry, DLL loading, host ABI, diagnostics, Virtools loader            |
+| Object    | `src/object/`    | `include/object/`     | CK class and manager schemas, vtable dispatch, repository, index, shadow storage |
+| Session   | `src/session/`   | `include/session/`    | Deserializer, builder, ID sanitizer, reference resolver, runtime kernel, delete |
+| Runtime   | `src/runtime/`   | `include/runtime/`    | Context, workspace, workspace edit, session utilities                            |
+| Document  | `src/document/`  | `include/document/`   | Document load/save, stats, performance stats, comparison, file state            |
+| Chunk     | `src/chunk/`     | `include/chunk/`      | Chunk index and chunk inspection utilities                                       |
+| Behavior  | `src/behavior/`  | `include/behavior/`   | Behavior graph traversal, BB registry, parameter chains, script walker, edit plan, behavior execute |
+| Export    | `src/export/`    | `include/export/`     | DOT graph, JSON utilities, text export, ANSI, hex dump                          |
+| Lua       | `src/lua/`       | `include/lua/`        | Lua 5.4 runtime, module system, bindings for all layers, fold-map parser        |
+| Project   | `src/project/`   | `include/project/`    | Project plan, asset/scene/script authoring, executor, manifest, validator       |
 
 ### Key Design Decisions
 
 - **DWORD alignment**: all chunk positions and sizes are measured in 4-byte
-  DWORDs, not bytes.  This matches the Virtools `CKStateChunk` binary layout.
+  DWORDs, not bytes. This matches the Virtools `CKStateChunk` binary layout.
 - **Move semantics**: APIs taking `T**` transfer ownership; the callee sets
   `*ptr = NULL` on success.
 - **ECS-style state**: combined state buffers with ancestor offsets for
   polymorphic access across the CK class hierarchy.
 - **IntList verbatim**: `id_offsets`, `chunk_offsets`, and `manager_offsets`
   stored exactly as Virtools writes them for deterministic remap and iteration.
-- **ID sanitization**: bit 31 (`0x80000000`) marks reference-only IDs.  Always
+- **ID sanitization**: bit 31 (`0x80000000`) marks reference-only IDs. Always
   call `nmo_id_sanitize()` before using an ID at runtime.
 - **Vtable dispatch**: each object type provides both `serialize` and
   `deserialize` methods through a function pointer table; no legacy bridge
   macros remain.
+- **Document/Workspace split**: `nmo_document_t` owns the parsed, immutable
+  representation; `nmo_workspace_t` provides mutation and runtime services on
+  top of a document. Read-only workflows never need a workspace.
 - **No upward dependencies**: lower layers never include headers from higher
   layers, enforced at the architectural level.
 
@@ -260,13 +306,16 @@ layers (excluding tools, tests, and examples).
 
 ### Prerequisites
 
-| Requirement         | Minimum Version | Notes                                   |
-|---------------------|-----------------|-----------------------------------------|
-| CMake               | 3.15            | Build system                            |
-| C compiler          | C17             | GCC, Clang, or MSVC                     |
-| miniz or zlib       | -               | Bundled miniz included as git submodule |
-| yyjson              | -               | Bundled; required for JSON export       |
-| Threads             | POSIX or Win32  | For atomic reference counting           |
+| Requirement           | Minimum Version | Notes                                      |
+|-----------------------|-----------------|--------------------------------------------|
+| CMake                 | 3.15            | Build system                               |
+| C compiler            | C17             | GCC, Clang, or MSVC                        |
+| miniz or zlib         | -               | Bundled miniz included as git submodule    |
+| yyjson                | -               | Bundled; required for JSON export          |
+| Lua 5.4               | -               | Bundled in `deps/lua/`                     |
+| isocline              | -               | Bundled in `deps/isocline/`; REPL readline |
+| stb                   | -               | Bundled; image decode                      |
+| Threads               | POSIX or Win32  | For atomic reference counting              |
 
 ### Recommended Build (Ninja)
 
@@ -302,15 +351,15 @@ cmake --build build --config Release
 
 ### Build Options
 
-| Option                   | Default | Description                                  |
-|--------------------------|---------|----------------------------------------------|
-| `NMO_BUILD_TESTS`        | ON      | Build the test suite (enables ctest)         |
-| `NMO_BUILD_TOOLS`        | ON      | Build the `nmo` CLI tool                     |
-| `NMO_BUILD_EXAMPLES`     | OFF     | Build example programs                       |
-| `NMO_BUILD_SHARED`       | OFF     | Build as shared library (SOVERSION 2)        |
-| `NMO_MINGW_STATIC_RUNTIME` | OFF   | Link MinGW CLI executables with `-static`    |
-| `NMO_ENABLE_SIMD`        | OFF     | Enable SIMD optimizations                    |
-| `NMO_ENABLE_SANITIZERS`  | auto    | ASan/UBSan in Debug (non-Windows by default) |
+| Option                     | Default | Description                                  |
+|----------------------------|---------|----------------------------------------------|
+| `NMO_BUILD_TESTS`          | ON      | Build the test suite (enables ctest)         |
+| `NMO_BUILD_TOOLS`          | ON      | Build the `nmo` CLI tool                     |
+| `NMO_BUILD_EXAMPLES`       | OFF     | Build example programs                       |
+| `NMO_BUILD_SHARED`         | OFF     | Build as shared library (SOVERSION 2)        |
+| `NMO_MINGW_STATIC_RUNTIME` | OFF     | Link MinGW CLI executables with `-static`    |
+| `NMO_ENABLE_SIMD`          | OFF     | Enable SIMD optimizations                    |
+| `NMO_ENABLE_SANITIZERS`    | auto    | ASan/UBSan in Debug (non-Windows by default) |
 
 ### Running Tests
 
@@ -352,8 +401,8 @@ nmo file header <file>        # Raw file header fields
 ### Object Discovery
 
 ```
-nmo object list [--class <name>] <file>   # List objects, optionally filtered by class
-nmo object show <id> <file>               # Detailed view of a single object
+nmo object list [--class <name>] <file>    # List objects, optionally filtered by class
+nmo object show <id> <file>                # Detailed view of a single object
 nmo object find [--name <pattern>] <file>  # Search objects by name glob
 ```
 
@@ -369,9 +418,45 @@ nmo chunk show <id> <file>     # Inspect a single chunk in detail
 ```
 nmo behavior graph <id> <file>              # Behavior graph structure
 nmo behavior show <id> <file>               # Behavior details and parameters
-nmo behavior find [--name <pattern> | --op-type <type>] <file> # Search behaviors
+nmo behavior find [--name <pattern> | --op-type <type>] <file>  # Search behaviors
 nmo behavior trace --from <io> <id> <file>  # Trace execution paths
 nmo behavior interface show <id> <file>     # Interface layout data
+```
+
+### Script Editing
+
+```
+nmo script graph <id> <file>                # Export script edit graph
+nmo script run <script.lua> <file> -o <out> # Run Lua automation script
+nmo script node <id> <file> -o <out>        # Script node editing
+nmo script io <id> <file> -o <out>          # Script IO editing
+```
+
+### Scene and Entity
+
+```
+nmo scene list <file>          # List scenes and levels
+nmo scene show <id> <file>     # Scene details
+
+nmo entity list <file>         # List 3D entities
+nmo entity show <id> <file>    # Entity details and transform
+```
+
+### Mesh, Texture, Material, Animation
+
+```
+nmo mesh list <file>
+nmo mesh show <id> <file>
+nmo mesh export --id <id> --out-dir meshes <file>
+
+nmo texture list <file>
+nmo texture extract --id <id> --out-dir textures <file>
+
+nmo material list <file>
+nmo material show <id> <file>
+
+nmo animation list <file>
+nmo animation export --id <id> --out-dir anims <file>
 ```
 
 ### Type System
@@ -394,16 +479,23 @@ nmo validate references <file>  # Check reference integrity
 ```
 nmo object rename <id> "NewName" <file> -o <out>
 nmo object delete <id> <file> -o <out>
-nmo -f json object export --id <id> <file>              # Importable semantic snapshot
-nmo object import -f json <snapshot.json> <file> -o <out> # Import object snapshot JSON
+nmo -f json object export --id <id> <file>               # Importable semantic snapshot
+nmo object import -f json <snapshot.json> <file> -o <out>  # Import object snapshot JSON
 nmo texture extract --id <id> --out-dir textures <file>
-nmo convert copy <file> -o <out> # Round-trip copy / format conversion
+nmo convert copy <file> -o <out>  # Round-trip copy / format conversion
 ```
 
 `object export` JSON is a semantic snapshot protocol intended for round-trip
 with `object import -f json`. Snapshot fields use `name`, `kind`, `type_guid`,
 and `value`; arrays carry full `items` and `count` data. Legacy flat field maps
 and preview-only `{name,value_str}` exports are not accepted by import.
+
+### Diff and Patch
+
+```
+nmo diff objects <file-a> <file-b>    # Compare two files at the object level
+nmo patch apply <patch.json> <file> -o <out>  # Apply a patch file
+```
 
 ### Debugging and REPL
 
@@ -460,27 +552,36 @@ nmo completion powershell
 
 ## API Documentation
 
-### Context and Session
+### Context, Document, and Workspace
 
-| Function                     | Purpose                                        | Header                         |
-|------------------------------|------------------------------------------------|--------------------------------|
-| `nmo_context_create()`       | Create a library context (owns registries)     | `include/session/nmo_context.h`|
-| `nmo_context_release()`      | Release context (atomic refcount)              | `include/session/nmo_context.h`|
-| `nmo_context_retain()`       | Retain context (atomic refcount)               | `include/session/nmo_context.h`|
-| `nmo_session_load()`         | Load a file into a new session                 | `include/app/nmo_load.h`       |
-| `nmo_session_destroy()`      | Destroy session and release resources          | `include/session/nmo_session.h`|
-| `nmo_session_save()`         | Save session to file (two-phase commit)        | `include/app/nmo_save.h`       |
-| `nmo_session_get_file_info()`| Query file metadata                            | `include/session/nmo_session.h`|
+The primary entry points are `nmo_context_t`, `nmo_document_t`, and
+`nmo_workspace_t`. A context owns the global registries (type, extension,
+manager). A document holds the parsed file representation. A workspace provides
+mutation and runtime services on top of a document.
+
+| Function                          | Purpose                                         | Header                              |
+|-----------------------------------|-------------------------------------------------|-------------------------------------|
+| `nmo_context_create()`            | Create a library context (owns registries)      | `include/runtime/nmo_context.h`     |
+| `nmo_context_release()`           | Release context (atomic refcount)               | `include/runtime/nmo_context.h`     |
+| `nmo_context_retain()`            | Retain context (atomic refcount)                | `include/runtime/nmo_context.h`     |
+| `nmo_document_create()`           | Create an empty document                        | `include/document/nmo_document.h`   |
+| `nmo_document_destroy()`          | Destroy document and release resources          | `include/document/nmo_document.h`   |
+| `nmo_document_load_file()`        | Load a file into a new document                 | `include/document/nmo_document_load.h` |
+| `nmo_document_save_file()`        | Save document to file (two-phase commit)        | `include/document/nmo_document_save.h` |
+| `nmo_document_get_repository()`   | Access the object repository                    | `include/document/nmo_document.h`   |
+| `nmo_workspace_create()`          | Create workspace over a document                | `include/runtime/nmo_workspace.h`   |
+| `nmo_workspace_destroy()`         | Destroy workspace                               | `include/runtime/nmo_workspace.h`   |
+| `nmo_workspace_get_document()`    | Get the underlying document                     | `include/runtime/nmo_workspace.h`   |
 
 ### Error Handling
 
-All fallible public APIs return `nmo_status_t`.  Success is `NMO_OK` (0).
+All fallible public APIs return `nmo_status_t`. Success is `NMO_OK` (0).
 Pointer-returning constructors return `NULL` on failure and set thread-local
 last-error state.
 
 ```c
-nmo_session_t *s = nmo_session_load(ctx, "missing.nmo");
-if (!s) {
+nmo_document_t *doc = NULL;
+if (nmo_document_load_file(ctx, "missing.nmo", &doc) != NMO_OK) {
     printf("Error %d: %s (%s:%d)\n",
            nmo_last_error_code(),
            nmo_last_error_message(),
@@ -489,12 +590,13 @@ if (!s) {
 }
 ```
 
-Error codes include: `NMO_OK`, `NMO_ERR_NOMEM`, `NMO_ERR_FILE_NOT_FOUND`,
-`NMO_ERR_TRUNCATED_CHUNK`, `NMO_ERR_INVALID_SIGNATURE`,
-`NMO_ERR_UNSUPPORTED_VERSION`, `NMO_ERR_CHECKSUM_MISMATCH`, and 20 more.
+Error codes are defined in `include/core/nmo_error.h`: `NMO_OK`,
+`NMO_ERR_NOMEM`, `NMO_ERR_FILE_NOT_FOUND`, `NMO_ERR_TRUNCATED_CHUNK`,
+`NMO_ERR_INVALID_SIGNATURE`, `NMO_ERR_UNSUPPORTED_VERSION`,
+`NMO_ERR_CHECKSUM_MISMATCH`, and others.
 
-| API                             | Header                 |
-|---------------------------------|------------------------|
+| API                             | Header                     |
+|---------------------------------|----------------------------|
 | `nmo_last_error_code()`         | `include/core/nmo_error.h` |
 | `nmo_last_error_message()`      | `include/core/nmo_error.h` |
 | `nmo_last_error_file()`         | `include/core/nmo_error.h` |
@@ -507,15 +609,17 @@ Error codes include: `NMO_OK`, `NMO_ERR_NOMEM`, `NMO_ERR_FILE_NOT_FOUND`,
 
 All chunk positions and sizes are in DWORDs (4 bytes), not bytes.
 
-| Function                      | Purpose                                  | Header                          |
-|-------------------------------|------------------------------------------|---------------------------------|
-| `nmo_chunk_create()`          | Create a new chunk                       | `include/format/nmo_chunk.h`    |
+| Function                      | Purpose                                  | Header                              |
+|-------------------------------|------------------------------------------|-------------------------------------|
+| `nmo_chunk_create()`          | Create a new chunk                       | `include/format/nmo_chunk.h`        |
 | `nmo_chunk_read_dword()`      | Read a DWORD from chunk                  | `include/format/nmo_chunk_parser.h` |
 | `nmo_chunk_write_dword()`     | Write a DWORD to chunk                   | `include/format/nmo_chunk_writer.h` |
 | `nmo_chunk_reserve_dword()`   | Reserve space for forward references     | `include/format/nmo_chunk_writer.h` |
 | `nmo_chunk_patch_dword()`     | Patch a previously reserved DWORD        | `include/format/nmo_chunk_writer.h` |
-| `nmo_chunk_compress()`        | Compress chunk data                      | `include/format/nmo_chunk.h`    |
-| `nmo_chunk_decompress()`      | Decompress chunk data                    | `include/format/nmo_chunk.h`    |
+| `nmo_chunk_compress()`        | Compress chunk data                      | `include/format/nmo_chunk.h`        |
+| `nmo_chunk_decompress()`      | Decompress chunk data                    | `include/format/nmo_chunk.h`        |
+| `nmo_chunk_index_build()`     | Build chunk index from document          | `include/chunk/nmo_chunk_index.h`   |
+| `nmo_chunk_inspect()`         | Inspect chunk structure                  | `include/chunk/nmo_chunk_inspect.h` |
 
 ### Type System API
 
@@ -524,7 +628,7 @@ All chunk positions and sizes are in DWORDs (4 bytes), not bytes.
 | `nmo_type_registry_lookup_by_guid()`      | O(1) type lookup by GUID             | `include/type/nmo_type_system.h`    |
 | `nmo_type_registry_register_enum()`       | Register enum type                   | `include/type/nmo_dynamic_types.h`  |
 | `nmo_type_registry_register_flags()`      | Register bitfield flags type         | `include/type/nmo_dynamic_types.h`  |
-| `nmo_field_resolve_count()`               | Resolve reflected pointer-array count | `include/type/nmo_reflection.h`     |
+| `nmo_field_resolve_count()`               | Resolve reflected pointer-array count | `include/type/nmo_reflection.h`    |
 | `nmo_operation_registry_dispatch()`       | Dispatch typed operation             | `include/type/nmo_operations.h`     |
 | `nmo_type_to_string()`                    | Convert typed value to string        | `include/type/nmo_type_string.h`    |
 | `nmo_type_from_string()`                  | Parse string to typed value          | `include/type/nmo_type_string.h`    |
@@ -535,49 +639,70 @@ schema. Consumers do not infer count fields from naming conventions.
 
 ### Object System
 
-| Function                                | Purpose                                | Header                               |
-|-----------------------------------------|----------------------------------------|--------------------------------------|
-| `nmo_object_repository_add()`           | Add object (transfers ownership)       | `include/object/nmo_object_repository.h` |
-| `nmo_object_repository_find_by_id()`    | Lookup by object ID                    | `include/object/nmo_object_repository.h` |
-| `nmo_object_repository_take()`          | Take object (transfers ownership out)  | `include/object/nmo_object_repository.h` |
-| `nmo_object_index_find_by_class()`      | O(1) lookup by class ID                | `include/object/nmo_object_index.h`  |
-| `nmo_object_index_find_by_name()`       | O(1) lookup by name                    | `include/object/nmo_object_index.h`  |
-| `nmo_object_index_find_by_guid()`       | O(1) lookup by GUID                    | `include/object/nmo_object_index.h`  |
-| `nmo_object_import_json()`              | Import object export snapshot JSON     | `include/app/nmo_object_import.h`    |
+| Function                                | Purpose                                | Header                                       |
+|-----------------------------------------|----------------------------------------|----------------------------------------------|
+| `nmo_object_repository_add()`           | Add object (transfers ownership)       | `include/object/nmo_object_repository.h`     |
+| `nmo_object_repository_find_by_id()`    | Lookup by object ID                    | `include/object/nmo_object_repository.h`     |
+| `nmo_object_repository_take()`          | Take object (transfers ownership out)  | `include/object/nmo_object_repository.h`     |
+| `nmo_object_index_find_by_class()`      | O(1) lookup by class ID                | `include/object/nmo_object_index.h`          |
+| `nmo_object_index_find_by_name()`       | O(1) lookup by name                    | `include/object/nmo_object_index.h`          |
+| `nmo_object_index_find_by_guid()`       | O(1) lookup by GUID                    | `include/object/nmo_object_index.h`          |
+| `nmo_object_edit_rename()`              | Rename an object in a workspace        | `include/object/nmo_object_edit.h`           |
+| `nmo_object_edit_delete()`              | Delete object with cascade             | `include/object/nmo_object_edit.h`           |
+| `nmo_object_edit_create()`              | Create a new object                    | `include/object/nmo_object_edit.h`           |
 
-### Behavior Layer
+### Behavior and Script Layer
 
-| Function                          | Purpose                                   | Header                              |
-|-----------------------------------|-------------------------------------------|-------------------------------------|
-| `nmo_behavior_graph_traverse()`   | Recursive graph traversal                  | `include/behavior/nmo_behavior_graph.h` |
-| `nmo_behavior_index_create()`     | Build parameter and link index             | `include/behavior/nmo_behavior_index.h`  |
-| `nmo_bb_registry_lookup()`        | Look up Building Block by GUID             | `include/behavior/nmo_bb_registry.h`     |
-| `nmo_script_walker_walk()`        | Walk behavior script graph                 | `include/behavior/nmo_script_walker.h`   |
+| Function                            | Purpose                                    | Header                                     |
+|-------------------------------------|--------------------------------------------|--------------------------------------------|
+| `nmo_behavior_graph_traverse()`     | Recursive graph traversal                  | `include/behavior/nmo_behavior_analyze.h`  |
+| `nmo_behavior_index_create()`       | Build parameter and link index             | `include/behavior/nmo_behavior_query.h`    |
+| `nmo_bb_registry_lookup()`          | Look up Building Block by GUID             | `include/behavior/nmo_behavior_registry.h` |
+| `nmo_script_walker_walk()`          | Walk behavior script graph                 | `include/behavior/nmo_behavior_analyze.h`  |
+| `nmo_edit_plan_create()`            | Create a new behavior edit plan            | `include/behavior/nmo_edit_plan.h`         |
+| `nmo_edit_plan_to_json()`           | Serialize edit plan to JSON                | `include/behavior/nmo_edit_plan_json.h`    |
+| `nmo_behavior_execute()`            | Execute behavior edit plan against file    | `include/behavior/nmo_behavior_execute.h`  |
+| `nmo_script_edit_node_add()`        | Add node to script graph                   | `include/behavior/nmo_script_edit.h`       |
+| `nmo_script_edit_io_add()`          | Add IO to script                           | `include/behavior/nmo_script_edit.h`       |
+| `nmo_probe_analyzer_run()`          | Run probe analysis on behavior graph       | `include/behavior/nmo_probe_analyzer.h`    |
 
-### DSL Query Language
+### Project and Authoring
 
-The DSL subsystem provides a compile-once, evaluate-many query and mutation
-language for inspecting and transforming loaded sessions.
+| Function                              | Purpose                                  | Header                                        |
+|---------------------------------------|------------------------------------------|-----------------------------------------------|
+| `nmo_project_plan_create()`           | Create a new project plan                | `include/project/nmo_project_plan.h`          |
+| `nmo_project_executor_run()`          | Execute a project plan                   | `include/project/nmo_project_executor.h`      |
+| `nmo_project_validator_validate()`    | Validate project plan                    | `include/project/nmo_project_validator.h`     |
+| `nmo_project_manifest_to_json()`      | Serialize project manifest to JSON       | `include/project/nmo_project_manifest_json.h` |
+| `nmo_scene_authoring_create()`        | Create scene via authoring API           | `include/project/nmo_scene_authoring.h`       |
+| `nmo_script_authoring_create()`       | Create script via authoring API          | `include/project/nmo_script_authoring.h`      |
+
+### Lua Scripting
 
 ```c
-#include <dsl/nmo_dsl.h>
+#include <lua/nmo_lua_module.h>
+#include <lua/nmo_lua_runtime.h>
+#include <lua/nmo_lua_bindings.h>
 
-nmo_dsl_program_t *prog = nmo_dsl_compile("select CK3dEntity where name ~ 'Player*'");
-nmo_dsl_result_t result = nmo_dsl_eval(prog, session);
-// result contains matching objects
-nmo_dsl_program_destroy(prog);
+nmo_lua_runtime_t *rt = nmo_lua_runtime_create();
+// Register all nmo bindings into the Lua state
+nmo_lua_bindings_open(rt, ctx, document);
+// Run a Lua script
+nmo_lua_runtime_exec_file(rt, "automation.lua");
+nmo_lua_runtime_destroy(rt);
 ```
 
-| Function                 | Header                   |
-|--------------------------|--------------------------|
-| `nmo_dsl_compile()`      | `include/dsl/nmo_dsl.h`  |
-| `nmo_dsl_eval()`         | `include/dsl/nmo_dsl.h`  |
-| `nmo_dsl_program_destroy()` | `include/dsl/nmo_dsl.h` |
+| Function                      | Header                           |
+|-------------------------------|----------------------------------|
+| `nmo_lua_runtime_create()`    | `include/lua/nmo_lua_runtime.h`  |
+| `nmo_lua_runtime_destroy()`   | `include/lua/nmo_lua_runtime.h`  |
+| `nmo_lua_bindings_open()`     | `include/lua/nmo_lua_bindings.h` |
+| `nmo_lua_handles_register()`  | `include/lua/nmo_lua_handles.h`  |
 
 ### Extension System
 
-| Function                          | Purpose                               | Header                                    |
-|-----------------------------------|---------------------------------------|-------------------------------------------|
+| Function                          | Purpose                               | Header                                       |
+|-----------------------------------|---------------------------------------|----------------------------------------------|
 | `nmo_extension_register()`        | Register a static plugin              | `include/extension/nmo_extension_registry.h` |
 | `nmo_extension_load()`            | Load a DLL/shared library plugin      | `include/extension/nmo_extension_loader.h`   |
 | `nmo_extension_unregister()`      | Unregister plugin before unload       | `include/extension/nmo_extension_registry.h` |
@@ -587,19 +712,9 @@ nmo_dsl_program_destroy(prog);
 
 ## Testing
 
-**Current test status: 138/138 passing**
-
-### Test Categories
-
-| Category       | Directory               | Count | Description                                           |
-|----------------|--------------------------|-------|-------------------------------------------------------|
-| Unit           | `tests/unit/`           | ~65   | Isolated function tests per module                    |
-| Integration    | `tests/integration/`    | ~28   | Full workflow tests with real files                   |
-| Round-trip     | `tests/round_trip/`     | ~1    | Load-save-reload DOM comparison framework             |
-| Performance    | `tests/performance/`    | ~6    | Load/save/mmap benchmarks with CI enforcement         |
-| Fuzz           | `tests/fuzz/`           | ~1    | Truncation injector over real .nmo files              |
-| Stress         | `tests/stress/`         | ~1    | Memory pressure and boundary condition tests          |
-| Batch          | `tests/batch_*.c`       | ~1    | Oracle-based batch interface testing                  |
+Tests are organized under `tests/` into unit, integration, round-trip,
+performance, fuzz, stress, and batch subdirectories. Run the full suite with
+`ctest` (see [Running Tests](#running-tests) above).
 
 ### Test Framework
 
@@ -634,44 +749,21 @@ and on every pull request:
 
 ## Supported File Model
 
-### Supported CK Class Types (23)
+### Supported CK Class Types
 
-| Class                | Schema File                          |
-|----------------------|--------------------------------------|
-| CKObject             | `ckobject_schemas.c`                 |
-| CKBeObject           | `ckbeobject_schemas.c`               |
-| CKSceneObject        | `cksceneobject_schemas.c`            |
-| CKRenderObject       | `ckrenderobject_schemas.c`           |
-| CKParameter          | `ckparameter_schemas.c`              |
-| CKParameterIn        | `ckparameterin_schemas.c`            |
-| CKParameterOut       | `ckparameterout_schemas.c`           |
-| CKParameterLocal     | `ckparameterlocal_schemas.c`         |
-| CKParameterOperation | `ckparameteroperation_schemas.c`     |
-| CKGroup              | `ckgroup_schemas.c`                  |
-| CKLevel              | `cklevel_schemas.c`                  |
-| CKScene              | `ckscene_schemas.c`                  |
-| CKBehavior           | `ckbehavior_schemas.c`               |
-| CKBehaviorIO         | `ckbehaviorio_schemas.c`             |
-| CKBehaviorLink       | `ckbehaviorlink_schemas.c`           |
-| CK3dEntity           | `ck3dentity_schemas.c`               |
-| CK3dObject           | `ck3dobject_schemas.c`               |
-| CKMesh               | `ckmesh_schemas.c`                   |
-| CKTexture            | `cktexture_schemas.c`                |
-| CKMaterial           | `ckmaterial_schemas.c`               |
-| CKLight              | `cklight_schemas.c`                  |
-| CKCamera             | `ckcamera_schemas.c`                 |
-| CKCharacter          | `ckcharacter_schemas.c`              |
-
-Plus additional types: CKAnimation, CKCurve, CKPatchMesh, CKGrid, CKLayer,
-CKPlace, CKSound, CKSynchro, CKSprite, CKSpriteText, CKSprite3D, CK2dEntity,
+CKObject, CKBeObject, CKSceneObject, CKRenderObject, CKParameter,
+CKParameterIn, CKParameterOut, CKParameterLocal, CKParameterOperation,
+CKGroup, CKLevel, CKScene, CKBehavior, CKBehaviorIO, CKBehaviorLink,
+CK3dEntity, CK3dObject, CKMesh, CKTexture, CKMaterial, CKLight, CKCamera,
+CKCharacter, CKAnimation, CKCurve, CKPatchMesh, CKGrid, CKLayer, CKPlace,
+CKSound, CKSynchro, CKSprite, CKSpriteText, CKSprite3D, CK2dEntity,
 CKTargetCamera, CKTargetLight, CKKinematicChain, CKRenderContext, CKDataArray.
 
-### Supported Managers (2)
+### Supported Managers
 
-| Manager                     | Schema File                                |
-|-----------------------------|--------------------------------------------|
-| CKInterfaceObjectManager    | `ckinterfaceobjectmanager_schemas.c`       |
-| CKAttributeManager          | `ckattributemanager_schemas.c`             |
+CKInterfaceObjectManager, CKAttributeManager.
+
+---
 
 ## Contributing
 
@@ -704,7 +796,7 @@ Copyright (c) 2025 libnmo contributors
 ## Acknowledgments
 
 This project implements the Virtools file format based on extensive reverse
-engineering and documentation efforts by the community.  The object schemas,
+engineering and documentation efforts by the community. The object schemas,
 chunk format, and type system are derived from analysis of the original Virtools
 Dev runtime and its CK2 class hierarchy.
 
