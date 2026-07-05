@@ -94,6 +94,45 @@ static const nmo_specialized_metadata_t *get_matching_metadata(
     return metadata;
 }
 
+static nmo_status_t get_change_metadata(
+    nmo_type_registry_t *type_registry,
+    nmo_guid_t type_guid,
+    nmo_type_category_t category,
+    uint16_t metadata_type,
+    const char *category_message,
+    const char *missing_message,
+    const char *mismatch_message,
+    nmo_specialized_metadata_t **out_metadata)
+{
+    *out_metadata = NULL;
+
+    nmo_type_descriptor_t *type =
+        (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(type_registry, type_guid);
+    if (!type || !type->valid) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "Type not found");
+    }
+    if (!(type->category & category)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "%s", category_message);
+    }
+    if (type->specialized_index == NMO_SPECIALIZED_INDEX_INVALID ||
+        type->specialized_index >= type_registry->metadata.count) {
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                         "%s", missing_message);
+    }
+
+    nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t **)
+        nmo_arena_array_get(&type_registry->metadata, type->specialized_index);
+    if (!metadata || metadata->metadata_type != metadata_type) {
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                         "%s", mismatch_message);
+    }
+
+    *out_metadata = metadata;
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t copy_wrapped_type_value(
     const nmo_type_descriptor_t *type,
     const char *string,
@@ -898,28 +937,14 @@ nmo_status_t nmo_type_registry_change_enum_string(
                                 "NULL argument to change_enum_string");
     }
 
-    nmo_type_descriptor_t *type =
-        (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(type_registry, type_guid);
-    if (!type || !type->valid) {
-        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                                "Type not found");
-    }
-    if (!(type->category & NMO_TYPE_CATEGORY_ENUM)) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                "Type is not an enum");
-    }
-    if (type->specialized_index == NMO_SPECIALIZED_INDEX_INVALID ||
-        type->specialized_index >= type_registry->metadata.count) {
-        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
-                                "Enum type has no specialized metadata");
-    }
-
-    nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t **)
-        nmo_arena_array_get(&type_registry->metadata, type->specialized_index);
-    if (!metadata || metadata->metadata_type != NMO_METADATA_TYPE_ENUM) {
-        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
-                                "Enum metadata mismatch");
-    }
+    nmo_specialized_metadata_t *metadata = NULL;
+    NMO_RETURN_IF_ERROR(get_change_metadata(
+        type_registry, type_guid,
+        NMO_TYPE_CATEGORY_ENUM, NMO_METADATA_TYPE_ENUM,
+        "Type is not an enum",
+        "Enum type has no specialized metadata",
+        "Enum metadata mismatch",
+        &metadata));
 
     /* Parse new enum definition into a temporary arena. */
     nmo_arena_t *temp_arena = nmo_arena_create(NULL, 4096);
@@ -1098,28 +1123,14 @@ nmo_status_t nmo_type_registry_change_flags_string(
                                 "NULL argument to change_flags_string");
     }
 
-    nmo_type_descriptor_t *type =
-        (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(type_registry, type_guid);
-    if (!type || !type->valid) {
-        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                                "Type not found");
-    }
-    if (!(type->category & NMO_TYPE_CATEGORY_FLAGS)) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                "Type is not flags");
-    }
-    if (type->specialized_index == NMO_SPECIALIZED_INDEX_INVALID ||
-        type->specialized_index >= type_registry->metadata.count) {
-        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
-                                "Flags type has no specialized metadata");
-    }
-
-    nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t **)
-        nmo_arena_array_get(&type_registry->metadata, type->specialized_index);
-    if (!metadata || metadata->metadata_type != NMO_METADATA_TYPE_FLAGS) {
-        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
-                                "Flags metadata mismatch");
-    }
+    nmo_specialized_metadata_t *metadata = NULL;
+    NMO_RETURN_IF_ERROR(get_change_metadata(
+        type_registry, type_guid,
+        NMO_TYPE_CATEGORY_FLAGS, NMO_METADATA_TYPE_FLAGS,
+        "Type is not flags",
+        "Flags type has no specialized metadata",
+        "Flags metadata mismatch",
+        &metadata));
 
     /* Parse new flags definition into a temporary arena. */
     nmo_arena_t *temp_arena = nmo_arena_create(NULL, 4096);
