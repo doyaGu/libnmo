@@ -57,10 +57,8 @@ static void nmo_lua_push_edit_impacts(lua_State *state,
     lua_createtable(state, (int)count, 0);
     for (size_t i = 0; i < count; ++i) {
         lua_createtable(state, 0, 4);
-        lua_pushinteger(state, (lua_Integer)items[i].id);
-        lua_setfield(state, -2, "object_id");
-        lua_pushinteger(state, (lua_Integer)items[i].id);
-        lua_setfield(state, -2, "id");
+        nmo_lua_set_integer_field(state, "object_id", (lua_Integer)items[i].id);
+        nmo_lua_set_integer_field(state, "id", (lua_Integer)items[i].id);
         lua_pushstring(state, nmo_lua_edit_op_kind_string(items[i].cause));
         lua_setfield(state, -2, "cause");
         lua_pushstring(state, items[i].role != NULL ? items[i].role : "");
@@ -158,12 +156,10 @@ static void nmo_lua_push_control_link_snapshot(
     uint32_t activation_delay)
 {
     lua_createtable(state, 0, 3);
-    lua_pushinteger(state, (lua_Integer)from_io_id);
-    lua_setfield(state, -2, "from_io_id");
-    lua_pushinteger(state, (lua_Integer)to_io_id);
-    lua_setfield(state, -2, "to_io_id");
-    lua_pushinteger(state, (lua_Integer)activation_delay);
-    lua_setfield(state, -2, "activation_delay");
+    nmo_lua_set_integer_field(state, "from_io_id", (lua_Integer)from_io_id);
+    nmo_lua_set_integer_field(state, "to_io_id", (lua_Integer)to_io_id);
+    nmo_lua_set_integer_field(
+        state, "activation_delay", (lua_Integer)activation_delay);
 }
 
 static void nmo_lua_push_parameter_edge_snapshot(
@@ -172,10 +168,10 @@ static void nmo_lua_push_parameter_edge_snapshot(
     nmo_object_id_t target_parameter_id)
 {
     lua_createtable(state, 0, 2);
-    lua_pushinteger(state, (lua_Integer)source_parameter_id);
-    lua_setfield(state, -2, "source_parameter_id");
-    lua_pushinteger(state, (lua_Integer)target_parameter_id);
-    lua_setfield(state, -2, "target_parameter_id");
+    nmo_lua_set_integer_field(
+        state, "source_parameter_id", (lua_Integer)source_parameter_id);
+    nmo_lua_set_integer_field(
+        state, "target_parameter_id", (lua_Integer)target_parameter_id);
 }
 
 static void nmo_lua_push_operation_slot_snapshot(
@@ -194,18 +190,15 @@ static void nmo_lua_push_operation_slot_snapshot(
         lua_pushstring(state, guid_text);
         lua_setfield(state, -2, "operation_guid");
     }
-    lua_pushboolean(state, has_in1);
-    lua_setfield(state, -2, "has_in1");
-    lua_pushinteger(state, (lua_Integer)in1_parameter_id);
-    lua_setfield(state, -2, "in1_parameter_id");
-    lua_pushboolean(state, has_in2);
-    lua_setfield(state, -2, "has_in2");
-    lua_pushinteger(state, (lua_Integer)in2_parameter_id);
-    lua_setfield(state, -2, "in2_parameter_id");
-    lua_pushboolean(state, has_out);
-    lua_setfield(state, -2, "has_out");
-    lua_pushinteger(state, (lua_Integer)out_parameter_id);
-    lua_setfield(state, -2, "out_parameter_id");
+    nmo_lua_set_boolean_field(state, "has_in1", has_in1);
+    nmo_lua_set_integer_field(
+        state, "in1_parameter_id", (lua_Integer)in1_parameter_id);
+    nmo_lua_set_boolean_field(state, "has_in2", has_in2);
+    nmo_lua_set_integer_field(
+        state, "in2_parameter_id", (lua_Integer)in2_parameter_id);
+    nmo_lua_set_boolean_field(state, "has_out", has_out);
+    nmo_lua_set_integer_field(
+        state, "out_parameter_id", (lua_Integer)out_parameter_id);
 }
 
 static const char *nmo_lua_data_cell_type_name(uint32_t type)
@@ -237,20 +230,15 @@ static void nmo_lua_push_interface_snapshot(
     uint32_t sub_count)
 {
     lua_createtable(state, 0, 7);
-    lua_pushinteger(state, (lua_Integer)behavior_id);
-    lua_setfield(state, -2, "behavior_id");
-    lua_pushboolean(state, has_interface);
-    lua_setfield(state, -2, "has_interface");
-    lua_pushboolean(state, has_interface_chunk);
-    lua_setfield(state, -2, "has_interface_chunk");
-    lua_pushboolean(state, has_interface_data);
-    lua_setfield(state, -2, "has_interface_data");
-    lua_pushboolean(state, interface_ids_are_runtime);
-    lua_setfield(state, -2, "interface_ids_are_runtime");
-    lua_pushinteger(state, (lua_Integer)version);
-    lua_setfield(state, -2, "version");
-    lua_pushinteger(state, (lua_Integer)sub_count);
-    lua_setfield(state, -2, "sub_count");
+    nmo_lua_set_integer_field(state, "behavior_id", (lua_Integer)behavior_id);
+    nmo_lua_set_boolean_field(state, "has_interface", has_interface);
+    nmo_lua_set_boolean_field(
+        state, "has_interface_chunk", has_interface_chunk);
+    nmo_lua_set_boolean_field(state, "has_interface_data", has_interface_data);
+    nmo_lua_set_boolean_field(
+        state, "interface_ids_are_runtime", interface_ids_are_runtime);
+    nmo_lua_set_integer_field(state, "version", (lua_Integer)version);
+    nmo_lua_set_integer_field(state, "sub_count", (lua_Integer)sub_count);
 }
 
 static void nmo_lua_push_data_cell_snapshot(
@@ -261,10 +249,8 @@ static void nmo_lua_push_data_cell_snapshot(
     const char *value)
 {
     lua_createtable(state, 0, 4);
-    lua_pushinteger(state, (lua_Integer)row);
-    lua_setfield(state, -2, "row");
-    lua_pushinteger(state, (lua_Integer)col);
-    lua_setfield(state, -2, "col");
+    nmo_lua_set_integer_field(state, "row", (lua_Integer)row);
+    nmo_lua_set_integer_field(state, "col", (lua_Integer)col);
     lua_pushstring(state, nmo_lua_data_cell_type_name(type));
     lua_setfield(state, -2, "type");
     lua_pushstring(state, value != NULL ? value : "");
@@ -419,10 +405,8 @@ static void nmo_lua_push_filtered_edit_impacts(
             continue;
         }
         lua_createtable(state, 0, 4);
-        lua_pushinteger(state, (lua_Integer)items[i].id);
-        lua_setfield(state, -2, "object_id");
-        lua_pushinteger(state, (lua_Integer)items[i].id);
-        lua_setfield(state, -2, "id");
+        nmo_lua_set_integer_field(state, "object_id", (lua_Integer)items[i].id);
+        nmo_lua_set_integer_field(state, "id", (lua_Integer)items[i].id);
         lua_pushstring(state, nmo_lua_edit_op_kind_string(items[i].cause));
         lua_setfield(state, -2, "cause");
         lua_pushstring(state, items[i].role != NULL ? items[i].role : "");
