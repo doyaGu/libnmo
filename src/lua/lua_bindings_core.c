@@ -13,9 +13,13 @@ static int nmo_lua_core_version(lua_State *state)
 
 static int nmo_lua_open_core_module(lua_State *state)
 {
-    lua_createtable(state, 0, 1);
-    lua_pushcfunction(state, nmo_lua_core_version);
-    lua_setfield(state, -2, "version");
+    static const nmo_lua_function_entry_t functions[] = {
+        { "version", nmo_lua_core_version },
+    };
+    const size_t function_count = sizeof(functions) / sizeof(functions[0]);
+
+    lua_createtable(state, 0, (int)function_count);
+    nmo_lua_set_functions(state, functions, function_count);
     return 1;
 }
 

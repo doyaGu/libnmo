@@ -151,14 +151,14 @@ static int nmo_lua_format_find_interface_behavior(lua_State *state)
 
 static int nmo_lua_open_format_module(lua_State *state)
 {
-    lua_createtable(state, 0, 2);
+    static const nmo_lua_function_entry_t functions[] = {
+        { "interface_view", nmo_lua_format_interface_view },
+        { "find_behavior", nmo_lua_format_find_interface_behavior },
+    };
+    const size_t function_count = sizeof(functions) / sizeof(functions[0]);
 
-    lua_pushcfunction(state, nmo_lua_format_interface_view);
-    lua_setfield(state, -2, "interface_view");
-
-    lua_pushcfunction(state, nmo_lua_format_find_interface_behavior);
-    lua_setfield(state, -2, "find_behavior");
-
+    lua_createtable(state, 0, (int)function_count);
+    nmo_lua_set_functions(state, functions, function_count);
     return 1;
 }
 

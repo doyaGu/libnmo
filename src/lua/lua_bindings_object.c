@@ -925,88 +925,40 @@ static int nmo_lua_object_destroy_objects_info(lua_State *state)
 
 static int nmo_lua_open_object_module(lua_State *state)
 {
-    lua_createtable(state, 0, 23);
+    static const nmo_lua_function_entry_t functions[] = {
+        { "id", nmo_lua_object_id },
+        { "name", nmo_lua_object_name },
+        { "class_id", nmo_lua_object_class_id },
+        { "matches", nmo_lua_object_matches },
+        { "count", nmo_lua_object_count },
+        { "at", nmo_lua_object_at },
+        { "count_class", nmo_lua_object_count_class },
+        { "at_class", nmo_lua_object_at_class },
+        { "query_first", nmo_lua_object_query_first },
+        { "query_collect", nmo_lua_object_query_collect },
+        { "query_collect_info", nmo_lua_object_query_collect_info },
+        { "find_object_by_name", nmo_lua_object_find_object_by_name },
+        { "create_object", nmo_lua_object_create_object },
+        { "copy_objects", nmo_lua_object_copy_objects },
+        { "copy_objects_info", nmo_lua_object_copy_objects_info },
+        { "destroy_objects", nmo_lua_object_destroy_objects },
+        { "destroy_objects_info", nmo_lua_object_destroy_objects_info },
+        { "total_edge_count", nmo_lua_object_total_edge_count },
+        { "broken_edge_count", nmo_lua_object_broken_edge_count },
+        { "outgoing_edge_count", nmo_lua_object_outgoing_edge_count },
+        { "incoming_edge_count", nmo_lua_object_incoming_edge_count },
+        { "has_outgoing_edges", nmo_lua_object_has_outgoing_edges },
+        { "has_incoming_edges", nmo_lua_object_has_incoming_edges },
+        { "outgoing_edges", nmo_lua_object_outgoing_edges },
+        { "incoming_edges", nmo_lua_object_incoming_edges },
+        { "all_edges", nmo_lua_object_all_edges },
+    };
+    const size_t function_count = sizeof(functions) / sizeof(functions[0]);
 
-    lua_pushcfunction(state, nmo_lua_object_id);
-    lua_setfield(state, -2, "id");
-
-    lua_pushcfunction(state, nmo_lua_object_name);
-    lua_setfield(state, -2, "name");
-
-    lua_pushcfunction(state, nmo_lua_object_class_id);
-    lua_setfield(state, -2, "class_id");
-
-    lua_pushcfunction(state, nmo_lua_object_matches);
-    lua_setfield(state, -2, "matches");
-
+    lua_createtable(state, 0, (int)(function_count + 1u));
+    nmo_lua_set_functions(state, functions, function_count);
     nmo_lua_push_object_query_name_modes(state);
     lua_setfield(state, -2, "query_name_modes");
-
-    lua_pushcfunction(state, nmo_lua_object_count);
-    lua_setfield(state, -2, "count");
-
-    lua_pushcfunction(state, nmo_lua_object_at);
-    lua_setfield(state, -2, "at");
-
-    lua_pushcfunction(state, nmo_lua_object_count_class);
-    lua_setfield(state, -2, "count_class");
-
-    lua_pushcfunction(state, nmo_lua_object_at_class);
-    lua_setfield(state, -2, "at_class");
-
-    lua_pushcfunction(state, nmo_lua_object_query_first);
-    lua_setfield(state, -2, "query_first");
-
-    lua_pushcfunction(state, nmo_lua_object_query_collect);
-    lua_setfield(state, -2, "query_collect");
-
-    lua_pushcfunction(state, nmo_lua_object_query_collect_info);
-    lua_setfield(state, -2, "query_collect_info");
-
-    lua_pushcfunction(state, nmo_lua_object_find_object_by_name);
-    lua_setfield(state, -2, "find_object_by_name");
-
-    lua_pushcfunction(state, nmo_lua_object_create_object);
-    lua_setfield(state, -2, "create_object");
-
-    lua_pushcfunction(state, nmo_lua_object_copy_objects);
-    lua_setfield(state, -2, "copy_objects");
-
-    lua_pushcfunction(state, nmo_lua_object_copy_objects_info);
-    lua_setfield(state, -2, "copy_objects_info");
-
-    lua_pushcfunction(state, nmo_lua_object_destroy_objects);
-    lua_setfield(state, -2, "destroy_objects");
-
-    lua_pushcfunction(state, nmo_lua_object_destroy_objects_info);
-    lua_setfield(state, -2, "destroy_objects_info");
-
-    lua_pushcfunction(state, nmo_lua_object_total_edge_count);
-    lua_setfield(state, -2, "total_edge_count");
-
-    lua_pushcfunction(state, nmo_lua_object_broken_edge_count);
-    lua_setfield(state, -2, "broken_edge_count");
-
-    lua_pushcfunction(state, nmo_lua_object_outgoing_edge_count);
-    lua_setfield(state, -2, "outgoing_edge_count");
-
-    lua_pushcfunction(state, nmo_lua_object_incoming_edge_count);
-    lua_setfield(state, -2, "incoming_edge_count");
-
-    lua_pushcfunction(state, nmo_lua_object_has_outgoing_edges);
-    lua_setfield(state, -2, "has_outgoing_edges");
-
-    lua_pushcfunction(state, nmo_lua_object_has_incoming_edges);
-    lua_setfield(state, -2, "has_incoming_edges");
-
-    lua_pushcfunction(state, nmo_lua_object_outgoing_edges);
-    lua_setfield(state, -2, "outgoing_edges");
-
-    lua_pushcfunction(state, nmo_lua_object_incoming_edges);
-    lua_setfield(state, -2, "incoming_edges");
-
-    lua_pushcfunction(state, nmo_lua_object_all_edges);
-    lua_setfield(state, -2, "all_edges");
 
     return 1;
 }

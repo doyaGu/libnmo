@@ -223,27 +223,26 @@ static int nmo_lua_runtime_preview_destroy_info(lua_State *state)
 
 static int nmo_lua_open_runtime_module(lua_State *state)
 {
-    lua_createtable(state, 0, 4);
+    static const nmo_lua_function_entry_t functions[] = {
+        { "preview_destroy", nmo_lua_runtime_preview_destroy },
+        { "preview_destroy_info", nmo_lua_runtime_preview_destroy_info },
+        { "preview_destroy_ids", nmo_lua_runtime_preview_destroy_ids },
+    };
+    static const nmo_lua_integer_entry_t request_flags[] = {
+        { "default", (lua_Integer)NMO_RUNTIME_REQUEST_DEFAULT },
+        { "strict", (lua_Integer)NMO_RUNTIME_REQUEST_STRICT },
+        { "cascade", (lua_Integer)NMO_RUNTIME_REQUEST_CASCADE },
+        { "safe_detach", (lua_Integer)NMO_RUNTIME_REQUEST_SAFE_DETACH },
+    };
+    const size_t function_count = sizeof(functions) / sizeof(functions[0]);
 
-    lua_createtable(state, 0, 4);
-    lua_pushinteger(state, (lua_Integer)NMO_RUNTIME_REQUEST_DEFAULT);
-    lua_setfield(state, -2, "default");
-    lua_pushinteger(state, (lua_Integer)NMO_RUNTIME_REQUEST_STRICT);
-    lua_setfield(state, -2, "strict");
-    lua_pushinteger(state, (lua_Integer)NMO_RUNTIME_REQUEST_CASCADE);
-    lua_setfield(state, -2, "cascade");
-    lua_pushinteger(state, (lua_Integer)NMO_RUNTIME_REQUEST_SAFE_DETACH);
-    lua_setfield(state, -2, "safe_detach");
+    lua_createtable(state, 0, (int)(function_count + 1u));
+    nmo_lua_set_functions(state, functions, function_count);
+
+    nmo_lua_push_integer_table(
+        state, request_flags, sizeof(request_flags) / sizeof(request_flags[0]));
     lua_setfield(state, -2, "request_flags");
 
-    lua_pushcfunction(state, nmo_lua_runtime_preview_destroy);
-    lua_setfield(state, -2, "preview_destroy");
-
-    lua_pushcfunction(state, nmo_lua_runtime_preview_destroy_info);
-    lua_setfield(state, -2, "preview_destroy_info");
-
-    lua_pushcfunction(state, nmo_lua_runtime_preview_destroy_ids);
-    lua_setfield(state, -2, "preview_destroy_ids");
     return 1;
 }
 

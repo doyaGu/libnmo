@@ -56,25 +56,24 @@ static int nmo_lua_workspace_apply_edit_flags(lua_State *state)
 
 static int nmo_lua_open_workspace_module(lua_State *state)
 {
-    lua_createtable(state, 0, 3);
+    static const nmo_lua_function_entry_t functions[] = {
+        { "create", nmo_lua_workspace_create },
+        { "apply_edit_flags", nmo_lua_workspace_apply_edit_flags },
+    };
+    static const nmo_lua_integer_entry_t edit_flags[] = {
+        { "object_state", (lua_Integer)NMO_WORKSPACE_EDIT_OBJECT_STATE },
+        { "references", (lua_Integer)NMO_WORKSPACE_EDIT_REFERENCES },
+        { "behavior_graph", (lua_Integer)NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH },
+        { "names", (lua_Integer)NMO_WORKSPACE_EDIT_NAMES },
+        { "resources", (lua_Integer)NMO_WORKSPACE_EDIT_RESOURCES },
+    };
+    const size_t function_count = sizeof(functions) / sizeof(functions[0]);
 
-    lua_pushcfunction(state, nmo_lua_workspace_create);
-    lua_setfield(state, -2, "create");
+    lua_createtable(state, 0, (int)(function_count + 1u));
+    nmo_lua_set_functions(state, functions, function_count);
 
-    lua_pushcfunction(state, nmo_lua_workspace_apply_edit_flags);
-    lua_setfield(state, -2, "apply_edit_flags");
-
-    lua_createtable(state, 0, 5);
-    lua_pushinteger(state, (lua_Integer)NMO_WORKSPACE_EDIT_OBJECT_STATE);
-    lua_setfield(state, -2, "object_state");
-    lua_pushinteger(state, (lua_Integer)NMO_WORKSPACE_EDIT_REFERENCES);
-    lua_setfield(state, -2, "references");
-    lua_pushinteger(state, (lua_Integer)NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH);
-    lua_setfield(state, -2, "behavior_graph");
-    lua_pushinteger(state, (lua_Integer)NMO_WORKSPACE_EDIT_NAMES);
-    lua_setfield(state, -2, "names");
-    lua_pushinteger(state, (lua_Integer)NMO_WORKSPACE_EDIT_RESOURCES);
-    lua_setfield(state, -2, "resources");
+    nmo_lua_push_integer_table(
+        state, edit_flags, sizeof(edit_flags) / sizeof(edit_flags[0]));
     lua_setfield(state, -2, "edit_flags");
 
     return 1;

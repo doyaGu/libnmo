@@ -820,17 +820,14 @@ nmo_status_t nmo_lua_parse_object_query(lua_State *state,
 
 void nmo_lua_push_object_query_name_modes(lua_State *state)
 {
-    lua_createtable(state, 0, 5);
-    lua_pushinteger(state, (lua_Integer)NMO_OBJECT_QUERY_NAME_NONE);
-    lua_setfield(state, -2, "none");
-    lua_pushinteger(state, (lua_Integer)NMO_OBJECT_QUERY_NAME_EXACT);
-    lua_setfield(state, -2, "exact");
-    lua_pushinteger(state, (lua_Integer)NMO_OBJECT_QUERY_NAME_SUBSTRING);
-    lua_setfield(state, -2, "substring");
-    lua_pushinteger(state, (lua_Integer)NMO_OBJECT_QUERY_NAME_WILDCARD);
-    lua_setfield(state, -2, "wildcard");
-    lua_pushinteger(state, (lua_Integer)NMO_OBJECT_QUERY_NAME_REGEX);
-    lua_setfield(state, -2, "regex");
+    static const nmo_lua_integer_entry_t entries[] = {
+        { "none", (lua_Integer)NMO_OBJECT_QUERY_NAME_NONE },
+        { "exact", (lua_Integer)NMO_OBJECT_QUERY_NAME_EXACT },
+        { "substring", (lua_Integer)NMO_OBJECT_QUERY_NAME_SUBSTRING },
+        { "wildcard", (lua_Integer)NMO_OBJECT_QUERY_NAME_WILDCARD },
+        { "regex", (lua_Integer)NMO_OBJECT_QUERY_NAME_REGEX },
+    };
+    nmo_lua_push_integer_table(state, entries, sizeof(entries) / sizeof(entries[0]));
 }
 
 static int nmo_lua_session_create(lua_State *state)
@@ -991,45 +988,40 @@ static int nmo_lua_session_behavior_interface_diagnostics(lua_State *state)
 
 static int nmo_lua_open_session_module(lua_State *state)
 {
-    lua_createtable(state, 0, 10);
+    static const nmo_lua_function_entry_t functions[] = {
+        { "create", nmo_lua_session_create },
+        { "rebuild_indexes", nmo_lua_session_rebuild_indexes },
+        { "object_index_stats", nmo_lua_session_object_index_stats },
+        { "invalidate_object_query", nmo_lua_session_invalidate_object_query },
+        { "behavior_interface_diagnostics",
+          nmo_lua_session_behavior_interface_diagnostics },
+    };
+    static const nmo_lua_integer_entry_t index_build_flags[] = {
+        { "class", (lua_Integer)NMO_INDEX_BUILD_CLASS },
+        { "name", (lua_Integer)NMO_INDEX_BUILD_NAME },
+        { "guid", (lua_Integer)NMO_INDEX_BUILD_GUID },
+        { "all", (lua_Integer)NMO_INDEX_BUILD_ALL },
+    };
+    static const nmo_lua_integer_entry_t query_index_flags[] = {
+        { "membership", (lua_Integer)NMO_OBJECT_QUERY_INDEX_MEMBERSHIP },
+        { "names", (lua_Integer)NMO_OBJECT_QUERY_INDEX_NAMES },
+        { "text", (lua_Integer)NMO_OBJECT_QUERY_INDEX_TEXT },
+        { "type_guid", (lua_Integer)NMO_OBJECT_QUERY_INDEX_TYPE_GUID },
+        { "all", (lua_Integer)NMO_OBJECT_QUERY_INDEX_ALL },
+    };
+    const size_t function_count = sizeof(functions) / sizeof(functions[0]);
 
-    lua_pushcfunction(state, nmo_lua_session_create);
-    lua_setfield(state, -2, "create");
+    lua_createtable(state, 0, (int)(function_count + 2u));
+    nmo_lua_set_functions(state, functions, function_count);
 
-    lua_pushcfunction(state, nmo_lua_session_rebuild_indexes);
-    lua_setfield(state, -2, "rebuild_indexes");
-
-    lua_pushcfunction(state, nmo_lua_session_object_index_stats);
-    lua_setfield(state, -2, "object_index_stats");
-
-    lua_pushcfunction(state, nmo_lua_session_invalidate_object_query);
-    lua_setfield(state, -2, "invalidate_object_query");
-
-    lua_pushcfunction(state, nmo_lua_session_behavior_interface_diagnostics);
-    lua_setfield(state, -2, "behavior_interface_diagnostics");
-
-    lua_createtable(state, 0, 4);
-    lua_pushinteger(state, (lua_Integer)NMO_INDEX_BUILD_CLASS);
-    lua_setfield(state, -2, "class");
-    lua_pushinteger(state, (lua_Integer)NMO_INDEX_BUILD_NAME);
-    lua_setfield(state, -2, "name");
-    lua_pushinteger(state, (lua_Integer)NMO_INDEX_BUILD_GUID);
-    lua_setfield(state, -2, "guid");
-    lua_pushinteger(state, (lua_Integer)NMO_INDEX_BUILD_ALL);
-    lua_setfield(state, -2, "all");
+    nmo_lua_push_integer_table(
+        state, index_build_flags,
+        sizeof(index_build_flags) / sizeof(index_build_flags[0]));
     lua_setfield(state, -2, "index_build_flags");
 
-    lua_createtable(state, 0, 5);
-    lua_pushinteger(state, (lua_Integer)NMO_OBJECT_QUERY_INDEX_MEMBERSHIP);
-    lua_setfield(state, -2, "membership");
-    lua_pushinteger(state, (lua_Integer)NMO_OBJECT_QUERY_INDEX_NAMES);
-    lua_setfield(state, -2, "names");
-    lua_pushinteger(state, (lua_Integer)NMO_OBJECT_QUERY_INDEX_TEXT);
-    lua_setfield(state, -2, "text");
-    lua_pushinteger(state, (lua_Integer)NMO_OBJECT_QUERY_INDEX_TYPE_GUID);
-    lua_setfield(state, -2, "type_guid");
-    lua_pushinteger(state, (lua_Integer)NMO_OBJECT_QUERY_INDEX_ALL);
-    lua_setfield(state, -2, "all");
+    nmo_lua_push_integer_table(
+        state, query_index_flags,
+        sizeof(query_index_flags) / sizeof(query_index_flags[0]));
     lua_setfield(state, -2, "query_index_flags");
 
     return 1;
