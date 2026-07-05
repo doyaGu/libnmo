@@ -16,6 +16,23 @@ const nmo_lua_handle_descriptor_t NMO_LUA_EDIT_PLAN_HANDLE_DESCRIPTOR = {
     .debug_name = "edit_plan",
 };
 
+typedef struct nmo_lua_plan_function_entry {
+    const char *name;
+    lua_CFunction fn;
+} nmo_lua_plan_function_entry_t;
+
+static void nmo_lua_plan_set_functions(
+    lua_State *state,
+    const nmo_lua_plan_function_entry_t *entries,
+    size_t count)
+{
+    size_t i = 0u;
+    for (i = 0u; i < count; ++i) {
+        lua_pushcfunction(state, entries[i].fn);
+        lua_setfield(state, -2, entries[i].name);
+    }
+}
+
 static void nmo_lua_plan_release(void *resource, void *user_data)
 {
     (void)user_data;
@@ -1265,65 +1282,41 @@ static int nmo_lua_plan_execute(lua_State *state)
 
 static int nmo_lua_open_plan_module(lua_State *state)
 {
-    lua_createtable(state, 0, 4);
-    lua_pushcfunction(state, nmo_lua_plan_new);
-    lua_setfield(state, -2, "new");
-    lua_pushcfunction(state, nmo_lua_plan_count);
-    lua_setfield(state, -2, "count");
-    lua_pushcfunction(state, nmo_lua_plan_add_node);
-    lua_setfield(state, -2, "add_node");
-    lua_pushcfunction(state, nmo_lua_plan_add_io);
-    lua_setfield(state, -2, "add_io");
-    lua_pushcfunction(state, nmo_lua_plan_rename_io);
-    lua_setfield(state, -2, "rename_io");
-    lua_pushcfunction(state, nmo_lua_plan_remove_io);
-    lua_setfield(state, -2, "remove_io");
-    lua_pushcfunction(state, nmo_lua_plan_remove_node);
-    lua_setfield(state, -2, "remove_node");
-    lua_pushcfunction(state, nmo_lua_plan_add_behavior_link);
-    lua_setfield(state, -2, "add_behavior_link");
-    lua_pushcfunction(state, nmo_lua_plan_rewire_behavior_link);
-    lua_setfield(state, -2, "rewire_behavior_link");
-    lua_pushcfunction(state, nmo_lua_plan_set_behavior_link_delay);
-    lua_setfield(state, -2, "set_behavior_link_delay");
-    lua_pushcfunction(state, nmo_lua_plan_remove_behavior_link);
-    lua_setfield(state, -2, "remove_behavior_link");
-    lua_pushcfunction(state, nmo_lua_plan_add_parameter);
-    lua_setfield(state, -2, "add_parameter");
-    lua_pushcfunction(state, nmo_lua_plan_connect_parameter);
-    lua_setfield(state, -2, "connect_parameter");
-    lua_pushcfunction(state, nmo_lua_plan_connect_parameter_to_handle);
-    lua_setfield(state, -2, "connect_parameter_to_handle");
-    lua_pushcfunction(state, nmo_lua_plan_disconnect_parameter);
-    lua_setfield(state, -2, "disconnect_parameter");
-    lua_pushcfunction(state, nmo_lua_plan_remove_parameter);
-    lua_setfield(state, -2, "remove_parameter");
-    lua_pushcfunction(state, nmo_lua_plan_add_operation);
-    lua_setfield(state, -2, "add_operation");
-    lua_pushcfunction(state, nmo_lua_plan_rewire_operation);
-    lua_setfield(state, -2, "rewire_operation");
-    lua_pushcfunction(state, nmo_lua_plan_remove_operation);
-    lua_setfield(state, -2, "remove_operation");
-    lua_pushcfunction(state, nmo_lua_plan_replace_bb);
-    lua_setfield(state, -2, "replace_bb");
-    lua_pushcfunction(state, nmo_lua_plan_fold);
-    lua_setfield(state, -2, "fold");
-    lua_pushcfunction(state, nmo_lua_plan_set_parameter_value);
-    lua_setfield(state, -2, "set_parameter_value");
-    lua_pushcfunction(state, nmo_lua_plan_set_parameter_value_from_handle);
-    lua_setfield(state, -2, "set_parameter_value_from_handle");
-    lua_pushcfunction(state, nmo_lua_plan_set_parameter_bytes);
-    lua_setfield(state, -2, "set_parameter_bytes");
-    lua_pushcfunction(state, nmo_lua_plan_set_parameter_bytes_from_handle);
-    lua_setfield(state, -2, "set_parameter_bytes_from_handle");
-    lua_pushcfunction(state, nmo_lua_plan_set_data_cell);
-    lua_setfield(state, -2, "set_data_cell");
-    lua_pushcfunction(state, nmo_lua_plan_set_probe_selector_analysis);
-    lua_setfield(state, -2, "set_probe_selector_analysis");
-    lua_pushcfunction(state, nmo_lua_plan_interface_policy);
-    lua_setfield(state, -2, "interface_policy");
-    lua_pushcfunction(state, nmo_lua_plan_execute);
-    lua_setfield(state, -2, "execute");
+    static const nmo_lua_plan_function_entry_t functions[] = {
+        { "new", nmo_lua_plan_new },
+        { "count", nmo_lua_plan_count },
+        { "add_node", nmo_lua_plan_add_node },
+        { "add_io", nmo_lua_plan_add_io },
+        { "rename_io", nmo_lua_plan_rename_io },
+        { "remove_io", nmo_lua_plan_remove_io },
+        { "remove_node", nmo_lua_plan_remove_node },
+        { "add_behavior_link", nmo_lua_plan_add_behavior_link },
+        { "rewire_behavior_link", nmo_lua_plan_rewire_behavior_link },
+        { "set_behavior_link_delay", nmo_lua_plan_set_behavior_link_delay },
+        { "remove_behavior_link", nmo_lua_plan_remove_behavior_link },
+        { "add_parameter", nmo_lua_plan_add_parameter },
+        { "connect_parameter", nmo_lua_plan_connect_parameter },
+        { "connect_parameter_to_handle", nmo_lua_plan_connect_parameter_to_handle },
+        { "disconnect_parameter", nmo_lua_plan_disconnect_parameter },
+        { "remove_parameter", nmo_lua_plan_remove_parameter },
+        { "add_operation", nmo_lua_plan_add_operation },
+        { "rewire_operation", nmo_lua_plan_rewire_operation },
+        { "remove_operation", nmo_lua_plan_remove_operation },
+        { "replace_bb", nmo_lua_plan_replace_bb },
+        { "fold", nmo_lua_plan_fold },
+        { "set_parameter_value", nmo_lua_plan_set_parameter_value },
+        { "set_parameter_value_from_handle", nmo_lua_plan_set_parameter_value_from_handle },
+        { "set_parameter_bytes", nmo_lua_plan_set_parameter_bytes },
+        { "set_parameter_bytes_from_handle", nmo_lua_plan_set_parameter_bytes_from_handle },
+        { "set_data_cell", nmo_lua_plan_set_data_cell },
+        { "set_probe_selector_analysis", nmo_lua_plan_set_probe_selector_analysis },
+        { "interface_policy", nmo_lua_plan_interface_policy },
+        { "execute", nmo_lua_plan_execute },
+    };
+    const size_t function_count = sizeof(functions) / sizeof(functions[0]);
+
+    lua_createtable(state, 0, (int)function_count);
+    nmo_lua_plan_set_functions(state, functions, function_count);
     return 1;
 }
 
