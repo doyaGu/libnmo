@@ -83,6 +83,30 @@ static void object_index_prepare_lifecycle(nmo_hash_table_t *table, nmo_allocato
     nmo_hash_table_set_lifecycle(table, NULL, &value_lifecycle);
 }
 
+static void object_index_destroy_table(nmo_hash_table_t **table)
+{
+    if (table != NULL && *table != NULL) {
+        nmo_hash_table_destroy(*table);
+        *table = NULL;
+    }
+}
+
+static void object_index_clear_tables(nmo_object_index_t *index, uint32_t flags)
+{
+    if ((flags & NMO_INDEX_BUILD_CLASS) != 0u) {
+        object_index_destroy_table(&index->class_index);
+        index->active_indexes &= ~NMO_INDEX_BUILD_CLASS;
+    }
+    if ((flags & NMO_INDEX_BUILD_NAME) != 0u) {
+        object_index_destroy_table(&index->name_index);
+        index->active_indexes &= ~NMO_INDEX_BUILD_NAME;
+    }
+    if ((flags & NMO_INDEX_BUILD_GUID) != 0u) {
+        object_index_destroy_table(&index->guid_index);
+        index->active_indexes &= ~NMO_INDEX_BUILD_GUID;
+    }
+}
+
 /**
  * Create object array
  */
@@ -187,11 +211,7 @@ static nmo_status_t object_index_reset_table(
     nmo_hash_func_t hash_func,
     nmo_key_compare_func_t compare_func)
 {
-    if (*table != NULL) {
-        nmo_hash_table_destroy(*table);
-        *table = NULL;
-    }
-
+    object_index_destroy_table(table);
     *table = object_index_create_table(index, key_size, hash_func, compare_func);
     return *table != NULL ? NMO_OK : NMO_ERR_NOMEM;
 }
@@ -208,6 +228,7 @@ static nmo_status_t object_index_prepare_build(nmo_object_index_t *index, uint32
             nmo_hash_uint32,
             NULL);
         if (status != NMO_OK) {
+            object_index_clear_tables(index, flags);
             return status;
         }
     }
@@ -220,6 +241,7 @@ static nmo_status_t object_index_prepare_build(nmo_object_index_t *index, uint32
             nmo_hash_string,
             nmo_compare_string);
         if (status != NMO_OK) {
+            object_index_clear_tables(index, flags);
             return status;
         }
     }
@@ -232,6 +254,7 @@ static nmo_status_t object_index_prepare_build(nmo_object_index_t *index, uint32
             NULL,
             NULL);
         if (status != NMO_OK) {
+            object_index_clear_tables(index, flags);
             return status;
         }
     }
@@ -525,23 +548,7 @@ nmo_status_t nmo_object_index_clear(nmo_object_index_t *index, uint32_t flags) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if ((flags & NMO_INDEX_BUILD_CLASS) && index->class_index != NULL) {
-        nmo_hash_table_destroy(index->class_index);
-        index->class_index = NULL;
-        index->active_indexes &= ~NMO_INDEX_BUILD_CLASS;
-    }
-
-    if ((flags & NMO_INDEX_BUILD_NAME) && index->name_index != NULL) {
-        nmo_hash_table_destroy(index->name_index);
-        index->name_index = NULL;
-        index->active_indexes &= ~NMO_INDEX_BUILD_NAME;
-    }
-
-    if ((flags & NMO_INDEX_BUILD_GUID) && index->guid_index != NULL) {
-        nmo_hash_table_destroy(index->guid_index);
-        index->guid_index = NULL;
-        index->active_indexes &= ~NMO_INDEX_BUILD_GUID;
-    }
+    object_index_clear_tables(index, flags);
 
     return NMO_OK;
 }
