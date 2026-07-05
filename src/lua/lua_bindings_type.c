@@ -291,56 +291,63 @@ static void nmo_lua_type_push_guid_string(lua_State *state, nmo_guid_t guid)
     lua_pushstring(state, guid_buffer);
 }
 
+static void nmo_lua_type_set_guid_field(
+    lua_State *state,
+    const char *field_name,
+    nmo_guid_t guid)
+{
+    nmo_lua_type_push_guid_string(state, guid);
+    lua_setfield(state, -2, field_name);
+}
+
+static void nmo_lua_type_set_integer_field(
+    lua_State *state,
+    const char *field_name,
+    lua_Integer value)
+{
+    lua_pushinteger(state, value);
+    lua_setfield(state, -2, field_name);
+}
+
+static void nmo_lua_type_set_boolean_field(
+    lua_State *state,
+    const char *field_name,
+    bool value)
+{
+    lua_pushboolean(state, value ? 1 : 0);
+    lua_setfield(state, -2, field_name);
+}
+
+static void nmo_lua_type_set_optional_string_field(
+    lua_State *state,
+    const char *field_name,
+    const char *value)
+{
+    if (value != NULL) {
+        lua_pushstring(state, value);
+    } else {
+        lua_pushnil(state);
+    }
+    lua_setfield(state, -2, field_name);
+}
+
 static void nmo_lua_type_push_view(lua_State *state, const nmo_type_view_t *view)
 {
     lua_createtable(state, 0, 13);
 
-    nmo_lua_type_push_guid_string(state, view->guid);
-    lua_setfield(state, -2, "guid");
-
-    nmo_lua_type_push_guid_string(state, view->base_guid);
-    lua_setfield(state, -2, "base_guid");
-
-    lua_pushinteger(state, (lua_Integer)view->type_id);
-    lua_setfield(state, -2, "type_id");
-
-    lua_pushinteger(state, (lua_Integer)view->class_id);
-    lua_setfield(state, -2, "class_id");
-
-    lua_pushinteger(state, (lua_Integer)view->category);
-    lua_setfield(state, -2, "category");
-
-    lua_pushinteger(state, (lua_Integer)view->flags);
-    lua_setfield(state, -2, "flags");
-
-    lua_pushinteger(state, (lua_Integer)view->size);
-    lua_setfield(state, -2, "size");
-
-    lua_pushinteger(state, (lua_Integer)view->alignment);
-    lua_setfield(state, -2, "alignment");
-
-    lua_pushinteger(state, (lua_Integer)view->field_count);
-    lua_setfield(state, -2, "field_count");
-
-    if (view->name != NULL) {
-        lua_pushstring(state, view->name);
-    } else {
-        lua_pushnil(state);
-    }
-    lua_setfield(state, -2, "name");
-
-    if (view->description != NULL) {
-        lua_pushstring(state, view->description);
-    } else {
-        lua_pushnil(state);
-    }
-    lua_setfield(state, -2, "description");
-
-    lua_pushboolean(state, view->has_reflection ? 1 : 0);
-    lua_setfield(state, -2, "has_reflection");
-
-    lua_pushboolean(state, view->ui_visible ? 1 : 0);
-    lua_setfield(state, -2, "ui_visible");
+    nmo_lua_type_set_guid_field(state, "guid", view->guid);
+    nmo_lua_type_set_guid_field(state, "base_guid", view->base_guid);
+    nmo_lua_type_set_integer_field(state, "type_id", (lua_Integer)view->type_id);
+    nmo_lua_type_set_integer_field(state, "class_id", (lua_Integer)view->class_id);
+    nmo_lua_type_set_integer_field(state, "category", (lua_Integer)view->category);
+    nmo_lua_type_set_integer_field(state, "flags", (lua_Integer)view->flags);
+    nmo_lua_type_set_integer_field(state, "size", (lua_Integer)view->size);
+    nmo_lua_type_set_integer_field(state, "alignment", (lua_Integer)view->alignment);
+    nmo_lua_type_set_integer_field(state, "field_count", (lua_Integer)view->field_count);
+    nmo_lua_type_set_optional_string_field(state, "name", view->name);
+    nmo_lua_type_set_optional_string_field(state, "description", view->description);
+    nmo_lua_type_set_boolean_field(state, "has_reflection", view->has_reflection);
+    nmo_lua_type_set_boolean_field(state, "ui_visible", view->ui_visible);
 }
 
 static int nmo_lua_type_view_from_guid(lua_State *state)
@@ -845,116 +852,112 @@ static int nmo_lua_type_flags_from_string(lua_State *state)
     return 1;
 }
 
-static int nmo_lua_type_vector2_to_string(lua_State *state)
+typedef nmo_status_t (*nmo_lua_type_float_array_to_string_fn)(
+    const void *value,
+    char *buffer,
+    size_t buffer_size);
+
+typedef nmo_status_t (*nmo_lua_type_float_array_from_string_fn)(
+    void *value,
+    const char *string);
+
+static int nmo_lua_type_float_array_to_string(
+    lua_State *state,
+    size_t value_count,
+    nmo_lua_type_float_array_to_string_fn to_string,
+    const char *invalid_message,
+    const char *conversion_message)
 {
     char buffer[128];
-    float value[2] = {0.0f, 0.0f};
-    nmo_status_t status = nmo_lua_type_collect_float_array(state, 1, 2u, value);
+    float value[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    nmo_status_t status = nmo_lua_type_collect_float_array(
+        state, 1, value_count, value);
     if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid vector2 value");
+        return nmo_lua_raise_last_error(state, status, invalid_message);
     }
-    status = nmo_vector2_to_string(value, buffer, sizeof(buffer));
+
+    status = to_string(value, buffer, sizeof(buffer));
     if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to convert vector2 to string");
+        return nmo_lua_raise_last_error(state, status, conversion_message);
     }
     lua_pushstring(state, buffer);
     return 1;
+}
+
+static int nmo_lua_type_float_array_from_string(
+    lua_State *state,
+    size_t value_count,
+    nmo_lua_type_float_array_from_string_fn from_string,
+    const char *parse_message)
+{
+    float value[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    const char *text = luaL_checkstring(state, 1);
+    nmo_status_t status = from_string(value, text);
+    if (status != NMO_OK) {
+        return nmo_lua_raise_last_error(state, status, parse_message);
+    }
+    nmo_lua_type_push_float_array(state, value, value_count);
+    return 1;
+}
+
+static int nmo_lua_type_vector2_to_string(lua_State *state)
+{
+    return nmo_lua_type_float_array_to_string(
+        state, 2u, nmo_vector2_to_string,
+        "Invalid vector2 value",
+        "Failed to convert vector2 to string");
 }
 
 static int nmo_lua_type_vector2_from_string(lua_State *state)
 {
-    float value[2] = {0.0f, 0.0f};
-    const char *text = luaL_checkstring(state, 1);
-    nmo_status_t status = nmo_vector2_from_string(value, text);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to parse vector2 string");
-    }
-    nmo_lua_type_push_float_array(state, value, 2u);
-    return 1;
+    return nmo_lua_type_float_array_from_string(
+        state, 2u, nmo_vector2_from_string,
+        "Failed to parse vector2 string");
 }
 
 static int nmo_lua_type_vector_to_string(lua_State *state)
 {
-    char buffer[128];
-    float value[3] = {0.0f, 0.0f, 0.0f};
-    nmo_status_t status = nmo_lua_type_collect_float_array(state, 1, 3u, value);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid vector value");
-    }
-    status = nmo_vector_to_string(value, buffer, sizeof(buffer));
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to convert vector to string");
-    }
-    lua_pushstring(state, buffer);
-    return 1;
+    return nmo_lua_type_float_array_to_string(
+        state, 3u, nmo_vector_to_string,
+        "Invalid vector value",
+        "Failed to convert vector to string");
 }
 
 static int nmo_lua_type_vector_from_string(lua_State *state)
 {
-    float value[3] = {0.0f, 0.0f, 0.0f};
-    const char *text = luaL_checkstring(state, 1);
-    nmo_status_t status = nmo_vector_from_string(value, text);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to parse vector string");
-    }
-    nmo_lua_type_push_float_array(state, value, 3u);
-    return 1;
+    return nmo_lua_type_float_array_from_string(
+        state, 3u, nmo_vector_from_string,
+        "Failed to parse vector string");
 }
 
 static int nmo_lua_type_vector4_to_string(lua_State *state)
 {
-    char buffer[128];
-    float value[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    nmo_status_t status = nmo_lua_type_collect_float_array(state, 1, 4u, value);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid vector4 value");
-    }
-    status = nmo_vector4_to_string(value, buffer, sizeof(buffer));
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to convert vector4 to string");
-    }
-    lua_pushstring(state, buffer);
-    return 1;
+    return nmo_lua_type_float_array_to_string(
+        state, 4u, nmo_vector4_to_string,
+        "Invalid vector4 value",
+        "Failed to convert vector4 to string");
 }
 
 static int nmo_lua_type_vector4_from_string(lua_State *state)
 {
-    float value[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    const char *text = luaL_checkstring(state, 1);
-    nmo_status_t status = nmo_vector4_from_string(value, text);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to parse vector4 string");
-    }
-    nmo_lua_type_push_float_array(state, value, 4u);
-    return 1;
+    return nmo_lua_type_float_array_from_string(
+        state, 4u, nmo_vector4_from_string,
+        "Failed to parse vector4 string");
 }
 
 static int nmo_lua_type_quaternion_to_string(lua_State *state)
 {
-    char buffer[128];
-    float value[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    nmo_status_t status = nmo_lua_type_collect_float_array(state, 1, 4u, value);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid quaternion value");
-    }
-    status = nmo_quaternion_to_string(value, buffer, sizeof(buffer));
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to convert quaternion to string");
-    }
-    lua_pushstring(state, buffer);
-    return 1;
+    return nmo_lua_type_float_array_to_string(
+        state, 4u, nmo_quaternion_to_string,
+        "Invalid quaternion value",
+        "Failed to convert quaternion to string");
 }
 
 static int nmo_lua_type_quaternion_from_string(lua_State *state)
 {
-    float value[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    const char *text = luaL_checkstring(state, 1);
-    nmo_status_t status = nmo_quaternion_from_string(value, text);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to parse quaternion string");
-    }
-    nmo_lua_type_push_float_array(state, value, 4u);
-    return 1;
+    return nmo_lua_type_float_array_from_string(
+        state, 4u, nmo_quaternion_from_string,
+        "Failed to parse quaternion string");
 }
 
 static int nmo_lua_type_matrix_to_string(lua_State *state)
@@ -994,30 +997,17 @@ static int nmo_lua_type_matrix_from_string(lua_State *state)
 
 static int nmo_lua_type_color_to_string(lua_State *state)
 {
-    char buffer[128];
-    float value[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    nmo_status_t status = nmo_lua_type_collect_float_array(state, 1, 4u, value);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid color value");
-    }
-    status = nmo_color_to_string(value, buffer, sizeof(buffer));
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to convert color to string");
-    }
-    lua_pushstring(state, buffer);
-    return 1;
+    return nmo_lua_type_float_array_to_string(
+        state, 4u, nmo_color_to_string,
+        "Invalid color value",
+        "Failed to convert color to string");
 }
 
 static int nmo_lua_type_color_from_string(lua_State *state)
 {
-    float value[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    const char *text = luaL_checkstring(state, 1);
-    nmo_status_t status = nmo_color_from_string(value, text);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to parse color string");
-    }
-    nmo_lua_type_push_float_array(state, value, 4u);
-    return 1;
+    return nmo_lua_type_float_array_from_string(
+        state, 4u, nmo_color_from_string,
+        "Failed to parse color string");
 }
 
 static int nmo_lua_type_string_to_string(lua_State *state)
@@ -1104,133 +1094,72 @@ static int nmo_lua_type_set_field(lua_State *state)
     return 0;
 }
 
+typedef struct nmo_lua_type_function_entry {
+    const char *name;
+    lua_CFunction fn;
+} nmo_lua_type_function_entry_t;
+
+static void nmo_lua_type_set_functions(
+    lua_State *state,
+    const nmo_lua_type_function_entry_t *entries,
+    size_t count)
+{
+    size_t i = 0u;
+    for (i = 0u; i < count; ++i) {
+        lua_pushcfunction(state, entries[i].fn);
+        lua_setfield(state, -2, entries[i].name);
+    }
+}
+
 static int nmo_lua_open_type_module(lua_State *state)
 {
-    lua_createtable(state, 0, 37);
+    static const nmo_lua_type_function_entry_t functions[] = {
+        { "view_from_guid", nmo_lua_type_view_from_guid },
+        { "view_from_class_id", nmo_lua_type_view_from_class_id },
+        { "view_from_type_id", nmo_lua_type_view_from_type_id },
+        { "view_from_object", nmo_lua_type_view_from_object },
+        { "class_name", nmo_lua_type_class_name },
+        { "class_id", nmo_lua_type_class_id },
+        { "guid_from_name", nmo_lua_type_guid_from_name },
+        { "class_parent", nmo_lua_type_class_parent },
+        { "class_is_derived_from", nmo_lua_type_class_is_derived_from },
+        { "object_is_derived_from_guid", nmo_lua_type_object_is_derived_from_guid },
+        { "value_roundtrip", nmo_lua_type_value_roundtrip },
+        { "get_field", nmo_lua_type_get_field },
+        { "set_field", nmo_lua_type_set_field },
+        { "float_to_string", nmo_lua_type_float_to_string },
+        { "float_from_string", nmo_lua_type_float_from_string },
+        { "int_to_string", nmo_lua_type_int_to_string },
+        { "int_from_string", nmo_lua_type_int_from_string },
+        { "bool_to_string", nmo_lua_type_bool_to_string },
+        { "bool_from_string", nmo_lua_type_bool_from_string },
+        { "string_escape", nmo_lua_type_string_escape },
+        { "string_unescape", nmo_lua_type_string_unescape },
+        { "object_id_to_string", nmo_lua_type_object_id_to_string },
+        { "object_id_from_string", nmo_lua_type_object_id_from_string },
+        { "enum_to_string", nmo_lua_type_enum_to_string },
+        { "enum_from_string", nmo_lua_type_enum_from_string },
+        { "flags_to_string", nmo_lua_type_flags_to_string },
+        { "flags_from_string", nmo_lua_type_flags_from_string },
+        { "vector2_to_string", nmo_lua_type_vector2_to_string },
+        { "vector2_from_string", nmo_lua_type_vector2_from_string },
+        { "vector_to_string", nmo_lua_type_vector_to_string },
+        { "vector_from_string", nmo_lua_type_vector_from_string },
+        { "vector4_to_string", nmo_lua_type_vector4_to_string },
+        { "vector4_from_string", nmo_lua_type_vector4_from_string },
+        { "quaternion_to_string", nmo_lua_type_quaternion_to_string },
+        { "quaternion_from_string", nmo_lua_type_quaternion_from_string },
+        { "matrix_to_string", nmo_lua_type_matrix_to_string },
+        { "matrix_from_string", nmo_lua_type_matrix_from_string },
+        { "color_to_string", nmo_lua_type_color_to_string },
+        { "color_from_string", nmo_lua_type_color_from_string },
+        { "string_to_string", nmo_lua_type_string_to_string },
+        { "string_from_string", nmo_lua_type_string_from_string },
+    };
+    const size_t function_count = sizeof(functions) / sizeof(functions[0]);
 
-    lua_pushcfunction(state, nmo_lua_type_view_from_guid);
-    lua_setfield(state, -2, "view_from_guid");
-
-    lua_pushcfunction(state, nmo_lua_type_view_from_class_id);
-    lua_setfield(state, -2, "view_from_class_id");
-
-    lua_pushcfunction(state, nmo_lua_type_view_from_type_id);
-    lua_setfield(state, -2, "view_from_type_id");
-
-    lua_pushcfunction(state, nmo_lua_type_view_from_object);
-    lua_setfield(state, -2, "view_from_object");
-
-    lua_pushcfunction(state, nmo_lua_type_class_name);
-    lua_setfield(state, -2, "class_name");
-
-    lua_pushcfunction(state, nmo_lua_type_class_id);
-    lua_setfield(state, -2, "class_id");
-
-    lua_pushcfunction(state, nmo_lua_type_guid_from_name);
-    lua_setfield(state, -2, "guid_from_name");
-
-    lua_pushcfunction(state, nmo_lua_type_class_parent);
-    lua_setfield(state, -2, "class_parent");
-
-    lua_pushcfunction(state, nmo_lua_type_class_is_derived_from);
-    lua_setfield(state, -2, "class_is_derived_from");
-
-    lua_pushcfunction(state, nmo_lua_type_object_is_derived_from_guid);
-    lua_setfield(state, -2, "object_is_derived_from_guid");
-
-    lua_pushcfunction(state, nmo_lua_type_value_roundtrip);
-    lua_setfield(state, -2, "value_roundtrip");
-
-    lua_pushcfunction(state, nmo_lua_type_get_field);
-    lua_setfield(state, -2, "get_field");
-
-    lua_pushcfunction(state, nmo_lua_type_set_field);
-    lua_setfield(state, -2, "set_field");
-
-    lua_pushcfunction(state, nmo_lua_type_float_to_string);
-    lua_setfield(state, -2, "float_to_string");
-
-    lua_pushcfunction(state, nmo_lua_type_float_from_string);
-    lua_setfield(state, -2, "float_from_string");
-
-    lua_pushcfunction(state, nmo_lua_type_int_to_string);
-    lua_setfield(state, -2, "int_to_string");
-
-    lua_pushcfunction(state, nmo_lua_type_int_from_string);
-    lua_setfield(state, -2, "int_from_string");
-
-    lua_pushcfunction(state, nmo_lua_type_bool_to_string);
-    lua_setfield(state, -2, "bool_to_string");
-
-    lua_pushcfunction(state, nmo_lua_type_bool_from_string);
-    lua_setfield(state, -2, "bool_from_string");
-
-    lua_pushcfunction(state, nmo_lua_type_string_escape);
-    lua_setfield(state, -2, "string_escape");
-
-    lua_pushcfunction(state, nmo_lua_type_string_unescape);
-    lua_setfield(state, -2, "string_unescape");
-
-    lua_pushcfunction(state, nmo_lua_type_object_id_to_string);
-    lua_setfield(state, -2, "object_id_to_string");
-
-    lua_pushcfunction(state, nmo_lua_type_object_id_from_string);
-    lua_setfield(state, -2, "object_id_from_string");
-
-    lua_pushcfunction(state, nmo_lua_type_enum_to_string);
-    lua_setfield(state, -2, "enum_to_string");
-
-    lua_pushcfunction(state, nmo_lua_type_enum_from_string);
-    lua_setfield(state, -2, "enum_from_string");
-
-    lua_pushcfunction(state, nmo_lua_type_flags_to_string);
-    lua_setfield(state, -2, "flags_to_string");
-
-    lua_pushcfunction(state, nmo_lua_type_flags_from_string);
-    lua_setfield(state, -2, "flags_from_string");
-
-    lua_pushcfunction(state, nmo_lua_type_vector2_to_string);
-    lua_setfield(state, -2, "vector2_to_string");
-
-    lua_pushcfunction(state, nmo_lua_type_vector2_from_string);
-    lua_setfield(state, -2, "vector2_from_string");
-
-    lua_pushcfunction(state, nmo_lua_type_vector_to_string);
-    lua_setfield(state, -2, "vector_to_string");
-
-    lua_pushcfunction(state, nmo_lua_type_vector_from_string);
-    lua_setfield(state, -2, "vector_from_string");
-
-    lua_pushcfunction(state, nmo_lua_type_vector4_to_string);
-    lua_setfield(state, -2, "vector4_to_string");
-
-    lua_pushcfunction(state, nmo_lua_type_vector4_from_string);
-    lua_setfield(state, -2, "vector4_from_string");
-
-    lua_pushcfunction(state, nmo_lua_type_quaternion_to_string);
-    lua_setfield(state, -2, "quaternion_to_string");
-
-    lua_pushcfunction(state, nmo_lua_type_quaternion_from_string);
-    lua_setfield(state, -2, "quaternion_from_string");
-
-    lua_pushcfunction(state, nmo_lua_type_matrix_to_string);
-    lua_setfield(state, -2, "matrix_to_string");
-
-    lua_pushcfunction(state, nmo_lua_type_matrix_from_string);
-    lua_setfield(state, -2, "matrix_from_string");
-
-    lua_pushcfunction(state, nmo_lua_type_color_to_string);
-    lua_setfield(state, -2, "color_to_string");
-
-    lua_pushcfunction(state, nmo_lua_type_color_from_string);
-    lua_setfield(state, -2, "color_from_string");
-
-    lua_pushcfunction(state, nmo_lua_type_string_to_string);
-    lua_setfield(state, -2, "string_to_string");
-
-    lua_pushcfunction(state, nmo_lua_type_string_from_string);
-    lua_setfield(state, -2, "string_from_string");
-
+    lua_createtable(state, 0, (int)function_count);
+    nmo_lua_type_set_functions(state, functions, function_count);
     return 1;
 }
 
