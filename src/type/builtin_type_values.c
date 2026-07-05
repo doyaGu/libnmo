@@ -1530,49 +1530,35 @@ nmo_status_t nmo_vt_to_string_classid(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_vt_to_string_none(
-    const void *value, const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry,
-    char *buffer, size_t buffer_size, int depth)
-{
-    (void)value; (void)type; (void)registry; (void)depth;
-    snprintf(buffer, buffer_size, "(none)");
-    NMO_RETURN_OK();
-}
-
-nmo_status_t nmo_vt_from_string_none(
-    void *value, const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry, const char *string)
-{
-    (void)value; (void)type; (void)registry;
-    if (string && strcmp(string, "(none)") == 0) {
-        NMO_RETURN_OK();
+#define NMO_DEFINE_PLACEHOLDER_VTABLE(name, literal, error_message) \
+    nmo_status_t nmo_vt_to_string_##name( \
+        const void *value, const nmo_type_descriptor_t *type, \
+        const nmo_type_registry_t *registry, \
+        char *buffer, size_t buffer_size, int depth) \
+    { \
+        (void)value; \
+        (void)type; \
+        (void)registry; \
+        (void)depth; \
+        snprintf(buffer, buffer_size, literal); \
+        NMO_RETURN_OK(); \
+    } \
+    nmo_status_t nmo_vt_from_string_##name( \
+        void *value, const nmo_type_descriptor_t *type, \
+        const nmo_type_registry_t *registry, const char *string) \
+    { \
+        (void)value; \
+        (void)type; \
+        (void)registry; \
+        if (string && strcmp(string, literal) == 0) { \
+            NMO_RETURN_OK(); \
+        } \
+        NMO_RETURN_ERROR( \
+            NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, error_message); \
     }
-    NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                     "Invalid none placeholder");
-}
 
-nmo_status_t nmo_vt_to_string_voidbuf(
-    const void *value, const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry,
-    char *buffer, size_t buffer_size, int depth)
-{
-    (void)value; (void)type; (void)registry; (void)depth;
-    snprintf(buffer, buffer_size, "<voidbuf>");
-    NMO_RETURN_OK();
-}
-
-nmo_status_t nmo_vt_from_string_voidbuf(
-    void *value, const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry, const char *string)
-{
-    (void)value; (void)type; (void)registry;
-    if (string && strcmp(string, "<voidbuf>") == 0) {
-        NMO_RETURN_OK();
-    }
-    NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                     "Invalid voidbuf placeholder");
-}
+NMO_DEFINE_PLACEHOLDER_VTABLE(none, "(none)", "Invalid none placeholder")
+NMO_DEFINE_PLACEHOLDER_VTABLE(voidbuf, "<voidbuf>", "Invalid voidbuf placeholder")
 
 static nmo_status_t parse_i64(const char *string, int64_t *out_value)
 {
