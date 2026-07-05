@@ -476,10 +476,10 @@ static void nmo_lua_push_edit_operation_handles(
             state,
             operation->handles[i].name != NULL ? operation->handles[i].name : "");
         lua_setfield(state, -2, "name");
-        lua_pushinteger(state, (lua_Integer)operation->handles[i].id);
-        lua_setfield(state, -2, "object_id");
-        lua_pushinteger(state, (lua_Integer)operation->handles[i].id);
-        lua_setfield(state, -2, "id");
+        nmo_lua_set_integer_field(
+            state, "object_id", (lua_Integer)operation->handles[i].id);
+        nmo_lua_set_integer_field(
+            state, "id", (lua_Integer)operation->handles[i].id);
         lua_rawseti(state, -2, (lua_Integer)i + 1);
     }
 }
@@ -492,32 +492,23 @@ static void nmo_lua_push_edit_report_operations(lua_State *state,
         const nmo_edit_operation_result_t *operation = &report->operations[i];
         const char *kind = nmo_lua_edit_op_kind_string(operation->kind);
         lua_createtable(state, 0, 10);
-        lua_pushinteger(state, (lua_Integer)i + 1);
-        lua_setfield(state, -2, "index");
+        nmo_lua_set_integer_field(state, "index", (lua_Integer)i + 1);
         lua_pushstring(state, kind);
         lua_setfield(state, -2, "op");
         lua_pushstring(state, kind);
         lua_setfield(state, -2, "kind");
-        lua_pushinteger(state, (lua_Integer)operation->primary_id);
-        lua_setfield(state, -2, "primary_id");
-        lua_pushinteger(state, (lua_Integer)operation->result_id);
-        lua_setfield(state, -2, "result_id");
-        lua_pushinteger(state, (lua_Integer)operation->status);
-        lua_setfield(state, -2, "status");
+        nmo_lua_set_integer_field(
+            state, "primary_id", (lua_Integer)operation->primary_id);
+        nmo_lua_set_integer_field(
+            state, "result_id", (lua_Integer)operation->result_id);
+        nmo_lua_set_integer_field(
+            state, "status", (lua_Integer)operation->status);
         lua_pushstring(state, nmo_error_string(operation->status));
         lua_setfield(state, -2, "status_name");
-        if (operation->diagnostic_code != NULL) {
-            lua_pushstring(state, operation->diagnostic_code);
-        } else {
-            lua_pushnil(state);
-        }
-        lua_setfield(state, -2, "diagnostic_code");
-        if (operation->diagnostic_message != NULL) {
-            lua_pushstring(state, operation->diagnostic_message);
-        } else {
-            lua_pushnil(state);
-        }
-        lua_setfield(state, -2, "diagnostic_message");
+        nmo_lua_set_optional_string_field(
+            state, "diagnostic_code", operation->diagnostic_code);
+        nmo_lua_set_optional_string_field(
+            state, "diagnostic_message", operation->diagnostic_message);
         nmo_lua_push_edit_operation_handles(state, operation);
         lua_setfield(state, -2, "handles");
         lua_rawseti(state, -2, (lua_Integer)i + 1);
@@ -529,16 +520,18 @@ static void nmo_lua_push_edit_validation(
     const nmo_edit_validation_report_t *validation)
 {
     lua_createtable(state, 0, 5);
-    lua_pushinteger(state, (lua_Integer)validation->final_status);
-    lua_setfield(state, -2, "final_status");
-    lua_pushinteger(state, (lua_Integer)validation->roundtrip_status);
-    lua_setfield(state, -2, "roundtrip_status");
-    lua_pushinteger(state, (lua_Integer)validation->reference_status);
-    lua_setfield(state, -2, "reference_status");
-    lua_pushinteger(state, (lua_Integer)validation->behavior_index_status);
-    lua_setfield(state, -2, "behavior_index_status");
-    lua_pushinteger(state, (lua_Integer)validation->interface_status);
-    lua_setfield(state, -2, "interface_status");
+    nmo_lua_set_integer_field(
+        state, "final_status", (lua_Integer)validation->final_status);
+    nmo_lua_set_integer_field(
+        state, "roundtrip_status", (lua_Integer)validation->roundtrip_status);
+    nmo_lua_set_integer_field(
+        state, "reference_status", (lua_Integer)validation->reference_status);
+    nmo_lua_set_integer_field(
+        state,
+        "behavior_index_status",
+        (lua_Integer)validation->behavior_index_status);
+    nmo_lua_set_integer_field(
+        state, "interface_status", (lua_Integer)validation->interface_status);
 }
 
 static void nmo_lua_push_edit_diff(lua_State *state,
