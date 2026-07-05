@@ -358,6 +358,46 @@ static nmo_status_t workspace_edit_push_commit_or_abort(
     return NMO_OK;
 }
 
+static void workspace_edit_finish(nmo_workspace_edit_t *edit)
+{
+    if (edit == NULL) {
+        return;
+    }
+    edit->finished = true;
+    workspace_edit_free(edit);
+}
+
+static nmo_status_t workspace_edit_finish_status(
+    nmo_workspace_edit_t *edit,
+    nmo_status_t status)
+{
+    workspace_edit_finish(edit);
+    return status;
+}
+
+static nmo_status_t workspace_edit_finish_rollback_status(
+    nmo_workspace_edit_t *edit,
+    nmo_status_t status)
+{
+    workspace_edit_rollback_to(edit, 0);
+    return workspace_edit_finish_status(edit, status);
+}
+
+static nmo_status_t workspace_edit_run_commit_actions(nmo_workspace_edit_t *edit)
+{
+    if (edit == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    for (size_t i = 0; i < edit->commit_count; i++) {
+        nmo_status_t status =
+            edit->commit_actions[i].fn(edit, edit->commit_actions[i].payload);
+        if (status != NMO_OK) {
+            return status;
+        }
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t rollback_field_bytes(nmo_workspace_edit_t *edit, void *payload)
 {
     (void)edit;
@@ -1414,6 +1454,36 @@ static nmo_status_t workspace_edit_find_typed_state(
         out_state);
 }
 
+static nmo_status_t workspace_edit_snapshot_typed_state(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t object_id,
+    nmo_class_id_t class_id,
+    size_t state_size,
+    void **out_state)
+{
+    if (out_state != NULL) {
+        *out_state = NULL;
+    }
+    if (out_state == NULL || state_size == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    void *state = NULL;
+    nmo_status_t status =
+        workspace_edit_find_typed_state(edit, object_id, class_id, &state);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    status = nmo_workspace_edit_snapshot_bytes(edit, state, state_size);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    *out_state = state;
+    return NMO_OK;
+}
+
 static nmo_status_t workspace_edit_require_object_class(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,
@@ -1448,16 +1518,12 @@ nmo_status_t nmo_asset_edit_set_material_color(
     float a)
 {
     nmo_material_state_t *state = NULL;
-    nmo_status_t status = workspace_edit_find_typed_state(
+    nmo_status_t status = workspace_edit_snapshot_typed_state(
         edit,
         material_id,
         NMO_CID_MATERIAL,
+        sizeof(*state),
         (void **)&state);
-    if (status != NMO_OK) {
-        return status;
-    }
-
-    status = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
     if (status != NMO_OK) {
         return status;
     }
@@ -1483,16 +1549,12 @@ nmo_status_t nmo_asset_edit_set_material_channels(
     }
 
     nmo_material_state_t *state = NULL;
-    nmo_status_t status = workspace_edit_find_typed_state(
+    nmo_status_t status = workspace_edit_snapshot_typed_state(
         edit,
         material_id,
         NMO_CID_MATERIAL,
+        sizeof(*state),
         (void **)&state);
-    if (status != NMO_OK) {
-        return status;
-    }
-
-    status = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
     if (status != NMO_OK) {
         return status;
     }
@@ -1543,16 +1605,12 @@ nmo_status_t nmo_asset_edit_set_material_render_flags(
     }
 
     nmo_material_state_t *state = NULL;
-    nmo_status_t status = workspace_edit_find_typed_state(
+    nmo_status_t status = workspace_edit_snapshot_typed_state(
         edit,
         material_id,
         NMO_CID_MATERIAL,
+        sizeof(*state),
         (void **)&state);
-    if (status != NMO_OK) {
-        return status;
-    }
-
-    status = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
     if (status != NMO_OK) {
         return status;
     }
@@ -3476,22 +3534,14 @@ nmo_status_t nmo_workspace_edit_commit(nmo_workspace_edit_t *edit)
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    for (size_t i = 0; i < edit->commit_count; i++) {
-        nmo_status_t action_result =
-            edit->commit_actions[i].fn(edit, edit->commit_actions[i].payload);
-        if (action_result != NMO_OK) {
-            workspace_edit_rollback_to(edit, 0);
-            edit->finished = true;
-            workspace_edit_free(edit);
-            return action_result;
-        }
+    nmo_status_t action_result = workspace_edit_run_commit_actions(edit);
+    if (action_result != NMO_OK) {
+        return workspace_edit_finish_rollback_status(edit, action_result);
     }
 
     nmo_status_t apply_result =
         nmo_workspace_internal_apply_edit_flags(edit->workspace, edit->flags);
-    edit->finished = true;
-    workspace_edit_free(edit);
-    return apply_result;
+    return workspace_edit_finish_status(edit, apply_result);
 }
 
 void nmo_workspace_edit_rollback(nmo_workspace_edit_t *edit)
@@ -3499,9 +3549,7 @@ void nmo_workspace_edit_rollback(nmo_workspace_edit_t *edit)
     if (edit == NULL || edit->finished) {
         return;
     }
-    workspace_edit_rollback_to(edit, 0);
-    edit->finished = true;
-    workspace_edit_free(edit);
+    (void)workspace_edit_finish_rollback_status(edit, NMO_OK);
 }
 
 void *nmo_workspace_edit_alloc(
