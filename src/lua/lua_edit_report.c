@@ -436,21 +436,21 @@ static void nmo_lua_push_structural_edit_diff(
     bool (*predicate)(const nmo_edit_object_impact_t *))
 {
     lua_createtable(state, 0, 6);
-    lua_pushinteger(
+    nmo_lua_set_integer_field(
         state,
+        "changed_count",
         (lua_Integer)nmo_lua_count_filtered_edit_impacts(
             report->changed_objects, report->changed_object_count, predicate));
-    lua_setfield(state, -2, "changed_count");
-    lua_pushinteger(
+    nmo_lua_set_integer_field(
         state,
+        "created_count",
         (lua_Integer)nmo_lua_count_filtered_edit_impacts(
             report->created_objects, report->created_object_count, predicate));
-    lua_setfield(state, -2, "created_count");
-    lua_pushinteger(
+    nmo_lua_set_integer_field(
         state,
+        "deleted_count",
         (lua_Integer)nmo_lua_count_filtered_edit_impacts(
             report->deleted_objects, report->deleted_object_count, predicate));
-    lua_setfield(state, -2, "deleted_count");
     nmo_lua_push_filtered_edit_impacts(
         state, report->changed_objects, report->changed_object_count,
         predicate);
@@ -538,14 +538,22 @@ static void nmo_lua_push_edit_diff(lua_State *state,
                                    const nmo_edit_report_t *report)
 {
     lua_createtable(state, 0, 5);
-    lua_pushinteger(state, (lua_Integer)report->changed_object_count);
-    lua_setfield(state, -2, "changed_object_count");
-    lua_pushinteger(state, (lua_Integer)report->created_object_count);
-    lua_setfield(state, -2, "created_object_count");
-    lua_pushinteger(state, (lua_Integer)report->deleted_object_count);
-    lua_setfield(state, -2, "deleted_object_count");
-    lua_pushinteger(state, (lua_Integer)report->semantic_risk_count);
-    lua_setfield(state, -2, "semantic_risk_count");
+    nmo_lua_set_integer_field(
+        state,
+        "changed_object_count",
+        (lua_Integer)report->changed_object_count);
+    nmo_lua_set_integer_field(
+        state,
+        "created_object_count",
+        (lua_Integer)report->created_object_count);
+    nmo_lua_set_integer_field(
+        state,
+        "deleted_object_count",
+        (lua_Integer)report->deleted_object_count);
+    nmo_lua_set_integer_field(
+        state,
+        "semantic_risk_count",
+        (lua_Integer)report->semantic_risk_count);
 
     lua_createtable(state, 0, 3);
     nmo_lua_push_edit_impacts(
@@ -571,16 +579,24 @@ static void nmo_lua_push_edit_diff(lua_State *state,
     lua_setfield(state, -2, "data_cell_diff");
 
     lua_createtable(state, 0, 5);
-    lua_pushinteger(state, (lua_Integer)report->operation_count);
-    lua_setfield(state, -2, "operation_count");
-    lua_pushinteger(state, (lua_Integer)report->changed_object_count);
-    lua_setfield(state, -2, "changed_object_count");
-    lua_pushinteger(state, (lua_Integer)report->created_object_count);
-    lua_setfield(state, -2, "created_object_count");
-    lua_pushinteger(state, (lua_Integer)report->deleted_object_count);
-    lua_setfield(state, -2, "deleted_object_count");
-    lua_pushinteger(state, (lua_Integer)report->semantic_risk_count);
-    lua_setfield(state, -2, "semantic_risk_count");
+    nmo_lua_set_integer_field(
+        state, "operation_count", (lua_Integer)report->operation_count);
+    nmo_lua_set_integer_field(
+        state,
+        "changed_object_count",
+        (lua_Integer)report->changed_object_count);
+    nmo_lua_set_integer_field(
+        state,
+        "created_object_count",
+        (lua_Integer)report->created_object_count);
+    nmo_lua_set_integer_field(
+        state,
+        "deleted_object_count",
+        (lua_Integer)report->deleted_object_count);
+    nmo_lua_set_integer_field(
+        state,
+        "semantic_risk_count",
+        (lua_Integer)report->semantic_risk_count);
     lua_setfield(state, -2, "replay_summary");
 }
 
@@ -608,8 +624,8 @@ static void nmo_lua_push_semantic_risks(lua_State *state,
         lua_setfield(state, -2, "code");
         lua_pushstring(state, risk->message != NULL ? risk->message : "");
         lua_setfield(state, -2, "message");
-        lua_pushinteger(state, (lua_Integer)risk->object_id);
-        lua_setfield(state, -2, "object_id");
+        nmo_lua_set_integer_field(
+            state, "object_id", (lua_Integer)risk->object_id);
         lua_rawseti(state, -2, (lua_Integer)i + 1);
     }
 }
@@ -684,10 +700,9 @@ static void nmo_lua_push_probe_selector_diagnostics(
 void nmo_lua_push_edit_report(lua_State *state, const nmo_edit_report_t *report)
 {
     lua_createtable(state, 0, 10);
-    lua_pushboolean(state, report != NULL && report->ok);
-    lua_setfield(state, -2, "ok");
-    lua_pushboolean(state, report != NULL && report->dry_run);
-    lua_setfield(state, -2, "dry_run");
+    nmo_lua_set_boolean_field(state, "ok", report != NULL && report->ok);
+    nmo_lua_set_boolean_field(
+        state, "dry_run", report != NULL && report->dry_run);
     if (report != NULL) {
         nmo_lua_push_edit_report_operations(state, report);
     } else {
@@ -729,12 +744,10 @@ void nmo_lua_push_edit_report(lua_State *state, const nmo_edit_report_t *report)
         nmo_lua_push_edit_diff(state, &empty);
     }
     lua_setfield(state, -2, "diff");
-    if (report != NULL && report->output_path != NULL) {
-        lua_pushstring(state, report->output_path);
-    } else {
-        lua_pushnil(state);
-    }
-    lua_setfield(state, -2, "output_path");
+    nmo_lua_set_optional_string_field(
+        state,
+        "output_path",
+        report != NULL ? report->output_path : NULL);
     if (report != NULL && report->has_probe_selector_analysis) {
         nmo_lua_push_probe_selector_diagnostics(
             state, &report->probe_selector_analysis);
@@ -769,7 +782,6 @@ void nmo_lua_push_pending_edit_plan_report(lua_State *state,
     }
     report.validation.final_status = NMO_OK;
     nmo_lua_push_edit_report(state, &report);
-    lua_pushboolean(state, 1);
-    lua_setfield(state, -2, "pending");
+    nmo_lua_set_boolean_field(state, "pending", true);
     free(report.operations);
 }
