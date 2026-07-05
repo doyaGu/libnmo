@@ -5,7 +5,6 @@
 #include "behavior/nmo_behavior_query.h"
 #include "behavior/nmo_behavior_view.h"
 #include "behavior/nmo_script_edit_graph.h"
-#include "behavior/nmo_behavior_view.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 
@@ -32,6 +31,49 @@ typedef struct nmo_lua_behavior_workspace_scope {
     nmo_document_t *document;
     nmo_workspace_t *workspace;
 } nmo_lua_behavior_workspace_scope_t;
+
+typedef struct nmo_lua_behavior_function_entry {
+    const char *name;
+    lua_CFunction fn;
+} nmo_lua_behavior_function_entry_t;
+
+typedef struct nmo_lua_behavior_integer_entry {
+    const char *name;
+    lua_Integer value;
+} nmo_lua_behavior_integer_entry_t;
+
+static void nmo_lua_behavior_set_functions(
+    lua_State *state,
+    const nmo_lua_behavior_function_entry_t *entries,
+    size_t count)
+{
+    size_t i = 0u;
+    for (i = 0u; i < count; ++i) {
+        lua_pushcfunction(state, entries[i].fn);
+        lua_setfield(state, -2, entries[i].name);
+    }
+}
+
+static void nmo_lua_behavior_set_integer_entries(
+    lua_State *state,
+    const nmo_lua_behavior_integer_entry_t *entries,
+    size_t count)
+{
+    size_t i = 0u;
+    for (i = 0u; i < count; ++i) {
+        lua_pushinteger(state, entries[i].value);
+        lua_setfield(state, -2, entries[i].name);
+    }
+}
+
+static void nmo_lua_behavior_push_integer_table(
+    lua_State *state,
+    const nmo_lua_behavior_integer_entry_t *entries,
+    size_t count)
+{
+    lua_createtable(state, 0, (int)count);
+    nmo_lua_behavior_set_integer_entries(state, entries, count);
+}
 
 static void nmo_lua_behavior_push_script_view(lua_State *state,
                                               const nmo_behavior_script_view_t *view)
@@ -2874,209 +2916,124 @@ static int nmo_lua_behavior_remove_operation(lua_State *state)
 
 static void nmo_lua_behavior_push_validation_flags(lua_State *state)
 {
-    lua_createtable(state, 0, 4);
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_VALIDATE_REFERENCES);
-    lua_setfield(state, -2, "references");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX);
-    lua_setfield(state, -2, "behavior_index");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_VALIDATE_INTERFACE);
-    lua_setfield(state, -2, "interface");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY);
-    lua_setfield(state, -2, "roundtrip_ready");
+    static const nmo_lua_behavior_integer_entry_t entries[] = {
+        { "references", (lua_Integer)NMO_SCRIPT_EDIT_VALIDATE_REFERENCES },
+        { "behavior_index", (lua_Integer)NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX },
+        { "interface", (lua_Integer)NMO_SCRIPT_EDIT_VALIDATE_INTERFACE },
+        { "roundtrip_ready", (lua_Integer)NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY },
+    };
+    nmo_lua_behavior_push_integer_table(
+        state, entries, sizeof(entries) / sizeof(entries[0]));
 }
 
 static void nmo_lua_behavior_push_operation_slot_flags(lua_State *state)
 {
-    lua_createtable(state, 0, 3);
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_SLOT_IN1);
-    lua_setfield(state, -2, "in1");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_SLOT_IN2);
-    lua_setfield(state, -2, "in2");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_SLOT_OUT);
-    lua_setfield(state, -2, "out");
+    static const nmo_lua_behavior_integer_entry_t entries[] = {
+        { "in1", (lua_Integer)NMO_SCRIPT_EDIT_OP_SLOT_IN1 },
+        { "in2", (lua_Integer)NMO_SCRIPT_EDIT_OP_SLOT_IN2 },
+        { "out", (lua_Integer)NMO_SCRIPT_EDIT_OP_SLOT_OUT },
+    };
+    nmo_lua_behavior_push_integer_table(
+        state, entries, sizeof(entries) / sizeof(entries[0]));
 }
 
 static void nmo_lua_behavior_push_graph_handle_kinds(lua_State *state)
 {
-    lua_createtable(state, 0, 4);
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_HANDLE_OBJECT_ID);
-    lua_setfield(state, -2, "object_id");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_HANDLE_ALIAS);
-    lua_setfield(state, -2, "alias");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_HANDLE_QUERY);
-    lua_setfield(state, -2, "query");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_HANDLE_SLOT);
-    lua_setfield(state, -2, "slot");
+    static const nmo_lua_behavior_integer_entry_t entries[] = {
+        { "object_id", (lua_Integer)NMO_SCRIPT_EDIT_HANDLE_OBJECT_ID },
+        { "alias", (lua_Integer)NMO_SCRIPT_EDIT_HANDLE_ALIAS },
+        { "query", (lua_Integer)NMO_SCRIPT_EDIT_HANDLE_QUERY },
+        { "slot", (lua_Integer)NMO_SCRIPT_EDIT_HANDLE_SLOT },
+    };
+    nmo_lua_behavior_push_integer_table(
+        state, entries, sizeof(entries) / sizeof(entries[0]));
 }
 
 static void nmo_lua_behavior_push_graph_op_kinds(lua_State *state)
 {
-    lua_createtable(state, 0, 18);
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_NODE_ADD);
-    lua_setfield(state, -2, "node_add");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_NODE_REMOVE);
-    lua_setfield(state, -2, "node_remove");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_IO_ADD);
-    lua_setfield(state, -2, "io_add");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_IO_RENAME);
-    lua_setfield(state, -2, "io_rename");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_IO_REMOVE);
-    lua_setfield(state, -2, "io_remove");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_LINK_ADD);
-    lua_setfield(state, -2, "link_add");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_LINK_REWIRE);
-    lua_setfield(state, -2, "link_rewire");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_LINK_REMOVE);
-    lua_setfield(state, -2, "link_remove");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_PARAM_ADD);
-    lua_setfield(state, -2, "param_add");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_PARAM_SET);
-    lua_setfield(state, -2, "param_set");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_PARAM_CONNECT);
-    lua_setfield(state, -2, "param_connect");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_PARAM_DISCONNECT);
-    lua_setfield(state, -2, "param_disconnect");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_PARAM_REMOVE);
-    lua_setfield(state, -2, "param_remove");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_OPERATION_ADD);
-    lua_setfield(state, -2, "operation_add");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_OPERATION_REWIRE);
-    lua_setfield(state, -2, "operation_rewire");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_OPERATION_REMOVE);
-    lua_setfield(state, -2, "operation_remove");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_SUBGRAPH_FOLD);
-    lua_setfield(state, -2, "subgraph_fold");
-    lua_pushinteger(state, (lua_Integer)NMO_SCRIPT_EDIT_OP_VALIDATE);
-    lua_setfield(state, -2, "validate");
+    static const nmo_lua_behavior_integer_entry_t entries[] = {
+        { "node_add", (lua_Integer)NMO_SCRIPT_EDIT_OP_NODE_ADD },
+        { "node_remove", (lua_Integer)NMO_SCRIPT_EDIT_OP_NODE_REMOVE },
+        { "io_add", (lua_Integer)NMO_SCRIPT_EDIT_OP_IO_ADD },
+        { "io_rename", (lua_Integer)NMO_SCRIPT_EDIT_OP_IO_RENAME },
+        { "io_remove", (lua_Integer)NMO_SCRIPT_EDIT_OP_IO_REMOVE },
+        { "link_add", (lua_Integer)NMO_SCRIPT_EDIT_OP_LINK_ADD },
+        { "link_rewire", (lua_Integer)NMO_SCRIPT_EDIT_OP_LINK_REWIRE },
+        { "link_remove", (lua_Integer)NMO_SCRIPT_EDIT_OP_LINK_REMOVE },
+        { "param_add", (lua_Integer)NMO_SCRIPT_EDIT_OP_PARAM_ADD },
+        { "param_set", (lua_Integer)NMO_SCRIPT_EDIT_OP_PARAM_SET },
+        { "param_connect", (lua_Integer)NMO_SCRIPT_EDIT_OP_PARAM_CONNECT },
+        { "param_disconnect", (lua_Integer)NMO_SCRIPT_EDIT_OP_PARAM_DISCONNECT },
+        { "param_remove", (lua_Integer)NMO_SCRIPT_EDIT_OP_PARAM_REMOVE },
+        { "operation_add", (lua_Integer)NMO_SCRIPT_EDIT_OP_OPERATION_ADD },
+        { "operation_rewire", (lua_Integer)NMO_SCRIPT_EDIT_OP_OPERATION_REWIRE },
+        { "operation_remove", (lua_Integer)NMO_SCRIPT_EDIT_OP_OPERATION_REMOVE },
+        { "subgraph_fold", (lua_Integer)NMO_SCRIPT_EDIT_OP_SUBGRAPH_FOLD },
+        { "validate", (lua_Integer)NMO_SCRIPT_EDIT_OP_VALIDATE },
+    };
+    nmo_lua_behavior_push_integer_table(
+        state, entries, sizeof(entries) / sizeof(entries[0]));
 }
 
 static int nmo_lua_open_behavior_module(lua_State *state)
 {
-    lua_createtable(state, 0, 27);
+    static const nmo_lua_behavior_function_entry_t graph_functions[] = {
+        { "build", nmo_lua_behavior_graph },
+        { "find_owner", nmo_lua_behavior_graph_find_owner },
+        { "incoming_control", nmo_lua_behavior_graph_incoming_control },
+        { "outgoing_control", nmo_lua_behavior_graph_outgoing_control },
+        { "parameter_sources", nmo_lua_behavior_graph_parameter_sources },
+        { "parameter_destinations", nmo_lua_behavior_graph_parameter_destinations },
+        { "resolve_handle", nmo_lua_behavior_graph_resolve_handle },
+        { "validate_operation", nmo_lua_behavior_graph_validate_operation },
+    };
+    static const nmo_lua_behavior_function_entry_t functions[] = {
+        { "script_count", nmo_lua_behavior_script_count },
+        { "script_at", nmo_lua_behavior_script_at },
+        { "script_from_id", nmo_lua_behavior_script_from_id },
+        { "view", nmo_lua_behavior_view },
+        { "inspect", nmo_lua_behavior_inspect },
+        { "describe_boundary", nmo_lua_behavior_describe_boundary },
+        { "trace_parameter_chain", nmo_lua_behavior_trace_parameter_chain },
+        { "script_tree", nmo_lua_behavior_script_tree },
+        { "execute", nmo_lua_behavior_execute },
+        { "begin_edit", nmo_lua_behavior_begin_edit },
+        { "validate", nmo_lua_behavior_validate },
+        { "commit", nmo_lua_behavior_commit },
+        { "mark", nmo_lua_behavior_mark },
+        { "validate_interface_refs", nmo_lua_behavior_validate_interface_refs },
+        { "apply_interface_policy", nmo_lua_behavior_apply_interface_policy },
+        { "add_node", nmo_lua_behavior_add_node },
+        { "remove_node", nmo_lua_behavior_remove_node },
+        { "add_io", nmo_lua_behavior_add_io },
+        { "rename_io", nmo_lua_behavior_rename_io },
+        { "remove_io", nmo_lua_behavior_remove_io },
+        { "add_parameter", nmo_lua_behavior_add_parameter },
+        { "set_parameter_value", nmo_lua_behavior_set_parameter_value },
+        { "set_parameter_bytes", nmo_lua_behavior_set_parameter_bytes },
+        { "connect_parameter", nmo_lua_behavior_connect_parameter },
+        { "disconnect_parameter", nmo_lua_behavior_disconnect_parameter },
+        { "remove_parameter", nmo_lua_behavior_remove_parameter },
+        { "add_link", nmo_lua_behavior_add_link },
+        { "rewire_link", nmo_lua_behavior_rewire_link },
+        { "set_link_delay", nmo_lua_behavior_set_link_delay },
+        { "remove_link", nmo_lua_behavior_remove_link },
+        { "add_operation", nmo_lua_behavior_add_operation },
+        { "rewire_operation", nmo_lua_behavior_rewire_operation },
+        { "remove_operation", nmo_lua_behavior_remove_operation },
+        { "report", nmo_lua_behavior_report },
+        { "rollback", nmo_lua_behavior_rollback },
+    };
+    const size_t graph_function_count =
+        sizeof(graph_functions) / sizeof(graph_functions[0]);
+    const size_t function_count = sizeof(functions) / sizeof(functions[0]);
 
-    lua_pushcfunction(state, nmo_lua_behavior_script_count);
-    lua_setfield(state, -2, "script_count");
+    lua_createtable(state, 0, (int)(function_count + 5u));
+    nmo_lua_behavior_set_functions(state, functions, function_count);
 
-    lua_pushcfunction(state, nmo_lua_behavior_script_at);
-    lua_setfield(state, -2, "script_at");
-
-    lua_pushcfunction(state, nmo_lua_behavior_script_from_id);
-    lua_setfield(state, -2, "script_from_id");
-
-    lua_pushcfunction(state, nmo_lua_behavior_view);
-    lua_setfield(state, -2, "view");
-
-    lua_pushcfunction(state, nmo_lua_behavior_inspect);
-    lua_setfield(state, -2, "inspect");
-
-    lua_pushcfunction(state, nmo_lua_behavior_describe_boundary);
-    lua_setfield(state, -2, "describe_boundary");
-
-    lua_pushcfunction(state, nmo_lua_behavior_trace_parameter_chain);
-    lua_setfield(state, -2, "trace_parameter_chain");
-
-    lua_pushcfunction(state, nmo_lua_behavior_script_tree);
-    lua_setfield(state, -2, "script_tree");
-
-    lua_createtable(state, 0, 8);
-    lua_pushcfunction(state, nmo_lua_behavior_graph);
-    lua_setfield(state, -2, "build");
-    lua_pushcfunction(state, nmo_lua_behavior_graph_find_owner);
-    lua_setfield(state, -2, "find_owner");
-    lua_pushcfunction(state, nmo_lua_behavior_graph_incoming_control);
-    lua_setfield(state, -2, "incoming_control");
-    lua_pushcfunction(state, nmo_lua_behavior_graph_outgoing_control);
-    lua_setfield(state, -2, "outgoing_control");
-    lua_pushcfunction(state, nmo_lua_behavior_graph_parameter_sources);
-    lua_setfield(state, -2, "parameter_sources");
-    lua_pushcfunction(state, nmo_lua_behavior_graph_parameter_destinations);
-    lua_setfield(state, -2, "parameter_destinations");
-    lua_pushcfunction(state, nmo_lua_behavior_graph_resolve_handle);
-    lua_setfield(state, -2, "resolve_handle");
-    lua_pushcfunction(state, nmo_lua_behavior_graph_validate_operation);
-    lua_setfield(state, -2, "validate_operation");
+    lua_createtable(state, 0, (int)graph_function_count);
+    nmo_lua_behavior_set_functions(state, graph_functions, graph_function_count);
     lua_setfield(state, -2, "graph");
-
-    lua_pushcfunction(state, nmo_lua_behavior_execute);
-    lua_setfield(state, -2, "execute");
-
-    lua_pushcfunction(state, nmo_lua_behavior_begin_edit);
-    lua_setfield(state, -2, "begin_edit");
-
-    lua_pushcfunction(state, nmo_lua_behavior_validate);
-    lua_setfield(state, -2, "validate");
-
-    lua_pushcfunction(state, nmo_lua_behavior_commit);
-    lua_setfield(state, -2, "commit");
-
-    lua_pushcfunction(state, nmo_lua_behavior_mark);
-    lua_setfield(state, -2, "mark");
-
-    lua_pushcfunction(state, nmo_lua_behavior_validate_interface_refs);
-    lua_setfield(state, -2, "validate_interface_refs");
-
-    lua_pushcfunction(state, nmo_lua_behavior_apply_interface_policy);
-    lua_setfield(state, -2, "apply_interface_policy");
-
-    lua_pushcfunction(state, nmo_lua_behavior_add_node);
-    lua_setfield(state, -2, "add_node");
-
-    lua_pushcfunction(state, nmo_lua_behavior_remove_node);
-    lua_setfield(state, -2, "remove_node");
-
-    lua_pushcfunction(state, nmo_lua_behavior_add_io);
-    lua_setfield(state, -2, "add_io");
-
-    lua_pushcfunction(state, nmo_lua_behavior_rename_io);
-    lua_setfield(state, -2, "rename_io");
-
-    lua_pushcfunction(state, nmo_lua_behavior_remove_io);
-    lua_setfield(state, -2, "remove_io");
-
-    lua_pushcfunction(state, nmo_lua_behavior_add_parameter);
-    lua_setfield(state, -2, "add_parameter");
-
-    lua_pushcfunction(state, nmo_lua_behavior_set_parameter_value);
-    lua_setfield(state, -2, "set_parameter_value");
-
-    lua_pushcfunction(state, nmo_lua_behavior_set_parameter_bytes);
-    lua_setfield(state, -2, "set_parameter_bytes");
-
-    lua_pushcfunction(state, nmo_lua_behavior_connect_parameter);
-    lua_setfield(state, -2, "connect_parameter");
-
-    lua_pushcfunction(state, nmo_lua_behavior_disconnect_parameter);
-    lua_setfield(state, -2, "disconnect_parameter");
-
-    lua_pushcfunction(state, nmo_lua_behavior_remove_parameter);
-    lua_setfield(state, -2, "remove_parameter");
-
-    lua_pushcfunction(state, nmo_lua_behavior_add_link);
-    lua_setfield(state, -2, "add_link");
-
-    lua_pushcfunction(state, nmo_lua_behavior_rewire_link);
-    lua_setfield(state, -2, "rewire_link");
-
-    lua_pushcfunction(state, nmo_lua_behavior_set_link_delay);
-    lua_setfield(state, -2, "set_link_delay");
-
-    lua_pushcfunction(state, nmo_lua_behavior_remove_link);
-    lua_setfield(state, -2, "remove_link");
-
-    lua_pushcfunction(state, nmo_lua_behavior_add_operation);
-    lua_setfield(state, -2, "add_operation");
-
-    lua_pushcfunction(state, nmo_lua_behavior_rewire_operation);
-    lua_setfield(state, -2, "rewire_operation");
-
-    lua_pushcfunction(state, nmo_lua_behavior_remove_operation);
-    lua_setfield(state, -2, "remove_operation");
-
-    lua_pushcfunction(state, nmo_lua_behavior_report);
-    lua_setfield(state, -2, "report");
-
-    lua_pushcfunction(state, nmo_lua_behavior_rollback);
-    lua_setfield(state, -2, "rollback");
 
     nmo_lua_behavior_push_validation_flags(state);
     lua_setfield(state, -2, "validation_flags");
