@@ -2429,6 +2429,32 @@ uint32_t nmo_hash_bytes_box(const void *instance)
 
 /* Hand-written vtable to_string handlers for types with extra args or inline logic */
 
+#define NMO_DEFINE_SIGNED_VT_TO_STRING(name, c_type) \
+    nmo_status_t nmo_vt_to_string_##name( \
+        const void *value, const nmo_type_descriptor_t *type, \
+        const nmo_type_registry_t *registry, \
+        char *buffer, size_t buffer_size, int depth) \
+    { \
+        (void)type; \
+        (void)registry; \
+        (void)depth; \
+        return nmo_format_i64_text( \
+            *(const c_type *)value, buffer, buffer_size); \
+    }
+
+#define NMO_DEFINE_UNSIGNED_VT_TO_STRING(name, c_type) \
+    nmo_status_t nmo_vt_to_string_##name( \
+        const void *value, const nmo_type_descriptor_t *type, \
+        const nmo_type_registry_t *registry, \
+        char *buffer, size_t buffer_size, int depth) \
+    { \
+        (void)type; \
+        (void)registry; \
+        (void)depth; \
+        return nmo_format_u64_text( \
+            *(const c_type *)value, buffer, buffer_size); \
+    }
+
 nmo_status_t nmo_vt_to_string_int32(
     const void *value, const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -2439,74 +2465,25 @@ nmo_status_t nmo_vt_to_string_int32(
 }
 NMO_DEFINE_VT_FROM_STRING(int32, nmo_parse_int32)
 
-nmo_status_t nmo_vt_to_string_uint32(
-    const void *value, const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry,
-    char *buffer, size_t buffer_size, int depth)
-{
-    (void)type; (void)registry; (void)depth;
-    return nmo_format_u64_text(*(const uint32_t *)value, buffer, buffer_size);
-}
+NMO_DEFINE_UNSIGNED_VT_TO_STRING(uint32, uint32_t)
 NMO_DEFINE_VT_FROM_STRING(uint32, nmo_parse_uint32)
 
-nmo_status_t nmo_vt_to_string_int8(
-    const void *value, const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry,
-    char *buffer, size_t buffer_size, int depth)
-{
-    (void)type; (void)registry; (void)depth;
-    return nmo_format_i64_text(*(const int8_t *)value, buffer, buffer_size);
-}
+NMO_DEFINE_SIGNED_VT_TO_STRING(int8, int8_t)
 NMO_DEFINE_VT_FROM_STRING(int8, nmo_parse_int8)
 
-nmo_status_t nmo_vt_to_string_uint8(
-    const void *value, const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry,
-    char *buffer, size_t buffer_size, int depth)
-{
-    (void)type; (void)registry; (void)depth;
-    return nmo_format_u64_text(*(const uint8_t *)value, buffer, buffer_size);
-}
+NMO_DEFINE_UNSIGNED_VT_TO_STRING(uint8, uint8_t)
 NMO_DEFINE_VT_FROM_STRING(uint8, nmo_parse_uint8)
 
-nmo_status_t nmo_vt_to_string_int16(
-    const void *value, const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry,
-    char *buffer, size_t buffer_size, int depth)
-{
-    (void)type; (void)registry; (void)depth;
-    return nmo_format_i64_text(*(const int16_t *)value, buffer, buffer_size);
-}
+NMO_DEFINE_SIGNED_VT_TO_STRING(int16, int16_t)
 NMO_DEFINE_VT_FROM_STRING(int16, nmo_parse_int16)
 
-nmo_status_t nmo_vt_to_string_uint16(
-    const void *value, const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry,
-    char *buffer, size_t buffer_size, int depth)
-{
-    (void)type; (void)registry; (void)depth;
-    return nmo_format_u64_text(*(const uint16_t *)value, buffer, buffer_size);
-}
+NMO_DEFINE_UNSIGNED_VT_TO_STRING(uint16, uint16_t)
 NMO_DEFINE_VT_FROM_STRING(uint16, nmo_parse_uint16)
 
-nmo_status_t nmo_vt_to_string_int64(
-    const void *value, const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry,
-    char *buffer, size_t buffer_size, int depth)
-{
-    (void)type; (void)registry; (void)depth;
-    return nmo_format_i64_text(*(const int64_t *)value, buffer, buffer_size);
-}
+NMO_DEFINE_SIGNED_VT_TO_STRING(int64, int64_t)
 NMO_DEFINE_VT_FROM_STRING(int64, nmo_parse_int64)
 
-nmo_status_t nmo_vt_to_string_uint64(
-    const void *value, const nmo_type_descriptor_t *type,
-    const nmo_type_registry_t *registry,
-    char *buffer, size_t buffer_size, int depth)
-{
-    (void)type; (void)registry; (void)depth;
-    return nmo_format_u64_text(*(const uint64_t *)value, buffer, buffer_size);
-}
+NMO_DEFINE_UNSIGNED_VT_TO_STRING(uint64, uint64_t)
 NMO_DEFINE_VT_FROM_STRING(uint64, nmo_parse_uint64)
 
 NMO_DEFINE_VT_TO_STRING(float, nmo_float_to_string)
