@@ -68,8 +68,7 @@ static void nmo_lua_runtime_push_preview_result(lua_State *state,
                                                 const nmo_preview_destroy_result_t *result)
 {
     lua_createtable(state, 0, 2);
-    lua_pushinteger(state, (lua_Integer)result->count);
-    lua_setfield(state, -2, "count");
+    nmo_lua_set_integer_field(state, "count", (lua_Integer)result->count);
     nmo_lua_runtime_push_id_table(state, result->ids, result->count);
     lua_setfield(state, -2, "ids");
 }

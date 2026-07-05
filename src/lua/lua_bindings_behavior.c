@@ -1253,14 +1253,18 @@ static int nmo_lua_behavior_graph(lua_State *state)
     }
 
     lua_createtable(state, 0, 7);
-    lua_pushinteger(state, (lua_Integer)nmo_script_edit_graph_root_behavior_id(graph));
-    lua_setfield(state, -2, "root_behavior_id");
-    lua_pushboolean(state, nmo_script_edit_graph_edit_ready(graph) ? 1 : 0);
-    lua_setfield(state, -2, "edit_ready");
-    lua_pushboolean(state, nmo_script_edit_graph_owner_index_available(graph) ? 1 : 0);
-    lua_setfield(state, -2, "owner_index_available");
-    lua_pushinteger(state, (lua_Integer)broken_ref_count);
-    lua_setfield(state, -2, "broken_ref_count");
+    nmo_lua_set_integer_field(
+        state,
+        "root_behavior_id",
+        (lua_Integer)nmo_script_edit_graph_root_behavior_id(graph));
+    nmo_lua_set_boolean_field(
+        state, "edit_ready", nmo_script_edit_graph_edit_ready(graph));
+    nmo_lua_set_boolean_field(
+        state,
+        "owner_index_available",
+        nmo_script_edit_graph_owner_index_available(graph));
+    nmo_lua_set_integer_field(
+        state, "broken_ref_count", (lua_Integer)broken_ref_count);
     nmo_lua_behavior_push_graph_node_array(state, nodes, node_count);
     lua_setfield(state, -2, "nodes");
     nmo_lua_behavior_push_graph_control_edge_array(state, control_edges, control_edge_count);
