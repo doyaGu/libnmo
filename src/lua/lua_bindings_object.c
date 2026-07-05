@@ -23,20 +23,11 @@ static void nmo_lua_push_ref_edge(lua_State *state, const nmo_ref_edge_t *edge)
 {
     lua_createtable(state, 0, 5);
 
-    lua_pushinteger(state, (lua_Integer)edge->from);
-    lua_setfield(state, -2, "from");
-    lua_pushinteger(state, (lua_Integer)edge->to);
-    lua_setfield(state, -2, "to");
-    lua_pushinteger(state, (lua_Integer)edge->kind);
-    lua_setfield(state, -2, "kind");
-    if (edge->field_path != NULL) {
-        lua_pushstring(state, edge->field_path);
-    } else {
-        lua_pushnil(state);
-    }
-    lua_setfield(state, -2, "field_path");
-    lua_pushinteger(state, (lua_Integer)edge->index);
-    lua_setfield(state, -2, "index");
+    nmo_lua_set_integer_field(state, "from", (lua_Integer)edge->from);
+    nmo_lua_set_integer_field(state, "to", (lua_Integer)edge->to);
+    nmo_lua_set_integer_field(state, "kind", (lua_Integer)edge->kind);
+    nmo_lua_set_optional_string_field(state, "field_path", edge->field_path);
+    nmo_lua_set_integer_field(state, "index", (lua_Integer)edge->index);
 }
 
 static bool nmo_lua_collect_ref_edge(const nmo_ref_edge_t *edge, void *user_data)
@@ -106,28 +97,32 @@ static void nmo_lua_push_copy_result(lua_State *state,
                                      const nmo_copy_result_t *result)
 {
     lua_createtable(state, 0, 4);
-    lua_pushinteger(state, (lua_Integer)result->copied_count);
-    lua_setfield(state, -2, "copied_count");
-    lua_pushinteger(state, (lua_Integer)result->affected_count);
-    lua_setfield(state, -2, "affected_count");
-    lua_pushinteger(state, (lua_Integer)result->manager_event_errors);
-    lua_setfield(state, -2, "manager_event_errors");
-    lua_pushinteger(state, (lua_Integer)result->object_hook_errors);
-    lua_setfield(state, -2, "object_hook_errors");
+    nmo_lua_set_integer_field(
+        state, "copied_count", (lua_Integer)result->copied_count);
+    nmo_lua_set_integer_field(
+        state, "affected_count", (lua_Integer)result->affected_count);
+    nmo_lua_set_integer_field(
+        state,
+        "manager_event_errors",
+        (lua_Integer)result->manager_event_errors);
+    nmo_lua_set_integer_field(
+        state, "object_hook_errors", (lua_Integer)result->object_hook_errors);
 }
 
 static void nmo_lua_push_destroy_result(lua_State *state,
                                         const nmo_destroy_result_t *result)
 {
     lua_createtable(state, 0, 4);
-    lua_pushinteger(state, (lua_Integer)result->deleted_count);
-    lua_setfield(state, -2, "deleted_count");
-    lua_pushinteger(state, (lua_Integer)result->affected_count);
-    lua_setfield(state, -2, "affected_count");
-    lua_pushinteger(state, (lua_Integer)result->manager_event_errors);
-    lua_setfield(state, -2, "manager_event_errors");
-    lua_pushinteger(state, (lua_Integer)result->object_hook_errors);
-    lua_setfield(state, -2, "object_hook_errors");
+    nmo_lua_set_integer_field(
+        state, "deleted_count", (lua_Integer)result->deleted_count);
+    nmo_lua_set_integer_field(
+        state, "affected_count", (lua_Integer)result->affected_count);
+    nmo_lua_set_integer_field(
+        state,
+        "manager_event_errors",
+        (lua_Integer)result->manager_event_errors);
+    nmo_lua_set_integer_field(
+        state, "object_hook_errors", (lua_Integer)result->object_hook_errors);
 }
 
 static int nmo_lua_object_id(lua_State *state)
@@ -464,14 +459,10 @@ static int nmo_lua_object_query_collect_info(lua_State *state)
             state, document, document_scope, objects, count);
         if (status == NMO_OK) {
             lua_setfield(state, -2, "objects");
-            lua_pushinteger(state, (lua_Integer)result.total);
-            lua_setfield(state, -2, "total");
-            lua_pushinteger(state, (lua_Integer)result.matched);
-            lua_setfield(state, -2, "matched");
-            lua_pushinteger(state, (lua_Integer)result.visited);
-            lua_setfield(state, -2, "visited");
-            lua_pushboolean(state, result.stopped_early ? 1 : 0);
-            lua_setfield(state, -2, "stopped_early");
+            nmo_lua_set_integer_field(state, "total", (lua_Integer)result.total);
+            nmo_lua_set_integer_field(state, "matched", (lua_Integer)result.matched);
+            nmo_lua_set_integer_field(state, "visited", (lua_Integer)result.visited);
+            nmo_lua_set_boolean_field(state, "stopped_early", result.stopped_early);
         }
     }
     nmo_arena_destroy(arena);
