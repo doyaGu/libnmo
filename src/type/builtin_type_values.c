@@ -1780,23 +1780,18 @@ static nmo_status_t nmo_parse_uint64(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_parse_bool(
-    void *value,
-    const nmo_type_registry_t *registry,
-    const char *string)
-{
-    (void)registry;
-    return nmo_bool_from_string(value, string);
-}
+#define NMO_DEFINE_PARSE_ADAPTER(name, parse_fn) \
+    static nmo_status_t nmo_parse_##name( \
+        void *value, \
+        const nmo_type_registry_t *registry, \
+        const char *string) \
+    { \
+        (void)registry; \
+        return (parse_fn)(value, string); \
+    }
 
-static nmo_status_t nmo_parse_float(
-    void *value,
-    const nmo_type_registry_t *registry,
-    const char *string)
-{
-    (void)registry;
-    return nmo_float_from_string(value, string);
-}
+NMO_DEFINE_PARSE_ADAPTER(bool, nmo_bool_from_string)
+NMO_DEFINE_PARSE_ADAPTER(float, nmo_float_from_string)
 
 static nmo_status_t nmo_parse_double(
     void *value,
@@ -1823,59 +1818,12 @@ static nmo_status_t nmo_parse_string(
     return nmo_string_from_string(value, string, (nmo_arena_t *)registry->arena);
 }
 
-static nmo_status_t nmo_parse_vector2(
-    void *value,
-    const nmo_type_registry_t *registry,
-    const char *string)
-{
-    (void)registry;
-    return nmo_vector2_from_string(value, string);
-}
-
-static nmo_status_t nmo_parse_vector3(
-    void *value,
-    const nmo_type_registry_t *registry,
-    const char *string)
-{
-    (void)registry;
-    return nmo_vector_from_string(value, string);
-}
-
-static nmo_status_t nmo_parse_vector4(
-    void *value,
-    const nmo_type_registry_t *registry,
-    const char *string)
-{
-    (void)registry;
-    return nmo_vector4_from_string(value, string);
-}
-
-static nmo_status_t nmo_parse_quaternion(
-    void *value,
-    const nmo_type_registry_t *registry,
-    const char *string)
-{
-    (void)registry;
-    return nmo_quaternion_from_string(value, string);
-}
-
-static nmo_status_t nmo_parse_matrix(
-    void *value,
-    const nmo_type_registry_t *registry,
-    const char *string)
-{
-    (void)registry;
-    return nmo_matrix_from_string(value, string);
-}
-
-static nmo_status_t nmo_parse_color(
-    void *value,
-    const nmo_type_registry_t *registry,
-    const char *string)
-{
-    (void)registry;
-    return nmo_color_from_string(value, string);
-}
+NMO_DEFINE_PARSE_ADAPTER(vector2, nmo_vector2_from_string)
+NMO_DEFINE_PARSE_ADAPTER(vector3, nmo_vector_from_string)
+NMO_DEFINE_PARSE_ADAPTER(vector4, nmo_vector4_from_string)
+NMO_DEFINE_PARSE_ADAPTER(quaternion, nmo_quaternion_from_string)
+NMO_DEFINE_PARSE_ADAPTER(matrix, nmo_matrix_from_string)
+NMO_DEFINE_PARSE_ADAPTER(color, nmo_color_from_string)
 
 static nmo_status_t nmo_parse_guid(
     void *value,
