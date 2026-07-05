@@ -678,59 +678,35 @@ static int nmo_lua_document_remove_included_file(lua_State *state)
 
 static int nmo_lua_open_document_module(lua_State *state)
 {
-    lua_createtable(state, 0, 15);
+    static const nmo_lua_function_entry_t functions[] = {
+        { "load_file", nmo_lua_document_load_file },
+        { "save_file", nmo_lua_document_save_file },
+        { "stats", nmo_lua_document_stats },
+        { "compare", nmo_lua_document_compare },
+        { "file_info", nmo_lua_document_file_info },
+        { "is_partial_load", nmo_lua_document_is_partial_load },
+        { "has_materialized_load_state", nmo_lua_document_has_materialized_load_state },
+        { "runtime_load_stats", nmo_lua_document_runtime_load_stats },
+        { "plugin_diagnostics", nmo_lua_document_plugin_diagnostics },
+        { "included_files", nmo_lua_document_included_files },
+        { "add_included_file", nmo_lua_document_add_included_file },
+        { "replace_included_file", nmo_lua_document_replace_included_file },
+        { "set_included_file_owners", nmo_lua_document_set_included_file_owners },
+        { "remove_included_file", nmo_lua_document_remove_included_file },
+    };
+    static const nmo_lua_integer_entry_t compare_flags[] = {
+        { "default", (lua_Integer)NMO_COMPARE_DEFAULT },
+        { "structure", (lua_Integer)NMO_COMPARE_STRUCTURE },
+        { "names", (lua_Integer)NMO_COMPARE_NAMES },
+        { "strict", (lua_Integer)NMO_COMPARE_STRICT },
+    };
+    const size_t function_count = sizeof(functions) / sizeof(functions[0]);
 
-    lua_pushcfunction(state, nmo_lua_document_load_file);
-    lua_setfield(state, -2, "load_file");
+    lua_createtable(state, 0, (int)(function_count + 1u));
+    nmo_lua_set_functions(state, functions, function_count);
 
-    lua_pushcfunction(state, nmo_lua_document_save_file);
-    lua_setfield(state, -2, "save_file");
-
-    lua_pushcfunction(state, nmo_lua_document_stats);
-    lua_setfield(state, -2, "stats");
-
-    lua_pushcfunction(state, nmo_lua_document_compare);
-    lua_setfield(state, -2, "compare");
-
-    lua_pushcfunction(state, nmo_lua_document_file_info);
-    lua_setfield(state, -2, "file_info");
-
-    lua_pushcfunction(state, nmo_lua_document_is_partial_load);
-    lua_setfield(state, -2, "is_partial_load");
-
-    lua_pushcfunction(state, nmo_lua_document_has_materialized_load_state);
-    lua_setfield(state, -2, "has_materialized_load_state");
-
-    lua_pushcfunction(state, nmo_lua_document_runtime_load_stats);
-    lua_setfield(state, -2, "runtime_load_stats");
-
-    lua_pushcfunction(state, nmo_lua_document_plugin_diagnostics);
-    lua_setfield(state, -2, "plugin_diagnostics");
-
-    lua_pushcfunction(state, nmo_lua_document_included_files);
-    lua_setfield(state, -2, "included_files");
-
-    lua_pushcfunction(state, nmo_lua_document_add_included_file);
-    lua_setfield(state, -2, "add_included_file");
-
-    lua_pushcfunction(state, nmo_lua_document_replace_included_file);
-    lua_setfield(state, -2, "replace_included_file");
-
-    lua_pushcfunction(state, nmo_lua_document_set_included_file_owners);
-    lua_setfield(state, -2, "set_included_file_owners");
-
-    lua_pushcfunction(state, nmo_lua_document_remove_included_file);
-    lua_setfield(state, -2, "remove_included_file");
-
-    lua_createtable(state, 0, 4);
-    lua_pushinteger(state, (lua_Integer)NMO_COMPARE_DEFAULT);
-    lua_setfield(state, -2, "default");
-    lua_pushinteger(state, (lua_Integer)NMO_COMPARE_STRUCTURE);
-    lua_setfield(state, -2, "structure");
-    lua_pushinteger(state, (lua_Integer)NMO_COMPARE_NAMES);
-    lua_setfield(state, -2, "names");
-    lua_pushinteger(state, (lua_Integer)NMO_COMPARE_STRICT);
-    lua_setfield(state, -2, "strict");
+    nmo_lua_push_integer_table(
+        state, compare_flags, sizeof(compare_flags) / sizeof(compare_flags[0]));
     lua_setfield(state, -2, "compare_flags");
 
     return 1;

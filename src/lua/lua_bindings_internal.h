@@ -43,6 +43,26 @@ extern const nmo_lua_handle_descriptor_t NMO_LUA_RUNTIME_HANDLE_DESCRIPTOR;
 extern const nmo_lua_handle_descriptor_t NMO_LUA_SCRIPT_EDIT_TX_HANDLE_DESCRIPTOR;
 extern const nmo_lua_handle_descriptor_t NMO_LUA_EDIT_PLAN_HANDLE_DESCRIPTOR;
 
+typedef struct nmo_lua_function_entry {
+    const char *name;
+    lua_CFunction fn;
+} nmo_lua_function_entry_t;
+
+typedef struct nmo_lua_integer_entry {
+    const char *name;
+    lua_Integer value;
+} nmo_lua_integer_entry_t;
+
+void nmo_lua_set_functions(lua_State *state,
+                           const nmo_lua_function_entry_t *entries,
+                           size_t count);
+void nmo_lua_set_integers(lua_State *state,
+                          const nmo_lua_integer_entry_t *entries,
+                          size_t count);
+void nmo_lua_push_integer_table(lua_State *state,
+                                const nmo_lua_integer_entry_t *entries,
+                                size_t count);
+
 int nmo_lua_raise_last_error(lua_State *state,
                              nmo_status_t status,
                              const char *fallback_message);

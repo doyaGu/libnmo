@@ -1094,26 +1094,9 @@ static int nmo_lua_type_set_field(lua_State *state)
     return 0;
 }
 
-typedef struct nmo_lua_type_function_entry {
-    const char *name;
-    lua_CFunction fn;
-} nmo_lua_type_function_entry_t;
-
-static void nmo_lua_type_set_functions(
-    lua_State *state,
-    const nmo_lua_type_function_entry_t *entries,
-    size_t count)
-{
-    size_t i = 0u;
-    for (i = 0u; i < count; ++i) {
-        lua_pushcfunction(state, entries[i].fn);
-        lua_setfield(state, -2, entries[i].name);
-    }
-}
-
 static int nmo_lua_open_type_module(lua_State *state)
 {
-    static const nmo_lua_type_function_entry_t functions[] = {
+    static const nmo_lua_function_entry_t functions[] = {
         { "view_from_guid", nmo_lua_type_view_from_guid },
         { "view_from_class_id", nmo_lua_type_view_from_class_id },
         { "view_from_type_id", nmo_lua_type_view_from_type_id },
@@ -1159,7 +1142,7 @@ static int nmo_lua_open_type_module(lua_State *state)
     const size_t function_count = sizeof(functions) / sizeof(functions[0]);
 
     lua_createtable(state, 0, (int)function_count);
-    nmo_lua_type_set_functions(state, functions, function_count);
+    nmo_lua_set_functions(state, functions, function_count);
     return 1;
 }
 

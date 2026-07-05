@@ -32,49 +32,6 @@ typedef struct nmo_lua_behavior_workspace_scope {
     nmo_workspace_t *workspace;
 } nmo_lua_behavior_workspace_scope_t;
 
-typedef struct nmo_lua_behavior_function_entry {
-    const char *name;
-    lua_CFunction fn;
-} nmo_lua_behavior_function_entry_t;
-
-typedef struct nmo_lua_behavior_integer_entry {
-    const char *name;
-    lua_Integer value;
-} nmo_lua_behavior_integer_entry_t;
-
-static void nmo_lua_behavior_set_functions(
-    lua_State *state,
-    const nmo_lua_behavior_function_entry_t *entries,
-    size_t count)
-{
-    size_t i = 0u;
-    for (i = 0u; i < count; ++i) {
-        lua_pushcfunction(state, entries[i].fn);
-        lua_setfield(state, -2, entries[i].name);
-    }
-}
-
-static void nmo_lua_behavior_set_integer_entries(
-    lua_State *state,
-    const nmo_lua_behavior_integer_entry_t *entries,
-    size_t count)
-{
-    size_t i = 0u;
-    for (i = 0u; i < count; ++i) {
-        lua_pushinteger(state, entries[i].value);
-        lua_setfield(state, -2, entries[i].name);
-    }
-}
-
-static void nmo_lua_behavior_push_integer_table(
-    lua_State *state,
-    const nmo_lua_behavior_integer_entry_t *entries,
-    size_t count)
-{
-    lua_createtable(state, 0, (int)count);
-    nmo_lua_behavior_set_integer_entries(state, entries, count);
-}
-
 static void nmo_lua_behavior_push_script_view(lua_State *state,
                                               const nmo_behavior_script_view_t *view)
 {
@@ -2916,42 +2873,39 @@ static int nmo_lua_behavior_remove_operation(lua_State *state)
 
 static void nmo_lua_behavior_push_validation_flags(lua_State *state)
 {
-    static const nmo_lua_behavior_integer_entry_t entries[] = {
+    static const nmo_lua_integer_entry_t entries[] = {
         { "references", (lua_Integer)NMO_SCRIPT_EDIT_VALIDATE_REFERENCES },
         { "behavior_index", (lua_Integer)NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX },
         { "interface", (lua_Integer)NMO_SCRIPT_EDIT_VALIDATE_INTERFACE },
         { "roundtrip_ready", (lua_Integer)NMO_SCRIPT_EDIT_VALIDATE_ROUNDTRIP_READY },
     };
-    nmo_lua_behavior_push_integer_table(
-        state, entries, sizeof(entries) / sizeof(entries[0]));
+    nmo_lua_push_integer_table(state, entries, sizeof(entries) / sizeof(entries[0]));
 }
 
 static void nmo_lua_behavior_push_operation_slot_flags(lua_State *state)
 {
-    static const nmo_lua_behavior_integer_entry_t entries[] = {
+    static const nmo_lua_integer_entry_t entries[] = {
         { "in1", (lua_Integer)NMO_SCRIPT_EDIT_OP_SLOT_IN1 },
         { "in2", (lua_Integer)NMO_SCRIPT_EDIT_OP_SLOT_IN2 },
         { "out", (lua_Integer)NMO_SCRIPT_EDIT_OP_SLOT_OUT },
     };
-    nmo_lua_behavior_push_integer_table(
-        state, entries, sizeof(entries) / sizeof(entries[0]));
+    nmo_lua_push_integer_table(state, entries, sizeof(entries) / sizeof(entries[0]));
 }
 
 static void nmo_lua_behavior_push_graph_handle_kinds(lua_State *state)
 {
-    static const nmo_lua_behavior_integer_entry_t entries[] = {
+    static const nmo_lua_integer_entry_t entries[] = {
         { "object_id", (lua_Integer)NMO_SCRIPT_EDIT_HANDLE_OBJECT_ID },
         { "alias", (lua_Integer)NMO_SCRIPT_EDIT_HANDLE_ALIAS },
         { "query", (lua_Integer)NMO_SCRIPT_EDIT_HANDLE_QUERY },
         { "slot", (lua_Integer)NMO_SCRIPT_EDIT_HANDLE_SLOT },
     };
-    nmo_lua_behavior_push_integer_table(
-        state, entries, sizeof(entries) / sizeof(entries[0]));
+    nmo_lua_push_integer_table(state, entries, sizeof(entries) / sizeof(entries[0]));
 }
 
 static void nmo_lua_behavior_push_graph_op_kinds(lua_State *state)
 {
-    static const nmo_lua_behavior_integer_entry_t entries[] = {
+    static const nmo_lua_integer_entry_t entries[] = {
         { "node_add", (lua_Integer)NMO_SCRIPT_EDIT_OP_NODE_ADD },
         { "node_remove", (lua_Integer)NMO_SCRIPT_EDIT_OP_NODE_REMOVE },
         { "io_add", (lua_Integer)NMO_SCRIPT_EDIT_OP_IO_ADD },
@@ -2971,13 +2925,12 @@ static void nmo_lua_behavior_push_graph_op_kinds(lua_State *state)
         { "subgraph_fold", (lua_Integer)NMO_SCRIPT_EDIT_OP_SUBGRAPH_FOLD },
         { "validate", (lua_Integer)NMO_SCRIPT_EDIT_OP_VALIDATE },
     };
-    nmo_lua_behavior_push_integer_table(
-        state, entries, sizeof(entries) / sizeof(entries[0]));
+    nmo_lua_push_integer_table(state, entries, sizeof(entries) / sizeof(entries[0]));
 }
 
 static int nmo_lua_open_behavior_module(lua_State *state)
 {
-    static const nmo_lua_behavior_function_entry_t graph_functions[] = {
+    static const nmo_lua_function_entry_t graph_functions[] = {
         { "build", nmo_lua_behavior_graph },
         { "find_owner", nmo_lua_behavior_graph_find_owner },
         { "incoming_control", nmo_lua_behavior_graph_incoming_control },
@@ -2987,7 +2940,7 @@ static int nmo_lua_open_behavior_module(lua_State *state)
         { "resolve_handle", nmo_lua_behavior_graph_resolve_handle },
         { "validate_operation", nmo_lua_behavior_graph_validate_operation },
     };
-    static const nmo_lua_behavior_function_entry_t functions[] = {
+    static const nmo_lua_function_entry_t functions[] = {
         { "script_count", nmo_lua_behavior_script_count },
         { "script_at", nmo_lua_behavior_script_at },
         { "script_from_id", nmo_lua_behavior_script_from_id },
@@ -3029,10 +2982,10 @@ static int nmo_lua_open_behavior_module(lua_State *state)
     const size_t function_count = sizeof(functions) / sizeof(functions[0]);
 
     lua_createtable(state, 0, (int)(function_count + 5u));
-    nmo_lua_behavior_set_functions(state, functions, function_count);
+    nmo_lua_set_functions(state, functions, function_count);
 
     lua_createtable(state, 0, (int)graph_function_count);
-    nmo_lua_behavior_set_functions(state, graph_functions, graph_function_count);
+    nmo_lua_set_functions(state, graph_functions, graph_function_count);
     lua_setfield(state, -2, "graph");
 
     nmo_lua_behavior_push_validation_flags(state);

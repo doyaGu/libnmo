@@ -16,23 +16,6 @@ const nmo_lua_handle_descriptor_t NMO_LUA_EDIT_PLAN_HANDLE_DESCRIPTOR = {
     .debug_name = "edit_plan",
 };
 
-typedef struct nmo_lua_plan_function_entry {
-    const char *name;
-    lua_CFunction fn;
-} nmo_lua_plan_function_entry_t;
-
-static void nmo_lua_plan_set_functions(
-    lua_State *state,
-    const nmo_lua_plan_function_entry_t *entries,
-    size_t count)
-{
-    size_t i = 0u;
-    for (i = 0u; i < count; ++i) {
-        lua_pushcfunction(state, entries[i].fn);
-        lua_setfield(state, -2, entries[i].name);
-    }
-}
-
 static void nmo_lua_plan_release(void *resource, void *user_data)
 {
     (void)user_data;
@@ -1282,7 +1265,7 @@ static int nmo_lua_plan_execute(lua_State *state)
 
 static int nmo_lua_open_plan_module(lua_State *state)
 {
-    static const nmo_lua_plan_function_entry_t functions[] = {
+    static const nmo_lua_function_entry_t functions[] = {
         { "new", nmo_lua_plan_new },
         { "count", nmo_lua_plan_count },
         { "add_node", nmo_lua_plan_add_node },
@@ -1316,7 +1299,7 @@ static int nmo_lua_open_plan_module(lua_State *state)
     const size_t function_count = sizeof(functions) / sizeof(functions[0]);
 
     lua_createtable(state, 0, (int)function_count);
-    nmo_lua_plan_set_functions(state, functions, function_count);
+    nmo_lua_set_functions(state, functions, function_count);
     return 1;
 }
 

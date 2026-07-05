@@ -1,5 +1,7 @@
 #include "lua/nmo_lua_module.h"
 
+#include "lua_bindings_internal.h"
+
 #include "lauxlib.h"
 
 nmo_status_t nmo_lua_module_register(lua_State *state,
@@ -30,4 +32,34 @@ nmo_status_t nmo_lua_module_register(lua_State *state,
     lua_pop(state, 2);
 
     NMO_RETURN_OK();
+}
+
+void nmo_lua_set_functions(lua_State *state,
+                           const nmo_lua_function_entry_t *entries,
+                           size_t count)
+{
+    size_t i = 0u;
+    for (i = 0u; i < count; ++i) {
+        lua_pushcfunction(state, entries[i].fn);
+        lua_setfield(state, -2, entries[i].name);
+    }
+}
+
+void nmo_lua_set_integers(lua_State *state,
+                          const nmo_lua_integer_entry_t *entries,
+                          size_t count)
+{
+    size_t i = 0u;
+    for (i = 0u; i < count; ++i) {
+        lua_pushinteger(state, entries[i].value);
+        lua_setfield(state, -2, entries[i].name);
+    }
+}
+
+void nmo_lua_push_integer_table(lua_State *state,
+                                const nmo_lua_integer_entry_t *entries,
+                                size_t count)
+{
+    lua_createtable(state, 0, (int)count);
+    nmo_lua_set_integers(state, entries, count);
 }
