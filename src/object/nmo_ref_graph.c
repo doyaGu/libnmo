@@ -9,10 +9,12 @@
 #include "object/nmo_ref_graph.h"
 #include "object/nmo_ref_enumerate.h"
 #include "object/nmo_object_repository.h"
+#include "object_scan_internal.h"
 #include "object/nmo_class_ids.h"
 #include "type/nmo_type_system.h"
 #include "format/nmo_object.h"
 
+#include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -36,6 +38,22 @@ static const char *ref_kind_names[] = {
     [NMO_REF_KIND_SCRIPT] = "script"
 };
 
+typedef struct nmo_ref_adjacency_entry {
+    nmo_object_id_t object_id;
+    size_t edge_index;
+} nmo_ref_adjacency_entry_t;
+
+typedef struct nmo_ref_edge_cursor {
+    const nmo_ref_graph_t *graph;
+    const nmo_ref_adjacency_entry_t *entries;
+    size_t count;
+    size_t pos;
+    nmo_object_id_t object_id;
+    nmo_ref_direction_t direction;
+    size_t scan_pos;
+    bool indexed;
+} nmo_ref_edge_cursor_t;
+
 /**
  * @brief Reference graph structure
  */
@@ -48,6 +66,11 @@ struct nmo_ref_graph {
     nmo_ref_edge_t *edges;
     size_t edge_count;
     size_t edge_capacity;
+
+    /* Optional adjacency indexes over edge storage. */
+    nmo_ref_adjacency_entry_t *outgoing_entries;
+    nmo_ref_adjacency_entry_t *incoming_entries;
+    bool adjacency_built;
     
     /* Current object being enumerated (for visitor context) */
     nmo_object_id_t current_object_id;
@@ -123,6 +146,202 @@ static bool add_edge(nmo_ref_graph_t *graph, nmo_object_id_t from,
     return true;
 }
 
+static bool ref_graph_edge_matches(
+    const nmo_ref_edge_t *edge,
+    nmo_object_id_t object_id,
+    nmo_ref_direction_t direction)
+{
+    if (edge == NULL) {
+        return false;
+    }
+    if (direction == NMO_REF_DIR_OUTGOING) {
+        return edge->from == object_id;
+    }
+    if (direction == NMO_REF_DIR_INCOMING) {
+        return edge->to == object_id;
+    }
+    return false;
+}
+
+static int compare_adjacency_entry(const void *a, const void *b)
+{
+    const nmo_ref_adjacency_entry_t *ea = (const nmo_ref_adjacency_entry_t *)a;
+    const nmo_ref_adjacency_entry_t *eb = (const nmo_ref_adjacency_entry_t *)b;
+    if (ea->object_id < eb->object_id) return -1;
+    if (ea->object_id > eb->object_id) return 1;
+    if (ea->edge_index < eb->edge_index) return -1;
+    if (ea->edge_index > eb->edge_index) return 1;
+    return 0;
+}
+
+static bool ref_graph_build_adjacency(nmo_ref_graph_t *graph)
+{
+    if (graph == NULL) {
+        return false;
+    }
+
+    graph->adjacency_built = false;
+    graph->outgoing_entries = NULL;
+    graph->incoming_entries = NULL;
+
+    if (graph->edge_count == 0) {
+        graph->adjacency_built = true;
+        return true;
+    }
+    if (graph->edge_count > SIZE_MAX / sizeof(nmo_ref_adjacency_entry_t)) {
+        return false;
+    }
+
+    size_t bytes = graph->edge_count * sizeof(nmo_ref_adjacency_entry_t);
+    graph->outgoing_entries = (nmo_ref_adjacency_entry_t *)nmo_arena_alloc(
+        graph->arena, bytes, _Alignof(nmo_ref_adjacency_entry_t));
+    graph->incoming_entries = (nmo_ref_adjacency_entry_t *)nmo_arena_alloc(
+        graph->arena, bytes, _Alignof(nmo_ref_adjacency_entry_t));
+    if (graph->outgoing_entries == NULL || graph->incoming_entries == NULL) {
+        graph->outgoing_entries = NULL;
+        graph->incoming_entries = NULL;
+        return false;
+    }
+
+    for (size_t i = 0; i < graph->edge_count; ++i) {
+        graph->outgoing_entries[i] = (nmo_ref_adjacency_entry_t){
+            .object_id = graph->edges[i].from,
+            .edge_index = i
+        };
+        graph->incoming_entries[i] = (nmo_ref_adjacency_entry_t){
+            .object_id = graph->edges[i].to,
+            .edge_index = i
+        };
+    }
+
+    qsort(
+        graph->outgoing_entries,
+        graph->edge_count,
+        sizeof(nmo_ref_adjacency_entry_t),
+        compare_adjacency_entry);
+    qsort(
+        graph->incoming_entries,
+        graph->edge_count,
+        sizeof(nmo_ref_adjacency_entry_t),
+        compare_adjacency_entry);
+    graph->adjacency_built = true;
+    return true;
+}
+
+static bool ref_graph_adjacency_range(
+    const nmo_ref_graph_t *graph,
+    nmo_object_id_t object_id,
+    nmo_ref_direction_t direction,
+    const nmo_ref_adjacency_entry_t **out_entries,
+    size_t *out_count)
+{
+    if (out_entries != NULL) {
+        *out_entries = NULL;
+    }
+    if (out_count != NULL) {
+        *out_count = 0;
+    }
+    if (graph == NULL || !graph->adjacency_built) {
+        return false;
+    }
+
+    const nmo_ref_adjacency_entry_t *entries = NULL;
+    if (direction == NMO_REF_DIR_OUTGOING) {
+        entries = graph->outgoing_entries;
+    } else if (direction == NMO_REF_DIR_INCOMING) {
+        entries = graph->incoming_entries;
+    } else {
+        return true;
+    }
+    if (graph->edge_count == 0 || entries == NULL) {
+        return true;
+    }
+
+    size_t lo = 0;
+    size_t hi = graph->edge_count;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (entries[mid].object_id < object_id) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+
+    size_t start = lo;
+    while (lo < graph->edge_count && entries[lo].object_id == object_id) {
+        lo++;
+    }
+
+    if (out_entries != NULL && lo > start) {
+        *out_entries = entries + start;
+    }
+    if (out_count != NULL) {
+        *out_count = lo - start;
+    }
+    return true;
+}
+
+static void ref_graph_edge_cursor_init(
+    const nmo_ref_graph_t *graph,
+    nmo_object_id_t object_id,
+    nmo_ref_direction_t direction,
+    nmo_ref_edge_cursor_t *cursor)
+{
+    memset(cursor, 0, sizeof(*cursor));
+    cursor->graph = graph;
+    cursor->object_id = object_id;
+    cursor->direction = direction;
+    cursor->indexed = ref_graph_adjacency_range(
+        graph, object_id, direction, &cursor->entries, &cursor->count);
+}
+
+static const nmo_ref_edge_t *ref_graph_edge_cursor_next(
+    nmo_ref_edge_cursor_t *cursor)
+{
+    if (cursor == NULL || cursor->graph == NULL) {
+        return NULL;
+    }
+
+    const nmo_ref_graph_t *graph = cursor->graph;
+    if (cursor->indexed) {
+        if (cursor->pos >= cursor->count || cursor->entries == NULL) {
+            return NULL;
+        }
+        size_t edge_index = cursor->entries[cursor->pos++].edge_index;
+        return edge_index < graph->edge_count ? &graph->edges[edge_index] : NULL;
+    }
+
+    while (cursor->scan_pos < graph->edge_count) {
+        const nmo_ref_edge_t *edge = &graph->edges[cursor->scan_pos++];
+        if (ref_graph_edge_matches(edge, cursor->object_id, cursor->direction)) {
+            return edge;
+        }
+    }
+    return NULL;
+}
+
+static size_t ref_graph_count_object_edges(
+    const nmo_ref_graph_t *graph,
+    nmo_object_id_t object_id,
+    nmo_ref_direction_t direction)
+{
+    size_t count = 0;
+    if (ref_graph_adjacency_range(graph, object_id, direction, NULL, &count)) {
+        return count;
+    }
+
+    if (graph == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < graph->edge_count; ++i) {
+        if (ref_graph_edge_matches(&graph->edges[i], object_id, direction)) {
+            count++;
+        }
+    }
+    return count;
+}
+
 /* ============================================================================
  * Visitor Callback for Enumerator Integration
  * ============================================================================ */
@@ -140,6 +359,19 @@ static bool ref_graph_visitor(
     nmo_ref_graph_t *graph = (nmo_ref_graph_t *)user_data;
     add_edge(graph, graph->current_object_id, target_id, kind, field_path, index);
     return true; /* Continue enumeration */
+}
+
+static nmo_status_t ref_graph_build_object(
+    size_t object_index,
+    nmo_object_t *object,
+    void *user_data)
+{
+    (void)object_index;
+    nmo_ref_graph_t *graph = (nmo_ref_graph_t *)user_data;
+    graph->current_object_id = nmo_object_get_id(object);
+    (void)nmo_ref_enumerate_object(
+        graph->type_registry, object, ref_graph_visitor, graph);
+    return NMO_OK;
 }
 
 /* ============================================================================
@@ -167,17 +399,8 @@ nmo_ref_graph_t *nmo_ref_graph_create(
     graph->type_registry = type_registry;
     
     /* Enumerate all repository objects using the registry. */
-    size_t object_count = nmo_object_repository_get_count(repo);
-    
-    for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_t *obj = nmo_object_repository_get_by_index(repo, i);
-        if (obj == NULL) {
-            continue;
-        }
-        graph->current_object_id = nmo_object_get_id(obj);
-        
-        nmo_ref_enumerate_object(graph->type_registry, obj, ref_graph_visitor, graph);
-    }
+    (void)nmo_object_scan_repository(repo, ref_graph_build_object, graph, NULL);
+    (void)ref_graph_build_adjacency(graph);
     
     return graph;
 }
@@ -215,16 +438,7 @@ nmo_status_t nmo_ref_graph_get_object_edges(nmo_ref_graph_t *graph,
                          "invalid argument");
     }
     
-    /* Count matching edges first */
-    size_t match_count = 0;
-    for (size_t i = 0; i < graph->edge_count; ++i) {
-        if (direction == NMO_REF_DIR_OUTGOING && graph->edges[i].from == object_id) {
-            match_count++;
-        } else if (direction == NMO_REF_DIR_INCOMING && graph->edges[i].to == object_id) {
-            match_count++;
-        }
-    }
-    
+    size_t match_count = ref_graph_count_object_edges(graph, object_id, direction);
     if (match_count == 0) {
         *edges = NULL;
         *count = 0;
@@ -240,17 +454,17 @@ nmo_status_t nmo_ref_graph_get_object_edges(nmo_ref_graph_t *graph,
                          "failed to allocate edge array");
     }
     
+    nmo_ref_edge_cursor_t cursor;
+    ref_graph_edge_cursor_init(graph, object_id, direction, &cursor);
     size_t idx = 0;
-    for (size_t i = 0; i < graph->edge_count; ++i) {
-        if (direction == NMO_REF_DIR_OUTGOING && graph->edges[i].from == object_id) {
-            result[idx++] = graph->edges[i];
-        } else if (direction == NMO_REF_DIR_INCOMING && graph->edges[i].to == object_id) {
-            result[idx++] = graph->edges[i];
-        }
+    const nmo_ref_edge_t *edge = NULL;
+    while (idx < match_count &&
+           (edge = ref_graph_edge_cursor_next(&cursor)) != NULL) {
+        result[idx++] = *edge;
     }
     
     *edges = result;
-    *count = match_count;
+    *count = idx;
     NMO_RETURN_OK();
 }
 
@@ -397,6 +611,30 @@ static int id_set_insert(nmo_object_id_t **arr, size_t *count,
     return 1;
 }
 
+static int id_queue_append(
+    nmo_object_id_t **arr,
+    size_t *count,
+    size_t *capacity,
+    nmo_arena_t *arena,
+    nmo_object_id_t id)
+{
+    if (*count >= *capacity) {
+        size_t new_cap = *capacity == 0 ? 64 : *capacity * 2;
+        nmo_object_id_t *new_arr = nmo_arena_alloc(
+            arena, new_cap * sizeof(nmo_object_id_t),
+            _Alignof(nmo_object_id_t));
+        if (!new_arr) return -1;
+        if (*arr && *count > 0) {
+            memcpy(new_arr, *arr, *count * sizeof(nmo_object_id_t));
+        }
+        *arr = new_arr;
+        *capacity = new_cap;
+    }
+
+    (*arr)[(*count)++] = id;
+    return 0;
+}
+
 nmo_status_t nmo_ref_graph_mark_reachable(
     nmo_ref_graph_t *graph,
     const nmo_object_id_t *root_ids,
@@ -421,6 +659,9 @@ nmo_status_t nmo_ref_graph_mark_reachable(
     nmo_object_id_t *marked = NULL;
     size_t marked_count = 0;
     size_t marked_cap = 0;
+    nmo_object_id_t *queue = NULL;
+    size_t queue_count = 0;
+    size_t queue_cap = 0;
 
     for (size_t i = 0; i < root_count; ++i) {
         if (root_ids[i] == NMO_OBJECT_ID_NONE) continue;
@@ -429,27 +670,31 @@ nmo_status_t nmo_ref_graph_mark_reachable(
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                              "allocation failure in mark_reachable");
         }
+        if (irc == 1 &&
+            id_queue_append(&queue, &queue_count, &queue_cap, arena, root_ids[i]) != 0) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "allocation failure in mark_reachable");
+        }
     }
 
-    /* Fixed-point iteration over all edges */
-    bool changed = true;
-    while (changed) {
-        changed = false;
-        for (size_t i = 0; i < graph->edge_count; ++i) {
-            nmo_object_id_t from = graph->edges[i].from;
-            nmo_object_id_t to = graph->edges[i].to;
+    for (size_t queue_pos = 0; queue_pos < queue_count; ++queue_pos) {
+        nmo_ref_edge_cursor_t cursor;
+        ref_graph_edge_cursor_init(
+            graph, queue[queue_pos], NMO_REF_DIR_OUTGOING, &cursor);
+        const nmo_ref_edge_t *edge = NULL;
+        while ((edge = ref_graph_edge_cursor_next(&cursor)) != NULL) {
+            nmo_object_id_t to = edge->to;
             if (to == NMO_OBJECT_ID_NONE) continue;
-            if (id_in_sorted(marked, marked_count, from) &&
-                !id_in_sorted(marked, marked_count, to)) {
-                int irc = id_set_insert(&marked, &marked_count, &marked_cap,
-                                        arena, to);
-                if (irc < 0) {
-                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                     "allocation failure in mark_reachable");
-                }
-                if (irc == 1) {
-                    changed = true;
-                }
+            int irc = id_set_insert(&marked, &marked_count, &marked_cap,
+                                    arena, to);
+            if (irc < 0) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "allocation failure in mark_reachable");
+            }
+            if (irc == 1 &&
+                id_queue_append(&queue, &queue_count, &queue_cap, arena, to) != 0) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "allocation failure in mark_reachable");
             }
         }
     }
@@ -563,10 +808,8 @@ nmo_status_t nmo_ref_graph_find_orphans(
                 continue;
             }
             nmo_object_id_t oid = nmo_object_get_id(object);
-            nmo_ref_edge_t *edges = NULL;
-            size_t ecount = 0;
-            nmo_ref_graph_get_object_edges(graph, oid, NMO_REF_DIR_INCOMING,
-                                           &edges, &ecount);
+            size_t ecount = ref_graph_count_object_edges(
+                graph, oid, NMO_REF_DIR_INCOMING);
             if (ecount == 0) {
                 root_ids[root_count++] = oid;
             }
@@ -708,9 +951,7 @@ static void cycle_dfs_record(cycle_dfs_state_t *st, nmo_object_id_t back_target,
 typedef struct {
     nmo_object_id_t id;
     nmo_ref_kind_t entry_kind;
-    nmo_ref_edge_t *edges;
-    size_t ecount;
-    size_t edge_idx;
+    nmo_ref_edge_cursor_t edges;
 } cycle_dfs_frame_t;
 
 static void cycle_dfs_visit(cycle_dfs_state_t *st, nmo_object_id_t start_id,
@@ -727,28 +968,23 @@ static void cycle_dfs_visit(cycle_dfs_state_t *st, nmo_object_id_t start_id,
     st->stack_kinds[st->stack_size] = start_kind;
     st->stack_size++;
 
-    nmo_ref_edge_t *edges = NULL;
-    size_t ecount = 0;
-    nmo_ref_graph_get_object_edges(st->graph, start_id, NMO_REF_DIR_OUTGOING,
-                                   &edges, &ecount);
     frames[frame_top].id = start_id;
     frames[frame_top].entry_kind = start_kind;
-    frames[frame_top].edges = edges;
-    frames[frame_top].ecount = ecount;
-    frames[frame_top].edge_idx = 0;
+    ref_graph_edge_cursor_init(
+        st->graph, start_id, NMO_REF_DIR_OUTGOING, &frames[frame_top].edges);
     frame_top++;
 
     while (frame_top > 0) {
         cycle_dfs_frame_t *f = &frames[frame_top - 1];
+        const nmo_ref_edge_t *edge = ref_graph_edge_cursor_next(&f->edges);
 
-        if (f->edge_idx >= f->ecount) {
+        if (edge == NULL) {
             st->stack_size--;
             st->color[f->id] = 2; /* BLACK */
             frame_top--;
             continue;
         }
 
-        nmo_ref_edge_t *edge = &f->edges[f->edge_idx++];
         nmo_object_id_t target = edge->to;
         if (target > st->max_id) continue;
 
@@ -763,15 +999,10 @@ static void cycle_dfs_visit(cycle_dfs_state_t *st, nmo_object_id_t start_id,
             st->stack_kinds[st->stack_size] = edge->kind;
             st->stack_size++;
 
-            nmo_ref_edge_t *tedges = NULL;
-            size_t tecount = 0;
-            nmo_ref_graph_get_object_edges(st->graph, target, NMO_REF_DIR_OUTGOING,
-                                           &tedges, &tecount);
             frames[frame_top].id = target;
             frames[frame_top].entry_kind = edge->kind;
-            frames[frame_top].edges = tedges;
-            frames[frame_top].ecount = tecount;
-            frames[frame_top].edge_idx = 0;
+            ref_graph_edge_cursor_init(
+                st->graph, target, NMO_REF_DIR_OUTGOING, &frames[frame_top].edges);
             frame_top++;
         }
     }
