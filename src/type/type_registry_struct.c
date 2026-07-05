@@ -103,6 +103,43 @@ static const nmo_type_descriptor_t* resolve_field_type(
     return nmo_type_registry_find_by_guid(type_registry, *io_guid);
 }
 
+typedef struct parsed_struct_field_type {
+    nmo_guid_t type_guid;
+    uint32_t array_count;
+    nmo_guid_t pointee_guid;
+    uint32_t pointer_depth;
+} parsed_struct_field_type_t;
+
+static void parse_struct_field_type_if_available(
+    const nmo_type_registry_t *type_registry,
+    const nmo_struct_field_def_t *field_def,
+    parsed_struct_field_type_t *out)
+{
+    out->type_guid = field_def->type_guid;
+    out->array_count = 0;
+    out->pointee_guid = NMO_NULL_GUID;
+    out->pointer_depth = 0;
+
+    if (!field_def->type_name) {
+        return;
+    }
+
+    nmo_type_parse_result_t parse_result;
+    nmo_status_t parse_res = nmo_type_registry_parse_type_name(
+        type_registry, field_def->type_name, &parse_result);
+    if (parse_res != NMO_OK) {
+        return;
+    }
+
+    out->type_guid = parse_result.base_type_guid;
+    out->array_count = parse_result.array_count;
+    if (parse_result.is_pointer) {
+        out->pointee_guid = parse_result.base_type_guid;
+        out->pointer_depth = parse_result.pointer_depth;
+        out->type_guid = CKPGUID_POINTER;
+    }
+}
+
 static nmo_status_t validate_struct_field_consistency(
     const nmo_struct_descriptor_t *struct_fields,
     const nmo_type_field_t *type_fields,
@@ -408,29 +445,11 @@ nmo_status_t nmo_type_registry_register_struct(
                                     "Failed to copy field name");
         }
         
-        /* Parse type name to get array info if needed */
-        uint32_t array_count = 0;
-        nmo_guid_t field_type_guid = field_def->type_guid;
-        
-        nmo_guid_t pointee_guid = NMO_NULL_GUID;
-        uint32_t pointer_depth = 0;
-
-        if (field_def->type_name) {
-            nmo_type_parse_result_t parse_result;
-            nmo_status_t parse_res = nmo_type_registry_parse_type_name(
-                type_registry, field_def->type_name, &parse_result);
-            if (parse_res == NMO_OK) {
-                field_type_guid = parse_result.base_type_guid;
-                array_count = parse_result.array_count;
-                if (parse_result.is_pointer) {
-                    pointee_guid = parse_result.base_type_guid;
-                    pointer_depth = parse_result.pointer_depth;
-                    field_type_guid = CKPGUID_POINTER;
-                }
-            }
-        }
+        parsed_struct_field_type_t parsed_type;
+        parse_struct_field_type_if_available(type_registry, field_def, &parsed_type);
         
         /* Get field type info */
+        nmo_guid_t field_type_guid = parsed_type.type_guid;
         const nmo_type_descriptor_t *field_type = resolve_field_type(type_registry, &field_type_guid);
         if (!field_type) {
             NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
@@ -440,8 +459,8 @@ nmo_status_t nmo_type_registry_register_struct(
         /* Calculate field size (including arrays) */
         uint32_t element_size = field_type->size;
         uint32_t total_field_size = element_size;
-        if (array_count > 0) {
-            total_field_size = element_size * array_count;
+        if (parsed_type.array_count > 0) {
+            total_field_size = element_size * parsed_type.array_count;
         }
         
         uint32_t field_align = struct_def->packed ? 1 : field_type->alignment;
@@ -450,12 +469,12 @@ nmo_status_t nmo_type_registry_register_struct(
         field_desc->type_guid = field_type_guid;
         field_desc->offset = offset;
         field_desc->size = total_field_size;
-        field_desc->array_count = array_count;
+        field_desc->array_count = parsed_type.array_count;
         field_desc->flags = field_def->flags;
         field_desc->description = field_def->description ?
             nmo_arena_strdup(arena, field_def->description) : NULL;
-        field_desc->pointee_guid = pointee_guid;
-        field_desc->pointer_depth = pointer_depth;
+        field_desc->pointee_guid = parsed_type.pointee_guid;
+        field_desc->pointer_depth = parsed_type.pointer_depth;
 
         /* Populate generic field descriptor */
         memset(&type_fields[i], 0, sizeof(type_fields[i]));
@@ -465,7 +484,7 @@ nmo_status_t nmo_type_registry_register_struct(
         type_fields[i].offset = offset;
         type_fields[i].size = total_field_size;
         type_fields[i].flags = field_def->flags;
-        if (array_count > 0) {
+        if (parsed_type.array_count > 0) {
             type_fields[i].flags |= NMO_FIELD_REPEATED;
         }
         type_fields[i].added_version = 0;
@@ -846,26 +865,10 @@ nmo_status_t nmo_type_registry_finalize_struct(
         const nmo_struct_field_def_t *field_def = &incomplete->fields[i];
         nmo_struct_descriptor_t *field_desc = &struct_fields[i];
         
-        uint32_t array_count = 0;
-        nmo_guid_t field_type_guid = field_def->type_guid;
-        nmo_guid_t pointee_guid = NMO_NULL_GUID;
-        uint32_t pointer_depth = 0;
+        parsed_struct_field_type_t parsed_type;
+        parse_struct_field_type_if_available(type_registry, field_def, &parsed_type);
 
-        if (field_def->type_name) {
-            nmo_type_parse_result_t parse_result;
-            nmo_status_t parse_res = nmo_type_registry_parse_type_name(
-                type_registry, field_def->type_name, &parse_result);
-            if (parse_res == NMO_OK) {
-                field_type_guid = parse_result.base_type_guid;
-                array_count = parse_result.array_count;
-                if (parse_result.is_pointer) {
-                    pointee_guid = parse_result.base_type_guid;
-                    pointer_depth = parse_result.pointer_depth;
-                    field_type_guid = CKPGUID_POINTER;
-                }
-            }
-        }
-
+        nmo_guid_t field_type_guid = parsed_type.type_guid;
         const nmo_type_descriptor_t *field_type = resolve_field_type(
             type_registry, &field_type_guid);
         if (!field_type) {
@@ -885,15 +888,15 @@ nmo_status_t nmo_type_registry_finalize_struct(
         field_desc->offset = offset;
         uint32_t element_size = field_type->size;
         uint32_t total_field_size = element_size;
-        if (array_count > 0) {
-            total_field_size = element_size * array_count;
+        if (parsed_type.array_count > 0) {
+            total_field_size = element_size * parsed_type.array_count;
         }
         field_desc->size = total_field_size;
-        field_desc->array_count = array_count;
+        field_desc->array_count = parsed_type.array_count;
         field_desc->flags = field_def->flags;
         field_desc->description = field_def->description;
-        field_desc->pointee_guid = pointee_guid;
-        field_desc->pointer_depth = pointer_depth;
+        field_desc->pointee_guid = parsed_type.pointee_guid;
+        field_desc->pointer_depth = parsed_type.pointer_depth;
 
         if (field_def->name) {
             type_fields[i].name = nmo_strdup(&type_registry->type_allocator, field_def->name);
@@ -917,7 +920,7 @@ nmo_status_t nmo_type_registry_finalize_struct(
         type_fields[i].offset = offset;
         type_fields[i].size = total_field_size;
         type_fields[i].flags = field_def->flags;
-        if (array_count > 0) {
+        if (parsed_type.array_count > 0) {
             type_fields[i].flags |= NMO_FIELD_REPEATED;
         }
         type_fields[i].added_version = 0;
@@ -1207,26 +1210,10 @@ nmo_status_t nmo_type_registry_register_union(
                                     "Failed to copy union field name");
         }
 
-        /* Determine array count again for size calc */
-        uint32_t array_count = 0;
-        nmo_guid_t field_type_guid = field_def->type_guid;
-        nmo_guid_t pointee_guid = NMO_NULL_GUID;
-        uint32_t pointer_depth = 0;
-        if (field_def->type_name) {
-            nmo_type_parse_result_t parse_result;
-            nmo_status_t parse_res = nmo_type_registry_parse_type_name(
-                type_registry, field_def->type_name, &parse_result);
-            if (parse_res == NMO_OK) {
-                field_type_guid = parse_result.base_type_guid;
-                array_count = parse_result.array_count;
-                if (parse_result.is_pointer) {
-                    pointee_guid = parse_result.base_type_guid;
-                    pointer_depth = parse_result.pointer_depth;
-                    field_type_guid = CKPGUID_POINTER;
-                }
-            }
-        }
+        parsed_struct_field_type_t parsed_type;
+        parse_struct_field_type_if_available(type_registry, field_def, &parsed_type);
 
+        nmo_guid_t field_type_guid = parsed_type.type_guid;
         const nmo_type_descriptor_t *field_type = resolve_field_type(type_registry, &field_type_guid);
         if (!field_type) {
             NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
@@ -1236,19 +1223,19 @@ nmo_status_t nmo_type_registry_register_union(
 
         uint32_t element_size = field_type->size;
         uint32_t total_field_size = element_size;
-        if (array_count > 0) {
-            total_field_size = element_size * array_count;
+        if (parsed_type.array_count > 0) {
+            total_field_size = element_size * parsed_type.array_count;
         }
 
         field_desc->type_guid = field_type_guid;
         field_desc->offset = 0;
         field_desc->size = total_field_size;
-        field_desc->array_count = array_count;
+        field_desc->array_count = parsed_type.array_count;
         field_desc->flags = field_def->flags;
         field_desc->description = field_def->description ?
             nmo_arena_strdup(arena, field_def->description) : NULL;
-        field_desc->pointee_guid = pointee_guid;
-        field_desc->pointer_depth = pointer_depth;
+        field_desc->pointee_guid = parsed_type.pointee_guid;
+        field_desc->pointer_depth = parsed_type.pointer_depth;
 
         memset(&type_fields[i], 0, sizeof(type_fields[i]));
         type_fields[i].name = field_desc->name;
@@ -1257,7 +1244,7 @@ nmo_status_t nmo_type_registry_register_union(
         type_fields[i].offset = 0;
         type_fields[i].size = total_field_size;
         type_fields[i].flags = field_def->flags;
-        if (array_count > 0) {
+        if (parsed_type.array_count > 0) {
             type_fields[i].flags |= NMO_FIELD_REPEATED;
         }
         type_fields[i].added_version = 0;
