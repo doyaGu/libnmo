@@ -881,31 +881,56 @@ static nmo_status_t parse_float_tuple(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t nmo_float_tuple_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size,
+    size_t min_buffer_size,
+    size_t count,
+    const char *message)
+{
+    nmo_status_t status = nmo_validate_value_to_string_args(
+        value, buffer, buffer_size, min_buffer_size, message);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    nmo_format_float_tuple_text(
+        (const float *)value, count, buffer, buffer_size);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_float_tuple_from_string(
+    void *value,
+    const char *string,
+    const char *kind,
+    size_t count,
+    const char *message)
+{
+    if (!value || !string) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "%s", message);
+    }
+
+    return parse_float_tuple(kind, string, (float *)value, (int)count);
+}
+
 nmo_status_t nmo_vector2_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
 {
-    nmo_status_t status = nmo_validate_value_to_string_args(
-        value, buffer, buffer_size, 24, "Invalid arguments for vector2_to_string");
-    if (status != NMO_OK) {
-        return status;
-    }
-
-    nmo_format_float_tuple_text((const float*)value, 2, buffer, buffer_size);
-    NMO_RETURN_OK();
+    return nmo_float_tuple_to_string(
+        value, buffer, buffer_size, 24, 2,
+        "Invalid arguments for vector2_to_string");
 }
 
 nmo_status_t nmo_vector2_from_string(
     void *value,
     const char *string)
 {
-    if (!value || !string) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for vector2_from_string");
-    }
-
-    float *v = (float*)value;
-    return parse_float_tuple("Vector2", string, v, 2);
+    return nmo_float_tuple_from_string(
+        value, string, "Vector2", 2,
+        "Invalid arguments for vector2_from_string");
 }
 
 nmo_status_t nmo_vector_to_string(
@@ -913,26 +938,18 @@ nmo_status_t nmo_vector_to_string(
     char *buffer,
     size_t buffer_size)
 {
-    nmo_status_t status = nmo_validate_value_to_string_args(
-        value, buffer, buffer_size, 32, "Invalid arguments for vector_to_string");
-    if (status != NMO_OK) {
-        return status;
-    }
-
-    nmo_format_float_tuple_text((const float*)value, 3, buffer, buffer_size);
-    NMO_RETURN_OK();
+    return nmo_float_tuple_to_string(
+        value, buffer, buffer_size, 32, 3,
+        "Invalid arguments for vector_to_string");
 }
 
 nmo_status_t nmo_vector_from_string(
     void *value,
     const char *string)
 {
-    if (!value || !string) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for vector_from_string");
-    }
-
-    float *v = (float*)value;
-    return parse_float_tuple("Vector", string, v, 3);
+    return nmo_float_tuple_from_string(
+        value, string, "Vector", 3,
+        "Invalid arguments for vector_from_string");
 }
 
 nmo_status_t nmo_vector4_to_string(
@@ -940,26 +957,18 @@ nmo_status_t nmo_vector4_to_string(
     char *buffer,
     size_t buffer_size)
 {
-    nmo_status_t status = nmo_validate_value_to_string_args(
-        value, buffer, buffer_size, 48, "Invalid arguments for vector4_to_string");
-    if (status != NMO_OK) {
-        return status;
-    }
-
-    nmo_format_float_tuple_text((const float*)value, 4, buffer, buffer_size);
-    NMO_RETURN_OK();
+    return nmo_float_tuple_to_string(
+        value, buffer, buffer_size, 48, 4,
+        "Invalid arguments for vector4_to_string");
 }
 
 nmo_status_t nmo_vector4_from_string(
     void *value,
     const char *string)
 {
-    if (!value || !string) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for vector4_from_string");
-    }
-
-    float *v = (float*)value;
-    return parse_float_tuple("Vector4", string, v, 4);
+    return nmo_float_tuple_from_string(
+        value, string, "Vector4", 4,
+        "Invalid arguments for vector4_from_string");
 }
 
 /* ============================================================================
@@ -971,26 +980,18 @@ nmo_status_t nmo_quaternion_to_string(
     char *buffer,
     size_t buffer_size)
 {
-    nmo_status_t status = nmo_validate_value_to_string_args(
-        value, buffer, buffer_size, 48, "Invalid arguments for quaternion_to_string");
-    if (status != NMO_OK) {
-        return status;
-    }
-
-    nmo_format_float_tuple_text((const float*)value, 4, buffer, buffer_size);
-    NMO_RETURN_OK();
+    return nmo_float_tuple_to_string(
+        value, buffer, buffer_size, 48, 4,
+        "Invalid arguments for quaternion_to_string");
 }
 
 nmo_status_t nmo_quaternion_from_string(
     void *value,
     const char *string)
 {
-    if (!value || !string) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for quaternion_from_string");
-    }
-
-    float *q = (float*)value;
-    return parse_float_tuple("Quaternion", string, q, 4);
+    return nmo_float_tuple_from_string(
+        value, string, "Quaternion", 4,
+        "Invalid arguments for quaternion_from_string");
 }
 
 /* ============================================================================
@@ -1046,26 +1047,18 @@ nmo_status_t nmo_color_to_string(
     char *buffer,
     size_t buffer_size)
 {
-    nmo_status_t status = nmo_validate_value_to_string_args(
-        value, buffer, buffer_size, 48, "Invalid arguments for color_to_string");
-    if (status != NMO_OK) {
-        return status;
-    }
-
-    nmo_format_float_tuple_text((const float*)value, 4, buffer, buffer_size);
-    NMO_RETURN_OK();
+    return nmo_float_tuple_to_string(
+        value, buffer, buffer_size, 48, 4,
+        "Invalid arguments for color_to_string");
 }
 
 nmo_status_t nmo_color_from_string(
     void *value,
     const char *string)
 {
-    if (!value || !string) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for color_from_string");
-    }
-
-    float *c = (float*)value;
-    return parse_float_tuple("Color", string, c, 4);
+    return nmo_float_tuple_from_string(
+        value, string, "Color", 4,
+        "Invalid arguments for color_from_string");
 }
 
 /* ============================================================================
