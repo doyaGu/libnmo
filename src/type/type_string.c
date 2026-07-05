@@ -69,17 +69,15 @@ nmo_status_t nmo_type_value_from_string(
     return type->vtable->from_string(value, type, registry, string);
 }
 
-nmo_status_t nmo_type_set_field(
+static nmo_status_t resolve_field_access(
     void *state,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
     const char *field_name,
-    const char *value_str)
+    const nmo_type_field_t **out_field,
+    const nmo_type_descriptor_t **out_field_type,
+    void **out_field_ptr)
 {
-    if (!state || !type || !registry || !field_name || !value_str) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
     const nmo_type_field_t *field = nmo_type_get_field_by_name(type, field_name);
     if (!field) {
         return NMO_ERR_NOT_FOUND;
@@ -96,11 +94,37 @@ nmo_status_t nmo_type_set_field(
         return NMO_ERR_INVALID_STATE;
     }
 
+    *out_field = field;
+    *out_field_type = field_type;
+    *out_field_ptr = field_ptr;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_type_set_field(
+    void *state,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *field_name,
+    const char *value_str)
+{
+    if (!state || !type || !registry || !field_name || !value_str) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    const nmo_type_field_t *field = NULL;
+    const nmo_type_descriptor_t *field_type = NULL;
+    void *field_ptr = NULL;
+    nmo_status_t status = resolve_field_access(
+        state, type, registry, field_name, &field, &field_type, &field_ptr);
+    if (status != NMO_OK) {
+        return status;
+    }
+
     if (nmo_guid_equals(field->type_guid, CKPGUID_COLOR) &&
         field->size == sizeof(uint32_t) &&
         field_type->size == sizeof(nmo_color_t)) {
         nmo_color_t parsed;
-        nmo_status_t status = nmo_color_from_string(&parsed, value_str);
+        status = nmo_color_from_string(&parsed, value_str);
         if (status != NMO_OK) return status;
         *(uint32_t *)field_ptr = nmo_color_to_argb32(&parsed);
         return NMO_OK;
@@ -123,20 +147,13 @@ nmo_status_t nmo_type_get_field(
 
     out_buf[0] = '\0';
 
-    const nmo_type_field_t *field = nmo_type_get_field_by_name(type, field_name);
-    if (!field) {
-        return NMO_ERR_NOT_FOUND;
-    }
-
-    const nmo_type_descriptor_t *field_type =
-        nmo_type_registry_find_by_guid(registry, field->type_guid);
-    if (!field_type) {
-        return NMO_ERR_NOT_FOUND;
-    }
-
-    const void *field_ptr = nmo_field_get_ptr((void *)state, field);
-    if (!field_ptr) {
-        return NMO_ERR_INVALID_STATE;
+    const nmo_type_field_t *field = NULL;
+    const nmo_type_descriptor_t *field_type = NULL;
+    void *field_ptr = NULL;
+    nmo_status_t status = resolve_field_access(
+        (void *)state, type, registry, field_name, &field, &field_type, &field_ptr);
+    if (status != NMO_OK) {
+        return status;
     }
 
     return nmo_type_value_to_string(field_ptr, field_type, registry, out_buf, buf_size);
