@@ -37,24 +37,12 @@ static void nmo_lua_behavior_push_script_view(lua_State *state,
 {
     lua_createtable(state, 0, 5);
 
-    lua_pushinteger(state, (lua_Integer)view->script_id);
-    lua_setfield(state, -2, "script_id");
-    lua_pushinteger(state, (lua_Integer)view->owner_id);
-    lua_setfield(state, -2, "owner_id");
-    if (view->script_name != NULL) {
-        lua_pushstring(state, view->script_name);
-    } else {
-        lua_pushnil(state);
-    }
-    lua_setfield(state, -2, "script_name");
-    if (view->owner_name != NULL) {
-        lua_pushstring(state, view->owner_name);
-    } else {
-        lua_pushnil(state);
-    }
-    lua_setfield(state, -2, "owner_name");
-    lua_pushinteger(state, (lua_Integer)view->owner_class_id);
-    lua_setfield(state, -2, "owner_class_id");
+    nmo_lua_set_integer_field(state, "script_id", (lua_Integer)view->script_id);
+    nmo_lua_set_integer_field(state, "owner_id", (lua_Integer)view->owner_id);
+    nmo_lua_set_optional_string_field(state, "script_name", view->script_name);
+    nmo_lua_set_optional_string_field(state, "owner_name", view->owner_name);
+    nmo_lua_set_integer_field(
+        state, "owner_class_id", (lua_Integer)view->owner_class_id);
 }
 
 static nmo_status_t nmo_lua_behavior_query_count_scripts(
@@ -99,52 +87,38 @@ static void nmo_lua_behavior_push_view(lua_State *state,
 {
     lua_createtable(state, 0, 22);
 
-    lua_pushinteger(state, (lua_Integer)view->behavior_id);
-    lua_setfield(state, -2, "behavior_id");
-    lua_pushinteger(state, (lua_Integer)view->class_id);
-    lua_setfield(state, -2, "class_id");
-    if (view->name != NULL) {
-        lua_pushstring(state, view->name);
-    } else {
-        lua_pushnil(state);
-    }
-    lua_setfield(state, -2, "name");
-    lua_pushinteger(state, (lua_Integer)view->flags);
-    lua_setfield(state, -2, "flags");
-    lua_pushboolean(state, view->is_building_block ? 1 : 0);
-    lua_setfield(state, -2, "is_building_block");
-    lua_pushboolean(state, view->has_target_parameter ? 1 : 0);
-    lua_setfield(state, -2, "has_target_parameter");
-    lua_pushinteger(state, (lua_Integer)view->target_parameter_id);
-    lua_setfield(state, -2, "target_parameter_id");
-    lua_pushinteger(state, (lua_Integer)view->sub_behavior_count);
-    lua_setfield(state, -2, "sub_behavior_count");
-    lua_pushinteger(state, (lua_Integer)view->link_count);
-    lua_setfield(state, -2, "link_count");
-    lua_pushinteger(state, (lua_Integer)view->operation_count);
-    lua_setfield(state, -2, "operation_count");
-    lua_pushinteger(state, (lua_Integer)view->input_count);
-    lua_setfield(state, -2, "input_count");
-    lua_pushinteger(state, (lua_Integer)view->output_count);
-    lua_setfield(state, -2, "output_count");
-    lua_pushinteger(state, (lua_Integer)view->in_parameter_count);
-    lua_setfield(state, -2, "in_parameter_count");
-    lua_pushinteger(state, (lua_Integer)view->out_parameter_count);
-    lua_setfield(state, -2, "out_parameter_count");
-    lua_pushinteger(state, (lua_Integer)view->local_parameter_count);
-    lua_setfield(state, -2, "local_parameter_count");
-    lua_pushboolean(state, view->owner_index_available ? 1 : 0);
-    lua_setfield(state, -2, "owner_index_available");
-    lua_pushboolean(state, view->edit_ready ? 1 : 0);
-    lua_setfield(state, -2, "edit_ready");
-    lua_pushinteger(state, (lua_Integer)view->edit_graph_status);
-    lua_setfield(state, -2, "edit_graph_status");
-    lua_pushboolean(state, view->has_interface ? 1 : 0);
-    lua_setfield(state, -2, "has_interface");
-    lua_pushboolean(state, view->interface_available ? 1 : 0);
-    lua_setfield(state, -2, "interface_available");
-    lua_pushinteger(state, (lua_Integer)view->interface_status);
-    lua_setfield(state, -2, "interface_status");
+    nmo_lua_set_integer_field(state, "behavior_id", (lua_Integer)view->behavior_id);
+    nmo_lua_set_integer_field(state, "class_id", (lua_Integer)view->class_id);
+    nmo_lua_set_optional_string_field(state, "name", view->name);
+    nmo_lua_set_integer_field(state, "flags", (lua_Integer)view->flags);
+    nmo_lua_set_boolean_field(state, "is_building_block", view->is_building_block);
+    nmo_lua_set_boolean_field(
+        state, "has_target_parameter", view->has_target_parameter);
+    nmo_lua_set_integer_field(
+        state, "target_parameter_id", (lua_Integer)view->target_parameter_id);
+    nmo_lua_set_integer_field(
+        state, "sub_behavior_count", (lua_Integer)view->sub_behavior_count);
+    nmo_lua_set_integer_field(state, "link_count", (lua_Integer)view->link_count);
+    nmo_lua_set_integer_field(
+        state, "operation_count", (lua_Integer)view->operation_count);
+    nmo_lua_set_integer_field(state, "input_count", (lua_Integer)view->input_count);
+    nmo_lua_set_integer_field(state, "output_count", (lua_Integer)view->output_count);
+    nmo_lua_set_integer_field(
+        state, "in_parameter_count", (lua_Integer)view->in_parameter_count);
+    nmo_lua_set_integer_field(
+        state, "out_parameter_count", (lua_Integer)view->out_parameter_count);
+    nmo_lua_set_integer_field(
+        state, "local_parameter_count", (lua_Integer)view->local_parameter_count);
+    nmo_lua_set_boolean_field(
+        state, "owner_index_available", view->owner_index_available);
+    nmo_lua_set_boolean_field(state, "edit_ready", view->edit_ready);
+    nmo_lua_set_integer_field(
+        state, "edit_graph_status", (lua_Integer)view->edit_graph_status);
+    nmo_lua_set_boolean_field(state, "has_interface", view->has_interface);
+    nmo_lua_set_boolean_field(
+        state, "interface_available", view->interface_available);
+    nmo_lua_set_integer_field(
+        state, "interface_status", (lua_Integer)view->interface_status);
     if (view->interface_available) {
         nmo_lua_push_interface_view(state, &view->interface_view);
     } else {
@@ -159,22 +133,19 @@ static void nmo_lua_behavior_push_boundary_view(
 {
     lua_createtable(state, 0, 8);
 
-    lua_pushinteger(state, (lua_Integer)view->behavior_id);
-    lua_setfield(state, -2, "behavior_id");
-    lua_pushinteger(state, (lua_Integer)view->internal_node_count);
-    lua_setfield(state, -2, "internal_node_count");
-    lua_pushinteger(state, (lua_Integer)view->control_in_count);
-    lua_setfield(state, -2, "control_in_count");
-    lua_pushinteger(state, (lua_Integer)view->control_out_count);
-    lua_setfield(state, -2, "control_out_count");
-    lua_pushinteger(state, (lua_Integer)view->parameter_in_count);
-    lua_setfield(state, -2, "parameter_in_count");
-    lua_pushinteger(state, (lua_Integer)view->parameter_out_count);
-    lua_setfield(state, -2, "parameter_out_count");
-    lua_pushinteger(state, (lua_Integer)view->broken_links);
-    lua_setfield(state, -2, "broken_links");
-    lua_pushinteger(state, (lua_Integer)view->missing_nodes);
-    lua_setfield(state, -2, "missing_nodes");
+    nmo_lua_set_integer_field(state, "behavior_id", (lua_Integer)view->behavior_id);
+    nmo_lua_set_integer_field(
+        state, "internal_node_count", (lua_Integer)view->internal_node_count);
+    nmo_lua_set_integer_field(
+        state, "control_in_count", (lua_Integer)view->control_in_count);
+    nmo_lua_set_integer_field(
+        state, "control_out_count", (lua_Integer)view->control_out_count);
+    nmo_lua_set_integer_field(
+        state, "parameter_in_count", (lua_Integer)view->parameter_in_count);
+    nmo_lua_set_integer_field(
+        state, "parameter_out_count", (lua_Integer)view->parameter_out_count);
+    nmo_lua_set_integer_field(state, "broken_links", (lua_Integer)view->broken_links);
+    nmo_lua_set_integer_field(state, "missing_nodes", (lua_Integer)view->missing_nodes);
 }
 
 static void nmo_lua_behavior_push_guid_string(lua_State *state, nmo_guid_t guid)
@@ -198,14 +169,12 @@ static void nmo_lua_behavior_push_graph_endpoint(
     const nmo_script_edit_endpoint_t *endpoint)
 {
     lua_createtable(state, 0, 4);
-    lua_pushinteger(state, (lua_Integer)endpoint->object_id);
-    lua_setfield(state, -2, "object_id");
-    lua_pushinteger(state, (lua_Integer)endpoint->owner_behavior_id);
-    lua_setfield(state, -2, "owner_behavior_id");
-    lua_pushinteger(state, (lua_Integer)endpoint->owner_index);
-    lua_setfield(state, -2, "owner_index");
-    lua_pushinteger(state, (lua_Integer)endpoint->kind);
-    lua_setfield(state, -2, "kind");
+    nmo_lua_set_integer_field(state, "object_id", (lua_Integer)endpoint->object_id);
+    nmo_lua_set_integer_field(
+        state, "owner_behavior_id", (lua_Integer)endpoint->owner_behavior_id);
+    nmo_lua_set_integer_field(
+        state, "owner_index", (lua_Integer)endpoint->owner_index);
+    nmo_lua_set_integer_field(state, "kind", (lua_Integer)endpoint->kind);
 }
 
 
@@ -214,34 +183,20 @@ static void nmo_lua_behavior_push_graph_node(
     const nmo_script_edit_node_t *node)
 {
     lua_createtable(state, 0, 10);
-    lua_pushinteger(state, (lua_Integer)node->object_id);
-    lua_setfield(state, -2, "object_id");
-    lua_pushinteger(state, (lua_Integer)node->kind);
-    lua_setfield(state, -2, "kind");
-    if (node->name != NULL) {
-        lua_pushstring(state, node->name);
-    } else {
-        lua_pushnil(state);
-    }
-    lua_setfield(state, -2, "name");
-    lua_pushinteger(state, (lua_Integer)node->class_id);
-    lua_setfield(state, -2, "class_id");
-    if (node->class_name != NULL) {
-        lua_pushstring(state, node->class_name);
-    } else {
-        lua_pushnil(state);
-    }
-    lua_setfield(state, -2, "class_name");
-    lua_pushinteger(state, (lua_Integer)node->depth);
-    lua_setfield(state, -2, "depth");
-    lua_pushinteger(state, (lua_Integer)node->parent_behavior_id);
-    lua_setfield(state, -2, "parent_behavior_id");
-    lua_pushinteger(state, (lua_Integer)node->owner_behavior_id);
-    lua_setfield(state, -2, "owner_behavior_id");
-    lua_pushinteger(state, (lua_Integer)node->owner_slot_index);
-    lua_setfield(state, -2, "owner_slot_index");
-    lua_pushinteger(state, (lua_Integer)node->owner_slot_kind);
-    lua_setfield(state, -2, "owner_slot_kind");
+    nmo_lua_set_integer_field(state, "object_id", (lua_Integer)node->object_id);
+    nmo_lua_set_integer_field(state, "kind", (lua_Integer)node->kind);
+    nmo_lua_set_optional_string_field(state, "name", node->name);
+    nmo_lua_set_integer_field(state, "class_id", (lua_Integer)node->class_id);
+    nmo_lua_set_optional_string_field(state, "class_name", node->class_name);
+    nmo_lua_set_integer_field(state, "depth", (lua_Integer)node->depth);
+    nmo_lua_set_integer_field(
+        state, "parent_behavior_id", (lua_Integer)node->parent_behavior_id);
+    nmo_lua_set_integer_field(
+        state, "owner_behavior_id", (lua_Integer)node->owner_behavior_id);
+    nmo_lua_set_integer_field(
+        state, "owner_slot_index", (lua_Integer)node->owner_slot_index);
+    nmo_lua_set_integer_field(
+        state, "owner_slot_kind", (lua_Integer)node->owner_slot_kind);
 }
 
 static void nmo_lua_behavior_push_graph_control_edge(
@@ -249,16 +204,17 @@ static void nmo_lua_behavior_push_graph_control_edge(
     const nmo_script_edit_control_edge_t *edge)
 {
     lua_createtable(state, 0, 5);
-    lua_pushinteger(state, (lua_Integer)edge->link_id);
-    lua_setfield(state, -2, "link_id");
+    nmo_lua_set_integer_field(state, "link_id", (lua_Integer)edge->link_id);
     nmo_lua_behavior_push_graph_endpoint(state, &edge->source);
     lua_setfield(state, -2, "source");
     nmo_lua_behavior_push_graph_endpoint(state, &edge->target);
     lua_setfield(state, -2, "target");
-    lua_pushinteger(state, (lua_Integer)edge->activation_delay);
-    lua_setfield(state, -2, "activation_delay");
-    lua_pushinteger(state, (lua_Integer)edge->initial_activation_delay);
-    lua_setfield(state, -2, "initial_activation_delay");
+    nmo_lua_set_integer_field(
+        state, "activation_delay", (lua_Integer)edge->activation_delay);
+    nmo_lua_set_integer_field(
+        state,
+        "initial_activation_delay",
+        (lua_Integer)edge->initial_activation_delay);
 }
 
 static void nmo_lua_behavior_push_graph_data_edge(
@@ -266,38 +222,28 @@ static void nmo_lua_behavior_push_graph_data_edge(
     const nmo_script_edit_data_edge_t *edge)
 {
     lua_createtable(state, 0, 6);
-    lua_pushinteger(state, (lua_Integer)edge->source_parameter_id);
-    lua_setfield(state, -2, "source_parameter_id");
-    lua_pushinteger(state, (lua_Integer)edge->target_parameter_id);
-    lua_setfield(state, -2, "target_parameter_id");
-    lua_pushinteger(state, (lua_Integer)edge->source_owner_id);
-    lua_setfield(state, -2, "source_owner_id");
-    lua_pushinteger(state, (lua_Integer)edge->target_owner_id);
-    lua_setfield(state, -2, "target_owner_id");
+    nmo_lua_set_integer_field(
+        state, "source_parameter_id", (lua_Integer)edge->source_parameter_id);
+    nmo_lua_set_integer_field(
+        state, "target_parameter_id", (lua_Integer)edge->target_parameter_id);
+    nmo_lua_set_integer_field(
+        state, "source_owner_id", (lua_Integer)edge->source_owner_id);
+    nmo_lua_set_integer_field(
+        state, "target_owner_id", (lua_Integer)edge->target_owner_id);
     nmo_lua_behavior_push_guid_string(state, edge->type_guid);
     lua_setfield(state, -2, "type_guid");
-    lua_pushboolean(state, edge->shared ? 1 : 0);
-    lua_setfield(state, -2, "shared");
+    nmo_lua_set_boolean_field(state, "shared", edge->shared);
 }
 
 static void nmo_lua_behavior_push_ref_edge(lua_State *state,
                                            const nmo_ref_edge_t *edge)
 {
     lua_createtable(state, 0, 5);
-    lua_pushinteger(state, (lua_Integer)edge->from);
-    lua_setfield(state, -2, "from");
-    lua_pushinteger(state, (lua_Integer)edge->to);
-    lua_setfield(state, -2, "to");
-    lua_pushinteger(state, (lua_Integer)edge->kind);
-    lua_setfield(state, -2, "kind");
-    if (edge->field_path != NULL) {
-        lua_pushstring(state, edge->field_path);
-    } else {
-        lua_pushnil(state);
-    }
-    lua_setfield(state, -2, "field_path");
-    lua_pushinteger(state, (lua_Integer)edge->index);
-    lua_setfield(state, -2, "index");
+    nmo_lua_set_integer_field(state, "from", (lua_Integer)edge->from);
+    nmo_lua_set_integer_field(state, "to", (lua_Integer)edge->to);
+    nmo_lua_set_integer_field(state, "kind", (lua_Integer)edge->kind);
+    nmo_lua_set_optional_string_field(state, "field_path", edge->field_path);
+    nmo_lua_set_integer_field(state, "index", (lua_Integer)edge->index);
 }
 
 static void nmo_lua_behavior_push_graph_node_array(
@@ -405,15 +351,14 @@ static void nmo_lua_behavior_push_trace_chain_view(
     lua_createtable(state, (int)view->step_count, 0);
     for (i = 0u; i < view->step_count; ++i) {
         lua_createtable(state, 0, 4);
-        lua_pushinteger(state, (lua_Integer)view->steps[i].id);
-        lua_setfield(state, -2, "id");
+        nmo_lua_set_integer_field(state, "id", (lua_Integer)view->steps[i].id);
         lua_pushstring(state,
                        nmo_lua_behavior_step_kind_name(view->steps[i].step_kind));
         lua_setfield(state, -2, "step_type");
-        lua_pushinteger(state, (lua_Integer)view->steps[i].owner_id);
-        lua_setfield(state, -2, "owner_id");
-        lua_pushinteger(state, (lua_Integer)view->steps[i].class_id);
-        lua_setfield(state, -2, "class_id");
+        nmo_lua_set_integer_field(
+            state, "owner_id", (lua_Integer)view->steps[i].owner_id);
+        nmo_lua_set_integer_field(
+            state, "class_id", (lua_Integer)view->steps[i].class_id);
         lua_rawseti(state, -2, (lua_Integer)i + 1);
     }
 }
@@ -427,20 +372,15 @@ static void nmo_lua_behavior_push_script_tree_view(
     lua_createtable(state, (int)view->node_count, 0);
     for (i = 0u; i < view->node_count; ++i) {
         lua_createtable(state, 0, 5);
-        lua_pushinteger(state, (lua_Integer)view->nodes[i].behavior_id);
-        lua_setfield(state, -2, "behavior_id");
-        lua_pushinteger(state, (lua_Integer)view->nodes[i].depth);
-        lua_setfield(state, -2, "depth");
-        lua_pushboolean(state, view->nodes[i].is_building_block ? 1 : 0);
-        lua_setfield(state, -2, "is_building_block");
-        if (view->nodes[i].name != NULL) {
-            lua_pushstring(state, view->nodes[i].name);
-        } else {
-            lua_pushnil(state);
-        }
-        lua_setfield(state, -2, "name");
-        lua_pushinteger(state, (lua_Integer)view->nodes[i].class_id);
-        lua_setfield(state, -2, "class_id");
+        nmo_lua_set_integer_field(
+            state, "behavior_id", (lua_Integer)view->nodes[i].behavior_id);
+        nmo_lua_set_integer_field(
+            state, "depth", (lua_Integer)view->nodes[i].depth);
+        nmo_lua_set_boolean_field(
+            state, "is_building_block", view->nodes[i].is_building_block);
+        nmo_lua_set_optional_string_field(state, "name", view->nodes[i].name);
+        nmo_lua_set_integer_field(
+            state, "class_id", (lua_Integer)view->nodes[i].class_id);
         lua_rawseti(state, -2, (lua_Integer)i + 1);
     }
 }
@@ -482,8 +422,8 @@ static int nmo_lua_behavior_push_pending_handle(
         return 0;
     }
     lua_createtable(state, 0, 2);
-    lua_pushinteger(state, (lua_Integer)nmo_edit_plan_count(plan));
-    lua_setfield(state, -2, "operation");
+    nmo_lua_set_integer_field(
+        state, "operation", (lua_Integer)nmo_edit_plan_count(plan));
     lua_pushstring(state, handle_name);
     lua_setfield(state, -2, "handle");
     return 1;
