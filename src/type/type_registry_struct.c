@@ -87,6 +87,11 @@ static nmo_status_t create_arena_metadata(
     NMO_RETURN_OK();
 }
 
+static nmo_guid_t resolve_registration_guid(nmo_guid_t guid, const char *type_name)
+{
+    return nmo_guid_is_null(guid) ? nmo_type_generate_guid(type_name) : guid;
+}
+
 static const nmo_type_descriptor_t* resolve_field_type(
     const nmo_type_registry_t *type_registry,
     nmo_guid_t *io_guid
@@ -320,9 +325,7 @@ nmo_status_t nmo_type_registry_register_struct(
                                 "Struct must have at least one field");
     }
     
-    /* Generate GUID for the struct type */
-    nmo_guid_t type_guid = nmo_guid_is_null(struct_def->guid) ?
-        nmo_type_generate_guid(struct_def->name) : struct_def->guid;
+    nmo_guid_t type_guid = resolve_registration_guid(struct_def->guid, struct_def->name);
 
     /* Resolve optional base struct type */
     const nmo_type_descriptor_t *base_type = NULL;
@@ -614,10 +617,7 @@ nmo_status_t nmo_type_registry_begin_struct(
                          "Type registry is finalized; cannot begin struct definitions");
     }
     
-    /* Generate GUID if null */
-    if (nmo_guid_is_null(guid)) {
-        guid = nmo_type_generate_guid(name);
-    }
+    guid = resolve_registration_guid(guid, name);
     
     /* Check if type already exists */
     const nmo_type_descriptor_t *existing = nmo_type_registry_find_by_guid(type_registry, guid);
@@ -995,11 +995,7 @@ nmo_status_t nmo_type_registry_register_struct_string(
         }
     }
     
-    /* Generate GUID if NULL_GUID */
-    nmo_guid_t actual_guid = type_guid;
-    if (nmo_guid_is_null(type_guid)) {
-        actual_guid = nmo_type_generate_guid(type_name);
-    }
+    nmo_guid_t actual_guid = resolve_registration_guid(type_guid, type_name);
     
     /* Create temporary arena for field definitions */
     nmo_arena_t *temp_arena = nmo_arena_create(NULL, 4096);
@@ -1109,8 +1105,7 @@ nmo_status_t nmo_type_registry_register_union(
     }
 
     /* Generate GUID for the union type */
-    nmo_guid_t type_guid = nmo_guid_is_null(union_def->guid) ?
-        nmo_type_generate_guid(union_def->name) : union_def->guid;
+    nmo_guid_t type_guid = resolve_registration_guid(union_def->guid, union_def->name);
 
     /* Check if type already exists */
     const nmo_type_descriptor_t *existing = nmo_type_registry_find_by_guid(type_registry, type_guid);
