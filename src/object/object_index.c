@@ -12,6 +12,7 @@
 
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_repository.h"
+#include "object_scan_internal.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_hash.h"
 #include "core/nmo_allocator.h"
@@ -160,224 +161,171 @@ static int strcasecmp_portable(const char *s1, const char *s2) {
 
 /* ==================== Index Building ==================== */
 
-/**
- * Build class ID index
- */
-static int build_class_index(nmo_object_index_t *index) {
-    if (index->class_index != NULL) {
-        nmo_hash_table_destroy(index->class_index);
-    }
-
-    /* Create hash table: uint32_t -> object_array_t* */
-    index->class_index = nmo_hash_table_create(
+static nmo_hash_table_t *object_index_create_table(
+    nmo_object_index_t *index,
+    size_t key_size,
+    nmo_hash_func_t hash_func,
+    nmo_key_compare_func_t compare_func)
+{
+    nmo_hash_table_t *table = nmo_hash_table_create(
         NULL,
-        sizeof(nmo_class_id_t),
+        key_size,
         sizeof(object_array_t *),
-        64, /* Initial capacity */
-        nmo_hash_uint32,
-        NULL /* Default memcmp */
-    );
-
-    if (index->class_index == NULL) {
-        return NMO_ERR_NOMEM;
+        64,
+        hash_func,
+        compare_func);
+    if (table != NULL) {
+        object_index_prepare_lifecycle(table, &index->allocator);
     }
-    object_index_prepare_lifecycle(index->class_index, &index->allocator);
+    return table;
+}
 
-    size_t obj_count = nmo_object_repository_get_count(index->repo);
+static nmo_status_t object_index_reset_table(
+    nmo_object_index_t *index,
+    nmo_hash_table_t **table,
+    size_t key_size,
+    nmo_hash_func_t hash_func,
+    nmo_key_compare_func_t compare_func)
+{
+    if (*table != NULL) {
+        nmo_hash_table_destroy(*table);
+        *table = NULL;
+    }
 
-    /* Group objects by class ID */
-    for (size_t i = 0; i < obj_count; i++) {
-        nmo_object_t *obj = nmo_object_repository_get_by_index(index->repo, i);
-        if (obj == NULL) {
-            continue;
-        }
-        object_array_t *arr = NULL;
+    *table = object_index_create_table(index, key_size, hash_func, compare_func);
+    return *table != NULL ? NMO_OK : NMO_ERR_NOMEM;
+}
 
-        /* Check if class already has an array */
-        nmo_status_t lookup_result = nmo_hash_table_get(index->class_index, &obj->class_id, &arr);
-        if (lookup_result == NMO_ERR_NOT_FOUND) {
-            /* Create new array for this class */
-            arr = object_array_create(8, &index->allocator);
-            if (arr == NULL) {
-                nmo_hash_table_destroy(index->class_index);
-                index->class_index = NULL;
-                return NMO_ERR_NOMEM;
-            }
-            nmo_status_t insert_result = nmo_hash_table_insert(index->class_index, &obj->class_id, &arr);
-            if (insert_result != NMO_OK) {
-                object_array_dispose(&arr, &index->allocator);
-                nmo_hash_table_destroy(index->class_index);
-                index->class_index = NULL;
-                return insert_result;
-            }
-        } else if (lookup_result != NMO_OK) {
-            nmo_hash_table_destroy(index->class_index);
-            index->class_index = NULL;
-            return lookup_result;
-        }
+static nmo_status_t object_index_prepare_build(nmo_object_index_t *index, uint32_t flags)
+{
+    index->active_indexes &= ~flags;
 
-        /* Add object to array */
-        int result = object_array_add(arr, obj, &index->allocator);
-        if (result != NMO_OK) {
-            nmo_hash_table_destroy(index->class_index);
-            index->class_index = NULL;
-            return result;
+    if ((flags & NMO_INDEX_BUILD_CLASS) != 0u) {
+        nmo_status_t status = object_index_reset_table(
+            index,
+            &index->class_index,
+            sizeof(nmo_class_id_t),
+            nmo_hash_uint32,
+            NULL);
+        if (status != NMO_OK) {
+            return status;
         }
     }
 
-    index->active_indexes |= NMO_INDEX_BUILD_CLASS;
+    if ((flags & NMO_INDEX_BUILD_NAME) != 0u) {
+        nmo_status_t status = object_index_reset_table(
+            index,
+            &index->name_index,
+            sizeof(char *),
+            nmo_hash_string,
+            nmo_compare_string);
+        if (status != NMO_OK) {
+            return status;
+        }
+    }
+
+    if ((flags & NMO_INDEX_BUILD_GUID) != 0u) {
+        nmo_status_t status = object_index_reset_table(
+            index,
+            &index->guid_index,
+            sizeof(nmo_guid_t),
+            NULL,
+            NULL);
+        if (status != NMO_OK) {
+            return status;
+        }
+    }
+
     return NMO_OK;
 }
 
-/**
- * Build name index
- */
-static int build_name_index(nmo_object_index_t *index) {
-    if (index->name_index != NULL) {
-        nmo_hash_table_destroy(index->name_index);
+static nmo_status_t object_index_add_to_table(
+    nmo_hash_table_t *table,
+    const void *key,
+    nmo_object_t *object,
+    size_t initial_capacity,
+    nmo_allocator_t *allocator)
+{
+    object_array_t *arr = NULL;
+    nmo_status_t lookup_result = nmo_hash_table_get(table, key, &arr);
+    if (lookup_result == NMO_ERR_NOT_FOUND) {
+        arr = object_array_create(initial_capacity, allocator);
+        if (arr == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        nmo_status_t insert_result = nmo_hash_table_insert(table, key, &arr);
+        if (insert_result != NMO_OK) {
+            object_array_dispose(&arr, allocator);
+            return insert_result;
+        }
+    } else if (lookup_result != NMO_OK) {
+        return lookup_result;
     }
 
-    /* Create hash table: string -> object_array_t* */
-    index->name_index = nmo_hash_table_create(
-        NULL,
-        sizeof(char *),
-        sizeof(object_array_t *),
-        64,
-        nmo_hash_string,
-        nmo_compare_string  /* Use string comparison */
-    );
+    return object_array_add(arr, object, allocator);
+}
 
-    if (index->name_index == NULL) {
-        return NMO_ERR_NOMEM;
+static nmo_status_t object_index_add_object_to_tables(
+    nmo_object_index_t *index,
+    nmo_object_t *object,
+    uint32_t flags)
+{
+    if ((flags & NMO_INDEX_BUILD_CLASS) != 0u && index->class_index != NULL) {
+        nmo_status_t status = object_index_add_to_table(
+            index->class_index,
+            &object->class_id,
+            object,
+            8,
+            &index->allocator);
+        if (status != NMO_OK) {
+            return status;
+        }
     }
-    object_index_prepare_lifecycle(index->name_index, &index->allocator);
 
-    size_t obj_count = nmo_object_repository_get_count(index->repo);
-
-    /* Group objects by name */
-    for (size_t i = 0; i < obj_count; i++) {
-        nmo_object_t *obj = nmo_object_repository_get_by_index(index->repo, i);
-        if (obj == NULL) {
-            continue;
-        }
-        const char *name = nmo_object_get_name(obj);
-
-        /* Skip objects without name */
-        if (name == NULL || name[0] == '\0') {
-            continue;
-        }
-
-        object_array_t *arr = NULL;
-
-        /* Check if name already has an array */
-        nmo_status_t lookup_result = nmo_hash_table_get(index->name_index, &name, &arr);
-        if (lookup_result == NMO_ERR_NOT_FOUND) {
-            /* Create new array for this name */
-            arr = object_array_create(4, &index->allocator); /* Most names are unique */
-            if (arr == NULL) {
-                nmo_hash_table_destroy(index->name_index);
-                index->name_index = NULL;
-                return NMO_ERR_NOMEM;
+    if ((flags & NMO_INDEX_BUILD_NAME) != 0u && index->name_index != NULL) {
+        const char *name = nmo_object_get_name(object);
+        if (name != NULL && name[0] != '\0') {
+            nmo_status_t status = object_index_add_to_table(
+                index->name_index,
+                &name,
+                object,
+                4,
+                &index->allocator);
+            if (status != NMO_OK) {
+                return status;
             }
-            nmo_status_t insert_result = nmo_hash_table_insert(index->name_index, &name, &arr);
-            if (insert_result != NMO_OK) {
-                object_array_dispose(&arr, &index->allocator);
-                nmo_hash_table_destroy(index->name_index);
-                index->name_index = NULL;
-                return insert_result;
-            }
-        } else if (lookup_result != NMO_OK) {
-            nmo_hash_table_destroy(index->name_index);
-            index->name_index = NULL;
-            return lookup_result;
-        }
-
-        /* Add object to array */
-        int result = object_array_add(arr, obj, &index->allocator);
-        if (result != NMO_OK) {
-            nmo_hash_table_destroy(index->name_index);
-            index->name_index = NULL;
-            return result;
         }
     }
 
-    index->active_indexes |= NMO_INDEX_BUILD_NAME;
+    if ((flags & NMO_INDEX_BUILD_GUID) != 0u && index->guid_index != NULL &&
+        !nmo_guid_is_null(object->type_guid)) {
+        nmo_status_t status = object_index_add_to_table(
+            index->guid_index,
+            &object->type_guid,
+            object,
+            4,
+            &index->allocator);
+        if (status != NMO_OK) {
+            return status;
+        }
+    }
+
     return NMO_OK;
 }
 
-/**
- * Build GUID index
- */
-static int build_guid_index(nmo_object_index_t *index) {
-    if (index->guid_index != NULL) {
-        nmo_hash_table_destroy(index->guid_index);
-    }
+typedef struct object_index_build_ctx {
+    nmo_object_index_t *index;
+    uint32_t flags;
+} object_index_build_ctx_t;
 
-    /* Create hash table: nmo_guid_t -> object_array_t* */
-    index->guid_index = nmo_hash_table_create(
-        NULL,
-        sizeof(nmo_guid_t),
-        sizeof(object_array_t *),
-        64,
-        NULL,  /* Use default hash for now, will add nmo_hash_guid later */
-        NULL
-    );
-
-    if (index->guid_index == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-    object_index_prepare_lifecycle(index->guid_index, &index->allocator);
-
-    size_t obj_count = nmo_object_repository_get_count(index->repo);
-
-    /* Group objects by GUID */
-    for (size_t i = 0; i < obj_count; i++) {
-        nmo_object_t *obj = nmo_object_repository_get_by_index(index->repo, i);
-        if (obj == NULL) {
-            continue;
-        }
-
-        /* Skip objects with null GUID */
-        if (nmo_guid_is_null(obj->type_guid)) {
-            continue;
-        }
-
-        object_array_t *arr = NULL;
-
-        /* Check if GUID already has an array */
-        nmo_status_t lookup_result = nmo_hash_table_get(index->guid_index, &obj->type_guid, &arr);
-        if (lookup_result == NMO_ERR_NOT_FOUND) {
-            /* Create new array for this GUID */
-            arr = object_array_create(4, &index->allocator);
-            if (arr == NULL) {
-                nmo_hash_table_destroy(index->guid_index);
-                index->guid_index = NULL;
-                return NMO_ERR_NOMEM;
-            }
-            nmo_status_t insert_result = nmo_hash_table_insert(index->guid_index, &obj->type_guid, &arr);
-            if (insert_result != NMO_OK) {
-                object_array_dispose(&arr, &index->allocator);
-                nmo_hash_table_destroy(index->guid_index);
-                index->guid_index = NULL;
-                return insert_result;
-            }
-        } else if (lookup_result != NMO_OK) {
-            nmo_hash_table_destroy(index->guid_index);
-            index->guid_index = NULL;
-            return lookup_result;
-        }
-
-        /* Add object to array */
-        int result = object_array_add(arr, obj, &index->allocator);
-        if (result != NMO_OK) {
-            nmo_hash_table_destroy(index->guid_index);
-            index->guid_index = NULL;
-            return result;
-        }
-    }
-
-    index->active_indexes |= NMO_INDEX_BUILD_GUID;
-    return NMO_OK;
+static nmo_status_t object_index_build_visitor(
+    size_t object_index,
+    nmo_object_t *object,
+    void *user_data)
+{
+    (void)object_index;
+    object_index_build_ctx_t *ctx = (object_index_build_ctx_t *)user_data;
+    return object_index_add_object_to_tables(ctx->index, object, ctx->flags);
 }
 
 /* ==================== Public API ==================== */
@@ -449,29 +397,31 @@ nmo_status_t nmo_object_index_build(nmo_object_index_t *index, uint32_t flags) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    int result = NMO_OK;
-
-    if (flags & NMO_INDEX_BUILD_CLASS) {
-        result = build_class_index(index);
-        if (result != NMO_OK) {
-            return result;
-        }
+    flags &= NMO_INDEX_BUILD_ALL;
+    if (flags == 0u) {
+        return NMO_OK;
     }
 
-    if (flags & NMO_INDEX_BUILD_NAME) {
-        result = build_name_index(index);
-        if (result != NMO_OK) {
-            return result;
-        }
+    nmo_status_t status = object_index_prepare_build(index, flags);
+    if (status != NMO_OK) {
+        return status;
     }
 
-    if (flags & NMO_INDEX_BUILD_GUID) {
-        result = build_guid_index(index);
-        if (result != NMO_OK) {
-            return result;
-        }
+    object_index_build_ctx_t ctx = {
+        .index = index,
+        .flags = flags
+    };
+    status = nmo_object_scan_repository(
+        index->repo,
+        object_index_build_visitor,
+        &ctx,
+        NULL);
+    if (status != NMO_OK) {
+        nmo_object_index_clear(index, flags);
+        return status;
     }
 
+    index->active_indexes |= flags;
     return NMO_OK;
 }
 
@@ -505,89 +455,7 @@ nmo_status_t nmo_object_index_add_object(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    int result = NMO_OK;
-
-    /* Add to class index */
-    if ((flags & NMO_INDEX_BUILD_CLASS) && index->class_index != NULL) {
-        object_array_t *arr = NULL;
-
-        nmo_status_t lookup_result = nmo_hash_table_get(index->class_index, &object->class_id, &arr);
-        if (lookup_result == NMO_ERR_NOT_FOUND) {
-            arr = object_array_create(8, &index->allocator);
-            if (arr == NULL) {
-                return NMO_ERR_NOMEM;
-            }
-            nmo_status_t insert_result = nmo_hash_table_insert(index->class_index, &object->class_id, &arr);
-            if (insert_result != NMO_OK) {
-                object_array_dispose(&arr, &index->allocator);
-                return insert_result;
-            }
-        } else if (lookup_result != NMO_OK) {
-            return lookup_result;
-        }
-
-        result = object_array_add(arr, object, &index->allocator);
-        if (result != NMO_OK) {
-            return result;
-        }
-    }
-
-    /* Add to name index */
-    if ((flags & NMO_INDEX_BUILD_NAME) && index->name_index != NULL) {
-        const char *name = nmo_object_get_name(object);
-        if (name != NULL && name[0] != '\0') {
-            object_array_t *arr = NULL;
-
-            nmo_status_t lookup_result = nmo_hash_table_get(index->name_index, &name, &arr);
-            if (lookup_result == NMO_ERR_NOT_FOUND) {
-                arr = object_array_create(4, &index->allocator);
-                if (arr == NULL) {
-                    return NMO_ERR_NOMEM;
-                }
-                nmo_status_t insert_result = nmo_hash_table_insert(index->name_index, &name, &arr);
-                if (insert_result != NMO_OK) {
-                    object_array_dispose(&arr, &index->allocator);
-                    return insert_result;
-                }
-            } else if (lookup_result != NMO_OK) {
-                return lookup_result;
-            }
-
-            result = object_array_add(arr, object, &index->allocator);
-            if (result != NMO_OK) {
-                return result;
-            }
-        }
-    }
-
-    /* Add to GUID index */
-    if ((flags & NMO_INDEX_BUILD_GUID) && index->guid_index != NULL) {
-        if (!nmo_guid_is_null(object->type_guid)) {
-            object_array_t *arr = NULL;
-
-            nmo_status_t lookup_result = nmo_hash_table_get(index->guid_index, &object->type_guid, &arr);
-            if (lookup_result == NMO_ERR_NOT_FOUND) {
-                arr = object_array_create(4, &index->allocator);
-                if (arr == NULL) {
-                    return NMO_ERR_NOMEM;
-                }
-                nmo_status_t insert_result = nmo_hash_table_insert(index->guid_index, &object->type_guid, &arr);
-                if (insert_result != NMO_OK) {
-                    object_array_dispose(&arr, &index->allocator);
-                    return insert_result;
-                }
-            } else if (lookup_result != NMO_OK) {
-                return lookup_result;
-            }
-
-            result = object_array_add(arr, object, &index->allocator);
-            if (result != NMO_OK) {
-                return result;
-            }
-        }
-    }
-
-    return NMO_OK;
+    return object_index_add_object_to_tables(index, object, flags);
 }
 
 /**
