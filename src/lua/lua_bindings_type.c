@@ -5,6 +5,7 @@
 #include "type/nmo_type_string.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_view.h"
+#include "../type/type_value_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -610,7 +611,7 @@ static int nmo_lua_type_float_to_string(lua_State *state)
 {
     char buffer[64];
     float value = (float)luaL_checknumber(state, 1);
-    nmo_status_t status = nmo_float_to_string(&value, buffer, sizeof(buffer));
+    nmo_status_t status = nmo_type_float_to_string(&value, buffer, sizeof(buffer));
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to convert float to string");
     }
@@ -622,7 +623,7 @@ static int nmo_lua_type_float_from_string(lua_State *state)
 {
     float value = 0.0f;
     const char *text = luaL_checkstring(state, 1);
-    nmo_status_t status = nmo_float_from_string(&value, text);
+    nmo_status_t status = nmo_type_float_from_string(&value, text);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to parse float string");
     }
@@ -635,7 +636,7 @@ static int nmo_lua_type_int_to_string(lua_State *state)
     char buffer[64];
     int32_t value = (int32_t)luaL_checkinteger(state, 1);
     bool use_hex = lua_gettop(state) >= 2 && lua_toboolean(state, 2) != 0;
-    nmo_status_t status = nmo_int_to_string(&value, buffer, sizeof(buffer), use_hex);
+    nmo_status_t status = nmo_type_int_to_string(&value, buffer, sizeof(buffer), use_hex);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to convert int to string");
     }
@@ -647,7 +648,7 @@ static int nmo_lua_type_int_from_string(lua_State *state)
 {
     int32_t value = 0;
     const char *text = luaL_checkstring(state, 1);
-    nmo_status_t status = nmo_int_from_string(&value, text);
+    nmo_status_t status = nmo_type_int_from_string(&value, text);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to parse int string");
     }
@@ -659,7 +660,7 @@ static int nmo_lua_type_bool_to_string(lua_State *state)
 {
     char buffer[64];
     bool value = lua_toboolean(state, 1) != 0;
-    nmo_status_t status = nmo_bool_to_string(&value, buffer, sizeof(buffer));
+    nmo_status_t status = nmo_type_bool_to_string(&value, buffer, sizeof(buffer));
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to convert bool to string");
     }
@@ -671,7 +672,7 @@ static int nmo_lua_type_bool_from_string(lua_State *state)
 {
     bool value = false;
     const char *text = luaL_checkstring(state, 1);
-    nmo_status_t status = nmo_bool_from_string(&value, text);
+    nmo_status_t status = nmo_type_bool_from_string(&value, text);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to parse bool string");
     }
@@ -713,7 +714,7 @@ static int nmo_lua_type_object_id_to_string(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid session handle");
     }
 
-    status = nmo_object_id_to_string(&id, buffer, sizeof(buffer), session);
+    status = nmo_type_object_id_to_string(&id, buffer, sizeof(buffer), session);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to convert object id to string");
     }
@@ -731,7 +732,7 @@ static int nmo_lua_type_object_id_from_string(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid session handle");
     }
 
-    status = nmo_object_id_from_string(&id, text, session);
+    status = nmo_type_object_id_from_string(&id, text, session);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to parse object id string");
     }
@@ -752,7 +753,7 @@ static int nmo_lua_type_enum_to_string(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid enum type");
     }
 
-    status = nmo_enum_to_string(&value, type, registry, buffer, sizeof(buffer), use_name);
+    status = nmo_type_enum_to_string(&value, type, registry, buffer, sizeof(buffer), use_name);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to convert enum to string");
     }
@@ -772,7 +773,7 @@ static int nmo_lua_type_enum_from_string(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid enum type");
     }
 
-    status = nmo_enum_from_string(&value, type, registry, text);
+    status = nmo_type_enum_from_string(&value, type, registry, text);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to parse enum string");
     }
@@ -793,7 +794,7 @@ static int nmo_lua_type_flags_to_string(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid flags type");
     }
 
-    status = nmo_flags_to_string(&value, type, registry, buffer, sizeof(buffer), use_names);
+    status = nmo_type_flags_to_string(&value, type, registry, buffer, sizeof(buffer), use_names);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to convert flags to string");
     }
@@ -813,7 +814,7 @@ static int nmo_lua_type_flags_from_string(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid flags type");
     }
 
-    status = nmo_flags_from_string(&value, type, registry, text);
+    status = nmo_type_flags_from_string(&value, type, registry, text);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to parse flags string");
     }
@@ -872,7 +873,7 @@ static int nmo_lua_type_float_array_from_string(
 static int nmo_lua_type_vector2_to_string(lua_State *state)
 {
     return nmo_lua_type_float_array_to_string(
-        state, 2u, nmo_vector2_to_string,
+        state, 2u, nmo_type_vector2_to_string,
         "Invalid vector2 value",
         "Failed to convert vector2 to string");
 }
@@ -880,14 +881,14 @@ static int nmo_lua_type_vector2_to_string(lua_State *state)
 static int nmo_lua_type_vector2_from_string(lua_State *state)
 {
     return nmo_lua_type_float_array_from_string(
-        state, 2u, nmo_vector2_from_string,
+        state, 2u, nmo_type_vector2_from_string,
         "Failed to parse vector2 string");
 }
 
 static int nmo_lua_type_vector_to_string(lua_State *state)
 {
     return nmo_lua_type_float_array_to_string(
-        state, 3u, nmo_vector_to_string,
+        state, 3u, nmo_type_vector3_to_string,
         "Invalid vector value",
         "Failed to convert vector to string");
 }
@@ -895,14 +896,14 @@ static int nmo_lua_type_vector_to_string(lua_State *state)
 static int nmo_lua_type_vector_from_string(lua_State *state)
 {
     return nmo_lua_type_float_array_from_string(
-        state, 3u, nmo_vector_from_string,
+        state, 3u, nmo_type_vector3_from_string,
         "Failed to parse vector string");
 }
 
 static int nmo_lua_type_vector4_to_string(lua_State *state)
 {
     return nmo_lua_type_float_array_to_string(
-        state, 4u, nmo_vector4_to_string,
+        state, 4u, nmo_type_vector4_to_string,
         "Invalid vector4 value",
         "Failed to convert vector4 to string");
 }
@@ -910,14 +911,14 @@ static int nmo_lua_type_vector4_to_string(lua_State *state)
 static int nmo_lua_type_vector4_from_string(lua_State *state)
 {
     return nmo_lua_type_float_array_from_string(
-        state, 4u, nmo_vector4_from_string,
+        state, 4u, nmo_type_vector4_from_string,
         "Failed to parse vector4 string");
 }
 
 static int nmo_lua_type_quaternion_to_string(lua_State *state)
 {
     return nmo_lua_type_float_array_to_string(
-        state, 4u, nmo_quaternion_to_string,
+        state, 4u, nmo_type_quaternion_to_string,
         "Invalid quaternion value",
         "Failed to convert quaternion to string");
 }
@@ -925,7 +926,7 @@ static int nmo_lua_type_quaternion_to_string(lua_State *state)
 static int nmo_lua_type_quaternion_from_string(lua_State *state)
 {
     return nmo_lua_type_float_array_from_string(
-        state, 4u, nmo_quaternion_from_string,
+        state, 4u, nmo_type_quaternion_from_string,
         "Failed to parse quaternion string");
 }
 
@@ -944,7 +945,7 @@ static int nmo_lua_type_matrix_to_string(lua_State *state)
         matrix.m[i / 4u][i % 4u] = values[i];
     }
 
-    status = nmo_matrix_to_string(&matrix, buffer, sizeof(buffer));
+    status = nmo_type_matrix_to_string(&matrix, buffer, sizeof(buffer));
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to convert matrix to string");
     }
@@ -956,7 +957,7 @@ static int nmo_lua_type_matrix_from_string(lua_State *state)
 {
     nmo_matrix_t matrix = {0};
     const char *text = luaL_checkstring(state, 1);
-    nmo_status_t status = nmo_matrix_from_string(&matrix, text);
+    nmo_status_t status = nmo_type_matrix_from_string(&matrix, text);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to parse matrix string");
     }
@@ -967,7 +968,7 @@ static int nmo_lua_type_matrix_from_string(lua_State *state)
 static int nmo_lua_type_color_to_string(lua_State *state)
 {
     return nmo_lua_type_float_array_to_string(
-        state, 4u, nmo_color_to_string,
+        state, 4u, nmo_type_color_to_string,
         "Invalid color value",
         "Failed to convert color to string");
 }
@@ -975,7 +976,7 @@ static int nmo_lua_type_color_to_string(lua_State *state)
 static int nmo_lua_type_color_from_string(lua_State *state)
 {
     return nmo_lua_type_float_array_from_string(
-        state, 4u, nmo_color_from_string,
+        state, 4u, nmo_type_color_from_string,
         "Failed to parse color string");
 }
 
@@ -986,7 +987,7 @@ static int nmo_lua_type_string_to_string(lua_State *state)
     if (!lua_isnoneornil(state, 1)) {
         value = luaL_checkstring(state, 1);
     }
-    nmo_status_t status = nmo_string_to_string(&value, buffer, sizeof(buffer));
+    nmo_status_t status = nmo_type_string_to_string(&value, buffer, sizeof(buffer));
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to convert string value");
     }
@@ -1004,7 +1005,7 @@ static int nmo_lua_type_string_from_string(lua_State *state)
         return nmo_lua_raise_last_error(state, NMO_ERR_NOMEM, "Failed to allocate string arena");
     }
 
-    status = nmo_string_from_string(&value, text, arena);
+    status = nmo_type_string_from_string(&value, text, arena);
     if (status == NMO_OK) {
         lua_pushstring(state, value != NULL ? value : "");
     }

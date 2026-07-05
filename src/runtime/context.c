@@ -1,6 +1,6 @@
 /**
  * @file context.c
- * @brief Global context implementation (Phase 8.1)
+ * @brief Global context implementation
  */
 
 #include "runtime_internal.h"
@@ -11,7 +11,7 @@
 #include "type/nmo_type_runtime.h"
 #include "type/nmo_operation_system.h"
 #include "type/nmo_operations.h"
-#include "type/nmo_type_string.h"
+#include "../type/type_value_internal.h"
 #include "object/nmo_object_types.h"
 #include "format/nmo_manager_registry.h"
 #include "format/nmo_object.h"
@@ -289,7 +289,7 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
     }
 
     /* Install object-id string resolvers once per process */
-    nmo_type_string_set_object_resolvers(
+    nmo_type_set_object_resolvers(
         nmo_context_object_id_to_name_resolver,
         nmo_context_object_name_to_id_resolver);
 

@@ -206,7 +206,7 @@ static void free_wrapped_type_value(char *inner, const char *stack_buf)
     }
 }
 
-nmo_status_t nmo_enum_to_string(
+nmo_status_t nmo_type_enum_to_string(
     const void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -250,7 +250,7 @@ nmo_status_t nmo_enum_to_string(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_enum_from_string(
+nmo_status_t nmo_type_enum_from_string(
     void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -306,7 +306,7 @@ nmo_status_t nmo_enum_from_string(
  * Flags Converters
  * ============================================================================ */
 
-nmo_status_t nmo_flags_to_string(
+nmo_status_t nmo_type_flags_to_string(
     const void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -363,7 +363,7 @@ nmo_status_t nmo_flags_to_string(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_flags_from_string(
+nmo_status_t nmo_type_flags_from_string(
     void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -451,7 +451,7 @@ static nmo_status_t nmo_enum_vt_to_string(
     int depth)
 {
     (void)depth;
-    return nmo_enum_to_string(value, type, registry, buffer, buffer_size, true);
+    return nmo_type_enum_to_string(value, type, registry, buffer, buffer_size, true);
 }
 
 static nmo_status_t nmo_enum_vt_from_string(
@@ -460,7 +460,7 @@ static nmo_status_t nmo_enum_vt_from_string(
     const nmo_type_registry_t *registry,
     const char *string)
 {
-    return nmo_enum_from_string(value, type, registry, string);
+    return nmo_type_enum_from_string(value, type, registry, string);
 }
 
 static nmo_status_t nmo_flags_vt_to_string(
@@ -472,7 +472,7 @@ static nmo_status_t nmo_flags_vt_to_string(
     int depth)
 {
     (void)depth;
-    return nmo_flags_to_string(value, type, registry, buffer, buffer_size, true);
+    return nmo_type_flags_to_string(value, type, registry, buffer, buffer_size, true);
 }
 
 static nmo_status_t nmo_flags_vt_from_string(
@@ -481,7 +481,7 @@ static nmo_status_t nmo_flags_vt_from_string(
     const nmo_type_registry_t *registry,
     const char *string)
 {
-    return nmo_flags_from_string(value, type, registry, string);
+    return nmo_type_flags_from_string(value, type, registry, string);
 }
 
 NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(

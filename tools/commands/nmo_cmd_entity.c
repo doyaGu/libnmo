@@ -21,7 +21,6 @@
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
 #include "object/builtin/nmo_targetlight_schemas.h"
-#include "type/nmo_type_string.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -66,6 +65,25 @@ static void format_color_rgba(char *buf, size_t buf_size, const nmo_color_t *col
     snprintf(buf, buf_size, "(%.3f, %.3f, %.3f, %.3f)",
              (double)color->r, (double)color->g,
              (double)color->b, (double)color->a);
+}
+
+static nmo_status_t parse_color_rgba(const char *text, nmo_color_t *out_color) {
+    if (!text || !out_color) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    float values[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    nmo_status_t status =
+        nmo_parse_f32_parenthesized_tuple(text, ",;", values, 4u);
+    if (status != NMO_OK) {
+        return status;
+    }
+
+    out_color->r = values[0];
+    out_color->g = values[1];
+    out_color->b = values[2];
+    out_color->a = values[3];
+    return NMO_OK;
 }
 
 typedef struct entity_list_json_data {
@@ -1075,7 +1093,7 @@ static int entity_set_fields_mutate(
             const char *value = args->entries[i].value_str;
             if (strcmp(field, "diffuse_color") == 0) {
                 nmo_color_t parsed;
-                if (nmo_color_from_string(&parsed, value) != NMO_OK) {
+                if (parse_color_rgba(value, &parsed) != NMO_OK) {
                     fprintf(stderr, "Error: Failed to set '%s' = '%s'\n", field, value);
                     return NMO_CLI_EXIT_ARG_ERROR;
                 }

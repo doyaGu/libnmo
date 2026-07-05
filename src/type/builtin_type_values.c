@@ -550,7 +550,7 @@ static nmo_status_t nmo_format_u64_text(
  * Float Converters
  * ============================================================================ */
 
-nmo_status_t nmo_float_to_string(
+nmo_status_t nmo_type_float_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
@@ -565,7 +565,7 @@ nmo_status_t nmo_float_to_string(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_float_from_string(
+nmo_status_t nmo_type_float_from_string(
     void *value,
     const char *string)
 {
@@ -600,7 +600,7 @@ nmo_status_t nmo_float_from_string(
  * Int Converters
  * ============================================================================ */
 
-nmo_status_t nmo_int_to_string(
+nmo_status_t nmo_type_int_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size,
@@ -623,7 +623,7 @@ nmo_status_t nmo_int_to_string(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_int_from_string(
+nmo_status_t nmo_type_int_from_string(
     void *value,
     const char *string)
 {
@@ -644,7 +644,7 @@ nmo_status_t nmo_int_from_string(
  * Bool Converters
  * ============================================================================ */
 
-nmo_status_t nmo_bool_to_string(
+nmo_status_t nmo_type_bool_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
@@ -661,7 +661,7 @@ nmo_status_t nmo_bool_to_string(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_bool_from_string(
+nmo_status_t nmo_type_bool_from_string(
     void *value,
     const char *string)
 {
@@ -742,7 +742,7 @@ static nmo_status_t nmo_float_tuple_from_string(
     return parse_float_tuple(kind, string, (float *)value, (int)count);
 }
 
-nmo_status_t nmo_vector2_to_string(
+nmo_status_t nmo_type_vector2_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
@@ -752,7 +752,7 @@ nmo_status_t nmo_vector2_to_string(
         "Invalid arguments for vector2_to_string");
 }
 
-nmo_status_t nmo_vector2_from_string(
+nmo_status_t nmo_type_vector2_from_string(
     void *value,
     const char *string)
 {
@@ -761,7 +761,7 @@ nmo_status_t nmo_vector2_from_string(
         "Invalid arguments for vector2_from_string");
 }
 
-nmo_status_t nmo_vector_to_string(
+nmo_status_t nmo_type_vector3_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
@@ -771,7 +771,7 @@ nmo_status_t nmo_vector_to_string(
         "Invalid arguments for vector_to_string");
 }
 
-nmo_status_t nmo_vector_from_string(
+nmo_status_t nmo_type_vector3_from_string(
     void *value,
     const char *string)
 {
@@ -780,7 +780,7 @@ nmo_status_t nmo_vector_from_string(
         "Invalid arguments for vector_from_string");
 }
 
-nmo_status_t nmo_vector4_to_string(
+nmo_status_t nmo_type_vector4_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
@@ -790,7 +790,7 @@ nmo_status_t nmo_vector4_to_string(
         "Invalid arguments for vector4_to_string");
 }
 
-nmo_status_t nmo_vector4_from_string(
+nmo_status_t nmo_type_vector4_from_string(
     void *value,
     const char *string)
 {
@@ -803,7 +803,7 @@ nmo_status_t nmo_vector4_from_string(
  * Quaternion Converters
  * ============================================================================ */
 
-nmo_status_t nmo_quaternion_to_string(
+nmo_status_t nmo_type_quaternion_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
@@ -813,7 +813,7 @@ nmo_status_t nmo_quaternion_to_string(
         "Invalid arguments for quaternion_to_string");
 }
 
-nmo_status_t nmo_quaternion_from_string(
+nmo_status_t nmo_type_quaternion_from_string(
     void *value,
     const char *string)
 {
@@ -826,7 +826,7 @@ nmo_status_t nmo_quaternion_from_string(
  * Matrix/Color Converters
  * ============================================================================ */
 
-nmo_status_t nmo_matrix_to_string(
+nmo_status_t nmo_type_matrix_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
@@ -847,7 +847,7 @@ nmo_status_t nmo_matrix_to_string(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_matrix_from_string(
+nmo_status_t nmo_type_matrix_from_string(
     void *value,
     const char *string)
 {
@@ -870,7 +870,7 @@ nmo_status_t nmo_matrix_from_string(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_color_to_string(
+nmo_status_t nmo_type_color_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
@@ -880,7 +880,7 @@ nmo_status_t nmo_color_to_string(
         "Invalid arguments for color_to_string");
 }
 
-nmo_status_t nmo_color_from_string(
+nmo_status_t nmo_type_color_from_string(
     void *value,
     const char *string)
 {
@@ -1002,7 +1002,7 @@ size_t nmo_string_unescape(
  * String Converters
  * ============================================================================ */
 
-nmo_status_t nmo_string_to_string(
+nmo_status_t nmo_type_string_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
@@ -1023,7 +1023,7 @@ nmo_status_t nmo_string_to_string(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_string_from_string(
+nmo_status_t nmo_type_string_from_string(
     void *value,
     const char *string,
     nmo_arena_t *arena)
@@ -1058,12 +1058,12 @@ nmo_status_t nmo_string_from_string(
  * Object ID Converters
  * ============================================================================ */
 
-static nmo_object_id_to_name_resolver_fn g_object_id_to_name_resolver = NULL;
-static nmo_object_name_to_id_resolver_fn g_object_name_to_id_resolver = NULL;
+static nmo_type_object_id_to_name_resolver_fn g_object_id_to_name_resolver = NULL;
+static nmo_type_object_name_to_id_resolver_fn g_object_name_to_id_resolver = NULL;
 
-void nmo_type_string_set_object_resolvers(
-    nmo_object_id_to_name_resolver_fn id_to_name,
-    nmo_object_name_to_id_resolver_fn name_to_id)
+void nmo_type_set_object_resolvers(
+    nmo_type_object_id_to_name_resolver_fn id_to_name,
+    nmo_type_object_name_to_id_resolver_fn name_to_id)
 {
     g_object_id_to_name_resolver = id_to_name;
     g_object_name_to_id_resolver = name_to_id;
@@ -1085,7 +1085,7 @@ static bool nmo_object_name_is_safe_token(const char *name)
     return true;
 }
 
-nmo_status_t nmo_object_id_to_string(
+nmo_status_t nmo_type_object_id_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size,
@@ -1118,7 +1118,7 @@ nmo_status_t nmo_object_id_to_string(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_object_id_from_string(
+nmo_status_t nmo_type_object_id_from_string(
     void *value,
     const char *string,
     struct nmo_session *session)
@@ -1214,7 +1214,7 @@ nmo_status_t nmo_vt_from_string_percentage(
         memcpy(number, string, len);
         number[len] = '\0';
         float parsed = 0.0f;
-        nmo_status_t st = nmo_float_from_string(&parsed, number);
+        nmo_status_t st = nmo_type_float_from_string(&parsed, number);
         if (number != stack_buf) {
             free(number);
         }
@@ -1225,7 +1225,7 @@ nmo_status_t nmo_vt_from_string_percentage(
         NMO_RETURN_OK();
     }
 
-    return nmo_float_from_string(value, string);
+    return nmo_type_float_from_string(value, string);
 }
 
 nmo_status_t nmo_vt_to_string_time(
@@ -1253,7 +1253,7 @@ nmo_status_t nmo_vt_from_string_time(
     }
 
     float numeric = 0.0f;
-    if (nmo_float_from_string(&numeric, string) == NMO_OK) {
+    if (nmo_type_float_from_string(&numeric, string) == NMO_OK) {
         *(float *)value = numeric;
         NMO_RETURN_OK();
     }
@@ -1315,7 +1315,7 @@ nmo_status_t nmo_vt_from_string_time(
         number[number_len] = '\0';
 
         float amount = 0.0f;
-        if (nmo_float_from_string(&amount, number) != NMO_OK) {
+        if (nmo_type_float_from_string(&amount, number) != NMO_OK) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "Invalid time value");
         }
@@ -1523,7 +1523,7 @@ static nmo_status_t nmo_parse_int32(
     const char *string)
 {
     (void)registry;
-    return nmo_int_from_string(value, string);
+    return nmo_type_int_from_string(value, string);
 }
 
 static nmo_status_t nmo_parse_int64(
@@ -1604,8 +1604,8 @@ static nmo_status_t nmo_parse_uint64(
         return (parse_fn)(value, string); \
     }
 
-NMO_DEFINE_PARSE_ADAPTER(bool, nmo_bool_from_string)
-NMO_DEFINE_PARSE_ADAPTER(float, nmo_float_from_string)
+NMO_DEFINE_PARSE_ADAPTER(bool, nmo_type_bool_from_string)
+NMO_DEFINE_PARSE_ADAPTER(float, nmo_type_float_from_string)
 
 static nmo_status_t nmo_parse_double(
     void *value,
@@ -1629,15 +1629,15 @@ static nmo_status_t nmo_parse_string(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Registry with arena required for string parsing");
     }
-    return nmo_string_from_string(value, string, (nmo_arena_t *)registry->arena);
+    return nmo_type_string_from_string(value, string, (nmo_arena_t *)registry->arena);
 }
 
-NMO_DEFINE_PARSE_ADAPTER(vector2, nmo_vector2_from_string)
-NMO_DEFINE_PARSE_ADAPTER(vector3, nmo_vector_from_string)
-NMO_DEFINE_PARSE_ADAPTER(vector4, nmo_vector4_from_string)
-NMO_DEFINE_PARSE_ADAPTER(quaternion, nmo_quaternion_from_string)
-NMO_DEFINE_PARSE_ADAPTER(matrix, nmo_matrix_from_string)
-NMO_DEFINE_PARSE_ADAPTER(color, nmo_color_from_string)
+NMO_DEFINE_PARSE_ADAPTER(vector2, nmo_type_vector2_from_string)
+NMO_DEFINE_PARSE_ADAPTER(vector3, nmo_type_vector3_from_string)
+NMO_DEFINE_PARSE_ADAPTER(vector4, nmo_type_vector4_from_string)
+NMO_DEFINE_PARSE_ADAPTER(quaternion, nmo_type_quaternion_from_string)
+NMO_DEFINE_PARSE_ADAPTER(matrix, nmo_type_matrix_from_string)
+NMO_DEFINE_PARSE_ADAPTER(color, nmo_type_color_from_string)
 
 static nmo_status_t nmo_parse_guid(
     void *value,
@@ -1706,7 +1706,7 @@ static nmo_status_t nmo_parse_object_id_value(
     }
 
     /* Prefer #id format (and optional name lookup if resolver installed elsewhere) */
-    nmo_status_t st = nmo_object_id_from_string(value, string, NULL);
+    nmo_status_t st = nmo_type_object_id_from_string(value, string, NULL);
     if (st == NMO_OK) {
         return st;
     }
@@ -1785,7 +1785,7 @@ static nmo_status_t parse_vector_segment(
 
     memcpy(buf, start, len);
     buf[len] = '\0';
-    nmo_status_t st = nmo_vector_from_string(out_value, buf);
+    nmo_status_t st = nmo_type_vector3_from_string(out_value, buf);
     if (buf != stack_buf) {
         free(buf);
     }
@@ -2151,7 +2151,7 @@ nmo_status_t nmo_vt_to_string_int32(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    return nmo_int_to_string(value, buffer, buffer_size, false);
+    return nmo_type_int_to_string(value, buffer, buffer_size, false);
 }
 NMO_DEFINE_VT_FROM_STRING(int32, nmo_parse_int32)
 
@@ -2176,7 +2176,7 @@ NMO_DEFINE_VT_FROM_STRING(int64, nmo_parse_int64)
 NMO_DEFINE_UNSIGNED_VT_TO_STRING(uint64, uint64_t)
 NMO_DEFINE_VT_FROM_STRING(uint64, nmo_parse_uint64)
 
-NMO_DEFINE_VT_TO_STRING(float, nmo_float_to_string)
+NMO_DEFINE_VT_TO_STRING(float, nmo_type_float_to_string)
 NMO_DEFINE_VT_FROM_STRING(float, nmo_parse_float)
 
 nmo_status_t nmo_vt_to_string_double(
@@ -2190,7 +2190,7 @@ nmo_status_t nmo_vt_to_string_double(
 }
 NMO_DEFINE_VT_FROM_STRING(double, nmo_parse_double)
 
-NMO_DEFINE_VT_TO_STRING(bool, nmo_bool_to_string)
+NMO_DEFINE_VT_TO_STRING(bool, nmo_type_bool_to_string)
 NMO_DEFINE_VT_FROM_STRING(bool, nmo_parse_bool)
 
 nmo_status_t nmo_vt_to_string_bool32(
@@ -2219,7 +2219,7 @@ nmo_status_t nmo_vt_from_string_bool32(
     }
 
     bool parsed = false;
-    nmo_status_t status = nmo_bool_from_string(&parsed, string);
+    nmo_status_t status = nmo_type_bool_from_string(&parsed, string);
     if (status != NMO_OK) {
         return status;
     }
@@ -2228,7 +2228,7 @@ nmo_status_t nmo_vt_from_string_bool32(
     NMO_RETURN_OK();
 }
 
-NMO_DEFINE_VT_TO_STRING(string, nmo_string_to_string)
+NMO_DEFINE_VT_TO_STRING(string, nmo_type_string_to_string)
 NMO_DEFINE_VT_FROM_STRING(string, nmo_parse_string)
 
 nmo_status_t nmo_vt_to_string_pointer(
@@ -2268,26 +2268,26 @@ nmo_status_t nmo_vt_to_string_object_id(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    return nmo_object_id_to_string(value, buffer, buffer_size, NULL);
+    return nmo_type_object_id_to_string(value, buffer, buffer_size, NULL);
 }
 NMO_DEFINE_VT_FROM_STRING(object_id, nmo_parse_object_id_value)
 
-NMO_DEFINE_VT_TO_STRING(vector2, nmo_vector2_to_string)
+NMO_DEFINE_VT_TO_STRING(vector2, nmo_type_vector2_to_string)
 NMO_DEFINE_VT_FROM_STRING(vector2, nmo_parse_vector2)
 
-NMO_DEFINE_VT_TO_STRING(vector3, nmo_vector_to_string)
+NMO_DEFINE_VT_TO_STRING(vector3, nmo_type_vector3_to_string)
 NMO_DEFINE_VT_FROM_STRING(vector3, nmo_parse_vector3)
 
-NMO_DEFINE_VT_TO_STRING(vector4, nmo_vector4_to_string)
+NMO_DEFINE_VT_TO_STRING(vector4, nmo_type_vector4_to_string)
 NMO_DEFINE_VT_FROM_STRING(vector4, nmo_parse_vector4)
 
-NMO_DEFINE_VT_TO_STRING(quaternion, nmo_quaternion_to_string)
+NMO_DEFINE_VT_TO_STRING(quaternion, nmo_type_quaternion_to_string)
 NMO_DEFINE_VT_FROM_STRING(quaternion, nmo_parse_quaternion)
 
-NMO_DEFINE_VT_TO_STRING(matrix, nmo_matrix_to_string)
+NMO_DEFINE_VT_TO_STRING(matrix, nmo_type_matrix_to_string)
 NMO_DEFINE_VT_FROM_STRING(matrix, nmo_parse_matrix)
 
-NMO_DEFINE_VT_TO_STRING(color, nmo_color_to_string)
+NMO_DEFINE_VT_TO_STRING(color, nmo_type_color_to_string)
 NMO_DEFINE_VT_FROM_STRING(color, nmo_parse_color)
 
 nmo_status_t nmo_vt_to_string_rect(

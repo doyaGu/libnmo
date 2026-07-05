@@ -273,7 +273,8 @@ static nmo_status_t import_scalar_value(void *fptr,
         field->size == sizeof(uint32_t) &&
         field_type->size == sizeof(nmo_color_t)) {
         nmo_color_t parsed;
-        nmo_status_t st = nmo_color_from_string(&parsed, str);
+        nmo_status_t st =
+            nmo_type_value_from_string(&parsed, field_type, registry, str);
         if (st != NMO_OK) return st;
         if (!dry_run) {
             *(uint32_t *)fptr = nmo_color_to_argb32(&parsed);

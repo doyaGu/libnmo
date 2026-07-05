@@ -124,7 +124,7 @@ nmo_status_t nmo_type_set_field(
         field->size == sizeof(uint32_t) &&
         field_type->size == sizeof(nmo_color_t)) {
         nmo_color_t parsed;
-        status = nmo_color_from_string(&parsed, value_str);
+        status = nmo_type_color_from_string(&parsed, value_str);
         if (status != NMO_OK) return status;
         *(uint32_t *)field_ptr = nmo_color_to_argb32(&parsed);
         return NMO_OK;

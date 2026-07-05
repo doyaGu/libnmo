@@ -4,6 +4,22 @@
 #include "type/nmo_type_system.h"
 #include <stdint.h>
 
+struct nmo_session;
+
+typedef nmo_status_t (*nmo_type_object_id_to_name_resolver_fn)(
+    const void *session,
+    nmo_object_id_t id,
+    const char **out_name);
+
+typedef nmo_status_t (*nmo_type_object_name_to_id_resolver_fn)(
+    const void *session,
+    const char *name,
+    nmo_object_id_t *out_id);
+
+void nmo_type_set_object_resolvers(
+    nmo_type_object_id_to_name_resolver_fn id_to_name,
+    nmo_type_object_name_to_id_resolver_fn name_to_id);
+
 extern const nmo_type_vtable_t nmo_builtin_vtable_int;
 extern const nmo_type_vtable_t nmo_builtin_vtable_float;
 extern const nmo_type_vtable_t nmo_builtin_vtable_angle;
@@ -90,6 +106,112 @@ bool nmo_vt_equals_int32(const void *a, const void *b);
 uint32_t nmo_vt_hash_int32(const void *instance);
 bool nmo_vt_equals_uint32(const void *a, const void *b);
 uint32_t nmo_vt_hash_uint32(const void *instance);
+
+nmo_status_t nmo_type_float_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size);
+nmo_status_t nmo_type_float_from_string(
+    void *value,
+    const char *string);
+nmo_status_t nmo_type_int_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size,
+    bool use_hex);
+nmo_status_t nmo_type_int_from_string(
+    void *value,
+    const char *string);
+nmo_status_t nmo_type_bool_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size);
+nmo_status_t nmo_type_bool_from_string(
+    void *value,
+    const char *string);
+nmo_status_t nmo_type_vector2_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size);
+nmo_status_t nmo_type_vector2_from_string(
+    void *value,
+    const char *string);
+nmo_status_t nmo_type_vector3_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size);
+nmo_status_t nmo_type_vector3_from_string(
+    void *value,
+    const char *string);
+nmo_status_t nmo_type_vector4_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size);
+nmo_status_t nmo_type_vector4_from_string(
+    void *value,
+    const char *string);
+nmo_status_t nmo_type_quaternion_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size);
+nmo_status_t nmo_type_quaternion_from_string(
+    void *value,
+    const char *string);
+nmo_status_t nmo_type_matrix_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size);
+nmo_status_t nmo_type_matrix_from_string(
+    void *value,
+    const char *string);
+nmo_status_t nmo_type_color_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size);
+nmo_status_t nmo_type_color_from_string(
+    void *value,
+    const char *string);
+nmo_status_t nmo_type_string_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size);
+nmo_status_t nmo_type_string_from_string(
+    void *value,
+    const char *string,
+    nmo_arena_t *arena);
+nmo_status_t nmo_type_object_id_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size,
+    struct nmo_session *session);
+nmo_status_t nmo_type_object_id_from_string(
+    void *value,
+    const char *string,
+    struct nmo_session *session);
+nmo_status_t nmo_type_enum_to_string(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    bool use_name);
+nmo_status_t nmo_type_enum_from_string(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string);
+nmo_status_t nmo_type_flags_to_string(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    bool use_names);
+nmo_status_t nmo_type_flags_from_string(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string);
 
 #define NMO_DEFINE_ZERO_COPY_TYPE_VTABLE( \
     symbol, copy_fn, equals_fn, hash_fn, to_string_fn, from_string_fn) \
