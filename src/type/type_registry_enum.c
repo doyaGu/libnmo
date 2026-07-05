@@ -94,6 +94,54 @@ static const nmo_specialized_metadata_t *get_matching_metadata(
     return metadata;
 }
 
+static nmo_status_t copy_wrapped_type_value(
+    const nmo_type_descriptor_t *type,
+    const char *string,
+    char *stack_buf,
+    size_t stack_buf_size,
+    const char *oom_message,
+    char **out_inner,
+    bool *out_matched)
+{
+    *out_inner = NULL;
+    *out_matched = false;
+
+    if (!type->name) {
+        NMO_RETURN_OK();
+    }
+
+    size_t name_len = strlen(type->name);
+    size_t string_len = strlen(string);
+    if (string_len <= name_len + 2u ||
+        strncmp(string, type->name, name_len) != 0 ||
+        string[name_len] != '(' ||
+        string[string_len - 1u] != ')') {
+        NMO_RETURN_OK();
+    }
+
+    size_t inner_len = string_len - name_len - 2u;
+    char *inner = stack_buf;
+    if (inner_len + 1u > stack_buf_size) {
+        inner = (char *)malloc(inner_len + 1u);
+        if (!inner) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "%s", oom_message);
+        }
+    }
+
+    memcpy(inner, string + name_len + 1u, inner_len);
+    inner[inner_len] = '\0';
+    *out_inner = inner;
+    *out_matched = true;
+    NMO_RETURN_OK();
+}
+
+static void free_wrapped_type_value(char *inner, const char *stack_buf)
+{
+    if (inner != stack_buf) {
+        free(inner);
+    }
+}
+
 nmo_status_t nmo_enum_to_string(
     const void *value,
     const nmo_type_descriptor_t *type,
@@ -163,35 +211,20 @@ nmo_status_t nmo_enum_from_string(
         }
     }
 
-    if (type->name) {
-        size_t name_len = strlen(type->name);
-        size_t string_len = strlen(string);
-        if (string_len > name_len + 2u &&
-            strncmp(string, type->name, name_len) == 0 &&
-            string[name_len] == '(' &&
-            string[string_len - 1u] == ')') {
-            size_t inner_len = string_len - name_len - 2u;
-            char stack_buf[64];
-            char *inner = stack_buf;
-            if (inner_len + 1u > sizeof(stack_buf)) {
-                inner = (char *)malloc(inner_len + 1u);
-                if (!inner) {
-                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                     "Failed to allocate enum fallback value");
-                }
-            }
-            memcpy(inner, string + name_len + 1u, inner_len);
-            inner[inner_len] = '\0';
-            int32_t result = 0;
-            nmo_status_t parse_status =
-                nmo_parse_i32_range_base(inner, 0, INT32_MIN, INT32_MAX, &result);
-            if (inner != stack_buf) {
-                free(inner);
-            }
-            if (parse_status == NMO_OK) {
-                *(int32_t*)value = result;
-                NMO_RETURN_OK();
-            }
+    char stack_buf[64];
+    char *inner = NULL;
+    bool matched = false;
+    NMO_RETURN_IF_ERROR(copy_wrapped_type_value(
+        type, string, stack_buf, sizeof(stack_buf),
+        "Failed to allocate enum fallback value", &inner, &matched));
+    if (matched) {
+        int32_t result = 0;
+        nmo_status_t parse_status =
+            nmo_parse_i32_range_base(inner, 0, INT32_MIN, INT32_MAX, &result);
+        free_wrapped_type_value(inner, stack_buf);
+        if (parse_status == NMO_OK) {
+            *(int32_t*)value = result;
+            NMO_RETURN_OK();
         }
     }
 
@@ -287,34 +320,19 @@ nmo_status_t nmo_flags_from_string(
         NMO_RETURN_OK();
     }
 
-    if (type->name) {
-        size_t name_len = strlen(type->name);
-        size_t string_len = strlen(string);
-        if (string_len > name_len + 2u &&
-            strncmp(string, type->name, name_len) == 0 &&
-            string[name_len] == '(' &&
-            string[string_len - 1u] == ')') {
-            size_t inner_len = string_len - name_len - 2u;
-            char stack_buf[64];
-            char *inner = stack_buf;
-            if (inner_len + 1u > sizeof(stack_buf)) {
-                inner = (char *)malloc(inner_len + 1u);
-                if (!inner) {
-                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                     "Failed to allocate flags fallback value");
-                }
-            }
-            memcpy(inner, string + name_len + 1u, inner_len);
-            inner[inner_len] = '\0';
-            nmo_status_t parse_status =
-                nmo_parse_u32_range_base(inner, 0, 0, UINT32_MAX, &result);
-            if (inner != stack_buf) {
-                free(inner);
-            }
-            if (parse_status == NMO_OK) {
-                *(uint32_t*)value = result;
-                NMO_RETURN_OK();
-            }
+    char stack_buf[64];
+    char *inner = NULL;
+    bool matched = false;
+    NMO_RETURN_IF_ERROR(copy_wrapped_type_value(
+        type, string, stack_buf, sizeof(stack_buf),
+        "Failed to allocate flags fallback value", &inner, &matched));
+    if (matched) {
+        nmo_status_t parse_status =
+            nmo_parse_u32_range_base(inner, 0, 0, UINT32_MAX, &result);
+        free_wrapped_type_value(inner, stack_buf);
+        if (parse_status == NMO_OK) {
+            *(uint32_t*)value = result;
+            NMO_RETURN_OK();
         }
     }
 
