@@ -71,6 +71,29 @@ static void format_flags_fallback(
     }
 }
 
+static const nmo_specialized_metadata_t *get_matching_metadata(
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    uint16_t metadata_type)
+{
+    if (!type || !registry ||
+        type->specialized_index == NMO_SPECIALIZED_INDEX_INVALID ||
+        type->specialized_index >= registry->metadata.count) {
+        return NULL;
+    }
+
+    const nmo_specialized_metadata_t *const *slot =
+        (const nmo_specialized_metadata_t *const *)nmo_arena_array_get(
+            (nmo_arena_array_t *)&registry->metadata,
+            type->specialized_index);
+    const nmo_specialized_metadata_t *metadata = slot ? *slot : NULL;
+    if (!metadata || metadata->metadata_type != metadata_type) {
+        return NULL;
+    }
+
+    return metadata;
+}
+
 nmo_status_t nmo_enum_to_string(
     const void *value,
     const nmo_type_descriptor_t *type,
@@ -90,19 +113,14 @@ nmo_status_t nmo_enum_to_string(
     int32_t enum_value = *(const int32_t*)value;
 
     /* If name not requested or no registry, output numeric value with type context */
-    if (!use_name || !registry || type->specialized_index == NMO_SPECIALIZED_INDEX_INVALID) {
+    if (!use_name) {
         format_enum_fallback(type, enum_value, buffer, buffer_size);
         NMO_RETURN_OK();
     }
 
-    /* Access enum metadata from registry */
-    if (type->specialized_index >= registry->metadata.count) {
-        format_enum_fallback(type, enum_value, buffer, buffer_size);
-        NMO_RETURN_OK();
-    }
-
-    const nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t**)nmo_arena_array_get((nmo_arena_array_t*)&registry->metadata, type->specialized_index);
-    if (!metadata || metadata->metadata_type != NMO_METADATA_TYPE_ENUM) {
+    const nmo_specialized_metadata_t *metadata =
+        get_matching_metadata(type, registry, NMO_METADATA_TYPE_ENUM);
+    if (!metadata) {
         format_enum_fallback(type, enum_value, buffer, buffer_size);
         NMO_RETURN_OK();
     }
@@ -134,16 +152,13 @@ nmo_status_t nmo_enum_from_string(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Type is not an enum");
     }
 
-    // Try to match name in enum metadata
-    if (registry && type->specialized_index != NMO_SPECIALIZED_INDEX_INVALID &&
-        type->specialized_index < registry->metadata.count) {
-        const nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t**)nmo_arena_array_get((nmo_arena_array_t*)&registry->metadata, type->specialized_index);
-        if (metadata && metadata->metadata_type == NMO_METADATA_TYPE_ENUM) {
-            for (size_t i = 0; i < metadata->enum_meta.value_count; i++) {
-                if (strcmp(metadata->enum_meta.values[i].name, string) == 0) {
-                    *(int32_t*)value = (int32_t)metadata->enum_meta.values[i].value;
-                    NMO_RETURN_OK();
-                }
+    const nmo_specialized_metadata_t *metadata =
+        get_matching_metadata(type, registry, NMO_METADATA_TYPE_ENUM);
+    if (metadata) {
+        for (size_t i = 0; i < metadata->enum_meta.value_count; i++) {
+            if (strcmp(metadata->enum_meta.values[i].name, string) == 0) {
+                *(int32_t*)value = (int32_t)metadata->enum_meta.values[i].value;
+                NMO_RETURN_OK();
             }
         }
     }
@@ -213,19 +228,14 @@ nmo_status_t nmo_flags_to_string(
     uint32_t flags_value = *(const uint32_t*)value;
 
     /* If names not requested or no registry, output hex with type context */
-    if (!use_names || !registry || type->specialized_index == NMO_SPECIALIZED_INDEX_INVALID) {
+    if (!use_names) {
         format_flags_fallback(type, flags_value, buffer, buffer_size);
         NMO_RETURN_OK();
     }
 
-    /* Access flags metadata from registry */
-    if (type->specialized_index >= registry->metadata.count) {
-        format_flags_fallback(type, flags_value, buffer, buffer_size);
-        NMO_RETURN_OK();
-    }
-
-    const nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t**)nmo_arena_array_get((nmo_arena_array_t*)&registry->metadata, type->specialized_index);
-    if (!metadata || metadata->metadata_type != NMO_METADATA_TYPE_FLAGS) {
+    const nmo_specialized_metadata_t *metadata =
+        get_matching_metadata(type, registry, NMO_METADATA_TYPE_FLAGS);
+    if (!metadata) {
         format_flags_fallback(type, flags_value, buffer, buffer_size);
         NMO_RETURN_OK();
     }
@@ -308,46 +318,43 @@ nmo_status_t nmo_flags_from_string(
         }
     }
 
-    // Parse name1|name2 format from metadata
-    if (registry && type->specialized_index != NMO_SPECIALIZED_INDEX_INVALID &&
-        type->specialized_index < registry->metadata.count) {
-        const nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t**)nmo_arena_array_get((nmo_arena_array_t*)&registry->metadata, type->specialized_index);
-        if (metadata && metadata->metadata_type == NMO_METADATA_TYPE_FLAGS) {
-            uint32_t flags_result = 0;
-            const char *start = string;
-            
-            while (*start) {
-                // Skip whitespace
-                while (*start && isspace(*start)) start++;
-                if (!*start) break;
-                
-                // Find end of name (| or end of string)
-                const char *end = start;
-                while (*end && *end != '|') end++;
-                
-                // Match name
-                size_t name_len = end - start;
-                bool found = false;
-                for (size_t i = 0; i < metadata->flags_meta.bit_count; i++) {
-                    const char *bit_name = metadata->flags_meta.bits[i].name;
-                    if (strncmp(bit_name, start, name_len) == 0 && bit_name[name_len] == '\0') {
-                        flags_result |= (uint32_t)metadata->flags_meta.bits[i].mask;
-                        found = true;
-                        break;
-                    }
+    const nmo_specialized_metadata_t *metadata =
+        get_matching_metadata(type, registry, NMO_METADATA_TYPE_FLAGS);
+    if (metadata) {
+        uint32_t flags_result = 0;
+        const char *start = string;
+
+        while (*start) {
+            // Skip whitespace
+            while (*start && isspace(*start)) start++;
+            if (!*start) break;
+
+            // Find end of name (| or end of string)
+            const char *end = start;
+            while (*end && *end != '|') end++;
+
+            // Match name
+            size_t name_len = end - start;
+            bool found = false;
+            for (size_t i = 0; i < metadata->flags_meta.bit_count; i++) {
+                const char *bit_name = metadata->flags_meta.bits[i].name;
+                if (strncmp(bit_name, start, name_len) == 0 && bit_name[name_len] == '\0') {
+                    flags_result |= (uint32_t)metadata->flags_meta.bits[i].mask;
+                    found = true;
+                    break;
                 }
-                
-                if (!found) {
-                    NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Unknown flag name");
-                }
-                
-                // Move to next
-                start = (*end == '|') ? end + 1 : end;
             }
-            
-            *(uint32_t*)value = flags_result;
-            NMO_RETURN_OK();
+
+            if (!found) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Unknown flag name");
+            }
+
+            // Move to next
+            start = (*end == '|') ? end + 1 : end;
         }
+
+        *(uint32_t*)value = flags_result;
+        NMO_RETURN_OK();
     }
 
     NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid flags format");
