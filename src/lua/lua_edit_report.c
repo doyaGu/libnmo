@@ -641,34 +641,42 @@ static void nmo_lua_push_probe_selector_diagnostics(
     lua_setfield(state, -2, "status");
     lua_pushstring(state, analysis->rejection_code);
     lua_setfield(state, -2, "rejection_code");
-    lua_pushinteger(state, (lua_Integer)analysis->selected_node_id);
-    lua_setfield(state, -2, "selected_node_id");
-    lua_pushinteger(state, (lua_Integer)analysis->selected_link_id);
-    lua_setfield(state, -2, "selected_link_id");
-    lua_pushinteger(state, (lua_Integer)analysis->selected_operation_id);
-    lua_setfield(state, -2, "selected_operation_id");
+    nmo_lua_set_integer_field(
+        state, "selected_node_id", (lua_Integer)analysis->selected_node_id);
+    nmo_lua_set_integer_field(
+        state, "selected_link_id", (lua_Integer)analysis->selected_link_id);
+    nmo_lua_set_integer_field(
+        state,
+        "selected_operation_id",
+        (lua_Integer)analysis->selected_operation_id);
 
     lua_createtable(state, (int)analysis->candidate_count, 0);
     for (size_t i = 0; i < analysis->candidate_count; ++i) {
         const nmo_probe_selector_candidate_t *candidate =
             &analysis->candidates[i];
         lua_createtable(state, 0, 10);
-        lua_pushinteger(state, (lua_Integer)candidate->node_id);
-        lua_setfield(state, -2, "node_id");
-        lua_pushinteger(state, (lua_Integer)candidate->parent_id);
-        lua_setfield(state, -2, "parent_id");
-        lua_pushinteger(state, (lua_Integer)candidate->boundary_behavior_id);
-        lua_setfield(state, -2, "boundary_behavior_id");
-        lua_pushinteger(state, (lua_Integer)candidate->link_id);
-        lua_setfield(state, -2, "link_id");
-        lua_pushinteger(state, (lua_Integer)candidate->operation_id);
-        lua_setfield(state, -2, "operation_id");
-        lua_pushinteger(state, (lua_Integer)candidate->source_parameter_id);
-        lua_setfield(state, -2, "source_parameter_id");
-        lua_pushinteger(state, (lua_Integer)candidate->value_parameter_id);
-        lua_setfield(state, -2, "value_parameter_id");
-        lua_pushinteger(state, (lua_Integer)candidate->dataarray_id);
-        lua_setfield(state, -2, "dataarray_id");
+        nmo_lua_set_integer_field(
+            state, "node_id", (lua_Integer)candidate->node_id);
+        nmo_lua_set_integer_field(
+            state, "parent_id", (lua_Integer)candidate->parent_id);
+        nmo_lua_set_integer_field(
+            state,
+            "boundary_behavior_id",
+            (lua_Integer)candidate->boundary_behavior_id);
+        nmo_lua_set_integer_field(
+            state, "link_id", (lua_Integer)candidate->link_id);
+        nmo_lua_set_integer_field(
+            state, "operation_id", (lua_Integer)candidate->operation_id);
+        nmo_lua_set_integer_field(
+            state,
+            "source_parameter_id",
+            (lua_Integer)candidate->source_parameter_id);
+        nmo_lua_set_integer_field(
+            state,
+            "value_parameter_id",
+            (lua_Integer)candidate->value_parameter_id);
+        nmo_lua_set_integer_field(
+            state, "dataarray_id", (lua_Integer)candidate->dataarray_id);
         lua_pushstring(state, nmo_probe_candidate_role_name(candidate->role));
         lua_setfield(state, -2, "role");
         lua_pushstring(state, candidate->rejection_code);
@@ -677,23 +685,25 @@ static void nmo_lua_push_probe_selector_diagnostics(
     }
     lua_setfield(state, -2, "candidates");
 
+    const nmo_probe_safe_insertion_t *safe = &analysis->safe_insertion;
     lua_createtable(state, 0, 8);
-    lua_pushboolean(state, analysis->safe_insertion.selected);
-    lua_setfield(state, -2, "selected");
-    lua_pushinteger(state, (lua_Integer)analysis->safe_insertion.selected_node_id);
-    lua_setfield(state, -2, "selected_node_id");
-    lua_pushinteger(state, (lua_Integer)analysis->safe_insertion.selected_link_id);
-    lua_setfield(state, -2, "selected_link_id");
-    lua_pushinteger(state, (lua_Integer)analysis->safe_insertion.selected_operation_id);
-    lua_setfield(state, -2, "selected_operation_id");
-    lua_pushinteger(state, (lua_Integer)analysis->safe_insertion.remove_link_id);
-    lua_setfield(state, -2, "remove_link_id");
-    lua_pushinteger(state, (lua_Integer)analysis->safe_insertion.insert_from_io_id);
-    lua_setfield(state, -2, "insert_from_io_id");
-    lua_pushinteger(state, (lua_Integer)analysis->safe_insertion.insert_to_io_id);
-    lua_setfield(state, -2, "insert_to_io_id");
-    lua_pushinteger(state, (lua_Integer)analysis->safe_insertion.preserved_delay);
-    lua_setfield(state, -2, "preserved_delay");
+    nmo_lua_set_boolean_field(state, "selected", safe->selected);
+    nmo_lua_set_integer_field(
+        state, "selected_node_id", (lua_Integer)safe->selected_node_id);
+    nmo_lua_set_integer_field(
+        state, "selected_link_id", (lua_Integer)safe->selected_link_id);
+    nmo_lua_set_integer_field(
+        state,
+        "selected_operation_id",
+        (lua_Integer)safe->selected_operation_id);
+    nmo_lua_set_integer_field(
+        state, "remove_link_id", (lua_Integer)safe->remove_link_id);
+    nmo_lua_set_integer_field(
+        state, "insert_from_io_id", (lua_Integer)safe->insert_from_io_id);
+    nmo_lua_set_integer_field(
+        state, "insert_to_io_id", (lua_Integer)safe->insert_to_io_id);
+    nmo_lua_set_integer_field(
+        state, "preserved_delay", (lua_Integer)safe->preserved_delay);
     lua_setfield(state, -2, "safe_insertion");
 }
 
