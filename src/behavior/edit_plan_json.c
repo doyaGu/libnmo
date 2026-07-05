@@ -640,11 +640,11 @@ static yyjson_mut_val *edit_op_to_json(yyjson_mut_doc *doc,
 
     switch (op->kind) {
         case NMO_EDIT_OP_SET_PARAMETER_VALUE:
-            if (op->data.set_value.has_parameter_ref) {
+            if (op->data.set_value.parameter_ref.has_ref) {
                 add_ref_json(doc, obj, "parameter_operation",
                              "parameter_handle",
-                             op->data.set_value.parameter_ref_operation_index,
-                             op->data.set_value.parameter_ref_handle);
+                             op->data.set_value.parameter_ref.operation_index,
+                             op->data.set_value.parameter_ref.handle_name);
             } else {
                 yyjson_mut_obj_add_uint(doc, obj, "parameter_id",
                                         (uint64_t)op->primary_id);
@@ -658,11 +658,11 @@ static yyjson_mut_val *edit_op_to_json(yyjson_mut_doc *doc,
             }
             break;
         case NMO_EDIT_OP_SET_PARAMETER_BYTES: {
-            if (op->data.set_bytes.has_parameter_ref) {
+            if (op->data.set_bytes.parameter_ref.has_ref) {
                 add_ref_json(doc, obj, "parameter_operation",
                              "parameter_handle",
-                             op->data.set_bytes.parameter_ref_operation_index,
-                             op->data.set_bytes.parameter_ref_handle);
+                             op->data.set_bytes.parameter_ref.operation_index,
+                             op->data.set_bytes.parameter_ref.handle_name);
             } else {
                 yyjson_mut_obj_add_uint(doc, obj, "parameter_id",
                                         (uint64_t)op->primary_id);
@@ -722,19 +722,19 @@ static yyjson_mut_val *edit_op_to_json(yyjson_mut_doc *doc,
             yyjson_mut_obj_add_uint(
                 doc, obj, "parent_id",
                 (uint64_t)op->data.add_link.parent_behavior_id);
-            if (op->data.add_link.has_from_io_ref) {
+            if (op->data.add_link.from_io_ref.has_ref) {
                 add_ref_json(doc, obj, "from_operation", "from_handle",
-                             op->data.add_link.from_io_ref_operation_index,
-                             op->data.add_link.from_io_ref_handle);
+                             op->data.add_link.from_io_ref.operation_index,
+                             op->data.add_link.from_io_ref.handle_name);
             } else {
                 yyjson_mut_obj_add_uint(
                     doc, obj, "from_io_id",
                     (uint64_t)op->data.add_link.from_io_id);
             }
-            if (op->data.add_link.has_to_io_ref) {
+            if (op->data.add_link.to_io_ref.has_ref) {
                 add_ref_json(doc, obj, "to_operation", "to_handle",
-                             op->data.add_link.to_io_ref_operation_index,
-                             op->data.add_link.to_io_ref_handle);
+                             op->data.add_link.to_io_ref.operation_index,
+                             op->data.add_link.to_io_ref.handle_name);
             } else {
                 yyjson_mut_obj_add_uint(
                     doc, obj, "to_io_id",
@@ -785,12 +785,12 @@ static yyjson_mut_val *edit_op_to_json(yyjson_mut_doc *doc,
             yyjson_mut_obj_add_uint(
                 doc, obj, "source_id",
                 (uint64_t)op->data.connect_parameter.source_parameter_id);
-            if (op->data.connect_parameter.has_target_parameter_ref) {
+            if (op->data.connect_parameter.target_parameter_ref.has_ref) {
                 add_ref_json(
                     doc, obj, "target_operation", "target_handle",
                     op->data.connect_parameter
-                        .target_parameter_ref_operation_index,
-                    op->data.connect_parameter.target_parameter_ref_handle);
+                        .target_parameter_ref.operation_index,
+                    op->data.connect_parameter.target_parameter_ref.handle_name);
             } else {
                 yyjson_mut_obj_add_uint(
                     doc, obj, "target_id",
@@ -815,31 +815,31 @@ static yyjson_mut_val *edit_op_to_json(yyjson_mut_doc *doc,
                 (uint64_t)op->data.add_operation.parent_behavior_id);
             add_guid_json(doc, obj, "operation_guid",
                           op->data.add_operation.operation_guid);
-            if (op->data.add_operation.has_in1_parameter_ref) {
+            if (op->data.add_operation.in1_parameter_ref.has_ref) {
                 add_ref_json(
                     doc, obj, "in1_operation", "in1_handle",
-                    op->data.add_operation.in1_parameter_ref_operation_index,
-                    op->data.add_operation.in1_parameter_ref_handle);
+                    op->data.add_operation.in1_parameter_ref.operation_index,
+                    op->data.add_operation.in1_parameter_ref.handle_name);
             } else {
                 add_optional_id_json(
                     doc, obj, "in1_id",
                     op->data.add_operation.in1_parameter_id);
             }
-            if (op->data.add_operation.has_in2_parameter_ref) {
+            if (op->data.add_operation.in2_parameter_ref.has_ref) {
                 add_ref_json(
                     doc, obj, "in2_operation", "in2_handle",
-                    op->data.add_operation.in2_parameter_ref_operation_index,
-                    op->data.add_operation.in2_parameter_ref_handle);
+                    op->data.add_operation.in2_parameter_ref.operation_index,
+                    op->data.add_operation.in2_parameter_ref.handle_name);
             } else {
                 add_optional_id_json(
                     doc, obj, "in2_id",
                     op->data.add_operation.in2_parameter_id);
             }
-            if (op->data.add_operation.has_out_parameter_ref) {
+            if (op->data.add_operation.out_parameter_ref.has_ref) {
                 add_ref_json(
                     doc, obj, "out_operation", "out_handle",
-                    op->data.add_operation.out_parameter_ref_operation_index,
-                    op->data.add_operation.out_parameter_ref_handle);
+                    op->data.add_operation.out_parameter_ref.operation_index,
+                    op->data.add_operation.out_parameter_ref.handle_name);
             } else {
                 add_optional_id_json(
                     doc, obj, "out_id",
@@ -852,12 +852,12 @@ static yyjson_mut_val *edit_op_to_json(yyjson_mut_doc *doc,
                 (uint64_t)op->data.rewire_operation.operation_id);
             if ((op->data.rewire_operation.slot_flags &
                  NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u) {
-                if (op->data.rewire_operation.has_in1_parameter_ref) {
+                if (op->data.rewire_operation.in1_parameter_ref.has_ref) {
                     add_ref_json(
                         doc, obj, "in1_operation", "in1_handle",
                         op->data.rewire_operation
-                            .in1_parameter_ref_operation_index,
-                        op->data.rewire_operation.in1_parameter_ref_handle);
+                            .in1_parameter_ref.operation_index,
+                        op->data.rewire_operation.in1_parameter_ref.handle_name);
                 } else {
                     yyjson_mut_obj_add_uint(
                         doc, obj, "in1_id",
@@ -866,12 +866,12 @@ static yyjson_mut_val *edit_op_to_json(yyjson_mut_doc *doc,
             }
             if ((op->data.rewire_operation.slot_flags &
                  NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u) {
-                if (op->data.rewire_operation.has_in2_parameter_ref) {
+                if (op->data.rewire_operation.in2_parameter_ref.has_ref) {
                     add_ref_json(
                         doc, obj, "in2_operation", "in2_handle",
                         op->data.rewire_operation
-                            .in2_parameter_ref_operation_index,
-                        op->data.rewire_operation.in2_parameter_ref_handle);
+                            .in2_parameter_ref.operation_index,
+                        op->data.rewire_operation.in2_parameter_ref.handle_name);
                 } else {
                     yyjson_mut_obj_add_uint(
                         doc, obj, "in2_id",
@@ -880,12 +880,12 @@ static yyjson_mut_val *edit_op_to_json(yyjson_mut_doc *doc,
             }
             if ((op->data.rewire_operation.slot_flags &
                  NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u) {
-                if (op->data.rewire_operation.has_out_parameter_ref) {
+                if (op->data.rewire_operation.out_parameter_ref.has_ref) {
                     add_ref_json(
                         doc, obj, "out_operation", "out_handle",
                         op->data.rewire_operation
-                            .out_parameter_ref_operation_index,
-                        op->data.rewire_operation.out_parameter_ref_handle);
+                            .out_parameter_ref.operation_index,
+                        op->data.rewire_operation.out_parameter_ref.handle_name);
                 } else {
                     yyjson_mut_obj_add_uint(
                         doc, obj, "out_id",
@@ -1710,7 +1710,7 @@ static nmo_status_t parse_set_parameter_value(yyjson_val *op_obj,
         }
         return nmo_edit_plan_add_set_parameter_value(
             plan, (nmo_object_id_t)yyjson_get_uint(parameter_id_val),
-            value, options_ptr);
+            NULL, value, options_ptr);
     }
 
     if (operation_val == NULL || !yyjson_is_uint(operation_val) ||
@@ -1723,12 +1723,13 @@ static nmo_status_t parse_set_parameter_value(yyjson_val *op_obj,
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "Missing or invalid parameter_handle");
     }
-    return nmo_edit_plan_add_set_parameter_value_from_handle(
-        plan,
-        (size_t)(yyjson_get_uint(operation_val) - 1u),
-        yyjson_get_str(handle_val),
-        value,
-        options_ptr);
+    nmo_edit_handle_ref_t parameter_ref = {
+        .has_ref = true,
+        .operation_index = (size_t)(yyjson_get_uint(operation_val) - 1u),
+        .handle_name = yyjson_get_str(handle_val),
+    };
+    return nmo_edit_plan_add_set_parameter_value(
+        plan, 0u, &parameter_ref, value, options_ptr);
 }
 
 static nmo_status_t parse_set_parameter_bytes(yyjson_val *op_obj,
@@ -1778,7 +1779,7 @@ static nmo_status_t parse_set_parameter_bytes(yyjson_val *op_obj,
         }
         st = nmo_edit_plan_add_set_parameter_bytes(
             plan, (nmo_object_id_t)yyjson_get_uint(parameter_id_val),
-            bytes, byte_count, options_ptr);
+            NULL, bytes, byte_count, options_ptr);
     } else {
         if (operation_val == NULL || !yyjson_is_uint(operation_val) ||
             yyjson_get_uint(operation_val) == 0u) {
@@ -1792,9 +1793,13 @@ static nmo_status_t parse_set_parameter_bytes(yyjson_val *op_obj,
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "Missing or invalid parameter_handle");
         }
-        st = nmo_edit_plan_add_set_parameter_bytes_from_handle(
-            plan, (size_t)(yyjson_get_uint(operation_val) - 1u),
-            yyjson_get_str(handle_val), bytes, byte_count, options_ptr);
+        nmo_edit_handle_ref_t parameter_ref = {
+            .has_ref = true,
+            .operation_index = (size_t)(yyjson_get_uint(operation_val) - 1u),
+            .handle_name = yyjson_get_str(handle_val),
+        };
+        st = nmo_edit_plan_add_set_parameter_bytes(
+            plan, 0u, &parameter_ref, bytes, byte_count, options_ptr);
     }
     free(bytes);
     return st;
@@ -1807,9 +1812,7 @@ static nmo_status_t parse_optional_parameter_ref(
     const char *operation_key,
     const char *handle_key,
     nmo_object_id_t *out_id,
-    size_t *out_operation_index,
-    const char **out_handle,
-    bool *out_has_ref)
+    nmo_edit_handle_ref_t *out_ref)
 {
     yyjson_val *id_val = yyjson_obj_get(op_obj, id_key);
     yyjson_val *operation_val = yyjson_obj_get(op_obj, operation_key);
@@ -1817,9 +1820,7 @@ static nmo_status_t parse_optional_parameter_ref(
     bool has_id = id_val != NULL;
     bool has_ref = operation_val != NULL || handle_val != NULL;
     *out_id = 0u;
-    *out_operation_index = 0u;
-    *out_handle = NULL;
-    *out_has_ref = false;
+    *out_ref = (nmo_edit_handle_ref_t){0};
 
     if (!has_id && !has_ref) {
         return NMO_OK;
@@ -1847,9 +1848,11 @@ static nmo_status_t parse_optional_parameter_ref(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "Missing or invalid %s", handle_key);
     }
-    *out_operation_index = (size_t)(yyjson_get_uint(operation_val) - 1u);
-    *out_handle = yyjson_get_str(handle_val);
-    *out_has_ref = true;
+    *out_ref = (nmo_edit_handle_ref_t){
+        .has_ref = true,
+        .operation_index = (size_t)(yyjson_get_uint(operation_val) - 1u),
+        .handle_name = yyjson_get_str(handle_val),
+    };
     return NMO_OK;
 }
 
@@ -1885,6 +1888,10 @@ static nmo_status_t parse_add_behavior_link(yyjson_val *op_obj,
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "add_behavior_link requires either to_io_id or to_operation plus to_handle");
     }
+    nmo_object_id_t from_io_id = 0u;
+    nmo_object_id_t to_io_id = 0u;
+    nmo_edit_handle_ref_t from_ref = {0};
+    nmo_edit_handle_ref_t to_ref = {0};
     if (has_from_ref) {
         if (from_operation_val == NULL || !yyjson_is_uint(from_operation_val) ||
             yyjson_get_uint(from_operation_val) == 0u) {
@@ -1896,41 +1903,19 @@ static nmo_status_t parse_add_behavior_link(yyjson_val *op_obj,
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "Missing or invalid from_handle");
         }
-        if (has_to_ref) {
-            if (to_operation_val == NULL || !yyjson_is_uint(to_operation_val) ||
-                yyjson_get_uint(to_operation_val) == 0u) {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                 "Missing or invalid to_operation");
-            }
-            if (to_handle_val == NULL || !yyjson_is_str(to_handle_val) ||
-                yyjson_get_str(to_handle_val)[0] == '\0') {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                 "Missing or invalid to_handle");
-            }
-            return nmo_edit_plan_add_behavior_link_from_handles(
-                plan, parent_id,
-                (size_t)(yyjson_get_uint(from_operation_val) - 1u),
-                yyjson_get_str(from_handle_val),
-                (size_t)(yyjson_get_uint(to_operation_val) - 1u),
-                yyjson_get_str(to_handle_val),
-                activation_delay);
-        }
-        if (!yyjson_is_uint(to_id_val) || yyjson_get_uint(to_id_val) == 0u ||
-            yyjson_get_uint(to_id_val) > UINT32_MAX) {
+        from_ref = (nmo_edit_handle_ref_t){
+            .has_ref = true,
+            .operation_index = (size_t)(yyjson_get_uint(from_operation_val) - 1u),
+            .handle_name = yyjson_get_str(from_handle_val),
+        };
+    } else {
+        if (!yyjson_is_uint(from_id_val) ||
+            yyjson_get_uint(from_id_val) == 0u ||
+            yyjson_get_uint(from_id_val) > UINT32_MAX) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "Missing or invalid to_io_id");
+                             "Missing or invalid from_io_id");
         }
-        return nmo_edit_plan_add_behavior_link_from_handle(
-            plan, parent_id,
-            (size_t)(yyjson_get_uint(from_operation_val) - 1u),
-            yyjson_get_str(from_handle_val),
-            (nmo_object_id_t)yyjson_get_uint(to_id_val),
-            activation_delay);
-    }
-    if (!yyjson_is_uint(from_id_val) || yyjson_get_uint(from_id_val) == 0u ||
-        yyjson_get_uint(from_id_val) > UINT32_MAX) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "Missing or invalid from_io_id");
+        from_io_id = (nmo_object_id_t)yyjson_get_uint(from_id_val);
     }
     if (has_to_ref) {
         if (to_operation_val == NULL || !yyjson_is_uint(to_operation_val) ||
@@ -1943,22 +1928,23 @@ static nmo_status_t parse_add_behavior_link(yyjson_val *op_obj,
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "Missing or invalid to_handle");
         }
-        return nmo_edit_plan_add_behavior_link_to_handle(
-            plan, parent_id,
-            (nmo_object_id_t)yyjson_get_uint(from_id_val),
-            (size_t)(yyjson_get_uint(to_operation_val) - 1u),
-            yyjson_get_str(to_handle_val),
-            activation_delay);
-    }
-    if (!yyjson_is_uint(to_id_val) || yyjson_get_uint(to_id_val) == 0u ||
-        yyjson_get_uint(to_id_val) > UINT32_MAX) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "Missing or invalid to_io_id");
+        to_ref = (nmo_edit_handle_ref_t){
+            .has_ref = true,
+            .operation_index = (size_t)(yyjson_get_uint(to_operation_val) - 1u),
+            .handle_name = yyjson_get_str(to_handle_val),
+        };
+    } else {
+        if (!yyjson_is_uint(to_id_val) || yyjson_get_uint(to_id_val) == 0u ||
+            yyjson_get_uint(to_id_val) > UINT32_MAX) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Missing or invalid to_io_id");
+        }
+        to_io_id = (nmo_object_id_t)yyjson_get_uint(to_id_val);
     }
     return nmo_edit_plan_add_behavior_link(
         plan, parent_id,
-        (nmo_object_id_t)yyjson_get_uint(from_id_val),
-        (nmo_object_id_t)yyjson_get_uint(to_id_val),
+        from_io_id, has_from_ref ? &from_ref : NULL,
+        to_io_id, has_to_ref ? &to_ref : NULL,
         activation_delay);
 }
 
@@ -2041,7 +2027,8 @@ static nmo_status_t parse_connect_parameter(yyjson_val *op_obj,
             return NMO_ERR_INVALID_FORMAT;
         }
         return nmo_edit_plan_add_connect_parameter(
-            plan, source_id, (nmo_object_id_t)yyjson_get_uint(target_id_val));
+            plan, source_id, (nmo_object_id_t)yyjson_get_uint(target_id_val),
+            NULL);
     }
     if (operation_val == NULL || !yyjson_is_uint(operation_val) ||
         yyjson_get_uint(operation_val) == 0u) {
@@ -2053,10 +2040,13 @@ static nmo_status_t parse_connect_parameter(yyjson_val *op_obj,
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "Missing or invalid target_handle");
     }
-    return nmo_edit_plan_add_connect_parameter_to_handle(
-        plan, source_id,
-        (size_t)(yyjson_get_uint(operation_val) - 1u),
-        yyjson_get_str(handle_val));
+    nmo_edit_handle_ref_t target_ref = {
+        .has_ref = true,
+        .operation_index = (size_t)(yyjson_get_uint(operation_val) - 1u),
+        .handle_name = yyjson_get_str(handle_val),
+    };
+    return nmo_edit_plan_add_connect_parameter(
+        plan, source_id, 0u, &target_ref);
 }
 
 static nmo_status_t parse_disconnect_parameter(yyjson_val *op_obj,
@@ -2114,53 +2104,34 @@ static nmo_status_t parse_add_operation(yyjson_val *op_obj,
     nmo_object_id_t in1_id = 0u;
     nmo_object_id_t in2_id = 0u;
     nmo_object_id_t out_id = 0u;
-    size_t in1_operation_index = 0u;
-    size_t in2_operation_index = 0u;
-    size_t out_operation_index = 0u;
-    const char *in1_handle = NULL;
-    const char *in2_handle = NULL;
-    const char *out_handle = NULL;
-    bool has_in1_ref = false;
-    bool has_in2_ref = false;
-    bool has_out_ref = false;
+    nmo_edit_handle_ref_t in1_ref = {0};
+    nmo_edit_handle_ref_t in2_ref = {0};
+    nmo_edit_handle_ref_t out_ref = {0};
 
     nmo_status_t st = parse_optional_parameter_ref(
         op_obj, "add_operation", "in1_id", "in1_operation", "in1_handle",
-        &in1_id, &in1_operation_index, &in1_handle, &has_in1_ref);
+        &in1_id, &in1_ref);
     if (st != NMO_OK) {
         return st;
     }
     st = parse_optional_parameter_ref(
         op_obj, "add_operation", "in2_id", "in2_operation", "in2_handle",
-        &in2_id, &in2_operation_index, &in2_handle, &has_in2_ref);
+        &in2_id, &in2_ref);
     if (st != NMO_OK) {
         return st;
     }
     st = parse_optional_parameter_ref(
         op_obj, "add_operation", "out_id", "out_operation", "out_handle",
-        &out_id, &out_operation_index, &out_handle, &has_out_ref);
+        &out_id, &out_ref);
     if (st != NMO_OK) {
         return st;
     }
 
-    if (has_in1_ref || has_in2_ref || has_out_ref) {
-        return nmo_edit_plan_add_operation_with_refs(
-            plan,
-            (nmo_object_id_t)parent_id,
-            operation_guid,
-            in1_id,
-            in1_operation_index,
-            in1_handle,
-            in2_id,
-            in2_operation_index,
-            in2_handle,
-            out_id,
-            out_operation_index,
-            out_handle);
-    }
     return nmo_edit_plan_add_operation(
         plan, (nmo_object_id_t)parent_id, operation_guid,
-        in1_id, in2_id, out_id);
+        in1_id, in1_ref.has_ref ? &in1_ref : NULL,
+        in2_id, in2_ref.has_ref ? &in2_ref : NULL,
+        out_id, out_ref.has_ref ? &out_ref : NULL);
 }
 
 static nmo_status_t parse_rewire_operation(yyjson_val *op_obj,
@@ -2177,67 +2148,49 @@ static nmo_status_t parse_rewire_operation(yyjson_val *op_obj,
     nmo_object_id_t in1_id = 0u;
     nmo_object_id_t in2_id = 0u;
     nmo_object_id_t out_id = 0u;
-    size_t in1_operation_index = 0u;
-    size_t in2_operation_index = 0u;
-    size_t out_operation_index = 0u;
-    const char *in1_handle = NULL;
-    const char *in2_handle = NULL;
-    const char *out_handle = NULL;
-    bool has_in1_ref = false;
-    bool has_in2_ref = false;
-    bool has_out_ref = false;
+    nmo_edit_handle_ref_t in1_ref = {0};
+    nmo_edit_handle_ref_t in2_ref = {0};
+    nmo_edit_handle_ref_t out_ref = {0};
     uint32_t slot_flags = 0u;
     if (!read_required_u32(op_obj, "operation_id", &operation_id, false)) {
         return NMO_ERR_INVALID_FORMAT;
     }
     nmo_status_t st = parse_optional_parameter_ref(
         op_obj, "rewire_operation", "in1_id", "in1_operation", "in1_handle",
-        &in1_id, &in1_operation_index, &in1_handle, &has_in1_ref);
+        &in1_id, &in1_ref);
     if (st != NMO_OK) {
         return st;
     }
     st = parse_optional_parameter_ref(
         op_obj, "rewire_operation", "in2_id", "in2_operation", "in2_handle",
-        &in2_id, &in2_operation_index, &in2_handle, &has_in2_ref);
+        &in2_id, &in2_ref);
     if (st != NMO_OK) {
         return st;
     }
     st = parse_optional_parameter_ref(
         op_obj, "rewire_operation", "out_id", "out_operation", "out_handle",
-        &out_id, &out_operation_index, &out_handle, &has_out_ref);
+        &out_id, &out_ref);
     if (st != NMO_OK) {
         return st;
     }
-    if (yyjson_obj_get(op_obj, "in1_id") != NULL || has_in1_ref) {
+    if (yyjson_obj_get(op_obj, "in1_id") != NULL || in1_ref.has_ref) {
         slot_flags |= NMO_SCRIPT_EDIT_OP_SLOT_IN1;
     }
-    if (yyjson_obj_get(op_obj, "in2_id") != NULL || has_in2_ref) {
+    if (yyjson_obj_get(op_obj, "in2_id") != NULL || in2_ref.has_ref) {
         slot_flags |= NMO_SCRIPT_EDIT_OP_SLOT_IN2;
     }
-    if (yyjson_obj_get(op_obj, "out_id") != NULL || has_out_ref) {
+    if (yyjson_obj_get(op_obj, "out_id") != NULL || out_ref.has_ref) {
         slot_flags |= NMO_SCRIPT_EDIT_OP_SLOT_OUT;
     }
     if (slot_flags == 0u) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "rewire_operation requires in1_id, in1_operation, in2_id, in2_operation, out_id, or out_operation");
     }
-    if (has_in1_ref || has_in2_ref || has_out_ref) {
-        return nmo_edit_plan_add_rewire_operation_with_refs(
-            plan,
-            operation_id,
-            slot_flags,
-            in1_id,
-            in1_operation_index,
-            in1_handle,
-            in2_id,
-            in2_operation_index,
-            in2_handle,
-            out_id,
-            out_operation_index,
-            out_handle);
-    }
     return nmo_edit_plan_add_rewire_operation(
-        plan, operation_id, slot_flags, in1_id, in2_id, out_id);
+        plan, operation_id, slot_flags,
+        in1_id, in1_ref.has_ref ? &in1_ref : NULL,
+        in2_id, in2_ref.has_ref ? &in2_ref : NULL,
+        out_id, out_ref.has_ref ? &out_ref : NULL);
 }
 
 static nmo_status_t parse_remove_operation(yyjson_val *op_obj,
@@ -2510,84 +2463,84 @@ static nmo_status_t validate_parsed_op_refs(
 
     switch (op->kind) {
         case NMO_EDIT_OP_SET_PARAMETER_VALUE:
-            if (op->data.set_value.has_parameter_ref) {
+            if (op->data.set_value.parameter_ref.has_ref) {
                 return validate_operation_ref_index(
                     "parameter_operation",
-                    op->data.set_value.parameter_ref_operation_index,
+                    op->data.set_value.parameter_ref.operation_index,
                     current_index);
             }
             break;
         case NMO_EDIT_OP_SET_PARAMETER_BYTES:
-            if (op->data.set_bytes.has_parameter_ref) {
+            if (op->data.set_bytes.parameter_ref.has_ref) {
                 return validate_operation_ref_index(
                     "parameter_operation",
-                    op->data.set_bytes.parameter_ref_operation_index,
+                    op->data.set_bytes.parameter_ref.operation_index,
                     current_index);
             }
             break;
         case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
-            if (op->data.add_link.has_from_io_ref) {
+            if (op->data.add_link.from_io_ref.has_ref) {
                 NMO_RETURN_IF_ERROR(validate_operation_ref_index(
                     "from_operation",
-                    op->data.add_link.from_io_ref_operation_index,
+                    op->data.add_link.from_io_ref.operation_index,
                     current_index));
             }
-            if (op->data.add_link.has_to_io_ref) {
+            if (op->data.add_link.to_io_ref.has_ref) {
                 NMO_RETURN_IF_ERROR(validate_operation_ref_index(
                     "to_operation",
-                    op->data.add_link.to_io_ref_operation_index,
+                    op->data.add_link.to_io_ref.operation_index,
                     current_index));
             }
             break;
         case NMO_EDIT_OP_CONNECT_PARAMETER:
-            if (op->data.connect_parameter.has_target_parameter_ref) {
+            if (op->data.connect_parameter.target_parameter_ref.has_ref) {
                 return validate_operation_ref_index(
                     "target_operation",
                     op->data.connect_parameter
-                        .target_parameter_ref_operation_index,
+                        .target_parameter_ref.operation_index,
                     current_index);
             }
             break;
         case NMO_EDIT_OP_ADD_OPERATION:
-            if (op->data.add_operation.has_in1_parameter_ref) {
+            if (op->data.add_operation.in1_parameter_ref.has_ref) {
                 NMO_RETURN_IF_ERROR(validate_operation_ref_index(
                     "in1_operation",
-                    op->data.add_operation.in1_parameter_ref_operation_index,
+                    op->data.add_operation.in1_parameter_ref.operation_index,
                     current_index));
             }
-            if (op->data.add_operation.has_in2_parameter_ref) {
+            if (op->data.add_operation.in2_parameter_ref.has_ref) {
                 NMO_RETURN_IF_ERROR(validate_operation_ref_index(
                     "in2_operation",
-                    op->data.add_operation.in2_parameter_ref_operation_index,
+                    op->data.add_operation.in2_parameter_ref.operation_index,
                     current_index));
             }
-            if (op->data.add_operation.has_out_parameter_ref) {
+            if (op->data.add_operation.out_parameter_ref.has_ref) {
                 NMO_RETURN_IF_ERROR(validate_operation_ref_index(
                     "out_operation",
-                    op->data.add_operation.out_parameter_ref_operation_index,
+                    op->data.add_operation.out_parameter_ref.operation_index,
                     current_index));
             }
             break;
         case NMO_EDIT_OP_REWIRE_OPERATION:
-            if (op->data.rewire_operation.has_in1_parameter_ref) {
+            if (op->data.rewire_operation.in1_parameter_ref.has_ref) {
                 NMO_RETURN_IF_ERROR(validate_operation_ref_index(
                     "in1_operation",
                     op->data.rewire_operation
-                        .in1_parameter_ref_operation_index,
+                        .in1_parameter_ref.operation_index,
                     current_index));
             }
-            if (op->data.rewire_operation.has_in2_parameter_ref) {
+            if (op->data.rewire_operation.in2_parameter_ref.has_ref) {
                 NMO_RETURN_IF_ERROR(validate_operation_ref_index(
                     "in2_operation",
                     op->data.rewire_operation
-                        .in2_parameter_ref_operation_index,
+                        .in2_parameter_ref.operation_index,
                     current_index));
             }
-            if (op->data.rewire_operation.has_out_parameter_ref) {
+            if (op->data.rewire_operation.out_parameter_ref.has_ref) {
                 NMO_RETURN_IF_ERROR(validate_operation_ref_index(
                     "out_operation",
                     op->data.rewire_operation
-                        .out_parameter_ref_operation_index,
+                        .out_parameter_ref.operation_index,
                     current_index));
             }
             break;

@@ -38,6 +38,17 @@ static char *project_script_make_node_name(
     const char *script_name,
     const char *suffix);
 
+static nmo_edit_handle_ref_t project_script_handle_ref(
+    size_t operation_index,
+    const char *handle_name)
+{
+    return (nmo_edit_handle_ref_t){
+        .has_ref = true,
+        .operation_index = operation_index,
+        .handle_name = handle_name,
+    };
+}
+
 static char *project_script_make_debug_name(const char *script_name)
 {
     return project_script_make_node_name(script_name, "_DebugOutput");
@@ -90,12 +101,10 @@ static nmo_status_t project_script_add_debug_output(
             node_name);
     }
     if (status == NMO_OK) {
-        status = nmo_edit_plan_add_set_parameter_value_from_handle(
-            edit_plan,
-            0u,
-            "input_param:String",
-            message,
-            NULL);
+        nmo_edit_handle_ref_t input_ref =
+            project_script_handle_ref(0u, "input_param:String");
+        status = nmo_edit_plan_add_set_parameter_value(
+            edit_plan, 0u, &input_ref, message, NULL);
     }
     if (status == NMO_OK) {
         status = nmo_edit_executor_execute(workspace, edit_plan, NULL, &edit_report);
@@ -151,30 +160,27 @@ static nmo_status_t project_script_add_triggered_debug_output(
     }
     if (status == NMO_OK) {
         if (trigger_param_handle && trigger_param_value) {
-            status = nmo_edit_plan_add_set_parameter_value_from_handle(
-                edit_plan,
-                0u,
-                trigger_param_handle,
-                trigger_param_value,
-                NULL);
+            nmo_edit_handle_ref_t trigger_param_ref =
+                project_script_handle_ref(0u, trigger_param_handle);
+            status = nmo_edit_plan_add_set_parameter_value(
+                edit_plan, 0u, &trigger_param_ref, trigger_param_value, NULL);
         }
     }
     if (status == NMO_OK) {
-        status = nmo_edit_plan_add_set_parameter_value_from_handle(
-            edit_plan,
-            1u,
-            "input_param:String",
-            message,
-            NULL);
+        nmo_edit_handle_ref_t input_ref =
+            project_script_handle_ref(1u, "input_param:String");
+        status = nmo_edit_plan_add_set_parameter_value(
+            edit_plan, 0u, &input_ref, message, NULL);
     }
     if (status == NMO_OK) {
-        status = nmo_edit_plan_add_behavior_link_from_handles(
-            edit_plan,
-            behavior_id,
-            0u,
-            trigger_output_handle,
-            1u,
-            "input:In",
+        nmo_edit_handle_ref_t trigger_output_ref =
+            project_script_handle_ref(0u, trigger_output_handle);
+        nmo_edit_handle_ref_t input_ref =
+            project_script_handle_ref(1u, "input:In");
+        status = nmo_edit_plan_add_behavior_link(
+            edit_plan, behavior_id,
+            0u, &trigger_output_ref,
+            0u, &input_ref,
             0u);
     }
     if (status == NMO_OK) {

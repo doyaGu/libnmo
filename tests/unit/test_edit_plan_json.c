@@ -39,6 +39,17 @@ static void assert_plan_op_kind(const nmo_edit_plan_t *plan,
     ASSERT_EQ(expected, op->kind);
 }
 
+static nmo_edit_handle_ref_t edit_plan_json_handle_ref(
+    size_t operation_index,
+    const char *handle_name)
+{
+    return (nmo_edit_handle_ref_t){
+        .has_ref = true,
+        .operation_index = operation_index,
+        .handle_name = handle_name,
+    };
+}
+
 static void assert_manifest_invalid_contains(const char *operations_json,
                                              const char *expected_message)
 {
@@ -92,21 +103,20 @@ TEST(edit_plan_json, writes_manifest_with_operation_handle_refs) {
                                           NMO_SCRIPT_EDIT_PARAM_IN,
                                           CKPGUID_STRING,
                                           "Runtime Text"));
+    nmo_edit_handle_ref_t parameter_ref =
+        edit_plan_json_handle_ref(0u, "parameter");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_set_parameter_value_from_handle(
-                  plan, 0u, "parameter", "hello", NULL));
+              nmo_edit_plan_add_set_parameter_value(
+                  plan, 0u, &parameter_ref, "hello", NULL));
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_operation_with_refs(
+              nmo_edit_plan_add_operation(
                   plan,
                   42u,
                   nmo_guid_parse("33CC6B49-3589282B"),
                   0u,
-                  0u,
-                  "parameter",
-                  0u,
+                  &parameter_ref,
                   0u,
                   NULL,
-                  0u,
                   0u,
                   NULL));
 
@@ -173,21 +183,20 @@ TEST(edit_plan_json, reads_manifest_with_operation_handle_refs) {
                                           NMO_SCRIPT_EDIT_PARAM_IN,
                                           CKPGUID_STRING,
                                           "Runtime Text"));
+    nmo_edit_handle_ref_t parameter_ref =
+        edit_plan_json_handle_ref(0u, "parameter");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_set_parameter_value_from_handle(
-                  plan, 0u, "parameter", "hello", NULL));
+              nmo_edit_plan_add_set_parameter_value(
+                  plan, 0u, &parameter_ref, "hello", NULL));
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_operation_with_refs(
+              nmo_edit_plan_add_operation(
                   plan,
                   42u,
                   nmo_guid_parse("33CC6B49-3589282B"),
                   0u,
-                  0u,
-                  "parameter",
-                  0u,
+                  &parameter_ref,
                   0u,
                   NULL,
-                  0u,
                   0u,
                   NULL));
     ASSERT_EQ(NMO_OK,
@@ -205,23 +214,23 @@ TEST(edit_plan_json, reads_manifest_with_operation_handle_refs) {
     const nmo_edit_op_t *set_op = nmo_edit_plan_get(manifest.plan, 1u);
     ASSERT_NOT_NULL(set_op);
     ASSERT_EQ(NMO_EDIT_OP_SET_PARAMETER_VALUE, set_op->kind);
-    ASSERT_TRUE(set_op->data.set_value.has_parameter_ref);
-    ASSERT_EQ(0u, set_op->data.set_value.parameter_ref_operation_index);
-    ASSERT_STR_EQ("parameter", set_op->data.set_value.parameter_ref_handle);
+    ASSERT_TRUE(set_op->data.set_value.parameter_ref.has_ref);
+    ASSERT_EQ(0u, set_op->data.set_value.parameter_ref.operation_index);
+    ASSERT_STR_EQ("parameter", set_op->data.set_value.parameter_ref.handle_name);
     ASSERT_STR_EQ("hello", set_op->data.set_value.value);
 
     const nmo_edit_op_t *operation_op = nmo_edit_plan_get(manifest.plan, 2u);
     ASSERT_NOT_NULL(operation_op);
     ASSERT_EQ(NMO_EDIT_OP_ADD_OPERATION, operation_op->kind);
-    ASSERT_TRUE(operation_op->data.add_operation.has_in1_parameter_ref);
+    ASSERT_TRUE(operation_op->data.add_operation.in1_parameter_ref.has_ref);
     ASSERT_EQ(0u,
               operation_op->data.add_operation
-                  .in1_parameter_ref_operation_index);
+                  .in1_parameter_ref.operation_index);
     ASSERT_STR_EQ("parameter",
                   operation_op->data.add_operation
-                      .in1_parameter_ref_handle);
-    ASSERT_FALSE(operation_op->data.add_operation.has_in2_parameter_ref);
-    ASSERT_FALSE(operation_op->data.add_operation.has_out_parameter_ref);
+                      .in1_parameter_ref.handle_name);
+    ASSERT_FALSE(operation_op->data.add_operation.in2_parameter_ref.has_ref);
+    ASSERT_FALSE(operation_op->data.add_operation.out_parameter_ref.has_ref);
 
     nmo_edit_plan_manifest_dispose(&manifest);
     nmo_edit_plan_manifest_json_free(json);
@@ -245,7 +254,7 @@ TEST(edit_plan_json, writes_structured_manager_entry_options)
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_set_parameter_value(
-                  plan, 7u, "CreatedMessage", &options));
+                  plan, 7u, NULL, "CreatedMessage", &options));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_json_write(plan, &json));
     ASSERT_NOT_NULL(json);
 
@@ -343,7 +352,7 @@ TEST(edit_plan_json, roundtrips_attribute_manager_create_options)
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_set_parameter_value(
-                  plan, 7u, "CustomAttr", &options));
+                  plan, 7u, NULL, "CustomAttr", &options));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_json_write(plan, &json));
     ASSERT_NOT_NULL(json);
     ASSERT_STR_CONTAINS(json, "\"schema\":\"attribute\"");
@@ -407,19 +416,18 @@ TEST(edit_plan_json, roundtrips_rewire_operation_handle_refs)
                                           NMO_SCRIPT_EDIT_PARAM_IN,
                                           CKPGUID_STRING,
                                           "Runtime Text"));
+    nmo_edit_handle_ref_t parameter_ref =
+        edit_plan_json_handle_ref(0u, "parameter");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_rewire_operation_with_refs(
+              nmo_edit_plan_add_rewire_operation(
                   plan,
                   55u,
                   NMO_SCRIPT_EDIT_OP_SLOT_IN1 |
                       NMO_SCRIPT_EDIT_OP_SLOT_OUT,
                   0u,
-                  0u,
-                  "parameter",
-                  0u,
+                  &parameter_ref,
                   0u,
                   NULL,
-                  0u,
                   0u,
                   NULL));
     ASSERT_EQ(NMO_OK,
@@ -453,12 +461,12 @@ TEST(edit_plan_json, roundtrips_rewire_operation_handle_refs)
                  NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u);
     ASSERT_TRUE((op->data.rewire_operation.slot_flags &
                  NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u);
-    ASSERT_TRUE(op->data.rewire_operation.has_in1_parameter_ref);
+    ASSERT_TRUE(op->data.rewire_operation.in1_parameter_ref.has_ref);
     ASSERT_EQ(0u,
               op->data.rewire_operation
-                  .in1_parameter_ref_operation_index);
+                  .in1_parameter_ref.operation_index);
     ASSERT_STR_EQ("parameter",
-                  op->data.rewire_operation.in1_parameter_ref_handle);
+                  op->data.rewire_operation.in1_parameter_ref.handle_name);
     ASSERT_EQ(0u, op->data.rewire_operation.out_parameter_id);
 
     nmo_edit_plan_manifest_dispose(&manifest);
@@ -510,7 +518,7 @@ TEST(edit_plan_json, roundtrips_absent_parameter_bytes_options) {
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_set_parameter_bytes(
-                  plan, 42u, bytes, sizeof(bytes), NULL));
+                  plan, 42u, NULL, bytes, sizeof(bytes), NULL));
 
     ASSERT_EQ(NMO_OK, nmo_edit_plan_json_write(plan, &json));
     ASSERT_NOT_NULL(json);
@@ -602,8 +610,8 @@ TEST(edit_plan_json, roundtrips_all_current_ops) {
     memset(&manifest, 0, sizeof(manifest));
 
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
-    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_set_parameter_value(plan, 1u, "value", &resize_options));
-    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_set_parameter_bytes(plan, 2u, bytes, sizeof(bytes), &resize_options));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_set_parameter_value(plan, 1u, NULL, "value", &resize_options));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_set_parameter_bytes(plan, 2u, NULL, bytes, sizeof(bytes), &resize_options));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_node_ex(
                   plan,
@@ -620,16 +628,22 @@ TEST(edit_plan_json, roundtrips_all_current_ops) {
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_io(plan, 7u, NMO_SCRIPT_EDIT_IO_OUTPUT, "Out"));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_rename_io(plan, 8u, "Renamed"));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_io(plan, 9u, true));
-    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_behavior_link_from_handles(plan, 10u, 2u, "out", 4u, "in", 11u));
+    nmo_edit_handle_ref_t from_ref = edit_plan_json_handle_ref(2u, "out");
+    nmo_edit_handle_ref_t to_ref = edit_plan_json_handle_ref(4u, "in");
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_behavior_link(plan, 10u, 0u, &from_ref, 0u, &to_ref, 11u));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_rewire_behavior_link(plan, 12u, 13u, 14u));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_set_behavior_link_delay(plan, 15u, 16u));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_behavior_link(plan, 17u, 18u));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_parameter(plan, 19u, NMO_SCRIPT_EDIT_PARAM_SHARED, CKPGUID_STRING, "Param"));
-    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_connect_parameter_to_handle(plan, 20u, 11u, "parameter"));
+    nmo_edit_handle_ref_t target_ref =
+        edit_plan_json_handle_ref(11u, "parameter");
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_connect_parameter(plan, 20u, 0u, &target_ref));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_disconnect_parameter(plan, 21u));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_parameter(plan, 22u, true));
-    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_operation_with_refs(plan, 23u, nmo_guid_parse("33CC6B49-3589282B"), 0u, 11u, "parameter", 24u, 0u, NULL, 25u, 0u, NULL));
-    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_rewire_operation(plan, 26u, NMO_SCRIPT_EDIT_OP_SLOT_IN1 | NMO_SCRIPT_EDIT_OP_SLOT_OUT, 27u, 0u, 28u));
+    nmo_edit_handle_ref_t in1_ref =
+        edit_plan_json_handle_ref(11u, "parameter");
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_operation(plan, 23u, nmo_guid_parse("33CC6B49-3589282B"), 0u, &in1_ref, 24u, NULL, 25u, NULL));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_rewire_operation(plan, 26u, NMO_SCRIPT_EDIT_OP_SLOT_IN1 | NMO_SCRIPT_EDIT_OP_SLOT_OUT, 27u, NULL, 0u, NULL, 28u, NULL));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_operation(plan, 29u));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_interface_policy(plan, 30u, NMO_SCRIPT_EDIT_INTERFACE_REMOVE));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_data_cell(plan, 31u, 32u, 33u, "cell"));
@@ -678,32 +692,32 @@ TEST(edit_plan_json, roundtrips_all_current_ops) {
     ASSERT_EQ(6u, remove_node->data.remove_node.delete_flags);
     const nmo_edit_op_t *link = nmo_edit_plan_get(manifest.plan, 7u);
     ASSERT_NOT_NULL(link);
-    ASSERT_TRUE(link->data.add_link.has_from_io_ref);
-    ASSERT_EQ(2u, link->data.add_link.from_io_ref_operation_index);
-    ASSERT_STR_EQ("out", link->data.add_link.from_io_ref_handle);
-    ASSERT_TRUE(link->data.add_link.has_to_io_ref);
-    ASSERT_EQ(4u, link->data.add_link.to_io_ref_operation_index);
-    ASSERT_STR_EQ("in", link->data.add_link.to_io_ref_handle);
+    ASSERT_TRUE(link->data.add_link.from_io_ref.has_ref);
+    ASSERT_EQ(2u, link->data.add_link.from_io_ref.operation_index);
+    ASSERT_STR_EQ("out", link->data.add_link.from_io_ref.handle_name);
+    ASSERT_TRUE(link->data.add_link.to_io_ref.has_ref);
+    ASSERT_EQ(4u, link->data.add_link.to_io_ref.operation_index);
+    ASSERT_STR_EQ("in", link->data.add_link.to_io_ref.handle_name);
     ASSERT_EQ(11u, link->data.add_link.activation_delay);
     const nmo_edit_op_t *connect = nmo_edit_plan_get(manifest.plan, 12u);
     ASSERT_NOT_NULL(connect);
     ASSERT_EQ(20u, connect->data.connect_parameter.source_parameter_id);
-    ASSERT_TRUE(connect->data.connect_parameter.has_target_parameter_ref);
+    ASSERT_TRUE(connect->data.connect_parameter.target_parameter_ref.has_ref);
     ASSERT_EQ(11u,
               connect->data.connect_parameter
-                  .target_parameter_ref_operation_index);
+                  .target_parameter_ref.operation_index);
     ASSERT_STR_EQ("parameter",
                   connect->data.connect_parameter
-                      .target_parameter_ref_handle);
+                      .target_parameter_ref.handle_name);
     const nmo_edit_op_t *add_operation = nmo_edit_plan_get(manifest.plan, 15u);
     ASSERT_NOT_NULL(add_operation);
-    ASSERT_TRUE(add_operation->data.add_operation.has_in1_parameter_ref);
+    ASSERT_TRUE(add_operation->data.add_operation.in1_parameter_ref.has_ref);
     ASSERT_EQ(11u,
               add_operation->data.add_operation
-                  .in1_parameter_ref_operation_index);
+                  .in1_parameter_ref.operation_index);
     ASSERT_STR_EQ("parameter",
                   add_operation->data.add_operation
-                      .in1_parameter_ref_handle);
+                      .in1_parameter_ref.handle_name);
     ASSERT_EQ(24u, add_operation->data.add_operation.in2_parameter_id);
     ASSERT_EQ(25u, add_operation->data.add_operation.out_parameter_id);
     const nmo_edit_op_t *rewire_operation =

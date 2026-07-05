@@ -808,6 +808,16 @@ static nmo_status_t nmo_lua_behavior_parse_object_ref(
     NMO_RETURN_OK();
 }
 
+static nmo_edit_handle_ref_t nmo_lua_behavior_edit_handle_ref(
+    const nmo_lua_behavior_pending_ref_t *ref)
+{
+    return (nmo_edit_handle_ref_t){
+        .has_ref = ref != NULL && ref->has_ref,
+        .operation_index = ref != NULL ? ref->operation_index : 0u,
+        .handle_name = ref != NULL ? ref->handle_name : NULL,
+    };
+}
+
 static int nmo_lua_behavior_parse_manager_entry_policy(
     lua_State *state,
     int index,
@@ -2461,20 +2471,14 @@ static int nmo_lua_behavior_set_parameter_value(lua_State *state)
     if (option_rc != 0) {
         return option_rc;
     }
-    if (parameter.has_ref) {
-        status = nmo_edit_plan_add_set_parameter_value_from_handle(
-            handle->plan,
-            parameter.operation_index,
-            parameter.handle_name,
-            value_text,
-            has_options ? &options : NULL);
-    } else {
-        status = nmo_edit_plan_add_set_parameter_value(
-            handle->plan,
-            parameter.id,
-            value_text,
-            has_options ? &options : NULL);
-    }
+    nmo_edit_handle_ref_t parameter_ref =
+        nmo_lua_behavior_edit_handle_ref(&parameter);
+    status = nmo_edit_plan_add_set_parameter_value(
+        handle->plan,
+        parameter.id,
+        parameter.has_ref ? &parameter_ref : NULL,
+        value_text,
+        has_options ? &options : NULL);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to set parameter value");
     }
@@ -2504,22 +2508,15 @@ static int nmo_lua_behavior_set_parameter_bytes(lua_State *state)
     if (option_rc != 0) {
         return option_rc;
     }
-    if (parameter.has_ref) {
-        status = nmo_edit_plan_add_set_parameter_bytes_from_handle(
-            handle->plan,
-            parameter.operation_index,
-            parameter.handle_name,
-            (const uint8_t *)bytes,
-            byte_count,
-            has_options ? &options : NULL);
-    } else {
-        status = nmo_edit_plan_add_set_parameter_bytes(
-            handle->plan,
-            parameter.id,
-            (const uint8_t *)bytes,
-            byte_count,
-            has_options ? &options : NULL);
-    }
+    nmo_edit_handle_ref_t parameter_ref =
+        nmo_lua_behavior_edit_handle_ref(&parameter);
+    status = nmo_edit_plan_add_set_parameter_bytes(
+        handle->plan,
+        parameter.id,
+        parameter.has_ref ? &parameter_ref : NULL,
+        (const uint8_t *)bytes,
+        byte_count,
+        has_options ? &options : NULL);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to set parameter bytes");
     }
@@ -2540,16 +2537,13 @@ static int nmo_lua_behavior_connect_parameter(lua_State *state)
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Invalid target parameter reference");
     }
-    if (target_parameter.has_ref) {
-        status = nmo_edit_plan_add_connect_parameter_to_handle(
-            handle->plan,
-            source_parameter_id,
-            target_parameter.operation_index,
-            target_parameter.handle_name);
-    } else {
-        status = nmo_edit_plan_add_connect_parameter(
-            handle->plan, source_parameter_id, target_parameter.id);
-    }
+    nmo_edit_handle_ref_t target_ref =
+        nmo_lua_behavior_edit_handle_ref(&target_parameter);
+    status = nmo_edit_plan_add_connect_parameter(
+        handle->plan,
+        source_parameter_id,
+        target_parameter.id,
+        target_parameter.has_ref ? &target_ref : NULL);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to connect parameter");
     }
@@ -2611,39 +2605,18 @@ static int nmo_lua_behavior_add_link(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid target io reference");
     }
     activation_delay = nmo_lua_behavior_optional_flags(state, 5, 0u);
-    if (from_io.has_ref && to_io.has_ref) {
-        status = nmo_edit_plan_add_behavior_link_from_handles(
-            handle->plan,
-            parent_behavior_id,
-            from_io.operation_index,
-            from_io.handle_name,
-            to_io.operation_index,
-            to_io.handle_name,
-            activation_delay);
-    } else if (from_io.has_ref) {
-        status = nmo_edit_plan_add_behavior_link_from_handle(
-            handle->plan,
-            parent_behavior_id,
-            from_io.operation_index,
-            from_io.handle_name,
-            to_io.id,
-            activation_delay);
-    } else if (to_io.has_ref) {
-        status = nmo_edit_plan_add_behavior_link_to_handle(
-            handle->plan,
-            parent_behavior_id,
-            from_io.id,
-            to_io.operation_index,
-            to_io.handle_name,
-            activation_delay);
-    } else {
-        status = nmo_edit_plan_add_behavior_link(
-            handle->plan,
-            parent_behavior_id,
-            from_io.id,
-            to_io.id,
-            activation_delay);
-    }
+    nmo_edit_handle_ref_t from_ref =
+        nmo_lua_behavior_edit_handle_ref(&from_io);
+    nmo_edit_handle_ref_t to_ref =
+        nmo_lua_behavior_edit_handle_ref(&to_io);
+    status = nmo_edit_plan_add_behavior_link(
+        handle->plan,
+        parent_behavior_id,
+        from_io.id,
+        from_io.has_ref ? &from_ref : NULL,
+        to_io.id,
+        to_io.has_ref ? &to_ref : NULL,
+        activation_delay);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to add link");
     }
@@ -2739,29 +2712,22 @@ static int nmo_lua_behavior_add_operation(lua_State *state)
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Invalid output parameter reference");
     }
-    if (in1.has_ref || in2.has_ref || out.has_ref) {
-        status = nmo_edit_plan_add_operation_with_refs(
-            handle->plan,
-            parent_behavior_id,
-            operation_guid,
-            in1.id,
-            in1.operation_index,
-            in1.has_ref ? in1.handle_name : NULL,
-            in2.id,
-            in2.operation_index,
-            in2.has_ref ? in2.handle_name : NULL,
-            out.id,
-            out.operation_index,
-            out.has_ref ? out.handle_name : NULL);
-    } else {
-        status = nmo_edit_plan_add_operation(
-            handle->plan,
-            parent_behavior_id,
-            operation_guid,
-            in1.id,
-            in2.id,
-            out.id);
-    }
+    nmo_edit_handle_ref_t in1_ref =
+        nmo_lua_behavior_edit_handle_ref(&in1);
+    nmo_edit_handle_ref_t in2_ref =
+        nmo_lua_behavior_edit_handle_ref(&in2);
+    nmo_edit_handle_ref_t out_ref =
+        nmo_lua_behavior_edit_handle_ref(&out);
+    status = nmo_edit_plan_add_operation(
+        handle->plan,
+        parent_behavior_id,
+        operation_guid,
+        in1.id,
+        in1.has_ref ? &in1_ref : NULL,
+        in2.id,
+        in2.has_ref ? &in2_ref : NULL,
+        out.id,
+        out.has_ref ? &out_ref : NULL);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to add operation");
     }
@@ -2790,8 +2756,11 @@ static int nmo_lua_behavior_rewire_operation(lua_State *state)
                                                 operation_id,
                                                 slot_flags,
                                                 in1_parameter_id,
+                                                NULL,
                                                 in2_parameter_id,
-                                                out_parameter_id);
+                                                NULL,
+                                                out_parameter_id,
+                                                NULL);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to rewire operation");
     }

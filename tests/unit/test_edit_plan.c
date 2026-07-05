@@ -42,6 +42,17 @@ static void create_object_or_fail(
     ASSERT_TRUE(*out_id != 0);
 }
 
+static nmo_edit_handle_ref_t edit_plan_test_handle_ref(
+    size_t operation_index,
+    const char *handle_name)
+{
+    return (nmo_edit_handle_ref_t){
+        .has_ref = true,
+        .operation_index = operation_index,
+        .handle_name = handle_name,
+    };
+}
+
 typedef struct edit_plan_fixture {
     nmo_context_t *ctx;
     nmo_session_t *session;
@@ -468,7 +479,7 @@ TEST(edit_plan, stores_parameter_value_ops) {
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(0u, nmo_edit_plan_count(plan));
 
-    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_set_parameter_value(plan, 42, "value", NULL));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_set_parameter_value(plan, 42, NULL, "value", NULL));
     ASSERT_EQ(1u, nmo_edit_plan_count(plan));
     const nmo_edit_op_t *op = nmo_edit_plan_get(plan, 0);
     ASSERT_NOT_NULL(op);
@@ -516,19 +527,19 @@ TEST(edit_plan, stores_full_script_edit_ops_and_clones_plan) {
         plan, 4, NMO_SCRIPT_EDIT_IO_INPUT, "Input"));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_rename_io(plan, 5, "Renamed"));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_io(plan, 6, true));
-    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_behavior_link(plan, 7, 8, 9, 10));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_behavior_link(plan, 7, 8, NULL, 9, NULL, 10));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_rewire_behavior_link(plan, 11, 12, 13));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_set_behavior_link_delay(plan, 14, 15));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_behavior_link(plan, 16, 17));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_parameter(
         plan, 18, NMO_SCRIPT_EDIT_PARAM_IN, CKPGUID_STRING, "Param"));
-    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_connect_parameter(plan, 19, 20));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_connect_parameter(plan, 19, 20, NULL));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_disconnect_parameter(plan, 21));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_parameter(plan, 22, true));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_operation(
-        plan, 23, nmo_guid_parse("55555555-66666666"), 24, 25, 26));
+        plan, 23, nmo_guid_parse("55555555-66666666"), 24, NULL, 25, NULL, 26, NULL));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_rewire_operation(
-        plan, 27, NMO_SCRIPT_EDIT_OP_SLOT_IN1, 28, 29, 30));
+        plan, 27, NMO_SCRIPT_EDIT_OP_SLOT_IN1, 28, NULL, 29, NULL, 30, NULL));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_operation(plan, 31));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_add_interface_policy(
         plan, 32, NMO_SCRIPT_EDIT_INTERFACE_CANONICALIZE));
@@ -633,7 +644,7 @@ TEST(edit_plan, executor_commits_parameter_value_plan) {
     ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_set_parameter_value(plan, param_id, "new value", NULL));
+              nmo_edit_plan_add_set_parameter_value(plan, param_id, NULL, "new value", NULL));
 
     ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
     ASSERT_TRUE(report.ok);
@@ -683,7 +694,7 @@ TEST(edit_plan, executor_report_carries_probe_selector_analysis) {
     ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_set_parameter_value(plan, param_id, "new value", NULL));
+              nmo_edit_plan_add_set_parameter_value(plan, param_id, NULL, "new value", NULL));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_set_probe_selector_analysis(plan, &analysis));
 
@@ -717,9 +728,9 @@ TEST(edit_plan, executor_rolls_back_failed_plan) {
     ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_set_parameter_value(plan, param_id, "new value", NULL));
+              nmo_edit_plan_add_set_parameter_value(plan, param_id, NULL, "new value", NULL));
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_set_parameter_value(plan, 999999u, "bad", NULL));
+              nmo_edit_plan_add_set_parameter_value(plan, 999999u, NULL, "bad", NULL));
 
     ASSERT_EQ(NMO_ERR_NOT_FOUND,
               nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
@@ -752,11 +763,13 @@ TEST(edit_plan, executor_rolls_back_created_handle_chain_failure) {
                   NMO_SCRIPT_EDIT_PARAM_IN,
                   CKPGUID_STRING,
                   "Created Before Failure"));
+    nmo_edit_handle_ref_t missing_ref =
+        edit_plan_test_handle_ref(0u, "missing-parameter-handle");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_set_parameter_value_from_handle(
+              nmo_edit_plan_add_set_parameter_value(
                   plan,
                   0u,
-                  "missing-parameter-handle",
+                  &missing_ref,
                   "bad",
                   NULL));
 
@@ -789,7 +802,7 @@ TEST(edit_plan, executor_dry_run_reports_without_persisting) {
     ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_set_parameter_value(plan, param_id, "new value", NULL));
+              nmo_edit_plan_add_set_parameter_value(plan, param_id, NULL, "new value", NULL));
     nmo_edit_executor_options_t options = nmo_edit_executor_options_default();
     options.dry_run = true;
 
@@ -819,7 +832,7 @@ TEST(edit_plan, executor_writes_manager_parameter_values) {
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_set_parameter_value(
-                  plan, param_id, "12345678-9ABCDEF0:77", NULL));
+                  plan, param_id, NULL, "12345678-9ABCDEF0:77", NULL));
 
     ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
     ASSERT_TRUE(report.ok);
@@ -849,7 +862,7 @@ TEST(edit_plan, executor_writes_display_formatted_manager_parameter_values) {
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_set_parameter_value(
-                  plan, param_id, "manager{12345678-9ABCDEF0} = 99", NULL));
+                  plan, param_id, NULL, "manager{12345678-9ABCDEF0} = 99", NULL));
 
     ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
     ASSERT_TRUE(nmo_guid_equals(
@@ -879,7 +892,7 @@ TEST(edit_plan, executor_resizes_typed_parameter_values_when_requested) {
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_set_parameter_value(
-                  plan, param_id, "123", &options));
+                  plan, param_id, NULL, "123", &options));
 
     ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
     ASSERT_TRUE(report.ok);
@@ -906,7 +919,7 @@ TEST(edit_plan, executor_rejects_truncated_typed_parameter_values_without_resize
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_set_parameter_value(
-                  plan, param_id, "123", NULL));
+                  plan, param_id, NULL, "123", NULL));
 
     ASSERT_EQ(NMO_ERR_OUT_OF_BOUNDS,
               nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
@@ -940,7 +953,7 @@ TEST(edit_plan, executor_writes_object_reference_display_values) {
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_set_parameter_value(
-                  plan, param_id, object_ref, NULL));
+                  plan, param_id, NULL, object_ref, NULL));
 
     ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
     ASSERT_TRUE(report.ok);
@@ -955,7 +968,7 @@ TEST(edit_plan, executor_writes_object_reference_display_values) {
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_set_parameter_value(
-                  plan, param_id, hash_ref, NULL));
+                  plan, param_id, NULL, hash_ref, NULL));
 
     ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
     ASSERT_TRUE(report.ok);
@@ -1568,9 +1581,11 @@ TEST(edit_plan, executor_resolves_parameter_value_from_prior_handle) {
                   root_id,
                   nmo_guid_parse("055B29FE-662D5CA0"),
                   "Probe 2D Text"));
+    nmo_edit_handle_ref_t alignment_ref =
+        edit_plan_test_handle_ref(0u, "input_param_source:Alignment");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_set_parameter_value_from_handle(
-                  plan, 0u, "input_param_source:Alignment", "Top-Left", NULL));
+              nmo_edit_plan_add_set_parameter_value(
+                  plan, 0u, &alignment_ref, "Top-Left", NULL));
 
     ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
     ASSERT_TRUE(report.ok);
@@ -1602,9 +1617,11 @@ TEST(edit_plan, executor_materializes_input_source_for_handle_value) {
                   root_id,
                   nmo_guid_parse("055B29FE-662D5CA0"),
                   "Probe 2D Text"));
+    nmo_edit_handle_ref_t text_ref =
+        edit_plan_test_handle_ref(0u, "input_param:Text");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_set_parameter_value_from_handle(
-                  plan, 0u, "input_param:Text", "loading trace", NULL));
+              nmo_edit_plan_add_set_parameter_value(
+                  plan, 0u, &text_ref, "loading trace", NULL));
 
     ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
     ASSERT_TRUE(report.ok);
@@ -1674,11 +1691,13 @@ TEST(edit_plan, executor_materializes_input_source_for_handle_bytes) {
                   root_id,
                   nmo_guid_parse("055B29FE-662D5CA0"),
                   "Probe 2D Text"));
+    nmo_edit_handle_ref_t text_ref =
+        edit_plan_test_handle_ref(0u, "input_param:Text");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_set_parameter_bytes_from_handle(
+              nmo_edit_plan_add_set_parameter_bytes(
                   plan,
                   0u,
-                  "input_param:Text",
+                  &text_ref,
                   trace_bytes,
                   sizeof(trace_bytes),
                   &options));
@@ -1774,9 +1793,11 @@ TEST(edit_plan, executor_connects_parameter_to_prior_node_handle) {
                   root_id,
                   nmo_guid_parse("18655B3F-68291DC3"),
                   "Parameter Logger"));
+    nmo_edit_handle_ref_t target_ref =
+        edit_plan_test_handle_ref(0u, "input_param:String");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_connect_parameter_to_handle(
-                  plan, source_parameter_id, 0u, "input_param:String"));
+              nmo_edit_plan_add_connect_parameter(
+                  plan, source_parameter_id, 0u, &target_ref));
 
     ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
     ASSERT_TRUE(report.ok);
@@ -1889,14 +1910,16 @@ TEST(edit_plan, executor_resolves_behavior_link_io_handles) {
                   child_id,
                   NMO_SCRIPT_EDIT_IO_INPUT,
                   "Child In"));
+    nmo_edit_handle_ref_t from_ref = edit_plan_test_handle_ref(0u, "io");
+    nmo_edit_handle_ref_t to_ref = edit_plan_test_handle_ref(1u, "io");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_behavior_link_from_handles(
+              nmo_edit_plan_add_behavior_link(
                   plan,
                   root_id,
                   0u,
-                  "io",
-                  1u,
-                  "io",
+                  &from_ref,
+                  0u,
+                  &to_ref,
                   0u));
 
     ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
@@ -2006,7 +2029,9 @@ TEST(edit_plan, executor_resolves_behavior_link_io_handles) {
                   plan,
                   root_id,
                   from_io_id,
+                  NULL,
                   to_io_id,
+                  NULL,
                   0u));
 
     ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
@@ -2099,14 +2124,16 @@ TEST(edit_plan, executor_reports_remove_node_detached_link_impact) {
                   child_id,
                   NMO_SCRIPT_EDIT_IO_INPUT,
                   "Child In"));
+    nmo_edit_handle_ref_t from_ref = edit_plan_test_handle_ref(0u, "io");
+    nmo_edit_handle_ref_t to_ref = edit_plan_test_handle_ref(1u, "io");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_behavior_link_from_handles(
+              nmo_edit_plan_add_behavior_link(
                   plan,
                   root_id,
                   0u,
-                  "io",
-                  1u,
-                  "io",
+                  &from_ref,
+                  0u,
+                  &to_ref,
                   0u));
 
     ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
@@ -3042,18 +3069,17 @@ TEST(edit_plan, executor_reports_rewire_operation_slot_parameter_impact) {
                   NMO_SCRIPT_EDIT_PARAM_LOCAL,
                   CKPGUID_INT,
                   "Replacement A"));
+    nmo_edit_handle_ref_t in1_ref =
+        edit_plan_test_handle_ref(0u, "parameter");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_rewire_operation_with_refs(
+              nmo_edit_plan_add_rewire_operation(
                   plan,
                   operation_id,
                   NMO_SCRIPT_EDIT_OP_SLOT_IN1,
                   0u,
-                  0u,
-                  "parameter",
-                  0u,
+                  &in1_ref,
                   0u,
                   NULL,
-                  0u,
                   0u,
                   NULL));
 
@@ -3122,20 +3148,23 @@ TEST(edit_plan, executor_reports_add_operation_slot_parameter_impact) {
               nmo_edit_plan_add_parameter(
                   plan, root_id, NMO_SCRIPT_EDIT_PARAM_LOCAL,
                   CKPGUID_INT, "Out"));
+    nmo_edit_handle_ref_t in1_ref =
+        edit_plan_test_handle_ref(0u, "parameter");
+    nmo_edit_handle_ref_t in2_ref =
+        edit_plan_test_handle_ref(1u, "parameter");
+    nmo_edit_handle_ref_t out_ref =
+        edit_plan_test_handle_ref(2u, "parameter");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_operation_with_refs(
+              nmo_edit_plan_add_operation(
                   plan,
                   root_id,
                   nmo_guid_parse("33CC6B49-3589282B"),
                   0u,
+                  &in1_ref,
                   0u,
-                  "parameter",
+                  &in2_ref,
                   0u,
-                  1u,
-                  "parameter",
-                  0u,
-                  2u,
-                  "parameter"));
+                  &out_ref));
 
     ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
     ASSERT_TRUE(report.ok);
@@ -3811,7 +3840,8 @@ TEST(edit_plan, executor_reports_generic_activation_delay_risk) {
     nmo_edit_plan_t *plan = NULL;
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_behavior_link(plan, 6u, 5u, 2u, 7u));
+              nmo_edit_plan_add_behavior_link(
+                  plan, 6u, 5u, NULL, 2u, NULL, 7u));
 
     nmo_edit_executor_options_t options = nmo_edit_executor_options_default();
     options.dry_run = true;

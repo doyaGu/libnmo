@@ -55,6 +55,12 @@ typedef struct nmo_add_node_options {
     nmo_manager_entry_options_t manager_entry;
 } nmo_add_node_options_t;
 
+typedef struct nmo_edit_handle_ref {
+    bool has_ref;
+    size_t operation_index;
+    const char *handle_name;
+} nmo_edit_handle_ref_t;
+
 typedef struct nmo_edit_op {
     nmo_edit_op_kind_t kind;
     nmo_object_id_t primary_id;
@@ -63,18 +69,14 @@ typedef struct nmo_edit_op {
             const char *value;
             nmo_parameter_write_options_t options;
             bool has_options;
-            size_t parameter_ref_operation_index;
-            const char *parameter_ref_handle;
-            bool has_parameter_ref;
+            nmo_edit_handle_ref_t parameter_ref;
         } set_value;
         struct {
             const uint8_t *bytes;
             size_t byte_count;
             nmo_parameter_write_options_t options;
             bool has_options;
-            size_t parameter_ref_operation_index;
-            const char *parameter_ref_handle;
-            bool has_parameter_ref;
+            nmo_edit_handle_ref_t parameter_ref;
         } set_bytes;
         struct {
             nmo_object_id_t parent_behavior_id;
@@ -106,12 +108,8 @@ typedef struct nmo_edit_op {
             nmo_object_id_t from_io_id;
             nmo_object_id_t to_io_id;
             uint32_t activation_delay;
-            size_t from_io_ref_operation_index;
-            const char *from_io_ref_handle;
-            bool has_from_io_ref;
-            size_t to_io_ref_operation_index;
-            const char *to_io_ref_handle;
-            bool has_to_io_ref;
+            nmo_edit_handle_ref_t from_io_ref;
+            nmo_edit_handle_ref_t to_io_ref;
         } add_link;
         struct {
             nmo_object_id_t link_id;
@@ -135,9 +133,7 @@ typedef struct nmo_edit_op {
         struct {
             nmo_object_id_t source_parameter_id;
             nmo_object_id_t target_parameter_id;
-            size_t target_parameter_ref_operation_index;
-            const char *target_parameter_ref_handle;
-            bool has_target_parameter_ref;
+            nmo_edit_handle_ref_t target_parameter_ref;
         } connect_parameter;
         struct {
             nmo_object_id_t target_parameter_id;
@@ -152,15 +148,9 @@ typedef struct nmo_edit_op {
             nmo_object_id_t in1_parameter_id;
             nmo_object_id_t in2_parameter_id;
             nmo_object_id_t out_parameter_id;
-            size_t in1_parameter_ref_operation_index;
-            const char *in1_parameter_ref_handle;
-            bool has_in1_parameter_ref;
-            size_t in2_parameter_ref_operation_index;
-            const char *in2_parameter_ref_handle;
-            bool has_in2_parameter_ref;
-            size_t out_parameter_ref_operation_index;
-            const char *out_parameter_ref_handle;
-            bool has_out_parameter_ref;
+            nmo_edit_handle_ref_t in1_parameter_ref;
+            nmo_edit_handle_ref_t in2_parameter_ref;
+            nmo_edit_handle_ref_t out_parameter_ref;
         } add_operation;
         struct {
             nmo_object_id_t operation_id;
@@ -168,15 +158,9 @@ typedef struct nmo_edit_op {
             nmo_object_id_t in1_parameter_id;
             nmo_object_id_t in2_parameter_id;
             nmo_object_id_t out_parameter_id;
-            size_t in1_parameter_ref_operation_index;
-            const char *in1_parameter_ref_handle;
-            bool has_in1_parameter_ref;
-            size_t in2_parameter_ref_operation_index;
-            const char *in2_parameter_ref_handle;
-            bool has_in2_parameter_ref;
-            size_t out_parameter_ref_operation_index;
-            const char *out_parameter_ref_handle;
-            bool has_out_parameter_ref;
+            nmo_edit_handle_ref_t in1_parameter_ref;
+            nmo_edit_handle_ref_t in2_parameter_ref;
+            nmo_edit_handle_ref_t out_parameter_ref;
         } rewire_operation;
         struct {
             nmo_object_id_t operation_id;
@@ -360,27 +344,14 @@ nmo_edit_plan_get_probe_selector_analysis(const nmo_edit_plan_t *plan);
 NMO_API nmo_status_t nmo_edit_plan_add_set_parameter_value(
     nmo_edit_plan_t *plan,
     nmo_object_id_t parameter_id,
-    const char *value_str,
-    const nmo_parameter_write_options_t *options);
-
-NMO_API nmo_status_t nmo_edit_plan_add_set_parameter_value_from_handle(
-    nmo_edit_plan_t *plan,
-    size_t operation_index,
-    const char *handle_name,
+    const nmo_edit_handle_ref_t *parameter_ref,
     const char *value_str,
     const nmo_parameter_write_options_t *options);
 
 NMO_API nmo_status_t nmo_edit_plan_add_set_parameter_bytes(
     nmo_edit_plan_t *plan,
     nmo_object_id_t parameter_id,
-    const uint8_t *bytes,
-    size_t byte_count,
-    const nmo_parameter_write_options_t *options);
-
-NMO_API nmo_status_t nmo_edit_plan_add_set_parameter_bytes_from_handle(
-    nmo_edit_plan_t *plan,
-    size_t operation_index,
-    const char *handle_name,
+    const nmo_edit_handle_ref_t *parameter_ref,
     const uint8_t *bytes,
     size_t byte_count,
     const nmo_parameter_write_options_t *options);
@@ -424,32 +395,9 @@ NMO_API nmo_status_t nmo_edit_plan_add_behavior_link(
     nmo_edit_plan_t *plan,
     nmo_object_id_t parent_behavior_id,
     nmo_object_id_t from_io_id,
+    const nmo_edit_handle_ref_t *from_io_ref,
     nmo_object_id_t to_io_id,
-    uint32_t activation_delay);
-
-NMO_API nmo_status_t nmo_edit_plan_add_behavior_link_from_handles(
-    nmo_edit_plan_t *plan,
-    nmo_object_id_t parent_behavior_id,
-    size_t from_operation_index,
-    const char *from_handle_name,
-    size_t to_operation_index,
-    const char *to_handle_name,
-    uint32_t activation_delay);
-
-NMO_API nmo_status_t nmo_edit_plan_add_behavior_link_to_handle(
-    nmo_edit_plan_t *plan,
-    nmo_object_id_t parent_behavior_id,
-    nmo_object_id_t from_io_id,
-    size_t to_operation_index,
-    const char *to_handle_name,
-    uint32_t activation_delay);
-
-NMO_API nmo_status_t nmo_edit_plan_add_behavior_link_from_handle(
-    nmo_edit_plan_t *plan,
-    nmo_object_id_t parent_behavior_id,
-    size_t from_operation_index,
-    const char *from_handle_name,
-    nmo_object_id_t to_io_id,
+    const nmo_edit_handle_ref_t *to_io_ref,
     uint32_t activation_delay);
 
 NMO_API nmo_status_t nmo_edit_plan_add_rewire_behavior_link(
@@ -478,13 +426,8 @@ NMO_API nmo_status_t nmo_edit_plan_add_parameter(
 NMO_API nmo_status_t nmo_edit_plan_add_connect_parameter(
     nmo_edit_plan_t *plan,
     nmo_object_id_t source_parameter_id,
-    nmo_object_id_t target_parameter_id);
-
-NMO_API nmo_status_t nmo_edit_plan_add_connect_parameter_to_handle(
-    nmo_edit_plan_t *plan,
-    nmo_object_id_t source_parameter_id,
-    size_t target_operation_index,
-    const char *target_handle_name);
+    nmo_object_id_t target_parameter_id,
+    const nmo_edit_handle_ref_t *target_parameter_ref);
 
 NMO_API nmo_status_t nmo_edit_plan_add_disconnect_parameter(
     nmo_edit_plan_t *plan,
@@ -500,44 +443,22 @@ NMO_API nmo_status_t nmo_edit_plan_add_operation(
     nmo_object_id_t parent_behavior_id,
     nmo_guid_t operation_guid,
     nmo_object_id_t in1_parameter_id,
+    const nmo_edit_handle_ref_t *in1_parameter_ref,
     nmo_object_id_t in2_parameter_id,
-    nmo_object_id_t out_parameter_id);
-
-NMO_API nmo_status_t nmo_edit_plan_add_operation_with_refs(
-    nmo_edit_plan_t *plan,
-    nmo_object_id_t parent_behavior_id,
-    nmo_guid_t operation_guid,
-    nmo_object_id_t in1_parameter_id,
-    size_t in1_operation_index,
-    const char *in1_handle_name,
-    nmo_object_id_t in2_parameter_id,
-    size_t in2_operation_index,
-    const char *in2_handle_name,
+    const nmo_edit_handle_ref_t *in2_parameter_ref,
     nmo_object_id_t out_parameter_id,
-    size_t out_operation_index,
-    const char *out_handle_name);
+    const nmo_edit_handle_ref_t *out_parameter_ref);
 
 NMO_API nmo_status_t nmo_edit_plan_add_rewire_operation(
     nmo_edit_plan_t *plan,
     nmo_object_id_t operation_id,
     uint32_t slot_flags,
     nmo_object_id_t in1_parameter_id,
+    const nmo_edit_handle_ref_t *in1_parameter_ref,
     nmo_object_id_t in2_parameter_id,
-    nmo_object_id_t out_parameter_id);
-
-NMO_API nmo_status_t nmo_edit_plan_add_rewire_operation_with_refs(
-    nmo_edit_plan_t *plan,
-    nmo_object_id_t operation_id,
-    uint32_t slot_flags,
-    nmo_object_id_t in1_parameter_id,
-    size_t in1_operation_index,
-    const char *in1_handle_name,
-    nmo_object_id_t in2_parameter_id,
-    size_t in2_operation_index,
-    const char *in2_handle_name,
+    const nmo_edit_handle_ref_t *in2_parameter_ref,
     nmo_object_id_t out_parameter_id,
-    size_t out_operation_index,
-    const char *out_handle_name);
+    const nmo_edit_handle_ref_t *out_parameter_ref);
 
 NMO_API nmo_status_t nmo_edit_plan_add_remove_operation(
     nmo_edit_plan_t *plan,

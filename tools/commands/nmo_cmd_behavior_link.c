@@ -80,7 +80,9 @@ static int behavior_add_link_mutate(
             args->edit_plan,
             args->parent_id,
             args->from_id,
+            NULL,
             args->to_id,
+            NULL,
             args->delay);
     }
     if (add_rc == NMO_OK) {

@@ -1911,20 +1911,20 @@ static nmo_status_t semantic_validate_basic_edit_op(
     case NMO_EDIT_OP_SET_PARAMETER_VALUE:
     case NMO_EDIT_OP_SET_PARAMETER_BYTES:
         if (op->kind == NMO_EDIT_OP_SET_PARAMETER_VALUE &&
-            op->data.set_value.has_parameter_ref) {
+            op->data.set_value.parameter_ref.has_ref) {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
                 ctx,
                 plan,
                 op_index,
-                op->data.set_value.parameter_ref_operation_index,
-                op->data.set_value.parameter_ref_handle,
+                op->data.set_value.parameter_ref.operation_index,
+                op->data.set_value.parameter_ref.handle_name,
                 op->primary_id,
                 risks,
                 risk_count));
             NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
                 plan,
-                op->data.set_value.parameter_ref_operation_index,
-                op->data.set_value.parameter_ref_handle,
+                op->data.set_value.parameter_ref.operation_index,
+                op->data.set_value.parameter_ref.handle_name,
                 op->primary_id,
                 risks,
                 risk_count));
@@ -1936,8 +1936,8 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 semantic_parameter_handle_type_desc(
                     ctx,
                     plan,
-                    op->data.set_value.parameter_ref_operation_index,
-                    op->data.set_value.parameter_ref_handle);
+                    op->data.set_value.parameter_ref.operation_index,
+                    op->data.set_value.parameter_ref.handle_name);
             return semantic_add_manager_value_risk(
                 workspace,
                 risks,
@@ -1948,20 +1948,20 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 semantic_manager_target_for_type(type));
         }
         if (op->kind == NMO_EDIT_OP_SET_PARAMETER_BYTES &&
-            op->data.set_bytes.has_parameter_ref) {
+            op->data.set_bytes.parameter_ref.has_ref) {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
                 ctx,
                 plan,
                 op_index,
-                op->data.set_bytes.parameter_ref_operation_index,
-                op->data.set_bytes.parameter_ref_handle,
+                op->data.set_bytes.parameter_ref.operation_index,
+                op->data.set_bytes.parameter_ref.handle_name,
                 op->primary_id,
                 risks,
                 risk_count));
             return semantic_add_parameter_handle_ref_risk(
                 plan,
-                op->data.set_bytes.parameter_ref_operation_index,
-                op->data.set_bytes.parameter_ref_handle,
+                op->data.set_bytes.parameter_ref.operation_index,
+                op->data.set_bytes.parameter_ref.handle_name,
                 op->primary_id,
                 risks,
                 risk_count);
@@ -2045,7 +2045,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             risks,
             risk_count,
             op->data.add_link.parent_behavior_id));
-        if (!op->data.add_link.has_from_io_ref) {
+        if (!op->data.add_link.from_io_ref.has_ref) {
             NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
                 repo, risks, risk_count, op->data.add_link.from_io_id));
             NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
@@ -2067,20 +2067,20 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 ctx,
                 plan,
                 op_index,
-                op->data.add_link.from_io_ref_operation_index,
-                op->data.add_link.from_io_ref_handle,
+                op->data.add_link.from_io_ref.operation_index,
+                op->data.add_link.from_io_ref.handle_name,
                 op->primary_id,
                 risks,
                 risk_count));
             NMO_RETURN_IF_ERROR(semantic_add_control_handle_ref_risk(
                 plan,
-                op->data.add_link.from_io_ref_operation_index,
-                op->data.add_link.from_io_ref_handle,
+                op->data.add_link.from_io_ref.operation_index,
+                op->data.add_link.from_io_ref.handle_name,
                 op->primary_id,
                 risks,
                 risk_count));
         }
-        if (!op->data.add_link.has_to_io_ref) {
+        if (!op->data.add_link.to_io_ref.has_ref) {
             NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
                 repo, risks, risk_count, op->data.add_link.to_io_id));
             NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
@@ -2102,15 +2102,15 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 ctx,
                 plan,
                 op_index,
-                op->data.add_link.to_io_ref_operation_index,
-                op->data.add_link.to_io_ref_handle,
+                op->data.add_link.to_io_ref.operation_index,
+                op->data.add_link.to_io_ref.handle_name,
                 op->primary_id,
                 risks,
                 risk_count));
             NMO_RETURN_IF_ERROR(semantic_add_control_handle_ref_risk(
                 plan,
-                op->data.add_link.to_io_ref_operation_index,
-                op->data.add_link.to_io_ref_handle,
+                op->data.add_link.to_io_ref.operation_index,
+                op->data.add_link.to_io_ref.handle_name,
                 op->primary_id,
                 risks,
                 risk_count));
@@ -2216,20 +2216,20 @@ static nmo_status_t semantic_validate_basic_edit_op(
         NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
             repo, risks, risk_count,
             op->data.connect_parameter.source_parameter_id));
-        if (op->data.connect_parameter.has_target_parameter_ref) {
+        if (op->data.connect_parameter.target_parameter_ref.has_ref) {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
                 ctx,
                 plan,
                 op_index,
-                op->data.connect_parameter.target_parameter_ref_operation_index,
-                op->data.connect_parameter.target_parameter_ref_handle,
+                op->data.connect_parameter.target_parameter_ref.operation_index,
+                op->data.connect_parameter.target_parameter_ref.handle_name,
                 op->primary_id,
                 risks,
                 risk_count));
             NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
                 plan,
-                op->data.connect_parameter.target_parameter_ref_operation_index,
-                op->data.connect_parameter.target_parameter_ref_handle,
+                op->data.connect_parameter.target_parameter_ref.operation_index,
+                op->data.connect_parameter.target_parameter_ref.handle_name,
                 op->primary_id,
                 risks,
                 risk_count));
@@ -2241,8 +2241,8 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 semantic_parameter_handle_type_desc(
                     ctx,
                     plan,
-                    op->data.connect_parameter.target_parameter_ref_operation_index,
-                    op->data.connect_parameter.target_parameter_ref_handle),
+                    op->data.connect_parameter.target_parameter_ref.operation_index,
+                    op->data.connect_parameter.target_parameter_ref.handle_name),
                 risks,
                 risk_count,
                 op->primary_id);
@@ -2295,28 +2295,28 @@ static nmo_status_t semantic_validate_basic_edit_op(
             risks,
             risk_count,
             op->data.add_operation.parent_behavior_id));
-        if (op->data.add_operation.has_in1_parameter_ref) {
+        if (op->data.add_operation.in1_parameter_ref.has_ref) {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
                 ctx,
                 plan,
                 op_index,
-                op->data.add_operation.in1_parameter_ref_operation_index,
-                op->data.add_operation.in1_parameter_ref_handle,
+                op->data.add_operation.in1_parameter_ref.operation_index,
+                op->data.add_operation.in1_parameter_ref.handle_name,
                 op->primary_id,
                 risks,
                 risk_count));
             NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
                 plan,
-                op->data.add_operation.in1_parameter_ref_operation_index,
-                op->data.add_operation.in1_parameter_ref_handle,
+                op->data.add_operation.in1_parameter_ref.operation_index,
+                op->data.add_operation.in1_parameter_ref.handle_name,
                 op->primary_id,
                 risks,
                 risk_count));
             in1_type = semantic_parameter_handle_type_desc(
                 ctx,
                 plan,
-                op->data.add_operation.in1_parameter_ref_operation_index,
-                op->data.add_operation.in1_parameter_ref_handle);
+                op->data.add_operation.in1_parameter_ref.operation_index,
+                op->data.add_operation.in1_parameter_ref.handle_name);
             has_in1 = true;
         } else {
             NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
@@ -2329,28 +2329,28 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 ctx, repo, op->data.add_operation.in1_parameter_id);
             has_in1 = op->data.add_operation.in1_parameter_id != 0u;
         }
-        if (op->data.add_operation.has_in2_parameter_ref) {
+        if (op->data.add_operation.in2_parameter_ref.has_ref) {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
                 ctx,
                 plan,
                 op_index,
-                op->data.add_operation.in2_parameter_ref_operation_index,
-                op->data.add_operation.in2_parameter_ref_handle,
+                op->data.add_operation.in2_parameter_ref.operation_index,
+                op->data.add_operation.in2_parameter_ref.handle_name,
                 op->primary_id,
                 risks,
                 risk_count));
             NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
                 plan,
-                op->data.add_operation.in2_parameter_ref_operation_index,
-                op->data.add_operation.in2_parameter_ref_handle,
+                op->data.add_operation.in2_parameter_ref.operation_index,
+                op->data.add_operation.in2_parameter_ref.handle_name,
                 op->primary_id,
                 risks,
                 risk_count));
             in2_type = semantic_parameter_handle_type_desc(
                 ctx,
                 plan,
-                op->data.add_operation.in2_parameter_ref_operation_index,
-                op->data.add_operation.in2_parameter_ref_handle);
+                op->data.add_operation.in2_parameter_ref.operation_index,
+                op->data.add_operation.in2_parameter_ref.handle_name);
             has_in2 = true;
         } else {
             NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
@@ -2363,28 +2363,28 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 ctx, repo, op->data.add_operation.in2_parameter_id);
             has_in2 = op->data.add_operation.in2_parameter_id != 0u;
         }
-        if (op->data.add_operation.has_out_parameter_ref) {
+        if (op->data.add_operation.out_parameter_ref.has_ref) {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
                 ctx,
                 plan,
                 op_index,
-                op->data.add_operation.out_parameter_ref_operation_index,
-                op->data.add_operation.out_parameter_ref_handle,
+                op->data.add_operation.out_parameter_ref.operation_index,
+                op->data.add_operation.out_parameter_ref.handle_name,
                 op->primary_id,
                 risks,
                 risk_count));
             NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
                 plan,
-                op->data.add_operation.out_parameter_ref_operation_index,
-                op->data.add_operation.out_parameter_ref_handle,
+                op->data.add_operation.out_parameter_ref.operation_index,
+                op->data.add_operation.out_parameter_ref.handle_name,
                 op->primary_id,
                 risks,
                 risk_count));
             out_type = semantic_parameter_handle_type_desc(
                 ctx,
                 plan,
-                op->data.add_operation.out_parameter_ref_operation_index,
-                op->data.add_operation.out_parameter_ref_handle);
+                op->data.add_operation.out_parameter_ref.operation_index,
+                op->data.add_operation.out_parameter_ref.handle_name);
             has_out = true;
         } else {
             NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
@@ -2438,28 +2438,28 @@ static nmo_status_t semantic_validate_basic_edit_op(
 
         if ((op->data.rewire_operation.slot_flags &
              NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u) {
-            if (op->data.rewire_operation.has_in1_parameter_ref) {
+            if (op->data.rewire_operation.in1_parameter_ref.has_ref) {
                 NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
                     ctx,
                     plan,
                     op_index,
-                    op->data.rewire_operation.in1_parameter_ref_operation_index,
-                    op->data.rewire_operation.in1_parameter_ref_handle,
+                    op->data.rewire_operation.in1_parameter_ref.operation_index,
+                    op->data.rewire_operation.in1_parameter_ref.handle_name,
                     op->primary_id,
                     risks,
                     risk_count));
                 NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
                     plan,
-                    op->data.rewire_operation.in1_parameter_ref_operation_index,
-                    op->data.rewire_operation.in1_parameter_ref_handle,
+                    op->data.rewire_operation.in1_parameter_ref.operation_index,
+                    op->data.rewire_operation.in1_parameter_ref.handle_name,
                     op->primary_id,
                     risks,
                     risk_count));
                 in1_type = semantic_parameter_handle_type_desc(
                     ctx,
                     plan,
-                    op->data.rewire_operation.in1_parameter_ref_operation_index,
-                    op->data.rewire_operation.in1_parameter_ref_handle);
+                    op->data.rewire_operation.in1_parameter_ref.operation_index,
+                    op->data.rewire_operation.in1_parameter_ref.handle_name);
                 has_in1 = true;
             } else {
                 NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
@@ -2485,28 +2485,28 @@ static nmo_status_t semantic_validate_basic_edit_op(
 
         if ((op->data.rewire_operation.slot_flags &
              NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u) {
-            if (op->data.rewire_operation.has_in2_parameter_ref) {
+            if (op->data.rewire_operation.in2_parameter_ref.has_ref) {
                 NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
                     ctx,
                     plan,
                     op_index,
-                    op->data.rewire_operation.in2_parameter_ref_operation_index,
-                    op->data.rewire_operation.in2_parameter_ref_handle,
+                    op->data.rewire_operation.in2_parameter_ref.operation_index,
+                    op->data.rewire_operation.in2_parameter_ref.handle_name,
                     op->primary_id,
                     risks,
                     risk_count));
                 NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
                     plan,
-                    op->data.rewire_operation.in2_parameter_ref_operation_index,
-                    op->data.rewire_operation.in2_parameter_ref_handle,
+                    op->data.rewire_operation.in2_parameter_ref.operation_index,
+                    op->data.rewire_operation.in2_parameter_ref.handle_name,
                     op->primary_id,
                     risks,
                     risk_count));
                 in2_type = semantic_parameter_handle_type_desc(
                     ctx,
                     plan,
-                    op->data.rewire_operation.in2_parameter_ref_operation_index,
-                    op->data.rewire_operation.in2_parameter_ref_handle);
+                    op->data.rewire_operation.in2_parameter_ref.operation_index,
+                    op->data.rewire_operation.in2_parameter_ref.handle_name);
                 has_in2 = true;
             } else {
                 NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
@@ -2532,28 +2532,28 @@ static nmo_status_t semantic_validate_basic_edit_op(
 
         if ((op->data.rewire_operation.slot_flags &
              NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u) {
-            if (op->data.rewire_operation.has_out_parameter_ref) {
+            if (op->data.rewire_operation.out_parameter_ref.has_ref) {
                 NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
                     ctx,
                     plan,
                     op_index,
-                    op->data.rewire_operation.out_parameter_ref_operation_index,
-                    op->data.rewire_operation.out_parameter_ref_handle,
+                    op->data.rewire_operation.out_parameter_ref.operation_index,
+                    op->data.rewire_operation.out_parameter_ref.handle_name,
                     op->primary_id,
                     risks,
                     risk_count));
                 NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
                     plan,
-                    op->data.rewire_operation.out_parameter_ref_operation_index,
-                    op->data.rewire_operation.out_parameter_ref_handle,
+                    op->data.rewire_operation.out_parameter_ref.operation_index,
+                    op->data.rewire_operation.out_parameter_ref.handle_name,
                     op->primary_id,
                     risks,
                     risk_count));
                 out_type = semantic_parameter_handle_type_desc(
                     ctx,
                     plan,
-                    op->data.rewire_operation.out_parameter_ref_operation_index,
-                    op->data.rewire_operation.out_parameter_ref_handle);
+                    op->data.rewire_operation.out_parameter_ref.operation_index,
+                    op->data.rewire_operation.out_parameter_ref.handle_name);
                 has_out = true;
             } else {
                 NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(

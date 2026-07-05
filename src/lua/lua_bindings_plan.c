@@ -394,7 +394,7 @@ static int nmo_lua_plan_add_behavior_link(lua_State *state)
     uint32_t delay = (uint32_t)luaL_optinteger(state, 5, 0);
 
     status = nmo_edit_plan_add_behavior_link(
-        plan, parent_id, from_io_id, to_io_id, delay);
+        plan, parent_id, from_io_id, NULL, to_io_id, NULL, delay);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(
             state, status, "Failed to add behavior link op");
@@ -525,7 +525,8 @@ static int nmo_lua_plan_connect_parameter(lua_State *state)
     nmo_object_id_t source_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
     nmo_object_id_t target_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
 
-    status = nmo_edit_plan_add_connect_parameter(plan, source_id, target_id);
+    status = nmo_edit_plan_add_connect_parameter(
+        plan, source_id, target_id, NULL);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(
             state, status, "Failed to add connect parameter op");
@@ -548,8 +549,13 @@ static int nmo_lua_plan_connect_parameter_to_handle(lua_State *state)
         return luaL_error(state, "operation index is 1-based and must be positive");
     }
 
-    status = nmo_edit_plan_add_connect_parameter_to_handle(
-        plan, source_id, (size_t)(lua_operation_index - 1), handle_name);
+    nmo_edit_handle_ref_t target_ref = {
+        .has_ref = true,
+        .operation_index = (size_t)(lua_operation_index - 1),
+        .handle_name = handle_name,
+    };
+    status = nmo_edit_plan_add_connect_parameter(
+        plan, source_id, 0u, &target_ref);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(
             state, status, "Failed to add connect parameter handle op");
@@ -608,6 +614,17 @@ static nmo_object_id_t nmo_lua_plan_optional_object_id(lua_State *state,
     return (nmo_object_id_t)luaL_checkinteger(state, index);
 }
 
+static nmo_edit_handle_ref_t nmo_lua_plan_handle_ref(
+    size_t operation_index,
+    const char *handle_name)
+{
+    return (nmo_edit_handle_ref_t){
+        .has_ref = true,
+        .operation_index = operation_index,
+        .handle_name = handle_name,
+    };
+}
+
 static int nmo_lua_plan_add_operation(lua_State *state)
 {
     nmo_edit_plan_t *plan = NULL;
@@ -630,7 +647,8 @@ static int nmo_lua_plan_add_operation(lua_State *state)
         nmo_lua_plan_optional_object_id(state, 6, NULL, 0u);
 
     status = nmo_edit_plan_add_operation(
-        plan, parent_id, operation_guid, in1_id, in2_id, out_id);
+        plan, parent_id, operation_guid,
+        in1_id, NULL, in2_id, NULL, out_id, NULL);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(
             state, status, "Failed to add operation op");
@@ -660,7 +678,8 @@ static int nmo_lua_plan_rewire_operation(lua_State *state)
     }
 
     status = nmo_edit_plan_add_rewire_operation(
-        plan, operation_id, slot_flags, in1_id, in2_id, out_id);
+        plan, operation_id, slot_flags,
+        in1_id, NULL, in2_id, NULL, out_id, NULL);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(
             state, status, "Failed to add rewire operation op");
@@ -877,7 +896,7 @@ static int nmo_lua_plan_set_parameter_value(lua_State *state)
     }
 
     status = nmo_edit_plan_add_set_parameter_value(
-        plan, parameter_id, value, has_options ? &options : NULL);
+        plan, parameter_id, NULL, value, has_options ? &options : NULL);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(
             state, status, "Failed to add set parameter value op");
@@ -907,12 +926,10 @@ static int nmo_lua_plan_set_parameter_value_from_handle(lua_State *state)
         return option_rc;
     }
 
-    status = nmo_edit_plan_add_set_parameter_value_from_handle(
-        plan,
-        (size_t)(lua_operation_index - 1),
-        handle_name,
-        value,
-        has_options ? &options : NULL);
+    nmo_edit_handle_ref_t parameter_ref =
+        nmo_lua_plan_handle_ref((size_t)(lua_operation_index - 1), handle_name);
+    status = nmo_edit_plan_add_set_parameter_value(
+        plan, 0u, &parameter_ref, value, has_options ? &options : NULL);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(
             state, status, "Failed to add set parameter value handle op");
@@ -942,6 +959,7 @@ static int nmo_lua_plan_set_parameter_bytes(lua_State *state)
     status = nmo_edit_plan_add_set_parameter_bytes(
         plan,
         parameter_id,
+        NULL,
         (const uint8_t *)bytes,
         byte_count,
         has_options ? &options : NULL);
@@ -975,10 +993,12 @@ static int nmo_lua_plan_set_parameter_bytes_from_handle(lua_State *state)
         return option_rc;
     }
 
-    status = nmo_edit_plan_add_set_parameter_bytes_from_handle(
+    nmo_edit_handle_ref_t parameter_ref =
+        nmo_lua_plan_handle_ref((size_t)(lua_operation_index - 1), handle_name);
+    status = nmo_edit_plan_add_set_parameter_bytes(
         plan,
-        (size_t)(lua_operation_index - 1),
-        handle_name,
+        0u,
+        &parameter_ref,
         (const uint8_t *)bytes,
         byte_count,
         has_options ? &options : NULL);

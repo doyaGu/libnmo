@@ -1370,30 +1370,52 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
         probe_text = data_cell_text;
     }
     if (status == NMO_OK && probe_text != NULL && spec->text_handle != NULL) {
-        status = nmo_edit_plan_add_set_parameter_value_from_handle(
-            plan, node_op_index, spec->text_handle, probe_text, NULL);
+        nmo_edit_handle_ref_t text_ref = {
+            .has_ref = true,
+            .operation_index = node_op_index,
+            .handle_name = spec->text_handle,
+        };
+        status = nmo_edit_plan_add_set_parameter_value(
+            plan, 0u, &text_ref, probe_text, NULL);
     }
     if (status == NMO_OK && spec->connects_parameter &&
         args->parameter_id != 0u && spec->text_handle != NULL) {
-        status = nmo_edit_plan_add_connect_parameter_to_handle(
-            plan, args->parameter_id, node_op_index, spec->text_handle);
+        nmo_edit_handle_ref_t text_ref = {
+            .has_ref = true,
+            .operation_index = node_op_index,
+            .handle_name = spec->text_handle,
+        };
+        status = nmo_edit_plan_add_connect_parameter(
+            plan, args->parameter_id, 0u, &text_ref);
     }
     if (status == NMO_OK && args->from_io_id != 0u) {
-        status = nmo_edit_plan_add_behavior_link_to_handle(
+        nmo_edit_handle_ref_t input_ref = {
+            .has_ref = true,
+            .operation_index = node_op_index,
+            .handle_name = spec->input_handle,
+        };
+        status = nmo_edit_plan_add_behavior_link(
             plan,
             args->behavior_id,
             args->from_io_id,
-            node_op_index,
-            spec->input_handle,
+            NULL,
+            0u,
+            &input_ref,
             args->has_delay ? args->delay : 0u);
     }
     if (status == NMO_OK && args->to_io_id != 0u) {
-        status = nmo_edit_plan_add_behavior_link_from_handle(
+        nmo_edit_handle_ref_t output_ref = {
+            .has_ref = true,
+            .operation_index = node_op_index,
+            .handle_name = spec->output_handle,
+        };
+        status = nmo_edit_plan_add_behavior_link(
             plan,
             args->behavior_id,
-            node_op_index,
-            spec->output_handle,
+            0u,
+            &output_ref,
             args->to_io_id,
+            NULL,
             (args->from_io_id == 0u && args->has_delay) ? args->delay : 0u);
     }
     if (status == NMO_OK) {

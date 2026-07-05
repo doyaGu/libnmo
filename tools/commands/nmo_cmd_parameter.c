@@ -1776,7 +1776,7 @@ static int parameter_set_mutate(
         }
 
         plan_rc = nmo_edit_plan_add_set_parameter_bytes(
-            args->edit_plan, args->param_id, hex_buf, hex_len, NULL);
+            args->edit_plan, args->param_id, NULL, hex_buf, hex_len, NULL);
         free(hex_buf);
         if (plan_rc != NMO_OK) {
             fprintf(stderr, "Error: Failed to add raw parameter write op: %s\n",
@@ -1798,7 +1798,7 @@ static int parameter_set_mutate(
 
         (void)type_desc;
         plan_rc = nmo_edit_plan_add_set_parameter_value(
-            args->edit_plan, args->param_id, args->value_str, NULL);
+            args->edit_plan, args->param_id, NULL, args->value_str, NULL);
         if (plan_rc != NMO_OK) {
             fprintf(stderr, "Error: Failed to add parameter value write op: %s\n",
                     nmo_error_string(plan_rc));
@@ -1827,7 +1827,7 @@ static int parameter_set_mutate(
         char ref_buf[32];
         snprintf(ref_buf, sizeof(ref_buf), "%u", ref_id);
         plan_rc = nmo_edit_plan_add_set_parameter_value(
-            args->edit_plan, args->param_id, ref_buf, NULL);
+            args->edit_plan, args->param_id, NULL, ref_buf, NULL);
         if (plan_rc != NMO_OK) {
             fprintf(stderr, "Error: Failed to add object reference write op: %s\n",
                     nmo_error_string(plan_rc));
@@ -2100,5 +2100,4 @@ int nmo_cmd_parameter_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     fprintf(stderr, "Unsupported parameter read action in session: %s\n", argv[0]);
     return NMO_CLI_EXIT_ARG_ERROR;
 }
-
 

@@ -34,6 +34,17 @@ typedef struct semantic_fixture {
     nmo_workspace_t *workspace;
 } semantic_fixture_t;
 
+static nmo_edit_handle_ref_t semantic_test_handle_ref(
+    size_t operation_index,
+    const char *handle_name)
+{
+    return (nmo_edit_handle_ref_t){
+        .has_ref = true,
+        .operation_index = operation_index,
+        .handle_name = handle_name,
+    };
+}
+
 static void semantic_fixture_init(semantic_fixture_t *fixture)
 {
     memset(fixture, 0, sizeof(*fixture));
@@ -337,7 +348,7 @@ TEST(semantic_validator, detects_missing_symbolic_message_parameter_value)
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_set_parameter_value(
-                  plan, param_id, "MissingLuaMessage", NULL));
+                  plan, param_id, NULL, "MissingLuaMessage", NULL));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
@@ -361,7 +372,7 @@ TEST(semantic_validator, detects_missing_symbolic_message_parameter_value)
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&create_plan));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_set_parameter_value(
-                  create_plan, param_id, "MissingLuaMessage",
+                  create_plan, param_id, NULL, "MissingLuaMessage",
                   &create_options));
 
     risks = NULL;
@@ -405,7 +416,7 @@ TEST(semantic_validator, rejects_manager_entry_schema_type_mismatch)
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_set_parameter_value(
-                  plan, param_id, "MissingAttribute", &options));
+                  plan, param_id, NULL, "MissingAttribute", &options));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
@@ -464,7 +475,7 @@ TEST(semantic_validator, accepts_attribute_manager_create_schema)
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_set_parameter_value(
-                  plan, param_id, "IgnoredValue", &options));
+                  plan, param_id, NULL, "IgnoredValue", &options));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
@@ -517,7 +528,7 @@ TEST(semantic_validator, rejects_incomplete_attribute_manager_create_schema)
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_set_parameter_value(
-                  plan, param_id, "IgnoredValue", &options));
+                  plan, param_id, NULL, "IgnoredValue", &options));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
@@ -568,7 +579,7 @@ TEST(semantic_validator, manager_entry_key_drives_attribute_lookup)
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_set_parameter_value(
-                  plan, param_id, "MissingValueButKeyExists", &options));
+                  plan, param_id, NULL, "MissingValueButKeyExists", &options));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
@@ -612,7 +623,7 @@ TEST(semantic_validator, rejects_manager_entry_schema_guid_mismatch)
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_set_parameter_value(
-                  plan, param_id, "MissingGuidMessage", &options));
+                  plan, param_id, NULL, "MissingGuidMessage", &options));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
@@ -660,7 +671,7 @@ TEST(semantic_validator, rejects_unknown_guid_manager_entry_creation)
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_set_parameter_value(
-                  plan, param_id, "MissingUnknownMessage", &options));
+                  plan, param_id, NULL, "MissingUnknownMessage", &options));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
@@ -711,7 +722,7 @@ TEST(semantic_validator, manager_entry_key_drives_message_lookup)
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_add_set_parameter_value(
-                  plan, param_id, "MissingValueButKeyExists", &options));
+                  plan, param_id, NULL, "MissingValueButKeyExists", &options));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
@@ -746,9 +757,11 @@ TEST(semantic_validator, detects_missing_symbolic_message_handle_value)
                       .manager_entry.policy =
                           NMO_MANAGER_ENTRY_POLICY_CREATE_MISSING,
                   }));
+    nmo_edit_handle_ref_t message_ref =
+        semantic_test_handle_ref(0u, "input_param:Message");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_set_parameter_value_from_handle(
-                  plan, 0u, "input_param:Message",
+              nmo_edit_plan_add_set_parameter_value(
+                  plan, 0u, &message_ref,
                   "MissingHandleMessage", NULL));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
@@ -803,9 +816,11 @@ TEST(semantic_validator, edit_plan_reports_generic_op_risks)
     nmo_edit_plan_t *plan = NULL;
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_behavior_link(plan, 6u, 5u, 2u, 5u));
+              nmo_edit_plan_add_behavior_link(
+                  plan, 6u, 5u, NULL, 2u, NULL, 5u));
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_connect_parameter(plan, 0x00FFFFFEu, 0x00FFFFFFu));
+              nmo_edit_plan_add_connect_parameter(
+                  plan, 0x00FFFFFEu, 0x00FFFFFFu, NULL));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
@@ -837,14 +852,17 @@ TEST(semantic_validator, edit_plan_reports_invalid_handle_reference)
                   6u,
                   NMO_SCRIPT_EDIT_IO_INPUT,
                   "Entry"));
+    nmo_edit_handle_ref_t missing_ref =
+        semantic_test_handle_ref(0u, "missing_io");
+    nmo_edit_handle_ref_t io_ref = semantic_test_handle_ref(0u, "io");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_behavior_link_from_handles(
+              nmo_edit_plan_add_behavior_link(
                   plan,
                   6u,
                   0u,
-                  "missing_io",
+                  &missing_ref,
                   0u,
-                  "io",
+                  &io_ref,
                   0u));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
@@ -877,11 +895,13 @@ TEST(semantic_validator, edit_plan_rejects_missing_add_node_child_handle)
                   6u,
                   nmo_guid_parse("055B29FE-662D5CA0"),
                   "Handle Checked 2D Text"));
+    nmo_edit_handle_ref_t missing_ref =
+        semantic_test_handle_ref(0u, "input_param:Missing");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_set_parameter_value_from_handle(
+              nmo_edit_plan_add_set_parameter_value(
                   plan,
                   0u,
-                  "input_param:Missing",
+                  &missing_ref,
                   "trace",
                   NULL));
 
@@ -914,14 +934,18 @@ TEST(semantic_validator, edit_plan_rejects_parameter_handle_as_control_endpoint)
                   6u,
                   nmo_guid_parse("055B29FE-662D5CA0"),
                   "Control Handle 2D Text"));
+    nmo_edit_handle_ref_t from_ref =
+        semantic_test_handle_ref(0u, "input_param:Text");
+    nmo_edit_handle_ref_t to_ref =
+        semantic_test_handle_ref(0u, "input:On");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_behavior_link_from_handles(
+              nmo_edit_plan_add_behavior_link(
                   plan,
                   6u,
                   0u,
-                  "input_param:Text",
+                  &from_ref,
                   0u,
-                  "input:On",
+                  &to_ref,
                   0u));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
@@ -953,11 +977,13 @@ TEST(semantic_validator, edit_plan_rejects_control_handle_as_parameter_reference
                   6u,
                   nmo_guid_parse("055B29FE-662D5CA0"),
                   "Parameter Handle 2D Text"));
+    nmo_edit_handle_ref_t control_ref =
+        semantic_test_handle_ref(0u, "input:On");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_set_parameter_value_from_handle(
+              nmo_edit_plan_add_set_parameter_value(
                   plan,
                   0u,
-                  "input:On",
+                  &control_ref,
                   "trace",
                   NULL));
 
@@ -1089,7 +1115,9 @@ TEST(semantic_validator, edit_plan_reports_control_endpoint_type_mismatch)
                   plan,
                   root_id,
                   parameter_id,
+                  NULL,
                   parameter_id,
+                  NULL,
                   0u));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
@@ -1186,7 +1214,9 @@ TEST(semantic_validator, edit_plan_reports_nested_control_endpoint_scope)
                   plan,
                   root_id,
                   root_io_id,
+                  NULL,
                   nested_io_id,
+                  NULL,
                   0u));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
@@ -1232,7 +1262,9 @@ TEST(semantic_validator, edit_plan_reports_unowned_control_endpoint)
                   plan,
                   root_id,
                   root_io_id,
+                  NULL,
                   unowned_io_id,
+                  NULL,
                   0u));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
@@ -1331,7 +1363,7 @@ TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch)
 
     nmo_edit_plan_t *plan = NULL;
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
-    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_connect_parameter(plan, 13u, 7u));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_connect_parameter(plan, 13u, 7u, NULL));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
@@ -1363,12 +1395,14 @@ TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch_with_target_h
                   6u,
                   nmo_guid_parse("055B29FE-662D5CA0"),
                   "Parameter Target 2D Text"));
+    nmo_edit_handle_ref_t target_ref =
+        semantic_test_handle_ref(0u, "input_param:Text");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_connect_parameter_to_handle(
+              nmo_edit_plan_add_connect_parameter(
                   plan,
                   13u,
                   0u,
-                  "input_param:Text"));
+                  &target_ref));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
@@ -1427,7 +1461,7 @@ TEST(semantic_validator, edit_plan_reports_parameter_target_type_mismatch)
 
     nmo_edit_plan_t *plan = NULL;
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
-    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_connect_parameter(plan, source_id, target_id));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_connect_parameter(plan, source_id, target_id, NULL));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
@@ -1489,6 +1523,7 @@ TEST(semantic_validator, edit_plan_reports_value_parameter_type_mismatch)
               nmo_edit_plan_add_set_parameter_value(
                   plan,
                   behavior_id,
+                  NULL,
                   "value",
                   NULL));
 
@@ -1536,6 +1571,7 @@ TEST(semantic_validator, edit_plan_reports_scene_sensitive_parameter_ref)
               nmo_edit_plan_add_set_parameter_value(
                   plan,
                   scene_parameter_id,
+                  NULL,
                   "Current Scene",
                   NULL));
 
@@ -1569,8 +1605,11 @@ TEST(semantic_validator, edit_plan_reports_operation_type_mismatch)
                   6u,
                   nmo_guid_parse("33CC6B49-3589282B"),
                   13u,
+                  NULL,
                   0u,
-                  7u));
+                  NULL,
+                  7u,
+                  NULL));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
@@ -1608,19 +1647,18 @@ TEST(semantic_validator, edit_plan_reports_operation_type_mismatch_with_handle_r
                   NMO_SCRIPT_EDIT_PARAM_IN,
                   CKPGUID_FLOAT,
                   "Handle Float"));
+    nmo_edit_handle_ref_t in1_ref =
+        semantic_test_handle_ref(0u, "parameter");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_operation_with_refs(
+              nmo_edit_plan_add_operation(
                   plan,
                   6u,
                   nmo_guid_parse("33CC6B49-3589282B"),
                   0u,
-                  0u,
-                  "parameter",
-                  0u,
+                  &in1_ref,
                   0u,
                   NULL,
                   7u,
-                  0u,
                   NULL));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
@@ -1653,18 +1691,17 @@ TEST(semantic_validator, edit_plan_reports_operation_type_mismatch_with_node_par
                   6u,
                   nmo_guid_parse("055B29FE-662D5CA0"),
                   "Operation Source 2D Text"));
+    nmo_edit_handle_ref_t in1_ref =
+        semantic_test_handle_ref(0u, "input_param:Text");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_operation_with_refs(
+              nmo_edit_plan_add_operation(
                   plan,
                   6u,
                   nmo_guid_parse("33CC6B49-3589282B"),
                   0u,
-                  0u,
-                  "input_param:Text",
-                  0u,
+                  &in1_ref,
                   0u,
                   NULL,
-                  0u,
                   0u,
                   NULL));
 
@@ -1700,8 +1737,11 @@ TEST(semantic_validator, edit_plan_reports_operation_parent_type_mismatch)
                   parameter_id,
                   nmo_guid_parse("33CC6B49-3589282B"),
                   0u,
+                  NULL,
                   0u,
-                  0u));
+                  NULL,
+                  0u,
+                  NULL));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
@@ -1788,8 +1828,11 @@ TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch)
                   operation_id,
                   NMO_SCRIPT_EDIT_OP_SLOT_IN1,
                   string_parameter_id,
+                  NULL,
                   0u,
-                  0u));
+                  NULL,
+                  0u,
+                  NULL));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
@@ -1842,8 +1885,11 @@ TEST(semantic_validator, edit_plan_reports_rewire_operation_existing_slot_dangli
                   operation_id,
                   NMO_SCRIPT_EDIT_OP_SLOT_OUT,
                   0u,
+                  NULL,
                   0u,
-                  out_id));
+                  NULL,
+                  out_id,
+                  NULL));
 
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0u;
@@ -1891,18 +1937,17 @@ TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch_with_h
                   NMO_SCRIPT_EDIT_PARAM_LOCAL,
                   CKPGUID_STRING,
                   "Handle String"));
+    nmo_edit_handle_ref_t in1_ref =
+        semantic_test_handle_ref(0u, "parameter");
     ASSERT_EQ(NMO_OK,
-              nmo_edit_plan_add_rewire_operation_with_refs(
+              nmo_edit_plan_add_rewire_operation(
                   plan,
                   operation_id,
                   NMO_SCRIPT_EDIT_OP_SLOT_IN1,
                   0u,
-                  0u,
-                  "parameter",
-                  0u,
+                  &in1_ref,
                   0u,
                   NULL,
-                  0u,
                   0u,
                   NULL));
 

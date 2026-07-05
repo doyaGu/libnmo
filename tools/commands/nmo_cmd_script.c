@@ -821,6 +821,27 @@ static void script_run_lua_check_pending_ref(lua_State *state,
     out_ref->id = (nmo_object_id_t)luaL_checkinteger(state, index);
 }
 
+static nmo_edit_handle_ref_t script_run_lua_edit_handle_ref(
+    const script_run_lua_pending_ref_t *ref)
+{
+    return (nmo_edit_handle_ref_t){
+        .has_ref = ref != NULL && ref->has_ref,
+        .operation_index = ref != NULL ? ref->operation_index : 0u,
+        .handle_name = ref != NULL ? ref->handle_name : NULL,
+    };
+}
+
+static nmo_edit_handle_ref_t script_edit_handle_ref(
+    size_t operation_index,
+    const char *handle_name)
+{
+    return (nmo_edit_handle_ref_t){
+        .has_ref = true,
+        .operation_index = operation_index,
+        .handle_name = handle_name,
+    };
+}
+
 static int script_run_lua_add_behavior_link(lua_State *state)
 {
     script_run_args_t *args = script_run_current_args(state);
@@ -835,39 +856,18 @@ static int script_run_lua_add_behavior_link(lua_State *state)
 
     status = script_run_ensure_pending_plan(args);
     if (status == NMO_OK) {
-        if (from_io.has_ref && to_io.has_ref) {
-            status = nmo_edit_plan_add_behavior_link_from_handles(
-                args->pending_plan,
-                parent_id,
-                from_io.operation_index,
-                from_io.handle_name,
-                to_io.operation_index,
-                to_io.handle_name,
-                activation_delay);
-        } else if (from_io.has_ref) {
-            status = nmo_edit_plan_add_behavior_link_from_handle(
-                args->pending_plan,
-                parent_id,
-                from_io.operation_index,
-                from_io.handle_name,
-                to_io.id,
-                activation_delay);
-        } else if (to_io.has_ref) {
-            status = nmo_edit_plan_add_behavior_link_to_handle(
-                args->pending_plan,
-                parent_id,
-                from_io.id,
-                to_io.operation_index,
-                to_io.handle_name,
-                activation_delay);
-        } else {
-            status = nmo_edit_plan_add_behavior_link(
-                args->pending_plan,
-                parent_id,
-                from_io.id,
-                to_io.id,
-                activation_delay);
-        }
+        nmo_edit_handle_ref_t from_ref =
+            script_run_lua_edit_handle_ref(&from_io);
+        nmo_edit_handle_ref_t to_ref =
+            script_run_lua_edit_handle_ref(&to_io);
+        status = nmo_edit_plan_add_behavior_link(
+            args->pending_plan,
+            parent_id,
+            from_io.id,
+            from_io.has_ref ? &from_ref : NULL,
+            to_io.id,
+            to_io.has_ref ? &to_ref : NULL,
+            activation_delay);
     }
     if (status != NMO_OK) {
         return luaL_error(state, "%s",
@@ -1018,7 +1018,7 @@ static int script_run_lua_connect_parameter(lua_State *state)
     status = script_run_ensure_pending_plan(args);
     if (status == NMO_OK) {
         status = nmo_edit_plan_add_connect_parameter(
-            args->pending_plan, source_id, target_id);
+            args->pending_plan, source_id, target_id, NULL);
     }
     if (status != NMO_OK) {
         return luaL_error(state, "%s",
@@ -1045,11 +1045,13 @@ static int script_run_lua_connect_parameter_to_handle(lua_State *state)
 
     status = script_run_ensure_pending_plan(args);
     if (status == NMO_OK) {
-        status = nmo_edit_plan_add_connect_parameter_to_handle(
+        nmo_edit_handle_ref_t target_ref =
+            script_edit_handle_ref((size_t)(operation_index - 1), handle_name);
+        status = nmo_edit_plan_add_connect_parameter(
             args->pending_plan,
             source_id,
-            (size_t)(operation_index - 1),
-            handle_name);
+            0u,
+            &target_ref);
     }
     if (status != NMO_OK) {
         return luaL_error(state, "%s",
@@ -1157,8 +1159,11 @@ static int script_run_lua_add_operation(lua_State *state)
             parent_id,
             operation_guid,
             in1_id,
+            NULL,
             in2_id,
-            out_id);
+            NULL,
+            out_id,
+            NULL);
     }
     if (status != NMO_OK) {
         return luaL_error(state, "%s",
@@ -1199,8 +1204,11 @@ static int script_run_lua_rewire_operation(lua_State *state)
             operation_id,
             slot_flags,
             in1_id,
+            NULL,
             in2_id,
-            out_id);
+            NULL,
+            out_id,
+            NULL);
     }
     if (status != NMO_OK) {
         return luaL_error(state, "%s",
@@ -1434,6 +1442,7 @@ static int script_run_lua_set_parameter_value(lua_State *state)
         status = nmo_edit_plan_add_set_parameter_value(
             args->pending_plan,
             parameter_id,
+            NULL,
             value,
             has_options ? &options : NULL);
     }
@@ -1469,10 +1478,12 @@ static int script_run_lua_set_parameter_value_from_handle(lua_State *state)
 
     status = script_run_ensure_pending_plan(args);
     if (status == NMO_OK) {
-        status = nmo_edit_plan_add_set_parameter_value_from_handle(
+        nmo_edit_handle_ref_t parameter_ref =
+            script_edit_handle_ref((size_t)(operation_index - 1), handle_name);
+        status = nmo_edit_plan_add_set_parameter_value(
             args->pending_plan,
-            (size_t)(operation_index - 1),
-            handle_name,
+            0u,
+            &parameter_ref,
             value,
             has_options ? &options : NULL);
     }
@@ -1508,6 +1519,7 @@ static int script_run_lua_set_parameter_bytes(lua_State *state)
         status = nmo_edit_plan_add_set_parameter_bytes(
             args->pending_plan,
             parameter_id,
+            NULL,
             (const uint8_t *)bytes,
             byte_count,
             has_options ? &options : NULL);
@@ -1545,10 +1557,12 @@ static int script_run_lua_set_parameter_bytes_from_handle(lua_State *state)
 
     status = script_run_ensure_pending_plan(args);
     if (status == NMO_OK) {
-        status = nmo_edit_plan_add_set_parameter_bytes_from_handle(
+        nmo_edit_handle_ref_t parameter_ref =
+            script_edit_handle_ref((size_t)(operation_index - 1), handle_name);
+        status = nmo_edit_plan_add_set_parameter_bytes(
             args->pending_plan,
-            (size_t)(operation_index - 1),
-            handle_name,
+            0u,
+            &parameter_ref,
             (const uint8_t *)bytes,
             byte_count,
             has_options ? &options : NULL);
@@ -3133,7 +3147,13 @@ static nmo_status_t script_link_add_execute(
     nmo_status_t rc = nmo_edit_plan_create(&plan);
     if (rc == NMO_OK) {
         rc = nmo_edit_plan_add_behavior_link(
-            plan, args->parent_id, args->from_id, args->to_id, args->delay);
+            plan,
+            args->parent_id,
+            args->from_id,
+            NULL,
+            args->to_id,
+            NULL,
+            args->delay);
     }
     if (rc == NMO_OK) {
         rc = script_execute_edit_plan(executor, &args->common, plan);
@@ -3866,6 +3886,7 @@ static nmo_status_t script_param_set_execute(
         rc = nmo_edit_plan_add_set_parameter_value(
             plan,
             args->param_id,
+            NULL,
             args->value_str,
             args->has_manager_entry ? &options : NULL);
     }
@@ -3939,7 +3960,7 @@ static nmo_status_t script_param_connect_execute(
     nmo_status_t rc = nmo_edit_plan_create(&plan);
     if (rc == NMO_OK) {
         rc = nmo_edit_plan_add_connect_parameter(
-            plan, args->source_id, args->target_id);
+            plan, args->source_id, args->target_id, NULL);
     }
     if (rc == NMO_OK) {
         rc = script_execute_edit_plan(executor, &args->common, plan);
@@ -4117,8 +4138,11 @@ static nmo_status_t script_op_add_execute(
             args->parent_id,
             args->op_guid,
             args->in1_id,
+            NULL,
             args->in2_id,
-            args->out_id);
+            NULL,
+            args->out_id,
+            NULL);
     }
     if (rc == NMO_OK) {
         rc = script_execute_edit_plan(executor, &args->common, plan);
@@ -4181,8 +4205,11 @@ static nmo_status_t script_op_rewire_execute(
             args->op_id,
             args->slot_flags,
             args->in1_id,
+            NULL,
             args->in2_id,
-            args->out_id);
+            NULL,
+            args->out_id,
+            NULL);
     }
     if (rc == NMO_OK) {
         rc = script_execute_edit_plan(executor, &args->common, plan);
