@@ -9,40 +9,33 @@ void nmo_lua_push_interface_body_view(lua_State *state,
 {
     lua_createtable(state, 0, 16);
 
-    lua_pushboolean(state, body->has_body ? 1 : 0);
-    lua_setfield(state, -2, "has_body");
-    lua_pushinteger(state, (lua_Integer)body->link_count);
-    lua_setfield(state, -2, "link_count");
-    lua_pushinteger(state, (lua_Integer)body->operation_count);
-    lua_setfield(state, -2, "operation_count");
-    lua_pushinteger(state, (lua_Integer)body->comment_count);
-    lua_setfield(state, -2, "comment_count");
-    lua_pushinteger(state, (lua_Integer)body->local_param_count);
-    lua_setfield(state, -2, "local_param_count");
-    lua_pushinteger(state, (lua_Integer)body->shared_param_count);
-    lua_setfield(state, -2, "shared_param_count");
-    lua_pushboolean(state, body->has_params ? 1 : 0);
-    lua_setfield(state, -2, "has_params");
-    lua_pushboolean(state, body->has_graph_io ? 1 : 0);
-    lua_setfield(state, -2, "has_graph_io");
-    lua_pushboolean(state, body->has_links_section ? 1 : 0);
-    lua_setfield(state, -2, "has_links_section");
-    lua_pushboolean(state, body->has_operations_section ? 1 : 0);
-    lua_setfield(state, -2, "has_operations_section");
-    lua_pushboolean(state, body->has_comments_section ? 1 : 0);
-    lua_setfield(state, -2, "has_comments_section");
-    lua_pushboolean(state, body->has_unknown_flag_section ? 1 : 0);
-    lua_setfield(state, -2, "has_unknown_flag_section");
-    lua_pushinteger(state, (lua_Integer)body->unknown_flag);
-    lua_setfield(state, -2, "unknown_flag");
-    lua_pushinteger(state, (lua_Integer)body->inward_input_count);
-    lua_setfield(state, -2, "inward_input_count");
-    lua_pushinteger(state, (lua_Integer)body->outward_input_count);
-    lua_setfield(state, -2, "outward_input_count");
-    lua_pushinteger(state, (lua_Integer)body->inward_output_count);
-    lua_setfield(state, -2, "inward_output_count");
-    lua_pushinteger(state, (lua_Integer)body->outward_output_count);
-    lua_setfield(state, -2, "outward_output_count");
+    nmo_lua_set_boolean_field(state, "has_body", body->has_body);
+    nmo_lua_set_integer_field(state, "link_count", (lua_Integer)body->link_count);
+    nmo_lua_set_integer_field(
+        state, "operation_count", (lua_Integer)body->operation_count);
+    nmo_lua_set_integer_field(state, "comment_count", (lua_Integer)body->comment_count);
+    nmo_lua_set_integer_field(
+        state, "local_param_count", (lua_Integer)body->local_param_count);
+    nmo_lua_set_integer_field(
+        state, "shared_param_count", (lua_Integer)body->shared_param_count);
+    nmo_lua_set_boolean_field(state, "has_params", body->has_params);
+    nmo_lua_set_boolean_field(state, "has_graph_io", body->has_graph_io);
+    nmo_lua_set_boolean_field(state, "has_links_section", body->has_links_section);
+    nmo_lua_set_boolean_field(
+        state, "has_operations_section", body->has_operations_section);
+    nmo_lua_set_boolean_field(
+        state, "has_comments_section", body->has_comments_section);
+    nmo_lua_set_boolean_field(
+        state, "has_unknown_flag_section", body->has_unknown_flag_section);
+    nmo_lua_set_integer_field(state, "unknown_flag", (lua_Integer)body->unknown_flag);
+    nmo_lua_set_integer_field(
+        state, "inward_input_count", (lua_Integer)body->inward_input_count);
+    nmo_lua_set_integer_field(
+        state, "outward_input_count", (lua_Integer)body->outward_input_count);
+    nmo_lua_set_integer_field(
+        state, "inward_output_count", (lua_Integer)body->inward_output_count);
+    nmo_lua_set_integer_field(
+        state, "outward_output_count", (lua_Integer)body->outward_output_count);
 }
 
 void nmo_lua_push_interface_view(lua_State *state,
@@ -50,28 +43,20 @@ void nmo_lua_push_interface_view(lua_State *state,
 {
     lua_createtable(state, 0, 10);
 
-    lua_pushinteger(state, (lua_Integer)view->owner_behavior_id);
-    lua_setfield(state, -2, "owner_behavior_id");
-    lua_pushinteger(state, (lua_Integer)view->behavior_id);
-    lua_setfield(state, -2, "behavior_id");
-    lua_pushboolean(state, view->is_root ? 1 : 0);
-    lua_setfield(state, -2, "is_root");
-    lua_pushinteger(state, (lua_Integer)view->version);
-    lua_setfield(state, -2, "version");
-    lua_pushinteger(state, (lua_Integer)view->format_flags);
-    lua_setfield(state, -2, "format_flags");
-    lua_pushinteger(state, (lua_Integer)view->flags);
-    lua_setfield(state, -2, "flags");
-    lua_pushinteger(state, (lua_Integer)view->depth);
-    lua_setfield(state, -2, "depth");
-    lua_pushinteger(state, (lua_Integer)view->sub_behavior_count);
-    lua_setfield(state, -2, "sub_behavior_count");
-    lua_pushboolean(state, view->extra_present ? 1 : 0);
-    lua_setfield(state, -2, "extra_present");
-    lua_pushinteger(state, (lua_Integer)view->extra_entry_count);
-    lua_setfield(state, -2, "extra_entry_count");
-    lua_pushboolean(state, view->has_snapshot ? 1 : 0);
-    lua_setfield(state, -2, "has_snapshot");
+    nmo_lua_set_integer_field(
+        state, "owner_behavior_id", (lua_Integer)view->owner_behavior_id);
+    nmo_lua_set_integer_field(state, "behavior_id", (lua_Integer)view->behavior_id);
+    nmo_lua_set_boolean_field(state, "is_root", view->is_root);
+    nmo_lua_set_integer_field(state, "version", (lua_Integer)view->version);
+    nmo_lua_set_integer_field(state, "format_flags", (lua_Integer)view->format_flags);
+    nmo_lua_set_integer_field(state, "flags", (lua_Integer)view->flags);
+    nmo_lua_set_integer_field(state, "depth", (lua_Integer)view->depth);
+    nmo_lua_set_integer_field(
+        state, "sub_behavior_count", (lua_Integer)view->sub_behavior_count);
+    nmo_lua_set_boolean_field(state, "extra_present", view->extra_present);
+    nmo_lua_set_integer_field(
+        state, "extra_entry_count", (lua_Integer)view->extra_entry_count);
+    nmo_lua_set_boolean_field(state, "has_snapshot", view->has_snapshot);
 
     nmo_lua_push_interface_body_view(state, &view->body);
     lua_setfield(state, -2, "body");

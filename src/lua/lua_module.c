@@ -63,3 +63,39 @@ void nmo_lua_push_integer_table(lua_State *state,
     lua_createtable(state, 0, (int)count);
     nmo_lua_set_integers(state, entries, count);
 }
+
+void nmo_lua_set_integer_field(lua_State *state,
+                               const char *field_name,
+                               lua_Integer value)
+{
+    lua_pushinteger(state, value);
+    lua_setfield(state, -2, field_name);
+}
+
+void nmo_lua_set_number_field(lua_State *state,
+                              const char *field_name,
+                              lua_Number value)
+{
+    lua_pushnumber(state, value);
+    lua_setfield(state, -2, field_name);
+}
+
+void nmo_lua_set_boolean_field(lua_State *state,
+                               const char *field_name,
+                               bool value)
+{
+    lua_pushboolean(state, value ? 1 : 0);
+    lua_setfield(state, -2, field_name);
+}
+
+void nmo_lua_set_optional_string_field(lua_State *state,
+                                       const char *field_name,
+                                       const char *value)
+{
+    if (value != NULL) {
+        lua_pushstring(state, value);
+    } else {
+        lua_pushnil(state);
+    }
+    lua_setfield(state, -2, field_name);
+}

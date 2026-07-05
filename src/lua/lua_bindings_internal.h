@@ -62,6 +62,18 @@ void nmo_lua_set_integers(lua_State *state,
 void nmo_lua_push_integer_table(lua_State *state,
                                 const nmo_lua_integer_entry_t *entries,
                                 size_t count);
+void nmo_lua_set_integer_field(lua_State *state,
+                               const char *field_name,
+                               lua_Integer value);
+void nmo_lua_set_number_field(lua_State *state,
+                              const char *field_name,
+                              lua_Number value);
+void nmo_lua_set_boolean_field(lua_State *state,
+                               const char *field_name,
+                               bool value);
+void nmo_lua_set_optional_string_field(lua_State *state,
+                                       const char *field_name,
+                                       const char *value);
 
 int nmo_lua_raise_last_error(lua_State *state,
                              nmo_status_t status,

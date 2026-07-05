@@ -300,54 +300,23 @@ static void nmo_lua_type_set_guid_field(
     lua_setfield(state, -2, field_name);
 }
 
-static void nmo_lua_type_set_integer_field(
-    lua_State *state,
-    const char *field_name,
-    lua_Integer value)
-{
-    lua_pushinteger(state, value);
-    lua_setfield(state, -2, field_name);
-}
-
-static void nmo_lua_type_set_boolean_field(
-    lua_State *state,
-    const char *field_name,
-    bool value)
-{
-    lua_pushboolean(state, value ? 1 : 0);
-    lua_setfield(state, -2, field_name);
-}
-
-static void nmo_lua_type_set_optional_string_field(
-    lua_State *state,
-    const char *field_name,
-    const char *value)
-{
-    if (value != NULL) {
-        lua_pushstring(state, value);
-    } else {
-        lua_pushnil(state);
-    }
-    lua_setfield(state, -2, field_name);
-}
-
 static void nmo_lua_type_push_view(lua_State *state, const nmo_type_view_t *view)
 {
     lua_createtable(state, 0, 13);
 
     nmo_lua_type_set_guid_field(state, "guid", view->guid);
     nmo_lua_type_set_guid_field(state, "base_guid", view->base_guid);
-    nmo_lua_type_set_integer_field(state, "type_id", (lua_Integer)view->type_id);
-    nmo_lua_type_set_integer_field(state, "class_id", (lua_Integer)view->class_id);
-    nmo_lua_type_set_integer_field(state, "category", (lua_Integer)view->category);
-    nmo_lua_type_set_integer_field(state, "flags", (lua_Integer)view->flags);
-    nmo_lua_type_set_integer_field(state, "size", (lua_Integer)view->size);
-    nmo_lua_type_set_integer_field(state, "alignment", (lua_Integer)view->alignment);
-    nmo_lua_type_set_integer_field(state, "field_count", (lua_Integer)view->field_count);
-    nmo_lua_type_set_optional_string_field(state, "name", view->name);
-    nmo_lua_type_set_optional_string_field(state, "description", view->description);
-    nmo_lua_type_set_boolean_field(state, "has_reflection", view->has_reflection);
-    nmo_lua_type_set_boolean_field(state, "ui_visible", view->ui_visible);
+    nmo_lua_set_integer_field(state, "type_id", (lua_Integer)view->type_id);
+    nmo_lua_set_integer_field(state, "class_id", (lua_Integer)view->class_id);
+    nmo_lua_set_integer_field(state, "category", (lua_Integer)view->category);
+    nmo_lua_set_integer_field(state, "flags", (lua_Integer)view->flags);
+    nmo_lua_set_integer_field(state, "size", (lua_Integer)view->size);
+    nmo_lua_set_integer_field(state, "alignment", (lua_Integer)view->alignment);
+    nmo_lua_set_integer_field(state, "field_count", (lua_Integer)view->field_count);
+    nmo_lua_set_optional_string_field(state, "name", view->name);
+    nmo_lua_set_optional_string_field(state, "description", view->description);
+    nmo_lua_set_boolean_field(state, "has_reflection", view->has_reflection);
+    nmo_lua_set_boolean_field(state, "ui_visible", view->ui_visible);
 }
 
 static int nmo_lua_type_view_from_guid(lua_State *state)
