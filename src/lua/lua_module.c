@@ -80,6 +80,14 @@ void nmo_lua_set_number_field(lua_State *state,
     lua_setfield(state, -2, field_name);
 }
 
+void nmo_lua_set_string_field(lua_State *state,
+                              const char *field_name,
+                              const char *value)
+{
+    lua_pushstring(state, value);
+    lua_setfield(state, -2, field_name);
+}
+
 void nmo_lua_set_boolean_field(lua_State *state,
                                const char *field_name,
                                bool value)
@@ -93,9 +101,9 @@ void nmo_lua_set_optional_string_field(lua_State *state,
                                        const char *value)
 {
     if (value != NULL) {
-        lua_pushstring(state, value);
-    } else {
-        lua_pushnil(state);
+        nmo_lua_set_string_field(state, field_name, value);
+        return;
     }
+    lua_pushnil(state);
     lua_setfield(state, -2, field_name);
 }

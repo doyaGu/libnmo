@@ -59,10 +59,10 @@ static void nmo_lua_push_edit_impacts(lua_State *state,
         lua_createtable(state, 0, 4);
         nmo_lua_set_integer_field(state, "object_id", (lua_Integer)items[i].id);
         nmo_lua_set_integer_field(state, "id", (lua_Integer)items[i].id);
-        lua_pushstring(state, nmo_lua_edit_op_kind_string(items[i].cause));
-        lua_setfield(state, -2, "cause");
-        lua_pushstring(state, items[i].role != NULL ? items[i].role : "");
-        lua_setfield(state, -2, "role");
+        nmo_lua_set_string_field(
+            state, "cause", nmo_lua_edit_op_kind_string(items[i].cause));
+        nmo_lua_set_string_field(
+            state, "role", items[i].role != NULL ? items[i].role : "");
         lua_rawseti(state, -2, (lua_Integer)i + 1);
     }
 }
@@ -187,8 +187,7 @@ static void nmo_lua_push_operation_slot_snapshot(
     lua_createtable(state, 0, 7);
     char guid_text[32];
     if (nmo_guid_format(operation_guid, guid_text, sizeof(guid_text)) > 0) {
-        lua_pushstring(state, guid_text);
-        lua_setfield(state, -2, "operation_guid");
+        nmo_lua_set_string_field(state, "operation_guid", guid_text);
     }
     nmo_lua_set_boolean_field(state, "has_in1", has_in1);
     nmo_lua_set_integer_field(
@@ -251,10 +250,8 @@ static void nmo_lua_push_data_cell_snapshot(
     lua_createtable(state, 0, 4);
     nmo_lua_set_integer_field(state, "row", (lua_Integer)row);
     nmo_lua_set_integer_field(state, "col", (lua_Integer)col);
-    lua_pushstring(state, nmo_lua_data_cell_type_name(type));
-    lua_setfield(state, -2, "type");
-    lua_pushstring(state, value != NULL ? value : "");
-    lua_setfield(state, -2, "value");
+    nmo_lua_set_string_field(state, "type", nmo_lua_data_cell_type_name(type));
+    nmo_lua_set_string_field(state, "value", value != NULL ? value : "");
 }
 
 static void nmo_lua_push_impact_before_after(
@@ -407,10 +404,10 @@ static void nmo_lua_push_filtered_edit_impacts(
         lua_createtable(state, 0, 4);
         nmo_lua_set_integer_field(state, "object_id", (lua_Integer)items[i].id);
         nmo_lua_set_integer_field(state, "id", (lua_Integer)items[i].id);
-        lua_pushstring(state, nmo_lua_edit_op_kind_string(items[i].cause));
-        lua_setfield(state, -2, "cause");
-        lua_pushstring(state, items[i].role != NULL ? items[i].role : "");
-        lua_setfield(state, -2, "role");
+        nmo_lua_set_string_field(
+            state, "cause", nmo_lua_edit_op_kind_string(items[i].cause));
+        nmo_lua_set_string_field(
+            state, "role", items[i].role != NULL ? items[i].role : "");
         nmo_lua_push_impact_before_after(state, &items[i]);
         lua_rawseti(state, -2, out_index++);
     }
@@ -472,10 +469,10 @@ static void nmo_lua_push_edit_operation_handles(
     lua_createtable(state, (int)operation->handle_count, 0);
     for (size_t i = 0; i < operation->handle_count; ++i) {
         lua_createtable(state, 0, 3);
-        lua_pushstring(
+        nmo_lua_set_string_field(
             state,
+            "name",
             operation->handles[i].name != NULL ? operation->handles[i].name : "");
-        lua_setfield(state, -2, "name");
         nmo_lua_set_integer_field(
             state, "object_id", (lua_Integer)operation->handles[i].id);
         nmo_lua_set_integer_field(
@@ -493,18 +490,16 @@ static void nmo_lua_push_edit_report_operations(lua_State *state,
         const char *kind = nmo_lua_edit_op_kind_string(operation->kind);
         lua_createtable(state, 0, 10);
         nmo_lua_set_integer_field(state, "index", (lua_Integer)i + 1);
-        lua_pushstring(state, kind);
-        lua_setfield(state, -2, "op");
-        lua_pushstring(state, kind);
-        lua_setfield(state, -2, "kind");
+        nmo_lua_set_string_field(state, "op", kind);
+        nmo_lua_set_string_field(state, "kind", kind);
         nmo_lua_set_integer_field(
             state, "primary_id", (lua_Integer)operation->primary_id);
         nmo_lua_set_integer_field(
             state, "result_id", (lua_Integer)operation->result_id);
         nmo_lua_set_integer_field(
             state, "status", (lua_Integer)operation->status);
-        lua_pushstring(state, nmo_error_string(operation->status));
-        lua_setfield(state, -2, "status_name");
+        nmo_lua_set_string_field(
+            state, "status_name", nmo_error_string(operation->status));
         nmo_lua_set_optional_string_field(
             state, "diagnostic_code", operation->diagnostic_code);
         nmo_lua_set_optional_string_field(
@@ -618,12 +613,14 @@ static void nmo_lua_push_semantic_risks(lua_State *state,
     for (size_t i = 0; i < report->semantic_risk_count; ++i) {
         const nmo_behavior_semantic_risk_t *risk = &report->semantic_risks[i];
         lua_createtable(state, 0, 4);
-        lua_pushstring(state, nmo_lua_edit_risk_severity_string(risk->severity));
-        lua_setfield(state, -2, "severity");
-        lua_pushstring(state, risk->code != NULL ? risk->code : "");
-        lua_setfield(state, -2, "code");
-        lua_pushstring(state, risk->message != NULL ? risk->message : "");
-        lua_setfield(state, -2, "message");
+        nmo_lua_set_string_field(
+            state,
+            "severity",
+            nmo_lua_edit_risk_severity_string(risk->severity));
+        nmo_lua_set_string_field(
+            state, "code", risk->code != NULL ? risk->code : "");
+        nmo_lua_set_string_field(
+            state, "message", risk->message != NULL ? risk->message : "");
         nmo_lua_set_integer_field(
             state, "object_id", (lua_Integer)risk->object_id);
         lua_rawseti(state, -2, (lua_Integer)i + 1);
@@ -635,12 +632,12 @@ static void nmo_lua_push_probe_selector_diagnostics(
     const nmo_probe_selector_result_t *analysis)
 {
     lua_createtable(state, 0, 8);
-    lua_pushstring(state, nmo_probe_selector_mode_name(analysis->mode));
-    lua_setfield(state, -2, "mode");
-    lua_pushstring(state, nmo_probe_selector_status_name(analysis->status));
-    lua_setfield(state, -2, "status");
-    lua_pushstring(state, analysis->rejection_code);
-    lua_setfield(state, -2, "rejection_code");
+    nmo_lua_set_string_field(
+        state, "mode", nmo_probe_selector_mode_name(analysis->mode));
+    nmo_lua_set_string_field(
+        state, "status", nmo_probe_selector_status_name(analysis->status));
+    nmo_lua_set_string_field(
+        state, "rejection_code", analysis->rejection_code);
     nmo_lua_set_integer_field(
         state, "selected_node_id", (lua_Integer)analysis->selected_node_id);
     nmo_lua_set_integer_field(
@@ -677,10 +674,10 @@ static void nmo_lua_push_probe_selector_diagnostics(
             (lua_Integer)candidate->value_parameter_id);
         nmo_lua_set_integer_field(
             state, "dataarray_id", (lua_Integer)candidate->dataarray_id);
-        lua_pushstring(state, nmo_probe_candidate_role_name(candidate->role));
-        lua_setfield(state, -2, "role");
-        lua_pushstring(state, candidate->rejection_code);
-        lua_setfield(state, -2, "rejection_code");
+        nmo_lua_set_string_field(
+            state, "role", nmo_probe_candidate_role_name(candidate->role));
+        nmo_lua_set_string_field(
+            state, "rejection_code", candidate->rejection_code);
         lua_rawseti(state, -2, (lua_Integer)i + 1);
     }
     lua_setfield(state, -2, "candidates");

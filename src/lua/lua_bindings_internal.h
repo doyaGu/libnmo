@@ -68,6 +68,9 @@ void nmo_lua_set_integer_field(lua_State *state,
 void nmo_lua_set_number_field(lua_State *state,
                               const char *field_name,
                               lua_Number value);
+void nmo_lua_set_string_field(lua_State *state,
+                              const char *field_name,
+                              const char *value);
 void nmo_lua_set_boolean_field(lua_State *state,
                                const char *field_name,
                                bool value);
