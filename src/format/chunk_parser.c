@@ -125,6 +125,28 @@ static inline nmo_status_t parser_read_guid(nmo_chunk_parser_t *p,
     return parser_read_guid_rollback(p, p != NULL ? p->cursor : 0, out_guid, eof_message);
 }
 
+static inline nmo_status_t parser_copy_aligned_bytes(nmo_chunk_parser_t *p,
+                                                     void *dest,
+                                                     size_t bytes,
+                                                     const char *eof_message) {
+    if (p == NULL || dest == NULL) {
+        NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
+    }
+
+    if (bytes == 0) {
+        NMO_RETURN_OK();
+    }
+
+    size_t dwords_needed = nmo_bytes_to_dwords(bytes);
+    if (!check_bounds(p, dwords_needed)) {
+        NMO_PARSER_RETURN_TRUNCATED(eof_message);
+    }
+
+    memcpy(dest, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], bytes);
+    p->cursor += dwords_needed;
+    NMO_RETURN_OK();
+}
+
 static inline void consume_subchunk_slot(nmo_chunk_parser_t *p) {
     if (p == NULL) {
         return;
@@ -561,22 +583,7 @@ nmo_status_t nmo_chunk_parser_read_bytes(nmo_chunk_parser_t *p, void *dest, size
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
 
-    if (bytes == 0) {
-        NMO_RETURN_OK();
-    }
-
-    // Calculate DWORDs needed (with padding)
-    size_t dwords_needed = nmo_align_dword(bytes) / 4;
-
-    if (!check_bounds(p, dwords_needed)) {
-        NMO_PARSER_RETURN_TRUNCATED("Cannot read bytes");
-    }
-
-    // Copy bytes from DWORD buffer
-    memcpy(dest, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], bytes);
-    p->cursor += dwords_needed;
-
-    NMO_RETURN_OK();
+    return parser_copy_aligned_bytes(p, dest, bytes, "Cannot read bytes");
 }
 
 nmo_status_t nmo_chunk_parser_read_string(nmo_chunk_parser_t *p, char **out, nmo_arena_t *arena) {
@@ -692,19 +699,7 @@ nmo_status_t nmo_chunk_parser_read_buffer_nosize(nmo_chunk_parser_t *p, size_t b
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid buffer");
     }
 
-    // Calculate DWORDs needed (with padding)
-    size_t dwords_needed = (bytes + 3) / 4;
-
-    // Check bounds
-    if (!check_bounds(p, dwords_needed)) {
-        NMO_PARSER_RETURN_TRUNCATED("Cannot read buffer");
-    }
-
-    // Copy bytes from DWORD buffer
-    memcpy(buffer, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], bytes);
-    p->cursor += dwords_needed;
-
-    NMO_RETURN_OK();
+    return parser_copy_aligned_bytes(p, buffer, bytes, "Cannot read buffer");
 }
 
 nmo_status_t nmo_chunk_parser_read_buffer_nosize_lendian16(nmo_chunk_parser_t *p,
