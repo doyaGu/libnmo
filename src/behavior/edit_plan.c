@@ -3217,6 +3217,15 @@ static void edit_executor_set_diagnostic(
     }
 }
 
+typedef struct edit_executor_handle_slot {
+    const edit_plan_handle_ref_t *ref;
+    nmo_object_id_t *id;
+    const char *diagnostic_code;
+    const char *diagnostic_message;
+    bool resolve_input_parameter_source;
+    bool source_requires_ref;
+} edit_executor_handle_slot_t;
+
 static nmo_status_t edit_executor_resolve_handle_ref(
     const nmo_edit_report_t *report,
     edit_plan_handle_ref_t ref,
@@ -3261,6 +3270,54 @@ static nmo_status_t edit_executor_resolve_input_parameter_source(
     return NMO_OK;
 }
 
+static nmo_status_t edit_executor_resolve_handle_slots(
+    nmo_script_edit_tx_t *tx,
+    const nmo_edit_report_t *report,
+    const edit_executor_handle_slot_t *slots,
+    size_t slot_count,
+    const char **out_diagnostic_code,
+    const char **out_diagnostic_message)
+{
+    if (slot_count == 0u) {
+        return NMO_OK;
+    }
+    if (slots == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    for (size_t i = 0; i < slot_count; ++i) {
+        const edit_executor_handle_slot_t *slot = &slots[i];
+        if (slot->id == NULL) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+
+        bool has_ref = slot->ref != NULL && slot->ref->has_ref;
+        if (has_ref) {
+            nmo_status_t rc = edit_executor_resolve_handle_ref(
+                report,
+                *slot->ref,
+                slot->id,
+                slot->diagnostic_code,
+                slot->diagnostic_message,
+                out_diagnostic_code,
+                out_diagnostic_message);
+            if (rc != NMO_OK) {
+                return rc;
+            }
+        }
+
+        if (slot->resolve_input_parameter_source &&
+            (has_ref || !slot->source_requires_ref)) {
+            nmo_status_t rc =
+                edit_executor_resolve_input_parameter_source(tx, slot->id);
+            if (rc != NMO_OK) {
+                return rc;
+            }
+        }
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t edit_executor_apply_op(
     nmo_script_edit_tx_t *tx,
     const nmo_edit_op_t *op,
@@ -3285,22 +3342,22 @@ static nmo_status_t edit_executor_apply_op(
     switch (op->kind) {
     case NMO_EDIT_OP_SET_PARAMETER_VALUE: {
         nmo_object_id_t parameter_id = op->primary_id;
-        nmo_status_t ref_rc = edit_executor_resolve_handle_ref(
+        edit_executor_handle_slot_t parameter_slot = {
+            .ref = &op->data.set_value.parameter_ref,
+            .id = &parameter_id,
+            .diagnostic_code = "handle_not_found",
+            .diagnostic_message =
+                "Referenced edit operation handle was not found",
+            .resolve_input_parameter_source = true,
+            .source_requires_ref = false,
+        };
+        NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
+            tx,
             report,
-            op->data.set_value.parameter_ref,
-            &parameter_id,
-            "handle_not_found",
-            "Referenced edit operation handle was not found",
+            &parameter_slot,
+            1u,
             out_diagnostic_code,
-            out_diagnostic_message);
-        if (ref_rc != NMO_OK) {
-            return ref_rc;
-        }
-        nmo_status_t source_rc =
-            edit_executor_resolve_input_parameter_source(tx, &parameter_id);
-        if (source_rc != NMO_OK) {
-            return source_rc;
-        }
+            out_diagnostic_message));
         if (out_result_id != NULL) {
             *out_result_id = parameter_id;
         }
@@ -3318,24 +3375,22 @@ static nmo_status_t edit_executor_apply_op(
     case NMO_EDIT_OP_SET_PARAMETER_BYTES:
     {
         nmo_object_id_t parameter_id = op->primary_id;
-        if (op->data.set_bytes.parameter_ref.has_ref) {
-            nmo_status_t ref_rc = edit_executor_resolve_handle_ref(
-                report,
-                op->data.set_bytes.parameter_ref,
-                &parameter_id,
-                "handle_not_found",
+        edit_executor_handle_slot_t parameter_slot = {
+            .ref = &op->data.set_bytes.parameter_ref,
+            .id = &parameter_id,
+            .diagnostic_code = "handle_not_found",
+            .diagnostic_message =
                 "Referenced edit operation parameter handle was not found",
-                out_diagnostic_code,
-                out_diagnostic_message);
-            if (ref_rc != NMO_OK) {
-                return ref_rc;
-            }
-            nmo_status_t source_rc =
-                edit_executor_resolve_input_parameter_source(tx, &parameter_id);
-            if (source_rc != NMO_OK) {
-                return source_rc;
-            }
-        }
+            .resolve_input_parameter_source = true,
+            .source_requires_ref = true,
+        };
+        NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
+            tx,
+            report,
+            &parameter_slot,
+            1u,
+            out_diagnostic_code,
+            out_diagnostic_message));
         if (out_result_id != NULL) {
             *out_result_id = parameter_id;
         }
@@ -3411,28 +3466,29 @@ static nmo_status_t edit_executor_apply_op(
     case NMO_EDIT_OP_ADD_BEHAVIOR_LINK: {
         nmo_object_id_t from_io_id = op->data.add_link.from_io_id;
         nmo_object_id_t to_io_id = op->data.add_link.to_io_id;
-        nmo_status_t ref_rc = edit_executor_resolve_handle_ref(
+        edit_executor_handle_slot_t slots[] = {
+            {
+                .ref = &op->data.add_link.from_io_ref,
+                .id = &from_io_id,
+                .diagnostic_code = "handle_not_found",
+                .diagnostic_message =
+                    "Referenced edit operation output IO handle was not found",
+            },
+            {
+                .ref = &op->data.add_link.to_io_ref,
+                .id = &to_io_id,
+                .diagnostic_code = "handle_not_found",
+                .diagnostic_message =
+                    "Referenced edit operation input IO handle was not found",
+            },
+        };
+        NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
+            tx,
             report,
-            op->data.add_link.from_io_ref,
-            &from_io_id,
-            "handle_not_found",
-            "Referenced edit operation output IO handle was not found",
+            slots,
+            sizeof(slots) / sizeof(slots[0]),
             out_diagnostic_code,
-            out_diagnostic_message);
-        if (ref_rc != NMO_OK) {
-            return ref_rc;
-        }
-        ref_rc = edit_executor_resolve_handle_ref(
-            report,
-            op->data.add_link.to_io_ref,
-            &to_io_id,
-            "handle_not_found",
-            "Referenced edit operation input IO handle was not found",
-            out_diagnostic_code,
-            out_diagnostic_message);
-        if (ref_rc != NMO_OK) {
-            return ref_rc;
-        }
+            out_diagnostic_message));
         nmo_status_t rc = nmo_script_edit_add_behavior_link(
             tx,
             op->data.add_link.parent_behavior_id,
@@ -3605,17 +3661,20 @@ static nmo_status_t edit_executor_apply_op(
     case NMO_EDIT_OP_CONNECT_PARAMETER: {
         nmo_object_id_t target_parameter_id =
             op->data.connect_parameter.target_parameter_id;
-        nmo_status_t ref_rc = edit_executor_resolve_handle_ref(
+        edit_executor_handle_slot_t target_slot = {
+            .ref = &op->data.connect_parameter.target_parameter_ref,
+            .id = &target_parameter_id,
+            .diagnostic_code = "handle_not_found",
+            .diagnostic_message =
+                "Referenced edit operation parameter handle was not found",
+        };
+        NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
+            tx,
             report,
-            op->data.connect_parameter.target_parameter_ref,
-            &target_parameter_id,
-            "handle_not_found",
-            "Referenced edit operation parameter handle was not found",
+            &target_slot,
+            1u,
             out_diagnostic_code,
-            out_diagnostic_message);
-        if (ref_rc != NMO_OK) {
-            return ref_rc;
-        }
+            out_diagnostic_message));
         nmo_object_id_t before_source_parameter_id =
             edit_plan_get_parameterin_source(tx, target_parameter_id);
         nmo_status_t rc = nmo_script_edit_connect_parameter(
@@ -3728,39 +3787,36 @@ static nmo_status_t edit_executor_apply_op(
             op->data.add_operation.in2_parameter_id;
         nmo_object_id_t out_parameter_id =
             op->data.add_operation.out_parameter_id;
-        nmo_status_t ref_rc = edit_executor_resolve_handle_ref(
+        edit_executor_handle_slot_t slots[] = {
+            {
+                .ref = &op->data.add_operation.in1_parameter_ref,
+                .id = &in1_parameter_id,
+                .diagnostic_code = "handle_not_found",
+                .diagnostic_message =
+                    "Referenced edit operation input parameter handle was not found",
+            },
+            {
+                .ref = &op->data.add_operation.in2_parameter_ref,
+                .id = &in2_parameter_id,
+                .diagnostic_code = "handle_not_found",
+                .diagnostic_message =
+                    "Referenced edit operation input parameter handle was not found",
+            },
+            {
+                .ref = &op->data.add_operation.out_parameter_ref,
+                .id = &out_parameter_id,
+                .diagnostic_code = "handle_not_found",
+                .diagnostic_message =
+                    "Referenced edit operation output parameter handle was not found",
+            },
+        };
+        NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
+            tx,
             report,
-            op->data.add_operation.in1_parameter_ref,
-            &in1_parameter_id,
-            "handle_not_found",
-            "Referenced edit operation input parameter handle was not found",
+            slots,
+            sizeof(slots) / sizeof(slots[0]),
             out_diagnostic_code,
-            out_diagnostic_message);
-        if (ref_rc != NMO_OK) {
-            return ref_rc;
-        }
-        ref_rc = edit_executor_resolve_handle_ref(
-            report,
-            op->data.add_operation.in2_parameter_ref,
-            &in2_parameter_id,
-            "handle_not_found",
-            "Referenced edit operation input parameter handle was not found",
-            out_diagnostic_code,
-            out_diagnostic_message);
-        if (ref_rc != NMO_OK) {
-            return ref_rc;
-        }
-        ref_rc = edit_executor_resolve_handle_ref(
-            report,
-            op->data.add_operation.out_parameter_ref,
-            &out_parameter_id,
-            "handle_not_found",
-            "Referenced edit operation output parameter handle was not found",
-            out_diagnostic_code,
-            out_diagnostic_message);
-        if (ref_rc != NMO_OK) {
-            return ref_rc;
-        }
+            out_diagnostic_message));
         nmo_status_t rc = nmo_script_edit_add_operation(
             tx,
             op->data.add_operation.parent_behavior_id,
@@ -3797,39 +3853,36 @@ static nmo_status_t edit_executor_apply_op(
             op->data.rewire_operation.in2_parameter_id;
         nmo_object_id_t out_parameter_id =
             op->data.rewire_operation.out_parameter_id;
-        nmo_status_t ref_rc = edit_executor_resolve_handle_ref(
+        edit_executor_handle_slot_t slots[] = {
+            {
+                .ref = &op->data.rewire_operation.in1_parameter_ref,
+                .id = &in1_parameter_id,
+                .diagnostic_code = "missing_in1_handle",
+                .diagnostic_message =
+                    "Failed to resolve in1 parameter handle",
+            },
+            {
+                .ref = &op->data.rewire_operation.in2_parameter_ref,
+                .id = &in2_parameter_id,
+                .diagnostic_code = "missing_in2_handle",
+                .diagnostic_message =
+                    "Failed to resolve in2 parameter handle",
+            },
+            {
+                .ref = &op->data.rewire_operation.out_parameter_ref,
+                .id = &out_parameter_id,
+                .diagnostic_code = "missing_out_handle",
+                .diagnostic_message =
+                    "Failed to resolve out parameter handle",
+            },
+        };
+        NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
+            tx,
             report,
-            op->data.rewire_operation.in1_parameter_ref,
-            &in1_parameter_id,
-            "missing_in1_handle",
-            "Failed to resolve in1 parameter handle",
+            slots,
+            sizeof(slots) / sizeof(slots[0]),
             out_diagnostic_code,
-            out_diagnostic_message);
-        if (ref_rc != NMO_OK) {
-            return ref_rc;
-        }
-        ref_rc = edit_executor_resolve_handle_ref(
-            report,
-            op->data.rewire_operation.in2_parameter_ref,
-            &in2_parameter_id,
-            "missing_in2_handle",
-            "Failed to resolve in2 parameter handle",
-            out_diagnostic_code,
-            out_diagnostic_message);
-        if (ref_rc != NMO_OK) {
-            return ref_rc;
-        }
-        ref_rc = edit_executor_resolve_handle_ref(
-            report,
-            op->data.rewire_operation.out_parameter_ref,
-            &out_parameter_id,
-            "missing_out_handle",
-            "Failed to resolve out parameter handle",
-            out_diagnostic_code,
-            out_diagnostic_message);
-        if (ref_rc != NMO_OK) {
-            return ref_rc;
-        }
+            out_diagnostic_message));
         nmo_status_t rc = nmo_script_edit_rewire_operation(
             tx,
             op->data.rewire_operation.operation_id,
