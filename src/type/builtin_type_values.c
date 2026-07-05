@@ -2190,6 +2190,14 @@ uint32_t nmo_hash_string_value(const void *instance)
         return nmo_hash_u64_fold((uint64_t)(*(const c_type *)instance)); \
     }
 
+#define NMO_DEFINE_EQ_HASH_BYTES(tag, c_type) \
+    bool nmo_equals_bytes_##tag(const void *a, const void *b) { \
+        return memcmp(a, b, sizeof(c_type)) == 0; \
+    } \
+    uint32_t nmo_hash_bytes_##tag(const void *instance) { \
+        return nmo_murmur3_32(instance, sizeof(c_type), 0); \
+    }
+
 NMO_DEFINE_EQ_HASH_U32(int32, int32_t)
 NMO_DEFINE_EQ_HASH_U32(uint32, uint32_t)
 NMO_DEFINE_EQ_HASH_U32(int8, int8_t)
@@ -2250,95 +2258,15 @@ uint32_t nmo_hash_object_id(const void *instance)
     return nmo_hash_int32((uint32_t)(*(const nmo_object_id_t *)instance));
 }
 
-bool nmo_equals_bytes_vector2(const void *a, const void *b)
-{
-    return memcmp(a, b, sizeof(nmo_vector2_t)) == 0;
-}
-
-uint32_t nmo_hash_bytes_vector2(const void *instance)
-{
-    return nmo_murmur3_32(instance, sizeof(nmo_vector2_t), 0);
-}
-
-bool nmo_equals_bytes_vector3(const void *a, const void *b)
-{
-    return memcmp(a, b, sizeof(nmo_vector_t)) == 0;
-}
-
-uint32_t nmo_hash_bytes_vector3(const void *instance)
-{
-    return nmo_murmur3_32(instance, sizeof(nmo_vector_t), 0);
-}
-
-bool nmo_equals_bytes_vector4(const void *a, const void *b)
-{
-    return memcmp(a, b, sizeof(nmo_vector4_t)) == 0;
-}
-
-uint32_t nmo_hash_bytes_vector4(const void *instance)
-{
-    return nmo_murmur3_32(instance, sizeof(nmo_vector4_t), 0);
-}
-
-bool nmo_equals_bytes_quaternion(const void *a, const void *b)
-{
-    return memcmp(a, b, sizeof(nmo_quaternion_t)) == 0;
-}
-
-uint32_t nmo_hash_bytes_quaternion(const void *instance)
-{
-    return nmo_murmur3_32(instance, sizeof(nmo_quaternion_t), 0);
-}
-
-bool nmo_equals_bytes_matrix(const void *a, const void *b)
-{
-    return memcmp(a, b, sizeof(nmo_matrix_t)) == 0;
-}
-
-uint32_t nmo_hash_bytes_matrix(const void *instance)
-{
-    return nmo_murmur3_32(instance, sizeof(nmo_matrix_t), 0);
-}
-
-bool nmo_equals_bytes_color(const void *a, const void *b)
-{
-    return memcmp(a, b, sizeof(nmo_color_t)) == 0;
-}
-
-uint32_t nmo_hash_bytes_color(const void *instance)
-{
-    return nmo_murmur3_32(instance, sizeof(nmo_color_t), 0);
-}
-
-bool nmo_equals_bytes_rect(const void *a, const void *b)
-{
-    return memcmp(a, b, sizeof(nmo_rect_t)) == 0;
-}
-
-uint32_t nmo_hash_bytes_rect(const void *instance)
-{
-    return nmo_murmur3_32(instance, sizeof(nmo_rect_t), 0);
-}
-
-bool nmo_equals_bytes_eulerangles(const void *a, const void *b)
-{
-    return memcmp(a, b, sizeof(nmo_eulerangles_t)) == 0;
-}
-
-uint32_t nmo_hash_bytes_eulerangles(const void *instance)
-{
-    return nmo_murmur3_32(instance, sizeof(nmo_eulerangles_t), 0);
-}
-
-bool nmo_equals_bytes_box(const void *a, const void *b)
-{
-    return memcmp(a, b, sizeof(nmo_box_t)) == 0;
-}
-
-uint32_t nmo_hash_bytes_box(const void *instance)
-{
-    return nmo_murmur3_32(instance, sizeof(nmo_box_t), 0);
-}
+NMO_DEFINE_EQ_HASH_BYTES(vector2, nmo_vector2_t)
+NMO_DEFINE_EQ_HASH_BYTES(vector3, nmo_vector_t)
+NMO_DEFINE_EQ_HASH_BYTES(vector4, nmo_vector4_t)
+NMO_DEFINE_EQ_HASH_BYTES(quaternion, nmo_quaternion_t)
+NMO_DEFINE_EQ_HASH_BYTES(matrix, nmo_matrix_t)
+NMO_DEFINE_EQ_HASH_BYTES(color, nmo_color_t)
+NMO_DEFINE_EQ_HASH_BYTES(rect, nmo_rect_t)
+NMO_DEFINE_EQ_HASH_BYTES(eulerangles, nmo_eulerangles_t)
+NMO_DEFINE_EQ_HASH_BYTES(box, nmo_box_t)
 
 #define NMO_DEFINE_VT_TO_STRING(name, value_to_string_fn) \
     nmo_status_t nmo_vt_to_string_##name( \
