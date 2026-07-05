@@ -424,8 +424,7 @@ static int nmo_lua_behavior_push_pending_handle(
     lua_createtable(state, 0, 2);
     nmo_lua_set_integer_field(
         state, "operation", (lua_Integer)nmo_edit_plan_count(plan));
-    lua_pushstring(state, handle_name);
-    lua_setfield(state, -2, "handle");
+    nmo_lua_set_string_field(state, "handle", handle_name);
     return 1;
 }
 
