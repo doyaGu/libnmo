@@ -859,16 +859,15 @@ static void nmo_lua_session_push_index_stats(lua_State *state,
                                              const nmo_index_stats_t *stats)
 {
     lua_createtable(state, 0, 5);
-    lua_pushinteger(state, (lua_Integer)stats->total_objects);
-    lua_setfield(state, -2, "total_objects");
-    lua_pushinteger(state, (lua_Integer)stats->class_index_entries);
-    lua_setfield(state, -2, "class_index_entries");
-    lua_pushinteger(state, (lua_Integer)stats->name_index_entries);
-    lua_setfield(state, -2, "name_index_entries");
-    lua_pushinteger(state, (lua_Integer)stats->guid_index_entries);
-    lua_setfield(state, -2, "guid_index_entries");
-    lua_pushinteger(state, (lua_Integer)stats->memory_usage);
-    lua_setfield(state, -2, "memory_usage");
+    nmo_lua_set_integer_field(
+        state, "total_objects", (lua_Integer)stats->total_objects);
+    nmo_lua_set_integer_field(
+        state, "class_index_entries", (lua_Integer)stats->class_index_entries);
+    nmo_lua_set_integer_field(
+        state, "name_index_entries", (lua_Integer)stats->name_index_entries);
+    nmo_lua_set_integer_field(
+        state, "guid_index_entries", (lua_Integer)stats->guid_index_entries);
+    nmo_lua_set_integer_field(state, "memory_usage", (lua_Integer)stats->memory_usage);
 }
 
 static int nmo_lua_session_rebuild_indexes(lua_State *state)
@@ -941,34 +940,36 @@ static void nmo_lua_session_push_behavior_interface_diagnostics(
     const nmo_session_behavior_interface_diagnostics_t *diag)
 {
     lua_createtable(state, 0, 12);
-    lua_pushboolean(state, diag->attempted ? 1 : 0);
-    lua_setfield(state, -2, "attempted");
-    lua_pushboolean(state, diag->available ? 1 : 0);
-    lua_setfield(state, -2, "available");
-    lua_pushinteger(state, (lua_Integer)diag->status);
-    lua_setfield(state, -2, "status");
-    lua_pushinteger(state, (lua_Integer)diag->attempted_count);
-    lua_setfield(state, -2, "attempted_count");
-    lua_pushinteger(state, (lua_Integer)diag->parsed_count);
-    lua_setfield(state, -2, "parsed_count");
-    lua_pushinteger(state, (lua_Integer)diag->failed_count);
-    lua_setfield(state, -2, "failed_count");
-    lua_pushinteger(state, (lua_Integer)diag->skipped_no_arena_count);
-    lua_setfield(state, -2, "skipped_no_arena_count");
-    lua_pushinteger(state, (lua_Integer)diag->allocation_failure_count);
-    lua_setfield(state, -2, "allocation_failure_count");
-    lua_pushinteger(state, (lua_Integer)diag->first_error_object_id);
-    lua_setfield(state, -2, "first_error_object_id");
-    lua_pushinteger(state, (lua_Integer)diag->first_error_file_id);
-    lua_setfield(state, -2, "first_error_file_id");
-    lua_pushinteger(state, (lua_Integer)diag->first_error_chunk_version);
-    lua_setfield(state, -2, "first_error_chunk_version");
-    lua_pushinteger(state, (lua_Integer)diag->first_error_data_version);
-    lua_setfield(state, -2, "first_error_data_version");
-    lua_pushinteger(state, (lua_Integer)diag->first_error_reader_offset);
-    lua_setfield(state, -2, "first_error_reader_offset");
-    lua_pushinteger(state, (lua_Integer)diag->first_error_chunk_dwords);
-    lua_setfield(state, -2, "first_error_chunk_dwords");
+    nmo_lua_set_boolean_field(state, "attempted", diag->attempted);
+    nmo_lua_set_boolean_field(state, "available", diag->available);
+    nmo_lua_set_integer_field(state, "status", (lua_Integer)diag->status);
+    nmo_lua_set_integer_field(
+        state, "attempted_count", (lua_Integer)diag->attempted_count);
+    nmo_lua_set_integer_field(state, "parsed_count", (lua_Integer)diag->parsed_count);
+    nmo_lua_set_integer_field(state, "failed_count", (lua_Integer)diag->failed_count);
+    nmo_lua_set_integer_field(
+        state, "skipped_no_arena_count", (lua_Integer)diag->skipped_no_arena_count);
+    nmo_lua_set_integer_field(
+        state, "allocation_failure_count",
+        (lua_Integer)diag->allocation_failure_count);
+    nmo_lua_set_integer_field(
+        state, "first_error_object_id", (lua_Integer)diag->first_error_object_id);
+    nmo_lua_set_integer_field(
+        state, "first_error_file_id", (lua_Integer)diag->first_error_file_id);
+    nmo_lua_set_integer_field(
+        state,
+        "first_error_chunk_version",
+        (lua_Integer)diag->first_error_chunk_version);
+    nmo_lua_set_integer_field(
+        state,
+        "first_error_data_version",
+        (lua_Integer)diag->first_error_data_version);
+    nmo_lua_set_integer_field(
+        state,
+        "first_error_reader_offset",
+        (lua_Integer)diag->first_error_reader_offset);
+    nmo_lua_set_integer_field(
+        state, "first_error_chunk_dwords", (lua_Integer)diag->first_error_chunk_dwords);
 }
 
 static int nmo_lua_session_behavior_interface_diagnostics(lua_State *state)
