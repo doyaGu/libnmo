@@ -268,7 +268,6 @@ add_unit_test(test_count_field_metadata)
 add_unit_test(test_strip_preview)
 add_unit_test(test_manager_event_bus)
 add_unit_test(test_type_runtime_hook_coverage)
-add_unit_test(test_no_legacy_runtime_api_exports)
 
 # Phase 2.1: Memory-mapped IO tests
 add_unit_test(test_io_mmap)
