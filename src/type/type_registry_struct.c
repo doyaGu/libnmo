@@ -66,6 +66,27 @@ static void free_heap_type_fields(nmo_allocator_t *allocator, nmo_type_field_t *
     nmo_free(allocator, fields);
 }
 
+static nmo_status_t create_arena_metadata(
+    nmo_arena_t *arena,
+    nmo_type_id_t type_id,
+    uint16_t metadata_type,
+    nmo_specialized_metadata_t **out_metadata)
+{
+    nmo_specialized_metadata_t *metadata = (nmo_specialized_metadata_t *)
+        nmo_arena_alloc(arena, sizeof(nmo_specialized_metadata_t),
+                        alignof(nmo_specialized_metadata_t));
+    if (!metadata) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate specialized metadata");
+    }
+
+    metadata->type_id = type_id;
+    metadata->metadata_type = metadata_type;
+    metadata->ownership = NMO_OWNERSHIP_ARENA;
+    *out_metadata = metadata;
+    NMO_RETURN_OK();
+}
+
 static const nmo_type_descriptor_t* resolve_field_type(
     const nmo_type_registry_t *type_registry,
     nmo_guid_t *io_guid
@@ -465,17 +486,9 @@ nmo_status_t nmo_type_registry_register_struct(
         return consistency_res;
     }
     
-    /* Allocate specialized_metadata */
-    nmo_specialized_metadata_t *spec_meta = (nmo_specialized_metadata_t*)
-        nmo_arena_alloc(arena, sizeof(nmo_specialized_metadata_t), alignof(nmo_specialized_metadata_t));
-    if (!spec_meta) {
-        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                "Failed to allocate specialized metadata");
-    }
-    
-    spec_meta->type_id = NMO_TYPE_ID_INVALID;  /* Will be set during registration */
-    spec_meta->metadata_type = NMO_METADATA_TYPE_STRUCT;
-    spec_meta->ownership = NMO_OWNERSHIP_ARENA; /* arena-owned; do not free via type_allocator */
+    nmo_specialized_metadata_t *spec_meta = NULL;
+    NMO_RETURN_IF_ERROR(create_arena_metadata(
+        arena, NMO_TYPE_ID_INVALID, NMO_METADATA_TYPE_STRUCT, &spec_meta));
     spec_meta->struct_meta.fields = struct_fields;
     spec_meta->struct_meta.field_count = struct_def->field_count;
     
@@ -930,17 +943,9 @@ nmo_status_t nmo_type_registry_finalize_struct(
         offset += total_field_size;
     }
     
-    /* Create specialized metadata */
-    nmo_specialized_metadata_t *spec_meta = (nmo_specialized_metadata_t*)
-        nmo_arena_alloc(arena, sizeof(nmo_specialized_metadata_t), alignof(nmo_specialized_metadata_t));
-    if (!spec_meta) {
-        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                "Failed to allocate specialized metadata");
-    }
-    
-    spec_meta->type_id = struct_type_id;
-    spec_meta->metadata_type = NMO_METADATA_TYPE_STRUCT;
-    spec_meta->ownership = NMO_OWNERSHIP_ARENA; /* arena-owned; do not free via type_allocator */
+    nmo_specialized_metadata_t *spec_meta = NULL;
+    NMO_RETURN_IF_ERROR(create_arena_metadata(
+        arena, struct_type_id, NMO_METADATA_TYPE_STRUCT, &spec_meta));
     spec_meta->struct_meta.fields = struct_fields;
     spec_meta->struct_meta.field_count = incomplete->field_count;
 
@@ -1277,17 +1282,9 @@ nmo_status_t nmo_type_registry_register_union(
         return consistency_res;
     }
 
-    /* Allocate specialized metadata */
-    nmo_specialized_metadata_t *spec_meta = (nmo_specialized_metadata_t*)
-        nmo_arena_alloc(arena, sizeof(nmo_specialized_metadata_t), alignof(nmo_specialized_metadata_t));
-    if (!spec_meta) {
-        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                "Failed to allocate specialized metadata");
-    }
-
-    spec_meta->type_id = NMO_TYPE_ID_INVALID;
-    spec_meta->metadata_type = NMO_METADATA_TYPE_UNION;
-    spec_meta->ownership = NMO_OWNERSHIP_ARENA; /* arena-owned; do not free via type_allocator */
+    nmo_specialized_metadata_t *spec_meta = NULL;
+    NMO_RETURN_IF_ERROR(create_arena_metadata(
+        arena, NMO_TYPE_ID_INVALID, NMO_METADATA_TYPE_UNION, &spec_meta));
     spec_meta->union_meta.fields = union_fields;
     spec_meta->union_meta.field_count = union_def->field_count;
 
