@@ -13,7 +13,6 @@
 #include "behavior/nmo_behavior_edit.h"
 
 #include "runtime_internal.h"
-#include "runtime_internal.h"
 
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
@@ -74,6 +73,11 @@ typedef struct nmo_workspace_edit_action {
     nmo_workspace_edit_action_fn fn;
     void *payload;
 } nmo_workspace_edit_action_t;
+
+typedef struct workspace_edit_checkpoint {
+    size_t rollback_count;
+    size_t commit_count;
+} workspace_edit_checkpoint_t;
 
 struct nmo_workspace_edit {
     nmo_workspace_t *workspace;
@@ -295,6 +299,63 @@ static void workspace_edit_rollback_to(nmo_workspace_edit_t *edit, size_t checkp
         nmo_workspace_edit_action_t action = edit->rollback_actions[edit->rollback_count];
         (void)action.fn(edit, action.payload);
     }
+}
+
+static workspace_edit_checkpoint_t workspace_edit_checkpoint(
+    const nmo_workspace_edit_t *edit)
+{
+    return (workspace_edit_checkpoint_t){
+        edit != NULL ? edit->rollback_count : 0u,
+        edit != NULL ? edit->commit_count : 0u,
+    };
+}
+
+static void workspace_edit_abort_to(
+    nmo_workspace_edit_t *edit,
+    workspace_edit_checkpoint_t checkpoint)
+{
+    if (edit == NULL) {
+        return;
+    }
+    workspace_edit_rollback_to(edit, checkpoint.rollback_count);
+    if (edit->commit_count > checkpoint.commit_count) {
+        edit->commit_count = checkpoint.commit_count;
+    }
+}
+
+static nmo_status_t workspace_edit_abort_status(
+    nmo_workspace_edit_t *edit,
+    workspace_edit_checkpoint_t checkpoint,
+    nmo_status_t status)
+{
+    workspace_edit_abort_to(edit, checkpoint);
+    return status;
+}
+
+static nmo_status_t workspace_edit_push_rollback_or_abort(
+    nmo_workspace_edit_t *edit,
+    workspace_edit_checkpoint_t checkpoint,
+    nmo_workspace_edit_action_fn fn,
+    void *payload)
+{
+    nmo_status_t status = workspace_edit_push_rollback(edit, fn, payload);
+    if (status != NMO_OK) {
+        return workspace_edit_abort_status(edit, checkpoint, status);
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t workspace_edit_push_commit_or_abort(
+    nmo_workspace_edit_t *edit,
+    workspace_edit_checkpoint_t checkpoint,
+    nmo_workspace_edit_action_fn fn,
+    void *payload)
+{
+    nmo_status_t status = workspace_edit_push_commit(edit, fn, payload);
+    if (status != NMO_OK) {
+        return workspace_edit_abort_status(edit, checkpoint, status);
+    }
+    return NMO_OK;
 }
 
 static nmo_status_t rollback_field_bytes(nmo_workspace_edit_t *edit, void *payload)
@@ -1026,7 +1087,7 @@ nmo_status_t nmo_scene_edit_add_object(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    size_t checkpoint = edit->rollback_count;
+    workspace_edit_checkpoint_t checkpoint = workspace_edit_checkpoint(edit);
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
     if (repo == NULL) {
         return NMO_ERR_INVALID_STATE;
@@ -1070,7 +1131,8 @@ nmo_status_t nmo_scene_edit_add_object(
     snapshot->object_id = object_id;
 
     nmo_status_t push_result =
-        workspace_edit_push_rollback(edit, rollback_scene_object_desc_append, snapshot);
+        workspace_edit_push_rollback_or_abort(
+            edit, checkpoint, rollback_scene_object_desc_append, snapshot);
     if (push_result != NMO_OK) {
         return push_result;
     }
@@ -1089,8 +1151,7 @@ nmo_status_t nmo_scene_edit_add_object(
     nmo_status_t append_result =
         nmo_array_append(&scene_state->object_descs, &scene_desc);
     if (append_result != NMO_OK) {
-        workspace_edit_rollback_to(edit, checkpoint);
-        return append_result;
+        return workspace_edit_abort_status(edit, checkpoint, append_result);
     }
 
     nmo_workspace_edit_mark(
@@ -1227,7 +1288,7 @@ nmo_status_t workspace_edit_bind_script(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    size_t checkpoint = edit->rollback_count;
+    workspace_edit_checkpoint_t checkpoint = workspace_edit_checkpoint(edit);
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
     const nmo_type_registry_t *registry =
         nmo_workspace_internal_type_registry(edit->workspace);
@@ -1267,22 +1328,20 @@ nmo_status_t workspace_edit_bind_script(
     if (nmo_array_find(&owner_state->script_ids, &behavior_id, &existing_index) == 0) {
         status = nmo_array_append(&owner_state->script_ids, &behavior_id);
         if (status != NMO_OK) {
-            workspace_edit_rollback_to(edit, checkpoint);
-            return status;
+            return workspace_edit_abort_status(edit, checkpoint, status);
         }
 
         array_id_action_t *rollback =
             (array_id_action_t *)nmo_workspace_edit_alloc(edit, sizeof(*rollback), 1u);
         if (rollback == NULL) {
-            workspace_edit_rollback_to(edit, checkpoint);
-            return NMO_ERR_NOMEM;
+            return workspace_edit_abort_status(edit, checkpoint, NMO_ERR_NOMEM);
         }
         rollback->array = &owner_state->script_ids;
         rollback->id = behavior_id;
         rollback->index = owner_state->script_ids.count - 1u;
-        status = workspace_edit_push_rollback(edit, rollback_remove_array_id, rollback);
+        status = workspace_edit_push_rollback_or_abort(
+            edit, checkpoint, rollback_remove_array_id, rollback);
         if (status != NMO_OK) {
-            workspace_edit_rollback_to(edit, checkpoint);
             return status;
         }
     }
@@ -3625,7 +3684,7 @@ nmo_status_t workspace_edit_set_object_fields(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    size_t checkpoint = edit->rollback_count;
+    workspace_edit_checkpoint_t checkpoint = workspace_edit_checkpoint(edit);
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
     const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
     if (repo == NULL || registry == NULL) {
@@ -3651,7 +3710,7 @@ nmo_status_t workspace_edit_set_object_fields(
     for (size_t i = 0; i < field_count; i++) {
         if (fields[i].field_name == NULL || fields[i].value_str == NULL) {
             result.failed++;
-            workspace_edit_rollback_to(edit, checkpoint);
+            workspace_edit_abort_to(edit, checkpoint);
             if (out_result != NULL) {
                 *out_result = result;
             }
@@ -3662,7 +3721,7 @@ nmo_status_t workspace_edit_set_object_fields(
             nmo_type_get_field_by_name(type, fields[i].field_name);
         if (field == NULL) {
             result.failed++;
-            workspace_edit_rollback_to(edit, checkpoint);
+            workspace_edit_abort_to(edit, checkpoint);
             if (out_result != NULL) {
                 *out_result = result;
             }
@@ -3675,7 +3734,7 @@ nmo_status_t workspace_edit_set_object_fields(
                 edit, sizeof(*snapshot) + field->size, _Alignof(field_bytes_snapshot_t));
         if (snapshot == NULL) {
             result.failed++;
-            workspace_edit_rollback_to(edit, checkpoint);
+            workspace_edit_abort_to(edit, checkpoint);
             if (out_result != NULL) {
                 *out_result = result;
             }
@@ -3686,10 +3745,10 @@ nmo_status_t workspace_edit_set_object_fields(
         memcpy(snapshot->bytes, field_ptr, field->size);
 
         nmo_status_t push_result =
-            workspace_edit_push_rollback(edit, rollback_field_bytes, snapshot);
+            workspace_edit_push_rollback_or_abort(
+                edit, checkpoint, rollback_field_bytes, snapshot);
         if (push_result != NMO_OK) {
             result.failed++;
-            workspace_edit_rollback_to(edit, checkpoint);
             if (out_result != NULL) {
                 *out_result = result;
             }
@@ -3701,7 +3760,7 @@ nmo_status_t workspace_edit_set_object_fields(
                 state, type, registry, fields[i].field_name, fields[i].value_str);
         if (set_result != NMO_OK) {
             result.failed++;
-            workspace_edit_rollback_to(edit, checkpoint);
+            workspace_edit_abort_to(edit, checkpoint);
             if (out_result != NULL) {
                 *out_result = result;
             }
@@ -3733,7 +3792,7 @@ nmo_status_t workspace_edit_rename_object(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    size_t checkpoint = edit->rollback_count;
+    workspace_edit_checkpoint_t checkpoint = workspace_edit_checkpoint(edit);
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
     if (repo == NULL) {
         return NMO_ERR_INVALID_STATE;
@@ -3766,7 +3825,8 @@ nmo_status_t workspace_edit_rename_object(
     rollback->name = old_name_copy;
 
     nmo_status_t push_result =
-        workspace_edit_push_rollback(edit, rollback_rename_object, rollback);
+        workspace_edit_push_rollback_or_abort(
+            edit, checkpoint, rollback_rename_object, rollback);
     if (push_result != NMO_OK) {
         return push_result;
     }
@@ -3774,8 +3834,7 @@ nmo_status_t workspace_edit_rename_object(
     nmo_status_t rename_result =
         nmo_object_repository_rename(repo, object_id, new_name);
     if (rename_result != NMO_OK) {
-        workspace_edit_rollback_to(edit, checkpoint);
-        return rename_result;
+        return workspace_edit_abort_status(edit, checkpoint, rename_result);
     }
 
     nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_NAMES);
@@ -3793,7 +3852,7 @@ nmo_status_t workspace_edit_set_parameter_value(
 static nmo_status_t workspace_edit_snapshot_parameter_buffer(
     nmo_workspace_edit_t *edit,
     nmo_parameter_state_t *state,
-    size_t checkpoint)
+    workspace_edit_checkpoint_t checkpoint)
 {
     if (edit == NULL || state == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -3814,9 +3873,9 @@ static nmo_status_t workspace_edit_snapshot_parameter_buffer(
     }
 
     nmo_status_t push_result =
-        workspace_edit_push_rollback(edit, rollback_parameter_buffer, snapshot);
+        workspace_edit_push_rollback_or_abort(
+            edit, checkpoint, rollback_parameter_buffer, snapshot);
     if (push_result != NMO_OK) {
-        workspace_edit_rollback_to(edit, checkpoint);
         return push_result;
     }
     return NMO_OK;
@@ -3832,7 +3891,7 @@ nmo_status_t workspace_edit_set_parameter_value_ex(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    size_t checkpoint = edit->rollback_count;
+    workspace_edit_checkpoint_t checkpoint = workspace_edit_checkpoint(edit);
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
     const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
     if (repo == NULL || registry == NULL) {
@@ -3862,17 +3921,16 @@ nmo_status_t workspace_edit_set_parameter_value_ex(
         memcpy(snapshot->bytes, &state->object_id, sizeof(state->object_id));
 
         nmo_status_t push_result =
-            workspace_edit_push_rollback(edit, rollback_field_bytes, snapshot);
+            workspace_edit_push_rollback_or_abort(
+                edit, checkpoint, rollback_field_bytes, snapshot);
         if (push_result != NMO_OK) {
-            workspace_edit_rollback_to(edit, checkpoint);
             return push_result;
         }
 
         nmo_object_id_t new_id = 0;
         nmo_status_t parse_result = parse_object_id_text(value_str, &new_id);
         if (parse_result != NMO_OK) {
-            workspace_edit_rollback_to(edit, checkpoint);
-            return parse_result;
+            return workspace_edit_abort_status(edit, checkpoint, parse_result);
         }
         state->object_id = new_id;
         nmo_workspace_edit_mark(
@@ -3894,17 +3952,15 @@ nmo_status_t workspace_edit_set_parameter_value_ex(
             (parameter_manager_snapshot_t *)nmo_workspace_edit_alloc(
                 edit, sizeof(*snapshot), _Alignof(parameter_manager_snapshot_t));
         if (snapshot == NULL) {
-            workspace_edit_rollback_to(edit, checkpoint);
-            return NMO_ERR_NOMEM;
+            return workspace_edit_abort_status(edit, checkpoint, NMO_ERR_NOMEM);
         }
         snapshot->state = state;
         snapshot->manager_guid = state->manager_guid;
         snapshot->manager_value = state->manager_value;
         nmo_status_t push_result =
-            workspace_edit_push_rollback(
-                edit, rollback_parameter_manager, snapshot);
+            workspace_edit_push_rollback_or_abort(
+                edit, checkpoint, rollback_parameter_manager, snapshot);
         if (push_result != NMO_OK) {
-            workspace_edit_rollback_to(edit, checkpoint);
             return push_result;
         }
 
@@ -3943,8 +3999,7 @@ nmo_status_t workspace_edit_set_parameter_value_ex(
             nmo_status_t resize_result =
                 nmo_array_resize(&state->buffer_data, required_size);
             if (resize_result != NMO_OK) {
-                workspace_edit_rollback_to(edit, checkpoint);
-                return resize_result;
+                return workspace_edit_abort_status(edit, checkpoint, resize_result);
             }
         }
         memcpy(state->buffer_data.data, value_str, required_size);
@@ -3966,15 +4021,13 @@ nmo_status_t workspace_edit_set_parameter_value_ex(
     if (buffer_size != state->buffer_data.count && allow_resize) {
         nmo_status_t resize_result = nmo_array_resize(&state->buffer_data, buffer_size);
         if (resize_result != NMO_OK) {
-            workspace_edit_rollback_to(edit, checkpoint);
-            return resize_result;
+            return workspace_edit_abort_status(edit, checkpoint, resize_result);
         }
     }
 
     uint8_t *tmp = (uint8_t *)calloc(1, buffer_size);
     if (tmp == NULL) {
-        workspace_edit_rollback_to(edit, checkpoint);
-        return NMO_ERR_NOMEM;
+        return workspace_edit_abort_status(edit, checkpoint, NMO_ERR_NOMEM);
     }
 
     nmo_status_t parse_result =
@@ -3992,8 +4045,7 @@ nmo_status_t workspace_edit_set_parameter_value_ex(
     free(tmp);
 
     if (parse_result != NMO_OK) {
-        workspace_edit_rollback_to(edit, checkpoint);
-        return parse_result;
+        return workspace_edit_abort_status(edit, checkpoint, parse_result);
     }
     return NMO_OK;
 }
@@ -4520,7 +4572,7 @@ nmo_status_t workspace_edit_set_parameter_bytes_ex(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    size_t checkpoint = edit->rollback_count;
+    workspace_edit_checkpoint_t checkpoint = workspace_edit_checkpoint(edit);
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
     if (repo == NULL) {
         return NMO_ERR_INVALID_STATE;
@@ -4551,8 +4603,7 @@ nmo_status_t workspace_edit_set_parameter_bytes_ex(
     if (byte_count != state->buffer_data.count && allow_resize) {
         nmo_status_t resize_result = nmo_array_resize(&state->buffer_data, byte_count);
         if (resize_result != NMO_OK) {
-            workspace_edit_rollback_to(edit, checkpoint);
-            return resize_result;
+            return workspace_edit_abort_status(edit, checkpoint, resize_result);
         }
     }
 
@@ -4579,7 +4630,7 @@ nmo_status_t workspace_edit_set_dataarray_cell(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    size_t checkpoint = edit->rollback_count;
+    workspace_edit_checkpoint_t checkpoint = workspace_edit_checkpoint(edit);
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
     if (repo == NULL) {
         return NMO_ERR_INVALID_STATE;
@@ -4634,9 +4685,9 @@ nmo_status_t workspace_edit_set_dataarray_cell(
     snapshot->old_cell = *target_cell;
 
     nmo_status_t push_result =
-        workspace_edit_push_rollback(edit, rollback_dataarray_cell, snapshot);
+        workspace_edit_push_rollback_or_abort(
+            edit, checkpoint, rollback_dataarray_cell, snapshot);
     if (push_result != NMO_OK) {
-        workspace_edit_rollback_to(edit, checkpoint);
         return push_result;
     }
 
@@ -4663,7 +4714,7 @@ nmo_status_t workspace_edit_add_behavior_link(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    size_t checkpoint = edit->rollback_count;
+    workspace_edit_checkpoint_t checkpoint = workspace_edit_checkpoint(edit);
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
     const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
     if (repo == NULL || registry == NULL) {
@@ -4713,14 +4764,12 @@ nmo_status_t workspace_edit_add_behavior_link(
 
     nmo_object_t *link_obj = nmo_object_repository_find_by_id(repo, link_id);
     if (link_obj == NULL) {
-        workspace_edit_rollback_to(edit, checkpoint);
-        return NMO_ERR_INTERNAL;
+        return workspace_edit_abort_status(edit, checkpoint, NMO_ERR_INTERNAL);
     }
     nmo_behaviorlink_state_t *link_state =
         (nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj);
     if (link_state == NULL) {
-        workspace_edit_rollback_to(edit, checkpoint);
-        return NMO_ERR_INTERNAL;
+        return workspace_edit_abort_status(edit, checkpoint, NMO_ERR_INTERNAL);
     }
     link_state->in_io_id = to_io_id;
     link_state->out_io_id = from_io_id;
@@ -4732,30 +4781,27 @@ nmo_status_t workspace_edit_add_behavior_link(
     nmo_behavior_state_t *parent_state =
         (nmo_behavior_state_t *)nmo_object_get_state(parent_obj);
     if (parent_state == NULL) {
-        workspace_edit_rollback_to(edit, checkpoint);
-        return NMO_ERR_INTERNAL;
+        return workspace_edit_abort_status(edit, checkpoint, NMO_ERR_INTERNAL);
     }
     nmo_status_t append_result =
         nmo_array_append(&parent_state->sub_behavior_links, &link_id);
     if (append_result != NMO_OK) {
-        workspace_edit_rollback_to(edit, checkpoint);
-        return append_result;
+        return workspace_edit_abort_status(edit, checkpoint, append_result);
     }
 
     array_id_action_t *array_action =
         (array_id_action_t *)nmo_workspace_edit_alloc(
             edit, sizeof(*array_action), _Alignof(array_id_action_t));
     if (array_action == NULL) {
-        workspace_edit_rollback_to(edit, checkpoint);
-        return NMO_ERR_NOMEM;
+        return workspace_edit_abort_status(edit, checkpoint, NMO_ERR_NOMEM);
     }
     array_action->array = &parent_state->sub_behavior_links;
     array_action->id = link_id;
     array_action->index = parent_state->sub_behavior_links.count - 1u;
     nmo_status_t push_array_result =
-        workspace_edit_push_rollback(edit, rollback_remove_array_id, array_action);
+        workspace_edit_push_rollback_or_abort(
+            edit, checkpoint, rollback_remove_array_id, array_action);
     if (push_array_result != NMO_OK) {
-        workspace_edit_rollback_to(edit, checkpoint);
         return push_array_result;
     }
 
@@ -4785,7 +4831,7 @@ nmo_status_t workspace_edit_remove_behavior_link(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    size_t checkpoint = edit->rollback_count;
+    workspace_edit_checkpoint_t checkpoint = workspace_edit_checkpoint(edit);
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
     const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
     if (repo == NULL || registry == NULL) {
@@ -4846,15 +4892,15 @@ nmo_status_t workspace_edit_remove_behavior_link(
     parent_state->has_save_flags = true;
 
     nmo_status_t rollback_result =
-        workspace_edit_push_rollback(edit, rollback_insert_array_id, array_action);
+        workspace_edit_push_rollback_or_abort(
+            edit, checkpoint, rollback_insert_array_id, array_action);
     if (rollback_result != NMO_OK) {
-        workspace_edit_rollback_to(edit, checkpoint);
         return rollback_result;
     }
     nmo_status_t commit_result =
-        workspace_edit_push_commit(edit, commit_destroy_object, object_action);
+        workspace_edit_push_commit_or_abort(
+            edit, checkpoint, commit_destroy_object, object_action);
     if (commit_result != NMO_OK) {
-        workspace_edit_rollback_to(edit, checkpoint);
         return commit_result;
     }
 
