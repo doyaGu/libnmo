@@ -133,6 +133,26 @@ static nmo_status_t get_change_metadata(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t create_arena_metadata(
+    nmo_arena_t *arena,
+    uint16_t metadata_type,
+    nmo_specialized_metadata_t **out_metadata)
+{
+    nmo_specialized_metadata_t *metadata = (nmo_specialized_metadata_t *)
+        nmo_arena_alloc(arena, sizeof(nmo_specialized_metadata_t),
+                        alignof(nmo_specialized_metadata_t));
+    if (!metadata) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate specialized metadata");
+    }
+
+    metadata->type_id = NMO_TYPE_ID_INVALID;
+    metadata->metadata_type = metadata_type;
+    metadata->ownership = NMO_OWNERSHIP_ARENA;
+    *out_metadata = metadata;
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t copy_wrapped_type_value(
     const nmo_type_descriptor_t *type,
     const char *string,
@@ -699,16 +719,9 @@ nmo_status_t nmo_type_registry_register_enum(
         enum_values[i].flags = 0;
     }
 
-    /* Build specialized metadata */
-    nmo_specialized_metadata_t *spec_meta = (nmo_specialized_metadata_t *)
-        nmo_arena_alloc(arena, sizeof(nmo_specialized_metadata_t), alignof(nmo_specialized_metadata_t));
-    if (!spec_meta) {
-        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                "Failed to allocate specialized metadata");
-    }
-    spec_meta->type_id              = NMO_TYPE_ID_INVALID;
-    spec_meta->metadata_type        = NMO_METADATA_TYPE_ENUM;
-    spec_meta->ownership            = NMO_OWNERSHIP_ARENA;
+    nmo_specialized_metadata_t *spec_meta = NULL;
+    NMO_RETURN_IF_ERROR(create_arena_metadata(
+        arena, NMO_METADATA_TYPE_ENUM, &spec_meta));
     spec_meta->enum_meta.values     = enum_values;
     spec_meta->enum_meta.value_count = enum_def->value_count;
 
@@ -774,16 +787,9 @@ nmo_status_t nmo_type_registry_register_flags(
         flags_bits[i].flags = 0;
     }
 
-    /* Build specialized metadata */
-    nmo_specialized_metadata_t *spec_meta = (nmo_specialized_metadata_t *)
-        nmo_arena_alloc(arena, sizeof(nmo_specialized_metadata_t), alignof(nmo_specialized_metadata_t));
-    if (!spec_meta) {
-        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                "Failed to allocate specialized metadata");
-    }
-    spec_meta->type_id             = NMO_TYPE_ID_INVALID;
-    spec_meta->metadata_type       = NMO_METADATA_TYPE_FLAGS;
-    spec_meta->ownership           = NMO_OWNERSHIP_ARENA;
+    nmo_specialized_metadata_t *spec_meta = NULL;
+    NMO_RETURN_IF_ERROR(create_arena_metadata(
+        arena, NMO_METADATA_TYPE_FLAGS, &spec_meta));
     spec_meta->flags_meta.bits     = flags_bits;
     spec_meta->flags_meta.bit_count = flags_def->bit_count;
 
