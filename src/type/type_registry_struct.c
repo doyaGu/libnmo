@@ -140,6 +140,13 @@ static void parse_struct_field_type_if_available(
     }
 }
 
+static uint32_t struct_field_storage_size(
+    const nmo_type_descriptor_t *field_type,
+    uint32_t array_count)
+{
+    return array_count > 0 ? field_type->size * array_count : field_type->size;
+}
+
 static nmo_status_t validate_struct_field_consistency(
     const nmo_struct_descriptor_t *struct_fields,
     const nmo_type_field_t *type_fields,
@@ -294,11 +301,7 @@ nmo_status_t nmo_type_calculate_layout(
         }
         
         /* Calculate field size (including arrays) */
-        uint32_t element_size = field_type->size;
-        uint32_t field_size = element_size;
-        if (array_count > 0) {
-            field_size = element_size * array_count;
-        }
+        uint32_t field_size = struct_field_storage_size(field_type, array_count);
         
         uint32_t field_align = packed ? 1 : field_type->alignment;
         
@@ -457,11 +460,8 @@ nmo_status_t nmo_type_registry_register_struct(
         }
         
         /* Calculate field size (including arrays) */
-        uint32_t element_size = field_type->size;
-        uint32_t total_field_size = element_size;
-        if (parsed_type.array_count > 0) {
-            total_field_size = element_size * parsed_type.array_count;
-        }
+        uint32_t total_field_size =
+            struct_field_storage_size(field_type, parsed_type.array_count);
         
         uint32_t field_align = struct_def->packed ? 1 : field_type->alignment;
         offset = (uint32_t)nmo_align((size_t)(offset), (size_t)(field_align));
@@ -886,11 +886,8 @@ nmo_status_t nmo_type_registry_finalize_struct(
         field_desc->name = field_def->name;
         field_desc->type_guid = field_type_guid;
         field_desc->offset = offset;
-        uint32_t element_size = field_type->size;
-        uint32_t total_field_size = element_size;
-        if (parsed_type.array_count > 0) {
-            total_field_size = element_size * parsed_type.array_count;
-        }
+        uint32_t total_field_size =
+            struct_field_storage_size(field_type, parsed_type.array_count);
         field_desc->size = total_field_size;
         field_desc->array_count = parsed_type.array_count;
         field_desc->flags = field_def->flags;
@@ -1161,11 +1158,7 @@ nmo_status_t nmo_type_registry_register_union(
                                     field_def->name ? field_def->name : "(unnamed)");
         }
 
-        uint32_t element_size = field_type->size;
-        uint32_t total_field_size = element_size;
-        if (array_count > 0) {
-            total_field_size = element_size * array_count;
-        }
+        uint32_t total_field_size = struct_field_storage_size(field_type, array_count);
 
         uint32_t field_align = union_def->packed ? 1 : field_type->alignment;
         max_align = NMO_MAX(max_align, field_align);
@@ -1221,11 +1214,8 @@ nmo_status_t nmo_type_registry_register_union(
                                     field_def->name ? field_def->name : "(unnamed)");
         }
 
-        uint32_t element_size = field_type->size;
-        uint32_t total_field_size = element_size;
-        if (parsed_type.array_count > 0) {
-            total_field_size = element_size * parsed_type.array_count;
-        }
+        uint32_t total_field_size =
+            struct_field_storage_size(field_type, parsed_type.array_count);
 
         field_desc->type_guid = field_type_guid;
         field_desc->offset = 0;
