@@ -153,6 +153,11 @@ static nmo_status_t create_arena_metadata(
     NMO_RETURN_OK();
 }
 
+static nmo_guid_t resolve_registration_guid(nmo_guid_t guid, const char *type_name)
+{
+    return !nmo_guid_is_null(guid) ? guid : nmo_type_generate_guid(type_name);
+}
+
 static nmo_status_t copy_wrapped_type_value(
     const nmo_type_descriptor_t *type,
     const char *string,
@@ -693,9 +698,7 @@ nmo_status_t nmo_type_registry_register_enum(
         return result;
     }
 
-    nmo_guid_t type_guid = !nmo_guid_is_null(enum_def->guid)
-        ? enum_def->guid
-        : nmo_type_generate_guid(enum_def->name);
+    nmo_guid_t type_guid = resolve_registration_guid(enum_def->guid, enum_def->name);
 
     nmo_arena_t *arena = type_registry->arena;
 
@@ -761,9 +764,7 @@ nmo_status_t nmo_type_registry_register_flags(
         return result;
     }
 
-    nmo_guid_t type_guid = !nmo_guid_is_null(flags_def->guid)
-        ? flags_def->guid
-        : nmo_type_generate_guid(flags_def->name);
+    nmo_guid_t type_guid = resolve_registration_guid(flags_def->guid, flags_def->name);
 
     nmo_arena_t *arena = type_registry->arena;
 
@@ -839,10 +840,7 @@ nmo_status_t nmo_type_registry_register_enum_string(
     }
     
     /* Generate GUID if NULL_GUID */
-    nmo_guid_t actual_guid = type_guid;
-    if (nmo_guid_is_null(type_guid)) {
-        actual_guid = nmo_type_generate_guid(type_name);
-    }
+    nmo_guid_t actual_guid = resolve_registration_guid(type_guid, type_name);
     
     /* Create enum type definition */
     nmo_enum_type_def_t enum_def = {
@@ -908,10 +906,7 @@ nmo_status_t nmo_type_registry_register_flags_string(
     }
     
     /* Generate GUID if NULL_GUID */
-    nmo_guid_t actual_guid = type_guid;
-    if (nmo_guid_is_null(type_guid)) {
-        actual_guid = nmo_type_generate_guid(type_name);
-    }
+    nmo_guid_t actual_guid = resolve_registration_guid(type_guid, type_name);
     
     /* Create flags type definition */
     nmo_flags_type_def_t flags_def = {
