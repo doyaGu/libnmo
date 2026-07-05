@@ -647,6 +647,77 @@ const nmo_type_vtable_t nmo_builtin_vtable_array = {
 #define M_PI 3.14159265358979323846
 #endif
 
+static nmo_status_t nmo_validate_value_to_string_args(
+    const void *value,
+    const char *buffer,
+    size_t buffer_size,
+    size_t min_buffer_size,
+    const char *message)
+{
+    if (!value || !buffer || buffer_size < min_buffer_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "%s", message);
+    }
+
+    NMO_RETURN_OK();
+}
+
+static void nmo_format_real_text(
+    double value,
+    char *buffer,
+    size_t buffer_size)
+{
+    if (isnan(value)) {
+        snprintf(buffer, buffer_size, "NaN");
+    } else if (isinf(value)) {
+        snprintf(buffer, buffer_size, value > 0.0 ? "Infinity" : "-Infinity");
+    } else {
+        snprintf(buffer, buffer_size, "%.6g", value);
+    }
+}
+
+static void nmo_format_float_tuple_text(
+    const float *values,
+    size_t count,
+    char *buffer,
+    size_t buffer_size)
+{
+    switch (count) {
+        case 2:
+            snprintf(buffer, buffer_size, "(%.6g, %.6g)",
+                     values[0], values[1]);
+            break;
+        case 3:
+            snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g)",
+                     values[0], values[1], values[2]);
+            break;
+        case 4:
+            snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g, %.6g)",
+                     values[0], values[1], values[2], values[3]);
+            break;
+        default:
+            snprintf(buffer, buffer_size, "()");
+            break;
+    }
+}
+
+static nmo_status_t nmo_format_i64_text(
+    int64_t value,
+    char *buffer,
+    size_t buffer_size)
+{
+    snprintf(buffer, buffer_size, "%lld", (long long)value);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_format_u64_text(
+    uint64_t value,
+    char *buffer,
+    size_t buffer_size)
+{
+    snprintf(buffer, buffer_size, "%llu", (unsigned long long)value);
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Float Converters
  * ============================================================================ */
@@ -656,22 +727,13 @@ nmo_status_t nmo_float_to_string(
     char *buffer,
     size_t buffer_size)
 {
-    if (!value || !buffer || buffer_size < 16) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for float_to_string");
+    nmo_status_t status = nmo_validate_value_to_string_args(
+        value, buffer, buffer_size, 16, "Invalid arguments for float_to_string");
+    if (status != NMO_OK) {
+        return status;
     }
 
-    float f = *(const float*)value;
-    
-    // Handle special cases
-    if (isnan(f)) {
-        snprintf(buffer, buffer_size, "NaN");
-    } else if (isinf(f)) {
-        snprintf(buffer, buffer_size, f > 0 ? "Infinity" : "-Infinity");
-    } else {
-        // Use %.6g for compact representation
-        snprintf(buffer, buffer_size, "%.6g", f);
-    }
-
+    nmo_format_real_text((double)*(const float*)value, buffer, buffer_size);
     NMO_RETURN_OK();
 }
 
@@ -716,8 +778,10 @@ nmo_status_t nmo_int_to_string(
     size_t buffer_size,
     bool use_hex)
 {
-    if (!value || !buffer || buffer_size < 16) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for int_to_string");
+    nmo_status_t status = nmo_validate_value_to_string_args(
+        value, buffer, buffer_size, 16, "Invalid arguments for int_to_string");
+    if (status != NMO_OK) {
+        return status;
     }
 
     int32_t i = *(const int32_t*)value;
@@ -757,8 +821,10 @@ nmo_status_t nmo_bool_to_string(
     char *buffer,
     size_t buffer_size)
 {
-    if (!value || !buffer || buffer_size < 6) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for bool_to_string");
+    nmo_status_t status = nmo_validate_value_to_string_args(
+        value, buffer, buffer_size, 6, "Invalid arguments for bool_to_string");
+    if (status != NMO_OK) {
+        return status;
     }
 
     bool b = *(const bool*)value;
@@ -820,12 +886,13 @@ nmo_status_t nmo_vector2_to_string(
     char *buffer,
     size_t buffer_size)
 {
-    if (!value || !buffer || buffer_size < 24) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for vector2_to_string");
+    nmo_status_t status = nmo_validate_value_to_string_args(
+        value, buffer, buffer_size, 24, "Invalid arguments for vector2_to_string");
+    if (status != NMO_OK) {
+        return status;
     }
 
-    const float *v = (const float*)value;
-    snprintf(buffer, buffer_size, "(%.6g, %.6g)", v[0], v[1]);
+    nmo_format_float_tuple_text((const float*)value, 2, buffer, buffer_size);
     NMO_RETURN_OK();
 }
 
@@ -846,13 +913,13 @@ nmo_status_t nmo_vector_to_string(
     char *buffer,
     size_t buffer_size)
 {
-    if (!value || !buffer || buffer_size < 32) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for vector_to_string");
+    nmo_status_t status = nmo_validate_value_to_string_args(
+        value, buffer, buffer_size, 32, "Invalid arguments for vector_to_string");
+    if (status != NMO_OK) {
+        return status;
     }
 
-    const float *v = (const float*)value;
-    snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g)", v[0], v[1], v[2]);
-
+    nmo_format_float_tuple_text((const float*)value, 3, buffer, buffer_size);
     NMO_RETURN_OK();
 }
 
@@ -873,12 +940,13 @@ nmo_status_t nmo_vector4_to_string(
     char *buffer,
     size_t buffer_size)
 {
-    if (!value || !buffer || buffer_size < 48) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for vector4_to_string");
+    nmo_status_t status = nmo_validate_value_to_string_args(
+        value, buffer, buffer_size, 48, "Invalid arguments for vector4_to_string");
+    if (status != NMO_OK) {
+        return status;
     }
 
-    const float *v = (const float*)value;
-    snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g, %.6g)", v[0], v[1], v[2], v[3]);
+    nmo_format_float_tuple_text((const float*)value, 4, buffer, buffer_size);
     NMO_RETURN_OK();
 }
 
@@ -903,14 +971,13 @@ nmo_status_t nmo_quaternion_to_string(
     char *buffer,
     size_t buffer_size)
 {
-    if (!value || !buffer || buffer_size < 48) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for quaternion_to_string");
+    nmo_status_t status = nmo_validate_value_to_string_args(
+        value, buffer, buffer_size, 48, "Invalid arguments for quaternion_to_string");
+    if (status != NMO_OK) {
+        return status;
     }
 
-    const float *q = (const float*)value;
-    snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g, %.6g)", 
-             q[0], q[1], q[2], q[3]);
-
+    nmo_format_float_tuple_text((const float*)value, 4, buffer, buffer_size);
     NMO_RETURN_OK();
 }
 
@@ -935,8 +1002,10 @@ nmo_status_t nmo_matrix_to_string(
     char *buffer,
     size_t buffer_size)
 {
-    if (!value || !buffer || buffer_size < 128) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for matrix_to_string");
+    nmo_status_t status = nmo_validate_value_to_string_args(
+        value, buffer, buffer_size, 128, "Invalid arguments for matrix_to_string");
+    if (status != NMO_OK) {
+        return status;
     }
 
     const nmo_matrix_t *m = (const nmo_matrix_t*)value;
@@ -977,12 +1046,13 @@ nmo_status_t nmo_color_to_string(
     char *buffer,
     size_t buffer_size)
 {
-    if (!value || !buffer || buffer_size < 48) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for color_to_string");
+    nmo_status_t status = nmo_validate_value_to_string_args(
+        value, buffer, buffer_size, 48, "Invalid arguments for color_to_string");
+    if (status != NMO_OK) {
+        return status;
     }
 
-    const float *c = (const float*)value;
-    snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g, %.6g)", c[0], c[1], c[2], c[3]);
+    nmo_format_float_tuple_text((const float*)value, 4, buffer, buffer_size);
     NMO_RETURN_OK();
 }
 
@@ -1116,8 +1186,10 @@ nmo_status_t nmo_string_to_string(
     char *buffer,
     size_t buffer_size)
 {
-    if (!value || !buffer || buffer_size < 3) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for string_to_string");
+    nmo_status_t status = nmo_validate_value_to_string_args(
+        value, buffer, buffer_size, 3, "Invalid arguments for string_to_string");
+    if (status != NMO_OK) {
+        return status;
     }
 
     const char *str = *(const char**)value;
@@ -1543,6 +1615,45 @@ static nmo_status_t parse_u64(const char *string, uint64_t *out_value)
     NMO_RETURN_OK();
 }
 
+static nmo_status_t parse_i64_checked(
+    const char *string,
+    int64_t min_value,
+    int64_t max_value,
+    const char *range_message,
+    int64_t *out_value)
+{
+    int64_t parsed = 0;
+    nmo_status_t st = parse_i64(string, &parsed);
+    if (st != NMO_OK) {
+        return st;
+    }
+    if (parsed < min_value || parsed > max_value) {
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "%s", range_message);
+    }
+
+    *out_value = parsed;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t parse_u64_checked(
+    const char *string,
+    uint64_t max_value,
+    const char *range_message,
+    uint64_t *out_value)
+{
+    uint64_t parsed = 0;
+    nmo_status_t st = parse_u64(string, &parsed);
+    if (st != NMO_OK) {
+        return st;
+    }
+    if (parsed > max_value) {
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "%s", range_message);
+    }
+
+    *out_value = parsed;
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t parse_f64(const char *string, double *out_value)
 {
     if (!string || !out_value) {
@@ -1578,11 +1689,9 @@ static nmo_status_t nmo_parse_int8(
 {
     (void)registry;
     int64_t parsed = 0;
-    nmo_status_t st = parse_i64(string, &parsed);
+    nmo_status_t st = parse_i64_checked(
+        string, INT8_MIN, INT8_MAX, "INT8 out of range", &parsed);
     if (st != NMO_OK) return st;
-    if (parsed < INT8_MIN || parsed > INT8_MAX) {
-        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "INT8 out of range");
-    }
     *(int8_t *)value = (int8_t)parsed;
     NMO_RETURN_OK();
 }
@@ -1594,11 +1703,9 @@ static nmo_status_t nmo_parse_int16(
 {
     (void)registry;
     int64_t parsed = 0;
-    nmo_status_t st = parse_i64(string, &parsed);
+    nmo_status_t st = parse_i64_checked(
+        string, INT16_MIN, INT16_MAX, "INT16 out of range", &parsed);
     if (st != NMO_OK) return st;
-    if (parsed < INT16_MIN || parsed > INT16_MAX) {
-        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "INT16 out of range");
-    }
     *(int16_t *)value = (int16_t)parsed;
     NMO_RETURN_OK();
 }
@@ -1632,11 +1739,9 @@ static nmo_status_t nmo_parse_uint8(
 {
     (void)registry;
     uint64_t parsed = 0;
-    nmo_status_t st = parse_u64(string, &parsed);
+    nmo_status_t st = parse_u64_checked(
+        string, UINT8_MAX, "UINT8 out of range", &parsed);
     if (st != NMO_OK) return st;
-    if (parsed > UINT8_MAX) {
-        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "UINT8 out of range");
-    }
     *(uint8_t *)value = (uint8_t)parsed;
     NMO_RETURN_OK();
 }
@@ -1648,11 +1753,9 @@ static nmo_status_t nmo_parse_uint16(
 {
     (void)registry;
     uint64_t parsed = 0;
-    nmo_status_t st = parse_u64(string, &parsed);
+    nmo_status_t st = parse_u64_checked(
+        string, UINT16_MAX, "UINT16 out of range", &parsed);
     if (st != NMO_OK) return st;
-    if (parsed > UINT16_MAX) {
-        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "UINT16 out of range");
-    }
     *(uint16_t *)value = (uint16_t)parsed;
     NMO_RETURN_OK();
 }
@@ -1664,11 +1767,9 @@ static nmo_status_t nmo_parse_uint32(
 {
     (void)registry;
     uint64_t parsed = 0;
-    nmo_status_t st = parse_u64(string, &parsed);
+    nmo_status_t st = parse_u64_checked(
+        string, UINT32_MAX, "UINT32 out of range", &parsed);
     if (st != NMO_OK) return st;
-    if (parsed > UINT32_MAX) {
-        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "UINT32 out of range");
-    }
     *(uint32_t *)value = (uint32_t)parsed;
     NMO_RETURN_OK();
 }
@@ -2351,8 +2452,7 @@ nmo_status_t nmo_vt_to_string_uint32(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    snprintf(buffer, buffer_size, "%u", *(const uint32_t *)value);
-    NMO_RETURN_OK();
+    return nmo_format_u64_text(*(const uint32_t *)value, buffer, buffer_size);
 }
 NMO_DEFINE_VT_FROM_STRING(uint32, nmo_parse_uint32)
 
@@ -2362,8 +2462,7 @@ nmo_status_t nmo_vt_to_string_int8(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    snprintf(buffer, buffer_size, "%d", (int)*(const int8_t *)value);
-    NMO_RETURN_OK();
+    return nmo_format_i64_text(*(const int8_t *)value, buffer, buffer_size);
 }
 NMO_DEFINE_VT_FROM_STRING(int8, nmo_parse_int8)
 
@@ -2373,8 +2472,7 @@ nmo_status_t nmo_vt_to_string_uint8(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    snprintf(buffer, buffer_size, "%u", (unsigned)*(const uint8_t *)value);
-    NMO_RETURN_OK();
+    return nmo_format_u64_text(*(const uint8_t *)value, buffer, buffer_size);
 }
 NMO_DEFINE_VT_FROM_STRING(uint8, nmo_parse_uint8)
 
@@ -2384,8 +2482,7 @@ nmo_status_t nmo_vt_to_string_int16(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    snprintf(buffer, buffer_size, "%d", (int)*(const int16_t *)value);
-    NMO_RETURN_OK();
+    return nmo_format_i64_text(*(const int16_t *)value, buffer, buffer_size);
 }
 NMO_DEFINE_VT_FROM_STRING(int16, nmo_parse_int16)
 
@@ -2395,8 +2492,7 @@ nmo_status_t nmo_vt_to_string_uint16(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    snprintf(buffer, buffer_size, "%u", (unsigned)*(const uint16_t *)value);
-    NMO_RETURN_OK();
+    return nmo_format_u64_text(*(const uint16_t *)value, buffer, buffer_size);
 }
 NMO_DEFINE_VT_FROM_STRING(uint16, nmo_parse_uint16)
 
@@ -2406,8 +2502,7 @@ nmo_status_t nmo_vt_to_string_int64(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    snprintf(buffer, buffer_size, "%lld", (long long)*(const int64_t *)value);
-    NMO_RETURN_OK();
+    return nmo_format_i64_text(*(const int64_t *)value, buffer, buffer_size);
 }
 NMO_DEFINE_VT_FROM_STRING(int64, nmo_parse_int64)
 
@@ -2417,8 +2512,7 @@ nmo_status_t nmo_vt_to_string_uint64(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    snprintf(buffer, buffer_size, "%llu", (unsigned long long)*(const uint64_t *)value);
-    NMO_RETURN_OK();
+    return nmo_format_u64_text(*(const uint64_t *)value, buffer, buffer_size);
 }
 NMO_DEFINE_VT_FROM_STRING(uint64, nmo_parse_uint64)
 
@@ -2431,14 +2525,7 @@ nmo_status_t nmo_vt_to_string_double(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    double d = *(const double *)value;
-    if (isnan(d)) {
-        snprintf(buffer, buffer_size, "NaN");
-    } else if (isinf(d)) {
-        snprintf(buffer, buffer_size, d > 0 ? "Infinity" : "-Infinity");
-    } else {
-        snprintf(buffer, buffer_size, "%.6g", d);
-    }
+    nmo_format_real_text(*(const double *)value, buffer, buffer_size);
     NMO_RETURN_OK();
 }
 NMO_DEFINE_VT_FROM_STRING(double, nmo_parse_double)
@@ -2452,8 +2539,10 @@ nmo_status_t nmo_vt_to_string_bool32(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    if (!value || !buffer || buffer_size < 6) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for bool_to_string");
+    nmo_status_t status = nmo_validate_value_to_string_args(
+        value, buffer, buffer_size, 6, "Invalid arguments for bool_to_string");
+    if (status != NMO_OK) {
+        return status;
     }
 
     snprintf(buffer, buffer_size, *(const uint32_t *)value != 0u ? "true" : "false");
@@ -2548,7 +2637,8 @@ nmo_status_t nmo_vt_to_string_rect(
 {
     (void)type; (void)registry; (void)depth;
     const nmo_rect_t *r = (const nmo_rect_t *)value;
-    snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g, %.6g)", r->left, r->top, r->right, r->bottom);
+    const float values[4] = { r->left, r->top, r->right, r->bottom };
+    nmo_format_float_tuple_text(values, 4, buffer, buffer_size);
     NMO_RETURN_OK();
 }
 NMO_DEFINE_VT_FROM_STRING(rect, nmo_parse_rect)
@@ -2560,7 +2650,8 @@ nmo_status_t nmo_vt_to_string_eulerangles(
 {
     (void)type; (void)registry; (void)depth;
     const nmo_eulerangles_t *e = (const nmo_eulerangles_t *)value;
-    snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g)", e->x, e->y, e->z);
+    const float values[3] = { e->x, e->y, e->z };
+    nmo_format_float_tuple_text(values, 3, buffer, buffer_size);
     NMO_RETURN_OK();
 }
 NMO_DEFINE_VT_FROM_STRING(eulerangles, nmo_parse_eulerangles)
