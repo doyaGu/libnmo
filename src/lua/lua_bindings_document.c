@@ -30,56 +30,54 @@ static void nmo_lua_document_push_stats(lua_State *state,
     lua_createtable(state, 0, 5);
 
     lua_createtable(state, 0, 4);
-    lua_pushinteger(state, (lua_Integer)stats->objects.total_count);
-    lua_setfield(state, -2, "total_count");
-    lua_pushinteger(state, (lua_Integer)stats->objects.max_class_id);
-    lua_setfield(state, -2, "max_class_id");
-    lua_pushinteger(state, (lua_Integer)stats->objects.unique_classes);
-    lua_setfield(state, -2, "unique_classes");
+    nmo_lua_set_integer_field(
+        state, "total_count", (lua_Integer)stats->objects.total_count);
+    nmo_lua_set_integer_field(
+        state, "max_class_id", (lua_Integer)stats->objects.max_class_id);
+    nmo_lua_set_integer_field(
+        state, "unique_classes", (lua_Integer)stats->objects.unique_classes);
     lua_setfield(state, -2, "objects");
 
     lua_createtable(state, 0, 6);
-    lua_pushinteger(state, (lua_Integer)stats->memory.total_size);
-    lua_setfield(state, -2, "total_size");
-    lua_pushinteger(state, (lua_Integer)stats->memory.header_size);
-    lua_setfield(state, -2, "header_size");
-    lua_pushinteger(state, (lua_Integer)stats->memory.data_size);
-    lua_setfield(state, -2, "data_size");
-    lua_pushinteger(state, (lua_Integer)stats->memory.chunk_data_size);
-    lua_setfield(state, -2, "chunk_data_size");
-    lua_pushinteger(state, (lua_Integer)stats->memory.chunk_overhead);
-    lua_setfield(state, -2, "chunk_overhead");
-    lua_pushinteger(state, (lua_Integer)stats->memory.compression_ratio);
-    lua_setfield(state, -2, "compression_ratio");
+    nmo_lua_set_integer_field(
+        state, "total_size", (lua_Integer)stats->memory.total_size);
+    nmo_lua_set_integer_field(
+        state, "header_size", (lua_Integer)stats->memory.header_size);
+    nmo_lua_set_integer_field(state, "data_size", (lua_Integer)stats->memory.data_size);
+    nmo_lua_set_integer_field(
+        state, "chunk_data_size", (lua_Integer)stats->memory.chunk_data_size);
+    nmo_lua_set_integer_field(
+        state, "chunk_overhead", (lua_Integer)stats->memory.chunk_overhead);
+    nmo_lua_set_integer_field(
+        state, "compression_ratio", (lua_Integer)stats->memory.compression_ratio);
     lua_setfield(state, -2, "memory");
 
     lua_createtable(state, 0, 3);
-    lua_pushnumber(state, stats->performance.load_time_ms);
-    lua_setfield(state, -2, "load_time_ms");
-    lua_pushnumber(state, stats->performance.parse_time_ms);
-    lua_setfield(state, -2, "parse_time_ms");
-    lua_pushnumber(state, stats->performance.remap_time_ms);
-    lua_setfield(state, -2, "remap_time_ms");
+    nmo_lua_set_number_field(state, "load_time_ms", stats->performance.load_time_ms);
+    nmo_lua_set_number_field(state, "parse_time_ms", stats->performance.parse_time_ms);
+    nmo_lua_set_number_field(state, "remap_time_ms", stats->performance.remap_time_ms);
     lua_setfield(state, -2, "performance");
 
     lua_createtable(state, 0, 3);
-    lua_pushinteger(state, (lua_Integer)stats->references.total_references);
-    lua_setfield(state, -2, "total_references");
-    lua_pushinteger(state, (lua_Integer)stats->references.resolved);
-    lua_setfield(state, -2, "resolved");
-    lua_pushinteger(state, (lua_Integer)stats->references.unresolved);
-    lua_setfield(state, -2, "unresolved");
+    nmo_lua_set_integer_field(
+        state,
+        "total_references",
+        (lua_Integer)stats->references.total_references);
+    nmo_lua_set_integer_field(
+        state, "resolved", (lua_Integer)stats->references.resolved);
+    nmo_lua_set_integer_field(
+        state, "unresolved", (lua_Integer)stats->references.unresolved);
     lua_setfield(state, -2, "references");
 
     lua_createtable(state, 0, 4);
-    lua_pushinteger(state, (lua_Integer)stats->chunks.total_chunks);
-    lua_setfield(state, -2, "total_chunks");
-    lua_pushinteger(state, (lua_Integer)stats->chunks.compressed_chunks);
-    lua_setfield(state, -2, "compressed_chunks");
-    lua_pushinteger(state, (lua_Integer)stats->chunks.max_chunk_size);
-    lua_setfield(state, -2, "max_chunk_size");
-    lua_pushinteger(state, (lua_Integer)stats->chunks.avg_chunk_size);
-    lua_setfield(state, -2, "avg_chunk_size");
+    nmo_lua_set_integer_field(
+        state, "total_chunks", (lua_Integer)stats->chunks.total_chunks);
+    nmo_lua_set_integer_field(
+        state, "compressed_chunks", (lua_Integer)stats->chunks.compressed_chunks);
+    nmo_lua_set_integer_field(
+        state, "max_chunk_size", (lua_Integer)stats->chunks.max_chunk_size);
+    nmo_lua_set_integer_field(
+        state, "avg_chunk_size", (lua_Integer)stats->chunks.avg_chunk_size);
     lua_setfield(state, -2, "chunks");
 }
 
@@ -88,20 +86,17 @@ static void nmo_lua_document_push_compare_stats(
     const nmo_comparison_result_stats_t *stats)
 {
     lua_createtable(state, 0, 8);
-    lua_pushboolean(state, stats->match ? 1 : 0);
-    lua_setfield(state, -2, "match");
-    lua_pushinteger(state, (lua_Integer)stats->objects_compared);
-    lua_setfield(state, -2, "objects_compared");
-    lua_pushinteger(state, (lua_Integer)stats->objects_matched);
-    lua_setfield(state, -2, "objects_matched");
-    lua_pushinteger(state, (lua_Integer)stats->managers_compared);
-    lua_setfield(state, -2, "managers_compared");
-    lua_pushinteger(state, (lua_Integer)stats->managers_matched);
-    lua_setfield(state, -2, "managers_matched");
-    lua_pushinteger(state, (lua_Integer)stats->diff_count);
-    lua_setfield(state, -2, "diff_count");
-    lua_pushboolean(state, stats->diff_overflow ? 1 : 0);
-    lua_setfield(state, -2, "diff_overflow");
+    nmo_lua_set_boolean_field(state, "match", stats->match);
+    nmo_lua_set_integer_field(
+        state, "objects_compared", (lua_Integer)stats->objects_compared);
+    nmo_lua_set_integer_field(
+        state, "objects_matched", (lua_Integer)stats->objects_matched);
+    nmo_lua_set_integer_field(
+        state, "managers_compared", (lua_Integer)stats->managers_compared);
+    nmo_lua_set_integer_field(
+        state, "managers_matched", (lua_Integer)stats->managers_matched);
+    nmo_lua_set_integer_field(state, "diff_count", (lua_Integer)stats->diff_count);
+    nmo_lua_set_boolean_field(state, "diff_overflow", stats->diff_overflow);
 }
 
 static void nmo_lua_document_push_runtime_load_stats(
@@ -110,60 +105,62 @@ static void nmo_lua_document_push_runtime_load_stats(
 {
     size_t i = 0u;
     lua_createtable(state, 0, 5);
-    lua_pushinteger(state, (lua_Integer)stats->total_objects);
-    lua_setfield(state, -2, "total_objects");
-    lua_pushinteger(state, (lua_Integer)stats->flags);
-    lua_setfield(state, -2, "flags");
+    nmo_lua_set_integer_field(
+        state, "total_objects", (lua_Integer)stats->total_objects);
+    nmo_lua_set_integer_field(state, "flags", (lua_Integer)stats->flags);
 
     lua_createtable(state, 0, 6);
-    lua_pushinteger(state, (lua_Integer)stats->references.total);
-    lua_setfield(state, -2, "total");
-    lua_pushinteger(state, (lua_Integer)stats->references.resolved);
-    lua_setfield(state, -2, "resolved");
-    lua_pushinteger(state, (lua_Integer)stats->references.unresolved);
-    lua_setfield(state, -2, "unresolved");
-    lua_pushinteger(state, (lua_Integer)stats->references.ambiguous);
-    lua_setfield(state, -2, "ambiguous");
-    lua_pushinteger(state, (lua_Integer)stats->references.unresolved_preview_count);
-    lua_setfield(state, -2, "unresolved_preview_count");
+    nmo_lua_set_integer_field(
+        state, "total", (lua_Integer)stats->references.total);
+    nmo_lua_set_integer_field(
+        state, "resolved", (lua_Integer)stats->references.resolved);
+    nmo_lua_set_integer_field(
+        state, "unresolved", (lua_Integer)stats->references.unresolved);
+    nmo_lua_set_integer_field(
+        state, "ambiguous", (lua_Integer)stats->references.ambiguous);
+    nmo_lua_set_integer_field(
+        state,
+        "unresolved_preview_count",
+        (lua_Integer)stats->references.unresolved_preview_count);
     lua_createtable(state, (int)stats->references.unresolved_preview_count, 0);
     for (i = 0u; i < stats->references.unresolved_preview_count &&
                  i < (sizeof(stats->references.unresolved_preview) /
                        sizeof(stats->references.unresolved_preview[0]));
          ++i) {
         lua_createtable(state, 0, 2);
-        lua_pushinteger(state,
-                        (lua_Integer)stats->references.unresolved_preview[i].id);
-        lua_setfield(state, -2, "id");
-        lua_pushinteger(
+        nmo_lua_set_integer_field(
             state,
+            "id",
+            (lua_Integer)stats->references.unresolved_preview[i].id);
+        nmo_lua_set_integer_field(
+            state,
+            "class_id",
             (lua_Integer)stats->references.unresolved_preview[i].class_id);
-        lua_setfield(state, -2, "class_id");
         lua_rawseti(state, -2, (lua_Integer)i + 1);
     }
     lua_setfield(state, -2, "unresolved_preview");
     lua_setfield(state, -2, "references");
 
     lua_createtable(state, 0, 4);
-    lua_pushinteger(state, (lua_Integer)stats->indexes.class_entries);
-    lua_setfield(state, -2, "class_entries");
-    lua_pushinteger(state, (lua_Integer)stats->indexes.name_entries);
-    lua_setfield(state, -2, "name_entries");
-    lua_pushinteger(state, (lua_Integer)stats->indexes.guid_entries);
-    lua_setfield(state, -2, "guid_entries");
-    lua_pushinteger(state, (lua_Integer)stats->indexes.memory_usage);
-    lua_setfield(state, -2, "memory_usage");
+    nmo_lua_set_integer_field(
+        state, "class_entries", (lua_Integer)stats->indexes.class_entries);
+    nmo_lua_set_integer_field(
+        state, "name_entries", (lua_Integer)stats->indexes.name_entries);
+    nmo_lua_set_integer_field(
+        state, "guid_entries", (lua_Integer)stats->indexes.guid_entries);
+    nmo_lua_set_integer_field(
+        state, "memory_usage", (lua_Integer)stats->indexes.memory_usage);
     lua_setfield(state, -2, "indexes");
 
     lua_createtable(state, 0, 2);
-    lua_pushinteger(state, (lua_Integer)stats->object_postload.invoked);
-    lua_setfield(state, -2, "invoked");
-    lua_pushinteger(state, (lua_Integer)stats->object_postload.errors);
-    lua_setfield(state, -2, "errors");
+    nmo_lua_set_integer_field(
+        state, "invoked", (lua_Integer)stats->object_postload.invoked);
+    nmo_lua_set_integer_field(
+        state, "errors", (lua_Integer)stats->object_postload.errors);
     lua_setfield(state, -2, "object_postload");
 
-    lua_pushinteger(state, (lua_Integer)stats->manager_errors);
-    lua_setfield(state, -2, "manager_errors");
+    nmo_lua_set_integer_field(
+        state, "manager_errors", (lua_Integer)stats->manager_errors);
 }
 
 static void nmo_lua_document_push_plugin_diagnostics(
@@ -172,14 +169,11 @@ static void nmo_lua_document_push_plugin_diagnostics(
 {
     size_t i = 0u;
     lua_createtable(state, 0, 5);
-    lua_pushinteger(state, (lua_Integer)diag->entry_count);
-    lua_setfield(state, -2, "entry_count");
-    lua_pushinteger(state, (lua_Integer)diag->missing_count);
-    lua_setfield(state, -2, "missing_count");
-    lua_pushinteger(state, (lua_Integer)diag->outdated_count);
-    lua_setfield(state, -2, "outdated_count");
-    lua_pushboolean(state, diag->extension_registry_available ? 1 : 0);
-    lua_setfield(state, -2, "extension_registry_available");
+    nmo_lua_set_integer_field(state, "entry_count", (lua_Integer)diag->entry_count);
+    nmo_lua_set_integer_field(state, "missing_count", (lua_Integer)diag->missing_count);
+    nmo_lua_set_integer_field(state, "outdated_count", (lua_Integer)diag->outdated_count);
+    nmo_lua_set_boolean_field(
+        state, "extension_registry_available", diag->extension_registry_available);
 
     lua_createtable(state, (int)diag->entry_count, 0);
     for (i = 0u; i < diag->entry_count; ++i) {
@@ -187,20 +181,14 @@ static void nmo_lua_document_push_plugin_diagnostics(
         lua_createtable(state, 0, 7);
         nmo_lua_document_push_guid_string(state, entry->guid);
         lua_setfield(state, -2, "guid");
-        lua_pushinteger(state, (lua_Integer)entry->category);
-        lua_setfield(state, -2, "category");
-        lua_pushinteger(state, (lua_Integer)entry->required_version);
-        lua_setfield(state, -2, "required_version");
-        lua_pushinteger(state, (lua_Integer)entry->resolved_version);
-        lua_setfield(state, -2, "resolved_version");
-        if (entry->resolved_name != NULL) {
-            lua_pushstring(state, entry->resolved_name);
-        } else {
-            lua_pushnil(state);
-        }
-        lua_setfield(state, -2, "resolved_name");
-        lua_pushinteger(state, (lua_Integer)entry->status_flags);
-        lua_setfield(state, -2, "status_flags");
+        nmo_lua_set_integer_field(state, "category", (lua_Integer)entry->category);
+        nmo_lua_set_integer_field(
+            state, "required_version", (lua_Integer)entry->required_version);
+        nmo_lua_set_integer_field(
+            state, "resolved_version", (lua_Integer)entry->resolved_version);
+        nmo_lua_set_optional_string_field(state, "resolved_name", entry->resolved_name);
+        nmo_lua_set_integer_field(
+            state, "status_flags", (lua_Integer)entry->status_flags);
         lua_rawseti(state, -2, (lua_Integer)i + 1);
     }
     lua_setfield(state, -2, "entries");
@@ -220,16 +208,10 @@ static void nmo_lua_document_push_included_files(lua_State *state,
         size_t owner_index = 0u;
 
         lua_createtable(state, 0, 5);
-        if (entry->name != NULL) {
-            lua_pushstring(state, entry->name);
-        } else {
-            lua_pushnil(state);
-        }
-        lua_setfield(state, -2, "name");
-        lua_pushinteger(state, (lua_Integer)entry->size);
-        lua_setfield(state, -2, "size");
-        lua_pushinteger(state, (lua_Integer)entry->attributes);
-        lua_setfield(state, -2, "attributes");
+        nmo_lua_set_optional_string_field(state, "name", entry->name);
+        nmo_lua_set_integer_field(state, "size", (lua_Integer)entry->size);
+        nmo_lua_set_integer_field(
+            state, "attributes", (lua_Integer)entry->attributes);
         if (entry->data != NULL && entry->size > 0u) {
             lua_pushlstring(state, (const char *)entry->data, entry->size);
         } else {
@@ -366,24 +348,17 @@ static int nmo_lua_document_file_info(lua_State *state)
 
     info = nmo_document_get_file_info(document);
     lua_createtable(state, 0, 9);
-    lua_pushinteger(state, (lua_Integer)info.file_version);
-    lua_setfield(state, -2, "file_version");
-    lua_pushinteger(state, (lua_Integer)info.file_version2);
-    lua_setfield(state, -2, "file_version2");
-    lua_pushinteger(state, (lua_Integer)info.ck_version);
-    lua_setfield(state, -2, "ck_version");
-    lua_pushinteger(state, (lua_Integer)info.product_version);
-    lua_setfield(state, -2, "product_version");
-    lua_pushinteger(state, (lua_Integer)info.product_build);
-    lua_setfield(state, -2, "product_build");
-    lua_pushinteger(state, (lua_Integer)info.file_size);
-    lua_setfield(state, -2, "file_size");
-    lua_pushinteger(state, (lua_Integer)info.object_count);
-    lua_setfield(state, -2, "object_count");
-    lua_pushinteger(state, (lua_Integer)info.manager_count);
-    lua_setfield(state, -2, "manager_count");
-    lua_pushinteger(state, (lua_Integer)info.write_mode);
-    lua_setfield(state, -2, "write_mode");
+    nmo_lua_set_integer_field(state, "file_version", (lua_Integer)info.file_version);
+    nmo_lua_set_integer_field(state, "file_version2", (lua_Integer)info.file_version2);
+    nmo_lua_set_integer_field(state, "ck_version", (lua_Integer)info.ck_version);
+    nmo_lua_set_integer_field(
+        state, "product_version", (lua_Integer)info.product_version);
+    nmo_lua_set_integer_field(
+        state, "product_build", (lua_Integer)info.product_build);
+    nmo_lua_set_integer_field(state, "file_size", (lua_Integer)info.file_size);
+    nmo_lua_set_integer_field(state, "object_count", (lua_Integer)info.object_count);
+    nmo_lua_set_integer_field(state, "manager_count", (lua_Integer)info.manager_count);
+    nmo_lua_set_integer_field(state, "write_mode", (lua_Integer)info.write_mode);
     return 1;
 }
 
