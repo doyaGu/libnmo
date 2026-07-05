@@ -122,6 +122,37 @@ static int ensure_data_capacity(nmo_chunk_writer_t *w, size_t needed_dwords) {
     return NMO_OK;
 }
 
+static nmo_status_t writer_append_dword(nmo_chunk_writer_t *w, uint32_t value) {
+    if (w == NULL || w->finalized) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    int result = ensure_data_capacity(w, 1);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    w->data[w->data_size++] = value;
+    return NMO_OK;
+}
+
+static nmo_status_t writer_append_dword_pair(nmo_chunk_writer_t *w,
+                                             uint32_t first,
+                                             uint32_t second) {
+    if (w == NULL || w->finalized) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    int result = ensure_data_capacity(w, 2);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    w->data[w->data_size++] = first;
+    w->data[w->data_size++] = second;
+    return NMO_OK;
+}
+
 static int ensure_u32_list_capacity(nmo_chunk_writer_t *w,
                                     uint32_t **list,
                                     size_t count,
@@ -366,96 +397,33 @@ void nmo_chunk_writer_start(nmo_chunk_writer_t *w, nmo_class_id_t class_id, uint
 }
 
 nmo_status_t nmo_chunk_writer_write_byte(nmo_chunk_writer_t *w, uint8_t value) {
-    if (w == NULL || w->finalized) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    int result = ensure_data_capacity(w, 1);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    // Write byte in low 8 bits of DWORD
-    w->data[w->data_size++] = (uint32_t) value;
-    return NMO_OK;
+    return writer_append_dword(w, (uint32_t) value);
 }
 
 nmo_status_t nmo_chunk_writer_write_word(nmo_chunk_writer_t *w, uint16_t value) {
-    if (w == NULL || w->finalized) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    int result = ensure_data_capacity(w, 1);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    // Write word in low 16 bits of DWORD
-    w->data[w->data_size++] = (uint32_t) value;
-    return NMO_OK;
+    return writer_append_dword(w, (uint32_t) value);
 }
 
 nmo_status_t nmo_chunk_writer_write_dword(nmo_chunk_writer_t *w, uint32_t value) {
-    if (w == NULL || w->finalized) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    int result = ensure_data_capacity(w, 1);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    w->data[w->data_size++] = value;
-    return NMO_OK;
+    return writer_append_dword(w, value);
 }
 
 nmo_status_t nmo_chunk_writer_write_int(nmo_chunk_writer_t *w, int32_t value) {
-    if (w == NULL || w->finalized) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    int result = ensure_data_capacity(w, 1);
-    if (result != NMO_OK) {
-        return result;
-    }
-
     // Reinterpret int32 as uint32
     uint32_t uvalue;
     memcpy(&uvalue, &value, sizeof(uint32_t));
-    w->data[w->data_size++] = uvalue;
-    return NMO_OK;
+    return writer_append_dword(w, uvalue);
 }
 
 nmo_status_t nmo_chunk_writer_write_float(nmo_chunk_writer_t *w, float value) {
-    if (w == NULL || w->finalized) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    int result = ensure_data_capacity(w, 1);
-    if (result != NMO_OK) {
-        return result;
-    }
-
     // Reinterpret float as uint32
     uint32_t uvalue;
     memcpy(&uvalue, &value, sizeof(uint32_t));
-    w->data[w->data_size++] = uvalue;
-    return NMO_OK;
+    return writer_append_dword(w, uvalue);
 }
 
 nmo_status_t nmo_chunk_writer_write_guid(nmo_chunk_writer_t *w, nmo_guid_t guid) {
-    if (w == NULL || w->finalized) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    int result = ensure_data_capacity(w, 2);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    w->data[w->data_size++] = guid.d1;
-    w->data[w->data_size++] = guid.d2;
-    return NMO_OK;
+    return writer_append_dword_pair(w, guid.d1, guid.d2);
 }
 
 nmo_status_t nmo_chunk_writer_write_bytes(nmo_chunk_writer_t *w, const void *data, size_t bytes) {
