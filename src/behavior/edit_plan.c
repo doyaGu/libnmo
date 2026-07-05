@@ -593,6 +593,11 @@ static edit_plan_handle_ref_t edit_plan_ref_or_none(
     return ref != NULL ? *ref : edit_plan_no_handle_ref();
 }
 
+typedef struct edit_plan_handle_ref_clone_slot {
+    edit_plan_handle_ref_t *dst;
+    const edit_plan_handle_ref_t *src;
+} edit_plan_handle_ref_clone_slot_t;
+
 static nmo_status_t edit_plan_append_op(
     nmo_edit_plan_t *plan,
     nmo_edit_op_kind_t kind,
@@ -652,6 +657,29 @@ static nmo_status_t edit_plan_handle_ref_clone(
         return NMO_ERR_NOMEM;
     }
     dst->handle_name = handle_copy;
+    return NMO_OK;
+}
+
+static nmo_status_t edit_plan_handle_ref_clone_slots(
+    const edit_plan_handle_ref_clone_slot_t *slots,
+    size_t slot_count)
+{
+    if (slot_count == 0u) {
+        return NMO_OK;
+    }
+    if (slots == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    for (size_t i = 0; i < slot_count; ++i) {
+        if (slots[i].dst == NULL || slots[i].src == NULL) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+        nmo_status_t st =
+            edit_plan_handle_ref_clone(slots[i].dst, slots[i].src);
+        if (st != NMO_OK) {
+            return st;
+        }
+    }
     return NMO_OK;
 }
 
@@ -758,6 +786,19 @@ static void edit_op_dispose(nmo_edit_op_t *op)
     memset(op, 0, sizeof(*op));
 }
 
+static nmo_status_t edit_op_clone_handle_ref_slots_or_dispose(
+    nmo_edit_op_t *op,
+    const edit_plan_handle_ref_clone_slot_t *slots,
+    size_t slot_count)
+{
+    nmo_status_t st = edit_plan_handle_ref_clone_slots(slots, slot_count);
+    if (st != NMO_OK) {
+        edit_op_dispose(op);
+        return st;
+    }
+    return NMO_OK;
+}
+
 static void edit_op_clear_owned_pointers(nmo_edit_op_t *op)
 {
     if (op == NULL) {
@@ -839,7 +880,6 @@ static nmo_status_t edit_op_copy(
     memset(dst, 0, sizeof(*dst));
     *dst = *src;
     edit_op_clear_owned_pointers(dst);
-    nmo_status_t ref_st = NMO_OK;
     switch (src->kind) {
     case NMO_EDIT_OP_SET_PARAMETER_VALUE:
         dst->data.set_value.value =
@@ -847,14 +887,15 @@ static nmo_status_t edit_op_copy(
         if (src->data.set_value.value && !dst->data.set_value.value) {
             return NMO_ERR_NOMEM;
         }
-        dst->data.set_value.parameter_ref = edit_plan_no_handle_ref();
-        ref_st = edit_plan_handle_ref_clone(
-            &dst->data.set_value.parameter_ref,
-            &src->data.set_value.parameter_ref);
-        if (ref_st != NMO_OK) {
-            edit_op_dispose(dst);
-            return ref_st;
-        }
+        NMO_RETURN_IF_ERROR(edit_op_clone_handle_ref_slots_or_dispose(
+            dst,
+            (edit_plan_handle_ref_clone_slot_t[]){
+                {
+                    &dst->data.set_value.parameter_ref,
+                    &src->data.set_value.parameter_ref,
+                },
+            },
+            1u));
         if (src->data.set_value.has_options) {
             nmo_status_t st = edit_plan_parameter_write_options_clone(
                 &dst->data.set_value.options,
@@ -877,14 +918,15 @@ static nmo_status_t edit_op_copy(
                    src->data.set_bytes.byte_count);
             dst->data.set_bytes.bytes = copy;
         }
-        dst->data.set_bytes.parameter_ref = edit_plan_no_handle_ref();
-        ref_st = edit_plan_handle_ref_clone(
-            &dst->data.set_bytes.parameter_ref,
-            &src->data.set_bytes.parameter_ref);
-        if (ref_st != NMO_OK) {
-            edit_op_dispose(dst);
-            return ref_st;
-        }
+        NMO_RETURN_IF_ERROR(edit_op_clone_handle_ref_slots_or_dispose(
+            dst,
+            (edit_plan_handle_ref_clone_slot_t[]){
+                {
+                    &dst->data.set_bytes.parameter_ref,
+                    &src->data.set_bytes.parameter_ref,
+                },
+            },
+            1u));
         if (src->data.set_bytes.has_options) {
             nmo_status_t st = edit_plan_parameter_write_options_clone(
                 &dst->data.set_bytes.options,
@@ -923,22 +965,19 @@ static nmo_status_t edit_op_copy(
         }
         break;
     case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
-        dst->data.add_link.from_io_ref = edit_plan_no_handle_ref();
-        dst->data.add_link.to_io_ref = edit_plan_no_handle_ref();
-        ref_st = edit_plan_handle_ref_clone(
-            &dst->data.add_link.from_io_ref,
-            &src->data.add_link.from_io_ref);
-        if (ref_st != NMO_OK) {
-            edit_op_dispose(dst);
-            return ref_st;
-        }
-        ref_st = edit_plan_handle_ref_clone(
-            &dst->data.add_link.to_io_ref,
-            &src->data.add_link.to_io_ref);
-        if (ref_st != NMO_OK) {
-            edit_op_dispose(dst);
-            return ref_st;
-        }
+        NMO_RETURN_IF_ERROR(edit_op_clone_handle_ref_slots_or_dispose(
+            dst,
+            (edit_plan_handle_ref_clone_slot_t[]){
+                {
+                    &dst->data.add_link.from_io_ref,
+                    &src->data.add_link.from_io_ref,
+                },
+                {
+                    &dst->data.add_link.to_io_ref,
+                    &src->data.add_link.to_io_ref,
+                },
+            },
+            2u));
         break;
     case NMO_EDIT_OP_ADD_PARAMETER:
         dst->data.add_parameter.name =
@@ -948,70 +987,53 @@ static nmo_status_t edit_op_copy(
         }
         break;
     case NMO_EDIT_OP_CONNECT_PARAMETER:
-        dst->data.connect_parameter.target_parameter_ref =
-            edit_plan_no_handle_ref();
-        ref_st = edit_plan_handle_ref_clone(
-            &dst->data.connect_parameter.target_parameter_ref,
-            &src->data.connect_parameter.target_parameter_ref);
-        if (ref_st != NMO_OK) {
-            edit_op_dispose(dst);
-            return ref_st;
-        }
+        NMO_RETURN_IF_ERROR(edit_op_clone_handle_ref_slots_or_dispose(
+            dst,
+            (edit_plan_handle_ref_clone_slot_t[]){
+                {
+                    &dst->data.connect_parameter.target_parameter_ref,
+                    &src->data.connect_parameter.target_parameter_ref,
+                },
+            },
+            1u));
         break;
     case NMO_EDIT_OP_ADD_OPERATION:
-        dst->data.add_operation.in1_parameter_ref = edit_plan_no_handle_ref();
-        dst->data.add_operation.in2_parameter_ref = edit_plan_no_handle_ref();
-        dst->data.add_operation.out_parameter_ref = edit_plan_no_handle_ref();
-        ref_st = edit_plan_handle_ref_clone(
-            &dst->data.add_operation.in1_parameter_ref,
-            &src->data.add_operation.in1_parameter_ref);
-        if (ref_st != NMO_OK) {
-            edit_op_dispose(dst);
-            return ref_st;
-        }
-        ref_st = edit_plan_handle_ref_clone(
-            &dst->data.add_operation.in2_parameter_ref,
-            &src->data.add_operation.in2_parameter_ref);
-        if (ref_st != NMO_OK) {
-            edit_op_dispose(dst);
-            return ref_st;
-        }
-        ref_st = edit_plan_handle_ref_clone(
-            &dst->data.add_operation.out_parameter_ref,
-            &src->data.add_operation.out_parameter_ref);
-        if (ref_st != NMO_OK) {
-            edit_op_dispose(dst);
-            return ref_st;
-        }
+        NMO_RETURN_IF_ERROR(edit_op_clone_handle_ref_slots_or_dispose(
+            dst,
+            (edit_plan_handle_ref_clone_slot_t[]){
+                {
+                    &dst->data.add_operation.in1_parameter_ref,
+                    &src->data.add_operation.in1_parameter_ref,
+                },
+                {
+                    &dst->data.add_operation.in2_parameter_ref,
+                    &src->data.add_operation.in2_parameter_ref,
+                },
+                {
+                    &dst->data.add_operation.out_parameter_ref,
+                    &src->data.add_operation.out_parameter_ref,
+                },
+            },
+            3u));
         break;
     case NMO_EDIT_OP_REWIRE_OPERATION:
-        dst->data.rewire_operation.in1_parameter_ref =
-            edit_plan_no_handle_ref();
-        dst->data.rewire_operation.in2_parameter_ref =
-            edit_plan_no_handle_ref();
-        dst->data.rewire_operation.out_parameter_ref =
-            edit_plan_no_handle_ref();
-        ref_st = edit_plan_handle_ref_clone(
-            &dst->data.rewire_operation.in1_parameter_ref,
-            &src->data.rewire_operation.in1_parameter_ref);
-        if (ref_st != NMO_OK) {
-            edit_op_dispose(dst);
-            return ref_st;
-        }
-        ref_st = edit_plan_handle_ref_clone(
-            &dst->data.rewire_operation.in2_parameter_ref,
-            &src->data.rewire_operation.in2_parameter_ref);
-        if (ref_st != NMO_OK) {
-            edit_op_dispose(dst);
-            return ref_st;
-        }
-        ref_st = edit_plan_handle_ref_clone(
-            &dst->data.rewire_operation.out_parameter_ref,
-            &src->data.rewire_operation.out_parameter_ref);
-        if (ref_st != NMO_OK) {
-            edit_op_dispose(dst);
-            return ref_st;
-        }
+        NMO_RETURN_IF_ERROR(edit_op_clone_handle_ref_slots_or_dispose(
+            dst,
+            (edit_plan_handle_ref_clone_slot_t[]){
+                {
+                    &dst->data.rewire_operation.in1_parameter_ref,
+                    &src->data.rewire_operation.in1_parameter_ref,
+                },
+                {
+                    &dst->data.rewire_operation.in2_parameter_ref,
+                    &src->data.rewire_operation.in2_parameter_ref,
+                },
+                {
+                    &dst->data.rewire_operation.out_parameter_ref,
+                    &src->data.rewire_operation.out_parameter_ref,
+                },
+            },
+            3u));
         break;
     case NMO_EDIT_OP_SET_DATA_CELL:
         dst->data.data_cell.value =
@@ -1189,10 +1211,12 @@ static nmo_status_t edit_plan_add_set_parameter_value_core(
         edit_op_dispose(op);
         return NMO_ERR_NOMEM;
     }
-    nmo_status_t st = edit_plan_handle_ref_clone(
-        &op->data.set_value.parameter_ref, &parameter_ref);
+    edit_plan_handle_ref_clone_slot_t refs[] = {
+        {&op->data.set_value.parameter_ref, &parameter_ref},
+    };
+    nmo_status_t st = edit_op_clone_handle_ref_slots_or_dispose(
+        op, refs, sizeof(refs) / sizeof(refs[0]));
     if (st != NMO_OK) {
-        edit_op_dispose(op);
         return st;
     }
     st = edit_plan_copy_parameter_write_options(
@@ -1233,10 +1257,12 @@ static nmo_status_t edit_plan_add_set_parameter_bytes_core(
         return st;
     }
     op->data.set_bytes.byte_count = byte_count;
-    st = edit_plan_handle_ref_clone(
-        &op->data.set_bytes.parameter_ref, &parameter_ref);
+    edit_plan_handle_ref_clone_slot_t refs[] = {
+        {&op->data.set_bytes.parameter_ref, &parameter_ref},
+    };
+    st = edit_op_clone_handle_ref_slots_or_dispose(
+        op, refs, sizeof(refs) / sizeof(refs[0]));
     if (st != NMO_OK) {
-        edit_op_dispose(op);
         return st;
     }
     st = edit_plan_copy_parameter_write_options(
@@ -1272,16 +1298,13 @@ static nmo_status_t edit_plan_add_behavior_link_core(
     op->data.add_link.from_io_id = from_io_id;
     op->data.add_link.to_io_id = to_io_id;
     op->data.add_link.activation_delay = activation_delay;
-    nmo_status_t st = edit_plan_handle_ref_clone(
-        &op->data.add_link.from_io_ref, &from_ref);
+    edit_plan_handle_ref_clone_slot_t refs[] = {
+        {&op->data.add_link.from_io_ref, &from_ref},
+        {&op->data.add_link.to_io_ref, &to_ref},
+    };
+    nmo_status_t st = edit_op_clone_handle_ref_slots_or_dispose(
+        op, refs, sizeof(refs) / sizeof(refs[0]));
     if (st != NMO_OK) {
-        edit_op_dispose(op);
-        return st;
-    }
-    st = edit_plan_handle_ref_clone(
-        &op->data.add_link.to_io_ref, &to_ref);
-    if (st != NMO_OK) {
-        edit_op_dispose(op);
         return st;
     }
     plan->count++;
@@ -1305,11 +1328,12 @@ static nmo_status_t edit_plan_add_connect_parameter_core(
         plan, NMO_EDIT_OP_CONNECT_PARAMETER, primary_id, &op));
     op->data.connect_parameter.source_parameter_id = source_parameter_id;
     op->data.connect_parameter.target_parameter_id = target_parameter_id;
-    nmo_status_t st = edit_plan_handle_ref_clone(
-        &op->data.connect_parameter.target_parameter_ref,
-        &target_ref);
+    edit_plan_handle_ref_clone_slot_t refs[] = {
+        {&op->data.connect_parameter.target_parameter_ref, &target_ref},
+    };
+    nmo_status_t st = edit_op_clone_handle_ref_slots_or_dispose(
+        op, refs, sizeof(refs) / sizeof(refs[0]));
     if (st != NMO_OK) {
-        edit_op_dispose(op);
         return st;
     }
     plan->count++;
@@ -1338,22 +1362,14 @@ static nmo_status_t edit_plan_add_operation_core(
     op->data.add_operation.in1_parameter_id = in1_parameter_id;
     op->data.add_operation.in2_parameter_id = in2_parameter_id;
     op->data.add_operation.out_parameter_id = out_parameter_id;
-    nmo_status_t st = edit_plan_handle_ref_clone(
-        &op->data.add_operation.in1_parameter_ref, &in1_ref);
+    edit_plan_handle_ref_clone_slot_t refs[] = {
+        {&op->data.add_operation.in1_parameter_ref, &in1_ref},
+        {&op->data.add_operation.in2_parameter_ref, &in2_ref},
+        {&op->data.add_operation.out_parameter_ref, &out_ref},
+    };
+    nmo_status_t st = edit_op_clone_handle_ref_slots_or_dispose(
+        op, refs, sizeof(refs) / sizeof(refs[0]));
     if (st != NMO_OK) {
-        edit_op_dispose(op);
-        return st;
-    }
-    st = edit_plan_handle_ref_clone(
-        &op->data.add_operation.in2_parameter_ref, &in2_ref);
-    if (st != NMO_OK) {
-        edit_op_dispose(op);
-        return st;
-    }
-    st = edit_plan_handle_ref_clone(
-        &op->data.add_operation.out_parameter_ref, &out_ref);
-    if (st != NMO_OK) {
-        edit_op_dispose(op);
         return st;
     }
     plan->count++;
@@ -1383,29 +1399,21 @@ static nmo_status_t edit_plan_add_rewire_operation_core(
     op->data.rewire_operation.in1_parameter_id = in1_parameter_id;
     op->data.rewire_operation.in2_parameter_id = in2_parameter_id;
     op->data.rewire_operation.out_parameter_id = out_parameter_id;
-    nmo_status_t st = edit_plan_handle_ref_clone(
-        &op->data.rewire_operation.in1_parameter_ref, &in1_ref);
+    edit_plan_handle_ref_clone_slot_t refs[] = {
+        {&op->data.rewire_operation.in1_parameter_ref, &in1_ref},
+        {&op->data.rewire_operation.in2_parameter_ref, &in2_ref},
+        {&op->data.rewire_operation.out_parameter_ref, &out_ref},
+    };
+    nmo_status_t st = edit_op_clone_handle_ref_slots_or_dispose(
+        op, refs, sizeof(refs) / sizeof(refs[0]));
     if (st != NMO_OK) {
-        edit_op_dispose(op);
         return st;
     }
     if (in1_ref.has_ref) {
         op->data.rewire_operation.slot_flags |= NMO_SCRIPT_EDIT_OP_SLOT_IN1;
     }
-    st = edit_plan_handle_ref_clone(
-        &op->data.rewire_operation.in2_parameter_ref, &in2_ref);
-    if (st != NMO_OK) {
-        edit_op_dispose(op);
-        return st;
-    }
     if (in2_ref.has_ref) {
         op->data.rewire_operation.slot_flags |= NMO_SCRIPT_EDIT_OP_SLOT_IN2;
-    }
-    st = edit_plan_handle_ref_clone(
-        &op->data.rewire_operation.out_parameter_ref, &out_ref);
-    if (st != NMO_OK) {
-        edit_op_dispose(op);
-        return st;
     }
     if (out_ref.has_ref) {
         op->data.rewire_operation.slot_flags |= NMO_SCRIPT_EDIT_OP_SLOT_OUT;
