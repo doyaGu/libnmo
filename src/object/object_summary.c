@@ -102,6 +102,9 @@ static const char *nmo_summary_resolve_object_name(const nmo_summary_output_t *o
 static const nmo_type_descriptor_t *nmo_summary_get_type_for_object(
     const nmo_type_registry_t *registry, nmo_object_t *obj);
 static bool nmo_summary_is_object_ref_field(const nmo_type_field_t *field);
+static bool nmo_summary_is_base_embedding(
+    const nmo_type_descriptor_t *owner_type,
+    const nmo_type_field_t *field);
 static void nmo_summary_emit_stable_object_metadata(
     nmo_object_t *obj,
     nmo_summary_output_t *out);
@@ -482,6 +485,207 @@ static bool nmo_summary_is_metadata_count_field(
     return false;
 }
 
+static yyjson_mut_val *nmo_summary_array_preview_json(
+    nmo_summary_output_t *out,
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *field_type,
+    nmo_guid_t field_guid,
+    const void *array_ptr,
+    uint64_t count,
+    size_t elem_size,
+    uint32_t max_count)
+{
+    if (!out || !out->json_doc || !array_ptr || count == 0 || elem_size == 0) {
+        return NULL;
+    }
+
+    yyjson_mut_val *preview = yyjson_mut_arr(out->json_doc);
+    uint64_t emit = count < max_count ? count : max_count;
+    for (uint64_t i = 0; i < emit; ++i) {
+        const uint8_t *elem_ptr =
+            (const uint8_t *)array_ptr + (size_t)i * elem_size;
+        yyjson_mut_val *elem_val = NULL;
+        nmo_summary_format_value_to_json(
+            out, registry, field_type, field_guid,
+            elem_ptr, elem_size, &elem_val);
+        yyjson_mut_arr_add_val(
+            preview, elem_val ? elem_val : yyjson_mut_null(out->json_doc));
+    }
+    return preview;
+}
+
+static void nmo_summary_format_array_preview_text(
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *field_type,
+    nmo_guid_t field_guid,
+    const void *array_ptr,
+    uint64_t count,
+    size_t elem_size,
+    uint32_t max_count,
+    char *buffer,
+    size_t buffer_size)
+{
+    if (!buffer || buffer_size == 0) {
+        return;
+    }
+    buffer[0] = '\0';
+    if (!array_ptr || count == 0 || elem_size == 0) {
+        return;
+    }
+
+    uint64_t emit = count < max_count ? count : max_count;
+    size_t pos = 0;
+    const size_t guard = buffer_size > 32 ? buffer_size - 32 : buffer_size;
+    for (uint64_t i = 0; i < emit && pos < guard; ++i) {
+        const uint8_t *elem_ptr =
+            (const uint8_t *)array_ptr + (size_t)i * elem_size;
+        char elem_buf[256];
+        nmo_summary_format_value(
+            registry, field_type, field_guid,
+            elem_ptr, elem_size, elem_buf, sizeof(elem_buf));
+        if (i > 0) {
+            pos += snprintf(buffer + pos, buffer_size - pos, ", ");
+        }
+        pos += snprintf(buffer + pos, buffer_size - pos, "%s", elem_buf);
+    }
+    if (count > emit && pos < buffer_size) {
+        snprintf(buffer + pos, buffer_size - pos, " ... (+%llu)",
+                 (unsigned long long)(count - emit));
+    }
+}
+
+static void nmo_summary_print_array_preview(
+    nmo_summary_output_t *out,
+    const char *label,
+    int label_width,
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *field_type,
+    nmo_guid_t field_guid,
+    const void *array_ptr,
+    uint64_t count,
+    size_t elem_size,
+    uint32_t max_count)
+{
+    if (!out || !label) {
+        return;
+    }
+    if (!array_ptr || count == 0 || elem_size == 0) {
+        nmo_cli_print_kv(
+            out->stream, label, "(empty)", label_width, out->colorize);
+        return;
+    }
+
+    char preview[512];
+    nmo_summary_format_array_preview_text(
+        registry, field_type, field_guid,
+        array_ptr, count, elem_size, max_count,
+        preview, sizeof(preview));
+    nmo_cli_print_kv(
+        out->stream, label, preview, label_width, out->colorize);
+}
+
+static void nmo_summary_emit_array_field_preview(
+    nmo_field_render_ctx_t *ctx,
+    const nmo_type_field_t *field,
+    const nmo_type_descriptor_t *field_type,
+    const void *array_ptr,
+    uint64_t count,
+    size_t elem_size)
+{
+    if (!ctx || !ctx->out || !field || !field->name) {
+        return;
+    }
+
+    if (ctx->out->is_json) {
+        yyjson_mut_val *item = yyjson_mut_obj(ctx->out->json_doc);
+        nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "name", field->name);
+        yyjson_mut_obj_add_bool(ctx->out->json_doc, item, "is_array", true);
+        yyjson_mut_obj_add_uint(ctx->out->json_doc, item, "count", count);
+        yyjson_mut_val *preview = nmo_summary_array_preview_json(
+            ctx->out, ctx->registry, field_type, field->type_guid,
+            array_ptr, count, elem_size, ctx->config->array_preview_max);
+        if (preview) {
+            yyjson_mut_obj_add_val(ctx->out->json_doc, item, "preview", preview);
+        }
+        yyjson_mut_arr_add_val(ctx->json_fields, item);
+        return;
+    }
+
+    char label[128];
+    snprintf(label, sizeof(label), "%s[%llu]",
+             field->name, (unsigned long long)count);
+    nmo_summary_print_array_preview(
+        ctx->out, label, ctx->label_width,
+        ctx->registry, field_type, field->type_guid,
+        array_ptr, count, elem_size, ctx->config->text_preview_max);
+}
+
+static void nmo_summary_emit_select_value(
+    nmo_summary_output_t *out,
+    yyjson_mut_val *json_select_arr,
+    const nmo_summary_config_t *config,
+    const nmo_type_registry_t *registry,
+    const nmo_type_field_t *field,
+    const nmo_type_descriptor_t *field_type,
+    const void *value_ptr,
+    size_t value_size,
+    const char *path)
+{
+    if (!out || !config || !field || !path) {
+        return;
+    }
+
+    char value_buf[NMO_SUMMARY_VALUE_BUFFER_SIZE];
+    nmo_summary_format_value(
+        registry, field_type, field->type_guid,
+        value_ptr, value_size, value_buf, sizeof(value_buf));
+
+    if (out->is_json) {
+        yyjson_mut_val *item = yyjson_mut_obj(out->json_doc);
+        nmo_cli_json_add_str_safe(out->json_doc, item, "path", path);
+        yyjson_mut_obj_add_bool(out->json_doc, item, "ok", true);
+
+        yyjson_mut_val *json_val = NULL;
+        nmo_summary_format_value_to_json(
+            out, registry, field_type, field->type_guid,
+            value_ptr, value_size, &json_val);
+        yyjson_mut_obj_add_val(out->json_doc, item, "value", json_val);
+        nmo_cli_json_add_str_safe(out->json_doc, item, "value_str", value_buf);
+
+        if (nmo_summary_is_object_ref_field(field) &&
+            value_ptr && config->resolve_object_refs) {
+            nmo_object_id_t id =
+                value_size >= sizeof(nmo_object_id_t)
+                    ? *(const nmo_object_id_t *)value_ptr
+                    : 0;
+            const char *ref_name = nmo_summary_resolve_object_name(out, id);
+            if (ref_name) {
+                nmo_cli_json_add_str_safe(out->json_doc, item, "ref_name", ref_name);
+            }
+        }
+
+        yyjson_mut_arr_add_val(json_select_arr, item);
+        return;
+    }
+
+    if (nmo_summary_is_object_ref_field(field) &&
+        value_ptr && config->resolve_object_refs) {
+        nmo_object_id_t id =
+            value_size >= sizeof(nmo_object_id_t)
+                ? *(const nmo_object_id_t *)value_ptr
+                : 0;
+        const char *ref_name = nmo_summary_resolve_object_name(out, id);
+        if (ref_name) {
+            char ref_buf[256];
+            snprintf(ref_buf, sizeof(ref_buf), "#%u (%s)", id, ref_name);
+            nmo_cli_print_kv(out->stream, path, ref_buf, 30, out->colorize);
+            return;
+        }
+    }
+
+    nmo_cli_print_kv(out->stream, path, value_buf, 30, out->colorize);
+}
+
 /* ============================================================================
  * Field Path Selection (dot navigation + [index])
  * ============================================================================ */
@@ -693,17 +897,12 @@ static bool nmo_summary_emit_select_path(
                     yyjson_mut_obj_add_bool(out->json_doc, item, "is_array", true);
                     yyjson_mut_obj_add_uint(out->json_doc, item, "count", count);
 
-                    if (array_ptr && count > 0) {
-                        yyjson_mut_val *preview = yyjson_mut_arr(out->json_doc);
-                        size_t elem_size = nmo_summary_guess_element_size(field->type_guid, field_type);
-                        uint64_t emit_n = count < config->array_preview_max ? count : config->array_preview_max;
-                        for (uint64_t i = 0; i < emit_n; ++i) {
-                            const uint8_t *elem_ptr = (const uint8_t *)array_ptr + i * elem_size;
-                            yyjson_mut_val *elem_val = NULL;
-                            nmo_summary_format_value_to_json(out, registry, field_type,
-                                                            field->type_guid, elem_ptr, elem_size, &elem_val);
-                            yyjson_mut_arr_add_val(preview, elem_val ? elem_val : yyjson_mut_null(out->json_doc));
-                        }
+                    size_t elem_size =
+                        nmo_summary_guess_element_size(field->type_guid, field_type);
+                    yyjson_mut_val *preview = nmo_summary_array_preview_json(
+                        out, registry, field_type, field->type_guid,
+                        array_ptr, count, elem_size, config->array_preview_max);
+                    if (preview) {
                         yyjson_mut_obj_add_val(out->json_doc, item, "preview", preview);
                     }
 
@@ -716,25 +915,9 @@ static bool nmo_summary_emit_select_path(
                         nmo_cli_print_kv(out->stream, label, "(empty)", 30, out->colorize);
                     } else {
                         size_t elem_size = nmo_summary_guess_element_size(field->type_guid, field_type);
-                        uint64_t emit_n = count < config->text_preview_max ? count : config->text_preview_max;
-
-                        char preview[512] = "";
-                        size_t pos = 0;
-                        for (uint64_t i = 0; i < emit_n && pos < sizeof(preview) - 32; ++i) {
-                            const uint8_t *elem_ptr = (const uint8_t *)array_ptr + i * elem_size;
-                            char elem_buf[256];
-                            nmo_summary_format_value(registry, field_type, field->type_guid,
-                                                    elem_ptr, elem_size, elem_buf, sizeof(elem_buf));
-                            if (i > 0) {
-                                pos += snprintf(preview + pos, sizeof(preview) - pos, ", ");
-                            }
-                            pos += snprintf(preview + pos, sizeof(preview) - pos, "%s", elem_buf);
-                        }
-                        if (count > emit_n) {
-                            snprintf(preview + pos, sizeof(preview) - pos, " ... (+%llu)",
-                                     (unsigned long long)(count - emit_n));
-                        }
-                        nmo_cli_print_kv(out->stream, label, preview, 30, out->colorize);
+                        nmo_summary_print_array_preview(
+                            out, label, 30, registry, field_type, field->type_guid,
+                            array_ptr, count, elem_size, config->text_preview_max);
                     }
                 }
                 emitted = true;
@@ -758,46 +941,9 @@ static bool nmo_summary_emit_select_path(
             const uint8_t *elem_ptr = (const uint8_t *)array_ptr + (size_t)index * elem_size;
 
             if (is_last) {
-                /* Emit element value */
-                char value_buf[NMO_SUMMARY_VALUE_BUFFER_SIZE];
-                nmo_summary_format_value(registry, field_type, field->type_guid, elem_ptr, elem_size,
-                                        value_buf, sizeof(value_buf));
-
-                if (out->is_json) {
-                    yyjson_mut_val *item = yyjson_mut_obj(out->json_doc);
-                    nmo_cli_json_add_str_safe(out->json_doc, item, "path", path);
-                    yyjson_mut_obj_add_bool(out->json_doc, item, "ok", true);
-
-                    yyjson_mut_val *json_val = NULL;
-                    nmo_summary_format_value_to_json(out, registry, field_type,
-                                                    field->type_guid, elem_ptr, elem_size, &json_val);
-                    yyjson_mut_obj_add_val(out->json_doc, item, "value", json_val);
-                    nmo_cli_json_add_str_safe(out->json_doc, item, "value_str", value_buf);
-
-                    if (nmo_summary_is_object_ref_field(field) && config->resolve_object_refs) {
-                        nmo_object_id_t id = (elem_size >= 4) ? *(const nmo_object_id_t *)elem_ptr : 0;
-                        const char *ref_name = nmo_summary_resolve_object_name(out, id);
-                        if (ref_name) {
-                            nmo_cli_json_add_str_safe(out->json_doc, item, "ref_name", ref_name);
-                        }
-                    }
-
-                    yyjson_mut_arr_add_val(json_select_arr, item);
-                } else {
-                    if (nmo_summary_is_object_ref_field(field) && config->resolve_object_refs) {
-                        nmo_object_id_t id = (elem_size >= 4) ? *(const nmo_object_id_t *)elem_ptr : 0;
-                        const char *ref_name = nmo_summary_resolve_object_name(out, id);
-                        if (ref_name) {
-                            char ref_buf[256];
-                            snprintf(ref_buf, sizeof(ref_buf), "#%u (%s)", id, ref_name);
-                            nmo_cli_print_kv(out->stream, path, ref_buf, 30, out->colorize);
-                        } else {
-                            nmo_cli_print_kv(out->stream, path, value_buf, 30, out->colorize);
-                        }
-                    } else {
-                        nmo_cli_print_kv(out->stream, path, value_buf, 30, out->colorize);
-                    }
-                }
+                nmo_summary_emit_select_value(
+                    out, json_select_arr, config, registry,
+                    field, field_type, elem_ptr, elem_size, path);
                 emitted = true;
                 return true;
             }
@@ -819,46 +965,9 @@ static bool nmo_summary_emit_select_path(
         }
 
         if (is_last) {
-            char value_buf[NMO_SUMMARY_VALUE_BUFFER_SIZE];
-            nmo_summary_format_value(registry, field_type, field->type_guid,
-                                    field_ptr, field->size, value_buf, sizeof(value_buf));
-
-            if (out->is_json) {
-                yyjson_mut_val *item = yyjson_mut_obj(out->json_doc);
-                nmo_cli_json_add_str_safe(out->json_doc, item, "path", path);
-                yyjson_mut_obj_add_bool(out->json_doc, item, "ok", true);
-
-                yyjson_mut_val *json_val = NULL;
-                nmo_summary_format_value_to_json(out, registry, field_type,
-                                                field->type_guid, field_ptr, field->size, &json_val);
-                yyjson_mut_obj_add_val(out->json_doc, item, "value", json_val);
-                nmo_cli_json_add_str_safe(out->json_doc, item, "value_str", value_buf);
-
-                if (nmo_summary_is_object_ref_field(field) && field_ptr && config->resolve_object_refs) {
-                    nmo_object_id_t id = *(const nmo_object_id_t *)field_ptr;
-                    const char *ref_name = nmo_summary_resolve_object_name(out, id);
-                    if (ref_name) {
-                        nmo_cli_json_add_str_safe(out->json_doc, item, "ref_name", ref_name);
-                    }
-                }
-
-                yyjson_mut_arr_add_val(json_select_arr, item);
-            } else {
-                if (nmo_summary_is_object_ref_field(field) && field_ptr && config->resolve_object_refs) {
-                    nmo_object_id_t id = *(const nmo_object_id_t *)field_ptr;
-                    const char *ref_name = nmo_summary_resolve_object_name(out, id);
-                    if (ref_name) {
-                        char ref_buf[256];
-                        snprintf(ref_buf, sizeof(ref_buf), "#%u (%s)", id, ref_name);
-                        nmo_cli_print_kv(out->stream, path, ref_buf, 30, out->colorize);
-                    } else {
-                        nmo_cli_print_kv(out->stream, path, value_buf, 30, out->colorize);
-                    }
-                } else {
-                    nmo_cli_print_kv(out->stream, path, value_buf, 30, out->colorize);
-                }
-            }
-
+            nmo_summary_emit_select_value(
+                out, json_select_arr, config, registry,
+                field, field_type, field_ptr, field->size, path);
             emitted = true;
             return true;
         }
@@ -975,24 +1084,8 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
 
     /* Skip base class embedding fields -- these are handled by the flattening
      * walker in nmo_summary_emit_reflection_fields_recursive(). */
-    if (!(field->flags & NMO_FIELD_REPEATED) &&
-        !nmo_guid_is_null(ctx->owner_type->base_type))
-    {
-        /* Check if this field holds the parent class state.
-         * Match by type_guid == parent's GUID, or by well-known embedding names
-         * when the type_guid is CKPGUID_NONE. */
-        nmo_guid_t parent_guid = ctx->owner_type->base_type;
-        if (nmo_guid_equals(field->type_guid, parent_guid)) {
-            return true; /* Skip: parent base embedding */
-        }
-        if (nmo_guid_equals(field->type_guid, CKPGUID_NONE)) {
-            if (strcmp(field->name, "base") == 0 ||
-                strcmp(field->name, "entity") == 0 ||
-                strcmp(field->name, "beobject") == 0 ||
-                strcmp(field->name, "object") == 0) {
-                return true; /* Skip: likely parent base embedding */
-            }
-        }
+    if (nmo_summary_is_base_embedding(ctx->owner_type, field)) {
+        return true;
     }
 
     ctx->field_count++;
@@ -1231,47 +1324,8 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
         const void *array_ptr = field_ptr ? *(const void *const *)field_ptr : NULL;
         uint64_t count = nmo_summary_guess_array_count(ctx->owner_type, ctx->owner_instance, field);
         size_t elem_size = field_type ? (size_t)field_type->size : sizeof(uint32_t);
-
-        if (ctx->out->is_json) {
-            yyjson_mut_val *item = yyjson_mut_obj(ctx->out->json_doc);
-            nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "name", field->name);
-            yyjson_mut_obj_add_bool(ctx->out->json_doc, item, "is_array", true);
-            yyjson_mut_obj_add_uint(ctx->out->json_doc, item, "count", count);
-            if (array_ptr && count > 0) {
-                yyjson_mut_val *preview = yyjson_mut_arr(ctx->out->json_doc);
-                uint64_t emit = count < ctx->config->array_preview_max ? count : ctx->config->array_preview_max;
-                for (uint64_t i = 0; i < emit; ++i) {
-                    const uint8_t *ep = (const uint8_t *)array_ptr + i * elem_size;
-                    yyjson_mut_val *ev = NULL;
-                    nmo_summary_format_value_to_json(ctx->out, ctx->registry, field_type,
-                                                     field->type_guid, ep, elem_size, &ev);
-                    yyjson_mut_arr_add_val(preview, ev ? ev : yyjson_mut_null(ctx->out->json_doc));
-                }
-                yyjson_mut_obj_add_val(ctx->out->json_doc, item, "preview", preview);
-            }
-            yyjson_mut_arr_add_val(ctx->json_fields, item);
-        } else {
-            char label[128];
-            snprintf(label, sizeof(label), "%s[%llu]", field->name, (unsigned long long)count);
-            if (!array_ptr || count == 0) {
-                nmo_cli_print_kv(ctx->out->stream, label, "(empty)", ctx->label_width, ctx->out->colorize);
-            } else {
-                uint64_t emit = count < ctx->config->text_preview_max ? count : ctx->config->text_preview_max;
-                char preview[512] = "";
-                size_t pos = 0;
-                for (uint64_t i = 0; i < emit && pos < sizeof(preview) - 32; ++i) {
-                    const uint8_t *ep = (const uint8_t *)array_ptr + i * elem_size;
-                    char eb[256];
-                    nmo_summary_format_value(ctx->registry, field_type, field->type_guid,
-                                            ep, elem_size, eb, sizeof(eb));
-                    if (i > 0) pos += snprintf(preview + pos, sizeof(preview) - pos, ", ");
-                    pos += snprintf(preview + pos, sizeof(preview) - pos, "%s", eb);
-                }
-                if (count > emit)
-                    snprintf(preview + pos, sizeof(preview) - pos, " ... (+%llu)", (unsigned long long)(count - emit));
-                nmo_cli_print_kv(ctx->out->stream, label, preview, ctx->label_width, ctx->out->colorize);
-            }
-        }
+        nmo_summary_emit_array_field_preview(
+            ctx, field, field_type, array_ptr, count, elem_size);
         return true;
     }
 
@@ -1320,59 +1374,9 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
     if (field->flags & NMO_FIELD_REPEATED) {
         const void *array_ptr = field_ptr ? *(const void*const*)field_ptr : NULL;
         uint64_t count = nmo_summary_guess_array_count(ctx->owner_type, ctx->owner_instance, field);
-
-        if (ctx->out->is_json) {
-            yyjson_mut_val *item = yyjson_mut_obj(ctx->out->json_doc);
-            nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "name", field->name);
-            yyjson_mut_obj_add_bool(ctx->out->json_doc, item, "is_array", true);
-            yyjson_mut_obj_add_uint(ctx->out->json_doc, item, "count", count);
-
-            /* Preview array elements */
-            if (array_ptr && count > 0) {
-                yyjson_mut_val *preview = yyjson_mut_arr(ctx->out->json_doc);
-                size_t elem_size = nmo_summary_guess_element_size(field->type_guid, field_type);
-                uint64_t emit = count < ctx->config->array_preview_max ? count : ctx->config->array_preview_max;
-
-                for (uint64_t i = 0; i < emit; ++i) {
-                    const uint8_t *elem_ptr = (const uint8_t*)array_ptr + i * elem_size;
-                    yyjson_mut_val *elem_val = NULL;
-                    nmo_summary_format_value_to_json(ctx->out, ctx->registry, field_type,
-                                                     field->type_guid, elem_ptr, elem_size, &elem_val);
-                    yyjson_mut_arr_add_val(preview, elem_val ? elem_val : yyjson_mut_null(ctx->out->json_doc));
-                }
-                yyjson_mut_obj_add_val(ctx->out->json_doc, item, "preview", preview);
-            }
-
-            yyjson_mut_arr_add_val(ctx->json_fields, item);
-        } else {
-            /* Text output for arrays */
-            char label[128];
-            snprintf(label, sizeof(label), "%s[%llu]", field->name, (unsigned long long)count);
-
-            if (!array_ptr || count == 0) {
-                nmo_cli_print_kv(ctx->out->stream, label, "(empty)", ctx->label_width, ctx->out->colorize);
-            } else {
-                size_t elem_size = nmo_summary_guess_element_size(field->type_guid, field_type);
-                uint64_t emit = count < ctx->config->text_preview_max ? count : ctx->config->text_preview_max;
-
-                char preview[512] = "";
-                size_t pos = 0;
-                for (uint64_t i = 0; i < emit && pos < sizeof(preview) - 32; ++i) {
-                    const uint8_t *elem_ptr = (const uint8_t*)array_ptr + i * elem_size;
-                    char elem_buf[256];
-                    nmo_summary_format_value(ctx->registry, field_type, field->type_guid,
-                                            elem_ptr, elem_size, elem_buf, sizeof(elem_buf));
-                    if (i > 0) {
-                        pos += snprintf(preview + pos, sizeof(preview) - pos, ", ");
-                    }
-                    pos += snprintf(preview + pos, sizeof(preview) - pos, "%s", elem_buf);
-                }
-                if (count > emit) {
-                    snprintf(preview + pos, sizeof(preview) - pos, " ... (+%llu)", (unsigned long long)(count - emit));
-                }
-                nmo_cli_print_kv(ctx->out->stream, label, preview, ctx->label_width, ctx->out->colorize);
-            }
-        }
+        size_t elem_size = nmo_summary_guess_element_size(field->type_guid, field_type);
+        nmo_summary_emit_array_field_preview(
+            ctx, field, field_type, array_ptr, count, elem_size);
         return true;
     }
 
@@ -1685,6 +1689,30 @@ static yyjson_mut_val *nmo_snapshot_array_items(
     return items;
 }
 
+static void nmo_snapshot_add_array_payload(
+    nmo_summary_output_t *out,
+    yyjson_mut_val *item,
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *field_type,
+    nmo_guid_t field_guid,
+    const void *array_ptr,
+    uint64_t count,
+    size_t elem_size,
+    const nmo_summary_config_t *config)
+{
+    yyjson_mut_obj_add_str(out->json_doc, item, "kind", "array");
+    yyjson_mut_obj_add_uint(out->json_doc, item, "count", count);
+    yyjson_mut_val *items = nmo_snapshot_array_items(
+        out, registry, field_type, field_guid,
+        array_ptr, count, elem_size, config);
+    yyjson_mut_obj_add_null(out->json_doc, item, "value");
+    yyjson_mut_obj_add_val(out->json_doc, item, "items", items);
+    if (array_ptr && count > 0 && elem_size > 0) {
+        nmo_snapshot_add_raw_hex(
+            out->json_doc, item, array_ptr, (size_t)count * elem_size);
+    }
+}
+
 static yyjson_mut_val *nmo_snapshot_field(
     nmo_summary_output_t *out,
     const nmo_type_registry_t *registry,
@@ -1709,15 +1737,9 @@ static yyjson_mut_val *nmo_snapshot_field(
         const void *array_ptr = field_ptr ? *(const void *const *)field_ptr : NULL;
         uint64_t count = nmo_summary_guess_array_count(owner_type, owner_instance, field);
         size_t elem_size = nmo_snapshot_element_size_for_field(field, field_type);
-        yyjson_mut_obj_add_str(out->json_doc, item, "kind", "array");
-        yyjson_mut_obj_add_uint(out->json_doc, item, "count", count);
-        yyjson_mut_val *items = nmo_snapshot_array_items(
-            out, registry, field_type, field->type_guid, array_ptr, count, elem_size, config);
-        yyjson_mut_obj_add_null(out->json_doc, item, "value");
-        yyjson_mut_obj_add_val(out->json_doc, item, "items", items);
-        if (array_ptr && count > 0 && elem_size > 0) {
-            nmo_snapshot_add_raw_hex(out->json_doc, item, array_ptr, (size_t)count * elem_size);
-        }
+        nmo_snapshot_add_array_payload(
+            out, item, registry, field_type, field->type_guid,
+            array_ptr, count, elem_size, config);
         return item;
     }
 
@@ -1736,15 +1758,9 @@ static yyjson_mut_val *nmo_snapshot_field(
             array_ptr = field_ptr ? *(const void *const *)field_ptr : NULL;
             count = nmo_summary_guess_array_count(owner_type, owner_instance, field);
         }
-        yyjson_mut_obj_add_str(out->json_doc, item, "kind", "array");
-        yyjson_mut_obj_add_uint(out->json_doc, item, "count", count);
-        yyjson_mut_val *items = nmo_snapshot_array_items(
-            out, registry, field_type, field->type_guid, array_ptr, count, elem_size, config);
-        yyjson_mut_obj_add_null(out->json_doc, item, "value");
-        yyjson_mut_obj_add_val(out->json_doc, item, "items", items);
-        if (array_ptr && count > 0 && elem_size > 0) {
-            nmo_snapshot_add_raw_hex(out->json_doc, item, array_ptr, (size_t)count * elem_size);
-        }
+        nmo_snapshot_add_array_payload(
+            out, item, registry, field_type, field->type_guid,
+            array_ptr, count, elem_size, config);
         return item;
     }
 
@@ -1866,22 +1882,8 @@ static bool count_visible_fields_visitor(void *user_data,
     nmo_field_count_ctx_t *ctx = (nmo_field_count_ctx_t *)user_data;
     if (!ctx || !field || !field->name) return true;
 
-    /* Mirror the base-class embedding skip from nmo_summary_render_field */
-    if (!(field->flags & NMO_FIELD_REPEATED) &&
-        !nmo_guid_is_null(ctx->owner_type->base_type))
-    {
-        nmo_guid_t parent_guid = ctx->owner_type->base_type;
-        if (nmo_guid_equals(field->type_guid, parent_guid)) {
-            return true; /* Skip: parent base embedding */
-        }
-        if (nmo_guid_equals(field->type_guid, CKPGUID_NONE)) {
-            if (strcmp(field->name, "base") == 0 ||
-                strcmp(field->name, "entity") == 0 ||
-                strcmp(field->name, "beobject") == 0 ||
-                strcmp(field->name, "object") == 0) {
-                return true; /* Skip: likely parent base embedding */
-            }
-        }
+    if (nmo_summary_is_base_embedding(ctx->owner_type, field)) {
+        return true;
     }
 
     ctx->count++;
