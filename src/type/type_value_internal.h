@@ -4,22 +4,6 @@
 #include "type/nmo_type_system.h"
 #include <stdint.h>
 
-struct nmo_session;
-
-typedef nmo_status_t (*nmo_type_object_id_to_name_resolver_fn)(
-    const void *session,
-    nmo_object_id_t id,
-    const char **out_name);
-
-typedef nmo_status_t (*nmo_type_object_name_to_id_resolver_fn)(
-    const void *session,
-    const char *name,
-    nmo_object_id_t *out_id);
-
-void nmo_type_set_object_resolvers(
-    nmo_type_object_id_to_name_resolver_fn id_to_name,
-    nmo_type_object_name_to_id_resolver_fn name_to_id);
-
 extern const nmo_type_vtable_t nmo_builtin_vtable_int;
 extern const nmo_type_vtable_t nmo_builtin_vtable_float;
 extern const nmo_type_vtable_t nmo_builtin_vtable_angle;
@@ -182,12 +166,10 @@ nmo_status_t nmo_type_string_from_string(
 nmo_status_t nmo_type_object_id_to_string(
     const void *value,
     char *buffer,
-    size_t buffer_size,
-    struct nmo_session *session);
+    size_t buffer_size);
 nmo_status_t nmo_type_object_id_from_string(
     void *value,
-    const char *string,
-    struct nmo_session *session);
+    const char *string);
 nmo_status_t nmo_type_enum_to_string(
     const void *value,
     const nmo_type_descriptor_t *type,

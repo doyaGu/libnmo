@@ -1058,59 +1058,16 @@ nmo_status_t nmo_type_string_from_string(
  * Object ID Converters
  * ============================================================================ */
 
-static nmo_type_object_id_to_name_resolver_fn g_object_id_to_name_resolver = NULL;
-static nmo_type_object_name_to_id_resolver_fn g_object_name_to_id_resolver = NULL;
-
-void nmo_type_set_object_resolvers(
-    nmo_type_object_id_to_name_resolver_fn id_to_name,
-    nmo_type_object_name_to_id_resolver_fn name_to_id)
-{
-    g_object_id_to_name_resolver = id_to_name;
-    g_object_name_to_id_resolver = name_to_id;
-}
-
-static bool nmo_object_name_is_safe_token(const char *name)
-{
-    if (!name || *name == '\0' || *name == '#') {
-        return false;
-    }
-
-    for (const char *p = name; *p != '\0'; ++p) {
-        unsigned char c = (unsigned char)(*p);
-        if (isspace(c) || c == '"' || c == '\\') {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 nmo_status_t nmo_type_object_id_to_string(
     const void *value,
     char *buffer,
-    size_t buffer_size,
-    struct nmo_session *session)
+    size_t buffer_size)
 {
     if (!value || !buffer || buffer_size == 0) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for object_id_to_string");
     }
 
     nmo_object_id_t id = *(const nmo_object_id_t*)value;
-
-    if (session && g_object_id_to_name_resolver) {
-        const char *name = NULL;
-        nmo_status_t resolved = g_object_id_to_name_resolver(session, id, &name);
-        if (resolved == NMO_OK && nmo_object_name_is_safe_token(name)) {
-            size_t len = strlen(name);
-            if (len + 1 > buffer_size) {
-                NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small for object name");
-            }
-
-            memcpy(buffer, name, len + 1);
-            NMO_RETURN_OK();
-        }
-    }
-
     int written = snprintf(buffer, buffer_size, "#%u", id);
     if (written < 0 || (size_t)written >= buffer_size) {
         NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small for object id");
@@ -1120,8 +1077,7 @@ nmo_status_t nmo_type_object_id_to_string(
 
 nmo_status_t nmo_type_object_id_from_string(
     void *value,
-    const char *string,
-    struct nmo_session *session)
+    const char *string)
 {
     if (!value || !string) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for object_id_from_string");
@@ -1134,16 +1090,6 @@ nmo_status_t nmo_type_object_id_from_string(
             *(nmo_object_id_t*)value = id;
             NMO_RETURN_OK();
         }
-    }
-
-    // Name lookup (optional)
-    if (session && g_object_name_to_id_resolver) {
-        nmo_object_id_t resolved_id = 0;
-        nmo_status_t resolved = g_object_name_to_id_resolver(session, string, &resolved_id);
-        if (resolved == NMO_OK) {
-            *(nmo_object_id_t*)value = resolved_id;
-        }
-        return resolved;
     }
 
     NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid object ID format (expected #id)");
@@ -1705,8 +1651,8 @@ static nmo_status_t nmo_parse_object_id_value(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for object id parse");
     }
 
-    /* Prefer #id format (and optional name lookup if resolver installed elsewhere) */
-    nmo_status_t st = nmo_type_object_id_from_string(value, string, NULL);
+    /* Prefer #id format */
+    nmo_status_t st = nmo_type_object_id_from_string(value, string);
     if (st == NMO_OK) {
         return st;
     }
@@ -2268,7 +2214,7 @@ nmo_status_t nmo_vt_to_string_object_id(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    return nmo_type_object_id_to_string(value, buffer, buffer_size, NULL);
+    return nmo_type_object_id_to_string(value, buffer, buffer_size);
 }
 NMO_DEFINE_VT_FROM_STRING(object_id, nmo_parse_object_id_value)
 

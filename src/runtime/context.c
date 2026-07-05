@@ -11,18 +11,13 @@
 #include "type/nmo_type_runtime.h"
 #include "type/nmo_operation_system.h"
 #include "type/nmo_operations.h"
-#include "../type/type_value_internal.h"
 #include "object/nmo_object_types.h"
 #include "format/nmo_manager_registry.h"
-#include "format/nmo_object.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
 #include "behavior/nmo_behavior_registry.h"
 #include "extension/nmo_virtools_data_plugin.h"
 #include "format/nmo_interface_chunk.h"
-
-#include "object/nmo_object_repository.h"
-
 #include <stdlib.h>
 #include <string.h>
 #include <stdalign.h>
@@ -77,59 +72,6 @@ typedef struct nmo_context {
     int thread_pool_size;
 
 } nmo_context_t;
-
-static nmo_status_t nmo_context_object_id_to_name_resolver(
-    const void *session_ptr,
-    nmo_object_id_t id,
-    const char **out_name)
-{
-    if (!session_ptr || !out_name) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for object id->name resolver");
-    }
-
-    const nmo_session_t *session = (const nmo_session_t*)session_ptr;
-    const nmo_object_repository_t *repo = nmo_session_get_repository(session);
-    if (!repo) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Session repository is not available");
-    }
-
-    nmo_object_t *object = nmo_object_repository_find_by_id(repo, (nmo_object_id_t)id);
-    if (!object) {
-        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Object not found");
-    }
-
-    const char *name = nmo_object_get_name(object);
-    if (!name || name[0] == '\0') {
-        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Object has no name");
-    }
-
-    *out_name = name;
-    NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_context_object_name_to_id_resolver(
-    const void *session_ptr,
-    const char *name,
-    nmo_object_id_t *out_id)
-{
-    if (!session_ptr || !name || !out_id) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for object name->id resolver");
-    }
-
-    const nmo_session_t *session = (const nmo_session_t*)session_ptr;
-    const nmo_object_repository_t *repo = nmo_session_get_repository(session);
-    if (!repo) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Session repository is not available");
-    }
-
-    nmo_object_t *object = nmo_object_repository_find_by_name((nmo_object_repository_t*)repo, name);
-    if (!object) {
-        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Object name not found");
-    }
-
-    *out_id = (nmo_object_id_t)nmo_object_get_id(object);
-    NMO_RETURN_OK();
-}
 
 /**
  * Create context
@@ -287,11 +229,6 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
         nmo_free(&effective_allocator, ctx);
         return NULL;
     }
-
-    /* Install object-id string resolvers once per process */
-    nmo_type_set_object_resolvers(
-        nmo_context_object_id_to_name_resolver,
-        nmo_context_object_name_to_id_resolver);
 
     ctx->thread_pool_size = (desc != NULL) ? desc->thread_pool_size : 0;
     return ctx;

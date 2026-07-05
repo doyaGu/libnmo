@@ -25,7 +25,6 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_allocator.h"
-#include "../../src/type/type_value_internal.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -2689,136 +2688,6 @@ TEST(type_string, type_value_from_string_rejects_scalar_without_vtable) {
     teardown();
 }
 
-typedef struct test_object_name_session {
-    int unused;
-} test_object_name_session_t;
-
-static nmo_status_t test_object_id_to_name(const void *session, nmo_object_id_t id, const char **out_name)
-{
-    (void)session;
-    if (!out_name) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "out_name is NULL");
-    }
-
-    if (id == 42) {
-        *out_name = "Ball_01";
-        NMO_RETURN_OK();
-    }
-
-    *out_name = NULL;
-    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND,
-        NMO_SEVERITY_ERROR, "Object not found");
-}
-
-static nmo_status_t test_object_name_to_id(const void *session, const char *name, nmo_object_id_t *out_id)
-{
-    (void)session;
-    if (!name || !out_id) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments");
-    }
-
-    if (strcmp(name, "Ball_01") == 0) {
-        *out_id = 42;
-        NMO_RETURN_OK();
-    }
-
-    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND,
-        NMO_SEVERITY_ERROR, "Object name not found");
-}
-
-static nmo_status_t test_object_id_to_unsafe_name(const void *session, nmo_object_id_t id, const char **out_name)
-{
-    (void)session;
-    if (!out_name) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "out_name is NULL");
-    }
-
-    if (id == 42) {
-        *out_name = "Ball 01"; // unsafe (space)
-        NMO_RETURN_OK();
-    }
-
-    *out_name = NULL;
-    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND,
-        NMO_SEVERITY_ERROR, "Object not found");
-}
-
-TEST(type_string, object_id_to_string_uses_name_resolver) {
-    setup();
-
-    test_object_name_session_t session = {0};
-
-    nmo_type_set_object_resolvers(test_object_id_to_name, test_object_name_to_id);
-
-    char buffer[64];
-    nmo_object_id_t value = 42;
-    nmo_status_t result = nmo_type_object_id_to_string(
-        &value, buffer, sizeof(buffer), (struct nmo_session*)&session);
-
-    ASSERT_EQ(NMO_OK, result);
-    ASSERT_STR_EQ("Ball_01", buffer);
-
-    nmo_type_set_object_resolvers(NULL, NULL);
-    teardown();
-}
-
-TEST(type_string, object_id_from_string_uses_name_resolver) {
-    setup();
-
-    test_object_name_session_t session = {0};
-
-    nmo_type_set_object_resolvers(test_object_id_to_name, test_object_name_to_id);
-
-    nmo_object_id_t value = 0;
-    nmo_status_t result = nmo_type_object_id_from_string(
-        &value, "Ball_01", (struct nmo_session*)&session);
-
-    ASSERT_EQ(NMO_OK, result);
-    ASSERT_EQ(42u, value);
-
-    nmo_type_set_object_resolvers(NULL, NULL);
-    teardown();
-}
-
-TEST(type_string, object_id_to_string_falls_back_on_unsafe_name) {
-    setup();
-
-    test_object_name_session_t session = {0};
-
-    nmo_type_set_object_resolvers(test_object_id_to_unsafe_name, test_object_name_to_id);
-
-    char buffer[64];
-    nmo_object_id_t value = 42;
-    nmo_status_t result = nmo_type_object_id_to_string(
-        &value, buffer, sizeof(buffer), (struct nmo_session*)&session);
-
-    ASSERT_EQ(NMO_OK, result);
-    ASSERT_STR_EQ("#42", buffer);
-
-    nmo_type_set_object_resolvers(NULL, NULL);
-    teardown();
-}
-
-TEST(type_string, object_id_from_string_name_not_found) {
-    setup();
-
-    test_object_name_session_t session = {0};
-
-    nmo_type_set_object_resolvers(test_object_id_to_name, test_object_name_to_id);
-
-    nmo_object_id_t value = 0;
-    nmo_status_t result = nmo_type_object_id_from_string(
-        &value, "DoesNotExist", (struct nmo_session*)&session);
-
-    ASSERT_EQ(NMO_ERR_NOT_FOUND, result);
-
-    nmo_type_set_object_resolvers(NULL, NULL);
-    teardown();
-}
-
 /* ============================================================================
  * Main Test Runner
  * ============================================================================ */
@@ -2931,8 +2800,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, type_value_from_string_rect_accepts_virtools_margin_pair);
     REGISTER_TEST(type_string, type_value_roundtrip_box);
     REGISTER_TEST(type_string, type_value_roundtrip_eulerangles);
-    REGISTER_TEST(type_string, object_id_to_string_uses_name_resolver);
-    REGISTER_TEST(type_string, object_id_from_string_uses_name_resolver);
-    REGISTER_TEST(type_string, object_id_to_string_falls_back_on_unsafe_name);
-    REGISTER_TEST(type_string, object_id_from_string_name_not_found);
 TEST_MAIN_END()

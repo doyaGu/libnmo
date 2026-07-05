@@ -1,12 +1,14 @@
 #include "lua_bindings_internal.h"
 
 #include "core/nmo_guid.h"
+#include "type/nmo_operations.h"
+#include "type/nmo_type_guids.h"
 #include "type/nmo_type_query.h"
 #include "type/nmo_type_string.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_view.h"
-#include "../type/type_value_internal.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -216,6 +218,98 @@ static nmo_status_t nmo_lua_type_check_optional_session(
     }
 
     return nmo_lua_check_session_handle(state, index, out_session, NULL);
+}
+
+typedef struct nmo_lua_type_builtin_context {
+    nmo_arena_t *arena;
+    nmo_type_registry_t *registry;
+    const nmo_type_descriptor_t *type;
+} nmo_lua_type_builtin_context_t;
+
+static void nmo_lua_type_builtin_context_dispose(
+    nmo_lua_type_builtin_context_t *context)
+{
+    if (context == NULL) {
+        return;
+    }
+
+    if (context->registry != NULL) {
+        nmo_type_registry_destroy(context->registry);
+    }
+    if (context->arena != NULL) {
+        nmo_arena_destroy(context->arena);
+    }
+    memset(context, 0, sizeof(*context));
+}
+
+static nmo_status_t nmo_lua_type_builtin_context_init(
+    nmo_guid_t guid,
+    nmo_lua_type_builtin_context_t *context)
+{
+    if (context == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Builtin type context output must be non-null");
+    }
+
+    memset(context, 0, sizeof(*context));
+    context->arena = nmo_arena_create(NULL, 65536);
+    if (context->arena == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate builtin type arena");
+    }
+
+    context->registry = nmo_type_registry_create(context->arena);
+    if (context->registry == NULL) {
+        nmo_lua_type_builtin_context_dispose(context);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate builtin type registry");
+    }
+
+    nmo_status_t status = nmo_register_builtin_types(context->registry);
+    if (status != NMO_OK) {
+        nmo_lua_type_builtin_context_dispose(context);
+        return status;
+    }
+
+    context->type = nmo_type_registry_find_by_guid(context->registry, guid);
+    if (context->type == NULL) {
+        nmo_lua_type_builtin_context_dispose(context);
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "Builtin type GUID is not registered");
+    }
+
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_lua_type_builtin_to_string(
+    nmo_guid_t guid,
+    const void *value,
+    char *buffer,
+    size_t buffer_size)
+{
+    nmo_lua_type_builtin_context_t context;
+    nmo_status_t status = nmo_lua_type_builtin_context_init(guid, &context);
+    if (status == NMO_OK) {
+        status = nmo_type_value_to_string(
+            value, context.type, context.registry, buffer, buffer_size);
+    }
+    nmo_lua_type_builtin_context_dispose(&context);
+    return status;
+}
+
+static nmo_status_t nmo_lua_type_builtin_from_string(
+    nmo_guid_t guid,
+    void *value,
+    const char *text)
+{
+    nmo_lua_type_builtin_context_t context;
+    nmo_status_t status = nmo_lua_type_builtin_context_init(guid, &context);
+    if (status == NMO_OK) {
+        status = nmo_type_value_from_string(
+            value, context.type, context.registry, text);
+    }
+    nmo_lua_type_builtin_context_dispose(&context);
+    return status;
 }
 
 static nmo_status_t nmo_lua_type_collect_float_array(lua_State *state,
@@ -611,7 +705,8 @@ static int nmo_lua_type_float_to_string(lua_State *state)
 {
     char buffer[64];
     float value = (float)luaL_checknumber(state, 1);
-    nmo_status_t status = nmo_type_float_to_string(&value, buffer, sizeof(buffer));
+    nmo_status_t status =
+        nmo_lua_type_builtin_to_string(CKPGUID_FLOAT, &value, buffer, sizeof(buffer));
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to convert float to string");
     }
@@ -623,7 +718,8 @@ static int nmo_lua_type_float_from_string(lua_State *state)
 {
     float value = 0.0f;
     const char *text = luaL_checkstring(state, 1);
-    nmo_status_t status = nmo_type_float_from_string(&value, text);
+    nmo_status_t status =
+        nmo_lua_type_builtin_from_string(CKPGUID_FLOAT, &value, text);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to parse float string");
     }
@@ -636,7 +732,16 @@ static int nmo_lua_type_int_to_string(lua_State *state)
     char buffer[64];
     int32_t value = (int32_t)luaL_checkinteger(state, 1);
     bool use_hex = lua_gettop(state) >= 2 && lua_toboolean(state, 2) != 0;
-    nmo_status_t status = nmo_type_int_to_string(&value, buffer, sizeof(buffer), use_hex);
+    nmo_status_t status = NMO_OK;
+    if (use_hex) {
+        int written = snprintf(buffer, sizeof(buffer), "0x%X", (unsigned int)value);
+        if (written < 0 || (size_t)written >= sizeof(buffer)) {
+            status = NMO_ERR_BUFFER_OVERRUN;
+        }
+    } else {
+        status = nmo_lua_type_builtin_to_string(
+            CKPGUID_INT, &value, buffer, sizeof(buffer));
+    }
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to convert int to string");
     }
@@ -648,7 +753,8 @@ static int nmo_lua_type_int_from_string(lua_State *state)
 {
     int32_t value = 0;
     const char *text = luaL_checkstring(state, 1);
-    nmo_status_t status = nmo_type_int_from_string(&value, text);
+    nmo_status_t status =
+        nmo_lua_type_builtin_from_string(CKPGUID_INT, &value, text);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to parse int string");
     }
@@ -659,8 +765,9 @@ static int nmo_lua_type_int_from_string(lua_State *state)
 static int nmo_lua_type_bool_to_string(lua_State *state)
 {
     char buffer[64];
-    bool value = lua_toboolean(state, 1) != 0;
-    nmo_status_t status = nmo_type_bool_to_string(&value, buffer, sizeof(buffer));
+    uint32_t value = lua_toboolean(state, 1) != 0 ? 1u : 0u;
+    nmo_status_t status =
+        nmo_lua_type_builtin_to_string(CKPGUID_BOOL, &value, buffer, sizeof(buffer));
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to convert bool to string");
     }
@@ -670,13 +777,14 @@ static int nmo_lua_type_bool_to_string(lua_State *state)
 
 static int nmo_lua_type_bool_from_string(lua_State *state)
 {
-    bool value = false;
+    uint32_t value = 0u;
     const char *text = luaL_checkstring(state, 1);
-    nmo_status_t status = nmo_type_bool_from_string(&value, text);
+    nmo_status_t status =
+        nmo_lua_type_builtin_from_string(CKPGUID_BOOL, &value, text);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to parse bool string");
     }
-    lua_pushboolean(state, value ? 1 : 0);
+    lua_pushboolean(state, value != 0u ? 1 : 0);
     return 1;
 }
 
@@ -714,7 +822,8 @@ static int nmo_lua_type_object_id_to_string(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid session handle");
     }
 
-    status = nmo_type_object_id_to_string(&id, buffer, sizeof(buffer), session);
+    (void)session;
+    status = nmo_lua_type_builtin_to_string(CKPGUID_ID, &id, buffer, sizeof(buffer));
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to convert object id to string");
     }
@@ -732,7 +841,8 @@ static int nmo_lua_type_object_id_from_string(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid session handle");
     }
 
-    status = nmo_type_object_id_from_string(&id, text, session);
+    (void)session;
+    status = nmo_lua_type_builtin_from_string(CKPGUID_ID, &id, text);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to parse object id string");
     }
@@ -746,14 +856,13 @@ static int nmo_lua_type_enum_to_string(lua_State *state)
     const nmo_type_descriptor_t *type = NULL;
     char buffer[256];
     int32_t value = (int32_t)luaL_checkinteger(state, 3);
-    bool use_name = lua_gettop(state) < 4 || lua_toboolean(state, 4) != 0;
     nmo_status_t status = nmo_lua_type_get_registry_and_type_from_guid(
         state, 1, 2, NMO_TYPE_CATEGORY_ENUM, &registry, &type);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Invalid enum type");
     }
 
-    status = nmo_type_enum_to_string(&value, type, registry, buffer, sizeof(buffer), use_name);
+    status = nmo_type_value_to_string(&value, type, registry, buffer, sizeof(buffer));
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to convert enum to string");
     }
@@ -773,7 +882,7 @@ static int nmo_lua_type_enum_from_string(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid enum type");
     }
 
-    status = nmo_type_enum_from_string(&value, type, registry, text);
+    status = nmo_type_value_from_string(&value, type, registry, text);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to parse enum string");
     }
@@ -787,14 +896,13 @@ static int nmo_lua_type_flags_to_string(lua_State *state)
     const nmo_type_descriptor_t *type = NULL;
     char buffer[256];
     uint32_t value = (uint32_t)luaL_checkinteger(state, 3);
-    bool use_names = lua_gettop(state) < 4 || lua_toboolean(state, 4) != 0;
     nmo_status_t status = nmo_lua_type_get_registry_and_type_from_guid(
         state, 1, 2, NMO_TYPE_CATEGORY_FLAGS, &registry, &type);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Invalid flags type");
     }
 
-    status = nmo_type_flags_to_string(&value, type, registry, buffer, sizeof(buffer), use_names);
+    status = nmo_type_value_to_string(&value, type, registry, buffer, sizeof(buffer));
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to convert flags to string");
     }
@@ -814,7 +922,7 @@ static int nmo_lua_type_flags_from_string(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Invalid flags type");
     }
 
-    status = nmo_type_flags_from_string(&value, type, registry, text);
+    status = nmo_type_value_from_string(&value, type, registry, text);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to parse flags string");
     }
@@ -822,19 +930,10 @@ static int nmo_lua_type_flags_from_string(lua_State *state)
     return 1;
 }
 
-typedef nmo_status_t (*nmo_lua_type_float_array_to_string_fn)(
-    const void *value,
-    char *buffer,
-    size_t buffer_size);
-
-typedef nmo_status_t (*nmo_lua_type_float_array_from_string_fn)(
-    void *value,
-    const char *string);
-
 static int nmo_lua_type_float_array_to_string(
     lua_State *state,
     size_t value_count,
-    nmo_lua_type_float_array_to_string_fn to_string,
+    nmo_guid_t type_guid,
     const char *invalid_message,
     const char *conversion_message)
 {
@@ -846,7 +945,7 @@ static int nmo_lua_type_float_array_to_string(
         return nmo_lua_raise_last_error(state, status, invalid_message);
     }
 
-    status = to_string(value, buffer, sizeof(buffer));
+    status = nmo_lua_type_builtin_to_string(type_guid, value, buffer, sizeof(buffer));
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, conversion_message);
     }
@@ -857,12 +956,12 @@ static int nmo_lua_type_float_array_to_string(
 static int nmo_lua_type_float_array_from_string(
     lua_State *state,
     size_t value_count,
-    nmo_lua_type_float_array_from_string_fn from_string,
+    nmo_guid_t type_guid,
     const char *parse_message)
 {
     float value[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     const char *text = luaL_checkstring(state, 1);
-    nmo_status_t status = from_string(value, text);
+    nmo_status_t status = nmo_lua_type_builtin_from_string(type_guid, value, text);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, parse_message);
     }
@@ -873,7 +972,7 @@ static int nmo_lua_type_float_array_from_string(
 static int nmo_lua_type_vector2_to_string(lua_State *state)
 {
     return nmo_lua_type_float_array_to_string(
-        state, 2u, nmo_type_vector2_to_string,
+        state, 2u, CKPGUID_2DVECTOR,
         "Invalid vector2 value",
         "Failed to convert vector2 to string");
 }
@@ -881,14 +980,14 @@ static int nmo_lua_type_vector2_to_string(lua_State *state)
 static int nmo_lua_type_vector2_from_string(lua_State *state)
 {
     return nmo_lua_type_float_array_from_string(
-        state, 2u, nmo_type_vector2_from_string,
+        state, 2u, CKPGUID_2DVECTOR,
         "Failed to parse vector2 string");
 }
 
 static int nmo_lua_type_vector_to_string(lua_State *state)
 {
     return nmo_lua_type_float_array_to_string(
-        state, 3u, nmo_type_vector3_to_string,
+        state, 3u, CKPGUID_VECTOR,
         "Invalid vector value",
         "Failed to convert vector to string");
 }
@@ -896,14 +995,14 @@ static int nmo_lua_type_vector_to_string(lua_State *state)
 static int nmo_lua_type_vector_from_string(lua_State *state)
 {
     return nmo_lua_type_float_array_from_string(
-        state, 3u, nmo_type_vector3_from_string,
+        state, 3u, CKPGUID_VECTOR,
         "Failed to parse vector string");
 }
 
 static int nmo_lua_type_vector4_to_string(lua_State *state)
 {
     return nmo_lua_type_float_array_to_string(
-        state, 4u, nmo_type_vector4_to_string,
+        state, 4u, CKPGUID_VECTOR4,
         "Invalid vector4 value",
         "Failed to convert vector4 to string");
 }
@@ -911,14 +1010,14 @@ static int nmo_lua_type_vector4_to_string(lua_State *state)
 static int nmo_lua_type_vector4_from_string(lua_State *state)
 {
     return nmo_lua_type_float_array_from_string(
-        state, 4u, nmo_type_vector4_from_string,
+        state, 4u, CKPGUID_VECTOR4,
         "Failed to parse vector4 string");
 }
 
 static int nmo_lua_type_quaternion_to_string(lua_State *state)
 {
     return nmo_lua_type_float_array_to_string(
-        state, 4u, nmo_type_quaternion_to_string,
+        state, 4u, CKPGUID_QUATERNION,
         "Invalid quaternion value",
         "Failed to convert quaternion to string");
 }
@@ -926,7 +1025,7 @@ static int nmo_lua_type_quaternion_to_string(lua_State *state)
 static int nmo_lua_type_quaternion_from_string(lua_State *state)
 {
     return nmo_lua_type_float_array_from_string(
-        state, 4u, nmo_type_quaternion_from_string,
+        state, 4u, CKPGUID_QUATERNION,
         "Failed to parse quaternion string");
 }
 
@@ -945,7 +1044,8 @@ static int nmo_lua_type_matrix_to_string(lua_State *state)
         matrix.m[i / 4u][i % 4u] = values[i];
     }
 
-    status = nmo_type_matrix_to_string(&matrix, buffer, sizeof(buffer));
+    status = nmo_lua_type_builtin_to_string(
+        CKPGUID_MATRIX, &matrix, buffer, sizeof(buffer));
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to convert matrix to string");
     }
@@ -957,7 +1057,8 @@ static int nmo_lua_type_matrix_from_string(lua_State *state)
 {
     nmo_matrix_t matrix = {0};
     const char *text = luaL_checkstring(state, 1);
-    nmo_status_t status = nmo_type_matrix_from_string(&matrix, text);
+    nmo_status_t status =
+        nmo_lua_type_builtin_from_string(CKPGUID_MATRIX, &matrix, text);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to parse matrix string");
     }
@@ -968,7 +1069,7 @@ static int nmo_lua_type_matrix_from_string(lua_State *state)
 static int nmo_lua_type_color_to_string(lua_State *state)
 {
     return nmo_lua_type_float_array_to_string(
-        state, 4u, nmo_type_color_to_string,
+        state, 4u, CKPGUID_COLOR,
         "Invalid color value",
         "Failed to convert color to string");
 }
@@ -976,7 +1077,7 @@ static int nmo_lua_type_color_to_string(lua_State *state)
 static int nmo_lua_type_color_from_string(lua_State *state)
 {
     return nmo_lua_type_float_array_from_string(
-        state, 4u, nmo_type_color_from_string,
+        state, 4u, CKPGUID_COLOR,
         "Failed to parse color string");
 }
 
@@ -987,7 +1088,8 @@ static int nmo_lua_type_string_to_string(lua_State *state)
     if (!lua_isnoneornil(state, 1)) {
         value = luaL_checkstring(state, 1);
     }
-    nmo_status_t status = nmo_type_string_to_string(&value, buffer, sizeof(buffer));
+    nmo_status_t status =
+        nmo_lua_type_builtin_to_string(CKPGUID_STRING, &value, buffer, sizeof(buffer));
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to convert string value");
     }
@@ -998,18 +1100,19 @@ static int nmo_lua_type_string_to_string(lua_State *state)
 static int nmo_lua_type_string_from_string(lua_State *state)
 {
     const char *text = luaL_checkstring(state, 1);
-    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
     const char *value = NULL;
-    nmo_status_t status = NMO_OK;
-    if (arena == NULL) {
-        return nmo_lua_raise_last_error(state, NMO_ERR_NOMEM, "Failed to allocate string arena");
-    }
+    nmo_lua_type_builtin_context_t context;
+    nmo_status_t status =
+        nmo_lua_type_builtin_context_init(CKPGUID_STRING, &context);
 
-    status = nmo_type_string_from_string(&value, text, arena);
+    if (status == NMO_OK) {
+        status = nmo_type_value_from_string(
+            &value, context.type, context.registry, text);
+    }
     if (status == NMO_OK) {
         lua_pushstring(state, value != NULL ? value : "");
     }
-    nmo_arena_destroy(arena);
+    nmo_lua_type_builtin_context_dispose(&context);
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(state, status, "Failed to parse string literal");
     }
