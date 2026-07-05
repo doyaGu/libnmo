@@ -91,6 +91,24 @@ uint32_t nmo_vt_hash_int32(const void *instance);
 bool nmo_vt_equals_uint32(const void *a, const void *b);
 uint32_t nmo_vt_hash_uint32(const void *instance);
 
+#define NMO_DEFINE_ZERO_COPY_TYPE_VTABLE( \
+    symbol, copy_fn, equals_fn, hash_fn, to_string_fn, from_string_fn) \
+    const nmo_type_vtable_t symbol = { \
+        .create = nmo_builtin_create_zero, \
+        .destroy = nmo_builtin_destroy_noop, \
+        .copy = copy_fn, \
+        .equals = equals_fn, \
+        .hash = hash_fn, \
+        .to_string = to_string_fn, \
+        .from_string = from_string_fn, \
+    };
+
+#define NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE( \
+    symbol, equals_fn, hash_fn, to_string_fn, from_string_fn) \
+    NMO_DEFINE_ZERO_COPY_TYPE_VTABLE( \
+        symbol, nmo_builtin_copy_memcpy, equals_fn, hash_fn, \
+        to_string_fn, from_string_fn)
+
 void nmo_type_assign_default_vtable(
     nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry);

@@ -28,21 +28,17 @@
 #include <stdalign.h>
 #include <stddef.h>
 
-const nmo_type_vtable_t nmo_type_vtable_reflected_struct = {
-    .create = nmo_builtin_create_zero,
-    .destroy = nmo_builtin_destroy_noop,
-    .copy = nmo_builtin_copy_memcpy,
-    .to_string = nmo_reflected_struct_vt_to_string,
-    .from_string = nmo_reflected_struct_vt_from_string,
-};
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
+    nmo_type_vtable_reflected_struct,
+    NULL, NULL,
+    nmo_reflected_struct_vt_to_string,
+    nmo_reflected_struct_vt_from_string)
 
-const nmo_type_vtable_t nmo_type_vtable_object_ref = {
-    .create = nmo_builtin_create_zero,
-    .destroy = nmo_builtin_destroy_noop,
-    .copy = nmo_builtin_copy_memcpy,
-    .to_string = nmo_object_ref_vt_to_string,
-    .from_string = nmo_object_ref_vt_from_string,
-};
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
+    nmo_type_vtable_object_ref,
+    NULL, NULL,
+    nmo_object_ref_vt_to_string,
+    nmo_object_ref_vt_from_string)
 
 /* ============================================================================
  * Helper Functions

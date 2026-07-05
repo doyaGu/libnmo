@@ -401,25 +401,17 @@ static nmo_status_t nmo_flags_vt_from_string(
     return nmo_flags_from_string(value, type, registry, string);
 }
 
-const nmo_type_vtable_t nmo_type_vtable_enum = {
-    .create = nmo_builtin_create_zero,
-    .destroy = nmo_builtin_destroy_noop,
-    .copy = nmo_builtin_copy_memcpy,
-    .equals = nmo_vt_equals_int32,
-    .hash = nmo_vt_hash_int32,
-    .to_string = nmo_enum_vt_to_string,
-    .from_string = nmo_enum_vt_from_string,
-};
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
+    nmo_type_vtable_enum,
+    nmo_vt_equals_int32, nmo_vt_hash_int32,
+    nmo_enum_vt_to_string,
+    nmo_enum_vt_from_string)
 
-const nmo_type_vtable_t nmo_type_vtable_flags = {
-    .create = nmo_builtin_create_zero,
-    .destroy = nmo_builtin_destroy_noop,
-    .copy = nmo_builtin_copy_memcpy,
-    .equals = nmo_vt_equals_uint32,
-    .hash = nmo_vt_hash_uint32,
-    .to_string = nmo_flags_vt_to_string,
-    .from_string = nmo_flags_vt_from_string,
-};
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
+    nmo_type_vtable_flags,
+    nmo_vt_equals_uint32, nmo_vt_hash_uint32,
+    nmo_flags_vt_to_string,
+    nmo_flags_vt_from_string)
 
 static nmo_status_t validate_enum_values(
     const nmo_enum_value_def_t *values,

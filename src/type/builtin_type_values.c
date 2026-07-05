@@ -181,141 +181,123 @@ nmo_status_t nmo_vt_from_string_voidbuf(
     void *value, const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry, const char *string);
 
-#define NMO_DEFINE_BUILTIN_VTABLE(symbol, copy_fn, equals_fn, hash_fn, to_string_fn, from_string_fn) \
-    const nmo_type_vtable_t symbol = { \
-        .create = nmo_builtin_create_zero, \
-        .destroy = nmo_builtin_destroy_noop, \
-        .copy = copy_fn, \
-        .equals = equals_fn, \
-        .hash = hash_fn, \
-        .to_string = to_string_fn, \
-        .from_string = from_string_fn, \
-    };
-
-#define NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(symbol, equals_fn, hash_fn, to_string_fn, from_string_fn) \
-    NMO_DEFINE_BUILTIN_VTABLE( \
-        symbol, nmo_builtin_copy_memcpy, equals_fn, hash_fn, to_string_fn, from_string_fn)
-
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_int,
     nmo_vt_equals_int32, nmo_vt_hash_int32,
     nmo_vt_to_string_int32, nmo_vt_from_string_int32)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_float,
     nmo_equals_float_bits, nmo_hash_float_bits,
     nmo_vt_to_string_float, nmo_vt_from_string_float)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_angle,
     nmo_equals_float_bits, nmo_hash_float_bits,
     nmo_vt_to_string_angle, nmo_vt_from_string_float)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_percentage,
     nmo_equals_float_bits, nmo_hash_float_bits,
     nmo_vt_to_string_percentage, nmo_vt_from_string_percentage)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_bool,
     nmo_equals_bool32, nmo_hash_bool32,
     nmo_vt_to_string_bool32, nmo_vt_from_string_bool32)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_double,
     nmo_equals_double_bits, nmo_hash_double_bits,
     nmo_vt_to_string_double, nmo_vt_from_string_double)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_int8,
     nmo_vt_equals_int8, nmo_vt_hash_int8,
     nmo_vt_to_string_int8, nmo_vt_from_string_int8)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_uint8,
     nmo_vt_equals_uint8, nmo_vt_hash_uint8,
     nmo_vt_to_string_uint8, nmo_vt_from_string_uint8)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_int16,
     nmo_vt_equals_int16, nmo_vt_hash_int16,
     nmo_vt_to_string_int16, nmo_vt_from_string_int16)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_uint16,
     nmo_vt_equals_uint16, nmo_vt_hash_uint16,
     nmo_vt_to_string_uint16, nmo_vt_from_string_uint16)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_uint32,
     nmo_vt_equals_uint32, nmo_vt_hash_uint32,
     nmo_vt_to_string_uint32, nmo_vt_from_string_uint32)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_classid,
     nmo_vt_equals_uint32, nmo_vt_hash_uint32,
     nmo_vt_to_string_classid, nmo_vt_from_string_uint32)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_int64,
     nmo_vt_equals_int64, nmo_vt_hash_int64,
     nmo_vt_to_string_int64, nmo_vt_from_string_int64)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_uint64,
     nmo_vt_equals_uint64, nmo_vt_hash_uint64,
     nmo_vt_to_string_uint64, nmo_vt_from_string_uint64)
-NMO_DEFINE_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_COPY_TYPE_VTABLE(
     nmo_builtin_vtable_string,
     nmo_builtin_copy_string,
     nmo_equals_string_value, nmo_hash_string_value,
     nmo_vt_to_string_string, nmo_vt_from_string_string)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_pointer,
     nmo_equals_pointer, nmo_hash_pointer,
     nmo_vt_to_string_pointer, nmo_vt_from_string_pointer)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_chunk,
     nmo_equals_pointer, nmo_hash_pointer,
     nmo_vt_to_string_pointer, nmo_vt_from_string_pointer)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_guid,
     nmo_equals_guid, nmo_hash_guid,
     nmo_vt_to_string_guid, nmo_vt_from_string_guid)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_object_id,
     nmo_equals_object_id, nmo_hash_object_id,
     nmo_vt_to_string_object_id, nmo_vt_from_string_object_id)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_vector2,
     nmo_equals_bytes_vector2, nmo_hash_bytes_vector2,
     nmo_vt_to_string_vector2, nmo_vt_from_string_vector2)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_vector3,
     nmo_equals_bytes_vector3, nmo_hash_bytes_vector3,
     nmo_vt_to_string_vector3, nmo_vt_from_string_vector3)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_vector4,
     nmo_equals_bytes_vector4, nmo_hash_bytes_vector4,
     nmo_vt_to_string_vector4, nmo_vt_from_string_vector4)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_quaternion,
     nmo_equals_bytes_quaternion, nmo_hash_bytes_quaternion,
     nmo_vt_to_string_quaternion, nmo_vt_from_string_quaternion)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_matrix,
     nmo_equals_bytes_matrix, nmo_hash_bytes_matrix,
     nmo_vt_to_string_matrix, nmo_vt_from_string_matrix)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_color,
     nmo_equals_bytes_color, nmo_hash_bytes_color,
     nmo_vt_to_string_color, nmo_vt_from_string_color)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_rect,
     nmo_equals_bytes_rect, nmo_hash_bytes_rect,
     nmo_vt_to_string_rect, nmo_vt_from_string_rect)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_eulerangles,
     nmo_equals_bytes_eulerangles, nmo_hash_bytes_eulerangles,
     nmo_vt_to_string_eulerangles, nmo_vt_from_string_eulerangles)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_box,
     nmo_equals_bytes_box, nmo_hash_bytes_box,
     nmo_vt_to_string_box, nmo_vt_from_string_box)
-NMO_DEFINE_MEMCPY_BUILTIN_VTABLE(
+NMO_DEFINE_ZERO_MEMCPY_TYPE_VTABLE(
     nmo_builtin_vtable_time,
     nmo_equals_float_bits, nmo_hash_float_bits,
     nmo_vt_to_string_time, nmo_vt_from_string_time)
-
-#undef NMO_DEFINE_MEMCPY_BUILTIN_VTABLE
-#undef NMO_DEFINE_BUILTIN_VTABLE
 
 const nmo_type_vtable_t nmo_builtin_vtable_none = {
     .to_string = nmo_vt_to_string_none,
