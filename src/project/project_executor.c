@@ -13,6 +13,7 @@
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -102,46 +103,232 @@ static bool project_report_name_matches(const char *actual, const char *expected
     return actual && expected && strcmp(actual, expected) == 0;
 }
 
+typedef enum project_report_evidence_kind {
+    PROJECT_REPORT_EVIDENCE_OBJECTS,
+    PROJECT_REPORT_EVIDENCE_ASSET_BINDINGS,
+    PROJECT_REPORT_EVIDENCE_MATERIAL_TEXTURE_SLOTS,
+    PROJECT_REPORT_EVIDENCE_MATERIAL_CHANNELS,
+    PROJECT_REPORT_EVIDENCE_SCRIPTS,
+    PROJECT_REPORT_EVIDENCE_SOUND_BINDINGS,
+    PROJECT_REPORT_EVIDENCE_ANIMATION_BINDINGS,
+} project_report_evidence_kind_t;
+
+typedef struct project_report_evidence_slice {
+    const void *items;
+    size_t count;
+    size_t stride;
+} project_report_evidence_slice_t;
+
+typedef bool (*project_report_evidence_match_fn)(
+    const void *item,
+    const void *ctx);
+
+typedef struct project_report_string_field_query {
+    size_t field_offset;
+    const char *name;
+} project_report_string_field_query_t;
+
+typedef struct project_report_handle_query {
+    uint32_t plan_handle;
+} project_report_handle_query_t;
+
+typedef struct project_report_material_slot_query {
+    const char *material_name;
+    uint32_t slot;
+} project_report_material_slot_query_t;
+
+static project_report_evidence_slice_t project_report_evidence_slice(
+    const nmo_project_report_evidence_t *evidence,
+    project_report_evidence_kind_t kind)
+{
+    if (!evidence) {
+        return (project_report_evidence_slice_t){0};
+    }
+    switch (kind) {
+    case PROJECT_REPORT_EVIDENCE_OBJECTS:
+        return (project_report_evidence_slice_t){
+            evidence->objects,
+            evidence->object_count,
+            sizeof(evidence->objects[0]),
+        };
+    case PROJECT_REPORT_EVIDENCE_ASSET_BINDINGS:
+        return (project_report_evidence_slice_t){
+            evidence->asset_bindings,
+            evidence->asset_binding_count,
+            sizeof(evidence->asset_bindings[0]),
+        };
+    case PROJECT_REPORT_EVIDENCE_MATERIAL_TEXTURE_SLOTS:
+        return (project_report_evidence_slice_t){
+            evidence->material_texture_slots,
+            evidence->material_texture_slot_count,
+            sizeof(evidence->material_texture_slots[0]),
+        };
+    case PROJECT_REPORT_EVIDENCE_MATERIAL_CHANNELS:
+        return (project_report_evidence_slice_t){
+            evidence->material_channels,
+            evidence->material_channel_count,
+            sizeof(evidence->material_channels[0]),
+        };
+    case PROJECT_REPORT_EVIDENCE_SCRIPTS:
+        return (project_report_evidence_slice_t){
+            evidence->scripts,
+            evidence->script_count,
+            sizeof(evidence->scripts[0]),
+        };
+    case PROJECT_REPORT_EVIDENCE_SOUND_BINDINGS:
+        return (project_report_evidence_slice_t){
+            evidence->sound_bindings,
+            evidence->sound_binding_count,
+            sizeof(evidence->sound_bindings[0]),
+        };
+    case PROJECT_REPORT_EVIDENCE_ANIMATION_BINDINGS:
+        return (project_report_evidence_slice_t){
+            evidence->animation_bindings,
+            evidence->animation_binding_count,
+            sizeof(evidence->animation_bindings[0]),
+        };
+    }
+    return (project_report_evidence_slice_t){0};
+}
+
+static size_t project_report_evidence_count(
+    const nmo_project_report_t *report,
+    project_report_evidence_kind_t kind)
+{
+    return project_report_evidence_slice(
+        report ? &report->evidence : NULL, kind).count;
+}
+
+static const void *project_report_evidence_find(
+    project_report_evidence_slice_t slice,
+    project_report_evidence_match_fn match,
+    const void *ctx)
+{
+    if (!slice.items || !match) {
+        return NULL;
+    }
+    const unsigned char *items = (const unsigned char *)slice.items;
+    for (size_t i = 0u; i < slice.count; ++i) {
+        const void *item = items + i * slice.stride;
+        if (match(item, ctx)) {
+            return item;
+        }
+    }
+    return NULL;
+}
+
+static bool project_report_match_string_field(
+    const void *item,
+    const void *ctx)
+{
+    const project_report_string_field_query_t *query =
+        (const project_report_string_field_query_t *)ctx;
+    if (!item || !query) {
+        return false;
+    }
+    const char *const *field =
+        (const char *const *)((const unsigned char *)item +
+                              query->field_offset);
+    return project_report_name_matches(*field, query->name);
+}
+
+static bool project_report_match_object_handle(
+    const void *item,
+    const void *ctx)
+{
+    const nmo_project_report_object_evidence_t *object =
+        (const nmo_project_report_object_evidence_t *)item;
+    const project_report_handle_query_t *query =
+        (const project_report_handle_query_t *)ctx;
+    return object && query && object->plan_handle == query->plan_handle;
+}
+
+static bool project_report_match_material_texture_slot(
+    const void *item,
+    const void *ctx)
+{
+    const nmo_project_report_material_texture_slot_evidence_t *slot =
+        (const nmo_project_report_material_texture_slot_evidence_t *)item;
+    const project_report_material_slot_query_t *query =
+        (const project_report_material_slot_query_t *)ctx;
+    return slot && query && slot->slot == query->slot &&
+           project_report_name_matches(slot->material_name,
+                                       query->material_name);
+}
+
+static const void *project_report_find_in_evidence(
+    const nmo_project_report_t *report,
+    project_report_evidence_kind_t kind,
+    project_report_evidence_match_fn match,
+    const void *ctx)
+{
+    return project_report_evidence_find(
+        project_report_evidence_slice(report ? &report->evidence : NULL, kind),
+        match,
+        ctx);
+}
+
+static const void *project_report_find_string_field(
+    const nmo_project_report_t *report,
+    project_report_evidence_kind_t kind,
+    size_t field_offset,
+    const char *name)
+{
+    const project_report_string_field_query_t query = {
+        .field_offset = field_offset,
+        .name = name,
+    };
+    return project_report_find_in_evidence(
+        report, kind, project_report_match_string_field, &query);
+}
+
 size_t nmo_project_report_evidence_object_count(
     const nmo_project_report_t *report)
 {
-    return report ? report->evidence.object_count : 0u;
+    return project_report_evidence_count(
+        report, PROJECT_REPORT_EVIDENCE_OBJECTS);
 }
 
 size_t nmo_project_report_evidence_asset_binding_count(
     const nmo_project_report_t *report)
 {
-    return report ? report->evidence.asset_binding_count : 0u;
+    return project_report_evidence_count(
+        report, PROJECT_REPORT_EVIDENCE_ASSET_BINDINGS);
 }
 
 size_t nmo_project_report_evidence_material_texture_slot_count(
     const nmo_project_report_t *report)
 {
-    return report ? report->evidence.material_texture_slot_count : 0u;
+    return project_report_evidence_count(
+        report, PROJECT_REPORT_EVIDENCE_MATERIAL_TEXTURE_SLOTS);
 }
 
 size_t nmo_project_report_evidence_material_channel_count(
     const nmo_project_report_t *report)
 {
-    return report ? report->evidence.material_channel_count : 0u;
+    return project_report_evidence_count(
+        report, PROJECT_REPORT_EVIDENCE_MATERIAL_CHANNELS);
 }
 
 size_t nmo_project_report_evidence_script_count(
     const nmo_project_report_t *report)
 {
-    return report ? report->evidence.script_count : 0u;
+    return project_report_evidence_count(
+        report, PROJECT_REPORT_EVIDENCE_SCRIPTS);
 }
 
 size_t nmo_project_report_evidence_sound_binding_count(
     const nmo_project_report_t *report)
 {
-    return report ? report->evidence.sound_binding_count : 0u;
+    return project_report_evidence_count(
+        report, PROJECT_REPORT_EVIDENCE_SOUND_BINDINGS);
 }
 
 size_t nmo_project_report_evidence_animation_binding_count(
     const nmo_project_report_t *report)
 {
-    return report ? report->evidence.animation_binding_count : 0u;
+    return project_report_evidence_count(
+        report, PROJECT_REPORT_EVIDENCE_ANIMATION_BINDINGS);
 }
 
 const nmo_project_report_object_evidence_t *
@@ -152,12 +339,12 @@ nmo_project_report_find_object_evidence_by_name(
     if (!report || !name) {
         return NULL;
     }
-    for (size_t i = 0u; i < report->evidence.object_count; ++i) {
-        if (project_report_name_matches(report->evidence.objects[i].name, name)) {
-            return &report->evidence.objects[i];
-        }
-    }
-    return NULL;
+    return (const nmo_project_report_object_evidence_t *)
+        project_report_find_string_field(
+            report,
+            PROJECT_REPORT_EVIDENCE_OBJECTS,
+            offsetof(nmo_project_report_object_evidence_t, name),
+            name);
 }
 
 const nmo_project_report_object_evidence_t *
@@ -168,12 +355,15 @@ nmo_project_report_find_object_evidence_by_handle(
     if (!report) {
         return NULL;
     }
-    for (size_t i = 0u; i < report->evidence.object_count; ++i) {
-        if (report->evidence.objects[i].plan_handle == plan_handle) {
-            return &report->evidence.objects[i];
-        }
-    }
-    return NULL;
+    const project_report_handle_query_t query = {
+        .plan_handle = plan_handle,
+    };
+    return (const nmo_project_report_object_evidence_t *)
+        project_report_find_in_evidence(
+            report,
+            PROJECT_REPORT_EVIDENCE_OBJECTS,
+            project_report_match_object_handle,
+            &query);
 }
 
 const nmo_project_report_asset_binding_evidence_t *
@@ -184,14 +374,12 @@ nmo_project_report_find_asset_binding_evidence(
     if (!report || !asset_name) {
         return NULL;
     }
-    for (size_t i = 0u; i < report->evidence.asset_binding_count; ++i) {
-        if (project_report_name_matches(
-                report->evidence.asset_bindings[i].asset_name,
-                asset_name)) {
-            return &report->evidence.asset_bindings[i];
-        }
-    }
-    return NULL;
+    return (const nmo_project_report_asset_binding_evidence_t *)
+        project_report_find_string_field(
+            report,
+            PROJECT_REPORT_EVIDENCE_ASSET_BINDINGS,
+            offsetof(nmo_project_report_asset_binding_evidence_t, asset_name),
+            asset_name);
 }
 
 const nmo_project_report_material_texture_slot_evidence_t *
@@ -203,15 +391,16 @@ nmo_project_report_find_material_texture_slot_evidence(
     if (!report || !material_name) {
         return NULL;
     }
-    for (size_t i = 0u; i < report->evidence.material_texture_slot_count; ++i) {
-        const nmo_project_report_material_texture_slot_evidence_t *item =
-            &report->evidence.material_texture_slots[i];
-        if (item->slot == slot &&
-            project_report_name_matches(item->material_name, material_name)) {
-            return item;
-        }
-    }
-    return NULL;
+    const project_report_material_slot_query_t query = {
+        .material_name = material_name,
+        .slot = slot,
+    };
+    return (const nmo_project_report_material_texture_slot_evidence_t *)
+        project_report_find_in_evidence(
+            report,
+            PROJECT_REPORT_EVIDENCE_MATERIAL_TEXTURE_SLOTS,
+            project_report_match_material_texture_slot,
+            &query);
 }
 
 const nmo_project_report_material_channel_evidence_t *
@@ -222,14 +411,13 @@ nmo_project_report_find_material_channel_evidence(
     if (!report || !material_name) {
         return NULL;
     }
-    for (size_t i = 0u; i < report->evidence.material_channel_count; ++i) {
-        if (project_report_name_matches(
-                report->evidence.material_channels[i].material_name,
-                material_name)) {
-            return &report->evidence.material_channels[i];
-        }
-    }
-    return NULL;
+    return (const nmo_project_report_material_channel_evidence_t *)
+        project_report_find_string_field(
+            report,
+            PROJECT_REPORT_EVIDENCE_MATERIAL_CHANNELS,
+            offsetof(nmo_project_report_material_channel_evidence_t,
+                     material_name),
+            material_name);
 }
 
 const nmo_project_report_script_evidence_t *
@@ -240,12 +428,12 @@ nmo_project_report_find_script_evidence(
     if (!report || !name) {
         return NULL;
     }
-    for (size_t i = 0u; i < report->evidence.script_count; ++i) {
-        if (project_report_name_matches(report->evidence.scripts[i].name, name)) {
-            return &report->evidence.scripts[i];
-        }
-    }
-    return NULL;
+    return (const nmo_project_report_script_evidence_t *)
+        project_report_find_string_field(
+            report,
+            PROJECT_REPORT_EVIDENCE_SCRIPTS,
+            offsetof(nmo_project_report_script_evidence_t, name),
+            name);
 }
 
 const nmo_project_report_sound_binding_evidence_t *
@@ -256,14 +444,12 @@ nmo_project_report_find_sound_binding_evidence(
     if (!report || !name) {
         return NULL;
     }
-    for (size_t i = 0u; i < report->evidence.sound_binding_count; ++i) {
-        if (project_report_name_matches(
-                report->evidence.sound_bindings[i].name,
-                name)) {
-            return &report->evidence.sound_bindings[i];
-        }
-    }
-    return NULL;
+    return (const nmo_project_report_sound_binding_evidence_t *)
+        project_report_find_string_field(
+            report,
+            PROJECT_REPORT_EVIDENCE_SOUND_BINDINGS,
+            offsetof(nmo_project_report_sound_binding_evidence_t, name),
+            name);
 }
 
 const nmo_project_report_animation_binding_evidence_t *
@@ -274,14 +460,12 @@ nmo_project_report_find_animation_binding_evidence(
     if (!report || !name) {
         return NULL;
     }
-    for (size_t i = 0u; i < report->evidence.animation_binding_count; ++i) {
-        if (project_report_name_matches(
-                report->evidence.animation_bindings[i].name,
-                name)) {
-            return &report->evidence.animation_bindings[i];
-        }
-    }
-    return NULL;
+    return (const nmo_project_report_animation_binding_evidence_t *)
+        project_report_find_string_field(
+            report,
+            PROJECT_REPORT_EVIDENCE_ANIMATION_BINDINGS,
+            offsetof(nmo_project_report_animation_binding_evidence_t, name),
+            name);
 }
 
 static void project_report_dispose_diffs(nmo_project_report_t *report)
