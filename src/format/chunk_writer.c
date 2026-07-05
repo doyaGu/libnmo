@@ -153,6 +153,29 @@ static nmo_status_t writer_append_dword_pair(nmo_chunk_writer_t *w,
     return NMO_OK;
 }
 
+static nmo_status_t writer_append_aligned_bytes(nmo_chunk_writer_t *w,
+                                                const void *data,
+                                                size_t bytes) {
+    if (w == NULL || w->finalized || data == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (bytes == 0) {
+        return NMO_OK;
+    }
+
+    size_t dwords_needed = nmo_bytes_to_dwords(bytes);
+    int result = ensure_data_capacity(w, dwords_needed);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    memset(&w->data[w->data_size], 0, dwords_needed * sizeof(uint32_t));
+    memcpy(&w->data[w->data_size], data, bytes);
+    w->data_size += dwords_needed;
+    return NMO_OK;
+}
+
 static int ensure_u32_list_capacity(nmo_chunk_writer_t *w,
                                     uint32_t **list,
                                     size_t count,
@@ -439,22 +462,7 @@ nmo_status_t nmo_chunk_writer_write_bytes(nmo_chunk_writer_t *w, const void *dat
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    // Calculate DWORDs needed (with padding)
-    size_t dwords_needed = nmo_align_dword(bytes) / 4;
-
-    int result = ensure_data_capacity(w, dwords_needed);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    // Zero out the padding area first
-    memset(&w->data[w->data_size], 0, dwords_needed * sizeof(uint32_t));
-
-    // Copy data
-    memcpy(&w->data[w->data_size], data, bytes);
-    w->data_size += dwords_needed;
-
-    return NMO_OK;
+    return writer_append_aligned_bytes(w, data, bytes);
 }
 
 /**
@@ -479,22 +487,7 @@ nmo_status_t nmo_chunk_writer_write_buffer_nosize(nmo_chunk_writer_t *w, size_t 
         return NMO_OK;
     }
 
-    // Calculate DWORDs needed (with padding)
-    size_t dwords_needed = nmo_align_dword(bytes) / 4;
-
-    int result = ensure_data_capacity(w, dwords_needed);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    // Zero out the padding area first
-    memset(&w->data[w->data_size], 0, dwords_needed * sizeof(uint32_t));
-
-    // Copy data
-    memcpy(&w->data[w->data_size], data, bytes);
-    w->data_size += dwords_needed;
-
-    return NMO_OK;
+    return writer_append_aligned_bytes(w, data, bytes);
 }
 
 nmo_status_t nmo_chunk_writer_write_buffer_nosize_lendian16(nmo_chunk_writer_t *w, size_t value_count, const void *data) {
