@@ -45,6 +45,32 @@
  * Enum/Flags Converters (require type metadata)
  * ============================================================================ */
 
+static void format_enum_fallback(
+    const nmo_type_descriptor_t *type,
+    int32_t enum_value,
+    char *buffer,
+    size_t buffer_size)
+{
+    if (type->name) {
+        snprintf(buffer, buffer_size, "%s(%d)", type->name, enum_value);
+    } else {
+        snprintf(buffer, buffer_size, "enum(%d)", enum_value);
+    }
+}
+
+static void format_flags_fallback(
+    const nmo_type_descriptor_t *type,
+    uint32_t flags_value,
+    char *buffer,
+    size_t buffer_size)
+{
+    if (type->name) {
+        snprintf(buffer, buffer_size, "%s(0x%X)", type->name, flags_value);
+    } else {
+        snprintf(buffer, buffer_size, "flags(0x%X)", flags_value);
+    }
+}
+
 nmo_status_t nmo_enum_to_string(
     const void *value,
     const nmo_type_descriptor_t *type,
@@ -65,31 +91,19 @@ nmo_status_t nmo_enum_to_string(
 
     /* If name not requested or no registry, output numeric value with type context */
     if (!use_name || !registry || type->specialized_index == NMO_SPECIALIZED_INDEX_INVALID) {
-        if (type->name) {
-            snprintf(buffer, buffer_size, "%s(%d)", type->name, enum_value);
-        } else {
-            snprintf(buffer, buffer_size, "enum(%d)", enum_value);
-        }
+        format_enum_fallback(type, enum_value, buffer, buffer_size);
         NMO_RETURN_OK();
     }
 
     /* Access enum metadata from registry */
     if (type->specialized_index >= registry->metadata.count) {
-        if (type->name) {
-            snprintf(buffer, buffer_size, "%s(%d)", type->name, enum_value);
-        } else {
-            snprintf(buffer, buffer_size, "enum(%d)", enum_value);
-        }
+        format_enum_fallback(type, enum_value, buffer, buffer_size);
         NMO_RETURN_OK();
     }
 
     const nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t**)nmo_arena_array_get((nmo_arena_array_t*)&registry->metadata, type->specialized_index);
     if (!metadata || metadata->metadata_type != NMO_METADATA_TYPE_ENUM) {
-        if (type->name) {
-            snprintf(buffer, buffer_size, "%s(%d)", type->name, enum_value);
-        } else {
-            snprintf(buffer, buffer_size, "enum(%d)", enum_value);
-        }
+        format_enum_fallback(type, enum_value, buffer, buffer_size);
         NMO_RETURN_OK();
     }
 
@@ -102,11 +116,7 @@ nmo_status_t nmo_enum_to_string(
     }
 
     /* No name found, output numeric value with type context */
-    if (type->name) {
-        snprintf(buffer, buffer_size, "%s(%d)", type->name, enum_value);
-    } else {
-        snprintf(buffer, buffer_size, "enum(%d)", enum_value);
-    }
+    format_enum_fallback(type, enum_value, buffer, buffer_size);
     NMO_RETURN_OK();
 }
 
@@ -204,31 +214,19 @@ nmo_status_t nmo_flags_to_string(
 
     /* If names not requested or no registry, output hex with type context */
     if (!use_names || !registry || type->specialized_index == NMO_SPECIALIZED_INDEX_INVALID) {
-        if (type->name) {
-            snprintf(buffer, buffer_size, "%s(0x%X)", type->name, flags_value);
-        } else {
-            snprintf(buffer, buffer_size, "flags(0x%X)", flags_value);
-        }
+        format_flags_fallback(type, flags_value, buffer, buffer_size);
         NMO_RETURN_OK();
     }
 
     /* Access flags metadata from registry */
     if (type->specialized_index >= registry->metadata.count) {
-        if (type->name) {
-            snprintf(buffer, buffer_size, "%s(0x%X)", type->name, flags_value);
-        } else {
-            snprintf(buffer, buffer_size, "flags(0x%X)", flags_value);
-        }
+        format_flags_fallback(type, flags_value, buffer, buffer_size);
         NMO_RETURN_OK();
     }
 
     const nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t**)nmo_arena_array_get((nmo_arena_array_t*)&registry->metadata, type->specialized_index);
     if (!metadata || metadata->metadata_type != NMO_METADATA_TYPE_FLAGS) {
-        if (type->name) {
-            snprintf(buffer, buffer_size, "%s(0x%X)", type->name, flags_value);
-        } else {
-            snprintf(buffer, buffer_size, "flags(0x%X)", flags_value);
-        }
+        format_flags_fallback(type, flags_value, buffer, buffer_size);
         NMO_RETURN_OK();
     }
 
@@ -250,11 +248,7 @@ nmo_status_t nmo_flags_to_string(
 
     /* If no flags matched, output hex with type context */
     if (first) {
-        if (type->name) {
-            snprintf(buffer, buffer_size, "%s(0x%X)", type->name, flags_value);
-        } else {
-            snprintf(buffer, buffer_size, "flags(0x%X)", flags_value);
-        }
+        format_flags_fallback(type, flags_value, buffer, buffer_size);
     } else {
         buffer[offset] = '\0';
     }
