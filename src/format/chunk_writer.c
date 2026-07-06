@@ -248,6 +248,27 @@ static nmo_patch_token_t writer_reserve_dword_span(nmo_chunk_writer_t *w,
     return token;
 }
 
+static nmo_status_t writer_patch_dword_span(nmo_chunk_writer_t *w,
+                                            nmo_patch_token_t token,
+                                            size_t dword_count,
+                                            uint32_t **out) {
+    if (w == NULL || out == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (!nmo_patch_token_valid(token) || token.size != dword_count) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (dword_count == 0 || token.offset > w->data_size ||
+        dword_count > w->data_size - token.offset) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    *out = &w->data[token.offset];
+    return NMO_OK;
+}
+
 static int ensure_u32_list_capacity(nmo_chunk_writer_t *w,
                                     uint32_t **list,
                                     size_t count,
@@ -1267,45 +1288,25 @@ nmo_patch_token_t nmo_chunk_writer_reserve_dwords(nmo_chunk_writer_t *w, size_t 
 }
 
 nmo_status_t nmo_chunk_writer_patch_u32(nmo_chunk_writer_t *w, nmo_patch_token_t token, uint32_t value) {
-    if (w == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
+    uint32_t *span = NULL;
+    nmo_status_t result = writer_patch_dword_span(w, token, 1, &span);
+    if (result != NMO_OK) {
+        return result;
     }
 
-    if (!nmo_patch_token_valid(token)) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    if (token.size != 1) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    if (token.offset >= w->data_size) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    w->data[token.offset] = value;
+    span[0] = value;
     return NMO_OK;
 }
 
 nmo_status_t nmo_chunk_writer_patch_u64(nmo_chunk_writer_t *w, nmo_patch_token_t token, uint64_t value) {
-    if (w == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
+    uint32_t *span = NULL;
+    nmo_status_t result = writer_patch_dword_span(w, token, 2, &span);
+    if (result != NMO_OK) {
+        return result;
     }
 
-    if (!nmo_patch_token_valid(token)) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    if (token.size != 2) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    if (token.offset + 1 >= w->data_size) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    w->data[token.offset] = (uint32_t)(value & 0xFFFFFFFF);
-    w->data[token.offset + 1] = (uint32_t)(value >> 32);
+    span[0] = (uint32_t)(value & 0xFFFFFFFF);
+    span[1] = (uint32_t)(value >> 32);
     return NMO_OK;
 }
 
