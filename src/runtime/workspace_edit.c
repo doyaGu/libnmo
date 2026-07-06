@@ -4005,6 +4005,29 @@ static nmo_status_t workspace_edit_snapshot_parameter_buffer(
     return NMO_OK;
 }
 
+static nmo_status_t workspace_edit_prepare_parameter_buffer_write(
+    nmo_workspace_edit_t *edit,
+    nmo_parameter_state_t *state,
+    workspace_edit_checkpoint_t checkpoint,
+    size_t target_size,
+    bool resize)
+{
+    nmo_status_t snapshot_result =
+        workspace_edit_snapshot_parameter_buffer(edit, state, checkpoint);
+    if (snapshot_result != NMO_OK) {
+        return snapshot_result;
+    }
+
+    if (target_size != state->buffer_data.count && resize) {
+        nmo_status_t resize_result =
+            nmo_array_resize(&state->buffer_data, target_size);
+        if (resize_result != NMO_OK) {
+            return workspace_edit_abort_status(edit, checkpoint, resize_result);
+        }
+    }
+    return NMO_OK;
+}
+
 nmo_status_t workspace_edit_set_parameter_value_ex(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t parameter_id,
@@ -4113,18 +4136,11 @@ nmo_status_t workspace_edit_set_parameter_value_ex(
             return NMO_ERR_OUT_OF_BOUNDS;
         }
 
-        nmo_status_t snapshot_result =
-            workspace_edit_snapshot_parameter_buffer(edit, state, checkpoint);
-        if (snapshot_result != NMO_OK) {
-            return snapshot_result;
-        }
-
-        if (required_size != state->buffer_data.count) {
-            nmo_status_t resize_result =
-                nmo_array_resize(&state->buffer_data, required_size);
-            if (resize_result != NMO_OK) {
-                return workspace_edit_abort_status(edit, checkpoint, resize_result);
-            }
+        nmo_status_t prepare_result =
+            workspace_edit_prepare_parameter_buffer_write(
+                edit, state, checkpoint, required_size, true);
+        if (prepare_result != NMO_OK) {
+            return prepare_result;
         }
         memcpy(state->buffer_data.data, value_str, required_size);
         nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
@@ -4137,16 +4153,11 @@ nmo_status_t workspace_edit_set_parameter_value_ex(
         return NMO_ERR_OUT_OF_BOUNDS;
     }
 
-    nmo_status_t snapshot_result =
-        workspace_edit_snapshot_parameter_buffer(edit, state, checkpoint);
-    if (snapshot_result != NMO_OK) {
-        return snapshot_result;
-    }
-    if (buffer_size != state->buffer_data.count && allow_resize) {
-        nmo_status_t resize_result = nmo_array_resize(&state->buffer_data, buffer_size);
-        if (resize_result != NMO_OK) {
-            return workspace_edit_abort_status(edit, checkpoint, resize_result);
-        }
+    nmo_status_t prepare_result =
+        workspace_edit_prepare_parameter_buffer_write(
+            edit, state, checkpoint, buffer_size, allow_resize);
+    if (prepare_result != NMO_OK) {
+        return prepare_result;
     }
 
     uint8_t *tmp = (uint8_t *)calloc(1, buffer_size);
@@ -4676,17 +4687,11 @@ nmo_status_t workspace_edit_set_parameter_bytes_ex(
         return NMO_ERR_OUT_OF_BOUNDS;
     }
 
-    nmo_status_t snapshot_result =
-        workspace_edit_snapshot_parameter_buffer(edit, state, checkpoint);
-    if (snapshot_result != NMO_OK) {
-        return snapshot_result;
-    }
-
-    if (byte_count != state->buffer_data.count && allow_resize) {
-        nmo_status_t resize_result = nmo_array_resize(&state->buffer_data, byte_count);
-        if (resize_result != NMO_OK) {
-            return workspace_edit_abort_status(edit, checkpoint, resize_result);
-        }
+    nmo_status_t prepare_result =
+        workspace_edit_prepare_parameter_buffer_write(
+            edit, state, checkpoint, byte_count, allow_resize);
+    if (prepare_result != NMO_OK) {
+        return prepare_result;
     }
 
     if (byte_count > 0) {
