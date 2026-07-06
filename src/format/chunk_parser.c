@@ -452,17 +452,19 @@ nmo_status_t nmo_chunk_parser_read_manager_int(nmo_chunk_parser_t *p,
         NMO_PARSER_RETURN_TRUNCATED("Cannot read manager int");
     }
 
-    // Read GUID if requested
+    nmo_guid_t parsed_manager = {0, 0};
+    nmo_status_t result = parser_read_guid(p, &parsed_manager, "Cannot read manager int");
+    NMO_RETURN_IF_ERROR(result);
+
     if (manager != NULL) {
-        manager->d1 = NMO_CHUNK_PARSER_DATA(p)[p->cursor];
-        manager->d2 = NMO_CHUNK_PARSER_DATA(p)[p->cursor + 1];
+        *manager = parsed_manager;
     }
 
-    // Advance past GUID
-    p->cursor += 2;
+    uint32_t raw_value = 0;
+    result = parser_read_u32(p, &raw_value, "Cannot read manager int");
+    NMO_RETURN_IF_ERROR(result);
 
-    // Read and return value
-    *out_value = (int32_t) NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
+    *out_value = (int32_t) raw_value;
     NMO_RETURN_OK();
 }
 
