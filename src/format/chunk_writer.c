@@ -1107,25 +1107,13 @@ nmo_status_t nmo_chunk_writer_write_array_lendian16(nmo_chunk_writer_t *w, int e
 }
 
 nmo_status_t nmo_chunk_writer_write_dword_as_words(nmo_chunk_writer_t *w, uint32_t value) {
-    if (w == NULL || w->finalized) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    int result = ensure_data_capacity(w, 2);
-    if (result != NMO_OK) {
-        return result;
-    }
-
     uint16_t low = (uint16_t)(value & 0xFFFFu);
     uint16_t high = (uint16_t)((value >> 16) & 0xFFFFu);
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     low = (uint16_t)((low >> 8) | (low << 8));
     high = (uint16_t)((high >> 8) | (high << 8));
 #endif
-    w->data[w->data_size++] = (uint32_t)low;
-    w->data[w->data_size++] = (uint32_t)high;
-
-    return NMO_OK;
+    return writer_append_dword_pair(w, (uint32_t)low, (uint32_t)high);
 }
 
 nmo_status_t nmo_chunk_writer_write_array_dword_as_words(nmo_chunk_writer_t *w,
