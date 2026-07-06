@@ -186,6 +186,71 @@ static nmo_status_t parser_read_float_span(nmo_chunk_parser_t *p,
     NMO_RETURN_OK();
 }
 
+static nmo_status_t parser_read_array_lendian_impl(nmo_chunk_parser_t *p,
+                                                   void **array,
+                                                   size_t *out_count,
+                                                   nmo_arena_t *arena,
+                                                   int swap_16bit) {
+    if (p == NULL || array == NULL || out_count == NULL || arena == NULL) {
+        NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
+    }
+
+    *array = NULL;
+    *out_count = 0;
+
+    size_t start_pos = p->cursor;
+
+    uint32_t data_size_bytes = 0;
+    uint32_t element_count = 0;
+    nmo_status_t result = parser_read_u32_rollback(
+        p,
+        start_pos,
+        &data_size_bytes,
+        "Cannot read array metadata");
+    NMO_PARSER_RETURN_IF_ERROR_ROLLBACK(result, p, start_pos);
+    result = parser_read_u32_rollback(
+        p,
+        start_pos,
+        &element_count,
+        "Cannot read array metadata");
+    NMO_PARSER_RETURN_IF_ERROR_ROLLBACK(result, p, start_pos);
+
+    if (data_size_bytes == 0 || element_count == 0) {
+        NMO_RETURN_OK();
+    }
+
+#if SIZE_MAX == UINT32_MAX
+    if (data_size_bytes > (UINT32_MAX - 3u)) {
+        NMO_PARSER_RETURN_ERROR_ROLLBACK(p, start_pos, NMO_ERR_INVALID_FORMAT, "Array size overflow");
+    }
+#endif
+
+    size_t dword_count = nmo_bytes_to_dwords((size_t)data_size_bytes);
+    if (!check_bounds(p, dword_count)) {
+        NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Cannot read array data");
+    }
+
+    void *array_data = nmo_arena_alloc(arena, (size_t)data_size_bytes, 1);
+    if (array_data == NULL) {
+        NMO_PARSER_RETURN_NOMEM_ROLLBACK(p, start_pos, "Failed to allocate array data");
+    }
+
+    memcpy(array_data, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], (size_t) data_size_bytes);
+    p->cursor += (size_t) dword_count;
+
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    if (swap_16bit && data_size_bytes >= 2) {
+        nmo_swap_16bit_words(array_data, (size_t) data_size_bytes / 2);
+    }
+#else
+    (void) swap_16bit;
+#endif
+
+    *array = array_data;
+    *out_count = (size_t) element_count;
+    NMO_RETURN_OK();
+}
+
 static inline void consume_subchunk_slot(nmo_chunk_parser_t *p) {
     if (p == NULL) {
         return;
@@ -477,129 +542,14 @@ nmo_status_t nmo_chunk_parser_read_array_lendian(nmo_chunk_parser_t *p,
                                                  void **array,
                                                  size_t *out_count,
                                                  nmo_arena_t *arena) {
-    if (p == NULL || array == NULL || out_count == NULL || arena == NULL) {
-        NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
-    }
-
-    // Initialize output to NULL
-    *array = NULL;
-    *out_count = 0;
-
-    size_t start_pos = p->cursor;
-
-    uint32_t data_size_bytes = 0;
-    uint32_t element_count = 0;
-    nmo_status_t result = parser_read_u32_rollback(
-        p,
-        start_pos,
-        &data_size_bytes,
-        "Cannot read array metadata");
-    NMO_PARSER_RETURN_IF_ERROR_ROLLBACK(result, p, start_pos);
-    result = parser_read_u32_rollback(
-        p,
-        start_pos,
-        &element_count,
-        "Cannot read array metadata");
-    NMO_PARSER_RETURN_IF_ERROR_ROLLBACK(result, p, start_pos);
-
-    // Check for valid parameters
-    if (data_size_bytes == 0 || element_count == 0) {
-        NMO_RETURN_OK();
-    }
-
-    // Calculate needed DWORDs (round up)
-#if SIZE_MAX == UINT32_MAX
-    if (data_size_bytes > (UINT32_MAX - 3u)) {
-        NMO_PARSER_RETURN_ERROR_ROLLBACK(p, start_pos, NMO_ERR_INVALID_FORMAT, "Array size overflow");
-    }
-#endif
-    size_t dword_count = nmo_bytes_to_dwords((size_t)data_size_bytes);
-
-    // Bounds check before allocation
-    if (!check_bounds(p, dword_count)) {
-        NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Cannot read array data");
-    }
-
-    // Allocate array data
-    void *array_data = nmo_arena_alloc(arena, (size_t)data_size_bytes, 1);
-    if (array_data == NULL) {
-        NMO_PARSER_RETURN_NOMEM_ROLLBACK(p, start_pos, "Failed to allocate array data");
-    }
-
-    // Copy data
-    memcpy(array_data, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], (size_t) data_size_bytes);
-
-    // Update parser position
-    p->cursor += (size_t) dword_count;
-
-    // Set output
-    *array = array_data;
-    *out_count = (size_t) element_count;
-    NMO_RETURN_OK();
+    return parser_read_array_lendian_impl(p, array, out_count, arena, 0);
 }
 
 nmo_status_t nmo_chunk_parser_read_array_lendian16(nmo_chunk_parser_t *p,
                                                    void **array,
                                                    size_t *out_count,
                                                    nmo_arena_t *arena) {
-    if (p == NULL || array == NULL || out_count == NULL || arena == NULL) {
-        NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
-    }
-
-    *array = NULL;
-    *out_count = 0;
-
-    size_t start_pos = p->cursor;
-
-    uint32_t data_size_bytes = 0;
-    uint32_t element_count = 0;
-    nmo_status_t result = parser_read_u32_rollback(
-        p,
-        start_pos,
-        &data_size_bytes,
-        "Cannot read array metadata");
-    NMO_PARSER_RETURN_IF_ERROR_ROLLBACK(result, p, start_pos);
-    result = parser_read_u32_rollback(
-        p,
-        start_pos,
-        &element_count,
-        "Cannot read array metadata");
-    NMO_PARSER_RETURN_IF_ERROR_ROLLBACK(result, p, start_pos);
-
-    if (data_size_bytes == 0 || element_count == 0) {
-        *array = NULL;
-        *out_count = 0;
-        NMO_RETURN_OK();
-    }
-
-#if SIZE_MAX == UINT32_MAX
-    if (data_size_bytes > (UINT32_MAX - 3u)) {
-        NMO_PARSER_RETURN_ERROR_ROLLBACK(p, start_pos, NMO_ERR_INVALID_FORMAT, "Array size overflow");
-    }
-#endif
-
-    size_t dword_count = nmo_bytes_to_dwords((size_t)data_size_bytes);
-    if (!check_bounds(p, dword_count)) {
-        NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Cannot read array data");
-    }
-
-    void *array_data = nmo_arena_alloc(arena, (size_t)data_size_bytes, 1);
-    if (array_data == NULL) {
-        NMO_PARSER_RETURN_NOMEM_ROLLBACK(p, start_pos, "Failed to allocate array data");
-    }
-
-    memcpy(array_data, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], (size_t) data_size_bytes);
-    p->cursor += (size_t) dword_count;
-
-#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    if (data_size_bytes >= 2) {
-        nmo_swap_16bit_words(array_data, (size_t) data_size_bytes / 2);
-    }
-#endif
-
-    *array = array_data;
-    *out_count = (size_t) element_count;
-    NMO_RETURN_OK();
+    return parser_read_array_lendian_impl(p, array, out_count, arena, 1);
 }
 
 nmo_status_t nmo_chunk_parser_read_buffer_lendian16(nmo_chunk_parser_t *p,
