@@ -272,6 +272,21 @@ static inline void consume_sequence_slot(size_t *remaining, int *active) {
     }
 }
 
+static inline void start_sequence(size_t count,
+                                  size_t *remaining,
+                                  int *active,
+                                  size_t *out_count) {
+    if (remaining != NULL) {
+        *remaining = count;
+    }
+    if (active != NULL) {
+        *active = (count > 0);
+    }
+    if (out_count != NULL) {
+        *out_count = count;
+    }
+}
+
 static inline void consume_subchunk_slot(nmo_chunk_parser_t *p) {
     if (p == NULL) {
         return;
@@ -532,14 +547,15 @@ nmo_status_t nmo_chunk_parser_start_manager_sequence(nmo_chunk_parser_t *p,
     NMO_PARSER_RETURN_IF_ERROR_ROLLBACK(result, p, start_pos);
 
     p->current_manager_guid = guid;
-    p->manager_sequence_remaining = count;
-    p->in_manager_sequence = (count > 0);
+    start_sequence(count,
+                   &p->manager_sequence_remaining,
+                   &p->in_manager_sequence,
+                   out_count);
 
     if (out_manager != NULL) {
         *out_manager = guid;
     }
 
-    *out_count = count;
     NMO_RETURN_OK();
 }
 
@@ -875,9 +891,10 @@ nmo_status_t nmo_chunk_parser_start_object_sequence(nmo_chunk_parser_t *p, size_
     nmo_status_t result = parser_read_u32(p, &count, "Cannot start object sequence");
     NMO_RETURN_IF_ERROR(result);
 
-    p->object_sequence_remaining = count;
-    p->in_object_sequence = (count > 0);
-    *out_count = count;
+    start_sequence(count,
+                   &p->object_sequence_remaining,
+                   &p->in_object_sequence,
+                   out_count);
     NMO_RETURN_OK();
 }
 
@@ -1069,9 +1086,10 @@ nmo_status_t nmo_chunk_parser_start_read_sequence(nmo_chunk_parser_t *p, size_t 
     nmo_status_t result = parser_read_u32(p, &count, "Cannot start read sequence");
     NMO_RETURN_IF_ERROR(result);
 
-    p->subchunk_sequence_remaining = count;
-    p->in_subchunk_sequence = (count > 0);
-    *out_count = count;
+    start_sequence(count,
+                   &p->subchunk_sequence_remaining,
+                   &p->in_subchunk_sequence,
+                   out_count);
     NMO_RETURN_OK();
 }
 
