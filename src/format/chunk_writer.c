@@ -157,6 +157,13 @@ static nmo_status_t writer_append_empty_array_marker(nmo_chunk_writer_t *w) {
     return writer_append_dword_pair(w, 0, 0);
 }
 
+static uint32_t writer_pack_lendian16_word(uint16_t value) {
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    value = (uint16_t)((value >> 8) | (value << 8));
+#endif
+    return (uint32_t)value;
+}
+
 static nmo_status_t writer_append_aligned_bytes(nmo_chunk_writer_t *w,
                                                 const void *data,
                                                 size_t bytes) {
@@ -599,11 +606,7 @@ nmo_status_t nmo_chunk_writer_write_buffer_nosize_lendian16(nmo_chunk_writer_t *
 
     const uint16_t *values = (const uint16_t *)data;
     for (size_t i = 0; i < value_count; i++) {
-        uint16_t value = values[i];
-#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        value = (uint16_t)((value >> 8) | (value << 8));
-#endif
-        w->data[w->data_size++] = (uint32_t)value;
+        w->data[w->data_size++] = writer_pack_lendian16_word(values[i]);
     }
 
     return NMO_OK;
@@ -1167,11 +1170,9 @@ nmo_status_t nmo_chunk_writer_write_array_lendian16(nmo_chunk_writer_t *w, int e
 nmo_status_t nmo_chunk_writer_write_dword_as_words(nmo_chunk_writer_t *w, uint32_t value) {
     uint16_t low = (uint16_t)(value & 0xFFFFu);
     uint16_t high = (uint16_t)((value >> 16) & 0xFFFFu);
-#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    low = (uint16_t)((low >> 8) | (low << 8));
-    high = (uint16_t)((high >> 8) | (high << 8));
-#endif
-    return writer_append_dword_pair(w, (uint32_t)low, (uint32_t)high);
+    return writer_append_dword_pair(w,
+                                    writer_pack_lendian16_word(low),
+                                    writer_pack_lendian16_word(high));
 }
 
 nmo_status_t nmo_chunk_writer_write_array_dword_as_words(nmo_chunk_writer_t *w,
