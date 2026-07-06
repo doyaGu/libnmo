@@ -316,67 +316,65 @@ static int ensure_u32_list_capacity(nmo_chunk_writer_t *w,
     return NMO_OK;
 }
 
-static int ensure_id_capacity(nmo_chunk_writer_t *w, size_t needed_entries) {
-    return ensure_u32_list_capacity(w, &w->id_list, w->id_count, &w->id_capacity, needed_entries);
+static int writer_track_u32_position(nmo_chunk_writer_t *w,
+                                     uint32_t **list,
+                                     size_t *count,
+                                     size_t *capacity,
+                                     uint32_t position) {
+    int result = ensure_u32_list_capacity(w, list, *count, capacity, 1);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    (*list)[(*count)++] = position;
+    return NMO_OK;
 }
 
-static int ensure_manager_capacity(nmo_chunk_writer_t *w, size_t needed_entries) {
-    return ensure_u32_list_capacity(w,
-                                    &w->manager_list,
-                                    w->manager_count,
-                                    &w->manager_capacity,
-                                    needed_entries);
+static int writer_track_u32_sequence_start(nmo_chunk_writer_t *w,
+                                           uint32_t **list,
+                                           size_t *count,
+                                           size_t *capacity,
+                                           uint32_t position) {
+    int result = ensure_u32_list_capacity(w, list, *count, capacity, 2);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    (*list)[(*count)++] = LIST_SEQUENCE_MARKER;
+    (*list)[(*count)++] = position;
+    return NMO_OK;
 }
 
 static int track_id_sequence_start(nmo_chunk_writer_t *w, uint32_t position) {
-    int result = ensure_id_capacity(w, 2);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    w->id_list[w->id_count++] = LIST_SEQUENCE_MARKER;
-    w->id_list[w->id_count++] = position;
-    return NMO_OK;
+    return writer_track_u32_sequence_start(w,
+                                           &w->id_list,
+                                           &w->id_count,
+                                           &w->id_capacity,
+                                           position);
 }
 
 static int track_manager_sequence_start(nmo_chunk_writer_t *w, uint32_t position) {
-    int result = ensure_manager_capacity(w, 2);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    w->manager_list[w->manager_count++] = LIST_SEQUENCE_MARKER;
-    w->manager_list[w->manager_count++] = position;
-    return NMO_OK;
-}
-
-static int ensure_chunk_ref_capacity(nmo_chunk_writer_t *w, size_t needed_entries) {
-    return ensure_u32_list_capacity(w,
-                                    &w->chunk_ref_list,
-                                    w->chunk_ref_count,
-                                    &w->chunk_ref_capacity,
-                                    needed_entries);
+    return writer_track_u32_sequence_start(w,
+                                           &w->manager_list,
+                                           &w->manager_count,
+                                           &w->manager_capacity,
+                                           position);
 }
 
 static int track_chunk_sequence_start(nmo_chunk_writer_t *w, uint32_t position) {
-    int result = ensure_chunk_ref_capacity(w, 2);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    w->chunk_ref_list[w->chunk_ref_count++] = LIST_SEQUENCE_MARKER;
-    w->chunk_ref_list[w->chunk_ref_count++] = position;
-    return NMO_OK;
+    return writer_track_u32_sequence_start(w,
+                                           &w->chunk_ref_list,
+                                           &w->chunk_ref_count,
+                                           &w->chunk_ref_capacity,
+                                           position);
 }
 
 static int track_chunk_position(nmo_chunk_writer_t *w, uint32_t position) {
-    int result = ensure_chunk_ref_capacity(w, 1);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    w->chunk_ref_list[w->chunk_ref_count++] = position;
-    return NMO_OK;
+    return writer_track_u32_position(w,
+                                     &w->chunk_ref_list,
+                                     &w->chunk_ref_count,
+                                     &w->chunk_ref_capacity,
+                                     position);
 }
 
 static inline int writer_has_file_context(const nmo_chunk_writer_t *w) {
@@ -396,14 +394,12 @@ static inline int writer_has_file_context(const nmo_chunk_writer_t *w) {
  * @return NMO_OK on success, error code on failure
  */
 static int track_id_position(nmo_chunk_writer_t *w) {
-    int result = ensure_id_capacity(w, 1);
-    if (result != NMO_OK) {
-        return result;
-    }
-
     // Track the current position (not the ID itself!)
-    w->id_list[w->id_count++] = (uint32_t) w->data_size;
-    return NMO_OK;
+    return writer_track_u32_position(w,
+                                     &w->id_list,
+                                     &w->id_count,
+                                     &w->id_capacity,
+                                     (uint32_t) w->data_size);
 }
 
 static int encode_object_id(const nmo_chunk_writer_t *w,
@@ -1061,14 +1057,15 @@ nmo_status_t nmo_chunk_writer_write_manager_int(nmo_chunk_writer_t *w, nmo_guid_
         return result;
     }
 
-    // Ensure manager list can track this position
-    result = ensure_manager_capacity(w, 1);
+    // Track current position in manager list
+    result = writer_track_u32_position(w,
+                                       &w->manager_list,
+                                       &w->manager_count,
+                                       &w->manager_capacity,
+                                       (uint32_t) w->data_size);
     if (result != NMO_OK) {
         return result;
     }
-
-    // Track current position in manager list
-    w->manager_list[w->manager_count++] = w->data_size;
 
     // Write [GUID.d1][GUID.d2][value]
     w->data[w->data_size++] = manager.d1;
