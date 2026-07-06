@@ -224,6 +224,30 @@ static nmo_status_t writer_copy_finalized_span(nmo_arena_array_t *dest,
     return NMO_OK;
 }
 
+static nmo_patch_token_t writer_reserve_dword_span(nmo_chunk_writer_t *w,
+                                                   size_t dword_count) {
+    nmo_patch_token_t token = NMO_PATCH_TOKEN_INVALID;
+
+    if (w == NULL || w->finalized || dword_count == 0 || dword_count > 4) {
+        return token;
+    }
+
+    int result = ensure_data_capacity(w, dword_count);
+    if (result != NMO_OK) {
+        return token;
+    }
+
+    token.offset = w->data_size;
+    token.size = (uint8_t)dword_count;
+    token.valid = 1;
+
+    for (size_t i = 0; i < dword_count; i++) {
+        w->data[w->data_size++] = 0;
+    }
+
+    return token;
+}
+
 static int ensure_u32_list_capacity(nmo_chunk_writer_t *w,
                                     uint32_t **list,
                                     size_t count,
@@ -1231,72 +1255,15 @@ nmo_status_t nmo_chunk_writer_write_identifier(nmo_chunk_writer_t *w, uint32_t i
  * ============================================================================ */
 
 nmo_patch_token_t nmo_chunk_writer_reserve_u32(nmo_chunk_writer_t *w) {
-    nmo_patch_token_t token = NMO_PATCH_TOKEN_INVALID;
-
-    if (w == NULL || w->finalized) {
-        return token;
-    }
-
-    int result = ensure_data_capacity(w, 1);
-    if (result != NMO_OK) {
-        return token;
-    }
-
-    token.offset = w->data_size;
-    token.size = 1;
-    token.valid = 1;
-
-    /* Write placeholder zero */
-    w->data[w->data_size++] = 0;
-
-    return token;
+    return writer_reserve_dword_span(w, 1);
 }
 
 nmo_patch_token_t nmo_chunk_writer_reserve_u64(nmo_chunk_writer_t *w) {
-    nmo_patch_token_t token = NMO_PATCH_TOKEN_INVALID;
-
-    if (w == NULL || w->finalized) {
-        return token;
-    }
-
-    int result = ensure_data_capacity(w, 2);
-    if (result != NMO_OK) {
-        return token;
-    }
-
-    token.offset = w->data_size;
-    token.size = 2;
-    token.valid = 1;
-
-    /* Write placeholder zeros */
-    w->data[w->data_size++] = 0;
-    w->data[w->data_size++] = 0;
-
-    return token;
+    return writer_reserve_dword_span(w, 2);
 }
 
 nmo_patch_token_t nmo_chunk_writer_reserve_dwords(nmo_chunk_writer_t *w, size_t dword_count) {
-    nmo_patch_token_t token = NMO_PATCH_TOKEN_INVALID;
-
-    if (w == NULL || w->finalized || dword_count == 0 || dword_count > 4) {
-        return token;
-    }
-
-    int result = ensure_data_capacity(w, dword_count);
-    if (result != NMO_OK) {
-        return token;
-    }
-
-    token.offset = w->data_size;
-    token.size = (uint8_t)dword_count;
-    token.valid = 1;
-
-    /* Write placeholder zeros */
-    for (size_t i = 0; i < dword_count; i++) {
-        w->data[w->data_size++] = 0;
-    }
-
-    return token;
+    return writer_reserve_dword_span(w, dword_count);
 }
 
 nmo_status_t nmo_chunk_writer_patch_u32(nmo_chunk_writer_t *w, nmo_patch_token_t token, uint32_t value) {
