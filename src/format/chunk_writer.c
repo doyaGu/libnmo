@@ -153,6 +153,10 @@ static nmo_status_t writer_append_dword_pair(nmo_chunk_writer_t *w,
     return NMO_OK;
 }
 
+static nmo_status_t writer_append_empty_array_marker(nmo_chunk_writer_t *w) {
+    return writer_append_dword_pair(w, 0, 0);
+}
+
 static nmo_status_t writer_append_aligned_bytes(nmo_chunk_writer_t *w,
                                                 const void *data,
                                                 size_t bytes) {
@@ -1017,38 +1021,20 @@ nmo_status_t nmo_chunk_writer_write_array_lendian(nmo_chunk_writer_t *w, int ele
 
     // Write empty array marker if no data
     if (src_data == NULL || element_count <= 0 || element_size <= 0) {
-        int result = ensure_data_capacity(w, 2);
-        if (result != NMO_OK) {
-            return result;
-        }
-        w->data[w->data_size++] = 0;
-        w->data[w->data_size++] = 0;
-        return NMO_OK;
+        return writer_append_empty_array_marker(w);
     }
 
     // Check for integer overflow in total bytes calculation
     if (element_count > INT_MAX / element_size) {
         // Write empty array marker on overflow
-        int result = ensure_data_capacity(w, 2);
-        if (result != NMO_OK) {
-            return result;
-        }
-        w->data[w->data_size++] = 0;
-        w->data[w->data_size++] = 0;
-        return NMO_OK;
+        return writer_append_empty_array_marker(w);
     }
 
     // Calculate total bytes
     size_t total_bytes = (size_t) element_size * (size_t) element_count;
     if (total_bytes > (size_t) INT_MAX) {
         // Write empty array marker on overflow
-        int result = ensure_data_capacity(w, 2);
-        if (result != NMO_OK) {
-            return result;
-        }
-        w->data[w->data_size++] = 0;
-        w->data[w->data_size++] = 0;
-        return NMO_OK;
+        return writer_append_empty_array_marker(w);
     }
 
     // Calculate DWORDs needed (round up)
