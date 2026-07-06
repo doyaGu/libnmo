@@ -208,6 +208,22 @@ static void writer_append_reserved_dwords(nmo_chunk_writer_t *w,
     w->data_size += count;
 }
 
+static nmo_status_t writer_copy_finalized_span(nmo_arena_array_t *dest,
+                                               const void *src,
+                                               size_t count,
+                                               size_t element_size) {
+    nmo_status_t result = nmo_arena_array_resize(dest, count);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    if (count > 0) {
+        memcpy(nmo_arena_array_data(dest), src, count * element_size);
+    }
+
+    return NMO_OK;
+}
+
 static int ensure_u32_list_capacity(nmo_chunk_writer_t *w,
                                     uint32_t **list,
                                     size_t count,
@@ -1338,43 +1354,50 @@ nmo_chunk_t *nmo_chunk_writer_finalize(nmo_chunk_writer_t *w) {
         return NULL;
     }
 
-    // Copy data to chunk
-    nmo_status_t result = nmo_arena_array_resize(&w->chunk->data, w->data_size);
+    nmo_status_t result = writer_copy_finalized_span(
+        &w->chunk->data,
+        w->data,
+        w->data_size,
+        sizeof(uint32_t));
     NMO_RETURN_NULL_IF_ERROR(result);
-    uint32_t *chunk_data = NMO_ARENA_ARRAY_DATA(uint32_t, &w->chunk->data);
-    if (w->data_size > 0) {
-        memcpy(chunk_data, w->data, w->data_size * sizeof(uint32_t));
-    }
 
     // Copy ID list
     if (w->id_count > 0) {
-        result = nmo_arena_array_resize(&w->chunk->ids, w->id_count);
+        result = writer_copy_finalized_span(
+            &w->chunk->ids,
+            w->id_list,
+            w->id_count,
+            sizeof(uint32_t));
         NMO_RETURN_NULL_IF_ERROR(result);
-        uint32_t *ids = NMO_ARENA_ARRAY_DATA(uint32_t, &w->chunk->ids);
-        memcpy(ids, w->id_list, w->id_count * sizeof(uint32_t));
     }
 
     // Copy manager list
     if (w->manager_count > 0) {
-        result = nmo_arena_array_resize(&w->chunk->managers, w->manager_count);
+        result = writer_copy_finalized_span(
+            &w->chunk->managers,
+            w->manager_list,
+            w->manager_count,
+            sizeof(uint32_t));
         NMO_RETURN_NULL_IF_ERROR(result);
-        uint32_t *managers = NMO_ARENA_ARRAY_DATA(uint32_t, &w->chunk->managers);
-        memcpy(managers, w->manager_list, w->manager_count * sizeof(uint32_t));
     }
 
     // Copy chunk list
     if (w->chunk_count > 0) {
-        result = nmo_arena_array_resize(&w->chunk->chunks, w->chunk_count);
+        result = writer_copy_finalized_span(
+            &w->chunk->chunks,
+            w->chunk_list,
+            w->chunk_count,
+            sizeof(nmo_chunk_t *));
         NMO_RETURN_NULL_IF_ERROR(result);
-        nmo_chunk_t **chunks = NMO_ARENA_ARRAY_DATA(nmo_chunk_t *, &w->chunk->chunks);
-        memcpy(chunks, w->chunk_list, w->chunk_count * sizeof(nmo_chunk_t *));
     }
 
     if (w->chunk_ref_count > 0) {
-        result = nmo_arena_array_resize(&w->chunk->chunk_refs, w->chunk_ref_count);
+        result = writer_copy_finalized_span(
+            &w->chunk->chunk_refs,
+            w->chunk_ref_list,
+            w->chunk_ref_count,
+            sizeof(uint32_t));
         NMO_RETURN_NULL_IF_ERROR(result);
-        uint32_t *chunk_refs = NMO_ARENA_ARRAY_DATA(uint32_t, &w->chunk->chunk_refs);
-        memcpy(chunk_refs, w->chunk_ref_list, w->chunk_ref_count * sizeof(uint32_t));
     }
 
     w->finalized = 1;
