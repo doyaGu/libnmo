@@ -259,17 +259,26 @@ static nmo_status_t parser_read_array_lendian_impl(nmo_chunk_parser_t *p,
     NMO_RETURN_OK();
 }
 
+static inline void consume_sequence_slot(size_t *remaining, int *active) {
+    if (remaining == NULL || active == NULL) {
+        return;
+    }
+
+    if (*active && *remaining > 0) {
+        (*remaining)--;
+        if (*remaining == 0) {
+            *active = 0;
+        }
+    }
+}
+
 static inline void consume_subchunk_slot(nmo_chunk_parser_t *p) {
     if (p == NULL) {
         return;
     }
 
-    if (p->in_subchunk_sequence && p->subchunk_sequence_remaining > 0) {
-        p->subchunk_sequence_remaining--;
-        if (p->subchunk_sequence_remaining == 0) {
-            p->in_subchunk_sequence = 0;
-        }
-    }
+    consume_sequence_slot(&p->subchunk_sequence_remaining,
+                          &p->in_subchunk_sequence);
 }
 
 nmo_chunk_parser_t *nmo_chunk_parser_create(nmo_chunk_t *chunk) {
@@ -492,10 +501,8 @@ nmo_status_t nmo_chunk_parser_read_manager_int_sequence(nmo_chunk_parser_t *p,
     NMO_RETURN_IF_ERROR(result);
 
     *out_value = (int32_t) raw_value;
-    p->manager_sequence_remaining--;
-    if (p->manager_sequence_remaining == 0) {
-        p->in_manager_sequence = 0;
-    }
+    consume_sequence_slot(&p->manager_sequence_remaining,
+                          &p->in_manager_sequence);
     NMO_RETURN_OK();
 }
 
@@ -853,12 +860,8 @@ nmo_status_t nmo_chunk_parser_read_object_id(nmo_chunk_parser_t *p, nmo_object_i
 
     *out = resolved_id;
 
-    if (p->in_object_sequence && p->object_sequence_remaining > 0) {
-        p->object_sequence_remaining--;
-        if (p->object_sequence_remaining == 0) {
-            p->in_object_sequence = 0;
-        }
-    }
+    consume_sequence_slot(&p->object_sequence_remaining,
+                          &p->in_object_sequence);
 
     NMO_RETURN_OK();
 }
