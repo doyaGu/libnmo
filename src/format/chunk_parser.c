@@ -125,6 +125,14 @@ static inline nmo_status_t parser_read_guid(nmo_chunk_parser_t *p,
     return parser_read_guid_rollback(p, p != NULL ? p->cursor : 0, out_guid, eof_message);
 }
 
+static inline uint16_t parser_unpack_lendian16_word(uint32_t word) {
+    uint16_t value = (uint16_t)(word & 0xFFFFu);
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    value = (uint16_t)((value >> 8) | (value << 8));
+#endif
+    return value;
+}
+
 static inline nmo_status_t parser_copy_aligned_bytes(nmo_chunk_parser_t *p,
                                                      void *dest,
                                                      size_t bytes,
@@ -713,11 +721,7 @@ nmo_status_t nmo_chunk_parser_read_buffer_nosize_lendian16(nmo_chunk_parser_t *p
     uint16_t *out = (uint16_t *)buffer;
     for (size_t i = 0; i < value_count; i++) {
         uint32_t word = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
-        uint16_t value = (uint16_t)(word & 0xFFFFu);
-#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        value = (uint16_t)((value >> 8) | (value << 8));
-#endif
-        out[i] = value;
+        out[i] = parser_unpack_lendian16_word(word);
     }
 
     NMO_RETURN_OK();
@@ -734,13 +738,8 @@ nmo_status_t nmo_chunk_parser_read_dword_as_words(nmo_chunk_parser_t *p, uint32_
 
     uint32_t low_word = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
     uint32_t high_word = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
-    uint16_t low = (uint16_t)(low_word & 0xFFFFu);
-    uint16_t high = (uint16_t)(high_word & 0xFFFFu);
-
-#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    low = (uint16_t)((low >> 8) | (low << 8));
-    high = (uint16_t)((high >> 8) | (high << 8));
-#endif
+    uint16_t low = parser_unpack_lendian16_word(low_word);
+    uint16_t high = parser_unpack_lendian16_word(high_word);
 
     *out = (uint32_t)low | ((uint32_t)high << 16);
     NMO_RETURN_OK();
