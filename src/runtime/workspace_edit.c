@@ -1007,6 +1007,53 @@ static nmo_status_t workspace_edit_replace_manager_data(
     return NMO_OK;
 }
 
+static nmo_status_t workspace_edit_build_manager_data_update(
+    nmo_arena_t *arena,
+    const nmo_file_state_t *file_state,
+    uint32_t *manager_index,
+    nmo_guid_t manager_guid,
+    nmo_chunk_t *new_chunk,
+    nmo_manager_data_t **out_manager_data,
+    uint32_t *out_manager_count)
+{
+    if (arena == NULL || file_state == NULL || manager_index == NULL ||
+        new_chunk == NULL || out_manager_data == NULL ||
+        out_manager_count == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    uint32_t old_manager_count = file_state->manager_data_count;
+    nmo_manager_data_t *old_manager_data = file_state->manager_data;
+    uint32_t new_manager_count =
+        *manager_index == UINT32_MAX ? old_manager_count + 1u : old_manager_count;
+    nmo_manager_data_t *new_manager_data =
+        (nmo_manager_data_t *)nmo_arena_alloc(
+            arena,
+            (size_t)new_manager_count * sizeof(*new_manager_data),
+            _Alignof(nmo_manager_data_t));
+    if (new_manager_data == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    if (old_manager_count > 0u && old_manager_data != NULL) {
+        memcpy(new_manager_data, old_manager_data,
+               (size_t)old_manager_count * sizeof(*new_manager_data));
+    }
+    if (*manager_index == UINT32_MAX) {
+        *manager_index = old_manager_count;
+        memset(&new_manager_data[*manager_index], 0,
+               sizeof(new_manager_data[*manager_index]));
+        new_manager_data[*manager_index].guid = manager_guid;
+    }
+    new_manager_data[*manager_index].chunk = new_chunk;
+    new_manager_data[*manager_index].data_size =
+        (uint32_t)nmo_chunk_get_size(new_chunk);
+    new_manager_data[*manager_index].flags = 0u;
+
+    *out_manager_data = new_manager_data;
+    *out_manager_count = new_manager_count;
+    return NMO_OK;
+}
+
 static nmo_status_t workspace_edit_seek_message_manager_identifier(
     nmo_chunk_t *chunk)
 {
@@ -4418,30 +4465,16 @@ nmo_status_t nmo_object_edit_ensure_message_manager_entry(
 
     uint32_t old_manager_count = file_state->manager_data_count;
     nmo_manager_data_t *old_manager_data = file_state->manager_data;
-    uint32_t new_manager_count =
-        manager_index == UINT32_MAX ? old_manager_count + 1u : old_manager_count;
-    nmo_manager_data_t *new_manager_data =
-        (nmo_manager_data_t *)nmo_arena_alloc(
-            arena,
-            (size_t)new_manager_count * sizeof(*new_manager_data),
-            _Alignof(nmo_manager_data_t));
-    if (new_manager_data == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-    if (old_manager_count > 0u && old_manager_data != NULL) {
-        memcpy(new_manager_data, old_manager_data,
-               (size_t)old_manager_count * sizeof(*new_manager_data));
-    }
-    if (manager_index == UINT32_MAX) {
-        manager_index = old_manager_count;
-        memset(&new_manager_data[manager_index], 0,
-               sizeof(new_manager_data[manager_index]));
-        new_manager_data[manager_index].guid = NMO_MANAGER_GUID_MESSAGE;
-    }
-    new_manager_data[manager_index].chunk = new_chunk;
-    new_manager_data[manager_index].data_size =
-        (uint32_t)nmo_chunk_get_size(new_chunk);
-    new_manager_data[manager_index].flags = 0u;
+    uint32_t new_manager_count = 0u;
+    nmo_manager_data_t *new_manager_data = NULL;
+    NMO_RETURN_IF_ERROR(workspace_edit_build_manager_data_update(
+        arena,
+        file_state,
+        &manager_index,
+        NMO_MANAGER_GUID_MESSAGE,
+        new_chunk,
+        &new_manager_data,
+        &new_manager_count));
 
     NMO_RETURN_IF_ERROR(workspace_edit_replace_manager_data(
         edit,
@@ -4579,30 +4612,16 @@ nmo_status_t nmo_object_edit_ensure_attribute_manager_entry(
 
     uint32_t old_manager_count = file_state->manager_data_count;
     nmo_manager_data_t *old_manager_data = file_state->manager_data;
-    uint32_t new_manager_count =
-        manager_index == UINT32_MAX ? old_manager_count + 1u : old_manager_count;
-    nmo_manager_data_t *new_manager_data =
-        (nmo_manager_data_t *)nmo_arena_alloc(
-            arena,
-            (size_t)new_manager_count * sizeof(*new_manager_data),
-            _Alignof(nmo_manager_data_t));
-    if (new_manager_data == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-    if (old_manager_count > 0u && old_manager_data != NULL) {
-        memcpy(new_manager_data, old_manager_data,
-               (size_t)old_manager_count * sizeof(*new_manager_data));
-    }
-    if (manager_index == UINT32_MAX) {
-        manager_index = old_manager_count;
-        memset(&new_manager_data[manager_index], 0,
-               sizeof(new_manager_data[manager_index]));
-        new_manager_data[manager_index].guid = NMO_MANAGER_GUID_ATTRIBUTE;
-    }
-    new_manager_data[manager_index].chunk = new_chunk;
-    new_manager_data[manager_index].data_size =
-        (uint32_t)nmo_chunk_get_size(new_chunk);
-    new_manager_data[manager_index].flags = 0u;
+    uint32_t new_manager_count = 0u;
+    nmo_manager_data_t *new_manager_data = NULL;
+    NMO_RETURN_IF_ERROR(workspace_edit_build_manager_data_update(
+        arena,
+        file_state,
+        &manager_index,
+        NMO_MANAGER_GUID_ATTRIBUTE,
+        new_chunk,
+        &new_manager_data,
+        &new_manager_count));
 
     NMO_RETURN_IF_ERROR(workspace_edit_replace_manager_data(
         edit,
