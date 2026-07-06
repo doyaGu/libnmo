@@ -581,6 +581,58 @@ static nmo_status_t commit_destroy_object(nmo_workspace_edit_t *edit, void *payl
         NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_DEFER_CACHE_INVALIDATION);
 }
 
+static nmo_status_t workspace_edit_make_object_id_action(
+    nmo_workspace_edit_t *edit,
+    nmo_object_id_t id,
+    object_id_action_t **out_action)
+{
+    if (out_action == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_action = NULL;
+    if (edit == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    object_id_action_t *action =
+        (object_id_action_t *)nmo_workspace_edit_alloc(
+            edit, sizeof(*action), _Alignof(object_id_action_t));
+    if (action == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    action->id = id;
+    *out_action = action;
+    return NMO_OK;
+}
+
+static nmo_status_t workspace_edit_make_array_id_action(
+    nmo_workspace_edit_t *edit,
+    nmo_array_t *array,
+    nmo_object_id_t id,
+    size_t index,
+    array_id_action_t **out_action)
+{
+    if (out_action == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_action = NULL;
+    if (edit == NULL || array == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    array_id_action_t *action =
+        (array_id_action_t *)nmo_workspace_edit_alloc(
+            edit, sizeof(*action), _Alignof(array_id_action_t));
+    if (action == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    action->array = array;
+    action->id = id;
+    action->index = index;
+    *out_action = action;
+    return NMO_OK;
+}
+
 static nmo_status_t rollback_rename_object(nmo_workspace_edit_t *edit, void *payload)
 {
     rename_object_action_t *action = (rename_object_action_t *)payload;
@@ -1484,14 +1536,16 @@ nmo_status_t workspace_edit_bind_script(
             return workspace_edit_abort_status(edit, checkpoint, status);
         }
 
-        array_id_action_t *rollback =
-            (array_id_action_t *)nmo_workspace_edit_alloc(edit, sizeof(*rollback), 1u);
-        if (rollback == NULL) {
-            return workspace_edit_abort_status(edit, checkpoint, NMO_ERR_NOMEM);
+        array_id_action_t *rollback = NULL;
+        status = workspace_edit_make_array_id_action(
+            edit,
+            &owner_state->script_ids,
+            behavior_id,
+            owner_state->script_ids.count - 1u,
+            &rollback);
+        if (status != NMO_OK) {
+            return workspace_edit_abort_status(edit, checkpoint, status);
         }
-        rollback->array = &owner_state->script_ids;
-        rollback->id = behavior_id;
-        rollback->index = owner_state->script_ids.count - 1u;
         status = workspace_edit_push_rollback_or_abort(
             edit, checkpoint, rollback_remove_array_id, rollback);
         if (status != NMO_OK) {
@@ -3704,13 +3758,12 @@ nmo_status_t nmo_workspace_edit_track_created_object(
         return NMO_ERR_NOT_FOUND;
     }
 
-    object_id_action_t *rollback =
-        (object_id_action_t *)nmo_workspace_edit_alloc(
-            edit, sizeof(*rollback), _Alignof(object_id_action_t));
-    if (rollback == NULL) {
-        return NMO_ERR_NOMEM;
+    object_id_action_t *rollback = NULL;
+    nmo_status_t action_result =
+        workspace_edit_make_object_id_action(edit, object_id, &rollback);
+    if (action_result != NMO_OK) {
+        return action_result;
     }
-    rollback->id = object_id;
 
     nmo_status_t push_result =
         workspace_edit_push_rollback(edit, action_remove_object, rollback);
@@ -4834,14 +4887,13 @@ nmo_status_t workspace_edit_add_behavior_link(
         return create_result;
     }
 
-    object_id_action_t *object_action =
-        (object_id_action_t *)nmo_workspace_edit_alloc(
-            edit, sizeof(*object_action), _Alignof(object_id_action_t));
-    if (object_action == NULL) {
+    object_id_action_t *object_action = NULL;
+    nmo_status_t object_action_result =
+        workspace_edit_make_object_id_action(edit, link_id, &object_action);
+    if (object_action_result != NMO_OK) {
         (void)nmo_object_repository_remove(repo, link_id);
-        return NMO_ERR_NOMEM;
+        return object_action_result;
     }
-    object_action->id = link_id;
     nmo_status_t push_object_result =
         workspace_edit_push_rollback(edit, action_remove_object, object_action);
     if (push_object_result != NMO_OK) {
@@ -4876,15 +4928,17 @@ nmo_status_t workspace_edit_add_behavior_link(
         return workspace_edit_abort_status(edit, checkpoint, append_result);
     }
 
-    array_id_action_t *array_action =
-        (array_id_action_t *)nmo_workspace_edit_alloc(
-            edit, sizeof(*array_action), _Alignof(array_id_action_t));
-    if (array_action == NULL) {
-        return workspace_edit_abort_status(edit, checkpoint, NMO_ERR_NOMEM);
+    array_id_action_t *array_action = NULL;
+    nmo_status_t array_action_result =
+        workspace_edit_make_array_id_action(
+            edit,
+            &parent_state->sub_behavior_links,
+            link_id,
+            parent_state->sub_behavior_links.count - 1u,
+            &array_action);
+    if (array_action_result != NMO_OK) {
+        return workspace_edit_abort_status(edit, checkpoint, array_action_result);
     }
-    array_action->array = &parent_state->sub_behavior_links;
-    array_action->id = link_id;
-    array_action->index = parent_state->sub_behavior_links.count - 1u;
     nmo_status_t push_array_result =
         workspace_edit_push_rollback_or_abort(
             edit, checkpoint, rollback_remove_array_id, array_action);
@@ -4952,19 +5006,23 @@ nmo_status_t workspace_edit_remove_behavior_link(
         return NMO_ERR_NOT_FOUND;
     }
 
-    array_id_action_t *array_action =
-        (array_id_action_t *)nmo_workspace_edit_alloc(
-            edit, sizeof(*array_action), _Alignof(array_id_action_t));
-    object_id_action_t *object_action =
-        (object_id_action_t *)nmo_workspace_edit_alloc(
-            edit, sizeof(*object_action), _Alignof(object_id_action_t));
-    if (array_action == NULL || object_action == NULL) {
-        return NMO_ERR_NOMEM;
+    array_id_action_t *array_action = NULL;
+    nmo_status_t array_action_result =
+        workspace_edit_make_array_id_action(
+            edit,
+            &parent_state->sub_behavior_links,
+            link_id,
+            index,
+            &array_action);
+    if (array_action_result != NMO_OK) {
+        return array_action_result;
     }
-    array_action->array = &parent_state->sub_behavior_links;
-    array_action->id = link_id;
-    array_action->index = index;
-    object_action->id = link_id;
+    object_id_action_t *object_action = NULL;
+    nmo_status_t object_action_result =
+        workspace_edit_make_object_id_action(edit, link_id, &object_action);
+    if (object_action_result != NMO_OK) {
+        return object_action_result;
+    }
 
     nmo_status_t remove_result =
         nmo_array_remove(&parent_state->sub_behavior_links, index, NULL);
