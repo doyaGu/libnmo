@@ -76,7 +76,7 @@ typedef struct nmo_chunk_writer {
     int finalized;
 } nmo_chunk_writer_t;
 
-typedef int (*writer_track_sequence_fn)(nmo_chunk_writer_t *w, uint32_t position);
+typedef int (*writer_track_position_fn)(nmo_chunk_writer_t *w, uint32_t position);
 
 // Helper to ensure capacity
 static int ensure_data_capacity(nmo_chunk_writer_t *w, size_t needed_dwords) {
@@ -370,6 +370,14 @@ static int track_manager_sequence_start(nmo_chunk_writer_t *w, uint32_t position
                                            position);
 }
 
+static int track_manager_position(nmo_chunk_writer_t *w, uint32_t position) {
+    return writer_track_u32_position(w,
+                                     &w->manager_list,
+                                     &w->manager_count,
+                                     &w->manager_capacity,
+                                     position);
+}
+
 static int track_chunk_sequence_start(nmo_chunk_writer_t *w, uint32_t position) {
     return writer_track_u32_sequence_start(w,
                                            &w->chunk_ref_list,
@@ -380,7 +388,7 @@ static int track_chunk_sequence_start(nmo_chunk_writer_t *w, uint32_t position) 
 
 static nmo_status_t writer_append_sequence_count(nmo_chunk_writer_t *w,
                                                  size_t count,
-                                                 writer_track_sequence_fn track,
+                                                 writer_track_position_fn track,
                                                  int should_track) {
     int result = ensure_data_capacity(w, 1);
     if (result != NMO_OK) {
@@ -395,6 +403,31 @@ static nmo_status_t writer_append_sequence_count(nmo_chunk_writer_t *w,
     }
 
     w->data[w->data_size++] = (uint32_t) count;
+    return NMO_OK;
+}
+
+static nmo_status_t writer_reserve_tracked_dword_span(nmo_chunk_writer_t *w,
+                                                      size_t count,
+                                                      writer_track_position_fn track,
+                                                      uint32_t **out) {
+    if (out == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    int result = ensure_data_capacity(w, count);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    if (track != NULL) {
+        result = track(w, (uint32_t) w->data_size);
+        if (result != NMO_OK) {
+            return result;
+        }
+    }
+
+    *out = &w->data[w->data_size];
+    w->data_size += count;
     return NMO_OK;
 }
 
@@ -813,19 +846,18 @@ nmo_status_t nmo_chunk_writer_start_manager_sequence(nmo_chunk_writer_t *w,
         w->chunk->chunk_options |= NMO_CHUNK_OPTION_MAN;
     }
 
-    int result = ensure_data_capacity(w, 3);
+    uint32_t *span = NULL;
+    int result = writer_reserve_tracked_dword_span(w,
+                                                   3,
+                                                   track_manager_sequence_start,
+                                                   &span);
     if (result != NMO_OK) {
         return result;
     }
 
-    result = track_manager_sequence_start(w, (uint32_t) w->data_size);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    w->data[w->data_size++] = (uint32_t) count;
-    w->data[w->data_size++] = manager.d1;
-    w->data[w->data_size++] = manager.d2;
+    span[0] = (uint32_t) count;
+    span[1] = manager.d1;
+    span[2] = manager.d2;
     return NMO_OK;
 }
 
@@ -1055,26 +1087,18 @@ nmo_status_t nmo_chunk_writer_write_manager_int(nmo_chunk_writer_t *w, nmo_guid_
         w->chunk->chunk_options |= NMO_CHUNK_OPTION_MAN;
     }
 
-    // Ensure capacity for [GUID.d1][GUID.d2][value] (3 DWORDs)
-    int result = ensure_data_capacity(w, 3);
+    uint32_t *span = NULL;
+    int result = writer_reserve_tracked_dword_span(w,
+                                                   3,
+                                                   track_manager_position,
+                                                   &span);
     if (result != NMO_OK) {
         return result;
     }
 
-    // Track current position in manager list
-    result = writer_track_u32_position(w,
-                                       &w->manager_list,
-                                       &w->manager_count,
-                                       &w->manager_capacity,
-                                       (uint32_t) w->data_size);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    // Write [GUID.d1][GUID.d2][value]
-    w->data[w->data_size++] = manager.d1;
-    w->data[w->data_size++] = manager.d2;
-    w->data[w->data_size++] = (uint32_t) value;
+    span[0] = manager.d1;
+    span[1] = manager.d2;
+    span[2] = (uint32_t) value;
 
     return NMO_OK;
 }
