@@ -169,6 +169,23 @@ static nmo_status_t parser_read_dword_array_rollback(nmo_chunk_parser_t *p,
     NMO_RETURN_OK();
 }
 
+static nmo_status_t parser_read_float_span(nmo_chunk_parser_t *p,
+                                           float *dest,
+                                           size_t count,
+                                           const char *eof_message) {
+    if (p == NULL || dest == NULL) {
+        NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
+    }
+
+    if (!check_bounds(p, count)) {
+        NMO_PARSER_RETURN_TRUNCATED(eof_message);
+    }
+
+    memcpy(dest, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], count * sizeof(float));
+    p->cursor += count;
+    NMO_RETURN_OK();
+}
+
 static inline void consume_subchunk_slot(nmo_chunk_parser_t *p) {
     if (p == NULL) {
         return;
@@ -1310,114 +1327,86 @@ nmo_status_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
 // Math type read functions
 
 nmo_status_t nmo_chunk_parser_read_vector2(nmo_chunk_parser_t *p, nmo_vector2_t *out) {
-    if (p == NULL || out == NULL) {
+    if (out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
 
-    if (!check_bounds(p, 2)) {
-        NMO_PARSER_RETURN_TRUNCATED("Cannot read vector2");
-    }
+    float values[2];
+    nmo_status_t result = parser_read_float_span(p, values, 2, "Cannot read vector2");
+    NMO_RETURN_IF_ERROR(result);
 
-    // Read 2 floats
-    float *data = (float *) (void *) &NMO_CHUNK_PARSER_DATA(p)[p->cursor];
-    out->x = data[0];
-    out->y = data[1];
-    p->cursor += 2;
-
+    out->x = values[0];
+    out->y = values[1];
     NMO_RETURN_OK();
 }
 
 nmo_status_t nmo_chunk_parser_read_vector(nmo_chunk_parser_t *p, nmo_vector_t *out) {
-    if (p == NULL || out == NULL) {
+    if (out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
 
-    if (!check_bounds(p, 3)) {
-        NMO_PARSER_RETURN_TRUNCATED("Cannot read vector");
-    }
+    float values[3];
+    nmo_status_t result = parser_read_float_span(p, values, 3, "Cannot read vector");
+    NMO_RETURN_IF_ERROR(result);
 
-    // Read 3 floats
-    float *data = (float *) (void *) &NMO_CHUNK_PARSER_DATA(p)[p->cursor];
-    out->x = data[0];
-    out->y = data[1];
-    out->z = data[2];
-    p->cursor += 3;
-
+    out->x = values[0];
+    out->y = values[1];
+    out->z = values[2];
     NMO_RETURN_OK();
 }
 
 nmo_status_t nmo_chunk_parser_read_vector4(nmo_chunk_parser_t *p, nmo_vector4_t *out) {
-    if (p == NULL || out == NULL) {
+    if (out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
 
-    if (!check_bounds(p, 4)) {
-        NMO_PARSER_RETURN_TRUNCATED("Cannot read vector4");
-    }
+    float values[4];
+    nmo_status_t result = parser_read_float_span(p, values, 4, "Cannot read vector4");
+    NMO_RETURN_IF_ERROR(result);
 
-    // Read 4 floats
-    float *data = (float *) (void *) &NMO_CHUNK_PARSER_DATA(p)[p->cursor];
-    out->x = data[0];
-    out->y = data[1];
-    out->z = data[2];
-    out->w = data[3];
-    p->cursor += 4;
-
+    out->x = values[0];
+    out->y = values[1];
+    out->z = values[2];
+    out->w = values[3];
     NMO_RETURN_OK();
 }
 
 nmo_status_t nmo_chunk_parser_read_matrix(nmo_chunk_parser_t *p, nmo_matrix_t *out) {
-    if (p == NULL || out == NULL) {
+    if (out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
 
-    if (!check_bounds(p, 16)) {
-        NMO_PARSER_RETURN_TRUNCATED("Cannot read matrix");
-    }
-
-    // Read 16 floats (4x4 matrix)
-    memcpy(out->m, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], 16 * sizeof(float));
-    p->cursor += 16;
-
-    NMO_RETURN_OK();
+    return parser_read_float_span(p, &out->m[0][0], 16, "Cannot read matrix");
 }
 
 nmo_status_t nmo_chunk_parser_read_quaternion(nmo_chunk_parser_t *p, nmo_quaternion_t *out) {
-    if (p == NULL || out == NULL) {
+    if (out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
 
-    if (!check_bounds(p, 4)) {
-        NMO_PARSER_RETURN_TRUNCATED("Cannot read quaternion");
-    }
+    float values[4];
+    nmo_status_t result = parser_read_float_span(p, values, 4, "Cannot read quaternion");
+    NMO_RETURN_IF_ERROR(result);
 
-    // Read 4 floats (quaternion)
-    float *data = (float *) (void *) &NMO_CHUNK_PARSER_DATA(p)[p->cursor];
-    out->x = data[0];
-    out->y = data[1];
-    out->z = data[2];
-    out->w = data[3];
-    p->cursor += 4;
-
+    out->x = values[0];
+    out->y = values[1];
+    out->z = values[2];
+    out->w = values[3];
     NMO_RETURN_OK();
 }
 
 nmo_status_t nmo_chunk_parser_read_color(nmo_chunk_parser_t *p, nmo_color_t *out) {
-    if (p == NULL || out == NULL) {
+    if (out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
 
-    if (!check_bounds(p, 4)) {
-        NMO_PARSER_RETURN_TRUNCATED("Cannot read color");
-    }
+    float values[4];
+    nmo_status_t result = parser_read_float_span(p, values, 4, "Cannot read color");
+    NMO_RETURN_IF_ERROR(result);
 
-    // Read 4 floats (RGBA color)
-    float *data = (float *) (void *) &NMO_CHUNK_PARSER_DATA(p)[p->cursor];
-    out->r = data[0];
-    out->g = data[1];
-    out->b = data[2];
-    out->a = data[3];
-    p->cursor += 4;
-
+    out->r = values[0];
+    out->g = values[1];
+    out->b = values[2];
+    out->a = values[3];
     NMO_RETURN_OK();
 }
