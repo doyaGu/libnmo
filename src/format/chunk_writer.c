@@ -180,6 +180,23 @@ static nmo_status_t writer_append_aligned_bytes(nmo_chunk_writer_t *w,
     return NMO_OK;
 }
 
+static nmo_status_t writer_append_float_span(nmo_chunk_writer_t *w,
+                                             const float *values,
+                                             size_t count) {
+    if (w == NULL || w->finalized || values == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    int result = ensure_data_capacity(w, count);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    memcpy(&w->data[w->data_size], values, count * sizeof(float));
+    w->data_size += count;
+    return NMO_OK;
+}
+
 static void writer_append_reserved_dwords(nmo_chunk_writer_t *w,
                                           const uint32_t *data,
                                           size_t count) {
@@ -1385,122 +1402,56 @@ void nmo_chunk_writer_destroy(nmo_chunk_writer_t *w) {
 // Math type write functions
 
 nmo_status_t nmo_chunk_writer_write_vector2(nmo_chunk_writer_t *w, const nmo_vector2_t *v) {
-    if (w == NULL || v == NULL || w->finalized) {
+    if (v == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    int result = ensure_data_capacity(w, 2);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    // Write 2 floats
-    float *data = (float *) &w->data[w->data_size];
-    data[0] = v->x;
-    data[1] = v->y;
-    w->data_size += 2;
-
-    return NMO_OK;
+    const float values[2] = { v->x, v->y };
+    return writer_append_float_span(w, values, 2);
 }
 
 nmo_status_t nmo_chunk_writer_write_vector(nmo_chunk_writer_t *w, const nmo_vector_t *v) {
-    if (w == NULL || v == NULL || w->finalized) {
+    if (v == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    int result = ensure_data_capacity(w, 3);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    // Write 3 floats
-    float *data = (float *) &w->data[w->data_size];
-    data[0] = v->x;
-    data[1] = v->y;
-    data[2] = v->z;
-    w->data_size += 3;
-
-    return NMO_OK;
+    const float values[3] = { v->x, v->y, v->z };
+    return writer_append_float_span(w, values, 3);
 }
 
 nmo_status_t nmo_chunk_writer_write_vector4(nmo_chunk_writer_t *w, const nmo_vector4_t *v) {
-    if (w == NULL || v == NULL || w->finalized) {
+    if (v == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    int result = ensure_data_capacity(w, 4);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    // Write 4 floats
-    float *data = (float *) &w->data[w->data_size];
-    data[0] = v->x;
-    data[1] = v->y;
-    data[2] = v->z;
-    data[3] = v->w;
-    w->data_size += 4;
-
-    return NMO_OK;
+    const float values[4] = { v->x, v->y, v->z, v->w };
+    return writer_append_float_span(w, values, 4);
 }
 
 nmo_status_t nmo_chunk_writer_write_matrix(nmo_chunk_writer_t *w, const nmo_matrix_t *m) {
-    if (w == NULL || m == NULL || w->finalized) {
+    if (m == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    int result = ensure_data_capacity(w, 16);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    // Write 16 floats (4x4 matrix)
-    memcpy(&w->data[w->data_size], m->m, 16 * sizeof(float));
-    w->data_size += 16;
-
-    return NMO_OK;
+    return writer_append_float_span(w, &m->m[0][0], 16);
 }
 
 nmo_status_t nmo_chunk_writer_write_quaternion(nmo_chunk_writer_t *w, const nmo_quaternion_t *q) {
-    if (w == NULL || q == NULL || w->finalized) {
+    if (q == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    int result = ensure_data_capacity(w, 4);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    // Write 4 floats (quaternion)
-    float *data = (float *) &w->data[w->data_size];
-    data[0] = q->x;
-    data[1] = q->y;
-    data[2] = q->z;
-    data[3] = q->w;
-    w->data_size += 4;
-
-    return NMO_OK;
+    const float values[4] = { q->x, q->y, q->z, q->w };
+    return writer_append_float_span(w, values, 4);
 }
 
 nmo_status_t nmo_chunk_writer_write_color(nmo_chunk_writer_t *w, const nmo_color_t *c) {
-    if (w == NULL || c == NULL || w->finalized) {
+    if (c == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    int result = ensure_data_capacity(w, 4);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    // Write 4 floats (RGBA color)
-    float *data = (float *) &w->data[w->data_size];
-    data[0] = c->r;
-    data[1] = c->g;
-    data[2] = c->b;
-    data[3] = c->a;
-    w->data_size += 4;
-
-    return NMO_OK;
+    const float values[4] = { c->r, c->g, c->b, c->a };
+    return writer_append_float_span(w, values, 4);
 }
 
 /* ========================================================================
