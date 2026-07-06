@@ -409,6 +409,43 @@ static nmo_status_t rollback_field_bytes(nmo_workspace_edit_t *edit, void *paylo
     return NMO_OK;
 }
 
+static nmo_status_t workspace_edit_push_bytes_snapshot(
+    nmo_workspace_edit_t *edit,
+    void *target,
+    size_t size)
+{
+    if (edit == NULL || target == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    field_bytes_snapshot_t *snapshot =
+        (field_bytes_snapshot_t *)nmo_workspace_edit_alloc(
+            edit, sizeof(*snapshot) + size, _Alignof(field_bytes_snapshot_t));
+    if (snapshot == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    snapshot->field_ptr = target;
+    snapshot->size = size;
+    if (size > 0) {
+        memcpy(snapshot->bytes, target, size);
+    }
+
+    return workspace_edit_push_rollback(edit, rollback_field_bytes, snapshot);
+}
+
+static nmo_status_t workspace_edit_push_bytes_snapshot_or_abort(
+    nmo_workspace_edit_t *edit,
+    workspace_edit_checkpoint_t checkpoint,
+    void *target,
+    size_t size)
+{
+    nmo_status_t status = workspace_edit_push_bytes_snapshot(edit, target, size);
+    if (status != NMO_OK) {
+        return workspace_edit_abort_status(edit, checkpoint, status);
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t rollback_parameter_buffer(nmo_workspace_edit_t *edit, void *payload)
 {
     (void)edit;
@@ -3648,17 +3685,7 @@ nmo_status_t nmo_workspace_edit_snapshot_bytes(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    field_bytes_snapshot_t *snapshot =
-        (field_bytes_snapshot_t *)nmo_workspace_edit_alloc(
-            edit, sizeof(*snapshot) + size, _Alignof(field_bytes_snapshot_t));
-    if (snapshot == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-    snapshot->field_ptr = target;
-    snapshot->size = size;
-    memcpy(snapshot->bytes, target, size);
-
-    return workspace_edit_push_rollback(edit, rollback_field_bytes, snapshot);
+    return workspace_edit_push_bytes_snapshot(edit, target, size);
 }
 
 nmo_status_t nmo_workspace_edit_track_created_object(
@@ -3853,30 +3880,15 @@ nmo_status_t workspace_edit_set_object_fields(
         }
 
         void *field_ptr = (uint8_t *)state + field->offset;
-        field_bytes_snapshot_t *snapshot =
-            (field_bytes_snapshot_t *)nmo_workspace_edit_alloc(
-                edit, sizeof(*snapshot) + field->size, _Alignof(field_bytes_snapshot_t));
-        if (snapshot == NULL) {
-            result.failed++;
-            workspace_edit_abort_to(edit, checkpoint);
-            if (out_result != NULL) {
-                *out_result = result;
-            }
-            return NMO_ERR_NOMEM;
-        }
-        snapshot->field_ptr = field_ptr;
-        snapshot->size = field->size;
-        memcpy(snapshot->bytes, field_ptr, field->size);
-
-        nmo_status_t push_result =
-            workspace_edit_push_rollback_or_abort(
-                edit, checkpoint, rollback_field_bytes, snapshot);
-        if (push_result != NMO_OK) {
+        nmo_status_t snapshot_result =
+            workspace_edit_push_bytes_snapshot_or_abort(
+                edit, checkpoint, field_ptr, field->size);
+        if (snapshot_result != NMO_OK) {
             result.failed++;
             if (out_result != NULL) {
                 *out_result = result;
             }
-            return push_result;
+            return snapshot_result;
         }
 
         nmo_status_t set_result =
@@ -4055,23 +4067,11 @@ nmo_status_t workspace_edit_set_parameter_value_ex(
     }
 
     if (state->mode == CKPARAM_MODE_OBJECT) {
-        field_bytes_snapshot_t *snapshot =
-            (field_bytes_snapshot_t *)nmo_workspace_edit_alloc(
-                edit,
-                sizeof(*snapshot) + sizeof(state->object_id),
-                _Alignof(field_bytes_snapshot_t));
-        if (snapshot == NULL) {
-            return NMO_ERR_NOMEM;
-        }
-        snapshot->field_ptr = &state->object_id;
-        snapshot->size = sizeof(state->object_id);
-        memcpy(snapshot->bytes, &state->object_id, sizeof(state->object_id));
-
-        nmo_status_t push_result =
-            workspace_edit_push_rollback_or_abort(
-                edit, checkpoint, rollback_field_bytes, snapshot);
-        if (push_result != NMO_OK) {
-            return push_result;
+        nmo_status_t snapshot_result =
+            workspace_edit_push_bytes_snapshot_or_abort(
+                edit, checkpoint, &state->object_id, sizeof(state->object_id));
+        if (snapshot_result != NMO_OK) {
+            return snapshot_result;
         }
 
         nmo_object_id_t new_id = 0;
