@@ -978,6 +978,35 @@ static nmo_status_t rollback_manager_data(nmo_workspace_edit_t *edit, void *payl
     return NMO_OK;
 }
 
+static nmo_status_t workspace_edit_replace_manager_data(
+    nmo_workspace_edit_t *edit,
+    nmo_session_t *session,
+    nmo_manager_data_t *old_manager_data,
+    uint32_t old_manager_count,
+    nmo_manager_data_t *new_manager_data,
+    uint32_t new_manager_count)
+{
+    if (edit == NULL || session == NULL || new_manager_data == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    manager_data_snapshot_t *snapshot =
+        (manager_data_snapshot_t *)nmo_workspace_edit_alloc(
+            edit, sizeof(*snapshot), _Alignof(manager_data_snapshot_t));
+    if (snapshot == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    snapshot->session = session;
+    snapshot->manager_data = old_manager_data;
+    snapshot->manager_data_count = old_manager_count;
+    NMO_RETURN_IF_ERROR(workspace_edit_push_rollback(
+        edit, rollback_manager_data, snapshot));
+
+    nmo_session_set_manager_data(session, new_manager_data, new_manager_count);
+    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_RESOURCES);
+    return NMO_OK;
+}
+
 static nmo_status_t workspace_edit_seek_message_manager_identifier(
     nmo_chunk_t *chunk)
 {
@@ -4414,20 +4443,13 @@ nmo_status_t nmo_object_edit_ensure_message_manager_entry(
         (uint32_t)nmo_chunk_get_size(new_chunk);
     new_manager_data[manager_index].flags = 0u;
 
-    manager_data_snapshot_t *snapshot =
-        (manager_data_snapshot_t *)nmo_workspace_edit_alloc(
-            edit, sizeof(*snapshot), _Alignof(manager_data_snapshot_t));
-    if (snapshot == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-    snapshot->session = session;
-    snapshot->manager_data = old_manager_data;
-    snapshot->manager_data_count = old_manager_count;
-    NMO_RETURN_IF_ERROR(workspace_edit_push_rollback(
-        edit, rollback_manager_data, snapshot));
-
-    nmo_session_set_manager_data(session, new_manager_data, new_manager_count);
-    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_RESOURCES);
+    NMO_RETURN_IF_ERROR(workspace_edit_replace_manager_data(
+        edit,
+        session,
+        old_manager_data,
+        old_manager_count,
+        new_manager_data,
+        new_manager_count));
     *out_value = name_count;
     return NMO_OK;
 }
@@ -4582,20 +4604,13 @@ nmo_status_t nmo_object_edit_ensure_attribute_manager_entry(
         (uint32_t)nmo_chunk_get_size(new_chunk);
     new_manager_data[manager_index].flags = 0u;
 
-    manager_data_snapshot_t *snapshot =
-        (manager_data_snapshot_t *)nmo_workspace_edit_alloc(
-            edit, sizeof(*snapshot), _Alignof(manager_data_snapshot_t));
-    if (snapshot == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-    snapshot->session = session;
-    snapshot->manager_data = old_manager_data;
-    snapshot->manager_data_count = old_manager_count;
-    NMO_RETURN_IF_ERROR(workspace_edit_push_rollback(
-        edit, rollback_manager_data, snapshot));
-
-    nmo_session_set_manager_data(session, new_manager_data, new_manager_count);
-    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_RESOURCES);
+    NMO_RETURN_IF_ERROR(workspace_edit_replace_manager_data(
+        edit,
+        session,
+        old_manager_data,
+        old_manager_count,
+        new_manager_data,
+        new_manager_count));
     *out_value = new_attribute_index;
     return NMO_OK;
 }
