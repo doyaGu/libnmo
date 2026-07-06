@@ -176,6 +176,17 @@ static nmo_status_t writer_append_aligned_bytes(nmo_chunk_writer_t *w,
     return NMO_OK;
 }
 
+static void writer_append_reserved_dwords(nmo_chunk_writer_t *w,
+                                          const uint32_t *data,
+                                          size_t count) {
+    if (count == 0) {
+        return;
+    }
+
+    memcpy(&w->data[w->data_size], data, count * sizeof(uint32_t));
+    w->data_size += count;
+}
+
 static int ensure_u32_list_capacity(nmo_chunk_writer_t *w,
                                     uint32_t **list,
                                     size_t count,
@@ -917,29 +928,25 @@ nmo_status_t nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_ch
         /* Data buffer */
         if (sub->data.count > 0) {
             const uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->data);
-            memcpy(&w->data[w->data_size], data, sub->data.count * sizeof(uint32_t));
-            w->data_size += sub->data.count;
+            writer_append_reserved_dwords(w, data, sub->data.count);
         }
 
         /* IDs */
         if (sub->ids.count > 0) {
             const uint32_t *ids = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->ids);
-            memcpy(&w->data[w->data_size], ids, sub->ids.count * sizeof(uint32_t));
-            w->data_size += sub->ids.count;
+            writer_append_reserved_dwords(w, ids, sub->ids.count);
         }
 
         /* Sub-chunk reference positions */
         if (sub->chunk_refs.count > 0) {
             const uint32_t *chunk_refs = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->chunk_refs);
-            memcpy(&w->data[w->data_size], chunk_refs, sub->chunk_refs.count * sizeof(uint32_t));
-            w->data_size += sub->chunk_refs.count;
+            writer_append_reserved_dwords(w, chunk_refs, sub->chunk_refs.count);
         }
 
         /* Manager data */
         if (manager_count_field > 0) {
             const uint32_t *managers = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->managers);
-            memcpy(&w->data[w->data_size], managers, manager_count_field * sizeof(uint32_t));
-            w->data_size += manager_count_field;
+            writer_append_reserved_dwords(w, managers, manager_count_field);
         }
     }
 
