@@ -76,6 +76,8 @@ typedef struct nmo_chunk_writer {
     int finalized;
 } nmo_chunk_writer_t;
 
+typedef int (*writer_track_sequence_fn)(nmo_chunk_writer_t *w, uint32_t position);
+
 // Helper to ensure capacity
 static int ensure_data_capacity(nmo_chunk_writer_t *w, size_t needed_dwords) {
     size_t required = 0;
@@ -374,6 +376,26 @@ static int track_chunk_sequence_start(nmo_chunk_writer_t *w, uint32_t position) 
                                            &w->chunk_ref_count,
                                            &w->chunk_ref_capacity,
                                            position);
+}
+
+static nmo_status_t writer_append_sequence_count(nmo_chunk_writer_t *w,
+                                                 size_t count,
+                                                 writer_track_sequence_fn track,
+                                                 int should_track) {
+    int result = ensure_data_capacity(w, 1);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    if (should_track && track != NULL) {
+        result = track(w, (uint32_t) w->data_size);
+        if (result != NMO_OK) {
+            return result;
+        }
+    }
+
+    w->data[w->data_size++] = (uint32_t) count;
+    return NMO_OK;
 }
 
 static int track_chunk_position(nmo_chunk_writer_t *w, uint32_t position) {
@@ -772,21 +794,11 @@ nmo_status_t nmo_chunk_writer_start_object_sequence(nmo_chunk_writer_t *w, size_
         w->chunk->chunk_options |= NMO_CHUNK_OPTION_IDS;
     }
 
-    int result = ensure_data_capacity(w, 1);
-    if (result != NMO_OK) {
-        return result;
-    }
-
     int in_file_context = writer_has_file_context(w);
-    if (count > 0 && !in_file_context) {
-        result = track_id_sequence_start(w, (uint32_t) w->data_size);
-        if (result != NMO_OK) {
-            return result;
-        }
-    }
-
-    w->data[w->data_size++] = (uint32_t) count;
-    return NMO_OK;
+    return writer_append_sequence_count(w,
+                                        count,
+                                        track_id_sequence_start,
+                                        count > 0 && !in_file_context);
 }
 
 nmo_status_t nmo_chunk_writer_start_manager_sequence(nmo_chunk_writer_t *w,
@@ -838,21 +850,10 @@ nmo_status_t nmo_chunk_writer_start_subchunk_sequence(nmo_chunk_writer_t *w, siz
         w->chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
     }
 
-    // Ensure capacity for the count (1 DWORD)
-    int result = ensure_data_capacity(w, 1);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    uint32_t sequence_pos = (uint32_t) w->data_size;
-    result = track_chunk_sequence_start(w, sequence_pos);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    // Write the count
-    w->data[w->data_size++] = (uint32_t) count;
-    return NMO_OK;
+    return writer_append_sequence_count(w,
+                                        count,
+                                        track_chunk_sequence_start,
+                                        1);
 }
 
 /**
