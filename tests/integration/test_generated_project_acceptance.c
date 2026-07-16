@@ -591,7 +591,7 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
     ASSERT_EQ(0xFFFFFF00u, material_state->specular_color);
     ASSERT_EQ(0xFFFF00FFu, material_state->emissive_color);
     ASSERT_FLOAT_EQ(12.5f, material_state->specular_power, 0.0001f);
-    ASSERT_EQ(texture_id, material_state->texture_ids[0]);
+    ASSERT_EQ(texture_id, nmo_material_texture_id(material_state, 0));
     ASSERT_EQ(VXTEXTUREBLEND_MODULATE,
               (VXTEXTURE_BLENDMODE)(material_state->packed_modes & 0xFu));
     ASSERT_EQ(VXTEXTUREFILTER_LINEAR,

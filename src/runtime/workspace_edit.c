@@ -1918,11 +1918,11 @@ nmo_status_t nmo_asset_edit_bind_material_texture(
         return status;
     }
 
-    state->texture_ids[slot] = texture_id;
+    nmo_material_set_texture_id(state, slot, texture_id);
     state->has_additional_textures =
-        (state->texture_ids[1] != NMO_OBJECT_ID_NONE ||
-         state->texture_ids[2] != NMO_OBJECT_ID_NONE ||
-         state->texture_ids[3] != NMO_OBJECT_ID_NONE)
+        (nmo_material_texture_id(state, 1) != NMO_OBJECT_ID_NONE ||
+         nmo_material_texture_id(state, 2) != NMO_OBJECT_ID_NONE ||
+         nmo_material_texture_id(state, 3) != NMO_OBJECT_ID_NONE)
             ? 1u
             : 0u;
     nmo_workspace_edit_mark(

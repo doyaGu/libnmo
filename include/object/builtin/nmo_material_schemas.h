@@ -22,6 +22,7 @@
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_ref.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -148,7 +149,7 @@ typedef struct nmo_material_state {
     float specular_power;
 
     /* Texture references */
-    nmo_object_id_t texture_ids[4];
+    nmo_ref_t textures[4];
 
     /* Packed render settings */
     uint32_t texture_border_color;
@@ -157,11 +158,30 @@ typedef struct nmo_material_state {
 
     /* Effect data */
     uint32_t effect;
-    nmo_object_id_t effect_parameter_id;
+    nmo_ref_t effect_parameter;
     uint8_t has_effect;
     uint8_t has_effect_param;
     uint8_t has_additional_textures;
 } nmo_material_state_t;
+
+static inline nmo_object_id_t nmo_material_texture_id(
+    const nmo_material_state_t *state,
+    size_t slot)
+{
+    return state != NULL && slot < 4
+        ? nmo_ref_runtime_id(&state->textures[slot])
+        : NMO_OBJECT_ID_NONE;
+}
+
+static inline void nmo_material_set_texture_id(
+    nmo_material_state_t *state,
+    size_t slot,
+    nmo_object_id_t id)
+{
+    if (state != NULL && slot < 4) {
+        state->textures[slot] = nmo_ref_from_id(id);
+    }
+}
 
 /* ========================================================================
  * Public API

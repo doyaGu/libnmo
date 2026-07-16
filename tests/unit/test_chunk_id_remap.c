@@ -26,6 +26,7 @@
 #include "object/builtin/nmo_level_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/builtin/nmo_synchro_schemas.h"
+#include "object/builtin/nmo_material_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_statesave_ids.h"
@@ -521,6 +522,123 @@ TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic) {
     nmo_behaviorlink_vtable.destroy(&loaded, NULL, NULL);
     nmo_behaviorlink_vtable.destroy(&reloaded, NULL, NULL);
     nmo_behaviorlink_vtable.destroy(&failed, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    ASSERT_NOT_NULL(runtime_to_file);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_chunk_file_context_t write_context = {
+        .runtime_to_file = runtime_to_file,
+    };
+    nmo_chunk_file_context_t read_context = {
+        .file_to_runtime = file_to_runtime,
+    };
+
+    nmo_material_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_material_vtable.create(&source, NULL, NULL));
+    source.diffuse_color = 0x11223344u;
+    source.ambient_color = 0x55667788u;
+    source.specular_color = 0x99AABBCCu;
+    source.emissive_color = 0xDDEEFF00u;
+    source.specular_power = 3.5f;
+    source.texture_border_color = 0x01020304u;
+    source.packed_modes = 0x12345678u;
+    source.packed_flags = 0x11223344u;
+    for (size_t i = 0; i < 4; ++i) {
+        source.textures[i] = nmo_ref_from_raw((nmo_object_id_t)(700 + i));
+    }
+    source.has_additional_textures = 1;
+    source.effect = 42;
+    source.effect_parameter = nmo_ref_from_raw(704);
+    source.has_effect = 1;
+    source.has_effect_param = 1;
+
+    nmo_chunk_t *first = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(first);
+    first->class_id = NMO_CID_MATERIAL;
+    first->data_version = 8;
+    first->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(first, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_material_serialize(
+        &source, first, NULL, &serialize_context));
+    nmo_chunk_close(first);
+    nmo_chunk_set_file_context(first, &read_context);
+
+    nmo_material_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_material_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_material_deserialize(
+        &loaded, first, NULL, &deserialize_context));
+    for (size_t i = 0; i < 4; ++i) {
+        ASSERT_EQ((nmo_object_id_t)(700 + i), loaded.textures[i].raw_id);
+        ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.textures[i].state);
+    }
+    ASSERT_EQ(704u, loaded.effect_parameter.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.effect_parameter.state);
+    ASSERT_EQ(42u, loaded.effect);
+
+    nmo_chunk_t *second = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(second);
+    second->class_id = NMO_CID_MATERIAL;
+    second->data_version = 8;
+    second->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(second, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_material_serialize(
+        &loaded, second, NULL, &serialize_context));
+    nmo_chunk_close(second);
+    nmo_chunk_set_file_context(second, &read_context);
+
+    nmo_material_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_material_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_material_deserialize(
+        &reloaded, second, NULL, &deserialize_context));
+    for (size_t i = 0; i < 4; ++i) {
+        ASSERT_EQ((nmo_object_id_t)(700 + i), reloaded.textures[i].raw_id);
+        ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.textures[i].state);
+    }
+    ASSERT_EQ(704u, reloaded.effect_parameter.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.effect_parameter.state);
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_MATERIAL;
+    truncated->data_version = 8;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_MATDATA2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(truncated, 800));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(truncated, 801));
+    nmo_chunk_close(truncated);
+    nmo_chunk_set_file_context(truncated, &read_context);
+
+    nmo_material_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_material_vtable.create(&failed, NULL, NULL));
+    failed.diffuse_color = 0xCAFEBABEu;
+    for (size_t i = 0; i < 4; ++i) {
+        failed.textures[i] = nmo_ref_from_raw((nmo_object_id_t)(900 + i));
+    }
+    ASSERT_NE(NMO_OK, nmo_material_deserialize(
+        &failed, truncated, NULL, &deserialize_context));
+    ASSERT_EQ(0xCAFEBABEu, failed.diffuse_color);
+    for (size_t i = 0; i < 4; ++i) {
+        ASSERT_EQ((nmo_object_id_t)(900 + i), failed.textures[i].raw_id);
+        ASSERT_EQ(NMO_REF_UNRESOLVED, failed.textures[i].state);
+    }
+
+    nmo_material_vtable.destroy(&source, NULL, NULL);
+    nmo_material_vtable.destroy(&loaded, NULL, NULL);
+    nmo_material_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_material_vtable.destroy(&failed, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -2332,6 +2450,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, unresolved_ref_preserves_raw_id);
     REGISTER_TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic);
+    REGISTER_TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, targetcamera_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, targetlight_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically);

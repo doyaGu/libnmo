@@ -102,7 +102,7 @@ TEST(asset_edit_texture, replaces_rgba_texture_and_binds_material_slot_zero)
     const nmo_material_state_t *material =
         (const nmo_material_state_t *)nmo_object_get_state(material_object);
     ASSERT_NOT_NULL(material);
-    ASSERT_EQ(texture_id, material->texture_ids[0]);
+    ASSERT_EQ(texture_id, nmo_material_texture_id(material, 0));
 
     destroy_workspace(ctx, doc, workspace);
 }
@@ -138,7 +138,7 @@ TEST(asset_edit_texture, binds_material_texture_slot_one)
     const nmo_material_state_t *material =
         (const nmo_material_state_t *)nmo_object_get_state(material_object);
     ASSERT_NOT_NULL(material);
-    ASSERT_EQ(texture_id, material->texture_ids[1]);
+    ASSERT_EQ(texture_id, nmo_material_texture_id(material, 1));
     ASSERT_TRUE(material->has_additional_textures);
 
     destroy_workspace(ctx, doc, workspace);

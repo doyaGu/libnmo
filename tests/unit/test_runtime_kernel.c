@@ -8,6 +8,7 @@
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorio_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
+#include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_animation_schemas.h"
@@ -861,6 +862,8 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     nmo_object_id_t scene_id = 0;
     nmo_object_id_t behavior_io_id = 0;
     nmo_object_id_t behavior_link_id = 0;
+    nmo_object_id_t texture_id = 0;
+    nmo_object_id_t parameter_id = 0;
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_3DENTITY, "entity", (nmo_guid_t){0, 0},
         &entity_id, NULL));
@@ -885,6 +888,12 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_BEHAVIORLINK, "link", (nmo_guid_t){0, 0},
         &behavior_link_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_TEXTURE, "texture", (nmo_guid_t){0, 0},
+        &texture_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETER, "parameter", (nmo_guid_t){0, 0},
+        &parameter_id, NULL));
 
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
     nmo_3dentity_state_t *entity = (nmo_3dentity_state_t *)
@@ -934,11 +943,19 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     ASSERT_NOT_NULL(link);
     link->in_io = nmo_ref_from_id(material_id);
     link->out_io = nmo_ref_from_id(behavior_io_id);
+    nmo_material_state_t *material = (nmo_material_state_t *)
+        nmo_object_repository_find_by_id(repo, material_id)->state;
+    ASSERT_NOT_NULL(material);
+    material->textures[0] = nmo_ref_from_id(entity_id);
+    material->textures[1] = nmo_ref_from_id(texture_id);
+    material->effect_parameter = nmo_ref_from_id(camera_id);
+    material->has_effect = 1;
+    material->has_effect_param = 1;
 
     size_t changed = 0;
     ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
         repo, nmo_context_get_type_runtime(ctx), &changed));
-    ASSERT_EQ((size_t)12, changed);
+    ASSERT_EQ((size_t)14, changed);
     ASSERT_EQ(NMO_REF_NONE, entity->current_mesh.state);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, entity->current_mesh.raw_id);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, entity->current_mesh.id);
@@ -963,6 +980,9 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
                                  &scene->object_descs)[0].ref));
     ASSERT_EQ(NMO_REF_NONE, link->in_io.state);
     ASSERT_EQ(behavior_io_id, nmo_behaviorlink_out_io_id(link));
+    ASSERT_EQ(NMO_REF_NONE, material->textures[0].state);
+    ASSERT_EQ(texture_id, nmo_material_texture_id(material, 1));
+    ASSERT_EQ(NMO_REF_NONE, material->effect_parameter.state);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -1102,6 +1122,39 @@ TEST(runtime_kernel, copy_remap_updates_only_resolved_behaviorlink_endpoints) {
     ASSERT_EQ(101u, link.in_io.raw_id);
     ASSERT_EQ(202u, link.out_io.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, link.out_io.state);
+
+    nmo_arena_destroy(arena);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, copy_remap_updates_only_resolved_material_refs) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *material_type =
+        nmo_type_registry_find_by_class_id(type_rt->types, NMO_CID_MATERIAL);
+    ASSERT_NOT_NULL(material_type);
+
+    nmo_material_state_t material = {0};
+    material.textures[0] = nmo_ref_from_id(101);
+    material.textures[1] = nmo_ref_from_raw(102);
+    material.effect_parameter = nmo_ref_from_id(103);
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 101, 201));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 102, 202));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 103, 203));
+
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, material_type, &material, remap));
+    ASSERT_EQ(201u, nmo_material_texture_id(&material, 0));
+    ASSERT_EQ(101u, material.textures[0].raw_id);
+    ASSERT_EQ(102u, material.textures[1].raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, material.textures[1].state);
+    ASSERT_EQ(203u, nmo_ref_runtime_id(&material.effect_parameter));
+    ASSERT_EQ(103u, material.effect_parameter.raw_id);
 
     nmo_arena_destroy(arena);
     nmo_context_release(ctx);
@@ -1259,6 +1312,7 @@ REGISTER_TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_invalid_references);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_scene_members);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_behaviorlink_endpoints);
+REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_material_refs);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_nonreference_state);
 REGISTER_TEST(runtime_kernel, serializer_failure_does_not_reuse_raw_chunk);
 TEST_MAIN_END()

@@ -42,10 +42,10 @@ static void format_color_components(char *buf, size_t buf_size, uint32_t argb) {
     snprintf(buf, buf_size, "(%u, %u, %u, %u)", r_c, g, b, a);
 }
 
-static uint32_t count_texture_refs(const nmo_object_id_t *ids, size_t count) {
+static uint32_t count_texture_refs(const nmo_material_state_t *state) {
     uint32_t n = 0;
-    for (size_t i = 0; i < count; ++i) {
-        if (ids[i] != 0) ++n;
+    for (size_t i = 0; i < 4; ++i) {
+        if (nmo_material_texture_id(state, i) != 0) ++n;
     }
     return n;
 }
@@ -89,7 +89,7 @@ static int material_list_json_visitor(size_t index,
         format_argb(color_buf, sizeof(color_buf), ms->diffuse_color);
         yyjson_mut_obj_add_strcpy(doc, item, "diffuse", color_buf);
         yyjson_mut_obj_add_uint(doc, item, "texture_count",
-                                count_texture_refs(ms->texture_ids, 4));
+                                count_texture_refs(ms));
     }
 
     yyjson_mut_arr_add_val(data->arr, item);
@@ -123,7 +123,7 @@ static int material_list_table_visitor(size_t index,
     if (ms) {
         format_argb(diffuse_buf, sizeof(diffuse_buf), ms->diffuse_color);
         snprintf(tex_buf, sizeof(tex_buf), "%u",
-                 count_texture_refs(ms->texture_ids, 4));
+                 count_texture_refs(ms));
     } else {
         snprintf(diffuse_buf, sizeof(diffuse_buf), "-");
         snprintf(tex_buf, sizeof(tex_buf), "-");
@@ -275,11 +275,13 @@ static int material_show_run(nmo_cmd_ctx_t *c, const material_show_args_t *args)
             /* Texture references */
             yyjson_mut_val *tex_arr = yyjson_mut_arr(doc);
             for (int ti = 0; ti < 4; ++ti) {
-                if (ms->texture_ids[ti]) {
+                const nmo_object_id_t texture_id =
+                    nmo_material_texture_id(ms, (size_t)ti);
+                if (texture_id) {
                     yyjson_mut_val *tref = yyjson_mut_obj(doc);
                     yyjson_mut_obj_add_uint(doc, tref, "slot", (uint64_t)ti);
-                    yyjson_mut_obj_add_uint(doc, tref, "id", ms->texture_ids[ti]);
-                    const char *tn = resolve_name(c, ms->texture_ids[ti]);
+                    yyjson_mut_obj_add_uint(doc, tref, "id", texture_id);
+                    const char *tn = resolve_name(c, texture_id);
                     if (tn && tn[0]) {
                         nmo_cli_json_add_str_safe(doc, tref, "name", tn);
                     }
@@ -346,12 +348,14 @@ static int material_show_run(nmo_cmd_ctx_t *c, const material_show_args_t *args)
         fprintf(c->out, "\nTextures:\n");
         bool any_tex = false;
         for (int ti = 0; ti < 4; ++ti) {
-            if (ms->texture_ids[ti]) {
-                const char *tn = resolve_name(c, ms->texture_ids[ti]);
+            const nmo_object_id_t texture_id =
+                nmo_material_texture_id(ms, (size_t)ti);
+            if (texture_id) {
+                const char *tn = resolve_name(c, texture_id);
                 if (tn && tn[0]) {
-                    fprintf(c->out, "  [%d] #%u (%s)\n", ti, ms->texture_ids[ti], tn);
+                    fprintf(c->out, "  [%d] #%u (%s)\n", ti, texture_id, tn);
                 } else {
-                    fprintf(c->out, "  [%d] #%u\n", ti, ms->texture_ids[ti]);
+                    fprintf(c->out, "  [%d] #%u\n", ti, texture_id);
                 }
                 any_tex = true;
             }

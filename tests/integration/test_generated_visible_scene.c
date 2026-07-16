@@ -247,7 +247,7 @@ TEST(generated_visible_scene, creates_external_obj_texture_and_position) {
         (const nmo_material_state_t *)nmo_object_get_state(material_object);
     ASSERT_NOT_NULL(material_state);
     ASSERT_EQ(0xFFFFFFFFu, material_state->diffuse_color);
-    ASSERT_EQ(texture_id, material_state->texture_ids[0]);
+    ASSERT_EQ(texture_id, nmo_material_texture_id(material_state, 0));
 
     const nmo_texture_state_t *texture_state =
         (const nmo_texture_state_t *)nmo_object_get_state(texture_object);
@@ -362,8 +362,10 @@ TEST(generated_visible_scene, creates_external_obj_named_materials) {
     const nmo_material_state_t *blue_state =
         (const nmo_material_state_t *)nmo_object_get_state(blue_object);
     ASSERT_NOT_NULL(blue_state);
-    ASSERT_EQ(nmo_object_get_id(blue_base_texture), blue_state->texture_ids[0]);
-    ASSERT_EQ(nmo_object_get_id(blue_detail_texture), blue_state->texture_ids[1]);
+    ASSERT_EQ(nmo_object_get_id(blue_base_texture),
+              nmo_material_texture_id(blue_state, 0));
+    ASSERT_EQ(nmo_object_get_id(blue_detail_texture),
+              nmo_material_texture_id(blue_state, 1));
     ASSERT_TRUE(blue_state->has_additional_textures);
 
     nmo_document_destroy(document);

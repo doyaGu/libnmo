@@ -279,7 +279,7 @@ TEST(cli_write, object_data_entity_material_texture_parameter_dry_run_preserves_
         (const nmo_material_state_t *)write_probe_state(&camera_before, 8, CKPGUID_MATERIAL);
     ASSERT_NOT_NULL(material_before);
     uint32_t diffuse_before = material_before->diffuse_color;
-    uint32_t texture_id_before = material_before->texture_ids[0];
+    uint32_t texture_id_before = nmo_material_texture_id(material_before, 0);
     const nmo_texture_state_t *texture_before =
         (const nmo_texture_state_t *)write_probe_state(&camera_before, 7, CKPGUID_TEXTURE);
     ASSERT_NOT_NULL(texture_before);
@@ -349,7 +349,7 @@ TEST(cli_write, object_data_entity_material_texture_parameter_dry_run_preserves_
         (const nmo_material_state_t *)write_probe_state(&camera_after, 8, CKPGUID_MATERIAL);
     ASSERT_NOT_NULL(material_after);
     ASSERT_EQ(diffuse_before, material_after->diffuse_color);
-    ASSERT_EQ(texture_id_before, material_after->texture_ids[0]);
+    ASSERT_EQ(texture_id_before, nmo_material_texture_id(material_after, 0));
     const nmo_texture_state_t *texture_after =
         (const nmo_texture_state_t *)write_probe_state(&camera_after, 7, CKPGUID_TEXTURE);
     ASSERT_NOT_NULL(texture_after);
@@ -1118,7 +1118,7 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     ASSERT_EQ(0xFF0000FFu, material_state->specular_color);
     ASSERT_EQ(0xFF4080BFu, material_state->emissive_color);
     ASSERT_FLOAT_EQ(12.5f, material_state->specular_power, 0.0001f);
-    ASSERT_EQ(7u, material_state->texture_ids[0]);
+    ASSERT_EQ(7u, nmo_material_texture_id(material_state, 0));
     write_probe_close(&material_probe);
 
     write_semantic_probe_t texture_baseline;
